@@ -574,8 +574,20 @@
   .minimap-lvl-debug{fill:var(--level-debug);}
   .minimap-lvl-trace{fill:var(--level-trace);}
   .minimap-lvl-other{fill:var(--text-secondary);}
-  .minimap-viewport{fill:var(--accent-soft); stroke:var(--accent); stroke-width:1;}
-  .minimap-viewport.hidden{display:none;}
+  /* Full range = the whole time span the Filtered view's result set covers
+     (every match, regardless of scroll/virtualization) — same look this
+     indicator always had. Rendered range = just the entries that currently
+     have DOM rows (a real subset for the virtualized table view; not drawn
+     at all for the Link view, which has no virtualization — see
+     updateMinimapRenderedRange). Nested visually inside the full range, one
+     step more saturated so it reads as "this part specifically" without
+     competing with the overlay bars for attention. */
+  .minimap-full-range{fill:var(--accent-soft); stroke:var(--accent); stroke-width:1;}
+  .minimap-full-range.hidden{display:none;}
+  .minimap-rendered-range{fill:var(--accent); opacity:.3; stroke:var(--accent-strong); stroke-width:1;}
+  .minimap-rendered-range.hidden{display:none;}
+  .minimap-marker-line{fill:var(--text-primary); opacity:.9; pointer-events:none;}
+  .minimap-marker-flag{fill:var(--text-primary); pointer-events:none;}
   #timelineMinimapTooltip{
     position:absolute; top:4px; transform:translateX(-50%);
     padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--border);
@@ -583,6 +595,25 @@
     pointer-events:none; white-space:nowrap; z-index:10;
   }
   #timelineMinimapTooltip.hidden{display:none;}
+  /* Drag-select overlay: click-drag across the bars marks a from/to range
+     that becomes a time filter on mouseup (see the drag handlers in the
+     "Timeline minimap" script section). Separate elements from the SVG's
+     range-indicator rects (#minimapFullRangeRect/#minimapRenderedRangeRect)
+     on purpose — those are rebuilt from scratch on every
+     renderTimelineMinimap() call, which would otherwise wipe an in-progress
+     drag mid-gesture. */
+  #timelineMinimapDragRect{
+    position:absolute; background:var(--accent-soft); border:1px solid var(--accent);
+    opacity:.7; pointer-events:none; z-index:6;
+  }
+  #timelineMinimapDragRect.hidden{display:none;}
+  #timelineMinimapDragLabel{
+    position:absolute; top:4px; transform:translateX(-50%);
+    padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:11;
+  }
+  #timelineMinimapDragLabel.hidden{display:none;}
 
   /* Virtualized body: #tableBody scrolls, #tableSpacer gives it the correct
      scrollHeight for the full (unrendered) row count, #tableRows holds only
@@ -856,7 +887,7 @@
   .link-field label{display:block; font-size:11px; color:var(--text-tertiary); margin-bottom:6px;}
   .link-field-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
   .link-target-label{font-size:12px; color:var(--text-secondary); font-family:var(--font-mono); margin-left:2px;}
-  .link-dialog-card select, .link-dialog-card input[type="number"]{
+  .link-dialog-card select, .link-dialog-card input[type="number"], .link-dialog-card input[type="datetime-local"]{
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 8px; font-family:var(--font-mono); font-size:12px;
   }
@@ -882,6 +913,24 @@
     padding-top:106px; /* topbar 50px + filter popup offset 56px -> same spot as search popup */
   }
   #contextDialog.hidden{display:none;}
+
+  /* ---------- Time range dialog (create/edit — see createFilterNode's
+     "timerange" filterType and openTimeRangeDialog) ---------- */
+  #timeRangeDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
+  }
+  #timeRangeDialog.hidden{display:none;}
+  #timeRangeDialog input[type="datetime-local"]{flex:1 1 auto; min-width:0;}
+  .time-range-hint{font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-tertiary);}
+  .time-range-clear{
+    flex:0 0 auto; width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+    background:transparent; color:var(--text-tertiary); border:1px solid var(--border); border-radius:6px; cursor:pointer;
+  }
+  .time-range-clear:hover{border-color:var(--accent); color:var(--accent-strong);}
+  .time-range-error{font-size:11px; color:var(--warn); margin:-6px 0 14px;}
+  .time-range-error.hidden{display:none;}
 
   /* ---------- Value assertion dialog ---------- */
   #assertDialog{
@@ -1269,6 +1318,8 @@
         <div id="timelineMinimapMeta"></div>
         <svg id="timelineMinimapSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
         <div id="timelineMinimapTooltip" class="hidden"></div>
+        <div id="timelineMinimapDragRect" class="hidden"></div>
+        <div id="timelineMinimapDragLabel" class="hidden"></div>
       </div>
 
       <div id="statusStrip"></div>
@@ -1509,6 +1560,35 @@
       <div class="link-dialog-actions">
         <button type="button" id="contextDialogCancel" class="btn-mini-outline">Cancel</button>
         <button type="button" id="contextDialogCreate" class="btn-mini">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="timeRangeDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title" id="timeRangeDialogTitle">Time filter</div>
+      <div class="link-field">
+        <label for="timeRangeFromInput">From <span class="time-range-hint">(empty = no lower bound)</span></label>
+        <div class="link-field-row">
+          <input type="datetime-local" id="timeRangeFromInput" step="0.001">
+          <button type="button" class="time-range-clear" id="timeRangeFromClear" title="Clear (no lower bound)">
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="link-field">
+        <label for="timeRangeToInput">To <span class="time-range-hint">(empty = no upper bound)</span></label>
+        <div class="link-field-row">
+          <input type="datetime-local" id="timeRangeToInput" step="0.001">
+          <button type="button" class="time-range-clear" id="timeRangeToClear" title="Clear (no upper bound)">
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="time-range-error hidden" id="timeRangeDialogError">Set at least one of From / To.</div>
+      <div class="link-dialog-actions">
+        <button type="button" id="timeRangeDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="timeRangeDialogSubmit" class="btn-mini">Create</button>
       </div>
     </div>
   </div>
@@ -1826,6 +1906,23 @@ function formatTime(ms) {
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p3(d.getMilliseconds())}`;
 }
 
+// Local (no-timezone) "YYYY-MM-DDTHH:mm:ss.sss" round-trip for the time-range
+// dialog's <input type="datetime-local" step="0.001"> fields — same local-
+// time interpretation formatTime()/parseTimestamp() already use elsewhere,
+// so a value typed in the dialog lines up exactly with what the table shows.
+function tsToLocalInputValue(ts) {
+  if (ts == null || isNaN(ts)) return "";
+  const d = new Date(ts);
+  const p2 = n => String(n).padStart(2, "0");
+  const p3 = n => String(n).padStart(3, "0");
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p3(d.getMilliseconds())}`;
+}
+function localInputValueToTs(str) {
+  if (!str) return null;
+  const t = new Date(str).getTime();
+  return isNaN(t) ? null : t;
+}
+
 // Row-to-row gap coloring thresholds for the Δt column — a quick visual cue
 // for stalls/timeouts while scanning a long list, tunable if a log's normal
 // cadence differs from this default.
@@ -1972,14 +2069,31 @@ function compileExtractPattern(pattern) {
   }
 }
 
+// Display name for a "timerange" filter's { from, to } value (either bound
+// may be null, meaning unbounded on that side) — shared by createFilterNode,
+// updateTimeRangeFilterNode, and anything else that needs to (re)compute a
+// timerange node's name from its value. "after"/"before" are the legacy,
+// single-bound predecessors of this type (still readable, no longer created
+// by any UI path — see FILTER_TYPES/getEntries) and keep their own simpler
+// ≥/≤ names in createFilterNode below, unaffected by this helper.
+function timeRangeFilterName(value) {
+  const from = value && value.from, to = value && value.to;
+  if (from != null && to != null) return `${formatTime(from)} → ${formatTime(to)}`;
+  if (from != null) return `≥ ${formatTime(from)}`;
+  if (to != null) return `≤ ${formatTime(to)}`;
+  return "any time";
+}
+
 function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null) {
   const parent = state.nodes[parentId];
   if (!parent) return null;
   let name;
   if (filterType === "text") name = `“${value}”`;
   else if (filterType === "after") name = `≥ ${formatTime(value)}`;
+  else if (filterType === "before") name = `≤ ${formatTime(value)}`;
   else if (filterType === "extract") name = value;
-  else name = `≤ ${formatTime(value)}`;
+  else if (filterType === "timerange") name = timeRangeFilterName(value);
+  else name = String(value);
 
   const node = { id: uid("n"), type: "filter", name, parentId, children: [], filterType, value, inverted };
   if (filterType === "extract" && ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
@@ -2009,6 +2123,42 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns) {
     else delete node.ignoredColumns;
   }
   invalidateAllCaches();
+}
+
+// Edits an existing time filter in place — same "not undoable" scope as
+// updateFilterNode above, and the same reasoning for why (a value/type edit,
+// not a move/delete). Unlike updateFilterNode this also handles the legacy
+// "after"/"before" node shapes: editing one through the time-range dialog
+// (see openTimeRangeDialog) migrates it to "timerange" on save, since the
+// dialog always writes both bounds. One-way (there's no UI to go back to the
+// single-bound legacy shape), which is fine — the two are behaviorally
+// identical when only one bound is set.
+function updateTimeRangeFilterNode(nodeId, from, to) {
+  const node = state.nodes[nodeId];
+  if (!node) return;
+  node.filterType = "timerange";
+  node.value = { from, to };
+  node.name = timeRangeFilterName(node.value);
+  invalidateAllCaches();
+}
+
+// Normalizes any of the three time-filter node shapes into a plain
+// { from, to } pair for the time-range dialog to prefill from — lets
+// openTimeRangeDialog's edit mode work uniformly whether the node being
+// edited is a legacy "after"/"before" node or an already-unified "timerange"
+// node (see updateTimeRangeFilterNode above for the migration-on-save).
+function timeRangeOfNode(node) {
+  if (node.filterType === "after") return { from: node.value, to: null };
+  if (node.filterType === "before") return { from: null, to: node.value };
+  if (node.filterType === "timerange") return { from: node.value.from, to: node.value.to };
+  return { from: null, to: null };
+}
+
+// Shared eligibility check for "this node is editable through the time-range
+// dialog" — the F2 shortcut and the tree's right-click "Edit filter…" item
+// both gate on it (see their call sites).
+function isTimeFilterType(filterType) {
+  return filterType === "after" || filterType === "before" || filterType === "timerange";
 }
 
 function isDescendantOrSelf(rootId, targetId) {
@@ -2487,6 +2637,16 @@ function getEntries(nodeId) {
     result = parentEntries.filter(e => e.ts >= node.value);
   } else if (node.filterType === "before") {
     result = parentEntries.filter(e => e.ts <= node.value);
+  } else if (node.filterType === "timerange") {
+    // value = { from, to }, either bound possibly null (unbounded on that
+    // side) — the unified replacement for "after"/"before" above, which stay
+    // readable (old saved sessions/exports) but are no longer created by any
+    // UI path. Plain object under the existing generic `value` field, so
+    // every persistence carrier (clone/snapshot/serialize/import) already
+    // threads it through with no extra field to add — see CLAUDE.md's
+    // "Known gotchas" note on filter-node fields.
+    const from = node.value && node.value.from, to = node.value && node.value.to;
+    result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
   } else if (node.filterType === "extract") {
     const spec = compileExtractPattern(node.value);
     result = spec ? parentEntries.filter(e => spec.regex.test(e.message)) : [];
@@ -2888,6 +3048,8 @@ const timelineMinimapEl = el("#timelineMinimap");
 const timelineMinimapMetaEl = el("#timelineMinimapMeta");
 const timelineMinimapSvg = el("#timelineMinimapSvg");
 const timelineMinimapTooltip = el("#timelineMinimapTooltip");
+const timelineMinimapDragRect = el("#timelineMinimapDragRect");
+const timelineMinimapDragLabel = el("#timelineMinimapDragLabel");
 const fhTabs = el("#fhTabs");
 const fhSplit = el("#fhSplit");
 const filterSlot = el("#filterSlot");
@@ -3101,7 +3263,11 @@ function renderMainView() {
     tableWrap.style.display = "none";
     linkWrap.style.display = "flex";
     statusStrip.classList.add("hidden");
-    timelineMinimapEl.classList.add("hidden");
+    // Pair entries duck-type as normal entries (ts/level — see "Link
+    // filter" in PROJECT.md), so the minimap works here unchanged; shown
+    // now so a brace selection's markers (see renderLinkView) have
+    // somewhere to actually appear.
+    timelineMinimapEl.classList.remove("hidden");
     renderLinkView(activeNode);
   } else {
     linkWrap.style.display = "none";
@@ -3148,7 +3314,7 @@ function typeTagFor(node) {
   if (node.type === "file") return "FILE";
   switch (node.filterType) {
     case "text": return "TXT";
-    case "after": case "before": return "TIME";
+    case "after": case "before": case "timerange": return "TIME";
     case "extract": return "TBL";
     case "and": return "AND";
     case "or": return "OR";
@@ -3172,7 +3338,7 @@ function renderTree() {
 function ghostTypeTag(filterType) {
   switch (filterType) {
     case "text": return "TXT";
-    case "after": case "before": return "TIME";
+    case "after": case "before": case "timerange": return "TIME";
     case "extract": return "TBL";
     case "and": return "AND";
     case "or": return "OR";
@@ -3800,6 +3966,11 @@ function renderLinkView(node) {
   linkInfo.textContent = pairs.length.toLocaleString("de-DE") + " pair" + (pairs.length === 1 ? "" : "s");
 
   const frag = document.createDocumentFragment();
+  // Flattened across every pair, fed to the minimap below — pairs
+  // themselves only carry the reference side's own .ts (see PROJECT.md
+  // "Link filter"), which would under-represent the true time span whenever
+  // a matched (target-side) entry lands outside its reference's own range.
+  const allRealEntries = [];
   pairs.forEach(pair => {
     const block = document.createElement("div");
     block.className = "pair-block";
@@ -3807,16 +3978,21 @@ function renderLinkView(node) {
     const brace = document.createElement("div");
     brace.className = "pair-brace";
     brace.title = "Click to select the pair · right-click to filter/extract on the combined entry";
+    const realEntries = getTupleEntries(pair);
+    // Read back by minimapMarkedEntries() when this brace is the selected
+    // one, so a click here marks every real entry the pair/tuple is made
+    // of on the minimap — not just a single point.
+    brace.dataset.entryIds = realEntries.map(e => e.id).join(",");
     brace.addEventListener("click", () => {
       const wasSelected = block.classList.contains("pair-selected");
       linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
       if (!wasSelected) block.classList.add("pair-selected");
+      updateMinimapSelectionMarkers();
     });
     brace.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, pair); });
 
     const rowsWrap = document.createElement("div");
     rowsWrap.className = "pair-rows";
-    const realEntries = getTupleEntries(pair);
     realEntries.forEach((entry, i) => {
       if (i > 0) {
         const delta = document.createElement("div");
@@ -3825,6 +4001,7 @@ function renderLinkView(node) {
         rowsWrap.appendChild(delta);
       }
       rowsWrap.appendChild(buildPairRow(entry));
+      allRealEntries.push(entry);
     });
 
     block.appendChild(brace);
@@ -3833,6 +4010,14 @@ function renderLinkView(node) {
   });
   linkBody.innerHTML = "";
   linkBody.appendChild(frag);
+
+  // The Link view has no row virtualization (every pair-block above is a
+  // real DOM node already) — renderTimelineMinimap draws the background/
+  // overlay bars and the full-range rectangle from allRealEntries; the
+  // rendered-range sub-rectangle is deliberately left alone (stays hidden),
+  // since there's no narrower "actually rendered" subset to distinguish it
+  // from here — see updateMinimapRenderedRange's own comment.
+  renderTimelineMinimap(getRootFileId(node.id), allRealEntries);
 }
 
 function buildPairRow(entry) {
@@ -4885,11 +5070,18 @@ tableBody.addEventListener("scroll", () => {
   }
   if (scrollTicking) return;
   scrollTicking = true;
-  requestAnimationFrame(() => { renderVisibleRows(); updateMinimapViewportIndicator(); scrollTicking = false; });
+  requestAnimationFrame(() => { renderVisibleRows(); updateMinimapRenderedRange(); scrollTicking = false; });
 });
 window.addEventListener("resize", () => {
   renderVisibleRows();
-  if (!timelineMinimapEl.classList.contains("hidden")) renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+  if (!timelineMinimapEl.classList.contains("hidden")) {
+    renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+    // Bucket geometry just changed (bar width depends on container width) —
+    // the rendered-range rect's pixel position/width need recomputing too,
+    // same as renderTable()'s own explicit call; only meaningful while the
+    // table view (not the Link view) is what's on screen.
+    if (tableWrap.style.display !== "none") updateMinimapRenderedRange();
+  }
 });
 
 /* ---------- Detail panel resizer (drag the handle above it) ---------- */
@@ -4951,7 +5143,10 @@ window.addEventListener("mousemove", ev => {
   // same reasoning as the window "resize" listener above.
   renderVisibleRows();
   renderHighlightVisibleRows();
-  if (!timelineMinimapEl.classList.contains("hidden")) renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+  if (!timelineMinimapEl.classList.contains("hidden")) {
+    renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+    if (tableWrap.style.display !== "none") updateMinimapRenderedRange();
+  }
 });
 
 window.addEventListener("mouseup", () => {
@@ -5021,7 +5216,8 @@ const MINIMAP_MIN_BUCKETS = 40;
 const MINIMAP_MAX_BUCKETS = 400;
 
 // Set by renderTimelineMinimap; read by the click/hover handlers and by
-// updateMinimapViewportIndicator so they don't need to recompute the scale.
+// updateMinimapFullRange/updateMinimapRenderedRange so they don't need to
+// recompute the scale.
 let minimapTMin = 0;
 let minimapTMax = 0;
 let minimapWidth = 0;
@@ -5050,6 +5246,26 @@ function minimapTsToX(ts) {
 function minimapXToTs(x) {
   if (minimapTMax <= minimapTMin) return minimapTMin;
   return minimapTMin + (x / minimapWidth) * (minimapTMax - minimapTMin);
+}
+
+// Maps a timestamp to the horizontal span of the density BAR it falls into,
+// not just the single point minimapTsToX(ts) gives for its exact moment —
+// used by updateMinimapFullRange/updateMinimapRenderedRange so their
+// rectangles always cover a shown entry's whole bar, not just the point
+// within it its own exact timestamp happens to fall at. Depending on where
+// in its bucket's time range an entry's exact ts lands, minimapTsToX(ts) can
+// sit well short of that bar's right edge; using it directly for a
+// rectangle's end used to make the last covered entry's bar visibly stick
+// out past the highlighted range (person-reported via screenshot — a shown
+// ERROR row's bar looked like it was outside the current view). Mirrors the
+// exact bucketOf() formula renderTimelineMinimap uses to build the bars
+// themselves, so the two always agree on which bucket a timestamp belongs to.
+function minimapBarSpan(ts) {
+  if (minimapBucketCount === 0) { const x = minimapTsToX(ts); return { left: x, right: x }; }
+  const span = Math.max(1, minimapTMax - minimapTMin);
+  const bucket = Math.min(minimapBucketCount - 1, Math.max(0, Math.floor(((ts - minimapTMin) / span) * minimapBucketCount)));
+  const barW = minimapWidth / minimapBucketCount;
+  return { left: bucket * barW, right: (bucket + 1) * barW };
 }
 
 // rootId: the active node's root file id (whole-file density, background bars).
@@ -5147,34 +5363,143 @@ function renderTimelineMinimap(rootId, viewEntries) {
   }
 
   timelineMinimapSvg.innerHTML = bgParts + ovParts +
-    '<rect class="minimap-viewport hidden" id="minimapViewportRect" x="0" y="0" width="0" height="' + H + '"/>';
+    '<rect class="minimap-full-range hidden" id="minimapFullRangeRect" x="0" y="0" width="0" height="' + H + '"/>' +
+    '<rect class="minimap-rendered-range hidden" id="minimapRenderedRangeRect" x="0" y="0" width="0" height="' + H + '"/>' +
+    '<g id="minimapSelectionMarkers"></g>';
 
-  updateMinimapViewportIndicator();
+  // Full range and the selection markers are meaningful for every caller
+  // (table view and Link view alike — see renderLinkView) since both only
+  // depend on minimapLastViewEntries/the current selection, not on which
+  // scrollable container is on screen. The rendered-range sub-rectangle is
+  // NOT updated here on purpose — it depends on the table's own scroll
+  // position (tableBody), which only means something when the table view is
+  // what's actually showing; renderTable() calls updateMinimapRenderedRange()
+  // itself right after this, and renderLinkView() simply never does, leaving
+  // that rect hidden (the Link view has no virtualization — see its own
+  // comment for why "rendered subset" doesn't apply there).
+  updateMinimapFullRange();
+  updateMinimapSelectionMarkers();
 }
 
-// Repositions the viewport-range rectangle to match what's actually scrolled
-// into view in the table, without rebuilding the rest of the minimap —
-// cheap enough to call on every scroll frame (see the tableBody scroll
-// listener above).
-function updateMinimapViewportIndicator() {
-  const rect = el("#minimapViewportRect");
+// Repositions the "whole Filtered-view result" rectangle to span from the
+// earliest to the latest entry in minimapLastViewEntries — i.e. everything
+// the active filter currently matches, independent of scroll position or
+// virtualization. Scans for min/max rather than assuming entries[0]/
+// entries[last] are the extremes: true for the table view's chronological
+// currentViewEntries, but NOT guaranteed for the Link view's flattened pair
+// entries (a "before" hop's matched entry can sit earlier than its own
+// reference entry — see "Link filter" in PROJECT.md), so this stays correct
+// for both callers instead of relying on an ordering assumption that only
+// holds for one of them.
+function updateMinimapFullRange() {
+  const rect = el("#minimapFullRangeRect");
   if (!rect) return;
-  if (!minimapInteractive || currentViewEntries.length === 0) { rect.classList.add("hidden"); return; }
-
-  const viewportH = tableBody.clientHeight || 400;
-  const startIdx = Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT));
-  const endIdx = Math.min(currentViewEntries.length - 1, Math.ceil((tableBody.scrollTop + viewportH) / ROW_HEIGHT));
-  const x1 = minimapTsToX(currentViewEntries[startIdx].ts);
-  const x2 = minimapTsToX(currentViewEntries[endIdx].ts);
+  const entries = minimapLastViewEntries;
+  if (!entries || entries.length === 0) { rect.classList.add("hidden"); return; }
+  let minTs = Infinity, maxTs = -Infinity;
+  for (const e of entries) {
+    if (e.ts < minTs) minTs = e.ts;
+    if (e.ts > maxTs) maxTs = e.ts;
+  }
+  const x1 = minimapBarSpan(minTs).left;
+  const x2 = minimapBarSpan(maxTs).right;
   rect.setAttribute("x", x1.toFixed(1));
   rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
   rect.classList.remove("hidden");
 }
 
+// Repositions the "currently rendered" sub-rectangle to match what actually
+// has DOM rows right now, nested inside the full-range rectangle above —
+// cheap enough to call on every scroll frame (see the tableBody scroll
+// listener below). Table-view-only: the table virtualizes (only rows within
+// BUFFER_ROWS of the scrolled viewport exist as DOM nodes at all), so this
+// sub-range is normally a real, narrower subset of the full filtered range;
+// only renderTable() calls this (see renderTimelineMinimap's own comment for
+// why it isn't called from there directly).
+function updateMinimapRenderedRange() {
+  const rect = el("#minimapRenderedRangeRect");
+  if (!rect) return;
+  if (!minimapInteractive || currentViewEntries.length === 0) { rect.classList.add("hidden"); return; }
+
+  const viewportH = tableBody.clientHeight || 400;
+  // Both clamped to the list's bounds — scrollTop can briefly be stale for
+  // the list currentViewEntries just became (e.g. switching to a much
+  // smaller filtered result while previously scrolled deep into a larger
+  // one; the actual scroll-position reset happens later in renderTable(),
+  // after this runs — see its own comment). Bugfix: startIdx used to only
+  // clamp at 0, so that scenario indexed straight past the end of the array.
+  const maxIdx = currentViewEntries.length - 1;
+  const startIdx = Math.min(maxIdx, Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT)));
+  const endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((tableBody.scrollTop + viewportH) / ROW_HEIGHT)));
+  const x1 = minimapBarSpan(currentViewEntries[startIdx].ts).left;
+  const x2 = minimapBarSpan(currentViewEntries[endIdx].ts).right;
+  rect.setAttribute("x", x1.toFixed(1));
+  rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
+  rect.classList.remove("hidden");
+}
+
+// Resolves which real entries should get a position marker on the minimap
+// right now. Two sources, checked in order:
+//  1. A Link view pair currently selected via its brace (see renderLinkView)
+//     — every REAL entry the pair/tuple is made of (getTupleEntries), read
+//     back off a data-entry-ids attribute stashed on the brace at render
+//     time, since that's cheaper than re-deriving it from getEntries() here.
+//     Gated on the Link view actually being the active view: renderLinkView
+//     only rebuilds #linkBody (clearing any stale .pair-selected) the next
+//     time it itself runs, which doesn't happen just from switching away —
+//     without this gate, a brace left selected before navigating to an
+//     unrelated node would keep incorrectly marking its old entries.
+//  2. The ordinary single selection, state.selectedId — resolved via
+//     entryIndex first (fast, and works even off-screen, same as
+//     updateDetailPanel), falling back to a scan of currentViewEntries/
+//     currentHighlightViewEntries for the one case entryIndex can't cover: a
+//     selected row that's itself a synthetic Link pair entry (duck-types as
+//     a normal entry — see "Link filter" in PROJECT.md — but is never
+//     entryIndex-registered, only real parsed entries are).
+// Returns [] when nothing should be marked.
+function minimapMarkedEntries() {
+  const activeNode = state.nodes[state.activeId];
+  const isLinkActive = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
+  const selectedBrace = isLinkActive ? linkBody.querySelector(".pair-selected .pair-brace") : null;
+  if (selectedBrace && selectedBrace.dataset.entryIds) {
+    return selectedBrace.dataset.entryIds.split(",").map(id => entryIndex[id]).filter(Boolean);
+  }
+  if (!state.selectedId) return [];
+  const found = entryIndex[state.selectedId]
+    || currentViewEntries.find(e => e.id === state.selectedId)
+    || currentHighlightViewEntries.find(e => e.id === state.selectedId);
+  return found ? [found] : [];
+}
+
+// Redraws the selected-entry marker(s) — a thin vertical line plus a small
+// flag at the top, one per entry from minimapMarkedEntries() — without
+// touching anything else in the minimap. Cheap enough to call on every
+// selection change (see applySelection and the Link view's brace click
+// handler). Not gated on minimapInteractive/column-sort like the range
+// rectangles and click-to-jump are: "where is this entry in time" stays
+// meaningful regardless of what order the table itself is currently sorted
+// into, unlike those two features which specifically assume chronological
+// row adjacency.
+function updateMinimapSelectionMarkers() {
+  const g = el("#minimapSelectionMarkers");
+  if (!g) return;
+  const marked = minimapMarkedEntries();
+  if (marked.length === 0) { g.innerHTML = ""; return; }
+  const H = Math.max(20, timelineMinimapSvg.clientHeight || 52);
+  g.innerHTML = marked.map(e => {
+    const x = minimapTsToX(e.ts);
+    return '<rect class="minimap-marker-line" x="' + (x - 1).toFixed(1) + '" y="0" width="2" height="' + H + '"/>' +
+      '<path class="minimap-marker-flag" d="M ' + (x - 4).toFixed(1) + ' 0 L ' + (x + 4).toFixed(1) + ' 0 L ' + x.toFixed(1) + ' 6 Z"/>';
+  }).join("");
+}
+
 // Click-to-jump: nearest entry in time, same "select + scroll + flash"
 // path a row double-click uses elsewhere. Withheld during a column sort —
-// see the module comment above.
+// see the module comment above. Also withheld right after a drag-select
+// gesture: mouseup fires a trailing "click" on whatever element is under the
+// pointer, which would otherwise re-interpret the drag's end point as a jump.
 timelineMinimapSvg.addEventListener("click", ev => {
+  if (minimapDragSuppressClick) { minimapDragSuppressClick = false; return; }
   if (!minimapInteractive || currentViewEntries.length === 0) return;
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
@@ -5188,6 +5513,7 @@ timelineMinimapSvg.addEventListener("click", ev => {
 // and stays available even during a column sort (a pure lookup, unlike the
 // click and viewport-rect features above).
 timelineMinimapSvg.addEventListener("mousemove", ev => {
+  if (minimapDragging) return; // the drag-select overlay/label own this space right now
   if (minimapBucketCount === 0) { timelineMinimapTooltip.classList.add("hidden"); return; }
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const localX = ev.clientX - rect.left;
@@ -5199,7 +5525,112 @@ timelineMinimapSvg.addEventListener("mousemove", ev => {
   timelineMinimapTooltip.style.left = Math.min(rect.width - 4, Math.max(4, localX)) + "px";
   timelineMinimapTooltip.classList.remove("hidden");
 });
-timelineMinimapSvg.addEventListener("mouseleave", () => timelineMinimapTooltip.classList.add("hidden"));
+timelineMinimapSvg.addEventListener("mouseleave", () => { if (!minimapDragging) timelineMinimapTooltip.classList.add("hidden"); });
+
+/* ---------- Drag-select: click-drag across the minimap creates a from/to
+   time filter ---------------------------------------------------------
+   Marking a range and releasing creates a single "timerange" filter node
+   (see the filterType's introduction near createFilterNode/getEntries) —
+   an earlier version of this built the range from two separate "after"/
+   "before" filters combined by an AND node (three tree nodes for one
+   conceptual filter); "timerange" replaced that with one node holding both
+   bounds directly, so a drag now produces exactly one filter.
+
+   Deliberately built on its own DOM elements (#timelineMinimapDragRect/
+   Label, plain positioned <div>s, not part of the SVG) rather than another
+   SVG rect like #minimapFullRangeRect/#minimapRenderedRangeRect — those
+   elements (and the rest of the SVG's markup) get fully torn down and
+   rebuilt by renderTimelineMinimap() on every render (tail tick, level
+   toggle, filter switch, ...), which can happen mid-drag; a plain sibling
+   div survives that untouched. This also keeps the guarantee
+   FEATURE_BACKLOG.md called out explicitly: the "filtered view time range"
+   rectangles' own update paths (updateMinimapFullRange/
+   updateMinimapRenderedRange) are completely untouched by any of this. */
+const MINIMAP_DRAG_THRESHOLD_PX = 3; // below this, treat it as the existing click-to-jump instead
+let minimapDragging = false;
+let minimapDragStartX = 0; // in minimapWidth units, captured at mousedown
+let minimapDragMoved = false;
+let minimapDragSvgRect = null; // cached at mousedown so a drag past the element's edge still resolves consistently
+let minimapDragSuppressClick = false;
+
+function minimapEventUnitX(ev, rect) {
+  const raw = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
+  return Math.min(minimapWidth, Math.max(0, raw));
+}
+
+function showMinimapDragOverlay(xa, xb) {
+  const lo = Math.min(xa, xb), hi = Math.max(xa, xb);
+  timelineMinimapDragRect.style.top = timelineMinimapSvg.offsetTop + "px";
+  timelineMinimapDragRect.style.height = timelineMinimapSvg.offsetHeight + "px";
+  timelineMinimapDragRect.style.left = lo.toFixed(1) + "px";
+  timelineMinimapDragRect.style.width = Math.max(1, hi - lo).toFixed(1) + "px";
+  timelineMinimapDragRect.classList.remove("hidden");
+
+  const fromTs = minimapXToTs(lo), toTs = minimapXToTs(hi);
+  timelineMinimapDragLabel.textContent = formatTime(fromTs) + " → " + formatTime(toTs) + " · " + formatMs(Math.max(0, toTs - fromTs));
+  timelineMinimapDragLabel.style.left = Math.min(minimapWidth - 4, Math.max(4, (lo + hi) / 2)).toFixed(1) + "px";
+  timelineMinimapDragLabel.classList.remove("hidden");
+  timelineMinimapTooltip.classList.add("hidden"); // hover tooltip would otherwise fight the label for the same space
+}
+function hideMinimapDragOverlay() {
+  timelineMinimapDragRect.classList.add("hidden");
+  timelineMinimapDragLabel.classList.add("hidden");
+}
+
+// Builds the from/to range filter — a single "timerange" node under the
+// active node. See the module comment above for the earlier three-node shape
+// this replaced.
+function createTimeRangeFilterFromDrag(fromTs, toTs) {
+  const baseId = state.activeId;
+  if (!baseId) return;
+  if (!createFilterNode(baseId, "timerange", { from: fromTs, to: toTs })) return;
+  revealFilteredView(); // a new filter's result lives in the Filtered view, same as every other filter-creation path
+  render();
+}
+
+timelineMinimapSvg.addEventListener("mousedown", ev => {
+  if (!minimapInteractive || ev.button !== 0) return;
+  minimapDragSvgRect = timelineMinimapSvg.getBoundingClientRect();
+  minimapDragStartX = minimapEventUnitX(ev, minimapDragSvgRect);
+  minimapDragging = true;
+  minimapDragMoved = false;
+  document.body.style.userSelect = "none";
+  ev.preventDefault();
+});
+
+window.addEventListener("mousemove", ev => {
+  if (!minimapDragging) return;
+  const x = minimapEventUnitX(ev, minimapDragSvgRect);
+  if (!minimapDragMoved && Math.abs(x - minimapDragStartX) < MINIMAP_DRAG_THRESHOLD_PX) return;
+  minimapDragMoved = true;
+  showMinimapDragOverlay(minimapDragStartX, x);
+});
+
+window.addEventListener("mouseup", ev => {
+  if (!minimapDragging) return;
+  minimapDragging = false;
+  document.body.style.userSelect = "";
+  hideMinimapDragOverlay();
+  if (!minimapDragMoved) return; // a plain click — the svg's own "click" listener handles jump-to
+  minimapDragSuppressClick = true;
+  const x = minimapEventUnitX(ev, minimapDragSvgRect);
+  const lo = Math.min(minimapDragStartX, x), hi = Math.max(minimapDragStartX, x);
+  const fromTs = Math.round(minimapXToTs(lo)), toTs = Math.round(minimapXToTs(hi));
+  if (toTs > fromTs) createTimeRangeFilterFromDrag(fromTs, toTs);
+});
+
+// Right-click: open the time-range dialog directly (see "Time range dialog"
+// section) instead of dragging, for a manual/precise range — prefilled with
+// the clicked point as both bounds (a zero-width starting range), so the
+// dialog opens on an already-valid selection the person can then widen
+// either side of. Withheld during a column sort, same as click/drag above.
+timelineMinimapSvg.addEventListener("contextmenu", ev => {
+  if (!minimapInteractive || !state.activeId) return;
+  ev.preventDefault();
+  const rect = timelineMinimapSvg.getBoundingClientRect();
+  const ts = Math.round(minimapXToTs(minimapEventUnitX(ev, rect)));
+  openTimeRangeDialog("create", state.activeId, { from: ts, to: ts });
+});
 
 // Scrolls the virtual list so that the entry at `index` is in view (and
 // optionally flashes it). Works regardless of whether it's currently rendered.
@@ -5305,6 +5736,12 @@ function applySelection(entryId) {
     state.tailFollow = false;
     updateTailJumpBtn();
   }
+  // A plain row selection always supersedes any Link-view pair-brace marker
+  // (see minimapMarkedEntries' priority order) — clear it here so a stale
+  // "Klammer" doesn't keep overriding a fresh single-row selection made
+  // elsewhere. Cheap no-op when the minimap is hidden or nothing's marked.
+  linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
+  updateMinimapSelectionMarkers();
   return previousId;
 }
 
@@ -5642,6 +6079,10 @@ function renderTable() {
   tableSpacer.style.height = (currentViewEntries.length * ROW_HEIGHT + 22) + "px";
   renderStatusStrip();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
+  // Table-view-specific ("what's actually got a DOM row right now") — see
+  // updateMinimapRenderedRange's own comment for why this isn't folded into
+  // renderTimelineMinimap itself.
+  updateMinimapRenderedRange();
   updateSortIndicators();
 
   if (state.scrollTargetId) {
@@ -6225,13 +6666,16 @@ function openContextMenu(ev, entry) {
 }
 function closeContextMenu() { contextMenu.classList.add("hidden"); ctxEntry = null; }
 
+// Both create a unified "timerange" node with only one bound set, rather
+// than the legacy single-bound "after"/"before" types — same result, but now
+// editable afterward through the time-range dialog (see openTimeRangeDialog).
 el("#ctxAfter").addEventListener("click", () => {
-  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "after", ctxEntry.ts); revealFilteredView(); }
+  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: ctxEntry.ts, to: null }); revealFilteredView(); }
   closeContextMenu();
   render();
 });
 el("#ctxBefore").addEventListener("click", () => {
-  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "before", ctxEntry.ts); revealFilteredView(); }
+  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: null, to: ctxEntry.ts }); revealFilteredView(); }
   closeContextMenu();
   render();
 });
@@ -6435,11 +6879,12 @@ function openTreeContextMenu(ev, clickedId) {
   } else {
     const items = [];
     if (node.type === "filter") {
-      // Only "text" and "extract" filters have a plain value the filter
-      // popup's single input can represent (see openEditFilterPopup) —
-      // and/or/link nodes derive their value from two other nodes, and
-      // context filters have their own before/after dialog.
-      if (node.filterType === "text" || node.filterType === "extract") {
+      // "text"/"extract" have a plain value the filter popup's single input
+      // can represent (see openEditFilterPopup); "after"/"before"/"timerange"
+      // go through the dedicated time-range dialog instead (see
+      // openTimeRangeDialog). and/or/link nodes derive their value from two
+      // other nodes, and context filters have their own before/after dialog.
+      if (node.filterType === "text" || node.filterType === "extract" || isTimeFilterType(node.filterType)) {
         items.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
       }
       items.push({ action: "copy", label: "Copy", icon: ICON_COPY });
@@ -6494,7 +6939,9 @@ treeContextMenu.addEventListener("click", ev => {
   // Single-node actions operate on treeCtxId (the node the menu was opened
   // for), mirroring exactly what Ctrl+C/X/V/Delete do for state.activeId.
   if (action === "edit") {
-    if (treeCtxId && state.nodes[treeCtxId]) openEditFilterPopup(treeCtxId);
+    const node = treeCtxId && state.nodes[treeCtxId];
+    if (node && isTimeFilterType(node.filterType)) openTimeRangeDialog("edit", node.id, timeRangeOfNode(node));
+    else if (node) openEditFilterPopup(treeCtxId);
     return;
   }
   if (action === "copy" || action === "cut") {
@@ -6711,6 +7158,66 @@ el("#contextDialogCreate").addEventListener("click", () => {
   render();
 });
 
+/* ===================== Time range dialog (create/edit a "timerange" filter) =====================
+   Single small dialog covering both create (mode "create", targetId = the
+   new filter's parent) and edit (mode "edit", targetId = the node being
+   edited) — same targetId-means-different-things-per-mode pattern
+   openEditFilterPopup/openFilterPopup already use for the text/extract
+   popup. Edit mode also accepts a legacy "after"/"before" node (see
+   timeRangeOfNode); saving it migrates it to "timerange"
+   (updateTimeRangeFilterNode). Either bound left empty means unbounded on
+   that side — no separate "infinity" checkbox, same "empty = optional"
+   convention the value-assertion dialog's min/max range fields already use. */
+
+const timeRangeDialog = el("#timeRangeDialog");
+const timeRangeDialogTitle = el("#timeRangeDialogTitle");
+const timeRangeFromInput = el("#timeRangeFromInput");
+const timeRangeToInput = el("#timeRangeToInput");
+const timeRangeDialogError = el("#timeRangeDialogError");
+const timeRangeDialogSubmit = el("#timeRangeDialogSubmit");
+let timeRangeDialogMode = null; // "create" | "edit"
+let timeRangeDialogTargetId = null; // create: parentId · edit: the node's own id
+
+function openTimeRangeDialog(mode, targetId, prefill) {
+  const target = state.nodes[targetId];
+  if (!target) return;
+  timeRangeDialogMode = mode;
+  timeRangeDialogTargetId = targetId;
+  const range = prefill || { from: null, to: null };
+  timeRangeFromInput.value = tsToLocalInputValue(range.from);
+  timeRangeToInput.value = tsToLocalInputValue(range.to);
+  timeRangeDialogError.classList.add("hidden");
+  timeRangeDialogTitle.textContent = mode === "edit" ? "Edit time filter" : `Time filter on “${target.name}”`;
+  timeRangeDialogSubmit.textContent = mode === "edit" ? "Save" : "Create";
+  timeRangeDialog.classList.remove("hidden");
+  timeRangeFromInput.focus();
+}
+function closeTimeRangeDialog() {
+  timeRangeDialog.classList.add("hidden");
+  timeRangeDialogMode = null;
+  timeRangeDialogTargetId = null;
+}
+timeRangeDialog.addEventListener("click", ev => { if (ev.target === timeRangeDialog) closeTimeRangeDialog(); });
+el("#timeRangeDialogCancel").addEventListener("click", closeTimeRangeDialog);
+el("#timeRangeFromClear").addEventListener("click", () => { timeRangeFromInput.value = ""; timeRangeDialogError.classList.add("hidden"); });
+el("#timeRangeToClear").addEventListener("click", () => { timeRangeToInput.value = ""; timeRangeDialogError.classList.add("hidden"); });
+timeRangeDialogSubmit.addEventListener("click", () => {
+  let from = localInputValueToTs(timeRangeFromInput.value);
+  let to = localInputValueToTs(timeRangeToInput.value);
+  if (from == null && to == null) { timeRangeDialogError.classList.remove("hidden"); return; }
+  if (from != null && to != null && from > to) { const t = from; from = to; to = t; } // swap silently, same as the minimap drag
+
+  if (timeRangeDialogMode === "edit") {
+    updateTimeRangeFilterNode(timeRangeDialogTargetId, from, to);
+  } else if (!createFilterNode(timeRangeDialogTargetId, "timerange", { from, to })) {
+    closeTimeRangeDialog();
+    return;
+  }
+  closeTimeRangeDialog();
+  revealFilteredView();
+  render();
+});
+
 /* ===================== Filter save / load (JSON files) =====================
    "Save filter…" writes the *branch* a filter belongs to: the ancestor
    chain from just below the root file down to the clicked node, plus the
@@ -6737,7 +7244,7 @@ el("#contextDialogCreate").addEventListener("click", () => {
 
 const FILTER_FILE_FORMAT = "logtrail-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "extract", "and", "or", "link", "context"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId) {
@@ -6998,6 +7505,7 @@ document.addEventListener("keydown", ev => {
     closeTreeContextMenu();
     closeLinkDialog();
     closeContextDialog();
+    closeTimeRangeDialog();
     closeAssertDialog();
     closeBookmarksPanel();
     closeColorPicker();
@@ -7032,7 +7540,10 @@ document.addEventListener("keydown", ev => {
 
   if (ev.key === "F2") {
     const node = state.nodes[state.activeId];
-    if (node && node.type === "filter" && (node.filterType === "text" || node.filterType === "extract")) {
+    if (node && node.type === "filter" && isTimeFilterType(node.filterType)) {
+      ev.preventDefault();
+      openTimeRangeDialog("edit", node.id, timeRangeOfNode(node));
+    } else if (node && node.type === "filter" && (node.filterType === "text" || node.filterType === "extract")) {
       ev.preventDefault();
       openEditFilterPopup(state.activeId);
     }

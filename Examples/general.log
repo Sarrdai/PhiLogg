@@ -1,0 +1,27 @@
+2024-01-15 10:00:00,000	INFO	"main"	C:\src\App.cs	line 12	[Startup]	"Application started, version 1.4.2"
+2024-01-15 10:00:00,150	INFO	"main"	C:\src\Config.cs	line 30	[LoadConfig]	"Configuration loaded from app.config"
+2024-01-15 10:00:00,420	DEBUG	"main"	C:\src\Database.cs	line 55	[Connect]	"Connecting to database at db01.internal:5432"
+2024-01-15 10:00:00,900	INFO	"main"	C:\src\Database.cs	line 61	[Connect]	"Database connection established"
+2024-01-15 10:02:15,000	INFO	"worker-1"	C:\src\Scheduler.cs	line 88	[Tick]	"Scheduler tick, 0 jobs pending"
+2024-01-15 10:04:47,300	WARN	"worker-1"	C:\src\Scheduler.cs	line 102	[Tick]	"Job queue latency above threshold (420ms)"
+2024-01-15 10:05:00,000	INFO	"worker-2"	C:\src\JobRunner.cs	line 44	[RunJob]	"Starting job ImportCustomers"
+2024-01-15 10:05:00,210	DEBUG	"worker-2"	C:\src\JobRunner.cs	line 51	[RunJob]	"Fetched 128 records from source"
+2024-01-15 10:05:00,480	INFO	"worker-2"	C:\src\JobRunner.cs	line 70	[RunJob]	"Job ImportCustomers completed in 480ms"
+2024-01-15 10:05:01,000	INFO	"worker-3"	C:\src\JobRunner.cs	line 44	[RunJob]	"Starting job ExportInvoices"
+2024-01-15 10:05:01,650	ERROR	"worker-3"	C:\src\JobRunner.cs	line 92	[RunJob]	"Job ExportInvoices failed: NullReferenceException"
+   at LogTrailDemo.JobRunner.RunJob(String jobName) in C:\src\JobRunner.cs:line 92
+   at LogTrailDemo.Scheduler.Tick() in C:\src\Scheduler.cs:line 105
+   at LogTrailDemo.Program.Main(String[] args) in C:\src\Program.cs:line 20
+2024-01-15 10:05:02,010	INFO	"worker-3"	C:\src\JobRunner.cs	line 96	[RunJob]	"Retrying job ExportInvoices (attempt 2/3)"
+2024-01-15 10:05:02,900	INFO	"worker-3"	C:\src\JobRunner.cs	line 70	[RunJob]	"Job ExportInvoices completed in 890ms"
+2024-01-15 10:12:30,000	DEBUG	"main"	C:\src\Heartbeat.cs	line 18	[Ping]	"Heartbeat OK, uptime 12m30s"
+2024-01-15 10:20:05,500	INFO	"worker-1"	C:\src\Scheduler.cs	line 88	[Tick]	"Scheduler tick, 3 jobs pending"
+2024-01-15 10:20:06,000	WARN	"worker-1"	C:\src\Cache.cs	line 40	[Evict]	"Cache eviction triggered, memory usage 82%"
+2024-01-15 10:25:00,000	INFO	"worker-2"	C:\src\JobRunner.cs	line 44	[RunJob]	"Starting job SyncInventory"
+2024-01-15 10:25:00,340	DEBUG	"worker-2"	C:\src\JobRunner.cs	line 51	[RunJob]	"Fetched 4096 records from source"
+2024-01-15 10:25:03,120	ERROR	"worker-2"	C:\src\JobRunner.cs	line 92	[RunJob]	"Job SyncInventory failed: TimeoutException"
+   at LogTrailDemo.JobRunner.RunJob(String jobName) in C:\src\JobRunner.cs:line 92
+   at LogTrailDemo.Scheduler.Tick() in C:\src\Scheduler.cs:line 105
+2024-01-15 10:25:03,500	INFO	"worker-2"	C:\src\JobRunner.cs	line 96	[RunJob]	"Retrying job SyncInventory (attempt 2/3)"
+2024-01-15 10:25:06,800	INFO	"worker-2"	C:\src\JobRunner.cs	line 70	[RunJob]	"Job SyncInventory completed in 6800ms"
+2024-01-15 10:30:00,000	INFO	"main"	C:\src\App.cs	line 44	[Shutdown]	"Application shutting down"

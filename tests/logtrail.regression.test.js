@@ -2819,6 +2819,405 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 31 — Drag-select time range in minimap (originating session;
+   UPDATED this session — see Group 32 below for why). Click-drag across the
+   minimap bars creates a from/to time filter: originally an "after" +
+   "before" filter pair combined by an "and" node (three tree nodes for one
+   conceptual filter); this session replaced that with a single "timerange"
+   filter node holding both bounds directly (person-reported: "I'd like the
+   result as a single filter, without the two sub-filters" — see Group 32's
+   own comment for the full redesign). Updated in place rather than left
+   testing the superseded three-node shape (CLAUDE.md: "update/remove
+   superseded groups instead of leaving a green check on dead code"). Covers:
+   overlay show/hide across the gesture, the correct single-node filter
+   shape and resulting entry range, that the pre-existing "scrolled into
+   view" viewport indicator keeps working independently (the explicit
+   caution in FEATURE_BACKLOG.md), and that a plain (non-dragged) click
+   still falls through to the existing click-to-jump behavior.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("31. Drag-select time range in minimap");
+  const lines = [];
+  const push = (sec, level, msg) => lines.push(`2024-01-15 10:00:${String(sec).padStart(2, "0")},000\t${level}\t"main"\tFoo.cs\tline 0\t[DoWork]\t"${msg}"`);
+  for (let i = 0; i < 20; i++) push(i, i % 5 === 0 ? "ERROR" : "INFO", "entry " + i); // 10:00:00 .. 10:00:19
+  const f = await w.addFile("range.log", lines.join("\n") + "\n", () => {});
+  T.state.activeId = f.id;
+  T.state.sortColumn = null;
+  w.render();
+
+  const svg = d.querySelector("#timelineMinimapSvg");
+  const dragRectEl = d.querySelector("#timelineMinimapDragRect");
+  const beforeChildCount = f.children.length;
+
+  // Drag from entry 5's time to entry 14's time (inclusive range of 10 entries).
+  const x1 = w.minimapTsToX(f.entries[5].ts);
+  const x2 = w.minimapTsToX(f.entries[14].ts);
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: x1, clientY: 10 }));
+  assert(dragRectEl.classList.contains("hidden"), "drag overlay stays hidden until the pointer moves past the click threshold");
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: (x1 + x2) / 2, clientY: 10 }));
+  assert(!dragRectEl.classList.contains("hidden"), "drag overlay rect appears once the pointer has moved past the click threshold");
+  const dragLabelEl = d.querySelector("#timelineMinimapDragLabel");
+  assert(!dragLabelEl.classList.contains("hidden") && dragLabelEl.textContent.includes("→"), "drag label shows a from → to readout while dragging");
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: x2, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: x2, clientY: 10 }));
+  // Real browsers fire a trailing "click" after mouseup; jsdom doesn't
+  // synthesize one from dispatched mousedown/mouseup, so simulate it to
+  // exercise the suppress-flag guard (see the click listener's comment).
+  svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
+
+  assert(dragRectEl.classList.contains("hidden"), "drag overlay rect hides again after mouseup");
+  assert(f.children.length === beforeChildCount + 1, "drag-select added exactly ONE filter child under the active file, got " + f.children.length);
+
+  const rangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
+  assert(rangeNode, "the new node has filterType \"timerange\"");
+  assert(T.state.activeId === (rangeNode && rangeNode.id), "the new range filter becomes the active node");
+  assert(rangeNode.value.from === f.entries[5].ts && rangeNode.value.to === f.entries[14].ts, "the node's value holds both bounds directly, got " + JSON.stringify(rangeNode.value));
+  assert(rangeNode.name === w.formatTime(f.entries[5].ts) + " → " + w.formatTime(f.entries[14].ts), "the node's name shows both bounds, got " + rangeNode.name);
+
+  const rangeEntries = w.getEntries(rangeNode.id);
+  assert(rangeEntries.length === 10, "range filter selects exactly entries 5..14 inclusive (10 entries), got " + rangeEntries.length);
+  assert(rangeEntries.every(e => e.ts >= f.entries[5].ts && e.ts <= f.entries[14].ts), "every selected entry falls within the dragged time range");
+
+  // The pre-existing "filtered view time range" indicators must keep working
+  // independently — the explicit caution in FEATURE_BACKLOG.md. (Split into
+  // a full-range + a rendered-subset rect by a later session — see Group 34
+  // — but the underlying guarantee this asserts is unchanged.)
+  const fullRangeRect = d.querySelector("#minimapFullRangeRect");
+  const renderedRangeRect = d.querySelector("#minimapRenderedRangeRect");
+  assert(fullRangeRect && !fullRangeRect.classList.contains("hidden"), "the full-range indicator still renders after a drag-select filter is created");
+  assert(renderedRangeRect && !renderedRangeRect.classList.contains("hidden"), "the rendered-subset indicator still renders after a drag-select filter is created");
+
+  // A short drag (below the pixel threshold) still falls through to plain click-to-jump.
+  T.state.selectedId = null;
+  const jumpTs = rangeEntries[3].ts;
+  const jumpX = w.minimapTsToX(jumpTs);
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  assert(T.state.selectedId != null, "a plain (non-dragged) click on the minimap still jumps to the nearest entry");
+});
+
+/* ============================================================
+   GROUP 32 — Unified "timerange" time filter (this session, person-reported
+   follow-up to the drag-select feature above: "I'd like the result as a
+   single filter, without the two sub-filters"). Redesigns time filtering
+   around one filterType, "timerange", holding both bounds directly as
+   `value: { from, to }` (either null = unbounded on that side) — replacing
+   the old single-bound "after"/"before" types for every CREATION path
+   (drag-select, row context-menu "Filter after/before this row", and the
+   new minimap right-click → dialog). "after"/"before" stay in FILTER_TYPES
+   purely for backward-compatible READING of already-saved sessions/exports;
+   nothing creates them anymore, and editing one through the new dialog
+   migrates it to "timerange" (one-way, see updateTimeRangeFilterNode).
+   New: a small time-range dialog (create AND edit, unlike the old after/
+   before filters which had no edit UI at all) with empty-field-means-
+   unbounded fields (no separate infinity checkbox — same convention the
+   value-assertion dialog's optional min/max already uses) and a right-click
+   on the minimap to open it in create mode, prefilled at the clicked point.
+   Covers: legacy after/before nodes still evaluate/tag correctly, F2-edit
+   migrates a legacy node in place, row context-menu actions now produce
+   unified nodes, tree right-click Edit opens the new dialog for any of the
+   three time-filter types, the dialog's own validation (reject empty,
+   silently swap a reversed from/to) and Clear buttons, minimap right-click
+   creation, and a "timerange" node's value round-tripping through the
+   existing generic Save/Load filter JSON machinery unchanged (confirming no
+   carrier-specific code was needed beyond adding it to FILTER_TYPES — see
+   CLAUDE.md's "Known gotchas" note on filter-node fields).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("32. Unified time filter: single \"timerange\" node, editable dialog, migration, minimap right-click");
+  const f = await w.addFile("range2.log", makeLog(0, 30), () => {});
+  w.render();
+
+  // --- A. Legacy "after"/"before" nodes stay readable (backward compat) ---
+  const legacyAfter = w.createFilterNode(f.id, "after", f.entries[10].ts);
+  w.render();
+  assert(legacyAfter.filterType === "after", "sanity: a directly-created legacy \"after\" node keeps its old filterType (nothing auto-migrates on creation)");
+  assert(w.typeTagFor(legacyAfter) === "TIME", "legacy \"after\" node still gets the TIME tag");
+  const legacyEntries = w.getEntries(legacyAfter.id);
+  assert(legacyEntries.length === f.entries.length - 10 && legacyEntries.every(e => e.ts >= f.entries[10].ts),
+    "legacy \"after\" node still filters correctly, got " + legacyEntries.length);
+
+  // --- B. Editing a legacy node (F2) migrates it to "timerange" ---
+  T.state.activeId = legacyAfter.id;
+  w.render();
+  fireKeydown(d, w, "F2");
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "F2 on a legacy \"after\" node opens the time-range dialog (not the text popup)");
+  assert(d.querySelector("#timeRangeFromInput").value !== "", "From is prefilled from the legacy node's value");
+  assert(d.querySelector("#timeRangeToInput").value === "", "To starts empty — the legacy \"after\" node had no upper bound");
+  d.querySelector("#timeRangeToInput").value = w.tsToLocalInputValue(f.entries[20].ts);
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(legacyAfter.filterType === "timerange", "saving the edit migrates the node to \"timerange\"");
+  assert(legacyAfter.value.from === f.entries[10].ts && legacyAfter.value.to === f.entries[20].ts,
+    "migrated node's value holds both bounds, got " + JSON.stringify(legacyAfter.value));
+  assert(legacyAfter.name.includes("→"), "migrated node's name shows the arrow (both bounds), got " + legacyAfter.name);
+  assert(T.state.nodes[legacyAfter.id] === legacyAfter, "edit updates the SAME node id in place (not a new node)");
+
+  // --- C. Row context menu "Filter after/before this row" now create unified nodes ---
+  // ctxAfter/ctxBefore attach under state.activeId (same as before this
+  // session) — reset it to the file so both land as its direct children,
+  // rather than under legacyAfter (left active by section B's edit).
+  T.state.activeId = f.id;
+  const beforeCtxCount = f.children.length;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[3]);
+  fireClick(d.querySelector("#ctxAfter"), w);
+  const ctxAfterNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.to === null);
+  assert(ctxAfterNode && ctxAfterNode.value.from === f.entries[3].ts, "\"Filter after this row\" creates a \"timerange\" node with only the lower bound set");
+  // createFilterNode leaves the just-created node active — reset back to the
+  // file so this second action also lands as its direct child, not nested
+  // under ctxAfterNode.
+  T.state.activeId = f.id;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[25]);
+  fireClick(d.querySelector("#ctxBefore"), w);
+  const ctxBeforeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.from === null);
+  assert(ctxBeforeNode && ctxBeforeNode.value.to === f.entries[25].ts, "\"Filter before this row\" creates a \"timerange\" node with only the upper bound set");
+  assert(f.children.length === beforeCtxCount + 2, "exactly two new filter children (one per context-menu action), no extra AND/combinator node");
+
+  // --- D. Tree right-click "Edit filter…" on a "timerange" node opens the same dialog ---
+  T.state.activeId = ctxAfterNode.id;
+  w.render();
+  const activeRow = [...d.querySelectorAll(".tree-row")].find(r => r.classList.contains("active"));
+  fireContextMenu(activeRow, w);
+  const editItem = [...d.querySelectorAll("#treeContextMenu [data-action]")].find(n => n.dataset.action === "edit");
+  assert(editItem, "tree context menu offers 'Edit filter…' for a \"timerange\" node");
+  fireClick(editItem, w);
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "right-click Edit on a \"timerange\" node opens the time-range dialog");
+  assert(d.querySelector("#timeRangeToInput").value === "", "To is still empty (unbounded) for this node");
+  w.closeTimeRangeDialog();
+
+  // --- E. Dialog validation: both fields empty is rejected, not silently accepted ---
+  w.openTimeRangeDialog("create", f.id, { from: null, to: null });
+  assert(d.querySelector("#timeRangeDialogError").classList.contains("hidden"), "sanity: no error shown on open");
+  const childCountBeforeInvalid = f.children.length;
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(!d.querySelector("#timeRangeDialogError").classList.contains("hidden"), "submitting with both fields empty shows the validation error");
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "dialog stays open on validation failure");
+  assert(f.children.length === childCountBeforeInvalid, "no node was created from the invalid (empty) submit");
+
+  // --- F. Clear button empties a field ---
+  d.querySelector("#timeRangeFromInput").value = w.tsToLocalInputValue(f.entries[0].ts);
+  fireClick(d.querySelector("#timeRangeFromClear"), w);
+  assert(d.querySelector("#timeRangeFromInput").value === "", "the clear button empties the From field");
+  w.closeTimeRangeDialog();
+
+  // --- G. Minimap right-click opens the create dialog prefilled at the clicked point ---
+  T.state.activeId = f.id;
+  T.state.sortColumn = null;
+  w.render();
+  const svg = d.querySelector("#timelineMinimapSvg");
+  const clickX = w.minimapTsToX(f.entries[15].ts);
+  svg.dispatchEvent(new w.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: clickX, clientY: 10 }));
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "right-click on the minimap opens the time-range dialog");
+  assert(d.querySelector("#timeRangeFromInput").value !== "" && d.querySelector("#timeRangeToInput").value !== "",
+    "both fields are prefilled with the clicked point (a valid zero-width starting range)");
+  const beforeMinimapCreate = f.children.length;
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(f.children.length === beforeMinimapCreate + 1, "submitting creates exactly one new \"timerange\" filter child");
+  const minimapCreated = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.from === n.value.to);
+  assert(minimapCreated, "the created node has equal from/to (the zero-width prefill was kept, unedited)");
+
+  // --- H. "timerange" round-trips through Save/Load filter JSON unchanged
+  // (confirms FILTER_TYPES + the generic `value` passthrough is all that was
+  // needed — no carrier-specific code for the new object-shaped value) ---
+  const branch = w.serializeFilterBranch(ctxAfterNode.id);
+  const json = JSON.stringify({ format: "logtrail-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const fc = await w.addFile("c.log", makeLog(0, 30), () => {});
+  w.render();
+  W_setLoadTarget(w, fc.id);
+  w.importFilterJson(json);
+  const importedNode = fc.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
+  assert(importedNode, "a \"timerange\" node survives a save-to-JSON + load round trip");
+  assert(importedNode.value.from === ctxAfterNode.value.from && importedNode.value.to === ctxAfterNode.value.to,
+    "the imported node's { from, to } value round-tripped intact, got " + JSON.stringify(importedNode.value));
+
+  // --- I. A reversed From/To on submit is silently swapped, not rejected — same as the minimap drag's own swap ---
+  w.openTimeRangeDialog("create", f.id, { from: null, to: null });
+  d.querySelector("#timeRangeFromInput").value = w.tsToLocalInputValue(f.entries[25].ts);
+  d.querySelector("#timeRangeToInput").value = w.tsToLocalInputValue(f.entries[5].ts);
+  const beforeSwapCreate = f.children.length;
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(f.children.length === beforeSwapCreate + 1, "a reversed From/To still creates a node (not rejected)");
+  const swappedNode = f.children.map(id => T.state.nodes[id])
+    .find(n => n.filterType === "timerange" && n.value.from === f.entries[5].ts && n.value.to === f.entries[25].ts);
+  assert(swappedNode, "From/To were silently swapped so from <= to");
+
+  function W_setLoadTarget(w, targetId) {
+    // loadFilterTargetId is a top-level `let` — reach it via the shared
+    // lexical scope the same way the T bridge does, but write instead of read.
+    const s = d.createElement("script");
+    s.textContent = `loadFilterTargetId = ${JSON.stringify(targetId)};`;
+    d.body.appendChild(s);
+  }
+});
+
+/* ============================================================
+   GROUP 33 — Bugfix: minimap viewport indicator now covers the LAST shown
+   entry's full bar, not just the single x position its exact timestamp
+   happens to land at (person-reported via screenshot: "the range indicator
+   only runs to the START of the last included bin — it should still include
+   this bin"). Root cause: updateMinimapViewportIndicator used
+   minimapTsToX(entry.ts) directly for both edges — a continuous, per-moment
+   position — while the density bars themselves are drawn per BUCKET
+   (bucketOf() in renderTimelineMinimap). An entry landing anywhere other
+   than exactly at its bucket's right edge left the highlighted rectangle
+   visibly short of that bucket's own bar, making an entry that's actually
+   IN the current view look like it sits outside the highlighted range.
+   Fixed with a new minimapBarSpan(ts) helper (mirrors bucketOf()'s exact
+   formula) giving the bucket's full [left, right) span; the indicator now
+   uses .left for the first shown entry and .right for the last.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("33. Minimap viewport indicator covers the last shown entry's full bar (bugfix)");
+  // Craft exact ts offsets so, with the suite's stubbed 800px container
+  // width (bucketCount = round(800/3) = 267, bucket width = 800/267 in px
+  // and (tMax-tMin)/267 in ms), the shown entry sits only 500ms into its
+  // 10,000ms-wide bucket — close enough to the bucket's LEFT edge that the
+  // old raw-position code visibly fell short of the bucket's right edge.
+  const anchor = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+  const line = (offsetMs, level, msg) => {
+    const dt = new Date(anchor + offsetMs);
+    const p2 = n => String(n).padStart(2, "0"), p3 = n => String(n).padStart(3, "0");
+    const ts = `${dt.getFullYear()}-${p2(dt.getMonth() + 1)}-${p2(dt.getDate())} ${p2(dt.getHours())}:${p2(dt.getMinutes())}:${p2(dt.getSeconds())},${p3(dt.getMilliseconds())}`;
+    return `${ts}\t${level}\t"main"\tFoo.cs\tline 0\t[DoWork]\t"${msg}"`;
+  };
+  const lines = [
+    line(0, "INFO", "start"),
+    line(2000500, "ERROR", "target"), // 500ms into bucket 200 of 267 (bucket width 10,000ms)
+    line(2670000, "INFO", "end"),     // anchors tMax so bucketCount * 10,000ms === the file's span exactly
+  ];
+  const f = await w.addFile("bins.log", lines.join("\n") + "\n", () => {});
+  T.state.activeId = f.id;
+  T.state.sortColumn = null;
+  w.render();
+
+  // Isolate to the single ERROR entry (mirrors the reported screenshot's
+  // "filtered to ERROR" level quick-filter).
+  const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
+  fireClick(errBtn, w);
+  assert(T.currentViewEntries.length === 1 && T.currentViewEntries[0].message === "target",
+    "sanity: the level filter isolated the single crafted ERROR entry");
+
+  const targetTs = f.entries[1].ts;
+  const naiveX = w.minimapTsToX(targetTs);
+  const span = w.minimapBarSpan(targetTs);
+  assert(span.right - naiveX > 1,
+    "sanity: the crafted timestamp lands closer to its bucket's start than its end (right edge at least 1px past the raw position), got " + (span.right - naiveX).toFixed(2));
+
+  // Split into two rects by a later session (see Group 34) — with exactly
+  // one entry shown, both cover the same single bucket, so both should land
+  // on its exact bounds.
+  for (const id of ["#minimapRenderedRangeRect", "#minimapFullRangeRect"]) {
+    const rect = d.querySelector(id);
+    assert(!rect.classList.contains("hidden"), id + " is visible");
+    const x = parseFloat(rect.getAttribute("x"));
+    const width = parseFloat(rect.getAttribute("width"));
+    assert(Math.abs(x - span.left) < 0.15, id + "'s left edge matches the shown entry's bucket LEFT edge, got x=" + x + " expected " + span.left.toFixed(1));
+    assert(Math.abs((x + width) - span.right) < 0.15,
+      id + "'s right edge reaches the shown entry's bucket RIGHT edge — not just its raw timestamp position (the bug) — got right=" + (x + width).toFixed(1) + " expected " + span.right.toFixed(1));
+    assert(x + width > naiveX + 1,
+      id + " visibly extends past where the old buggy calculation would have stopped, got right=" + (x + width).toFixed(1) + " vs old=" + naiveX.toFixed(1));
+  }
+});
+
+/* ============================================================
+   GROUP 34 — Minimap: full-range vs rendered-subset rects, selected-entry
+   markers, and the minimap now showing during the Link view (this session,
+   person-reported: the range indicator only ever showed what's scrolled
+   into view, never the Filtered view's whole matched span). See
+   updateMinimapFullRange/updateMinimapRenderedRange/
+   updateMinimapSelectionMarkers/minimapMarkedEntries in logtrail.html.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("34. Minimap: full-range vs rendered-subset rects, selection markers, Link view");
+
+  // --- Part A: full range vs rendered (scrolled-into-view) subset ---
+  const fA = await w.addFile("wide.log", makeLog(0, 100), () => {}); // 100 entries, 1s apart
+  T.state.activeId = fA.id;
+  T.state.sortColumn = null;
+  w.render();
+
+  const fullRect = d.querySelector("#minimapFullRangeRect");
+  const renderedRect = d.querySelector("#minimapRenderedRangeRect");
+  assert(!fullRect.classList.contains("hidden") && !renderedRect.classList.contains("hidden"),
+    "both range rects are visible for a plain unfiltered file");
+  const fullX = parseFloat(fullRect.getAttribute("x")), fullW = parseFloat(fullRect.getAttribute("width"));
+  const renderedWInit = parseFloat(renderedRect.getAttribute("width"));
+  assert(fullW > renderedWInit + 5,
+    "full-range rect is visibly wider than the rendered subset when only the top of a 100-row list is on screen, full=" + fullW.toFixed(1) + " rendered=" + renderedWInit.toFixed(1));
+  assert(Math.abs(parseFloat(renderedRect.getAttribute("x")) - fullX) < 1,
+    "at scrollTop 0, the rendered subset starts at the same left edge as the full range");
+
+  // Scroll roughly to the middle and recompute the rendered subset directly
+  // (bypassing the scroll-event/rAF plumbing for a deterministic test).
+  d.querySelector("#tableBody").scrollTop = 50 * 28; // ROW_HEIGHT=28, ~halfway down 100 rows
+  w.updateMinimapRenderedRange();
+  const renderedXMid = parseFloat(renderedRect.getAttribute("x"));
+  assert(renderedXMid > fullX + fullW * 0.2,
+    "scrolling down moves the rendered subset's left edge meaningfully to the right, got " + renderedXMid.toFixed(1) + " (full range x=" + fullX.toFixed(1) + " width=" + fullW.toFixed(1) + ")");
+  assert(renderedXMid + parseFloat(renderedRect.getAttribute("width")) <= fullX + fullW + 1,
+    "rendered subset stays within the full range's bounds");
+
+  // --- Part B: selected-entry marker ---
+  w.selectEntry(fA.entries[50].id);
+  let markerLines = [...d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line")];
+  assert(markerLines.length === 1, "selecting a single entry draws exactly one marker, got " + markerLines.length);
+  assert(Math.abs(parseFloat(markerLines[0].getAttribute("x")) + 1 - w.minimapTsToX(fA.entries[50].ts)) < 0.2,
+    "marker sits at the selected entry's own timestamp position");
+
+  w.selectEntry(fA.entries[10].id);
+  markerLines = [...d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line")];
+  assert(markerLines.length === 1 && Math.abs(parseFloat(markerLines[0].getAttribute("x")) + 1 - w.minimapTsToX(fA.entries[10].ts)) < 0.2,
+    "selecting a different entry moves the marker");
+
+  T.state.selectedId = null;
+  w.updateMinimapSelectionMarkers();
+  assert(d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line").length === 0, "clearing the selection clears the marker");
+
+  // --- Part C: Link view — minimap now visible, brace selection marks BOTH real entries ---
+  const linkLines = [];
+  for (let i = 0; i < 10; i++) {
+    const label = i % 2 === 0 ? "REF" : "TARGET";
+    linkLines.push(`2024-01-15 10:00:${String(i).padStart(2, "0")},000\tINFO\t"main"\tFoo.cs\tline 0\t[DoWork]\t"${label} ${i}"`);
+  }
+  const fB = await w.addFile("linked.log", linkLines.join("\n") + "\n", () => {});
+  const refNode = w.createFilterNode(fB.id, "text", "REF");       // entries 0,2,4,6,8
+  const targetNode = w.createFilterNode(fB.id, "text", "TARGET"); // entries 1,3,5,7,9
+  const linkNode = w.createLinkNode(refNode.id, targetNode.id, "after", 1); // REF n -> 1st TARGET after it
+  T.state.activeId = linkNode.id;
+  w.render();
+
+  assert(!d.querySelector("#timelineMinimap").classList.contains("hidden"), "the minimap is now shown while the Link view is active");
+  const linkFullRect = d.querySelector("#minimapFullRangeRect");
+  assert(linkFullRect && !linkFullRect.classList.contains("hidden"), "full-range rect renders for the Link view too");
+  assert(d.querySelector("#minimapRenderedRangeRect").classList.contains("hidden"),
+    "rendered-subset rect stays hidden in the Link view (no virtualization to distinguish a subset from)");
+
+  const firstBrace = d.querySelector(".pair-brace");
+  assert(firstBrace, "sanity: at least one pair rendered in the Link view");
+  fireClick(firstBrace, w);
+  assert(firstBrace.closest(".pair-block").classList.contains("pair-selected"), "clicking a brace selects its pair");
+  let pairMarkers = [...d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line")];
+  assert(pairMarkers.length === 2, "selecting a pair's brace marks BOTH of its real entries, got " + pairMarkers.length);
+  const expectedXs = [w.minimapTsToX(fB.entries[0].ts), w.minimapTsToX(fB.entries[1].ts)].sort((a, b) => a - b); // REF 0 -> TARGET 1
+  const actualXs = pairMarkers.map(m => parseFloat(m.getAttribute("x")) + 1).sort((a, b) => a - b);
+  assert(Math.abs(actualXs[0] - expectedXs[0]) < 0.2 && Math.abs(actualXs[1] - expectedXs[1]) < 0.2,
+    "the two markers sit at the pair's two real entries' own timestamps");
+
+  fireClick(firstBrace, w); // click again: deselect
+  assert(!firstBrace.closest(".pair-block").classList.contains("pair-selected"), "clicking the same brace again deselects the pair");
+  assert(d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line").length === 0, "deselecting the pair clears its markers (no other selection underneath)");
+
+  // Re-select the brace, then navigate away — a stale .pair-selected left
+  // behind in the now-hidden Link view must NOT keep marking its old
+  // entries once a different (non-link) node is active.
+  fireClick(firstBrace, w);
+  assert(firstBrace.closest(".pair-block").classList.contains("pair-selected"), "sanity: brace re-selected");
+  T.state.activeId = refNode.id;
+  w.render();
+  assert(w.minimapMarkedEntries().length === 0, "a stale Link-view brace selection is ignored once a different, non-link node is active");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -3040,6 +3439,122 @@ process.exit(failed ? 1 : 0);
               group in this suite use; proves the `persistFileNode` →
               `matchFileHistory` hook wired inside `loadFileDescriptors`
               itself fires correctly end-to-end.
+   Group 31  — this session (2026-08-16), FEATURE_BACKLOG.md item: drag-
+              select a time range on the timeline minimap to create a from/
+              to filter. New DOM elements (`#timelineMinimapDragRect`/
+              `#timelineMinimapDragLabel`) sit outside the minimap's `<svg>`
+              specifically so they survive a renderTimelineMinimap() call
+              mid-drag, which fully rebuilds the SVG's innerHTML (tail
+              ticks, level toggles, ...). A pixel-distance threshold
+              (`MINIMAP_DRAG_THRESHOLD_PX`) tells a real drag apart from a
+              plain click, and a one-shot `minimapDragSuppressClick` flag
+              stops the browser's trailing "click" event (fired after any
+              mouseup) from also being interpreted as the pre-existing
+              click-to-jump. UPDATED later the same session (see Group 32):
+              originally built the range from two separate "after"/"before"
+              filters combined by an AND node (reusing `createAndOrNode`,
+              identical in shape to the "Combine (AND)" bulk action) — a
+              person-reported follow-up asked for the result as one filter
+              instead of three tree nodes, which prompted the "timerange"
+              filterType Group 32 covers; this group's own assertions were
+              updated in place to match the new single-node shape rather
+              than left testing the superseded one. Still covers: overlay
+              show/hide across the full gesture, the pre-existing scrolled-
+              viewport indicator (`#minimapViewportRect`) continuing to work
+              unmodified — the explicit caution in FEATURE_BACKLOG.md — and
+              a plain click still falling through to click-to-jump.
+   Group 32  — this session (2026-08-16), person-reported follow-up to
+              Group 31's drag-select: "I'd like the result as a single
+              filter, without the two sub-filters." Introduces a unified
+              "timerange" filterType (`value: { from, to }`, either bound
+              nullable = unbounded) replacing the old single-bound "after"/
+              "before" types in every CREATION path (drag-select, row
+              context-menu "Filter after/before this row", and a new
+              minimap right-click → dialog); "after"/"before" stay in
+              FILTER_TYPES purely so already-saved sessions/exports keep
+              reading correctly, and editing one through the new dialog
+              (F2 or tree right-click "Edit filter…" — previously
+              unavailable for these types at all) migrates it to
+              "timerange" one-way. Dialog uses empty-field-means-unbounded
+              (no separate infinity checkbox, matching the value-assertion
+              dialog's existing optional min/max convention) and silently
+              swaps a reversed From/To rather than rejecting it. Because the
+              new value is still carried under the filter node's existing
+              generic `value` field, no persistence-carrier code needed
+              touching beyond adding "timerange" to FILTER_TYPES — Section H
+              of this group proves that by round-tripping a "timerange"
+              node through the real Save/Load filter JSON path unchanged.
+              Also covers: legacy after/before nodes still evaluate/tag
+              correctly, F2 migration in place, unified context-menu
+              creation, tree-context-menu Edit routing for all three
+              time-filter types, dialog validation (reject empty submit)
+              and Clear buttons, and minimap right-click creation prefilled
+              at the clicked point.
+   Group 33  — this session (2026-08-16), person-reported bugfix via
+              screenshot: the minimap's "scrolled/filtered into view"
+              rectangle (`#minimapViewportRect`) stopped at the raw x
+              position of the last shown entry's own timestamp instead of
+              extending to the right edge of the density BAR that entry
+              belongs to — visually, a shown row's own bar could stick out
+              past the highlighted range, looking like it was outside the
+              current view even though the table below it was showing that
+              exact row. Fixed with `minimapBarSpan(ts)`, mirroring
+              `renderTimelineMinimap`'s own `bucketOf()` bucketing formula,
+              giving the full `[left, right)` pixel span of an entry's
+              bucket; `updateMinimapViewportIndicator` now uses `.left`/
+              `.right` from the first/last shown entry instead of two raw
+              `minimapTsToX()` points. Verified with hand-crafted timestamps
+              placing the shown entry exactly 500ms into a 10,000ms-wide
+              bucket (deterministic given the suite's stubbed 800px
+              container width) — confirms the rendered rect's right edge
+              lands at the bucket's true right edge, measurably past where
+              the old raw-position code would have stopped short.
+   Group 34  — this session (2026-08-16), person-reported follow-up to
+              Group 33's bugfix: the minimap's range indicator only ever
+              showed what's scrolled into view, never the WHOLE time span
+              the Filtered view's result set covers. Split the old single
+              `#minimapViewportRect` into `#minimapFullRangeRect` (the whole
+              filtered result, same look the old rect always had —
+              `updateMinimapFullRange`, scans for real min/max rather than
+              assuming entries[0]/entries[last] are the extremes, since that
+              only holds for the table view's chronological list, not the
+              Link view's flattened pair entries) and
+              `#minimapRenderedRangeRect` (just what's actually got a DOM
+              row right now — a real subset for the virtualized table view;
+              simply left hidden for the Link view, which has no
+              virtualization to distinguish a subset from — see
+              `renderLinkView`'s own comment). Also added: a position marker
+              for the current selection (`updateMinimapSelectionMarkers`,
+              a thin line + small flag per marked entry, wired into the
+              single `applySelection` choke point shared by
+              `selectEntry`/`selectHighlightEntry`/`revealInHighlightView`,
+              so every existing selection path gets one for free) and, for
+              the Link view specifically, clicking a pair's brace now marks
+              BOTH real entries the pair is made of
+              (`minimapMarkedEntries`, reading a `data-entry-ids` attribute
+              stashed on the brace by `renderLinkView` at render time) —
+              which required making the minimap visible during the Link
+              view at all (previously hidden outright; pair entries
+              duck-type as normal entries, so this needed no special-casing
+              beyond feeding `renderTimelineMinimap` the flattened tuple
+              entries). `minimapMarkedEntries` gates the brace-selection
+              branch on the Link view actually being the active view, so a
+              stale `.pair-selected` left over from navigating away can't
+              keep marking its old entries once a different node is active.
+              Bugfix caught along the way (pre-existing, not introduced this
+              session): `updateMinimapRenderedRange`'s `startIdx` was only
+              ever clamped at 0, never at the entry list's upper bound —
+              switching to a much smaller filtered result while previously
+              scrolled deep into a larger one indexed straight past the end
+              of `currentViewEntries` and threw; both `startIdx`/`endIdx`
+              are now clamped on both ends. Covers: full-range vs rendered-
+              subset both visible and differing correctly for a 100-entry
+              file scrolled to its middle, a single selection's marker
+              appearing/moving/clearing, the minimap now rendering during
+              the Link view with the rendered-subset rect correctly staying
+              hidden there, a brace selection marking exactly its pair's two
+              real entries at their own timestamps, deselection clearing the
+              markers, and the stale-brace-after-navigating-away guard.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
