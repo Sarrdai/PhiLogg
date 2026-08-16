@@ -1,20 +1,20 @@
-# LogTrail regression suite
+# PhiLogg regression suite
 
 Consolidated jsdom regression suite, assembled from the assertions written
 across the project's implementation sessions (see "TEST PROVENANCE" at the
-bottom of `logtrail.regression.test.js` for the session-by-session map).
+bottom of `philogg.regression.test.js` for the session-by-session map).
 
 ## Layout
 
-Place this folder directly at the project root, sibling to `logtrail.html`:
+Place this folder directly at the project root, sibling to `philogg.html`:
 
 ```
 project-root/
-  logtrail.html
+  philogg.html
   PROJECT.md
   FEATURE_BACKLOG.md
   tests/                              <- this folder
-    logtrail.regression.test.js
+    philogg.regression.test.js
     package.json
     README.md
 ```
@@ -27,15 +27,15 @@ npm install
 npm test
 ```
 
-Or point at a `logtrail.html` living elsewhere:
+Or point at a `philogg.html` living elsewhere:
 
 ```
-LOGTRAIL_HTML=/path/to/logtrail.html node logtrail.regression.test.js
+PHILOGG_HTML=/path/to/philogg.html node philogg.regression.test.js
 ```
 
 ## How it works
 
-Loads the *real* `logtrail.html` with jsdom's `runScripts: "dangerously"` and
+Loads the *real* `philogg.html` with jsdom's `runScripts: "dangerously"` and
 drives it through actual DOM events — clicks, keydown, drag sequences, form
 submits — asserting on resulting state/DOM, per the project's established
 "Testing approach" (see `PROJECT.md`). Layout-dependent getters

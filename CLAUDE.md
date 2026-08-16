@@ -1,15 +1,15 @@
 # CLAUDE.md
 
-Project-specific instructions for Claude Code sessions on LogTrail. This file
+Project-specific instructions for Claude Code sessions on PhiLogg. This file
 loads automatically every session — kept short on purpose. For architecture,
 design decisions, and the full changelog see `PROJECT.md`. For planned work
 see `FEATURE_BACKLOG.md`.
 
 ## What this is
 
-LogTrail: a single self-contained `logtrail.html` (7,700+ lines, inline CSS,
+PhiLogg: a single self-contained `philogg.html` (7,700+ lines, inline CSS,
 vanilla JS — no framework, no build tooling). Personal tool for browser-based
-log analysis. Companion: `tests/logtrail.regression.test.js` (jsdom
+log analysis. Companion: `tests/philogg.regression.test.js` (jsdom
 regression suite, see `tests/README.md` for conventions).
 
 ## Non-negotiables
@@ -17,7 +17,7 @@ regression suite, see `tests/README.md` for conventions).
 - **Diagnose before implementing.** For bug reports or ambiguous behavior,
   find the root cause first, then fix — not a speculative patch.
 - **Every feature/fix ships with regression tests.** Extend
-  `tests/logtrail.regression.test.js` per `tests/README.md`'s conventions
+  `tests/philogg.regression.test.js` per `tests/README.md`'s conventions
   (new `GROUP N`, one line in TEST PROVENANCE, update/remove superseded
   groups instead of leaving a green check on dead code).
 - **Run the full suite before calling anything done:**

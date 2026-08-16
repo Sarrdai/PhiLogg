@@ -1,4 +1,4 @@
-# LogTrail — Feature Backlog
+# PhiLogg — Feature Backlog
 
 Raw ideas only, not yet elaborated. Pick items up individually before implementation.
 
