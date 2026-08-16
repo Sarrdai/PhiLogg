@@ -583,6 +583,24 @@
     pointer-events:none; white-space:nowrap; z-index:10;
   }
   #timelineMinimapTooltip.hidden{display:none;}
+  /* Drag-select overlay: click-drag across the bars marks a from/to range
+     that becomes a time filter on mouseup (see the drag handlers in the
+     "Timeline minimap" script section). Separate elements from the SVG's
+     #minimapViewportRect (the "scrolled into view" indicator) on purpose —
+     that one is rebuilt from scratch on every renderTimelineMinimap() call,
+     which would otherwise wipe an in-progress drag mid-gesture. */
+  #timelineMinimapDragRect{
+    position:absolute; background:var(--accent-soft); border:1px solid var(--accent);
+    opacity:.7; pointer-events:none; z-index:6;
+  }
+  #timelineMinimapDragRect.hidden{display:none;}
+  #timelineMinimapDragLabel{
+    position:absolute; top:4px; transform:translateX(-50%);
+    padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:11;
+  }
+  #timelineMinimapDragLabel.hidden{display:none;}
 
   /* Virtualized body: #tableBody scrolls, #tableSpacer gives it the correct
      scrollHeight for the full (unrendered) row count, #tableRows holds only
@@ -1269,6 +1287,8 @@
         <div id="timelineMinimapMeta"></div>
         <svg id="timelineMinimapSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
         <div id="timelineMinimapTooltip" class="hidden"></div>
+        <div id="timelineMinimapDragRect" class="hidden"></div>
+        <div id="timelineMinimapDragLabel" class="hidden"></div>
       </div>
 
       <div id="statusStrip"></div>
@@ -2888,6 +2908,8 @@ const timelineMinimapEl = el("#timelineMinimap");
 const timelineMinimapMetaEl = el("#timelineMinimapMeta");
 const timelineMinimapSvg = el("#timelineMinimapSvg");
 const timelineMinimapTooltip = el("#timelineMinimapTooltip");
+const timelineMinimapDragRect = el("#timelineMinimapDragRect");
+const timelineMinimapDragLabel = el("#timelineMinimapDragLabel");
 const fhTabs = el("#fhTabs");
 const fhSplit = el("#fhSplit");
 const filterSlot = el("#filterSlot");
@@ -5173,8 +5195,11 @@ function updateMinimapViewportIndicator() {
 
 // Click-to-jump: nearest entry in time, same "select + scroll + flash"
 // path a row double-click uses elsewhere. Withheld during a column sort —
-// see the module comment above.
+// see the module comment above. Also withheld right after a drag-select
+// gesture: mouseup fires a trailing "click" on whatever element is under the
+// pointer, which would otherwise re-interpret the drag's end point as a jump.
 timelineMinimapSvg.addEventListener("click", ev => {
+  if (minimapDragSuppressClick) { minimapDragSuppressClick = false; return; }
   if (!minimapInteractive || currentViewEntries.length === 0) return;
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
@@ -5188,6 +5213,7 @@ timelineMinimapSvg.addEventListener("click", ev => {
 // and stays available even during a column sort (a pure lookup, unlike the
 // click and viewport-rect features above).
 timelineMinimapSvg.addEventListener("mousemove", ev => {
+  if (minimapDragging) return; // the drag-select overlay/label own this space right now
   if (minimapBucketCount === 0) { timelineMinimapTooltip.classList.add("hidden"); return; }
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const localX = ev.clientX - rect.left;
@@ -5199,7 +5225,102 @@ timelineMinimapSvg.addEventListener("mousemove", ev => {
   timelineMinimapTooltip.style.left = Math.min(rect.width - 4, Math.max(4, localX)) + "px";
   timelineMinimapTooltip.classList.remove("hidden");
 });
-timelineMinimapSvg.addEventListener("mouseleave", () => timelineMinimapTooltip.classList.add("hidden"));
+timelineMinimapSvg.addEventListener("mouseleave", () => { if (!minimapDragging) timelineMinimapTooltip.classList.add("hidden"); });
+
+/* ---------- Drag-select: click-drag across the minimap creates a from/to
+   time filter ---------------------------------------------------------
+   Marking a range and releasing builds the exact same shape the "Combine
+   (AND)" bulk action already produces from two manually-created filters: an
+   "after" filter and a "before" filter, both children of the active node,
+   combined by an "and" node (see createAndOrNode). That reuse means the new
+   filter gets the tree's existing name/undo/persistence handling for free —
+   nothing range-specific needed adding to any of the carriers listed in
+   CLAUDE.md's "Known gotchas".
+
+   Deliberately built on its own DOM elements (#timelineMinimapDragRect/
+   Label, plain positioned <div>s, not part of the SVG) rather than another
+   SVG rect like #minimapViewportRect — that element (and the rest of the
+   SVG's markup) gets fully torn down and rebuilt by renderTimelineMinimap()
+   on every render (tail tick, level toggle, filter switch, ...), which can
+   happen mid-drag; a plain sibling div survives that untouched. This also
+   keeps the guarantee FEATURE_BACKLOG.md called out explicitly: the
+   "filtered view time range" viewport rectangle's own update path
+   (updateMinimapViewportIndicator) is completely untouched by any of this. */
+const MINIMAP_DRAG_THRESHOLD_PX = 3; // below this, treat it as the existing click-to-jump instead
+let minimapDragging = false;
+let minimapDragStartX = 0; // in minimapWidth units, captured at mousedown
+let minimapDragMoved = false;
+let minimapDragSvgRect = null; // cached at mousedown so a drag past the element's edge still resolves consistently
+let minimapDragSuppressClick = false;
+
+function minimapEventUnitX(ev, rect) {
+  const raw = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
+  return Math.min(minimapWidth, Math.max(0, raw));
+}
+
+function showMinimapDragOverlay(xa, xb) {
+  const lo = Math.min(xa, xb), hi = Math.max(xa, xb);
+  timelineMinimapDragRect.style.top = timelineMinimapSvg.offsetTop + "px";
+  timelineMinimapDragRect.style.height = timelineMinimapSvg.offsetHeight + "px";
+  timelineMinimapDragRect.style.left = lo.toFixed(1) + "px";
+  timelineMinimapDragRect.style.width = Math.max(1, hi - lo).toFixed(1) + "px";
+  timelineMinimapDragRect.classList.remove("hidden");
+
+  const fromTs = minimapXToTs(lo), toTs = minimapXToTs(hi);
+  timelineMinimapDragLabel.textContent = formatTime(fromTs) + " → " + formatTime(toTs) + " · " + formatMs(Math.max(0, toTs - fromTs));
+  timelineMinimapDragLabel.style.left = Math.min(minimapWidth - 4, Math.max(4, (lo + hi) / 2)).toFixed(1) + "px";
+  timelineMinimapDragLabel.classList.remove("hidden");
+  timelineMinimapTooltip.classList.add("hidden"); // hover tooltip would otherwise fight the label for the same space
+}
+function hideMinimapDragOverlay() {
+  timelineMinimapDragRect.classList.add("hidden");
+  timelineMinimapDragLabel.classList.add("hidden");
+}
+
+// Builds the from/to range filter. See the module comment above for why this
+// reuses "after" + "before" + AND rather than a dedicated range filter type.
+function createTimeRangeFilterFromDrag(fromTs, toTs) {
+  const baseId = state.activeId;
+  if (!baseId) return;
+  const afterNode = createFilterNode(baseId, "after", fromTs);
+  if (!afterNode) return;
+  const beforeNode = createFilterNode(baseId, "before", toTs); // baseId, not the now-active afterNode — keeps it a sibling
+  if (!beforeNode) return;
+  if (!createAndOrNode(afterNode.id, beforeNode.id, "and")) return;
+  revealFilteredView(); // a new filter's result lives in the Filtered view, same as every other filter-creation path
+  render();
+}
+
+timelineMinimapSvg.addEventListener("mousedown", ev => {
+  if (!minimapInteractive || ev.button !== 0) return;
+  minimapDragSvgRect = timelineMinimapSvg.getBoundingClientRect();
+  minimapDragStartX = minimapEventUnitX(ev, minimapDragSvgRect);
+  minimapDragging = true;
+  minimapDragMoved = false;
+  document.body.style.userSelect = "none";
+  ev.preventDefault();
+});
+
+window.addEventListener("mousemove", ev => {
+  if (!minimapDragging) return;
+  const x = minimapEventUnitX(ev, minimapDragSvgRect);
+  if (!minimapDragMoved && Math.abs(x - minimapDragStartX) < MINIMAP_DRAG_THRESHOLD_PX) return;
+  minimapDragMoved = true;
+  showMinimapDragOverlay(minimapDragStartX, x);
+});
+
+window.addEventListener("mouseup", ev => {
+  if (!minimapDragging) return;
+  minimapDragging = false;
+  document.body.style.userSelect = "";
+  hideMinimapDragOverlay();
+  if (!minimapDragMoved) return; // a plain click — the svg's own "click" listener handles jump-to
+  minimapDragSuppressClick = true;
+  const x = minimapEventUnitX(ev, minimapDragSvgRect);
+  const lo = Math.min(minimapDragStartX, x), hi = Math.max(minimapDragStartX, x);
+  const fromTs = Math.round(minimapXToTs(lo)), toTs = Math.round(minimapXToTs(hi));
+  if (toTs > fromTs) createTimeRangeFilterFromDrag(fromTs, toTs);
+});
 
 // Scrolls the virtual list so that the entry at `index` is in view (and
 // optionally flashes it). Works regardless of whether it's currently rendered.
