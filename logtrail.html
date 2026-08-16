@@ -5201,6 +5201,25 @@ function minimapXToTs(x) {
   return minimapTMin + (x / minimapWidth) * (minimapTMax - minimapTMin);
 }
 
+// Maps a timestamp to the horizontal span of the density BAR it falls into,
+// not just the single point minimapTsToX(ts) gives for its exact moment —
+// used by updateMinimapViewportIndicator so the "scrolled into view"
+// rectangle always covers a shown entry's whole bar. Depending on where in
+// its bucket's time range an entry's exact ts lands, minimapTsToX(ts) can
+// sit well short of that bar's right edge; using it directly for the
+// rectangle's end made the last shown entry's bar visibly stick out past the
+// highlighted range (person-reported via screenshot — a shown ERROR row's
+// bar looked like it was outside the current view). Mirrors the exact
+// bucketOf() formula renderTimelineMinimap uses to build the bars
+// themselves, so the two always agree on which bucket a timestamp belongs to.
+function minimapBarSpan(ts) {
+  if (minimapBucketCount === 0) { const x = minimapTsToX(ts); return { left: x, right: x }; }
+  const span = Math.max(1, minimapTMax - minimapTMin);
+  const bucket = Math.min(minimapBucketCount - 1, Math.max(0, Math.floor(((ts - minimapTMin) / span) * minimapBucketCount)));
+  const barW = minimapWidth / minimapBucketCount;
+  return { left: bucket * barW, right: (bucket + 1) * barW };
+}
+
 // rootId: the active node's root file id (whole-file density, background bars).
 // viewEntries: the active node's filtered+leveled result in chronological
 // order — i.e. currentViewEntries *before* any column-sort copy is applied
@@ -5313,8 +5332,8 @@ function updateMinimapViewportIndicator() {
   const viewportH = tableBody.clientHeight || 400;
   const startIdx = Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT));
   const endIdx = Math.min(currentViewEntries.length - 1, Math.ceil((tableBody.scrollTop + viewportH) / ROW_HEIGHT));
-  const x1 = minimapTsToX(currentViewEntries[startIdx].ts);
-  const x2 = minimapTsToX(currentViewEntries[endIdx].ts);
+  const x1 = minimapBarSpan(currentViewEntries[startIdx].ts).left;
+  const x2 = minimapBarSpan(currentViewEntries[endIdx].ts).right;
   rect.setAttribute("x", x1.toFixed(1));
   rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
   rect.classList.remove("hidden");
