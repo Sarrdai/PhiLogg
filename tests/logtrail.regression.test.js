@@ -2819,16 +2819,21 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 31 — Drag-select time range in minimap (this session,
-   FEATURE_BACKLOG.md item). Click-drag across the minimap bars now creates
-   a from/to time filter: an "after" + "before" filter pair combined by an
-   "and" node, the same shape the "Combine (AND)" bulk action already
-   produces — see the module comment above createTimeRangeFilterFromDrag in
-   logtrail.html for why. Covers: overlay show/hide across the gesture, the
-   correct filter-tree shape and resulting entry range, that the pre-existing
-   "scrolled into view" viewport indicator keeps working independently (the
-   explicit caution in FEATURE_BACKLOG.md), and that a plain (non-dragged)
-   click still falls through to the existing click-to-jump behavior.
+   GROUP 31 — Drag-select time range in minimap (originating session;
+   UPDATED this session — see Group 32 below for why). Click-drag across the
+   minimap bars creates a from/to time filter: originally an "after" +
+   "before" filter pair combined by an "and" node (three tree nodes for one
+   conceptual filter); this session replaced that with a single "timerange"
+   filter node holding both bounds directly (person-reported: "I'd like the
+   result as a single filter, without the two sub-filters" — see Group 32's
+   own comment for the full redesign). Updated in place rather than left
+   testing the superseded three-node shape (CLAUDE.md: "update/remove
+   superseded groups instead of leaving a green check on dead code"). Covers:
+   overlay show/hide across the gesture, the correct single-node filter
+   shape and resulting entry range, that the pre-existing "scrolled into
+   view" viewport indicator keeps working independently (the explicit
+   caution in FEATURE_BACKLOG.md), and that a plain (non-dragged) click
+   still falls through to the existing click-to-jump behavior.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("31. Drag-select time range in minimap");
@@ -2861,17 +2866,15 @@ await withApp(async (w, d, T) => {
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
 
   assert(dragRectEl.classList.contains("hidden"), "drag overlay rect hides again after mouseup");
-  assert(f.children.length === beforeChildCount + 2, "drag-select added two filter children (after + before) under the active file, got " + f.children.length);
+  assert(f.children.length === beforeChildCount + 1, "drag-select added exactly ONE filter child under the active file, got " + f.children.length);
 
-  const afterNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "after");
-  const beforeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "before");
-  assert(afterNode && beforeNode, "both an \"after\" and a \"before\" filter node were created");
-  assert(afterNode.children.length === 1, "the AND node combining after/before is nested under the \"after\" filter");
-  const andNode = afterNode ? T.state.nodes[afterNode.children[0]] : null;
-  assert(andNode && andNode.filterType === "and", "the new node has filterType \"and\"");
-  assert(T.state.activeId === (andNode && andNode.id), "the new AND range filter becomes the active node");
+  const rangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
+  assert(rangeNode, "the new node has filterType \"timerange\"");
+  assert(T.state.activeId === (rangeNode && rangeNode.id), "the new range filter becomes the active node");
+  assert(rangeNode.value.from === f.entries[5].ts && rangeNode.value.to === f.entries[14].ts, "the node's value holds both bounds directly, got " + JSON.stringify(rangeNode.value));
+  assert(rangeNode.name === w.formatTime(f.entries[5].ts) + " → " + w.formatTime(f.entries[14].ts), "the node's name shows both bounds, got " + rangeNode.name);
 
-  const rangeEntries = w.getEntries(andNode.id);
+  const rangeEntries = w.getEntries(rangeNode.id);
   assert(rangeEntries.length === 10, "range filter selects exactly entries 5..14 inclusive (10 entries), got " + rangeEntries.length);
   assert(rangeEntries.every(e => e.ts >= f.entries[5].ts && e.ts <= f.entries[14].ts), "every selected entry falls within the dragged time range");
 
@@ -2888,6 +2891,159 @@ await withApp(async (w, d, T) => {
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: jumpX, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: jumpX, clientY: 10 }));
   assert(T.state.selectedId != null, "a plain (non-dragged) click on the minimap still jumps to the nearest entry");
+});
+
+/* ============================================================
+   GROUP 32 — Unified "timerange" time filter (this session, person-reported
+   follow-up to the drag-select feature above: "I'd like the result as a
+   single filter, without the two sub-filters"). Redesigns time filtering
+   around one filterType, "timerange", holding both bounds directly as
+   `value: { from, to }` (either null = unbounded on that side) — replacing
+   the old single-bound "after"/"before" types for every CREATION path
+   (drag-select, row context-menu "Filter after/before this row", and the
+   new minimap right-click → dialog). "after"/"before" stay in FILTER_TYPES
+   purely for backward-compatible READING of already-saved sessions/exports;
+   nothing creates them anymore, and editing one through the new dialog
+   migrates it to "timerange" (one-way, see updateTimeRangeFilterNode).
+   New: a small time-range dialog (create AND edit, unlike the old after/
+   before filters which had no edit UI at all) with empty-field-means-
+   unbounded fields (no separate infinity checkbox — same convention the
+   value-assertion dialog's optional min/max already uses) and a right-click
+   on the minimap to open it in create mode, prefilled at the clicked point.
+   Covers: legacy after/before nodes still evaluate/tag correctly, F2-edit
+   migrates a legacy node in place, row context-menu actions now produce
+   unified nodes, tree right-click Edit opens the new dialog for any of the
+   three time-filter types, the dialog's own validation (reject empty,
+   silently swap a reversed from/to) and Clear buttons, minimap right-click
+   creation, and a "timerange" node's value round-tripping through the
+   existing generic Save/Load filter JSON machinery unchanged (confirming no
+   carrier-specific code was needed beyond adding it to FILTER_TYPES — see
+   CLAUDE.md's "Known gotchas" note on filter-node fields).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("32. Unified time filter: single \"timerange\" node, editable dialog, migration, minimap right-click");
+  const f = await w.addFile("range2.log", makeLog(0, 30), () => {});
+  w.render();
+
+  // --- A. Legacy "after"/"before" nodes stay readable (backward compat) ---
+  const legacyAfter = w.createFilterNode(f.id, "after", f.entries[10].ts);
+  w.render();
+  assert(legacyAfter.filterType === "after", "sanity: a directly-created legacy \"after\" node keeps its old filterType (nothing auto-migrates on creation)");
+  assert(w.typeTagFor(legacyAfter) === "TIME", "legacy \"after\" node still gets the TIME tag");
+  const legacyEntries = w.getEntries(legacyAfter.id);
+  assert(legacyEntries.length === f.entries.length - 10 && legacyEntries.every(e => e.ts >= f.entries[10].ts),
+    "legacy \"after\" node still filters correctly, got " + legacyEntries.length);
+
+  // --- B. Editing a legacy node (F2) migrates it to "timerange" ---
+  T.state.activeId = legacyAfter.id;
+  w.render();
+  fireKeydown(d, w, "F2");
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "F2 on a legacy \"after\" node opens the time-range dialog (not the text popup)");
+  assert(d.querySelector("#timeRangeFromInput").value !== "", "From is prefilled from the legacy node's value");
+  assert(d.querySelector("#timeRangeToInput").value === "", "To starts empty — the legacy \"after\" node had no upper bound");
+  d.querySelector("#timeRangeToInput").value = w.tsToLocalInputValue(f.entries[20].ts);
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(legacyAfter.filterType === "timerange", "saving the edit migrates the node to \"timerange\"");
+  assert(legacyAfter.value.from === f.entries[10].ts && legacyAfter.value.to === f.entries[20].ts,
+    "migrated node's value holds both bounds, got " + JSON.stringify(legacyAfter.value));
+  assert(legacyAfter.name.includes("→"), "migrated node's name shows the arrow (both bounds), got " + legacyAfter.name);
+  assert(T.state.nodes[legacyAfter.id] === legacyAfter, "edit updates the SAME node id in place (not a new node)");
+
+  // --- C. Row context menu "Filter after/before this row" now create unified nodes ---
+  // ctxAfter/ctxBefore attach under state.activeId (same as before this
+  // session) — reset it to the file so both land as its direct children,
+  // rather than under legacyAfter (left active by section B's edit).
+  T.state.activeId = f.id;
+  const beforeCtxCount = f.children.length;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[3]);
+  fireClick(d.querySelector("#ctxAfter"), w);
+  const ctxAfterNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.to === null);
+  assert(ctxAfterNode && ctxAfterNode.value.from === f.entries[3].ts, "\"Filter after this row\" creates a \"timerange\" node with only the lower bound set");
+  // createFilterNode leaves the just-created node active — reset back to the
+  // file so this second action also lands as its direct child, not nested
+  // under ctxAfterNode.
+  T.state.activeId = f.id;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[25]);
+  fireClick(d.querySelector("#ctxBefore"), w);
+  const ctxBeforeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.from === null);
+  assert(ctxBeforeNode && ctxBeforeNode.value.to === f.entries[25].ts, "\"Filter before this row\" creates a \"timerange\" node with only the upper bound set");
+  assert(f.children.length === beforeCtxCount + 2, "exactly two new filter children (one per context-menu action), no extra AND/combinator node");
+
+  // --- D. Tree right-click "Edit filter…" on a "timerange" node opens the same dialog ---
+  T.state.activeId = ctxAfterNode.id;
+  w.render();
+  const activeRow = [...d.querySelectorAll(".tree-row")].find(r => r.classList.contains("active"));
+  fireContextMenu(activeRow, w);
+  const editItem = [...d.querySelectorAll("#treeContextMenu [data-action]")].find(n => n.dataset.action === "edit");
+  assert(editItem, "tree context menu offers 'Edit filter…' for a \"timerange\" node");
+  fireClick(editItem, w);
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "right-click Edit on a \"timerange\" node opens the time-range dialog");
+  assert(d.querySelector("#timeRangeToInput").value === "", "To is still empty (unbounded) for this node");
+  w.closeTimeRangeDialog();
+
+  // --- E. Dialog validation: both fields empty is rejected, not silently accepted ---
+  w.openTimeRangeDialog("create", f.id, { from: null, to: null });
+  assert(d.querySelector("#timeRangeDialogError").classList.contains("hidden"), "sanity: no error shown on open");
+  const childCountBeforeInvalid = f.children.length;
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(!d.querySelector("#timeRangeDialogError").classList.contains("hidden"), "submitting with both fields empty shows the validation error");
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "dialog stays open on validation failure");
+  assert(f.children.length === childCountBeforeInvalid, "no node was created from the invalid (empty) submit");
+
+  // --- F. Clear button empties a field ---
+  d.querySelector("#timeRangeFromInput").value = w.tsToLocalInputValue(f.entries[0].ts);
+  fireClick(d.querySelector("#timeRangeFromClear"), w);
+  assert(d.querySelector("#timeRangeFromInput").value === "", "the clear button empties the From field");
+  w.closeTimeRangeDialog();
+
+  // --- G. Minimap right-click opens the create dialog prefilled at the clicked point ---
+  T.state.activeId = f.id;
+  T.state.sortColumn = null;
+  w.render();
+  const svg = d.querySelector("#timelineMinimapSvg");
+  const clickX = w.minimapTsToX(f.entries[15].ts);
+  svg.dispatchEvent(new w.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: clickX, clientY: 10 }));
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "right-click on the minimap opens the time-range dialog");
+  assert(d.querySelector("#timeRangeFromInput").value !== "" && d.querySelector("#timeRangeToInput").value !== "",
+    "both fields are prefilled with the clicked point (a valid zero-width starting range)");
+  const beforeMinimapCreate = f.children.length;
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(f.children.length === beforeMinimapCreate + 1, "submitting creates exactly one new \"timerange\" filter child");
+  const minimapCreated = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.from === n.value.to);
+  assert(minimapCreated, "the created node has equal from/to (the zero-width prefill was kept, unedited)");
+
+  // --- H. "timerange" round-trips through Save/Load filter JSON unchanged
+  // (confirms FILTER_TYPES + the generic `value` passthrough is all that was
+  // needed — no carrier-specific code for the new object-shaped value) ---
+  const branch = w.serializeFilterBranch(ctxAfterNode.id);
+  const json = JSON.stringify({ format: "logtrail-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const fc = await w.addFile("c.log", makeLog(0, 30), () => {});
+  w.render();
+  W_setLoadTarget(w, fc.id);
+  w.importFilterJson(json);
+  const importedNode = fc.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
+  assert(importedNode, "a \"timerange\" node survives a save-to-JSON + load round trip");
+  assert(importedNode.value.from === ctxAfterNode.value.from && importedNode.value.to === ctxAfterNode.value.to,
+    "the imported node's { from, to } value round-tripped intact, got " + JSON.stringify(importedNode.value));
+
+  // --- I. A reversed From/To on submit is silently swapped, not rejected — same as the minimap drag's own swap ---
+  w.openTimeRangeDialog("create", f.id, { from: null, to: null });
+  d.querySelector("#timeRangeFromInput").value = w.tsToLocalInputValue(f.entries[25].ts);
+  d.querySelector("#timeRangeToInput").value = w.tsToLocalInputValue(f.entries[5].ts);
+  const beforeSwapCreate = f.children.length;
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(f.children.length === beforeSwapCreate + 1, "a reversed From/To still creates a node (not rejected)");
+  const swappedNode = f.children.map(id => T.state.nodes[id])
+    .find(n => n.filterType === "timerange" && n.value.from === f.entries[5].ts && n.value.to === f.entries[25].ts);
+  assert(swappedNode, "From/To were silently swapped so from <= to");
+
+  function W_setLoadTarget(w, targetId) {
+    // loadFilterTargetId is a top-level `let` — reach it via the shared
+    // lexical scope the same way the T bridge does, but write instead of read.
+    const s = d.createElement("script");
+    s.textContent = `loadFilterTargetId = ${JSON.stringify(targetId)};`;
+    d.body.appendChild(s);
+  }
 });
 
 /* ============================================================
@@ -3114,26 +3270,55 @@ process.exit(failed ? 1 : 0);
               itself fires correctly end-to-end.
    Group 31  — this session (2026-08-16), FEATURE_BACKLOG.md item: drag-
               select a time range on the timeline minimap to create a from/
-              to filter. Reuses the existing "after"/"before" filter types
-              plus the AND combinator (`createAndOrNode`) rather than a new
-              filter type — a click-drag builds an "after" filter and a
-              "before" filter under the active node, then combines them,
-              identical in shape to manually creating both and using the
-              "Combine (AND)" bulk action. New DOM elements
-              (`#timelineMinimapDragRect`/`#timelineMinimapDragLabel`) sit
-              outside the minimap's `<svg>` specifically so they survive a
-              renderTimelineMinimap() call mid-drag, which fully rebuilds the
-              SVG's innerHTML (tail ticks, level toggles, ...). A pixel-
-              distance threshold (`MINIMAP_DRAG_THRESHOLD_PX`) tells a real
-              drag apart from a plain click, and a one-shot
-              `minimapDragSuppressClick` flag stops the browser's trailing
-              "click" event (fired after any mouseup) from also being
-              interpreted as the pre-existing click-to-jump. Covers: overlay
-              show/hide across the full gesture, the resulting tree shape
-              and entry range, the pre-existing scrolled-viewport indicator
-              (`#minimapViewportRect`) continuing to work unmodified — the
-              explicit caution in FEATURE_BACKLOG.md — and a plain click
-              still falling through to click-to-jump.
+              to filter. New DOM elements (`#timelineMinimapDragRect`/
+              `#timelineMinimapDragLabel`) sit outside the minimap's `<svg>`
+              specifically so they survive a renderTimelineMinimap() call
+              mid-drag, which fully rebuilds the SVG's innerHTML (tail
+              ticks, level toggles, ...). A pixel-distance threshold
+              (`MINIMAP_DRAG_THRESHOLD_PX`) tells a real drag apart from a
+              plain click, and a one-shot `minimapDragSuppressClick` flag
+              stops the browser's trailing "click" event (fired after any
+              mouseup) from also being interpreted as the pre-existing
+              click-to-jump. UPDATED later the same session (see Group 32):
+              originally built the range from two separate "after"/"before"
+              filters combined by an AND node (reusing `createAndOrNode`,
+              identical in shape to the "Combine (AND)" bulk action) — a
+              person-reported follow-up asked for the result as one filter
+              instead of three tree nodes, which prompted the "timerange"
+              filterType Group 32 covers; this group's own assertions were
+              updated in place to match the new single-node shape rather
+              than left testing the superseded one. Still covers: overlay
+              show/hide across the full gesture, the pre-existing scrolled-
+              viewport indicator (`#minimapViewportRect`) continuing to work
+              unmodified — the explicit caution in FEATURE_BACKLOG.md — and
+              a plain click still falling through to click-to-jump.
+   Group 32  — this session (2026-08-16), person-reported follow-up to
+              Group 31's drag-select: "I'd like the result as a single
+              filter, without the two sub-filters." Introduces a unified
+              "timerange" filterType (`value: { from, to }`, either bound
+              nullable = unbounded) replacing the old single-bound "after"/
+              "before" types in every CREATION path (drag-select, row
+              context-menu "Filter after/before this row", and a new
+              minimap right-click → dialog); "after"/"before" stay in
+              FILTER_TYPES purely so already-saved sessions/exports keep
+              reading correctly, and editing one through the new dialog
+              (F2 or tree right-click "Edit filter…" — previously
+              unavailable for these types at all) migrates it to
+              "timerange" one-way. Dialog uses empty-field-means-unbounded
+              (no separate infinity checkbox, matching the value-assertion
+              dialog's existing optional min/max convention) and silently
+              swaps a reversed From/To rather than rejecting it. Because the
+              new value is still carried under the filter node's existing
+              generic `value` field, no persistence-carrier code needed
+              touching beyond adding "timerange" to FILTER_TYPES — Section H
+              of this group proves that by round-tripping a "timerange"
+              node through the real Save/Load filter JSON path unchanged.
+              Also covers: legacy after/before nodes still evaluate/tag
+              correctly, F2 migration in place, unified context-menu
+              creation, tree-context-menu Edit routing for all three
+              time-filter types, dialog validation (reject empty submit)
+              and Clear buttons, and minimap right-click creation prefilled
+              at the clicked point.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
