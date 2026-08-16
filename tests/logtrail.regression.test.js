@@ -2878,10 +2878,14 @@ await withApp(async (w, d, T) => {
   assert(rangeEntries.length === 10, "range filter selects exactly entries 5..14 inclusive (10 entries), got " + rangeEntries.length);
   assert(rangeEntries.every(e => e.ts >= f.entries[5].ts && e.ts <= f.entries[14].ts), "every selected entry falls within the dragged time range");
 
-  // The pre-existing "filtered view time range" viewport indicator must
-  // keep working independently — the explicit caution in FEATURE_BACKLOG.md.
-  const viewportRect = d.querySelector("#minimapViewportRect");
-  assert(viewportRect && !viewportRect.classList.contains("hidden"), "the pre-existing scrolled-viewport indicator still renders after a drag-select filter is created");
+  // The pre-existing "filtered view time range" indicators must keep working
+  // independently — the explicit caution in FEATURE_BACKLOG.md. (Split into
+  // a full-range + a rendered-subset rect by a later session — see Group 34
+  // — but the underlying guarantee this asserts is unchanged.)
+  const fullRangeRect = d.querySelector("#minimapFullRangeRect");
+  const renderedRangeRect = d.querySelector("#minimapRenderedRangeRect");
+  assert(fullRangeRect && !fullRangeRect.classList.contains("hidden"), "the full-range indicator still renders after a drag-select filter is created");
+  assert(renderedRangeRect && !renderedRangeRect.classList.contains("hidden"), "the rendered-subset indicator still renders after a drag-select filter is created");
 
   // A short drag (below the pixel threshold) still falls through to plain click-to-jump.
   T.state.selectedId = null;
@@ -3099,15 +3103,118 @@ await withApp(async (w, d, T) => {
   assert(span.right - naiveX > 1,
     "sanity: the crafted timestamp lands closer to its bucket's start than its end (right edge at least 1px past the raw position), got " + (span.right - naiveX).toFixed(2));
 
-  const rect = d.querySelector("#minimapViewportRect");
-  assert(!rect.classList.contains("hidden"), "viewport indicator is visible");
-  const x = parseFloat(rect.getAttribute("x"));
-  const width = parseFloat(rect.getAttribute("width"));
-  assert(Math.abs(x - span.left) < 0.15, "rect's left edge matches the shown entry's bucket LEFT edge, got x=" + x + " expected " + span.left.toFixed(1));
-  assert(Math.abs((x + width) - span.right) < 0.15,
-    "rect's right edge reaches the shown entry's bucket RIGHT edge — not just its raw timestamp position (the bug) — got right=" + (x + width).toFixed(1) + " expected " + span.right.toFixed(1));
-  assert(x + width > naiveX + 1,
-    "the fixed rect visibly extends past where the old buggy calculation would have stopped, got right=" + (x + width).toFixed(1) + " vs old=" + naiveX.toFixed(1));
+  // Split into two rects by a later session (see Group 34) — with exactly
+  // one entry shown, both cover the same single bucket, so both should land
+  // on its exact bounds.
+  for (const id of ["#minimapRenderedRangeRect", "#minimapFullRangeRect"]) {
+    const rect = d.querySelector(id);
+    assert(!rect.classList.contains("hidden"), id + " is visible");
+    const x = parseFloat(rect.getAttribute("x"));
+    const width = parseFloat(rect.getAttribute("width"));
+    assert(Math.abs(x - span.left) < 0.15, id + "'s left edge matches the shown entry's bucket LEFT edge, got x=" + x + " expected " + span.left.toFixed(1));
+    assert(Math.abs((x + width) - span.right) < 0.15,
+      id + "'s right edge reaches the shown entry's bucket RIGHT edge — not just its raw timestamp position (the bug) — got right=" + (x + width).toFixed(1) + " expected " + span.right.toFixed(1));
+    assert(x + width > naiveX + 1,
+      id + " visibly extends past where the old buggy calculation would have stopped, got right=" + (x + width).toFixed(1) + " vs old=" + naiveX.toFixed(1));
+  }
+});
+
+/* ============================================================
+   GROUP 34 — Minimap: full-range vs rendered-subset rects, selected-entry
+   markers, and the minimap now showing during the Link view (this session,
+   person-reported: the range indicator only ever showed what's scrolled
+   into view, never the Filtered view's whole matched span). See
+   updateMinimapFullRange/updateMinimapRenderedRange/
+   updateMinimapSelectionMarkers/minimapMarkedEntries in logtrail.html.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("34. Minimap: full-range vs rendered-subset rects, selection markers, Link view");
+
+  // --- Part A: full range vs rendered (scrolled-into-view) subset ---
+  const fA = await w.addFile("wide.log", makeLog(0, 100), () => {}); // 100 entries, 1s apart
+  T.state.activeId = fA.id;
+  T.state.sortColumn = null;
+  w.render();
+
+  const fullRect = d.querySelector("#minimapFullRangeRect");
+  const renderedRect = d.querySelector("#minimapRenderedRangeRect");
+  assert(!fullRect.classList.contains("hidden") && !renderedRect.classList.contains("hidden"),
+    "both range rects are visible for a plain unfiltered file");
+  const fullX = parseFloat(fullRect.getAttribute("x")), fullW = parseFloat(fullRect.getAttribute("width"));
+  const renderedWInit = parseFloat(renderedRect.getAttribute("width"));
+  assert(fullW > renderedWInit + 5,
+    "full-range rect is visibly wider than the rendered subset when only the top of a 100-row list is on screen, full=" + fullW.toFixed(1) + " rendered=" + renderedWInit.toFixed(1));
+  assert(Math.abs(parseFloat(renderedRect.getAttribute("x")) - fullX) < 1,
+    "at scrollTop 0, the rendered subset starts at the same left edge as the full range");
+
+  // Scroll roughly to the middle and recompute the rendered subset directly
+  // (bypassing the scroll-event/rAF plumbing for a deterministic test).
+  d.querySelector("#tableBody").scrollTop = 50 * 28; // ROW_HEIGHT=28, ~halfway down 100 rows
+  w.updateMinimapRenderedRange();
+  const renderedXMid = parseFloat(renderedRect.getAttribute("x"));
+  assert(renderedXMid > fullX + fullW * 0.2,
+    "scrolling down moves the rendered subset's left edge meaningfully to the right, got " + renderedXMid.toFixed(1) + " (full range x=" + fullX.toFixed(1) + " width=" + fullW.toFixed(1) + ")");
+  assert(renderedXMid + parseFloat(renderedRect.getAttribute("width")) <= fullX + fullW + 1,
+    "rendered subset stays within the full range's bounds");
+
+  // --- Part B: selected-entry marker ---
+  w.selectEntry(fA.entries[50].id);
+  let markerLines = [...d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line")];
+  assert(markerLines.length === 1, "selecting a single entry draws exactly one marker, got " + markerLines.length);
+  assert(Math.abs(parseFloat(markerLines[0].getAttribute("x")) + 1 - w.minimapTsToX(fA.entries[50].ts)) < 0.2,
+    "marker sits at the selected entry's own timestamp position");
+
+  w.selectEntry(fA.entries[10].id);
+  markerLines = [...d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line")];
+  assert(markerLines.length === 1 && Math.abs(parseFloat(markerLines[0].getAttribute("x")) + 1 - w.minimapTsToX(fA.entries[10].ts)) < 0.2,
+    "selecting a different entry moves the marker");
+
+  T.state.selectedId = null;
+  w.updateMinimapSelectionMarkers();
+  assert(d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line").length === 0, "clearing the selection clears the marker");
+
+  // --- Part C: Link view — minimap now visible, brace selection marks BOTH real entries ---
+  const linkLines = [];
+  for (let i = 0; i < 10; i++) {
+    const label = i % 2 === 0 ? "REF" : "TARGET";
+    linkLines.push(`2024-01-15 10:00:${String(i).padStart(2, "0")},000\tINFO\t"main"\tFoo.cs\tline 0\t[DoWork]\t"${label} ${i}"`);
+  }
+  const fB = await w.addFile("linked.log", linkLines.join("\n") + "\n", () => {});
+  const refNode = w.createFilterNode(fB.id, "text", "REF");       // entries 0,2,4,6,8
+  const targetNode = w.createFilterNode(fB.id, "text", "TARGET"); // entries 1,3,5,7,9
+  const linkNode = w.createLinkNode(refNode.id, targetNode.id, "after", 1); // REF n -> 1st TARGET after it
+  T.state.activeId = linkNode.id;
+  w.render();
+
+  assert(!d.querySelector("#timelineMinimap").classList.contains("hidden"), "the minimap is now shown while the Link view is active");
+  const linkFullRect = d.querySelector("#minimapFullRangeRect");
+  assert(linkFullRect && !linkFullRect.classList.contains("hidden"), "full-range rect renders for the Link view too");
+  assert(d.querySelector("#minimapRenderedRangeRect").classList.contains("hidden"),
+    "rendered-subset rect stays hidden in the Link view (no virtualization to distinguish a subset from)");
+
+  const firstBrace = d.querySelector(".pair-brace");
+  assert(firstBrace, "sanity: at least one pair rendered in the Link view");
+  fireClick(firstBrace, w);
+  assert(firstBrace.closest(".pair-block").classList.contains("pair-selected"), "clicking a brace selects its pair");
+  let pairMarkers = [...d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line")];
+  assert(pairMarkers.length === 2, "selecting a pair's brace marks BOTH of its real entries, got " + pairMarkers.length);
+  const expectedXs = [w.minimapTsToX(fB.entries[0].ts), w.minimapTsToX(fB.entries[1].ts)].sort((a, b) => a - b); // REF 0 -> TARGET 1
+  const actualXs = pairMarkers.map(m => parseFloat(m.getAttribute("x")) + 1).sort((a, b) => a - b);
+  assert(Math.abs(actualXs[0] - expectedXs[0]) < 0.2 && Math.abs(actualXs[1] - expectedXs[1]) < 0.2,
+    "the two markers sit at the pair's two real entries' own timestamps");
+
+  fireClick(firstBrace, w); // click again: deselect
+  assert(!firstBrace.closest(".pair-block").classList.contains("pair-selected"), "clicking the same brace again deselects the pair");
+  assert(d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line").length === 0, "deselecting the pair clears its markers (no other selection underneath)");
+
+  // Re-select the brace, then navigate away — a stale .pair-selected left
+  // behind in the now-hidden Link view must NOT keep marking its old
+  // entries once a different (non-link) node is active.
+  fireClick(firstBrace, w);
+  assert(firstBrace.closest(".pair-block").classList.contains("pair-selected"), "sanity: brace re-selected");
+  T.state.activeId = refNode.id;
+  w.render();
+  assert(w.minimapMarkedEntries().length === 0, "a stale Link-view brace selection is ignored once a different, non-link node is active");
 });
 
 /* ============================================================
@@ -3402,6 +3509,52 @@ process.exit(failed ? 1 : 0);
               container width) — confirms the rendered rect's right edge
               lands at the bucket's true right edge, measurably past where
               the old raw-position code would have stopped short.
+   Group 34  — this session (2026-08-16), person-reported follow-up to
+              Group 33's bugfix: the minimap's range indicator only ever
+              showed what's scrolled into view, never the WHOLE time span
+              the Filtered view's result set covers. Split the old single
+              `#minimapViewportRect` into `#minimapFullRangeRect` (the whole
+              filtered result, same look the old rect always had —
+              `updateMinimapFullRange`, scans for real min/max rather than
+              assuming entries[0]/entries[last] are the extremes, since that
+              only holds for the table view's chronological list, not the
+              Link view's flattened pair entries) and
+              `#minimapRenderedRangeRect` (just what's actually got a DOM
+              row right now — a real subset for the virtualized table view;
+              simply left hidden for the Link view, which has no
+              virtualization to distinguish a subset from — see
+              `renderLinkView`'s own comment). Also added: a position marker
+              for the current selection (`updateMinimapSelectionMarkers`,
+              a thin line + small flag per marked entry, wired into the
+              single `applySelection` choke point shared by
+              `selectEntry`/`selectHighlightEntry`/`revealInHighlightView`,
+              so every existing selection path gets one for free) and, for
+              the Link view specifically, clicking a pair's brace now marks
+              BOTH real entries the pair is made of
+              (`minimapMarkedEntries`, reading a `data-entry-ids` attribute
+              stashed on the brace by `renderLinkView` at render time) —
+              which required making the minimap visible during the Link
+              view at all (previously hidden outright; pair entries
+              duck-type as normal entries, so this needed no special-casing
+              beyond feeding `renderTimelineMinimap` the flattened tuple
+              entries). `minimapMarkedEntries` gates the brace-selection
+              branch on the Link view actually being the active view, so a
+              stale `.pair-selected` left over from navigating away can't
+              keep marking its old entries once a different node is active.
+              Bugfix caught along the way (pre-existing, not introduced this
+              session): `updateMinimapRenderedRange`'s `startIdx` was only
+              ever clamped at 0, never at the entry list's upper bound —
+              switching to a much smaller filtered result while previously
+              scrolled deep into a larger one indexed straight past the end
+              of `currentViewEntries` and threw; both `startIdx`/`endIdx`
+              are now clamped on both ends. Covers: full-range vs rendered-
+              subset both visible and differing correctly for a 100-entry
+              file scrolled to its middle, a single selection's marker
+              appearing/moving/clearing, the minimap now rendering during
+              the Link view with the rendered-subset rect correctly staying
+              hidden there, a brace selection marking exactly its pair's two
+              real entries at their own timestamps, deselection clearing the
+              markers, and the stale-brace-after-navigating-away guard.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
