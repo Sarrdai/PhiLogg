@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LogTrail</title>
+<title>PhiLogg</title>
 <style>
   :root{
     --bg-app:#10131a;
@@ -1249,7 +1249,7 @@
   <header id="toolbar">
     <div class="brand">
       <span class="brand-mark">L</span>
-      <span class="brand-name">LogTrail</span>
+      <span class="brand-name">PhiLogg</span>
     </div>
     <div class="toolbar-right">
       <span class="status-text" id="statusText">No files loaded</span>
@@ -1716,7 +1716,7 @@ const ICON_SESSION_EXPORT = '<svg viewBox="0 0 16 16" width="11" height="11" fil
 const ICON_SESSION_IMPORT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 2v8M8 10 5.4 7.4M8 10l2.6-2.6"/></svg>';
 
 /* ===================== Theme ===================== */
-const THEME_STORAGE_KEY = "logtrail-theme";
+const THEME_STORAGE_KEY = "philogg-theme";
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
@@ -3078,7 +3078,7 @@ const highlightRows = el("#highlightRows");
    only the UI-facing label changed to "Full"; renaming every internal
    identifier felt like a much bigger, riskier diff for a label-only ask,
    so it was left alone. Say the word if you'd rather have the full rename. */
-const FH_LAYOUT_STORAGE_KEY = "logtrail-fh-layout";
+const FH_LAYOUT_STORAGE_KEY = "philogg-fh-layout";
 let fhLayout = "tabs";
 let fhActiveTab = "filter";
 
@@ -7242,7 +7242,7 @@ timeRangeDialogSubmit.addEventListener("click", () => {
    Runtime ids are never written to the file — every load creates new nodes
    with fresh uids, so the same file can be loaded repeatedly. */
 
-const FILTER_FILE_FORMAT = "logtrail-filters";
+const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
 const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context"]);
 const filterFileInput = el("#filterFileInput");
@@ -7354,7 +7354,7 @@ async function saveFilterToFile(nodeId) {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: suggested,
-        types: [{ description: "LogTrail filter", accept: { "application/json": [".json"] } }],
+        types: [{ description: "PhiLogg filter", accept: { "application/json": [".json"] } }],
       });
       const writable = await handle.createWritable();
       await writable.write(json);
@@ -7380,7 +7380,7 @@ async function loadFilterFromFile(targetId) {
   try {
     handles = await window.showOpenFilePicker({
       multiple: false,
-      types: [{ description: "LogTrail filter", accept: { "application/json": [".json"] } }],
+      types: [{ description: "PhiLogg filter", accept: { "application/json": [".json"] } }],
     });
   } catch (err) {
     if (err && err.name === "AbortError") return;
@@ -7403,7 +7403,7 @@ function importFilterJson(text) {
   let data;
   try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
   if (!data || data.format !== FILTER_FILE_FORMAT || !Array.isArray(data.roots)) {
-    showCopyToast("Not a LogTrail filter file");
+    showCopyToast("Not a PhiLogg filter file");
     return;
   }
   if (data.version > FILTER_FILE_VERSION) { showCopyToast("Filter file was saved by a newer version"); return; }
@@ -7608,7 +7608,7 @@ document.addEventListener("keydown", ev => {
    localStorage and are not duplicated here.
 
    Storage is IndexedDB (localStorage's ~5 MB quota is far too small for log
-   files), DB "logtrail-session-cache" with three object stores:
+   files), DB "philogg-session-cache" with three object stores:
      - "files": one record per root file, keyed by a per-session-stable
        node.cacheKey (fresh uids every load make runtime ids unusable as
        keys). Holds the file text — for merged files this is the merged
@@ -7631,14 +7631,14 @@ document.addEventListener("keydown", ev => {
    half-restored state. Tail handles are NOT persisted — a restored file is
    a static snapshot (documented limitation).
 
-   Escape hatch: localStorage "logtrail-cache-enabled" = "0" disables the
+   Escape hatch: localStorage "philogg-cache-enabled" = "0" disables the
    whole feature (no UI for it — deliberate, see PROJECT.md). */
 
-const CACHE_DB_NAME = "logtrail-session-cache";
+const CACHE_DB_NAME = "philogg-session-cache";
 const CACHE_DB_VERSION = 2; // bumped for the "fileHistory" store (see below)
 const CACHE_META_KEY = "session";
 const CACHE_FORMAT_VERSION = 1;
-const CACHE_ENABLED_KEY = "logtrail-cache-enabled"; // localStorage; "0" disables
+const CACHE_ENABLED_KEY = "philogg-cache-enabled"; // localStorage; "0" disables
 const CACHE_META_DEBOUNCE_MS = 400;
 const CACHE_FILE_DEBOUNCE_MS = 4000; // tail writes; keep well above TAIL_POLL_MS
 
@@ -8007,7 +8007,7 @@ window.addEventListener("pagehide", () => {
    under a file:// origin (this app's primary deployment mode) is not worth
    depending on. Do not "helpfully" swap it back in. */
 
-const SESSION_FILE_FORMAT = "logtrail-session-export";
+const SESSION_FILE_FORMAT = "philogg-session-export";
 const SESSION_FILE_VERSION = 1;
 const sessionExportDialog = el("#sessionExportDialog");
 const sessionMatchDialog = el("#sessionMatchDialog");
@@ -8153,12 +8153,12 @@ el("#sessionExportConfirm").addEventListener("click", async () => {
   const json = JSON.stringify(buildSessionExport(include, embed), null, 2);
   const now = new Date();
   const p2 = n => String(n).padStart(2, "0");
-  const suggested = "logtrail-session-" + now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()) + ".json";
+  const suggested = "philogg-session-" + now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()) + ".json";
   if (window.showSaveFilePicker) {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: suggested,
-        types: [{ description: "LogTrail session", accept: { "application/json": [".json"] } }],
+        types: [{ description: "PhiLogg session", accept: { "application/json": [".json"] } }],
       });
       const writable = await handle.createWritable();
       await writable.write(json);
@@ -8279,7 +8279,7 @@ async function importSessionFromFile() {
   try {
     handles = await window.showOpenFilePicker({
       multiple: false,
-      types: [{ description: "LogTrail session", accept: { "application/json": [".json"] } }],
+      types: [{ description: "PhiLogg session", accept: { "application/json": [".json"] } }],
     });
   } catch (err) {
     if (err && err.name === "AbortError") return;
@@ -8302,7 +8302,7 @@ function importSessionJson(text) {
   let data;
   try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
   if (!data || data.format !== SESSION_FILE_FORMAT || !Array.isArray(data.files)) {
-    showCopyToast("Not a LogTrail session file");
+    showCopyToast("Not a PhiLogg session file");
     return;
   }
   if (data.version > SESSION_FILE_VERSION) { showCopyToast("Session file was saved by a newer version"); return; }
