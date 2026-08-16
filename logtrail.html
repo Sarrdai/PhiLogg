@@ -874,7 +874,7 @@
   .link-field label{display:block; font-size:11px; color:var(--text-tertiary); margin-bottom:6px;}
   .link-field-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
   .link-target-label{font-size:12px; color:var(--text-secondary); font-family:var(--font-mono); margin-left:2px;}
-  .link-dialog-card select, .link-dialog-card input[type="number"]{
+  .link-dialog-card select, .link-dialog-card input[type="number"], .link-dialog-card input[type="datetime-local"]{
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 8px; font-family:var(--font-mono); font-size:12px;
   }
@@ -900,6 +900,24 @@
     padding-top:106px; /* topbar 50px + filter popup offset 56px -> same spot as search popup */
   }
   #contextDialog.hidden{display:none;}
+
+  /* ---------- Time range dialog (create/edit — see createFilterNode's
+     "timerange" filterType and openTimeRangeDialog) ---------- */
+  #timeRangeDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
+  }
+  #timeRangeDialog.hidden{display:none;}
+  #timeRangeDialog input[type="datetime-local"]{flex:1 1 auto; min-width:0;}
+  .time-range-hint{font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-tertiary);}
+  .time-range-clear{
+    flex:0 0 auto; width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+    background:transparent; color:var(--text-tertiary); border:1px solid var(--border); border-radius:6px; cursor:pointer;
+  }
+  .time-range-clear:hover{border-color:var(--accent); color:var(--accent-strong);}
+  .time-range-error{font-size:11px; color:var(--warn); margin:-6px 0 14px;}
+  .time-range-error.hidden{display:none;}
 
   /* ---------- Value assertion dialog ---------- */
   #assertDialog{
@@ -1533,6 +1551,35 @@
     </div>
   </div>
 
+  <div id="timeRangeDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title" id="timeRangeDialogTitle">Time filter</div>
+      <div class="link-field">
+        <label for="timeRangeFromInput">From <span class="time-range-hint">(empty = no lower bound)</span></label>
+        <div class="link-field-row">
+          <input type="datetime-local" id="timeRangeFromInput" step="0.001">
+          <button type="button" class="time-range-clear" id="timeRangeFromClear" title="Clear (no lower bound)">
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="link-field">
+        <label for="timeRangeToInput">To <span class="time-range-hint">(empty = no upper bound)</span></label>
+        <div class="link-field-row">
+          <input type="datetime-local" id="timeRangeToInput" step="0.001">
+          <button type="button" class="time-range-clear" id="timeRangeToClear" title="Clear (no upper bound)">
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="time-range-error hidden" id="timeRangeDialogError">Set at least one of From / To.</div>
+      <div class="link-dialog-actions">
+        <button type="button" id="timeRangeDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="timeRangeDialogSubmit" class="btn-mini">Create</button>
+      </div>
+    </div>
+  </div>
+
   <div id="assertDialog" class="hidden">
     <div class="link-dialog-card">
       <div class="link-dialog-title">Value assertion — <span id="assertColLabel" class="link-target-label"></span></div>
@@ -1846,6 +1893,23 @@ function formatTime(ms) {
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p3(d.getMilliseconds())}`;
 }
 
+// Local (no-timezone) "YYYY-MM-DDTHH:mm:ss.sss" round-trip for the time-range
+// dialog's <input type="datetime-local" step="0.001"> fields — same local-
+// time interpretation formatTime()/parseTimestamp() already use elsewhere,
+// so a value typed in the dialog lines up exactly with what the table shows.
+function tsToLocalInputValue(ts) {
+  if (ts == null || isNaN(ts)) return "";
+  const d = new Date(ts);
+  const p2 = n => String(n).padStart(2, "0");
+  const p3 = n => String(n).padStart(3, "0");
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p3(d.getMilliseconds())}`;
+}
+function localInputValueToTs(str) {
+  if (!str) return null;
+  const t = new Date(str).getTime();
+  return isNaN(t) ? null : t;
+}
+
 // Row-to-row gap coloring thresholds for the Δt column — a quick visual cue
 // for stalls/timeouts while scanning a long list, tunable if a log's normal
 // cadence differs from this default.
@@ -1992,14 +2056,31 @@ function compileExtractPattern(pattern) {
   }
 }
 
+// Display name for a "timerange" filter's { from, to } value (either bound
+// may be null, meaning unbounded on that side) — shared by createFilterNode,
+// updateTimeRangeFilterNode, and anything else that needs to (re)compute a
+// timerange node's name from its value. "after"/"before" are the legacy,
+// single-bound predecessors of this type (still readable, no longer created
+// by any UI path — see FILTER_TYPES/getEntries) and keep their own simpler
+// ≥/≤ names in createFilterNode below, unaffected by this helper.
+function timeRangeFilterName(value) {
+  const from = value && value.from, to = value && value.to;
+  if (from != null && to != null) return `${formatTime(from)} → ${formatTime(to)}`;
+  if (from != null) return `≥ ${formatTime(from)}`;
+  if (to != null) return `≤ ${formatTime(to)}`;
+  return "any time";
+}
+
 function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null) {
   const parent = state.nodes[parentId];
   if (!parent) return null;
   let name;
   if (filterType === "text") name = `“${value}”`;
   else if (filterType === "after") name = `≥ ${formatTime(value)}`;
+  else if (filterType === "before") name = `≤ ${formatTime(value)}`;
   else if (filterType === "extract") name = value;
-  else name = `≤ ${formatTime(value)}`;
+  else if (filterType === "timerange") name = timeRangeFilterName(value);
+  else name = String(value);
 
   const node = { id: uid("n"), type: "filter", name, parentId, children: [], filterType, value, inverted };
   if (filterType === "extract" && ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
@@ -2029,6 +2110,42 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns) {
     else delete node.ignoredColumns;
   }
   invalidateAllCaches();
+}
+
+// Edits an existing time filter in place — same "not undoable" scope as
+// updateFilterNode above, and the same reasoning for why (a value/type edit,
+// not a move/delete). Unlike updateFilterNode this also handles the legacy
+// "after"/"before" node shapes: editing one through the time-range dialog
+// (see openTimeRangeDialog) migrates it to "timerange" on save, since the
+// dialog always writes both bounds. One-way (there's no UI to go back to the
+// single-bound legacy shape), which is fine — the two are behaviorally
+// identical when only one bound is set.
+function updateTimeRangeFilterNode(nodeId, from, to) {
+  const node = state.nodes[nodeId];
+  if (!node) return;
+  node.filterType = "timerange";
+  node.value = { from, to };
+  node.name = timeRangeFilterName(node.value);
+  invalidateAllCaches();
+}
+
+// Normalizes any of the three time-filter node shapes into a plain
+// { from, to } pair for the time-range dialog to prefill from — lets
+// openTimeRangeDialog's edit mode work uniformly whether the node being
+// edited is a legacy "after"/"before" node or an already-unified "timerange"
+// node (see updateTimeRangeFilterNode above for the migration-on-save).
+function timeRangeOfNode(node) {
+  if (node.filterType === "after") return { from: node.value, to: null };
+  if (node.filterType === "before") return { from: null, to: node.value };
+  if (node.filterType === "timerange") return { from: node.value.from, to: node.value.to };
+  return { from: null, to: null };
+}
+
+// Shared eligibility check for "this node is editable through the time-range
+// dialog" — the F2 shortcut and the tree's right-click "Edit filter…" item
+// both gate on it (see their call sites).
+function isTimeFilterType(filterType) {
+  return filterType === "after" || filterType === "before" || filterType === "timerange";
 }
 
 function isDescendantOrSelf(rootId, targetId) {
@@ -2507,6 +2624,16 @@ function getEntries(nodeId) {
     result = parentEntries.filter(e => e.ts >= node.value);
   } else if (node.filterType === "before") {
     result = parentEntries.filter(e => e.ts <= node.value);
+  } else if (node.filterType === "timerange") {
+    // value = { from, to }, either bound possibly null (unbounded on that
+    // side) — the unified replacement for "after"/"before" above, which stay
+    // readable (old saved sessions/exports) but are no longer created by any
+    // UI path. Plain object under the existing generic `value` field, so
+    // every persistence carrier (clone/snapshot/serialize/import) already
+    // threads it through with no extra field to add — see CLAUDE.md's
+    // "Known gotchas" note on filter-node fields.
+    const from = node.value && node.value.from, to = node.value && node.value.to;
+    result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
   } else if (node.filterType === "extract") {
     const spec = compileExtractPattern(node.value);
     result = spec ? parentEntries.filter(e => spec.regex.test(e.message)) : [];
@@ -3170,7 +3297,7 @@ function typeTagFor(node) {
   if (node.type === "file") return "FILE";
   switch (node.filterType) {
     case "text": return "TXT";
-    case "after": case "before": return "TIME";
+    case "after": case "before": case "timerange": return "TIME";
     case "extract": return "TBL";
     case "and": return "AND";
     case "or": return "OR";
@@ -3194,7 +3321,7 @@ function renderTree() {
 function ghostTypeTag(filterType) {
   switch (filterType) {
     case "text": return "TXT";
-    case "after": case "before": return "TIME";
+    case "after": case "before": case "timerange": return "TIME";
     case "extract": return "TBL";
     case "and": return "AND";
     case "or": return "OR";
@@ -5229,13 +5356,12 @@ timelineMinimapSvg.addEventListener("mouseleave", () => { if (!minimapDragging) 
 
 /* ---------- Drag-select: click-drag across the minimap creates a from/to
    time filter ---------------------------------------------------------
-   Marking a range and releasing builds the exact same shape the "Combine
-   (AND)" bulk action already produces from two manually-created filters: an
-   "after" filter and a "before" filter, both children of the active node,
-   combined by an "and" node (see createAndOrNode). That reuse means the new
-   filter gets the tree's existing name/undo/persistence handling for free —
-   nothing range-specific needed adding to any of the carriers listed in
-   CLAUDE.md's "Known gotchas".
+   Marking a range and releasing creates a single "timerange" filter node
+   (see the filterType's introduction near createFilterNode/getEntries) —
+   an earlier version of this built the range from two separate "after"/
+   "before" filters combined by an AND node (three tree nodes for one
+   conceptual filter); "timerange" replaced that with one node holding both
+   bounds directly, so a drag now produces exactly one filter.
 
    Deliberately built on its own DOM elements (#timelineMinimapDragRect/
    Label, plain positioned <div>s, not part of the SVG) rather than another
@@ -5277,16 +5403,13 @@ function hideMinimapDragOverlay() {
   timelineMinimapDragLabel.classList.add("hidden");
 }
 
-// Builds the from/to range filter. See the module comment above for why this
-// reuses "after" + "before" + AND rather than a dedicated range filter type.
+// Builds the from/to range filter — a single "timerange" node under the
+// active node. See the module comment above for the earlier three-node shape
+// this replaced.
 function createTimeRangeFilterFromDrag(fromTs, toTs) {
   const baseId = state.activeId;
   if (!baseId) return;
-  const afterNode = createFilterNode(baseId, "after", fromTs);
-  if (!afterNode) return;
-  const beforeNode = createFilterNode(baseId, "before", toTs); // baseId, not the now-active afterNode — keeps it a sibling
-  if (!beforeNode) return;
-  if (!createAndOrNode(afterNode.id, beforeNode.id, "and")) return;
+  if (!createFilterNode(baseId, "timerange", { from: fromTs, to: toTs })) return;
   revealFilteredView(); // a new filter's result lives in the Filtered view, same as every other filter-creation path
   render();
 }
@@ -5320,6 +5443,19 @@ window.addEventListener("mouseup", ev => {
   const lo = Math.min(minimapDragStartX, x), hi = Math.max(minimapDragStartX, x);
   const fromTs = Math.round(minimapXToTs(lo)), toTs = Math.round(minimapXToTs(hi));
   if (toTs > fromTs) createTimeRangeFilterFromDrag(fromTs, toTs);
+});
+
+// Right-click: open the time-range dialog directly (see "Time range dialog"
+// section) instead of dragging, for a manual/precise range — prefilled with
+// the clicked point as both bounds (a zero-width starting range), so the
+// dialog opens on an already-valid selection the person can then widen
+// either side of. Withheld during a column sort, same as click/drag above.
+timelineMinimapSvg.addEventListener("contextmenu", ev => {
+  if (!minimapInteractive || !state.activeId) return;
+  ev.preventDefault();
+  const rect = timelineMinimapSvg.getBoundingClientRect();
+  const ts = Math.round(minimapXToTs(minimapEventUnitX(ev, rect)));
+  openTimeRangeDialog("create", state.activeId, { from: ts, to: ts });
 });
 
 // Scrolls the virtual list so that the entry at `index` is in view (and
@@ -6346,13 +6482,16 @@ function openContextMenu(ev, entry) {
 }
 function closeContextMenu() { contextMenu.classList.add("hidden"); ctxEntry = null; }
 
+// Both create a unified "timerange" node with only one bound set, rather
+// than the legacy single-bound "after"/"before" types — same result, but now
+// editable afterward through the time-range dialog (see openTimeRangeDialog).
 el("#ctxAfter").addEventListener("click", () => {
-  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "after", ctxEntry.ts); revealFilteredView(); }
+  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: ctxEntry.ts, to: null }); revealFilteredView(); }
   closeContextMenu();
   render();
 });
 el("#ctxBefore").addEventListener("click", () => {
-  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "before", ctxEntry.ts); revealFilteredView(); }
+  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: null, to: ctxEntry.ts }); revealFilteredView(); }
   closeContextMenu();
   render();
 });
@@ -6556,11 +6695,12 @@ function openTreeContextMenu(ev, clickedId) {
   } else {
     const items = [];
     if (node.type === "filter") {
-      // Only "text" and "extract" filters have a plain value the filter
-      // popup's single input can represent (see openEditFilterPopup) —
-      // and/or/link nodes derive their value from two other nodes, and
-      // context filters have their own before/after dialog.
-      if (node.filterType === "text" || node.filterType === "extract") {
+      // "text"/"extract" have a plain value the filter popup's single input
+      // can represent (see openEditFilterPopup); "after"/"before"/"timerange"
+      // go through the dedicated time-range dialog instead (see
+      // openTimeRangeDialog). and/or/link nodes derive their value from two
+      // other nodes, and context filters have their own before/after dialog.
+      if (node.filterType === "text" || node.filterType === "extract" || isTimeFilterType(node.filterType)) {
         items.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
       }
       items.push({ action: "copy", label: "Copy", icon: ICON_COPY });
@@ -6615,7 +6755,9 @@ treeContextMenu.addEventListener("click", ev => {
   // Single-node actions operate on treeCtxId (the node the menu was opened
   // for), mirroring exactly what Ctrl+C/X/V/Delete do for state.activeId.
   if (action === "edit") {
-    if (treeCtxId && state.nodes[treeCtxId]) openEditFilterPopup(treeCtxId);
+    const node = treeCtxId && state.nodes[treeCtxId];
+    if (node && isTimeFilterType(node.filterType)) openTimeRangeDialog("edit", node.id, timeRangeOfNode(node));
+    else if (node) openEditFilterPopup(treeCtxId);
     return;
   }
   if (action === "copy" || action === "cut") {
@@ -6832,6 +6974,66 @@ el("#contextDialogCreate").addEventListener("click", () => {
   render();
 });
 
+/* ===================== Time range dialog (create/edit a "timerange" filter) =====================
+   Single small dialog covering both create (mode "create", targetId = the
+   new filter's parent) and edit (mode "edit", targetId = the node being
+   edited) — same targetId-means-different-things-per-mode pattern
+   openEditFilterPopup/openFilterPopup already use for the text/extract
+   popup. Edit mode also accepts a legacy "after"/"before" node (see
+   timeRangeOfNode); saving it migrates it to "timerange"
+   (updateTimeRangeFilterNode). Either bound left empty means unbounded on
+   that side — no separate "infinity" checkbox, same "empty = optional"
+   convention the value-assertion dialog's min/max range fields already use. */
+
+const timeRangeDialog = el("#timeRangeDialog");
+const timeRangeDialogTitle = el("#timeRangeDialogTitle");
+const timeRangeFromInput = el("#timeRangeFromInput");
+const timeRangeToInput = el("#timeRangeToInput");
+const timeRangeDialogError = el("#timeRangeDialogError");
+const timeRangeDialogSubmit = el("#timeRangeDialogSubmit");
+let timeRangeDialogMode = null; // "create" | "edit"
+let timeRangeDialogTargetId = null; // create: parentId · edit: the node's own id
+
+function openTimeRangeDialog(mode, targetId, prefill) {
+  const target = state.nodes[targetId];
+  if (!target) return;
+  timeRangeDialogMode = mode;
+  timeRangeDialogTargetId = targetId;
+  const range = prefill || { from: null, to: null };
+  timeRangeFromInput.value = tsToLocalInputValue(range.from);
+  timeRangeToInput.value = tsToLocalInputValue(range.to);
+  timeRangeDialogError.classList.add("hidden");
+  timeRangeDialogTitle.textContent = mode === "edit" ? "Edit time filter" : `Time filter on “${target.name}”`;
+  timeRangeDialogSubmit.textContent = mode === "edit" ? "Save" : "Create";
+  timeRangeDialog.classList.remove("hidden");
+  timeRangeFromInput.focus();
+}
+function closeTimeRangeDialog() {
+  timeRangeDialog.classList.add("hidden");
+  timeRangeDialogMode = null;
+  timeRangeDialogTargetId = null;
+}
+timeRangeDialog.addEventListener("click", ev => { if (ev.target === timeRangeDialog) closeTimeRangeDialog(); });
+el("#timeRangeDialogCancel").addEventListener("click", closeTimeRangeDialog);
+el("#timeRangeFromClear").addEventListener("click", () => { timeRangeFromInput.value = ""; timeRangeDialogError.classList.add("hidden"); });
+el("#timeRangeToClear").addEventListener("click", () => { timeRangeToInput.value = ""; timeRangeDialogError.classList.add("hidden"); });
+timeRangeDialogSubmit.addEventListener("click", () => {
+  let from = localInputValueToTs(timeRangeFromInput.value);
+  let to = localInputValueToTs(timeRangeToInput.value);
+  if (from == null && to == null) { timeRangeDialogError.classList.remove("hidden"); return; }
+  if (from != null && to != null && from > to) { const t = from; from = to; to = t; } // swap silently, same as the minimap drag
+
+  if (timeRangeDialogMode === "edit") {
+    updateTimeRangeFilterNode(timeRangeDialogTargetId, from, to);
+  } else if (!createFilterNode(timeRangeDialogTargetId, "timerange", { from, to })) {
+    closeTimeRangeDialog();
+    return;
+  }
+  closeTimeRangeDialog();
+  revealFilteredView();
+  render();
+});
+
 /* ===================== Filter save / load (JSON files) =====================
    "Save filter…" writes the *branch* a filter belongs to: the ancestor
    chain from just below the root file down to the clicked node, plus the
@@ -6858,7 +7060,7 @@ el("#contextDialogCreate").addEventListener("click", () => {
 
 const FILTER_FILE_FORMAT = "logtrail-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "extract", "and", "or", "link", "context"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId) {
@@ -7119,6 +7321,7 @@ document.addEventListener("keydown", ev => {
     closeTreeContextMenu();
     closeLinkDialog();
     closeContextDialog();
+    closeTimeRangeDialog();
     closeAssertDialog();
     closeBookmarksPanel();
     closeColorPicker();
@@ -7153,7 +7356,10 @@ document.addEventListener("keydown", ev => {
 
   if (ev.key === "F2") {
     const node = state.nodes[state.activeId];
-    if (node && node.type === "filter" && (node.filterType === "text" || node.filterType === "extract")) {
+    if (node && node.type === "filter" && isTimeFilterType(node.filterType)) {
+      ev.preventDefault();
+      openTimeRangeDialog("edit", node.id, timeRangeOfNode(node));
+    } else if (node && node.type === "filter" && (node.filterType === "text" || node.filterType === "extract")) {
       ev.preventDefault();
       openEditFilterPopup(state.activeId);
     }
