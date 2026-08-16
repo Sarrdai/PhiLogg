@@ -1,0 +1,23 @@
+# LogTrail — Feature Backlog
+
+Raw ideas only, not yet elaborated. Pick items up individually before implementation.
+
+- **Drag-select time range in minimap** → creates a from/to time filter. Caution: must not affect the existing "filtered view time range" visualization on the minimap — that needs to keep working independently.
+- **Drop a non-log file (e.g. TIFF) → jump to matching log entry** by the file's CreationDate. Open question: TIFF files carry a trailing XML block (after the image data) with its own CreationDate, which may be more accurate than the filesystem timestamp. Needs scoping before implementation.
+- **Arrow-key navigation** in the filter tree.
+- **Bugfix**: view sometimes doesn't refresh when a new filter is created. Needs repro/root cause.
+- **Pluggable parser logic** — support/configure additional log formats beyond the current one.
+- **Folder watch + lazy loading** — auto-detect new files in a watched folder, list them, only parse on click.
+- **Per-filter target column** — let a filter choose which column it matches against, instead of a fixed one.
+- **Sortable columns** in the entry table.
+- **Numeric greater/less-than filter** without requiring value extraction first.
+- **Case-sensitive option** for text filters.
+- **Extend undo/redo** — currently only covers filter delete/move; missing file deletion, value/pattern edits, invert toggle, assertion changes.
+- **Dedup check on "Load filter…" / session import** — prevents duplicate branches when the same filter (tree) is loaded/imported again.
+- **Warn/migrate when an extraction pattern edit shifts columns** — assertions and ignored-columns are index-based and silently point at the wrong column otherwise.
+- **Optional tail auto-follow for the Highlight view** — currently deliberately static while the Filter view follows tailed entries; revisit if live-tailing workflows want it too.
+- **Theme-specific level colors for light mode** — currently same hex values as dark mode.
+- **Virtualize extraction table / link pair view** — needed if someone extracts from a very large file with a loose pattern.
+- **Persist tail handles across reload** — currently a restored file is a static snapshot; tailing must be re-established by re-opening the file.
+- **Autocomplete suggestions from recently used filter values/search terms** in the filter popup.
+- **Diff view between two filter results** — e.g. comparing two runs of the same log.

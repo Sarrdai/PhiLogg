@@ -1,0 +1,13 @@
+{
+  "name": "logtrail-regression-suite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Consolidated jsdom regression suite for logtrail.html — drives the real file through actual DOM events. See the 'TEST PROVENANCE' comment at the bottom of logtrail.regression.test.js for what each group covers.",
+  "scripts": {
+    "test": "node logtrail.regression.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1",
+    "fake-indexeddb": "^6.2.5"
+  }
+}
