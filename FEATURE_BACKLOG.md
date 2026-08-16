@@ -2,7 +2,6 @@
 
 Raw ideas only, not yet elaborated. Pick items up individually before implementation.
 
-- **Drag-select time range in minimap** → creates a from/to time filter. Caution: must not affect the existing "filtered view time range" visualization on the minimap — that needs to keep working independently.
 - **Drop a non-log file (e.g. TIFF) → jump to matching log entry** by the file's CreationDate. Open question: TIFF files carry a trailing XML block (after the image data) with its own CreationDate, which may be more accurate than the filesystem timestamp. Needs scoping before implementation.
 - **Arrow-key navigation** in the filter tree.
 - **Bugfix**: view sometimes doesn't refresh when a new filter is created. Needs repro/root cause.

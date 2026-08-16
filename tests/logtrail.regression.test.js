@@ -2819,6 +2819,78 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 31 — Drag-select time range in minimap (this session,
+   FEATURE_BACKLOG.md item). Click-drag across the minimap bars now creates
+   a from/to time filter: an "after" + "before" filter pair combined by an
+   "and" node, the same shape the "Combine (AND)" bulk action already
+   produces — see the module comment above createTimeRangeFilterFromDrag in
+   logtrail.html for why. Covers: overlay show/hide across the gesture, the
+   correct filter-tree shape and resulting entry range, that the pre-existing
+   "scrolled into view" viewport indicator keeps working independently (the
+   explicit caution in FEATURE_BACKLOG.md), and that a plain (non-dragged)
+   click still falls through to the existing click-to-jump behavior.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("31. Drag-select time range in minimap");
+  const lines = [];
+  const push = (sec, level, msg) => lines.push(`2024-01-15 10:00:${String(sec).padStart(2, "0")},000\t${level}\t"main"\tFoo.cs\tline 0\t[DoWork]\t"${msg}"`);
+  for (let i = 0; i < 20; i++) push(i, i % 5 === 0 ? "ERROR" : "INFO", "entry " + i); // 10:00:00 .. 10:00:19
+  const f = await w.addFile("range.log", lines.join("\n") + "\n", () => {});
+  T.state.activeId = f.id;
+  T.state.sortColumn = null;
+  w.render();
+
+  const svg = d.querySelector("#timelineMinimapSvg");
+  const dragRectEl = d.querySelector("#timelineMinimapDragRect");
+  const beforeChildCount = f.children.length;
+
+  // Drag from entry 5's time to entry 14's time (inclusive range of 10 entries).
+  const x1 = w.minimapTsToX(f.entries[5].ts);
+  const x2 = w.minimapTsToX(f.entries[14].ts);
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: x1, clientY: 10 }));
+  assert(dragRectEl.classList.contains("hidden"), "drag overlay stays hidden until the pointer moves past the click threshold");
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: (x1 + x2) / 2, clientY: 10 }));
+  assert(!dragRectEl.classList.contains("hidden"), "drag overlay rect appears once the pointer has moved past the click threshold");
+  const dragLabelEl = d.querySelector("#timelineMinimapDragLabel");
+  assert(!dragLabelEl.classList.contains("hidden") && dragLabelEl.textContent.includes("→"), "drag label shows a from → to readout while dragging");
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: x2, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: x2, clientY: 10 }));
+  // Real browsers fire a trailing "click" after mouseup; jsdom doesn't
+  // synthesize one from dispatched mousedown/mouseup, so simulate it to
+  // exercise the suppress-flag guard (see the click listener's comment).
+  svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
+
+  assert(dragRectEl.classList.contains("hidden"), "drag overlay rect hides again after mouseup");
+  assert(f.children.length === beforeChildCount + 2, "drag-select added two filter children (after + before) under the active file, got " + f.children.length);
+
+  const afterNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "after");
+  const beforeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "before");
+  assert(afterNode && beforeNode, "both an \"after\" and a \"before\" filter node were created");
+  assert(afterNode.children.length === 1, "the AND node combining after/before is nested under the \"after\" filter");
+  const andNode = afterNode ? T.state.nodes[afterNode.children[0]] : null;
+  assert(andNode && andNode.filterType === "and", "the new node has filterType \"and\"");
+  assert(T.state.activeId === (andNode && andNode.id), "the new AND range filter becomes the active node");
+
+  const rangeEntries = w.getEntries(andNode.id);
+  assert(rangeEntries.length === 10, "range filter selects exactly entries 5..14 inclusive (10 entries), got " + rangeEntries.length);
+  assert(rangeEntries.every(e => e.ts >= f.entries[5].ts && e.ts <= f.entries[14].ts), "every selected entry falls within the dragged time range");
+
+  // The pre-existing "filtered view time range" viewport indicator must
+  // keep working independently — the explicit caution in FEATURE_BACKLOG.md.
+  const viewportRect = d.querySelector("#minimapViewportRect");
+  assert(viewportRect && !viewportRect.classList.contains("hidden"), "the pre-existing scrolled-viewport indicator still renders after a drag-select filter is created");
+
+  // A short drag (below the pixel threshold) still falls through to plain click-to-jump.
+  T.state.selectedId = null;
+  const jumpTs = rangeEntries[3].ts;
+  const jumpX = w.minimapTsToX(jumpTs);
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  assert(T.state.selectedId != null, "a plain (non-dragged) click on the minimap still jumps to the nearest entry");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -3040,6 +3112,28 @@ process.exit(failed ? 1 : 0);
               group in this suite use; proves the `persistFileNode` →
               `matchFileHistory` hook wired inside `loadFileDescriptors`
               itself fires correctly end-to-end.
+   Group 31  — this session (2026-08-16), FEATURE_BACKLOG.md item: drag-
+              select a time range on the timeline minimap to create a from/
+              to filter. Reuses the existing "after"/"before" filter types
+              plus the AND combinator (`createAndOrNode`) rather than a new
+              filter type — a click-drag builds an "after" filter and a
+              "before" filter under the active node, then combines them,
+              identical in shape to manually creating both and using the
+              "Combine (AND)" bulk action. New DOM elements
+              (`#timelineMinimapDragRect`/`#timelineMinimapDragLabel`) sit
+              outside the minimap's `<svg>` specifically so they survive a
+              renderTimelineMinimap() call mid-drag, which fully rebuilds the
+              SVG's innerHTML (tail ticks, level toggles, ...). A pixel-
+              distance threshold (`MINIMAP_DRAG_THRESHOLD_PX`) tells a real
+              drag apart from a plain click, and a one-shot
+              `minimapDragSuppressClick` flag stops the browser's trailing
+              "click" event (fired after any mouseup) from also being
+              interpreted as the pre-existing click-to-jump. Covers: overlay
+              show/hide across the full gesture, the resulting tree shape
+              and entry range, the pre-existing scrolled-viewport indicator
+              (`#minimapViewportRect`) continuing to work unmodified — the
+              explicit caution in FEATURE_BACKLOG.md — and a plain click
+              still falling through to click-to-jump.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
