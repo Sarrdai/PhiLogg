@@ -1065,6 +1065,23 @@
   }
   .filter-invert-toggle input{accent-color:var(--level-error); cursor:pointer;}
   .filter-invert-toggle:has(input:checked){color:var(--level-error);}
+  .filter-case-toggle{
+    display:flex; align-items:center; gap:4px; flex:0 0 auto;
+    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
+    cursor:pointer; user-select:none; white-space:nowrap;
+  }
+  .filter-case-toggle input{accent-color:var(--accent); cursor:pointer;}
+  .filter-case-toggle:has(input:checked){color:var(--accent-strong);}
+  .filter-column-chips{display:flex; align-items:center; gap:5px; padding:0 4px; flex-wrap:wrap;}
+  .filter-column-chips.hidden{display:none;}
+  .column-chip{
+    font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--text-secondary);
+    background:transparent; border:1px solid var(--border); border-radius:20px;
+    padding:4px 9px; line-height:16px; cursor:pointer; user-select:none;
+    transition:background .12s, border-color .12s, color .12s, filter .12s;
+  }
+  .column-chip:hover{filter:brightness(1.25);}
+  .column-chip.active{background:var(--accent); border-color:transparent; color:#08201f;}
   .filter-token-chips{display:flex; align-items:center; gap:5px; padding:0 4px; flex-wrap:wrap;}
   .token-chip{
     font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--accent-strong);
@@ -1292,6 +1309,9 @@
           <span id="filterPopupLabel">Filter</span>
           <form id="filterForm">
             <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [value:float]" autocomplete="off">
+            <label class="filter-case-toggle" title="Match exact upper/lower case">
+              <input type="checkbox" id="filterCaseCheckbox"> Aa
+            </label>
             <label class="filter-invert-toggle" title="Keep entries that do NOT match instead">
               <input type="checkbox" id="filterInvertCheckbox"> NOT
             </label>
@@ -1300,6 +1320,14 @@
           <button type="button" class="btn-icon" id="btnCloseFilterPopup" title="Close">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
           </button>
+        </div>
+        <div id="filterColumnChips" class="filter-column-chips" title="Restrict search to specific columns — none selected searches all columns">
+          <button type="button" class="column-chip" data-col="time">Time</button>
+          <button type="button" class="column-chip" data-col="level">Level</button>
+          <button type="button" class="column-chip" data-col="thread">Thread</button>
+          <button type="button" class="column-chip" data-col="location">Location</button>
+          <button type="button" class="column-chip" data-col="method">Method</button>
+          <button type="button" class="column-chip" data-col="message">Message</button>
         </div>
         <div id="filterTokenChips" class="filter-token-chips">
           <button type="button" class="token-chip" data-token="float">[float]</button>
@@ -2084,7 +2112,7 @@ function timeRangeFilterName(value) {
   return "any time";
 }
 
-function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null) {
+function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null) {
   const parent = state.nodes[parentId];
   if (!parent) return null;
   let name;
@@ -2097,6 +2125,8 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
 
   const node = { id: uid("n"), type: "filter", name, parentId, children: [], filterType, value, inverted };
   if (filterType === "extract" && ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
+  if (filterType === "text" && caseSensitive) node.caseSensitive = true;
+  if (filterType === "text" && columns && columns.length) node.columns = columns.slice();
   state.nodes[node.id] = node;
   parent.children.push(node.id);
   state.activeId = node.id;
@@ -2111,7 +2141,7 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
 // same global invalidation used for move/delete/invert is needed here too.
 // Deliberately not undoable, same as the invert toggle — see the undo/redo
 // section's "not value/type edits" scope note.
-function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns) {
+function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns) {
   const node = state.nodes[nodeId];
   if (!node) return;
   node.filterType = filterType;
@@ -2121,6 +2151,13 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns) {
   if (filterType === "extract" && ignoredColumns !== undefined) {
     if (ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
     else delete node.ignoredColumns;
+  }
+  if (filterType === "text") {
+    if (caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
+    if (columns && columns.length) node.columns = columns.slice(); else delete node.columns;
+  } else {
+    delete node.caseSensitive;
+    delete node.columns;
   }
   invalidateAllCaches();
 }
@@ -2543,6 +2580,8 @@ function cloneSubtree(nodeId, newParentId) {
   }
   if (orig.filterType === "extract" && orig.assertions) clone.assertions = JSON.parse(JSON.stringify(orig.assertions));
   if (orig.filterType === "extract" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
+  if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
+  if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
   if (orig.highlightColor) clone.highlightColor = orig.highlightColor;
   state.nodes[clone.id] = clone;
   orig.children.forEach(childId => {
@@ -2618,6 +2657,51 @@ function deleteNode(nodeId) {
   invalidateAllCaches();
 }
 
+// Target-column options for "text" filters (FEATURE_BACKLOG.md "Per-filter
+// target column") — mirrors the columns the log table itself shows
+// (see renderTable's .col-time/.col-level/.col-thread/.col-loc/.col-method/
+// .col-msg spans). Same selection logic as the level filter bar
+// (state.levelFilter/applyLevelFilter): none selected = search every
+// column, one or more selected = restrict to those.
+const TEXT_FILTER_COLUMNS = [
+  { key: "time", label: "Time" },
+  { key: "level", label: "Level" },
+  { key: "thread", label: "Thread" },
+  { key: "location", label: "Location" },
+  { key: "method", label: "Method" },
+  { key: "message", label: "Message" },
+];
+const TEXT_FILTER_COLUMN_KEYS = new Set(TEXT_FILTER_COLUMNS.map(c => c.key));
+
+function textColumnValue(e, key) {
+  switch (key) {
+    case "time": return e.tsRaw || "";
+    case "level": return e.level || "";
+    case "thread": return e.thread || "";
+    case "location": return e.locationFull || "";
+    case "method": return e.method || "";
+    case "message": return e.message || "";
+    default: return "";
+  }
+}
+
+// Shared match logic for "text" filters — used both by getEntries (the
+// actual filter) and evaluateLiveMatch (the popup's live count preview), so
+// the two never disagree. `columns` empty/null searches e.raw (the whole
+// line) same as before this feature; caseSensitive off lower-cases both
+// sides same as the original behavior.
+function textFilterMatches(e, value, caseSensitive, columns) {
+  const q = caseSensitive ? value : value.toLowerCase();
+  if (columns && columns.length) {
+    return columns.some(key => {
+      const text = textColumnValue(e, key);
+      return (caseSensitive ? text : text.toLowerCase()).includes(q);
+    });
+  }
+  const text = caseSensitive ? e.raw : e.raw.toLowerCase();
+  return text.includes(q);
+}
+
 // Filter results only ever change for a node when it (or an ancestor) gets
 // re-parented — a filter's own type/value never change after creation. So we
 // can safely cache each node's computed entries and only clear the cache for
@@ -2631,8 +2715,8 @@ function getEntries(nodeId) {
   const parentEntries = getEntries(node.parentId);
   let result;
   if (node.filterType === "text") {
-    const q = String(node.value).toLowerCase();
-    result = parentEntries.filter(e => e.raw.toLowerCase().includes(q));
+    const value = String(node.value);
+    result = parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns));
   } else if (node.filterType === "after") {
     result = parentEntries.filter(e => e.ts >= node.value);
   } else if (node.filterType === "before") {
@@ -2863,6 +2947,8 @@ function snapshotSubtree(nodeId) {
   } else if (node.filterType === "context") { copy.contextBefore = node.contextBefore; copy.contextAfter = node.contextAfter; }
   if (node.assertions) copy.assertions = JSON.parse(JSON.stringify(node.assertions));
   if (node.ignoredColumns) copy.ignoredColumns = node.ignoredColumns.slice();
+  if (node.caseSensitive) copy.caseSensitive = true;
+  if (node.columns) copy.columns = node.columns.slice();
   if (node.highlightColor) copy.highlightColor = node.highlightColor;
   return copy;
 }
@@ -2883,6 +2969,8 @@ function restoreSubtree(snap) {
   } else if (snap.filterType === "context") { node.contextBefore = snap.contextBefore; node.contextAfter = snap.contextAfter; }
   if (snap.assertions) node.assertions = snap.assertions;
   if (snap.ignoredColumns) node.ignoredColumns = snap.ignoredColumns;
+  if (snap.caseSensitive) node.caseSensitive = true;
+  if (snap.columns) node.columns = snap.columns;
   if (snap.highlightColor) node.highlightColor = snap.highlightColor;
   state.nodes[node.id] = node;
   node.children = snap.children.map(c => restoreSubtree(c).id);
@@ -6392,6 +6480,8 @@ const filterTokenChips = el("#filterTokenChips");
 const filterLiveMatch = el("#filterLiveMatch");
 const filterPatternPreview = el("#filterPatternPreview");
 const filterInvertCheckbox = el("#filterInvertCheckbox");
+const filterCaseCheckbox = el("#filterCaseCheckbox");
+const filterColumnChips = el("#filterColumnChips");
 
 // editingFilterId: the node being edited, or null when the popup is in its
 // normal "create a new child filter" mode.
@@ -6412,17 +6502,43 @@ let filterPopupBaseId = null;
 // updateFilterPatternPreview) works identically in both modes.
 let filterPopupIgnored = new Set();
 
+// filterPopupColumns: working copy of the "text" filter's target-column
+// restriction (see TEXT_FILTER_COLUMNS/textFilterMatches) — same
+// create/edit lifecycle as filterPopupIgnored above, and the same
+// selection logic as state.levelFilter/applyLevelFilter: empty set searches
+// every column, non-empty restricts to those.
+let filterPopupColumns = new Set();
+
+function renderFilterColumnChips() {
+  filterColumnChips.querySelectorAll(".column-chip").forEach(chip => {
+    chip.classList.toggle("active", filterPopupColumns.has(chip.dataset.col));
+  });
+}
+filterColumnChips.addEventListener("click", ev => {
+  const chip = ev.target.closest(".column-chip");
+  if (!chip) return;
+  const key = chip.dataset.col;
+  if (filterPopupColumns.has(key)) filterPopupColumns.delete(key); else filterPopupColumns.add(key);
+  renderFilterColumnChips();
+  evaluateLiveMatch();
+});
+
 function openFilterPopup() {
   const node = state.nodes[state.activeId];
   if (!node) return;
   editingFilterId = null;
   filterPopupBaseId = state.activeId;
   filterPopupIgnored = new Set();
+  filterPopupColumns = new Set();
   filterPopupLabel.textContent = `Filter on “${node.name}”:`;
   filterSubmitBtn.textContent = "Add filter";
   filterInput.value = "";
   filterInvertCheckbox.checked = false;
   filterInvertCheckbox.disabled = false;
+  filterCaseCheckbox.checked = false;
+  filterCaseCheckbox.disabled = false;
+  renderFilterColumnChips();
+  filterColumnChips.classList.remove("hidden");
   filterLiveMatch.textContent = "";
   filterLiveMatch.className = "";
   filterPatternPreview.classList.add("hidden");
@@ -6444,12 +6560,15 @@ function openEditFilterPopup(nodeId) {
   editingFilterId = nodeId;
   filterPopupBaseId = node.parentId;
   filterPopupIgnored = new Set(node.ignoredColumns || []);
+  filterPopupColumns = new Set(node.filterType === "text" ? (node.columns || []) : []);
   state.activeId = nodeId;
   render();
   filterPopupLabel.textContent = `Edit filter on “${parent ? parent.name : "…"}”:`;
   filterSubmitBtn.textContent = "Save";
   filterInput.value = node.value;
   filterInvertCheckbox.checked = !!node.inverted;
+  filterCaseCheckbox.checked = node.filterType === "text" && !!node.caseSensitive;
+  renderFilterColumnChips();
   updateInvertAvailability();
   filterLiveMatch.textContent = "";
   filterLiveMatch.className = "";
@@ -6465,6 +6584,7 @@ function closeFilterPopup() {
   editingFilterId = null;
   filterPopupBaseId = null;
   filterPopupIgnored = new Set();
+  filterPopupColumns = new Set();
   filterPatternPreview.classList.add("hidden");
   filterPatternPreview.innerHTML = "";
 }
@@ -6520,8 +6640,9 @@ function evaluateLiveMatch() {
         " rows · " + spec.columns.length + " column" + (spec.columns.length === 1 ? "" : "s");
       if (matches === 0) filterLiveMatch.className = "warn";
     } else {
-      const q = val.toLowerCase();
-      let matches = baseEntries.reduce((n, e) => n + (e.raw.toLowerCase().includes(q) ? 1 : 0), 0);
+      const caseSensitive = filterCaseCheckbox.checked;
+      const columns = [...filterPopupColumns];
+      let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns) ? 1 : 0), 0);
       if (inverted) matches = baseEntries.length - matches;
       filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
       if (matches === 0) filterLiveMatch.className = "warn";
@@ -6603,7 +6724,10 @@ function updateFilterPatternPreview(val, baseEntries) {
 // Inverting an extraction pattern would keep only the rows that DON'T match
 // it — i.e. exactly the rows with nothing to extract — so the extraction
 // table would always be empty. Disable NOT for that case rather than let
-// the person build a filter that can never show anything.
+// the person build a filter that can never show anything. Case-sensitivity
+// and the target-column restriction are likewise "text" filter-only
+// options (an extract pattern already matches via its own regex against
+// e.message, see getEntries) — hidden/disabled the same way for the same reason.
 function updateInvertAvailability() {
   const isExtract = isExtractPattern(filterInput.value);
   filterInvertCheckbox.disabled = isExtract;
@@ -6611,9 +6735,17 @@ function updateInvertAvailability() {
     ? "NOT isn't available for extraction patterns"
     : "Keep entries that do NOT match instead";
   if (isExtract) filterInvertCheckbox.checked = false;
+
+  filterCaseCheckbox.disabled = isExtract;
+  filterCaseCheckbox.parentElement.title = isExtract
+    ? "Case sensitivity isn't available for extraction patterns"
+    : "Match exact upper/lower case";
+  if (isExtract) filterCaseCheckbox.checked = false;
+  filterColumnChips.classList.toggle("hidden", isExtract);
 }
 filterInput.addEventListener("input", () => { updateInvertAvailability(); evaluateLiveMatch(); });
 filterInvertCheckbox.addEventListener("change", evaluateLiveMatch);
+filterCaseCheckbox.addEventListener("change", evaluateLiveMatch);
 
 filterForm.addEventListener("submit", ev => {
   ev.preventDefault();
@@ -6632,8 +6764,10 @@ filterForm.addEventListener("submit", ev => {
     if (editingFilterId) updateFilterNode(editingFilterId, "extract", val, false, ignoredArr);
     else createFilterNode(filterPopupBaseId, "extract", val, false, ignoredArr);
   } else {
-    if (editingFilterId) updateFilterNode(editingFilterId, "text", val, filterInvertCheckbox.checked);
-    else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked);
+    const caseSensitive = filterCaseCheckbox.checked;
+    const columns = [...filterPopupColumns];
+    if (editingFilterId) updateFilterNode(editingFilterId, "text", val, filterInvertCheckbox.checked, undefined, caseSensitive, columns);
+    else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, null, caseSensitive, columns);
   }
   closeFilterPopup();
   revealFilteredView(); // a new/edited filter's result lives in the Filtered view
@@ -7305,6 +7439,8 @@ function serializeFilterBranch(nodeId) {
     if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
     if (node.filterType === "extract" && node.assertions) out.assertions = node.assertions;
     if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
+    if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
+    if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     return out;
   }
@@ -7444,6 +7580,10 @@ function importFilterJson(text) {
     }
     if (sn.filterType === "extract" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
       node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
+    }
+    if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
+    if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
+      node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
     }
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     state.nodes[node.id] = node;
@@ -7771,6 +7911,8 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
     if (node.filterType === "extract" && node.assertions) out.assertions = node.assertions;
     if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
+    if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
+    if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     return out;
   }
@@ -7885,6 +8027,10 @@ function materializeCachedFilters(fileNode, roots) {
     }
     if (sn.filterType === "extract" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
       node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
+    }
+    if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
+    if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
+      node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
     }
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     state.nodes[node.id] = node;
