@@ -574,8 +574,20 @@
   .minimap-lvl-debug{fill:var(--level-debug);}
   .minimap-lvl-trace{fill:var(--level-trace);}
   .minimap-lvl-other{fill:var(--text-secondary);}
-  .minimap-viewport{fill:var(--accent-soft); stroke:var(--accent); stroke-width:1;}
-  .minimap-viewport.hidden{display:none;}
+  /* Full range = the whole time span the Filtered view's result set covers
+     (every match, regardless of scroll/virtualization) — same look this
+     indicator always had. Rendered range = just the entries that currently
+     have DOM rows (a real subset for the virtualized table view; not drawn
+     at all for the Link view, which has no virtualization — see
+     updateMinimapRenderedRange). Nested visually inside the full range, one
+     step more saturated so it reads as "this part specifically" without
+     competing with the overlay bars for attention. */
+  .minimap-full-range{fill:var(--accent-soft); stroke:var(--accent); stroke-width:1;}
+  .minimap-full-range.hidden{display:none;}
+  .minimap-rendered-range{fill:var(--accent); opacity:.3; stroke:var(--accent-strong); stroke-width:1;}
+  .minimap-rendered-range.hidden{display:none;}
+  .minimap-marker-line{fill:var(--text-primary); opacity:.9; pointer-events:none;}
+  .minimap-marker-flag{fill:var(--text-primary); pointer-events:none;}
   #timelineMinimapTooltip{
     position:absolute; top:4px; transform:translateX(-50%);
     padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--border);
@@ -586,9 +598,10 @@
   /* Drag-select overlay: click-drag across the bars marks a from/to range
      that becomes a time filter on mouseup (see the drag handlers in the
      "Timeline minimap" script section). Separate elements from the SVG's
-     #minimapViewportRect (the "scrolled into view" indicator) on purpose —
-     that one is rebuilt from scratch on every renderTimelineMinimap() call,
-     which would otherwise wipe an in-progress drag mid-gesture. */
+     range-indicator rects (#minimapFullRangeRect/#minimapRenderedRangeRect)
+     on purpose — those are rebuilt from scratch on every
+     renderTimelineMinimap() call, which would otherwise wipe an in-progress
+     drag mid-gesture. */
   #timelineMinimapDragRect{
     position:absolute; background:var(--accent-soft); border:1px solid var(--accent);
     opacity:.7; pointer-events:none; z-index:6;
@@ -3250,7 +3263,11 @@ function renderMainView() {
     tableWrap.style.display = "none";
     linkWrap.style.display = "flex";
     statusStrip.classList.add("hidden");
-    timelineMinimapEl.classList.add("hidden");
+    // Pair entries duck-type as normal entries (ts/level — see "Link
+    // filter" in PROJECT.md), so the minimap works here unchanged; shown
+    // now so a brace selection's markers (see renderLinkView) have
+    // somewhere to actually appear.
+    timelineMinimapEl.classList.remove("hidden");
     renderLinkView(activeNode);
   } else {
     linkWrap.style.display = "none";
@@ -3949,6 +3966,11 @@ function renderLinkView(node) {
   linkInfo.textContent = pairs.length.toLocaleString("de-DE") + " pair" + (pairs.length === 1 ? "" : "s");
 
   const frag = document.createDocumentFragment();
+  // Flattened across every pair, fed to the minimap below — pairs
+  // themselves only carry the reference side's own .ts (see PROJECT.md
+  // "Link filter"), which would under-represent the true time span whenever
+  // a matched (target-side) entry lands outside its reference's own range.
+  const allRealEntries = [];
   pairs.forEach(pair => {
     const block = document.createElement("div");
     block.className = "pair-block";
@@ -3956,16 +3978,21 @@ function renderLinkView(node) {
     const brace = document.createElement("div");
     brace.className = "pair-brace";
     brace.title = "Click to select the pair · right-click to filter/extract on the combined entry";
+    const realEntries = getTupleEntries(pair);
+    // Read back by minimapMarkedEntries() when this brace is the selected
+    // one, so a click here marks every real entry the pair/tuple is made
+    // of on the minimap — not just a single point.
+    brace.dataset.entryIds = realEntries.map(e => e.id).join(",");
     brace.addEventListener("click", () => {
       const wasSelected = block.classList.contains("pair-selected");
       linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
       if (!wasSelected) block.classList.add("pair-selected");
+      updateMinimapSelectionMarkers();
     });
     brace.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, pair); });
 
     const rowsWrap = document.createElement("div");
     rowsWrap.className = "pair-rows";
-    const realEntries = getTupleEntries(pair);
     realEntries.forEach((entry, i) => {
       if (i > 0) {
         const delta = document.createElement("div");
@@ -3974,6 +4001,7 @@ function renderLinkView(node) {
         rowsWrap.appendChild(delta);
       }
       rowsWrap.appendChild(buildPairRow(entry));
+      allRealEntries.push(entry);
     });
 
     block.appendChild(brace);
@@ -3982,6 +4010,14 @@ function renderLinkView(node) {
   });
   linkBody.innerHTML = "";
   linkBody.appendChild(frag);
+
+  // The Link view has no row virtualization (every pair-block above is a
+  // real DOM node already) — renderTimelineMinimap draws the background/
+  // overlay bars and the full-range rectangle from allRealEntries; the
+  // rendered-range sub-rectangle is deliberately left alone (stays hidden),
+  // since there's no narrower "actually rendered" subset to distinguish it
+  // from here — see updateMinimapRenderedRange's own comment.
+  renderTimelineMinimap(getRootFileId(node.id), allRealEntries);
 }
 
 function buildPairRow(entry) {
@@ -5034,11 +5070,18 @@ tableBody.addEventListener("scroll", () => {
   }
   if (scrollTicking) return;
   scrollTicking = true;
-  requestAnimationFrame(() => { renderVisibleRows(); updateMinimapViewportIndicator(); scrollTicking = false; });
+  requestAnimationFrame(() => { renderVisibleRows(); updateMinimapRenderedRange(); scrollTicking = false; });
 });
 window.addEventListener("resize", () => {
   renderVisibleRows();
-  if (!timelineMinimapEl.classList.contains("hidden")) renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+  if (!timelineMinimapEl.classList.contains("hidden")) {
+    renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+    // Bucket geometry just changed (bar width depends on container width) —
+    // the rendered-range rect's pixel position/width need recomputing too,
+    // same as renderTable()'s own explicit call; only meaningful while the
+    // table view (not the Link view) is what's on screen.
+    if (tableWrap.style.display !== "none") updateMinimapRenderedRange();
+  }
 });
 
 /* ---------- Detail panel resizer (drag the handle above it) ---------- */
@@ -5100,7 +5143,10 @@ window.addEventListener("mousemove", ev => {
   // same reasoning as the window "resize" listener above.
   renderVisibleRows();
   renderHighlightVisibleRows();
-  if (!timelineMinimapEl.classList.contains("hidden")) renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+  if (!timelineMinimapEl.classList.contains("hidden")) {
+    renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+    if (tableWrap.style.display !== "none") updateMinimapRenderedRange();
+  }
 });
 
 window.addEventListener("mouseup", () => {
@@ -5170,7 +5216,8 @@ const MINIMAP_MIN_BUCKETS = 40;
 const MINIMAP_MAX_BUCKETS = 400;
 
 // Set by renderTimelineMinimap; read by the click/hover handlers and by
-// updateMinimapViewportIndicator so they don't need to recompute the scale.
+// updateMinimapFullRange/updateMinimapRenderedRange so they don't need to
+// recompute the scale.
 let minimapTMin = 0;
 let minimapTMax = 0;
 let minimapWidth = 0;
@@ -5203,14 +5250,15 @@ function minimapXToTs(x) {
 
 // Maps a timestamp to the horizontal span of the density BAR it falls into,
 // not just the single point minimapTsToX(ts) gives for its exact moment —
-// used by updateMinimapViewportIndicator so the "scrolled into view"
-// rectangle always covers a shown entry's whole bar. Depending on where in
-// its bucket's time range an entry's exact ts lands, minimapTsToX(ts) can
-// sit well short of that bar's right edge; using it directly for the
-// rectangle's end made the last shown entry's bar visibly stick out past the
-// highlighted range (person-reported via screenshot — a shown ERROR row's
-// bar looked like it was outside the current view). Mirrors the exact
-// bucketOf() formula renderTimelineMinimap uses to build the bars
+// used by updateMinimapFullRange/updateMinimapRenderedRange so their
+// rectangles always cover a shown entry's whole bar, not just the point
+// within it its own exact timestamp happens to fall at. Depending on where
+// in its bucket's time range an entry's exact ts lands, minimapTsToX(ts) can
+// sit well short of that bar's right edge; using it directly for a
+// rectangle's end used to make the last covered entry's bar visibly stick
+// out past the highlighted range (person-reported via screenshot — a shown
+// ERROR row's bar looked like it was outside the current view). Mirrors the
+// exact bucketOf() formula renderTimelineMinimap uses to build the bars
 // themselves, so the two always agree on which bucket a timestamp belongs to.
 function minimapBarSpan(ts) {
   if (minimapBucketCount === 0) { const x = minimapTsToX(ts); return { left: x, right: x }; }
@@ -5315,28 +5363,134 @@ function renderTimelineMinimap(rootId, viewEntries) {
   }
 
   timelineMinimapSvg.innerHTML = bgParts + ovParts +
-    '<rect class="minimap-viewport hidden" id="minimapViewportRect" x="0" y="0" width="0" height="' + H + '"/>';
+    '<rect class="minimap-full-range hidden" id="minimapFullRangeRect" x="0" y="0" width="0" height="' + H + '"/>' +
+    '<rect class="minimap-rendered-range hidden" id="minimapRenderedRangeRect" x="0" y="0" width="0" height="' + H + '"/>' +
+    '<g id="minimapSelectionMarkers"></g>';
 
-  updateMinimapViewportIndicator();
+  // Full range and the selection markers are meaningful for every caller
+  // (table view and Link view alike — see renderLinkView) since both only
+  // depend on minimapLastViewEntries/the current selection, not on which
+  // scrollable container is on screen. The rendered-range sub-rectangle is
+  // NOT updated here on purpose — it depends on the table's own scroll
+  // position (tableBody), which only means something when the table view is
+  // what's actually showing; renderTable() calls updateMinimapRenderedRange()
+  // itself right after this, and renderLinkView() simply never does, leaving
+  // that rect hidden (the Link view has no virtualization — see its own
+  // comment for why "rendered subset" doesn't apply there).
+  updateMinimapFullRange();
+  updateMinimapSelectionMarkers();
 }
 
-// Repositions the viewport-range rectangle to match what's actually scrolled
-// into view in the table, without rebuilding the rest of the minimap —
+// Repositions the "whole Filtered-view result" rectangle to span from the
+// earliest to the latest entry in minimapLastViewEntries — i.e. everything
+// the active filter currently matches, independent of scroll position or
+// virtualization. Scans for min/max rather than assuming entries[0]/
+// entries[last] are the extremes: true for the table view's chronological
+// currentViewEntries, but NOT guaranteed for the Link view's flattened pair
+// entries (a "before" hop's matched entry can sit earlier than its own
+// reference entry — see "Link filter" in PROJECT.md), so this stays correct
+// for both callers instead of relying on an ordering assumption that only
+// holds for one of them.
+function updateMinimapFullRange() {
+  const rect = el("#minimapFullRangeRect");
+  if (!rect) return;
+  const entries = minimapLastViewEntries;
+  if (!entries || entries.length === 0) { rect.classList.add("hidden"); return; }
+  let minTs = Infinity, maxTs = -Infinity;
+  for (const e of entries) {
+    if (e.ts < minTs) minTs = e.ts;
+    if (e.ts > maxTs) maxTs = e.ts;
+  }
+  const x1 = minimapBarSpan(minTs).left;
+  const x2 = minimapBarSpan(maxTs).right;
+  rect.setAttribute("x", x1.toFixed(1));
+  rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
+  rect.classList.remove("hidden");
+}
+
+// Repositions the "currently rendered" sub-rectangle to match what actually
+// has DOM rows right now, nested inside the full-range rectangle above —
 // cheap enough to call on every scroll frame (see the tableBody scroll
-// listener above).
-function updateMinimapViewportIndicator() {
-  const rect = el("#minimapViewportRect");
+// listener below). Table-view-only: the table virtualizes (only rows within
+// BUFFER_ROWS of the scrolled viewport exist as DOM nodes at all), so this
+// sub-range is normally a real, narrower subset of the full filtered range;
+// only renderTable() calls this (see renderTimelineMinimap's own comment for
+// why it isn't called from there directly).
+function updateMinimapRenderedRange() {
+  const rect = el("#minimapRenderedRangeRect");
   if (!rect) return;
   if (!minimapInteractive || currentViewEntries.length === 0) { rect.classList.add("hidden"); return; }
 
   const viewportH = tableBody.clientHeight || 400;
-  const startIdx = Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT));
-  const endIdx = Math.min(currentViewEntries.length - 1, Math.ceil((tableBody.scrollTop + viewportH) / ROW_HEIGHT));
+  // Both clamped to the list's bounds — scrollTop can briefly be stale for
+  // the list currentViewEntries just became (e.g. switching to a much
+  // smaller filtered result while previously scrolled deep into a larger
+  // one; the actual scroll-position reset happens later in renderTable(),
+  // after this runs — see its own comment). Bugfix: startIdx used to only
+  // clamp at 0, so that scenario indexed straight past the end of the array.
+  const maxIdx = currentViewEntries.length - 1;
+  const startIdx = Math.min(maxIdx, Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT)));
+  const endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((tableBody.scrollTop + viewportH) / ROW_HEIGHT)));
   const x1 = minimapBarSpan(currentViewEntries[startIdx].ts).left;
   const x2 = minimapBarSpan(currentViewEntries[endIdx].ts).right;
   rect.setAttribute("x", x1.toFixed(1));
   rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
   rect.classList.remove("hidden");
+}
+
+// Resolves which real entries should get a position marker on the minimap
+// right now. Two sources, checked in order:
+//  1. A Link view pair currently selected via its brace (see renderLinkView)
+//     — every REAL entry the pair/tuple is made of (getTupleEntries), read
+//     back off a data-entry-ids attribute stashed on the brace at render
+//     time, since that's cheaper than re-deriving it from getEntries() here.
+//     Gated on the Link view actually being the active view: renderLinkView
+//     only rebuilds #linkBody (clearing any stale .pair-selected) the next
+//     time it itself runs, which doesn't happen just from switching away —
+//     without this gate, a brace left selected before navigating to an
+//     unrelated node would keep incorrectly marking its old entries.
+//  2. The ordinary single selection, state.selectedId — resolved via
+//     entryIndex first (fast, and works even off-screen, same as
+//     updateDetailPanel), falling back to a scan of currentViewEntries/
+//     currentHighlightViewEntries for the one case entryIndex can't cover: a
+//     selected row that's itself a synthetic Link pair entry (duck-types as
+//     a normal entry — see "Link filter" in PROJECT.md — but is never
+//     entryIndex-registered, only real parsed entries are).
+// Returns [] when nothing should be marked.
+function minimapMarkedEntries() {
+  const activeNode = state.nodes[state.activeId];
+  const isLinkActive = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
+  const selectedBrace = isLinkActive ? linkBody.querySelector(".pair-selected .pair-brace") : null;
+  if (selectedBrace && selectedBrace.dataset.entryIds) {
+    return selectedBrace.dataset.entryIds.split(",").map(id => entryIndex[id]).filter(Boolean);
+  }
+  if (!state.selectedId) return [];
+  const found = entryIndex[state.selectedId]
+    || currentViewEntries.find(e => e.id === state.selectedId)
+    || currentHighlightViewEntries.find(e => e.id === state.selectedId);
+  return found ? [found] : [];
+}
+
+// Redraws the selected-entry marker(s) — a thin vertical line plus a small
+// flag at the top, one per entry from minimapMarkedEntries() — without
+// touching anything else in the minimap. Cheap enough to call on every
+// selection change (see applySelection and the Link view's brace click
+// handler). Not gated on minimapInteractive/column-sort like the range
+// rectangles and click-to-jump are: "where is this entry in time" stays
+// meaningful regardless of what order the table itself is currently sorted
+// into, unlike those two features which specifically assume chronological
+// row adjacency.
+function updateMinimapSelectionMarkers() {
+  const g = el("#minimapSelectionMarkers");
+  if (!g) return;
+  const marked = minimapMarkedEntries();
+  if (marked.length === 0) { g.innerHTML = ""; return; }
+  const H = Math.max(20, timelineMinimapSvg.clientHeight || 52);
+  g.innerHTML = marked.map(e => {
+    const x = minimapTsToX(e.ts);
+    return '<rect class="minimap-marker-line" x="' + (x - 1).toFixed(1) + '" y="0" width="2" height="' + H + '"/>' +
+      '<path class="minimap-marker-flag" d="M ' + (x - 4).toFixed(1) + ' 0 L ' + (x + 4).toFixed(1) + ' 0 L ' + x.toFixed(1) + ' 6 Z"/>';
+  }).join("");
 }
 
 // Click-to-jump: nearest entry in time, same "select + scroll + flash"
@@ -5384,13 +5538,14 @@ timelineMinimapSvg.addEventListener("mouseleave", () => { if (!minimapDragging) 
 
    Deliberately built on its own DOM elements (#timelineMinimapDragRect/
    Label, plain positioned <div>s, not part of the SVG) rather than another
-   SVG rect like #minimapViewportRect — that element (and the rest of the
-   SVG's markup) gets fully torn down and rebuilt by renderTimelineMinimap()
-   on every render (tail tick, level toggle, filter switch, ...), which can
-   happen mid-drag; a plain sibling div survives that untouched. This also
-   keeps the guarantee FEATURE_BACKLOG.md called out explicitly: the
-   "filtered view time range" viewport rectangle's own update path
-   (updateMinimapViewportIndicator) is completely untouched by any of this. */
+   SVG rect like #minimapFullRangeRect/#minimapRenderedRangeRect — those
+   elements (and the rest of the SVG's markup) get fully torn down and
+   rebuilt by renderTimelineMinimap() on every render (tail tick, level
+   toggle, filter switch, ...), which can happen mid-drag; a plain sibling
+   div survives that untouched. This also keeps the guarantee
+   FEATURE_BACKLOG.md called out explicitly: the "filtered view time range"
+   rectangles' own update paths (updateMinimapFullRange/
+   updateMinimapRenderedRange) are completely untouched by any of this. */
 const MINIMAP_DRAG_THRESHOLD_PX = 3; // below this, treat it as the existing click-to-jump instead
 let minimapDragging = false;
 let minimapDragStartX = 0; // in minimapWidth units, captured at mousedown
@@ -5581,6 +5736,12 @@ function applySelection(entryId) {
     state.tailFollow = false;
     updateTailJumpBtn();
   }
+  // A plain row selection always supersedes any Link-view pair-brace marker
+  // (see minimapMarkedEntries' priority order) — clear it here so a stale
+  // "Klammer" doesn't keep overriding a fresh single-row selection made
+  // elsewhere. Cheap no-op when the minimap is hidden or nothing's marked.
+  linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
+  updateMinimapSelectionMarkers();
   return previousId;
 }
 
@@ -5918,6 +6079,10 @@ function renderTable() {
   tableSpacer.style.height = (currentViewEntries.length * ROW_HEIGHT + 22) + "px";
   renderStatusStrip();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
+  // Table-view-specific ("what's actually got a DOM row right now") — see
+  // updateMinimapRenderedRange's own comment for why this isn't folded into
+  // renderTimelineMinimap itself.
+  updateMinimapRenderedRange();
   updateSortIndicators();
 
   if (state.scrollTargetId) {
