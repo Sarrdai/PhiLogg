@@ -1,4 +1,4 @@
-// LogTrail — consolidated jsdom regression suite.
+// PhiLogg — consolidated jsdom regression suite.
 //
 // This file merges the assertions written across many separate implementation
 // sessions (see PROJECT.md changelog for the feature history) into ONE
@@ -8,9 +8,9 @@
 // session map of what was pulled in, what was rewritten, and what was
 // deliberately dropped because the feature it tested no longer exists.
 //
-// Run: npm install && node logtrail.regression.test.js
+// Run: npm install && node philogg.regression.test.js
 //
-// Pattern (see PROJECT.md "Testing approach"): load the REAL logtrail.html
+// Pattern (see PROJECT.md "Testing approach"): load the REAL philogg.html
 // with jsdom's runScripts:"dangerously" and drive it through actual DOM
 // events — clicks, keydown, drag sequences, form submits — asserting on
 // resulting state/DOM rather than re-implementing logic in isolation.
@@ -29,15 +29,15 @@ const path = require("path");
 const { IDBFactory, IDBKeyRange } = require("fake-indexeddb");
 
 // Default assumes this file lives in a `tests/` (or similarly named) folder
-// directly at the project root, sibling to logtrail.html — e.g.:
+// directly at the project root, sibling to philogg.html — e.g.:
 //   project-root/
-//     logtrail.html
+//     philogg.html
 //     PROJECT.md
 //     tests/
-//       logtrail.regression.test.js   <- this file
+//       philogg.regression.test.js   <- this file
 //       package.json
-// Override with LOGTRAIL_HTML=/path/to/logtrail.html if placed elsewhere.
-const HTML_PATH = process.env.LOGTRAIL_HTML || path.join(__dirname, "..", "logtrail.html");
+// Override with PHILOGG_HTML=/path/to/philogg.html if placed elsewhere.
+const HTML_PATH = process.env.PHILOGG_HTML || path.join(__dirname, "..", "philogg.html");
 const html = fs.readFileSync(HTML_PATH, "utf8");
 
 let passed = 0, failed = 0;
@@ -71,7 +71,7 @@ async function withApp(run, opts = {}) {
   const dom = new JSDOM(html, {
     runScripts: "dangerously",
     pretendToBeVisual: true,
-    url: "http://localhost/logtrail.html",
+    url: "http://localhost/philogg.html",
     beforeParse(window) {
       // opts.indexedDB: a (shareable) IDBFactory — passing the SAME instance
       // to two windows makes the second one see the first one's writes,
@@ -723,7 +723,7 @@ await withApp(async (w, d, T) => {
   assert(targetRoot, "primary chain tagged attach:target");
   assert(fileRoot, "pulled-in and/or dependency chain tagged attach:file");
 
-  const json = JSON.stringify({ format: "logtrail-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
 
   // Load onto a THIRD, fresh file — re-evaluates against new data, doesn't replay a stored result.
   // Loaded onto a CHILD FILTER (not the file itself) so attach:"target" (goes
@@ -1096,7 +1096,7 @@ await withApp(async (w, d, T) => {
   const before = html.dataset.theme;
   fireClick(d.querySelector("#btnTheme"), w);
   assert(html.dataset.theme !== before, "theme toggle flips data-theme, was " + before + " now " + html.dataset.theme);
-  assert(w.localStorage.getItem("logtrail-theme") === html.dataset.theme, "theme choice persisted to localStorage");
+  assert(w.localStorage.getItem("philogg-theme") === html.dataset.theme, "theme choice persisted to localStorage");
 });
 
 /* ============================================================
@@ -1308,7 +1308,7 @@ section("20. Session cache: persist in one window, restore in the next");
   // --- Escape hatch: localStorage flag disables persistence entirely ---
   const factory2 = new IDBFactory();
   await withApp(async (w, d, T) => {
-    w.localStorage.setItem("logtrail-cache-enabled", "0");
+    w.localStorage.setItem("philogg-cache-enabled", "0");
     const f = await w.addFile("nocache.log", makeLog(0, 5), () => {});
     await w.persistFileNode(f);
     await w.persistMetaNow();
@@ -1390,11 +1390,11 @@ section("20. Session cache: persist in one window, restore in the next");
     // Deselect the unrelated file — its filters/bookmarks must not be exported.
     d.querySelector('.session-include[data-file-id="' + other.id + '"]').checked = false;
     fireClick(d.querySelector("#sessionExportConfirm"), w);
-    assert(captured.length === 1 && captured[0].name.startsWith("logtrail-session-"),
+    assert(captured.length === 1 && captured[0].name.startsWith("philogg-session-"),
       "export: confirm writes exactly one JSON via the download fallback");
     exportedJson = captured[0].json;
     const doc = JSON.parse(exportedJson);
-    assert(doc.format === "logtrail-session-export" && doc.version === 1, "export: envelope format/version");
+    assert(doc.format === "philogg-session-export" && doc.version === 1, "export: envelope format/version");
     assert(doc.files.length === 1 && doc.files[0].name === "worker-3.log", "export: deselected file excluded");
     const rec = doc.files[0];
     assert(rec.entryCount === 30 && typeof rec.fullHash === "string" && rec.fullHash.length === 16,
@@ -1536,9 +1536,9 @@ section("20. Session cache: persist in one window, restore in the next");
   // --- Plain export sanity: a non-session JSON is rejected ---
   await withApp(async (w, d, T) => {
     await w.addFile("x.log", makeLog(0, 3), () => {});
-    w.importSessionJson(JSON.stringify({ format: "logtrail-filters", roots: [] }));
+    w.importSessionJson(JSON.stringify({ format: "philogg-filters", roots: [] }));
     await sleep(40);
-    assert(d.querySelector("#copyToast").textContent.includes("Not a LogTrail session file"),
+    assert(d.querySelector("#copyToast").textContent.includes("Not a PhiLogg session file"),
       "guard: filter-branch JSON is rejected as a session file");
   });
 }
@@ -2039,7 +2039,7 @@ await withApp(async (w, d, T) => {
   const branch = w.serializeFilterBranch(node.id);
   const savedRoot = branch.roots.find(r => r.attach === "target");
   assert(savedRoot && savedRoot.ignoredColumns && savedRoot.ignoredColumns.includes(1), "serializeFilterBranch writes ignoredColumns into the saved JSON");
-  const json = JSON.stringify({ format: "logtrail-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
   const anchor = w.createFilterNode(f.id, "text", "id=");
   w.render();
   const loadScript = d.createElement("script");
@@ -2157,7 +2157,7 @@ await withApp(async (w, d, T) => {
 
   // --- Subtitle removed ---
   assert(d.querySelector(".brand-tag") === null, "the 'local, single-file log viewer' subtitle is gone");
-  assert(d.querySelector(".brand-name").textContent === "LogTrail", "brand name itself is untouched");
+  assert(d.querySelector(".brand-name").textContent === "PhiLogg", "brand name itself is untouched");
 
   // --- Merged view bar structure: tabs, level filter, breadcrumb share one row ---
   const viewBar = d.querySelector("#viewBar");
@@ -2412,7 +2412,7 @@ await withApp(async (w, d, T) => {
    toggleBookmark() recompute currentViewEntries/pinnedOnlyIds itself when
    pin mode is on, WITHOUT going through renderTable() (which would reset
    scroll to the top on every single bookmark toggle — see the fix's own
-   comment in logtrail.html).
+   comment in philogg.html).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("28. Bugfix: pinned Filtered view now updates on bookmark add/remove, not just on the pin toggle");
@@ -3020,7 +3020,7 @@ await withApp(async (w, d, T) => {
   // (confirms FILTER_TYPES + the generic `value` passthrough is all that was
   // needed — no carrier-specific code for the new object-shaped value) ---
   const branch = w.serializeFilterBranch(ctxAfterNode.id);
-  const json = JSON.stringify({ format: "logtrail-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
   const fc = await w.addFile("c.log", makeLog(0, 30), () => {});
   w.render();
   W_setLoadTarget(w, fc.id);
@@ -3125,7 +3125,7 @@ await withApp(async (w, d, T) => {
    person-reported: the range indicator only ever showed what's scrolled
    into view, never the Filtered view's whole matched span). See
    updateMinimapFullRange/updateMinimapRenderedRange/
-   updateMinimapSelectionMarkers/minimapMarkedEntries in logtrail.html.
+   updateMinimapSelectionMarkers/minimapMarkedEntries in philogg.html.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("34. Minimap: full-range vs rendered-subset rects, selection markers, Link view");
@@ -3284,7 +3284,7 @@ process.exit(failed ? 1 : 0);
               covers persist round-trip incl. multi-line raw text,
               linkedRef remap on an AND node, bookmark-by-ordinal,
               settings, file-deletion cache cleanup, and the
-              "logtrail-cache-enabled"="0" escape hatch. Every OTHER group
+              "philogg-cache-enabled"="0" escape hatch. Every OTHER group
               still runs without any IndexedDB, which implicitly covers
               the feature's graceful-degradation path.
    Group 21  — this session (2026-08-12): session export/import. Covers
