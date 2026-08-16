@@ -1703,6 +1703,7 @@
       <div>Check 2+ nodes for merge/combine actions</div>
       <div>Click a row — select it</div>
       <div>↑ / ↓ — move selection up/down</div>
+      <div>Click a tree row/breadcrumb — arrow keys then navigate the tree: ↑ / ↓ move, ← parent, → first child</div>
       <div>Right-click a row — filter before/after</div>
       <div>Double-click a row — jump to it in the full log</div>
       <div>Files keep updating live (tail) — scroll up to pause, “Newest” to follow again</div>
@@ -1774,6 +1775,11 @@ const state = {
   nodes: {},      // id -> node
   rootIds: [],    // file node ids, in load order
   activeId: null,
+  focusRegion: "entries", // "entries" | "tree" — which pane the arrow keys act on;
+                          // "tree" is set by clicking a tree row/breadcrumb chip or
+                          // dropping a drag onto a new parent, "entries" by any entry
+                          // selection (see applySelection) — see moveTreeSelection
+
   clipboard: null, // { id, mode: 'copy' | 'cut' }, set via Ctrl+C / Ctrl+X
   levelFilter: new Set(),  // active level toggles (empty = show all)
   scrollTargetId: null,    // entry id to scroll to & flash on next table render
@@ -3419,6 +3425,51 @@ function renderTree() {
   renderTreeActionBar();
 }
 
+// Flattened depth-first node-id order, matching the tree's visual
+// top-to-bottom layout (renderNode walks state.rootIds/children the same
+// way) — the order arrow-key tree navigation (moveTreeSelection) steps
+// through.
+function flattenTreeIds() {
+  const ids = [];
+  (function walk(list) {
+    list.forEach(id => {
+      ids.push(id);
+      const node = state.nodes[id];
+      if (node) walk(node.children);
+    });
+  })(state.rootIds);
+  return ids;
+}
+
+// Moves state.activeId with the arrow keys once the tree has keyboard focus
+// (state.focusRegion === "tree" — set by clicking a tree row/breadcrumb chip
+// or dropping a drag onto a new parent; cleared back to "entries" by any
+// entry-table selection, see applySelection). Up/Down step through the
+// flattened visual order; Left/Right jump to the parent/first child —
+// there's no collapse state to toggle here, every node is always expanded.
+function moveTreeSelection(key) {
+  const ids = flattenTreeIds();
+  if (ids.length === 0) return;
+  const node = state.nodes[state.activeId];
+
+  let targetId = null;
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    const idx = node ? ids.indexOf(state.activeId) : -1;
+    const delta = key === "ArrowDown" ? 1 : -1;
+    const nextIdx = idx === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, idx + delta));
+    targetId = ids[nextIdx];
+  } else if (key === "ArrowLeft") {
+    targetId = node && node.parentId ? node.parentId : null;
+  } else if (key === "ArrowRight") {
+    targetId = node && node.children.length ? node.children[0] : null;
+  }
+  if (!targetId) return;
+
+  state.multiSelect = new Set([targetId]);
+  state.activeId = targetId;
+  render();
+}
+
 // Short type label used by both a real filter node (typeTagFor above) and a
 // serialized filter-tree-history snapshot (which has the same filterType
 // field but isn't a live state.nodes entry) — shared so the ghost preview
@@ -3615,6 +3666,7 @@ function renderNode(id, depth) {
       state.multiSelect = new Set([id]);
     }
     state.activeId = id;
+    state.focusRegion = "tree";
     render();
   });
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openTreeContextMenu(ev, id); });
@@ -3651,7 +3703,7 @@ function renderNode(id, depth) {
     row.classList.remove("drag-over");
     if (!draggedNodeId) return;
     const moved = moveFilterNodeWithUndo(draggedNodeId, id);
-    if (moved) state.activeId = draggedNodeId;
+    if (moved) { state.activeId = draggedNodeId; state.focusRegion = "tree"; }
     else showCopyToast("Can't move here — would create a circular reference");
     draggedNodeId = null;
     render();
@@ -3686,6 +3738,7 @@ function renderBreadcrumb() {
     chip.addEventListener("click", () => {
       state.multiSelect = new Set([node.id]);
       state.activeId = node.id;
+      state.focusRegion = "tree";
       render();
     });
     breadcrumbEl.appendChild(chip);
@@ -5818,6 +5871,7 @@ function updateSelectedRowClass(previousId) {
 function applySelection(entryId) {
   const previousId = state.selectedId;
   state.selectedId = entryId;
+  state.focusRegion = "entries";
   // Picking a row means the user wants to look at *this* entry — stop the
   // view from being yanked to the bottom by incoming tailed entries.
   if (state.tailFollow && isTailedLogViewActive()) {
@@ -7660,6 +7714,13 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (inInput) return; // let normal copy/paste and text-cursor movement happen inside text inputs
+
+  if (state.focusRegion === "tree" &&
+      (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
+    ev.preventDefault();
+    moveTreeSelection(ev.key);
+    return;
+  }
 
   if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
     if (extractWrap.style.display !== "none") return; // extraction table has its own click/drag selection
