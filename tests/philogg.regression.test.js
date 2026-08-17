@@ -641,8 +641,11 @@ await withApp(async (w, d, T) => {
   T.state.activeId = node.id;
   w.render();
 
-  // Range mode via the real dialog
-  const assertBtn = d.querySelector(".extract-assert-btn");
+  // Range mode via the real dialog. Targeted by data-assert-col, not the
+  // first ".extract-assert-btn" in the DOM — the synthetic Index/ΔT columns
+  // (see INDEX_COL/DELTA_T_COL) are plottable too and now get their own
+  // assert buttons ahead of the real extracted column's.
+  const assertBtn = d.querySelector('.extract-assert-btn[data-assert-col="0"]');
   fireClick(assertBtn, w);
   assert(!d.querySelector("#assertDialog").classList.contains("hidden"), "clicking the target-icon button opens the assertion dialog");
   d.querySelector("#assertMinInput").value = "3";
@@ -1156,9 +1159,12 @@ await withApp(async (w, d, T) => {
   w.render();
 
   assert(T.extractRowsData.length === 10, "extraction table populated, one row per matching entry");
-  assert(T.extractColumns[0].type === "int", "extracted column typed as int");
+  assert(T.extractColumns.find(c => c.colIndex === 0).type === "int", "extracted column typed as int");
 
-  const sortBtn = d.querySelector(".extract-sort-btn");
+  // Targeted by data-sort-col, not the first ".extract-sort-btn" in the DOM
+  // — the synthetic Index/ΔT columns (see INDEX_COL/DELTA_T_COL) are always
+  // prepended and sortable too, ahead of the real extracted column's button.
+  const sortBtn = d.querySelector('.extract-sort-btn[data-sort-col="0"]');
   fireClick(sortBtn, w);
   const firstVal = +T.extractRowsData[0].values[0];
   const lastVal = +T.extractRowsData[T.extractRowsData.length - 1].values[0];
@@ -1976,22 +1982,27 @@ await withApp(async (w, d, T) => {
   assert(node.filterType === "extract" && node.ignoredColumns && node.ignoredColumns.length === 1 && node.ignoredColumns.includes(1),
     "a filter created via the popup carries ignoredColumns toggled from the live preview, got " + JSON.stringify(node.ignoredColumns));
 
-  /* ---------- Table reflects the ignored column immediately ---------- */
-  assert(T.extractColumns.length === 2, "extractColumns excludes the ignored column, got " + T.extractColumns.length);
+  /* ---------- Table reflects the ignored column immediately ----------
+     4, not 2: extractColumns always leads with the synthetic Index/ΔT
+     columns (see INDEX_COL/DELTA_T_COL) ahead of the 2 visible pattern
+     columns ("id"/"score" — "name" stays excluded, ignored). */
+  assert(T.extractColumns.length === 4, "extractColumns excludes the ignored column, got " + T.extractColumns.length);
   assert(!T.extractColumns.some(c => c.colIndex === 1), "column index 1 ('name') is not among the visible columns");
   const ths = [...d.querySelectorAll("#extractHead th[data-col]")];
-  assert(ths.length === 2 && ths.every(th => +th.dataset.col !== 1), "no <th> rendered for the ignored column, got data-col=[" + ths.map(t => t.dataset.col).join(",") + "]");
+  assert(ths.length === 4 && ths.every(th => +th.dataset.col !== 1), "no <th> rendered for the ignored column, got data-col=[" + ths.map(t => t.dataset.col).join(",") + "]");
   const firstRowTds = [...d.querySelectorAll("#extractBody tr:first-child td[data-col]")];
-  assert(firstRowTds.length === 2 && firstRowTds.every(td => +td.dataset.col !== 1), "no <td> rendered for the ignored column either");
-  assert(T.extractRowsData.every(r => r.values.length === 3), "row.values still holds all 3 raw captured values — matching itself is untouched by ignoring a column");
+  assert(firstRowTds.length === 4 && firstRowTds.every(td => +td.dataset.col !== 1), "no <td> rendered for the ignored column either");
+  assert(T.extractRowsData.every(r => r.values.length === 3), "row.values still holds all 3 raw captured values — matching itself is untouched by ignoring a column (Index/ΔT ride along as negative-index expandos, outside this .length)");
 
   /* ---------- Export excludes the ignored column from both header and body ---------- */
   let copied = null;
   w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
   w.copyWholeExtractTable();
   const copiedLines = copied.split("\n");
-  assert(copiedLines[0] === "value\tvalue 3", "copy-whole-table header includes only the visible columns' names, got " + JSON.stringify(copiedLines[0]));
-  assert(copiedLines[1] === "0\t0.5", "copy-whole-table body row includes only the visible columns' values (ignored 'name' column dropped), got " + JSON.stringify(copiedLines[1]));
+  // Leads with Index/ΔT (ΔT empty on the first row — no previous entry), then
+  // the two visible pattern columns; "name" (ignored) stays excluded.
+  assert(copiedLines[0] === "Index\tΔT (ms)\tvalue\tvalue 3", "copy-whole-table header includes only the visible columns' names, got " + JSON.stringify(copiedLines[0]));
+  assert(copiedLines[1] === "0\t\t0\t0.5", "copy-whole-table body row includes only the visible columns' values (ignored 'name' column dropped), got " + JSON.stringify(copiedLines[1]));
 
   /* ---------- Edit mode pre-populates the preview from node.ignoredColumns ---------- */
   w.openEditFilterPopup(node.id);
@@ -2007,7 +2018,7 @@ await withApp(async (w, d, T) => {
   assert(chips[1].classList.contains("chip-ignored"), "the ignored column's chip is visually dimmed in the post-creation pattern view too");
   fireClick(chips[1], w); // un-ignore "name" by clicking its chip directly (no popup involved)
   assert(!node.ignoredColumns, "clicking the pattern chip un-ignores the column directly on the node (empty ignoredColumns is deleted, not left as [])");
-  assert(T.extractColumns.length === 3, "table immediately shows all 3 columns again after un-ignoring");
+  assert(T.extractColumns.length === 5, "table immediately shows all 3 pattern columns (+2 synthetic Index/ΔT) again after un-ignoring");
   fireClick(d.querySelectorAll("#extractPatternView .pattern-chip")[1], w); // re-ignore for the checks below
   assert(node.ignoredColumns && node.ignoredColumns.includes(1), "re-ignored via the same chip toggle, for the persistence checks below");
 
@@ -2018,11 +2029,15 @@ await withApp(async (w, d, T) => {
   assert(w.computeColumnStats(0) === null, "computeColumnStats returns null for a currently-ignored column");
   const statsText = d.querySelector("#extractStatsBar").textContent;
   assert(statsText.includes("value 3") && !statsText.includes("value:"), "stats bar shows the visible numeric column ('value 3'/score) but omits the ignored one ('value'/id), got " + JSON.stringify(statsText));
-  assert(d.querySelectorAll("#extractHead .extract-assert-btn").length === 1, "only the visible numeric column gets a value-assertion button — an ignored column isn't assertable");
+  // 3, not 1: the synthetic Index/ΔT columns are always visible/plottable
+  // too, alongside the one visible pattern column ("score") — "id" stays
+  // excluded, ignored.
+  assert(d.querySelectorAll("#extractHead .extract-assert-btn").length === 3, "only the visible numeric columns get a value-assertion button — an ignored column isn't assertable");
 
   w.switchExtractView("plot");
   const xOptions = [...d.querySelectorAll("#plotXSelect option")].map(o => +o.value);
-  assert(xOptions.length === 1 && xOptions[0] === 2, "ignored numeric column is not offered as a plot axis candidate, got " + JSON.stringify(xOptions));
+  assert(xOptions.length === 3 && xOptions.includes(-2) && xOptions.includes(-1) && xOptions.includes(2),
+    "ignored numeric column is not offered as a plot axis candidate; Index/ΔT and the visible 'score' column are, got " + JSON.stringify(xOptions));
   w.switchExtractView("table");
 
   /* ---------- Persistence: cloneSubtree (copy/paste) ---------- */
@@ -4150,6 +4165,87 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 42 — Extraction table: synthetic Index + ΔT columns
+   Origin: this session (2026-08-17), person-requested. Every extraction
+   table now leads with two synthetic columns ahead of the pattern's own
+   (INDEX_COL = -2, DELTA_T_COL = -1, negative so they never collide with
+   spec.columns' dense 0..n-1 range): a 0-based row-order Index (also the
+   default X axis for the Plot tab, since extractColumns always starts with
+   it — see renderPlotControls) and ΔT, the gap in ms to the previous
+   entry's real timestamp (empty on the first row), so values can be
+   plotted against actual elapsed time, not just ordinal position.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("42. Extraction table: synthetic Index + ΔT columns");
+  // Hand-built (not makeLog) for exact, easy-to-check gaps: 0ms, then +1500ms, then +2000ms.
+  const log =
+    `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"n=5"\n` +
+    `2024-01-15 10:00:01,500\tINFO\t"main"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"n=3"\n` +
+    `2024-01-15 10:00:03,500\tINFO\t"main"\tC:\\src\\Foo.cs\tline 2\t[DoWork]\t"n=9"\n`;
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "extract", "n=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+
+  /* ---------- Column descriptors: Index/ΔT leftmost, ahead of the pattern column ---------- */
+  assert(T.extractColumns.length === 3, "3 columns: synthetic Index + ΔT, plus the one pattern column, got " + T.extractColumns.length);
+  assert(T.extractColumns[0].colIndex === -2 && T.extractColumns[0].name === "Index" && T.extractColumns[0].type === "int",
+    "Index is leftmost (colIndex -2), typed int");
+  assert(T.extractColumns[1].colIndex === -1 && T.extractColumns[1].name.includes("ΔT") && T.extractColumns[1].type === "int",
+    "ΔT is second (colIndex -1), typed int");
+  assert(T.extractColumns[2].colIndex === 0, "the real extracted pattern column follows, keeping its own colIndex 0");
+
+  /* ---------- Values: 0-based row order, ms gap to the previous entry ---------- */
+  assert(T.extractRowsData.length === 3, "sanity: one row per matching entry");
+  const [r0, r1, r2] = T.extractRowsData;
+  assert(r0.values[-2] === "0" && r1.values[-2] === "1" && r2.values[-2] === "2", "Index counts up 0,1,2 with row order");
+  assert(r0.values[-1] === "", "first row has no previous entry, so ΔT is blank rather than 0 or NaN");
+  assert(r1.values[-1] === "1500", "ΔT is the gap in ms to the PREVIOUS entry's real timestamp (1500ms), got " + r1.values[-1]);
+  assert(r2.values[-1] === "2000", "ΔT for the third row is the gap from the second (2000ms), got " + r2.values[-1]);
+  assert(r0.values.length === 1 && r1.values.length === 1, "Index/ΔT ride along as negative-index expandos — the dense spec.columns values array (.length) is untouched");
+
+  /* ---------- Header DOM: no numbered pattern-chip badge for the synthetic columns ---------- */
+  const ths = [...d.querySelectorAll("#extractHead th[data-col]")];
+  assert(ths.length === 3 && ths[0].dataset.col === "-2" && ths[1].dataset.col === "-1" && ths[2].dataset.col === "0",
+    "header renders Index, ΔT, then the pattern column left to right, got data-col=[" + ths.map(t => t.dataset.col).join(",") + "]");
+  assert(ths[0].textContent.includes("Index") && ths[1].textContent.includes("ΔT"), "header cells are labeled Index / ΔT");
+  assert(!ths[0].querySelector(".pattern-chip-num") && !ths[1].querySelector(".pattern-chip-num"),
+    "synthetic columns get no numbered pattern-chip badge (they aren't placeholders in the regex pattern)");
+  assert(ths[2].querySelector(".pattern-chip-num") !== null, "the real pattern column keeps its numbered badge, unaffected");
+
+  /* ---------- Body cells render the same values, first-row ΔT blank ---------- */
+  const firstRowTds = [...d.querySelectorAll("#extractBody tr:first-child td[data-col]")];
+  assert(firstRowTds[0].textContent === "0" && firstRowTds[1].textContent === "", "first row: Index=0, ΔT blank, in the DOM");
+  const secondRowTds = [...d.querySelectorAll("#extractBody tr:nth-child(2) td[data-col]")];
+  assert(secondRowTds[0].textContent === "1" && secondRowTds[1].textContent === "1500", "second row: Index=1, ΔT=1500, in the DOM");
+
+  /* ---------- columnColor handles negative colIndex (regression: naive `i % n` goes negative in JS) ---------- */
+  assert(ths[0].querySelector(".extract-sort-btn") && ths[1].querySelector(".extract-sort-btn"), "sanity: synthetic columns are still sortable, so a broken color would show up in the swatch below");
+
+  /* ---------- Sorting: ΔT ascending puts the blank (unparseable) first row last, per the existing NaN-always-last rule ---------- */
+  const deltaSortBtn = d.querySelector('.extract-sort-btn[data-sort-col="-1"]');
+  fireClick(deltaSortBtn, w);
+  assert(T.extractRowsData[0].values[-1] === "1500" && T.extractRowsData[1].values[-1] === "2000" && T.extractRowsData[2].values[-1] === "",
+    "sorting by ΔT orders numerically and keeps the blank first-row value last regardless of direction");
+
+  /* ---------- Copy whole table includes both synthetic columns ---------- */
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+  w.copyWholeExtractTable();
+  const lines = copied.split("\n");
+  assert(lines[0] === "Index\tΔT (ms)\tvalue", "copy-whole-table header includes Index/ΔT ahead of the pattern column, got " + JSON.stringify(lines[0]));
+
+  /* ---------- Plot tab: Index is the default X axis on every extraction, a real column defaults for Y ---------- */
+  w.switchExtractView("plot");
+  assert(d.querySelector("#plotXSelect").value === "-2", "Index is the default X-axis selection for a freshly opened extraction's plot, got " + d.querySelector("#plotXSelect").value);
+  const yChecked = [...d.querySelectorAll('#plotYList input[type="checkbox"]:checked')].map(cb => cb.dataset.col);
+  assert(yChecked.length === 1 && yChecked[0] === "0", "Y defaults to the real extracted column, not the synthetic ΔT one, got " + JSON.stringify(yChecked));
+  const deltaSwatch = d.querySelector('#plotYList input[data-col="-1"]').nextElementSibling;
+  assert(deltaSwatch.style.background !== "", "ΔT still gets a valid swatch color in the Y-column list (columnColor's negative-index modulo fix)");
+  w.switchExtractView("table");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -4643,6 +4739,25 @@ process.exit(failed ? 1 : 0);
               a plain filter, and editing an EXISTING plain filter and
               clicking "Extract" to turn it into a real extraction, both
               directions explicitly requested.
+   Group 42  — this session (2026-08-17), person-requested: every
+              extraction table now leads with two synthetic columns, a
+              0-based row-order Index and a ΔT (ms gap to the previous
+              entry's real timestamp), ahead of the pattern's own columns
+              — Index doubling as the default X axis on every extraction's
+              Plot tab. Covers the column descriptors/ordering, computed
+              values (Index counting up, ΔT's blank first row), the header
+              DOM (no numbered pattern-chip badge on the synthetic columns,
+              unlike real pattern columns), body cell rendering, sorting
+              (NaN-always-last still holds for ΔT's blank row), copy/export
+              including both columns, the Plot tab defaulting X to Index
+              and Y to a real column (not ΔT), and the columnColor
+              negative-colIndex modulo fix the swatches depend on. Also
+              updated three older groups whose assertions assumed the
+              extraction table had no leading columns: Group 5 (sort
+              button now targeted by data-sort-col, not "first in the
+              DOM"), Group 14 (same for the assert button), and Group 24
+              (column/button counts and copy-export text bumped by the
+              2 new always-visible columns).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
