@@ -7,7 +7,6 @@ Raw ideas only, not yet elaborated. Pick items up individually before implementa
 - **Pluggable parser logic** — support/configure additional log formats beyond the current one.
 - **Sortable columns** in the entry table.
 - **Numeric greater/less-than filter** without requiring value extraction first.
-- **Extend undo/redo** — currently only covers filter delete/move; missing file deletion, value/pattern edits, invert toggle, assertion changes.
 - **Dedup check on "Load filter…" / session import** — prevents duplicate branches when the same filter (tree) is loaded/imported again.
 - **Warn/migrate when an extraction pattern edit shifts columns** — assertions and ignored-columns are index-based and silently point at the wrong column otherwise.
 - **Optional tail auto-follow for the Highlight view** — currently deliberately static while the Filter view follows tailed entries; revisit if live-tailing workflows want it too.
