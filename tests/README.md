@@ -77,9 +77,12 @@ throwaway test from scratch. When a session adds a feature:
 
 - Pure CSS/layout bugs (jsdom has no real layout engine or hit-testing) —
   needs manual/visual review instead.
-- The File System Access API itself (`showOpenFilePicker` etc.) is faked at
-  the handle level for the tailing tests (Group 12); the picker UI/permission
-  flow is not exercised.
+- The File System Access API itself (`showOpenFilePicker`, `showDirectoryPicker`
+  etc.) is faked at the handle level for the tailing tests (Group 12) and the
+  folder-watch tests (Group 37); the picker UI/permission flow itself is not
+  exercised — `addWatchedFolder`/`loadFolderFile`/`folderScanTick` are called
+  directly with fake `FileSystemDirectoryHandle`/`FileSystemFileHandle`
+  objects rather than via `#btnOpenFolder`'s click handler.
 - Plot tab rendering (SVG chart output) is not covered — only the underlying
   data functions used across a few groups (`parseValueForPlot` via assertion
   checks). A dedicated group would be a reasonable future addition if the

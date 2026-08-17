@@ -3466,6 +3466,380 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 37 — Folder watch + lazy loading
+   Origin: this session (FEATURE_BACKLOG.md "Folder watch + lazy loading"),
+   UPDATED the same session after person feedback (see Group 38 below for
+   what else that feedback added): active and inactive files now render
+   TOGETHER, in folder order, inside one .folder-watch-files list — an
+   opened file is a real .tree-row (via renderNode), an unopened one is a
+   grayed .folder-watch-file row — instead of active files moving out to a
+   separate place below. This group's assertions were rewritten in place
+   for the new merged layout rather than left testing the old split one
+   (see tests/README.md's "Extending this suite" convention).
+
+   A watched folder (addWatchedFolder, given a FileSystemDirectoryHandle —
+   faked at the handle level here, same approach as Group 12's tailing
+   fixture, since jsdom has no File System Access API) lists its compatible
+   (*.log) files grayed-out, WITHOUT reading them, above #tree
+   (renderFolderWatchList/renderFolderSection/renderInactiveFileRow).
+   Double-click (or the row's "Load file" context-menu item) lazily opens
+   one via loadFolderFile, which becomes a completely normal root file node
+   (tagged node.folderId) and starts tailing since it has a real handle.
+   Closing it (deleteFilterNodeWithUndo's node.folderId branch,
+   closeFolderFile) returns it to the grayed listing, in the SAME position,
+   instead of removing it outright. folderScanTick (same polling shape as
+   tailTick) picks up files that appear in the folder later.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("37. Folder watch + lazy loading");
+
+  function fakeFileHandle(name, text) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  // fileMap is mutable (Group adds to it later to simulate a new file
+  // appearing) — values() re-reads Object.keys() on every call, exactly
+  // like the real FileSystemDirectoryHandle would after a rescan.
+  function fakeDirHandle(name, fileMap) {
+    return {
+      kind: "directory", name,
+      async *values() {
+        for (const fname of Object.keys(fileMap)) yield fakeFileHandle(fname, fileMap[fname]);
+      },
+    };
+  }
+  // Reads back the folder box's file list IN DOM ORDER, regardless of
+  // whether each row is a real .tree-row (renderNode's wrapper div) or a
+  // grayed .folder-watch-file — the thing under test is that a file's
+  // POSITION in this order never moves as it opens/closes.
+  function folderOrder(folderBox) {
+    return [...folderBox.querySelector(".folder-watch-files").children].map(el => {
+      const label = el.querySelector(".tree-label, .folder-watch-file-name");
+      return label ? label.textContent : "?";
+    });
+  }
+
+  const fileMap = {
+    "a.log": makeLog(0, 5),
+    "b.log": makeLog(100, 3),
+    "notes.txt": "not a compatible extension",
+  };
+  const dir = fakeDirHandle("logs", fileMap);
+  await w.addWatchedFolder(dir);
+
+  assert(T.state.folders.length === 1, "watched folder registered");
+  const folder = T.state.folders[0];
+  assert(folder.name === "logs", "folder name taken from the directory handle");
+  assert(folder.files.length === 2, "only *.log files are listed, incompatible extension filtered out — got " + folder.files.length);
+  assert(folder.files.map(f => f.name).join(",") === "a.log,b.log", "listed files sorted by name, got " + folder.files.map(f => f.name).join(","));
+  assert(T.state.rootIds.length === 0, "nothing is actively loaded yet — scanning lists files without parsing them (lazy)");
+
+  // Rendering: folder section above #tree, scanning ping for a live watch,
+  // one grayed row per listed file, in folder order.
+  const folderBox = d.querySelector(".folder-watch");
+  assert(folderBox !== null, "folder section rendered in the sidebar");
+  assert(folderBox.querySelector(".folder-watch-name").textContent === "logs", "folder name shown in the header");
+  assert(folderBox.querySelector(".folder-watch-icon.scanning") !== null, "scanning/watching animation class present for a live folder");
+  let inactiveRows = folderBox.querySelectorAll(".folder-watch-file");
+  assert(inactiveRows.length === 2, "both compatible files listed as inactive rows, got " + inactiveRows.length);
+  assert(folderOrder(folderBox).join(",") === "a.log,b.log", "initial folder order is a.log, b.log");
+
+  // A plain click on an inactive row must NOT select/activate it — there is
+  // no node id it could become state.activeId, so Ctrl+F/paste have nothing
+  // to target. This is the mechanism behind "no filter can be created or
+  // copied onto an inactive file".
+  const activeBefore = T.state.activeId;
+  fireClick(inactiveRows[0], w);
+  assert(T.state.activeId === activeBefore, "clicking a grayed inactive file row doesn't change state.activeId");
+
+  // Double-click lazily loads the file: becomes a real root node, tagged
+  // with folderId, rendered as a real tree row IN PLACE inside the folder's
+  // own file list (not moved elsewhere) — its position in the folder order
+  // is exactly what makes this different from a plain "grayed vs. separate
+  // active list" split.
+  fireDblClick(inactiveRows[0], w);
+  await new Promise(r => setTimeout(r, 50)); // let the FileReader-based load settle
+  assert(T.state.rootIds.length === 1, "double-click loaded exactly one file, got " + T.state.rootIds.length);
+  const loadedNode = T.state.nodes[T.state.rootIds[0]];
+  assert(loadedNode.name === "a.log", "the double-clicked file (a.log) was the one loaded");
+  assert(loadedNode.entries.length === 5, "loaded file content actually parsed (5 entries), got " + loadedNode.entries.length);
+  assert(loadedNode.folderId === folder.id, "loaded node is tagged with the folder it came from");
+  assert(loadedNode.tail && loadedNode.tail.handle, "a folder-loaded file (real handle) starts tailing automatically");
+  assert(folder.files.find(f => f.name === "a.log").nodeId === loadedNode.id, "the folder's own file record now points at the live node");
+  assert(![...d.querySelectorAll("#tree .tree-row .tree-label")].some(l => l.textContent === "a.log"),
+    "the loaded file does NOT also render as a separate top-level #tree row — only inside its folder section");
+  // renderFolderWatchList() rebuilds the folder box's DOM from scratch on
+  // every render() — re-query rather than reuse the stale pre-render node.
+  let folderBoxNow = d.querySelector(".folder-watch");
+  assert(folderOrder(folderBoxNow).join(",") === "a.log,b.log", "folder order unchanged after opening a.log — it stays in place, now as a real row");
+  assert(folderBoxNow.querySelectorAll(".folder-watch-file").length === 1, "only b.log is still a grayed row");
+  assert([...folderBoxNow.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "a.log"), "a.log renders as a real tree row inside the folder box");
+
+  // Right-click context menu's "Load file" is the alternative entry point
+  // for the remaining inactive file (b.log).
+  const bRow = [...d.querySelectorAll(".folder-watch-file")].find(r => r.querySelector(".folder-watch-file-name").textContent === "b.log");
+  fireContextMenu(bRow, w);
+  const menuItem = d.querySelector('#treeContextMenu [data-action="loadFolderFile"]');
+  assert(menuItem !== null, "right-click on a grayed file offers a \"Load file\" menu item");
+  fireClick(menuItem, w);
+  await new Promise(r => setTimeout(r, 50));
+  assert(T.state.rootIds.length === 2, "context-menu \"Load file\" also lazily loads the file, got " + T.state.rootIds.length);
+  assert(d.querySelectorAll(".folder-watch-file").length === 0, "both files now loaded — no grayed rows left");
+  assert(folderOrder(d.querySelector(".folder-watch")).join(",") === "a.log,b.log", "both files still render in their original folder order");
+
+  // Closing a folder-loaded file (the tree row's ✕) returns it to the
+  // grayed listing, IN THE SAME POSITION, instead of vanishing — the
+  // defining behavior this feature adds on top of a normal file close.
+  folderBoxNow = d.querySelector(".folder-watch");
+  const aTreeRow = [...folderBoxNow.querySelectorAll(".tree-row")].find(r => r.querySelector(".tree-label").textContent === "a.log");
+  const closeBtn = aTreeRow.querySelector(".tree-del");
+  fireClick(closeBtn, w);
+  assert(T.state.rootIds.length === 1, "closing the file removed its root node, got " + T.state.rootIds.length);
+  assert(T.state.nodes[loadedNode.id] === undefined, "the closed file's node is fully gone from state.nodes (not just hidden)");
+  assert(T.entryIndex[loadedNode.entries[0].id] === undefined, "the closed file's entries were released from entryIndex, same as a normal close");
+  assert(folder.files.find(f => f.name === "a.log").nodeId === null, "the folder's own record for a.log is cleared back to \"not loaded\"");
+  const rowsAfterClose = d.querySelectorAll(".folder-watch-file");
+  assert(rowsAfterClose.length === 1 && rowsAfterClose[0].querySelector(".folder-watch-file-name").textContent === "a.log",
+    "a.log is listed grayed again instead of being gone entirely");
+  assert(folderOrder(d.querySelector(".folder-watch")).join(",") === "a.log,b.log", "a.log is back at its original position, not appended at the end");
+
+  // Reopening reuses the same stored handle — no re-scan needed.
+  const aRecAgain = folder.files.find(f => f.name === "a.log");
+  await w.loadFolderFile(folder, aRecAgain);
+  assert(T.state.rootIds.length === 2, "a.log can be reopened after being closed, got " + T.state.rootIds.length);
+
+  // folderScanTick: a file appearing in the real folder later gets picked
+  // up automatically (the polling loop the scanning animation represents).
+  fileMap["c.log"] = makeLog(200, 2);
+  await w.folderScanTick();
+  assert(folder.files.length === 3, "folderScanTick picked up the newly appeared c.log, got " + folder.files.length);
+  assert(folder.files.some(f => f.name === "c.log" && f.nodeId === null), "the newly discovered file starts out as an unopened (grayed) listing entry");
+
+  // removeWatchedFolder: still-open files keep working as plain independent
+  // files (folderId cleared, so a later close is a normal full removal),
+  // and now render as normal top-level #tree rows again.
+  const cFolder = folder;
+  w.removeWatchedFolder(cFolder.id);
+  assert(T.state.folders.length === 0, "the folder record is gone after removeWatchedFolder");
+  assert(d.querySelector(".folder-watch") === null, "the folder section is no longer rendered");
+  assert(T.state.rootIds.length === 2, "already-open files loaded from the folder are left in place, not closed");
+  const survivingNode = T.state.nodes[T.state.rootIds[0]];
+  assert(!survivingNode.folderId, "a surviving node's folderId is cleared once its folder is removed");
+  assert([...d.querySelectorAll("#tree .tree-row .tree-label")].some(l => l.textContent === "a.log"),
+    "the surviving file now renders as a plain top-level #tree row, since it no longer belongs to any folder");
+});
+
+/* ============================================================
+   GROUP 38 — Folder watch follow-up (person-reported, this session):
+   unified "Open…" menu, browser-capability gate + popup notice, and
+   session-cache persistence of watched folders.
+   ============================================================ */
+
+// --- 38a: single "Open…" button + dropdown menu replaces the two
+// separate "Open files…"/"Open folder…" buttons. ---
+await withApp(async (w, d, T) => {
+  section("38a. Unified \"Open…\" menu");
+  const btnOpen = d.querySelector("#btnOpen");
+  const openMenu = d.querySelector("#openMenu");
+  assert(d.querySelector("#btnOpenFolder") === null, "the old separate \"Open folder…\" button is gone");
+  assert(openMenu.classList.contains("hidden"), "the dropdown starts hidden");
+
+  fireClick(btnOpen, w);
+  assert(!openMenu.classList.contains("hidden"), "clicking \"Open…\" reveals the dropdown");
+  const actions = [...openMenu.querySelectorAll("[data-action]")].map(i => i.dataset.action);
+  assert(actions.includes("files") && actions.includes("folder"), "menu offers both File(s)… and Folder… entries, got " + actions.join(","));
+
+  // Clicking outside closes it — same document-level pattern as every
+  // other popup/menu in the app (contextMenu, shortcutsPanel, ...).
+  fireClick(d.body, w);
+  assert(openMenu.classList.contains("hidden"), "clicking outside the menu closes it");
+
+  // "File(s)…" still falls back to the hidden <input> when
+  // showOpenFilePicker is unavailable (jsdom, same as before this menu
+  // existed) — the menu item is just a new front door to the same path.
+  fireClick(btnOpen, w);
+  const fileInput = d.querySelector("#fileInput");
+  let clicked = false;
+  fileInput.click = () => { clicked = true; };
+  fireClick(d.querySelector('#openMenu [data-action="files"]'), w);
+  assert(clicked, "\"File(s)…\" falls back to the hidden file <input>, same as the old \"Open files…\" button");
+  assert(openMenu.classList.contains("hidden"), "the menu closes itself after an item is picked");
+});
+
+// --- 38b: FOLDER_WATCH_SUPPORTED gates both entry points (menu + drag&drop)
+// behind a popup notice instead of silently offering a lesser/broken
+// experience — jsdom has no showDirectoryPicker at all, so this exercises
+// the exact "unsupported browser" path a real Firefox/Zen user hits. ---
+await withApp(async (w, d, T) => {
+  section("38b. Folder watch capability gate + popup notice");
+  assert(typeof w.showDirectoryPicker === "undefined", "fixture sanity: jsdom has no showDirectoryPicker (same documented gap as showOpenFilePicker)");
+
+  fireClick(d.querySelector("#btnOpen"), w);
+  fireClick(d.querySelector('#openMenu [data-action="folder"]'), w);
+  assert(d.querySelector("#copyToast").textContent.includes("Chromium-based browser"), "the \"Folder…\" menu entry shows a popup notice instead of doing nothing");
+  assert(T.state.folders.length === 0, "no folder was registered");
+
+  // A dropped FOLDER is detected via the much more broadly supported
+  // webkitGetAsEntry() (Firefox/Zen included) purely to explain why it
+  // didn't load, instead of silently mis-reading it as an empty file list.
+  const dirDropDt = { files: [], items: [{ kind: "file", webkitGetAsEntry: () => ({ isDirectory: true }) }] };
+  fireDrag(w, w, "drop", dirDropDt);
+  assert(d.querySelector("#copyToast").textContent.includes("Chromium-based browser"), "a dropped folder also shows the popup notice, same message");
+  assert(T.state.folders.length === 0, "still no folder registered from the drop");
+
+  // Plain file drops are completely unaffected by any of this.
+  const fileDropDt = { files: [new w.File([makeLog(0, 3)], "dropped.log", { type: "text/plain" })], items: [] };
+  fireDrag(w, w, "drop", fileDropDt);
+  await new Promise(r => setTimeout(r, 50));
+  assert(T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].name === "dropped.log",
+    "a plain (non-folder) file drop still loads normally");
+});
+
+// --- 38c: watched folders survive a reload (session cache), including
+// re-linking an already-open file back to its folder in the right spot,
+// and the permission-reconnect flow for when the browser doesn't silently
+// re-grant read access. ---
+{
+  section("38c. Session persistence: watched folders survive a reload");
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const factory = new IDBFactory();
+
+  function fakeFileHandle(w, name, text) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  // A REAL FileSystemDirectoryHandle is specced to survive IndexedDB's
+  // structured clone with all its methods intact — that's the actual
+  // mechanism persistFolder/restoreWatchedFolders rely on in a real
+  // browser. fake-indexeddb (this suite's only option — see
+  // tests/README.md) enforces structured clone strictly: a plain object
+  // with OWN function properties fails with DataCloneError outright, but a
+  // class instance's prototype methods are simply dropped (own DATA fields
+  // clone through fine, same as any plain object) rather than erroring —
+  // so this fixture uses a class, with the "live" bits (the fake
+  // filesystem + the owning window, for its Blob constructor) kept in a
+  // WeakMap instead of as instance fields, so they never become part of
+  // what gets cloned. The round-tripped copy in "window B" below ends up
+  // exactly like a real handle whose permission needs reconfirming, not
+  // like one that kept working — see the assertions there.
+  const fakeDirState = new WeakMap();
+  class FakeDirHandle {
+    constructor(w, name, fileMap) {
+      this.kind = "directory";
+      this.name = name;
+      fakeDirState.set(this, { w, fileMap });
+    }
+    async *values() {
+      const { w, fileMap } = fakeDirState.get(this);
+      for (const fname of Object.keys(fileMap)) yield fakeFileHandle(w, fname, fileMap[fname]);
+    }
+    async queryPermission() { return "granted"; }
+    async requestPermission() { return "granted"; }
+  }
+
+  let folderId = null;
+
+  // --- Window A: watch a folder, open one file from it, persist. ---
+  await withApp(async (w, d, T) => {
+    const dir = new FakeDirHandle(w, "watched", { "a.log": makeLog(0, 4), "b.log": makeLog(50, 2) });
+    await w.addWatchedFolder(dir);
+    const folder = T.state.folders[0];
+    folderId = folder.id;
+    const rec = folder.files.find(f => f.name === "a.log");
+    await w.loadFolderFile(folder, rec);
+    const node = T.state.nodes[rec.nodeId];
+    assert(node.folderId === folderId, "the loaded node is tagged with its folder's id before persisting");
+
+    // loadFolderFile's own persistFileNode call is fire-and-forget; calling
+    // it again directly (idempotent — same cacheKey) and awaiting it here
+    // is how the test knows the write with the correct folderId has landed.
+    await w.persistFileNode(node);
+    await w.persistMetaNow();
+
+    const fileRec = await w.cacheStoreOp("files", "readonly", s => s.get(node.cacheKey));
+    assert(fileRec && fileRec.folderId === folderId, "the persisted file record carries folderId");
+    const folderRec = await w.cacheStoreOp("folders", "readonly", s => s.get(folderId));
+    assert(folderRec && folderRec.name === "watched", "the folder itself was persisted to its own IndexedDB store");
+  }, { indexedDB: factory });
+
+  // --- Window B: boot-time restore (same factory = same "disk"). ---
+  await withApp(async (w, d, T) => {
+    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    assert(T.state.rootIds.length === 1, "the previously-open file came back via the normal session restore");
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(node.name === "a.log" && node.folderId === folderId, "restored node's folderId round-tripped through real IndexedDB");
+
+    for (let i = 0; i < 40 && T.state.folders.length === 0; i++) await sleep(50); // restoreWatchedFolders runs right after
+    assert(T.state.folders.length === 1, "the watched folder itself came back too");
+    const folder = T.state.folders[0];
+    assert(folder.id === folderId, "restored folder keeps its original id (the same value the file's folderId points at)");
+    assert(folder.name === "watched", "restored folder's name round-tripped");
+
+    // See the FakeDirHandle comment above: this fixture's handle genuinely
+    // can't keep working methods through fake-indexeddb's structured
+    // clone, which means queryPermission() really does fail here — that's
+    // the SAME degraded state a real browser puts a restored folder in
+    // whenever it doesn't silently re-grant the permission (e.g. after an
+    // actual browser restart, not just a tab reload), so it's asserted on
+    // directly as the expected outcome, not worked around.
+    assert(folder.needsPermission === true, "a folder whose handle can't be silently reused needs Reconnect, degrading gracefully instead of erroring");
+
+    w.render();
+    const folderBox = d.querySelector(".folder-watch");
+    assert(folderBox !== null, "the folder section still renders even before reconnecting");
+    assert(folderBox.querySelector(".folder-watch-reconnect") !== null, "a Reconnect button is shown");
+    assert([...folderBox.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "a.log"),
+      "the already-open file still renders as a real row inside the folder section pre-reconnect, in its right place");
+
+    // Reconnect logic itself: requestPermission() needs a real user
+    // gesture (reconnectFolder is the Reconnect button's own click
+    // handler, called directly here — same function, same as clicking it).
+    // A fresh, fully-working fixture handle stands in for "the browser
+    // re-granted permission" — the one part of this flow a REAL IndexedDB
+    // round trip can't exercise in jsdom (see the class comment above), so
+    // it's tested at the function level, consistent with this suite's
+    // documented File System Access API gap (tests/README.md).
+    folder.handle = new FakeDirHandle(w, "watched", { "a.log": makeLog(0, 4), "b.log": makeLog(50, 2) });
+    await w.reconnectFolder(folder);
+    assert(folder.needsPermission === false, "reconnectFolder clears needsPermission once a working handle is available");
+    assert(folder.files.length === 2, "reconnecting rescans and finds both files, got " + folder.files.length);
+    const aRec = folder.files.find(f => f.name === "a.log");
+    assert(aRec.nodeId === node.id, "the already-open file's nodeId is preserved across reconnect — not treated as a newly discovered file");
+    assert(node.tail && node.tail.handle, "reconnecting reattaches a live tail handle to the already-open (previously handle-less, restored) node");
+    const bRec = folder.files.find(f => f.name === "b.log");
+    assert(bRec.nodeId === null, "the not-yet-opened file (b.log) is listed grayed, same as any fresh scan");
+  }, { indexedDB: factory });
+}
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -3834,6 +4208,67 @@ process.exit(failed ? 1 : 0);
               focus DOM path, all four directions including the two
               no-op/clamp edges, and the hand-back to "entries" focus on
               the next row click.
+   Group 37  — this session (2026-08-16): FEATURE_BACKLOG.md "Folder watch
+              + lazy loading". addWatchedFolder scans a FileSystemDirectory-
+              Handle's immediate entries (faked at the handle level, same
+              approach as Group 12) for compatible (*.log) files and lists
+              them grayed-out, without reading them — lazy by construction.
+              REWRITTEN IN PLACE later the same session (person feedback,
+              see Group 38) for the merged-view layout: opened and unopened
+              files now render TOGETHER, in folder order, inside one
+              .folder-watch-files list — a folderOrder() test helper reads
+              that order back from the DOM regardless of whether a given
+              row is a real .tree-row or a grayed placeholder, and every
+              stage of the group (open, close, reopen, a newly-discovered
+              file) asserts the order stays exactly a.log, b.log[, c.log]
+              throughout, never reordering as files open/close. Also
+              covers: incompatible-extension filtering, the scanning-ping
+              CSS class on a live watch, a plain click on a grayed row NOT
+              touching state.activeId (the mechanism behind "no filter can
+              target an inactive file"), double-click AND the tree context
+              menu's "Load file" both lazily loading a file into a normal
+              tagged (folderId) root node that starts tailing and renders
+              INSIDE the folder box (not as a separate #tree row), closing
+              a folder-loaded file returning it to its same grayed spot
+              instead of vanishing (closeFolderFile) while a plain file's
+              close is untouched, reopening reusing the stored handle,
+              folderScanTick picking up a file that appears later, and
+              removeWatchedFolder leaving already-open files in place
+              (now rendered back under plain #tree) with folderId cleared.
+   Group 38  — this session (2026-08-16), person-reported follow-up to
+              Group 37's feature, same day: (38a) the two separate "Open
+              files…"/"Open folder…" buttons collapsed into one "Open…"
+              button + dropdown menu (#openMenu) — toggle open/closed,
+              click-outside-closes (same document-level pattern as every
+              other popup), and the "File(s)…" item still falling back to
+              the hidden <input> exactly like the old button did. (38b)
+              FOLDER_WATCH_SUPPORTED (!!window.showDirectoryPicker, always
+              false in jsdom — same gap as showOpenFilePicker) gates both
+              entry points behind a showCopyToast popup instead of a
+              silently degraded experience: the "Folder…" menu item, and a
+              dropped folder detected via the broadly-supported (even
+              without getAsFileSystemHandle) webkitGetAsEntry() — plus a
+              regression check that a plain (non-folder) file drop is
+              completely unaffected by any of this gating. (38c) session
+              persistence: a real two-window IndexedDB round trip (shared
+              IDBFactory, same pattern as Group 20) proving a file's
+              folderId AND the folder's own record (name, handle) survive
+              a reload, followed by the reconnect flow — a FakeDirHandle
+              built as a CLASS (methods on the prototype, not own
+              properties) so its instances survive fake-indexeddb's strict
+              structured-clone check (an own function property throws
+              DataCloneError outright; a class instance's prototype methods
+              are silently dropped instead, exactly modeling what a real
+              browser's structured clone does NOT do for a genuine
+              FileSystemHandle, but doing so consistently is what makes the
+              restored folder legitimately need Reconnect in this test —
+              asserted on directly, not worked around). The one piece a
+              real IndexedDB round trip can't exercise in jsdom — a working
+              handle actually surviving clone with its methods intact — is
+              tested at the function level instead (reconnectFolder called
+              directly with a fresh fixture handle), noted as such in the
+              test itself, consistent with tests/README.md's existing File
+              System Access API gap.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
