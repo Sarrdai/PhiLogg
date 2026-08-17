@@ -6609,8 +6609,9 @@ async function loadOneFileIntoTree(name, file, handle, progressLabel) {
       handle,
       offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
       pending: "",         // trailing line fragment not yet terminated by a newline
-      failed: false,       // set once a poll read fails (file moved, permission revoked)
+      failed: false,       // set once TAIL_MAX_CONSECUTIVE_ERRORS polls in a row fail
       busy: false,         // guards against overlapping async polls on slow disks
+      errorCount: 0,       // consecutive failed polls; reset to 0 by any clean poll
     };
     state.tailFollow = true; // a freshly opened live file starts in follow mode
   }
@@ -6730,6 +6731,16 @@ window.addEventListener("drop", ev => {
    Files loaded as plain File objects (Firefox, legacy <input>) are byte
    snapshots — they can't grow, so they simply never get a node.tail. */
 const TAIL_POLL_MS = 1500;
+// A poll can fail transiently — most commonly the writer holding the file
+// locked without FILE_SHARE_READ for the moment it's mid-write (person-
+// reported: tailing "just stopped" a few seconds after opening an actively-
+// written file) — as opposed to a genuinely permanent failure (file moved,
+// deleted, permission revoked), which fails every single poll, not just an
+// occasional one. A single read failure used to flip t.failed permanently on
+// the spot; now it only does that after this many CONSECUTIVE failures, so
+// one bad poll during a writer's brief lock window doesn't kill tailing for
+// the rest of the session — any successful poll resets the counter to 0.
+const TAIL_MAX_CONSECUTIVE_ERRORS = 5;
 
 // Parses newly appended text into node.entries in place. Handles chunks that
 // start mid-entry (continuation lines of a stack trace still being written)
@@ -6783,10 +6794,19 @@ async function tailTick() {
         t.offset = f.size;
         if (appendTailText(node, chunk)) changedRootIds.push(id);
       }
+      t.errorCount = 0; // a clean poll clears any streak of prior transient failures
     } catch (err) {
-      // File moved/deleted or permission revoked — stop tailing this one.
-      t.failed = true;
-      changedRootIds.push(id); // re-render so the live dot disappears
+      t.errorCount = (t.errorCount || 0) + 1;
+      // Logged unconditionally (not just once given up on) since this is
+      // otherwise a completely silent failure mode — the only way to tell a
+      // transient hiccup (e.g. the writer briefly holding the file locked)
+      // from a permanent one (moved/deleted/permission revoked) from outside
+      // is to see how often and how persistently it recurs.
+      console.warn("[philogg] tail poll failed for \"" + node.name + "\" (" + t.errorCount + "/" + TAIL_MAX_CONSECUTIVE_ERRORS + ")", err);
+      if (t.errorCount >= TAIL_MAX_CONSECUTIVE_ERRORS) {
+        t.failed = true; // consistently failing — genuinely gone, stop tailing this one
+        changedRootIds.push(id); // re-render so the live dot disappears
+      }
     } finally {
       t.busy = false;
     }
@@ -6917,7 +6937,7 @@ function mergeScannedFiles(folder, scanned) {
         node.tail = {
           handle: s.handle,
           offset: new Blob([rebuildFileText(node)]).size,
-          pending: "", failed: false, busy: false,
+          pending: "", failed: false, busy: false, errorCount: 0,
         };
       }
       return existing;
@@ -8932,6 +8952,7 @@ async function tryReattachFileTail(node, handle) {
         pending: "",
         failed: false,
         busy: false,
+        errorCount: 0,
       };
       return true;
     }
