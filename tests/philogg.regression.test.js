@@ -3331,15 +3331,22 @@ await withApp(async (w, d, T) => {
   // Editing a text filter into an extract pattern clears caseSensitive/columns
   // (updateFilterNode's else-branch) — extract patterns match via their own
   // regex against e.message, so these text-only options no longer apply.
+  // Since Group 39 (the "Extract values" checkbox), typing wildcard tokens
+  // no longer auto-flips a filter to "extract" by itself — the checkbox
+  // must also be checked (see Group 39 for the checkbox's own behavior).
   const toBecomeExtract = w.createFilterNode(f.id, "text", "Marker", false, null, true, ["message"]);
   w.openEditFilterPopup(toBecomeExtract.id);
+  assert(d.querySelector("#filterExtractCheckbox").checked === false, "editing a plain text filter starts with Extract values unchecked");
   d.querySelector("#filterInput").value = "id=[value:int]";
   fireInput(d.querySelector("#filterInput"), w);
-  assert(d.querySelector("#filterCaseCheckbox").disabled === true, "typing an extraction pattern while editing disables the case-sensitive checkbox");
-  assert(d.querySelector("#filterColumnChips").classList.contains("hidden"), "typing an extraction pattern hides the column-restriction chips");
+  assert(d.querySelector("#filterCaseCheckbox").disabled === false, "Extract values still unchecked: case-sensitive checkbox stays available for wildcard-as-filter mode");
+  assert(!d.querySelector("#filterColumnChips").classList.contains("hidden"), "Extract values still unchecked: column-restriction chips stay available");
+  fireClick(d.querySelector("#filterExtractCheckbox"), w); // opt into building an extraction table
+  assert(d.querySelector("#filterCaseCheckbox").disabled === true, "checking Extract values disables the case-sensitive checkbox");
+  assert(d.querySelector("#filterColumnChips").classList.contains("hidden"), "checking Extract values hides the column-restriction chips");
   fireSubmit(d.querySelector("#filterForm"), w);
   assert(toBecomeExtract.filterType === "extract" && !toBecomeExtract.caseSensitive && !toBecomeExtract.columns,
-    "editing a text filter into an extract pattern clears caseSensitive/columns");
+    "editing a text filter into an extract pattern (Extract values checked) clears caseSensitive/columns");
 
   // --- Persistence carriers ---
 
@@ -3840,6 +3847,122 @@ await withApp(async (w, d, T) => {
 }
 
 /* ============================================================
+   GROUP 39 — Filter popup: "Extract values" checkbox, target-chain
+   visualization, removed hint row (this session, person-requested)
+   Origin: this session. A [value:...]/[*] wildcard pattern used to ALWAYS
+   become an "extract" filterType (building an extraction table) the
+   moment it was typed — there was no way to use the wildcard shorthand
+   just to constrain a plain filter (e.g. "temp=[value:float]" meaning
+   "there's a float here") without also getting a table. The new
+   #filterExtractCheckbox decides which one a wildcard pattern becomes on
+   submit: checked (the default, preserving old behavior) -> "extract";
+   unchecked -> a normal "text" filter whose value happens to contain
+   wildcard tokens, matched via the SAME regex extraction would use but
+   only tested (not captured) — see getEntries/textFilterMatches's new
+   wildcardRegex parameter. Also: the old "Filter on “X”:" plain-text
+   label was replaced with #filterTargetChain, the same .crumb/.crumb-sep
+   pill-chain visualization #breadcrumb uses; the input now sits in its
+   own .filter-input-row instead of sharing a row with the toggles; and
+   the "Werte extrahieren: [value:float] ..." #filterHint row was removed
+   (the token chips already insert those same wildcards directly).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("39. Filter popup: Extract values checkbox + target chain + layout");
+
+  assert(d.querySelector("#filterHint") === null, "the old 'Werte extrahieren:' hint row is gone — the token chips already insert wildcards directly");
+  assert(d.querySelector(".filter-input-row #filterInput") !== null, "the filter input now lives in its own row");
+  assert(d.querySelector(".filter-options-row #filterExtractCheckbox") !== null, "the Extract values checkbox lives in the options row with case/invert/submit");
+
+  // --- Target-chain pill visualization (replaces the old plain-text "Filter on “X”:" label) ---
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const parentFilter = w.createFilterNode(f.id, "text", "message"); // matches all 5 rows
+  w.render();
+  w.openFilterPopup();
+  assert(d.querySelector("#filterPopupLabel").textContent === "Filter on:", "the label is now a short static prefix; the actual target is shown by the pill chain");
+  let chainChips = [...d.querySelectorAll("#filterTargetChain .crumb")];
+  assert(chainChips.length === 2 && chainChips[0].textContent === f.name && chainChips[1].textContent === parentFilter.name,
+    "create mode's target chain shows the full chain down to (and including) the active node this filter will be added under");
+  assert(chainChips[1].classList.contains("current") && !chainChips[0].classList.contains("current"),
+    "the chain's last pill (the actual attach point) is marked current, same convention as #breadcrumb");
+  assert(d.querySelectorAll("#filterTargetChain .crumb-sep").length === 1, "pills are separated the same way #breadcrumb separates its chain");
+
+  w.openEditFilterPopup(parentFilter.id);
+  assert(d.querySelector("#filterPopupLabel").textContent === "Edit filter on:", "edit mode uses its own short static prefix");
+  chainChips = [...d.querySelectorAll("#filterTargetChain .crumb")];
+  assert(chainChips.length === 1 && chainChips[0].textContent === f.name,
+    "edit mode's target chain shows the chain down to the edited filter's PARENT (whose entries the value change re-filters), not the filter being edited itself");
+  w.closeFilterPopup();
+
+  // --- "Extract values" checkbox: direct-API sanity for the two filtering
+  // shapes a wildcard pattern can now produce ---
+  const wLines = [
+    `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"temp=23.5 ok"`,
+    `2024-01-15 10:00:01,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"temp=n/a error"`,
+    `2024-01-15 10:00:02,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 2\t[DoWork]\t"TEMP=99.1 ok"`,
+    `2024-01-15 10:00:03,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 3\t[DoWork]\t"unrelated line"`,
+  ];
+  const wf = await w.addFile("wild.log", wLines.join("\n") + "\n", () => {});
+
+  const wildcardAsFilter = w.createFilterNode(wf.id, "text", "temp=[value:float]");
+  w.invalidateAllCaches();
+  const wafEntries = w.getEntries(wildcardAsFilter.id);
+  assert(wafEntries.length === 2 && [wf.entries[0].id, wf.entries[2].id].every(id => wafEntries.some(e => e.id === id)),
+    "a 'text' filter whose value contains [value:...] tokens matches via the wildcard's regex shape (case-insensitive by default) instead of a literal substring, got " + wafEntries.length);
+
+  const wildcardCaseSensitive = w.createFilterNode(wf.id, "text", "temp=[value:float]", false, null, true);
+  w.invalidateAllCaches();
+  const wcsEntries = w.getEntries(wildcardCaseSensitive.id);
+  assert(wcsEntries.length === 1 && wcsEntries[0].id === wf.entries[0].id,
+    "case-sensitive wildcard-as-filter matches only the exact-case 'temp=' occurrence, not 'TEMP='");
+
+  const wildcardInverted = w.createFilterNode(wf.id, "text", "temp=[value:float]", true);
+  w.invalidateAllCaches();
+  const invEntries = w.getEntries(wildcardInverted.id);
+  assert(invEntries.length === 2 && [wf.entries[1].id, wf.entries[3].id].every(id => invEntries.some(e => e.id === id)),
+    "NOT works normally on a wildcard-as-filter 'text' node (unlike a real 'extract' node, where NOT is unavailable)");
+
+  const realExtract = w.createFilterNode(wf.id, "extract", "temp=[value:float]");
+  w.invalidateAllCaches();
+  assert(w.getEntries(realExtract.id).length === 2, "an actual 'extract' filterType is unaffected by the new wildcard-as-filter 'text' path");
+
+  // --- Extract values checkbox through the actual popup UI ---
+  T.state.activeId = wf.id;
+  w.render();
+  w.openFilterPopup();
+  assert(d.querySelector("#filterExtractCheckbox").checked === true, "Extract values defaults to checked on a fresh popup, preserving the old always-extract behavior");
+  assert(d.querySelector("#filterExtractCheckbox").disabled === true, "with no wildcard tokens typed yet, Extract values has nothing to control and starts disabled");
+
+  const wInput = d.querySelector("#filterInput");
+  wInput.value = "temp=[value:float]";
+  fireInput(wInput, w);
+  assert(d.querySelector("#filterExtractCheckbox").disabled === false, "typing a wildcard pattern enables the Extract values checkbox");
+  assert(d.querySelector("#filterCaseCheckbox").disabled === true, "Extract values still checked (the default): case-sensitivity stays unavailable, same as the old extract-only behavior");
+  assert(d.querySelector("#filterColumnChips").classList.contains("hidden"), "Extract values still checked: column-restriction chips stay hidden");
+
+  fireClick(d.querySelector("#filterExtractCheckbox"), w); // uncheck -> wildcard-as-filter mode
+  assert(d.querySelector("#filterCaseCheckbox").disabled === false, "unchecking Extract values re-enables case-sensitivity for the wildcard-as-filter mode");
+  assert(!d.querySelector("#filterColumnChips").classList.contains("hidden"), "unchecking Extract values reveals the column-restriction chips again");
+  assert(d.querySelector("#filterInvertCheckbox").disabled === false, "unchecking Extract values re-enables NOT");
+
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const uiWildcardNode = T.state.nodes[T.state.activeId];
+  assert(uiWildcardNode.filterType === "text" && uiWildcardNode.value === "temp=[value:float]",
+    "submitting with Extract values UNCHECKED creates a plain 'text' filter carrying the wildcard pattern, not an 'extract' node");
+  assert(w.getEntries(uiWildcardNode.id).length === 2, "the UI-created wildcard-as-filter node matches the same 2 rows the direct-API check above found");
+
+  T.state.activeId = wf.id;
+  w.render();
+  w.openFilterPopup();
+  d.querySelector("#filterInput").value = "temp=[value:float]";
+  fireInput(d.querySelector("#filterInput"), w);
+  assert(d.querySelector("#filterExtractCheckbox").checked === true, "Extract values still defaults to checked on a fresh popup open");
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const uiExtractNode = T.state.nodes[T.state.activeId];
+  assert(uiExtractNode.filterType === "extract" && uiExtractNode.value === "temp=[value:float]",
+    "submitting with Extract values left CHECKED still creates a real 'extract' filter, unchanged from before this feature");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -4269,6 +4392,25 @@ process.exit(failed ? 1 : 0);
               directly with a fresh fixture handle), noted as such in the
               test itself, consistent with tests/README.md's existing File
               System Access API gap.
+   Group 39  — this session (2026-08-17), person-requested filter-popup
+              sizing/layout pass: the "Extract values" checkbox (a wildcard
+              pattern only becomes an "extract" filter, building a table,
+              when checked; unchecked it stays a "text" filter matched via
+              the same regex shape but just tested, not captured — covered
+              both via direct getEntries()/textFilterMatches() calls and
+              through the real popup UI, including case-sensitivity, NOT,
+              and parity with the unchanged "checked" -> real-extract
+              path), the #filterTargetChain pill-chain visualization that
+              replaced the old plain-text "Filter on “X”:" label (reusing
+              #breadcrumb's own .crumb/.crumb-sep classes), and two pure
+              layout changes (the input's own .filter-input-row, and the
+              removed #filterHint row) asserted on structurally. The
+              popup's new max-height/overflow-y (the actual "content no
+              longer fully visible" sizing bug) is a pure CSS fix with no
+              meaningful jsdom-observable state, so it is NOT re-tested
+              here — same "jsdom has no layout engine" gap noted in
+              tests/README.md and the flex-direction regression entry
+              below.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
