@@ -12,6 +12,5 @@ Raw ideas only, not yet elaborated. Pick items up individually before implementa
 - **Warn/migrate when an extraction pattern edit shifts columns** — assertions and ignored-columns are index-based and silently point at the wrong column otherwise.
 - **Optional tail auto-follow for the Highlight view** — currently deliberately static while the Filter view follows tailed entries; revisit if live-tailing workflows want it too.
 - **Theme-specific level colors for light mode** — currently same hex values as dark mode.
-- **Virtualize extraction table / link pair view** — needed if someone extracts from a very large file with a loose pattern.
 - **Autocomplete suggestions from recently used filter values/search terms** in the filter popup.
 - **Diff view between two filter results** — e.g. comparing two runs of the same log.
