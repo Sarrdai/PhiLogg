@@ -1127,11 +1127,19 @@
     font-family:var(--font-mono); font-size:12.5px; outline:none;
   }
   #filterInput:focus{border-color:var(--accent);}
-  /* The input gets its own row now (person-requested); the toggles/submit
-     button live in a second, wrapping row below it. */
-  #filterForm{display:flex; flex-direction:column; gap:8px;}
-  .filter-input-row{display:flex;}
-  .filter-options-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  /* Structured into distinct sections (person-requested, this session):
+     input+wildcards, settings (case/NOT), preview, "applies to" column
+     restriction, then a footer row (match count left, Extract-values +
+     submit right) — each later section divided from the one above by a
+     thin top border so the popup reads as organized blocks instead of one
+     undifferentiated stack, without needing a text caption on every row. */
+  #filterForm{display:flex; flex-direction:column; gap:10px;}
+  .filter-input-section{display:flex; flex-direction:column; gap:8px;}
+  .filter-section-label{font-size:10.5px; color:var(--text-tertiary); white-space:nowrap; margin-right:2px; flex:0 0 auto;}
+  .filter-settings-row{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding-top:9px; border-top:1px solid var(--border-soft);
+  }
   .filter-invert-toggle{
     display:flex; align-items:center; gap:4px; flex:0 0 auto;
     font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
@@ -1146,14 +1154,26 @@
   }
   .filter-case-toggle input{accent-color:var(--accent); cursor:pointer;}
   .filter-case-toggle:has(input:checked){color:var(--accent-strong);}
+  /* "Extract values" moved into the footer, next to Add filter (person-
+     requested) — styled as a real toggle BUTTON (border/fill, not a
+     visible checkbox+label like the settings row above) since it now sits
+     among actions, not options; the checkbox itself is kept for its native
+     checked/disabled semantics (same JS as before) but visually hidden —
+     the label IS the clickable button. */
   .filter-extract-toggle{
-    display:flex; align-items:center; gap:4px; flex:0 0 auto;
-    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
-    cursor:pointer; user-select:none; white-space:nowrap;
+    position:relative; display:flex; align-items:center; gap:5px; flex:0 0 auto;
+    font-family:var(--font-mono); font-size:11.5px; font-weight:650; color:var(--text-secondary);
+    background:transparent; border:1px solid var(--border); border-radius:6px;
+    padding:7px 11px; cursor:pointer; user-select:none;
+    transition:background .12s, border-color .12s, color .12s, opacity .12s;
   }
-  .filter-extract-toggle input{accent-color:var(--accent); cursor:pointer;}
-  .filter-extract-toggle:has(input:checked){color:var(--accent-strong);}
-  .filter-column-chips{display:flex; align-items:center; gap:5px; padding:0 4px; flex-wrap:wrap;}
+  .filter-extract-toggle input{position:absolute; opacity:0; width:0; height:0; pointer-events:none;}
+  .filter-extract-toggle:has(input:checked){background:var(--accent); border-color:transparent; color:#08201f;}
+  .filter-extract-toggle:has(input:disabled){opacity:.4; cursor:default;}
+  .filter-column-chips{
+    display:flex; align-items:center; gap:5px; flex-wrap:wrap;
+    padding-top:9px; border-top:1px solid var(--border-soft);
+  }
   .filter-column-chips.hidden{display:none;}
   .column-chip{
     font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--text-secondary);
@@ -1163,21 +1183,29 @@
   }
   .column-chip:hover{filter:brightness(1.25);}
   .column-chip.active{background:var(--accent); border-color:transparent; color:#08201f;}
-  .filter-token-chips{display:flex; align-items:center; gap:5px; padding:0 4px; flex-wrap:wrap;}
+  .filter-token-chips{display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
   .token-chip{
     font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--accent-strong);
     background:var(--accent-soft); border:1px solid rgba(79,199,195,.35); border-radius:5px;
     padding:2px 7px; cursor:pointer; transition:filter .12s;
   }
   .token-chip:hover{filter:brightness(1.2);}
-  #filterLiveMatch{font-size:10.8px; color:var(--text-tertiary); padding:0 4px; font-variant-numeric:tabular-nums; min-height:14px;}
+  /* Footer row: match count left-aligned, Extract-values + submit right —
+     person-requested split (previously the match count sat above the
+     column chips, and Extract-values lived in the settings row). */
+  .filter-footer-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding-top:9px; border-top:1px solid var(--border-soft);
+  }
+  .filter-footer-actions{display:flex; align-items:center; gap:8px; flex:0 0 auto;}
+  #filterLiveMatch{font-size:10.8px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; min-height:14px; flex:1 1 auto; min-width:0;}
   #filterLiveMatch.warn{color:var(--warn);}
   #filterLiveMatch.error{color:var(--level-error);}
   /* ---------- Filter popup: live pattern preview (real sample message, matched substrings highlighted in place) ---------- */
   #filterPatternPreview{
     font-family:var(--font-mono); font-size:11.5px; line-height:1.6; color:var(--text-secondary);
     white-space:pre-wrap; word-break:break-word; max-height:150px; overflow-y:auto;
-    padding:8px 10px; margin:0 4px; background:var(--bg-app); border:1px solid var(--border-soft); border-radius:6px;
+    padding:8px 10px; background:var(--bg-app); border:1px solid var(--border-soft); border-radius:6px;
   }
   #filterPatternPreview.hidden{display:none;}
   #filterPatternPreview.preview-empty{color:var(--text-tertiary); font-style:italic;}
@@ -1406,40 +1434,46 @@
           </button>
         </div>
         <form id="filterForm">
-          <div class="filter-input-row">
+          <div class="filter-input-section">
             <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [value:float]" autocomplete="off">
+            <div id="filterTokenChips" class="filter-token-chips">
+              <span class="filter-section-label">Insert:</span>
+              <button type="button" class="token-chip" data-token="float">[float]</button>
+              <button type="button" class="token-chip" data-token="int">[int]</button>
+              <button type="button" class="token-chip" data-token="time">[time]</button>
+              <button type="button" class="token-chip" data-token="word">[word]</button>
+              <button type="button" class="token-chip" data-token="hex">[hex]</button>
+              <button type="button" class="token-chip" data-token="*">[*]</button>
+            </div>
           </div>
-          <div class="filter-options-row">
+          <div class="filter-settings-row">
             <label class="filter-case-toggle" title="Match exact upper/lower case">
               <input type="checkbox" id="filterCaseCheckbox"> Aa
             </label>
             <label class="filter-invert-toggle" title="Keep entries that do NOT match instead">
               <input type="checkbox" id="filterInvertCheckbox"> NOT
             </label>
-            <label class="filter-extract-toggle" title="Add a [value:...] wildcard to enable extraction">
-              <input type="checkbox" id="filterExtractCheckbox"> Extract values
-            </label>
-            <button type="submit" class="btn-mini" id="filterSubmitBtn">Add filter</button>
+          </div>
+          <div id="filterPatternPreview" class="hidden"></div>
+          <div id="filterColumnChips" class="filter-column-chips" title="Restrict search to specific columns — none selected searches all columns">
+            <span class="filter-section-label">Applies to:</span>
+            <button type="button" class="column-chip" data-col="time">Time</button>
+            <button type="button" class="column-chip" data-col="level">Level</button>
+            <button type="button" class="column-chip" data-col="thread">Thread</button>
+            <button type="button" class="column-chip" data-col="location">Location</button>
+            <button type="button" class="column-chip" data-col="method">Method</button>
+            <button type="button" class="column-chip" data-col="message">Message</button>
+          </div>
+          <div class="filter-footer-row">
+            <div id="filterLiveMatch"></div>
+            <div class="filter-footer-actions">
+              <label class="filter-extract-toggle" title="Add a [value:...] wildcard to enable extraction">
+                <input type="checkbox" id="filterExtractCheckbox"> Extract values
+              </label>
+              <button type="submit" class="btn-mini" id="filterSubmitBtn">Add filter</button>
+            </div>
           </div>
         </form>
-        <div id="filterColumnChips" class="filter-column-chips" title="Restrict search to specific columns — none selected searches all columns">
-          <button type="button" class="column-chip" data-col="time">Time</button>
-          <button type="button" class="column-chip" data-col="level">Level</button>
-          <button type="button" class="column-chip" data-col="thread">Thread</button>
-          <button type="button" class="column-chip" data-col="location">Location</button>
-          <button type="button" class="column-chip" data-col="method">Method</button>
-          <button type="button" class="column-chip" data-col="message">Message</button>
-        </div>
-        <div id="filterTokenChips" class="filter-token-chips">
-          <button type="button" class="token-chip" data-token="float">[float]</button>
-          <button type="button" class="token-chip" data-token="int">[int]</button>
-          <button type="button" class="token-chip" data-token="time">[time]</button>
-          <button type="button" class="token-chip" data-token="word">[word]</button>
-          <button type="button" class="token-chip" data-token="hex">[hex]</button>
-          <button type="button" class="token-chip" data-token="*">[*]</button>
-        </div>
-        <div id="filterLiveMatch"></div>
-        <div id="filterPatternPreview" class="hidden"></div>
       </div>
 
       <div id="timelineMinimap" class="hidden">
@@ -1612,9 +1646,9 @@
       <span id="ctxBookmarkLabel">Bookmark this row</span>
     </div>
     <div class="ctx-sep"></div>
-    <div class="ctx-item" id="ctxExtractNumbers">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>
-      Extract numbers from this message
+    <div class="ctx-item" id="ctxFilterForColumn">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
+      <span id="ctxFilterForColumnLabel">Filter for this message</span>
     </div>
   </div>
 
@@ -7255,6 +7289,12 @@ function closeFilterPopup() {
 
 // Inserts a placeholder token at the current cursor position (replacing any
 // current selection), matching how a normal text input handles typed text.
+// Sets .value directly rather than via a keystroke, so — same as every
+// other direct .value write in this popup (openEditFilterPopup, the
+// context-menu prefill below) — it must also re-run
+// updateInvertAvailability() itself: a plain "input" event listener alone
+// wouldn't see this, and without it the Extract-values checkbox could stay
+// stuck disabled after a token turns plain text into a wildcard pattern.
 function insertTokenAtCursor(token) {
   const start = filterInput.selectionStart ?? filterInput.value.length;
   const end = filterInput.selectionEnd ?? filterInput.value.length;
@@ -7263,6 +7303,7 @@ function insertTokenAtCursor(token) {
   const cursor = start + token.length;
   filterInput.focus();
   filterInput.setSelectionRange(cursor, cursor);
+  updateInvertAvailability();
   evaluateLiveMatch();
 }
 filterTokenChips.addEventListener("click", ev => {
@@ -7470,10 +7511,38 @@ const contextMenu = el("#contextMenu");
 const ctxMeta = el("#ctxMeta");
 const ctxBookmark = el("#ctxBookmark");
 const ctxBookmarkLabel = el("#ctxBookmarkLabel");
+const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
 let ctxEntry = null;
+
+// Maps a row's .col-* span class (see renderTable's row-grid markup) to its
+// TEXT_FILTER_COLUMNS entry, so "Filter for this ___" (below) reads the
+// SAME key/label the filter popup's own column-restriction chips use —
+// can't drift out of sync since there's only the one source of labels.
+const CTX_FILTER_COLUMN_CLASSES = [
+  ["col-time", "time"], ["col-level", "level"], ["col-thread", "thread"],
+  ["col-loc", "location"], ["col-method", "method"], ["col-msg", "message"],
+];
+// The row's own "contextmenu" listener is attached once per row (see the
+// four openContextMenu call sites), so ev.target is whichever inner
+// .col-* span the pointer actually landed on — walk up from there to find
+// out which column was right-clicked. Anything else (row background/
+// gutter, a link-view pair's brace) falls back to "message", the one
+// column every entry always has meaningful text in.
+function resolveContextFilterColumn(ev) {
+  const target = ev && ev.target;
+  if (target && target.closest) {
+    for (const [cls, key] of CTX_FILTER_COLUMN_CLASSES) {
+      if (target.closest("." + cls)) return TEXT_FILTER_COLUMNS.find(c => c.key === key);
+    }
+  }
+  return TEXT_FILTER_COLUMNS.find(c => c.key === "message");
+}
+let ctxFilterColumn = TEXT_FILTER_COLUMNS[TEXT_FILTER_COLUMNS.length - 1]; // "message", matches the fallback above
 
 function openContextMenu(ev, entry) {
   ctxEntry = entry;
+  ctxFilterColumn = resolveContextFilterColumn(ev);
+  ctxFilterForColumnLabel.textContent = "Filter for this " + ctxFilterColumn.label;
   ctxMeta.textContent = formatTime(entry.ts);
   // Bookmarks only make sense for real log entries (present in entryIndex) —
   // a link-view pair entry has a synthetic id that's never indexed there, so
@@ -7507,12 +7576,15 @@ el("#ctxBookmark").addEventListener("click", () => {
   closeContextMenu();
 });
 
-// Scans a message for numbers and replaces each with a typed placeholder,
-// producing a ready-to-use extraction pattern (e.g. "moved to [value:float]
-// after [value:int] tries"). Clock times / durations are recognized as a
-// single [value:time] rather than being split into separate numbers, and a
-// number glued directly onto letters (e.g. inside a hash or "v2") is left
-// alone rather than being pulled out. Returns null if none were found.
+// Scans a column's text for numbers and replaces each with a typed
+// placeholder, producing a ready-to-use wildcard pattern (e.g. "moved to
+// [value:float] after [value:int] tries"). Clock times / durations are
+// recognized as a single [value:time] rather than being split into
+// separate numbers, and a number glued directly onto letters (e.g. inside
+// a hash or "v2") is left alone rather than being pulled out. Returns null
+// if none were found — "Filter for this ___" (below) then falls back to
+// the exact literal text instead, so a message/method/thread with no
+// numbers in it is still filterable for its exact value.
 const NUMERIC_TOKEN_RE = new RegExp(
   "\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?" +                                       // clock time
   "|\\d+(?:\\.\\d+)?\\s?(?:ms|s|sec|secs|seconds|min|mins|minutes|h|hrs|hours)\\b" + // duration + unit
@@ -7536,15 +7608,32 @@ function buildNumericExtractPattern(message) {
   return count > 0 ? out : null;
 }
 
-el("#ctxExtractNumbers").addEventListener("click", ev => {
+// "Filter for this ___" opens the filter popup prefilled from whichever
+// column was right-clicked (see resolveContextFilterColumn), with that
+// column pre-selected in the "Applies to" chips — but deliberately does
+// NOT decide text-filter vs. extraction itself anymore: any numeric
+// content becomes a [value:...] wildcard pattern same as the old "Extract
+// numbers from this message" action did, but whether that pattern actually
+// builds an extraction table is left entirely to the popup's own Extract
+// values button (see "Filter popup: Extract values checkbox" — this is the
+// same decision point, just reached from one more entry point now). A
+// column with no numeric content (most Method/Thread values, or a message
+// that's plain text) falls back to the exact literal text instead of doing
+// nothing, so the action is useful there too: "find this exact line again."
+el("#ctxFilterForColumn").addEventListener("click", ev => {
   ev.stopPropagation();
   const entry = ctxEntry;
+  const column = ctxFilterColumn;
   closeContextMenu();
   if (!entry || !state.activeId) return;
-  const pattern = buildNumericExtractPattern(entry.message);
-  if (!pattern) { showCopyToast("No numeric values found in this message"); return; }
+  const value = textColumnValue(entry, column.key);
+  if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
+  const pattern = buildNumericExtractPattern(value) || value;
   openFilterPopup();
   filterInput.value = pattern;
+  filterPopupColumns = new Set([column.key]);
+  renderFilterColumnChips();
+  updateInvertAvailability();
   evaluateLiveMatch();
 });
 
