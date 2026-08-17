@@ -2091,12 +2091,15 @@ await withApp(async (w, d, T) => {
   w.render();
   T.state.activeId = f.id;
 
-  // --- Bug 1 ---
+  // --- Bug 1 --- ("Extract numbers from this message" was renamed to
+  // "Filter for this message" in a later session — #ctxFilterForColumn is
+  // its current id, see Group 40 for the rename's own coverage; the
+  // underlying live-preview bugfix being re-verified here is unaffected.)
   const entryRow = d.querySelector(".log-row");
   fireContextMenu(entryRow, w, 50, 50);
-  fireClick(d.querySelector("#ctxExtractNumbers"), w);
+  fireClick(d.querySelector("#ctxFilterForColumn"), w);
   await new Promise(r => setTimeout(r, 200)); // shared debounce, see evaluateLiveMatch
-  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "sanity: popup opens from 'Extract numbers from this message'");
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "sanity: popup opens from 'Filter for this message'");
   assert(d.querySelector("#filterInput").value.includes("[value:"), "sanity: a pattern was inserted");
   const preview = d.querySelector("#filterPatternPreview");
   assert(!preview.classList.contains("hidden"), "live pattern preview appears immediately, without the person typing anything first");
@@ -3861,8 +3864,10 @@ await withApp(async (w, d, T) => {
    only tested (not captured) — see getEntries/textFilterMatches's new
    wildcardRegex parameter. Also: the old "Filter on “X”:" plain-text
    label was replaced with #filterTargetChain, the same .crumb/.crumb-sep
-   pill-chain visualization #breadcrumb uses; the input now sits in its
-   own .filter-input-row instead of sharing a row with the toggles; and
+   pill-chain visualization #breadcrumb uses; the input got its own row
+   (superseded the SAME session by a fuller section reorg — see Group 40 —
+   so the exact wrapper class checked below now points at that reorg's
+   .filter-input-section instead of the short-lived .filter-input-row); and
    the "Werte extrahieren: [value:float] ..." #filterHint row was removed
    (the token chips already insert those same wildcards directly).
    ============================================================ */
@@ -3870,8 +3875,8 @@ await withApp(async (w, d, T) => {
   section("39. Filter popup: Extract values checkbox + target chain + layout");
 
   assert(d.querySelector("#filterHint") === null, "the old 'Werte extrahieren:' hint row is gone — the token chips already insert wildcards directly");
-  assert(d.querySelector(".filter-input-row #filterInput") !== null, "the filter input now lives in its own row");
-  assert(d.querySelector(".filter-options-row #filterExtractCheckbox") !== null, "the Extract values checkbox lives in the options row with case/invert/submit");
+  assert(d.querySelector(".filter-input-section #filterInput") !== null, "the filter input lives in its own input section (see Group 40 for the fuller section-reorg coverage)");
+  assert(d.querySelector(".filter-footer-row #filterExtractCheckbox") !== null, "the Extract values checkbox now lives in the footer row next to Add filter (see Group 40)");
 
   // --- Target-chain pill visualization (replaces the old plain-text "Filter on “X”:" label) ---
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
@@ -3960,6 +3965,128 @@ await withApp(async (w, d, T) => {
   const uiExtractNode = T.state.nodes[T.state.activeId];
   assert(uiExtractNode.filterType === "extract" && uiExtractNode.value === "temp=[value:float]",
     "submitting with Extract values left CHECKED still creates a real 'extract' filter, unchanged from before this feature");
+});
+
+/* ============================================================
+   GROUP 40 — Filter popup section reorg + "Filter for this ___" context
+   menu (this session, person-requested)
+   Origin: this session, two related requests. (1) The filter popup's
+   layout, restructured into explicit sections: input+wildcard chips
+   together, a settings row (case-sensitive/NOT only — Extract values
+   moved OUT of it), the live pattern preview, the column-restriction
+   ("Applies to") chips, and a final footer row with the match count
+   left-aligned and Extract values + Add filter right-aligned, Extract
+   values immediately left of Add filter. Superseded Group 39's own
+   layout assertions from earlier the same session (see that group's
+   updated note) — Group 39 still covers the Extract-values CHECKBOX's
+   own enable/disable/checked-default semantics, unaffected by where it
+   physically sits in the DOM. (2) The row context menu's "Extract numbers
+   from this message" (#ctxExtractNumbers) was renamed to "Filter for this
+   ___" (#ctxFilterForColumn), where "___" is whichever column the
+   right-click actually landed on (resolveContextFilterColumn walks up
+   from ev.target to the clicked .col-* span, falling back to "message"
+   for anything else — row background, a link-view pair's brace). It no
+   longer decides text-vs-extraction itself: any numeric content still
+   becomes a [value:...] wildcard pattern (reusing buildNumericExtractPattern
+   unchanged), but whether that builds an extraction table is now entirely
+   up to the popup's own Extract values button — so the same action can
+   produce either a wildcard filter or an extraction, decided after the
+   fact. A column with no numeric content (most Method/Thread values)
+   falls back to its exact literal text instead of the old "No numeric
+   values found" no-op toast, making the action useful there too. Also
+   fixed in the same pass: two pre-existing spots that set #filterInput's
+   .value directly (insertTokenAtCursor — a token chip click — and this
+   new context-menu action) already called evaluateLiveMatch() but NOT
+   updateInvertAvailability(), so the Extract-values checkbox added last
+   session could get stuck disabled after a wildcard was inserted any way
+   other than typing it — a real usability bug for exactly the "uncheck
+   Extract values to get a plain wildcard filter instead" workflow this
+   session's request depends on.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("40. Filter popup section reorg + 'Filter for this ___' context menu");
+
+  // --- Section structure ---
+  const inputSection = d.querySelector(".filter-input-section");
+  assert(inputSection.contains(d.querySelector("#filterInput")) && inputSection.contains(d.querySelector("#filterTokenChips")),
+    "the input and the [float]/[int]/... wildcard chips are grouped together in one input section");
+  assert(d.querySelector("#filterTokenChips .filter-section-label").textContent === "Insert:", "the wildcard-insert chips carry an 'Insert:' caption");
+
+  const settingsRow = d.querySelector(".filter-settings-row");
+  assert(settingsRow.contains(d.querySelector("#filterCaseCheckbox")) && settingsRow.contains(d.querySelector("#filterInvertCheckbox")),
+    "case-sensitive and NOT live together in the settings row");
+  assert(!settingsRow.contains(d.querySelector("#filterExtractCheckbox")), "Extract values is NOT in the settings row — it moved to the footer");
+
+  assert(d.querySelector("#filterColumnChips .filter-section-label").textContent === "Applies to:", "the column-restriction chips carry an 'Applies to:' caption now that they're their own section");
+
+  const footerRow = d.querySelector(".filter-footer-row");
+  const footerActions = d.querySelector(".filter-footer-actions");
+  assert(footerRow.firstElementChild.id === "filterLiveMatch", "the match count is the footer row's first (left-aligned) child");
+  assert(footerRow.lastElementChild === footerActions, "the action buttons are the footer row's last (right-aligned) child");
+  const actionChildren = [...footerActions.children];
+  assert(actionChildren[0].contains(d.querySelector("#filterExtractCheckbox")) && actionChildren[1] === d.querySelector("#filterSubmitBtn"),
+    "Extract values sits immediately left of Add filter, both bottom-right");
+
+  const formChildren = [...d.querySelector("#filterForm").children];
+  const idx = el => formChildren.indexOf(el);
+  assert(idx(inputSection) < idx(settingsRow) && idx(settingsRow) < idx(d.querySelector("#filterPatternPreview")) &&
+    idx(d.querySelector("#filterPatternPreview")) < idx(d.querySelector("#filterColumnChips")) &&
+    idx(d.querySelector("#filterColumnChips")) < idx(footerRow),
+    "sections appear top-to-bottom in the requested order: input, settings, preview, applies-to, footer");
+
+  // --- Bugfix: a direct .value write (token chip click) must also refresh
+  // Extract-values' disabled state, not just the live-match preview ---
+  const bf = await w.addFile("bugfix.log", makeLog(0, 3), () => {});
+  w.render();
+  T.state.activeId = bf.id;
+  w.openFilterPopup();
+  assert(d.querySelector("#filterExtractCheckbox").disabled === true, "sanity: no wildcard tokens yet, Extract values starts disabled");
+  fireClick(d.querySelector('.token-chip[data-token="float"]'), w);
+  assert(d.querySelector("#filterInput").value.includes("[value:float]"), "sanity: the token chip inserted its placeholder");
+  assert(d.querySelector("#filterExtractCheckbox").disabled === false, "clicking a token chip also re-enables Extract values immediately (bugfix, this session)");
+  w.closeFilterPopup();
+
+  // --- "Filter for this ___" context menu ---
+  assert(d.querySelector("#ctxExtractNumbers") === null, "the old 'Extract numbers from this message' menu item is gone");
+  const line = `2024-01-15 10:00:00,000\tINFO\t"pool 3"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"processed 42 items"\n`;
+  const cf = await w.addFile("cols.log", line, () => {});
+  w.render();
+  T.state.activeId = cf.id;
+  const activeCol = key => d.querySelector('.column-chip[data-col="' + key + '"]').classList.contains("active");
+
+  // Default (row background, no specific column under the pointer) -> "message"
+  fireContextMenu(d.querySelector(".log-row"), w, 50, 50);
+  assert(d.querySelector("#ctxFilterForColumnLabel").textContent === "Filter for this Message", "right-clicking the row background defaults to the Message column");
+  fireClick(d.querySelector("#ctxFilterForColumn"), w);
+  assert(d.querySelector("#filterInput").value === "processed [value:int] items", "numeric message content becomes a wildcard pattern, same as the old 'Extract numbers' action");
+  assert(activeCol("message"), "the Message column chip is pre-selected to match what was right-clicked");
+  assert(d.querySelector("#filterExtractCheckbox").checked === true, "Extract values still defaults to checked — the popup's own button decides extract vs. wildcard-filter now, not this menu action");
+  w.closeFilterPopup();
+
+  // A column with no numeric content falls back to its exact literal text
+  fireContextMenu(d.querySelector(".col-method"), w, 60, 60);
+  assert(d.querySelector("#ctxFilterForColumnLabel").textContent === "Filter for this Method", "right-clicking the Method cell labels the action for that column");
+  fireClick(d.querySelector("#ctxFilterForColumn"), w);
+  assert(d.querySelector("#filterInput").value === "DoWork", "no numeric content in 'DoWork' -> falls back to the exact literal method text instead of a no-op");
+  assert(activeCol("method"), "the Method column chip is pre-selected");
+  assert(d.querySelector("#filterExtractCheckbox").disabled === true, "no wildcard tokens in a literal fallback, so Extract values has nothing to control and stays disabled");
+  w.closeFilterPopup();
+
+  // A non-message column WITH numeric content also becomes a wildcard pattern
+  fireContextMenu(d.querySelector(".col-thread"), w, 70, 70);
+  assert(d.querySelector("#ctxFilterForColumnLabel").textContent === "Filter for this Thread", "right-clicking the Thread cell labels the action for that column");
+  fireClick(d.querySelector("#ctxFilterForColumn"), w);
+  assert(d.querySelector("#filterInput").value === "pool [value:int]", "numeric content in a non-message column ('pool 3') also becomes a wildcard pattern");
+  assert(activeCol("thread"), "the Thread column chip is pre-selected");
+  assert(d.querySelector("#filterExtractCheckbox").disabled === false, "a wildcard pattern from any column re-enables Extract values, letting the person choose extraction or a plain wildcard filter afterward");
+
+  // End-to-end: unchecking Extract values turns this into a real wildcard-as-filter "text" node, restricted to the right-clicked column
+  fireClick(d.querySelector("#filterExtractCheckbox"), w);
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "text" && created.value === "pool [value:int]" && JSON.stringify(created.columns) === JSON.stringify(["thread"]),
+    "end-to-end: 'Filter for this Thread' + unchecking Extract values creates a 'text' filter restricted to the thread column, matched via the wildcard shape");
+  assert(w.getEntries(created.id).length === 1, "the created filter actually matches the entry whose thread is 'pool 3'");
 });
 
 /* ============================================================
