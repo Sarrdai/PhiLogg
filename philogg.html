@@ -4023,11 +4023,29 @@ let extractNodeId = null;
 let extractSortCol = null; // index into extractColumns, or null (natural/chronological order)
 let extractSortDir = "asc";
 
+// Two synthetic columns prepended to every extraction table, leftmost: a
+// 0-based row-order index (also the default X axis for the Plot tab — see
+// renderPlotControls) and the time delta from the previous entry in ms (so
+// values can be plotted against real elapsed time, not just ordinal
+// position). Negative colIndex keeps them out of spec.columns' 0..n-1 range
+// unconditionally — they're never ignorable/toggleable like pattern columns,
+// so there's no chip for them in the pattern view, but every other
+// colIndex-keyed mechanism (sort, assertions, stats, plot, copy/export)
+// already works generically off extractColumns and needs no special-casing.
+const INDEX_COL = -2;
+const DELTA_T_COL = -1;
+
 // Distinct colors for numbering/coloring extraction columns, cycling if there
 // are more columns than colors. Deliberately separate from the log-level
 // palette so the two color systems are never confused.
 const COLUMN_PALETTE = ["#4fc7c3", "#c792ea", "#e8a94a", "#6fa8ff", "#f0708a", "#8bd17c"];
-function columnColor(i) { return COLUMN_PALETTE[i % COLUMN_PALETTE.length]; }
+// Modulo, not remainder — a naive `i % n` returns negative for the synthetic
+// columns' negative colIndex (e.g. -1 % 6 === -1 in JS), which would index
+// before the array. ((i % n) + n) % n normalizes that back into [0, n).
+function columnColor(i) {
+  const n = COLUMN_PALETTE.length;
+  return COLUMN_PALETTE[((i % n) + n) % n];
+}
 
 /* ===================== Ignored extraction columns =====================
    node.ignoredColumns: number[] — indices (into the compiled pattern's
@@ -4450,13 +4468,21 @@ function renderPlotControls() {
     return;
   }
   // X always has a valid selection (it's a dropdown, never empty) — re-pick if the
-  // pattern changed underneath it. Y defaults are only auto-picked ONCE per
+  // pattern changed underneath it. extractColumns always starts with the
+  // synthetic Index column (see INDEX_COL), so plottable[0] here IS Index —
+  // that's what makes it the default X axis for every extraction's plot,
+  // with no extra logic needed. Y defaults are only auto-picked ONCE per
   // extraction (first time its plot tab is opened); after that, unchecking every
   // box is a valid state (the chart just shows a "pick a column" placeholder)
   // instead of the box being silently re-checked out from under the user.
   if (plotConfig.xCol == null || !plottable.some(c => c.index === plotConfig.xCol)) plotConfig.xCol = plottable[0].index;
   if (!plotConfig.yColsInit) {
-    const firstOther = plottable.find(c => c.index !== plotConfig.xCol) || plottable[0];
+    // Prefer a real pattern-extracted column over the synthetic Index/ΔT
+    // ones for the Y default — those are more useful defaults to look at
+    // than "ΔT plotted against Index".
+    const firstOther = plottable.find(c => c.index !== plotConfig.xCol && c.index >= 0)
+      || plottable.find(c => c.index !== plotConfig.xCol)
+      || plottable[0];
     plotConfig.yCols = [firstOther.index];
     plotConfig.yColsInit = true;
   }
@@ -4926,11 +4952,23 @@ function renderExtractTable(node) {
   // findExtractColumn) since positions shift as columns are ignored/
   // un-ignored but that identity must not.
   const ignoredSet = new Set(node.ignoredColumns || []);
-  extractColumns = spec.columns.map((c, i) => ({ ...c, colIndex: i })).filter(c => !ignoredSet.has(c.colIndex));
+  extractColumns = [
+    { name: "Index", type: "int", colIndex: INDEX_COL },
+    { name: "ΔT (ms)", type: "int", colIndex: DELTA_T_COL },
+    ...spec.columns.map((c, i) => ({ ...c, colIndex: i })).filter(c => !ignoredSet.has(c.colIndex)),
+  ];
   const entries = applyLevelFilter(getEntries(node.id));
-  extractRowsData = entries.map(e => {
+  extractRowsData = entries.map((e, r) => {
     const m = spec.regex.exec(e.message);
-    return { entry: e, values: spec.columns.map((c, i) => (m ? (m[i + 1] ?? "") : "")) };
+    const values = spec.columns.map((c, i) => (m ? (m[i + 1] ?? "") : ""));
+    // Expando properties on negative indices, not part of the dense
+    // spec.columns range — .length and any spec.columns iteration over
+    // `values` stay exactly as before (see the r.values.length assertion in
+    // Group 24), while every colIndex-keyed bracket read (row.values[ci])
+    // used throughout this file already picks these up unchanged.
+    values[INDEX_COL] = String(r);
+    values[DELTA_T_COL] = r === 0 ? "" : String(e.ts - entries[r - 1].ts);
+    return { entry: e, values };
   });
   // Sorting is applied to extractRowsData itself (not just the table display)
   // so selection/copy stay index-consistent with what's on screen. This also
@@ -4977,9 +5015,13 @@ function renderExtractTable(node) {
     const badge = summary
       ? '<span class="assert-badge' + (summary.violations > 0 ? " has-violations" : "") + '">' + summary.violations + " of " + summary.total + " outside range</span>"
       : "";
+    // The numbered circle mirrors a placeholder's position in the pattern
+    // (see renderExtractPatternView) — Index/ΔT aren't placeholders, so they
+    // get no number, just their name.
+    const numBadge = i < 0 ? "" : '<span class="pattern-chip-num" style="background:' + color + '">' + (i + 1) + "</span> ";
     headHtml +=
       '<th data-col="' + i + '" title="Click: select column · Ctrl+click: add/remove column · Shift+click: extend">' +
-      '<span class="pattern-chip-num" style="background:' + color + '">' + (i + 1) + "</span> " +
+      numBadge +
       escapeHtml(c.name) + '<span class="extract-col-type">' + escapeHtml(c.type) + '</span>' +
       '<button type="button" class="extract-sort-btn' + (extractSortCol === i ? " active" : "") + '" data-sort-col="' + i + '" title="Sort by this column">' + arrow + "</button>" +
       assertBtn + badge + "</th>";
