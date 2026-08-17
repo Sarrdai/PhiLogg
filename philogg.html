@@ -869,7 +869,7 @@
     background:var(--bg-panel); position:sticky; left:0; z-index:1;
   }
   #extractHead .extract-gutter{z-index:2; cursor:pointer;}
-  tbody#extractBody tr:hover td{background:var(--bg-elevated);}
+  tbody#extractBody tr:not(.extract-spacer):hover td{background:var(--bg-elevated);}
   #extractTable td.cell-selected, #extractTable th.cell-selected{background:var(--accent-soft) !important;}
   #extractTable td.col-hover, #extractTable th.col-hover{background:var(--bg-elevated-2);}
   .extract-col-float, .extract-col-int, .extract-col-hex{text-align:right; font-variant-numeric:tabular-nums;}
@@ -907,6 +907,12 @@
   #linkInfo{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
   .link-hint{font-size:10.8px; color:var(--text-tertiary); text-align:right;}
   #linkScroll{flex:1 1 auto; overflow-y:auto; padding:12px 16px 24px;}
+  /* Virtualized: #linkSpacer is given the full (analytically computed, see
+     computeLinkBlockOffsets) content height so the scrollbar behaves
+     normally; #linkBody holds only the rendered window and is offset with
+     an inline `top` — same pattern as #tableSpacer/#tableRows. */
+  #linkSpacer{position:relative;}
+  #linkBody{position:absolute; top:0; left:0; right:0;}
 
   .pair-block{display:flex; align-items:stretch; margin-bottom:8px;}
   .pair-brace{
@@ -932,7 +938,7 @@
   .pair-row-msg{font-family:var(--font-mono); font-size:11.6px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0;}
   .pair-delta{
     font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);
-    padding:0 8px 0 15px; letter-spacing:.2px;
+    padding:0 8px 0 15px; letter-spacing:.2px; display:flex; align-items:center;
   }
 
   /* ---------- Link dialog ---------- */
@@ -1563,7 +1569,9 @@
               <span class="link-hint">Right-click the brace for the combined pair · double-click a row to jump to it</span>
             </div>
             <div id="linkScroll">
-              <div id="linkBody"></div>
+              <div id="linkSpacer">
+                <div id="linkBody"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -3303,6 +3311,8 @@ const plotSvg = el("#plotSvg");
 const copyToast = el("#copyToast");
 const linkWrap = el("#linkWrap");
 const linkInfo = el("#linkInfo");
+const linkScroll = el("#linkScroll");
+const linkSpacer = el("#linkSpacer");
 const linkBody = el("#linkBody");
 const statusStrip = el("#statusStrip");
 const tableHeaderEl = el("#tableHeader");
@@ -4014,14 +4024,29 @@ function getVisibleEntries() {
    grid: one row per matching entry, one column per placeholder. Supports
    click/shift-click/drag range selection (like Excel), one-click column
    and row copy, "copy all", and Ctrl+C on the current selection.
-   Not virtualized (extraction patterns are expected to be selective; a
-   few thousand matches render fine as a plain table). */
+   Row-virtualized the same way the main log table is (see "Virtualized
+   row rendering" below): extractRowsData/extractColumns always hold the
+   FULL result (sort/selection/copy/stats/plot all operate on the full
+   set, unaffected), but only the rows within the scrolled viewport (plus
+   a small buffer) actually become <tr> nodes — see renderExtractVisibleRows. */
 
 let extractRowsData = []; // [{ entry, values: [...] }]
 let extractColumns = [];  // [{ name, type }]
 let extractNodeId = null;
 let extractSortCol = null; // index into extractColumns, or null (natural/chronological order)
 let extractSortDir = "asc";
+
+// Fixed per-row height, enforced via an inline style on every rendered <tr>
+// (same technique/reasoning as the main log table's ROW_HEIGHT, declared
+// further down — kept as its own constant here since these functions run
+// long before that declaration executes, see the const/hoisting note where
+// ROW_HEIGHT is declared) so the spacer-row math below is always exact
+// regardless of font metrics. #extractHead is NOT virtualized (it's a
+// single sticky <thead> row) — extractHead.offsetHeight is read directly
+// wherever the body's scroll offset needs to exclude it, rather than
+// assuming a fixed header height.
+const EXTRACT_ROW_HEIGHT = 28;
+const EXTRACT_BUFFER_ROWS = 15;
 
 // Two synthetic columns prepended to every extraction table, leftmost: a
 // 0-based row-order index (also the default X axis for the Plot tab — see
@@ -4295,7 +4320,33 @@ function clearColumnHighlight() {
   extractPatternEl.querySelectorAll(".chip-highlight").forEach(el => el.classList.remove("chip-highlight"));
 }
 
-/* ---------- Link filter: paired-results rendering ---------- */
+/* ---------- Link filter: paired-results rendering ----------
+   Block-virtualized (see "Virtualized block rendering" further down): a
+   pair-block's height varies with its tuple size (getTupleEntries(pair) —
+   2 rows/1 delta for a plain link, N rows/N-1 deltas for a chained/
+   multi-hop tuple), so unlike the fixed-row-height table views this can't
+   just divide scrollTop by a constant — see computeLinkBlockOffsets. */
+
+let linkPairsData = []; // [{ pair, realEntries }] — the FULL result, always, regardless of what's rendered
+let linkNodeId = null;
+let linkBlockOffsets = []; // prefix sums: linkBlockOffsets[i] = cumulative height of blocks[0..i-1]; length linkPairsData.length+1
+// Selection is tracked by index into linkPairsData, not by a DOM class on
+// the block itself — a virtualized block can be torn down and rebuilt
+// (scrolled away and back) between clicks, so the class alone can't be the
+// source of truth the way it could when every pair always had a live DOM
+// node (see applyLinkSelectionClasses/minimapMarkedEntries).
+let linkSelectedPairIndex = null;
+
+// Fixed per-row/delta height (enforced via inline style, same reasoning as
+// EXTRACT_ROW_HEIGHT above) so a block's total height is exactly computable
+// from its tuple size alone, with no DOM measurement needed. Matches
+// .pair-rows' own `gap:2px` (LINK_ROWS_GAP, between every adjacent row/
+// delta child) and .pair-block's `margin-bottom:8px` (LINK_BLOCK_MARGIN).
+const LINK_PAIR_ROW_HEIGHT = 26;
+const LINK_DELTA_HEIGHT = 16;
+const LINK_ROWS_GAP = 2;
+const LINK_BLOCK_MARGIN = 8;
+const LINK_BUFFER_PX = 300; // pixels of slack rendered above/below the viewport, since blocks vary in height
 
 // A pair's row count follows getTupleEntries(pair) — 2 rows/1 delta for a
 // plain link, N rows/N-1 deltas for a chained/multi-hop tuple (nesting
@@ -4304,67 +4355,156 @@ function clearColumnHighlight() {
 // entry, never a synthetic intermediate pair, so double-click always has a
 // real id to reveal (see buildPairRow).
 function renderLinkView(node) {
+  if (linkNodeId !== node.id) {
+    linkNodeId = node.id;
+    linkSelectedPairIndex = null;
+    linkScroll.scrollTop = 0;
+  }
   const pairs = applyLevelFilter(getEntries(node.id));
   linkInfo.textContent = pairs.length.toLocaleString("de-DE") + " pair" + (pairs.length === 1 ? "" : "s");
 
+  linkPairsData = pairs.map(pair => ({ pair, realEntries: getTupleEntries(pair) }));
+  computeLinkBlockOffsets();
+  renderLinkVisibleBlocks();
+
+  // Flattened across every pair (the FULL set, not just the rendered
+  // window — see renderLinkVisibleBlocks) — pairs themselves only carry the
+  // reference side's own .ts (see PROJECT.md "Link filter"), which would
+  // under-represent the true time span whenever a matched (target-side)
+  // entry lands outside its reference's own range.
+  const allRealEntries = linkPairsData.flatMap(p => p.realEntries);
+  // The rendered-range sub-rectangle stays deliberately hidden here (same as
+  // before virtualization) — see updateMinimapRenderedRange's own comment;
+  // it's gated to the table view specifically, not extended to the Link
+  // view's own (differently-shaped) virtualization.
+  renderTimelineMinimap(getRootFileId(node.id), allRealEntries);
+}
+
+// height(n real entries) = n rows + (n-1) deltas + gaps between every
+// adjacent child (2n-2 of them, .pair-rows' flex `gap`) + the block's own
+// bottom margin.
+function linkBlockHeight(n) {
+  const rows = n * LINK_PAIR_ROW_HEIGHT + Math.max(0, n - 1) * LINK_DELTA_HEIGHT;
+  const gaps = Math.max(0, 2 * n - 2) * LINK_ROWS_GAP;
+  return rows + gaps + LINK_BLOCK_MARGIN;
+}
+function computeLinkBlockOffsets() {
+  const offsets = new Array(linkPairsData.length + 1);
+  offsets[0] = 0;
+  for (let i = 0; i < linkPairsData.length; i++) {
+    offsets[i + 1] = offsets[i] + linkBlockHeight(linkPairsData[i].realEntries.length);
+  }
+  linkBlockOffsets = offsets;
+}
+// Smallest block index i such that offsets[i+1] > y — i.e. the block whose
+// span [offsets[i], offsets[i+1]) contains y, clamped to the last block if
+// y is beyond the total height. offsets has length linkPairsData.length+1.
+function linkBlockIndexAtOffset(offsets, y) {
+  const n = offsets.length - 1;
+  if (n <= 0) return 0;
+  let lo = 0, hi = n - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (offsets[mid + 1] > y) hi = mid; else lo = mid + 1;
+  }
+  return lo;
+}
+
+/* ---------- Link view: virtualized block rendering ----------
+   #linkSpacer/#linkBody split mirrors #tableSpacer/#tableRows (see main log
+   table's "Virtualized row rendering"): the spacer is given the full
+   (analytically computed) content height so the scrollbar behaves normally,
+   #linkBody holds only the rendered window's blocks and is offset with an
+   inline `top`. Buffered in PIXELS (LINK_BUFFER_PX), not a row count, since
+   block height varies with tuple size. */
+function renderLinkVisibleBlocks() {
+  const n = linkPairsData.length;
+  if (n === 0) {
+    linkSpacer.style.height = "0px";
+    linkBody.style.top = "0px";
+    linkBody.innerHTML = "";
+    return;
+  }
+  const total = linkBlockOffsets[n];
+  const viewportH = linkScroll.clientHeight || 400;
+  const scrollTop = linkScroll.scrollTop;
+  const yStart = Math.max(0, scrollTop - LINK_BUFFER_PX);
+  const yEnd = Math.min(total, scrollTop + viewportH + LINK_BUFFER_PX);
+  const start = linkBlockIndexAtOffset(linkBlockOffsets, yStart);
+  const end = Math.min(n, linkBlockIndexAtOffset(linkBlockOffsets, Math.max(yStart, yEnd - 1)) + 1);
+
+  linkSpacer.style.height = total + "px";
+  linkBody.style.top = linkBlockOffsets[start] + "px";
+
   const frag = document.createDocumentFragment();
-  // Flattened across every pair, fed to the minimap below — pairs
-  // themselves only carry the reference side's own .ts (see PROJECT.md
-  // "Link filter"), which would under-represent the true time span whenever
-  // a matched (target-side) entry lands outside its reference's own range.
-  const allRealEntries = [];
-  pairs.forEach(pair => {
-    const block = document.createElement("div");
-    block.className = "pair-block";
-
-    const brace = document.createElement("div");
-    brace.className = "pair-brace";
-    brace.title = "Click to select the pair · right-click to filter/extract on the combined entry";
-    const realEntries = getTupleEntries(pair);
-    // Read back by minimapMarkedEntries() when this brace is the selected
-    // one, so a click here marks every real entry the pair/tuple is made
-    // of on the minimap — not just a single point.
-    brace.dataset.entryIds = realEntries.map(e => e.id).join(",");
-    brace.addEventListener("click", () => {
-      const wasSelected = block.classList.contains("pair-selected");
-      linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
-      if (!wasSelected) block.classList.add("pair-selected");
-      updateMinimapSelectionMarkers();
-    });
-    brace.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, pair); });
-
-    const rowsWrap = document.createElement("div");
-    rowsWrap.className = "pair-rows";
-    realEntries.forEach((entry, i) => {
-      if (i > 0) {
-        const delta = document.createElement("div");
-        delta.className = "pair-delta";
-        delta.textContent = "Δ " + formatDuration(entry.ts - realEntries[i - 1].ts);
-        rowsWrap.appendChild(delta);
-      }
-      rowsWrap.appendChild(buildPairRow(entry));
-      allRealEntries.push(entry);
-    });
-
-    block.appendChild(brace);
-    block.appendChild(rowsWrap);
-    frag.appendChild(block);
-  });
+  for (let i = start; i < end; i++) frag.appendChild(buildPairBlock(linkPairsData[i], i));
   linkBody.innerHTML = "";
   linkBody.appendChild(frag);
 
-  // The Link view has no row virtualization (every pair-block above is a
-  // real DOM node already) — renderTimelineMinimap draws the background/
-  // overlay bars and the full-range rectangle from allRealEntries; the
-  // rendered-range sub-rectangle is deliberately left alone (stays hidden),
-  // since there's no narrower "actually rendered" subset to distinguish it
-  // from here — see updateMinimapRenderedRange's own comment.
-  renderTimelineMinimap(getRootFileId(node.id), allRealEntries);
+  applyLinkSelectionClasses();
+}
+
+let linkScrollTicking = false;
+linkScroll.addEventListener("scroll", () => {
+  if (linkScrollTicking) return;
+  linkScrollTicking = true;
+  requestAnimationFrame(() => { renderLinkVisibleBlocks(); linkScrollTicking = false; });
+});
+window.addEventListener("resize", () => renderLinkVisibleBlocks());
+
+// Re-applies the .pair-selected class to whichever currently-rendered block
+// matches linkSelectedPairIndex (see that variable's own comment) — call
+// after any DOM rebuild of the rendered window, not just on selection change,
+// since scrolling can bring the selected pair's block into or out of the DOM.
+function applyLinkSelectionClasses() {
+  linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
+  if (linkSelectedPairIndex == null) return;
+  const block = linkBody.querySelector('.pair-block[data-pair-index="' + linkSelectedPairIndex + '"]');
+  if (block) block.classList.add("pair-selected");
+}
+
+function buildPairBlock(entryData, index) {
+  const { pair, realEntries } = entryData;
+  const block = document.createElement("div");
+  block.className = "pair-block";
+  block.dataset.pairIndex = index;
+
+  const brace = document.createElement("div");
+  brace.className = "pair-brace";
+  brace.title = "Click to select the pair · right-click to filter/extract on the combined entry";
+  // Read back by minimapMarkedEntries() when this pair is the selected one,
+  // so a click here marks every real entry the pair/tuple is made of on the
+  // minimap — not just a single point.
+  brace.dataset.entryIds = realEntries.map(e => e.id).join(",");
+  brace.addEventListener("click", () => {
+    linkSelectedPairIndex = linkSelectedPairIndex === index ? null : index;
+    applyLinkSelectionClasses();
+    updateMinimapSelectionMarkers();
+  });
+  brace.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, pair); });
+
+  const rowsWrap = document.createElement("div");
+  rowsWrap.className = "pair-rows";
+  realEntries.forEach((entry, i) => {
+    if (i > 0) {
+      const delta = document.createElement("div");
+      delta.className = "pair-delta";
+      delta.style.height = LINK_DELTA_HEIGHT + "px";
+      delta.textContent = "Δ " + formatDuration(entry.ts - realEntries[i - 1].ts);
+      rowsWrap.appendChild(delta);
+    }
+    rowsWrap.appendChild(buildPairRow(entry));
+  });
+
+  block.appendChild(brace);
+  block.appendChild(rowsWrap);
+  return block;
 }
 
 function buildPairRow(entry) {
   const row = document.createElement("div");
   row.className = "pair-row " + levelClass(entry.level);
+  row.style.height = LINK_PAIR_ROW_HEIGHT + "px";
   row.innerHTML =
     '<span class="pair-row-bar"></span>' +
     '<span class="pair-row-time">' + escapeHtml(formatTime(entry.ts)) + '</span>' +
@@ -4934,6 +5074,11 @@ function renderExtractTable(node) {
     resetPlotConfig();
     extractSortCol = null;
     extractSortDir = "asc";
+    // The row window below is computed from extractScroll.scrollTop — reset
+    // it on every node switch so a scroll position left deep in a large
+    // extraction's result doesn't leave a much smaller one's table looking
+    // scrolled-past-its-own-end (or a blank spacer) the instant it renders.
+    extractScroll.scrollTop = 0;
   }
   const spec = compileExtractPattern(node.value);
   extractNodeId = node.id;
@@ -5063,9 +5208,50 @@ function renderExtractTable(node) {
     });
   });
 
+  renderExtractVisibleRows();
+
+  if (extractView === "plot") { renderPlotControls(); renderPlotChart(); }
+}
+
+/* ---------- Extraction table: virtualized row rendering ----------
+   Same "spacer + windowed subset" idea as the main log table's
+   renderVisibleRows (see that function's own comment), adapted for a real
+   <table>: since #extractHead is a sticky <thead> INSIDE the same
+   scrollable table (not a separate non-scrolling element like #tableHead),
+   the header's own rendered height still occupies scroll-flow space above
+   row 0 — extractHead.offsetHeight is subtracted from extractScroll's
+   scrollTop before mapping it to a row index. Rather than absolutely-
+   positioning a windowed subset (native <table> row layout doesn't support
+   that), two spacer <tr>s — a single <td colspan> each, sized via inline
+   height/padding/border so they need no dedicated CSS rule — stand in for
+   the rows above/below the rendered window so the scrollbar's total range
+   still matches the full row count. Reads the active node off extractNodeId
+   (state.nodes) rather than taking one as a parameter, since the scroll
+   listener below re-invokes this without one. */
+function renderExtractVisibleRows() {
+  const node = state.nodes[extractNodeId];
+  const total = extractRowsData.length;
+  const colCount = extractColumns.length + 1; // +1 for the leading gutter column
+  if (total === 0) { extractBody.innerHTML = ""; applyExtractSelectionClasses(); return; }
+
+  const viewportH = extractScroll.clientHeight || 400;
+  const headerH = extractHead.offsetHeight || 0;
+  const bodyScrollTop = Math.max(0, extractScroll.scrollTop - headerH);
+  const maxVisible = Math.ceil(viewportH / EXTRACT_ROW_HEIGHT) + EXTRACT_BUFFER_ROWS * 2;
+  const start = Math.max(0, Math.floor(bodyScrollTop / EXTRACT_ROW_HEIGHT) - EXTRACT_BUFFER_ROWS);
+  const end = Math.min(total, start + maxVisible);
+
   const frag = document.createDocumentFragment();
-  extractRowsData.forEach((row, r) => {
+  if (start > 0) {
+    const topSpacer = document.createElement("tr");
+    topSpacer.className = "extract-spacer";
+    topSpacer.innerHTML = '<td colspan="' + colCount + '" style="height:' + (start * EXTRACT_ROW_HEIGHT) + 'px;padding:0;border:none;"></td>';
+    frag.appendChild(topSpacer);
+  }
+  for (let r = start; r < end; r++) {
+    const row = extractRowsData[r];
     const tr = document.createElement("tr");
+    tr.style.height = EXTRACT_ROW_HEIGHT + "px";
     let rowHtml = '<td class="extract-gutter" data-row="' + r + '" title="Click: select row · Ctrl+click: add/remove row">' + (r + 1) + "</td>";
     extractColumns.forEach(c => {
       const ci = c.colIndex;
@@ -5086,14 +5272,26 @@ function renderExtractTable(node) {
       td.addEventListener("mouseleave", clearColumnHighlight);
     });
     frag.appendChild(tr);
-  });
+  }
+  if (end < total) {
+    const bottomSpacer = document.createElement("tr");
+    bottomSpacer.className = "extract-spacer";
+    bottomSpacer.innerHTML = '<td colspan="' + colCount + '" style="height:' + ((total - end) * EXTRACT_ROW_HEIGHT) + 'px;padding:0;border:none;"></td>';
+    frag.appendChild(bottomSpacer);
+  }
   extractBody.innerHTML = "";
   extractBody.appendChild(frag);
 
   applyExtractSelectionClasses();
-
-  if (extractView === "plot") { renderPlotControls(); renderPlotChart(); }
 }
+
+let extractScrollTicking = false;
+extractScroll.addEventListener("scroll", () => {
+  if (extractScrollTicking) return;
+  extractScrollTicking = true;
+  requestAnimationFrame(() => { renderExtractVisibleRows(); extractScrollTicking = false; });
+});
+window.addEventListener("resize", () => renderExtractVisibleRows());
 
 // --- Cell selection: click, Ctrl+click (toggle/non-contiguous), shift-click (extend), drag, corner ---
 extractHead.addEventListener("mousedown", ev => {
@@ -5809,14 +6007,15 @@ function updateMinimapRenderedRange() {
 // Resolves which real entries should get a position marker on the minimap
 // right now. Two sources, checked in order:
 //  1. A Link view pair currently selected via its brace (see renderLinkView)
-//     — every REAL entry the pair/tuple is made of (getTupleEntries), read
-//     back off a data-entry-ids attribute stashed on the brace at render
-//     time, since that's cheaper than re-deriving it from getEntries() here.
+//     — every REAL entry the pair/tuple is made of, read directly off
+//     linkPairsData[linkSelectedPairIndex] (not the DOM — a virtualized
+//     block can be scrolled out of existence between the click and this
+//     read, see linkSelectedPairIndex's own comment).
 //     Gated on the Link view actually being the active view: renderLinkView
-//     only rebuilds #linkBody (clearing any stale .pair-selected) the next
-//     time it itself runs, which doesn't happen just from switching away —
-//     without this gate, a brace left selected before navigating to an
-//     unrelated node would keep incorrectly marking its old entries.
+//     only resets linkSelectedPairIndex when ITS OWN active node changes,
+//     which doesn't happen just from switching away to an unrelated node —
+//     without this gate, a pair left selected before navigating away would
+//     keep incorrectly marking its old entries.
 //  2. The ordinary single selection, state.selectedId — resolved via
 //     entryIndex first (fast, and works even off-screen, same as
 //     updateDetailPanel), falling back to a scan of currentViewEntries/
@@ -5828,9 +6027,8 @@ function updateMinimapRenderedRange() {
 function minimapMarkedEntries() {
   const activeNode = state.nodes[state.activeId];
   const isLinkActive = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
-  const selectedBrace = isLinkActive ? linkBody.querySelector(".pair-selected .pair-brace") : null;
-  if (selectedBrace && selectedBrace.dataset.entryIds) {
-    return selectedBrace.dataset.entryIds.split(",").map(id => entryIndex[id]).filter(Boolean);
+  if (isLinkActive && linkSelectedPairIndex != null && linkPairsData[linkSelectedPairIndex]) {
+    return linkPairsData[linkSelectedPairIndex].realEntries;
   }
   if (!state.selectedId) return [];
   const found = entryIndex[state.selectedId]
@@ -6108,8 +6306,9 @@ function applySelection(entryId) {
   // A plain row selection always supersedes any Link-view pair-brace marker
   // (see minimapMarkedEntries' priority order) — clear it here so a stale
   // "Klammer" doesn't keep overriding a fresh single-row selection made
-  // elsewhere. Cheap no-op when the minimap is hidden or nothing's marked.
-  linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
+  // elsewhere. Cheap no-op when nothing's marked.
+  linkSelectedPairIndex = null;
+  applyLinkSelectionClasses();
   updateMinimapSelectionMarkers();
   return previousId;
 }
