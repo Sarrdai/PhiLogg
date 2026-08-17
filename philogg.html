@@ -1154,27 +1154,10 @@
   }
   .filter-case-toggle input{accent-color:var(--accent); cursor:pointer;}
   .filter-case-toggle:has(input:checked){color:var(--accent-strong);}
-  /* "Extract values" moved into the footer, next to Add filter (person-
-     requested) — styled as a real toggle BUTTON (border/fill, not a
-     visible checkbox+label like the settings row above) since it now sits
-     among actions, not options; the checkbox itself is kept for its native
-     checked/disabled semantics (same JS as before) but visually hidden —
-     the label IS the clickable button. */
-  .filter-extract-toggle{
-    position:relative; display:flex; align-items:center; gap:5px; flex:0 0 auto;
-    font-family:var(--font-mono); font-size:11.5px; font-weight:650; color:var(--text-secondary);
-    background:transparent; border:1px solid var(--border); border-radius:6px;
-    padding:7px 11px; cursor:pointer; user-select:none;
-    transition:background .12s, border-color .12s, color .12s, opacity .12s;
-  }
-  .filter-extract-toggle input{position:absolute; opacity:0; width:0; height:0; pointer-events:none;}
-  .filter-extract-toggle:has(input:checked){background:var(--accent); border-color:transparent; color:#08201f;}
-  .filter-extract-toggle:has(input:disabled){opacity:.4; cursor:default;}
   .filter-column-chips{
     display:flex; align-items:center; gap:5px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
   }
-  .filter-column-chips.hidden{display:none;}
   .column-chip{
     font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--text-secondary);
     background:transparent; border:1px solid var(--border); border-radius:20px;
@@ -1218,6 +1201,12 @@
     background:var(--accent); color:#08201f; border:none; border-radius:6px;
     padding:8px 12px; font-size:12px; font-weight:650; cursor:pointer;
   }
+  .btn-mini:disabled{opacity:.4; cursor:default;}
+  /* #filterExtractBtn: a plain secondary button, bordered/transparent
+     instead of accent-filled, so "Add filter"/"Save" (still .btn-mini)
+     stays the visually primary action. */
+  .btn-mini-secondary{background:transparent; color:var(--text-secondary); border:1px solid var(--border);}
+  .btn-mini-secondary:hover:not(:disabled){filter:brightness(1.25);}
   .btn-icon{background:none; border:none; color:var(--text-tertiary); cursor:pointer; display:flex; padding:6px; border-radius:6px;}
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
@@ -1467,9 +1456,7 @@
           <div class="filter-footer-row">
             <div id="filterLiveMatch"></div>
             <div class="filter-footer-actions">
-              <label class="filter-extract-toggle" title="Add a [value:...] wildcard to enable extraction">
-                <input type="checkbox" id="filterExtractCheckbox"> Extract values
-              </label>
+              <button type="button" class="btn-mini btn-mini-secondary" id="filterExtractBtn" title="Build an extraction table from this pattern's [value:...] wildcards">Extract</button>
               <button type="submit" class="btn-mini" id="filterSubmitBtn">Add filter</button>
             </div>
           </div>
@@ -2849,11 +2836,12 @@ function textColumnValue(e, key) {
 // sides same as the original behavior.
 //
 // `wildcardRegex` (optional): a "text" filter can now carry [value:...]/[*]
-// tokens without becoming an "extract" filter — the "Extract values"
-// checkbox in the filter popup decides which one a wildcard pattern
-// becomes (see filterForm's submit handler). When set, wildcardRegex is
-// compileExtractPattern's regex (rebuilt with the right case-sensitivity
-// flag) tested against the target text instead of a plain substring check.
+// tokens without becoming an "extract" filter — which one a wildcard
+// pattern becomes is decided purely by which filter-popup button gets
+// clicked, "Add filter" vs. "Extract" (see commitFilter). When set,
+// wildcardRegex is compileExtractPattern's regex (rebuilt with the right
+// case-sensitivity flag) tested against the target text instead of a
+// plain substring check.
 function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex) {
   if (wildcardRegex) {
     if (columns && columns.length) {
@@ -2887,10 +2875,11 @@ function getEntries(nodeId) {
   if (node.filterType === "text") {
     const value = String(node.value);
     // A "text" filter's value can itself contain [value:...]/[*] tokens
-    // when it was authored with "Extract values" unchecked (wildcard used
-    // as a match-shape hint, not to build an extraction table — see the
-    // filter popup). Compiled to the same regex compileExtractPattern
-    // would use for extraction, just tested rather than captured.
+    // when it was authored by clicking "Add filter" instead of "Extract"
+    // (wildcard used as a match-shape hint, not to build an extraction
+    // table — see the filter popup's commitFilter). Compiled to the same
+    // regex compileExtractPattern would use for extraction, just tested
+    // rather than captured.
     if (isExtractPattern(value)) {
       const spec = compileExtractPattern(value);
       const wildcardRegex = spec && new RegExp(spec.regexStr, node.caseSensitive ? "" : "i");
@@ -7153,7 +7142,7 @@ const filterLiveMatch = el("#filterLiveMatch");
 const filterPatternPreview = el("#filterPatternPreview");
 const filterInvertCheckbox = el("#filterInvertCheckbox");
 const filterCaseCheckbox = el("#filterCaseCheckbox");
-const filterExtractCheckbox = el("#filterExtractCheckbox");
+const filterExtractBtn = el("#filterExtractBtn");
 const filterColumnChips = el("#filterColumnChips");
 const filterTargetChainEl = el("#filterTargetChain");
 
@@ -7233,17 +7222,8 @@ function openFilterPopup() {
   filterInput.value = "";
   filterInvertCheckbox.checked = false;
   filterCaseCheckbox.checked = false;
-  // Always OFF for a new filter (person-reported bugfix: it used to
-  // default to checked, so "Filter for this ___" — which prefills a
-  // wildcard pattern here without ever touching this checkbox — silently
-  // built an extraction table on a plain "Add filter" click). The popup
-  // has exactly one behavior per submit, entirely determined by what's
-  // currently checked here, never by which entry point opened it. Ctrl+F
-  // and "Filter for this ___" may prefill the input text/column
-  // differently — never this.
-  filterExtractCheckbox.checked = false;
   renderFilterColumnChips();
-  updateInvertAvailability();
+  updateExtractAvailability();
   filterLiveMatch.textContent = "";
   filterLiveMatch.className = "";
   filterPatternPreview.classList.add("hidden");
@@ -7273,9 +7253,8 @@ function openEditFilterPopup(nodeId) {
   filterInput.value = node.value;
   filterInvertCheckbox.checked = !!node.inverted;
   filterCaseCheckbox.checked = node.filterType === "text" && !!node.caseSensitive;
-  filterExtractCheckbox.checked = node.filterType === "extract";
   renderFilterColumnChips();
-  updateInvertAvailability();
+  updateExtractAvailability();
   filterLiveMatch.textContent = "";
   filterLiveMatch.className = "";
   filterPopup.classList.remove("hidden");
@@ -7300,9 +7279,9 @@ function closeFilterPopup() {
 // Sets .value directly rather than via a keystroke, so — same as every
 // other direct .value write in this popup (openEditFilterPopup, the
 // context-menu prefill below) — it must also re-run
-// updateInvertAvailability() itself: a plain "input" event listener alone
-// wouldn't see this, and without it the Extract-values checkbox could stay
-// stuck disabled after a token turns plain text into a wildcard pattern.
+// updateExtractAvailability() itself: a plain "input" event listener alone
+// wouldn't see this, and without it the Extract button could stay stuck
+// disabled after a token turns plain text into a wildcard pattern.
 function insertTokenAtCursor(token) {
   const start = filterInput.selectionStart ?? filterInput.value.length;
   const end = filterInput.selectionEnd ?? filterInput.value.length;
@@ -7311,7 +7290,7 @@ function insertTokenAtCursor(token) {
   const cursor = start + token.length;
   filterInput.focus();
   filterInput.setSelectionRange(cursor, cursor);
-  updateInvertAvailability();
+  updateExtractAvailability();
   evaluateLiveMatch();
 }
 filterTokenChips.addEventListener("click", ev => {
@@ -7326,6 +7305,16 @@ filterTokenChips.addEventListener("click", ev => {
 // in create mode, the edited filter's existing parent in edit mode), so the
 // person gets instant feedback on whether a pattern actually matches
 // anything before committing to it with Enter.
+//
+// This ALWAYS previews the "Add filter" outcome specifically (a "text"
+// filter — using the wildcard-shape regex once the pattern has [value:...]
+// tokens, same as getEntries' "text" branch does — honoring NOT/case/
+// column-restriction exactly as they're currently set), never the
+// "Extract" outcome: which one actually happens is decided entirely by
+// which button gets clicked (see commitFilter), not by anything this
+// preview shows ahead of time. The pattern preview box below (matched
+// substrings highlighted in a real sample message) already conveys what
+// Extract would capture, independent of this count.
 let liveMatchTimer = null;
 function evaluateLiveMatch() {
   clearTimeout(liveMatchTimer);
@@ -7342,40 +7331,19 @@ function evaluateLiveMatch() {
     updateFilterPatternPreview(val, baseEntries);
 
     const inverted = filterInvertCheckbox.checked;
-    const label = inverted ? "Kept (NOT): " : "Matches: ";
-    const wantsExtract = isExtractPattern(val) && filterExtractCheckbox.checked;
-
-    if (wantsExtract) {
+    const caseSensitive = filterCaseCheckbox.checked;
+    const columns = [...filterPopupColumns];
+    let wildcardRegex = null;
+    if (isExtractPattern(val)) {
       const spec = compileExtractPattern(val);
       if (!spec) { filterLiveMatch.textContent = "Invalid pattern"; filterLiveMatch.className = "error"; return; }
-      let matches = baseEntries.reduce((n, e) => n + (spec.regex.test(e.message) ? 1 : 0), 0);
-      if (inverted) matches = baseEntries.length - matches;
-      filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") +
-        " rows · " + spec.columns.length + " column" + (spec.columns.length === 1 ? "" : "s");
-      if (matches === 0) filterLiveMatch.className = "warn";
-    } else if (isExtractPattern(val)) {
-      // Wildcard-as-filter mode ("Extract values" unchecked): the pattern's
-      // tokens still constrain what matches (e.g. "here a float value"),
-      // but the result stays plain filtered rows instead of an extraction
-      // table — same regex as extraction, just tested, and honoring
-      // case-sensitivity/columns/NOT like any other "text" filter.
-      const spec = compileExtractPattern(val);
-      if (!spec) { filterLiveMatch.textContent = "Invalid pattern"; filterLiveMatch.className = "error"; return; }
-      const caseSensitive = filterCaseCheckbox.checked;
-      const columns = [...filterPopupColumns];
-      const wildcardRegex = new RegExp(spec.regexStr, caseSensitive ? "" : "i");
-      let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, wildcardRegex) ? 1 : 0), 0);
-      if (inverted) matches = baseEntries.length - matches;
-      filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
-      if (matches === 0) filterLiveMatch.className = "warn";
-    } else {
-      const caseSensitive = filterCaseCheckbox.checked;
-      const columns = [...filterPopupColumns];
-      let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns) ? 1 : 0), 0);
-      if (inverted) matches = baseEntries.length - matches;
-      filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
-      if (matches === 0) filterLiveMatch.className = "warn";
+      wildcardRegex = new RegExp(spec.regexStr, caseSensitive ? "" : "i");
     }
+    let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, wildcardRegex) ? 1 : 0), 0);
+    if (inverted) matches = baseEntries.length - matches;
+    const label = inverted ? "Kept (NOT): " : "Matches: ";
+    filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
+    if (matches === 0) filterLiveMatch.className = "warn";
   }, 150);
 }
 
@@ -7450,53 +7418,44 @@ function updateFilterPatternPreview(val, baseEntries) {
   filterPatternPreview.innerHTML = "";
   filterPatternPreview.appendChild(frag);
 }
-// Inverting an extraction pattern would keep only the rows that DON'T match
-// it — i.e. exactly the rows with nothing to extract — so the extraction
-// table would always be empty. Disable NOT for that case rather than let
-// the person build a filter that can never show anything. Case-sensitivity
-// and the target-column restriction are likewise "text" filter-only
-// options (an extract pattern already matches via its own regex against
-// e.message, see getEntries) — hidden/disabled the same way for the same
-// reason. None of this applies when "Extract values" is unchecked: the
-// wildcard then stays a "text" filter (see getEntries/textFilterMatches),
-// so NOT/case/columns all behave normally.
-function updateInvertAvailability() {
-  const isExtractCandidate = isExtractPattern(filterInput.value);
-  filterExtractCheckbox.disabled = !isExtractCandidate;
-  const wantsExtract = isExtractCandidate && filterExtractCheckbox.checked;
-
-  filterInvertCheckbox.disabled = wantsExtract;
-  filterInvertCheckbox.parentElement.title = wantsExtract
-    ? "NOT isn't available for extraction patterns"
-    : "Keep entries that do NOT match instead";
-  if (wantsExtract) filterInvertCheckbox.checked = false;
-
-  filterCaseCheckbox.disabled = wantsExtract;
-  filterCaseCheckbox.parentElement.title = wantsExtract
-    ? "Case sensitivity isn't available for extraction patterns"
-    : "Match exact upper/lower case";
-  if (wantsExtract) filterCaseCheckbox.checked = false;
-  filterColumnChips.classList.toggle("hidden", wantsExtract);
+// The Extract button only makes sense once the pattern actually contains a
+// [value:...]/[*] wildcard token — disabled otherwise, same as before.
+// NOT/case-sensitivity/column-restriction are NOT conditionally disabled
+// anymore (person-requested, this session — removed the old "Extract
+// values" checkbox entirely): they're parameters of the "Add filter"
+// outcome only, Extract simply ignores all three (see commitFilter), so
+// there's nothing left to hide/gray out based on pattern content — which
+// button gets clicked is the only thing that decides extract vs. plain
+// filter, and that decision is never made ahead of time by anything typed
+// or toggled here.
+function updateExtractAvailability() {
+  filterExtractBtn.disabled = !isExtractPattern(filterInput.value);
 }
-filterInput.addEventListener("input", () => { updateInvertAvailability(); evaluateLiveMatch(); });
+filterInput.addEventListener("input", () => { updateExtractAvailability(); evaluateLiveMatch(); });
 filterInvertCheckbox.addEventListener("change", evaluateLiveMatch);
 filterCaseCheckbox.addEventListener("change", evaluateLiveMatch);
-filterExtractCheckbox.addEventListener("change", () => { updateInvertAvailability(); evaluateLiveMatch(); });
 
-filterForm.addEventListener("submit", ev => {
-  ev.preventDefault();
+// Shared by both "Add filter"/"Save" (asExtract=false) and "Extract"
+// (asExtract=true) — the ONLY place that decides "text" vs. "extract",
+// and it does so purely from which button called it, never from any
+// state the popup was carrying around beforehand. Editing an existing
+// node works exactly the same way: clicking "Add filter" on a node that's
+// currently an "extract" replaces it with a plain "text" filter, and
+// clicking "Extract" on a "text" node turns it into a real extraction —
+// updateFilterNode always writes the fresh filterType, there is no
+// merge/preserve-old-type step (see "editingFilterId ? update : create"
+// below, both branches always pass the type asExtract dictates).
+function commitFilter(asExtract) {
   const val = filterInput.value.trim();
   if (!val || !filterPopupBaseId) { closeFilterPopup(); return; }
 
-  const wantsExtract = isExtractPattern(val) && filterExtractCheckbox.checked;
   if (isExtractPattern(val) && !compileExtractPattern(val)) {
     filterInput.classList.remove("input-error");
     void filterInput.offsetWidth; // restart the animation if it's already mid-flash
     filterInput.classList.add("input-error");
     return; // keep the popup open so the pattern can be fixed
   }
-  if (wantsExtract) {
-    // NOT is disabled for extract patterns, see updateInvertAvailability
+  if (asExtract) {
     const ignoredArr = [...filterPopupIgnored];
     if (editingFilterId) updateFilterNode(editingFilterId, "extract", val, false, ignoredArr);
     else createFilterNode(filterPopupBaseId, "extract", val, false, ignoredArr);
@@ -7509,7 +7468,17 @@ filterForm.addEventListener("submit", ev => {
   closeFilterPopup();
   revealFilteredView(); // a new/edited filter's result lives in the Filtered view
   render();
+}
+
+filterForm.addEventListener("submit", ev => {
+  ev.preventDefault();
+  commitFilter(false);
 });
+// type="button", not type="submit" — a click never fires the form's
+// "submit" event, and (per spec) implicit submission on Enter in a text
+// field only ever considers real submit buttons, so this can sit anywhere
+// in the form without affecting what Enter does (still "Add filter").
+filterExtractBtn.addEventListener("click", () => commitFilter(true));
 el("#btnCloseFilterPopup").addEventListener("click", closeFilterPopup);
 
 
@@ -7622,12 +7591,12 @@ function buildNumericExtractPattern(message) {
 // NOT decide text-filter vs. extraction itself anymore: any numeric
 // content becomes a [value:...] wildcard pattern same as the old "Extract
 // numbers from this message" action did, but whether that pattern actually
-// builds an extraction table is left entirely to the popup's own Extract
-// values button (see "Filter popup: Extract values checkbox" — this is the
-// same decision point, just reached from one more entry point now). A
-// column with no numeric content (most Method/Thread values, or a message
-// that's plain text) falls back to the exact literal text instead of doing
-// nothing, so the action is useful there too: "find this exact line again."
+// builds an extraction table is left entirely to which popup button gets
+// clicked afterward (see "Filter popup" — this is the same decision
+// point, just reached from one more entry point now). A column with no
+// numeric content (most Method/Thread values, or a message that's plain
+// text) falls back to the exact literal text instead of doing nothing, so
+// the action is useful there too: "find this exact line again."
 el("#ctxFilterForColumn").addEventListener("click", ev => {
   ev.stopPropagation();
   const entry = ctxEntry;
@@ -7641,7 +7610,7 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
   filterInput.value = pattern;
   filterPopupColumns = new Set([column.key]);
   renderFilterColumnChips();
-  updateInvertAvailability();
+  updateExtractAvailability();
   evaluateLiveMatch();
 });
 
