@@ -49,7 +49,24 @@
     --accent-soft:rgba(27,143,138,.12);
     --accent-strong:#137672;
     --warn:#a06a1c;
+    --level-error:#c0392b;
+    --level-error-soft:rgba(192,57,43,.12);
+    --level-warn:#a06a1c;
+    --level-warn-soft:rgba(160,106,28,.12);
+    --level-info:#1f5fbf;
+    --level-info-soft:rgba(31,95,191,.10);
+    --level-debug:#5b6474;
+    --level-debug-soft:rgba(91,100,116,.10);
+    --level-trace:#8991a3;
+    --level-trace-soft:rgba(137,145,163,.08);
   }
+  /* Level-color backgrounds (log rows, badges) are near-white in light mode,
+     so the active toggle buttons need light text instead of the near-black
+     used against the brighter dark-mode swatches. */
+  :root[data-theme="light"] .level-btn.active.lvl-error,
+  :root[data-theme="light"] .level-btn.active.lvl-warn,
+  :root[data-theme="light"] .level-btn.active.lvl-info,
+  :root[data-theme="light"] .level-btn.active.lvl-debug{color:#fff;}
 
   *{box-sizing:border-box;}
   html,body{height:100%;}
