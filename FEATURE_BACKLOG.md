@@ -5,7 +5,6 @@ Raw ideas only, not yet elaborated. Pick items up individually before implementa
 - **Drop a non-log file (e.g. TIFF) → jump to matching log entry** by the file's CreationDate. Open question: TIFF files carry a trailing XML block (after the image data) with its own CreationDate, which may be more accurate than the filesystem timestamp. Needs scoping before implementation.
 - **Bugfix**: view sometimes doesn't refresh when a new filter is created. Needs repro/root cause.
 - **Pluggable parser logic** — support/configure additional log formats beyond the current one.
-- **Folder watch + lazy loading** — auto-detect new files in a watched folder, list them, only parse on click.
 - **Sortable columns** in the entry table.
 - **Numeric greater/less-than filter** without requiring value extraction first.
 - **Extend undo/redo** — currently only covers filter delete/move; missing file deletion, value/pattern edits, invert toggle, assertion changes.

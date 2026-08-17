@@ -153,6 +153,58 @@
     border-radius:9px; text-align:center;
     color:var(--text-tertiary); font-size:11.5px; line-height:1.5;
   }
+
+  /* Folder watch (FEATURE_BACKLOG.md "Folder watch + lazy loading"): a
+     watched folder's section sits above #tree, showing its name with a
+     "scanning" ping animation (only while it's a real, live directory
+     handle) and a grayed-out list of compatible files not yet opened —
+     see renderFolderWatchList/renderFolderSection/renderInactiveFileRow. */
+  #folderWatchList{flex:0 0 auto;}
+  .folder-watch{
+    margin:8px 12px 0; border:1px solid var(--border-soft); border-radius:9px;
+    background:var(--bg-elevated); overflow:hidden;
+  }
+  .folder-watch-header{
+    display:flex; align-items:center; gap:8px;
+    padding:7px 6px 7px 10px;
+  }
+  .folder-watch-icon{
+    flex:0 0 auto; position:relative; display:flex; color:var(--text-tertiary);
+  }
+  .folder-watch-icon.scanning{color:var(--accent);}
+  .folder-watch-icon.scanning::after{
+    content:""; position:absolute; inset:-4px; border-radius:50%;
+    border:1.5px solid var(--accent); opacity:0;
+    animation:folder-scan-ping 1.8s ease-out infinite;
+  }
+  @keyframes folder-scan-ping{
+    0%{transform:scale(.5); opacity:.85;}
+    100%{transform:scale(2); opacity:0;}
+  }
+  .folder-watch-name{
+    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; font-size:12.3px; font-weight:600; color:var(--text-primary);
+  }
+  .folder-watch-close{
+    flex:0 0 auto; background:none; border:none; cursor:pointer;
+    color:var(--text-tertiary); display:flex; padding:3px; border-radius:4px;
+  }
+  .folder-watch-close:hover{color:var(--level-error); background:var(--level-error-soft);}
+  .folder-watch-files{border-top:1px solid var(--border-soft);}
+  .folder-watch-file{
+    display:flex; align-items:center; gap:7px;
+    padding:6px 10px 6px 12px; cursor:pointer;
+    color:var(--text-tertiary); opacity:.55;
+  }
+  .folder-watch-file:hover{opacity:.9; background:var(--bg-elevated-2);}
+  .folder-watch-file .tree-icon{flex:0 0 auto; display:flex;}
+  .folder-watch-file-name{
+    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; font-size:12px;
+  }
+  .folder-watch-note{
+    padding:7px 10px; font-size:10.8px; color:var(--text-tertiary); font-style:italic;
+  }
   #shortcuts{
     flex:1 1 auto; overflow-y:auto; padding:10px 14px;
     color:var(--text-tertiary); font-size:10.8px; line-height:1.7;
@@ -1283,7 +1335,12 @@
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5a1 1 0 0 1 1-1h3l1.3 1.6H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>
         Open files…
       </button>
+      <button id="btnOpenFolder" title="Watch a folder: compatible files are listed grayed-out and only parsed when opened">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>
+        Open folder…
+      </button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
+      <input type="file" id="folderInput" webkitdirectory hidden>
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,text/plain">
@@ -1296,8 +1353,9 @@
       <div id="treeActionBar">
         <span id="treeActionBarLabel"></span>
       </div>
+      <div id="folderWatchList"></div>
       <div id="tree"></div>
-      <div id="dropHint">Drag &amp; drop log files here<br>or use “Open files…”</div>
+      <div id="dropHint">Drag &amp; drop log files or a folder here<br>or use “Open files…” / “Open folder…”</div>
     </aside>
 
     <div id="sidebarResizer" title="Drag to resize"></div>
@@ -1453,7 +1511,7 @@
           <svg width="34" height="34" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M5.7 8h4.6M5.7 10h4.6M5.7 12h3"/></svg>
         </div>
         <h2>No log file loaded yet</h2>
-        <p>Drop one or more log files anywhere on this window, or click “Open files…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>.</p>
+        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open files…” / “Open folder…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>.</p>
       </div>
 
       <div id="extractWrap">
@@ -1717,6 +1775,7 @@
 
 /* ===================== Icons ===================== */
 const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>';
+const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>';
 const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
 const ICON_CLOCK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.3l2.2 1.3"/></svg>';
 const ICON_CLOSE = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>';
@@ -1793,6 +1852,18 @@ const state = {
                            // disengaged by scrolling up or selecting a row, re-engaged via #tailJumpBtn
   bookmarks: new Map(),    // entry id -> { note: string, bookmarkedAt: number (ms epoch) }, session-only (not persisted)
   pinBookmarksInFilteredView: false, // see PROJECT.md "Pin bookmarks into the Filtered View"
+
+  // Watched folders (FEATURE_BACKLOG.md "Folder watch + lazy loading"), see
+  // "Folder watch (lazy loading)" section near the Tailing code. Each entry:
+  // { id, name, handle: FileSystemDirectoryHandle|null, files: [{ name,
+  //   handle: FileSystemFileHandle|null, file: File|null, nodeId: string|null }],
+  //   busy: boolean, failed: boolean }. `handle` is null for the <input
+  //   webkitdirectory> fallback (no live re-scan possible there — see
+  //   addWatchedFolderFromFileList); a file record's own `handle`/`file` is
+  //   whichever of the two is available for that one file. `nodeId` is set
+  //   while the file is actively loaded (a real state.nodes entry exists);
+  //   null while it's still just a grayed, unopened listing.
+  folders: [],
 };
 
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
@@ -3001,6 +3072,11 @@ function pushUndo(action) {
 function deleteFilterNodeWithUndo(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return;
+  // A file loaded from a watched folder (node.folderId) doesn't get fully
+  // removed on close — it returns to the folder's grayed listing instead of
+  // vanishing, per FEATURE_BACKLOG.md "Folder watch + lazy loading". See
+  // closeFolderFile in the "Folder watch" section.
+  if (node.type === "file" && node.folderId) { closeFolderFile(nodeId); return; }
   if (node.type !== "filter") { deleteNode(nodeId); return; } // files: out of v1 undo scope
   const parent = state.nodes[node.parentId];
   const index = parent ? parent.children.indexOf(nodeId) : -1;
@@ -3419,6 +3495,7 @@ function typeTagFor(node) {
 }
 
 function renderTree() {
+  renderFolderWatchList();
   treeEl.innerHTML = "";
   state.rootIds.forEach(id => treeEl.appendChild(renderNode(id, 0)));
   dropHintEl.style.display = state.rootIds.length === 0 ? "block" : "none";
@@ -3654,7 +3731,9 @@ function renderNode(id, depth) {
   const del = document.createElement("button");
   del.className = "tree-del";
   del.innerHTML = ICON_CLOSE;
-  del.title = node.type === "file" ? "Remove file" : "Remove filter";
+  del.title = node.type === "file"
+    ? (node.folderId ? "Close file (stays listed in its watched folder)" : "Remove file")
+    : "Remove filter";
   del.addEventListener("click", ev => { ev.stopPropagation(); deleteFilterNodeWithUndo(id); render(); });
   row.appendChild(del);
 
@@ -6274,6 +6353,28 @@ el("#btnOpen").addEventListener("click", async () => {
 });
 fileInput.addEventListener("change", ev => { loadFiles(ev.target.files); fileInput.value = ""; });
 
+const folderInput = el("#folderInput");
+// Same picker-first, hidden-<input>-fallback pattern as #btnOpen above —
+// see "Folder watch (lazy loading)" near the Tailing section for what
+// happens after a folder handle (or file list) is obtained.
+el("#btnOpenFolder").addEventListener("click", async () => {
+  if (!window.showDirectoryPicker) { folderInput.click(); return; }
+  let handle;
+  try {
+    handle = await window.showDirectoryPicker();
+  } catch (err) {
+    if (err && err.name === "AbortError") return; // user cancelled the picker
+    folderInput.click(); // API present but unusable in this context
+    return;
+  }
+  addWatchedFolder(handle);
+});
+folderInput.addEventListener("change", ev => {
+  const list = Array.from(ev.target.files || []);
+  folderInput.value = "";
+  if (list.length) addWatchedFolderFromFileList(list);
+});
+
 const progressOverlay = el("#progressOverlay");
 const progressTitle = el("#progressTitle");
 const progressFill = el("#progressFill");
@@ -6309,6 +6410,41 @@ function loadFiles(fileList) {
   return loadFileDescriptors(Array.from(fileList).map(f => ({ file: f, handle: null })));
 }
 
+// Shared by loadFileDescriptors below and loadFolderFile (see "Folder watch
+// (lazy loading)" near the Tailing section) — reads+parses one file, wires up
+// persistence/filter-history/tailing, and returns the new root file node.
+// Caller owns showProgress()/hideProgress()/render() around this.
+async function loadOneFileIntoTree(name, file, handle, progressLabel) {
+  setProgressLabel(progressLabel);
+  setProgressValue(0);
+  const text = await readFileWithProgress(file, (loaded, total) => {
+    setProgressValue(READ_WEIGHT * (loaded / total));
+  });
+  const node = await addFile(name, text, (done, total) => {
+    setProgressValue(READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1));
+  });
+  persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
+  // File filter history (see the section near the end of the script):
+  // a freshly loaded file always starts with zero filter children, so
+  // this only ever attaches a match for renderNode to show as a ghost
+  // preview — it never applies anything by itself. Skipped for merges
+  // (mergeFiles doesn't go through this helper, and starts empty by
+  // explicit design anyway — see mergeFiles' own comment).
+  const historyMatch = await matchFileHistory(node);
+  if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
+  if (handle) {
+    node.tail = {
+      handle,
+      offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
+      pending: "",         // trailing line fragment not yet terminated by a newline
+      failed: false,       // set once a poll read fails (file moved, permission revoked)
+      busy: false,         // guards against overlapping async polls on slow disks
+    };
+    state.tailFollow = true; // a freshly opened live file starts in follow mode
+  }
+  return node;
+}
+
 // descs: [{ file: File, handle: FileSystemFileHandle|null }]. A handle enables
 // tailing (see the Tailing section): re-calling handle.getFile() later yields a
 // *fresh* snapshot including bytes appended after load — a plain File can't do that.
@@ -6320,34 +6456,7 @@ async function loadFileDescriptors(descs) {
     for (let i = 0; i < descs.length; i++) {
       const { file, handle } = descs[i];
       const label = descs.length > 1 ? `${file.name} (${i + 1}/${descs.length})` : file.name;
-      setProgressLabel(label);
-      setProgressValue(0);
-
-      const text = await readFileWithProgress(file, (loaded, total) => {
-        setProgressValue(READ_WEIGHT * (loaded / total));
-      });
-      const node = await addFile(file.name, text, (done, total) => {
-        setProgressValue(READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1));
-      });
-      persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
-      // File filter history (see the section near the end of the script):
-      // a freshly loaded file always starts with zero filter children, so
-      // this only ever attaches a match for renderNode to show as a ghost
-      // preview — it never applies anything by itself. Skipped for merges
-      // (mergeFiles doesn't go through loadFileDescriptors, and starts
-      // empty by explicit design anyway — see mergeFiles' own comment).
-      const historyMatch = await matchFileHistory(node);
-      if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
-      if (handle) {
-        node.tail = {
-          handle,
-          offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
-          pending: "",         // trailing line fragment not yet terminated by a newline
-          failed: false,       // set once a poll read fails (file moved, permission revoked)
-          busy: false,         // guards against overlapping async polls on slow disks
-        };
-        state.tailFollow = true; // a freshly opened live file starts in follow mode
-      }
+      await loadOneFileIntoTree(file.name, file, handle, label);
     }
   } finally {
     hideProgress();
@@ -6386,20 +6495,28 @@ window.addEventListener("drop", ev => {
   const dt = ev.dataTransfer;
   if (!dt) return;
 
-  // Prefer FileSystemHandles (Chromium) so dropped files can be tailed.
-  // Both the handle promises and the plain-File fallback must be captured
-  // synchronously — DataTransfer contents are gone once the handler returns.
+  // Prefer FileSystemHandles (Chromium) so dropped files can be tailed, and
+  // so a dropped folder resolves to a FileSystemDirectoryHandle (kind
+  // "directory") instead of being silently skipped — DataTransferItem.kind
+  // is "file" for both a dropped file AND a dropped folder, only the
+  // resolved handle's own .kind tells them apart. Both the handle promises
+  // and the plain-File fallback must be captured synchronously —
+  // DataTransfer contents are gone once the handler returns.
   const plainFiles = dt.files ? Array.from(dt.files) : [];
   const items = dt.items ? Array.from(dt.items) : [];
   if (items.length && typeof items[0].getAsFileSystemHandle === "function") {
     const handlePromises = items.filter(it => it.kind === "file").map(it => it.getAsFileSystemHandle());
     Promise.all(handlePromises).then(async handles => {
       const descs = [];
+      const dirHandles = [];
       for (const h of handles) {
-        if (h && h.kind === "file") descs.push({ file: await h.getFile(), handle: h });
+        if (!h) continue;
+        if (h.kind === "file") descs.push({ file: await h.getFile(), handle: h });
+        else if (h.kind === "directory") dirHandles.push(h);
       }
+      for (const dh of dirHandles) await addWatchedFolder(dh);
       if (descs.length) loadFileDescriptors(descs);
-      else if (plainFiles.length) loadFiles(plainFiles);
+      else if (!dirHandles.length && plainFiles.length) loadFiles(plainFiles);
     }).catch(() => { if (plainFiles.length) loadFiles(plainFiles); });
   } else if (plainFiles.length) {
     loadFiles(plainFiles);
@@ -6522,6 +6639,269 @@ tailJumpBtn.addEventListener("click", () => {
 });
 
 setInterval(tailTick, TAIL_POLL_MS);
+
+/* ===================== Folder watch (lazy loading) =====================
+   FEATURE_BACKLOG.md "Folder watch + lazy loading": pick a folder (via
+   "Open folder…" or drag&drop, same File System Access API the single-file
+   path above already prefers) instead of an individual *.log file. Its
+   compatible files are scanned and listed grayed-out (see
+   renderFolderWatchList/renderFolderSection/renderInactiveFileRow, above
+   #tree in the sidebar) WITHOUT reading their content — only a
+   double-click ("Load file" in the row's context menu is the alternative
+   entry point) actually reads+parses one, via loadFolderFile below, at
+   which point it becomes a completely normal root file node (build filters
+   on it with Ctrl+F exactly like any other file) and disappears from the
+   grayed listing. Because a grayed listing entry never becomes a real
+   state.nodes entry (and is rendered by separate DOM/CSS with no
+   drag/drop/filter-popup wiring at all — see the CSS block near #dropHint),
+   "no filter can be created or copied onto an inactive file" holds simply
+   by construction, with no extra guard needed.
+
+   The folder itself is polled every FOLDER_SCAN_MS (same handle-based
+   approach as TAIL_POLL_MS above) to pick up files that show up in the
+   folder after it was opened — the pulsing ring on the folder icon
+   (.folder-watch-icon.scanning, CSS) visualizes that this polling is
+   active. Only real FileSystemDirectoryHandle folders (Chromium picker or
+   drag&drop) get this; the <input webkitdirectory> fallback (Firefox, or
+   File System Access unusable) has no handle to re-scan, so it's a static
+   one-time listing with no scanning animation — same tradeoff the single-
+   file path already makes for tailing.
+
+   Closing a folder-loaded file (✕, or "Remove file" in its context menu)
+   does NOT fully remove it the way a normal file does — see
+   deleteFilterNodeWithUndo's node.folderId branch — it goes back to being a
+   grayed, unopened listing entry instead, reusing the same handle/File it
+   was first listed with. */
+const FOLDER_SCAN_MS = 3000;
+
+// Currently only *.log (CLAUDE.md/PROJECT.md's one supported log format) —
+// an array so a future "pluggable parser" session (FEATURE_BACKLOG.md) has
+// one obvious place to widen this.
+const FOLDER_WATCH_EXTENSIONS = [".log"];
+function isCompatibleFolderFile(name) {
+  const lower = name.toLowerCase();
+  return FOLDER_WATCH_EXTENSIONS.some(ext => lower.endsWith(ext));
+}
+
+// Non-recursive: only the folder's own immediate entries, matching the
+// backlog's "list them" scope — no subfolder walk.
+async function scanFolderHandle(dirHandle) {
+  const out = [];
+  for await (const entryHandle of dirHandle.values()) {
+    if (entryHandle.kind === "file" && isCompatibleFolderFile(entryHandle.name)) {
+      out.push({ name: entryHandle.name, handle: entryHandle });
+    }
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
+async function addWatchedFolder(handle) {
+  const found = await scanFolderHandle(handle);
+  state.folders.push({
+    id: uid("d"),
+    name: handle.name,
+    handle,
+    files: found.map(f => ({ name: f.name, handle: f.handle, file: null, nodeId: null })),
+    busy: false,
+    failed: false,
+  });
+  render();
+}
+
+// <input webkitdirectory> fallback: plain File objects, already carrying
+// their folder-relative path in webkitRelativePath ("FolderName/sub/a.log").
+// Only top-level files are listed, matching scanFolderHandle's non-recursive
+// scope — and, since there's no handle, no rescanning is possible later.
+function addWatchedFolderFromFileList(fileList) {
+  const first = fileList[0];
+  const rel = first.webkitRelativePath || first.name;
+  const folderName = rel.includes("/") ? rel.split("/")[0] : "Folder";
+  const files = fileList
+    .filter(f => {
+      const rp = f.webkitRelativePath || f.name;
+      return rp.split("/").length === 2 && isCompatibleFolderFile(f.name);
+    })
+    .map(f => ({ name: f.name, handle: null, file: f, nodeId: null }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  state.folders.push({ id: uid("d"), name: folderName, handle: null, files, busy: false, failed: false });
+  render();
+}
+
+// Called from deleteFilterNodeWithUndo instead of a plain deleteNode for any
+// file node carrying a folderId: releases the node/entries exactly like a
+// normal close (deleteNode), but leaves the folder's file record with its
+// handle/File intact and nodeId cleared, so it renders as a grayed listing
+// entry again instead of disappearing — reopenable via loadFolderFile.
+function closeFolderFile(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node) return;
+  const folder = state.folders.find(f => f.id === node.folderId);
+  deleteNode(nodeId);
+  if (folder) {
+    const rec = folder.files.find(f => f.nodeId === nodeId);
+    if (rec) rec.nodeId = null;
+  }
+}
+
+function removeWatchedFolder(folderId) {
+  const folder = state.folders.find(f => f.id === folderId);
+  if (!folder) return;
+  // Files already opened from this folder keep working as plain independent
+  // files — only the "close returns to a grayed listing" behavior (which
+  // needs the folder record to return to) goes away.
+  folder.files.forEach(rec => {
+    const node = rec.nodeId && state.nodes[rec.nodeId];
+    if (node) delete node.folderId;
+  });
+  state.folders = state.folders.filter(f => f.id !== folderId);
+  render();
+}
+
+// Reads+parses one listed-but-not-yet-opened file, turning it into a normal
+// root file node tagged with folderId (see deleteFilterNodeWithUndo). A
+// handle-backed file also starts tailing immediately — no special-casing
+// needed, loadOneFileIntoTree already does that for any handle it's given.
+async function loadFolderFile(folder, rec) {
+  if (rec.nodeId && state.nodes[rec.nodeId]) {
+    state.activeId = rec.nodeId;
+    state.focusRegion = "tree";
+    render();
+    return;
+  }
+  let file;
+  try {
+    file = rec.handle ? await rec.handle.getFile() : rec.file;
+  } catch (err) {
+    showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
+    return;
+  }
+  showProgress();
+  try {
+    const node = await loadOneFileIntoTree(rec.name, file, rec.handle, rec.name);
+    node.folderId = folder.id;
+    rec.nodeId = node.id;
+  } finally {
+    hideProgress();
+    render();
+  }
+}
+
+// Polls every watched (handle-backed) folder for newly appeared compatible
+// files — mirrors tailTick's shape/guards (skip while busy, catch handle
+// errors) one level up (folder entries, not file bytes). Doesn't detect
+// removed files: matches the backlog scope ("auto-detect NEW files").
+async function folderScanTick() {
+  for (const folder of state.folders) {
+    if (!folder.handle || folder.busy) continue;
+    folder.busy = true;
+    try {
+      const seen = await scanFolderHandle(folder.handle);
+      const known = new Set(folder.files.map(f => f.name));
+      let changed = false;
+      for (const f of seen) {
+        if (!known.has(f.name)) {
+          folder.files.push({ name: f.name, handle: f.handle, file: null, nodeId: null });
+          changed = true;
+        }
+      }
+      if (changed) {
+        folder.files.sort((a, b) => a.name.localeCompare(b.name));
+        render();
+      }
+    } catch (err) {
+      folder.failed = true; // folder moved/deleted or permission revoked — stop watching it
+    } finally {
+      folder.busy = false;
+    }
+  }
+}
+setInterval(folderScanTick, FOLDER_SCAN_MS);
+
+const folderWatchListEl = el("#folderWatchList");
+
+function renderFolderWatchList() {
+  folderWatchListEl.innerHTML = "";
+  state.folders.forEach(folder => folderWatchListEl.appendChild(renderFolderSection(folder)));
+}
+
+function renderFolderSection(folder) {
+  const box = document.createElement("div");
+  box.className = "folder-watch";
+
+  const header = document.createElement("div");
+  header.className = "folder-watch-header";
+  const icon = document.createElement("span");
+  icon.className = "folder-watch-icon" + (folder.handle && !folder.failed ? " scanning" : "");
+  icon.innerHTML = ICON_FOLDER;
+  icon.title = folder.failed ? "Folder no longer reachable"
+    : folder.handle ? "Watching for new " + FOLDER_WATCH_EXTENSIONS.join(", ") + " files"
+    : "Folder listing (opened via file picker — not live-watched)";
+  header.appendChild(icon);
+  const name = document.createElement("span");
+  name.className = "folder-watch-name";
+  name.textContent = folder.name;
+  name.title = folder.name;
+  header.appendChild(name);
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "folder-watch-close";
+  closeBtn.innerHTML = ICON_CLOSE;
+  closeBtn.title = "Stop watching this folder";
+  closeBtn.addEventListener("click", () => removeWatchedFolder(folder.id));
+  header.appendChild(closeBtn);
+  box.appendChild(header);
+
+  const inactive = folder.files.filter(f => !(f.nodeId && state.nodes[f.nodeId]));
+  if (inactive.length) {
+    const list = document.createElement("div");
+    list.className = "folder-watch-files";
+    inactive.forEach(rec => list.appendChild(renderInactiveFileRow(folder, rec)));
+    box.appendChild(list);
+  } else {
+    const note = document.createElement("div");
+    note.className = "folder-watch-note";
+    note.textContent = folder.files.length ? "All compatible files opened" : "No compatible files found yet";
+    box.appendChild(note);
+  }
+  return box;
+}
+
+function renderInactiveFileRow(folder, rec) {
+  const row = document.createElement("div");
+  row.className = "folder-watch-file";
+  row.title = `Double-click to open "${rec.name}"`;
+  const icon = document.createElement("span");
+  icon.className = "tree-icon";
+  icon.innerHTML = ICON_FILE;
+  row.appendChild(icon);
+  const label = document.createElement("span");
+  label.className = "folder-watch-file-name";
+  label.textContent = rec.name;
+  row.appendChild(label);
+  row.addEventListener("dblclick", () => loadFolderFile(folder, rec));
+  row.addEventListener("contextmenu", ev => {
+    ev.preventDefault();
+    openFolderFileContextMenu(ev, folder, rec);
+  });
+  return row;
+}
+
+// Minimal one-item context menu for a grayed, unopened folder file — reuses
+// the same #treeContextMenu element as openTreeContextMenu (a real filter-
+// tree node's menu), distinguished by folderCtxTarget instead of treeCtxId
+// so the shared click listener below can route to the right handler.
+let folderCtxTarget = null; // { folderId, name } while this menu is open
+function openFolderFileContextMenu(ev, folder, rec) {
+  treeCtxId = null;
+  folderCtxTarget = { folderId: folder.id, name: rec.name };
+  const html = '<div class="ctx-meta">' + escapeHtml(rec.name) + '</div><div class="ctx-sep"></div>' +
+    '<div class="ctx-item" data-action="loadFolderFile">' + ICON_LOAD + ' Load file</div>';
+  treeContextMenu.innerHTML = html;
+  treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
+  treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
+  treeContextMenu.classList.remove("hidden");
+}
 
 /* ===================== Filter popup (Ctrl+F to create, F2/right-click "Edit filter…" to edit) ===================== */
 
@@ -7056,6 +7436,7 @@ function openTreeContextMenu(ev, clickedId) {
   const node = state.nodes[clickedId];
   if (!node) return;
   treeCtxId = clickedId;
+  folderCtxTarget = null;
 
   let html;
   if (state.multiSelect.has(clickedId) && state.multiSelect.size >= 2) {
@@ -7105,7 +7486,11 @@ function openTreeContextMenu(ev, clickedId) {
     if (state.clipboard && state.nodes[state.clipboard.id]) {
       items.push({ action: "paste", label: "Paste", icon: ICON_PASTE });
     }
-    items.push({ action: "delete", label: node.type === "file" ? "Remove file" : "Remove filter", icon: ICON_CLOSE });
+    items.push({
+      action: "delete",
+      label: node.type === "file" ? (node.folderId ? "Close file" : "Remove file") : "Remove filter",
+      icon: ICON_CLOSE,
+    });
 
     html = '<div class="ctx-meta">' + escapeHtml(node.name) + "</div><div class=\"ctx-sep\"></div>";
     html += items.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join("");
@@ -7123,6 +7508,17 @@ treeContextMenu.addEventListener("click", ev => {
   ev.stopPropagation();
   const action = item.dataset.action;
   closeTreeContextMenu();
+
+  if (action === "loadFolderFile") {
+    const target = folderCtxTarget;
+    folderCtxTarget = null;
+    if (target) {
+      const folder = state.folders.find(f => f.id === target.folderId);
+      const rec = folder && folder.files.find(f => f.name === target.name);
+      if (folder && rec) loadFolderFile(folder, rec);
+    }
+    return;
+  }
 
   // Single-node actions operate on treeCtxId (the node the menu was opened
   // for), mirroring exactly what Ctrl+C/X/V/Delete do for state.activeId.
