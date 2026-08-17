@@ -7233,7 +7233,15 @@ function openFilterPopup() {
   filterInput.value = "";
   filterInvertCheckbox.checked = false;
   filterCaseCheckbox.checked = false;
-  filterExtractCheckbox.checked = true;
+  // Always OFF for a new filter (person-reported bugfix: it used to
+  // default to checked, so "Filter for this ___" — which prefills a
+  // wildcard pattern here without ever touching this checkbox — silently
+  // built an extraction table on a plain "Add filter" click). The popup
+  // has exactly one behavior per submit, entirely determined by what's
+  // currently checked here, never by which entry point opened it. Ctrl+F
+  // and "Filter for this ___" may prefill the input text/column
+  // differently — never this.
+  filterExtractCheckbox.checked = false;
   renderFilterColumnChips();
   updateInvertAvailability();
   filterLiveMatch.textContent = "";

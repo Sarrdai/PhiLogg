@@ -1073,7 +1073,10 @@ await withApp(async (w, d, T) => {
     "tree context menu omits Invert (NOT) for context nodes (3rd exclusion, added after the original NOT session)");
 
   // updateInvertAvailability: typing an extraction pattern into the popup
-  // disables/unchecks NOT live.
+  // disables/unchecks NOT live — but only once "Extract values" is ALSO
+  // checked (Extract values now always defaults to unchecked, so typing
+  // wildcard tokens alone keeps NOT available for the plain wildcard-as-
+  // filter path — see Group 41 for that default's own coverage).
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
@@ -1082,7 +1085,9 @@ await withApp(async (w, d, T) => {
   invertCb.checked = true;
   filterInput.value = "[value:int]";
   fireInput(filterInput, w);
-  assert(invertCb.disabled === true && invertCb.checked === false, "typing an extraction pattern disables and unchecks NOT live");
+  assert(invertCb.disabled === false, "typing an extraction pattern alone (Extract values still unchecked) leaves NOT available");
+  fireClick(d.querySelector("#filterExtractCheckbox"), w);
+  assert(invertCb.disabled === true && invertCb.checked === false, "checking Extract values on top of an extraction pattern disables and unchecks NOT live");
   w.closeFilterPopup();
 });
 
@@ -1966,6 +1971,9 @@ await withApp(async (w, d, T) => {
   assert(!spansAfterToggle[0].classList.contains("chip-ignored") && !spansAfterToggle[2].classList.contains("chip-ignored"),
     "the other two spans stay un-ignored");
 
+  // Extract values defaults to unchecked (see Group 41) — check it to
+  // actually build an extraction table, same as a real person would.
+  fireClick(d.querySelector("#filterExtractCheckbox"), w);
   fireSubmit(d.querySelector("#filterForm"), w);
   const node = T.state.nodes[T.state.activeId];
   assert(node.filterType === "extract" && node.ignoredColumns && node.ignoredColumns.length === 1 && node.ignoredColumns.includes(1),
@@ -3931,28 +3939,29 @@ await withApp(async (w, d, T) => {
   assert(w.getEntries(realExtract.id).length === 2, "an actual 'extract' filterType is unaffected by the new wildcard-as-filter 'text' path");
 
   // --- Extract values checkbox through the actual popup UI ---
+  // Defaults to UNCHECKED (changed this session, see Group 41): the popup
+  // has exactly one behavior per submit, entirely determined by what's
+  // currently checked, never by a hidden per-entry-point default — so
+  // plain "Add filter" always creates a plain filter unless the person
+  // deliberately turns Extract values on first.
   T.state.activeId = wf.id;
   w.render();
   w.openFilterPopup();
-  assert(d.querySelector("#filterExtractCheckbox").checked === true, "Extract values defaults to checked on a fresh popup, preserving the old always-extract behavior");
+  assert(d.querySelector("#filterExtractCheckbox").checked === false, "Extract values defaults to UNCHECKED on a fresh popup");
   assert(d.querySelector("#filterExtractCheckbox").disabled === true, "with no wildcard tokens typed yet, Extract values has nothing to control and starts disabled");
 
   const wInput = d.querySelector("#filterInput");
   wInput.value = "temp=[value:float]";
   fireInput(wInput, w);
   assert(d.querySelector("#filterExtractCheckbox").disabled === false, "typing a wildcard pattern enables the Extract values checkbox");
-  assert(d.querySelector("#filterCaseCheckbox").disabled === true, "Extract values still checked (the default): case-sensitivity stays unavailable, same as the old extract-only behavior");
-  assert(d.querySelector("#filterColumnChips").classList.contains("hidden"), "Extract values still checked: column-restriction chips stay hidden");
+  assert(d.querySelector("#filterCaseCheckbox").disabled === false, "Extract values still unchecked (the default): case-sensitivity stays available for the wildcard-as-filter mode");
+  assert(!d.querySelector("#filterColumnChips").classList.contains("hidden"), "Extract values still unchecked: column-restriction chips stay visible");
 
-  fireClick(d.querySelector("#filterExtractCheckbox"), w); // uncheck -> wildcard-as-filter mode
-  assert(d.querySelector("#filterCaseCheckbox").disabled === false, "unchecking Extract values re-enables case-sensitivity for the wildcard-as-filter mode");
-  assert(!d.querySelector("#filterColumnChips").classList.contains("hidden"), "unchecking Extract values reveals the column-restriction chips again");
-  assert(d.querySelector("#filterInvertCheckbox").disabled === false, "unchecking Extract values re-enables NOT");
-
+  // Submitting as-is (default left untouched) must create a plain wildcard-as-filter "text" node
   fireSubmit(d.querySelector("#filterForm"), w);
   const uiWildcardNode = T.state.nodes[T.state.activeId];
   assert(uiWildcardNode.filterType === "text" && uiWildcardNode.value === "temp=[value:float]",
-    "submitting with Extract values UNCHECKED creates a plain 'text' filter carrying the wildcard pattern, not an 'extract' node");
+    "submitting with Extract values left at its default (unchecked) creates a plain 'text' filter carrying the wildcard pattern, not an 'extract' node");
   assert(w.getEntries(uiWildcardNode.id).length === 2, "the UI-created wildcard-as-filter node matches the same 2 rows the direct-API check above found");
 
   T.state.activeId = wf.id;
@@ -3960,11 +3969,14 @@ await withApp(async (w, d, T) => {
   w.openFilterPopup();
   d.querySelector("#filterInput").value = "temp=[value:float]";
   fireInput(d.querySelector("#filterInput"), w);
-  assert(d.querySelector("#filterExtractCheckbox").checked === true, "Extract values still defaults to checked on a fresh popup open");
+  fireClick(d.querySelector("#filterExtractCheckbox"), w); // deliberately opt into extraction
+  assert(d.querySelector("#filterCaseCheckbox").disabled === true, "checking Extract values disables case-sensitivity");
+  assert(d.querySelector("#filterColumnChips").classList.contains("hidden"), "checking Extract values hides the column-restriction chips");
+  assert(d.querySelector("#filterInvertCheckbox").disabled === true, "checking Extract values disables NOT");
   fireSubmit(d.querySelector("#filterForm"), w);
   const uiExtractNode = T.state.nodes[T.state.activeId];
   assert(uiExtractNode.filterType === "extract" && uiExtractNode.value === "temp=[value:float]",
-    "submitting with Extract values left CHECKED still creates a real 'extract' filter, unchanged from before this feature");
+    "explicitly checking Extract values before submit still creates a real 'extract' filter");
 });
 
 /* ============================================================
@@ -4060,7 +4072,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#ctxFilterForColumn"), w);
   assert(d.querySelector("#filterInput").value === "processed [value:int] items", "numeric message content becomes a wildcard pattern, same as the old 'Extract numbers' action");
   assert(activeCol("message"), "the Message column chip is pre-selected to match what was right-clicked");
-  assert(d.querySelector("#filterExtractCheckbox").checked === true, "Extract values still defaults to checked — the popup's own button decides extract vs. wildcard-filter now, not this menu action");
+  assert(d.querySelector("#filterExtractCheckbox").checked === false, "Extract values still defaults to UNCHECKED even with a numeric wildcard prefilled — the popup's own button decides extract vs. wildcard-filter, not this menu action (person-reported bugfix, see Group 41)");
   w.closeFilterPopup();
 
   // A column with no numeric content falls back to its exact literal text
@@ -4080,13 +4092,102 @@ await withApp(async (w, d, T) => {
   assert(activeCol("thread"), "the Thread column chip is pre-selected");
   assert(d.querySelector("#filterExtractCheckbox").disabled === false, "a wildcard pattern from any column re-enables Extract values, letting the person choose extraction or a plain wildcard filter afterward");
 
-  // End-to-end: unchecking Extract values turns this into a real wildcard-as-filter "text" node, restricted to the right-clicked column
-  fireClick(d.querySelector("#filterExtractCheckbox"), w);
+  // End-to-end: submitting AS-IS (Extract values left at its default,
+  // unchecked) creates a real wildcard-as-filter "text" node restricted to
+  // the right-clicked column — plain "Add filter" never silently builds an
+  // extraction table just because the menu action prefilled a wildcard.
   fireSubmit(d.querySelector("#filterForm"), w);
   const created = T.state.nodes[T.state.activeId];
   assert(created.filterType === "text" && created.value === "pool [value:int]" && JSON.stringify(created.columns) === JSON.stringify(["thread"]),
-    "end-to-end: 'Filter for this Thread' + unchecking Extract values creates a 'text' filter restricted to the thread column, matched via the wildcard shape");
+    "end-to-end: 'Filter for this Thread' + plain 'Add filter' creates a 'text' filter restricted to the thread column, matched via the wildcard shape");
   assert(w.getEntries(created.id).length === 1, "the created filter actually matches the entry whose thread is 'pool 3'");
+});
+
+/* ============================================================
+   GROUP 41 — Bugfix follow-up to Groups 39/40 (person-reported, this
+   session): "Extract values" no longer defaults to checked
+   Person report: "wenn ich einen Filter mit wildcards erstelle z. B. über
+   den create from Message dialog, entsteht eine extraction auch wenn ich
+   auf Add Filter und nicht auf Extract klicke" — creating a filter with
+   wildcards via "Filter for this ___" produced an extraction table even
+   though only "Add filter" was clicked, never "Extract values". Root
+   cause: openFilterPopup() defaulted Extract values to CHECKED for every
+   new filter (preserving the pre-Group-39 "a wildcard always extracts"
+   behavior), and "Filter for this ___" prefills a wildcard pattern
+   without ever touching that checkbox itself — so the default alone
+   silently decided the outcome of a plain "Add filter" click. Person's
+   explicit design ask, not just a value flip: "Das Filter Edit Dialog
+   sollte keine grundlegend unterschiedlichen Zustände kennen, sondern nur
+   unterschied initialisiert werden. alle Zustände sind dabei im Dialog
+   selbst visualisiert. keine versteckte Logik im Hintergrund" — the popup
+   must have exactly ONE behavior per submit, entirely determined by what's
+   visibly checked at that moment, never by which entry point opened it.
+   Fix: openFilterPopup() (create mode) now always defaults Extract values
+   to UNCHECKED, full stop — no per-entry-point branching. Entry points
+   may still prefill the INPUT TEXT and the "Applies to" column
+   differently (that's legitimate initialization, unchanged), just never
+   the extract/plain decision itself. openEditFilterPopup() is deliberately
+   untouched: initializing the checkbox from the EDITED NODE's actual
+   filterType isn't a hidden default, it's just displaying that node's
+   real current state — exactly the "nur unterschiedlich initialisiert"
+   the person asked for. Groups 8/24/39/40 were updated in place for the
+   new default (each already covered the checkbox from a different angle);
+   this group is the focused, exact reproduction of the reported scenario.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("41. Bugfix: Extract values no longer defaults to checked (person-reported)");
+
+  const log = `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"retrying after 3 attempts"\n` +
+    `2024-01-15 10:00:01,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"retrying after 7 attempts"\n`;
+  const f = await w.addFile("repro.log", log, () => {});
+  w.render();
+  T.state.activeId = f.id;
+
+  // Exact reported repro: right-click a message -> "Filter for this
+  // Message" -> click "Add filter" WITHOUT touching Extract values.
+  fireContextMenu(d.querySelector(".log-row"), w, 50, 50);
+  fireClick(d.querySelector("#ctxFilterForColumn"), w);
+  assert(d.querySelector("#filterInput").value === "retrying after [value:int] attempts", "sanity: the numeric content became a wildcard pattern");
+  assert(d.querySelector("#filterExtractCheckbox").checked === false, "Extract values is NOT pre-checked just because a wildcard pattern was prefilled");
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "text", "clicking plain 'Add filter' after 'Filter for this Message' creates a TEXT filter, never a silent extraction — the reported bug");
+  assert(w.getEntries(created.id).length === 2, "and it actually filters correctly via the wildcard shape, matching both rows");
+
+  // The same holds for a filter typed by hand via plain Ctrl+F (not just the context-menu path) — no entry-point-specific branching anywhere.
+  T.state.activeId = f.id;
+  w.render();
+  w.openFilterPopup();
+  assert(d.querySelector("#filterExtractCheckbox").checked === false, "a fresh Ctrl+F popup ALSO defaults Extract values to unchecked, same single default the context-menu path uses");
+  d.querySelector("#filterInput").value = "retrying after [value:int] attempts";
+  fireInput(d.querySelector("#filterInput"), w);
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const typedNode = T.state.nodes[T.state.activeId];
+  assert(typedNode.filterType === "text", "typing a wildcard by hand and clicking 'Add filter' also creates a TEXT filter by default — one single behavior, not two hidden code paths");
+
+  // Extraction is still fully reachable — it just now requires the visible, deliberate step of checking the button first.
+  T.state.activeId = f.id;
+  w.render();
+  w.openFilterPopup();
+  d.querySelector("#filterInput").value = "retrying after [value:int] attempts";
+  fireInput(d.querySelector("#filterInput"), w);
+  fireClick(d.querySelector("#filterExtractCheckbox"), w);
+  assert(d.querySelector("#filterExtractCheckbox").checked === true, "Extract values CAN still be turned on — it's a visible, reachable toggle, not removed");
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const extractNode = T.state.nodes[T.state.activeId];
+  assert(extractNode.filterType === "extract", "deliberately checking Extract values before submit still builds a real extraction table");
+
+  // Editing an EXISTING extract node still initializes the checkbox from
+  // that node's real state (checked) — this is legitimate "different
+  // initialization," not the hidden-default bug being fixed here.
+  w.openEditFilterPopup(extractNode.id);
+  assert(d.querySelector("#filterExtractCheckbox").checked === true, "editing an existing 'extract' node still pre-checks Extract values, reflecting its actual current filterType");
+  w.closeFilterPopup();
+
+  // ...and editing an existing plain "text" node initializes it unchecked, for the same reason.
+  w.openEditFilterPopup(typedNode.id);
+  assert(d.querySelector("#filterExtractCheckbox").checked === false, "editing an existing 'text' node initializes Extract values unchecked, reflecting ITS actual current filterType");
+  w.closeFilterPopup();
 });
 
 /* ============================================================
