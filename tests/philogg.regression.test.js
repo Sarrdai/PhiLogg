@@ -4258,6 +4258,117 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 43 — Bugfix: tail handles now persist across a reload
+   Origin: person-reported (this session): a log file that was still
+   actively being written showed no live dot and never updated in Edge.
+   Root cause: FEATURE_BACKLOG.md's known gap "Persist tail handles across
+   reload" — a file the session cache auto-restored on relaunch (which the
+   person experienced simply as "opening" the file, not as a reload) never
+   got a node.tail at all, so it was permanently a static snapshot; only
+   manually re-opening the file (which the person did, seeing more entries)
+   re-established tailing. Fixed by persisting the file's
+   FileSystemFileHandle alongside its text (persistFileNode) and a new
+   tryReattachFileTail() helper, called from restoreSessionFromCache, that
+   silently resumes tailing via queryPermission (no user gesture needed) —
+   the same graceful-degradation shape restoreWatchedFolders already uses
+   for directory handles.
+   ============================================================ */
+section("43. Bugfix: tail handles persist across a reload");
+{
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // A REAL FileSystemFileHandle survives IndexedDB's structured clone with
+  // its methods intact — the same fact persistFolder/restoreWatchedFolders
+  // already rely on for directory handles (see Group 38's own comment).
+  // fake-indexeddb enforces structured clone strictly: a class instance's
+  // OWN data fields (e.g. `kind`) clone through fine, but its PROTOTYPE
+  // methods are simply dropped — so a round-tripped handle here ends up
+  // exactly like a real handle whose permission needs reconfirming, not
+  // like one that kept working. That's used deliberately below to prove
+  // the degrade-gracefully path; the successful-reattach path is then
+  // checked directly with a fresh (non-round-tripped) instance, same as
+  // Group 38c does for reconnectFolder.
+  class FakeFileHandle {
+    constructor() { this.kind = "file"; }
+    async queryPermission() { return "granted"; }
+  }
+
+  // --- Persisting a file with no tail writes handle:null, not a missing field ---
+  await withApp(async (w, d, T) => {
+    const g = await w.addFile("plain.log", makeLog(0, 2), () => {});
+    await w.persistFileNode(g);
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(g.cacheKey));
+    assert(rec && rec.handle === null, "persist: a file with no tail writes handle:null");
+  }, { indexedDB: new IDBFactory() });
+
+  const factory = new IDBFactory();
+
+  // --- Window A: load a "live" (tailed) file, persist it. ---
+  await withApp(async (w, d, T) => {
+    const handle = new FakeFileHandle();
+    const f = await w.addFile("live.log", makeLog(0, 3), () => {});
+    f.tail = { handle, offset: w.rebuildFileText(f).length, pending: "", failed: false, busy: false };
+    w.render();
+    assert(d.querySelector(".tree-live") !== null, "sanity: the live dot renders for a freshly-tailed file");
+
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    assert(rec && rec.handle && rec.handle.kind === "file", "persist: the tail handle's own data field is written to the files store");
+  }, { indexedDB: factory });
+
+  // --- Window B: boot-time restore (same factory = same "disk"). The
+  // round-tripped handle lost its methods, so queryPermission() genuinely
+  // fails — the same degraded state a real browser puts a restored file in
+  // whenever it doesn't silently re-grant the permission (e.g. after an
+  // actual browser restart, not just a tab reload). ---
+  await withApp(async (w, d, T) => {
+    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    assert(T.state.rootIds.length === 1, "restore: the file came back via the normal session restore");
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(!node.tail, "restore: a handle that can't survive structured clone leaves the file a static snapshot instead of throwing");
+    w.render();
+    assert(d.querySelector(".tree-live") === null, "restore: no live dot renders while the tail couldn't be silently reattached");
+
+    // Function-level check of the successful path (the part a real
+    // IndexedDB round trip can't exercise in jsdom — see the class comment
+    // above): a fresh, fully-working fixture handle stands in for "the
+    // browser re-granted permission silently."
+    const workingHandle = new FakeFileHandle();
+    const ok = await w.tryReattachFileTail(node, workingHandle);
+    assert(ok === true, "tryReattachFileTail resumes tailing when permission is (still) granted");
+    assert(node.tail && node.tail.handle === workingHandle, "reattached tail carries the working handle");
+    assert(node.tail.offset === w.rebuildFileText(node).length,
+      "reattached tail's offset matches the restored file's current byte length, so the next poll only reads genuinely NEW bytes");
+    w.render();
+    assert(d.querySelector(".tree-live") !== null, "the live dot renders once tailing is reattached");
+
+    // Tailing genuinely resumes polling from here, not just a flag flip.
+    const appended = `2024-01-15 10:00:03,000\tINFO\t"main"\tFoo.cs\tline 3\t[DoWork]\t"new entry"\n`;
+    const grownText = w.rebuildFileText(node) + "\n" + appended;
+    workingHandle.getFile = async () => {
+      const blob = new w.Blob([grownText]);
+      blob.slice = start => {
+        const sliced = grownText.slice(start);
+        const b = new w.Blob([sliced]);
+        b.text = async () => sliced;
+        return b;
+      };
+      Object.defineProperty(blob, "size", { get: () => grownText.length, configurable: true });
+      return blob;
+    };
+    await w.tailTick();
+    assert(node.entries.length === 4, "a reattached tail genuinely resumes polling for new content, got " + node.entries.length);
+
+    // Permission NOT silently granted (e.g. after a real browser restart).
+    class DeniedHandle { async queryPermission() { return "prompt"; } }
+    const node2 = await w.addFile("other.log", makeLog(0, 2), () => {});
+    const ok2 = await w.tryReattachFileTail(node2, new DeniedHandle());
+    assert(ok2 === false && !node2.tail, "tryReattachFileTail leaves the file untailed when permission isn't silently granted");
+  }, { indexedDB: factory });
+}
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -4781,6 +4892,34 @@ process.exit(failed ? 1 : 0);
               (same for the assert button), and Group 24 (column/button
               counts and copy-export text bumped by the 2 new always-
               visible columns).
+   Group 43  — this session (2026-08-17), person-reported: a log file
+              still being actively written showed no live dot and never
+              updated in Edge. Root cause was FEATURE_BACKLOG.md's known
+              gap "Persist tail handles across reload" — a file the
+              session cache auto-restored on relaunch (experienced by the
+              person as simply "opening" the file) never got a node.tail,
+              permanently a static snapshot; re-opening it manually was
+              the only way to resume tailing. Fixed via a persisted
+              FileSystemFileHandle (persistFileNode) and a new
+              tryReattachFileTail() helper (restoreSessionFromCache) that
+              silently resumes tailing through queryPermission — same
+              graceful-degradation shape as folder reconnect. Covers:
+              handle:null persisted for an untailed file; a tailed file's
+              handle round-tripping through real IndexedDB; the expected
+              degrade-to-static-snapshot outcome once the round-tripped
+              handle can't survive fake-indexeddb's strict structured
+              clone (same documented jsdom gap as Group 38c); the
+              successful-reattach path exercised directly with a fresh
+              working fixture handle (offset correctness, live dot
+              re-appearing, tailing genuinely resuming on the next poll);
+              and the not-silently-granted-permission path leaving a file
+              untailed rather than throwing. Also fixed in the same pass:
+              persistFileNode skips the handle for folder-owned files
+              (they already reattach via restoreWatchedFolders/
+              mergeScannedFiles, and Group 38c's own per-file fixture
+              handle isn't cloneable independent of its directory handle —
+              this was caught by Group 38c failing once persistFileNode
+              started writing a handle unconditionally).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

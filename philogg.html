@@ -8679,6 +8679,15 @@ async function persistFileNode(node) {
     name: node.name,
     merged: !!node.merged,
     folderId: node.folderId || null, // see "Folder watch" — re-links this node to its folder on restore
+    // A real FileSystemFileHandle survives IndexedDB's structured clone (same
+    // fact persistFolder already relies on) — stashing it here is what lets
+    // restoreSessionFromCache silently resume tailing after a reload instead
+    // of leaving a restored file a static snapshot forever (FEATURE_BACKLOG.md
+    // "Persist tail handles across reload"). Skipped for folder-owned files —
+    // those already reattach via restoreWatchedFolders/mergeScannedFiles, and
+    // that path's own per-file handle isn't guaranteed cloneable independent
+    // of its owning directory handle.
+    handle: (node.tail && !node.folderId) ? node.tail.handle : null,
     text: rebuildFileText(node),
     savedAt: Date.now(),
   }));
@@ -8902,6 +8911,34 @@ function materializeCachedFilters(fileNode, roots) {
   return refMap;
 }
 
+// Attempts to resume tailing on a file node just restored from the session
+// cache, using its persisted FileSystemFileHandle (see persistFileNode).
+// queryPermission (unlike requestPermission) needs no user gesture, so this
+// either resumes tailing invisibly or leaves the file a static snapshot —
+// same graceful-degradation shape restoreWatchedFolders already uses for
+// directory handles. A separate function (not inlined into
+// restoreSessionFromCache) purely so the successful-reattach path stays
+// testable: a handle round-tripped through fake-indexeddb's structured
+// clone always fails permission checks in jsdom (see tests/README.md), so
+// tests exercise this directly with a working fixture handle, the same way
+// reconnectFolder's own test does for folders.
+async function tryReattachFileTail(node, handle) {
+  try {
+    const perm = await handle.queryPermission({ mode: "read" });
+    if (perm === "granted") {
+      node.tail = {
+        handle,
+        offset: new Blob([rebuildFileText(node)]).size,
+        pending: "",
+        failed: false,
+        busy: false,
+      };
+      return true;
+    }
+  } catch { /* handle unusable (moved/deleted) — stays a static snapshot */ }
+  return false;
+}
+
 // Boot-time restore. Returns true if at least one file came back. Any error
 // abandons the restore (whatever loaded so far stays usable) rather than
 // blocking the app on a corrupt cache.
@@ -8930,6 +8967,9 @@ async function restoreSessionFromCache() {
       // folder record itself (including its handle) comes back separately
       // via restoreWatchedFolders, called right after this function returns.
       if (rec.folderId) node.folderId = rec.folderId;
+      // Plain (non-folder) file that was being tailed before the reload:
+      // try to resume silently — see tryReattachFileTail.
+      if (rec.handle && !rec.folderId) await tryReattachFileTail(node, rec.handle);
       byKey[key] = node;
     }
     if (!state.rootIds.length) return false;
