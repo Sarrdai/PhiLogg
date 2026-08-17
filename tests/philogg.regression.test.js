@@ -513,11 +513,15 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 16 — Undo / Redo
-   Origin: 7ef2c2a6 (item 6). Snapshot-based stack scoped to filter node
-   delete/move ONLY (not files, not value edits) — verifies the wrapped
-   mutators, the redo-stack-clearing-on-new-action semantics, the stack
-   limit, and that linkedId self-heals when a subtree is restored.
+   GROUP 16 — Undo / Redo (filter node delete/move)
+   Origin: 7ef2c2a6 (item 6). Snapshot-based stack, originally scoped to
+   filter node delete/move ONLY — verifies the wrapped mutators, the
+   redo-stack-clearing-on-new-action semantics, the stack limit, and that
+   linkedId self-heals when a subtree is restored. File delete, value/
+   pattern edits, invert toggle, and assertion changes were added to the
+   same stack later this session (2026-08-17, FEATURE_BACKLOG.md "Extend
+   undo/redo") — see Group 46, which also replaces this group's old
+   "files are out of scope" assertion (now false).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("16. Undo / Redo");
@@ -570,12 +574,16 @@ await withApp(async (w, d, T) => {
   w.deleteFilterNodeWithUndo(redoNode.id);
   assert(T.redoStack.length === 0, "pushing a new undo action clears any existing redo history");
 
-  // Files are explicitly OUT of undo scope
+  // Plain file deletion is now ALSO undoable (Group 46 covers this in
+  // depth — restored entryIndex/rootIds position/filter subtree — this is
+  // just a smoke check that it goes through the same stack).
   const fileToDelete = await w.addFile("c.log", makeLog(0, 3), () => {});
   const stackLenBefore = T.undoStack.length;
-  w.deleteFilterNodeWithUndo(fileToDelete.id); // falls through to plain deleteNode for file-type nodes
+  w.deleteFilterNodeWithUndo(fileToDelete.id);
   assert(!T.state.nodes[fileToDelete.id], "file deletion still works through the wrapped call");
-  assert(T.undoStack.length === stackLenBefore, "deleting a FILE does not push an undo action (v1 scope: filters only)");
+  assert(T.undoStack.length === stackLenBefore + 1, "deleting a plain FILE now pushes an undo action too");
+  w.undo();
+  assert(T.state.nodes[fileToDelete.id], "undo restores the deleted file");
 });
 
 /* ============================================================
@@ -4601,6 +4609,144 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 46 — Extend undo/redo: file delete, value/pattern edits, invert
+   toggle, assertion changes
+   Origin: this session (2026-08-17), FEATURE_BACKLOG.md "Extend undo/redo"
+   (Group 16 originally covered filter delete/move only). Adds four more
+   undoable action kinds on top of the SAME snapshot-based stack: plain
+   (non-folder) file delete ("deleteFile" — snapshotSubtree/restoreSubtree
+   extended to file nodes, entries/tail kept by reference), and a new
+   generic "edit" kind (captureNodeFields/applyNodeFields before/after)
+   backing value/pattern edits (F2 popup + time-range dialog), the invert
+   toggle, and assertion add/clear. Folder-file close and node creation
+   stay deliberately out of scope — see the undo/redo module comment in
+   philogg.html.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("46. Extend undo/redo: file delete, edits, invert, assertions");
+
+  // ---------- Plain file delete ----------
+  const fa = await w.addFile("a.log", makeLog(0, 10), () => {});
+  const filt = w.createFilterNode(fa.id, "text", "message 1");
+  w.render();
+  const rootIndexBefore = T.state.rootIds.indexOf(fa.id);
+  const entryIdsBefore = fa.entries.map(e => e.id);
+  const stackLenBefore = T.undoStack.length;
+
+  w.deleteFilterNodeWithUndo(fa.id);
+  assert(!T.state.nodes[fa.id], "plain file delete removes the node");
+  assert(!T.state.rootIds.includes(fa.id), "plain file delete removes it from rootIds");
+  assert(entryIdsBefore.every(id => !T.entryIndex[id]), "plain file delete releases its entries from entryIndex");
+  assert(T.undoStack.length === stackLenBefore + 1, "plain file delete pushes an undo action (kind \"deleteFile\")");
+
+  w.undo();
+  assert(T.state.nodes[fa.id], "undo restores the deleted file node");
+  assert(T.state.nodes[fa.id].id === fa.id, "restored file keeps its original id");
+  assert(T.state.rootIds[rootIndexBefore] === fa.id, "restored file lands back at its original rootIds position, got index " + T.state.rootIds.indexOf(fa.id));
+  assert(entryIdsBefore.every(id => T.entryIndex[id]), "undo re-adds every entry to entryIndex");
+  assert(T.state.nodes[filt.id] && T.state.nodes[filt.id].parentId === fa.id, "restored file's filter subtree comes back too, same id and parent");
+
+  w.redo();
+  assert(!T.state.nodes[fa.id], "redo re-deletes the file");
+  assert(entryIdsBefore.every(id => !T.entryIndex[id]), "redo re-releases entries from entryIndex");
+
+  w.undo(); // leave the file restored for the rest of this group
+  assert(T.state.nodes[fa.id], "sanity: file restored again for the rest of the group");
+
+  // ---------- Folder-loaded file close is STILL not undoable ----------
+  // Setting .folderId directly (no full watched-folder setup needed) is
+  // enough to route deleteFilterNodeWithUndo into its folder branch, which
+  // closeFolderFile handles gracefully even with no matching state.folders
+  // record (the "if (folder)" guard there).
+  const folderFile = await w.addFile("watched.log", makeLog(0, 3), () => {});
+  folderFile.folderId = "not-a-real-folder";
+  const stackLenBeforeFolder = T.undoStack.length;
+  w.deleteFilterNodeWithUndo(folderFile.id);
+  assert(!T.state.nodes[folderFile.id], "folder-file close still fully removes the node in this test (no folder record to return it to)");
+  assert(T.undoStack.length === stackLenBeforeFolder, "folder-file close still does not push an undo action");
+
+  // ---------- Value/pattern edit: F2 popup (text filter) ----------
+  const textNode = w.createFilterNode(fa.id, "text", "message 1");
+  T.state.activeId = textNode.id;
+  w.render();
+  const stackLenBeforeEdit = T.undoStack.length;
+  fireKeydown(d, w, "F2");
+  d.querySelector("#filterInput").value = "message 2";
+  fireSubmit(d.querySelector("#filterForm"), w);
+  assert(textNode.value === "message 2", "F2 edit still updates the node in place");
+  assert(T.undoStack.length === stackLenBeforeEdit + 1, "F2 edit now pushes an undo action");
+  w.undo();
+  assert(textNode.value === "message 1", "undo restores the pre-edit value");
+  w.redo();
+  assert(textNode.value === "message 2", "redo re-applies the edit");
+  // A real browser blurs a focused input when its containing popup goes
+  // display:none; jsdom doesn't compute that CSS-driven side effect, so the
+  // next F2 press below would otherwise hit the global keydown handler's
+  // "inInput" bail-out (see document's keydown listener) against a hidden,
+  // stale-focused #filterInput. Blur it explicitly to match real behavior.
+  d.querySelector("#filterInput").blur();
+
+  // ---------- Value/pattern edit: time-range dialog (legacy after -> timerange migration) ----------
+  const rangeNode = w.createFilterNode(fa.id, "after", fa.entries[3].ts);
+  T.state.activeId = rangeNode.id;
+  w.render();
+  const stackLenBeforeRange = T.undoStack.length;
+  fireKeydown(d, w, "F2");
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "F2 on a legacy \"after\" node opens the time-range dialog");
+  d.querySelector("#timeRangeToInput").value = w.tsToLocalInputValue(fa.entries[7].ts);
+  fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
+  assert(rangeNode.filterType === "timerange" && rangeNode.value.to === fa.entries[7].ts, "time-range edit applied and migrated the node");
+  assert(T.undoStack.length === stackLenBeforeRange + 1, "time-range edit pushes an undo action");
+  w.undo();
+  assert(rangeNode.filterType === "after" && rangeNode.value === fa.entries[3].ts, "undo restores the pre-edit legacy filterType AND value, got " + rangeNode.filterType + "/" + rangeNode.value);
+  w.redo();
+  assert(rangeNode.filterType === "timerange" && rangeNode.value.to === fa.entries[7].ts, "redo re-applies the migration + new bound");
+
+  // ---------- Invert (NOT) toggle ----------
+  const invNode = w.createFilterNode(fa.id, "text", "message 3");
+  T.state.activeId = invNode.id;
+  w.render();
+  const invRow = [...d.querySelectorAll(".tree-row")].find(r => r.classList.contains("active"));
+  fireContextMenu(invRow, w);
+  const invertItem = [...d.querySelectorAll("#treeContextMenu [data-action]")].find(n => n.dataset.action === "invert");
+  const stackLenBeforeInvert = T.undoStack.length;
+  fireClick(invertItem, w);
+  assert(invNode.inverted === true, "context-menu invert still toggles the flag");
+  assert(T.undoStack.length === stackLenBeforeInvert + 1, "invert toggle pushes an undo action");
+  w.undo();
+  assert(invNode.inverted === false, "undo reverts the invert toggle");
+  w.redo();
+  assert(invNode.inverted === true, "redo re-applies the invert toggle");
+
+  // ---------- Value assertion add/clear ----------
+  const extractNode = w.createFilterNode(fa.id, "extract", "message [value:int]");
+  T.state.activeId = extractNode.id;
+  w.render();
+  const assertBtn = d.querySelector('.extract-assert-btn[data-assert-col="0"]');
+  fireClick(assertBtn, w);
+  d.querySelector("#assertMinInput").value = "2";
+  d.querySelector("#assertMaxInput").value = "5";
+  const stackLenBeforeAssert = T.undoStack.length;
+  fireClick(d.querySelector("#assertDialogSave"), w);
+  assert(extractNode.assertions[0].min === 2 && extractNode.assertions[0].max === 5, "assertion saved");
+  assert(T.undoStack.length === stackLenBeforeAssert + 1, "saving an assertion pushes an undo action");
+  w.undo();
+  assert(!extractNode.assertions || !extractNode.assertions[0], "undo removes the just-added assertion");
+  w.redo();
+  assert(extractNode.assertions[0].min === 2 && extractNode.assertions[0].max === 5, "redo re-applies the assertion");
+
+  fireClick(assertBtn, w);
+  const stackLenBeforeClear = T.undoStack.length;
+  fireClick(d.querySelector("#assertDialogClear"), w);
+  assert(!extractNode.assertions[0], "Clear removes the assertion");
+  assert(T.undoStack.length === stackLenBeforeClear + 1, "clearing an assertion pushes an undo action");
+  w.undo();
+  assert(extractNode.assertions[0].min === 2 && extractNode.assertions[0].max === 5, "undo restores the cleared assertion");
+  w.redo();
+  assert(!extractNode.assertions[0], "redo re-applies the clear");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -5194,6 +5340,25 @@ process.exit(failed ? 1 : 0);
               still resolving it correctly, the class reappearing once
               scrolled back, and both scroll position and (for the Link
               view) the selected pair resetting on a genuine node switch.
+   Group 46  — this session (2026-08-17), from FEATURE_BACKLOG.md "Extend
+              undo/redo" (Group 16 originally covered filter node delete/
+              move only). Same snapshot-based stack, four more action
+              kinds: plain (non-folder) file delete ("deleteFile" —
+              snapshotSubtree/restoreSubtree extended to file nodes,
+              entries/tail kept by reference not cloned), and a new
+              generic "edit" kind (captureNodeFields/applyNodeFields
+              before/after) backing value/pattern edits (F2 popup + time-
+              range dialog, including the legacy after/before ->
+              timerange migration), the invert toggle, and value-assertion
+              add/clear. Covers: entryIndex/rootIds-position/filter-
+              subtree restoration on file delete+undo+redo, folder-file
+              close confirmed STILL not pushing an undo action (regression
+              guard — deleteFilterNodeWithUndo's folder branch has to run
+              BEFORE the new file branch), and before/after round-trips
+              for each of the four edit-kind call sites. Group 16's own
+              "files are out of undo scope" assertion was updated in place
+              to match (now redundant with this group's deeper file-delete
+              coverage, kept as a smoke check).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

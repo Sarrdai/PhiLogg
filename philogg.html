@@ -1842,7 +1842,7 @@
       <div>Right-click a node — copy/cut/paste/delete</div>
       <div>Drag a filter onto another node to move it there</div>
       <div><kbd>Del</kbd> — delete selected filter</div>
-      <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo (delete/move)</div>
+      <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo (delete/move/edit)</div>
       <div><kbd>B</kbd> — bookmark the selected row</div>
       <div>Drag the divider right of the tree, above the detail panel, or (in Stacked view) between Full and Filtered to resize</div>
       <div>Filter with <kbd>[value:float]</kbd> etc. to extract a table</div>
@@ -2308,8 +2308,8 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
 // applies), inverted flag and display name. Every other node's cache is
 // derived from this one's result if it sits below it in the tree, so the
 // same global invalidation used for move/delete/invert is needed here too.
-// Deliberately not undoable, same as the invert toggle — see the undo/redo
-// section's "not value/type edits" scope note.
+// The plain mutator — callers that should be undoable go through
+// updateFilterNodeWithUndo (see the undo/redo section) instead.
 function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns) {
   const node = state.nodes[nodeId];
   if (!node) return;
@@ -2331,9 +2331,9 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, c
   invalidateAllCaches();
 }
 
-// Edits an existing time filter in place — same "not undoable" scope as
-// updateFilterNode above, and the same reasoning for why (a value/type edit,
-// not a move/delete). Unlike updateFilterNode this also handles the legacy
+// Edits an existing time filter in place — same "plain mutator, wrap with
+// updateTimeRangeFilterNodeWithUndo for a user-facing edit" split as
+// updateFilterNode above. Unlike updateFilterNode this also handles the legacy
 // "after"/"before" node shapes: editing one through the time-range dialog
 // (see openTimeRangeDialog) migrates it to "timerange" on save, since the
 // dialog always writes both bounds. One-way (there's no UI to go back to the
@@ -3101,13 +3101,17 @@ function getLevelCounts(nodeId) {
   return node._levelCounts;
 }
 
-/* ===================== Undo / redo (filter-tree delete & move only) =====================
-   Deliberately narrow v1 scope, matching the feature backlog: only filter
-   node DELETE and MOVE (drag/drop reparent, and cut+paste which is also a
-   move) are undoable — not file deletion, not value/type edits, not
-   checkbox/inversion/assertion toggles. A small snapshot-based stack was
-   chosen over deriving undo generically from every tree-mutating function
-   (see PROJECT.md "Undo/redo" section for the reasoning).
+/* ===================== Undo / redo =====================
+   Covers: filter node delete & move (drag/drop reparent, and cut+paste
+   which is also a move), plain (non-folder) file delete, filter value/
+   pattern edits (the F2/"Edit filter…" popup and the time-range dialog),
+   the invert (NOT) toggle, and value-assertion add/clear. Still
+   deliberately NOT covering filter/file creation, folder-file close (a
+   non-destructive action already — the file just returns to its folder's
+   grayed listing), or context-filter creation (no edit path exists for it
+   at all). A small snapshot-based stack was chosen over deriving undo
+   generically from every tree-mutating function (see PROJECT.md
+   "Undo/redo" section for the reasoning).
 
    deleteFilterNodeWithUndo/moveFilterNodeWithUndo are the ONLY call sites
    that should invoke deleteNode/moveNode when the mutation originates from
@@ -3115,6 +3119,12 @@ function getLevelCounts(nodeId) {
    paste) — anything that bypasses them silently isn't undoable. Import-time
    cleanup of a dangling linkedRef (importFilterJson) is the one intentional
    exception: it's not a user-initiated delete of an existing node.
+   updateFilterNodeWithUndo/updateTimeRangeFilterNodeWithUndo/
+   toggleInvertWithUndo, and the assertion dialog's Save/Clear handlers, are
+   the equivalent call sites for the "edit" action kind below — they all
+   wrap a plain mutator with a before/after capture of the node's mutable
+   fields (captureNodeFields/applyNodeFields), since (unlike delete/move)
+   there's no cheap structural inverse for an arbitrary value edit.
 */
 const UNDO_STACK_LIMIT = 50;
 let undoStack = [];
@@ -3132,9 +3142,21 @@ function snapshotSubtree(nodeId) {
   if (!node) return null;
   const copy = {
     id: node.id, type: node.type, name: node.name, parentId: node.parentId,
-    filterType: node.filterType, value: node.value, inverted: !!node.inverted,
     children: node.children.map(snapshotSubtree),
   };
+  if (node.type === "file") {
+    // Files are never structurally nested (always root-level), so this
+    // branch only ever runs for the top-level node of a "deleteFile" action
+    // — its filter-type children still go through the branch below. Entries
+    // and the live tail handle are kept by reference (not cloned) — the
+    // same objects just get unplugged from entryIndex/rootIds on delete and
+    // plugged back in on undo, same as a real re-open.
+    copy.entries = node.entries; copy.cacheKey = node.cacheKey;
+    if (node.merged) copy.merged = true;
+    if (node.tail) copy.tail = node.tail;
+    return copy;
+  }
+  copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
   if (node.linkedId) copy.linkedId = node.linkedId;
   if (node.filterType === "link") {
     copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
@@ -3152,6 +3174,18 @@ function snapshotSubtree(nodeId) {
 // Does not insert into any parent's children array; the caller does that
 // (the right index depends on whether this is an undo or a redo).
 function restoreSubtree(snap) {
+  if (snap.type === "file") {
+    const node = {
+      id: snap.id, type: "file", name: snap.name, parentId: null,
+      children: [], entries: snap.entries, cacheKey: snap.cacheKey,
+    };
+    if (snap.merged) node.merged = true;
+    if (snap.tail) node.tail = snap.tail;
+    state.nodes[node.id] = node;
+    node.entries.forEach(e => { entryIndex[e.id] = e; });
+    node.children = snap.children.map(c => restoreSubtree(c).id);
+    return node;
+  }
   const node = {
     id: snap.id, type: snap.type, name: snap.name, parentId: snap.parentId,
     filterType: snap.filterType, value: snap.value, inverted: !!snap.inverted,
@@ -3195,13 +3229,70 @@ function deleteFilterNodeWithUndo(nodeId) {
   // vanishing, per FEATURE_BACKLOG.md "Folder watch + lazy loading". See
   // closeFolderFile in the "Folder watch" section.
   if (node.type === "file" && node.folderId) { closeFolderFile(nodeId); return; }
-  if (node.type !== "filter") { deleteNode(nodeId); return; } // files: out of v1 undo scope
+  if (node.type === "file") {
+    const index = state.rootIds.indexOf(nodeId);
+    const snapshot = snapshotSubtree(nodeId);
+    deleteNode(nodeId);
+    pushUndo({ kind: "deleteFile", snapshot, index });
+    return;
+  }
   const parent = state.nodes[node.parentId];
   const index = parent ? parent.children.indexOf(nodeId) : -1;
   const snapshot = snapshotSubtree(nodeId);
   const parentId = node.parentId;
   deleteNode(nodeId);
   pushUndo({ kind: "delete", snapshot, parentId, index });
+}
+
+// Generic "value edit" undo: captures the node's mutable, non-structural
+// fields before and after an arbitrary mutation and stores both — unlike
+// delete/move, an edit has no cheap structural inverse to derive, so undo/
+// redo just re-applies whichever snapshot (before/after) is wanted wholesale.
+function captureNodeFields(node) {
+  return {
+    filterType: node.filterType, value: node.value, inverted: !!node.inverted, name: node.name,
+    ignoredColumns: node.ignoredColumns ? node.ignoredColumns.slice() : undefined,
+    caseSensitive: !!node.caseSensitive,
+    columns: node.columns ? node.columns.slice() : undefined,
+    assertions: node.assertions ? JSON.parse(JSON.stringify(node.assertions)) : undefined,
+  };
+}
+function applyNodeFields(node, fields) {
+  node.filterType = fields.filterType; node.value = fields.value;
+  node.inverted = fields.inverted; node.name = fields.name;
+  if (fields.ignoredColumns) node.ignoredColumns = fields.ignoredColumns.slice(); else delete node.ignoredColumns;
+  if (fields.caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
+  if (fields.columns) node.columns = fields.columns.slice(); else delete node.columns;
+  if (fields.assertions) node.assertions = JSON.parse(JSON.stringify(fields.assertions)); else delete node.assertions;
+}
+function withFieldEditUndo(nodeId, mutateFn) {
+  const node = state.nodes[nodeId];
+  if (!node) return;
+  const before = captureNodeFields(node);
+  mutateFn(node);
+  const after = captureNodeFields(node);
+  pushUndo({ kind: "edit", nodeId, before, after });
+}
+
+// Named wrappers for the two edit mutators that take several args (the
+// assertion dialog's Save/Clear handlers instead call withFieldEditUndo
+// directly, since their mutation is a one-liner) — see the module comment
+// above for the full list of "edit" call sites.
+function updateFilterNodeWithUndo(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns) {
+  withFieldEditUndo(nodeId, () => updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns));
+}
+function updateTimeRangeFilterNodeWithUndo(nodeId, from, to) {
+  withFieldEditUndo(nodeId, () => updateTimeRangeFilterNode(nodeId, from, to));
+}
+function toggleInvertWithUndo(nodeId) {
+  withFieldEditUndo(nodeId, node => {
+    node.inverted = !node.inverted;
+    // A node's own cache is keyed on its filterType/value, which didn't
+    // change — only the inverted flag did — but every descendant's cache
+    // is derived from this node's result, so the same global invalidation
+    // used for move/delete is needed here too.
+    invalidateAllCaches();
+  });
 }
 
 function moveFilterNodeWithUndo(nodeId, newParentId) {
@@ -3221,6 +3312,12 @@ function insertAt(parent, nodeId, index) {
   parent.children.splice(idx, 0, nodeId);
 }
 
+// Human-readable label per action kind, shared by the toast and the toolbar
+// button tooltips below.
+const UNDO_KIND_LABELS = {
+  delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
+};
+
 function undo() {
   const action = undoStack.pop();
   if (!action) { showCopyToast("Nothing to undo"); return; }
@@ -3228,6 +3325,12 @@ function undo() {
     const restored = restoreSubtree(action.snapshot);
     insertAt(state.nodes[action.parentId], restored.id, action.index);
     state.activeId = restored.id;
+  } else if (action.kind === "deleteFile") {
+    const restored = restoreSubtree(action.snapshot);
+    const idx = action.index === -1 || action.index == null ? state.rootIds.length : Math.min(action.index, state.rootIds.length);
+    state.rootIds.splice(idx, 0, restored.id);
+    state.activeId = restored.id;
+    persistFileNode(restored); // fire-and-forget — re-adds the cache record deleteNode dropped
   } else if (action.kind === "move") {
     const node = state.nodes[action.nodeId];
     if (node) {
@@ -3237,12 +3340,15 @@ function undo() {
       node.parentId = action.oldParentId;
       state.activeId = action.nodeId;
     }
+  } else if (action.kind === "edit") {
+    const node = state.nodes[action.nodeId];
+    if (node) { applyNodeFields(node, action.before); state.activeId = action.nodeId; }
   }
   redoStack.push(action);
   updateUndoRedoButtons();
   invalidateAllCaches();
   render();
-  showCopyToast(action.kind === "delete" ? "Delete undone" : "Move undone");
+  showCopyToast((UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
 }
 
 function redo() {
@@ -3253,25 +3359,32 @@ function redo() {
     // id) — deleting it again is the redo.
     if (state.nodes[action.snapshot.id]) deleteNode(action.snapshot.id);
     state.activeId = action.parentId;
+  } else if (action.kind === "deleteFile") {
+    if (state.nodes[action.snapshot.id]) deleteNode(action.snapshot.id); // sets state.activeId itself
   } else if (action.kind === "move") {
     if (state.nodes[action.nodeId]) {
       moveNode(action.nodeId, action.newParentId);
       state.activeId = action.nodeId;
     }
+  } else if (action.kind === "edit") {
+    const node = state.nodes[action.nodeId];
+    if (node) { applyNodeFields(node, action.after); state.activeId = action.nodeId; }
   }
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
   updateUndoRedoButtons();
   invalidateAllCaches();
   render();
-  showCopyToast(action.kind === "delete" ? "Delete redone" : "Move redone");
+  showCopyToast((UNDO_KIND_LABELS[action.kind] || action.kind) + " redone");
 }
 
 function updateUndoRedoButtons() {
   btnUndo.disabled = undoStack.length === 0;
   btnRedo.disabled = redoStack.length === 0;
-  btnUndo.title = undoStack.length ? "Undo " + (undoStack[undoStack.length - 1].kind) + " (Ctrl+Z)" : "Nothing to undo";
-  btnRedo.title = redoStack.length ? "Redo " + (redoStack[redoStack.length - 1].kind) + " (Ctrl+Shift+Z)" : "Nothing to redo";
+  const nextUndo = undoStack[undoStack.length - 1];
+  const nextRedo = redoStack[redoStack.length - 1];
+  btnUndo.title = nextUndo ? "Undo " + (UNDO_KIND_LABELS[nextUndo.kind] || nextUndo.kind) + " (Ctrl+Z)" : "Nothing to undo";
+  btnRedo.title = nextRedo ? "Redo " + (UNDO_KIND_LABELS[nextRedo.kind] || nextRedo.kind) + " (Ctrl+Shift+Z)" : "Nothing to redo";
 }
 
 function getChain(id) {
@@ -5021,7 +5134,10 @@ assertDialog.addEventListener("click", ev => { if (ev.target === assertDialog) c
 el("#assertDialogCancel").addEventListener("click", closeAssertDialog);
 el("#assertDialogClear").addEventListener("click", () => {
   const node = state.nodes[assertDialogNodeId];
-  if (node && node.assertions) { delete node.assertions[assertDialogCol]; }
+  const col = assertDialogCol;
+  if (node && node.assertions && node.assertions[col] !== undefined) {
+    withFieldEditUndo(node.id, n => { delete n.assertions[col]; });
+  }
   closeAssertDialog();
   if (node) renderExtractTable(node);
 });
@@ -5040,8 +5156,11 @@ el("#assertDialogSave").addEventListener("click", () => {
     if (!Number.isFinite(target)) { closeAssertDialog(); return; } // target is required for this mode
     assertion = { mode: "target", target, tolerance: Number.isFinite(tolerance) ? Math.abs(tolerance) : 0 };
   }
-  if (!node.assertions) node.assertions = {};
-  node.assertions[assertDialogCol] = assertion;
+  const col = assertDialogCol;
+  withFieldEditUndo(node.id, n => {
+    if (!n.assertions) n.assertions = {};
+    n.assertions[col] = assertion;
+  });
   closeAssertDialog();
   renderExtractTable(node);
 });
@@ -7741,12 +7860,12 @@ function commitFilter(asExtract) {
   }
   if (asExtract) {
     const ignoredArr = [...filterPopupIgnored];
-    if (editingFilterId) updateFilterNode(editingFilterId, "extract", val, false, ignoredArr);
+    if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "extract", val, false, ignoredArr);
     else createFilterNode(filterPopupBaseId, "extract", val, false, ignoredArr);
   } else {
     const caseSensitive = filterCaseCheckbox.checked;
     const columns = [...filterPopupColumns];
-    if (editingFilterId) updateFilterNode(editingFilterId, "text", val, filterInvertCheckbox.checked, undefined, caseSensitive, columns);
+    if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, filterInvertCheckbox.checked, undefined, caseSensitive, columns);
     else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, null, caseSensitive, columns);
   }
   closeFilterPopup();
@@ -8156,14 +8275,8 @@ treeContextMenu.addEventListener("click", ev => {
     return;
   }
   if (action === "invert") {
-    const node = treeCtxId && state.nodes[treeCtxId];
-    if (node) {
-      node.inverted = !node.inverted;
-      // A node's own cache is keyed on its filterType/value, which didn't
-      // change — only the inverted flag did — but every descendant's cache
-      // is derived from this node's result, so the same global invalidation
-      // used for move/delete is needed here too.
-      invalidateAllCaches();
+    if (treeCtxId && state.nodes[treeCtxId]) {
+      toggleInvertWithUndo(treeCtxId);
       render();
     }
     return;
@@ -8396,7 +8509,7 @@ timeRangeDialogSubmit.addEventListener("click", () => {
   if (from != null && to != null && from > to) { const t = from; from = to; to = t; } // swap silently, same as the minimap drag
 
   if (timeRangeDialogMode === "edit") {
-    updateTimeRangeFilterNode(timeRangeDialogTargetId, from, to);
+    updateTimeRangeFilterNodeWithUndo(timeRangeDialogTargetId, from, to);
   } else if (!createFilterNode(timeRangeDialogTargetId, "timerange", { from, to })) {
     closeTimeRangeDialog();
     return;
