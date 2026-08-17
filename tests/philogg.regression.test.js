@@ -4258,6 +4258,203 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 43 — Bugfix: tail handles now persist across a reload
+   Origin: person-reported (this session): a log file that was still
+   actively being written showed no live dot and never updated in Edge.
+   Root cause: FEATURE_BACKLOG.md's known gap "Persist tail handles across
+   reload" — a file the session cache auto-restored on relaunch (which the
+   person experienced simply as "opening" the file, not as a reload) never
+   got a node.tail at all, so it was permanently a static snapshot; only
+   manually re-opening the file (which the person did, seeing more entries)
+   re-established tailing. Fixed by persisting the file's
+   FileSystemFileHandle alongside its text (persistFileNode) and a new
+   tryReattachFileTail() helper, called from restoreSessionFromCache, that
+   silently resumes tailing via queryPermission (no user gesture needed) —
+   the same graceful-degradation shape restoreWatchedFolders already uses
+   for directory handles.
+   ============================================================ */
+section("43. Bugfix: tail handles persist across a reload");
+{
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // A REAL FileSystemFileHandle survives IndexedDB's structured clone with
+  // its methods intact — the same fact persistFolder/restoreWatchedFolders
+  // already rely on for directory handles (see Group 38's own comment).
+  // fake-indexeddb enforces structured clone strictly: a class instance's
+  // OWN data fields (e.g. `kind`) clone through fine, but its PROTOTYPE
+  // methods are simply dropped — so a round-tripped handle here ends up
+  // exactly like a real handle whose permission needs reconfirming, not
+  // like one that kept working. That's used deliberately below to prove
+  // the degrade-gracefully path; the successful-reattach path is then
+  // checked directly with a fresh (non-round-tripped) instance, same as
+  // Group 38c does for reconnectFolder.
+  class FakeFileHandle {
+    constructor() { this.kind = "file"; }
+    async queryPermission() { return "granted"; }
+  }
+
+  // --- Persisting a file with no tail writes handle:null, not a missing field ---
+  await withApp(async (w, d, T) => {
+    const g = await w.addFile("plain.log", makeLog(0, 2), () => {});
+    await w.persistFileNode(g);
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(g.cacheKey));
+    assert(rec && rec.handle === null, "persist: a file with no tail writes handle:null");
+  }, { indexedDB: new IDBFactory() });
+
+  const factory = new IDBFactory();
+
+  // --- Window A: load a "live" (tailed) file, persist it. ---
+  await withApp(async (w, d, T) => {
+    const handle = new FakeFileHandle();
+    const f = await w.addFile("live.log", makeLog(0, 3), () => {});
+    f.tail = { handle, offset: w.rebuildFileText(f).length, pending: "", failed: false, busy: false };
+    w.render();
+    assert(d.querySelector(".tree-live") !== null, "sanity: the live dot renders for a freshly-tailed file");
+
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    assert(rec && rec.handle && rec.handle.kind === "file", "persist: the tail handle's own data field is written to the files store");
+  }, { indexedDB: factory });
+
+  // --- Window B: boot-time restore (same factory = same "disk"). The
+  // round-tripped handle lost its methods, so queryPermission() genuinely
+  // fails — the same degraded state a real browser puts a restored file in
+  // whenever it doesn't silently re-grant the permission (e.g. after an
+  // actual browser restart, not just a tab reload). ---
+  await withApp(async (w, d, T) => {
+    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    assert(T.state.rootIds.length === 1, "restore: the file came back via the normal session restore");
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(!node.tail, "restore: a handle that can't survive structured clone leaves the file a static snapshot instead of throwing");
+    w.render();
+    assert(d.querySelector(".tree-live") === null, "restore: no live dot renders while the tail couldn't be silently reattached");
+
+    // Function-level check of the successful path (the part a real
+    // IndexedDB round trip can't exercise in jsdom — see the class comment
+    // above): a fresh, fully-working fixture handle stands in for "the
+    // browser re-granted permission silently."
+    const workingHandle = new FakeFileHandle();
+    const ok = await w.tryReattachFileTail(node, workingHandle);
+    assert(ok === true, "tryReattachFileTail resumes tailing when permission is (still) granted");
+    assert(node.tail && node.tail.handle === workingHandle, "reattached tail carries the working handle");
+    assert(node.tail.offset === w.rebuildFileText(node).length,
+      "reattached tail's offset matches the restored file's current byte length, so the next poll only reads genuinely NEW bytes");
+    w.render();
+    assert(d.querySelector(".tree-live") !== null, "the live dot renders once tailing is reattached");
+
+    // Tailing genuinely resumes polling from here, not just a flag flip.
+    const appended = `2024-01-15 10:00:03,000\tINFO\t"main"\tFoo.cs\tline 3\t[DoWork]\t"new entry"\n`;
+    const grownText = w.rebuildFileText(node) + "\n" + appended;
+    workingHandle.getFile = async () => {
+      const blob = new w.Blob([grownText]);
+      blob.slice = start => {
+        const sliced = grownText.slice(start);
+        const b = new w.Blob([sliced]);
+        b.text = async () => sliced;
+        return b;
+      };
+      Object.defineProperty(blob, "size", { get: () => grownText.length, configurable: true });
+      return blob;
+    };
+    await w.tailTick();
+    assert(node.entries.length === 4, "a reattached tail genuinely resumes polling for new content, got " + node.entries.length);
+
+    // Permission NOT silently granted (e.g. after a real browser restart).
+    class DeniedHandle { async queryPermission() { return "prompt"; } }
+    const node2 = await w.addFile("other.log", makeLog(0, 2), () => {});
+    const ok2 = await w.tryReattachFileTail(node2, new DeniedHandle());
+    assert(ok2 === false && !node2.tail, "tryReattachFileTail leaves the file untailed when permission isn't silently granted");
+  }, { indexedDB: factory });
+}
+
+/* ============================================================
+   GROUP 44 — Bugfix: a transient tail-poll failure no longer permanently
+   kills tailing
+   Origin: person-reported (this session, follow-up to Group 43's fix): with
+   Group 43 in place, tailing DID pick up growth and show the live dot — but
+   stopped updating (dot included) a few seconds later, seemingly correlated
+   with moving the mouse. tailTick previously treated ANY getFile()/read
+   failure as permanent (t.failed = true on the first one), including
+   transient ones — most plausibly a moment where the writer holds the file
+   locked without shared-read access, a normal condition for a log actively
+   being appended to by another process. Fixed with a consecutive-failure
+   counter (t.errorCount, TAIL_MAX_CONSECUTIVE_ERRORS = 5): only a STREAK of
+   failures marks the file permanently failed; any clean poll in between
+   resets the streak, and every failure (transient or not) is now logged via
+   console.warn instead of vanishing silently — a genuinely permanent
+   failure (moved/deleted/permission revoked) still fails every single poll
+   and reaches the threshold in ~7.5s, same as it effectively did before.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("44. Bugfix: transient tail-poll failures don't permanently kill tailing");
+
+  // Same fixture shape as Group 12, plus a controllable failure mode.
+  function flakyHandle(initialText) {
+    let text = initialText;
+    let failNext = 0; // number of upcoming getFile() calls that should throw
+    return {
+      _setText(t) { text = t; },
+      _failNextCalls(n) { failNext = n; },
+      async getFile() {
+        if (failNext > 0) { failNext--; throw new Error("simulated transient read failure"); }
+        const blob = new w.Blob([text]);
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        return blob;
+      },
+    };
+  }
+
+  const warnCalls = [];
+  const origWarn = w.console.warn;
+  w.console.warn = (...args) => warnCalls.push(args);
+
+  const initial = makeLog(0, 3);
+  const handle = flakyHandle(initial);
+  const f = await w.addFile("live.log", initial, () => {});
+  f.tail = { handle, offset: initial.length, pending: "", failed: false, busy: false, errorCount: 0 };
+  w.render();
+  assert(d.querySelector(".tree-live") !== null, "sanity: live dot shows for a freshly-tailed file");
+
+  // --- A short streak of transient failures (below the threshold) ---
+  handle._failNextCalls(3);
+  await w.tailTick(); await w.tailTick(); await w.tailTick();
+  assert(f.tail.errorCount === 3, "three consecutive failures recorded, got " + f.tail.errorCount);
+  assert(f.tail.failed === false, "still under the threshold — tailing not yet given up on");
+  w.render();
+  assert(d.querySelector(".tree-live") !== null, "live dot still shows during a sub-threshold failure streak");
+  assert(warnCalls.length === 3, "each failure is logged via console.warn, not silently swallowed, got " + warnCalls.length);
+
+  // --- Recovery: the next poll succeeds (lock released) and growth resumes ---
+  const appended = `2024-01-15 10:00:03,000\tINFO\t"main"\tFoo.cs\tline 3\t[DoWork]\t"new entry"\n`;
+  handle._setText(initial + appended);
+  await w.tailTick();
+  assert(f.tail.errorCount === 0, "a clean poll resets the consecutive-failure streak back to 0");
+  assert(f.entries.length === 4, "growth is picked up normally once the transient failure clears, got " + f.entries.length);
+  assert(f.tail.failed === false, "never crossed the threshold — was never marked failed at all");
+
+  // --- A persistent failure (file genuinely gone) still gives up, eventually ---
+  handle._failNextCalls(999); // never recovers, same as a real moved/deleted file
+  for (let i = 0; i < 5; i++) await w.tailTick();
+  assert(f.tail.errorCount === 5, "five straight failures reach the threshold, got " + f.tail.errorCount);
+  assert(f.tail.failed === true, "a genuinely persistent failure still permanently stops tailing, same as before this fix");
+  w.render();
+  assert(d.querySelector(".tree-live") === null, "live dot disappears once tailing is genuinely given up on");
+
+  // Further ticks on an already-failed node are a no-op, not a crash.
+  await w.tailTick();
+  assert(f.tail.errorCount === 5, "an already-failed node is skipped by tailTick, not polled further");
+
+  w.console.warn = origWarn;
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -4781,6 +4978,57 @@ process.exit(failed ? 1 : 0);
               (same for the assert button), and Group 24 (column/button
               counts and copy-export text bumped by the 2 new always-
               visible columns).
+   Group 43  — this session (2026-08-17), person-reported: a log file
+              still being actively written showed no live dot and never
+              updated in Edge. Root cause was FEATURE_BACKLOG.md's known
+              gap "Persist tail handles across reload" — a file the
+              session cache auto-restored on relaunch (experienced by the
+              person as simply "opening" the file) never got a node.tail,
+              permanently a static snapshot; re-opening it manually was
+              the only way to resume tailing. Fixed via a persisted
+              FileSystemFileHandle (persistFileNode) and a new
+              tryReattachFileTail() helper (restoreSessionFromCache) that
+              silently resumes tailing through queryPermission — same
+              graceful-degradation shape as folder reconnect. Covers:
+              handle:null persisted for an untailed file; a tailed file's
+              handle round-tripping through real IndexedDB; the expected
+              degrade-to-static-snapshot outcome once the round-tripped
+              handle can't survive fake-indexeddb's strict structured
+              clone (same documented jsdom gap as Group 38c); the
+              successful-reattach path exercised directly with a fresh
+              working fixture handle (offset correctness, live dot
+              re-appearing, tailing genuinely resuming on the next poll);
+              and the not-silently-granted-permission path leaving a file
+              untailed rather than throwing. Also fixed in the same pass:
+              persistFileNode skips the handle for folder-owned files
+              (they already reattach via restoreWatchedFolders/
+              mergeScannedFiles, and Group 38c's own per-file fixture
+              handle isn't cloneable independent of its directory handle —
+              this was caught by Group 38c failing once persistFileNode
+              started writing a handle unconditionally).
+   Group 44  — this session (2026-08-17), person-reported same-day follow-
+              up to Group 43: with that fix in place, tailing DID start
+              updating and showing the live dot — but stopped again a few
+              seconds later, seemingly correlated with mouse movement.
+              Root cause: tailTick treated ANY getFile()/read failure as
+              permanent, including transient ones — most plausibly the
+              writer briefly holding the file locked without shared-read
+              access, an ordinary condition for a log actively being
+              appended to by another process, not something specific to
+              mouse movement (which was circumstantial timing, not a real
+              trigger — no code path ties mouse events to tailTick).
+              Fixed with a consecutive-failure counter (t.errorCount,
+              TAIL_MAX_CONSECUTIVE_ERRORS = 5) — only a STREAK of failures
+              now marks a file permanently failed; any clean poll in
+              between resets it, and every failure is logged via
+              console.warn instead of vanishing silently (there was
+              previously no logging at all for this catch block). Covers:
+              a sub-threshold failure streak leaving tailing/the live dot
+              untouched and each failure logged, a clean poll resetting the
+              streak and growth resuming normally, and a genuinely
+              persistent failure still reaching the threshold and stopping
+              tailing (live dot disappears) same as before this fix, with
+              an already-failed node correctly skipped on further ticks.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
