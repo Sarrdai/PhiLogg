@@ -4025,15 +4025,19 @@ let extractSortDir = "asc";
 
 // Two synthetic columns prepended to every extraction table, leftmost: a
 // 0-based row-order index (also the default X axis for the Plot tab — see
-// renderPlotControls) and the time delta from the previous entry in ms (so
-// values can be plotted against real elapsed time, not just ordinal
-// position). Negative colIndex keeps them out of spec.columns' 0..n-1 range
-// unconditionally — they're never ignorable/toggleable like pattern columns,
-// so there's no chip for them in the pattern view, but every other
-// colIndex-keyed mechanism (sort, assertions, stats, plot, copy/export)
-// already works generically off extractColumns and needs no special-casing.
+// renderPlotControls) and the elapsed time since the FIRST entry, in ms
+// (0 on the first row, cumulative from there) — not a row-to-row delta,
+// deliberately: a per-step delta doesn't work as a plot X value (row N's
+// position on the axis would depend on every prior row's spacing, not its
+// own value), while cumulative elapsed time is exactly a real time axis,
+// just relative rather than absolute. Negative colIndex keeps them out of
+// spec.columns' 0..n-1 range unconditionally — they're never
+// ignorable/toggleable like pattern columns, so there's no chip for them in
+// the pattern view, but every other colIndex-keyed mechanism (sort,
+// assertions, stats, plot, copy/export) already works generically off
+// extractColumns and needs no special-casing.
 const INDEX_COL = -2;
-const DELTA_T_COL = -1;
+const ELAPSED_COL = -1;
 
 // Distinct colors for numbering/coloring extraction columns, cycling if there
 // are more columns than colors. Deliberately separate from the log-level
@@ -4477,9 +4481,9 @@ function renderPlotControls() {
   // instead of the box being silently re-checked out from under the user.
   if (plotConfig.xCol == null || !plottable.some(c => c.index === plotConfig.xCol)) plotConfig.xCol = plottable[0].index;
   if (!plotConfig.yColsInit) {
-    // Prefer a real pattern-extracted column over the synthetic Index/ΔT
+    // Prefer a real pattern-extracted column over the synthetic Index/t(ms)
     // ones for the Y default — those are more useful defaults to look at
-    // than "ΔT plotted against Index".
+    // than "t(ms) plotted against Index".
     const firstOther = plottable.find(c => c.index !== plotConfig.xCol && c.index >= 0)
       || plottable.find(c => c.index !== plotConfig.xCol)
       || plottable[0];
@@ -4954,7 +4958,7 @@ function renderExtractTable(node) {
   const ignoredSet = new Set(node.ignoredColumns || []);
   extractColumns = [
     { name: "Index", type: "int", colIndex: INDEX_COL },
-    { name: "ΔT (ms)", type: "int", colIndex: DELTA_T_COL },
+    { name: "t (ms)", type: "int", colIndex: ELAPSED_COL },
     ...spec.columns.map((c, i) => ({ ...c, colIndex: i })).filter(c => !ignoredSet.has(c.colIndex)),
   ];
   const entries = applyLevelFilter(getEntries(node.id));
@@ -4967,7 +4971,9 @@ function renderExtractTable(node) {
     // Group 24), while every colIndex-keyed bracket read (row.values[ci])
     // used throughout this file already picks these up unchanged.
     values[INDEX_COL] = String(r);
-    values[DELTA_T_COL] = r === 0 ? "" : String(e.ts - entries[r - 1].ts);
+    // Cumulative, not a row-to-row delta (see ELAPSED_COL comment above) —
+    // 0 on the first row falls out naturally from e.ts - entries[0].ts.
+    values[ELAPSED_COL] = String(e.ts - entries[0].ts);
     return { entry: e, values };
   });
   // Sorting is applied to extractRowsData itself (not just the table display)
@@ -5016,8 +5022,8 @@ function renderExtractTable(node) {
       ? '<span class="assert-badge' + (summary.violations > 0 ? " has-violations" : "") + '">' + summary.violations + " of " + summary.total + " outside range</span>"
       : "";
     // The numbered circle mirrors a placeholder's position in the pattern
-    // (see renderExtractPatternView) — Index/ΔT aren't placeholders, so they
-    // get no number, just their name.
+    // (see renderExtractPatternView) — Index/t(ms) aren't placeholders, so
+    // they get no number, just their name.
     const numBadge = i < 0 ? "" : '<span class="pattern-chip-num" style="background:' + color + '">' + (i + 1) + "</span> ";
     headHtml +=
       '<th data-col="' + i + '" title="Click: select column · Ctrl+click: add/remove column · Shift+click: extend">' +
