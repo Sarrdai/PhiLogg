@@ -32,7 +32,9 @@ regression suite, see `tests/README.md` for conventions).
 
 `stopPropagation` on any click handler that opens a popup; DOM identity
 across clicks (`renderVisibleRows()` rebuilds nodes, breaking native
-`dblclick`); no `crypto.subtle` (sync FNV-1a fingerprint is intentional).
+`dblclick`; `renderTree()` does too, breaking native `click` on another row
+during a hot loop — see "load ticks never rebuild `#tree`" in PROJECT.md);
+no `crypto.subtle` (sync FNV-1a fingerprint is intentional).
 Any new filter-node field must be threaded through all persistence carriers:
 `cloneSubtree`, `snapshotSubtree`/`restoreSubtree`,
 `serializeFilterBranch`/`importFilterJson`,
