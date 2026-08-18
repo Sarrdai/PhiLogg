@@ -4856,15 +4856,23 @@ await withApp(async (w, d, T) => {
       "Session…" button must still work.
 
    2) The old #progressOverlay pop-up (full-screen, blocking) is gone
-      entirely — replaced by a .tree-loading-row placeholder rendered
-      directly in the tree (or, for a watched-folder file, in place of that
-      file's grayed .folder-watch-file row) with a thin progress bar along
-      its bottom edge. Because addLoadingFile() (called synchronously at
-      the top of loadOneFileIntoTree, before its first await) renders that
-      row before any actual async work starts, the row is already in the
-      DOM the instant loadFileDescriptors/loadFolderFile is called, with no
-      setTimeout needed to catch the "loading" state — same technique
-      Group 12 (tailing) and Group 30d use for real FileReader-backed loads.
+      entirely. It was first replaced (still this session) by a
+      .tree-loading-row placeholder shown while a file loaded, then
+      superseded again later the same session by createFileNode (see
+      philogg.html): the REAL file node now exists in the tree from the
+      instant loading starts — before any bytes have even been read — with
+      just a thin progress bar (node.loadFraction, drawn by renderNode)
+      riding along on its own real, already-interactive row instead of a
+      separate placeholder. Because createFileNode is called synchronously
+      at the top of loadOneFileIntoTree, before its first await, the row is
+      already in the DOM the instant loadFileDescriptors/loadFolderFile is
+      called, with no setTimeout needed to catch the "loading" state — same
+      technique Group 12 (tailing) and Group 30d use for real
+      FileReader-backed loads. 48b/48c below were rewritten in place for
+      this (no .tree-loading-row exists anymore); Group 49 covers the
+      actual point of the change — the file being usable while it loads,
+      not just showing a progress bar — since that's new behavior 48b/48c
+      never claimed to cover.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("48a. Session menu reachable with zero files loaded (old empty-tree context menu superseded)");
@@ -4888,20 +4896,32 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("48b. Mini loading-bar row replaces the pop-up for a plain file load");
+  section("48b. The real (already-interactive) file row, with a progress fill, replaces the pop-up for a plain file load");
   const text = makeLog(0, 5);
   const file = new w.File([text], "big.log", { type: "text/plain" });
 
   const before = new Set(T.state.rootIds);
   const donePromise = w.loadFileDescriptors([{ file, handle: null }]);
-  // Synchronous part of loadOneFileIntoTree (addLoadingFile -> renderTree)
+  // Synchronous part of loadOneFileIntoTree (createFileNode -> flushLoadRender)
   // has already run by the time this line executes — the first await inside
   // it (readFileWithProgress's FileReader) is what actually suspends.
-  let loadingRow = d.querySelector(".tree-loading-row");
-  assert(loadingRow !== null, "a .tree-loading-row appears in the tree the instant loading starts, before FileReader resolves");
-  assert(loadingRow.querySelector(".tree-label").textContent === "big.log", "the loading row shows the file's name");
-  assert(loadingRow.querySelector(".tree-load-fill") !== null, "the loading row carries a progress-fill bar");
+  const newId = T.state.rootIds.find(id => !before.has(id));
+  assert(newId, "the file is already a real root node the instant loading starts, before FileReader even resolves");
+  assert(typeof T.state.nodes[newId].loadFraction === "number", "the node carries a loadFraction while it's still loading");
+
+  let label = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "big.log");
+  assert(label !== undefined, "the file's row renders in the tree immediately, not just once loading finishes");
+  let row = label.closest(".tree-row");
+  assert(row.querySelector(".tree-load-fill") !== null, "the row carries a progress-fill bar while loading");
   assert(d.querySelector("#progressOverlay") === null, "still no blocking overlay anywhere in the DOM while a file is loading");
+  assert(d.querySelector(".tree-loading-row") === null, "no separate placeholder row exists anymore — the real row IS the loading row");
+
+  // The row is already fully interactive, not an inert placeholder: a real
+  // click on it runs the normal tree-row click handler.
+  T.state.focusRegion = "entries";
+  fireClick(row, w);
+  assert(T.state.focusRegion === "tree", "the still-loading row is already clickable like a normal tree row, not the old inert placeholder");
+
   // The rest of the UI stays usable: unrelated controls remain clickable —
   // spot-checked via the theme button, which has nothing to do with loading.
   const btnThemeBefore = d.documentElement.getAttribute("data-theme");
@@ -4909,15 +4929,14 @@ await withApp(async (w, d, T) => {
   assert(d.documentElement.getAttribute("data-theme") !== btnThemeBefore, "other toolbar controls remain responsive while a file load is in flight");
 
   await donePromise;
-  assert(d.querySelector(".tree-loading-row") === null, "the loading row is gone once the file finishes loading");
-  const newId = T.state.rootIds.find(id => !before.has(id));
-  assert(newId, "the file is now a real root node");
-  assert(d.querySelector('.tree-row .tree-label') && [...d.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "big.log"),
-    "the loaded file now renders as a normal real tree row");
+  assert(typeof T.state.nodes[newId].loadFraction !== "number", "loadFraction is cleared off the node once loading finishes");
+  label = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "big.log");
+  assert(label !== undefined, "the loaded file still renders as a normal real tree row");
+  assert(label.closest(".tree-row").querySelector(".tree-load-fill") === null, "the progress fill is gone once the file finishes loading");
 });
 
 await withApp(async (w, d, T) => {
-  section("48c. Mini loading-bar row replaces a folder-watch file's grayed placeholder while it loads");
+  section("48c. The real (already-interactive) file row, with a progress fill, replaces a folder-watch file's grayed placeholder while it loads");
   const text = makeLog(0, 4);
   function fakeFileHandle(name, content) {
     return {
@@ -4950,21 +4969,120 @@ await withApp(async (w, d, T) => {
 
   const donePromise = w.loadFolderFile(folder, rec);
   // Unlike 48b, loadFolderFile awaits rec.handle.getFile() BEFORE calling
-  // loadOneFileIntoTree (which is what actually inserts the loading row via
-  // addLoadingFile), so a plain synchronous check right after the call
+  // loadOneFileIntoTree (which is what actually creates the real node via
+  // createFileNode), so a plain synchronous check right after the call
   // isn't enough here — flush pending microtasks (the getFile() resolution
   // chain) via a zero-delay timer first, same as every other async-fixture
   // load in this suite (e.g. Group 37's "let the FileReader-based load settle").
   await new Promise(r => setTimeout(r, 0));
-  const folderBox = d.querySelector(".folder-watch");
-  const loadingRow = folderBox.querySelector(".tree-loading-row");
-  assert(loadingRow !== null, "the folder file's grayed row is replaced by a .tree-loading-row while it loads");
+  let folderBox = d.querySelector(".folder-watch");
+  let label = [...folderBox.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "a.log");
+  assert(label !== undefined, "the folder file's grayed placeholder is replaced by its real (loading) row while it loads");
   assert(folderBox.querySelector(".folder-watch-file") === null, "the plain grayed placeholder is gone while loading (replaced, not duplicated)");
+  assert(label.closest(".tree-row").querySelector(".tree-load-fill") !== null, "the row carries a progress-fill bar while loading");
+  // rec.nodeId is only linked once loadFolderFile's own await resolves —
+  // renderFolderSection must still find the real (unlinked) loading node by
+  // folder+name in the meantime (see its own comment on this fallback).
+  assert(rec.nodeId == null, "sanity: rec.nodeId isn't linked yet at this point, so the row above came from the by-name fallback, not the fast path");
 
   await donePromise;
   const folderBoxAfter = d.querySelector(".folder-watch");
-  assert(folderBoxAfter.querySelector(".tree-loading-row") === null, "the loading row is gone once the folder file finishes loading");
-  assert(folderBoxAfter.querySelector(".tree-row .tree-label").textContent === "a.log", "the folder file now renders as a real tree row inside its folder section");
+  label = [...folderBoxAfter.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "a.log");
+  assert(label !== undefined, "the folder file still renders as a real tree row inside its folder section once loaded");
+  assert(label.closest(".tree-row").querySelector(".tree-load-fill") === null, "the progress fill is gone once the folder file finishes loading");
+});
+
+/* ============================================================
+   GROUP 49 — File usable while it's still loading
+   Origin: this session, person-requested ("die Datei... direkt beim
+   Ladevorgang bedienbar machen, ... die Minimap fortlaufend zu befüllen").
+
+   createFileNode (see philogg.html) now creates the real file node and
+   inserts it into the tree BEFORE any text is read, and parseLogTextAsync
+   appends completed entries onto node.entries chunk by chunk (via
+   scheduleLoadRender/flushLoadRender, which also invalidate the node's
+   getEntries()/getLevelCounts() caches on every tick — see their own
+   comment) instead of only handing them all over once the whole file is
+   parsed. So a large file's tree row, table, level bar and minimap are all
+   live/interactive while it's still loading — the same way an already-open
+   tailed file updates continuously (Group 12), just driven by the initial
+   parse instead of a poll. Unlike tail auto-follow, the view deliberately
+   does NOT scroll to chase the growing content — renderTable's existing
+   "start at the top of a new list" default applies unchanged, so the
+   Filtered view just stays where it is while the file streams in.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("49. A large file streams into the tree/table/level-bar/minimap live while it's still parsing, without auto-scrolling");
+  // Force multiple PARSE_CHUNK_LINES (4000) chunks so the parse actually
+  // yields to the event loop more than once mid-parse — a small
+  // single-chunk log (as every other fixture in this suite uses) resolves
+  // in one hop and can't exercise this. Goes through addFile (text already
+  // in memory) rather than loadFileDescriptors/File/FileReader: the
+  // FileReader-backed read path is already covered by Group 30d/48b, and
+  // its own timing is real-I/O-dependent and would make this test racy —
+  // addFile's own synchronous prefix (createFileNode, then straight into
+  // parseLogTextAsync's first chunk) is what actually makes the file
+  // usable while loading, and is deterministic to catch mid-parse.
+  const text = makeLog(0, 9000, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] });
+
+  const before = new Set(T.state.rootIds);
+  const donePromise = w.addFile("huge.log", text); // not awaited yet — inspect mid-parse state below
+  const newId = T.state.rootIds.find(id => !before.has(id));
+  assert(newId, "the file is a real root node before parsing has even started (createFileNode runs synchronously, before addFile's first await)");
+  const node = T.state.nodes[newId];
+  T.state.activeId = newId;
+  w.render();
+
+  // Wait for exactly one parse chunk (4000 lines) to land, but not for the
+  // whole 9000-line parse to finish — the first PARSE_CHUNK_LINES yield was
+  // already scheduled by the synchronous prefix above, ahead of this tick,
+  // so it resolves (and the loop runs synchronously up to the NEXT chunk
+  // boundary) before this awaits.
+  await new Promise(r => setTimeout(r, 0));
+  const midCount = node.entries.length;
+  assert(midCount > 0 && midCount < 9000,
+    "entries stream into node.entries mid-parse instead of only appearing once the whole file is done — got " + midCount + "/9000");
+
+  // The tree row's own count reflects the growing entries live (renderNode
+  // reads getEntries(id).length, same as any other file node). Forced via an
+  // explicit render() here rather than waiting on the internal rAF-batched
+  // one (scheduleLoadRender) to actually fire — Group 47 already covers that
+  // batching mechanism itself; this checks the DATA it would render is
+  // already correct, deterministically.
+  w.render();
+  const label = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "huge.log");
+  const countEl = label.closest(".tree-row").querySelector(".tree-count");
+  const treeCount = parseInt(countEl.textContent.replace(/\./g, ""), 10);
+  assert(treeCount === node.entries.length, "the tree row's own entry count reflects the mid-parse entries, not zero or the eventual 9000 total — got " + countEl.textContent);
+
+  // The level bar's per-level counts are live too, not stuck at whatever was
+  // cached at the very first (still-empty) render — this is exactly the
+  // node._levelCounts staleness invalidateCachesForRoots(node.id) exists to
+  // prevent (see scheduleLoadRender/flushLoadRender's own comment).
+  const levelCounts = w.getLevelCounts(newId);
+  const midErrorCount = levelCounts.ERROR || 0;
+  assert(midErrorCount > 0 && midErrorCount < 1800, // 9000/5 ERROR entries total
+    "level-bar counts reflect the mid-parse entries live, not a stale empty/cached snapshot — got ERROR=" + midErrorCount);
+
+  // The table/minimap are usable, not empty, mid-parse — same active-node
+  // pipeline any already-loaded file uses.
+  const visibleMid = w.getVisibleEntries();
+  assert(visibleMid.length === node.entries.length, "the Filtered view already shows the mid-parse entries instead of an empty table");
+  assert(d.querySelector("#emptyState").style.display === "none", "the empty-state placeholder is not shown while entries are already streaming in");
+
+  // No auto-scroll while it streams in: renderTable's default "start back
+  // at the top of the list" behavior applies to every incremental render
+  // exactly as it would to any other node switch — nothing in the load path
+  // sets pendingTableScroll to "bottom" the way tail auto-follow does.
+  assert(d.querySelector("#tableBody").scrollTop === 0,
+    "the Filtered view stays pinned at the top while the file streams in, instead of jumping to follow the growing content like tail auto-follow does");
+
+  await donePromise;
+  assert(node.entries.length === 9000, "parsing finished with the full entry count");
+  assert(typeof node.loadFraction !== "number", "loadFraction is cleared once loading finishes");
+  const finalCounts = w.getLevelCounts(newId);
+  assert(finalCounts.ERROR === 1800 && finalCounts.INFO === 7200,
+    "level-bar counts are correct once loading finishes (not left stuck at a mid-parse snapshot) — got ERROR=" + finalCounts.ERROR + " INFO=" + finalCounts.INFO);
 });
 
 /* ============================================================
@@ -5598,13 +5716,34 @@ process.exit(failed ? 1 : 0);
               node menu) instead of re-tested here; this group only covers
               the empty-background-menu removal (right-click on an empty
               tree now opens nothing) and that the toolbar button still
-              works with zero files loaded. Also: the old blocking
-              #progressOverlay pop-up is gone, replaced by a
-              .tree-loading-row placeholder (thin progress bar along the
-              row's bottom edge) rendered directly in the tree — or, for a
-              watched-folder file, in place of that file's grayed
-              .folder-watch-file row — for both loadFileDescriptors (plain
-              "Open…"/drag-drop loads) and loadFolderFile.
+              works with zero files loaded (48a). Also: the old blocking
+              #progressOverlay pop-up is gone. 48b/48c were originally
+              written against a .tree-loading-row placeholder that replaced
+              it; later the SAME session that placeholder was itself
+              superseded by createFileNode (see Group 49) making the real
+              file row exist — and be fully interactive — from the instant
+              loading starts, with just a progress fill riding along on it.
+              48b/48c were rewritten in place for that (no .tree-loading-row
+              exists anymore) rather than left green against removed markup.
+   Group 49  — this session (2026-08-18), person-requested ("die Datei
+              direkt beim Ladevorgang bedienbar machen... die Minimap
+              fortlaufend zu befüllen... ähnlich wie eine Datei zu tailen").
+              createFileNode/parseLogTextAsync/scheduleLoadRender/
+              flushLoadRender (see philogg.html) make a file's entries
+              stream into node.entries chunk by chunk during the initial
+              parse, with the node already a real, active, selectable tree
+              row throughout — instead of the tree/table/minimap staying
+              empty until the whole file is parsed. Covers: entries/tree-row
+              count/level-bar counts all reflecting a genuinely mid-parse
+              state (not zero, not the final total) on a 9000-line file
+              forced across multiple PARSE_CHUNK_LINES chunks; that the
+              level-bar counts are correct again once loading finishes (the
+              exact node._levelCounts staleness bug the invalidateCachesFor-
+              Roots(node.id) calls in scheduleLoadRender/flushLoadRender fix
+              — this WAS a real regression caught while writing this group,
+              not a hypothetical); and that the Filtered view doesn't
+              auto-scroll to chase the growing content the way tail
+              auto-follow does for an already-open file.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
@@ -5658,7 +5797,13 @@ process.exit(failed ? 1 : 0);
      is gone outright, not just its session items — Group 48a asserts
      right-clicking empty tree space now opens nothing.
    - The old blocking #progressOverlay pop-up shown while a file loaded
-     (pre-2026-08-18) — superseded by the inline .tree-loading-row mini
-     progress bar (Group 48b/48c), which doesn't block the rest of the UI.
+     (pre-2026-08-18) — superseded, same session, first by an inline
+     .tree-loading-row placeholder, then by that placeholder itself being
+     superseded by the real file row existing (and being usable) from the
+     start (Group 49); Group 48b/48c cover the current shape.
+   - The .tree-loading-row placeholder row (still pre-2026-08-18, briefly)
+     — superseded by createFileNode making the real file row itself carry
+     the progress fill from the instant loading starts (Group 48b/48c,
+     Group 49); no code or markup for it remains.
 
    ============================================================ */
