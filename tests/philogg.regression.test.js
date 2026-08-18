@@ -5315,6 +5315,104 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 52 — Log-level filter and filter creation stay usable while the
+   loading file is the active view (feature parity with tailing)
+   Origin: this session, person-requested follow-up to Group 51: *"Jetzt
+   würde ich aber gerne auch schon während des Ladevorgangs in der Lage
+   sein, Log-Level Filter zu bedienen, neue Filter anlegen, etc. Also alles
+   was ich auch tun könnte, wenn es sich um ein Tailing und nicht um einen
+   Ladevorgang handeln würde."*
+
+   Groups 50/51 fixed scheduleLoadRender's tree-rebuild problem, but
+   renderLoadTickMainView still called renderLevelBar() every tick — the
+   SAME class of bug as renderTree(): renderLevelBar() tears down and
+   recreates all four level buttons (and their click listeners) from
+   scratch, so toggling one while a file loaded suffered the identical
+   click-loss symptom tree rows had. Fixed with updateLevelBarCounts (a
+   targeted .cnt text write, via a new btn.dataset.level, no rebuild) used
+   during ticks instead. Separately, updateLoadRowProgress was generalized
+   into updateLoadRowLiveData: it now walks the WHOLE subtree under the
+   loading root (not just the root's own row), so a filter created while the
+   file is still loading keeps showing a live, growing count on its own row
+   too — tailing's full render() already gave filter children this for
+   free (just at a much lower 1.5s cadence that never triggered the
+   click-loss bug in the first place); a load tick needed the same live
+   data without render()'s cost. Filter CREATION itself (the popup,
+   createFilterNode) was never actually blocked — it's a discrete action,
+   independent of the per-tick render path — so this group's job is mainly
+   proving the level bar fix and the live-count generalization, plus a
+   sanity check that creating a filter mid-load has always worked.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("52. Level-filter buttons stay clickable, and a newly created filter's own row keeps a live count, while the loading file is the active view");
+
+  // Monkey-patch renderLevelBar (the full rebuild) to count calls — same
+  // injected-script technique used throughout this suite.
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRenderLevelBar = renderLevelBar;
+    renderLevelBar = function() { window.__renderLevelBarCalls = (window.__renderLevelBarCalls||0)+1; return __origRenderLevelBar(); };
+  `;
+  d.body.appendChild(s);
+
+  // Large enough (15 PARSE_CHUNK_LINES chunks) to stay genuinely mid-parse
+  // across a handful of real ticks — same idiom Groups 49-51 use.
+  const text = makeLog(0, 60000, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] });
+  w.__renderLevelBarCalls = 0;
+  const donePromise = w.addFile("huge.log", text); // auto-activates
+  const newId = T.state.rootIds[T.state.rootIds.length - 1];
+  const node = T.state.nodes[newId];
+  assert(w.__renderLevelBarCalls === 1, "creating the node's own initial render rebuilds the level bar exactly once — got " + w.__renderLevelBarCalls);
+
+  // Capture the ERROR button right after that one legitimate rebuild —
+  // same "capture after the structural moment, not before" lesson Group 51
+  // learned the hard way.
+  const errBtnBefore = d.querySelector('.level-btn[data-level="ERROR"]');
+  assert(errBtnBefore !== null, "sanity: the ERROR level button exists");
+  w.__renderLevelBarCalls = 0;
+
+  for (let i = 0; i < 3 && node.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
+  assert(node.entries.length > 0 && node.entries.length < 60000, "file is genuinely still mid-parse — got " + node.entries.length + "/60000");
+  assert(w.__renderLevelBarCalls === 0, "none of the parse ticks rebuilt the level bar — got " + w.__renderLevelBarCalls);
+
+  const errBtnAfter = d.querySelector('.level-btn[data-level="ERROR"]');
+  assert(errBtnAfter === errBtnBefore, "the ERROR level button survives parse ticks as the exact same DOM element (identity preserved)");
+  const shownErr = parseInt(errBtnAfter.querySelector(".cnt").textContent.replace(/\./g, ""), 10);
+  assert(shownErr > 0, "the ERROR button's own count updates live during ticks via the cheap path (updateLevelBarCounts) — got " + shownErr);
+
+  // The real proof: a click on the reference held throughout the ticks
+  // still works — if the button had been torn down and replaced at any
+  // point, this reference's click listener would be gone.
+  fireClick(errBtnBefore, w);
+  assert(T.state.levelFilter.has("ERROR"), "a click on the level-filter button (same reference held throughout the ticks) correctly toggles it — no click was lost mid-load");
+  fireClick(errBtnBefore, w);
+  assert(!T.state.levelFilter.has("ERROR"), "sanity: toggled back off, state left clean for what follows");
+
+  // Creating a new filter while the file is STILL loading: never actually
+  // blocked (a discrete action, independent of the per-tick render path),
+  // but its own row needs to keep showing a live count afterwards, exactly
+  // like tailing would give it.
+  assert(node.entries.length < 60000, "sanity: still mid-load when the filter below gets created");
+  const filterNode = w.createFilterNode(newId, "text", "message");
+  T.state.activeId = filterNode.id;
+  w.render();
+  const countBefore = w.getEntries(filterNode.id).length;
+  assert(countBefore > 0 && countBefore < 60000, "sanity: the new filter already matches some of what's loaded so far, not the eventual full 60000 — got " + countBefore);
+
+  for (let i = 0; i < 3 && node.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
+  const filterRow = d.querySelector('.tree-row[data-node-id="' + filterNode.id + '"]');
+  assert(filterRow !== null, "the newly created filter's row still exists after further ticks");
+  const filterCountShown = parseInt(filterRow.querySelector(".tree-count").textContent.replace(/\./g, ""), 10);
+  assert(filterCountShown === w.getEntries(filterNode.id).length && filterCountShown > countBefore,
+    "the new filter's own row count keeps growing live as the parent file streams in more matching entries, instead of freezing at its creation-time value — got " + filterCountShown + " (was " + countBefore + ")");
+  const pctFill = filterRow.querySelector(".tree-pct-fill");
+  assert(pctFill !== null && pctFill.style.width !== "", "the new filter's percentage-of-parent bar is also kept live (updateLoadRowLiveData), not just its count");
+
+  await donePromise;
+  assert(node.entries.length === 60000, "the file finished loading normally despite the detour through level-filter/filter-creation interaction");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -6012,20 +6110,46 @@ process.exit(failed ? 1 : 0);
               rebuilds every row from scratch, which is what made a click on
               some other row need several attempts. Fixed by splitting a
               load tick's work: updateLoadRowProgress (extended to also
-              update .tree-count) handles the loading row directly without
-              renderTree(); new renderLoadTickMainView handles the rest of
-              the active view (table/minimap/level bar/status) the same way
-              — only createFileNode/flushLoadRender's structural moments
-              still call a real render(). Covers, with renderTree() mocked
-              to count calls: zero calls across several real parse ticks
-              while the loading file stays active (confirmed its own view
-              still updates live, via getVisibleEntries()); a different
-              row's DOM element — captured right after the one legitimate
-              structural rebuild from the loading file's own creation —
-              staying the exact same object through every following tick;
-              and a real click dispatched on that held reference correctly
-              switching to it (the strongest possible proof nothing was torn
-              down and replaced along the way).
+              update .tree-count; later the same session generalized further
+              into updateLoadRowLiveData — see Group 52) handles the loading
+              row directly without renderTree(); new renderLoadTickMainView
+              handles the rest of the active view (table/minimap/level
+              bar/status) the same way — only createFileNode/
+              flushLoadRender's structural moments still call a real
+              render(). Covers, with renderTree() mocked to count calls:
+              zero calls across several real parse ticks while the loading
+              file stays active (confirmed its own view still updates live,
+              via getVisibleEntries()); a different row's DOM element —
+              captured right after the one legitimate structural rebuild
+              from the loading file's own creation — staying the exact same
+              object through every following tick; and a real click
+              dispatched on that held reference correctly switching to it
+              (the strongest possible proof nothing was torn down and
+              replaced along the way).
+   Group 52  — this session (2026-08-18), person-requested follow-up to
+              Group 51 ("Jetzt würde ich aber gerne auch schon während des
+              Ladevorgangs in der Lage sein, Log-Level Filter zu bedienen,
+              neue Filter anlegen, etc. Also alles was ich auch tun könnte,
+              wenn es sich um ein Tailing... handeln würde"). Group 51 fixed
+              renderTree() but renderLoadTickMainView still called the full
+              renderLevelBar() every tick — same class of bug, just for the
+              four level buttons (recreated with fresh click listeners on
+              every tick). Fixed with updateLevelBarCounts (targeted .cnt
+              text write via a new btn.dataset.level). Also generalized
+              updateLoadRowProgress into updateLoadRowLiveData: a recursive
+              subtree walk (via row.dataset.nodeId, now on every tree row,
+              not just file rows) so a filter created mid-load keeps its own
+              row's count (and percentage-of-parent bar) growing live too,
+              instead of freezing at creation time. Filter creation itself
+              was never actually blocked (the popup is a static top-level
+              element, untouched by any of this). Covers, with
+              renderLevelBar() mocked to count calls: zero calls across
+              several real parse ticks while a level button's .cnt still
+              updates live; a click on that SAME held button reference still
+              correctly toggling the filter; and a filter created while
+              still mid-load shown growing its own row's count (matching
+              getEntries() exactly, not frozen) across further ticks, with
+              its percentage-of-parent bar kept live too.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
