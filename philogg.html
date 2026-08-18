@@ -6232,6 +6232,24 @@ function findOffsetIndex(offsets, y) {
 let tableRowOffsets = null;     // built by renderTable() when state.multilineMessages; null otherwise
 let highlightRowOffsets = null; // same, built by renderHighlightView()
 
+// Which entry id is currently rendered at (or just above) the top of a
+// virtualized viewport — i.e. "what the person is looking at right now."
+// Used by the multiline toggle (below) to re-anchor scroll on that SAME
+// entry after row heights change, instead of resetting to the top.
+function topVisibleEntryId(entries, offsets, scrollTop) {
+  if (!entries.length) return null;
+  const idx = (state.multilineMessages && offsets) ? findOffsetIndex(offsets, scrollTop) : Math.floor(scrollTop / ROW_HEIGHT);
+  return entries[Math.max(0, Math.min(idx, entries.length - 1))].id;
+}
+// Set by the multiline-message toggle right before render(): the entry id
+// that was at the top of each view's viewport pre-toggle. renderTable()/
+// renderHighlightView() consume these once, scrolling so that SAME entry
+// (now possibly a different height) is again at the top — the rows below it
+// are free to grow/shrink, but the view doesn't jump/reset to the top of the
+// whole list the way a plain node/filter switch does.
+let pendingTableTopAlignId = null;
+let pendingHighlightTopAlignId = null;
+
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
 // Set by the tail engine right before a live-update render:
@@ -6423,6 +6441,18 @@ function renderHighlightView(colorMapIsFresh) {
   highlightSpacer.style.height =
     ((state.multilineMessages ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
   if (!colorMapIsFresh) highlightColorMap = computeHighlightMap(rootId);
+
+  if (pendingHighlightTopAlignId != null) {
+    const targetId = pendingHighlightTopAlignId;
+    pendingHighlightTopAlignId = null;
+    const idx = currentHighlightViewEntries.findIndex(e => e.id === targetId);
+    if (idx !== -1) {
+      lastHighlightRootId = rootId;
+      setHighlightScroll(state.multilineMessages ? highlightRowOffsets[idx] : idx * ROW_HEIGHT);
+      renderHighlightVisibleRows();
+      return;
+    }
+  }
 
   if (state.highlightScrollTargetId) {
     const targetId = state.highlightScrollTargetId;
@@ -7553,6 +7583,20 @@ btnPinBookmarks.addEventListener("click", () => {
 // tableRowOffsets/highlightRowOffsets and re-renders both views' visible
 // windows — is needed, not just a targeted repaint.
 btnMultilineMsg.addEventListener("click", () => {
+  // Capture which entry is currently at the top of each viewport BEFORE
+  // flipping the flag (topVisibleEntryId reads state.multilineMessages/the
+  // offsets arrays, which still reflect the OLD mode at this point) — see
+  // "Multiline message display toggle" in PROJECT.md for why a plain
+  // render() alone would otherwise reset/shift the scroll position.
+  // currentViewEntries/#tableBody are only meaningful while the Filter view
+  // is actually the plain table (not the Link view, which renderMainView()
+  // renders instead of calling renderTable() at all — capturing here anyway
+  // would leave a stale pendingTableTopAlignId sitting unconsumed until some
+  // LATER, unrelated render finally reaches renderTable() again).
+  const activeNode = state.nodes[state.activeId];
+  const isLinkActive = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
+  pendingTableTopAlignId = isLinkActive ? null : topVisibleEntryId(currentViewEntries, tableRowOffsets, tableBody.scrollTop);
+  pendingHighlightTopAlignId = topVisibleEntryId(currentHighlightViewEntries, highlightRowOffsets, highlightBody.scrollTop);
   state.multilineMessages = !state.multilineMessages;
   updateMultilineMsgButton();
   render();
@@ -7600,6 +7644,17 @@ function renderTable() {
   // renderTimelineMinimap itself.
   updateMinimapRenderedRange();
   updateSortIndicators();
+
+  if (pendingTableTopAlignId != null) {
+    const targetId = pendingTableTopAlignId;
+    pendingTableTopAlignId = null;
+    const idx = currentViewEntries.findIndex(e => e.id === targetId);
+    if (idx !== -1) {
+      setTableScroll(state.multilineMessages ? tableRowOffsets[idx] : idx * ROW_HEIGHT);
+      renderVisibleRows();
+      return;
+    }
+  }
 
   if (state.scrollTargetId) {
     // Jumping to a specific entry: scroll straight to it instead of resetting to top.

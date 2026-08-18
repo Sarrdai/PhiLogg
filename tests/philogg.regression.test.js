@@ -5899,6 +5899,98 @@ await withApp(async (w, d, T) => {
   assert(targetRow, "the jumped-to entry actually has a rendered DOM row at that scroll position (offset-based start/end windowing landed correctly)");
 });
 
+/* ============================================================
+   GROUP 55d — Multiline toggle: no scroll jump/reset
+   Origin: this session (person follow-up, German: "Stelle sicher, dass das
+   Log nicht scrollt oder nach oben springt wenn man zwischen single und
+   multi line wechselt. Der jeweils oben sichtbare LogEintrag soll stehen
+   bleiben, darunter dürfen die Log-Einträge wachsen/schrumpfen."). A plain
+   render() after flipping state.multilineMessages would otherwise reset
+   #tableBody's scroll to the top (renderTable()'s normal "any other change
+   starts back at the top" behavior) and leave #highlightBody's raw
+   scrollTop pixel value untouched even though rows ABOVE it may have grown
+   — both wrong. The fix (topVisibleEntryId + pendingTableTopAlignId/
+   pendingHighlightTopAlignId, consumed once by renderTable()/
+   renderHighlightView()) re-anchors scroll on the SAME entry that was at
+   the top before the toggle, in both Log views.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("55d. Multiline toggle: the top-visible entry stays anchored (no scroll jump/reset) when row heights change above it");
+
+  // 60 entries; three of them (10, 25, 40) each get 3 continuation lines
+  // (4-line messages) so real height changes happen well ABOVE the
+  // scrolled-to viewport — exactly the scenario a plain render() (or even a
+  // naive "just keep the raw scrollTop pixel value") gets wrong.
+  const raw = makeLog(0, 60).trimEnd().split("\n");
+  [40, 25, 10].forEach(i => raw.splice(i + 1, 0, "  at A()", "  at B()", "  at C()")); // spliced back-to-front so earlier indices stay valid
+  const f = await w.addFile("scroll.log", raw.join("\n") + "\n", () => {});
+  assert(f.entries.length === 60, "sanity: 60 entries, continuation lines didn't create new ones");
+  [10, 25, 40].forEach(i => assert(f.entries[i].message.split("\n").length === 4, "sanity: entry " + i + " has a 4-line message"));
+  T.state.activeId = f.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const highlightBody = d.querySelector("#highlightBody");
+  tableBody.scrollTop = 45 * 28;      // entry 45 at the very top, past all three tall entries (10/25/40)
+  highlightBody.scrollTop = 45 * 28;
+  w.renderVisibleRows();
+  w.renderHighlightVisibleRows();
+  assert(d.querySelector('#tableRows [data-entry-id="' + f.entries[45].id + '"]'), "sanity: entry 45 is rendered at the top before toggling");
+
+  // Expected new scrollTop once multiline is ON: every row's real height up
+  // to index 45, where three of the rows before it each grew by 3*15=45px.
+  const expectedOn = 45 * 28 + 3 * (3 * 15);
+
+  fireClick(d.querySelector("#btnMultilineMsg"), w);
+  assert(T.state.multilineMessages === true, "sanity: toggled on");
+  assert(tableBody.scrollTop === expectedOn,
+    "Filtered view: scrollTop grows to keep entry 45 at the top (accounting for the 3 taller rows above it), got " + tableBody.scrollTop + " expected " + expectedOn);
+  assert(highlightBody.scrollTop === expectedOn,
+    "Highlight/Full view: same re-anchoring on the same entry, got " + highlightBody.scrollTop + " expected " + expectedOn);
+  assert(d.querySelector('#tableRows [data-entry-id="' + f.entries[45].id + '"]'),
+    "entry 45's row is still actually rendered at the (new) top of the Filtered view — not just a matching scrollTop number");
+  assert(d.querySelector('#highlightRows [data-entry-id="' + f.entries[45].id + '"]'),
+    "...and of the Highlight/Full view too");
+
+  /* ---------- Toggle back OFF: scrollTop shrinks back to the exact pixel spot it started at ---------- */
+  fireClick(d.querySelector("#btnMultilineMsg"), w);
+  assert(T.state.multilineMessages === false, "sanity: toggled off again");
+  assert(tableBody.scrollTop === 45 * 28, "toggling off re-anchors back to the original scrollTop, got " + tableBody.scrollTop);
+  assert(highlightBody.scrollTop === 45 * 28, "...in the Highlight/Full view too");
+  assert(d.querySelector('#tableRows [data-entry-id="' + f.entries[45].id + '"]'), "entry 45 is still exactly at the top after the round trip");
+
+  /* ---------- Edge case: already scrolled to the very top (0) stays at 0 ---------- */
+  w.setTableScroll(0);
+  w.setHighlightScroll(0);
+  w.renderVisibleRows();
+  w.renderHighlightVisibleRows();
+  fireClick(d.querySelector("#btnMultilineMsg"), w);
+  assert(tableBody.scrollTop === 0 && highlightBody.scrollTop === 0,
+    "toggling while already scrolled to the very top stays at 0 (entry 0 is unaffected — nothing above it can grow)");
+
+  /* ---------- Link view active: no stale pendingTableTopAlignId lingers ---------- */
+  // The Filtered table isn't even rendered while a Link node is active
+  // (renderMainView() calls renderLinkView() instead of renderTable()) — the
+  // click handler must not capture a table-view align target in that case.
+  // Scrolled away from 0 here specifically so an unguarded capture would
+  // resolve to some OTHER entry (not coincidentally 0 again) — proving the
+  // guard actually matters, not just that this particular number happens
+  // to line up.
+  tableBody.scrollTop = 20 * 28;
+  w.renderVisibleRows();
+  const refNode = w.createFilterNode(f.id, "text", "message 1");
+  const targetNode = w.createFilterNode(f.id, "text", "message 2");
+  const linkNode = w.createLinkNode(refNode.id, targetNode.id, "after", 1);
+  T.state.activeId = linkNode.id;
+  w.render(); // renderLinkView(), NOT renderTable() — #tableBody stays hidden at scrollTop 20*28
+  fireClick(d.querySelector("#btnMultilineMsg"), w); // toggled while the Link view is active
+  assert(T.state.multilineMessages === false, "sanity: toggled while the Link view is active");
+  T.state.activeId = f.id;
+  w.render(); // switches back to the plain table view, no scrollTargetId set — an ordinary node switch
+  assert(d.querySelector("#tableBody").scrollTop === 0,
+    "switching back to the plain table view behaves like any other node switch (resets to top) — it does NOT retroactively jump to the stale pre-Link-view scroll position a captured-while-hidden align target would have caused");
+});
+
 section("55c. Multiline toggle persists through the session cache (global setting, survives a reload)");
 {
   const factory = new IDBFactory();
@@ -6713,9 +6805,17 @@ process.exit(failed ? 1 : 0);
               (tableRowOffsets, scrollToIndex via jumpToEntry) landing a
               scroll position and rendering the target row correctly when a
               tall row sits before it, not just the flat index*ROW_HEIGHT
-              math the default path still uses; and the toggle persisting
+              math the default path still uses; the toggle persisting
               across a simulated reload via the same session-cache settings
-              carrier as pinBookmarksInFilteredView (global, not per-file).
+              carrier as pinBookmarksInFilteredView (global, not per-file);
+              and (55d, same-day follow-up bugfix — person-reported the
+              first cut jumped/reset scroll on toggle) topVisibleEntryId/
+              pendingTableTopAlignId/pendingHighlightTopAlignId re-anchoring
+              scroll on the SAME entry that was at the top pre-toggle in
+              BOTH views (scrollTop grows/shrinks by exactly the toggled
+              rows' height delta, never resets to 0 or drifts), plus the
+              Link-view guard (no stale align target captured while the
+              table view isn't even rendered).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
