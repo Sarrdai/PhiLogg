@@ -43,7 +43,7 @@ gap it closes and the first thing that needs deciding.
 - **Gap / stall filter** — match entries whose distance to the previous entry exceeds X ms. Finds hangs without extracting a value first; sits next to the existing "numeric greater/less-than filter" item.
 - **Derived extraction columns** — an expression column over other extracted columns (`c3 - c2`, unit conversion), plottable and assertable like any captured column. Open question: expression syntax, and how a derived column indexes against the index-based assertions/ignored-columns.
 - **Group-by in the extraction table** — collapse rows by one column and show count/min/max/mean per group, extending the stats bar from "per column, whole table" to "per column, per group".
-- **Plot point → log entry** — click a point/bar to select and reveal the underlying row in the Highlight view. Today the Plot tab is a dead end: an outlier is visible but not reachable.
+- ~~**Plot point → log entry**~~ — done (2026-08-18): click a point/bar to jump to the underlying entry (`jumpToFullLog`, same as the extraction table's own row double-click — the Plot tab still has no Highlight-view companion to reveal into instead).
 
 ### Multi-file & correlation
 
