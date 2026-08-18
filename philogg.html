@@ -115,6 +115,15 @@
   }
   #btnOpen:hover{background:var(--bg-elevated-2); border-color:#333c50;}
   #btnOpen svg{flex:0 0 auto;}
+  #btnSession{
+    display:flex; align-items:center; gap:7px;
+    background:var(--bg-elevated); color:var(--text-primary);
+    border:1px solid var(--border); border-radius:7px;
+    padding:7px 12px; font-size:12.5px; cursor:pointer;
+    transition:background .12s, border-color .12s;
+  }
+  #btnSession:hover{background:var(--bg-elevated-2); border-color:#333c50;}
+  #btnSession svg{flex:0 0 auto;}
   #btnTheme{
     display:flex; align-items:center; justify-content:center;
     width:29px; height:29px; flex:0 0 auto;
@@ -1234,13 +1243,13 @@
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
   /* ---------- Context menu ---------- */
-  #contextMenu, #treeContextMenu, #openMenu{
+  #contextMenu, #treeContextMenu, #openMenu, #sessionMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px;
   }
-  #openMenu{min-width:160px;}
-  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden{display:none;}
+  #openMenu, #sessionMenu{min-width:180px;}
+  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #sessionMenu.hidden{display:none;}
   .ctx-item{
     display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px;
     font-size:12.3px; color:var(--text-primary); cursor:pointer;
@@ -1334,36 +1343,23 @@
   .drop-msg{display:flex; flex-direction:column; align-items:center; gap:12px; color:var(--text-primary);}
   .drop-msg span{font-size:14px; font-weight:600;}
 
-  /* ---------- Loading progress overlay ---------- */
-  #progressOverlay{
-    position:fixed; inset:0; z-index:70;
-    background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
-    display:flex; align-items:center; justify-content:center;
+  /* ---------- File loading rows (tree/folder-watch list) ----------
+     Replaces the old blocking #progressOverlay pop-up: a file being
+     read+parsed (loadOneFileIntoTree) shows as a row shaped like a normal
+     .tree-row / .folder-watch-file, with a thin progress bar along its
+     bottom edge, instead of a modal overlaying the whole app — the rest of
+     the UI stays fully usable while a file loads. See "File loading &
+     progress" (addLoadingFile/setLoadingFileProgress/removeLoadingFile). */
+  .tree-loading-row{cursor:default;}
+  .tree-loading-row .tree-label{color:var(--text-tertiary);}
+  .tree-load-track{
+    position:absolute; left:0; right:0; bottom:0; height:2px;
+    background:var(--bg-elevated-2); overflow:hidden;
   }
-  #progressOverlay.hidden{display:none;}
-  .progress-card{
-    width:min(380px, 86%);
-    background:var(--bg-elevated); border:1px solid var(--border);
-    border-radius:12px; padding:20px 22px;
-    box-shadow:0 20px 45px rgba(0,0,0,.5);
-  }
-  .progress-title{
-    font-size:12.5px; color:var(--text-secondary); margin-bottom:12px;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-    font-family:var(--font-mono);
-  }
-  .progress-track{
-    height:6px; border-radius:4px; background:var(--bg-app);
-    border:1px solid var(--border-soft); overflow:hidden;
-  }
-  .progress-fill{
-    height:100%; width:0%; border-radius:4px;
+  .tree-load-fill{
+    display:block; height:100%; width:0%;
     background:linear-gradient(90deg, var(--accent), var(--accent-strong));
     transition:width .12s ease-out;
-  }
-  .progress-pct{
-    margin-top:9px; font-size:11px; color:var(--text-tertiary);
-    font-variant-numeric:tabular-nums; text-align:right;
   }
 
   @media (prefers-reduced-motion:reduce){
@@ -1401,6 +1397,20 @@
       <button id="btnTheme" title="Toggle light/dark theme">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" id="btnThemeIcon"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.3v1.6M8 13.1v1.6M2.6 8H1M15 8h-1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/></svg>
       </button>
+      <button id="btnSession">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
+        Session…
+      </button>
+      <div id="sessionMenu" class="hidden">
+        <div class="ctx-item" data-action="exportSession">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
+          Export session…
+        </div>
+        <div class="ctx-item" data-action="importSession">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 2v8M8 10 5.4 7.4M8 10l2.6-2.6"/></svg>
+          Import session…
+        </div>
+      </div>
       <button id="btnOpen">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5a1 1 0 0 1 1-1h3l1.3 1.6H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>
         Open…
@@ -1683,14 +1693,6 @@
     </div>
   </div>
 
-  <div id="progressOverlay" class="hidden">
-    <div class="progress-card">
-      <div class="progress-title" id="progressTitle">Loading…</div>
-      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-      <div class="progress-pct" id="progressPct">0%</div>
-    </div>
-  </div>
-
   <div id="linkDialog" class="hidden">
     <div class="link-dialog-card link-dialog-card-wide">
       <div class="link-dialog-title">Link filters</div>
@@ -1889,8 +1891,6 @@ const ICON_HELP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" s
 // Pencil icon for the tree context menu's "Edit filter…" action (F2 or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
-const ICON_SESSION_EXPORT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>';
-const ICON_SESSION_IMPORT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 2v8M8 10 5.4 7.4M8 10l2.6-2.6"/></svg>';
 
 /* ===================== Theme ===================== */
 const THEME_STORAGE_KEY = "philogg-theme";
@@ -1956,6 +1956,17 @@ const state = {
   //   session restore, before the person clicks "Reconnect" — see
   //   restoreWatchedFolders/reconnectFolder.
   folders: [],
+
+  // Files currently being read+parsed (loadOneFileIntoTree), shown as a mini
+  // progress bar directly in the tree/folder-watch list instead of a
+  // blocking pop-up — see "File loading & progress". Each entry:
+  // { id, name, folderId: string|null }. `folderId` set means the file
+  // belongs to a watched folder and its loading row replaces that file's
+  // grayed .folder-watch-file placeholder (renderFolderSection) instead of
+  // appearing in the plain #tree list. Progress itself isn't stored here —
+  // setLoadingFileProgress writes straight to the row's DOM (see there for
+  // why) — this array only tracks which rows should exist.
+  loadingFiles: [],
 };
 
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
@@ -3738,7 +3749,14 @@ function renderTree() {
     if (node && node.folderId) return;
     treeEl.appendChild(renderNode(id, 0));
   });
-  dropHintEl.style.display = (state.rootIds.length === 0 && state.folders.length === 0) ? "block" : "none";
+  // Files currently loading (see "File loading & progress"): folder-tagged
+  // ones render inside their folder section instead (renderFolderSection).
+  state.loadingFiles.forEach(entry => {
+    if (entry.folderId) return;
+    treeEl.appendChild(renderLoadingRow(entry));
+  });
+  dropHintEl.style.display =
+    (state.rootIds.length === 0 && state.folders.length === 0 && state.loadingFiles.length === 0) ? "block" : "none";
   renderTreeActionBar();
 }
 
@@ -6908,18 +6926,74 @@ openMenu.addEventListener("click", ev => {
   else if (item.dataset.action === "folder") openFolderPickerFlow();
 });
 
-const progressOverlay = el("#progressOverlay");
-const progressTitle = el("#progressTitle");
-const progressFill = el("#progressFill");
-const progressPct = el("#progressPct");
+// "Session…" mirrors "Open…"'s button+dropdown pattern: Export/Import
+// session used to live in the tree's context menu (reachable on any node,
+// plus the empty-tree background — see the old openTreeContextMenu code),
+// but both actions are session-global, not tied to whichever file/filter
+// the menu happened to be opened on, so they belong in the toolbar instead.
+const btnSession = el("#btnSession");
+const sessionMenu = el("#sessionMenu");
+function closeSessionMenu() { sessionMenu.classList.add("hidden"); }
+function toggleSessionMenu() {
+  if (!sessionMenu.classList.contains("hidden")) { closeSessionMenu(); return; }
+  const rect = btnSession.getBoundingClientRect();
+  sessionMenu.style.top = (rect.bottom + 6) + "px";
+  sessionMenu.style.left = Math.min(rect.left, window.innerWidth - 200) + "px";
+  sessionMenu.classList.remove("hidden");
+}
+btnSession.addEventListener("click", toggleSessionMenu);
+sessionMenu.addEventListener("click", ev => {
+  const item = ev.target.closest("[data-action]");
+  if (!item) return;
+  closeSessionMenu();
+  if (item.dataset.action === "exportSession") openSessionExportDialog();
+  else if (item.dataset.action === "importSession") importSessionFromFile();
+});
 
-function showProgress() { progressOverlay.classList.remove("hidden"); setProgressValue(0); }
-function hideProgress() { progressOverlay.classList.add("hidden"); }
-function setProgressLabel(text) { progressTitle.textContent = text; }
-function setProgressValue(fraction) {
-  const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
-  progressFill.style.width = pct + "%";
-  progressPct.textContent = pct + "%";
+// A loading row is a placeholder shaped like a real .tree-row (with a thin
+// progress bar along its bottom edge — see the CSS "File loading rows"
+// section), shown while a file is being read+parsed. A folder-tagged entry
+// replaces that file's grayed .folder-watch-file placeholder in place
+// (renderFolderSection); an untagged one is appended to the bottom of
+// #tree (renderTree). Progress updates go straight to the row's DOM (see
+// setLoadingFileProgress) instead of round-tripping through render(), so a
+// fast multi-file load doesn't rebuild the whole tree on every byte tick.
+function renderLoadingRow(entry) {
+  const row = document.createElement("div");
+  row.className = "tree-row tree-loading-row";
+  row.dataset.loadingId = entry.id;
+  const spacer = document.createElement("span");
+  spacer.className = "tree-swatch-spacer";
+  row.appendChild(spacer);
+  const icon = document.createElement("span");
+  icon.className = "tree-icon";
+  icon.innerHTML = ICON_FILE;
+  row.appendChild(icon);
+  const label = document.createElement("span");
+  label.className = "tree-label";
+  label.textContent = entry.name;
+  row.appendChild(label);
+  const track = document.createElement("span");
+  track.className = "tree-load-track";
+  track.innerHTML = '<span class="tree-load-fill"></span>';
+  row.appendChild(track);
+  return row;
+}
+
+// folderId: the watched folder this file belongs to, or null/undefined for
+// a plain load — see state.loadingFiles' comment.
+function addLoadingFile(name, folderId) {
+  const entry = { id: uid("load"), name, folderId: folderId || null };
+  state.loadingFiles.push(entry);
+  renderTree(); // inserts the row now — progress ticks then update it directly
+  return entry.id;
+}
+function setLoadingFileProgress(id, fraction) {
+  const fill = document.querySelector('.tree-loading-row[data-loading-id="' + id + '"] .tree-load-fill');
+  if (fill) fill.style.width = Math.max(0, Math.min(100, Math.round(fraction * 100))) + "%";
+}
+function removeLoadingFile(id) {
+  state.loadingFiles = state.loadingFiles.filter(f => f.id !== id);
 }
 
 // Reads a file as text via FileReader, reporting byte-level progress
@@ -6946,37 +7020,42 @@ function loadFiles(fileList) {
 // Shared by loadFileDescriptors below and loadFolderFile (see "Folder watch
 // (lazy loading)" near the Tailing section) — reads+parses one file, wires up
 // persistence/filter-history/tailing, and returns the new root file node.
-// Caller owns showProgress()/hideProgress()/render() around this.
-async function loadOneFileIntoTree(name, file, handle, progressLabel) {
-  setProgressLabel(progressLabel);
-  setProgressValue(0);
-  const text = await readFileWithProgress(file, (loaded, total) => {
-    setProgressValue(READ_WEIGHT * (loaded / total));
-  });
-  const node = await addFile(name, text, (done, total) => {
-    setProgressValue(READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1));
-  });
-  persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
-  // File filter history (see the section near the end of the script):
-  // a freshly loaded file always starts with zero filter children, so
-  // this only ever attaches a match for renderNode to show as a ghost
-  // preview — it never applies anything by itself. Skipped for merges
-  // (mergeFiles doesn't go through this helper, and starts empty by
-  // explicit design anyway — see mergeFiles' own comment).
-  const historyMatch = await matchFileHistory(node);
-  if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
-  if (handle) {
-    node.tail = {
-      handle,
-      offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
-      pending: "",         // trailing line fragment not yet terminated by a newline
-      failed: false,       // set once TAIL_MAX_CONSECUTIVE_ERRORS polls in a row fail
-      busy: false,         // guards against overlapping async polls on slow disks
-      errorCount: 0,       // consecutive failed polls; reset to 0 by any clean poll
-    };
-    state.tailFollow = true; // a freshly opened live file starts in follow mode
+// folderId (optional) places the loading row inside that folder's section
+// instead of the plain tree — see addLoadingFile. Caller owns render()
+// around this; the loading row itself is fully self-managed.
+async function loadOneFileIntoTree(name, file, handle, progressLabel, folderId) {
+  const loadId = addLoadingFile(progressLabel, folderId);
+  try {
+    const text = await readFileWithProgress(file, (loaded, total) => {
+      setLoadingFileProgress(loadId, READ_WEIGHT * (loaded / total));
+    });
+    const node = await addFile(name, text, (done, total) => {
+      setLoadingFileProgress(loadId, READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1));
+    });
+    persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
+    // File filter history (see the section near the end of the script):
+    // a freshly loaded file always starts with zero filter children, so
+    // this only ever attaches a match for renderNode to show as a ghost
+    // preview — it never applies anything by itself. Skipped for merges
+    // (mergeFiles doesn't go through this helper, and starts empty by
+    // explicit design anyway — see mergeFiles' own comment).
+    const historyMatch = await matchFileHistory(node);
+    if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
+    if (handle) {
+      node.tail = {
+        handle,
+        offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
+        pending: "",         // trailing line fragment not yet terminated by a newline
+        failed: false,       // set once TAIL_MAX_CONSECUTIVE_ERRORS polls in a row fail
+        busy: false,         // guards against overlapping async polls on slow disks
+        errorCount: 0,       // consecutive failed polls; reset to 0 by any clean poll
+      };
+      state.tailFollow = true; // a freshly opened live file starts in follow mode
+    }
+    return node;
+  } finally {
+    removeLoadingFile(loadId);
   }
-  return node;
 }
 
 // descs: [{ file: File, handle: FileSystemFileHandle|null }]. A handle enables
@@ -6985,7 +7064,6 @@ async function loadOneFileIntoTree(name, file, handle, progressLabel) {
 async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
 
-  showProgress();
   try {
     for (let i = 0; i < descs.length; i++) {
       const { file, handle } = descs[i];
@@ -6993,7 +7071,6 @@ async function loadFileDescriptors(descs) {
       await loadOneFileIntoTree(file.name, file, handle, label);
     }
   } finally {
-    hideProgress();
     render();
   }
 }
@@ -7385,9 +7462,8 @@ async function loadFolderFile(folder, rec) {
     showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
     return;
   }
-  showProgress();
   try {
-    const node = await loadOneFileIntoTree(rec.name, file, rec.handle, rec.name);
+    const node = await loadOneFileIntoTree(rec.name, file, rec.handle, rec.name, folder.id);
     node.folderId = folder.id;
     rec.nodeId = node.id;
     // loadOneFileIntoTree already persisted the file once, before folderId
@@ -7395,7 +7471,6 @@ async function loadFolderFile(folder, rec) {
     // to re-link this node to its folder on the next restore).
     persistFileNode(node);
   } finally {
-    hideProgress();
     render();
   }
 }
@@ -7510,7 +7585,9 @@ function renderFolderSection(folder) {
     const list = document.createElement("div");
     list.className = "folder-watch-files";
     folder.files.forEach(rec => {
-      if (rec.nodeId && state.nodes[rec.nodeId]) list.appendChild(renderNode(rec.nodeId, 0));
+      if (rec.nodeId && state.nodes[rec.nodeId]) { list.appendChild(renderNode(rec.nodeId, 0)); return; }
+      const loadingEntry = state.loadingFiles.find(f => f.folderId === folder.id && f.name === rec.name);
+      if (loadingEntry) list.appendChild(renderLoadingRow(loadingEntry));
       else list.appendChild(renderInactiveFileRow(folder, rec));
     });
     box.appendChild(list);
@@ -8226,12 +8303,10 @@ function openTreeContextMenu(ev, clickedId) {
     // Loading is offered on file nodes too: the saved branch is then applied
     // to the whole file, reproducing the original overall result.
     items.push({ action: "loadFilter", label: "Load filter…", icon: ICON_LOAD });
-    // Session export/import lives next to Save/Load filter (user-chosen
-    // placement over the spec's toolbar buttons): same "share analysis
-    // state" mental bucket, and the toolbar stays reserved for view-level
-    // actions. Both are session-global, so they appear on every node.
-    items.push({ action: "exportSession", label: "Export session…", icon: ICON_SESSION_EXPORT });
-    items.push({ action: "importSession", label: "Import session…", icon: ICON_SESSION_IMPORT });
+    // Session export/import used to live here too (session-global, so they
+    // appeared on every node), but that made them a context menu action on
+    // a file for something that has nothing to do with that file — moved to
+    // the "Session…" toolbar button (analogous to "Open…") instead.
     if (state.clipboard && state.nodes[state.clipboard.id]) {
       items.push({ action: "paste", label: "Paste", icon: ICON_PASTE });
     }
@@ -8319,30 +8394,8 @@ treeContextMenu.addEventListener("click", ev => {
     if (treeCtxId && state.nodes[treeCtxId]) loadFilterFromFile(treeCtxId);
     return;
   }
-  if (action === "exportSession") { openSessionExportDialog(); return; }
-  if (action === "importSession") { importSessionFromFile(); return; }
-
   // Everything else (merge/and/or/link) is a bulk action over the multi-selection.
   performBulkAction(action, [...state.multiSelect]);
-});
-
-// Right-click on the tree's empty background: the node menu can't open there
-// (it needs a node), but "Import session…" must stay reachable even with an
-// empty tree — importing into a blank session is a first-class flow (the
-// export may carry embedded log text, see the session export section).
-treeEl.addEventListener("contextmenu", ev => {
-  if (ev.target.closest(".tree-row")) return; // rows have their own menu
-  ev.preventDefault();
-  treeCtxId = null;
-  let html = '<div class="ctx-meta">Session</div><div class="ctx-sep"></div>';
-  if (state.rootIds.length) {
-    html += '<div class="ctx-item" data-action="exportSession">' + ICON_SESSION_EXPORT + " Export session…</div>";
-  }
-  html += '<div class="ctx-item" data-action="importSession">' + ICON_SESSION_IMPORT + " Import session…</div>";
-  treeContextMenu.innerHTML = html;
-  treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
-  treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
-  treeContextMenu.classList.remove("hidden");
 });
 
 /* ===================== Tree action bar (always-visible alternative to the context menu) ===================== */
@@ -8816,6 +8869,7 @@ document.addEventListener("click", ev => {
   if (!contextMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
+  if (!sessionMenu.contains(ev.target) && !btnSession.contains(ev.target)) closeSessionMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!bookmarksPanel.contains(ev.target) && !btnBookmarks.contains(ev.target)) closeBookmarksPanel();
   if (!shortcutsPanel.contains(ev.target) && !btnShortcuts.contains(ev.target)) closeShortcutsPanel();
@@ -9325,7 +9379,6 @@ async function restoreSessionFromCache() {
   if (meta.version > CACHE_FORMAT_VERSION) return false;
 
   sessionRestoreInProgress = true;
-  showProgress();
   try {
     const byKey = {}; // cacheKey -> restored file node
     for (let i = 0; i < meta.fileOrder.length; i++) {
@@ -9333,10 +9386,20 @@ async function restoreSessionFromCache() {
       const rec = await cacheStoreOp("files", "readonly", store => store.get(key));
       if (!rec || typeof rec.text !== "string") continue; // meta/file records out of sync — skip
       const label = meta.fileOrder.length > 1 ? `${rec.name} (${i + 1}/${meta.fileOrder.length})` : rec.name;
-      setProgressLabel("Restoring " + label);
-      const node = await addFile(rec.name, rec.text, (done, total) => {
-        setProgressValue(total ? done / total : 1);
-      });
+      // Not folder-tagged even for a file that WILL end up with a folderId
+      // below: state.folders is still empty this early (restoreWatchedFolders
+      // runs after this function returns), so there's no folder section yet
+      // for a tagged loading row to appear inside — the plain tree list is
+      // the only place it could show up regardless.
+      const loadId = addLoadingFile("Restoring " + label);
+      let node;
+      try {
+        node = await addFile(rec.name, rec.text, (done, total) => {
+          setLoadingFileProgress(loadId, total ? done / total : 1);
+        });
+      } finally {
+        removeLoadingFile(loadId);
+      }
       node.cacheKey = key; // keep the stored key so the next persist overwrites in place
       if (rec.merged) node.merged = true;
       // Re-links this node to its watched folder, if it had one — the
@@ -9385,7 +9448,6 @@ async function restoreSessionFromCache() {
     return false;
   } finally {
     sessionRestoreInProgress = false;
-    hideProgress();
     updateBookmarksButton();
     updatePinBookmarksButton();
     render();
