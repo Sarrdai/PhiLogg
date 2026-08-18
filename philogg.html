@@ -1343,15 +1343,16 @@
   .drop-msg{display:flex; flex-direction:column; align-items:center; gap:12px; color:var(--text-primary);}
   .drop-msg span{font-size:14px; font-weight:600;}
 
-  /* ---------- File loading rows (tree/folder-watch list) ----------
-     Replaces the old blocking #progressOverlay pop-up: a file being
-     read+parsed (loadOneFileIntoTree) shows as a row shaped like a normal
-     .tree-row / .folder-watch-file, with a thin progress bar along its
-     bottom edge, instead of a modal overlaying the whole app — the rest of
-     the UI stays fully usable while a file loads. See "File loading &
-     progress" (addLoadingFile/setLoadingFileProgress/removeLoadingFile). */
-  .tree-loading-row{cursor:default;}
-  .tree-loading-row .tree-label{color:var(--text-tertiary);}
+  /* ---------- File loading progress (tree row) ----------
+     Replaces the old blocking #progressOverlay pop-up, and later the
+     .tree-loading-row placeholder that replaced THAT: a file being
+     read+parsed (loadOneFileIntoTree) is a real, fully interactive file node
+     from the moment loading starts (see createFileNode) — selectable,
+     filterable, its entries/minimap filling in live as they parse — with
+     just a thin progress bar along its row's bottom edge (node.loadFraction,
+     drawn by renderNode) to show it's still loading, instead of a separate
+     placeholder row or a modal overlaying the whole app. See "File loading &
+     progress". */
   .tree-load-track{
     position:absolute; left:0; right:0; bottom:0; height:2px;
     background:var(--bg-elevated-2); overflow:hidden;
@@ -1956,17 +1957,6 @@ const state = {
   //   session restore, before the person clicks "Reconnect" — see
   //   restoreWatchedFolders/reconnectFolder.
   folders: [],
-
-  // Files currently being read+parsed (loadOneFileIntoTree), shown as a mini
-  // progress bar directly in the tree/folder-watch list instead of a
-  // blocking pop-up — see "File loading & progress". Each entry:
-  // { id, name, folderId: string|null }. `folderId` set means the file
-  // belongs to a watched folder and its loading row replaces that file's
-  // grayed .folder-watch-file placeholder (renderFolderSection) instead of
-  // appearing in the plain #tree list. Progress itself isn't stored here —
-  // setLoadingFileProgress writes straight to the row's DOM (see there for
-  // why) — this array only tracks which rows should exist.
-  loadingFiles: [],
 };
 
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
@@ -2061,19 +2051,24 @@ function parseHeaderLine(line) {
 }
 
 // Parses in chunks and yields to the event loop between them, so the UI
-// (progress bar, but also the rest of the page) stays responsive on large files.
+// (progress bar, but also the rest of the page) stays responsive on large
+// files. Completed entries are appended straight onto node.entries (and
+// entryIndex) as each chunk finishes, instead of only once the whole file
+// has been parsed — the same incremental-append shape appendTailText
+// already uses for live tailing, just driven by the initial parse instead of
+// a poll — so a large file is visible, filterable, and its minimap fills in
+// live while it's still loading (see createFileNode/scheduleLoadRender).
 // onProgress(linesDone, linesTotal) is called after each chunk.
 const PARSE_CHUNK_LINES = 4000;
 
-async function parseLogTextAsync(text, onProgress) {
+async function parseLogTextAsync(text, node, onProgress) {
   const lines = text.split(/\r\n|\n/);
-  const entries = [];
   let current = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (HEADER_RE.test(line)) {
-      if (current) entries.push(current);
+      if (current) { entryIndex[current.id] = current; node.entries.push(current); }
       current = parseHeaderLine(line);
     } else if (current && line !== "") {
       current.message += "\n" + line;
@@ -2086,9 +2081,58 @@ async function parseLogTextAsync(text, onProgress) {
       await new Promise(resolve => setTimeout(resolve, 0)); // yield a tick
     }
   }
-  if (current) entries.push(current);
+  if (current) { entryIndex[current.id] = current; node.entries.push(current); }
   if (onProgress) onProgress(lines.length, lines.length);
-  return entries;
+}
+
+// Throttles the incremental re-renders triggered while a file streams in
+// (parseLogTextAsync's onProgress, and loadOneFileIntoTree's own read-phase
+// progress) to at most one per animation frame — a large file can yield many
+// chunks between two frames, and render() rebuilds the whole tree plus the
+// visible rows/minimap, so firing it on every single chunk would be
+// wasteful. Same rAF-coalescing shape as the scroll/resize handlers
+// elsewhere (see scrollTicking). flushLoadRender cancels any still-pending
+// tick and renders immediately instead — used at the natural end of a load
+// (parsing finished, node removed) so a small/fast file doesn't leave a
+// stray rAF callback to fire later, out of context, and double up on
+// whatever unrelated re-render happens to land on the very next frame.
+//
+// Both take the loading file's own node id and invalidate its (and its
+// dependents') cached getEntries()/getLevelCounts() results right away —
+// same reasoning as onTailChange's invalidateCachesForRoots: a file node's
+// entries growing mid-parse is exactly the kind of content change those
+// caches don't otherwise know to distrust, so without this the level bar
+// would cache whatever (possibly still-empty) counts happened to be current
+// at the first render after the node was created, and never update again.
+let loadRenderRafId = null;
+function scheduleLoadRender(rootId) {
+  if (rootId) invalidateCachesForRoots([rootId]);
+  if (loadRenderRafId != null) return;
+  loadRenderRafId = requestAnimationFrame(() => { loadRenderRafId = null; render(); });
+}
+function flushLoadRender(rootId) {
+  if (rootId) invalidateCachesForRoots([rootId]);
+  if (loadRenderRafId != null) { cancelAnimationFrame(loadRenderRafId); loadRenderRafId = null; }
+  render();
+}
+
+// Creates an empty file node and inserts it into the tree/active view right
+// away — before any text has even been read, let alone parsed — so the row
+// is real, selectable and filterable from the very first moment a load
+// starts, rather than only appearing once the whole file is done. Callers
+// then stream entries into node.entries (parseLogTextAsync) and drive
+// node.loadFraction (0..1, deleted once done) to show progress on this same
+// row via renderNode — see "File loading progress" in the stylesheet.
+function createFileNode(name, folderId) {
+  const node = {
+    id: uid("f"), type: "file", name, parentId: null, children: [], entries: [],
+    cacheKey: newCacheKey(), folderId: folderId || null, loadFraction: 0,
+  };
+  state.nodes[node.id] = node;
+  state.rootIds.push(node.id);
+  state.activeId = node.id;
+  flushLoadRender();
+  return node;
 }
 
 // Normalizes a raw level string to one of the known buckets (or "OTHER").
@@ -2202,16 +2246,21 @@ function releaseEntriesFromIndex(entries, excludeRootId) {
   }
 }
 
+// Text is already fully in memory here (session-cache restore, embedded-log
+// import) — no separate read phase, so this just creates the node
+// (createFileNode) and parses straight into it. loadOneFileIntoTree (real
+// File objects, which DO have a read phase first) drives the same
+// node.loadFraction/scheduleLoadRender mechanism itself instead of going
+// through this helper — see there.
 async function addFile(name, text, onProgress) {
-  const entries = await parseLogTextAsync(text, onProgress);
-  entries.forEach(e => { entryIndex[e.id] = e; });
-  // cacheKey: stable identity for the session cache's "files" store — runtime
-  // ids are fresh uids every load, so they can't key persisted records.
-  // restoreSessionFromCache overwrites it with the stored key afterwards.
-  const node = { id: uid("f"), type: "file", name, parentId: null, children: [], entries, cacheKey: newCacheKey() };
-  state.nodes[node.id] = node;
-  state.rootIds.push(node.id);
-  state.activeId = node.id;
+  const node = createFileNode(name);
+  await parseLogTextAsync(text, node, (done, total) => {
+    node.loadFraction = total ? done / total : 1;
+    scheduleLoadRender(node.id);
+    if (onProgress) onProgress(done, total);
+  });
+  delete node.loadFraction;
+  flushLoadRender(node.id);
   return node;
 }
 
@@ -3749,14 +3798,8 @@ function renderTree() {
     if (node && node.folderId) return;
     treeEl.appendChild(renderNode(id, 0));
   });
-  // Files currently loading (see "File loading & progress"): folder-tagged
-  // ones render inside their folder section instead (renderFolderSection).
-  state.loadingFiles.forEach(entry => {
-    if (entry.folderId) return;
-    treeEl.appendChild(renderLoadingRow(entry));
-  });
   dropHintEl.style.display =
-    (state.rootIds.length === 0 && state.folders.length === 0 && state.loadingFiles.length === 0) ? "block" : "none";
+    (state.rootIds.length === 0 && state.folders.length === 0) ? "block" : "none";
   renderTreeActionBar();
 }
 
@@ -3994,6 +4037,18 @@ function renderNode(id, depth) {
     : "Remove filter";
   del.addEventListener("click", ev => { ev.stopPropagation(); deleteFilterNodeWithUndo(id); render(); });
   row.appendChild(del);
+
+  // Progress fill along the row's bottom edge while this file is still
+  // being read/parsed (see createFileNode/loadOneFileIntoTree) — the row
+  // itself is already a normal, fully interactive tree row at this point,
+  // this is purely the "still loading" indicator riding along on it.
+  if (node.type === "file" && typeof node.loadFraction === "number") {
+    const track = document.createElement("span");
+    track.className = "tree-load-track";
+    track.innerHTML = '<span class="tree-load-fill" style="width:' +
+      Math.round(Math.max(0, Math.min(1, node.loadFraction)) * 100) + '%"></span>';
+    row.appendChild(track);
+  }
 
   row.addEventListener("click", ev => {
     if (ev.ctrlKey || ev.metaKey) {
@@ -6950,52 +7005,6 @@ sessionMenu.addEventListener("click", ev => {
   else if (item.dataset.action === "importSession") importSessionFromFile();
 });
 
-// A loading row is a placeholder shaped like a real .tree-row (with a thin
-// progress bar along its bottom edge — see the CSS "File loading rows"
-// section), shown while a file is being read+parsed. A folder-tagged entry
-// replaces that file's grayed .folder-watch-file placeholder in place
-// (renderFolderSection); an untagged one is appended to the bottom of
-// #tree (renderTree). Progress updates go straight to the row's DOM (see
-// setLoadingFileProgress) instead of round-tripping through render(), so a
-// fast multi-file load doesn't rebuild the whole tree on every byte tick.
-function renderLoadingRow(entry) {
-  const row = document.createElement("div");
-  row.className = "tree-row tree-loading-row";
-  row.dataset.loadingId = entry.id;
-  const spacer = document.createElement("span");
-  spacer.className = "tree-swatch-spacer";
-  row.appendChild(spacer);
-  const icon = document.createElement("span");
-  icon.className = "tree-icon";
-  icon.innerHTML = ICON_FILE;
-  row.appendChild(icon);
-  const label = document.createElement("span");
-  label.className = "tree-label";
-  label.textContent = entry.name;
-  row.appendChild(label);
-  const track = document.createElement("span");
-  track.className = "tree-load-track";
-  track.innerHTML = '<span class="tree-load-fill"></span>';
-  row.appendChild(track);
-  return row;
-}
-
-// folderId: the watched folder this file belongs to, or null/undefined for
-// a plain load — see state.loadingFiles' comment.
-function addLoadingFile(name, folderId) {
-  const entry = { id: uid("load"), name, folderId: folderId || null };
-  state.loadingFiles.push(entry);
-  renderTree(); // inserts the row now — progress ticks then update it directly
-  return entry.id;
-}
-function setLoadingFileProgress(id, fraction) {
-  const fill = document.querySelector('.tree-loading-row[data-loading-id="' + id + '"] .tree-load-fill');
-  if (fill) fill.style.width = Math.max(0, Math.min(100, Math.round(fraction * 100))) + "%";
-}
-function removeLoadingFile(id) {
-  state.loadingFiles = state.loadingFiles.filter(f => f.id !== id);
-}
-
 // Reads a file as text via FileReader, reporting byte-level progress
 // (FileReader.onprogress) instead of resolving only once the whole file is in.
 function readFileWithProgress(file, onProgress) {
@@ -7020,42 +7029,55 @@ function loadFiles(fileList) {
 // Shared by loadFileDescriptors below and loadFolderFile (see "Folder watch
 // (lazy loading)" near the Tailing section) — reads+parses one file, wires up
 // persistence/filter-history/tailing, and returns the new root file node.
-// folderId (optional) places the loading row inside that folder's section
-// instead of the plain tree — see addLoadingFile. Caller owns render()
-// around this; the loading row itself is fully self-managed.
-async function loadOneFileIntoTree(name, file, handle, progressLabel, folderId) {
-  const loadId = addLoadingFile(progressLabel, folderId);
+// Unlike addFile (text already fully in memory), a real File has a read
+// phase before there's any text to parse at all — so this creates the node
+// itself (createFileNode) up front and drives node.loadFraction across both
+// phases (READ_WEIGHT/PARSE_WEIGHT), instead of going through addFile.
+// folderId (optional) tags the node so it renders inside that watched
+// folder's section (renderFolderSection) instead of the plain tree, from
+// the very first moment — see createFileNode. Caller owns the final
+// render() around this; the row's progress fill is fully self-managed via
+// scheduleLoadRender in the meantime.
+async function loadOneFileIntoTree(name, file, handle, folderId) {
+  const node = createFileNode(name, folderId);
   try {
     const text = await readFileWithProgress(file, (loaded, total) => {
-      setLoadingFileProgress(loadId, READ_WEIGHT * (loaded / total));
+      node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
+      scheduleLoadRender(node.id);
     });
-    const node = await addFile(name, text, (done, total) => {
-      setLoadingFileProgress(loadId, READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1));
+    await parseLogTextAsync(text, node, (done, total) => {
+      node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
+      scheduleLoadRender(node.id);
     });
-    persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
-    // File filter history (see the section near the end of the script):
-    // a freshly loaded file always starts with zero filter children, so
-    // this only ever attaches a match for renderNode to show as a ghost
-    // preview — it never applies anything by itself. Skipped for merges
-    // (mergeFiles doesn't go through this helper, and starts empty by
-    // explicit design anyway — see mergeFiles' own comment).
-    const historyMatch = await matchFileHistory(node);
-    if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
-    if (handle) {
-      node.tail = {
-        handle,
-        offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
-        pending: "",         // trailing line fragment not yet terminated by a newline
-        failed: false,       // set once TAIL_MAX_CONSECUTIVE_ERRORS polls in a row fail
-        busy: false,         // guards against overlapping async polls on slow disks
-        errorCount: 0,       // consecutive failed polls; reset to 0 by any clean poll
-      };
-      state.tailFollow = true; // a freshly opened live file starts in follow mode
-    }
-    return node;
+  } catch (err) {
+    deleteNode(node.id); // reading/parsing failed — don't leave a permanently empty file behind
+    throw err;
   } finally {
-    removeLoadingFile(loadId);
+    delete node.loadFraction;
+    flushLoadRender(node.id);
   }
+  if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
+  persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
+  // File filter history (see the section near the end of the script):
+  // a freshly loaded file always starts with zero filter children, so
+  // this only ever attaches a match for renderNode to show as a ghost
+  // preview — it never applies anything by itself. Skipped for merges
+  // (mergeFiles doesn't go through this helper, and starts empty by
+  // explicit design anyway — see mergeFiles' own comment).
+  const historyMatch = await matchFileHistory(node);
+  if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
+  if (handle) {
+    node.tail = {
+      handle,
+      offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
+      pending: "",         // trailing line fragment not yet terminated by a newline
+      failed: false,       // set once TAIL_MAX_CONSECUTIVE_ERRORS polls in a row fail
+      busy: false,         // guards against overlapping async polls on slow disks
+      errorCount: 0,       // consecutive failed polls; reset to 0 by any clean poll
+    };
+    state.tailFollow = true; // a freshly opened live file starts in follow mode
+  }
+  return node;
 }
 
 // descs: [{ file: File, handle: FileSystemFileHandle|null }]. A handle enables
@@ -7065,10 +7087,8 @@ async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
 
   try {
-    for (let i = 0; i < descs.length; i++) {
-      const { file, handle } = descs[i];
-      const label = descs.length > 1 ? `${file.name} (${i + 1}/${descs.length})` : file.name;
-      await loadOneFileIntoTree(file.name, file, handle, label);
+    for (const { file, handle } of descs) {
+      await loadOneFileIntoTree(file.name, file, handle);
     }
   } finally {
     render();
@@ -7463,13 +7483,8 @@ async function loadFolderFile(folder, rec) {
     return;
   }
   try {
-    const node = await loadOneFileIntoTree(rec.name, file, rec.handle, rec.name, folder.id);
-    node.folderId = folder.id;
+    const node = await loadOneFileIntoTree(rec.name, file, rec.handle, folder.id);
     rec.nodeId = node.id;
-    // loadOneFileIntoTree already persisted the file once, before folderId
-    // was known — re-persist now so the stored record carries it (needed
-    // to re-link this node to its folder on the next restore).
-    persistFileNode(node);
   } finally {
     render();
   }
@@ -7586,8 +7601,16 @@ function renderFolderSection(folder) {
     list.className = "folder-watch-files";
     folder.files.forEach(rec => {
       if (rec.nodeId && state.nodes[rec.nodeId]) { list.appendChild(renderNode(rec.nodeId, 0)); return; }
-      const loadingEntry = state.loadingFiles.find(f => f.folderId === folder.id && f.name === rec.name);
-      if (loadingEntry) list.appendChild(renderLoadingRow(loadingEntry));
+      // Still loading: the real node already exists (see createFileNode,
+      // called synchronously at the top of loadOneFileIntoTree) but
+      // loadFolderFile hasn't linked rec.nodeId yet — find it by folder+name
+      // so its own progress-carrying row renders here instead of falling
+      // through to the "not yet loaded" placeholder below.
+      const loadingId = state.rootIds.find(id => {
+        const n = state.nodes[id];
+        return n && n.folderId === folder.id && n.name === rec.name && typeof n.loadFraction === "number";
+      });
+      if (loadingId) list.appendChild(renderNode(loadingId, 0));
       else list.appendChild(renderInactiveFileRow(folder, rec));
     });
     box.appendChild(list);
@@ -9385,21 +9408,12 @@ async function restoreSessionFromCache() {
       const key = meta.fileOrder[i];
       const rec = await cacheStoreOp("files", "readonly", store => store.get(key));
       if (!rec || typeof rec.text !== "string") continue; // meta/file records out of sync — skip
-      const label = meta.fileOrder.length > 1 ? `${rec.name} (${i + 1}/${meta.fileOrder.length})` : rec.name;
       // Not folder-tagged even for a file that WILL end up with a folderId
       // below: state.folders is still empty this early (restoreWatchedFolders
       // runs after this function returns), so there's no folder section yet
-      // for a tagged loading row to appear inside — the plain tree list is
-      // the only place it could show up regardless.
-      const loadId = addLoadingFile("Restoring " + label);
-      let node;
-      try {
-        node = await addFile(rec.name, rec.text, (done, total) => {
-          setLoadingFileProgress(loadId, total ? done / total : 1);
-        });
-      } finally {
-        removeLoadingFile(loadId);
-      }
+      // to render it into — the plain tree list is the only place it could
+      // show up regardless (see createFileNode/renderFolderSection).
+      const node = await addFile(rec.name, rec.text);
       node.cacheKey = key; // keep the stored key so the next persist overwrites in place
       if (rec.merged) node.merged = true;
       // Re-links this node to its watched folder, if it had one — the
@@ -9998,7 +10012,7 @@ async function resolveExportedFileManually(rec, nearMissIds, summary) {
       // The embedded text is the exporter's own rebuilt file content and
       // re-parsing it is a fixed point (see rebuildFileText), so ordinals
       // are as trustworthy as a tier-1 match.
-      const node = await addFile(String(rec.name || "embedded.log"), rec.text, () => {});
+      const node = await addFile(String(rec.name || "embedded.log"), rec.text);
       persistFileNode(node); // same fire-and-forget as loadFileDescriptors
       const { refMap, placed, total } = applySessionEntryByOrdinal(rec, node);
       summary.placed += placed;
