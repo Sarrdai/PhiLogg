@@ -5555,10 +5555,22 @@ await withApp(async (w, d, T) => {
   assert(Math.abs(home.yDomainMin) < 1e-6 && Math.abs(home.yDomainMax - 100) < 1e-6, "home Y domain likewise 0..100");
   assert(!d.querySelector("#plotZoomBar").classList.contains("hidden"), "the zoom toolbar is visible once the plot has data");
 
-  /* ---------- Zoom-out clamp / unlimited zoom-in (via zoomPlotAt directly) ---------- */
-  w.zoomPlotAt(50, 50, 1.5); // factor > 1 = zoom OUT, requesting a span (150) wider than home (100)
-  assert(Math.abs(T.plotLastRender.xDomainMin) < 1e-6 && Math.abs(T.plotLastRender.xDomainMax - 100) < 1e-6,
-    "zooming OUT from the home view clamps right back to the home view (0..100), never wider — 'zoom out at most to the current default view'");
+  /* ---------- Zoom-out clamp (home span + a small buffer) / unlimited zoom-in ---------- */
+  // PLOT_ZOOM_OUT_BUFFER = 0.08 (8% of the home span on EACH side) — zooming
+  // out is capped there, not at the bare home span, so a mark sitting
+  // exactly on the home view's edge (previously rendered only half-visible,
+  // with no way to bring it fully into view) can be zoomed/panned to with a
+  // little padding. The home view itself (plotZoom === null, asserted
+  // above) is completely unaffected by this — only what zooming/panning OUT
+  // can reach changes.
+  const bufferedSpan = 100 * (1 + 2 * 0.08); // = 116
+  w.zoomPlotAt(50, 50, 1.5); // factor > 1 = zoom OUT, requesting a span (150) wider than even the buffered ceiling (116)
+  const afterZoomOutAttempt = T.plotLastRender;
+  assert(Math.abs((afterZoomOutAttempt.xDomainMax - afterZoomOutAttempt.xDomainMin) - bufferedSpan) < 1e-6,
+    "zooming OUT from the home view clamps to the home span plus the small buffer (116), never wider — 'zoom out a little past the current default view, but no further'; got span " + (afterZoomOutAttempt.xDomainMax - afterZoomOutAttempt.xDomainMin).toFixed(2));
+  assert(afterZoomOutAttempt.xDomainMin > -100 && afterZoomOutAttempt.xDomainMax < 200,
+    "sanity: the buffered zoom-out is still just a small pad around the home view, nowhere near doubling it, got " + afterZoomOutAttempt.xDomainMin.toFixed(2) + ".." + afterZoomOutAttempt.xDomainMax.toFixed(2));
+  fireClick(d.querySelector("#plotZoomResetBtn"), w);
 
   w.zoomPlotAt(50, 50, 0.001); // an extreme zoom-in factor
   const tinySpan = T.plotLastRender.xDomainMax - T.plotLastRender.xDomainMin;
@@ -5606,15 +5618,37 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#plotZoomLevelInput").value === "100%", "Reset restores the 100% readout");
 
   /* ---------- Middle-click-drag panning ---------- */
-  // At the home view (already 100%, no room to pan) a pan attempt is fully clamped — a no-op.
+  // At the home view (already 100%, no zoomed-in headroom), panning is still
+  // possible but capped at the same small buffer zoom-out uses (8% of the
+  // 100-unit home span = 8) rather than the full requested drag distance —
+  // this, together with the buffered zoom-out above, is the actual fix: a
+  // mark sitting exactly on the home view's edge can now be brought fully
+  // into view (with a little padding) instead of staying stuck half-visible.
   svgEl.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: 400, clientY: 200, button: 1 }));
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 300, clientY: 200, button: 1 }));
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 300, clientY: 200, button: 1 })); // dragged LEFT 100px — requests an ~13.85-unit shift, more than the 8-unit buffer
   await new Promise(resolve => setTimeout(resolve, 50)); // let the rAF-batched pan render flush (same pattern as Group 47)
-  assert(Math.abs(T.plotLastRender.xDomainMin) < 1e-6 && Math.abs(T.plotLastRender.xDomainMax - 100) < 1e-6,
-    "panning at the home view stays clamped to the home domain — there's nowhere to pan to yet");
+  const afterHomePanAttempt = T.plotLastRender;
+  assert(Math.abs((afterHomePanAttempt.xDomainMax - afterHomePanAttempt.xDomainMin) - 100) < 1e-6,
+    "panning changes position only, not span — still exactly the 100-unit home span, got " + (afterHomePanAttempt.xDomainMax - afterHomePanAttempt.xDomainMin).toFixed(2));
+  assert(afterHomePanAttempt.xDomainMin > 0 && afterHomePanAttempt.xDomainMin <= 8 + 1e-6,
+    "a pan request larger than the buffer is capped AT the buffer (8), not applied in full nor rejected outright, got xDomainMin=" + afterHomePanAttempt.xDomainMin.toFixed(3));
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, button: 1 }));
+  fireClick(d.querySelector("#plotZoomResetBtn"), w);
 
-  // Zoom in first (span 50, domain [25,75] both axes), THEN pan — now there's room to move.
+  // A SMALL pan request, well under the buffer, applies in full — proving
+  // the buffer is a real allowance and not just a rounding artifact of the
+  // clamp above.
+  svgEl.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: 400, clientY: 200, button: 1 }));
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 371, clientY: 200, button: 1 })); // ~4-unit shift, under the 8-unit buffer
+  await new Promise(resolve => setTimeout(resolve, 50));
+  const smallHomePan = T.plotLastRender;
+  const expectedSmallShift = 29 / 722 * 100; // (400-371)px / plotW * homeSpan ≈ 4.02
+  assert(Math.abs(smallHomePan.xDomainMin - expectedSmallShift) < 0.1,
+    "a pan request within the buffer applies in full (unclamped), got xDomainMin=" + smallHomePan.xDomainMin.toFixed(3) + " expected ~" + expectedSmallShift.toFixed(3));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, button: 1 }));
+  fireClick(d.querySelector("#plotZoomResetBtn"), w);
+
+  // Zoom in first (span 50, domain [25,75] both axes), THEN pan — now there's plenty of room to move.
   w.zoomPlotAt(50, 50, 0.5);
   const zoomedBeforePan = T.plotLastRender;
   svgEl.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: 400, clientY: 200, button: 1 }));
@@ -5631,7 +5665,7 @@ await withApp(async (w, d, T) => {
   svgEl.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: 400, clientY: 200, button: 1 }));
   w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 800, clientY: 200, button: 1 }));
   await new Promise(resolve => setTimeout(resolve, 50));
-  assert(T.plotLastRender.xDomainMin >= -1e-6, "panning can't push the view's left edge past the home view's own lower bound (0), got " + T.plotLastRender.xDomainMin.toFixed(3));
+  assert(T.plotLastRender.xDomainMin >= -8 - 1e-6, "panning can't push the view's left edge past the home view's own lower bound plus its small buffer (0 - 8 = -8), got " + T.plotLastRender.xDomainMin.toFixed(3));
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, button: 1 }));
   fireClick(d.querySelector("#plotZoomResetBtn"), w);
 
@@ -5713,6 +5747,35 @@ await withApp(async (w, d, T) => {
   w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: bx3 + bw3 / 2, clientY: by3 + bh3 / 2 }));
   assert(!tooltipEl.classList.contains("hidden"), "hovering inside a bar's rect shows the tooltip too — bar hit-testing is rect-based, not nearest-point");
   assert(tooltipEl.textContent.includes("30"), "bar tooltip shows the exact underlying value, got: " + tooltipEl.textContent);
+
+  /* ---------- Tooltip stays in-bounds and doesn't cover the cursor ---------- */
+  // person-reported: a mark far right in the chart pushed the tooltip
+  // partly off-screen. jsdom has no real layout engine (offsetWidth/Height
+  // are always 0), so a realistic tooltip size is stubbed just for this
+  // check — otherwise the flip-to-avoid-overflow logic has nothing to clamp
+  // against and this couldn't actually exercise it.
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  d.querySelector("#plotXSelect").value = "0";
+  d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+  d.querySelector("#plotYSelectSingle").value = "1";
+  d.querySelector("#plotYSelectSingle").dispatchEvent(new w.Event("change", { bubbles: true }));
+  Object.defineProperty(tooltipEl, "offsetWidth", { value: 140, configurable: true });
+  Object.defineProperty(tooltipEl, "offsetHeight", { value: 50, configurable: true });
+  // Row 10 is the last row (x=100, y=100) — the chart's top-right corner
+  // point, at pixel (780, 16) per the home-domain math established above.
+  const markFarRight = d.querySelector('#plotSvg circle.plot-mark[data-row="10"]');
+  assert(markFarRight, "row 10's mark exists");
+  const cxFar = +markFarRight.getAttribute("cx"), cyFar = +markFarRight.getAttribute("cy");
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: cxFar, clientY: cyFar }));
+  assert(!tooltipEl.classList.contains("hidden"), "tooltip shows for the far-right/top mark too");
+  const leftPx = parseFloat(tooltipEl.style.left), topPx = parseFloat(tooltipEl.style.top);
+  assert(leftPx + 140 <= 800 - 4 + 1e-6,
+    "the tooltip flips to the LEFT of a mark near the right edge instead of running off-screen (800-wide chart area), got left=" + leftPx + " (would end at " + (leftPx + 140) + ")");
+  assert(leftPx < cxFar, "flipped left of the cursor, so it no longer sits under/right of the mark's own pixel position");
+  assert(topPx >= 4 - 1e-6 && topPx + 50 <= 400 - 4 + 1e-6, "the tooltip stays vertically within the chart area too, got top=" + topPx);
+  assert(topPx > cyFar, "with no room ABOVE a mark near the top edge, the tooltip flips to BELOW it instead — never overlapping the cursor point");
+  Object.defineProperty(tooltipEl, "offsetWidth", { value: 0, configurable: true });
+  Object.defineProperty(tooltipEl, "offsetHeight", { value: 0, configurable: true });
 });
 
 /* ============================================================

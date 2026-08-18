@@ -5233,13 +5233,37 @@ function plotHandleHoverMove(ev) {
     escapeHtml(hit.seriesName) + ": <b>" + escapeHtml(String(row.values[hit.yCol])) + "</b>";
   if (hit.colorCol != null) html += "<br>" + escapeHtml(findExtractColumn(hit.colorCol).name) + ": <b>" + escapeHtml(String(row.values[hit.colorCol])) + "</b>";
   plotTooltip.innerHTML = html;
-  const areaPt = plotChartAreaPointFromEvent(ev);
-  const areaRect = plotChartArea.getBoundingClientRect();
-  plotTooltip.style.left = Math.min(areaRect.width - 10, areaPt.x + 14) + "px";
-  plotTooltip.style.top = Math.max(4, areaPt.y - 28) + "px";
-  plotTooltip.classList.remove("hidden");
+  plotTooltip.classList.remove("hidden"); // needs to be visible (not display:none) before offsetWidth/Height below can measure it
+  positionPlotTooltip(plotChartAreaPointFromEvent(ev));
 }
 plotChartArea.addEventListener("mouseleave", () => plotTooltip.classList.add("hidden"));
+
+const PLOT_TOOLTIP_GAP = 12; // clearance kept between the cursor point and the tooltip's nearest edge
+const PLOT_TOOLTIP_MARGIN = 4; // min distance from the chart area's own edges
+
+// Places the tooltip so it never runs outside #plotChartArea and never
+// covers the cursor (person-reported: a mark far right in the chart pushed
+// the tooltip partly off-screen, since the old fixed "areaPt.x + 14" offset
+// never accounted for the tooltip's own width). Prefers above-and-right of
+// the cursor (matching the previous default look); flips to the opposite
+// side on whichever axis actually lacks room, using the tooltip's real
+// rendered size — not a guessed one — so it's correct regardless of how
+// long the column names/values in it happen to be.
+function positionPlotTooltip(areaPt) {
+  const areaRect = plotChartArea.getBoundingClientRect();
+  const tw = plotTooltip.offsetWidth, th = plotTooltip.offsetHeight;
+
+  let left = areaPt.x + PLOT_TOOLTIP_GAP;
+  if (left + tw > areaRect.width - PLOT_TOOLTIP_MARGIN) left = areaPt.x - PLOT_TOOLTIP_GAP - tw;
+  left = Math.max(PLOT_TOOLTIP_MARGIN, Math.min(areaRect.width - tw - PLOT_TOOLTIP_MARGIN, left));
+
+  let top = areaPt.y - PLOT_TOOLTIP_GAP - th; // above the cursor by default, so the tooltip box never overlaps the pointer itself
+  if (top < PLOT_TOOLTIP_MARGIN) top = areaPt.y + PLOT_TOOLTIP_GAP; // no room above -> flip to below instead
+  top = Math.max(PLOT_TOOLTIP_MARGIN, Math.min(areaRect.height - th - PLOT_TOOLTIP_MARGIN, top));
+
+  plotTooltip.style.left = left + "px";
+  plotTooltip.style.top = top + "px";
+}
 
 function renderPlotControls() {
   if (plotNodeId !== extractNodeId) { plotNodeId = extractNodeId; } // config persists across re-renders of the SAME extraction
@@ -5363,6 +5387,14 @@ function plotTypeIcon(type) {
 }
 
 const PLOT_MARGIN = { left: 58, right: 20, top: 16, bottom: 38 };
+// How far zooming OUT / panning may go past the home view's own bounds, as a
+// fraction of the home span on EACH side (person-reported: a mark sitting
+// exactly on the home view's edge rendered only half-visible, with no way to
+// pan/zoom out slightly to center it). Deliberately does not touch the home
+// view itself (plotZoom === null still renders exactly the old, un-buffered
+// domain) — only clampZoomAxis's bounds widen, so this only ever matters once
+// the person actually starts zooming or panning.
+const PLOT_ZOOM_OUT_BUFFER = 0.08;
 // Matches --level-error. Kept as a literal rather than var(--level-error)
 // since every other plot color (COLUMN_PALETTE, PLOT_COLOR_STOPS) is already
 // a plain JS constant, not a CSS custom property — plot marks are built as
@@ -5489,18 +5521,26 @@ function renderPlotChart() {
   }
 
   // Effective (possibly zoomed) view domain. clampZoomAxis caps the
-  // requested span at the home span (can't zoom OUT past the home view) and
-  // keeps the requested position inside the home bounds (can't pan past
-  // its edges either) — zooming IN has no ceiling, per the requirement.
+  // requested span at the home span PLUS a small buffer on each side
+  // (PLOT_ZOOM_OUT_BUFFER) — not the bare home span — and keeps the
+  // requested position within those same widened bounds; zooming IN has no
+  // ceiling, per the original requirement. The buffer exists so a mark
+  // sitting exactly on the home view's own edge (rendered only half-visible
+  // there) can be panned/zoomed to fully, with a little padding around it —
+  // the home view itself (plotZoom === null) is completely unaffected,
+  // since this function is only ever called once plotZoom is actually set.
   function clampZoomAxis(homeLo, homeHi, wantLo, wantHi) {
     const homeSpan = homeHi - homeLo || 1;
+    const buffer = homeSpan * PLOT_ZOOM_OUT_BUFFER;
+    const boundLo = homeLo - buffer, boundHi = homeHi + buffer;
+    const maxSpan = boundHi - boundLo;
     let span = wantHi - wantLo;
     if (!(span > 0) || !Number.isFinite(span)) span = homeSpan;
-    if (span > homeSpan) span = homeSpan;
+    if (span > maxSpan) span = maxSpan;
     let lo = wantLo, hi = wantLo + span;
     if (!Number.isFinite(lo)) { lo = homeLo; hi = lo + span; }
-    if (lo < homeLo) { lo = homeLo; hi = lo + span; }
-    if (hi > homeHi) { hi = homeHi; lo = hi - span; }
+    if (lo < boundLo) { lo = boundLo; hi = lo + span; }
+    if (hi > boundHi) { hi = boundHi; lo = hi - span; }
     return [lo, hi];
   }
   let xDomainMin = xHomeDomainMin, xDomainMax = xHomeDomainMax, yDomainMin = yHomeDomainMin, yDomainMax = yHomeDomainMax;
