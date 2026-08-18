@@ -1112,14 +1112,45 @@
   .plot-checkbox-row{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
   .plot-checkbox-row input{accent-color:var(--accent);}
   .plot-note{font-size:10.5px; color:var(--text-tertiary); line-height:1.5;}
-  #plotChartArea{flex:1 1 auto; min-width:0; display:flex; align-items:stretch; justify-content:stretch; padding:14px;}
-  #plotSvg{width:100%; height:100%; overflow:visible;}
+  #plotChartArea{flex:1 1 auto; min-width:0; display:flex; align-items:stretch; justify-content:stretch; padding:14px; position:relative;}
+  #plotSvg{width:100%; height:100%; overflow:visible; touch-action:none; cursor:crosshair;}
   .plot-axis-line{stroke:var(--border); stroke-width:1;}
   .plot-grid-line{stroke:var(--border-soft); stroke-width:1;}
   .plot-tick-label{fill:var(--text-tertiary); font-size:10px; font-family:var(--font-mono);}
   .plot-empty-label{fill:var(--text-tertiary); font-size:12px; font-family:var(--font-ui);}
   .plot-mark{cursor:pointer;}
   .plot-mark:hover{opacity:.7;}
+
+  /* ---------- Plot zoom/pan ---------- */
+  #plotZoomBar{
+    position:absolute; top:22px; right:22px; z-index:5; display:flex; align-items:center; gap:2px;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:7px; padding:3px;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);
+  }
+  #plotZoomBar button{
+    background:transparent; border:none; color:var(--text-secondary); cursor:pointer; border-radius:5px;
+    font-family:var(--font-mono); font-size:12px; font-weight:650; line-height:1; padding:5px 7px;
+    transition:background .12s, color .12s;
+  }
+  #plotZoomBar button:hover{background:var(--bg-app); color:var(--text-primary);}
+  #plotZoomResetBtn{font-size:10px; padding:5px 8px;}
+  #plotZoomLevelInput{
+    width:44px; text-align:center; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:5px; padding:5px 2px; font-family:var(--font-mono); font-size:11px;
+  }
+  #plotZoomLevelInput:focus{border-color:var(--accent); outline:none;}
+  #plotDragRect{
+    position:absolute; border:1px solid var(--accent); background:var(--accent-soft); opacity:.55;
+    pointer-events:none; z-index:4;
+  }
+  #plotDragRect.hidden{display:none;}
+  #plotTooltip{
+    position:absolute; padding:4px 8px; background:var(--bg-elevated-2); border:1px solid var(--border);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:6; line-height:1.5;
+  }
+  #plotTooltip b{color:var(--text-primary); font-weight:650;}
+  #plotTooltip.hidden{display:none;}
 
   #copyToast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(6px);
@@ -1636,7 +1667,17 @@
         </div>
         <div id="plotWrap" class="hidden">
           <div id="plotControls"></div>
-          <div id="plotChartArea"><svg id="plotSvg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+          <div id="plotChartArea">
+            <svg id="plotSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div id="plotZoomBar" class="hidden">
+              <button type="button" id="plotZoomOutBtn" title="Zoom out">−</button>
+              <input type="text" id="plotZoomLevelInput" inputmode="numeric" title="Zoom level — click to edit">
+              <button type="button" id="plotZoomInBtn" title="Zoom in">+</button>
+              <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
+            </div>
+            <div id="plotDragRect" class="hidden"></div>
+            <div id="plotTooltip" class="hidden"></div>
+          </div>
         </div>
       </div>
 
@@ -3589,6 +3630,13 @@ const plotWrap = el("#plotWrap");
 const plotControls = el("#plotControls");
 const plotChartArea = el("#plotChartArea");
 const plotSvg = el("#plotSvg");
+const plotZoomBar = el("#plotZoomBar");
+const plotZoomOutBtn = el("#plotZoomOutBtn");
+const plotZoomInBtn = el("#plotZoomInBtn");
+const plotZoomResetBtn = el("#plotZoomResetBtn");
+const plotZoomLevelInput = el("#plotZoomLevelInput");
+const plotDragRect = el("#plotDragRect");
+const plotTooltip = el("#plotTooltip");
 const copyToast = el("#copyToast");
 const linkWrap = el("#linkWrap");
 const linkInfo = el("#linkInfo");
@@ -4838,9 +4886,29 @@ let extractView = "table"; // 'table' | 'plot'
 let plotNodeId = null;
 let plotConfig = { type: "line", xCol: null, yCols: [], colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, axisEqual: false, yColsInit: false };
 
+// --- Plot zoom/pan (ephemeral view state, like plotConfig.xMin/xMax — never
+// persisted through cloneSubtree/serializeFilterBranch/session cache) ---
+// plotZoom is {x0,x1,y0,y1} in the same domain units renderPlotChart already
+// computes for the unzoomed ("home") view, or null for "no zoom, show home".
+// plotLastRender is a snapshot of the most recent render's pixel<->data
+// mapping and home-domain bounds, written at the end of renderPlotChart and
+// read by the wheel/drag/pan/tooltip listeners below (which are registered
+// once, outside renderPlotChart, and need the current mapping on every
+// mouse event without recomputing the whole chart).
+let plotZoom = null;
+let plotLastRender = null;
+// One entry per rendered mark (line/scatter point or bar), rebuilt every
+// renderPlotChart() alongside the marks themselves — read by the hover-
+// tooltip listener to hit-test without re-walking extractRowsData/series.
+// Holds pixel geometry + which row/column it came from; the tooltip looks
+// the exact value up live from extractRowsData at hover time rather than
+// caching a formatted copy, so it always shows the real extracted string.
+let plotHoverPoints = [];
+
 function resetPlotConfig() {
   plotNodeId = null;
   plotConfig = { type: "line", xCol: null, yCols: [], colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, axisEqual: false, yColsInit: false };
+  plotZoom = null;
 }
 
 // --- Turning a column's text value into a plottable number ---
@@ -4925,13 +4993,277 @@ window.addEventListener("resize", () => { if (extractView === "plot") renderPlot
 // (see jumpToFullLog's own comment: the extraction table/plot has no
 // Highlight-view companion to reveal into instead). One delegated listener
 // rather than one per mark, since renderPlotChart rebuilds the SVG's
-// innerHTML wholesale on every render.
+// innerHTML wholesale on every render. plotDragSuppressClick (set by the
+// drag-to-zoom handler below) skips the jump when this click is really the
+// mouseup end of a drag, not a plain click — same pattern the timeline
+// minimap's own drag-select already uses for the identical reason.
+let plotDragSuppressClick = false;
 plotSvg.addEventListener("click", ev => {
+  if (plotDragSuppressClick) { plotDragSuppressClick = false; return; }
   const mark = ev.target.closest(".plot-mark");
   if (!mark) return;
   const row = extractRowsData[+mark.dataset.row];
   if (row) jumpToFullLog(row.entry);
 });
+
+// ---------- Plot zoom / pan / hover tooltip ----------
+// Interaction layer on top of renderPlotChart's plotZoom/plotLastRender
+// state (see their declarations above): mouse wheel zoom anchored at the
+// cursor, middle-click-drag panning, left-click-drag rectangle zoom, a
+// small editable zoom-level readout (+/-/reset), and a hover tooltip
+// showing a mark's exact underlying value. All zoom-out is clamped to the
+// "home" (default/unzoomed) view inside renderPlotChart itself
+// (clampZoomAxis) — this layer only ever proposes a new plotZoom domain,
+// never enforces the ceiling itself, so zooming in stays unlimited while
+// zooming out or panning can never escape the home view's bounds.
+const PLOT_ZOOM_WHEEL_FACTOR = 0.85; // one wheel notch in (1/this = one notch out)
+const PLOT_ZOOM_BUTTON_FACTOR = 1 / 1.4; // one +/- button press
+const PLOT_DRAG_THRESHOLD_PX = 3; // below this, a left mousedown+up is a plain click (mark jump), not a zoom-select drag
+const PLOT_HOVER_MAX_DIST_PX = 14; // max distance (line/scatter) from the cursor to still count as "hovering" a point
+
+function plotSvgPointFromEvent(ev) {
+  if (!plotLastRender) return null;
+  const rect = plotSvg.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return null;
+  return {
+    x: (ev.clientX - rect.left) * (plotLastRender.W / rect.width),
+    y: (ev.clientY - rect.top) * (plotLastRender.H / rect.height),
+  };
+}
+function plotChartAreaPointFromEvent(ev) {
+  const rect = plotChartArea.getBoundingClientRect();
+  return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+}
+function plotDataXFromSvgX(svgX) {
+  const r = plotLastRender;
+  return r.xDomainMin + (svgX - r.left) / r.plotW * (r.xDomainMax - r.xDomainMin);
+}
+function plotDataYFromSvgY(svgY) {
+  const r = plotLastRender;
+  return r.yDomainMin + (r.top + r.plotH - svgY) / r.plotH * (r.yDomainMax - r.yDomainMin);
+}
+function plotPointInPlotArea(svgPt) {
+  const r = plotLastRender;
+  return svgPt.x >= r.left && svgPt.x <= r.left + r.plotW && svgPt.y >= r.top && svgPt.y <= r.top + r.plotH;
+}
+
+// Zooms so that the data-space point (dataX, dataY) stays fixed on screen —
+// factor < 1 zooms in, > 1 zooms out. The proposed domain is intentionally
+// un-clamped here; renderPlotChart clamps it against the home view.
+function zoomPlotAt(dataX, dataY, factor) {
+  if (!plotLastRender) return;
+  const r = plotLastRender;
+  plotZoom = {
+    x0: dataX - (dataX - r.xDomainMin) * factor, x1: dataX + (r.xDomainMax - dataX) * factor,
+    y0: dataY - (dataY - r.yDomainMin) * factor, y1: dataY + (r.yDomainMax - dataY) * factor,
+  };
+  renderPlotChart();
+}
+
+function updatePlotZoomIndicator() {
+  if (!plotLastRender) { plotZoomBar.classList.add("hidden"); return; }
+  plotZoomBar.classList.remove("hidden");
+  const r = plotLastRender;
+  const zx = (r.xHomeDomainMax - r.xHomeDomainMin) / ((r.xDomainMax - r.xDomainMin) || 1);
+  const zy = (r.yHomeDomainMax - r.yHomeDomainMin) / ((r.yDomainMax - r.yDomainMin) || 1);
+  const pct = Math.round(((zx + zy) / 2) * 100);
+  // Don't clobber the field while the person is actively typing in it.
+  if (document.activeElement !== plotZoomLevelInput) plotZoomLevelInput.value = pct + "%";
+}
+
+// Sets an absolute zoom level (e.g. typing "200" always means 200% of the
+// HOME view, not 200% of whatever's currently on screen), centered on the
+// current view's own center point.
+function setPlotZoomLevel(pct) {
+  if (!plotLastRender || !Number.isFinite(pct) || pct <= 0) return;
+  const r = plotLastRender;
+  const cx = (r.xDomainMin + r.xDomainMax) / 2, cy = (r.yDomainMin + r.yDomainMax) / 2;
+  const factor = 100 / pct;
+  const halfX = ((r.xHomeDomainMax - r.xHomeDomainMin) * factor) / 2;
+  const halfY = ((r.yHomeDomainMax - r.yHomeDomainMin) * factor) / 2;
+  plotZoom = { x0: cx - halfX, x1: cx + halfX, y0: cy - halfY, y1: cy + halfY };
+  renderPlotChart();
+}
+
+plotZoomInBtn.addEventListener("click", () => {
+  if (!plotLastRender) return;
+  const r = plotLastRender;
+  zoomPlotAt((r.xDomainMin + r.xDomainMax) / 2, (r.yDomainMin + r.yDomainMax) / 2, PLOT_ZOOM_BUTTON_FACTOR);
+});
+plotZoomOutBtn.addEventListener("click", () => {
+  if (!plotLastRender) return;
+  const r = plotLastRender;
+  zoomPlotAt((r.xDomainMin + r.xDomainMax) / 2, (r.yDomainMin + r.yDomainMax) / 2, 1 / PLOT_ZOOM_BUTTON_FACTOR);
+});
+plotZoomResetBtn.addEventListener("click", () => { plotZoom = null; renderPlotChart(); });
+plotZoomLevelInput.addEventListener("change", () => { setPlotZoomLevel(parseFloat(plotZoomLevelInput.value)); updatePlotZoomIndicator(); });
+plotZoomLevelInput.addEventListener("keydown", ev => { if (ev.key === "Enter") plotZoomLevelInput.blur(); });
+
+// Mouse wheel: zoom in/out anchored at the cursor's data-space position.
+// Only active when the cursor is actually over the plot rectangle, so
+// scrolling the rest of the page (or the controls panel) is unaffected.
+plotSvg.addEventListener("wheel", ev => {
+  const pt = plotSvgPointFromEvent(ev);
+  if (!pt || !plotPointInPlotArea(pt)) return;
+  ev.preventDefault();
+  zoomPlotAt(plotDataXFromSvgX(pt.x), plotDataYFromSvgY(pt.y), ev.deltaY < 0 ? PLOT_ZOOM_WHEEL_FACTOR : 1 / PLOT_ZOOM_WHEEL_FACTOR);
+}, { passive: false });
+
+// Middle-click-drag panning (rAF-batched like every other high-frequency
+// mousemove re-render in this app — see the panel-resizer drag handlers'
+// own comment for why: mousemove fires far more often than the display
+// repaints, so re-rendering the whole chart on every raw event would stutter).
+let plotPanActive = false, plotPanStartSvg = null, plotPanStartDomain = null, plotPanTicking = false, plotPanPendingEv = null;
+// Left-click-drag rectangle zoom (multi-step: works the same starting from
+// an already-zoomed view, zooming further in).
+let plotDragActive = false, plotDragStartSvg = null, plotDragStartClient = null, plotDragMoved = false;
+
+plotSvg.addEventListener("mousedown", ev => {
+  if (!plotLastRender) return;
+  const svgPt = plotSvgPointFromEvent(ev);
+  if (!svgPt || !plotPointInPlotArea(svgPt)) return;
+  if (ev.button === 1) {
+    ev.preventDefault(); // suppress the browser's default middle-click autoscroll
+    plotPanActive = true;
+    plotPanStartSvg = svgPt;
+    plotPanStartDomain = { xDomainMin: plotLastRender.xDomainMin, xDomainMax: plotLastRender.xDomainMax, yDomainMin: plotLastRender.yDomainMin, yDomainMax: plotLastRender.yDomainMax };
+    document.body.style.userSelect = "none";
+  } else if (ev.button === 0) {
+    plotDragActive = true;
+    plotDragMoved = false;
+    plotDragStartSvg = svgPt;
+    plotDragStartClient = plotChartAreaPointFromEvent(ev);
+  }
+});
+
+function showPlotDragOverlay(startClient, curClient) {
+  const lo = { x: Math.min(startClient.x, curClient.x), y: Math.min(startClient.y, curClient.y) };
+  const hi = { x: Math.max(startClient.x, curClient.x), y: Math.max(startClient.y, curClient.y) };
+  plotDragRect.style.left = lo.x.toFixed(1) + "px";
+  plotDragRect.style.top = lo.y.toFixed(1) + "px";
+  plotDragRect.style.width = Math.max(1, hi.x - lo.x).toFixed(1) + "px";
+  plotDragRect.style.height = Math.max(1, hi.y - lo.y).toFixed(1) + "px";
+  plotDragRect.classList.remove("hidden");
+  plotTooltip.classList.add("hidden"); // dragging owns the pointer — don't fight it with a stale hover tooltip
+}
+function hidePlotDragOverlay() { plotDragRect.classList.add("hidden"); }
+
+window.addEventListener("mousemove", ev => {
+  if (plotPanActive) {
+    plotPanPendingEv = ev;
+    if (!plotPanTicking) {
+      plotPanTicking = true;
+      requestAnimationFrame(() => {
+        plotPanTicking = false;
+        if (!plotPanActive || !plotPanPendingEv || !plotLastRender) return;
+        const pt = plotSvgPointFromEvent(plotPanPendingEv);
+        if (!pt) return;
+        const r = plotLastRender;
+        const dxData = (pt.x - plotPanStartSvg.x) / r.plotW * (plotPanStartDomain.xDomainMax - plotPanStartDomain.xDomainMin);
+        const dyData = (pt.y - plotPanStartSvg.y) / r.plotH * (plotPanStartDomain.yDomainMax - plotPanStartDomain.yDomainMin);
+        // Dragging right/down should slide the VIEW right/down, i.e. reveal
+        // data that was further left/up — so the domain moves opposite to
+        // the pointer's on-screen motion (Y is additionally flipped back
+        // since screen-down is data-down-in-pixels but yPix already inverts
+        // it once for rendering).
+        plotZoom = {
+          x0: plotPanStartDomain.xDomainMin - dxData, x1: plotPanStartDomain.xDomainMax - dxData,
+          y0: plotPanStartDomain.yDomainMin + dyData, y1: plotPanStartDomain.yDomainMax + dyData,
+        };
+        renderPlotChart();
+      });
+    }
+    return;
+  }
+  if (plotDragActive) {
+    const cur = plotChartAreaPointFromEvent(ev);
+    if (!plotDragMoved && Math.hypot(cur.x - plotDragStartClient.x, cur.y - plotDragStartClient.y) < PLOT_DRAG_THRESHOLD_PX) return;
+    plotDragMoved = true;
+    showPlotDragOverlay(plotDragStartClient, cur);
+    return;
+  }
+  if (extractView === "plot") plotHandleHoverMove(ev);
+});
+
+window.addEventListener("mouseup", ev => {
+  if (plotPanActive && ev.button === 1) {
+    plotPanActive = false;
+    document.body.style.userSelect = "";
+  }
+  if (plotDragActive && ev.button === 0) {
+    plotDragActive = false;
+    hidePlotDragOverlay();
+    if (plotDragMoved && plotLastRender) {
+      plotDragSuppressClick = true; // this mouseup will still fire a "click" on plotSvg — swallow it there instead of jumping to a mark
+      const endSvg = plotSvgPointFromEvent(ev) || plotDragStartSvg;
+      const x0 = plotDataXFromSvgX(plotDragStartSvg.x), x1 = plotDataXFromSvgX(endSvg.x);
+      const y0 = plotDataYFromSvgY(plotDragStartSvg.y), y1 = plotDataYFromSvgY(endSvg.y);
+      plotZoom = { x0: Math.min(x0, x1), x1: Math.max(x0, x1), y0: Math.min(y0, y1), y1: Math.max(y0, y1) };
+      renderPlotChart();
+    }
+  }
+});
+
+// Hover tooltip: shows the exact underlying value(s) of the nearest mark
+// under the cursor (bar charts hit-test the actual bar rect; line/scatter
+// use nearest-point-within-radius, since their marks are small circles).
+// Reads plotHoverPoints (rebuilt every renderPlotChart alongside the marks
+// themselves) and looks the value up live from extractRowsData rather than
+// caching a formatted copy, so it always shows the real extracted string.
+function plotHandleHoverMove(ev) {
+  if (!plotLastRender || plotHoverPoints.length === 0) { plotTooltip.classList.add("hidden"); return; }
+  const svgPt = plotSvgPointFromEvent(ev);
+  if (!svgPt || !plotPointInPlotArea(svgPt)) { plotTooltip.classList.add("hidden"); return; }
+  let hit = null;
+  if (plotLastRender.isBarChart) {
+    for (const p of plotHoverPoints) {
+      if (svgPt.x >= p.bx && svgPt.x <= p.bx + p.bw && svgPt.y >= p.by && svgPt.y <= p.by + p.bh) { hit = p; break; }
+    }
+  } else {
+    let bestDist = PLOT_HOVER_MAX_DIST_PX;
+    for (const p of plotHoverPoints) {
+      const d = Math.hypot(svgPt.x - p.px, svgPt.y - p.py);
+      if (d < bestDist) { bestDist = d; hit = p; }
+    }
+  }
+  if (!hit) { plotTooltip.classList.add("hidden"); return; }
+  const row = extractRowsData[hit.rowIndex];
+  if (!row) { plotTooltip.classList.add("hidden"); return; }
+  let html = escapeHtml(findExtractColumn(hit.xCol).name) + ": <b>" + escapeHtml(String(row.values[hit.xCol])) + "</b><br>" +
+    escapeHtml(hit.seriesName) + ": <b>" + escapeHtml(String(row.values[hit.yCol])) + "</b>";
+  if (hit.colorCol != null) html += "<br>" + escapeHtml(findExtractColumn(hit.colorCol).name) + ": <b>" + escapeHtml(String(row.values[hit.colorCol])) + "</b>";
+  plotTooltip.innerHTML = html;
+  plotTooltip.classList.remove("hidden"); // needs to be visible (not display:none) before offsetWidth/Height below can measure it
+  positionPlotTooltip(plotChartAreaPointFromEvent(ev));
+}
+plotChartArea.addEventListener("mouseleave", () => plotTooltip.classList.add("hidden"));
+
+const PLOT_TOOLTIP_GAP = 12; // clearance kept between the cursor point and the tooltip's nearest edge
+const PLOT_TOOLTIP_MARGIN = 4; // min distance from the chart area's own edges
+
+// Places the tooltip so it never runs outside #plotChartArea and never
+// covers the cursor (person-reported: a mark far right in the chart pushed
+// the tooltip partly off-screen, since the old fixed "areaPt.x + 14" offset
+// never accounted for the tooltip's own width). Prefers above-and-right of
+// the cursor (matching the previous default look); flips to the opposite
+// side on whichever axis actually lacks room, using the tooltip's real
+// rendered size — not a guessed one — so it's correct regardless of how
+// long the column names/values in it happen to be.
+function positionPlotTooltip(areaPt) {
+  const areaRect = plotChartArea.getBoundingClientRect();
+  const tw = plotTooltip.offsetWidth, th = plotTooltip.offsetHeight;
+
+  let left = areaPt.x + PLOT_TOOLTIP_GAP;
+  if (left + tw > areaRect.width - PLOT_TOOLTIP_MARGIN) left = areaPt.x - PLOT_TOOLTIP_GAP - tw;
+  left = Math.max(PLOT_TOOLTIP_MARGIN, Math.min(areaRect.width - tw - PLOT_TOOLTIP_MARGIN, left));
+
+  let top = areaPt.y - PLOT_TOOLTIP_GAP - th; // above the cursor by default, so the tooltip box never overlaps the pointer itself
+  if (top < PLOT_TOOLTIP_MARGIN) top = areaPt.y + PLOT_TOOLTIP_GAP; // no room above -> flip to below instead
+  top = Math.max(PLOT_TOOLTIP_MARGIN, Math.min(areaRect.height - th - PLOT_TOOLTIP_MARGIN, top));
+
+  plotTooltip.style.left = left + "px";
+  plotTooltip.style.top = top + "px";
+}
 
 function renderPlotControls() {
   if (plotNodeId !== extractNodeId) { plotNodeId = extractNodeId; } // config persists across re-renders of the SAME extraction
@@ -5007,16 +5339,17 @@ function renderPlotControls() {
     btn.addEventListener("click", () => {
       plotConfig.type = btn.dataset.type;
       if (plotConfig.type === "scatter" && plotConfig.yCols.length) plotConfig.yCols = [plotConfig.yCols[0]];
+      plotZoom = null; // the home view's shape changes with chart type — a bar's categorical X vs. a scatter's continuous X mean any prior zoom domain is meaningless here
       renderPlotControls();
       renderPlotChart();
     });
   });
   el("#plotXSelect").value = plotConfig.xCol;
-  el("#plotXSelect").addEventListener("change", ev => { plotConfig.xCol = +ev.target.value; renderPlotControls(); renderPlotChart(); });
+  el("#plotXSelect").addEventListener("change", ev => { plotConfig.xCol = +ev.target.value; plotZoom = null; renderPlotControls(); renderPlotChart(); });
 
   if (plotConfig.type === "scatter") {
     el("#plotYSelectSingle").value = plotConfig.yCols[0];
-    el("#plotYSelectSingle").addEventListener("change", ev => { plotConfig.yCols = [+ev.target.value]; renderPlotChart(); });
+    el("#plotYSelectSingle").addEventListener("change", ev => { plotConfig.yCols = [+ev.target.value]; plotZoom = null; renderPlotChart(); });
     el("#plotColorSelect").value = plotConfig.colorCol == null ? "" : plotConfig.colorCol;
     el("#plotColorSelect").addEventListener("change", ev => { plotConfig.colorCol = ev.target.value === "" ? null : +ev.target.value; renderPlotChart(); });
   } else {
@@ -5025,12 +5358,13 @@ function renderPlotControls() {
         const col = +cb.dataset.col;
         if (cb.checked) { if (!plotConfig.yCols.includes(col)) plotConfig.yCols.push(col); }
         else { plotConfig.yCols = plotConfig.yCols.filter(c => c !== col); }
+        plotZoom = null;
         renderPlotControls();
         renderPlotChart();
       });
     });
     const normCb = el("#plotNormalize");
-    if (normCb) normCb.addEventListener("change", () => { plotConfig.normalize = normCb.checked; renderPlotChart(); });
+    if (normCb) normCb.addEventListener("change", () => { plotConfig.normalize = normCb.checked; plotZoom = null; renderPlotChart(); });
   }
 
   const axisEqCb = el("#plotAxisEqual");
@@ -5040,6 +5374,7 @@ function renderPlotControls() {
     el("#" + id).addEventListener("change", ev => {
       const key = id.replace("plot", "").replace(/^./, c0 => c0.toLowerCase());
       plotConfig[key] = ev.target.value;
+      plotZoom = null; // a new manual axis override redefines the home view itself
       renderPlotChart();
     });
   });
@@ -5052,6 +5387,14 @@ function plotTypeIcon(type) {
 }
 
 const PLOT_MARGIN = { left: 58, right: 20, top: 16, bottom: 38 };
+// How far zooming OUT / panning may go past the home view's own bounds, as a
+// fraction of the home span on EACH side (person-reported: a mark sitting
+// exactly on the home view's edge rendered only half-visible, with no way to
+// pan/zoom out slightly to center it). Deliberately does not touch the home
+// view itself (plotZoom === null still renders exactly the old, un-buffered
+// domain) — only clampZoomAxis's bounds widen, so this only ever matters once
+// the person actually starts zooming or panning.
+const PLOT_ZOOM_OUT_BUFFER = 0.08;
 // Matches --level-error. Kept as a literal rather than var(--level-error)
 // since every other plot color (COLUMN_PALETTE, PLOT_COLOR_STOPS) is already
 // a plain JS constant, not a CSS custom property — plot marks are built as
@@ -5063,6 +5406,9 @@ function renderPlotChart() {
   const plottable = extractColumns.map(c => ({ ...c, index: c.colIndex })).filter(c => isPlottableType(c.type));
   if (plottable.length === 0 || plotConfig.xCol == null || plotConfig.yCols.length === 0) {
     plotSvg.innerHTML = '<text class="plot-empty-label" x="16" y="24">Select an X and at least one Y column to plot.</text>';
+    plotLastRender = null;
+    plotHoverPoints = [];
+    updatePlotZoomIndicator();
     return;
   }
 
@@ -5074,7 +5420,7 @@ function renderPlotChart() {
   const plotW = W - left - rightMargin, plotH = H - top - PLOT_MARGIN.bottom;
   plotSvg.setAttribute("viewBox", "0 0 " + W + " " + H);
 
-  if (plotW < 40 || plotH < 40) { plotSvg.innerHTML = ""; return; }
+  if (plotW < 40 || plotH < 40) { plotSvg.innerHTML = ""; plotLastRender = null; plotHoverPoints = []; updatePlotZoomIndicator(); return; }
 
   const xType = findExtractColumn(plotConfig.xCol).type;
 
@@ -5117,42 +5463,90 @@ function renderPlotChart() {
 
   if (series.every(s => s.pts.length === 0)) {
     plotSvg.innerHTML = '<text class="plot-empty-label" x="16" y="24">No rows have numeric values for the selected columns.</text>';
+    plotLastRender = null;
+    plotHoverPoints = [];
+    updatePlotZoomIndicator();
     return;
   }
 
   const allX = series.flatMap(s => s.pts.map(p => p.x));
   const allY = series.flatMap(s => s.pts.map(p => p.y));
   const isBarChart = plotConfig.type === "bar";
+  const rowCount = extractRowsData.length;
 
-  const xLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : Math.min(...allX);
-  const xHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : Math.max(...allX);
-  // Bar charts treat X as categorical (one bar per row, in row order) rather than a continuous position.
-  const xTicksInfo = isBarChart ? null : niceTicks(xLo, xHi, Math.max(2, Math.round(plotW / 90)));
-  const xMin = isBarChart ? xLo : xTicksInfo.min;
-  const xMax = isBarChart ? xHi : xTicksInfo.max;
-
+  // "Raw" (unzoomed) axis extents: manual override if set, else the data's
+  // own range. A bar chart has no continuous X value of its own — X is one
+  // slot per row — so its raw X extent is simply the row-index range
+  // [0, rowCount]; this is also what makes bar-chart X zoomable/pannable the
+  // exact same way as the other two chart types (see xPix below, and the
+  // bar-rendering block, which now goes through it instead of hand-rolling
+  // row placement from plotW/rowCount directly).
+  const xRawLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : (isBarChart ? 0 : Math.min(...allX));
+  const xRawHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : (isBarChart ? rowCount : Math.max(...allX));
   const yDataLo = Math.min(...allY), yDataHi = Math.max(...allY);
   // Bar charts always include the zero baseline (so bar height is meaningful); line/scatter fit the data tightly.
-  const yLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : (isBarChart ? Math.min(0, yDataLo) : yDataLo);
-  const yHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : (isBarChart ? Math.max(0, yDataHi) : yDataHi);
-  const yFinal = niceTicks(yLo, yHi, Math.max(2, Math.round(plotH / 50)));
+  const yRawLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : (isBarChart ? Math.min(0, yDataLo) : yDataLo);
+  const yRawHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : (isBarChart ? Math.max(0, yDataHi) : yDataHi);
 
-  // Equal axis scale: widen whichever axis' domain is "too tight" so both
-  // axes end up with the same units-per-pixel ratio — the tick positions
-  // computed above (xTicksInfo/yFinal) are left untouched, so a shape drawn
-  // in real units (e.g. an x/y position plot) keeps its true proportions,
-  // at the cost of extra blank margin on the axis that didn't need it.
-  let xDomainMin = xMin, xDomainMax = xMax, yDomainMin = yFinal.min, yDomainMax = yFinal.max;
+  // "Home" domain: the default, fully-zoomed-out view — exactly what would
+  // render with plotZoom unset. Nice-tick-snapped for X on line/scatter (bar
+  // X stays the raw row range — a categorical axis has no "nice number" to
+  // snap to); Y always goes through niceTicks. This is both what plotZoom
+  // falls back to when null AND the ceiling zooming out can never exceed
+  // (see clampZoomAxis below) — "zoom out at most to the current default
+  // view, zoom in without limit" was the explicit requirement.
+  const xTicksInfoHome = isBarChart ? null : niceTicks(xRawLo, xRawHi, Math.max(2, Math.round(plotW / 90)));
+  const xHomeMin = isBarChart ? xRawLo : xTicksInfoHome.min;
+  const xHomeMax = isBarChart ? xRawHi : xTicksInfoHome.max;
+  const yTicksInfoHome = niceTicks(yRawLo, yRawHi, Math.max(2, Math.round(plotH / 50)));
+  const yHomeMin = yTicksInfoHome.min, yHomeMax = yTicksInfoHome.max;
+
+  // Equal axis scale: widen whichever home axis' domain is "too tight" so
+  // both axes end up with the same units-per-pixel ratio — the tick
+  // positions computed above are left untouched, so a shape drawn in real
+  // units (e.g. an x/y position plot) keeps its true proportions, at the
+  // cost of extra blank margin on the axis that didn't need it. Zoom/pan
+  // then operate on top of this already-padded home domain.
+  let xHomeDomainMin = xHomeMin, xHomeDomainMax = xHomeMax, yHomeDomainMin = yHomeMin, yHomeDomainMax = yHomeMax;
   if (plotConfig.axisEqual && !isBarChart) {
-    const xUnitsPerPx = (xDomainMax - xDomainMin) / plotW;
-    const yUnitsPerPx = (yDomainMax - yDomainMin) / plotH;
+    const xUnitsPerPx = (xHomeDomainMax - xHomeDomainMin) / plotW;
+    const yUnitsPerPx = (yHomeDomainMax - yHomeDomainMin) / plotH;
     const targetUnitsPerPx = Math.max(xUnitsPerPx, yUnitsPerPx);
     if (targetUnitsPerPx > 0) {
-      const xPad = (targetUnitsPerPx * plotW - (xDomainMax - xDomainMin)) / 2;
-      const yPad = (targetUnitsPerPx * plotH - (yDomainMax - yDomainMin)) / 2;
-      xDomainMin -= xPad; xDomainMax += xPad;
-      yDomainMin -= yPad; yDomainMax += yPad;
+      const xPad = (targetUnitsPerPx * plotW - (xHomeDomainMax - xHomeDomainMin)) / 2;
+      const yPad = (targetUnitsPerPx * plotH - (yHomeDomainMax - yHomeDomainMin)) / 2;
+      xHomeDomainMin -= xPad; xHomeDomainMax += xPad;
+      yHomeDomainMin -= yPad; yHomeDomainMax += yPad;
     }
+  }
+
+  // Effective (possibly zoomed) view domain. clampZoomAxis caps the
+  // requested span at the home span PLUS a small buffer on each side
+  // (PLOT_ZOOM_OUT_BUFFER) — not the bare home span — and keeps the
+  // requested position within those same widened bounds; zooming IN has no
+  // ceiling, per the original requirement. The buffer exists so a mark
+  // sitting exactly on the home view's own edge (rendered only half-visible
+  // there) can be panned/zoomed to fully, with a little padding around it —
+  // the home view itself (plotZoom === null) is completely unaffected,
+  // since this function is only ever called once plotZoom is actually set.
+  function clampZoomAxis(homeLo, homeHi, wantLo, wantHi) {
+    const homeSpan = homeHi - homeLo || 1;
+    const buffer = homeSpan * PLOT_ZOOM_OUT_BUFFER;
+    const boundLo = homeLo - buffer, boundHi = homeHi + buffer;
+    const maxSpan = boundHi - boundLo;
+    let span = wantHi - wantLo;
+    if (!(span > 0) || !Number.isFinite(span)) span = homeSpan;
+    if (span > maxSpan) span = maxSpan;
+    let lo = wantLo, hi = wantLo + span;
+    if (!Number.isFinite(lo)) { lo = homeLo; hi = lo + span; }
+    if (lo < boundLo) { lo = boundLo; hi = lo + span; }
+    if (hi > boundHi) { hi = boundHi; lo = hi - span; }
+    return [lo, hi];
+  }
+  let xDomainMin = xHomeDomainMin, xDomainMax = xHomeDomainMax, yDomainMin = yHomeDomainMin, yDomainMax = yHomeDomainMax;
+  if (plotZoom) {
+    [xDomainMin, xDomainMax] = clampZoomAxis(xHomeDomainMin, xHomeDomainMax, plotZoom.x0, plotZoom.x1);
+    [yDomainMin, yDomainMax] = clampZoomAxis(yHomeDomainMin, yHomeDomainMax, plotZoom.y0, plotZoom.y1);
   }
   const xSpan = (xDomainMax - xDomainMin) || 1;
   const ySpan = (yDomainMax - yDomainMin) || 1;
@@ -5160,27 +5554,39 @@ function renderPlotChart() {
   const yPix = v => top + plotH - ((v - yDomainMin) / ySpan) * plotH;
 
   const parts = [];
-  // Gridlines + Y ticks
-  yFinal.ticks.forEach(t => {
-    if (t < yFinal.min - 1e-9 || t > yFinal.max + 1e-9) return;
+  plotHoverPoints = [];
+  parts.push('<defs><clipPath id="plotClip"><rect x="' + left + '" y="' + top + '" width="' + plotW + '" height="' + plotH + '"/></clipPath></defs>');
+
+  // Gridlines + Y ticks — recomputed from the EFFECTIVE (possibly zoomed)
+  // domain every render, so tick density stays sensible at any zoom level
+  // instead of only ever showing the home view's tick spacing.
+  const yTicksView = niceTicks(yDomainMin, yDomainMax, Math.max(2, Math.round(plotH / 50)));
+  yTicksView.ticks.forEach(t => {
+    if (t < yDomainMin - 1e-9 || t > yDomainMax + 1e-9) return;
     const py = yPix(t);
     parts.push('<line class="plot-grid-line" x1="' + left + '" y1="' + py + '" x2="' + (left + plotW) + '" y2="' + py + '"/>');
     parts.push('<text class="plot-tick-label" x="' + (left - 8) + '" y="' + (py + 3) + '" text-anchor="end">' + formatAxisNumber(t) + "</text>");
   });
   // X ticks
   if (isBarChart) {
-    const n = extractRowsData.length;
-    const step = plotW / Math.max(1, n);
-    const labelEvery = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(plotW / 60))));
-    for (let r = 0; r < n; r++) {
-      if (r % labelEvery !== 0) continue;
-      const px = left + step * (r + 0.5);
+    // Only the rows whose slot overlaps the current (possibly zoomed) X
+    // domain get a label — zooming into bars now behaves like zooming a
+    // continuous axis, showing fewer, wider bars rather than the same
+    // labelEvery spacing recomputed against the full row count.
+    const rowLo = Math.max(0, Math.floor(xDomainMin)), rowHi = Math.min(rowCount, Math.ceil(xDomainMax));
+    const visibleRows = Math.max(1, rowHi - rowLo);
+    const labelEvery = Math.max(1, Math.ceil(visibleRows / Math.max(1, Math.floor(plotW / 60))));
+    for (let r = rowLo; r < rowHi; r++) {
+      if ((r - rowLo) % labelEvery !== 0) continue;
+      const px = xPix(r + 0.5);
+      if (px < left - 1 || px > left + plotW + 1) continue;
       const val = extractRowsData[r].values[plotConfig.xCol];
       parts.push('<text class="plot-tick-label" x="' + px + '" y="' + (top + plotH + 16) + '" text-anchor="middle">' + escapeHtml(String(val).slice(0, 8)) + "</text>");
     }
   } else {
-    xTicksInfo.ticks.forEach(t => {
-      if (t < xMin - 1e-9 || t > xMax + 1e-9) return;
+    const xTicksView = niceTicks(xDomainMin, xDomainMax, Math.max(2, Math.round(plotW / 90)));
+    xTicksView.ticks.forEach(t => {
+      if (t < xDomainMin - 1e-9 || t > xDomainMax + 1e-9) return;
       const px = xPix(t);
       parts.push('<line class="plot-grid-line" x1="' + px + '" y1="' + top + '" x2="' + px + '" y2="' + (top + plotH) + '"/>');
       parts.push('<text class="plot-tick-label" x="' + px + '" y="' + (top + plotH + 16) + '" text-anchor="middle">' + formatAxisNumber(t) + "</text>");
@@ -5194,57 +5600,72 @@ function renderPlotChart() {
   // "Value assertions" above) gets an extra error-colored ring/border drawn
   // on top, on the theory that a plot is often where an out-of-range value is
   // actually *noticed* — the table's cell tint is easy to scroll past.
+  // Wrapped in a clip-path group: at any zoom/pan other than the home view,
+  // a line segment, bar, or point can legitimately extend beyond the plot
+  // rectangle, and SVG doesn't clip that on its own.
+  parts.push('<g clip-path="url(#plotClip)">');
+  let scatterColorMin = 0, scatterColorMax = 1; // set inside the scatter branch below, read afterward by its (unclipped) legend
   if (plotConfig.type === "line") {
     series.forEach(s => {
       if (s.pts.length === 0) return;
       const d = s.pts.map((p, i) => (i === 0 ? "M" : "L") + xPix(p.x).toFixed(1) + "," + yPix(p.y).toFixed(1)).join(" ");
       parts.push('<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="1.8"/>');
       s.pts.forEach(p => {
-        parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="2.6" fill="' + s.color + '"/>');
-        if (p.violated) parts.push('<circle cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
+        const px = xPix(p.x), py = yPix(p.y);
+        parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="2.6" fill="' + s.color + '"/>');
+        if (p.violated) parts.push('<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
+        plotHoverPoints.push({ kind: "point", px, py, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: s.col, seriesName: s.name, seriesColor: s.color });
       });
     });
   } else if (plotConfig.type === "bar") {
-    const n = extractRowsData.length;
-    const groupW = plotW / Math.max(1, n);
+    // Row placement now goes through xPix like every other axis mapping
+    // (domain = row-index units [0, rowCount]), instead of hand-rolling
+    // groupW from plotW/rowCount directly — that's what makes bar-chart X
+    // zoom/pan (a subset of rows, wider) fall out for free.
+    const groupW = xPix(1) - xPix(0);
     const barW = (groupW * 0.7) / series.length;
     const zeroY = yPix(0);
     series.forEach((s, si) => {
       s.pts.forEach(p => {
-        const groupX = left + groupW * p.rowIndex + groupW * 0.15;
+        const groupX = xPix(p.rowIndex) + groupW * 0.15;
         const bx = groupX + si * barW;
         const by = yPix(p.y);
         const h = zeroY - by;
         const w = Math.max(1, barW - 1);
         parts.push('<rect class="plot-mark" data-row="' + p.rowIndex + '" x="' + bx.toFixed(1) + '" y="' + Math.min(by, zeroY).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.abs(h).toFixed(1) + '" fill="' + s.color + '"' +
           (p.violated ? ' stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"' : '') + '/>');
+        plotHoverPoints.push({ kind: "bar", bx, by: Math.min(by, zeroY), bw: w, bh: Math.abs(h) || 1, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: s.col, seriesName: s.name, seriesColor: s.color });
       });
     });
   } else { // scatter
     const s = series[0];
-    let colorMin = 0, colorMax = 1;
+    scatterColorMin = 0; scatterColorMax = 1;
     if (hasColorScale) {
       const vals = s.pts.map(p => p.colorVal).filter(Number.isFinite);
-      colorMin = vals.length ? Math.min(...vals) : 0;
-      colorMax = vals.length ? Math.max(...vals) : 1;
+      scatterColorMin = vals.length ? Math.min(...vals) : 0;
+      scatterColorMax = vals.length ? Math.max(...vals) : 1;
     }
     s.pts.forEach(p => {
-      const fill = hasColorScale && p.colorVal != null ? plotColorScale((p.colorVal - colorMin) / ((colorMax - colorMin) || 1)) : s.color;
-      parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="4" fill="' + fill + '" fill-opacity="0.85"/>');
-      if (p.violated) parts.push('<circle cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="6.5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
+      const px = xPix(p.x), py = yPix(p.y);
+      const fill = hasColorScale && p.colorVal != null ? plotColorScale((p.colorVal - scatterColorMin) / ((scatterColorMax - scatterColorMin) || 1)) : s.color;
+      parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="4" fill="' + fill + '" fill-opacity="0.85"/>');
+      if (p.violated) parts.push('<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="6.5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
+      plotHoverPoints.push({ kind: "point", px, py, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: s.col, colorCol: hasColorScale ? plotConfig.colorCol : null, seriesName: s.name, seriesColor: fill });
     });
-    if (hasColorScale) {
-      const legendX = left + plotW + 24, legendTop = top, legendH = plotH;
-      const stops = 24;
-      for (let i = 0; i < stops; i++) {
-        const t0 = i / stops, t1 = (i + 1) / stops;
-        const yTop = legendTop + legendH * (1 - t1), yBot = legendTop + legendH * (1 - t0);
-        parts.push('<rect x="' + legendX + '" y="' + yTop.toFixed(1) + '" width="12" height="' + (yBot - yTop + 0.5).toFixed(1) + '" fill="' + plotColorScale((t0 + t1) / 2) + '"/>');
-      }
-      parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + 4) + '">' + formatAxisNumber(colorMax) + "</text>");
-      parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH) + '">' + formatAxisNumber(colorMin) + "</text>");
-      parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH / 2) + '" transform="rotate(0 0 0)">' + escapeHtml(findExtractColumn(plotConfig.colorCol).name) + "</text>");
+  }
+  parts.push('</g>'); // close the clip group before any legend, which is drawn to the right of/above the plot rect and must not itself be clipped
+
+  if (hasColorScale) {
+    const legendX = left + plotW + 24, legendTop = top, legendH = plotH;
+    const stops = 24;
+    for (let i = 0; i < stops; i++) {
+      const t0 = i / stops, t1 = (i + 1) / stops;
+      const yTop = legendTop + legendH * (1 - t1), yBot = legendTop + legendH * (1 - t0);
+      parts.push('<rect x="' + legendX + '" y="' + yTop.toFixed(1) + '" width="12" height="' + (yBot - yTop + 0.5).toFixed(1) + '" fill="' + plotColorScale((t0 + t1) / 2) + '"/>');
     }
+    parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + 4) + '">' + formatAxisNumber(scatterColorMax) + "</text>");
+    parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH) + '">' + formatAxisNumber(scatterColorMin) + "</text>");
+    parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH / 2) + '" transform="rotate(0 0 0)">' + escapeHtml(findExtractColumn(plotConfig.colorCol).name) + "</text>");
   }
 
   // Legend for multi-series line/bar
@@ -5258,6 +5679,18 @@ function renderPlotChart() {
   }
 
   plotSvg.innerHTML = parts.join("");
+
+  // Geometry/domain snapshot for the interaction layer (wheel zoom, drag-
+  // rect zoom, middle-click pan, hover tooltip) — those are separate,
+  // once-registered event listeners outside this function, so they read the
+  // most recent render's pixel<->data mapping from here instead of
+  // recomputing the whole chart on every mouse event.
+  plotLastRender = {
+    W, H, left, top, plotW, plotH, isBarChart,
+    xDomainMin, xDomainMax, yDomainMin, yDomainMax,
+    xHomeDomainMin, xHomeDomainMax, yHomeDomainMin, yHomeDomainMax,
+  };
+  updatePlotZoomIndicator();
 }
 
 // Comparator for sorting the extraction table by a column. Numeric-capable
