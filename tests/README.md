@@ -83,7 +83,9 @@ throwaway test from scratch. When a session adds a feature:
   exercised — `addWatchedFolder`/`loadFolderFile`/`folderScanTick` are called
   directly with fake `FileSystemDirectoryHandle`/`FileSystemFileHandle`
   objects rather than via `#btnOpenFolder`'s click handler.
-- Plot tab rendering (SVG chart output) is not covered — only the underlying
-  data functions used across a few groups (`parseValueForPlot` via assertion
-  checks). A dedicated group would be a reasonable future addition if the
-  Plot tab sees more active development.
+- Plot tab rendering (SVG chart output) has dedicated coverage now — Group 53
+  (marks/click-to-entry/axis-equal) and Group 54 (zoom/pan/drag-zoom/hover
+  tooltip) — beyond the underlying data functions (`parseValueForPlot`, etc.)
+  a few other groups also touch via assertion checks. Still not covered:
+  pure visual/paint correctness (jsdom has no real layout or rendering
+  engine, same blind spot as everywhere else in this suite).
