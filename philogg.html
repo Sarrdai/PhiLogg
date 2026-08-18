@@ -449,6 +449,11 @@
      relative to #fhTabs, a fact this round's fix corrects at the pills
      rather than here (see .level-btn/.crumb). */
   #btnPinBookmarks{float:left; margin:0 14px 6px 0; width:auto; height:26px; padding:4px 8px;}
+  /* #btnMultilineMsg: same float/sizing treatment as #btnPinBookmarks right
+     above (same row, same reasoning — a persistent view-content toggle, not
+     a popup trigger), just its own icon/state. See "Multiline message
+     display toggle" in PROJECT.md. */
+  #btnMultilineMsg{float:left; margin:0 14px 6px 0; width:auto; height:26px; padding:4px 8px;}
 
   #breadcrumb{
     /* Deliberately plain block (not flex/grid, no new block-formatting
@@ -765,6 +770,21 @@
   .col-loc{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-method{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-msg{font-family:var(--font-mono); font-size:11.6px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* Multiline message display (state.multilineMessages, toggled via
+     #btnMultilineMsg): white-space:pre renders literal "\n" line breaks
+     already present in e.message (continuation lines accumulated during
+     parsing — see "The log format it parses" in PROJECT.md) as real line
+     breaks, WITHOUT soft-wrapping a long single line — deliberately, so a
+     row's rendered height is exactly predictable from its message's line
+     COUNT alone (MULTILINE_LINE_HEIGHT below), never measured from the DOM.
+     That's what keeps the virtualized windowing math in renderVisibleRows/
+     renderHighlightVisibleRows exact. line-height is pinned to the same
+     15px MULTILINE_LINE_HEIGHT constant uses, for the same reason. Applied
+     via a body-level class (toggled once, not per-row) so it reaches both
+     #tableRows and #highlightRows' .col-msg spans — the two "Log views" the
+     toggle covers — without touching the Extraction/Link views, which don't
+     use this class at all. */
+  .multiline-messages .col-msg{white-space:pre; text-overflow:clip; line-height:15px;}
 
   .lvl-error .col-bar{background:var(--level-error);}
   .lvl-error .level-badge{color:var(--level-error); background:rgba(241,101,101,.28);}
@@ -1570,6 +1590,7 @@
           <button type="button" class="view-tab" data-fh-tab="stacked" title="Show Full and Filtered at once, split top/bottom">Stacked</button>
         </div>
         <button id="btnPinBookmarks" class="toolbar-icon-btn" title="Pin bookmarks into Filtered View"></button>
+        <button id="btnMultilineMsg" class="toolbar-icon-btn" title="Multi-line message display (line breaks in the message)"></button>
         <div id="levelBar"></div>
         <div id="breadcrumb"></div>
       </div>
@@ -1931,6 +1952,10 @@ const ICON_REDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" s
 const ICON_BOOKMARK = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
 const ICON_BOOKMARK_FILLED = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
 const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6c-2.4 0-4.3 1.9-4.3 4.3 0 3.2 4.3 8.5 4.3 8.5s4.3-5.3 4.3-8.5c0-2.4-1.9-4.3-4.3-4.3z"/><circle cx="8" cy="5.9" r="1.5"/></svg>';
+// Multiline message toggle (#btnMultilineMsg) — three stacked lines, standing
+// in for "multi-line text" the same way ICON_PIN's teardrop stands in for
+// "pin". See PROJECT.md "Multiline message display toggle".
+const ICON_MULTILINE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
 const ICON_HELP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M6.1 6.3a2 2 0 1 1 2.9 1.8c-.6.3-1 .8-1 1.5v.3"/><circle cx="8" cy="11.6" r="0.75" fill="currentColor" stroke="none"/></svg>';
 // Pencil icon for the tree context menu's "Edit filter…" action (F2 or
 // right-click a text/extract filter node — see openEditFilterPopup).
@@ -1985,6 +2010,7 @@ const state = {
                            // disengaged by scrolling up or selecting a row, re-engaged via #tailJumpBtn
   bookmarks: new Map(),    // entry id -> { note: string, bookmarkedAt: number (ms epoch) }, session-only (not persisted)
   pinBookmarksInFilteredView: false, // see PROJECT.md "Pin bookmarks into the Filtered View"
+  multilineMessages: false, // see PROJECT.md "Multiline message display toggle"; global, session-cache-persisted
 
   // Watched folders (FEATURE_BACKLOG.md "Folder watch + lazy loading"), see
   // "Folder watch (lazy loading)" section near the Tailing code. Each entry:
@@ -3613,6 +3639,7 @@ const extractInfo = el("#extractInfo");
 const extractStatsBar = el("#extractStatsBar");
 const btnBookmarks = el("#btnBookmarks");
 const btnPinBookmarks = el("#btnPinBookmarks");
+const btnMultilineMsg = el("#btnMultilineMsg");
 const bookmarksPanel = el("#bookmarksPanel");
 const bookmarksPanelTitle = el("#bookmarksPanelTitle");
 const bookmarksList = el("#bookmarksList");
@@ -6165,6 +6192,46 @@ el("#btnCopyAllExtract").addEventListener("click", copyWholeExtractTable);
 const ROW_HEIGHT = 28;
 const BUFFER_ROWS = 10;
 
+/* ---------- Multiline message display (state.multilineMessages) ----------
+   Off by default: rows stay the fixed ROW_HEIGHT, virtualization math below
+   is untouched from before this feature. On: a row's height grows with its
+   message's line count (literal "\n"s already in e.message — see the
+   .multiline-messages CSS comment for why no soft-wrap is involved, which is
+   what keeps this exact rather than measured). Since heights vary, the
+   simple `index * ROW_HEIGHT` arithmetic renderVisibleRows/scrollToIndex/etc.
+   normally use no longer locates a row — tableRowOffsets/highlightRowOffsets
+   are prefix-sum arrays (offsets[i] = pixel top of row i, built once per
+   current-view-list change via buildRowOffsets(), not per scroll frame) that
+   every one of those call sites falls back to instead, gated on
+   state.multilineMessages so the off-by-default path is unaffected. */
+const MULTILINE_LINE_HEIGHT = 15; // must match .multiline-messages .col-msg's line-height
+function messageLineCount(message) { return message ? message.split("\n").length : 1; }
+function rowHeightForEntry(e) {
+  if (!state.multilineMessages) return ROW_HEIGHT;
+  const n = messageLineCount(e.message);
+  return n > 1 ? ROW_HEIGHT + (n - 1) * MULTILINE_LINE_HEIGHT : ROW_HEIGHT;
+}
+function buildRowOffsets(entries) {
+  const offsets = new Float64Array(entries.length + 1);
+  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i]);
+  return offsets;
+}
+// Largest i such that offsets[i] <= y, clamped to a valid row index (offsets
+// has entries.length+1 slots, one extra for the trailing total) — i.e. "which
+// row is pixel position y inside (or the last row, if y is past the end)".
+function findOffsetIndex(offsets, y) {
+  const maxIdx = offsets.length - 2;
+  if (maxIdx < 0) return 0;
+  let lo = 0, hi = maxIdx;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (offsets[mid] <= y) lo = mid; else hi = mid - 1;
+  }
+  return lo;
+}
+let tableRowOffsets = null;     // built by renderTable() when state.multilineMessages; null otherwise
+let highlightRowOffsets = null; // same, built by renderHighlightView()
+
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
 // Set by the tail engine right before a live-update render:
@@ -6200,11 +6267,19 @@ function contextRangeIndex(ranges, ts) {
 function renderVisibleRows() {
   const total = currentViewEntries.length;
   const viewportH = tableBody.clientHeight || 400;
-  const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
-  const start = Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
-  const end = Math.min(total, start + maxVisible);
-
-  tableRows.style.top = (start * ROW_HEIGHT) + "px";
+  const scrollTop = tableBody.scrollTop;
+  let start, end;
+  if (state.multilineMessages && tableRowOffsets) {
+    const centerIdx = findOffsetIndex(tableRowOffsets, scrollTop);
+    start = Math.max(0, centerIdx - BUFFER_ROWS);
+    end = Math.min(total, findOffsetIndex(tableRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
+    tableRows.style.top = tableRowOffsets[start] + "px";
+  } else {
+    const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
+    start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+    end = Math.min(total, start + maxVisible);
+    tableRows.style.top = (start * ROW_HEIGHT) + "px";
+  }
 
   // Bracket rendering only makes sense in the file's natural chronological
   // order (a manual column sort would scatter a group's rows apart), and
@@ -6256,7 +6331,7 @@ function renderVisibleRows() {
     const deltaMs = (!state.sortColumn && prevE) ? (e.ts - prevE.ts) : null;
 
     row.className = cls;
-    row.style.height = ROW_HEIGHT + "px";
+    row.style.height = rowHeightForEntry(e) + "px";
     row.dataset.entryId = e.id;
     row.innerHTML =
       bracketHtml +
@@ -6344,7 +6419,9 @@ function setHighlightScroll(value) {
 function renderHighlightView(colorMapIsFresh) {
   const rootId = getRootFileId(state.activeId);
   currentHighlightViewEntries = rootId ? applyLevelFilter(state.nodes[rootId].entries) : [];
-  highlightSpacer.style.height = (currentHighlightViewEntries.length * ROW_HEIGHT + 22) + "px";
+  highlightRowOffsets = state.multilineMessages ? buildRowOffsets(currentHighlightViewEntries) : null;
+  highlightSpacer.style.height =
+    ((state.multilineMessages ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
   if (!colorMapIsFresh) highlightColorMap = computeHighlightMap(rootId);
 
   if (state.highlightScrollTargetId) {
@@ -6365,11 +6442,19 @@ function renderHighlightView(colorMapIsFresh) {
 function renderHighlightVisibleRows() {
   const total = currentHighlightViewEntries.length;
   const viewportH = highlightBody.clientHeight || 400;
-  const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
-  const start = Math.max(0, Math.floor(highlightBody.scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
-  const end = Math.min(total, start + maxVisible);
-
-  highlightRows.style.top = (start * ROW_HEIGHT) + "px";
+  const scrollTop = highlightBody.scrollTop;
+  let start, end;
+  if (state.multilineMessages && highlightRowOffsets) {
+    const centerIdx = findOffsetIndex(highlightRowOffsets, scrollTop);
+    start = Math.max(0, centerIdx - BUFFER_ROWS);
+    end = Math.min(total, findOffsetIndex(highlightRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
+    highlightRows.style.top = highlightRowOffsets[start] + "px";
+  } else {
+    const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
+    start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+    end = Math.min(total, start + maxVisible);
+    highlightRows.style.top = (start * ROW_HEIGHT) + "px";
+  }
 
   const frag = document.createDocumentFragment();
   for (let i = start; i < end; i++) {
@@ -6387,7 +6472,7 @@ function renderHighlightVisibleRows() {
     const deltaMs = prevE ? (e.ts - prevE.ts) : null;
 
     row.className = cls;
-    row.style.height = ROW_HEIGHT + "px";
+    row.style.height = rowHeightForEntry(e) + "px";
     row.dataset.entryId = e.id;
     row.innerHTML =
       markerHtml +
@@ -6817,8 +6902,14 @@ function updateMinimapRenderedRange() {
   // after this runs — see its own comment). Bugfix: startIdx used to only
   // clamp at 0, so that scenario indexed straight past the end of the array.
   const maxIdx = currentViewEntries.length - 1;
-  const startIdx = Math.min(maxIdx, Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT)));
-  const endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((tableBody.scrollTop + viewportH) / ROW_HEIGHT)));
+  let startIdx, endIdx;
+  if (state.multilineMessages && tableRowOffsets) {
+    startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(tableRowOffsets, tableBody.scrollTop)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(tableRowOffsets, tableBody.scrollTop + viewportH)));
+  } else {
+    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((tableBody.scrollTop + viewportH) / ROW_HEIGHT)));
+  }
   const x1 = minimapBarSpan(currentViewEntries[startIdx].ts).left;
   const x2 = minimapBarSpan(currentViewEntries[endIdx].ts).right;
   rect.setAttribute("x", x1.toFixed(1));
@@ -7025,14 +7116,21 @@ timelineMinimapSvg.addEventListener("contextmenu", ev => {
 function scrollToIndex(index, opts) {
   opts = opts || {};
   const viewportH = tableBody.clientHeight || 400;
-  const rowTop = index * ROW_HEIGHT;
+  let rowTop, rowH;
+  if (state.multilineMessages && tableRowOffsets) {
+    rowTop = tableRowOffsets[index] || 0;
+    rowH = tableRowOffsets[index + 1] - rowTop || ROW_HEIGHT;
+  } else {
+    rowTop = index * ROW_HEIGHT;
+    rowH = ROW_HEIGHT;
+  }
   let target;
   if (opts.center) {
-    target = rowTop - viewportH / 2 + ROW_HEIGHT / 2;
+    target = rowTop - viewportH / 2 + rowH / 2;
   } else if (rowTop < tableBody.scrollTop) {
     target = rowTop;
-  } else if (rowTop + ROW_HEIGHT > tableBody.scrollTop + viewportH) {
-    target = rowTop + ROW_HEIGHT - viewportH;
+  } else if (rowTop + rowH > tableBody.scrollTop + viewportH) {
+    target = rowTop + rowH - viewportH;
   } else {
     target = tableBody.scrollTop; // already in view
   }
@@ -7056,14 +7154,21 @@ function scrollToIndex(index, opts) {
 function scrollToHighlightIndex(index, opts) {
   opts = opts || {};
   const viewportH = highlightBody.clientHeight || 400;
-  const rowTop = index * ROW_HEIGHT;
+  let rowTop, rowH;
+  if (state.multilineMessages && highlightRowOffsets) {
+    rowTop = highlightRowOffsets[index] || 0;
+    rowH = highlightRowOffsets[index + 1] - rowTop || ROW_HEIGHT;
+  } else {
+    rowTop = index * ROW_HEIGHT;
+    rowH = ROW_HEIGHT;
+  }
   let target;
   if (opts.center) {
-    target = rowTop - viewportH / 2 + ROW_HEIGHT / 2;
+    target = rowTop - viewportH / 2 + rowH / 2;
   } else if (rowTop < highlightBody.scrollTop) {
     target = rowTop;
-  } else if (rowTop + ROW_HEIGHT > highlightBody.scrollTop + viewportH) {
-    target = rowTop + ROW_HEIGHT - viewportH;
+  } else if (rowTop + rowH > highlightBody.scrollTop + viewportH) {
+    target = rowTop + rowH - viewportH;
   } else {
     target = highlightBody.scrollTop;
   }
@@ -7295,7 +7400,8 @@ function toggleBookmark(entryId) {
   if (state.pinBookmarksInFilteredView) {
     currentViewEntries = getVisibleEntries();
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
-    tableSpacer.style.height = (currentViewEntries.length * ROW_HEIGHT + 22) + "px";
+    tableRowOffsets = state.multilineMessages ? buildRowOffsets(currentViewEntries) : null;
+    tableSpacer.style.height = ((state.multilineMessages ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
     renderStatusStrip();
   }
   // Repaint the visible row windows of BOTH views so the bookmark dot
@@ -7343,6 +7449,15 @@ function updateBookmarksButton() {
 // without going through the click handler below).
 function updatePinBookmarksButton() {
   btnPinBookmarks.classList.toggle("active", state.pinBookmarksInFilteredView);
+}
+
+// Reflects state.multilineMessages on both the toggle button and the
+// body-level class the .multiline-messages .col-msg CSS rule (and every row
+// height computed via rowHeightForEntry) keys off — called after every
+// toggle and after session restore, same pattern as updatePinBookmarksButton.
+function updateMultilineMsgButton() {
+  btnMultilineMsg.classList.toggle("active", state.multilineMessages);
+  document.body.classList.toggle("multiline-messages", state.multilineMessages);
 }
 
 function closeBookmarksPanel() { bookmarksPanel.classList.add("hidden"); }
@@ -7433,6 +7548,16 @@ btnPinBookmarks.addEventListener("click", () => {
   render();
 });
 
+// Same plain-persistent-toggle shape as #btnPinBookmarks right above: row
+// heights change (rowHeightForEntry), so a full render() — which rebuilds
+// tableRowOffsets/highlightRowOffsets and re-renders both views' visible
+// windows — is needed, not just a targeted repaint.
+btnMultilineMsg.addEventListener("click", () => {
+  state.multilineMessages = !state.multilineMessages;
+  updateMultilineMsgButton();
+  render();
+});
+
 // Keyboard-shortcuts popup: same fixed-position/toggle pattern as the
 // bookmarks panel above, just with static content (no render step needed).
 function closeShortcutsPanel() { shortcutsPanel.classList.add("hidden"); }
@@ -7466,7 +7591,8 @@ function renderTable() {
   // of what order the table itself ends up sorted into.
   const minimapViewEntries = currentViewEntries;
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
-  tableSpacer.style.height = (currentViewEntries.length * ROW_HEIGHT + 22) + "px";
+  tableRowOffsets = state.multilineMessages ? buildRowOffsets(currentViewEntries) : null;
+  tableSpacer.style.height = ((state.multilineMessages ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
   renderStatusStrip();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
   // Table-view-specific ("what's actually got a DOM row right now") — see
@@ -9867,6 +9993,7 @@ function buildCacheMeta() {
       sortColumn: state.sortColumn,
       sortDir: state.sortDir,
       pinBookmarksInFilteredView: state.pinBookmarksInFilteredView,
+      multilineMessages: state.multilineMessages,
       active,
     },
   };
@@ -10039,6 +10166,7 @@ async function restoreSessionFromCache() {
     state.sortColumn = ["time", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
+    state.multilineMessages = !!s.multilineMessages;
     if (s.active && byKey[s.active.file]) {
       const viaRef = s.active.ref != null && refMaps[s.active.file]
         ? refMaps[s.active.file][s.active.ref] : null;
@@ -10051,6 +10179,7 @@ async function restoreSessionFromCache() {
     sessionRestoreInProgress = false;
     updateBookmarksButton();
     updatePinBookmarksButton();
+    updateMultilineMsgButton();
     render();
   }
 }
@@ -10827,12 +10956,14 @@ btnUndo.innerHTML = ICON_UNDO;
 btnRedo.innerHTML = ICON_REDO;
 btnBookmarks.innerHTML = ICON_BOOKMARK;
 btnPinBookmarks.innerHTML = ICON_PIN;
+btnMultilineMsg.innerHTML = ICON_MULTILINE;
 btnShortcuts.innerHTML = ICON_HELP;
 btnUndo.addEventListener("click", undo);
 btnRedo.addEventListener("click", redo);
 updateUndoRedoButtons();
 updateBookmarksButton();
 updatePinBookmarksButton();
+updateMultilineMsgButton();
 initTheme();
 initFhView();
 render();
