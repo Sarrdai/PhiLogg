@@ -1118,6 +1118,8 @@
   .plot-grid-line{stroke:var(--border-soft); stroke-width:1;}
   .plot-tick-label{fill:var(--text-tertiary); font-size:10px; font-family:var(--font-mono);}
   .plot-empty-label{fill:var(--text-tertiary); font-size:12px; font-family:var(--font-ui);}
+  .plot-mark{cursor:pointer;}
+  .plot-mark:hover{opacity:.7;}
 
   #copyToast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(6px);
@@ -4834,11 +4836,11 @@ function buildPairRow(entry) {
 
 let extractView = "table"; // 'table' | 'plot'
 let plotNodeId = null;
-let plotConfig = { type: "line", xCol: null, yCols: [], colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, yColsInit: false };
+let plotConfig = { type: "line", xCol: null, yCols: [], colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, axisEqual: false, yColsInit: false };
 
 function resetPlotConfig() {
   plotNodeId = null;
-  plotConfig = { type: "line", xCol: null, yCols: [], colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, yColsInit: false };
+  plotConfig = { type: "line", xCol: null, yCols: [], colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, axisEqual: false, yColsInit: false };
 }
 
 // --- Turning a column's text value into a plottable number ---
@@ -4917,6 +4919,20 @@ extractViewTabs.addEventListener("click", ev => {
 });
 window.addEventListener("resize", () => { if (extractView === "plot") renderPlotChart(); });
 
+// Plot point/bar -> log entry: the Plot tab used to be a dead end (an
+// outlier was visible but not reachable) — clicking a mark now jumps to its
+// underlying entry the same way a table row's double-click already does
+// (see jumpToFullLog's own comment: the extraction table/plot has no
+// Highlight-view companion to reveal into instead). One delegated listener
+// rather than one per mark, since renderPlotChart rebuilds the SVG's
+// innerHTML wholesale on every render.
+plotSvg.addEventListener("click", ev => {
+  const mark = ev.target.closest(".plot-mark");
+  if (!mark) return;
+  const row = extractRowsData[+mark.dataset.row];
+  if (row) jumpToFullLog(row.entry);
+});
+
 function renderPlotControls() {
   if (plotNodeId !== extractNodeId) { plotNodeId = extractNodeId; } // config persists across re-renders of the SAME extraction
   const plottable = extractColumns.map(c => ({ ...c, index: c.colIndex })).filter(c => isPlottableType(c.type));
@@ -4970,6 +4986,13 @@ function renderPlotControls() {
       html += '<label class="plot-checkbox-row"><input type="checkbox" id="plotNormalize"' + (plotConfig.normalize ? " checked" : "") + '> Normalize each series (0\u20131)</label>';
     }
   }
+  // Equal axis scale ("axis equal"): meaningful for a real X/Y position
+  // (scatter, or a line plotting one continuous quantity against another) \u2014
+  // not for bar, whose X is categorical (one bar per row) rather than a
+  // continuous axis a pixel-per-unit ratio applies to.
+  if (plotConfig.type !== "bar") {
+    html += '<label class="plot-checkbox-row"><input type="checkbox" id="plotAxisEqual"' + (plotConfig.axisEqual ? " checked" : "") + '> Equal axis scale (1:1)</label>';
+  }
 
   html += '<div class="plot-field"><label>X range</label><div class="plot-range-row">' +
     '<input type="number" id="plotXMin" placeholder="auto" value="' + plotConfig.xMin + '">' +
@@ -5009,6 +5032,9 @@ function renderPlotControls() {
     const normCb = el("#plotNormalize");
     if (normCb) normCb.addEventListener("change", () => { plotConfig.normalize = normCb.checked; renderPlotChart(); });
   }
+
+  const axisEqCb = el("#plotAxisEqual");
+  if (axisEqCb) axisEqCb.addEventListener("change", () => { plotConfig.axisEqual = axisEqCb.checked; renderPlotChart(); });
 
   ["plotXMin", "plotXMax", "plotYMin", "plotYMax"].forEach(id => {
     el("#" + id).addEventListener("change", ev => {
@@ -5111,10 +5137,27 @@ function renderPlotChart() {
   const yHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : (isBarChart ? Math.max(0, yDataHi) : yDataHi);
   const yFinal = niceTicks(yLo, yHi, Math.max(2, Math.round(plotH / 50)));
 
-  const xSpan = (xMax - xMin) || 1;
-  const ySpan = (yFinal.max - yFinal.min) || 1;
-  const xPix = v => left + ((v - xMin) / xSpan) * plotW;
-  const yPix = v => top + plotH - ((v - yFinal.min) / ySpan) * plotH;
+  // Equal axis scale: widen whichever axis' domain is "too tight" so both
+  // axes end up with the same units-per-pixel ratio — the tick positions
+  // computed above (xTicksInfo/yFinal) are left untouched, so a shape drawn
+  // in real units (e.g. an x/y position plot) keeps its true proportions,
+  // at the cost of extra blank margin on the axis that didn't need it.
+  let xDomainMin = xMin, xDomainMax = xMax, yDomainMin = yFinal.min, yDomainMax = yFinal.max;
+  if (plotConfig.axisEqual && !isBarChart) {
+    const xUnitsPerPx = (xDomainMax - xDomainMin) / plotW;
+    const yUnitsPerPx = (yDomainMax - yDomainMin) / plotH;
+    const targetUnitsPerPx = Math.max(xUnitsPerPx, yUnitsPerPx);
+    if (targetUnitsPerPx > 0) {
+      const xPad = (targetUnitsPerPx * plotW - (xDomainMax - xDomainMin)) / 2;
+      const yPad = (targetUnitsPerPx * plotH - (yDomainMax - yDomainMin)) / 2;
+      xDomainMin -= xPad; xDomainMax += xPad;
+      yDomainMin -= yPad; yDomainMax += yPad;
+    }
+  }
+  const xSpan = (xDomainMax - xDomainMin) || 1;
+  const ySpan = (yDomainMax - yDomainMin) || 1;
+  const xPix = v => left + ((v - xDomainMin) / xSpan) * plotW;
+  const yPix = v => top + plotH - ((v - yDomainMin) / ySpan) * plotH;
 
   const parts = [];
   // Gridlines + Y ticks
@@ -5157,7 +5200,7 @@ function renderPlotChart() {
       const d = s.pts.map((p, i) => (i === 0 ? "M" : "L") + xPix(p.x).toFixed(1) + "," + yPix(p.y).toFixed(1)).join(" ");
       parts.push('<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="1.8"/>');
       s.pts.forEach(p => {
-        parts.push('<circle cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="2.6" fill="' + s.color + '"/>');
+        parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="2.6" fill="' + s.color + '"/>');
         if (p.violated) parts.push('<circle cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
       });
     });
@@ -5173,7 +5216,7 @@ function renderPlotChart() {
         const by = yPix(p.y);
         const h = zeroY - by;
         const w = Math.max(1, barW - 1);
-        parts.push('<rect x="' + bx.toFixed(1) + '" y="' + Math.min(by, zeroY).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.abs(h).toFixed(1) + '" fill="' + s.color + '"' +
+        parts.push('<rect class="plot-mark" data-row="' + p.rowIndex + '" x="' + bx.toFixed(1) + '" y="' + Math.min(by, zeroY).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.abs(h).toFixed(1) + '" fill="' + s.color + '"' +
           (p.violated ? ' stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"' : '') + '/>');
       });
     });
@@ -5187,7 +5230,7 @@ function renderPlotChart() {
     }
     s.pts.forEach(p => {
       const fill = hasColorScale && p.colorVal != null ? plotColorScale((p.colorVal - colorMin) / ((colorMax - colorMin) || 1)) : s.color;
-      parts.push('<circle cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="4" fill="' + fill + '" fill-opacity="0.85"/>');
+      parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="4" fill="' + fill + '" fill-opacity="0.85"/>');
       if (p.violated) parts.push('<circle cx="' + xPix(p.x).toFixed(1) + '" cy="' + yPix(p.y).toFixed(1) + '" r="6.5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
     });
     if (hasColorScale) {
