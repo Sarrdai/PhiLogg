@@ -5801,13 +5801,24 @@ detailResizer.addEventListener("mousedown", ev => {
   ev.preventDefault();
 });
 
+// Batches the (relatively expensive) row re-render onto animation frames
+// instead of once per raw mousemove — mousemove can fire far more often than
+// the display can paint, and without this a drag reruns renderVisibleRows()
+// synchronously on every single event, same jank risk the scroll handlers
+// below already guard against (see their own "Batches rapid ... events"
+// comments). The geometry itself (detailPanel.style.height) stays outside
+// the throttle so the panel visibly tracks the cursor with no added latency
+// — only the expensive re-render is deferred.
+let detailResizeTicking = false;
 window.addEventListener("mousemove", ev => {
   if (!resizing) return;
   const deltaY = ev.clientY - resizeStartY; // dragging down (positive) shrinks the panel
   const maxHeight = Math.max(150, window.innerHeight - 260); // leave room for header/breadcrumb/table
   const newHeight = Math.max(80, Math.min(maxHeight, resizeStartHeight - deltaY));
   detailPanel.style.height = newHeight + "px";
-  renderVisibleRows(); // the table viewport just changed size
+  if (detailResizeTicking) return;
+  detailResizeTicking = true;
+  requestAnimationFrame(() => { renderVisibleRows(); detailResizeTicking = false; }); // the table viewport just changed size
 });
 
 window.addEventListener("mouseup", () => {
@@ -5833,22 +5844,34 @@ sidebarResizer.addEventListener("mousedown", ev => {
   ev.preventDefault();
 });
 
+// Same rAF-batching reasoning as detailResizeTicking above — this handler is
+// the most expensive of the three (two row-window re-renders PLUS a full
+// timeline-minimap SVG rebuild, the latter O(current view size) even with
+// the background pass memoized), so leaving it synchronous-per-mousemove
+// was the worst offender for drag jank. Only sidebarEl.style.width, which
+// drives the actual visual resize, stays outside the throttle.
+let sidebarResizeTicking = false;
 window.addEventListener("mousemove", ev => {
   if (!sidebarResizing) return;
   const deltaX = ev.clientX - sidebarResizeStartX; // dragging right grows the sidebar
   const maxWidth = Math.max(200, window.innerWidth - 360); // leave room for the content area
   const newWidth = Math.max(160, Math.min(maxWidth, sidebarResizeStartWidth + deltaX));
   sidebarEl.style.width = newWidth + "px";
-  // The table/highlight columns reflow via CSS grid on their own, but the
-  // timeline minimap's SVG viewBox is computed from clientWidth at render
-  // time (see renderTimelineMinimap), so it needs an explicit re-render —
-  // same reasoning as the window "resize" listener above.
-  renderVisibleRows();
-  renderHighlightVisibleRows();
-  if (!timelineMinimapEl.classList.contains("hidden")) {
-    renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
-    if (tableWrap.style.display !== "none") updateMinimapRenderedRange();
-  }
+  if (sidebarResizeTicking) return;
+  sidebarResizeTicking = true;
+  requestAnimationFrame(() => {
+    // The table/highlight columns reflow via CSS grid on their own, but the
+    // timeline minimap's SVG viewBox is computed from clientWidth at render
+    // time (see renderTimelineMinimap), so it needs an explicit re-render —
+    // same reasoning as the window "resize" listener above.
+    renderVisibleRows();
+    renderHighlightVisibleRows();
+    if (!timelineMinimapEl.classList.contains("hidden")) {
+      renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+      if (tableWrap.style.display !== "none") updateMinimapRenderedRange();
+    }
+    sidebarResizeTicking = false;
+  });
 });
 
 window.addEventListener("mouseup", () => {
@@ -5875,6 +5898,8 @@ fhSplitResizer.addEventListener("mousedown", ev => {
   ev.preventDefault();
 });
 
+// Same rAF-batching reasoning as detailResizeTicking above.
+let fhResizeTicking = false;
 window.addEventListener("mousemove", ev => {
   if (!fhResizing) return;
   // filterSlot (Filtered) sits BELOW the handle now (Full is on top, see
@@ -5885,8 +5910,9 @@ window.addEventListener("mousemove", ev => {
   const maxHeight = Math.max(80, totalHeight - 80 - fhSplitResizer.getBoundingClientRect().height); // leave room for the Full panel
   const newHeight = Math.max(80, Math.min(maxHeight, fhResizeStartHeight - deltaY));
   filterSlot.style.height = newHeight + "px";
-  renderVisibleRows();
-  renderHighlightVisibleRows();
+  if (fhResizeTicking) return;
+  fhResizeTicking = true;
+  requestAnimationFrame(() => { renderVisibleRows(); renderHighlightVisibleRows(); fhResizeTicking = false; });
 });
 
 window.addEventListener("mouseup", () => {
