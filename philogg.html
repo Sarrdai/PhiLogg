@@ -2093,35 +2093,56 @@ function loadRenderRootIsActive(rootId) {
   return !!(rootId && state.activeId && getRootFileId(state.activeId) === rootId);
 }
 
-// Cheap, targeted progress-bar update for a loading file that ISN'T the
-// active view — writes straight to that one row's .tree-load-fill width via
-// a DOM query, same "direct write on a hot path" idea the old (pre-2026-08-18)
-// setLoadingFileProgress used, instead of running a full render(). A file
-// loading in the background has no business rebuilding the tree/table/
-// minimap dozens of times a second for a view nobody is looking at — doing
-// so anyway was person-reported as making the whole UI feel sluggish, even
-// after switching away to a different, already-loaded file.
+// Cheap, targeted update for a loading file's own tree row (progress-fill
+// width + entry count) — a direct DOM write via a query, same "direct write
+// on a hot path" idea the old (pre-2026-08-18) setLoadingFileProgress used,
+// instead of running any render() at all. Called on EVERY load-progress
+// tick, active view or not: renderTree() (the only thing that would
+// otherwise pick up these two changes) tears down and rebuilds every row in
+// the tree from scratch, including whichever OTHER row a person might be
+// mid-click on — running that dozens of times a second while a file loads
+// was person-reported as clicks on a different, already-loaded file not
+// reliably registering (mousedown/mouseup landing on a row element that got
+// replaced out from under the gesture). Structural tree changes (a row
+// appearing/disappearing) still go through a real render() — see
+// createFileNode and flushLoadRender below — just never a per-tick one.
 function updateLoadRowProgress(rootId) {
   const node = state.nodes[rootId];
   if (!node) return;
-  const fill = document.querySelector('.tree-row[data-node-id="' + rootId + '"] .tree-load-fill');
+  const row = document.querySelector('.tree-row[data-node-id="' + rootId + '"]');
+  if (!row) return;
+  const fill = row.querySelector(".tree-load-fill");
   if (fill) fill.style.width = Math.round(Math.max(0, Math.min(1, node.loadFraction || 0)) * 100) + "%";
+  const count = row.querySelector(".tree-count");
+  if (count) count.textContent = getEntries(rootId).length.toLocaleString("de-DE");
 }
 
-// Throttles the incremental re-renders triggered while a file streams in
-// (parseLogTextAsync's onProgress, and loadOneFileIntoTree's own read-phase
-// progress) to at most one per animation frame while it's the active view —
-// a large file can yield many chunks between two frames, and render()
-// rebuilds the whole tree plus the visible rows/minimap, so firing it on
-// every single chunk would be wasteful even then. Same rAF-coalescing shape
-// as the scroll/resize handlers elsewhere (see scrollTicking). While the
-// loading file is NOT the active view, this skips render() entirely and
-// just updates that row's own progress fill (updateLoadRowProgress) — see
-// its own comment for why. flushLoadRender cancels any still-pending tick
-// and always renders fully and immediately instead — used only at the
-// start (a row needs to exist before anything can be targeted) and the
-// natural end of a load (parsing finished, node removed), both one-off
-// events regardless of which view is active, not a hot path.
+// The rest of what a load tick needs while its file IS the active view —
+// table/minimap/level bar/status, so the view keeps filling in live exactly
+// like Group 49 established — deliberately WITHOUT renderTree() (see
+// updateLoadRowProgress) or the other render() steps that can't change from
+// a parse tick alone (breadcrumb, detail panel, tail-jump button all depend
+// on activeId/selection, untouched here; a real render() from an actual
+// click already refreshes those the moment activeId genuinely changes).
+function renderLoadTickMainView() {
+  renderLevelBar();
+  renderMainView();
+  renderStatus();
+}
+
+// Throttles renderLoadTickMainView (used for every progress tick —
+// parseLogTextAsync's onProgress, and loadOneFileIntoTree's own read-phase
+// progress) to at most one per animation frame while the loading file IS
+// the active view — a large file can yield many chunks between two frames,
+// so firing it on every single chunk would be wasteful even then. Same
+// rAF-coalescing shape as the scroll/resize handlers elsewhere (see
+// scrollTicking). updateLoadRowProgress itself is NOT throttled — it's called
+// synchronously on every tick regardless of active state, since it's cheap
+// and never touches #tree's structure (see its own comment for why that
+// distinction is the whole point). flushLoadRender cancels any still-
+// pending tick and always runs a full render() immediately instead — used
+// only at the true start/end of a load (a row appearing/disappearing IS a
+// structural tree change), never per-tick.
 //
 // Both take the loading file's own node id and invalidate its (and its
 // dependents') cached getEntries()/getLevelCounts() results right away,
@@ -2135,18 +2156,19 @@ function updateLoadRowProgress(rootId) {
 let loadRenderRafId = null;
 function scheduleLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
-  if (rootId && !loadRenderRootIsActive(rootId)) { updateLoadRowProgress(rootId); return; }
+  if (rootId) updateLoadRowProgress(rootId);
+  if (!rootId || !loadRenderRootIsActive(rootId)) return; // background: the row update above is all there is to do
   if (loadRenderRafId != null) return;
   // Re-checks active state again at fire time, not just at schedule time —
   // the person can switch away between this tick being scheduled and the
-  // next actual animation frame, and the pending full render must not fire
-  // anyway once that's happened (falls back to the same cheap row update
-  // instead), or a background load would cost one unwanted full render per
-  // switch-away regardless of the check above.
+  // next actual animation frame, and the pending main-view render must not
+  // fire anyway once that's happened (the row itself is already current,
+  // via the synchronous updateLoadRowProgress call above), or a switch-away
+  // would still cost one unwanted extra render.
   loadRenderRafId = requestAnimationFrame(() => {
     loadRenderRafId = null;
-    if (rootId && !loadRenderRootIsActive(rootId)) { updateLoadRowProgress(rootId); return; }
-    render();
+    if (rootId && !loadRenderRootIsActive(rootId)) return;
+    renderLoadTickMainView();
   });
 }
 function flushLoadRender(rootId) {
