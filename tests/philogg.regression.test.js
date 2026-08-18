@@ -4856,15 +4856,23 @@ await withApp(async (w, d, T) => {
       "Session…" button must still work.
 
    2) The old #progressOverlay pop-up (full-screen, blocking) is gone
-      entirely — replaced by a .tree-loading-row placeholder rendered
-      directly in the tree (or, for a watched-folder file, in place of that
-      file's grayed .folder-watch-file row) with a thin progress bar along
-      its bottom edge. Because addLoadingFile() (called synchronously at
-      the top of loadOneFileIntoTree, before its first await) renders that
-      row before any actual async work starts, the row is already in the
-      DOM the instant loadFileDescriptors/loadFolderFile is called, with no
-      setTimeout needed to catch the "loading" state — same technique
-      Group 12 (tailing) and Group 30d use for real FileReader-backed loads.
+      entirely. It was first replaced (still this session) by a
+      .tree-loading-row placeholder shown while a file loaded, then
+      superseded again later the same session by createFileNode (see
+      philogg.html): the REAL file node now exists in the tree from the
+      instant loading starts — before any bytes have even been read — with
+      just a thin progress bar (node.loadFraction, drawn by renderNode)
+      riding along on its own real, already-interactive row instead of a
+      separate placeholder. Because createFileNode is called synchronously
+      at the top of loadOneFileIntoTree, before its first await, the row is
+      already in the DOM the instant loadFileDescriptors/loadFolderFile is
+      called, with no setTimeout needed to catch the "loading" state — same
+      technique Group 12 (tailing) and Group 30d use for real
+      FileReader-backed loads. 48b/48c below were rewritten in place for
+      this (no .tree-loading-row exists anymore); Group 49 covers the
+      actual point of the change — the file being usable while it loads,
+      not just showing a progress bar — since that's new behavior 48b/48c
+      never claimed to cover.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("48a. Session menu reachable with zero files loaded (old empty-tree context menu superseded)");
@@ -4888,20 +4896,32 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("48b. Mini loading-bar row replaces the pop-up for a plain file load");
+  section("48b. The real (already-interactive) file row, with a progress fill, replaces the pop-up for a plain file load");
   const text = makeLog(0, 5);
   const file = new w.File([text], "big.log", { type: "text/plain" });
 
   const before = new Set(T.state.rootIds);
   const donePromise = w.loadFileDescriptors([{ file, handle: null }]);
-  // Synchronous part of loadOneFileIntoTree (addLoadingFile -> renderTree)
+  // Synchronous part of loadOneFileIntoTree (createFileNode -> flushLoadRender)
   // has already run by the time this line executes — the first await inside
   // it (readFileWithProgress's FileReader) is what actually suspends.
-  let loadingRow = d.querySelector(".tree-loading-row");
-  assert(loadingRow !== null, "a .tree-loading-row appears in the tree the instant loading starts, before FileReader resolves");
-  assert(loadingRow.querySelector(".tree-label").textContent === "big.log", "the loading row shows the file's name");
-  assert(loadingRow.querySelector(".tree-load-fill") !== null, "the loading row carries a progress-fill bar");
+  const newId = T.state.rootIds.find(id => !before.has(id));
+  assert(newId, "the file is already a real root node the instant loading starts, before FileReader even resolves");
+  assert(typeof T.state.nodes[newId].loadFraction === "number", "the node carries a loadFraction while it's still loading");
+
+  let label = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "big.log");
+  assert(label !== undefined, "the file's row renders in the tree immediately, not just once loading finishes");
+  let row = label.closest(".tree-row");
+  assert(row.querySelector(".tree-load-fill") !== null, "the row carries a progress-fill bar while loading");
   assert(d.querySelector("#progressOverlay") === null, "still no blocking overlay anywhere in the DOM while a file is loading");
+  assert(d.querySelector(".tree-loading-row") === null, "no separate placeholder row exists anymore — the real row IS the loading row");
+
+  // The row is already fully interactive, not an inert placeholder: a real
+  // click on it runs the normal tree-row click handler.
+  T.state.focusRegion = "entries";
+  fireClick(row, w);
+  assert(T.state.focusRegion === "tree", "the still-loading row is already clickable like a normal tree row, not the old inert placeholder");
+
   // The rest of the UI stays usable: unrelated controls remain clickable —
   // spot-checked via the theme button, which has nothing to do with loading.
   const btnThemeBefore = d.documentElement.getAttribute("data-theme");
@@ -4909,15 +4929,14 @@ await withApp(async (w, d, T) => {
   assert(d.documentElement.getAttribute("data-theme") !== btnThemeBefore, "other toolbar controls remain responsive while a file load is in flight");
 
   await donePromise;
-  assert(d.querySelector(".tree-loading-row") === null, "the loading row is gone once the file finishes loading");
-  const newId = T.state.rootIds.find(id => !before.has(id));
-  assert(newId, "the file is now a real root node");
-  assert(d.querySelector('.tree-row .tree-label') && [...d.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "big.log"),
-    "the loaded file now renders as a normal real tree row");
+  assert(typeof T.state.nodes[newId].loadFraction !== "number", "loadFraction is cleared off the node once loading finishes");
+  label = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "big.log");
+  assert(label !== undefined, "the loaded file still renders as a normal real tree row");
+  assert(label.closest(".tree-row").querySelector(".tree-load-fill") === null, "the progress fill is gone once the file finishes loading");
 });
 
 await withApp(async (w, d, T) => {
-  section("48c. Mini loading-bar row replaces a folder-watch file's grayed placeholder while it loads");
+  section("48c. The real (already-interactive) file row, with a progress fill, replaces a folder-watch file's grayed placeholder while it loads");
   const text = makeLog(0, 4);
   function fakeFileHandle(name, content) {
     return {
@@ -4950,21 +4969,447 @@ await withApp(async (w, d, T) => {
 
   const donePromise = w.loadFolderFile(folder, rec);
   // Unlike 48b, loadFolderFile awaits rec.handle.getFile() BEFORE calling
-  // loadOneFileIntoTree (which is what actually inserts the loading row via
-  // addLoadingFile), so a plain synchronous check right after the call
+  // loadOneFileIntoTree (which is what actually creates the real node via
+  // createFileNode), so a plain synchronous check right after the call
   // isn't enough here — flush pending microtasks (the getFile() resolution
   // chain) via a zero-delay timer first, same as every other async-fixture
   // load in this suite (e.g. Group 37's "let the FileReader-based load settle").
   await new Promise(r => setTimeout(r, 0));
-  const folderBox = d.querySelector(".folder-watch");
-  const loadingRow = folderBox.querySelector(".tree-loading-row");
-  assert(loadingRow !== null, "the folder file's grayed row is replaced by a .tree-loading-row while it loads");
+  let folderBox = d.querySelector(".folder-watch");
+  let label = [...folderBox.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "a.log");
+  assert(label !== undefined, "the folder file's grayed placeholder is replaced by its real (loading) row while it loads");
   assert(folderBox.querySelector(".folder-watch-file") === null, "the plain grayed placeholder is gone while loading (replaced, not duplicated)");
+  assert(label.closest(".tree-row").querySelector(".tree-load-fill") !== null, "the row carries a progress-fill bar while loading");
+  // rec.nodeId is only linked once loadFolderFile's own await resolves —
+  // renderFolderSection must still find the real (unlinked) loading node by
+  // folder+name in the meantime (see its own comment on this fallback).
+  assert(rec.nodeId == null, "sanity: rec.nodeId isn't linked yet at this point, so the row above came from the by-name fallback, not the fast path");
 
   await donePromise;
   const folderBoxAfter = d.querySelector(".folder-watch");
-  assert(folderBoxAfter.querySelector(".tree-loading-row") === null, "the loading row is gone once the folder file finishes loading");
-  assert(folderBoxAfter.querySelector(".tree-row .tree-label").textContent === "a.log", "the folder file now renders as a real tree row inside its folder section");
+  label = [...folderBoxAfter.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "a.log");
+  assert(label !== undefined, "the folder file still renders as a real tree row inside its folder section once loaded");
+  assert(label.closest(".tree-row").querySelector(".tree-load-fill") === null, "the progress fill is gone once the folder file finishes loading");
+});
+
+/* ============================================================
+   GROUP 49 — File usable while it's still loading
+   Origin: this session, person-requested ("die Datei... direkt beim
+   Ladevorgang bedienbar machen, ... die Minimap fortlaufend zu befüllen").
+
+   createFileNode (see philogg.html) now creates the real file node and
+   inserts it into the tree BEFORE any text is read, and parseLogTextAsync
+   appends completed entries onto node.entries chunk by chunk (via
+   scheduleLoadRender/flushLoadRender, which also invalidate the node's
+   getEntries()/getLevelCounts() caches on every tick — see their own
+   comment) instead of only handing them all over once the whole file is
+   parsed. So a large file's tree row, table, level bar and minimap are all
+   live/interactive while it's still loading — the same way an already-open
+   tailed file updates continuously (Group 12), just driven by the initial
+   parse instead of a poll. Unlike tail auto-follow, the view deliberately
+   does NOT scroll to chase the growing content — renderTable's existing
+   "start at the top of a new list" default applies unchanged, so the
+   Filtered view just stays where it is while the file streams in.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("49. A large file streams into the tree/table/level-bar/minimap live while it's still parsing, without auto-scrolling");
+  // Force multiple PARSE_CHUNK_LINES (4000) chunks so the parse actually
+  // yields to the event loop more than once mid-parse — a small
+  // single-chunk log (as every other fixture in this suite uses) resolves
+  // in one hop and can't exercise this. Goes through addFile (text already
+  // in memory) rather than loadFileDescriptors/File/FileReader: the
+  // FileReader-backed read path is already covered by Group 30d/48b, and
+  // its own timing is real-I/O-dependent and would make this test racy —
+  // addFile's own synchronous prefix (createFileNode, then straight into
+  // parseLogTextAsync's first chunk) is what actually makes the file
+  // usable while loading, and is deterministic to catch mid-parse.
+  const text = makeLog(0, 9000, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] });
+
+  const before = new Set(T.state.rootIds);
+  const donePromise = w.addFile("huge.log", text); // not awaited yet — inspect mid-parse state below
+  const newId = T.state.rootIds.find(id => !before.has(id));
+  assert(newId, "the file is a real root node before parsing has even started (createFileNode runs synchronously, before addFile's first await)");
+  const node = T.state.nodes[newId];
+  T.state.activeId = newId;
+  w.render();
+
+  // Wait for exactly one parse chunk (4000 lines) to land, but not for the
+  // whole 9000-line parse to finish — the first PARSE_CHUNK_LINES yield was
+  // already scheduled by the synchronous prefix above, ahead of this tick,
+  // so it resolves (and the loop runs synchronously up to the NEXT chunk
+  // boundary) before this awaits.
+  await new Promise(r => setTimeout(r, 0));
+  const midCount = node.entries.length;
+  assert(midCount > 0 && midCount < 9000,
+    "entries stream into node.entries mid-parse instead of only appearing once the whole file is done — got " + midCount + "/9000");
+
+  // The tree row's own count reflects the growing entries live (renderNode
+  // reads getEntries(id).length, same as any other file node). Forced via an
+  // explicit render() here rather than waiting on the internal rAF-batched
+  // one (scheduleLoadRender) to actually fire — Group 47 already covers that
+  // batching mechanism itself; this checks the DATA it would render is
+  // already correct, deterministically.
+  w.render();
+  const label = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "huge.log");
+  const countEl = label.closest(".tree-row").querySelector(".tree-count");
+  const treeCount = parseInt(countEl.textContent.replace(/\./g, ""), 10);
+  assert(treeCount === node.entries.length, "the tree row's own entry count reflects the mid-parse entries, not zero or the eventual 9000 total — got " + countEl.textContent);
+
+  // The level bar's per-level counts are live too, not stuck at whatever was
+  // cached at the very first (still-empty) render — this is exactly the
+  // node._levelCounts staleness invalidateCachesForRoots(node.id) exists to
+  // prevent (see scheduleLoadRender/flushLoadRender's own comment).
+  const levelCounts = w.getLevelCounts(newId);
+  const midErrorCount = levelCounts.ERROR || 0;
+  assert(midErrorCount > 0 && midErrorCount < 1800, // 9000/5 ERROR entries total
+    "level-bar counts reflect the mid-parse entries live, not a stale empty/cached snapshot — got ERROR=" + midErrorCount);
+
+  // The table/minimap are usable, not empty, mid-parse — same active-node
+  // pipeline any already-loaded file uses.
+  const visibleMid = w.getVisibleEntries();
+  assert(visibleMid.length === node.entries.length, "the Filtered view already shows the mid-parse entries instead of an empty table");
+  assert(d.querySelector("#emptyState").style.display === "none", "the empty-state placeholder is not shown while entries are already streaming in");
+
+  // No auto-scroll while it streams in: renderTable's default "start back
+  // at the top of the list" behavior applies to every incremental render
+  // exactly as it would to any other node switch — nothing in the load path
+  // sets pendingTableScroll to "bottom" the way tail auto-follow does.
+  assert(d.querySelector("#tableBody").scrollTop === 0,
+    "the Filtered view stays pinned at the top while the file streams in, instead of jumping to follow the growing content like tail auto-follow does");
+
+  await donePromise;
+  assert(node.entries.length === 9000, "parsing finished with the full entry count");
+  assert(typeof node.loadFraction !== "number", "loadFraction is cleared once loading finishes");
+  const finalCounts = w.getLevelCounts(newId);
+  assert(finalCounts.ERROR === 1800 && finalCounts.INFO === 7200,
+    "level-bar counts are correct once loading finishes (not left stuck at a mid-parse snapshot) — got ERROR=" + finalCounts.ERROR + " INFO=" + finalCounts.INFO);
+});
+
+/* ============================================================
+   GROUP 50 — A background file load stays cheap: no render() while it's
+   NOT the active view, so switching to a different, already-loaded file
+   stays fully responsive
+   Origin: this session, person-requested follow-up to Group 49: *"Aktuell
+   blockiert das Laden und die Animation teilweise das UI. Ich möchte eine
+   Datei Laden und während die Animation läuft auf eine andere, bereits
+   geladenen Datei wechseln können. Das UI soll dann sofort bedienbar sein
+   und das andere Log in Minimap und Views anzeigen. Von dem gerade ladenden
+   Log möchte ich dann nur noch den Fortschrittsbalken am Dateinamen sehen.
+   Wichtig ist, dass das UI in der Zeit komplett responsive bleibt."*
+
+   Group 49's scheduleLoadRender/flushLoadRender always ran a full render()
+   on every parse-chunk tick, even while the loading file wasn't what was
+   actually on screen — harmless for the single-file case Group 49 covers,
+   but a background load competing for full tree/table/minimap rebuilds on
+   every animation frame is exactly what made the UI feel sluggish once a
+   SECOND, already-loaded file was the actual active view. Fixed with
+   loadRenderRootIsActive (see philogg.html): scheduleLoadRender now only
+   runs a full render while its root IS the active view; otherwise it calls
+   the new updateLoadRowProgress, a direct DOM write to just that row's
+   .tree-load-fill width, same "cheap write on a hot path" idea the old
+   (pre-2026-08-18) setLoadingFileProgress used. The active-check is
+   re-verified again inside the rAF callback itself, not just at schedule
+   time, so a switch-away that happens between scheduling and the next
+   actual frame doesn't still cost one unwanted full render.
+
+   requestAnimationFrame/cancelAnimationFrame are mocked (manually
+   flushable via a captured-callback map) rather than raced against real
+   timing the way Group 47 does — a file large enough to still be
+   genuinely mid-parse by the time a REAL animation frame eventually fires
+   (found, while writing this group, to take a lot less than Group 47's own
+   50ms wait for even a 9000-line/3-chunk file) would need to be too large
+   to keep this suite fast. The mock makes the schedule-vs-fire race, and
+   the fire-time re-check it exists to close, fully deterministic instead.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("50. A file loading in the background updates cheaply (no render()); switching away stays fully live for the other file");
+
+  // File A: small, finishes instantly — the file the person is actually
+  // looking at throughout this test.
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  w.render();
+
+  // Monkey-patch render() to count calls, and requestAnimationFrame/
+  // cancelAnimationFrame to a manually-flushable mock — same injected-
+  // script technique Group 47 uses for render()-call counting (a second
+  // <script> in the same document shares the realm's lexical scope, so
+  // reassigning a top-level function declaration is visible page-wide).
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRender = render;
+    render = function() { window.__renderCalls = (window.__renderCalls||0)+1; return __origRender(); };
+    window.__rafCallbacks = {};
+    window.__rafNextId = 1;
+    window.requestAnimationFrame = function(cb) { const id = window.__rafNextId++; window.__rafCallbacks[id] = cb; return id; };
+    window.cancelAnimationFrame = function(id) { delete window.__rafCallbacks[id]; };
+    window.__flushRaf = function() {
+      const cbs = window.__rafCallbacks; window.__rafCallbacks = {};
+      Object.keys(cbs).forEach(id => cbs[id]());
+    };
+  `;
+  d.body.appendChild(s);
+
+  // File B: large enough (15 PARSE_CHUNK_LINES chunks) that a handful of
+  // background parse ticks still leaves plenty left over — not racing real
+  // rAF timing anymore (see above), but still exercising the real parse
+  // loop's own setTimeout(0) yields for genuinely mid-parse entries/DOM
+  // state, same idiom Group 49 uses.
+  const textB = makeLog(0, 60000);
+  w.__renderCalls = 0;
+  const donePromise = w.addFile("huge-bg.log", textB);
+  const newId = T.state.rootIds.find(id => id !== fa.id);
+  const nodeB = T.state.nodes[newId];
+  assert(newId, "the new file is a real root node immediately, before it's read a single chunk");
+  assert(T.state.activeId === newId, "sanity: creating a new file auto-activates it (unchanged, existing behavior)");
+  assert(w.__renderCalls === 1, "creating the node renders exactly once, to insert its row — got " + w.__renderCalls);
+  assert(Object.keys(w.__rafCallbacks).length === 1, "the first parse chunk (still active) scheduled exactly one pending animation-frame render");
+
+  // The person immediately switches back to file A — exactly the reported
+  // scenario: starting a load, then wanting to keep working on something
+  // already open instead of watching the new one load.
+  T.state.activeId = fa.id;
+  w.render();
+  w.__renderCalls = 0; // only count what happens FROM HERE, while B loads in the background
+
+  // Fire the animation frame that was scheduled BEFORE the switch-away —
+  // the fire-time re-check must fall back to the cheap row update now that
+  // B isn't active anymore, not run the full render it was originally
+  // scheduled for; otherwise every switch-away would still cost one
+  // unwanted full render.
+  w.__flushRaf();
+  assert(w.__renderCalls === 0, "the render scheduled while B was still active does NOT fire once B is no longer active by the time it runs — got " + w.__renderCalls);
+  assert(Object.keys(w.__rafCallbacks).length === 0, "the fallback did not itself schedule a new animation frame");
+
+  // Let B's parse loop actually continue in the background (real
+  // setTimeout(0) yields) and confirm every further tick also stays on the
+  // cheap path — no render() calls, no animation frame even scheduled at
+  // all anymore, since the active check now short-circuits before ever
+  // touching rAF.
+  for (let i = 0; i < 3 && nodeB.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
+  assert(nodeB.entries.length > 0 && nodeB.entries.length < 60000,
+    "file B keeps streaming in the background while A is the active view, without finishing outright — got " + nodeB.entries.length + "/60000");
+  assert(T.state.activeId === fa.id, "switching to A stuck — B's background progress did not steal the active view back");
+  assert(w.__renderCalls === 0, "none of B's further background ticks called render() either — got " + w.__renderCalls);
+  assert(Object.keys(w.__rafCallbacks).length === 0, "none of B's background ticks scheduled an animation frame at all");
+
+  // The view genuinely still shows A, completely undisturbed by B.
+  assert(w.getVisibleEntries().length === fa.entries.length, "the Filtered view still shows file A's own entries, unaffected by B's background load");
+
+  // File B's own row still carries a live progress fill, updated directly
+  // (updateLoadRowProgress) rather than via render() — "nur noch den
+  // Fortschrittsbalken am Dateinamen", exactly as requested.
+  const labelB = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "huge-bg.log");
+  assert(labelB !== undefined, "file B's row still exists in the tree while loading in the background");
+  const fillB = labelB.closest(".tree-row").querySelector(".tree-load-fill");
+  assert(fillB !== null, "file B's row still carries a progress fill while it loads in the background");
+  assert(parseInt(fillB.style.width, 10) > 0, "file B's progress fill width reflects its background progress via the cheap direct-DOM path — got " + fillB.style.width);
+
+  await donePromise;
+  assert(nodeB.entries.length === 60000, "file B finished loading with the full entry count despite the detour through the background");
+  assert(typeof nodeB.loadFraction !== "number", "loadFraction is cleared once B finishes loading, active or not");
+  assert(w.__renderCalls === 1, "finishing the background load runs exactly one final full render (flushLoadRender always renders unconditionally, to remove the progress fill and settle the final count) — got " + w.__renderCalls);
+});
+
+/* ============================================================
+   GROUP 51 — Tree row DOM identity survives load ticks while the loading
+   file itself IS the active view — a click on a DIFFERENT, already-loaded
+   row doesn't get lost
+   Origin: this session, person-reported follow-up to Group 50's fix:
+   *"Während eine Datei lädt, muss ich noch immer mehrfach auf eine andere
+   Klicken bis der Wechel erfolgt, es scheint nicht jeder Klick registriert
+   zu werden. Nach dem wechsel auf die bereits vorhandene Datei funktioniert
+   aber alles flüssig..."*
+
+   Group 50 fixed the BACKGROUND case (loading file not active) but left the
+   ACTIVE case's scheduleLoadRender calling a full render() on every parse
+   tick, exactly as Group 49 originally shipped it. render() calls
+   renderTree(), which tears down and rebuilds EVERY row in #tree from
+   scratch — including whatever OTHER row a person is trying to click while
+   the new file loads (auto-activated, so it's the active view from the
+   start). A native click only fires if mousedown and mouseup land on the
+   same, still-attached element; rebuilding that element out from under the
+   gesture up to once per animation frame is exactly what made clicks not
+   reliably register, matching the report precisely (works fine once
+   already switched, since ticks stop mattering to the other file's row at
+   that point).
+
+   Fixed by splitting what a load tick actually needs to touch:
+   updateLoadRowProgress (new: also writes the row's .tree-count now, not
+   just the progress fill) handles the loading file's OWN row directly,
+   without renderTree(), on every tick regardless of active state;
+   renderLoadTickMainView (new) handles the rest of what the active view
+   needs — table/minimap/level bar/status — also without renderTree().
+   Structural tree changes (a row appearing at createFileNode, disappearing
+   via flushLoadRender's cleanup) still go through a real render(), just
+   never per-tick. See philogg.html's updated scheduleLoadRender comment.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("51. A different, already-loaded row's DOM identity (and click-ability) survives parse ticks while the newly-loading file is the active view");
+
+  // File A: small, finishes instantly — the row a person would be trying
+  // to click on while B (below) loads and fills the active view.
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  w.render();
+
+  // Monkey-patch render()/renderTree() to count calls — same injected-
+  // script technique Group 47/50 use (a second <script> in the same
+  // document shares the realm's lexical scope, so reassigning a top-level
+  // function declaration is visible page-wide).
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRender = render;
+    render = function() { window.__renderCalls = (window.__renderCalls||0)+1; return __origRender(); };
+    const __origRenderTree = renderTree;
+    renderTree = function() { window.__renderTreeCalls = (window.__renderTreeCalls||0)+1; return __origRenderTree(); };
+  `;
+  d.body.appendChild(s);
+
+  // File B: large enough (15 PARSE_CHUNK_LINES chunks) that a handful of
+  // ticks still leaves it genuinely mid-parse — loaded (not awaited),
+  // auto-activating exactly like a real "Open…"/drag-drop always has.
+  const textB = makeLog(0, 60000);
+  w.__renderCalls = 0; w.__renderTreeCalls = 0;
+  const donePromise = w.addFile("huge.log", textB);
+  assert(T.state.activeId !== fa.id, "sanity: the newly-loading file auto-activated — it IS the active view for the ticks below, the exact reported scenario");
+  assert(w.__renderTreeCalls === 1,
+    "creating B's node rebuilds the tree exactly once, to insert its own row — a genuinely structural change (a new root), and the only tree rebuild this whole test expects — got " + w.__renderTreeCalls);
+
+  // File A's row is captured HERE, right after the one legitimate,
+  // structural rebuild above (which necessarily touched every row,
+  // including A's, since the rootIds list itself changed) — what this test
+  // actually covers is the SUSTAINED parse-tick period that follows, not
+  // that one-off moment.
+  const labelA = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "a.log");
+  const rowA = labelA.closest(".tree-row");
+  w.__renderTreeCalls = 0; w.__renderCalls = 0;
+
+  // Let several real parse chunks land while B stays the active view
+  // throughout — same idiom Group 49/50 use for a genuinely mid-parse state.
+  const nodeB = T.state.nodes[T.state.activeId];
+  for (let i = 0; i < 3 && nodeB.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
+  assert(nodeB.entries.length > 0 && nodeB.entries.length < 60000,
+    "file B is genuinely still mid-parse, actively being watched fill in — got " + nodeB.entries.length + "/60000");
+  assert(w.__renderTreeCalls === 0, "none of B's parse ticks rebuilt the tree while B is the active view — got " + w.__renderTreeCalls + " renderTree() calls");
+  assert(w.getVisibleEntries().length === nodeB.entries.length,
+    "sanity: B's own active view (Filtered view content) DID keep updating live via renderLoadTickMainView during the ticks, despite skipping renderTree()");
+
+  // File A's row is still the EXACT SAME DOM element as right after B was
+  // created — the direct proof renderTree() genuinely left #tree alone for
+  // every tick since; a rebuild would have replaced it with an
+  // equal-but-different node.
+  const labelA2 = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "a.log");
+  assert(labelA2 !== undefined && labelA2.closest(".tree-row") === rowA,
+    "file A's tree row survives B's active-view parse ticks as the exact same DOM element (identity preserved)");
+
+  // The strongest proof: a real click dispatched on that same reference
+  // still works and switches to file A — if the row had been torn down and
+  // replaced at any point during the ticks, this reference's click listener
+  // would be gone and nothing would happen.
+  fireClick(rowA, w);
+  assert(T.state.activeId === fa.id, "a click on file A's row (the same object reference held throughout B's parse ticks) correctly switches to it — no click was lost mid-load");
+
+  await donePromise;
+  assert(nodeB.entries.length === 60000, "file B finished loading in the background after the detour through being clicked away from");
+});
+
+/* ============================================================
+   GROUP 52 — Log-level filter and filter creation stay usable while the
+   loading file is the active view (feature parity with tailing)
+   Origin: this session, person-requested follow-up to Group 51: *"Jetzt
+   würde ich aber gerne auch schon während des Ladevorgangs in der Lage
+   sein, Log-Level Filter zu bedienen, neue Filter anlegen, etc. Also alles
+   was ich auch tun könnte, wenn es sich um ein Tailing und nicht um einen
+   Ladevorgang handeln würde."*
+
+   Groups 50/51 fixed scheduleLoadRender's tree-rebuild problem, but
+   renderLoadTickMainView still called renderLevelBar() every tick — the
+   SAME class of bug as renderTree(): renderLevelBar() tears down and
+   recreates all four level buttons (and their click listeners) from
+   scratch, so toggling one while a file loaded suffered the identical
+   click-loss symptom tree rows had. Fixed with updateLevelBarCounts (a
+   targeted .cnt text write, via a new btn.dataset.level, no rebuild) used
+   during ticks instead. Separately, updateLoadRowProgress was generalized
+   into updateLoadRowLiveData: it now walks the WHOLE subtree under the
+   loading root (not just the root's own row), so a filter created while the
+   file is still loading keeps showing a live, growing count on its own row
+   too — tailing's full render() already gave filter children this for
+   free (just at a much lower 1.5s cadence that never triggered the
+   click-loss bug in the first place); a load tick needed the same live
+   data without render()'s cost. Filter CREATION itself (the popup,
+   createFilterNode) was never actually blocked — it's a discrete action,
+   independent of the per-tick render path — so this group's job is mainly
+   proving the level bar fix and the live-count generalization, plus a
+   sanity check that creating a filter mid-load has always worked.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("52. Level-filter buttons stay clickable, and a newly created filter's own row keeps a live count, while the loading file is the active view");
+
+  // Monkey-patch renderLevelBar (the full rebuild) to count calls — same
+  // injected-script technique used throughout this suite.
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRenderLevelBar = renderLevelBar;
+    renderLevelBar = function() { window.__renderLevelBarCalls = (window.__renderLevelBarCalls||0)+1; return __origRenderLevelBar(); };
+  `;
+  d.body.appendChild(s);
+
+  // Large enough (15 PARSE_CHUNK_LINES chunks) to stay genuinely mid-parse
+  // across a handful of real ticks — same idiom Groups 49-51 use.
+  const text = makeLog(0, 60000, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] });
+  w.__renderLevelBarCalls = 0;
+  const donePromise = w.addFile("huge.log", text); // auto-activates
+  const newId = T.state.rootIds[T.state.rootIds.length - 1];
+  const node = T.state.nodes[newId];
+  assert(w.__renderLevelBarCalls === 1, "creating the node's own initial render rebuilds the level bar exactly once — got " + w.__renderLevelBarCalls);
+
+  // Capture the ERROR button right after that one legitimate rebuild —
+  // same "capture after the structural moment, not before" lesson Group 51
+  // learned the hard way.
+  const errBtnBefore = d.querySelector('.level-btn[data-level="ERROR"]');
+  assert(errBtnBefore !== null, "sanity: the ERROR level button exists");
+  w.__renderLevelBarCalls = 0;
+
+  for (let i = 0; i < 3 && node.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
+  assert(node.entries.length > 0 && node.entries.length < 60000, "file is genuinely still mid-parse — got " + node.entries.length + "/60000");
+  assert(w.__renderLevelBarCalls === 0, "none of the parse ticks rebuilt the level bar — got " + w.__renderLevelBarCalls);
+
+  const errBtnAfter = d.querySelector('.level-btn[data-level="ERROR"]');
+  assert(errBtnAfter === errBtnBefore, "the ERROR level button survives parse ticks as the exact same DOM element (identity preserved)");
+  const shownErr = parseInt(errBtnAfter.querySelector(".cnt").textContent.replace(/\./g, ""), 10);
+  assert(shownErr > 0, "the ERROR button's own count updates live during ticks via the cheap path (updateLevelBarCounts) — got " + shownErr);
+
+  // The real proof: a click on the reference held throughout the ticks
+  // still works — if the button had been torn down and replaced at any
+  // point, this reference's click listener would be gone.
+  fireClick(errBtnBefore, w);
+  assert(T.state.levelFilter.has("ERROR"), "a click on the level-filter button (same reference held throughout the ticks) correctly toggles it — no click was lost mid-load");
+  fireClick(errBtnBefore, w);
+  assert(!T.state.levelFilter.has("ERROR"), "sanity: toggled back off, state left clean for what follows");
+
+  // Creating a new filter while the file is STILL loading: never actually
+  // blocked (a discrete action, independent of the per-tick render path),
+  // but its own row needs to keep showing a live count afterwards, exactly
+  // like tailing would give it.
+  assert(node.entries.length < 60000, "sanity: still mid-load when the filter below gets created");
+  const filterNode = w.createFilterNode(newId, "text", "message");
+  T.state.activeId = filterNode.id;
+  w.render();
+  const countBefore = w.getEntries(filterNode.id).length;
+  assert(countBefore > 0 && countBefore < 60000, "sanity: the new filter already matches some of what's loaded so far, not the eventual full 60000 — got " + countBefore);
+
+  for (let i = 0; i < 3 && node.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
+  const filterRow = d.querySelector('.tree-row[data-node-id="' + filterNode.id + '"]');
+  assert(filterRow !== null, "the newly created filter's row still exists after further ticks");
+  const filterCountShown = parseInt(filterRow.querySelector(".tree-count").textContent.replace(/\./g, ""), 10);
+  assert(filterCountShown === w.getEntries(filterNode.id).length && filterCountShown > countBefore,
+    "the new filter's own row count keeps growing live as the parent file streams in more matching entries, instead of freezing at its creation-time value — got " + filterCountShown + " (was " + countBefore + ")");
+  const pctFill = filterRow.querySelector(".tree-pct-fill");
+  assert(pctFill !== null && pctFill.style.width !== "", "the new filter's percentage-of-parent bar is also kept live (updateLoadRowLiveData), not just its count");
+
+  await donePromise;
+  assert(node.entries.length === 60000, "the file finished loading normally despite the detour through level-filter/filter-creation interaction");
 });
 
 /* ============================================================
@@ -5598,13 +6043,113 @@ process.exit(failed ? 1 : 0);
               node menu) instead of re-tested here; this group only covers
               the empty-background-menu removal (right-click on an empty
               tree now opens nothing) and that the toolbar button still
-              works with zero files loaded. Also: the old blocking
-              #progressOverlay pop-up is gone, replaced by a
-              .tree-loading-row placeholder (thin progress bar along the
-              row's bottom edge) rendered directly in the tree — or, for a
-              watched-folder file, in place of that file's grayed
-              .folder-watch-file row — for both loadFileDescriptors (plain
-              "Open…"/drag-drop loads) and loadFolderFile.
+              works with zero files loaded (48a). Also: the old blocking
+              #progressOverlay pop-up is gone. 48b/48c were originally
+              written against a .tree-loading-row placeholder that replaced
+              it; later the SAME session that placeholder was itself
+              superseded by createFileNode (see Group 49) making the real
+              file row exist — and be fully interactive — from the instant
+              loading starts, with just a progress fill riding along on it.
+              48b/48c were rewritten in place for that (no .tree-loading-row
+              exists anymore) rather than left green against removed markup.
+   Group 49  — this session (2026-08-18), person-requested ("die Datei
+              direkt beim Ladevorgang bedienbar machen... die Minimap
+              fortlaufend zu befüllen... ähnlich wie eine Datei zu tailen").
+              createFileNode/parseLogTextAsync/scheduleLoadRender/
+              flushLoadRender (see philogg.html) make a file's entries
+              stream into node.entries chunk by chunk during the initial
+              parse, with the node already a real, active, selectable tree
+              row throughout — instead of the tree/table/minimap staying
+              empty until the whole file is parsed. Covers: entries/tree-row
+              count/level-bar counts all reflecting a genuinely mid-parse
+              state (not zero, not the final total) on a 9000-line file
+              forced across multiple PARSE_CHUNK_LINES chunks; that the
+              level-bar counts are correct again once loading finishes (the
+              exact node._levelCounts staleness bug the invalidateCachesFor-
+              Roots(node.id) calls in scheduleLoadRender/flushLoadRender fix
+              — this WAS a real regression caught while writing this group,
+              not a hypothetical); and that the Filtered view doesn't
+              auto-scroll to chase the growing content the way tail
+              auto-follow does for an already-open file.
+   Group 50  — this session (2026-08-18), person-requested follow-up to
+              Group 49 ("Aktuell blockiert das Laden... auf eine andere,
+              bereits geladenen Datei wechseln können. Das UI soll dann
+              sofort bedienbar sein... nur noch den Fortschrittsbalken am
+              Dateinamen sehen... komplett responsive"). Group 49's
+              scheduleLoadRender ran a full render() on every parse chunk
+              regardless of which file was actually the active view — fine
+              single-file, but a background load competed for full tree/
+              table/minimap rebuilds every frame once a DIFFERENT already-
+              loaded file was what the person was looking at. Fixed with
+              loadRenderRootIsActive + updateLoadRowProgress (see
+              philogg.html): scheduleLoadRender only does the throttled
+              full render while its root is the active view; otherwise a
+              direct, cheap DOM write to just that row's progress fill,
+              re-checked again at rAF fire time (not just schedule time) so
+              a switch-away between the two doesn't still cost one stray
+              render. Covers, with render()/requestAnimationFrame/
+              cancelAnimationFrame mocked for determinism (a real animation
+              frame was found, while writing this group, to fire well
+              before even a 9000-line/3-chunk file finishes parsing, making
+              a real-timing race against a genuinely-still-parsing state
+              impractical without a much larger, suite-slowing fixture):
+              zero render() calls across several real background parse
+              ticks while a different file stays active and completely
+              undisturbed, the fire-time re-check specifically, the
+              background row's progress fill still updating directly, and
+              exactly one full render at the load's natural completion.
+   Group 51  — this session (2026-08-18), person-reported follow-up to
+              Group 50 ("Während eine Datei lädt, muss ich noch immer
+              mehrfach auf eine andere Klicken bis der Wechel erfolgt...
+              Nach dem Wechsel auf die bereits vorhandene Datei funktioniert
+              aber alles flüssig"). Group 50 only fixed the BACKGROUND case;
+              scheduleLoadRender still ran the full render() (renderTree()
+              included) on every tick whenever the loading file WAS the
+              active view — true from the start of every load, since a
+              fresh load auto-activates. renderTree() tears down and
+              rebuilds every row from scratch, which is what made a click on
+              some other row need several attempts. Fixed by splitting a
+              load tick's work: updateLoadRowProgress (extended to also
+              update .tree-count; later the same session generalized further
+              into updateLoadRowLiveData — see Group 52) handles the loading
+              row directly without renderTree(); new renderLoadTickMainView
+              handles the rest of the active view (table/minimap/level
+              bar/status) the same way — only createFileNode/
+              flushLoadRender's structural moments still call a real
+              render(). Covers, with renderTree() mocked to count calls:
+              zero calls across several real parse ticks while the loading
+              file stays active (confirmed its own view still updates live,
+              via getVisibleEntries()); a different row's DOM element —
+              captured right after the one legitimate structural rebuild
+              from the loading file's own creation — staying the exact same
+              object through every following tick; and a real click
+              dispatched on that held reference correctly switching to it
+              (the strongest possible proof nothing was torn down and
+              replaced along the way).
+   Group 52  — this session (2026-08-18), person-requested follow-up to
+              Group 51 ("Jetzt würde ich aber gerne auch schon während des
+              Ladevorgangs in der Lage sein, Log-Level Filter zu bedienen,
+              neue Filter anlegen, etc. Also alles was ich auch tun könnte,
+              wenn es sich um ein Tailing... handeln würde"). Group 51 fixed
+              renderTree() but renderLoadTickMainView still called the full
+              renderLevelBar() every tick — same class of bug, just for the
+              four level buttons (recreated with fresh click listeners on
+              every tick). Fixed with updateLevelBarCounts (targeted .cnt
+              text write via a new btn.dataset.level). Also generalized
+              updateLoadRowProgress into updateLoadRowLiveData: a recursive
+              subtree walk (via row.dataset.nodeId, now on every tree row,
+              not just file rows) so a filter created mid-load keeps its own
+              row's count (and percentage-of-parent bar) growing live too,
+              instead of freezing at creation time. Filter creation itself
+              was never actually blocked (the popup is a static top-level
+              element, untouched by any of this). Covers, with
+              renderLevelBar() mocked to count calls: zero calls across
+              several real parse ticks while a level button's .cnt still
+              updates live; a click on that SAME held button reference still
+              correctly toggling the filter; and a filter created while
+              still mid-load shown growing its own row's count (matching
+              getEntries() exactly, not frozen) across further ticks, with
+              its percentage-of-parent bar kept live too.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
@@ -5658,7 +6203,13 @@ process.exit(failed ? 1 : 0);
      is gone outright, not just its session items — Group 48a asserts
      right-clicking empty tree space now opens nothing.
    - The old blocking #progressOverlay pop-up shown while a file loaded
-     (pre-2026-08-18) — superseded by the inline .tree-loading-row mini
-     progress bar (Group 48b/48c), which doesn't block the rest of the UI.
+     (pre-2026-08-18) — superseded, same session, first by an inline
+     .tree-loading-row placeholder, then by that placeholder itself being
+     superseded by the real file row existing (and being usable) from the
+     start (Group 49); Group 48b/48c cover the current shape.
+   - The .tree-loading-row placeholder row (still pre-2026-08-18, briefly)
+     — superseded by createFileNode making the real file row itself carry
+     the progress fill from the instant loading starts (Group 48b/48c,
+     Group 49); no code or markup for it remains.
 
    ============================================================ */
