@@ -2093,39 +2093,67 @@ function loadRenderRootIsActive(rootId) {
   return !!(rootId && state.activeId && getRootFileId(state.activeId) === rootId);
 }
 
-// Cheap, targeted update for a loading file's own tree row (progress-fill
-// width + entry count) — a direct DOM write via a query, same "direct write
-// on a hot path" idea the old (pre-2026-08-18) setLoadingFileProgress used,
-// instead of running any render() at all. Called on EVERY load-progress
-// tick, active view or not: renderTree() (the only thing that would
-// otherwise pick up these two changes) tears down and rebuilds every row in
-// the tree from scratch, including whichever OTHER row a person might be
-// mid-click on — running that dozens of times a second while a file loads
-// was person-reported as clicks on a different, already-loaded file not
-// reliably registering (mousedown/mouseup landing on a row element that got
-// replaced out from under the gesture). Structural tree changes (a row
-// appearing/disappearing) still go through a real render() — see
-// createFileNode and flushLoadRender below — just never a per-tick one.
-function updateLoadRowProgress(rootId) {
-  const node = state.nodes[rootId];
-  if (!node) return;
-  const row = document.querySelector('.tree-row[data-node-id="' + rootId + '"]');
-  if (!row) return;
-  const fill = row.querySelector(".tree-load-fill");
-  if (fill) fill.style.width = Math.round(Math.max(0, Math.min(1, node.loadFraction || 0)) * 100) + "%";
-  const count = row.querySelector(".tree-count");
-  if (count) count.textContent = getEntries(rootId).length.toLocaleString("de-DE");
+// Cheap, targeted update for a loading file's own tree row AND every
+// currently-rendered filter row already created under it (own count; a
+// file row's progress-fill width; a filter row's percentage-of-parent bar)
+// — direct DOM writes via queries, same "direct write on a hot path" idea
+// the old (pre-2026-08-18) setLoadingFileProgress used, instead of running
+// any render() at all. Called on EVERY load-progress tick, active view or
+// not: renderTree() (the only thing that would otherwise pick up these
+// changes) tears down and rebuilds every row in the tree from scratch,
+// including whichever OTHER row a person might be mid-click on — running
+// that dozens of times a second while a file loads was person-reported as
+// clicks on a different, already-loaded file not reliably registering
+// (mousedown/mouseup landing on a row element that got replaced out from
+// under the gesture). The recursive walk (not just the root's own row)
+// matters for a separate, same-session person request — a filter created
+// under a still-loading file needs its own row's count to keep updating
+// live too, exactly the way it would if the growth came from tailing
+// instead of the initial parse, not freeze at whatever it had when it was
+// created. Structural tree changes (a row appearing/disappearing) still go
+// through a real render() — see createFileNode and flushLoadRender below —
+// just never a per-tick one.
+function updateLoadRowLiveData(rootId) {
+  if (!state.nodes[rootId]) return;
+  (function walk(id) {
+    const node = state.nodes[id];
+    if (!node) return;
+    const row = document.querySelector('.tree-row[data-node-id="' + id + '"]');
+    if (row) {
+      const ownCount = getEntries(id).length;
+      const count = row.querySelector(".tree-count");
+      if (count) count.textContent = ownCount.toLocaleString("de-DE");
+      if (node.type === "file") {
+        const fill = row.querySelector(".tree-load-fill");
+        if (fill) fill.style.width = Math.round(Math.max(0, Math.min(1, node.loadFraction || 0)) * 100) + "%";
+      } else {
+        const pctFill = row.querySelector(".tree-pct-fill");
+        if (pctFill) {
+          const parentCount = getEntries(node.parentId).length;
+          const fraction = parentCount > 0 ? Math.min(1, ownCount / parentCount) : 0;
+          pctFill.style.width = (fraction * 100) + "%";
+          const pctEl = row.querySelector(".tree-pct");
+          if (pctEl) pctEl.title = Math.round(fraction * 100) + "% of parent (" + parentCount.toLocaleString("de-DE") + ")";
+        }
+      }
+    }
+    node.children.forEach(walk);
+  })(rootId);
 }
 
 // The rest of what a load tick needs while its file IS the active view —
-// table/minimap/level bar/status, so the view keeps filling in live exactly
-// like Group 49 established — deliberately WITHOUT renderTree() (see
-// updateLoadRowProgress) or the other render() steps that can't change from
+// table/minimap/status, so the view keeps filling in live exactly like
+// Group 49 established — deliberately WITHOUT renderTree() (see
+// updateLoadRowLiveData) or the other render() steps that can't change from
 // a parse tick alone (breadcrumb, detail panel, tail-jump button all depend
 // on activeId/selection, untouched here; a real render() from an actual
 // click already refreshes those the moment activeId genuinely changes).
+// The level bar specifically uses updateLevelBarCounts (a targeted count
+// write), not renderLevelBar (which, like renderTree, tears down and
+// rebuilds every button — including whichever one a person is trying to
+// toggle to filter by level while the file is still loading).
 function renderLoadTickMainView() {
-  renderLevelBar();
+  updateLevelBarCounts();
   renderMainView();
   renderStatus();
 }
@@ -2136,7 +2164,7 @@ function renderLoadTickMainView() {
 // the active view — a large file can yield many chunks between two frames,
 // so firing it on every single chunk would be wasteful even then. Same
 // rAF-coalescing shape as the scroll/resize handlers elsewhere (see
-// scrollTicking). updateLoadRowProgress itself is NOT throttled — it's called
+// scrollTicking). updateLoadRowLiveData itself is NOT throttled — it's called
 // synchronously on every tick regardless of active state, since it's cheap
 // and never touches #tree's structure (see its own comment for why that
 // distinction is the whole point). flushLoadRender cancels any still-
@@ -2156,14 +2184,14 @@ function renderLoadTickMainView() {
 let loadRenderRafId = null;
 function scheduleLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
-  if (rootId) updateLoadRowProgress(rootId);
+  if (rootId) updateLoadRowLiveData(rootId);
   if (!rootId || !loadRenderRootIsActive(rootId)) return; // background: the row update above is all there is to do
   if (loadRenderRafId != null) return;
   // Re-checks active state again at fire time, not just at schedule time —
   // the person can switch away between this tick being scheduled and the
   // next actual animation frame, and the pending main-view render must not
   // fire anyway once that's happened (the row itself is already current,
-  // via the synchronous updateLoadRowProgress call above), or a switch-away
+  // via the synchronous updateLoadRowLiveData call above), or a switch-away
   // would still cost one unwanted extra render.
   loadRenderRafId = requestAnimationFrame(() => {
     loadRenderRafId = null;
@@ -4016,9 +4044,11 @@ function renderNode(id, depth) {
   const invertClass = node.inverted ? " inverted" : "";
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
   row.style.paddingLeft = (12 + depth * 16) + "px";
-  // Lets a background file load (see updateLoadRowProgress) find and update
-  // this exact row's progress fill directly, without a full render().
-  if (node.type === "file") row.dataset.nodeId = id;
+  // Lets a load tick (see updateLoadRowLiveData) find and update this exact
+  // row's count/progress-fill/percentage-of-parent directly, without a full
+  // render() — every row, not just file rows, since a filter created under
+  // a still-loading file needs its own count to keep updating live too.
+  row.dataset.nodeId = id;
 
   // Highlight-colour swatch — replaces the old multi-select checkbox (that
   // affordance is Ctrl+click-only now, see the row click handler below;
@@ -4210,6 +4240,7 @@ function renderLevelBar() {
     const isActive = state.levelFilter.has(lvl);
     btn.className = "level-btn " + levelClass(lvl) + (isActive ? " active" : "");
     btn.type = "button";
+    btn.dataset.level = lvl; // lets updateLevelBarCounts find this button's .cnt directly, without a rebuild
     btn.innerHTML =
       '<span class="dot"></span>' + lvl + ' <span class="cnt">' + (counts[lvl] || 0).toLocaleString("de-DE") + '</span>';
     btn.addEventListener("click", () => {
@@ -4226,6 +4257,22 @@ function renderLevelBar() {
       renderMainView();
     });
     levelBarEl.appendChild(btn);
+  });
+}
+
+// Cheap counterpart to renderLevelBar used by a load tick (renderLoadTick-
+// MainView) — refreshes each button's own .cnt text in place instead of
+// tearing down and recreating all four buttons (and their click listeners)
+// on every tick, which is what made toggling a level filter unreliable
+// while a file was still loading (same class of bug as renderTree() during
+// a load tick — see updateLoadRowLiveData's own comment). Never changes
+// which buttons are .active — that only ever changes via a real click,
+// which already goes through the full renderLevelBar().
+function updateLevelBarCounts() {
+  const counts = state.activeId ? getLevelCounts(state.activeId) : {};
+  levelBarEl.querySelectorAll(".level-btn").forEach(btn => {
+    const cnt = btn.querySelector(".cnt");
+    if (cnt) cnt.textContent = (counts[btn.dataset.level] || 0).toLocaleString("de-DE");
   });
 }
 
