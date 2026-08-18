@@ -1387,18 +1387,26 @@ section("20. Session cache: persist in one window, restore in the next");
     T.state.sortDir = "desc";
     T.state.activeId = combo.id;
 
-    // Context-menu placement: node menu carries both entries...
+    // Import/Export lives behind the toolbar's "Session…" button+dropdown
+    // now (analogous to "Open…"), NOT the per-node/tree-background context
+    // menu — the node menu must no longer carry either entry.
     w.render();
     fireContextMenu(d.querySelector(".tree-row"), w);
     const menuHtml = d.querySelector("#treeContextMenu").innerHTML;
-    assert(menuHtml.includes("Export session") && menuHtml.includes("Import session"),
-      "export: node context menu offers Export/Import session next to Save/Load filter");
+    assert(!menuHtml.includes("Export session") && !menuHtml.includes("Import session"),
+      "export: node context menu no longer offers Export/Import session");
     w.closeTreeContextMenu();
-    // ...and the empty tree background offers import (reachable w/o node hit).
-    fireContextMenu(d.querySelector("#tree"), w);
-    assert(d.querySelector("#treeContextMenu").innerHTML.includes("Import session"),
-      "export: tree-background context menu offers Import session");
-    w.closeTreeContextMenu();
+
+    const btnSession = d.querySelector("#btnSession");
+    const sessionMenu = d.querySelector("#sessionMenu");
+    assert(sessionMenu.classList.contains("hidden"), "session menu starts hidden");
+    fireClick(btnSession, w);
+    assert(!sessionMenu.classList.contains("hidden"), "clicking \"Session…\" reveals the dropdown");
+    const sessionActions = [...sessionMenu.querySelectorAll("[data-action]")].map(i => i.dataset.action);
+    assert(sessionActions.join(",") === "exportSession,importSession",
+      "session menu offers Export session…/Import session…, got " + sessionActions.join(","));
+    fireClick(d.body, w);
+    assert(sessionMenu.classList.contains("hidden"), "clicking outside the session menu closes it");
 
     // Export dialog: one row per root file, per-file include + embed checkboxes.
     let captured = [];
@@ -4834,6 +4842,132 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 48 — Import/Export moved to a toolbar menu + pop-up loading
+   animation replaced by an inline tree progress row
+   Origin: this session (2026-08-18), person-requested UI changes.
+
+   1) Export/Import session used to live in the tree's per-node context
+      menu (plus a special empty-background menu, since the node menu needs
+      a node to right-click) — Group 21 covered that placement, and was
+      updated in place this session instead of re-tested here. This group
+      only adds the negative-space check the toolbar move implies: with no
+      files loaded at all (where the old empty-background context menu used
+      to be the only way to reach "Import session…"), the toolbar's
+      "Session…" button must still work.
+
+   2) The old #progressOverlay pop-up (full-screen, blocking) is gone
+      entirely — replaced by a .tree-loading-row placeholder rendered
+      directly in the tree (or, for a watched-folder file, in place of that
+      file's grayed .folder-watch-file row) with a thin progress bar along
+      its bottom edge. Because addLoadingFile() (called synchronously at
+      the top of loadOneFileIntoTree, before its first await) renders that
+      row before any actual async work starts, the row is already in the
+      DOM the instant loadFileDescriptors/loadFolderFile is called, with no
+      setTimeout needed to catch the "loading" state — same technique
+      Group 12 (tailing) and Group 30d use for real FileReader-backed loads.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("48a. Session menu reachable with zero files loaded (old empty-tree context menu superseded)");
+  assert(T.state.rootIds.length === 0, "sanity: no files loaded yet");
+  assert(d.querySelector("#progressOverlay") === null, "the old blocking #progressOverlay element no longer exists in the page at all");
+
+  const btnSession = d.querySelector("#btnSession");
+  const sessionMenu = d.querySelector("#sessionMenu");
+  fireClick(btnSession, w);
+  assert(!sessionMenu.classList.contains("hidden"), "\"Session…\" opens even with an empty tree");
+  const importItem = d.querySelector('#sessionMenu [data-action="importSession"]');
+  assert(importItem !== null, "Import session… is reachable from the toolbar with zero files loaded");
+
+  // Right-clicking the empty tree background no longer produces a menu at
+  // all (the whole special-cased empty-background context menu was removed
+  // — this behavior is superseded by the always-available toolbar button).
+  fireClick(d.body, w); // close the session menu first
+  fireContextMenu(d.querySelector("#tree"), w);
+  assert(d.querySelector("#treeContextMenu").classList.contains("hidden"),
+    "right-clicking the empty tree background no longer opens a context menu");
+});
+
+await withApp(async (w, d, T) => {
+  section("48b. Mini loading-bar row replaces the pop-up for a plain file load");
+  const text = makeLog(0, 5);
+  const file = new w.File([text], "big.log", { type: "text/plain" });
+
+  const before = new Set(T.state.rootIds);
+  const donePromise = w.loadFileDescriptors([{ file, handle: null }]);
+  // Synchronous part of loadOneFileIntoTree (addLoadingFile -> renderTree)
+  // has already run by the time this line executes — the first await inside
+  // it (readFileWithProgress's FileReader) is what actually suspends.
+  let loadingRow = d.querySelector(".tree-loading-row");
+  assert(loadingRow !== null, "a .tree-loading-row appears in the tree the instant loading starts, before FileReader resolves");
+  assert(loadingRow.querySelector(".tree-label").textContent === "big.log", "the loading row shows the file's name");
+  assert(loadingRow.querySelector(".tree-load-fill") !== null, "the loading row carries a progress-fill bar");
+  assert(d.querySelector("#progressOverlay") === null, "still no blocking overlay anywhere in the DOM while a file is loading");
+  // The rest of the UI stays usable: unrelated controls remain clickable —
+  // spot-checked via the theme button, which has nothing to do with loading.
+  const btnThemeBefore = d.documentElement.getAttribute("data-theme");
+  fireClick(d.querySelector("#btnTheme"), w);
+  assert(d.documentElement.getAttribute("data-theme") !== btnThemeBefore, "other toolbar controls remain responsive while a file load is in flight");
+
+  await donePromise;
+  assert(d.querySelector(".tree-loading-row") === null, "the loading row is gone once the file finishes loading");
+  const newId = T.state.rootIds.find(id => !before.has(id));
+  assert(newId, "the file is now a real root node");
+  assert(d.querySelector('.tree-row .tree-label') && [...d.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "big.log"),
+    "the loaded file now renders as a normal real tree row");
+});
+
+await withApp(async (w, d, T) => {
+  section("48c. Mini loading-bar row replaces a folder-watch file's grayed placeholder while it loads");
+  const text = makeLog(0, 4);
+  function fakeFileHandle(name, content) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([content]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => content.length, configurable: true });
+        blob.text = async () => content;
+        blob.slice = start => {
+          const sliced = content.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  function fakeDirHandle(name, fileMap) {
+    return {
+      kind: "directory", name,
+      async *values() { for (const fname of Object.keys(fileMap)) yield fakeFileHandle(fname, fileMap[fname]); },
+    };
+  }
+  const dir = fakeDirHandle("logs", { "a.log": text });
+  await w.addWatchedFolder(dir);
+  const folder = T.state.folders[0];
+  const rec = folder.files[0];
+
+  const donePromise = w.loadFolderFile(folder, rec);
+  // Unlike 48b, loadFolderFile awaits rec.handle.getFile() BEFORE calling
+  // loadOneFileIntoTree (which is what actually inserts the loading row via
+  // addLoadingFile), so a plain synchronous check right after the call
+  // isn't enough here — flush pending microtasks (the getFile() resolution
+  // chain) via a zero-delay timer first, same as every other async-fixture
+  // load in this suite (e.g. Group 37's "let the FileReader-based load settle").
+  await new Promise(r => setTimeout(r, 0));
+  const folderBox = d.querySelector(".folder-watch");
+  const loadingRow = folderBox.querySelector(".tree-loading-row");
+  assert(loadingRow !== null, "the folder file's grayed row is replaced by a .tree-loading-row while it loads");
+  assert(folderBox.querySelector(".folder-watch-file") === null, "the plain grayed placeholder is gone while loading (replaced, not duplicated)");
+
+  await donePromise;
+  const folderBoxAfter = d.querySelector(".folder-watch");
+  assert(folderBoxAfter.querySelector(".tree-loading-row") === null, "the loading row is gone once the folder file finishes loading");
+  assert(folderBoxAfter.querySelector(".tree-row .tree-label").textContent === "a.log", "the folder file now renders as a real tree row inside its folder section");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -5456,6 +5590,21 @@ process.exit(failed ? 1 : 0);
               (style.width/height) still tracks the cursor with no added
               latency while the expensive re-render is deferred and multiple
               rapid mousemove events collapse into exactly one render call.
+   Group 48  — this session (2026-08-18), person-requested UI changes.
+              Export/Import session moved from the tree's per-node/empty-
+              background context menu to a "Session…" toolbar button+dropdown
+              (analogous to "Open…") — Group 21's context-menu placement
+              assertions were rewritten in place (now assert ABSENCE from the
+              node menu) instead of re-tested here; this group only covers
+              the empty-background-menu removal (right-click on an empty
+              tree now opens nothing) and that the toolbar button still
+              works with zero files loaded. Also: the old blocking
+              #progressOverlay pop-up is gone, replaced by a
+              .tree-loading-row placeholder (thin progress bar along the
+              row's bottom edge) rendered directly in the tree — or, for a
+              watched-folder file, in place of that file's grayed
+              .folder-watch-file row — for both loadFileDescriptors (plain
+              "Open…"/drag-drop loads) and loadFolderFile.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
@@ -5500,5 +5649,16 @@ process.exit(failed ? 1 : 0);
      #fhTabBar row (pre-Group 26) — superseded by #shortcutsPanel and the
      merged #viewBar respectively; both are pure layout/placement changes
      with no filtering-logic behind them, fully covered by Group 26.
+   - Export/Import session living in the tree's per-node context menu, plus
+     the special empty-tree-background context menu that existed only to
+     keep "Import session…" reachable with zero files loaded (pre-2026-08-18)
+     — superseded by the toolbar's "Session…" button+dropdown (Group 48),
+     which needs no node to right-click and works the same regardless of
+     whether any files are loaded. The empty-background context menu itself
+     is gone outright, not just its session items — Group 48a asserts
+     right-clicking empty tree space now opens nothing.
+   - The old blocking #progressOverlay pop-up shown while a file loaded
+     (pre-2026-08-18) — superseded by the inline .tree-loading-row mini
+     progress bar (Group 48b/48c), which doesn't block the rest of the UI.
 
    ============================================================ */
