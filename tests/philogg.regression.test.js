@@ -5086,6 +5086,132 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 50 — A background file load stays cheap: no render() while it's
+   NOT the active view, so switching to a different, already-loaded file
+   stays fully responsive
+   Origin: this session, person-requested follow-up to Group 49: *"Aktuell
+   blockiert das Laden und die Animation teilweise das UI. Ich möchte eine
+   Datei Laden und während die Animation läuft auf eine andere, bereits
+   geladenen Datei wechseln können. Das UI soll dann sofort bedienbar sein
+   und das andere Log in Minimap und Views anzeigen. Von dem gerade ladenden
+   Log möchte ich dann nur noch den Fortschrittsbalken am Dateinamen sehen.
+   Wichtig ist, dass das UI in der Zeit komplett responsive bleibt."*
+
+   Group 49's scheduleLoadRender/flushLoadRender always ran a full render()
+   on every parse-chunk tick, even while the loading file wasn't what was
+   actually on screen — harmless for the single-file case Group 49 covers,
+   but a background load competing for full tree/table/minimap rebuilds on
+   every animation frame is exactly what made the UI feel sluggish once a
+   SECOND, already-loaded file was the actual active view. Fixed with
+   loadRenderRootIsActive (see philogg.html): scheduleLoadRender now only
+   runs a full render while its root IS the active view; otherwise it calls
+   the new updateLoadRowProgress, a direct DOM write to just that row's
+   .tree-load-fill width, same "cheap write on a hot path" idea the old
+   (pre-2026-08-18) setLoadingFileProgress used. The active-check is
+   re-verified again inside the rAF callback itself, not just at schedule
+   time, so a switch-away that happens between scheduling and the next
+   actual frame doesn't still cost one unwanted full render.
+
+   requestAnimationFrame/cancelAnimationFrame are mocked (manually
+   flushable via a captured-callback map) rather than raced against real
+   timing the way Group 47 does — a file large enough to still be
+   genuinely mid-parse by the time a REAL animation frame eventually fires
+   (found, while writing this group, to take a lot less than Group 47's own
+   50ms wait for even a 9000-line/3-chunk file) would need to be too large
+   to keep this suite fast. The mock makes the schedule-vs-fire race, and
+   the fire-time re-check it exists to close, fully deterministic instead.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("50. A file loading in the background updates cheaply (no render()); switching away stays fully live for the other file");
+
+  // File A: small, finishes instantly — the file the person is actually
+  // looking at throughout this test.
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  w.render();
+
+  // Monkey-patch render() to count calls, and requestAnimationFrame/
+  // cancelAnimationFrame to a manually-flushable mock — same injected-
+  // script technique Group 47 uses for render()-call counting (a second
+  // <script> in the same document shares the realm's lexical scope, so
+  // reassigning a top-level function declaration is visible page-wide).
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRender = render;
+    render = function() { window.__renderCalls = (window.__renderCalls||0)+1; return __origRender(); };
+    window.__rafCallbacks = {};
+    window.__rafNextId = 1;
+    window.requestAnimationFrame = function(cb) { const id = window.__rafNextId++; window.__rafCallbacks[id] = cb; return id; };
+    window.cancelAnimationFrame = function(id) { delete window.__rafCallbacks[id]; };
+    window.__flushRaf = function() {
+      const cbs = window.__rafCallbacks; window.__rafCallbacks = {};
+      Object.keys(cbs).forEach(id => cbs[id]());
+    };
+  `;
+  d.body.appendChild(s);
+
+  // File B: large enough (15 PARSE_CHUNK_LINES chunks) that a handful of
+  // background parse ticks still leaves plenty left over — not racing real
+  // rAF timing anymore (see above), but still exercising the real parse
+  // loop's own setTimeout(0) yields for genuinely mid-parse entries/DOM
+  // state, same idiom Group 49 uses.
+  const textB = makeLog(0, 60000);
+  w.__renderCalls = 0;
+  const donePromise = w.addFile("huge-bg.log", textB);
+  const newId = T.state.rootIds.find(id => id !== fa.id);
+  const nodeB = T.state.nodes[newId];
+  assert(newId, "the new file is a real root node immediately, before it's read a single chunk");
+  assert(T.state.activeId === newId, "sanity: creating a new file auto-activates it (unchanged, existing behavior)");
+  assert(w.__renderCalls === 1, "creating the node renders exactly once, to insert its row — got " + w.__renderCalls);
+  assert(Object.keys(w.__rafCallbacks).length === 1, "the first parse chunk (still active) scheduled exactly one pending animation-frame render");
+
+  // The person immediately switches back to file A — exactly the reported
+  // scenario: starting a load, then wanting to keep working on something
+  // already open instead of watching the new one load.
+  T.state.activeId = fa.id;
+  w.render();
+  w.__renderCalls = 0; // only count what happens FROM HERE, while B loads in the background
+
+  // Fire the animation frame that was scheduled BEFORE the switch-away —
+  // the fire-time re-check must fall back to the cheap row update now that
+  // B isn't active anymore, not run the full render it was originally
+  // scheduled for; otherwise every switch-away would still cost one
+  // unwanted full render.
+  w.__flushRaf();
+  assert(w.__renderCalls === 0, "the render scheduled while B was still active does NOT fire once B is no longer active by the time it runs — got " + w.__renderCalls);
+  assert(Object.keys(w.__rafCallbacks).length === 0, "the fallback did not itself schedule a new animation frame");
+
+  // Let B's parse loop actually continue in the background (real
+  // setTimeout(0) yields) and confirm every further tick also stays on the
+  // cheap path — no render() calls, no animation frame even scheduled at
+  // all anymore, since the active check now short-circuits before ever
+  // touching rAF.
+  for (let i = 0; i < 3 && nodeB.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
+  assert(nodeB.entries.length > 0 && nodeB.entries.length < 60000,
+    "file B keeps streaming in the background while A is the active view, without finishing outright — got " + nodeB.entries.length + "/60000");
+  assert(T.state.activeId === fa.id, "switching to A stuck — B's background progress did not steal the active view back");
+  assert(w.__renderCalls === 0, "none of B's further background ticks called render() either — got " + w.__renderCalls);
+  assert(Object.keys(w.__rafCallbacks).length === 0, "none of B's background ticks scheduled an animation frame at all");
+
+  // The view genuinely still shows A, completely undisturbed by B.
+  assert(w.getVisibleEntries().length === fa.entries.length, "the Filtered view still shows file A's own entries, unaffected by B's background load");
+
+  // File B's own row still carries a live progress fill, updated directly
+  // (updateLoadRowProgress) rather than via render() — "nur noch den
+  // Fortschrittsbalken am Dateinamen", exactly as requested.
+  const labelB = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "huge-bg.log");
+  assert(labelB !== undefined, "file B's row still exists in the tree while loading in the background");
+  const fillB = labelB.closest(".tree-row").querySelector(".tree-load-fill");
+  assert(fillB !== null, "file B's row still carries a progress fill while it loads in the background");
+  assert(parseInt(fillB.style.width, 10) > 0, "file B's progress fill width reflects its background progress via the cheap direct-DOM path — got " + fillB.style.width);
+
+  await donePromise;
+  assert(nodeB.entries.length === 60000, "file B finished loading with the full entry count despite the detour through the background");
+  assert(typeof nodeB.loadFraction !== "number", "loadFraction is cleared once B finishes loading, active or not");
+  assert(w.__renderCalls === 1, "finishing the background load runs exactly one final full render (flushLoadRender always renders unconditionally, to remove the progress fill and settle the final count) — got " + w.__renderCalls);
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -5744,6 +5870,33 @@ process.exit(failed ? 1 : 0);
               not a hypothetical); and that the Filtered view doesn't
               auto-scroll to chase the growing content the way tail
               auto-follow does for an already-open file.
+   Group 50  — this session (2026-08-18), person-requested follow-up to
+              Group 49 ("Aktuell blockiert das Laden... auf eine andere,
+              bereits geladenen Datei wechseln können. Das UI soll dann
+              sofort bedienbar sein... nur noch den Fortschrittsbalken am
+              Dateinamen sehen... komplett responsive"). Group 49's
+              scheduleLoadRender ran a full render() on every parse chunk
+              regardless of which file was actually the active view — fine
+              single-file, but a background load competed for full tree/
+              table/minimap rebuilds every frame once a DIFFERENT already-
+              loaded file was what the person was looking at. Fixed with
+              loadRenderRootIsActive + updateLoadRowProgress (see
+              philogg.html): scheduleLoadRender only does the throttled
+              full render while its root is the active view; otherwise a
+              direct, cheap DOM write to just that row's progress fill,
+              re-checked again at rAF fire time (not just schedule time) so
+              a switch-away between the two doesn't still cost one stray
+              render. Covers, with render()/requestAnimationFrame/
+              cancelAnimationFrame mocked for determinism (a real animation
+              frame was found, while writing this group, to fire well
+              before even a 9000-line/3-chunk file finishes parsing, making
+              a real-timing race against a genuinely-still-parsing state
+              impractical without a much larger, suite-slowing fixture):
+              zero render() calls across several real background parse
+              ticks while a different file stays active and completely
+              undisturbed, the fire-time re-check specifically, the
+              background row's progress fill still updating directly, and
+              exactly one full render at the load's natural completion.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

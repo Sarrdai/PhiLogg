@@ -2085,30 +2085,69 @@ async function parseLogTextAsync(text, node, onProgress) {
   if (onProgress) onProgress(lines.length, lines.length);
 }
 
+// True while rootId is (or is an ancestor of) the currently active/viewed
+// node — i.e. a load happening on rootId is actually what's on screen right
+// now, as opposed to a file loading in the background while some OTHER
+// already-loaded file is what the person is actually looking at.
+function loadRenderRootIsActive(rootId) {
+  return !!(rootId && state.activeId && getRootFileId(state.activeId) === rootId);
+}
+
+// Cheap, targeted progress-bar update for a loading file that ISN'T the
+// active view — writes straight to that one row's .tree-load-fill width via
+// a DOM query, same "direct write on a hot path" idea the old (pre-2026-08-18)
+// setLoadingFileProgress used, instead of running a full render(). A file
+// loading in the background has no business rebuilding the tree/table/
+// minimap dozens of times a second for a view nobody is looking at — doing
+// so anyway was person-reported as making the whole UI feel sluggish, even
+// after switching away to a different, already-loaded file.
+function updateLoadRowProgress(rootId) {
+  const node = state.nodes[rootId];
+  if (!node) return;
+  const fill = document.querySelector('.tree-row[data-node-id="' + rootId + '"] .tree-load-fill');
+  if (fill) fill.style.width = Math.round(Math.max(0, Math.min(1, node.loadFraction || 0)) * 100) + "%";
+}
+
 // Throttles the incremental re-renders triggered while a file streams in
 // (parseLogTextAsync's onProgress, and loadOneFileIntoTree's own read-phase
-// progress) to at most one per animation frame — a large file can yield many
-// chunks between two frames, and render() rebuilds the whole tree plus the
-// visible rows/minimap, so firing it on every single chunk would be
-// wasteful. Same rAF-coalescing shape as the scroll/resize handlers
-// elsewhere (see scrollTicking). flushLoadRender cancels any still-pending
-// tick and renders immediately instead — used at the natural end of a load
-// (parsing finished, node removed) so a small/fast file doesn't leave a
-// stray rAF callback to fire later, out of context, and double up on
-// whatever unrelated re-render happens to land on the very next frame.
+// progress) to at most one per animation frame while it's the active view —
+// a large file can yield many chunks between two frames, and render()
+// rebuilds the whole tree plus the visible rows/minimap, so firing it on
+// every single chunk would be wasteful even then. Same rAF-coalescing shape
+// as the scroll/resize handlers elsewhere (see scrollTicking). While the
+// loading file is NOT the active view, this skips render() entirely and
+// just updates that row's own progress fill (updateLoadRowProgress) — see
+// its own comment for why. flushLoadRender cancels any still-pending tick
+// and always renders fully and immediately instead — used only at the
+// start (a row needs to exist before anything can be targeted) and the
+// natural end of a load (parsing finished, node removed), both one-off
+// events regardless of which view is active, not a hot path.
 //
 // Both take the loading file's own node id and invalidate its (and its
-// dependents') cached getEntries()/getLevelCounts() results right away —
-// same reasoning as onTailChange's invalidateCachesForRoots: a file node's
-// entries growing mid-parse is exactly the kind of content change those
-// caches don't otherwise know to distrust, so without this the level bar
-// would cache whatever (possibly still-empty) counts happened to be current
-// at the first render after the node was created, and never update again.
+// dependents') cached getEntries()/getLevelCounts() results right away,
+// active view or not — same reasoning as onTailChange's
+// invalidateCachesForRoots: a file node's entries growing mid-parse is
+// exactly the kind of content change those caches don't otherwise know to
+// distrust, so without this the level bar would cache whatever (possibly
+// still-empty) counts happened to be current at the first render after the
+// node was created, and never update again — including once the person
+// switches TO the file after it's done loading in the background.
 let loadRenderRafId = null;
 function scheduleLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
+  if (rootId && !loadRenderRootIsActive(rootId)) { updateLoadRowProgress(rootId); return; }
   if (loadRenderRafId != null) return;
-  loadRenderRafId = requestAnimationFrame(() => { loadRenderRafId = null; render(); });
+  // Re-checks active state again at fire time, not just at schedule time —
+  // the person can switch away between this tick being scheduled and the
+  // next actual animation frame, and the pending full render must not fire
+  // anyway once that's happened (falls back to the same cheap row update
+  // instead), or a background load would cost one unwanted full render per
+  // switch-away regardless of the check above.
+  loadRenderRafId = requestAnimationFrame(() => {
+    loadRenderRafId = null;
+    if (rootId && !loadRenderRootIsActive(rootId)) { updateLoadRowProgress(rootId); return; }
+    render();
+  });
 }
 function flushLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
@@ -3955,6 +3994,9 @@ function renderNode(id, depth) {
   const invertClass = node.inverted ? " inverted" : "";
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
   row.style.paddingLeft = (12 + depth * 16) + "px";
+  // Lets a background file load (see updateLoadRowProgress) find and update
+  // this exact row's progress fill directly, without a full render().
+  if (node.type === "file") row.dataset.nodeId = id;
 
   // Highlight-colour swatch — replaces the old multi-select checkbox (that
   // affordance is Ctrl+click-only now, see the row click handler below;
