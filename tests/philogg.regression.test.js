@@ -111,6 +111,7 @@ async function withApp(run, opts = {}) {
       get currentHighlightViewEntries() { return currentHighlightViewEntries; },
       get extractRowsData() { return extractRowsData; },
       get extractColumns() { return extractColumns; },
+      get plotConfig() { return plotConfig; },
       get linkPairsData() { return linkPairsData; },
       get linkBlockOffsets() { return linkBlockOffsets; },
       get linkSelectedPairIndex() { return linkSelectedPairIndex; },
@@ -5413,6 +5414,102 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 53 — Plot tab: point/bar -> log entry, and an "Equal axis scale"
+   option
+   Origin: this session (2026-08-18, person-requested backlog items):
+   "Plot Point → Log-Eintrag" (the Plot tab was previously a dead end — an
+   outlier was visible but not reachable, per PROJECT.md's "Known
+   limitations") and "Plot Option für Axis-Equal" (so an x/y position plot
+   isn't visually distorted by the chart area's own, generally non-square,
+   aspect ratio). Both are additive plotConfig/UI-state features (plotConfig
+   gains `axisEqual`, ephemeral like `normalize`/xMin/etc. — not threaded
+   through any persistence carrier, so none is tested here).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("53. Plot: point -> log entry, axis-equal");
+  // Three entries with x/y values on the SAME 0..20 scale on both axes —
+  // deliberately, so any leftover pixel-distortion between the two axes
+  // below can only come from the chart area's own aspect ratio (722x346
+  // per the stubbed 800x400 clientWidth/Height minus PLOT_MARGIN), not from
+  // the data itself.
+  const rows = [[0, 0], [10, 10], [20, 20]];
+  const log = rows.map(([x, y], i) =>
+    `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${x} y=${y}"`
+  ).join("\n") + "\n";
+  const f = await w.addFile("pos.log", log, () => {});
+  w.render();
+  T.state.activeId = f.id;
+
+  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  assert(T.extractRowsData.length === 3, "sanity: one extraction row per entry");
+
+  w.switchExtractView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
+  xSel.value = "0"; xSel.dispatchEvent(new w.Event("change", { bubbles: true }));
+  ySel.value = "1"; ySel.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  /* ---------- Axis-equal ---------- */
+  const markByRow = r => d.querySelector('#plotSvg circle.plot-mark[data-row="' + r + '"]');
+  const pxPerUnit = () => {
+    const m0 = markByRow(0), m2 = markByRow(2);
+    return {
+      x: (parseFloat(m2.getAttribute("cx")) - parseFloat(m0.getAttribute("cx"))) / 20,
+      y: Math.abs(parseFloat(m0.getAttribute("cy")) - parseFloat(m2.getAttribute("cy"))) / 20,
+    };
+  };
+  assert(T.plotConfig.axisEqual === false, "axis-equal defaults off, matching every other plotConfig flag");
+  const before = pxPerUnit();
+  assert(Math.abs(before.x - before.y) > 1, "sanity: without axis-equal, X and Y pixels-per-unit differ substantially (722x346 chart area, same 0..20 data range on both axes), got x=" + before.x.toFixed(3) + " y=" + before.y.toFixed(3));
+
+  const axisCb = d.querySelector("#plotAxisEqual");
+  assert(axisCb !== null, "'Equal axis scale' checkbox is offered for a non-bar chart type (scatter)");
+  axisCb.checked = true;
+  axisCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.plotConfig.axisEqual === true, "checking the box flips plotConfig.axisEqual");
+
+  const after = pxPerUnit();
+  // Small epsilon: cx/cy are serialized via toFixed(1) in the SVG markup, so
+  // a little quantization noise survives the round trip through the DOM.
+  assert(Math.abs(after.x - after.y) < 0.1, "with axis-equal on, X and Y pixels-per-unit now match, got x=" + after.x.toFixed(3) + " y=" + after.y.toFixed(3));
+  assert(Math.abs(after.y - before.y) < 0.1, "the axis that already had the tighter (smaller) pixel budget per unit — Y, the shorter dimension — is left unpadded; only X's domain widens to meet it");
+
+  // Bar charts have a categorical X axis — no equal-scale option offered.
+  fireClick(d.querySelector('.plot-type-btn[data-type="bar"]'), w);
+  assert(d.querySelector("#plotAxisEqual") === null, "no axis-equal checkbox for a bar chart (categorical X)");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  d.querySelector("#plotXSelect").value = "0";
+  d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+  d.querySelector("#plotYSelectSingle").value = "1";
+  d.querySelector("#plotYSelectSingle").dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  /* ---------- Point -> log entry ---------- */
+  const marks = [...d.querySelectorAll("#plotSvg circle.plot-mark")];
+  assert(marks.length === 3, "one clickable mark per plotted row, got " + marks.length);
+  const targetEntry = T.extractRowsData[1].entry; // the x=10,y=10 row
+  const targetMark = markByRow(1);
+  assert(targetMark, "row 1's mark carries a data-row attribute for the click handler to resolve");
+
+  const fileNodeId = f.id;
+  fireClick(targetMark, w);
+  assert(T.state.activeId === fileNodeId,
+    "clicking a plot mark jumps to the entry's root file — the same destructive jump the extraction table's own row double-click already uses (jumpToFullLog), since the Plot tab has no Highlight-view companion to reveal into instead");
+  assert(T.state.selectedId === targetEntry.id, "the clicked mark's real underlying entry becomes selected");
+  assert(T.state.levelFilter.size === 0, "jumpToFullLog's usual level-filter reset still applies");
+
+  // Clicking empty chart space (not a mark) is a no-op — sanity that the
+  // delegated listener doesn't misfire on the axes/gridlines/background.
+  T.state.activeId = node.id;
+  w.render();
+  w.switchExtractView("plot");
+  const beforeClick = T.state.activeId;
+  fireClick(d.querySelector("#plotSvg"), w);
+  assert(T.state.activeId === beforeClick, "clicking the plot SVG background (no mark under the cursor) doesn't navigate away");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -6150,6 +6247,25 @@ process.exit(failed ? 1 : 0);
               still mid-load shown growing its own row's count (matching
               getEntries() exactly, not frozen) across further ticks, with
               its percentage-of-parent bar kept live too.
+
+   Group 53  — this session (2026-08-18), person-requested backlog items
+              ("Plot Point → Log-Eintrag" and "Plot Option für Axis-Equal",
+              both from a suggestions batch added to FEATURE_BACKLOG.md
+              earlier the same session). Covers: every line/bar/scatter
+              mark now carries a data-row attribute and .plot-mark class, a
+              single delegated click listener on #plotSvg resolves it back
+              to extractRowsData[row].entry and calls jumpToFullLog (same
+              destructive jump the table's own row dblclick already used —
+              the Plot tab still has no Highlight-view companion); clicking
+              chart background (no mark under the cursor) is a no-op. And
+              plotConfig.axisEqual (default false, checkbox hidden for bar
+              — categorical X has no meaningful pixel-per-unit ratio):
+              verified geometrically via rendered cx/cy — before enabling,
+              a 722x346 chart area maps the same 0..20 data range on both
+              axes to different pixels-per-unit; after, they match, with
+              only the axis that had the larger pixel-per-unit (X, in this
+              layout) padded to meet the tighter one (Y) — the tighter axis
+              itself is left unpadded.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
