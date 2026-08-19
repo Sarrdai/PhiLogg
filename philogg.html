@@ -4531,14 +4531,15 @@ function renderLevelBar() {
       if (state.levelFilter.has(lvl)) state.levelFilter.delete(lvl);
       else state.levelFilter.add(lvl);
       renderLevelBar();
-      // renderMainView() (not just renderTable()) so the Full view's
-      // currentHighlightViewEntries/highlightColorMap and virtualized rows
-      // pick up the new level filter immediately too — both views already
-      // apply state.levelFilter identically via applyLevelFilter (see
-      // getVisibleEntries/renderHighlightView), only the empty set (no
-      // levels toggled) short-circuits to "show everything", so this was a
-      // render-scheduling gap, not a filtering-logic one.
       renderMainView();
+      // The level quick-filter only narrows the Filtered view (getVisibleEntries
+      // — the Full view deliberately ignores it, see renderHighlightView) — so
+      // a change made while on the Full tab would otherwise look like nothing
+      // happened. Reveal Filtered so the effect is actually visible, same as
+      // switching to another filter already does (revealFilteredView); a
+      // no-op in Stacked layout (both panels already visible) or when
+      // already on the Filtered tab.
+      revealFilteredView();
     });
     levelBarEl.appendChild(btn);
   });
@@ -6700,7 +6701,13 @@ function renderHighlightView(colorMapIsFresh) {
   // overwrites the OLD (pre-change) list. See captureViewAnchor/
   // restoreViewAnchor above for the general mechanism this feeds.
   const scrollAnchor = sameRoot ? captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody) : null;
-  currentHighlightViewEntries = rootId ? applyLevelFilter(state.nodes[rootId].entries) : [];
+  // Deliberately NOT applyLevelFilter()'d — the Full view always shows the
+  // whole root file regardless of the level quick-filter (person-requested:
+  // level filtering should read as narrowing the Filtered view specifically,
+  // not silently also thinning out the "whole file" reference view). See
+  // renderLevelBar()'s click handler, which reveals the Filtered view on
+  // every level-filter change so the effect is actually visible somewhere.
+  currentHighlightViewEntries = rootId ? state.nodes[rootId].entries : [];
   highlightRowOffsets = state.multilineMessages ? buildRowOffsets(currentHighlightViewEntries) : null;
   highlightSpacer.style.height =
     ((state.multilineMessages ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
