@@ -390,6 +390,11 @@ await withApp(async (w, d, T) => {
   assert(T.state.levelFilter.has("ERROR"), "revealInHighlightView does not clear the level quick-filter");
   assert(T.fhActiveTab === "highlight", "revealInHighlightView switches to the Full tab (tabs layout)");
   T.state.levelFilter.clear();
+  // Real level-filter changes always flow through a render immediately after
+  // (see renderLevelBar's click handler) — keep currentHighlightViewEntries
+  // in sync the same way here, instead of leaving a stale (ERROR-only)
+  // snapshot sitting behind a levelFilter that's already been cleared.
+  w.render();
 
   // Highlight view does NOT reset scroll on every render (stable reference while browsing)
   w.applyFhView("stacked");
@@ -1122,8 +1127,17 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 4 — Tree / status strip / severity bar / level quick-filter dual-view
    Origin: 765d68a9 (sortable columns, status strip, severity bar) +
-   32e282b4 follow-up (level quick-filter now updates BOTH Full and Filtered
-   views in one click, not just Filtered).
+   32e282b4 follow-up (level quick-filter updates BOTH Full and Filtered
+   views in one click, not just Filtered — Full's own re-render, not its
+   filtering). Updated this session (2026-08-19, person-requested, German:
+   "die Log Level Filter sollen sich nicht mehr auf das full Log auswirken.
+   stattdessen soll ein andern der Log Level Filter auch zu einem
+   automatischen Sprung von Full nach Filtered führen"): the level
+   quick-filter no longer narrows the Full view's own entry list AT ALL
+   (only the Filtered view) — Full stays a stable "whole file" reference
+   regardless of the level filter. In exchange, changing the level filter
+   while on the Full tab now auto-reveals Filtered, same as switching to
+   another filter already does (revealFilteredView).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("4. Tree / status strip / severity bar / dual-view level filter");
@@ -1145,17 +1159,19 @@ await withApp(async (w, d, T) => {
   // Severity bar column exists (widened 3px -> 5px in that session; just check presence)
   assert(d.querySelector("#tableRows .col-bar") !== null, "severity color bar column renders on rows");
 
-  // Level quick-filter: toggling ERROR must update BOTH the Filtered (#tableRows)
-  // and the Full (#highlightRows) views in the SAME click (bugfix from 32e282b4 —
-  // previously only renderTable() was called, leaving Full stale until an
-  // unrelated render happened to touch it).
+  // Level quick-filter: toggling ERROR updates the Filtered (#tableRows) view
+  // immediately; the Full (#highlightRows) view re-renders in the SAME click
+  // (bugfix from 32e282b4 — previously only renderTable() was called,
+  // leaving Full stale until an unrelated render happened to touch it) but
+  // deliberately does NOT narrow its own entry list (this session's change —
+  // see GROUP 61e below for the auto-reveal-Filtered half of that change).
   w.applyFhView("stacked"); // both panels rendered so we can inspect both
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
   fireClick(errBtn, w);
   const filteredLevels = [...d.querySelectorAll("#tableRows .level-badge")].map(b => b.textContent);
   const fullLevels = [...d.querySelectorAll("#highlightRows .level-badge")].map(b => b.textContent);
   assert(filteredLevels.length > 0 && filteredLevels.every(l => l === "ERROR"), "Filtered view narrows to ERROR immediately");
-  assert(fullLevels.length > 0 && fullLevels.every(l => l === "ERROR"), "Full view ALSO narrows to ERROR in the same click (regression guard)");
+  assert(fullLevels.length === 30 && fullLevels.some(l => l === "INFO"), "Full view stays showing the whole file, unaffected by the level quick-filter");
   fireClick(errBtn, w); // reset
 });
 
@@ -5914,18 +5930,31 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 55d — Multiline toggle: no scroll jump/reset
-   Origin: this session (person follow-up, German: "Stelle sicher, dass das
-   Log nicht scrollt oder nach oben springt wenn man zwischen single und
+   Origin: 2026-08-10 session (person follow-up, German: "Stelle sicher, dass
+   das Log nicht scrollt oder nach oben springt wenn man zwischen single und
    multi line wechselt. Der jeweils oben sichtbare LogEintrag soll stehen
    bleiben, darunter dürfen die Log-Einträge wachsen/schrumpfen."). A plain
    render() after flipping state.multilineMessages would otherwise reset
-   #tableBody's scroll to the top (renderTable()'s normal "any other change
-   starts back at the top" behavior) and leave #highlightBody's raw
-   scrollTop pixel value untouched even though rows ABOVE it may have grown
-   — both wrong. The fix (topVisibleEntryId + pendingTableTopAlignId/
-   pendingHighlightTopAlignId, consumed once by renderTable()/
-   renderHighlightView()) re-anchors scroll on the SAME entry that was at
-   the top before the toggle, in both Log views.
+   #tableBody's scroll to the top and leave #highlightBody's raw scrollTop
+   pixel value untouched even though rows ABOVE it may have grown — both
+   wrong.
+   Updated this session (broader follow-up, German: "...wechsel von Filtern,
+   Log-Leveln, Message Expand etc. die aktive Zeile bleibt sichtbar..."): the
+   original fix was multiline-toggle-specific (topVisibleEntryId +
+   pendingTableTopAlignId/pendingHighlightTopAlignId, manually captured by
+   the toggle button's click handler right before render()). It's now
+   captureViewAnchor()/restoreViewAnchor() (see their own comment above
+   renderVisibleRows() in philogg.html), called automatically INSIDE
+   renderTable()/renderHighlightView() on every render that rebuilds either
+   view's entry list — level-filter toggle, node/filter switch, sort, pin-
+   bookmarks toggle, not just this one toggle — and prioritizing the
+   active/selected row over the topmost-visible one when there is a
+   selection. The assertions below (which only ever exercise the
+   no-selection fallback path) still hold unchanged; the very last one
+   (Link-view round trip) now expects the position to be PRESERVED across
+   the subsequent node switch instead of reset to 0, since that "reset to
+   top on any other change" default is exactly what this session's request
+   replaced everywhere, not just here.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("55d. Multiline toggle: the top-visible entry stays anchored (no scroll jump/reset) when row heights change above it");
@@ -5981,10 +6010,17 @@ await withApp(async (w, d, T) => {
   assert(tableBody.scrollTop === 0 && highlightBody.scrollTop === 0,
     "toggling while already scrolled to the very top stays at 0 (entry 0 is unaffected — nothing above it can grow)");
 
-  /* ---------- Link view active: no stale pendingTableTopAlignId lingers ---------- */
+  /* ---------- Link view active: no stale capture lingers ---------- */
   // The Filtered table isn't even rendered while a Link node is active
   // (renderMainView() calls renderLinkView() instead of renderTable()) — the
   // click handler must not capture a table-view align target in that case.
+  // Reset to single-line mode first (the "already at top" edge case above
+  // left it on) so the flat scrollTop chosen below actually lines up with
+  // flat ROW_HEIGHT math instead of the still-live variable-row offsets from
+  // that toggle — this section is about the Link-view guard, not about
+  // multiline row heights.
+  if (T.state.multilineMessages) fireClick(d.querySelector("#btnMultilineMsg"), w);
+  assert(T.state.multilineMessages === false, "sanity: back to single-line mode before the Link-view section");
   // Scrolled away from 0 here specifically so an unguarded capture would
   // resolve to some OTHER entry (not coincidentally 0 again) — proving the
   // guard actually matters, not just that this particular number happens
@@ -5997,11 +6033,20 @@ await withApp(async (w, d, T) => {
   T.state.activeId = linkNode.id;
   w.render(); // renderLinkView(), NOT renderTable() — #tableBody stays hidden at scrollTop 20*28
   fireClick(d.querySelector("#btnMultilineMsg"), w); // toggled while the Link view is active
-  assert(T.state.multilineMessages === false, "sanity: toggled while the Link view is active");
+  assert(T.state.multilineMessages === true, "sanity: toggled while the Link view is active");
+  fireClick(d.querySelector("#btnMultilineMsg"), w); // and back off again, still while Link view active
+  assert(T.state.multilineMessages === false, "sanity: toggled back off, still while the Link view is active");
   T.state.activeId = f.id;
   w.render(); // switches back to the plain table view, no scrollTargetId set — an ordinary node switch
-  assert(d.querySelector("#tableBody").scrollTop === 0,
-    "switching back to the plain table view behaves like any other node switch (resets to top) — it does NOT retroactively jump to the stale pre-Link-view scroll position a captured-while-hidden align target would have caused");
+  // captureViewAnchor() only ever runs INSIDE renderTable() itself (never
+  // while the Link view was showing instead), so #tableBody's currentViewEntries/
+  // scrollTop stayed frozen at their pre-Link-view values (20*28) the whole
+  // time — nothing stale to guard against here anymore, and switching back to
+  // the same node (f.id, still unfiltered) finds that same entry still in
+  // the list, so the view lands right back where it was instead of jumping
+  // to the top (see this session's general "don't jump" follow-up above).
+  assert(d.querySelector("#tableBody").scrollTop === 20 * 28,
+    "switching back to the plain table view re-anchors on the entry that was on screen before the Link view interruption, instead of resetting to top");
 });
 
 section("55c. Multiline toggle persists through the session cache (global setting, survives a reload)");
@@ -6510,6 +6555,289 @@ await withApp(async (w, d, T) => {
   w.copyWholeExtractTable();
   assert(copied && copied.startsWith("Index\tt (ms)\tvalue") && copied.split("\n").length === 6,
     "copyWholeExtractTable still works when called directly (header + 5 data rows), got " + JSON.stringify(copied && copied.split("\n")[0]));
+});
+
+/* ============================================================
+   GROUP 61 — General "don't jump" scroll anchoring + auto-reveal Filtered
+   Origin: this session (person request, German: "Stelle sicher, dass beim
+   ändern der angezeigten Log-Level, die aktive Zeile nicht aus dem Bild
+   springt, sondern sich das Log darüber/darunter erweitert. Generell gilt:
+   wechsel von Filtern, Log-Leveln, Message Expand etc. die aktive Zeile
+   bleibt sichtbar (sofern sie im Ziel-View vorhanden ist)... Bei wechsel zu
+   einem anderen Filter, wechsle automatisch vom Full zum Filtered View
+   (wenn Stacked aktiv ist, keine Änderung)"). Group 55d already covers the
+   no-selection (topmost-visible-row) fallback path of captureViewAnchor/
+   restoreViewAnchor via the multiline toggle; this group covers the
+   selection-priority path (the actual point of this session's request) and
+   the separate revealFilteredView()-on-node-switch behavior.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("61a. Level-filter toggle: the selected/active row stays on screen at the SAME pixel position — the log collapses/expands around it, not a jump");
+
+  // 60 entries, ERROR at every 5th index (makeLog's own default level rule:
+  // i%5===0 ? ERROR : INFO) — 12 ERROR / 48 INFO. Selecting an ERROR entry
+  // and then filtering down to ERROR-only removes lots of INFO rows ABOVE
+  // it, which is exactly the scenario a naive "keep the raw scrollTop pixel
+  // value" (or the old "any other change starts back at the top") gets
+  // wrong — this asserts the NEW scrollTop is derived so the selected row's
+  // on-screen offset is bit-for-bit unchanged.
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const highlightBody = d.querySelector("#highlightBody");
+  assert(f.entries[40].level === "ERROR", "sanity: entry 40 is ERROR-level (40 % 5 === 0)");
+
+  w.setTableScroll(35 * 28);
+  w.setHighlightScroll(35 * 28);
+  w.renderVisibleRows();
+  w.renderHighlightVisibleRows();
+  w.selectEntry(f.entries[40].id); // no opts.scroll — selection only, scroll stays exactly where set above
+  assert(T.state.selectedId === f.entries[40].id, "sanity: entry 40 selected");
+  assert(tableBody.scrollTop === 35 * 28, "sanity: scroll unchanged by selectEntry (no opts.scroll)");
+
+  const oldOffset = 40 * 28 - tableBody.scrollTop; // 140 — entry 40's row top minus scrollTop, i.e. its on-screen pixel offset before the filter change
+
+  const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
+  fireClick(errBtn, w);
+  assert(T.state.levelFilter.has("ERROR") && T.currentViewEntries.length === 12, "sanity: filtered down to the 12 ERROR-level entries");
+
+  // Entry 40 is the 9th ERROR entry (0,5,...,40 → new index 8).
+  const newIdx = T.currentViewEntries.findIndex(e => e.id === f.entries[40].id);
+  assert(newIdx === 8, "sanity: entry 40 is at index 8 in the ERROR-only list, got " + newIdx);
+  const expectedScrollTop = newIdx * 28 - oldOffset; // 224 - 140 = 84
+  assert(tableBody.scrollTop === expectedScrollTop,
+    "Filtered view: scrollTop recalculated so entry 40 keeps the SAME on-screen offset (" + oldOffset + "px), got " + tableBody.scrollTop + " expected " + expectedScrollTop);
+  assert(newIdx * 28 - tableBody.scrollTop === oldOffset, "entry 40's on-screen pixel position is bit-for-bit unchanged (log collapsed around it, not a jump)");
+  assert(d.querySelector('#tableRows [data-entry-id="' + f.entries[40].id + '"]').classList.contains("selected"),
+    "entry 40's row is actually rendered (and still marked selected) at the new scroll position");
+
+  // The Full/Highlight view deliberately does NOT apply the level filter
+  // (this session's change — see GROUP 61e below) — its own entry list is
+  // completely unaffected by the click, so entry 40 stays at its ORIGINAL
+  // index 40 there and scrollTop is untouched, not recalculated to 84.
+  assert(T.currentHighlightViewEntries.length === 60, "Full/Highlight view's entry list is unaffected by the level-filter click");
+  assert(highlightBody.scrollTop === 35 * 28, "Full/Highlight view: scrollTop untouched (nothing about its own content changed), got " + highlightBody.scrollTop);
+
+  fireClick(errBtn, w); // toggle back off, restore full 60-entry view for the next section
+});
+
+await withApp(async (w, d, T) => {
+  section("61b. Level-filter toggle: a selected row that does NOT survive the new filter falls back to the default (reset to top), same as no selection at all");
+
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const tableBody = d.querySelector("#tableBody");
+
+  assert(f.entries[41].level === "INFO", "sanity: entry 41 is INFO-level");
+  w.setTableScroll(35 * 28);
+  w.renderVisibleRows();
+  w.selectEntry(f.entries[41].id);
+
+  const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
+  fireClick(errBtn, w); // filters entry 41 (INFO) out entirely
+  assert(!T.currentViewEntries.some(e => e.id === f.entries[41].id), "sanity: entry 41 is gone from the ERROR-only view");
+  assert(tableBody.scrollTop === 0,
+    "the selected entry didn't survive into the target view, so the view falls back to its default (reset to top) instead of anchoring on something arbitrary");
+});
+
+await withApp(async (w, d, T) => {
+  section("61d. A selected row that was OFF-SCREEN before the change is revealed (centered), not left scrolled away, once it's still present in the target view");
+
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const tableBody = d.querySelector("#tableBody");
+
+  assert(f.entries[55].level === "ERROR", "sanity: entry 55 is ERROR-level");
+  w.setTableScroll(0); // scrolled to the top — entry 55 is off-screen (way below the viewport) before the filter change
+  w.renderVisibleRows();
+  w.selectEntry(f.entries[55].id); // no opts.scroll — selection only, doesn't move the scroll into view itself
+  assert(tableBody.scrollTop === 0, "sanity: entry 55 selected but scroll left untouched (still off-screen)");
+
+  const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
+  fireClick(errBtn, w); // entry 55 survives (ERROR-only filter) but was never on screen to begin with
+  const newIdx = T.currentViewEntries.findIndex(e => e.id === f.entries[55].id);
+  assert(newIdx === 11, "sanity: entry 55 is the last (12th) ERROR entry (0, 5, ..., 55), got index " + newIdx);
+  const rowTop = newIdx * 28;
+  const expectedScrollTop = rowTop - 400 / 2 + 28 / 2; // centered in the (stubbed 400px) viewport, not edge-snapped
+  assert(tableBody.scrollTop === expectedScrollTop,
+    "no prior on-screen position to preserve, so the row is revealed centered instead, got " + tableBody.scrollTop + " expected " + expectedScrollTop);
+  assert(tableBody.scrollTop <= rowTop && rowTop + 28 <= tableBody.scrollTop + 400,
+    "entry 5's row is actually within the new viewport bounds");
+});
+
+await withApp(async (w, d, T) => {
+  section("61e. Level-filter changes no longer narrow the Full view; auto-reveal Filtered from Full instead (no-op when Stacked is active, or already on Filtered)");
+
+  // 20 entries, ERROR at every 5th index (4 ERROR / 16 INFO).
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
+
+  /* ---------- Full view's own entry list ignores the level filter entirely ---------- */
+  w.applyFhView("stacked"); // both panels rendered so we can inspect both
+  fireClick(errBtn, w);
+  assert(T.currentViewEntries.length === 4, "sanity: Filtered view narrowed to the 4 ERROR-level entries");
+  assert(T.currentHighlightViewEntries.length === 20, "Full view keeps showing every entry, unaffected by the level filter");
+  fireClick(errBtn, w); // reset
+  assert(T.currentHighlightViewEntries.length === 20, "sanity: still all 20 after clearing the level filter again");
+
+  /* ---------- tabs layout: changing the level filter while on Full reveals Filtered ---------- */
+  w.applyFhView("highlight");
+  assert(T.fhActiveTab === "highlight", "sanity: on the Full tab");
+  fireClick(errBtn, w);
+  assert(T.fhActiveTab === "filter", "changing the level filter while on Full auto-reveals the Filtered view");
+
+  /* ---------- already on Filtered: changing the level filter is a no-op for the tab ---------- */
+  fireClick(errBtn, w); // clears the filter again
+  assert(T.fhActiveTab === "filter", "already on Filtered — stays there (nothing to reveal)");
+
+  /* ---------- Stacked: level-filter change does NOT change fhLayout ---------- */
+  w.applyFhView("stacked");
+  fireClick(errBtn, w);
+  assert(T.fhLayout === "stacked", "Stacked stays unchanged when the level filter changes (both panels already visible)");
+  fireClick(errBtn, w); // reset
+});
+
+await withApp(async (w, d, T) => {
+  section("61c. Switching to another filter auto-reveals the Filtered view from Full (no-op when Stacked is active, or when switching to a plain FILE node)");
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const nodeA = w.createFilterNode(f.id, "text", "message 1");
+  const nodeB = w.createFilterNode(f.id, "text", "message 2");
+  T.state.activeId = nodeA.id;
+  w.render();
+
+  const rowFor = id => [...d.querySelectorAll(".tree-row")].find(r => r.dataset.nodeId === id);
+
+  /* ---------- tabs layout: switching filters reveals Filtered from Full ---------- */
+  w.applyFhView("highlight");
+  assert(T.fhActiveTab === "highlight", "sanity: on the Full tab");
+  fireClick(rowFor(nodeB.id), w);
+  assert(T.state.activeId === nodeB.id, "sanity: switched active filter to node B");
+  assert(T.fhActiveTab === "filter", "switching to another filter while on Full auto-reveals the Filtered view");
+
+  /* ---------- already on Filtered: switching filters is a no-op for the tab ---------- */
+  fireClick(rowFor(nodeA.id), w);
+  assert(T.fhActiveTab === "filter", "already on Filtered — stays on Filtered (nothing to reveal)");
+
+  /* ---------- Stacked: switching filters does NOT change fhLayout ---------- */
+  w.applyFhView("stacked");
+  fireClick(rowFor(nodeB.id), w);
+  assert(T.fhLayout === "stacked", "Stacked stays unchanged when switching between filters (both panels already visible)");
+
+  /* ---------- switching to a plain FILE node does NOT auto-reveal (Full already shows the whole file) ---------- */
+  // Settle activeId on nodeA BEFORE switching to the Full tab (still in
+  // Stacked layout here, so this render()'s own reveal-check is a guaranteed
+  // no-op) — otherwise switching tabs first and changing activeId after
+  // would itself look like "switched to another filter while on Full" and
+  // immediately reveal Filtered again, which isn't what this section means
+  // to set up.
+  T.state.activeId = nodeA.id;
+  w.render();
+  w.applyFhView("highlight");
+  assert(T.fhActiveTab === "highlight", "sanity: back on the Full tab");
+  fireClick(rowFor(f.id), w);
+  assert(T.state.activeId === f.id, "sanity: switched active node to the plain file");
+  assert(T.fhActiveTab === "highlight", "switching to a FILE node (not a filter) does not auto-reveal Filtered — Full view content already reflects it");
+});
+
+/* ============================================================
+   GROUP 62 — Bugfix: tailing no longer closes an open Plot dropdown
+   Origin: this session (person-reported bug, German: "während ein Log im
+   Training [Tailing] ist, kann ich die Plots nicht korrekt Bedienen. wenn
+   ich das dropdown zur Auswahl einer Datenspalte für z. B die x Werte
+   öffne, schließt es sich kurz darauf von selbst"). Root cause:
+   renderExtractTable() unconditionally called renderPlotControls() whenever
+   the Plot tab was open, and renderPlotControls() unconditionally did
+   `plotControls.innerHTML = html` — destroying and recreating #plotXSelect/
+   #plotYSelectSingle/etc. every single call, including the ones
+   onTailChange() triggers via a plain render() on every tail poll tick
+   while a file is being actively written to. A native <select> element
+   getting torn down and recreated closes it immediately if it happened to
+   be open — exactly the reported symptom. But tailing only ever appends ROW
+   data (extractRowsData); it never touches the pattern/columns/plotConfig
+   the controls' HTML is actually built from, so the rebuild was pure waste
+   even before considering the dropdown-closing side effect. Fixed with a
+   simple content-diff guard (`lastPlotControlsHtml`, reset by
+   resetPlotConfig() so a genuine node switch always forces a real rebuild):
+   since the generated `html` string is a pure function of
+   extractColumns/plotConfig, an unchanged string means the rebuild would
+   have been a no-op, so it's skipped entirely (DOM identity preserved,
+   whatever was open stays open) — same fix shape as every other "known
+   gotcha" DOM-identity bug in this codebase (see CLAUDE.md).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("62. Bugfix: a tail-triggered re-render while the Plot tab is open no longer tears down (and closes) the axis dropdowns");
+
+  function fakeHandle(initialText) {
+    let text = initialText;
+    return {
+      _setText(t) { text = t; },
+      async getFile() {
+        const blob = new w.Blob([text]);
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+
+  const rows = [[0, 0], [10, 10], [20, 20]];
+  const log = rows.map(([x, y], i) =>
+    `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${x} y=${y}"\n`
+  ).join("");
+  const handle = fakeHandle(log);
+  const f = await w.addFile("live.log", log, () => {});
+  f.tail = { handle, offset: log.length, pending: "", failed: false, busy: false };
+  w.render();
+
+  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  assert(T.extractRowsData.length === 3, "sanity: one extraction row per entry before tailing");
+
+  w.switchExtractView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  const xSelBefore = d.querySelector("#plotXSelect");
+  const ySelBefore = d.querySelector("#plotYSelectSingle");
+  assert(xSelBefore && ySelBefore, "sanity: both axis dropdowns rendered");
+
+  // Simulate the dropdown being open: jsdom has no real popup state to
+  // assert against directly (no layout/hit-testing — see tests/README.md's
+  // "Known gaps"), so DOM node IDENTITY is the correct, general proxy here:
+  // a real browser closes an open <select> the instant its element is
+  // removed from the document, which `innerHTML = ...` always does. Proving
+  // the SAME node survives a tail tick is exactly the condition under which
+  // a real dropdown would have stayed open too.
+  const appended = `2024-01-15 10:00:03,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 3\t[DoWork]\t"x=30 y=30"\n`;
+  handle._setText(log + appended);
+  await w.tailTick(); // -> onTailChange() -> render() -> renderExtractTable() -> renderPlotControls()
+
+  assert(T.extractRowsData.length === 4, "sanity: the tail tick actually added a new extraction row (not a no-op tick)");
+  assert(d.querySelector("#plotXSelect") === xSelBefore, "X-axis dropdown is the SAME DOM node after a tail tick (not torn down and recreated)");
+  assert(d.querySelector("#plotYSelectSingle") === ySelBefore, "Y-axis dropdown is the SAME DOM node after a tail tick");
+  assert(d.querySelectorAll("#plotSvg circle.plot-mark").length === 4, "the chart itself DID update to reflect the new tailed row — only the CONTROLS were left untouched, not the data");
+
+  // A second, back-to-back tick with genuinely no new content (the common
+  // steady-state case between bursts of log activity) must be just as inert.
+  await w.tailTick();
+  assert(d.querySelector("#plotXSelect") === xSelBefore, "an empty tail tick (nothing new to append) is also a no-op for the dropdowns");
+
+  // Sanity check the guard isn't overzealous: an actual config change (chart
+  // type line -> bar, which drops the Y-axis dropdown entirely for the
+  // checkbox list layout) still rebuilds the controls for real.
+  fireClick(d.querySelector('.plot-type-btn[data-type="bar"]'), w);
+  assert(d.querySelector("#plotXSelect") !== xSelBefore, "a REAL control change (chart type) still rebuilds the DOM — the guard only skips genuinely identical rebuilds");
+  assert(d.querySelector("#plotYSelectSingle") === null, "bar chart type actually took effect (no scatter-only Y-select left behind)");
 });
 
 /* ============================================================
@@ -7399,6 +7727,57 @@ process.exit(failed ? 1 : 0);
               groups (not just "somewhere in the menu"), and a plain file
               node (fewer groups populated) still grouping cleanly with no
               dangling empty separator.
+   Group 61  — this session (2026-08-19), person-requested generalization of
+              the scroll-anchoring fix from Group 55d (previously multiline-
+              toggle-only) into captureViewAnchor()/restoreViewAnchor(),
+              applied automatically inside renderTable()/renderHighlightView()
+              on every render that rebuilds either Log view's entry list —
+              level-filter toggle, node/filter switch, sort, not just the one
+              toggle Group 55d covers — prioritizing the active/selected row
+              over the topmost-visible one when there is a selection, so it
+              never scrolls out of view as long as it's still present in the
+              target view (61a: exact on-screen pixel offset preserved
+              across a level-filter change that removes many rows above the
+              selection; 61b: falls back to reset-to-top when the selected
+              row itself gets filtered out; 61d: a selection that was
+              off-screen before the change is revealed centered instead of
+              left scrolled away). Also adds revealFilteredView()
+              on any node/filter switch (not just filter creation/edit,
+              which already called it) — centralized once inside render()
+              itself, since every state mutation ends in one — auto-
+              switching Full → Filtered so a newly active filter's result is
+              actually on screen (61c), a no-op in Stacked layout (both
+              panels already visible) or when switching to a plain FILE node
+              (Full already reflects it). Same-day follow-up (also 2026-08-19,
+              person-requested: "die Log Level Filter sollen sich nicht mehr
+              auf das full Log auswirken. stattdessen soll ein andern der Log
+              Level Filter auch zu einem automatischen Sprung von Full nach
+              Filtered führen") — the level quick-filter no longer narrows the
+              Full view's own entry list at all (`renderHighlightView()` stopped
+              calling `applyLevelFilter()`), and `renderLevelBar()`'s click
+              handler now calls `revealFilteredView()` too, same auto-reveal
+              as a filter switch (61e). Group 4's dual-view assertion (from
+              32e282b4, originally "Full view ALSO narrows to ERROR") updated
+              in place to assert the opposite — Full stays showing every
+              level, unaffected — and 61a's Full-view assertion updated the
+              same way (its entry list/scrollTop are now untouched by the
+              level-filter click that used to re-anchor it).
+   Group 62  — this session (2026-08-19), person-reported bugfix: a tail
+              poll tick while the Plot tab was open closed any open axis
+              dropdown, since renderPlotControls() unconditionally rebuilt
+              #plotControls' innerHTML on every renderExtractTable() call —
+              including the ones a tail tick's plain render() triggers, even
+              though tailing only ever appends row data, never touches the
+              columns/plotConfig the controls are built from. Fixed with a
+              content-diff guard (`lastPlotControlsHtml`) that skips the
+              destructive rebuild when the generated HTML is byte-identical
+              to what's already there. Covers: DOM node identity for both
+              axis dropdowns surviving a real `tailTick()` (via a fake
+              FileSystemFileHandle, same technique Group 12 uses) that adds a
+              new row, an inert back-to-back tick with nothing new, the
+              chart itself still updating live (proving only the controls
+              were guarded, not the data), and a genuine control change
+              (chart type) still forcing a real rebuild.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
