@@ -115,6 +115,40 @@
   .shot-frame .chrome span{width:10px; height:10px; border-radius:50%; background:#324b46;}
   .shot-frame img{width:100%;}
 
+  /* ---------- Zoom-crop thumbnail + lightbox ---------- */
+  .zoom-frame{
+    position:relative; display:block; width:100%;
+    background-color:var(--surface-2); background-repeat:no-repeat;
+    cursor:zoom-in;
+  }
+  .zoom-frame::after{
+    content:""; position:absolute; inset:0; box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+    transition:box-shadow .15s ease;
+  }
+  .zoom-frame:hover::after, .zoom-frame:focus-visible::after{box-shadow:inset 0 0 0 2px var(--accent-strong);}
+  .zoom-frame:focus-visible{outline:none;}
+  .zoom-hint{
+    position:absolute; right:10px; bottom:10px; display:flex; align-items:center; gap:6px;
+    font-size:11.5px; font-weight:600; color:var(--text-primary);
+    background:rgba(6,20,18,.75); border:1px solid rgba(255,255,255,.12);
+    padding:5px 10px; border-radius:999px;
+    opacity:0; transform:translateY(4px); transition:opacity .15s ease, transform .15s ease;
+    pointer-events:none;
+  }
+  .zoom-frame:hover .zoom-hint, .zoom-frame:focus-visible .zoom-hint{opacity:1; transform:translateY(0);}
+
+  .lightbox{
+    position:fixed; inset:0; z-index:100; display:none; align-items:center; justify-content:center;
+    background:rgba(5,12,11,.88); padding:56px 24px;
+  }
+  .lightbox.open{display:flex;}
+  .lightbox img{max-width:100%; max-height:100%; border-radius:10px; border:1px solid var(--border); box-shadow:0 30px 80px -20px rgba(0,0,0,.6);}
+  .lightbox-close{
+    position:absolute; top:20px; right:24px; width:38px; height:38px; border-radius:50%;
+    background:var(--surface); border:1px solid var(--border); color:var(--text-primary);
+    font-size:18px; line-height:1; cursor:pointer;
+  }
+
   /* ---------- Section shell ---------- */
   section{padding:88px 0;}
   section.alt{background:var(--bg-alt); border-top:1px solid var(--border); border-bottom:1px solid var(--border);}
@@ -152,7 +186,6 @@
     background:var(--surface-2); border-bottom:1px solid var(--border);
   }
   .feature-media .chrome span{width:8px; height:8px; border-radius:50%; background:#324b46;}
-  .feature-media img{width:100%;}
 
   /* ---------- Feature grid (secondary highlights) ---------- */
   .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:20px;}
@@ -237,13 +270,12 @@
 
   <!-- ================= HERO ================= -->
   <section class="hero">
-    <div class="eyebrow"><span class="dot"></span> Für Entwickler gebaut, kein Ops-Tool</div>
-    <h1>Logs lesen kostet Zeit. <span class="hl">PhiLogg</span> gibt sie dir zurück.</h1>
+    <div class="eyebrow"><span class="dot"></span> Lokaler Log-Viewer für die Fehlersuche</div>
+    <h1><span class="hl">PhiLogg</span> — Logdateien filtern, verknüpfen und auswerten</h1>
     <p class="hero-sub">
-      Ein einziges HTML-File. Kein Server, keine Installation, kein Upload.
-      Filterketten statt Ctrl+F, Wertextraktion statt Copy-Paste in Excel,
-      Plots statt Kopfrechnen — gebaut, um genau die Fragen zu beantworten,
-      die beim Debuggen und bei der Verifikation wirklich auftauchen.
+      Eine einzelne HTML-Datei, läuft lokal im Browser. Verschachtelte Filterketten,
+      Wertextraktion in Tabellen und Plots, Verknüpfung zusammengehöriger Ereignisse —
+      ohne Installation, ohne Server, ohne dass Logdaten den Rechner verlassen.
     </p>
     <div class="hero-ctas">
       <a class="btn btn-primary" href="../philogg.html">philogg.html öffnen</a>
@@ -258,34 +290,39 @@
 
     <div class="shot-frame">
       <div class="chrome"><span></span><span></span><span></span></div>
-      <img src="screenshots/01-log-view.png" alt="PhiLogg Hauptansicht: Filterbaum, Zeitleiste, Log-Tabelle mit Level-Filter">
+      <div class="zoom-frame" style="aspect-ratio:900/560"
+           data-src="screenshots/01-log-view.png" data-iw="1440" data-ih="900"
+           data-cx="0" data-cy="30" data-cw="900" data-ch="560"
+           role="button" tabindex="0"
+           aria-label="Hauptansicht: Filterbaum, Zeitleiste und Log-Tabelle — klicken für Originalgröße">
+        <span class="zoom-hint">⤢ Originalgröße</span>
+      </div>
     </div>
   </section>
 
   <!-- ================= WHY ================= -->
   <section id="why">
     <div class="section-head">
-      <div class="kicker">Warum PhiLogg</div>
-      <h2>Gebaut als Ersatz für LogViewPlus &amp; Co. — für ein ganz bestimmtes Log-Format</h2>
-      <p>Kein SaaS, kein Agent, kein Log-Shipping. PhiLogg öffnet die Datei, die schon auf deiner
-      Platte liegt, und bleibt dabei komplett im Browser. Genau das macht es für Bug-Analyse und
-      Verifikations-Läufe während der Entwicklung so schnell einsatzbereit.</p>
+      <div class="kicker">Betriebsmodell</div>
+      <h2>Einzelne HTML-Datei, läuft im Browser</h2>
+      <p>Kein Server, kein Log-Shipping, kein Account. PhiLogg öffnet eine lokale
+      Logdatei direkt im Browser und verarbeitet sie dort.</p>
     </div>
     <div class="grid-3">
       <div class="card">
         <div class="icon">⚡</div>
-        <h4>Sofort startklar</h4>
-        <p>Doppelklick auf <code>philogg.html</code> — fertig. Kein npm install, kein Server, kein Setup für die Kollegin nebenan.</p>
+        <h4>Keine Installation</h4>
+        <p>Öffnen von <code>philogg.html</code> im Browser reicht — kein npm install, kein Server, kein Setup.</p>
       </div>
       <div class="card">
         <div class="icon">🔒</div>
         <h4>Daten bleiben lokal</h4>
-        <p>Logs verlassen nie den Rechner. Kein Upload, kein Tracking, keine Cloud-Abhängigkeit — auch bei sensiblen Kundenlogs unbedenklich.</p>
+        <p>Logs verlassen den Rechner nicht. Kein Upload, kein Tracking, keine Cloud-Anbindung.</p>
       </div>
       <div class="card">
         <div class="icon">🚀</div>
-        <h4>Bleibt schnell bei großen Files</h4>
-        <p>Asynchrones Parsing in Chunks und virtualisiertes Rendering halten die UI auch bei sehr großen Logdateien flüssig.</p>
+        <h4>Asynchrones Parsing</h4>
+        <p>Logdateien werden in Chunks geparst, die Tabelle ist virtualisiert gerendert — die Oberfläche bleibt auch bei großen Dateien bedienbar.</p>
       </div>
     </div>
   </section>
@@ -293,9 +330,9 @@
   <!-- ================= SHOWCASE ================= -->
   <section id="showcase" class="alt">
     <div class="section-head">
-      <div class="kicker">So sieht die Arbeit damit aus</div>
-      <h2>Die Features, die den Unterschied machen</h2>
-      <p>Ein typischer Debugging-Flow: filtern, verknüpfen, Werte extrahieren, plotten — alles im selben Fenster, ohne das Tool zu wechseln.</p>
+      <div class="kicker">Screenshots</div>
+      <h2>Ausgewählte Features</h2>
+      <p>Filtern, verknüpfen, Werte extrahieren und plotten in einer Oberfläche. Ausschnitt anklicken für die Originalgröße.</p>
     </div>
 
     <div id="features">
@@ -303,60 +340,76 @@
       <div class="feature">
         <div class="feature-copy">
           <span class="tag">Filterbaum</span>
-          <h3>Verschachtelte Filterketten statt Wegwerf-Suchen</h3>
-          <p>Jeder Filter arbeitet auf dem Ergebnis seines Elternfilters. So baust du dir Schritt für
-          Schritt den genauen Blick auf das Problem auf — und jeder Schritt bleibt als Baumknoten
-          sichtbar, benennbar, umfärbbar und wiederverwendbar.</p>
+          <h3>Verschachtelter Filterbaum</h3>
+          <p>Jeder Filter arbeitet auf dem Ergebnis seines Elternfilters. Jeder Schritt bleibt als
+          eigener Baumknoten sichtbar, benennbar, umfärbbar und wiederverwendbar.</p>
           <ul>
             <li>Text-, Zeitraum-, AND/OR-, Link- und Kontext-Filter, beliebig kombinierbar</li>
             <li>Groß-/Kleinschreibung, Spaltenbeschränkung und NOT/Invertierung pro Textfilter</li>
             <li>Undo/Redo, Copy/Paste und Drag &amp; Drop direkt im Baum</li>
-            <li>Breadcrumb + Level-Schnellfilter immer sichtbar, ein Klick zurück zu jedem Vorfahren</li>
+            <li>Breadcrumb und Level-Schnellfilter, Klick auf einen Vorfahren springt dorthin zurück</li>
           </ul>
         </div>
         <div class="feature-media">
           <div class="chrome"><span></span><span></span><span></span></div>
-          <img src="screenshots/01-log-view.png" alt="Filterbaum mit mehreren verschachtelten Filtern, Level-Schnellfilter und Timeline-Minimap">
+          <div class="zoom-frame" style="aspect-ratio:700/460"
+               data-src="screenshots/01-log-view.png" data-iw="1440" data-ih="900"
+               data-cx="0" data-cy="40" data-cw="700" data-ch="460"
+               role="button" tabindex="0"
+               aria-label="Filterbaum mit mehreren verschachtelten Filtern, Level-Schnellfilter und Timeline-Minimap — klicken für Originalgröße">
+            <span class="zoom-hint">⤢ Originalgröße</span>
+          </div>
         </div>
       </div>
 
-      <!-- Feature 2: Extraction + Plot -->
+      <!-- Feature 2: Extraction table -->
       <div class="feature reverse">
         <div class="feature-copy">
-          <span class="tag">Wertextraktion &amp; Plots</span>
-          <h3>Aus Log-Text werden Zahlen — und aus Zahlen ein Chart</h3>
-          <p>Ein Muster wie <code>Job #[value:int] completed in [value:int]ms</code> reicht, und PhiLogg
-          baut daraus eine sortierbare Tabelle mit typisierten Spalten, Min/Max/Mittelwert/σ
-          pro Spalte und einem Plot-Tab — ganz ohne externe Chart-Bibliothek.</p>
+          <span class="tag">Wertextraktion</span>
+          <h3>Extraktionstabelle</h3>
+          <p>Ein Muster wie <code>Job #[value:int] completed in [value:int]ms</code> erzeugt eine
+          sortierbare Tabelle mit typisierten Spalten und Min/Max/Mittelwert/σ pro Spalte.</p>
           <ul>
             <li>Platzhalter für float/int/hex/word/time, live Muster-Vorschau während der Eingabe</li>
-            <li>Line-, Bar- und Scatter-Charts, mehrere Y-Serien, Farbe nach Wert</li>
             <li>Wert-Assertions (Soll-Bereich oder Ziel±Toleranz) mit Pass/Fail-Markierung</li>
-            <li>Copy als TSV — direkt einfügbar in Excel oder ein Ticket</li>
+            <li>Zellauswahl (auch nicht-zusammenhängend) und Copy als TSV</li>
+            <li>Synthetische Index- und t(ms)-Spalten für jede Extraktion</li>
           </ul>
         </div>
         <div class="feature-media">
           <div class="chrome"><span></span><span></span><span></span></div>
-          <img src="screenshots/02-extraction-table.png" alt="Extraktionstabelle mit typisierten Spalten und Statistikzeile">
+          <div class="zoom-frame" style="aspect-ratio:1160/520"
+               data-src="screenshots/02-extraction-table.png" data-iw="1440" data-ih="900"
+               data-cx="280" data-cy="40" data-cw="1160" data-ch="520"
+               role="button" tabindex="0"
+               aria-label="Extraktionstabelle mit typisierten Spalten und Statistikzeile — klicken für Originalgröße">
+            <span class="zoom-hint">⤢ Originalgröße</span>
+          </div>
         </div>
       </div>
 
       <div class="feature">
         <div class="feature-copy">
           <span class="tag">Plot-Tab</span>
-          <h3>Trends erkennen, ohne die Zahlen erst nach Excel zu schaufeln</h3>
-          <p>Der Plot-Tab sitzt direkt neben der Extraktionstabelle und teilt sich ihre Daten —
-          Achsenwahl, Zoom und Serienauswahl reagieren live, jede Spalte lässt sich per Klick
-          zur X- oder Y-Achse machen.</p>
+          <h3>Plots aus der Extraktionstabelle</h3>
+          <p>Der Plot-Tab teilt sich die Daten mit der Extraktionstabelle. Achsenwahl, Zoom und
+          Serienauswahl sind direkt darauf gebunden, ohne separaten Export.</p>
           <ul>
+            <li>Line-, Bar- und Scatter-Charts, mehrere Y-Serien, Farbe nach Wert</li>
             <li>Automatische Achsenwahl, jederzeit manuell überschreibbar</li>
-            <li>Zoom/Reset, normierte Serien, gleichskalierte Achsen für 1:1-Vergleiche</li>
-            <li>Klick auf einen Punkt springt zurück zur zugehörigen Log-Zeile</li>
+            <li>Zoom/Reset, normierte Serien, gleichskalierte Achsen</li>
+            <li>Klick auf einen Punkt springt zur zugehörigen Log-Zeile</li>
           </ul>
         </div>
         <div class="feature-media">
           <div class="chrome"><span></span><span></span><span></span></div>
-          <img src="screenshots/03-plot.png" alt="Line-Chart im Plot-Tab, generiert aus extrahierten Werten">
+          <div class="zoom-frame" style="aspect-ratio:1160/560"
+               data-src="screenshots/03-plot.png" data-iw="1440" data-ih="900"
+               data-cx="280" data-cy="40" data-cw="1160" data-ch="560"
+               role="button" tabindex="0"
+               aria-label="Line-Chart im Plot-Tab, generiert aus extrahierten Werten — klicken für Originalgröße">
+            <span class="zoom-hint">⤢ Originalgröße</span>
+          </div>
         </div>
       </div>
 
@@ -364,10 +417,9 @@
       <div class="feature reverse">
         <div class="feature-copy">
           <span class="tag">Link-Filter</span>
-          <h3>Zwei Ereignisströme zueinander in Beziehung setzen</h3>
-          <p>Klassische Frage bei der Verifikation: "Was war der letzte Sensorwert vor diesem Event?"
-          Der Link-Filter pairt zwei Filterergebnisse per Nearest-Neighbor-Suche — inklusive
-          mehrstufiger Verkettung für Multi-Hop-Analysen.</p>
+          <h3>Nearest-Neighbor-Verknüpfung zweier Filter</h3>
+          <p>Der Link-Filter paart die Ergebnisse zweier Filter per Nearest-Neighbor-Suche in der
+          Zeit — etwa den jeweils letzten Messwert vor einem Ereignis.</p>
           <ul>
             <li>Vorwärts/rückwärts, N-tes Vorkommen, optional exklusiv oder chronologisch erzwungen</li>
             <li>Mehrstufige Verkettung über einen Dialog (2 oder mehr Filter in einem Zug)</li>
@@ -376,7 +428,13 @@
         </div>
         <div class="feature-media">
           <div class="chrome"><span></span><span></span><span></span></div>
-          <img src="screenshots/04-link-view.png" alt="Link-Ansicht: gepaarte Log-Zeilen mit Δ-Zeit zwischen zwei Filterergebnissen">
+          <div class="zoom-frame" style="aspect-ratio:1160/560"
+               data-src="screenshots/04-link-view.png" data-iw="1440" data-ih="900"
+               data-cx="280" data-cy="40" data-cw="1160" data-ch="560"
+               role="button" tabindex="0"
+               aria-label="Link-Ansicht: gepaarte Log-Zeilen mit Δ-Zeit zwischen zwei Filterergebnissen — klicken für Originalgröße">
+            <span class="zoom-hint">⤢ Originalgröße</span>
+          </div>
         </div>
       </div>
 
@@ -384,19 +442,25 @@
       <div class="feature">
         <div class="feature-copy">
           <span class="tag">Full / Filtered Split</span>
-          <h3>Den Überblick behalten, während du in die Tiefe filterst</h3>
-          <p>Die "Full"-Ansicht zeigt immer die komplette Datei, unabhängig vom aktiven Filter —
-          mit frei einfärbbaren Highlight-Regeln pro Filterknoten. So verlierst du nie den
-          Gesamtkontext, während "Filtered" auf das aktuelle Problem eingeengt bleibt.</p>
+          <h3>Full/Filtered-Split-Ansicht</h3>
+          <p>Die "Full"-Ansicht zeigt die komplette Datei, unabhängig vom aktiven Filter, mit frei
+          einfärbbaren Highlight-Regeln pro Filterknoten. "Filtered" bleibt auf den aktiven Filter
+          eingeengt.</p>
           <ul>
             <li>Beliebig viele Farbregeln, gleichzeitig sichtbar als Streifen am Zeilenrand</li>
             <li>Tabs- oder Stacked-Layout, frei einstellbare Aufteilung</li>
-            <li>Auswahl bleibt zwischen beiden Ansichten synchron, kein "Sprung" beim Wechseln</li>
+            <li>Auswahl bleibt zwischen beiden Ansichten synchron</li>
           </ul>
         </div>
         <div class="feature-media">
           <div class="chrome"><span></span><span></span><span></span></div>
-          <img src="screenshots/05-highlight-split.png" alt="Stacked-Ansicht: Full-Log oben mit Highlight-Markierungen, gefilterte Ansicht darunter">
+          <div class="zoom-frame" style="aspect-ratio:1160/560"
+               data-src="screenshots/05-highlight-split.png" data-iw="1440" data-ih="900"
+               data-cx="280" data-cy="40" data-cw="1160" data-ch="560"
+               role="button" tabindex="0"
+               aria-label="Stacked-Ansicht: Full-Log oben mit Highlight-Markierungen, gefilterte Ansicht darunter — klicken für Originalgröße">
+            <span class="zoom-hint">⤢ Originalgröße</span>
+          </div>
         </div>
       </div>
 
@@ -404,34 +468,43 @@
       <div class="feature reverse">
         <div class="feature-copy">
           <span class="tag">Bookmarks &amp; Detailansicht</span>
-          <h3>Wichtige Fundstellen markieren, nicht nur merken</h3>
-          <p>Ein Klick setzt ein Bookmark mit Notiz — praktisch, um während einer längeren
-          Analyse-Session Fundstellen festzuhalten, auf die man später zurückkommen will,
-          ganz ohne die Filterkette zu verlassen.</p>
+          <h3>Bookmarks mit Notiz</h3>
+          <p>Ein Klick setzt ein Bookmark mit Freitext-Notiz auf einem Eintrag, unabhängig von der
+          aktiven Filterkette.</p>
           <ul>
-            <li>Bookmarks mit Freitext-Notiz, jederzeit über das Panel erreichbar</li>
-            <li>Optional direkt in die gefilterte Ansicht "eingepinnt"</li>
+            <li>Bookmarks jederzeit über ein Panel erreichbar</li>
+            <li>Optional direkt in die gefilterte Ansicht eingepinnt</li>
             <li>Detailpanel zeigt die volle Nachricht inkl. Stacktrace mit erhaltenen Zeilenumbrüchen</li>
           </ul>
         </div>
         <div class="feature-media">
           <div class="chrome"><span></span><span></span><span></span></div>
-          <img src="screenshots/06-detail-bookmarks.png" alt="Bookmarks-Panel mit Notiz und Detailansicht einer ausgewählten Log-Zeile inklusive Stacktrace">
+          <div class="zoom-frame" style="aspect-ratio:510/260"
+               data-src="screenshots/06-detail-bookmarks.png" data-iw="1440" data-ih="900"
+               data-cx="930" data-cy="30" data-cw="510" data-ch="260"
+               role="button" tabindex="0"
+               aria-label="Bookmarks-Panel mit Notiz zu einer ausgewählten Log-Zeile — klicken für Originalgröße">
+            <span class="zoom-hint">⤢ Originalgröße</span>
+          </div>
         </div>
       </div>
 
       <!-- Feature 6: Theming -->
       <div class="feature">
         <div class="feature-copy">
-          <span class="tag">Dark Mode</span>
-          <h3>Passt sich an, statt dich zu blenden</h3>
-          <p>Light und Dark Theme, folgt standardmäßig der Systemeinstellung und lässt sich jederzeit
-          per Klick umschalten — für lange Debugging-Sessions genauso geeignet wie für den schnellen
-          Blick zwischendurch.</p>
+          <span class="tag">Dark Theme</span>
+          <h3>Light- und Dark-Theme</h3>
+          <p>Folgt standardmäßig der Systemeinstellung, per Klick umschaltbar.</p>
         </div>
         <div class="feature-media">
           <div class="chrome"><span></span><span></span><span></span></div>
-          <img src="screenshots/07-dark-theme.png" alt="PhiLogg im Dark Theme mit Extraktionstabelle und Plot-Tab">
+          <div class="zoom-frame" style="aspect-ratio:1160/560"
+               data-src="screenshots/07-dark-theme.png" data-iw="1440" data-ih="900"
+               data-cx="280" data-cy="40" data-cw="1160" data-ch="560"
+               role="button" tabindex="0"
+               aria-label="PhiLogg im Dark Theme mit Extraktionstabelle und Plot-Tab — klicken für Originalgröße">
+            <span class="zoom-hint">⤢ Originalgröße</span>
+          </div>
         </div>
       </div>
     </div>
@@ -441,16 +514,15 @@
   <section id="full-list">
     <div class="section-head">
       <div class="kicker">Vollständige Übersicht</div>
-      <h2>Alle Features im Detail</h2>
-      <p>Eine möglichst vollständige Liste dessen, was heute schon in PhiLogg steckt.</p>
+      <h2>Alle Features</h2>
     </div>
 
     <div class="fl-grid">
       <div class="fl-col">
         <h4>Dateien &amp; Datenaufnahme</h4>
         <ul>
-          <li><b>Single-File-Tool</b>, läuft per Doppelklick oder von jedem Webserver</li>
-          <li>Toleranter Parser für <code>%d %p "%t" %l [%method] %m%n</code>-Logformat inkl. Mehrzeilen-Stacktraces</li>
+          <li>Einzelne HTML-Datei, läuft per Doppelklick oder von jedem Webserver</li>
+          <li>Toleranter Zeilenparser, erkennt Mehrzeilen-Stacktraces als Fortsetzung des vorherigen Eintrags</li>
           <li>Asynchrones Chunk-Parsing mit Fortschrittsbalken direkt an der Datei-Zeile</li>
           <li>Drag &amp; Drop von Dateien und ganzen Ordnern</li>
           <li>Mehrere Dateien zu einer chronologischen Zeitleiste zusammenführen (Merge)</li>
@@ -512,20 +584,20 @@
           <li>Pro Datei gespeicherter Filterverlauf über Sessions hinweg</li>
           <li>Filter als JSON speichern/laden</li>
           <li>Wiederverwendbare Filter-Bibliothek, dateiunabhängig anwendbar</li>
-          <li>Kompletter Session-Export/-Import zum Teilen einer Analyse mit Kolleg:innen</li>
-          <li>Intelligentes Datei-Matching beim Import (Name, Größe, Inhalt)</li>
+          <li>Session-Export/-Import zum Teilen einer Analyse mit Kolleg:innen</li>
+          <li>Datei-Matching beim Import über Name, Größe und Inhalt</li>
         </ul>
       </div>
 
       <div class="fl-col">
         <h4>Bedienung &amp; Qualität</h4>
         <ul>
-          <li>Umfangreiche Tastatur-Shortcuts (Filtern, Kopieren, Navigieren, Bookmarks)</li>
+          <li>Tastatur-Shortcuts für Filtern, Kopieren, Navigieren, Bookmarks</li>
           <li>Light- und Dark-Theme, folgt der Systemeinstellung</li>
-          <li>Kontextmenüs für schnellen Zugriff auf alle Zeilen-/Knoten-Aktionen</li>
+          <li>Kontextmenüs für Zeilen-/Knoten-Aktionen</li>
           <li>Keine Installation, keine Cloud, keine Telemetrie — alles lokal im Browser</li>
           <li>Keine externen Abhängigkeiten, kein Build-Schritt, kein Framework</li>
-          <li>Begleitet von einer automatisierten Regressionstest-Suite</li>
+          <li>Automatisierte Regressionstest-Suite</li>
         </ul>
       </div>
     </div>
@@ -535,17 +607,12 @@
   <section class="alt">
     <div class="why-grid">
       <div>
-        <div class="kicker">Für Entwickler, von einem Entwickler</div>
-        <h2 style="font-size:28px; margin:0 0 16px; letter-spacing:-.01em;">Kein Deployment-Ritual — Öffnen reicht</h2>
-        <p style="color:var(--text-secondary); font-size:15.5px; margin:0 0 16px;">
-          PhiLogg ist absichtlich <b>eine</b> HTML-Datei: inline CSS, vanilla JavaScript,
-          kein Framework, kein Build-Tooling, keine CDN-Aufrufe. Das macht es so einfach,
-          es an Kolleg:innen weiterzugeben wie jede andere Datei auch.
-        </p>
+        <div class="kicker">Aufbau</div>
+        <h2 style="font-size:28px; margin:0 0 16px; letter-spacing:-.01em;">Eine Datei, keine Abhängigkeiten</h2>
         <p style="color:var(--text-secondary); font-size:15.5px; margin:0;">
-          Gebaut, um ein bestimmtes, log4net-artiges Pipe/Tab-getrenntes Format zu lesen —
-          genau das Format, das in diesem Projekt anfällt. Läuft direkt via <code>file://</code>
-          oder von jedem statischen Webserver, ganz ohne Backend.
+          <code>philogg.html</code> enthält inline CSS und vanilla JavaScript, kein Framework,
+          kein Build-Tooling, keine CDN-Aufrufe. Läuft direkt via <code>file://</code> oder von
+          jedem statischen Webserver, ohne Backend.
         </p>
       </div>
       <div class="why-code">
@@ -556,9 +623,9 @@
         <div>–</div>
         <div>&nbsp;</div>
         <div class="c-cmt"># Starten</div>
-        <div class="c-ok">Doppelklick auf philogg.html</div>
+        <div class="c-ok">philogg.html im Browser öffnen</div>
         <div>&nbsp;</div>
-        <div class="c-cmt"># Weitergeben an Kolleg:in</div>
+        <div class="c-cmt"># Weitergeben</div>
         <div class="c-ok">philogg.html per Chat/Mail/Netzlaufwerk teilen</div>
       </div>
     </div>
@@ -567,8 +634,8 @@
   <!-- ================= CTA ================= -->
   <section>
     <div class="cta-band">
-      <h2>Nächstes Bug-Log direkt in PhiLogg öffnen</h2>
-      <p>Keine Anmeldung, kein Setup — die Datei liegt schon im Projekt.</p>
+      <h2>philogg.html öffnen</h2>
+      <p>Die Datei liegt im Projekt-Root, kein Setup notwendig.</p>
       <a class="btn btn-primary" href="../philogg.html">philogg.html öffnen →</a>
     </div>
   </section>
@@ -581,6 +648,51 @@
     <div class="fmuted">Lokaler, single-file Log-Viewer — kein Server, keine Cloud, keine Abhängigkeiten.</div>
   </div>
 </footer>
+
+<div class="lightbox" id="lightbox">
+  <button type="button" class="lightbox-close" id="lightboxCloseBtn" aria-label="Schließen">✕</button>
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll(".zoom-frame[data-src]").forEach(function(el){
+    var iw = +el.dataset.iw, ih = +el.dataset.ih;
+    var cx = +el.dataset.cx, cy = +el.dataset.cy, cw = +el.dataset.cw, ch = +el.dataset.ch;
+    el.style.aspectRatio = cw + " / " + ch;
+    el.style.backgroundImage = "url(\"" + el.dataset.src + "\")";
+    el.style.backgroundSize = (iw / cw * 100).toFixed(3) + "% " + (ih / ch * 100).toFixed(3) + "%";
+    var px = cw >= iw ? 0 : (cx / (iw - cw) * 100).toFixed(3);
+    var py = ch >= ih ? 0 : (cy / (ih - ch) * 100).toFixed(3);
+    el.style.backgroundPosition = px + "% " + py + "%";
+  });
+
+  var lightbox = document.getElementById("lightbox");
+  var lightboxImg = document.getElementById("lightboxImg");
+
+  function openLightbox(src, alt){
+    lightboxImg.src = src;
+    lightboxImg.alt = alt || "";
+    lightbox.classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+  function closeLightbox(){
+    lightbox.classList.remove("open");
+    lightboxImg.src = "";
+    document.body.style.overflow = "";
+  }
+
+  document.querySelectorAll(".zoom-frame[data-src]").forEach(function(el){
+    el.addEventListener("click", function(){ openLightbox(el.dataset.src, el.getAttribute("aria-label") || ""); });
+    el.addEventListener("keydown", function(ev){
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openLightbox(el.dataset.src, el.getAttribute("aria-label") || ""); }
+    });
+  });
+  lightbox.addEventListener("click", function(ev){ if (ev.target === lightbox) closeLightbox(); });
+  document.getElementById("lightboxCloseBtn").addEventListener("click", closeLightbox);
+  document.addEventListener("keydown", function(ev){ if (ev.key === "Escape") closeLightbox(); });
+})();
+</script>
 
 </body>
 </html>
