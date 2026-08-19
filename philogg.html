@@ -3938,6 +3938,17 @@ function initFhView() {
 function revealFilteredView() {
   if (fhLayout === "tabs" && fhActiveTab === "highlight") applyFhView("filter");
 }
+
+// Tracks state.activeId across render() calls (every state mutation ends in
+// one — see render()'s own comment) so switching the active node to a
+// filter — via the tree, the breadcrumb, arrow-key nav, drag-drop
+// reparenting, undo/redo, … any of the ~30 call sites that set
+// state.activeId directly — reveals the Filtered view the same way creating
+// or editing a filter already does (revealFilteredView() above), instead of
+// only covering the creation/edit call sites that happened to call it
+// explicitly. No-op (via revealFilteredView's own guard) when Stacked is
+// active or the Filtered tab is already showing.
+let lastActiveIdForReveal = null;
 fhTabs.addEventListener("click", ev => {
   const btn = ev.target.closest(".view-tab");
   if (btn) applyFhView(btn.dataset.fhTab);
@@ -3965,6 +3976,11 @@ function updateSortIndicators() {
 }
 
 function render() {
+  if (state.activeId !== lastActiveIdForReveal) {
+    lastActiveIdForReveal = state.activeId;
+    const activeNode = state.nodes[state.activeId];
+    if (activeNode && activeNode.type === "filter") revealFilteredView();
+  }
   renderTree();
   renderBreadcrumb();
   renderLevelBar();
@@ -6425,21 +6441,71 @@ let highlightRowOffsets = null; // same, built by renderHighlightView()
 
 // Which entry id is currently rendered at (or just above) the top of a
 // virtualized viewport — i.e. "what the person is looking at right now."
-// Used by the multiline toggle (below) to re-anchor scroll on that SAME
-// entry after row heights change, instead of resetting to the top.
+// Used by captureViewAnchor (below) as its fallback anchor when nothing is
+// selected. Takes `offsets` truthiness (not state.multilineMessages, which
+// may already reflect a NEWER mode than the entries/offsets pair passed in —
+// e.g. right after the multiline toggle flips the flag but before the view
+// rebuilds) as the source of truth for whether these particular offsets are
+// variable-height ones.
 function topVisibleEntryId(entries, offsets, scrollTop) {
   if (!entries.length) return null;
-  const idx = (state.multilineMessages && offsets) ? findOffsetIndex(offsets, scrollTop) : Math.floor(scrollTop / ROW_HEIGHT);
+  const idx = offsets ? findOffsetIndex(offsets, scrollTop) : Math.floor(scrollTop / ROW_HEIGHT);
   return entries[Math.max(0, Math.min(idx, entries.length - 1))].id;
 }
-// Set by the multiline-message toggle right before render(): the entry id
-// that was at the top of each view's viewport pre-toggle. renderTable()/
-// renderHighlightView() consume these once, scrolling so that SAME entry
-// (now possibly a different height) is again at the top — the rows below it
-// are free to grow/shrink, but the view doesn't jump/reset to the top of the
-// whole list the way a plain node/filter switch does.
-let pendingTableTopAlignId = null;
-let pendingHighlightTopAlignId = null;
+
+/* ---------- General "don't jump" scroll anchoring ----------
+   Shared by renderTable()/renderHighlightView() (and anything else that
+   rebuilds one of the two Log views' entry list — level-filter toggle,
+   node/filter switch, multiline toggle, sort, pin-bookmarks toggle, …):
+   captureViewAnchor() is called with the OLD entries/offsets/scroll
+   container right before a render recomputes them, restoreViewAnchor() with
+   the NEW ones right after. Together they keep whatever the person was
+   actually looking at on screen — the active/selected row takes priority
+   (Aufgabe: "die aktive Zeile bleibt sichtbar, sofern sie im Ziel-View
+   vorhanden ist"), falling back to the topmost visible row when nothing is
+   selected (the old multiline-toggle-only behavior, now applied to every
+   such change instead of just that one). If the anchored entry doesn't
+   survive into the new list, restoreViewAnchor() returns false and the
+   caller falls back to its own default (reset to top). */
+function captureViewAnchor(entries, offsets, scrollEl) {
+  if (!entries.length) return null;
+  const scrollTop = scrollEl.scrollTop;
+  const viewportH = scrollEl.clientHeight || 400;
+  if (state.selectedId) {
+    const idx = entries.findIndex(e => e.id === state.selectedId);
+    if (idx !== -1) {
+      const rowTop = offsets ? offsets[idx] : idx * ROW_HEIGHT;
+      const rowH = offsets ? (offsets[idx + 1] - rowTop) : ROW_HEIGHT;
+      const onScreen = rowTop + rowH > scrollTop && rowTop < scrollTop + viewportH;
+      // offset === null: the selected row wasn't on screen before the change
+      // either — nothing to preserve, just an obligation to reveal it now
+      // (restoreViewAnchor centers it instead of pinning an exact pixel spot).
+      return { id: state.selectedId, offset: onScreen ? (rowTop - scrollTop) : null };
+    }
+  }
+  const fallbackId = topVisibleEntryId(entries, offsets, scrollTop);
+  return fallbackId != null ? { id: fallbackId, offset: 0 } : null;
+}
+
+// Restores an anchor captured above against the NEW entries/offsets, after
+// the view that owns scrollEl has already been rebuilt. Returns false
+// (leaving scrollEl untouched) when the anchored entry isn't in the new
+// list at all — e.g. it got filtered out — so the caller can fall back to
+// its own default instead.
+function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
+  if (!anchor) return false;
+  const idx = entries.findIndex(e => e.id === anchor.id);
+  if (idx === -1) return false;
+  const rowTop = offsets ? offsets[idx] : idx * ROW_HEIGHT;
+  if (anchor.offset != null) {
+    setScrollFn(rowTop - anchor.offset);
+  } else {
+    const rowH = offsets ? (offsets[idx + 1] - rowTop) : ROW_HEIGHT;
+    const viewportH = scrollEl.clientHeight || 400;
+    setScrollFn(rowTop - viewportH / 2 + rowH / 2); // wasn't visible before — reveal it centered, not another edge-snap jump
+  }
+  return true;
+}
 
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
@@ -6628,23 +6694,17 @@ function setHighlightScroll(value) {
 // callers (revealInHighlightView) omit it and get a recompute.
 function renderHighlightView(colorMapIsFresh) {
   const rootId = getRootFileId(state.activeId);
+  const sameRoot = rootId === lastHighlightRootId;
+  // Only worth trying to preserve scroll position within the SAME root
+  // file's viewport — captured before currentHighlightViewEntries below
+  // overwrites the OLD (pre-change) list. See captureViewAnchor/
+  // restoreViewAnchor above for the general mechanism this feeds.
+  const scrollAnchor = sameRoot ? captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody) : null;
   currentHighlightViewEntries = rootId ? applyLevelFilter(state.nodes[rootId].entries) : [];
   highlightRowOffsets = state.multilineMessages ? buildRowOffsets(currentHighlightViewEntries) : null;
   highlightSpacer.style.height =
     ((state.multilineMessages ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
   if (!colorMapIsFresh) highlightColorMap = computeHighlightMap(rootId);
-
-  if (pendingHighlightTopAlignId != null) {
-    const targetId = pendingHighlightTopAlignId;
-    pendingHighlightTopAlignId = null;
-    const idx = currentHighlightViewEntries.findIndex(e => e.id === targetId);
-    if (idx !== -1) {
-      lastHighlightRootId = rootId;
-      setHighlightScroll(state.multilineMessages ? highlightRowOffsets[idx] : idx * ROW_HEIGHT);
-      renderHighlightVisibleRows();
-      return;
-    }
-  }
 
   if (state.highlightScrollTargetId) {
     const targetId = state.highlightScrollTargetId;
@@ -6657,7 +6717,22 @@ function renderHighlightView(colorMapIsFresh) {
     }
   }
 
-  if (rootId !== lastHighlightRootId) { lastHighlightRootId = rootId; setHighlightScroll(0); }
+  if (!sameRoot) {
+    // A genuine root-file switch — nothing from the old viewport applies,
+    // start at the top of the new one (same as always).
+    lastHighlightRootId = rootId;
+    setHighlightScroll(0);
+    renderHighlightVisibleRows();
+    return;
+  }
+
+  // Same root file: restoreViewAnchor keeps the active/top-visible row in
+  // place when it can. If it can't (anchor entry didn't survive whatever
+  // changed), the pre-existing default here is to leave scrollTop exactly
+  // as it was — NOT reset to 0 — since a same-root re-render (a highlight
+  // colour edit, a stacked-layout repaint, …) firing while scrolled deep
+  // into a large file should never silently yank the view back to the top.
+  restoreViewAnchor(scrollAnchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll);
   renderHighlightVisibleRows();
 }
 
@@ -7868,20 +7943,12 @@ btnPinBookmarks.addEventListener("click", () => {
 // tableRowOffsets/highlightRowOffsets and re-renders both views' visible
 // windows — is needed, not just a targeted repaint.
 btnMultilineMsg.addEventListener("click", () => {
-  // Capture which entry is currently at the top of each viewport BEFORE
-  // flipping the flag (topVisibleEntryId reads state.multilineMessages/the
-  // offsets arrays, which still reflect the OLD mode at this point) — see
-  // "Multiline message display toggle" in PROJECT.md for why a plain
-  // render() alone would otherwise reset/shift the scroll position.
-  // currentViewEntries/#tableBody are only meaningful while the Filter view
-  // is actually the plain table (not the Link view, which renderMainView()
-  // renders instead of calling renderTable() at all — capturing here anyway
-  // would leave a stale pendingTableTopAlignId sitting unconsumed until some
-  // LATER, unrelated render finally reaches renderTable() again).
-  const activeNode = state.nodes[state.activeId];
-  const isLinkActive = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
-  pendingTableTopAlignId = isLinkActive ? null : topVisibleEntryId(currentViewEntries, tableRowOffsets, tableBody.scrollTop);
-  pendingHighlightTopAlignId = topVisibleEntryId(currentHighlightViewEntries, highlightRowOffsets, highlightBody.scrollTop);
+  // No manual scroll-anchor bookkeeping needed here anymore — renderTable()/
+  // renderHighlightView() capture+restore it themselves on every render (see
+  // captureViewAnchor/restoreViewAnchor), including the case where the Link
+  // view is currently active (renderMainView() calls renderLinkView()
+  // instead of renderTable(), so captureViewAnchor simply never runs against
+  // a hidden #tableBody — nothing stale to guard against).
   state.multilineMessages = !state.multilineMessages;
   updateMultilineMsgButton();
   render();
@@ -8026,6 +8093,13 @@ function renderTable() {
     return;
   }
 
+  // Captured before currentViewEntries below overwrites the OLD (pre-change)
+  // list — see captureViewAnchor/restoreViewAnchor for the general
+  // "don't jump" mechanism this feeds (level-filter toggle, node/filter
+  // switch, multiline toggle, sort, pin-bookmarks toggle, …, not just one
+  // special-cased transition).
+  const scrollAnchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
+
   currentViewEntries = getVisibleEntries();
   // Captured before the optional column-sort copy below: the minimap buckets
   // by entry.ts directly, so it needs the real chronological list regardless
@@ -8041,17 +8115,6 @@ function renderTable() {
   // renderTimelineMinimap itself.
   updateMinimapRenderedRange();
   updateSortIndicators();
-
-  if (pendingTableTopAlignId != null) {
-    const targetId = pendingTableTopAlignId;
-    pendingTableTopAlignId = null;
-    const idx = currentViewEntries.findIndex(e => e.id === targetId);
-    if (idx !== -1) {
-      setTableScroll(state.multilineMessages ? tableRowOffsets[idx] : idx * ROW_HEIGHT);
-      renderVisibleRows();
-      return;
-    }
-  }
 
   if (state.scrollTargetId) {
     // Jumping to a specific entry: scroll straight to it instead of resetting to top.
@@ -8071,8 +8134,14 @@ function renderTable() {
     return;
   }
 
-  // Any other change to the displayed set (switched node, toggled a level
-  // filter, edited the tree) starts back at the top of the new list.
+  if (restoreViewAnchor(scrollAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScroll)) {
+    renderVisibleRows();
+    return;
+  }
+
+  // The anchored entry (active row, or the old top-visible row as a
+  // fallback) didn't survive into the new list at all — nothing to keep in
+  // place, so start back at the top of the new list.
   setTableScroll(0);
   renderVisibleRows();
 }
