@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhiLogg — Log-Analyse für Entwickler</title>
+<style>
+  :root{
+    --bg:#0b1615;
+    --bg-alt:#0f1e1c;
+    --surface:#122320;
+    --surface-2:#16302c;
+    --border:#1e3b36;
+    --text-primary:#eaf6f4;
+    --text-secondary:#9fc4bd;
+    --text-muted:#6f9089;
+    --accent:#4fc7c3;
+    --accent-strong:#7fe0dc;
+    --accent-ink:#06231f;
+    --code-bg:#0a1a18;
+    --shadow: 0 20px 50px -20px rgba(0,0,0,.55);
+    --radius:14px;
+    --max-w:1120px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1100px 520px at 12% -10%, rgba(79,199,195,.14), transparent 60%),
+      radial-gradient(900px 480px at 100% 0%, rgba(79,199,195,.08), transparent 55%),
+      var(--bg);
+    color:var(--text-primary);
+    font-family:var(--font-ui);
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  img{max-width:100%; display:block;}
+  a{color:var(--accent-strong);}
+  code{font-family:var(--font-mono); font-size:.92em; background:var(--code-bg); padding:.12em .42em; border-radius:5px; color:var(--accent-strong); border:1px solid var(--border);}
+
+  .wrap{max-width:var(--max-w); margin:0 auto; padding:0 28px;}
+
+  /* ---------- Nav ---------- */
+  header.site-nav{
+    position:sticky; top:0; z-index:40;
+    backdrop-filter:blur(10px);
+    background:rgba(11,22,21,.78);
+    border-bottom:1px solid var(--border);
+  }
+  .nav-inner{display:flex; align-items:center; justify-content:space-between; padding:14px 28px; max-width:var(--max-w); margin:0 auto;}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:16px; letter-spacing:.2px;}
+  .brand-mark{
+    width:26px; height:26px; border-radius:7px;
+    background:linear-gradient(135deg, var(--accent), #2f8f8c);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--accent-ink); font-weight:800; font-size:13px;
+  }
+  nav.links{display:flex; gap:26px; font-size:14px;}
+  nav.links a{color:var(--text-secondary); text-decoration:none; font-weight:500;}
+  nav.links a:hover{color:var(--accent-strong);}
+  .nav-cta{
+    font-size:13px; font-weight:600; padding:8px 14px; border-radius:8px;
+    background:var(--accent); color:var(--accent-ink); text-decoration:none;
+    white-space:nowrap;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero{padding:88px 0 56px;}
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    font-size:12.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--accent-strong); background:rgba(79,199,195,.1);
+    border:1px solid var(--border); padding:6px 12px; border-radius:999px;
+    margin-bottom:22px;
+  }
+  .eyebrow .dot{width:6px; height:6px; border-radius:50%; background:var(--accent-strong);}
+  h1{
+    font-size:clamp(34px, 5vw, 54px);
+    line-height:1.08; letter-spacing:-.02em; margin:0 0 20px;
+    max-width:820px;
+  }
+  h1 .hl{color:var(--accent-strong);}
+  .hero-sub{font-size:19px; color:var(--text-secondary); max-width:640px; margin:0 0 34px;}
+  .hero-ctas{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:52px;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    font-size:15px; font-weight:600; padding:12px 20px; border-radius:10px;
+    text-decoration:none; border:1px solid transparent; transition:transform .12s ease;
+  }
+  .btn:hover{transform:translateY(-1px);}
+  .btn-primary{background:var(--accent); color:var(--accent-ink);}
+  .btn-ghost{background:transparent; color:var(--text-primary); border-color:var(--border);}
+  .hero-stats{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+    background:var(--border); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;
+    max-width:820px;
+  }
+  .hero-stats div{background:var(--surface); padding:18px 20px;}
+  .hero-stats .num{font-size:22px; font-weight:700; color:var(--accent-strong); font-family:var(--font-mono);}
+  .hero-stats .lbl{font-size:12.5px; color:var(--text-muted); margin-top:4px;}
+
+  .shot-frame{
+    margin-top:56px; border-radius:16px; overflow:hidden;
+    border:1px solid var(--border); box-shadow:var(--shadow);
+    background:var(--surface);
+  }
+  .shot-frame .chrome{
+    display:flex; align-items:center; gap:6px; padding:11px 14px;
+    background:var(--surface-2); border-bottom:1px solid var(--border);
+  }
+  .shot-frame .chrome span{width:10px; height:10px; border-radius:50%; background:#324b46;}
+  .shot-frame img{width:100%;}
+
+  /* ---------- Section shell ---------- */
+  section{padding:88px 0;}
+  section.alt{background:var(--bg-alt); border-top:1px solid var(--border); border-bottom:1px solid var(--border);}
+  .section-head{max-width:640px; margin:0 0 52px;}
+  .kicker{font-size:12.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--accent-strong); margin-bottom:12px;}
+  .section-head h2{font-size:clamp(26px,3.4vw,36px); margin:0 0 14px; letter-spacing:-.01em;}
+  .section-head p{color:var(--text-secondary); font-size:16.5px; margin:0;}
+
+  /* ---------- Feature showcase (alternating) ---------- */
+  .feature{
+    display:grid; grid-template-columns:1fr 1fr; gap:56px; align-items:center;
+    padding:52px 0; border-bottom:1px solid var(--border);
+  }
+  .feature:last-child{border-bottom:none;}
+  .feature.reverse .feature-media{order:2;}
+  .feature.reverse .feature-copy{order:1;}
+  .feature-copy .tag{
+    display:inline-block; font-size:11.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--accent-strong); background:rgba(79,199,195,.1); border:1px solid var(--border);
+    padding:4px 10px; border-radius:999px; margin-bottom:16px;
+  }
+  .feature-copy h3{font-size:24px; margin:0 0 14px; letter-spacing:-.01em;}
+  .feature-copy p{color:var(--text-secondary); font-size:15.5px; margin:0 0 16px;}
+  .feature-copy ul{margin:0; padding:0; list-style:none;}
+  .feature-copy li{
+    display:flex; gap:10px; font-size:14.5px; color:var(--text-secondary); margin-bottom:9px;
+  }
+  .feature-copy li::before{content:"→"; color:var(--accent-strong); font-weight:700; flex-shrink:0;}
+  .feature-media{
+    border-radius:14px; overflow:hidden; border:1px solid var(--border);
+    box-shadow:var(--shadow); background:var(--surface);
+  }
+  .feature-media .chrome{
+    display:flex; align-items:center; gap:6px; padding:9px 12px;
+    background:var(--surface-2); border-bottom:1px solid var(--border);
+  }
+  .feature-media .chrome span{width:8px; height:8px; border-radius:50%; background:#324b46;}
+  .feature-media img{width:100%;}
+
+  /* ---------- Feature grid (secondary highlights) ---------- */
+  .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:20px;}
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:24px;
+  }
+  .card .icon{
+    width:38px; height:38px; border-radius:9px; background:rgba(79,199,195,.12);
+    display:flex; align-items:center; justify-content:center; margin-bottom:16px;
+    color:var(--accent-strong); font-size:18px;
+  }
+  .card h4{font-size:16px; margin:0 0 8px;}
+  .card p{font-size:14px; color:var(--text-secondary); margin:0;}
+
+  /* ---------- Full feature list ---------- */
+  .fl-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:28px 48px;}
+  .fl-col h4{
+    font-size:13px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    color:var(--accent-strong); margin:0 0 14px; padding-bottom:10px; border-bottom:1px solid var(--border);
+  }
+  .fl-col ul{margin:0 0 30px; padding:0; list-style:none;}
+  .fl-col li{
+    font-size:14.5px; color:var(--text-secondary); padding:7px 0 7px 20px; position:relative;
+    border-bottom:1px dashed var(--border);
+  }
+  .fl-col li:last-child{border-bottom:none;}
+  .fl-col li::before{
+    content:"✓"; position:absolute; left:0; top:7px; color:var(--accent-strong); font-size:12px; font-weight:700;
+  }
+  .fl-col li b{color:var(--text-primary); font-weight:600;}
+
+  /* ---------- Why single file ---------- */
+  .why-grid{display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center;}
+  .why-code{
+    background:var(--code-bg); border:1px solid var(--border); border-radius:12px; padding:22px 24px;
+    font-family:var(--font-mono); font-size:13.5px; color:var(--text-secondary); overflow-x:auto;
+  }
+  .why-code .c-cmt{color:var(--text-muted);}
+  .why-code .c-ok{color:var(--accent-strong);}
+
+  /* ---------- CTA footer ---------- */
+  .cta-band{
+    text-align:center; border-radius:20px; padding:64px 40px;
+    background:linear-gradient(135deg, rgba(79,199,195,.12), rgba(79,199,195,.02));
+    border:1px solid var(--border);
+  }
+  .cta-band h2{font-size:clamp(24px,3vw,34px); margin:0 0 14px;}
+  .cta-band p{color:var(--text-secondary); font-size:16px; max-width:520px; margin:0 auto 30px;}
+
+  footer{padding:40px 0 60px; border-top:1px solid var(--border); margin-top:20px;}
+  .footer-inner{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;}
+  footer .fmuted{color:var(--text-muted); font-size:13.5px;}
+
+  @media (max-width:880px){
+    .feature, .feature.reverse{grid-template-columns:1fr;}
+    .feature.reverse .feature-media, .feature.reverse .feature-copy{order:initial;}
+    .grid-3{grid-template-columns:1fr;}
+    .fl-grid{grid-template-columns:1fr;}
+    .why-grid{grid-template-columns:1fr;}
+    .hero-stats{grid-template-columns:repeat(2,1fr);}
+    nav.links{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<header class="site-nav">
+  <div class="nav-inner">
+    <div class="brand"><span class="brand-mark">L</span> PhiLogg</div>
+    <nav class="links">
+      <a href="#features">Features</a>
+      <a href="#showcase">Screenshots</a>
+      <a href="#full-list">Feature-Liste</a>
+      <a href="#why">Warum single-file</a>
+    </nav>
+    <a class="nav-cta" href="../philogg.html">Tool öffnen →</a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="eyebrow"><span class="dot"></span> Für Entwickler gebaut, kein Ops-Tool</div>
+    <h1>Logs lesen kostet Zeit. <span class="hl">PhiLogg</span> gibt sie dir zurück.</h1>
+    <p class="hero-sub">
+      Ein einziges HTML-File. Kein Server, keine Installation, kein Upload.
+      Filterketten statt Ctrl+F, Wertextraktion statt Copy-Paste in Excel,
+      Plots statt Kopfrechnen — gebaut, um genau die Fragen zu beantworten,
+      die beim Debuggen und bei der Verifikation wirklich auftauchen.
+    </p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="../philogg.html">philogg.html öffnen</a>
+      <a class="btn btn-ghost" href="#showcase">Screenshots ansehen</a>
+    </div>
+    <div class="hero-stats">
+      <div><div class="num">0</div><div class="lbl">Abhängigkeiten</div></div>
+      <div><div class="num">0</div><div class="lbl">Installationsschritte</div></div>
+      <div><div class="num">1</div><div class="lbl">HTML-Datei</div></div>
+      <div><div class="num">100%</div><div class="lbl">lokal &amp; offline</div></div>
+    </div>
+
+    <div class="shot-frame">
+      <div class="chrome"><span></span><span></span><span></span></div>
+      <img src="screenshots/01-log-view.png" alt="PhiLogg Hauptansicht: Filterbaum, Zeitleiste, Log-Tabelle mit Level-Filter">
+    </div>
+  </section>
+
+  <!-- ================= WHY ================= -->
+  <section id="why">
+    <div class="section-head">
+      <div class="kicker">Warum PhiLogg</div>
+      <h2>Gebaut als Ersatz für LogViewPlus &amp; Co. — für ein ganz bestimmtes Log-Format</h2>
+      <p>Kein SaaS, kein Agent, kein Log-Shipping. PhiLogg öffnet die Datei, die schon auf deiner
+      Platte liegt, und bleibt dabei komplett im Browser. Genau das macht es für Bug-Analyse und
+      Verifikations-Läufe während der Entwicklung so schnell einsatzbereit.</p>
+    </div>
+    <div class="grid-3">
+      <div class="card">
+        <div class="icon">⚡</div>
+        <h4>Sofort startklar</h4>
+        <p>Doppelklick auf <code>philogg.html</code> — fertig. Kein npm install, kein Server, kein Setup für die Kollegin nebenan.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔒</div>
+        <h4>Daten bleiben lokal</h4>
+        <p>Logs verlassen nie den Rechner. Kein Upload, kein Tracking, keine Cloud-Abhängigkeit — auch bei sensiblen Kundenlogs unbedenklich.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🚀</div>
+        <h4>Bleibt schnell bei großen Files</h4>
+        <p>Asynchrones Parsing in Chunks und virtualisiertes Rendering halten die UI auch bei sehr großen Logdateien flüssig.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SHOWCASE ================= -->
+  <section id="showcase" class="alt">
+    <div class="section-head">
+      <div class="kicker">So sieht die Arbeit damit aus</div>
+      <h2>Die Features, die den Unterschied machen</h2>
+      <p>Ein typischer Debugging-Flow: filtern, verknüpfen, Werte extrahieren, plotten — alles im selben Fenster, ohne das Tool zu wechseln.</p>
+    </div>
+
+    <div id="features">
+      <!-- Feature 1: Filterbaum -->
+      <div class="feature">
+        <div class="feature-copy">
+          <span class="tag">Filterbaum</span>
+          <h3>Verschachtelte Filterketten statt Wegwerf-Suchen</h3>
+          <p>Jeder Filter arbeitet auf dem Ergebnis seines Elternfilters. So baust du dir Schritt für
+          Schritt den genauen Blick auf das Problem auf — und jeder Schritt bleibt als Baumknoten
+          sichtbar, benennbar, umfärbbar und wiederverwendbar.</p>
+          <ul>
+            <li>Text-, Zeitraum-, AND/OR-, Link- und Kontext-Filter, beliebig kombinierbar</li>
+            <li>Groß-/Kleinschreibung, Spaltenbeschränkung und NOT/Invertierung pro Textfilter</li>
+            <li>Undo/Redo, Copy/Paste und Drag &amp; Drop direkt im Baum</li>
+            <li>Breadcrumb + Level-Schnellfilter immer sichtbar, ein Klick zurück zu jedem Vorfahren</li>
+          </ul>
+        </div>
+        <div class="feature-media">
+          <div class="chrome"><span></span><span></span><span></span></div>
+          <img src="screenshots/01-log-view.png" alt="Filterbaum mit mehreren verschachtelten Filtern, Level-Schnellfilter und Timeline-Minimap">
+        </div>
+      </div>
+
+      <!-- Feature 2: Extraction + Plot -->
+      <div class="feature reverse">
+        <div class="feature-copy">
+          <span class="tag">Wertextraktion &amp; Plots</span>
+          <h3>Aus Log-Text werden Zahlen — und aus Zahlen ein Chart</h3>
+          <p>Ein Muster wie <code>Job #[value:int] completed in [value:int]ms</code> reicht, und PhiLogg
+          baut daraus eine sortierbare Tabelle mit typisierten Spalten, Min/Max/Mittelwert/σ
+          pro Spalte und einem Plot-Tab — ganz ohne externe Chart-Bibliothek.</p>
+          <ul>
+            <li>Platzhalter für float/int/hex/word/time, live Muster-Vorschau während der Eingabe</li>
+            <li>Line-, Bar- und Scatter-Charts, mehrere Y-Serien, Farbe nach Wert</li>
+            <li>Wert-Assertions (Soll-Bereich oder Ziel±Toleranz) mit Pass/Fail-Markierung</li>
+            <li>Copy als TSV — direkt einfügbar in Excel oder ein Ticket</li>
+          </ul>
+        </div>
+        <div class="feature-media">
+          <div class="chrome"><span></span><span></span><span></span></div>
+          <img src="screenshots/02-extraction-table.png" alt="Extraktionstabelle mit typisierten Spalten und Statistikzeile">
+        </div>
+      </div>
+
+      <div class="feature">
+        <div class="feature-copy">
+          <span class="tag">Plot-Tab</span>
+          <h3>Trends erkennen, ohne die Zahlen erst nach Excel zu schaufeln</h3>
+          <p>Der Plot-Tab sitzt direkt neben der Extraktionstabelle und teilt sich ihre Daten —
+          Achsenwahl, Zoom und Serienauswahl reagieren live, jede Spalte lässt sich per Klick
+          zur X- oder Y-Achse machen.</p>
+          <ul>
+            <li>Automatische Achsenwahl, jederzeit manuell überschreibbar</li>
+            <li>Zoom/Reset, normierte Serien, gleichskalierte Achsen für 1:1-Vergleiche</li>
+            <li>Klick auf einen Punkt springt zurück zur zugehörigen Log-Zeile</li>
+          </ul>
+        </div>
+        <div class="feature-media">
+          <div class="chrome"><span></span><span></span><span></span></div>
+          <img src="screenshots/03-plot.png" alt="Line-Chart im Plot-Tab, generiert aus extrahierten Werten">
+        </div>
+      </div>
+
+      <!-- Feature 3: Link filter -->
+      <div class="feature reverse">
+        <div class="feature-copy">
+          <span class="tag">Link-Filter</span>
+          <h3>Zwei Ereignisströme zueinander in Beziehung setzen</h3>
+          <p>Klassische Frage bei der Verifikation: "Was war der letzte Sensorwert vor diesem Event?"
+          Der Link-Filter pairt zwei Filterergebnisse per Nearest-Neighbor-Suche — inklusive
+          mehrstufiger Verkettung für Multi-Hop-Analysen.</p>
+          <ul>
+            <li>Vorwärts/rückwärts, N-tes Vorkommen, optional exklusiv oder chronologisch erzwungen</li>
+            <li>Mehrstufige Verkettung über einen Dialog (2 oder mehr Filter in einem Zug)</li>
+            <li>Δ-Zeit zwischen den gepaarten Zeilen direkt sichtbar</li>
+          </ul>
+        </div>
+        <div class="feature-media">
+          <div class="chrome"><span></span><span></span><span></span></div>
+          <img src="screenshots/04-link-view.png" alt="Link-Ansicht: gepaarte Log-Zeilen mit Δ-Zeit zwischen zwei Filterergebnissen">
+        </div>
+      </div>
+
+      <!-- Feature 4: Full/Filtered split -->
+      <div class="feature">
+        <div class="feature-copy">
+          <span class="tag">Full / Filtered Split</span>
+          <h3>Den Überblick behalten, während du in die Tiefe filterst</h3>
+          <p>Die "Full"-Ansicht zeigt immer die komplette Datei, unabhängig vom aktiven Filter —
+          mit frei einfärbbaren Highlight-Regeln pro Filterknoten. So verlierst du nie den
+          Gesamtkontext, während "Filtered" auf das aktuelle Problem eingeengt bleibt.</p>
+          <ul>
+            <li>Beliebig viele Farbregeln, gleichzeitig sichtbar als Streifen am Zeilenrand</li>
+            <li>Tabs- oder Stacked-Layout, frei einstellbare Aufteilung</li>
+            <li>Auswahl bleibt zwischen beiden Ansichten synchron, kein "Sprung" beim Wechseln</li>
+          </ul>
+        </div>
+        <div class="feature-media">
+          <div class="chrome"><span></span><span></span><span></span></div>
+          <img src="screenshots/05-highlight-split.png" alt="Stacked-Ansicht: Full-Log oben mit Highlight-Markierungen, gefilterte Ansicht darunter">
+        </div>
+      </div>
+
+      <!-- Feature 5: Bookmarks + detail -->
+      <div class="feature reverse">
+        <div class="feature-copy">
+          <span class="tag">Bookmarks &amp; Detailansicht</span>
+          <h3>Wichtige Fundstellen markieren, nicht nur merken</h3>
+          <p>Ein Klick setzt ein Bookmark mit Notiz — praktisch, um während einer längeren
+          Analyse-Session Fundstellen festzuhalten, auf die man später zurückkommen will,
+          ganz ohne die Filterkette zu verlassen.</p>
+          <ul>
+            <li>Bookmarks mit Freitext-Notiz, jederzeit über das Panel erreichbar</li>
+            <li>Optional direkt in die gefilterte Ansicht "eingepinnt"</li>
+            <li>Detailpanel zeigt die volle Nachricht inkl. Stacktrace mit erhaltenen Zeilenumbrüchen</li>
+          </ul>
+        </div>
+        <div class="feature-media">
+          <div class="chrome"><span></span><span></span><span></span></div>
+          <img src="screenshots/06-detail-bookmarks.png" alt="Bookmarks-Panel mit Notiz und Detailansicht einer ausgewählten Log-Zeile inklusive Stacktrace">
+        </div>
+      </div>
+
+      <!-- Feature 6: Theming -->
+      <div class="feature">
+        <div class="feature-copy">
+          <span class="tag">Dark Mode</span>
+          <h3>Passt sich an, statt dich zu blenden</h3>
+          <p>Light und Dark Theme, folgt standardmäßig der Systemeinstellung und lässt sich jederzeit
+          per Klick umschalten — für lange Debugging-Sessions genauso geeignet wie für den schnellen
+          Blick zwischendurch.</p>
+        </div>
+        <div class="feature-media">
+          <div class="chrome"><span></span><span></span><span></span></div>
+          <img src="screenshots/07-dark-theme.png" alt="PhiLogg im Dark Theme mit Extraktionstabelle und Plot-Tab">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FULL FEATURE LIST ================= -->
+  <section id="full-list">
+    <div class="section-head">
+      <div class="kicker">Vollständige Übersicht</div>
+      <h2>Alle Features im Detail</h2>
+      <p>Eine möglichst vollständige Liste dessen, was heute schon in PhiLogg steckt.</p>
+    </div>
+
+    <div class="fl-grid">
+      <div class="fl-col">
+        <h4>Dateien &amp; Datenaufnahme</h4>
+        <ul>
+          <li><b>Single-File-Tool</b>, läuft per Doppelklick oder von jedem Webserver</li>
+          <li>Toleranter Parser für <code>%d %p "%t" %l [%method] %m%n</code>-Logformat inkl. Mehrzeilen-Stacktraces</li>
+          <li>Asynchrones Chunk-Parsing mit Fortschrittsbalken direkt an der Datei-Zeile</li>
+          <li>Drag &amp; Drop von Dateien und ganzen Ordnern</li>
+          <li>Mehrere Dateien zu einer chronologischen Zeitleiste zusammenführen (Merge)</li>
+          <li>Ordner-Watch mit Lazy Loading für große Verzeichnisse</li>
+          <li>Live-Tailing wachsender Logdateien</li>
+        </ul>
+      </div>
+
+      <div class="fl-col">
+        <h4>Filtern &amp; Verknüpfen</h4>
+        <ul>
+          <li>Beliebig tief verschachtelbarer Filterbaum, jeder Filter auf dem Ergebnis seines Vorgängers</li>
+          <li>Textfilter mit Case-Sensitivity und Spaltenbeschränkung (Zeit/Level/Thread/Ort/Methode/Message)</li>
+          <li>Zeitraum-Filter inkl. Drag-Select auf der Timeline-Minimap und manuellem Dialog</li>
+          <li>AND/OR-Verknüpfung mehrerer Filter</li>
+          <li>Link-Filter: Nearest-Neighbor-Pairing, N-tes Vorkommen, exklusiv/chronologisch erzwingbar</li>
+          <li>Mehrstufige Link-Ketten (Multi-Hop) über einen dedizierten Dialog</li>
+          <li>Time-Context-Filter: Zeitfenster um Referenz-Ereignisse</li>
+          <li>Invertierung (NOT) für jeden geeigneten Filtertyp</li>
+          <li>Filterknoten umbenennen, farbig markieren, kopieren/ausschneiden/einfügen, per Drag &amp; Drop umsortieren</li>
+        </ul>
+      </div>
+
+      <div class="fl-col">
+        <h4>Wertextraktion &amp; Auswertung</h4>
+        <ul>
+          <li>Muster-Sprache mit typisierten Platzhaltern: float, int, time, hex, word, Wildcard</li>
+          <li>Live-Musterschau mit farblich markierten Treffern während der Eingabe</li>
+          <li>Ignorierbare Platzhalter, die nur zum Verankern des Musters dienen</li>
+          <li>Sortierbare Extraktionstabelle mit synthetischen Index- und t(ms)-Spalten</li>
+          <li>Spaltenstatistiken (Min/Max/Mittelwert/Standardabweichung)</li>
+          <li>Wert-Assertions: Bereichs- oder Soll±Toleranz-Prüfung mit visuellem Pass/Fail</li>
+          <li>Plot-Tab: Line/Bar/Scatter-Charts, Mehrfachserien, Farbe-nach-Wert, Zoom</li>
+          <li>Zellauswahl (auch nicht-zusammenhängend) und Copy als TSV</li>
+        </ul>
+      </div>
+
+      <div class="fl-col">
+        <h4>Ansicht &amp; Navigation</h4>
+        <ul>
+          <li>Full/Filtered-Split mit frei einfärbbaren Highlight-Regeln über die ganze Datei</li>
+          <li>Tabs- oder Stacked-Layout, frei einstellbare Panel-Größen</li>
+          <li>Virtualisiertes Rendering für Log-Tabelle, Extraktionstabelle und Link-Ansicht</li>
+          <li>Timeline-Minimap mit Dichteanzeige, Klick-Navigation und Drag-Select</li>
+          <li>Automatisches Scroll-Anchoring: aktive Zeile bleibt beim Filtern/Wechseln sichtbar</li>
+          <li>Mehrzeilige Nachrichtendarstellung für vollständige Stacktraces</li>
+          <li>Spaltensichtbarkeit und -breite frei konfigurierbar</li>
+          <li>Mehrfachauswahl (Ctrl/Shift-Klick) und Copy als Rohtext, chronologisch sortiert</li>
+          <li>Level-Schnellfilter, Breadcrumb mit Klick-Navigation zu jedem Vorfahren</li>
+        </ul>
+      </div>
+
+      <div class="fl-col">
+        <h4>Workflow &amp; Persistenz</h4>
+        <ul>
+          <li>Undo/Redo für strukturelle Baumänderungen</li>
+          <li>Bookmarks mit Freitext-Notiz, optional in die gefilterte Ansicht eingepinnt</li>
+          <li>Automatischer Session-Cache — Browser-Reload verliert keine Arbeit</li>
+          <li>Pro Datei gespeicherter Filterverlauf über Sessions hinweg</li>
+          <li>Filter als JSON speichern/laden</li>
+          <li>Wiederverwendbare Filter-Bibliothek, dateiunabhängig anwendbar</li>
+          <li>Kompletter Session-Export/-Import zum Teilen einer Analyse mit Kolleg:innen</li>
+          <li>Intelligentes Datei-Matching beim Import (Name, Größe, Inhalt)</li>
+        </ul>
+      </div>
+
+      <div class="fl-col">
+        <h4>Bedienung &amp; Qualität</h4>
+        <ul>
+          <li>Umfangreiche Tastatur-Shortcuts (Filtern, Kopieren, Navigieren, Bookmarks)</li>
+          <li>Light- und Dark-Theme, folgt der Systemeinstellung</li>
+          <li>Kontextmenüs für schnellen Zugriff auf alle Zeilen-/Knoten-Aktionen</li>
+          <li>Keine Installation, keine Cloud, keine Telemetrie — alles lokal im Browser</li>
+          <li>Keine externen Abhängigkeiten, kein Build-Schritt, kein Framework</li>
+          <li>Begleitet von einer automatisierten Regressionstest-Suite</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WHY SINGLE FILE (tech) ================= -->
+  <section class="alt">
+    <div class="why-grid">
+      <div>
+        <div class="kicker">Für Entwickler, von einem Entwickler</div>
+        <h2 style="font-size:28px; margin:0 0 16px; letter-spacing:-.01em;">Kein Deployment-Ritual — Öffnen reicht</h2>
+        <p style="color:var(--text-secondary); font-size:15.5px; margin:0 0 16px;">
+          PhiLogg ist absichtlich <b>eine</b> HTML-Datei: inline CSS, vanilla JavaScript,
+          kein Framework, kein Build-Tooling, keine CDN-Aufrufe. Das macht es so einfach,
+          es an Kolleg:innen weiterzugeben wie jede andere Datei auch.
+        </p>
+        <p style="color:var(--text-secondary); font-size:15.5px; margin:0;">
+          Gebaut, um ein bestimmtes, log4net-artiges Pipe/Tab-getrenntes Format zu lesen —
+          genau das Format, das in diesem Projekt anfällt. Läuft direkt via <code>file://</code>
+          oder von jedem statischen Webserver, ganz ohne Backend.
+        </p>
+      </div>
+      <div class="why-code">
+        <div class="c-cmt"># Installation</div>
+        <div>–</div>
+        <div>&nbsp;</div>
+        <div class="c-cmt"># Setup</div>
+        <div>–</div>
+        <div>&nbsp;</div>
+        <div class="c-cmt"># Starten</div>
+        <div class="c-ok">Doppelklick auf philogg.html</div>
+        <div>&nbsp;</div>
+        <div class="c-cmt"># Weitergeben an Kolleg:in</div>
+        <div class="c-ok">philogg.html per Chat/Mail/Netzlaufwerk teilen</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CTA ================= -->
+  <section>
+    <div class="cta-band">
+      <h2>Nächstes Bug-Log direkt in PhiLogg öffnen</h2>
+      <p>Keine Anmeldung, kein Setup — die Datei liegt schon im Projekt.</p>
+      <a class="btn btn-primary" href="../philogg.html">philogg.html öffnen →</a>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap footer-inner">
+    <div class="brand"><span class="brand-mark">L</span> PhiLogg</div>
+    <div class="fmuted">Lokaler, single-file Log-Viewer — kein Server, keine Cloud, keine Abhängigkeiten.</div>
+  </div>
+</footer>
+
+</body>
+</html>
