@@ -334,24 +334,57 @@
   // explicit byte position (keepExistingData:true starts the cursor at 0,
   // not at the end — an explicit position is what makes this an append
   // rather than an overwrite), and closes again right away.
+
+  // Every disk-touching operation (open/truncate/write) is funneled through
+  // this single-file queue, so no two of them ever run concurrently.
+  // Person-reported (screenshots): app-2.log/app-3.log came out with lines
+  // mashed together (no newline between them, stray runs of leading
+  // whitespace) — root cause was writeOneLine()/writeText() reading
+  // fileHandle/bytesInFile, awaiting the actual disk write, and only THEN
+  // updating bytesInFile, with nothing stopping a second write (from the
+  // periodic ticker racing "Write burst", or racing "Start next file") from
+  // reading the SAME stale bytesInFile before the first write's increment
+  // landed — both writes then targeted the same byte position, corrupting
+  // whichever file was open at the time. Worse, if "Start next file" (which
+  // never waited for an in-flight write either) reset bytesInFile to 0 for
+  // the freshly-truncated new file while an old write's tail was still
+  // pending, that old write's late increment landed on the NEW file's
+  // counter instead — silently drifting it away from 0 before the new file
+  // had a single real byte, corrupting every write to that file from the
+  // very first one, permanently (the offset never resynced with reality).
+  // Queuing every op's critical section here means each one only ever reads
+  // fileHandle/bytesInFile after every earlier op (including its own
+  // trailing counter update) has fully finished — so a rotation's reset is
+  // always the last word, and two writes can never target the same offset.
+  let writeQueue = Promise.resolve();
+  function enqueue(fn) {
+    const result = writeQueue.then(fn, fn);
+    writeQueue = result.catch(() => {}); // one rejected op must not wedge the queue for the rest
+    return result;
+  }
+
   async function openNewFile() {
-    fileIndex += 1;
-    const prefix = (filePrefix.value || "app").trim() || "app";
-    currentFileName = prefix + "-" + fileIndex + ".log";
-    fileHandle = await dirHandle.getFileHandle(currentFileName, { create: true });
-    const w = await fileHandle.createWritable({ keepExistingData: false });
-    await w.close();
-    linesInFile = 0;
-    bytesInFile = 0;
-    logToPanel("── started " + currentFileName + " ──", "marker");
-    updateStatus();
+    return enqueue(async () => {
+      fileIndex += 1;
+      const prefix = (filePrefix.value || "app").trim() || "app";
+      currentFileName = prefix + "-" + fileIndex + ".log";
+      fileHandle = await dirHandle.getFileHandle(currentFileName, { create: true });
+      const w = await fileHandle.createWritable({ keepExistingData: false });
+      await w.close();
+      linesInFile = 0;
+      bytesInFile = 0;
+      logToPanel("── started " + currentFileName + " ──", "marker");
+      updateStatus();
+    });
   }
 
   async function writeText(text) {
-    const w = await fileHandle.createWritable({ keepExistingData: true });
-    await w.write({ type: "write", position: bytesInFile, data: text });
-    await w.close();
-    bytesInFile += new Blob([text]).size;
+    return enqueue(async () => {
+      const w = await fileHandle.createWritable({ keepExistingData: true });
+      await w.write({ type: "write", position: bytesInFile, data: text });
+      await w.close();
+      bytesInFile += new Blob([text]).size;
+    });
   }
 
   async function writeOneLine() {
@@ -416,10 +449,12 @@
     const wasRunning = running;
     running = false;
     if (timerId) { clearTimeout(timerId); timerId = null; }
-    const w = await fileHandle.createWritable({ keepExistingData: false });
-    await w.close();
-    linesInFile = 0;
-    bytesInFile = 0;
+    await enqueue(async () => {
+      const w = await fileHandle.createWritable({ keepExistingData: false });
+      await w.close();
+      linesInFile = 0;
+      bytesInFile = 0;
+    });
     logToPanel("── truncated " + currentFileName + " ──", "marker");
     if (wasRunning) {
       running = true;
