@@ -448,6 +448,15 @@
      a popup trigger), just its own icon/state. See "Multiline message
      display toggle" in PROJECT.md. */
   #btnMultilineMsg{float:left; margin:0 14px 6px 0; width:auto; height:26px; padding:4px 8px;}
+  /* #btnColumns: same float/sizing treatment as #btnPinBookmarks/
+     #btnMultilineMsg right above (bugfix, person-reported: this rule was
+     missing entirely when #btnColumns was added, so it stayed a plain,
+     non-floated 29x29px .toolbar-icon-btn box sitting in normal flow right
+     after three FLOATED siblings — breaking out of their line, pushing
+     itself and everything after it (#levelBar/#breadcrumb) down and out of
+     alignment instead of continuing the same top-left row). See "Log view
+     column visibility / width" in PROJECT.md. */
+  #btnColumns{float:left; margin:0 14px 6px 0; width:auto; height:26px; padding:4px 8px;}
 
   #breadcrumb{
     /* Deliberately plain block (not flex/grid, no new block-formatting
@@ -781,10 +790,18 @@
     width:5px; height:5px; border-radius:50%; background:var(--accent); pointer-events:none;
   }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
-  .col-time{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
+     it, a grid track collapsed to 0px (hidden column, or just dragged very
+     narrow — see "Log view column visibility / width") doesn't clip its
+     own content — the text keeps rendering at its natural width, spilling
+     into the next column and showing up underneath its (opaque) background
+     rather than actually disappearing. col-thread/col-loc/col-method/col-msg
+     already had this; col-time/col-delta didn't, since neither used to be
+     resizable to zero before that feature existed. */
+  .col-time{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   /* Time since the previous row *in the order currently shown* — only computed
      in chronological order (see renderVisibleRows), dashed out otherwise. */
-  .col-delta{font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .col-delta{font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .col-delta.delta-warn{color:var(--level-warn);}
   .col-delta.delta-error{color:var(--level-error); font-weight:650;}
   .col-level{align-self:center;}
@@ -910,7 +927,6 @@
   }
   .extract-toolbar-row2{display:flex; align-items:center; justify-content:space-between; gap:10px;}
   #extractInfo{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;}
-  .extract-actions{display:flex; gap:8px;}
   .btn-mini-outline{
     background:transparent; color:var(--text-secondary); border:1px solid var(--border);
     border-radius:6px; padding:5px 10px; font-size:11.5px; cursor:pointer; transition:border-color .12s, color .12s;
@@ -1760,10 +1776,6 @@
             <div class="view-tabs" id="extractViewTabs">
               <button type="button" class="view-tab active" data-view="table">Table</button>
               <button type="button" class="view-tab" data-view="plot">Plot</button>
-            </div>
-            <div class="extract-actions">
-              <button type="button" id="btnCopySelection" class="btn-mini-outline">Copy selection</button>
-              <button type="button" id="btnCopyAllExtract" class="btn-mini-outline">Copy all</button>
             </div>
           </div>
         </div>
@@ -4013,11 +4025,23 @@ function renderMainView() {
   const isLink = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
 
   if (isExtract) {
-    // Only the Full/Filtered/Stacked tabs hide here — #levelBar and
-    // #breadcrumb live in the same #viewBar row now but stay visible, since
-    // extract mode still applies the level filter (see applyLevelFilter in
-    // renderExtractTable) and still benefits from the filter chain display.
+    // Person-requested (this session): extract mode's #viewBar now shows
+    // ONLY the filter path (#breadcrumb) — #fhTabs (no Highlight companion
+    // to switch to), #levelBar, and the three Filtered/Highlight-view-only
+    // toggles (#btnPinBookmarks/#btnMultilineMsg/#btnColumns) all hide,
+    // since none of them apply to what's actually on screen here (the
+    // extraction table has its own columns, and applyLevelFilter() inside
+    // renderExtractTable still runs on whatever the level quick-filter was
+    // last set to — just without a visible pill row to change it from while
+    // in this view). Previously only #fhTabs hid; #levelBar/the toggles
+    // used to stay visible-but-inert, which read as a layout glitch once
+    // #btnColumns joined them (see #btnColumns' own CSS comment for the
+    // actual bug that triggered this reconsideration).
     fhTabs.style.display = "none";
+    levelBarEl.style.display = "none";
+    btnPinBookmarks.style.display = "none";
+    btnMultilineMsg.style.display = "none";
+    btnColumns.style.display = "none";
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
@@ -4032,6 +4056,10 @@ function renderMainView() {
 
   extractWrap.style.display = "none";
   fhTabs.style.display = "flex";
+  levelBarEl.style.display = "";
+  btnPinBookmarks.style.display = "";
+  btnMultilineMsg.style.display = "";
+  btnColumns.style.display = "";
   fhSplit.style.display = "flex";
   // Highlight-rule matches are shown in both the Filtered view (renderTable/
   // renderVisibleRows) and the Full view (renderHighlightView) — computed
@@ -4801,6 +4829,12 @@ function copyTableSelection() {
   showCopyToast("Copied " + s.size.toLocaleString("de-DE") + " cell" + (s.size === 1 ? "" : "s"));
 }
 
+// Person-requested removal of #btnCopySelection/#btnCopyAllExtract (this
+// session) took out this function's only UI trigger — kept anyway (same
+// precedent as jumpToFullLog, see PROJECT.md), still directly tested, in
+// case a future entry point wants "copy the whole extraction table incl.
+// header" specifically (copyTableSelection's Ctrl+C path only ever copies
+// a cell range, with no header row).
 function copyWholeExtractTable() {
   if (!extractRowsData.length) { showCopyToast("Nothing to copy"); return; }
   const header = extractColumns.map(c => c.name).join("\t");
@@ -6338,12 +6372,6 @@ extractBody.addEventListener("mouseover", ev => {
   selectCells(rangeCells(selectionAnchor.row, selectionAnchor.col, +td.dataset.row, +td.dataset.col));
 });
 window.addEventListener("mouseup", () => { isCellDragging = false; });
-
-el("#btnCopySelection").addEventListener("click", () => {
-  if (state.tableSelection) copyTableSelection();
-  else copyWholeExtractTable();
-});
-el("#btnCopyAllExtract").addEventListener("click", copyWholeExtractTable);
 
 /* ---------- Virtualized row rendering ----------
    Only the rows that fall within (plus a small buffer around) the visible
@@ -9432,7 +9460,17 @@ function openTreeContextMenu(ev, clickedId) {
     html += actions.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join("");
     if (note) html += '<div class="ctx-note">' + note + "</div>";
   } else {
-    const items = [];
+    // Grouped the same way #contextMenu (the log-row menu) already groups
+    // its own, much shorter, list — related actions bucketed together with
+    // a .ctx-sep between groups (person-requested, this session: the list
+    // had grown long enough — 11 items on a filter node once Save/Apply
+    // from library joined it — to read as one undifferentiated wall).
+    // GROUP_ORDER is the fixed rendering order; items are collected into
+    // buckets (not just tagged in push order) since e.g. "paste" is only
+    // conditionally pushed well after the other clipboard items, so a
+    // group's members aren't naturally contiguous in push order.
+    const GROUP_ORDER = ["edit", "clipboard", "library", "danger"];
+    const buckets = { edit: [], clipboard: [], library: [], danger: [] };
     if (node.type === "filter") {
       // "text"/"extract" have a plain value the filter popup's single input
       // can represent (see openEditFilterPopup); "after"/"before"/"timerange"
@@ -9440,10 +9478,8 @@ function openTreeContextMenu(ev, clickedId) {
       // openTimeRangeDialog). and/or/link nodes derive their value from two
       // other nodes, and context filters have their own before/after dialog.
       if (node.filterType === "text" || node.filterType === "extract" || isTimeFilterType(node.filterType)) {
-        items.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
+        buckets.edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
       }
-      items.push({ action: "copy", label: "Copy", icon: ICON_COPY });
-      items.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       // "link" results are pair entries with no parent-relative complement
       // (see getEntries), inverting "extract" would only ever keep the
       // non-matching, nothing-to-extract rows, and "context" always contains
@@ -9451,38 +9487,45 @@ function openTreeContextMenu(ev, clickedId) {
       // empty — all three excluded for the same reason NOT is disabled in
       // the filter popup for extract patterns.
       if (node.filterType !== "link" && node.filterType !== "extract" && node.filterType !== "context") {
-        items.push({
+        buckets.edit.push({
           action: "invert",
           label: node.inverted ? "Remove NOT" : "Invert (NOT)",
           icon: ICON_INVERT,
         });
       }
-      items.push({ action: "context", label: "Time context…", icon: ICON_CONTEXT });
-      items.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
-      items.push({ action: "saveToLibrary", label: "Save to library…", icon: ICON_SAVE });
+      buckets.edit.push({ action: "context", label: "Time context…", icon: ICON_CONTEXT });
+      buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
+      buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
+      buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
+      buckets.library.push({ action: "saveToLibrary", label: "Save to library…", icon: ICON_SAVE });
     }
     // Loading is offered on file nodes too: the saved branch is then applied
     // to the whole file, reproducing the original overall result. Same for
     // the library (FEATURE_BACKLOG.md "Reusable filter library") — its
     // presets are file-agnostic on purpose, so applying one makes sense
     // from any node, not just filters.
-    items.push({ action: "loadFilter", label: "Load filter…", icon: ICON_LOAD });
-    items.push({ action: "applyFromLibrary", label: "Apply from library…", icon: ICON_LOAD });
+    buckets.library.push({ action: "loadFilter", label: "Load filter…", icon: ICON_LOAD });
+    buckets.library.push({ action: "applyFromLibrary", label: "Apply from library…", icon: ICON_LOAD });
     // Session export/import used to live here too (session-global, so they
     // appeared on every node), but that made them a context menu action on
     // a file for something that has nothing to do with that file — moved to
     // the "Session…" toolbar button (analogous to "Open…") instead.
     if (state.clipboard && state.nodes[state.clipboard.id]) {
-      items.push({ action: "paste", label: "Paste", icon: ICON_PASTE });
+      buckets.clipboard.push({ action: "paste", label: "Paste", icon: ICON_PASTE });
     }
-    items.push({
+    buckets.danger.push({
       action: "delete",
       label: node.type === "file" ? (node.folderId ? "Close file" : "Remove file") : "Remove filter",
       icon: ICON_CLOSE,
     });
 
-    html = '<div class="ctx-meta">' + escapeHtml(node.name) + "</div><div class=\"ctx-sep\"></div>";
-    html += items.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join("");
+    const sectionsHtml = GROUP_ORDER
+      .map(g => buckets[g])
+      .filter(section => section.length)
+      .map(section => section.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join(""))
+      .join('<div class="ctx-sep"></div>');
+
+    html = '<div class="ctx-meta">' + escapeHtml(node.name) + "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
   }
 
   treeContextMenu.innerHTML = html;
