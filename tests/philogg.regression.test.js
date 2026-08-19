@@ -2260,16 +2260,22 @@ await withApp(async (w, d, T) => {
   assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter buttons render inside the merged bar");
   assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb chips render inside the merged bar");
 
-  // Extract mode: tabs hide (no Highlight companion), but level filter and
-  // breadcrumb — sharing the same #viewBar row now — must stay visible,
-  // since renderExtractTable() still applies applyLevelFilter() and the
-  // filter chain is still meaningful navigation there.
+  // Extract mode (UPDATED, this session, person-requested: "entferne die
+  // Anzeige der Level Leiste im Extraction View. Hier sollte nur noch der
+  // aktuelle Filterpfad zu sehen sein") — #fhTabs, #levelBar, and the three
+  // Filtered/Highlight-view-only toggles all hide; only #breadcrumb (the
+  // filter path) stays visible. renderExtractTable() still applies
+  // applyLevelFilter() internally against whatever the quick-filter was
+  // last set to — there's just no visible pill row to change it from here.
   const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   assert(d.querySelector("#fhTabs").style.display === "none", "tabs hide in extract mode (unchanged behaviour)");
-  assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter STILL renders in extract mode (regression guard for the merge)");
-  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb STILL renders in extract mode (regression guard for the merge)");
+  assert(d.querySelector("#levelBar").style.display === "none", "level bar hides in extract mode — only the filter path stays visible");
+  assert(d.querySelector("#btnPinBookmarks").style.display === "none", "pin-bookmarks toggle hides too (doesn't apply to the extraction table)");
+  assert(d.querySelector("#btnMultilineMsg").style.display === "none", "multiline toggle hides too (doesn't apply to the extraction table)");
+  assert(d.querySelector("#btnColumns").style.display === "none", "columns toggle hides too (doesn't apply to the extraction table's own columns)");
+  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb STILL renders (and is visible) in extract mode — the one thing meant to stay");
 
   // Back to a normal node so the popup checks below aren't affected
   T.state.activeId = textNode.id;
@@ -6399,6 +6405,114 @@ section("59c. Filter library persists across a simulated reload (separate Indexe
 }
 
 /* ============================================================
+   GROUP 60 — Session follow-up bugfixes: col-delta/col-time overflow-clip,
+   tree context menu grouped with separators
+   Origin: this session, person-reported. (a) "wenn ich die deltaT Spalte
+   verstecke, bleiben die Einträge in der Tabelle aber hinter den nun
+   darüber liegenden Log-Levels sichtbar" — .col-delta (and, defensively,
+   .col-time) lacked overflow:hidden, unlike .col-thread/.col-loc/
+   .col-method/.col-msg, which already had it — a column collapsed to a
+   0px --row-grid track (via the column-visibility toggle, or just a very
+   narrow drag-resize) didn't clip its own text content, which kept
+   rendering at natural width and spilled into the next column, appearing
+   underneath its opaque background. (b) "Das Kontextmenü auf dem Filter
+   Tree ist ziemlich voll geworden. gruppiere die Einträge sinnvoll, analog
+   zum Kontextmenü auf den Messages" — #treeContextMenu's per-node item
+   list (11 items on a filter node) is now built into GROUP_ORDER buckets
+   (edit/clipboard/library/danger) joined by .ctx-sep, the same grouping
+   convention #contextMenu (the log-row menu) already established.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("60a. col-delta/col-time declare overflow:hidden (bugfix: hidden/narrow column content no longer bleeds into the next column)");
+
+  const f = await w.addFile("a.log", makeLog(0, 3), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const cs = w.getComputedStyle;
+  const deltaEl = d.querySelector("#tableRows .col-delta");
+  const timeEl = d.querySelector("#tableRows .col-time");
+  assert(deltaEl && cs(deltaEl).overflow === "hidden", "col-delta declares overflow:hidden, got " + (deltaEl && cs(deltaEl).overflow));
+  assert(timeEl && cs(timeEl).overflow === "hidden", "col-time declares overflow:hidden too (defensive — also resizable now), got " + (timeEl && cs(timeEl).overflow));
+  // Same fix already existed for these three (regression guard: this bugfix
+  // must not have accidentally removed it).
+  ["col-thread", "col-loc", "col-method"].forEach(cls => {
+    const el = d.querySelector("#tableRows ." + cls);
+    assert(el && cs(el).overflow === "hidden", "." + cls + " still declares overflow:hidden");
+  });
+});
+
+await withApp(async (w, d, T) => {
+  section("60b. Tree context menu items grouped with separators (analogous to the log-row context menu)");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  w.render();
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  w.render();
+
+  const treeRow = d.querySelector('.tree-row[data-node-id="' + textNode.id + '"]');
+  fireContextMenu(treeRow, w);
+  const menu = d.querySelector("#treeContextMenu");
+  const children = [...menu.children];
+  const seps = children.filter(c => c.classList.contains("ctx-sep")).length;
+  assert(seps >= 4, "a filter node's context menu has at least 4 separators (meta + 3 group boundaries among edit/clipboard/library/danger), got " + seps);
+
+  // Group order: edit (edit/invert/context) before clipboard (copy/cut)
+  // before library (save/saveToLibrary/loadFilter/applyFromLibrary) before
+  // danger (delete) — verify relative order via each action's index.
+  const indexOf = action => children.findIndex(c => c.dataset && c.dataset.action === action);
+  assert(indexOf("edit") < indexOf("invert") && indexOf("invert") < indexOf("context"), "edit group stays together and in order: edit, invert, time context");
+  assert(indexOf("context") < indexOf("copy") && indexOf("copy") < indexOf("cut"), "clipboard group (copy, cut) comes after the edit group");
+  assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("saveToLibrary") &&
+    indexOf("saveToLibrary") < indexOf("loadFilter") && indexOf("loadFilter") < indexOf("applyFromLibrary"),
+    "library group (save filter, save to library, load filter, apply from library) comes after clipboard, in order");
+  assert(indexOf("applyFromLibrary") < indexOf("delete"), "danger group (remove filter) comes last");
+
+  // A .ctx-sep must actually separate the edit and clipboard groups (not
+  // just "somewhere in the menu") — the item right after "context" (edit
+  // group's last item) up to "copy" (clipboard's first) is exactly one sep.
+  const contextIdx = indexOf("context");
+  assert(children[contextIdx + 1].classList.contains("ctx-sep") && children[contextIdx + 2].dataset.action === "copy",
+    "a .ctx-sep sits directly between the edit group's last item and the clipboard group's first");
+
+  w.closeTreeContextMenu();
+
+  // A plain file node (no filter-specific groups) still groups cleanly:
+  // library items, a separator, then the danger item — no empty/dangling
+  // leading separator for the groups that have nothing in them.
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
+  const fileChildren = [...d.querySelector("#treeContextMenu").children];
+  const fileIndexOf = action => fileChildren.findIndex(c => c.dataset && c.dataset.action === action);
+  assert(fileIndexOf("loadFilter") < fileIndexOf("applyFromLibrary") && fileIndexOf("applyFromLibrary") < fileIndexOf("delete"),
+    "a file node's context menu still groups library items before the danger (remove file) item");
+  const libSep = fileChildren.filter(c => c.classList.contains("ctx-sep")).length;
+  assert(libSep === 2, "file node menu has exactly 2 separators (meta, then one between the library group and the danger group), got " + libSep);
+});
+
+await withApp(async (w, d, T) => {
+  section("60c. Extraction view: #btnCopySelection/#btnCopyAllExtract removed (person-requested), underlying copy functions kept (jumpToFullLog precedent)");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  T.state.activeId = extractNode.id;
+  w.render();
+
+  assert(d.querySelector("#btnCopySelection") === null, "#btnCopySelection button no longer exists");
+  assert(d.querySelector("#btnCopyAllExtract") === null, "#btnCopyAllExtract button no longer exists");
+  assert(d.querySelector(".extract-actions") === null, "the now-empty .extract-actions wrapper was removed too, not left behind empty");
+  assert(d.querySelector("#extractViewTabs"), "sanity: the rest of the extraction toolbar (Table/Plot tabs) is untouched");
+
+  // The underlying functions still work when called directly — only their
+  // button trigger is gone, same as jumpToFullLog surviving un-wired to a
+  // double-click (see PROJECT.md).
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+  w.copyWholeExtractTable();
+  assert(copied && copied.startsWith("Index\tt (ms)\tvalue") && copied.split("\n").length === 6,
+    "copyWholeExtractTable still works when called directly (header + 5 data rows), got " + JSON.stringify(copied && copied.split("\n")[0]));
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -7268,6 +7382,23 @@ process.exit(failed ? 1 : 0);
               simulated reload — a SEPARATE store from the session cache's
               own meta record, readable with zero files loaded and no
               boot-time restore wait, unlike restoreSessionFromCache.
+   Group 60  — this session (2026-08-18), person-reported follow-up
+              bugfixes to Groups 58/59. 60a: `.col-delta`/`.col-time` were
+              missing `overflow:hidden` (unlike `.col-thread`/`.col-loc`/
+              `.col-method`/`.col-msg`, which already had it) — a column
+              collapsed to a 0px `--row-grid` track didn't clip its own
+              text, which spilled into the next column and showed up
+              underneath its background ("bleiben die Einträge... hinter
+              den nun darüber liegenden Log-Levels sichtbar"). 60b: the
+              tree context menu's item list (11 items on a filter node)
+              was one flat list; grouped into `GROUP_ORDER` buckets (edit/
+              clipboard/library/danger) joined by `.ctx-sep`, the same
+              convention `#contextMenu` (the log-row menu) already used —
+              covers separator count/placement, per-group relative
+              ordering, a separator sitting directly between two adjacent
+              groups (not just "somewhere in the menu"), and a plain file
+              node (fewer groups populated) still grouping cleanly with no
+              dangling empty separator.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
