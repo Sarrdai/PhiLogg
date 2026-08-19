@@ -208,7 +208,7 @@
 
   // ---- state ----
   let dirHandle = null;
-  let writable = null;
+  let fileHandle = null;
   let currentFileName = null;
   let fileIndex = 0;
   let timerId = null;
@@ -294,7 +294,7 @@
   }
 
   function updateStatus() {
-    stState.textContent = running ? "writing" : (writable ? "paused" : "idle");
+    stState.textContent = running ? "writing" : (fileHandle ? "paused" : "idle");
     statusBox.classList.toggle("live", running);
     stFile.textContent = currentFileName || "—";
     stFiles.textContent = String(fileIndex);
@@ -307,9 +307,9 @@
     const haveFolder = !!dirHandle;
     btnStart.disabled = !haveFolder || running;
     btnStop.disabled = !running;
-    btnNextFile.disabled = !running && !writable;
-    btnBurst.disabled = !writable;
-    btnTruncate.disabled = !writable;
+    btnNextFile.disabled = !running && !fileHandle;
+    btnBurst.disabled = !fileHandle;
+    btnTruncate.disabled = !fileHandle;
   }
 
   async function pickFolder() {
@@ -324,33 +324,42 @@
     }
   }
 
+  // A FileSystemWritableFileStream writes to a hidden *.crswap file and only
+  // renames it into the real, visible file on close() — so a stream left
+  // open across many ticks (the original approach here) leaves the on-disk
+  // .log file permanently empty while everything actually written sits in
+  // the .crswap sidecar, invisible to anything (like PhiLogg's own tailing)
+  // watching the real file. To make every write actually land on disk
+  // immediately, each write below opens its own writable, writes at an
+  // explicit byte position (keepExistingData:true starts the cursor at 0,
+  // not at the end — an explicit position is what makes this an append
+  // rather than an overwrite), and closes again right away.
   async function openNewFile() {
     fileIndex += 1;
     const prefix = (filePrefix.value || "app").trim() || "app";
     currentFileName = prefix + "-" + fileIndex + ".log";
-    const fileHandle = await dirHandle.getFileHandle(currentFileName, { create: true });
-    writable = await fileHandle.createWritable({ keepExistingData: false });
+    fileHandle = await dirHandle.getFileHandle(currentFileName, { create: true });
+    const w = await fileHandle.createWritable({ keepExistingData: false });
+    await w.close();
     linesInFile = 0;
     bytesInFile = 0;
     logToPanel("── started " + currentFileName + " ──", "marker");
     updateStatus();
   }
 
-  async function closeCurrentFile() {
-    if (writable) {
-      await writable.close();
-      writable = null;
-    }
+  async function writeText(text) {
+    const w = await fileHandle.createWritable({ keepExistingData: true });
+    await w.write({ type: "write", position: bytesInFile, data: text });
+    await w.close();
+    bytesInFile += new Blob([text]).size;
   }
 
   async function writeOneLine() {
-    if (!writable) return;
+    if (!fileHandle) return;
     const { line, level } = buildLine();
-    const text = line + "\n";
-    await writable.write(text);
+    await writeText(line + "\n");
     linesInFile += 1;
     linesTotal += 1;
-    bytesInFile += new Blob([text]).size;
     logToPanel(line, "lvl-" + level);
     updateStatus();
   }
@@ -369,7 +378,7 @@
 
   async function start() {
     if (!dirHandle || running) return;
-    if (!writable) await openNewFile();
+    if (!fileHandle) await openNewFile();
     running = true;
     updateButtons();
     updateStatus();
@@ -387,7 +396,6 @@
     const wasRunning = running;
     running = false;
     if (timerId) { clearTimeout(timerId); timerId = null; }
-    await closeCurrentFile();
     await openNewFile();
     if (wasRunning) {
       running = true;
@@ -404,13 +412,12 @@
   }
 
   async function truncate() {
-    if (!currentFileName) return;
+    if (!fileHandle) return;
     const wasRunning = running;
     running = false;
     if (timerId) { clearTimeout(timerId); timerId = null; }
-    await closeCurrentFile();
-    const fileHandle = await dirHandle.getFileHandle(currentFileName, { create: true });
-    writable = await fileHandle.createWritable({ keepExistingData: false });
+    const w = await fileHandle.createWritable({ keepExistingData: false });
+    await w.close();
     linesInFile = 0;
     bytesInFile = 0;
     logToPanel("── truncated " + currentFileName + " ──", "marker");
@@ -432,10 +439,6 @@
   btnNextFile.addEventListener("click", nextFile);
   btnBurst.addEventListener("click", burst);
   btnTruncate.addEventListener("click", truncate);
-
-  window.addEventListener("beforeunload", () => {
-    if (writable) writable.close();
-  });
 
   updateButtons();
   updateStatus();
