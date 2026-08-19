@@ -4368,8 +4368,10 @@ function renderNode(id, depth) {
     : ICON_CLOCK;
   row.appendChild(icon);
 
-  // Pulsing dot on file nodes that are being tailed (live-updating).
-  if (node.type === "file" && node.tail && !node.tail.failed) {
+  // Pulsing dot on file nodes actively receiving new entries right now (see
+  // isTailLive — "being tailed" alone isn't enough, or a rotated-out file's
+  // dot would never go dark).
+  if (node.type === "file" && isTailLive(node.tail)) {
     const live = document.createElement("span");
     live.className = "tree-live";
     live.title = "Live: file is being tailed for new entries";
@@ -8338,6 +8340,8 @@ async function loadOneFileIntoTree(name, file, handle, folderId) {
       failed: false,       // set once TAIL_MAX_CONSECUTIVE_ERRORS polls in a row fail
       busy: false,         // guards against overlapping async polls on slow disks
       errorCount: 0,       // consecutive failed polls; reset to 0 by any clean poll
+      lastGrowth: Date.now(), // drives the live dot's staleness window (isTailLive)
+      wasLive: true,       // tailTick's own bookkeeping to know when to re-render on a stale flip
     };
     state.tailFollow = true; // a freshly opened live file starts in follow mode
   }
@@ -8464,6 +8468,20 @@ const TAIL_POLL_MS = 1500;
 // the rest of the session — any successful poll resets the counter to 0.
 const TAIL_MAX_CONSECUTIVE_ERRORS = 5;
 
+// The pulsing "live" dot (.tree-live) means "actually being written to right
+// now", not just "still polled" — a handle stays valid (and t.failed stays
+// false) long after a writer moves on to a different file, e.g. rotation in
+// Folder watch. Without a staleness window, a rotated-out file's dot never
+// went dark (person-reported), and a newly-written file's dot looked no
+// different from an idle one. TAIL_LIVE_MS is comfortably above
+// log-simulator's slowest line interval (3000ms, plus jitter) so ordinary
+// gaps between writes don't flicker the dot, while still going dark soon
+// after writing genuinely stops.
+const TAIL_LIVE_MS = 10000;
+function isTailLive(t) {
+  return !!(t && !t.failed && (t.lastGrowth == null || Date.now() - t.lastGrowth < TAIL_LIVE_MS));
+}
+
 // Parses newly appended text into node.entries in place. Handles chunks that
 // start mid-entry (continuation lines of a stack trace still being written)
 // and keeps an unterminated trailing line in tail.pending until the writer
@@ -8509,11 +8527,13 @@ async function tailTick() {
         node.entries = [];
         t.offset = 0;
         t.pending = "";
+        t.lastGrowth = Date.now();
         changedRootIds.push(id);
       }
       if (f.size > t.offset) {
         const chunk = await f.slice(t.offset).text();
         t.offset = f.size;
+        t.lastGrowth = Date.now();
         if (appendTailText(node, chunk)) changedRootIds.push(id);
       }
       t.errorCount = 0; // a clean poll clears any streak of prior transient failures
@@ -8533,7 +8553,19 @@ async function tailTick() {
       t.busy = false;
     }
   }
+  // A file crossing the staleness window (isTailLive flipping false) is a
+  // change worth a re-render too, even with no bytes read this tick — that's
+  // the only way a rotated-out file's dot ever goes dark on its own, since
+  // the loop above only notices byte-level growth/shrink, not time passing.
+  let liveStatusChanged = false;
+  for (const id of state.rootIds) {
+    const t = state.nodes[id] && state.nodes[id].tail;
+    if (!t) continue;
+    const live = isTailLive(t);
+    if (t.wasLive !== live) { t.wasLive = live; liveStatusChanged = true; }
+  }
   if (changedRootIds.length) onTailChange(changedRootIds);
+  else if (liveStatusChanged) renderTree(); // cheap: only the dot changed, no data/caches to touch
 }
 
 function onTailChange(changedRootIds) {
@@ -8660,6 +8692,7 @@ function mergeScannedFiles(folder, scanned) {
           handle: s.handle,
           offset: new Blob([rebuildFileText(node)]).size,
           pending: "", failed: false, busy: false, errorCount: 0,
+          lastGrowth: Date.now(), wasLive: true,
         };
       }
       return existing;
@@ -10831,6 +10864,8 @@ async function tryReattachFileTail(node, handle) {
         failed: false,
         busy: false,
         errorCount: 0,
+        lastGrowth: Date.now(),
+        wasLive: true,
       };
       return true;
     }
