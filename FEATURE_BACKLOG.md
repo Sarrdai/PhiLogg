@@ -27,7 +27,7 @@ gap it closes and the first thing that needs deciding.
 - **Δt between two rows** — mark a row, shift-click a second, get the gap in the status strip. The extraction table already answers this (`t(ms)`), the log view doesn't.
 - **Relative-time display toggle** — show timestamps as offsets from a chosen zero row (selected or bookmarked) instead of absolute time, same reasoning that made extraction's `t(ms)` cumulative-from-first.
 - **Collapse consecutive duplicate messages** into one row with an ×N badge — noise control for spam loops. Open question: what counts as "duplicate" (raw line, message column, or message-with-numbers-normalized — see message-pattern grouping below).
-- **Column visibility / width persistence in the log view** — hide Thread/Location when they aren't part of the current question. Widths and visibility would join the settings tier that already persists `levelFilter`/`sortColumn`.
+- ~~**Column visibility / width persistence in the log view**~~ — done (2026-08-18): `#btnColumns` popup (Δt/Thread/Location/Method toggles) + per-column drag-resize handles in `#tableHeader`, applied via the `--row-grid` CSS custom property, persisted in the same settings tier as `multilineMessages`.
 
 ### Filter tree workflow
 
@@ -35,7 +35,7 @@ gap it closes and the first thing that needs deciding.
 - **Rename / label filter nodes** — a human-readable step name ("Step 3: calibration errors") shown instead of the raw value, mainly so an exported/shared analysis reads as a narrative rather than a stack of patterns.
 - **"Why is this row here?" explain popup** — for the selected entry, show which node of the active chain matched it; for an entry visible only in the Full view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the existing "view sometimes doesn't refresh" class of confusion.
 - **Regex filter type** — a real `RegExp` alongside the wildcard-token text filter, with the same live match count, case-sensitivity, and target-column options. Complements (doesn't replace) the token language, which stays the friendlier default.
-- **Reusable filter library** — named presets applied to *any* file in one click. The global counterpart to the per-file filter history that already exists; storage tier and matching rules would be much simpler (no content fingerprinting — the person picks).
+- ~~**Reusable filter library**~~ — done (2026-08-18): "Save to library…"/"Apply from library…" context menu actions, IndexedDB-backed (`filterLibrary` store), file-agnostic, applying reuses `importFilterJson()` so a preset re-evaluates against whatever file it lands on.
 
 ### Aggregation & analysis
 
@@ -53,7 +53,7 @@ gap it closes and the first thing that needs deciding.
 
 ### Sharing & output
 
-- **Export the current view** — the filtered result as `.log`/`.csv`/`.tsv`, plus copy of selected log rows (raw line or column-wise). Only the extraction table can leave the app as text today; session export is JSON for PhiLogg users, not data for Excel or a ticket.
+- **Export the current view** — the filtered result as `.log`/`.csv`/`.tsv`. Only the extraction table can leave the app as text today; session export is JSON for PhiLogg users, not data for Excel or a ticket. (Partially done, 2026-08-18: copying selected log rows as raw text via Ctrl+C — Ctrl/Shift-click multi-select + `copyLogSelectionToClipboard` — now exists; column-wise copy and whole-view file export are still open.)
 - **Findings report export** — a standalone HTML/Markdown report carrying the filter chain, bookmark notes, and the matching entries, readable by someone who has neither PhiLogg nor the log file. Different audience than session export (which assumes both).
 
 ### Housekeeping
