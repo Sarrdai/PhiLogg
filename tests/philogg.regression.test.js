@@ -2217,6 +2217,23 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#breadcrumb").parentElement === viewBar && d.querySelector("#levelBar").parentElement === viewBar,
     "breadcrumb and level bar are nested INSIDE #viewBar (previously three separate top-level rows)");
 
+  const cs = w.getComputedStyle;
+
+  // Initial (no files loaded) state: tabs hidden, same as the old #fhTabBar
+  // default — and, per the later "no file loaded" cleanup session, the
+  // WHOLE #viewBar row (tabs/level-filter/breadcrumb) is hidden outright,
+  // not just left empty, so only #emptyState's centered hint shows.
+  assert(T.state.rootIds.length === 0, "sanity: no files loaded yet");
+  assert(d.querySelector("#fhTabs").style.display === "none", "tabs hide when no files are loaded");
+  assert(viewBar.style.display === "none", "#viewBar itself is hidden with zero files loaded (no empty toolbar row above the centered hint)");
+
+  const f = await w.addFile("a.log", makeLog(0, 10, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = textNode.id;
+  w.render();
+  assert(viewBar.style.display === "", "#viewBar is shown again once a file is loaded");
+  assert(d.querySelector("#fhTabs").style.display === "flex", "tabs visible for a normal (non-extract) filter node");
+
   // Layout mechanism guard (person-requested follow-up, same session): tabs
   // and level filter must stay pinned top-left even when the breadcrumb
   // wraps to multiple lines, with the breadcrumb using the FULL row width
@@ -2225,8 +2242,8 @@ await withApp(async (w, d, T) => {
   // classic float+normal-flow text-wrap technique can, so this guards
   // against an accidental revert to flex on #viewBar/#breadcrumb, which
   // jsdom's computed styles (unlike real line-wrapping) CAN detect even
-  // without a layout engine.
-  const cs = w.getComputedStyle;
+  // without a layout engine. Checked with a file loaded (#viewBar visible)
+  // since these are its own internal layout mechanics, not its visibility.
   assert(cs(viewBar).display === "flow-root", "#viewBar is a flow-root (contains the floats regardless of breadcrumb height)");
   assert(cs(d.querySelector("#fhTabs")).float === "left", "#fhTabs floats left so it stays pinned to the top line");
   assert(cs(d.querySelector("#levelBar")).float === "left", "#levelBar floats left so it stays pinned to the top line");
@@ -2240,29 +2257,25 @@ await withApp(async (w, d, T) => {
   // Filtered/Stacked toggle and level filter get cut off" symptom that was
   // reported and fixed in this session.
   assert(cs(viewBar).flexShrink === "0", "#viewBar must not flex-shrink as a child of #content, or its floated children get clipped when vertical space is tight");
-
-  // Initial (no files loaded) state: tabs hidden, same as the old #fhTabBar default
-  assert(T.state.rootIds.length === 0, "sanity: no files loaded yet");
-  assert(d.querySelector("#fhTabs").style.display === "none", "tabs hide when no files are loaded");
-
-  const f = await w.addFile("a.log", makeLog(0, 10, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
-  const textNode = w.createFilterNode(f.id, "text", "message 1");
-  T.state.activeId = textNode.id;
-  w.render();
-  assert(d.querySelector("#fhTabs").style.display === "flex", "tabs visible for a normal (non-extract) filter node");
   assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter buttons render inside the merged bar");
   assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb chips render inside the merged bar");
 
-  // Extract mode: tabs hide (no Highlight companion), but level filter and
-  // breadcrumb — sharing the same #viewBar row now — must stay visible,
-  // since renderExtractTable() still applies applyLevelFilter() and the
-  // filter chain is still meaningful navigation there.
+  // Extract mode (UPDATED, this session, person-requested: "entferne die
+  // Anzeige der Level Leiste im Extraction View. Hier sollte nur noch der
+  // aktuelle Filterpfad zu sehen sein") — #fhTabs, #levelBar, and the three
+  // Filtered/Highlight-view-only toggles all hide; only #breadcrumb (the
+  // filter path) stays visible. renderExtractTable() still applies
+  // applyLevelFilter() internally against whatever the quick-filter was
+  // last set to — there's just no visible pill row to change it from here.
   const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   assert(d.querySelector("#fhTabs").style.display === "none", "tabs hide in extract mode (unchanged behaviour)");
-  assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter STILL renders in extract mode (regression guard for the merge)");
-  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb STILL renders in extract mode (regression guard for the merge)");
+  assert(d.querySelector("#levelBar").style.display === "none", "level bar hides in extract mode — only the filter path stays visible");
+  assert(d.querySelector("#btnPinBookmarks").style.display === "none", "pin-bookmarks toggle hides too (doesn't apply to the extraction table)");
+  assert(d.querySelector("#btnMultilineMsg").style.display === "none", "multiline toggle hides too (doesn't apply to the extraction table)");
+  assert(d.querySelector("#btnColumns").style.display === "none", "columns toggle hides too (doesn't apply to the extraction table's own columns)");
+  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb STILL renders (and is visible) in extract mode — the one thing meant to stay");
 
   // Back to a normal node so the popup checks below aren't affected
   T.state.activeId = textNode.id;
@@ -6015,6 +6028,491 @@ section("55c. Multiline toggle persists through the session cache (global settin
 }
 
 /* ============================================================
+   GROUP 56 — "No file loaded" hint consolidated to #emptyState only
+   Origin: this session (person-requested): with zero files loaded, don't
+   show the #viewBar toolbar (level filter etc.) anymore, and remove the
+   duplicate "no file" hints that used to live in the tree sidebar
+   (#dropHint) and the toolbar status text (#statusText showing "No files
+   loaded") — #emptyState's centered message is now the ONLY such hint.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("56. No-file-loaded state: single centered hint, no toolbar/sidebar duplicates");
+
+  assert(T.state.rootIds.length === 0, "sanity: no files loaded yet");
+  assert(d.querySelector("#dropHint") === null, "#dropHint no longer exists in the tree sidebar");
+  assert(d.querySelector("#emptyState").style.display === "flex", "#emptyState (centered hint) is shown");
+  assert(d.querySelector("#emptyState h2").textContent.includes("No log file loaded"), "#emptyState still carries its message");
+  assert(d.querySelector("#statusText").textContent === "", "toolbar status text carries no 'No files loaded' duplicate hint");
+  assert(d.querySelector("#viewBar").style.display === "none", "the toolbar with the level filter/tabs/breadcrumb is hidden entirely");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  assert(d.querySelector("#emptyState").style.display === "none", "#emptyState hides once a file is loaded");
+  assert(d.querySelector("#viewBar").style.display === "", "#viewBar reappears once a file is loaded");
+  assert(d.querySelector("#statusText").textContent.includes("1 file"), "toolbar status text shows the real file/entry count again, got " + d.querySelector("#statusText").textContent);
+});
+
+/* ============================================================
+   GROUP 57 — Multi-select log rows (Ctrl/Shift+click) + Ctrl+C raw-line copy
+   Origin: this session (person-requested): select multiple lines in the log
+   view and copy their raw text to the system clipboard via Ctrl+C. Ctrl+click
+   toggles a row into/out of state.logMultiSelect (folding the prior plain-
+   click single selection in on the first Ctrl+click); Shift+click selects
+   the contiguous range from the last-clicked anchor. Ctrl+C copies the
+   multi-selected rows (or just the single selected entry when nothing's
+   multi-selected) sorted chronologically, taking priority over the tree's
+   own filter-node clipboard (state.clipboard) whenever focusRegion is
+   "entries" (i.e. the log view, not the tree, was last interacted with).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("57. Multi-select log rows + Ctrl+C raw-line copy");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+
+  const rowAt = i => d.querySelector('#tableRows [data-entry-id="' + f.entries[i].id + '"]');
+  const clickWith = (el, opts) => el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ...opts }));
+
+  // --- Plain click: unchanged single-selection behavior, no multi-select ---
+  clickWith(rowAt(2), {});
+  assert(T.state.selectedId === f.entries[2].id, "plain click selects the entry as before");
+  assert(T.state.logMultiSelect.size === 0, "plain click does not populate logMultiSelect");
+  assert(T.state.focusRegion === "entries", "sanity: focusRegion is entries after a row click");
+
+  // --- Ctrl+C with just a single selection: copies that one raw line ---
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(copied === f.entries[2].raw, "Ctrl+C with a single selection copies just that entry's raw line");
+
+  // --- Ctrl+click a second row: folds the prior single selection in; this
+  // click also becomes the new Shift-range anchor (index 5) ---
+  clickWith(rowAt(5), { ctrlKey: true });
+  assert(T.state.logMultiSelect.has(f.entries[2].id) && T.state.logMultiSelect.has(f.entries[5].id) && T.state.logMultiSelect.size === 2,
+    "first Ctrl+click folds the previous plain selection in, got " + [...T.state.logMultiSelect]);
+  assert(rowAt(2).classList.contains("row-multi-selected") && rowAt(5).classList.contains("row-multi-selected"),
+    "both rows carry the multi-select CSS class in the DOM immediately (no full render needed)");
+
+  // --- Shift+click: contiguous range from the anchor (index 5) to index 8 ---
+  clickWith(rowAt(8), { shiftKey: true });
+  const expectedRange = [5, 6, 7, 8].map(i => f.entries[i].id);
+  assert(expectedRange.every(id => T.state.logMultiSelect.has(id)) && T.state.logMultiSelect.size === 4,
+    "Shift+click selects the contiguous range from the anchor, got " + [...T.state.logMultiSelect].length + " ids");
+  assert(!T.state.logMultiSelect.has(f.entries[2].id), "Shift+click REPLACES the set rather than extending the previous Ctrl+click selection");
+
+  // --- Ctrl+C now copies all 4 rows, sorted chronologically, as raw lines ---
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  const expectedText = [5, 6, 7, 8].map(i => f.entries[i].raw).join("\n");
+  assert(copied === expectedText, "Ctrl+C copies every multi-selected row's raw text, newline-joined, in chronological order");
+
+  // --- A later Shift+click narrows the range from the SAME anchor (index 5, untouched by Shift+click itself), not the previous Shift target (index 8) ---
+  clickWith(rowAt(6), { shiftKey: true });
+  assert(T.state.logMultiSelect.size === 2 && T.state.logMultiSelect.has(f.entries[5].id) && T.state.logMultiSelect.has(f.entries[6].id),
+    "repeated Shift+click re-derives the range from the ORIGINAL anchor (5), not the previous Shift+click's target (8)");
+
+  // --- Ctrl+click one of the currently-selected rows: toggles it back off,
+  // and (like any Ctrl+click) becomes the new anchor ---
+  clickWith(rowAt(5), { ctrlKey: true });
+  assert(!T.state.logMultiSelect.has(f.entries[5].id) && T.state.logMultiSelect.has(f.entries[6].id),
+    "Ctrl+click on an already-selected row removes it from the set");
+  assert(!rowAt(5).classList.contains("row-multi-selected"), "removed row's class is cleared in place");
+
+  // --- Plain click again clears the multi-selection ---
+  clickWith(rowAt(3), {});
+  assert(T.state.logMultiSelect.size === 0, "a later plain click clears the multi-selection");
+  assert(T.state.selectedId === f.entries[3].id, "...and selects just the clicked row");
+
+  // --- Multi-select made in the Highlight (Full) view is mirrored onto the Filter view's copy of the same rows ---
+  w.showFhTab("highlight");
+  const hRowAt = i => d.querySelector('#highlightRows [data-entry-id="' + f.entries[i].id + '"]');
+  clickWith(hRowAt(1), {});
+  clickWith(hRowAt(4), { shiftKey: true });
+  assert(T.state.logMultiSelect.size === 4, "shift-range built from the Highlight view's own entries works the same way");
+  assert(rowAt(1) && rowAt(1).classList.contains("row-multi-selected"),
+    "the Filter view's row for the same entry id picks up the multi-select class too (state.logMultiSelect is shared, same as state.selectedId)");
+
+  // --- Escape clears the multi-selection ---
+  fireKeydown(d, w, "Escape");
+  assert(T.state.logMultiSelect.size === 0, "Escape clears logMultiSelect");
+  assert(!hRowAt(4).classList.contains("row-multi-selected"), "...and the DOM class is cleared too");
+
+  // --- Tree-node Ctrl+C is unaffected when focus is on the tree, not the log view ---
+  const filterNode = w.createFilterNode(f.id, "text", "message");
+  w.render();
+  T.state.activeId = filterNode.id;
+  T.state.focusRegion = "tree";
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(T.state.clipboard && T.state.clipboard.id === filterNode.id, "with focusRegion 'tree', Ctrl+C still copies the active FILTER NODE (tree clipboard), unaffected by the new log-row copy path");
+});
+
+/* ============================================================
+   GROUP 58 — Log view column visibility / width (FEATURE_BACKLOG.md item)
+   Origin: this session. #btnColumns opens #columnsPanel with checkboxes for
+   Δt/Thread/Location/Method (Time/Level/Message always shown); each header
+   column also has a drag handle (#tableHeader .col-resize-handle) that
+   resizes it live. Both are applied purely via the --row-grid CSS custom
+   property (applyRowGrid) — no per-row DOM changes — and persist through
+   the session cache like state.multilineMessages (global, not per-file).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("58a. Column visibility toggle + reset widths");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const rootStyle = d.documentElement.style;
+  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 92px 158px 168px 1fr",
+    "default --row-grid matches the original hardcoded default, got " + rootStyle.getPropertyValue("--row-grid"));
+
+  const btnColumns = d.querySelector("#btnColumns");
+  const columnsPanel = d.querySelector("#columnsPanel");
+  assert(columnsPanel.classList.contains("hidden"), "columns popup starts hidden");
+  fireClick(btnColumns, w);
+  assert(!columnsPanel.classList.contains("hidden"), "clicking #btnColumns opens the popup");
+  const threadCb = d.querySelector("#colToggleThread");
+  assert(threadCb.checked === true, "checkbox reflects the current (default-visible) state when opened");
+
+  threadCb.checked = false;
+  threadCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.state.columnVisible.thread === false, "unchecking the Thread checkbox updates state.columnVisible.thread");
+  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 0px 158px 168px 1fr",
+    "Thread's track collapses to 0px in --row-grid, got " + rootStyle.getPropertyValue("--row-grid"));
+  const threadHandle = d.querySelector('.col-resize-handle[data-col="thread"]');
+  assert(threadHandle.style.display === "none", "the hidden column's own resize handle is hidden too (nothing meaningful to drag)");
+
+  // Re-show it
+  threadCb.checked = true;
+  threadCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.state.columnVisible.thread === true && rootStyle.getPropertyValue("--row-grid").includes("92px"),
+    "re-checking restores the track to its remembered width (92px default), not a fresh default");
+  assert(threadHandle.style.display === "", "handle reappears once the column is visible again");
+
+  // --- Reset widths ---
+  T.state.columnWidths.method = 300; // simulate a prior resize
+  w.applyRowGrid();
+  fireClick(d.querySelector("#btnResetColumns"), w);
+  assert(T.state.columnWidths.method === 168, "Reset widths restores DEFAULT_COLUMN_WIDTHS");
+  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 92px 158px 168px 1fr",
+    "…and --row-grid reflects the reset defaults");
+});
+
+await withApp(async (w, d, T) => {
+  section("58b. Drag-resize a column header handle");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const handle = d.querySelector('.col-resize-handle[data-col="loc"]');
+  assert(handle, "Location's resize handle exists in #tableHeader");
+  assert(handle.style.left === (5 + 12 + 178 + 12 + 72 + 12 + 66 + 12 + 92 + 12 + 158) + "px",
+    "handle is positioned at the cumulative right edge of its own column, got " + handle.style.left);
+
+  handle.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: 500 }));
+  assert(handle.classList.contains("dragging"), "mousedown starts the drag (handle gets .dragging)");
+  d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: 540 })); // +40px
+  assert(T.state.columnWidths.loc === 198, "dragging 40px right grows Location's width by 40px (158 -> 198), got " + T.state.columnWidths.loc);
+  assert(d.documentElement.style.getPropertyValue("--row-grid").includes("198px"), "--row-grid reflects the live drag width");
+
+  // Shrinking below COLUMN_MIN_WIDTH clamps rather than going negative/zero
+  d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: -900 }));
+  assert(T.state.columnWidths.loc === 40, "drag clamps at COLUMN_MIN_WIDTH (40px), never below it, got " + T.state.columnWidths.loc);
+
+  d.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  assert(!handle.classList.contains("dragging"), "mouseup ends the drag");
+
+  // A mousemove with no active drag is a no-op (no leftover state from the previous drag)
+  const widthBefore = T.state.columnWidths.loc;
+  d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: 999 }));
+  assert(T.state.columnWidths.loc === widthBefore, "mousemove after mouseup no longer affects the column width");
+});
+
+await withApp(async (w, d, T) => {
+  section("58d. Narrow viewport forces Thread/Location/Method hidden regardless of state.columnVisible (replaces the old @media rule)");
+
+  const f = await w.addFile("a.log", makeLog(0, 3), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  assert(T.state.columnVisible.thread === true, "sanity: Thread is visible by default");
+  assert(d.documentElement.style.getPropertyValue("--row-grid").includes("92px"), "sanity: Thread's track is non-zero at the default (wide) viewport");
+
+  w.innerWidth = 600; // below COLUMN_MOBILE_BREAKPOINT (760)
+  w.dispatchEvent(new w.Event("resize"));
+  assert(T.state.columnVisible.thread === true, "narrow viewport does NOT mutate the stored preference...");
+  assert(d.documentElement.style.getPropertyValue("--row-grid") === "5px 178px 72px 66px 0px 0px 0px 1fr",
+    "...but --row-grid forces Thread/Location/Method to 0px anyway, got " + d.documentElement.style.getPropertyValue("--row-grid"));
+
+  w.innerWidth = 1024;
+  w.dispatchEvent(new w.Event("resize"));
+  assert(d.documentElement.style.getPropertyValue("--row-grid").includes("92px"), "widening back past the breakpoint restores the remembered widths");
+});
+
+section("58c. Column visibility/width persist through the session cache (global setting, survives a reload)");
+{
+  const factory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    const f = await w.addFile("a.log", makeLog(0, 3), () => {});
+    T.state.columnVisible.method = false;
+    T.state.columnWidths.time = 220;
+    w.applyRowGrid();
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+    const meta = await w.cacheStoreOp("meta", "readonly", s => s.get("session"));
+    assert(meta.settings.columnVisible.method === false, "cache: columnVisible written into the settings record");
+    assert(meta.settings.columnWidths.time === 220, "cache: columnWidths written into the settings record");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50);
+    assert(T.state.rootIds.length === 1, "sanity: file came back via boot-time restore");
+    assert(T.state.columnVisible.method === false, "restore: columnVisible.method restored");
+    assert(T.state.columnWidths.time === 220, "restore: columnWidths.time restored");
+    assert(d.documentElement.style.getPropertyValue("--row-grid").startsWith("5px 220px"),
+      "restore: --row-grid reflects the restored width immediately (applyRowGrid called from the restore's finally block)");
+    assert(d.documentElement.style.getPropertyValue("--row-grid").includes(" 0px 1fr"),
+      "restore: Method's track is collapsed (0px), got " + d.documentElement.style.getPropertyValue("--row-grid"));
+  }, { indexedDB: factory });
+}
+
+/* ============================================================
+   GROUP 59 — Reusable filter library (FEATURE_BACKLOG.md item)
+   Origin: this session. Named presets, saved via a filter node's "Save to
+   library…" context menu action (#filterLibrarySaveDialog) and applied to
+   ANY node — any file, not just the one it was saved from — via "Apply
+   from library…" (#filterLibraryDialog). IndexedDB-backed ("filterLibrary"
+   store, CACHE_DB_VERSION 3->4), file-agnostic and named on purpose (no
+   content-fingerprint matching, unlike the per-file filter history).
+   Applying reuses importFilterJson() unchanged, so it re-evaluates the
+   filter LOGIC against whatever file it lands on, never a stale result.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("59a. Save to library (context menu) + name dialog");
+  // Needs a real (fake-indexeddb) IndexedDB — unlike state.multilineMessages
+  // et al., the library has no in-memory fallback; cacheStoreOp silently
+  // no-ops without one (same graceful-degradation jsdom sees in every OTHER
+  // group, which is fine there since those don't assert on storage content).
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  w.render();
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  w.render();
+
+  // Right-click the filter node -> "Save to library…" opens the naming dialog
+  const treeRow = d.querySelector('.tree-row[data-node-id="' + textNode.id + '"]');
+  assert(treeRow, "sanity: tree row exists for the filter node");
+  fireContextMenu(treeRow, w);
+  const saveItem = [...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "saveToLibrary");
+  assert(saveItem, "'Save to library…' appears in a filter node's context menu");
+  fireClick(saveItem, w);
+
+  const saveDialog = d.querySelector("#filterLibrarySaveDialog");
+  assert(!saveDialog.classList.contains("hidden"), "the naming dialog opens");
+  const nameInput = d.querySelector("#filterLibraryNameInput");
+  assert(nameInput.value === textNode.name, "name input pre-fills with the filter node's own name");
+
+  nameInput.value = "My saved filter";
+  fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
+  assert(saveDialog.classList.contains("hidden"), "confirming closes the dialog");
+
+  await new Promise(r => setTimeout(r, 20)); // saveFilterToLibrary's IndexedDB write is async
+  const records = await w.listFilterLibrary();
+  assert(records.length === 1 && records[0].name === "My saved filter", "one record saved under the entered name");
+  assert(Array.isArray(records[0].roots) && records[0].roots.length === 1 && records[0].roots[0].filterType === "text",
+    "the saved record carries serializeFilterBranch()'s own shape (roots/activeRef)");
+
+  // Blank name is a no-op (dialog stays open, nothing saved)
+  fireContextMenu(treeRow, w);
+  fireClick([...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "saveToLibrary"), w);
+  d.querySelector("#filterLibraryNameInput").value = "   ";
+  fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
+  assert(!d.querySelector("#filterLibrarySaveDialog").classList.contains("hidden"), "a blank/whitespace-only name does not save or close the dialog");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("59b. Apply from library onto a DIFFERENT file (one click, file-agnostic) + delete");
+
+  const fa = await w.addFile("a.log", makeLog(0, 20), () => {});
+  w.render();
+  const textNode = w.createFilterNode(fa.id, "text", "message 1");
+  w.render();
+  await w.saveFilterToLibrary(textNode.id, "reusable text filter");
+
+  const fb = await w.addFile("b.log", makeLog(0, 20, { msgPrefix: "message" }), () => {});
+  w.render();
+
+  // Right-click the SECOND file (never touched by the save above) -> "Apply from library…"
+  const fileRow = d.querySelector('.tree-row[data-node-id="' + fb.id + '"]');
+  fireContextMenu(fileRow, w);
+  const applyItem = [...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "applyFromLibrary");
+  assert(applyItem, "'Apply from library…' appears on a plain FILE node's context menu too, not just filter nodes");
+  fireClick(applyItem, w);
+
+  const dialog = d.querySelector("#filterLibraryDialog");
+  assert(!dialog.classList.contains("hidden"), "the apply dialog opens");
+  await new Promise(r => setTimeout(r, 20)); // renderFilterLibraryDialog's listFilterLibrary() read is async
+  const rows = [...d.querySelectorAll("#filterLibraryList .filter-library-row")];
+  assert(rows.length === 1 && rows[0].querySelector(".filter-library-row-name").textContent === "reusable text filter",
+    "the saved preset is listed");
+
+  const before = fb.children.length;
+  fireClick(rows[0].querySelector("button.btn-mini"), w); // "Apply"
+  assert(dialog.classList.contains("hidden"), "clicking Apply closes the dialog");
+  assert(fb.children.length === before + 1, "a fresh copy of the filter is created directly under the target file");
+  const appliedNode = T.state.nodes[fb.children[fb.children.length - 1]];
+  assert(appliedNode.filterType === "text" && appliedNode.value === "message 1", "applied node carries the same filter definition");
+  assert(appliedNode.id !== textNode.id, "it's a NEW node (fresh uid), not the original");
+  // "message 1" matches entries 1, 10..19 in file b's own data (re-evaluated
+  // against ITS entries, not a replayed result from file a).
+  assert(w.getEntries(appliedNode.id).length === 11, "re-evaluates against the target file's OWN data, got " + w.getEntries(appliedNode.id).length);
+
+  // --- Delete from the library ---
+  fireContextMenu(fileRow, w);
+  fireClick([...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "applyFromLibrary"), w);
+  await new Promise(r => setTimeout(r, 20));
+  const delBtn = d.querySelector("#filterLibraryList .filter-library-row-del");
+  fireClick(delBtn, w);
+  await new Promise(r => setTimeout(r, 20));
+  assert(d.querySelector("#filterLibraryList .filter-library-empty"), "list re-renders empty after deleting the only entry");
+  const remaining = await w.listFilterLibrary();
+  assert(remaining.length === 0, "record actually removed from IndexedDB");
+}, { indexedDB: new IDBFactory() });
+
+section("59c. Filter library persists across a simulated reload (separate IndexedDB store from the session cache)");
+{
+  const factory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+    w.render();
+    const node = w.createFilterNode(f.id, "extract", "message [value:int]");
+    w.render();
+    await w.saveFilterToLibrary(node.id, "extract preset");
+    const records = await w.listFilterLibrary();
+    assert(records.length === 1 && records[0].roots[0].filterType === "extract", "sanity: saved before the simulated reload");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    // Filter library is independent of file/session state — no file needs
+    // to be loaded, and no boot-time restore wait is needed, for it to be
+    // readable (unlike the session cache's own restoreSessionFromCache).
+    const records = await w.listFilterLibrary();
+    assert(records.length === 1 && records[0].name === "extract preset", "library record survives across the simulated reload");
+  }, { indexedDB: factory });
+}
+
+/* ============================================================
+   GROUP 60 — Session follow-up bugfixes: col-delta/col-time overflow-clip,
+   tree context menu grouped with separators
+   Origin: this session, person-reported. (a) "wenn ich die deltaT Spalte
+   verstecke, bleiben die Einträge in der Tabelle aber hinter den nun
+   darüber liegenden Log-Levels sichtbar" — .col-delta (and, defensively,
+   .col-time) lacked overflow:hidden, unlike .col-thread/.col-loc/
+   .col-method/.col-msg, which already had it — a column collapsed to a
+   0px --row-grid track (via the column-visibility toggle, or just a very
+   narrow drag-resize) didn't clip its own text content, which kept
+   rendering at natural width and spilled into the next column, appearing
+   underneath its opaque background. (b) "Das Kontextmenü auf dem Filter
+   Tree ist ziemlich voll geworden. gruppiere die Einträge sinnvoll, analog
+   zum Kontextmenü auf den Messages" — #treeContextMenu's per-node item
+   list (11 items on a filter node) is now built into GROUP_ORDER buckets
+   (edit/clipboard/library/danger) joined by .ctx-sep, the same grouping
+   convention #contextMenu (the log-row menu) already established.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("60a. col-delta/col-time declare overflow:hidden (bugfix: hidden/narrow column content no longer bleeds into the next column)");
+
+  const f = await w.addFile("a.log", makeLog(0, 3), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const cs = w.getComputedStyle;
+  const deltaEl = d.querySelector("#tableRows .col-delta");
+  const timeEl = d.querySelector("#tableRows .col-time");
+  assert(deltaEl && cs(deltaEl).overflow === "hidden", "col-delta declares overflow:hidden, got " + (deltaEl && cs(deltaEl).overflow));
+  assert(timeEl && cs(timeEl).overflow === "hidden", "col-time declares overflow:hidden too (defensive — also resizable now), got " + (timeEl && cs(timeEl).overflow));
+  // Same fix already existed for these three (regression guard: this bugfix
+  // must not have accidentally removed it).
+  ["col-thread", "col-loc", "col-method"].forEach(cls => {
+    const el = d.querySelector("#tableRows ." + cls);
+    assert(el && cs(el).overflow === "hidden", "." + cls + " still declares overflow:hidden");
+  });
+});
+
+await withApp(async (w, d, T) => {
+  section("60b. Tree context menu items grouped with separators (analogous to the log-row context menu)");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  w.render();
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  w.render();
+
+  const treeRow = d.querySelector('.tree-row[data-node-id="' + textNode.id + '"]');
+  fireContextMenu(treeRow, w);
+  const menu = d.querySelector("#treeContextMenu");
+  const children = [...menu.children];
+  const seps = children.filter(c => c.classList.contains("ctx-sep")).length;
+  assert(seps >= 4, "a filter node's context menu has at least 4 separators (meta + 3 group boundaries among edit/clipboard/library/danger), got " + seps);
+
+  // Group order: edit (edit/invert/context) before clipboard (copy/cut)
+  // before library (save/saveToLibrary/loadFilter/applyFromLibrary) before
+  // danger (delete) — verify relative order via each action's index.
+  const indexOf = action => children.findIndex(c => c.dataset && c.dataset.action === action);
+  assert(indexOf("edit") < indexOf("invert") && indexOf("invert") < indexOf("context"), "edit group stays together and in order: edit, invert, time context");
+  assert(indexOf("context") < indexOf("copy") && indexOf("copy") < indexOf("cut"), "clipboard group (copy, cut) comes after the edit group");
+  assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("saveToLibrary") &&
+    indexOf("saveToLibrary") < indexOf("loadFilter") && indexOf("loadFilter") < indexOf("applyFromLibrary"),
+    "library group (save filter, save to library, load filter, apply from library) comes after clipboard, in order");
+  assert(indexOf("applyFromLibrary") < indexOf("delete"), "danger group (remove filter) comes last");
+
+  // A .ctx-sep must actually separate the edit and clipboard groups (not
+  // just "somewhere in the menu") — the item right after "context" (edit
+  // group's last item) up to "copy" (clipboard's first) is exactly one sep.
+  const contextIdx = indexOf("context");
+  assert(children[contextIdx + 1].classList.contains("ctx-sep") && children[contextIdx + 2].dataset.action === "copy",
+    "a .ctx-sep sits directly between the edit group's last item and the clipboard group's first");
+
+  w.closeTreeContextMenu();
+
+  // A plain file node (no filter-specific groups) still groups cleanly:
+  // library items, a separator, then the danger item — no empty/dangling
+  // leading separator for the groups that have nothing in them.
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
+  const fileChildren = [...d.querySelector("#treeContextMenu").children];
+  const fileIndexOf = action => fileChildren.findIndex(c => c.dataset && c.dataset.action === action);
+  assert(fileIndexOf("loadFilter") < fileIndexOf("applyFromLibrary") && fileIndexOf("applyFromLibrary") < fileIndexOf("delete"),
+    "a file node's context menu still groups library items before the danger (remove file) item");
+  const libSep = fileChildren.filter(c => c.classList.contains("ctx-sep")).length;
+  assert(libSep === 2, "file node menu has exactly 2 separators (meta, then one between the library group and the danger group), got " + libSep);
+});
+
+await withApp(async (w, d, T) => {
+  section("60c. Extraction view: #btnCopySelection/#btnCopyAllExtract removed (person-requested), underlying copy functions kept (jumpToFullLog precedent)");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  T.state.activeId = extractNode.id;
+  w.render();
+
+  assert(d.querySelector("#btnCopySelection") === null, "#btnCopySelection button no longer exists");
+  assert(d.querySelector("#btnCopyAllExtract") === null, "#btnCopyAllExtract button no longer exists");
+  assert(d.querySelector(".extract-actions") === null, "the now-empty .extract-actions wrapper was removed too, not left behind empty");
+  assert(d.querySelector("#extractViewTabs"), "sanity: the rest of the extraction toolbar (Table/Plot tabs) is untouched");
+
+  // The underlying functions still work when called directly — only their
+  // button trigger is gone, same as jumpToFullLog surviving un-wired to a
+  // double-click (see PROJECT.md).
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+  w.copyWholeExtractTable();
+  assert(copied && copied.startsWith("Index\tt (ms)\tvalue") && copied.split("\n").length === 6,
+    "copyWholeExtractTable still works when called directly (header + 5 data rows), got " + JSON.stringify(copied && copied.split("\n")[0]));
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -6816,6 +7314,91 @@ process.exit(failed ? 1 : 0);
               rows' height delta, never resets to 0 or drifts), plus the
               Link-view guard (no stale align target captured while the
               table view isn't even rendered).
+   Group 56  — this session (2026-08-18), person-requested: with zero files
+              loaded, hide the whole #viewBar toolbar (level filter, Full/
+              Filtered/Stacked tabs, breadcrumb) and remove the duplicate
+              "no file loaded" hints that used to live in the tree sidebar
+              (#dropHint, now deleted outright) and the toolbar status text
+              (#statusText used to read "No files loaded", now empty) —
+              #emptyState's centered message is the sole surviving hint.
+   Group 57  — this session (2026-08-18), person-requested: select multiple
+              lines in the log view (Filter/Highlight) via Ctrl+click
+              (toggle) or Shift+click (contiguous range from the last-
+              clicked anchor) and copy their raw text via Ctrl+C
+              (copyLogSelectionToClipboard, entries sorted chronologically,
+              falls back to just the single selected entry when nothing's
+              multi-selected). Covers: plain click stays unchanged/no
+              multi-select; the first Ctrl+click folds the prior single
+              selection in; Ctrl+click toggle-off and its anchor move;
+              Shift+click range selection (REPLACES, not extends); repeated
+              Shift+click re-deriving from the same anchor, not the previous
+              Shift target; Ctrl+C priority over the tree's own filter-node
+              clipboard (only when focusRegion is "entries", not "tree");
+              Escape clearing the selection (state + DOM class); and the
+              selection/DOM-class being shared between the Filter and
+              Highlight views for the same underlying entries, same sharing
+              as state.selectedId itself.
+   Group 58  — this session (2026-08-18), FEATURE_BACKLOG.md "Column
+              visibility / width persistence in the log view". #btnColumns
+              popup toggles Δt/Thread/Location/Method visibility (Time/
+              Level/Message always shown); #tableHeader gets a drag handle
+              per resizable column. Both apply purely through the
+              --row-grid CSS custom property (applyRowGrid), so both Log
+              views + every virtualized row reflow with zero JS re-render.
+              Covers: default --row-grid value; checkbox toggle collapsing/
+              restoring a track (and its own resize handle hiding/
+              reappearing); Reset widths; drag-resize (live width update,
+              COLUMN_MIN_WIDTH clamping, drag-end/no-stray-mousemove-effect);
+              persistence through the session cache across a simulated
+              reload, same tier/carrier as state.multilineMessages; and
+              (58d) the old @media (max-width:760px) rule's own --row-grid
+              override + display:none pair, folded into applyRowGrid()
+              itself — living in both an inline style AND a media query
+              would have made the inline style always win, and the
+              display:none half was independently a latent CSS Grid
+              auto-placement bug (a display:none grid item doesn't reserve
+              its track, so Message would silently land in an earlier,
+              wrong-width track on narrow viewports) neither this session's
+              own use of the mechanism nor the original feature ever hit
+              before, since nothing previously toggled column visibility
+              through it outside that one fixed breakpoint.
+   Group 59  — this session (2026-08-18), FEATURE_BACKLOG.md "Reusable
+              filter library". Named presets ("Save to library…" on a
+              filter node's context menu; "Apply from library…" on any
+              node's), IndexedDB-backed ("filterLibrary" store,
+              CACHE_DB_VERSION 3->4), file-agnostic by design (no content-
+              fingerprint matching — the person picks where it applies, per
+              the backlog item's own scoping). Applying reuses the EXISTING
+              importFilterJson() unchanged, wrapped in the same
+              {format,version,roots,activeRef} envelope Save/Load filter's
+              JSON files already use. Covers: the naming dialog pre-filling
+              from the source node's name, blank-name no-op; a saved
+              preset's record shape (serializeFilterBranch()'s own
+              roots/activeRef); applying onto a DIFFERENT, previously-
+              untouched file (fresh uid, same filter definition, RE-
+              EVALUATED against that file's own data rather than a stale
+              replayed result); delete-from-library (dialog list re-render,
+              IndexedDB record actually gone); and persistence across a
+              simulated reload — a SEPARATE store from the session cache's
+              own meta record, readable with zero files loaded and no
+              boot-time restore wait, unlike restoreSessionFromCache.
+   Group 60  — this session (2026-08-18), person-reported follow-up
+              bugfixes to Groups 58/59. 60a: `.col-delta`/`.col-time` were
+              missing `overflow:hidden` (unlike `.col-thread`/`.col-loc`/
+              `.col-method`/`.col-msg`, which already had it) — a column
+              collapsed to a 0px `--row-grid` track didn't clip its own
+              text, which spilled into the next column and showed up
+              underneath its background ("bleiben die Einträge... hinter
+              den nun darüber liegenden Log-Levels sichtbar"). 60b: the
+              tree context menu's item list (11 items on a filter node)
+              was one flat list; grouped into `GROUP_ORDER` buckets (edit/
+              clipboard/library/danger) joined by `.ctx-sep`, the same
+              convention `#contextMenu` (the log-row menu) already used —
+              covers separator count/placement, per-group relative
+              ordering, a separator sitting directly between two adjacent
+              groups (not just "somewhere in the menu"), and a plain file
+              node (fewer groups populated) still grouping cleanly with no
+              dangling empty separator.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
@@ -6877,5 +7460,8 @@ process.exit(failed ? 1 : 0);
      — superseded by createFileNode making the real file row itself carry
      the progress fill from the instant loading starts (Group 48b/48c,
      Group 49); no code or markup for it remains.
+   - #dropHint, the tree sidebar's own "Drag & drop log files..." hint
+     (pre-2026-08-18) — removed outright (Group 56) in favor of #emptyState
+     being the single "no file loaded" hint; no code or markup remains.
 
    ============================================================ */
