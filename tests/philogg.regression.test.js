@@ -1127,8 +1127,17 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 4 — Tree / status strip / severity bar / level quick-filter dual-view
    Origin: 765d68a9 (sortable columns, status strip, severity bar) +
-   32e282b4 follow-up (level quick-filter now updates BOTH Full and Filtered
-   views in one click, not just Filtered).
+   32e282b4 follow-up (level quick-filter updates BOTH Full and Filtered
+   views in one click, not just Filtered — Full's own re-render, not its
+   filtering). Updated this session (2026-08-19, person-requested, German:
+   "die Log Level Filter sollen sich nicht mehr auf das full Log auswirken.
+   stattdessen soll ein andern der Log Level Filter auch zu einem
+   automatischen Sprung von Full nach Filtered führen"): the level
+   quick-filter no longer narrows the Full view's own entry list AT ALL
+   (only the Filtered view) — Full stays a stable "whole file" reference
+   regardless of the level filter. In exchange, changing the level filter
+   while on the Full tab now auto-reveals Filtered, same as switching to
+   another filter already does (revealFilteredView).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("4. Tree / status strip / severity bar / dual-view level filter");
@@ -1150,17 +1159,19 @@ await withApp(async (w, d, T) => {
   // Severity bar column exists (widened 3px -> 5px in that session; just check presence)
   assert(d.querySelector("#tableRows .col-bar") !== null, "severity color bar column renders on rows");
 
-  // Level quick-filter: toggling ERROR must update BOTH the Filtered (#tableRows)
-  // and the Full (#highlightRows) views in the SAME click (bugfix from 32e282b4 —
-  // previously only renderTable() was called, leaving Full stale until an
-  // unrelated render happened to touch it).
+  // Level quick-filter: toggling ERROR updates the Filtered (#tableRows) view
+  // immediately; the Full (#highlightRows) view re-renders in the SAME click
+  // (bugfix from 32e282b4 — previously only renderTable() was called,
+  // leaving Full stale until an unrelated render happened to touch it) but
+  // deliberately does NOT narrow its own entry list (this session's change —
+  // see GROUP 61e below for the auto-reveal-Filtered half of that change).
   w.applyFhView("stacked"); // both panels rendered so we can inspect both
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
   fireClick(errBtn, w);
   const filteredLevels = [...d.querySelectorAll("#tableRows .level-badge")].map(b => b.textContent);
   const fullLevels = [...d.querySelectorAll("#highlightRows .level-badge")].map(b => b.textContent);
   assert(filteredLevels.length > 0 && filteredLevels.every(l => l === "ERROR"), "Filtered view narrows to ERROR immediately");
-  assert(fullLevels.length > 0 && fullLevels.every(l => l === "ERROR"), "Full view ALSO narrows to ERROR in the same click (regression guard)");
+  assert(fullLevels.length === 30 && fullLevels.some(l => l === "INFO"), "Full view stays showing the whole file, unaffected by the level quick-filter");
   fireClick(errBtn, w); // reset
 });
 
@@ -6602,11 +6613,12 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector('#tableRows [data-entry-id="' + f.entries[40].id + '"]').classList.contains("selected"),
     "entry 40's row is actually rendered (and still marked selected) at the new scroll position");
 
-  // Same math, independently, for the Full/Highlight view (also subject to
-  // the level quick-filter, always rendered by renderMainView() regardless
-  // of which tab is currently visible).
-  assert(highlightBody.scrollTop === expectedScrollTop,
-    "Full/Highlight view: same re-anchoring on the same selected entry, got " + highlightBody.scrollTop + " expected " + expectedScrollTop);
+  // The Full/Highlight view deliberately does NOT apply the level filter
+  // (this session's change — see GROUP 61e below) — its own entry list is
+  // completely unaffected by the click, so entry 40 stays at its ORIGINAL
+  // index 40 there and scrollTop is untouched, not recalculated to 84.
+  assert(T.currentHighlightViewEntries.length === 60, "Full/Highlight view's entry list is unaffected by the level-filter click");
+  assert(highlightBody.scrollTop === 35 * 28, "Full/Highlight view: scrollTop untouched (nothing about its own content changed), got " + highlightBody.scrollTop);
 
   fireClick(errBtn, w); // toggle back off, restore full 60-entry view for the next section
 });
@@ -6655,6 +6667,40 @@ await withApp(async (w, d, T) => {
     "no prior on-screen position to preserve, so the row is revealed centered instead, got " + tableBody.scrollTop + " expected " + expectedScrollTop);
   assert(tableBody.scrollTop <= rowTop && rowTop + 28 <= tableBody.scrollTop + 400,
     "entry 5's row is actually within the new viewport bounds");
+});
+
+await withApp(async (w, d, T) => {
+  section("61e. Level-filter changes no longer narrow the Full view; auto-reveal Filtered from Full instead (no-op when Stacked is active, or already on Filtered)");
+
+  // 20 entries, ERROR at every 5th index (4 ERROR / 16 INFO).
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
+
+  /* ---------- Full view's own entry list ignores the level filter entirely ---------- */
+  w.applyFhView("stacked"); // both panels rendered so we can inspect both
+  fireClick(errBtn, w);
+  assert(T.currentViewEntries.length === 4, "sanity: Filtered view narrowed to the 4 ERROR-level entries");
+  assert(T.currentHighlightViewEntries.length === 20, "Full view keeps showing every entry, unaffected by the level filter");
+  fireClick(errBtn, w); // reset
+  assert(T.currentHighlightViewEntries.length === 20, "sanity: still all 20 after clearing the level filter again");
+
+  /* ---------- tabs layout: changing the level filter while on Full reveals Filtered ---------- */
+  w.applyFhView("highlight");
+  assert(T.fhActiveTab === "highlight", "sanity: on the Full tab");
+  fireClick(errBtn, w);
+  assert(T.fhActiveTab === "filter", "changing the level filter while on Full auto-reveals the Filtered view");
+
+  /* ---------- already on Filtered: changing the level filter is a no-op for the tab ---------- */
+  fireClick(errBtn, w); // clears the filter again
+  assert(T.fhActiveTab === "filter", "already on Filtered — stays there (nothing to reveal)");
+
+  /* ---------- Stacked: level-filter change does NOT change fhLayout ---------- */
+  w.applyFhView("stacked");
+  fireClick(errBtn, w);
+  assert(T.fhLayout === "stacked", "Stacked stays unchanged when the level filter changes (both panels already visible)");
+  fireClick(errBtn, w); // reset
 });
 
 await withApp(async (w, d, T) => {
@@ -7608,7 +7654,20 @@ process.exit(failed ? 1 : 0);
               switching Full → Filtered so a newly active filter's result is
               actually on screen (61c), a no-op in Stacked layout (both
               panels already visible) or when switching to a plain FILE node
-              (Full already reflects it).
+              (Full already reflects it). Same-day follow-up (also 2026-08-19,
+              person-requested: "die Log Level Filter sollen sich nicht mehr
+              auf das full Log auswirken. stattdessen soll ein andern der Log
+              Level Filter auch zu einem automatischen Sprung von Full nach
+              Filtered führen") — the level quick-filter no longer narrows the
+              Full view's own entry list at all (`renderHighlightView()` stopped
+              calling `applyLevelFilter()`), and `renderLevelBar()`'s click
+              handler now calls `revealFilteredView()` too, same auto-reveal
+              as a filter switch (61e). Group 4's dual-view assertion (from
+              32e282b4, originally "Full view ALSO narrows to ERROR") updated
+              in place to assert the opposite — Full stays showing every
+              level, unaffected — and 61a's Full-view assertion updated the
+              same way (its entry list/scrollTop are now untouched by the
+              level-filter click that used to re-anchor it).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
