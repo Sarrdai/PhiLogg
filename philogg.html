@@ -5126,6 +5126,10 @@ function buildPairRow(entry) {
 let extractView = "table"; // 'table' | 'plot'
 let plotNodeId = null;
 let plotConfig = { type: "line", xCol: null, yCols: [], colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, axisEqual: false, yColsInit: false };
+// The exact HTML string #plotControls last had — see renderPlotControls's
+// own comment for why this matters (a rebuild while tailing was silently
+// closing a native <select> the person had open).
+let lastPlotControlsHtml = null;
 
 // --- Plot zoom/pan (ephemeral view state, like plotConfig.xMin/xMax — never
 // persisted through cloneSubtree/serializeFilterBranch/session cache) ---
@@ -5150,6 +5154,7 @@ function resetPlotConfig() {
   plotNodeId = null;
   plotConfig = { type: "line", xCol: null, yCols: [], colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, axisEqual: false, yColsInit: false };
   plotZoom = null;
+  lastPlotControlsHtml = null; // force a real rebuild next render, regardless of whether the new node's generated HTML happens to coincide with the old one
 }
 
 // --- Turning a column's text value into a plottable number ---
@@ -5512,6 +5517,7 @@ function renderPlotControls() {
 
   if (plottable.length === 0) {
     plotControls.innerHTML = '<div class="plot-note">None of this pattern\u2019s columns are numeric (float/int/hex/time), so there\u2019s nothing to plot.</div>';
+    lastPlotControlsHtml = null; // no dropdowns here to protect, but keep the cache honest for the next real render
     return;
   }
   // X always has a valid selection (it's a dropdown, never empty) — re-pick if the
@@ -5574,6 +5580,23 @@ function renderPlotControls() {
     '<input type="number" id="plotYMin" placeholder="auto" value="' + plotConfig.yMin + '">' +
     '<input type="number" id="plotYMax" placeholder="auto" value="' + plotConfig.yMax + '"></div></div>';
 
+  // Bug (person-reported): while a file is being tailed, every incoming
+  // batch of new lines runs a full render() (onTailChange), which reaches
+  // here via renderExtractTable() whenever the Plot tab is open — even
+  // though tailing only ever appends ROW data (extractRowsData), never
+  // touches the pattern/columns/plotConfig this HTML is built from. A plain
+  // `innerHTML = html` on every one of those ticks destroyed and recreated
+  // the <select> elements each time, which silently closes a native
+  // dropdown the person has open mid-click ("wenn ich das dropdown... öffne,
+  // schließt es sich kurz darauf von selbst"). Since `html` is a pure
+  // function of extractColumns/plotConfig (nothing tail-related), comparing
+  // it against what's already there is a simple, general guard: identical
+  // string means an identical rebuild would follow, so skip the destructive
+  // DOM replacement (and the listener re-attachment below, which only makes
+  // sense paired with a fresh set of nodes) entirely — the still-live
+  // elements (and any dropdown open on one of them) are left alone.
+  if (html === lastPlotControlsHtml) return;
+  lastPlotControlsHtml = html;
   plotControls.innerHTML = html;
 
   plotControls.querySelectorAll(".plot-type-btn").forEach(btn => {
