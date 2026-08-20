@@ -1,6 +1,6 @@
 # PhiLogg — Project Documentation
 
-**Read this file first.** It's the entry point for understanding what PhiLogg is, how it's built, and why it's built that way, before touching `philogg.html`.
+**Read this file first.** It's the entry point for understanding what PhiLogg is, how it's built, and why it's built that way, before touching `philogg.html`. For a human-facing overview (what it does, screenshots, how to use it, license) see `README.md` instead — keep that file in sync with user-visible changes; this file stays the architecture/changelog reference.
 
 ## What this is
 
