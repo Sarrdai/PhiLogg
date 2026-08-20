@@ -9,11 +9,11 @@ full design rationale.
 
 ## Status
 
-**Scaffolded, not built or run anywhere yet.** This container has no
-display server (a real `BrowserWindow` needs one) and no way to test
-platform-specific installers/file-association behavior across all three
-OSes, so `npm install` was deliberately not run here. Before relying on
-this:
+**Scaffolded, `.github/workflows/desktop-release.yml` has run once** (see
+"Adding an app icon" below for what that run found). Still not run/tested
+interactively on any machine — no display server here for a real
+`BrowserWindow`, so `npm start` and the file-association flow are unverified.
+Before relying on this:
 
 1. `cd desktop && npm install` on a real machine.
 2. `npm start` — confirms the window opens and loads `philogg.html`
@@ -26,8 +26,23 @@ this:
    whatever platform you're building on. Cross-compiling a signed
    Windows/macOS installer from Linux CI needs extra setup (signing
    certs, `electron-builder`'s own cross-build docs) not covered here.
-5. Add real icons (`build/icons/README.md`) before a release build —
-   electron-builder uses its own default icon until then.
+5. Add real icons before a release build — see "Adding an app icon" below.
+
+## Adding an app icon
+
+No app icon exists yet — `electron-builder.yml` has no `icon:` lines and
+`build/` currently has no `icons/` subdirectory. **Keep it that way until
+real artwork exists**: an earlier version of this scaffold shipped an empty
+placeholder `build/icons/` directory, and electron-builder's Linux target
+(`app-builder`) hard-failed the CI build with `icon directory ... doesn't
+contain icons` / `ERR_ELECTRON_BUILDER_CANNOT_EXECUTE` — the directory's
+mere presence is taken as "icons belong here", unlike Windows/macOS which
+silently fall back to Electron's default icon when nothing is configured.
+
+To add a real icon later: drop a single square `build/icon.png` (1024×1024
+recommended; electron-builder derives `.ico`/`.icns` from it), or a
+multi-resolution `build/icons/16x16.png`, `32x32.png`, ... set, then add an
+`icon:` line under the matching platform block in `electron-builder.yml`.
 
 ## Why no `preload.js` / IPC bridge
 
