@@ -993,6 +993,57 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 65 — License popup + version display
+   Origin: this session (2026-08-20), person-requested: a proprietary
+   license (no redistribution, no modification, rights holder Philipp
+   Klein) reachable via a new header button next to the existing
+   #btnShortcuts help button, same popup pattern (Group 26). Also a short
+   commit-hash "version" shown both next to the product name and inside
+   the license popup — PHILOGG_VERSION defaults to the literal "dev" in
+   source control; only the "Build tester release" GitHub Action
+   (.github/workflows/release.yml) stamps it to a real short SHA, in a
+   build artifact that's never committed back. This suite runs against
+   the literal source file, so it always sees "dev".
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("65. License popup + version display");
+
+  // --- Version display (unstamped source -> literal "dev") ---
+  assert(d.querySelector("#brandVersion").textContent === "dev", "brand-name version tag shows PHILOGG_VERSION verbatim, no \"v\" prefix");
+  assert(d.querySelector("#licenseVersion").textContent === "Version: dev", "license panel's own version line shows the same PHILOGG_VERSION");
+
+  // --- License popup: same fixed-position/toggle pattern as #shortcutsPanel ---
+  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "license popup starts hidden");
+
+  const btnLicense = d.querySelector("#btnLicense");
+  fireClick(btnLicense, w);
+  assert(!d.querySelector("#licensePanel").classList.contains("hidden"), "clicking the header button opens the license popup");
+  const licenseText = d.querySelector("#licensePanel").textContent;
+  assert(licenseText.includes("Philipp Klein"), "license popup names the rights holder");
+  assert(licenseText.includes("philogg@kleinphilipp.de"), "license popup shows the contact address");
+  assert(licenseText.includes("Keine Weitergabe"), "license popup prohibits redistribution");
+  assert(licenseText.includes("Keine Veränderung"), "license popup prohibits modification");
+  assert(licenseText.includes("Version: dev"), "license popup includes the version line while open");
+
+  fireClick(d.body, w); // outside click
+  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "clicking outside closes the license popup");
+
+  fireClick(btnLicense, w);
+  assert(!d.querySelector("#licensePanel").classList.contains("hidden"), "sanity: reopened for the Escape check");
+  fireKeydown(d, w, "Escape");
+  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "Escape closes the license popup, same as the other popups");
+
+  // Independent from the neighboring shortcuts popup: opening one doesn't
+  // implicitly open or leave the other stuck open.
+  const btnShortcuts = d.querySelector("#btnShortcuts");
+  fireClick(btnShortcuts, w);
+  assert(!d.querySelector("#shortcutsPanel").classList.contains("hidden"), "sanity: shortcuts popup opens on its own button");
+  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "opening the shortcuts popup does not also open the license popup");
+  fireClick(btnLicense, w);
+  assert(!d.querySelector("#licensePanel").classList.contains("hidden"), "license popup opens independently while the shortcuts popup is also open");
+});
+
+/* ============================================================
    GROUP 10 — Bugfix regressions from the dedicated code-review session
    Origin: 94d8ec50. Three fixes: (1) Escape key on an active extraction
    cell-selection no longer throws (the handler called a helper that no
@@ -8010,6 +8061,13 @@ process.exit(failed ? 1 : 0);
               new write, and the rotation scenario itself (two tailed files,
               only one still growing — exactly one dot shown, on the right
               file).
+   Group 65  — this session (2026-08-20), person-requested: a proprietary
+              license (no redistribution, no modification, rights holder
+              Philipp Klein) reachable via a new #btnLicense header button
+              next to #btnShortcuts, same popup pattern as Group 26; plus a
+              short-commit-hash "version" (`PHILOGG_VERSION`, literal "dev"
+              in source, stamped only by the release GitHub Action) shown
+              next to the product name and inside the license popup.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

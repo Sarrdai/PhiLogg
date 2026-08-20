@@ -1,0 +1,35 @@
+name: Build tester release
+
+# Manual only — run this from the Actions tab whenever a build should go out
+# to external testers. Stamps PHILOGG_VERSION (in philogg.html) with the
+# short commit hash of the checked-out commit and publishes the stamped file
+# as a GitHub Release asset. Never commits the stamped file back to the repo
+# — the tracked philogg.html always keeps PHILOGG_VERSION = "dev".
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp version
+        id: stamp
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          sed -i "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
+          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHORT_SHA: ${{ steps.stamp.outputs.short_sha }}
+        run: |
+          gh release create "build-${SHORT_SHA}" philogg.html \
+            --title "PhiLogg build ${SHORT_SHA}" \
+            --notes "Automated tester build of philogg.html, stamped with version ${SHORT_SHA}. Proprietary — see the in-app License panel. Not for redistribution."
