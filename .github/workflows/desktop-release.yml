@@ -5,7 +5,20 @@ name: Build desktop release
 # Electron wrapper in desktop/ per platform via electron-builder and
 # publishes the installers as GitHub Release assets.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      build_windows:
+        description: Build Windows (.exe)
+        type: boolean
+        default: true
+      build_mac:
+        description: Build macOS (.dmg)
+        type: boolean
+        default: false
+      build_linux:
+        description: Build Linux (.AppImage)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -40,6 +53,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # Skips the matrix entries whose checkbox is off, rather than pruning
+    # the `os:` list itself — a static matrix keeps `fail-fast: false`
+    # working per-OS and needs no separate job to compute a dynamic list.
+    if: |
+      (matrix.os == 'windows-latest' && inputs.build_windows) ||
+      (matrix.os == 'macos-latest' && inputs.build_mac) ||
+      (matrix.os == 'ubuntu-latest' && inputs.build_linux)
     steps:
       - uses: actions/checkout@v4
 
