@@ -31,12 +31,28 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      os_list: ${{ steps.os_list.outputs.list }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Compute release tag
         id: tag
         run: echo "tag=desktop-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      # The `matrix` context isn't available in a job-level `if:` (only in
+      # `runs-on`/`env` and inside steps — an earlier version of this
+      # workflow tried `if: matrix.os == ... && inputs.build_windows` on the
+      # `build` job below and GitHub rejected the whole file at parse time,
+      # 0 jobs created). So the checkboxes are turned into the `build`
+      # job's actual matrix list here instead of filtering a fixed one.
+      - name: Compute selected OS matrix
+        id: os_list
+        run: |
+          list="[]"
+          [ "${{ inputs.build_windows }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["windows-latest"]')
+          [ "${{ inputs.build_mac }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["macos-latest"]')
+          [ "${{ inputs.build_linux }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["ubuntu-latest"]')
+          echo "list=$list" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         env:
@@ -51,15 +67,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ fromJSON(needs.prepare.outputs.os_list) }}
     runs-on: ${{ matrix.os }}
-    # Skips the matrix entries whose checkbox is off, rather than pruning
-    # the `os:` list itself — a static matrix keeps `fail-fast: false`
-    # working per-OS and needs no separate job to compute a dynamic list.
-    if: |
-      (matrix.os == 'windows-latest' && inputs.build_windows) ||
-      (matrix.os == 'macos-latest' && inputs.build_mac) ||
-      (matrix.os == 'ubuntu-latest' && inputs.build_linux)
     steps:
       - uses: actions/checkout@v4
 
