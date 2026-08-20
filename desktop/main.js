@@ -99,9 +99,13 @@ function watchTheme(win) {
   poll();
 }
 
-// id -> absolute local path, served at philogg://local/<id>. Populated only
-// from paths the OS itself handed us (argv / file-association / open-file),
-// same trust level as a native app's own file-open dialog.
+// id -> absolute local path, served at philogg://local/<id>/<basename>. The
+// basename is only along for the ride so philogg.html's own loadUrlIntoTree
+// (which names the loaded file after the URL's last path segment, same as
+// any other ?url= deep link) shows the real file name instead of the bare
+// id — the lookup below still keys off the id alone. Populated only from
+// paths the OS itself handed us (argv / file-association / open-file), same
+// trust level as a native app's own file-open dialog.
 const localFiles = new Map();
 let nextLocalId = 1;
 
@@ -109,6 +113,11 @@ function registerLocalFile(filePath) {
   const id = String(nextLocalId++);
   localFiles.set(id, filePath);
   return id;
+}
+
+function localFileUrl(filePath) {
+  const id = registerLocalFile(filePath);
+  return `philogg://local/${id}/${encodeURIComponent(path.basename(filePath))}`;
 }
 
 function registerProtocol() {
@@ -119,7 +128,8 @@ function registerProtocol() {
       return new Response(buf, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     if (url.hostname === "local") {
-      const filePath = localFiles.get(url.pathname.replace(/^\//, ""));
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      const filePath = localFiles.get(id);
       if (!filePath) return new Response("Not found", { status: 404 });
       try {
         const buf = await fs.promises.readFile(filePath);
@@ -147,11 +157,32 @@ function createWindow(filePath) {
     if (!isMac) watchTheme(win);
   });
   if (filePath) {
-    const id = registerLocalFile(filePath);
-    win.loadURL(`philogg://app/philogg.html?url=${encodeURIComponent(`philogg://local/${id}`)}`);
+    win.loadURL(`philogg://app/philogg.html?url=${encodeURIComponent(localFileUrl(filePath))}`);
   } else {
     win.loadURL("philogg://app/philogg.html");
   }
+}
+
+function focusWindow(win) {
+  if (win.isMinimized()) win.restore();
+  win.focus();
+}
+
+// Routes a file open (second file-association launch, or a later macOS
+// open-file) into the already-running window instead of spawning another
+// one — only the very first file of a run should ever create a window.
+// Falls back to createWindow if, somehow, no window is open yet (e.g.
+// called before the first one finished initializing).
+function openFile(filePath) {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) {
+    createWindow(filePath);
+    return;
+  }
+  if (filePath) {
+    win.webContents.executeJavaScript(`window.philoggLoadUrl(${JSON.stringify(localFileUrl(filePath))})`).catch(() => {});
+  }
+  focusWindow(win);
 }
 
 // Windows/Linux: a ".log" file association relaunches the app with the path
@@ -166,13 +197,15 @@ if (!gotLock) {
   app.quit();
 } else {
   // A second file-association launch while the app is already running
-  // arrives here instead of as a new process.
-  app.on("second-instance", (_event, argv) => createWindow(fileArgFromArgv(argv)));
+  // arrives here instead of as a new process (that's the whole point of
+  // requestSingleInstanceLock above) — route its file into the existing
+  // window rather than opening another one.
+  app.on("second-instance", (_event, argv) => openFile(fileArgFromArgv(argv)));
 
   let pendingOpenFile = null;
   app.on("open-file", (event, filePath) => {
     event.preventDefault();
-    if (app.isReady()) createWindow(filePath);
+    if (app.isReady()) openFile(filePath);
     else pendingOpenFile = filePath; // fired before "ready" on a cold launch
   });
 
