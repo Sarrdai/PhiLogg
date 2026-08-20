@@ -71,7 +71,7 @@ async function withApp(run, opts = {}) {
   const dom = new JSDOM(html, {
     runScripts: "dangerously",
     pretendToBeVisual: true,
-    url: "http://localhost/philogg.html",
+    url: opts.url || "http://localhost/philogg.html",
     beforeParse(window) {
       // opts.indexedDB: a (shareable) IDBFactory — passing the SAME instance
       // to two windows makes the second one see the first one's writes,
@@ -7104,6 +7104,65 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 66 — ?url= deep-link loading (fetch a log at boot)
+   Origin: this session (2026-08-20), person-requested: associate PhiLogg
+   with files/CI links by letting philogg.html?url=<encoded-url> fetch and
+   open a log straight from an http(s) URL at boot — the shared mechanism
+   both a CI report link to a log artifact and the planned desktop wrapper
+   (which serves a local file through a loopback URL) build on, instead of
+   two separate loading paths. jsdom ships no fetch at all (by design), so
+   these tests install a fake `window.fetch` directly before calling the
+   exposed `loadFromUrlParam()` (a function declaration, so it's a window
+   property per the usual jsdom bridge gotcha) — bypassing the fire-and-
+   forget call the boot script itself makes (which races the fake fetch's
+   installation and is a no-op anyway against the default test URL, which
+   carries no ?url=).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("66a. ?url= fetch success adds the file");
+  const logText = makeLog(0, 3);
+  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://logs.example/build-42/output.log"));
+  let requestedUrl = null;
+  w.fetch = async (u) => { requestedUrl = u; return { ok: true, status: 200, text: async () => logText }; };
+  await w.loadFromUrlParam();
+  assert(requestedUrl === "http://logs.example/build-42/output.log", "fetch was called with the exact ?url= value");
+  assert(T.state.rootIds.length === 1, "exactly one file was opened, got " + T.state.rootIds.length);
+  const node = T.state.nodes[T.state.rootIds[0]];
+  assert(node.name === "output.log", "the file name is derived from the URL's last path segment, got " + node.name);
+  assert(node.entries.length === 3, "the fetched text was parsed into entries, got " + node.entries.length);
+});
+
+await withApp(async (w, d, T) => {
+  section("66b. ?url= HTTP error shows a toast, no file added");
+  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://logs.example/missing.log"));
+  w.fetch = async () => ({ ok: false, status: 404, text: async () => "" });
+  await w.loadFromUrlParam();
+  assert(T.state.rootIds.length === 0, "no file was added on a 404");
+  assert(d.querySelector("#copyToast").textContent.includes("404"), "the toast reports the HTTP status");
+});
+
+await withApp(async (w, d, T) => {
+  section("66c. ?url= network/CORS failure shows a toast, no file added");
+  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://blocked.example/x.log"));
+  w.fetch = async () => { throw new w.TypeError("Failed to fetch"); };
+  await w.loadFromUrlParam();
+  assert(T.state.rootIds.length === 0, "no file was added when fetch rejects");
+  assert(d.querySelector("#copyToast").textContent.includes("network or CORS"), "the toast names network/CORS as the likely cause");
+});
+
+// 66d (the location.protocol === "file:" guard) is NOT covered here: jsdom
+// treats every file: URL as an opaque origin and throws on ANY localStorage
+// access (confirmed for both "file:///x.html" and "file://localhost/x.html"
+// — no URL shape avoids it), which the app's own boot sequence (initTheme,
+// cacheEnabled) touches before loadFromUrlParam ever runs — unrelated to the
+// guard's own logic, but it means a jsdom window can't reach this branch at
+// all. window.location itself also can't be shadowed/faked afterwards
+// (Object.defineProperty on either `location` or `location.protocol` is
+// rejected by jsdom as non-configurable). See tests/README.md "Known gaps".
+// The guard (four lines, `if (location.protocol === "file:") {...}`) is
+// straightforward enough to cover by code review instead.
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -8068,6 +8127,16 @@ process.exit(failed ? 1 : 0);
               short-commit-hash "version" (`PHILOGG_VERSION`, literal "dev"
               in source, stamped only by the release GitHub Action) shown
               next to the product name and inside the license popup.
+   Group 66  — this session (2026-08-20), person-requested: philogg.html
+              ?url=<encoded-url> fetches and opens a log at boot — the
+              shared loading mechanism for CI/report deep-links to a log
+              artifact on a webserver and, planned, a desktop wrapper that
+              serves a local file through a loopback URL. Covers success
+              (name derived from the URL's last path segment, text parsed
+              into entries), an HTTP error status, and a rejected fetch
+              (network/CORS). The file:// guard (skips the fetch attempt
+              entirely with a dedicated message) is NOT covered here — see
+              the comment right after 66c and tests/README.md "Known gaps".
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

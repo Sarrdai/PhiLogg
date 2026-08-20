@@ -40,6 +40,10 @@ open it in a browser to view it.
 - **Live tailing & folder watch** (Chromium, File System Access API) — an
   actively-written log file updates in place; a watched folder picks up new
   files automatically.
+- **Deep-link loading** — `philogg.html?url=<encoded-url>` fetches and opens
+  a log at boot, for linking straight to a log from CI/a report (requires
+  PhiLogg itself served over `http(s)`, not opened as a local file, and CORS
+  on the remote log server).
 - **Bookmarks, undo/redo, timeline minimap with drag-to-select.**
 - **Session cache** — reload the browser tab and get your files, filters,
   and settings back.
@@ -88,6 +92,9 @@ tests/
   README.md                           testing conventions
 tools/
   log-simulator.html                  standalone tool: writes a growing .log file, for testing tailing/folder watch
+desktop/
+  README.md                           Electron wrapper: build/run steps, current status
+  main.js, package.json, electron-builder.yml   file associations + CLI file opening (loads philogg.html unmodified)
 homepage/
   index.html                          static feature-tour / marketing page
   screenshots/                        screenshots used by the homepage and this README
@@ -96,6 +103,7 @@ Examples/
 scripts/
   install_pkgs.sh                     helper for installing test dependencies
 .github/workflows/release.yml         manual workflow: stamps a version and publishes a tester build
+.github/workflows/desktop-release.yml manual workflow: builds the desktop/ Electron wrapper per OS (untested, see desktop/README.md)
 PROJECT.md                            architecture, design decisions, full changelog (start here to work on the code)
 FEATURE_BACKLOG.md                    unelaborated feature ideas
 CLAUDE.md                             instructions for AI coding sessions on this repo
