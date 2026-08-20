@@ -27,6 +27,9 @@ Before relying on this:
    whatever platform you're building on. Cross-compiling a signed
    Windows/macOS installer from Linux CI needs extra setup (signing
    certs, `electron-builder`'s own cross-build docs) not covered here.
+   Set `PHILOGG_SHA` first (e.g. `PHILOGG_SHA=$(git rev-parse --short
+   HEAD) npm run build`) or the installer filename is left with a blank
+   where the version normally goes — see "Version stamp" below.
 5. Add real icons before a release build — see "Adding an app icon" below.
 6. Confirm the frameless window (see "Frameless window" below) actually
    works: the window is draggable by its header's empty space, every
@@ -47,16 +50,35 @@ moving them to match Windows — relocating a Mac app's own window controls
 would be the actually-jarring choice there.
 
 A frameless window has no title bar left to drag by default, so `main.js`
-injects a small stylesheet at runtime (`insertCSS`/`executeJavaScript`,
-never touching `philogg.html` on disk) making `#toolbar` draggable and all
-of its buttons/inputs `no-drag` again, plus — Windows/Linux only — right
-padding sized from the live `navigator.windowControlsOverlay` rect so
-`#toolbar`'s own rightmost button doesn't sit under the native overlay
-buttons. See the comment above `FRAMELESS_CSS` in `main.js` for the full
-mechanism and its one known gap: the overlay button colors are fixed to
-the dark theme at window-creation time and don't follow `#btnTheme`'s
-light/dark toggle live (would need a preload/IPC bridge — see "Why no
-preload.js" below).
+injects a small stylesheet at runtime (`insertCSS`, never touching
+`philogg.html` on disk) making `#toolbar` draggable and all of its
+buttons/inputs `no-drag` again, plus — Windows/Linux only — right padding
+via the `titlebar-area-*` CSS environment variables Chromium exposes for
+exactly this, so `#toolbar`'s own rightmost button doesn't sit under the
+native overlay buttons. The overlay's colors follow `#btnTheme`'s
+light/dark toggle live too — `main.js` polls the renderer's own
+`data-theme` attribute (~1x/second, no preload/IPC bridge needed — see
+"Why no preload.js" below) and calls `win.setTitleBarOverlay()` on change.
+`TITLEBAR_HEIGHT` in `main.js` is 1px shorter than `#toolbar`'s own 50px so
+its `border-bottom` isn't occluded by the overlay buttons. See the comment
+above `FRAMELESS_CSS` in `main.js` for the full mechanism, including why
+an earlier version's JS-computed padding (measuring
+`navigator.windowControlsOverlay`'s rect instead of using `env()`) went
+stale across maximize/restore/fullscreen — reported after the first real
+Windows run, fixed the same session, not yet re-verified live.
+
+## Version stamp
+
+Matches `release.yml`'s scheme for the plain `philogg.html` tester build:
+`desktop-release.yml`'s `Stamp version` step rewrites the checked-out
+copy's `PHILOGG_VERSION` (`"dev"` in source, never committed back) to the
+commit's short SHA before `npm run build` packages it, so the in-app
+corner text/License panel show the real build instead of "dev". The same
+SHA becomes the installer's own filename via `electron-builder.yml`'s
+`artifactName` (`PhiLogg-<sha>.exe`/`.dmg`/`.AppImage`, replacing
+`package.json`'s placeholder `"1.0.0"` there — `package.json`'s own
+`version` field is left alone since electron-builder expects real semver
+there, which a git SHA isn't).
 
 ## Adding an app icon
 

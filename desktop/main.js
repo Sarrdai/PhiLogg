@@ -29,45 +29,75 @@ const PHILOGG_HTML_PATH = app.isPackaged
 
 const isMac = process.platform === "darwin";
 
-// #toolbar (philogg.html's own 50px header) is what a user actually grabs
-// to move the window now that there's no native title bar — but marking it
+// One pixel shorter than #toolbar's own 50px height: the Window Controls
+// Overlay buttons are a native layer painted over the full reserved strip,
+// so at exactly 50px they occlude the bottom-most row of #toolbar's own
+// `border-bottom` (the line separating the header from the content below)
+// wherever the buttons sit. At 49px that row falls just outside the
+// reserved strip and is painted by the page as normal.
+const TITLEBAR_HEIGHT = 49;
+
+// #toolbar (philogg.html's own header) is what a user actually grabs to
+// move the window now that there's no native title bar — but marking it
 // `-webkit-app-region: drag` also swallows clicks on everything inside it,
 // so every interactive child gets `no-drag` back. Injected at runtime via
-// webContents.insertCSS()/executeJavaScript() instead of editing
-// philogg.html itself, matching this wrapper's "unmodified philogg.html"
-// rule (see PROJECT.md "Desktop wrapper").
+// webContents.insertCSS() instead of editing philogg.html itself, matching
+// this wrapper's "unmodified philogg.html" rule (see PROJECT.md "Desktop
+// wrapper").
 //
 // Windows/Linux additionally reserve real estate on the right so the
 // header's own rightmost button (#btnLicense) doesn't sit under the native
 // Window Controls Overlay buttons electron-builder draws there (see
-// titleBarOverlay below) — sized from the live overlay rect via the
-// `navigator.windowControlsOverlay` API so it tracks DPI/scale changes
-// instead of a guessed constant. macOS traffic lights sit top-left instead
-// (native inset position, not moved to match "top-right" — flipping a Mac
-// app's own window controls to the right would be the actually-jarring
-// choice for a Mac user), so `.brand` gets a static left inset instead.
-//
-// Doesn't track the light/dark theme toggle (#btnTheme) — the overlay
-// button colors are fixed at window-creation time to match the default
-// dark toolbar. Following theme switches live would need a preload/IPC
-// bridge, which this wrapper deliberately doesn't have (see top comment).
+// titleBarOverlay below) — via the `titlebar-area-*` CSS environment
+// variables Chromium exposes specifically for this, rather than measuring
+// `navigator.windowControlsOverlay`'s rect in JS: an earlier version did
+// that with a `geometrychange` listener, but it only fired reliably on
+// live resizes, leaving stale padding across maximize/restore/fullscreen
+// transitions (reported after the first real Windows run — see changelog).
+// `env()` is a native, continuously-live CSS value with no JS/event timing
+// involved, so it can't go stale the same way. macOS traffic lights sit
+// top-left instead (native inset position, not moved to match "top-right"
+// — flipping a Mac app's own window controls to the right would be the
+// actually-jarring choice for a Mac user), so `.brand` gets a static left
+// inset instead.
 const FRAMELESS_CSS = `
   #toolbar { -webkit-app-region: drag; }
   #toolbar button, #toolbar input, #toolbar .ctx-item { -webkit-app-region: no-drag; }
-  ${isMac ? `.brand { padding-left: 72px; }` : `.toolbar-right { padding-right: var(--wco-inset, 0px); }`}
+  ${isMac
+    ? `.brand { padding-left: 72px; }`
+    : `.toolbar-right { padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px)); }`}
 `;
 
-const FRAMELESS_JS = isMac ? null : `
-  (function () {
-    if (!navigator.windowControlsOverlay) return;
-    const update = () => {
-      const rect = navigator.windowControlsOverlay.getTitlebarAreaRect();
-      document.documentElement.style.setProperty("--wco-inset", Math.max(0, window.innerWidth - rect.width) + "px");
-    };
-    navigator.windowControlsOverlay.addEventListener("geometrychange", update);
-    update();
-  })();
-`;
+// Windows/Linux only: keeps the overlay buttons' colors following
+// philogg.html's own light/dark toggle (#btnTheme, persisted to
+// localStorage — independent of the OS theme, so nativeTheme can't be used
+// instead). No preload/IPC bridge for this either — same reasoning as the
+// top comment — so it's a light poll of the renderer's own `data-theme`
+// attribute from the main process instead, cheap enough at ~1x/second for
+// a value that only ever changes on an explicit click.
+const OVERLAY_COLORS = {
+  dark: { color: "#151924", symbolColor: "#8a92a8" }, // matches --bg-panel/--text-secondary (dark)
+  light: { color: "#ffffff", symbolColor: "#5b6474" }, // matches --bg-panel/--text-secondary (light)
+};
+
+function watchTheme(win) {
+  let lastTheme = null;
+  const poll = async () => {
+    if (win.isDestroyed()) return;
+    let theme;
+    try {
+      theme = await win.webContents.executeJavaScript('document.documentElement.getAttribute("data-theme")');
+    } catch {
+      return; // window/page torn down mid-poll
+    }
+    if (theme === lastTheme) return;
+    lastTheme = theme;
+    win.setTitleBarOverlay({ ...OVERLAY_COLORS[theme === "light" ? "light" : "dark"], height: TITLEBAR_HEIGHT });
+  };
+  const interval = setInterval(poll, 800);
+  win.on("closed", () => clearInterval(interval));
+  poll();
+}
 
 // id -> absolute local path, served at philogg://local/<id>. Populated only
 // from paths the OS itself handed us (argv / file-association / open-file),
@@ -109,12 +139,12 @@ function createWindow(filePath) {
     backgroundColor: "#151924", // matches #toolbar/#bg-panel's dark-theme default, avoids a white flash while loading
     ...(isMac
       ? { titleBarStyle: "hiddenInset" }
-      : { titleBarStyle: "hidden", titleBarOverlay: { color: "#151924", symbolColor: "#8a92a8", height: 50 } }),
+      : { titleBarStyle: "hidden", titleBarOverlay: { ...OVERLAY_COLORS.dark, height: TITLEBAR_HEIGHT } }),
     webPreferences: { sandbox: true },
   });
   win.webContents.on("dom-ready", () => {
     win.webContents.insertCSS(FRAMELESS_CSS);
-    if (FRAMELESS_JS) win.webContents.executeJavaScript(FRAMELESS_JS);
+    if (!isMac) watchTheme(win);
   });
   if (filePath) {
     const id = registerLocalFile(filePath);
