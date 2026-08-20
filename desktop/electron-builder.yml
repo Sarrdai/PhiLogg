@@ -1,0 +1,27 @@
+appId: com.kleinphilipp.philogg
+productName: PhiLogg
+directories:
+  buildResources: build
+files:
+  - main.js
+  - package.json
+extraResources:
+  - from: ../philogg.html
+    to: philogg.html
+fileAssociations:
+  - ext: log
+    name: Log File
+    description: PhiLogg log file
+    role: Viewer
+mac:
+  target: dmg
+  category: public.app-category.developer-tools
+win:
+  target: nsis
+linux:
+  target: AppImage
+  category: Development
+# No icon: set yet (build/icons/ is empty — see desktop/README.md). Add
+# icon.icns/icon.ico/icon.png there and an `icon:` line per platform above
+# once real artwork exists; electron-builder falls back to its own default
+# Electron icon until then.

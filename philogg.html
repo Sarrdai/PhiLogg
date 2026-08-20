@@ -8554,6 +8554,44 @@ async function loadFileDescriptors(descs) {
   }
 }
 
+// Deep-link loading: philogg.html?url=<encoded-url> fetches and opens a log
+// at boot, straight into addFile (text already fully in memory, same as a
+// session-cache restore). Two consumers: a CI/report link to a log
+// artifact on a webserver, and the desktop wrapper (see desktop/), which
+// serves a local file through a loopback URL so it can reuse this same
+// path instead of a separate content-injection mechanism.
+// Requires philogg.html itself to be served over http(s) — a file:// page
+// cannot fetch cross-origin (or even same-origin file://) resources at all,
+// so opening philogg.html directly as a local file with ?url= set can only
+// ever fail; that case gets a specific message instead of a raw fetch error.
+async function loadFromUrlParam() {
+  const url = new URLSearchParams(location.search).get("url");
+  if (!url) return;
+  if (location.protocol === "file:") {
+    showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
+    return;
+  }
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    showCopyToast("Could not load log from URL (network or CORS error)");
+    return;
+  }
+  if (!res.ok) {
+    showCopyToast(`Could not load log from URL (HTTP ${res.status})`);
+    return;
+  }
+  const text = await res.text();
+  let name = "remote.log";
+  try {
+    const last = decodeURIComponent(new URL(url, location.href).pathname.split("/").filter(Boolean).pop() || "");
+    if (last) name = last;
+  } catch { /* keep the "remote.log" fallback */ }
+  await addFile(name, text);
+  render();
+}
+
 let dragCounter = 0;
 const dropOverlay = el("#dropOverlay");
 // Distinguishes an OS file drag (dataTransfer.types includes "Files") from an
@@ -11992,6 +12030,9 @@ applyRowGrid();
 initTheme();
 initFhView();
 render();
+// Deep-link ?url= load, fire-and-forget — independent of session restore
+// below (a link straight into a log doesn't need a prior cached session).
+loadFromUrlParam();
 // Async session restore AFTER the first (empty-state) render — restore's own
 // finally block re-renders once files/filters/bookmarks/settings are back.
 // Watched folders are restored right after (restoreWatchedFolders needs
