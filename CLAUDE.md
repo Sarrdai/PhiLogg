@@ -24,6 +24,12 @@ regression suite, see `tests/README.md` for conventions).
   `cd tests && npm test`. Report the pass count.
 - **Update `PROJECT.md` every session**: changelog entry (newest-first),
   touched architecture sections, line count if it moved meaningfully.
+- **Keep `README.md` up to date.** It's the human-facing entry point
+  (overview, features, screenshots, usage, license) — `PROJECT.md` stays
+  the entry point and full reference for Claude sessions. When a session
+  adds/removes/changes a user-visible feature, update README's feature
+  list/screenshots references accordingly instead of leaving it stale;
+  keep implementation detail out of it and link to `PROJECT.md` for that.
 - **Simplest solution that solves the actual problem** — no speculative
   complexity (size caps, expiry, etc.) until it's a real, current problem.
 - Code and comments in English.
