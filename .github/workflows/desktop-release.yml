@@ -1,0 +1,70 @@
+name: Build desktop release
+
+# Manual only, and entirely separate from "Build tester release"
+# (release.yml) — philogg.html itself is untouched by this. Builds the
+# Electron wrapper in desktop/ per platform via electron-builder and
+# publishes the installers as GitHub Release assets.
+#
+# UNTESTED as of when this workflow was written: desktop/README.md's own
+# build steps had not been run anywhere yet (no display server / multi-OS
+# setup available while scaffolding desktop/). Treat the first real run of
+# this workflow as that verification, not as a known-good pipeline — check
+# desktop/README.md if it fails.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  # Creates the release once, up front, so the three per-OS build jobs below
+  # can each just upload into it — avoids three parallel jobs racing to
+  # create (or half-create) the same release tag.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute release tag
+        id: tag
+        run: echo "tag=desktop-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --title "PhiLogg desktop build ${{ steps.tag.outputs.tag }}" \
+            --notes "Automated desktop (Electron) tester build. Proprietary — see the in-app License panel. Not for redistribution."
+
+  build:
+    needs: prepare
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build installer
+        working-directory: desktop
+        run: npm run build
+
+      - name: Upload installer(s)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          for f in desktop/dist/*.exe desktop/dist/*.dmg desktop/dist/*.AppImage; do
+            [ -f "$f" ] && gh release upload "${{ needs.prepare.outputs.tag }}" "$f" --clobber
+          done
