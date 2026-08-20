@@ -1009,7 +1009,7 @@ await withApp(async (w, d, T) => {
   section("65. License popup + version display");
 
   // --- Version display (unstamped source -> literal "dev") ---
-  assert(d.querySelector("#brandVersion").textContent === "vdev", "brand-name version tag shows v + PHILOGG_VERSION");
+  assert(d.querySelector("#brandVersion").textContent === "dev", "brand-name version tag shows PHILOGG_VERSION verbatim, no \"v\" prefix");
   assert(d.querySelector("#licenseVersion").textContent === "Version: dev", "license panel's own version line shows the same PHILOGG_VERSION");
 
   // --- License popup: same fixed-position/toggle pattern as #shortcutsPanel ---
