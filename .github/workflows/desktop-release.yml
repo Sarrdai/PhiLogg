@@ -4,12 +4,6 @@ name: Build desktop release
 # (release.yml) — philogg.html itself is untouched by this. Builds the
 # Electron wrapper in desktop/ per platform via electron-builder and
 # publishes the installers as GitHub Release assets.
-#
-# UNTESTED as of when this workflow was written: desktop/README.md's own
-# build steps had not been run anywhere yet (no display server / multi-OS
-# setup available while scaffolding desktop/). Treat the first real run of
-# this workflow as that verification, not as a known-good pipeline — check
-# desktop/README.md if it fails.
 on:
   workflow_dispatch: {}
 
@@ -42,6 +36,7 @@ jobs:
   build:
     needs: prepare
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
