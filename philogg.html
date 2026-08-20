@@ -1072,6 +1072,16 @@
   }
   #contextDialog.hidden{display:none;}
 
+  /* ---------- Count context dialog (analogous to Time context above, but
+     windows by entry count instead of milliseconds — see #countContextDialog
+     markup and createCountContextNode) ---------- */
+  #countContextDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
+  }
+  #countContextDialog.hidden{display:none;}
+
   /* ---------- Time range dialog (create/edit — see createFilterNode's
      "timerange" filterType and openTimeRangeDialog) ---------- */
   #timeRangeDialog{
@@ -1897,6 +1907,31 @@
       <div class="link-dialog-actions">
         <button type="button" id="contextDialogCancel" class="btn-mini-outline">Cancel</button>
         <button type="button" id="contextDialogCreate" class="btn-mini">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="countContextDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Count context</div>
+      <div class="link-field">
+        <label>Around each entry of <span id="countContextRefLabel" class="link-target-label"></span></label>
+      </div>
+      <div class="link-field">
+        <label for="countContextBeforeInput">Entries before</label>
+        <div class="link-field-row">
+          <input type="number" id="countContextBeforeInput" min="0" step="1" value="0">
+        </div>
+      </div>
+      <div class="link-field">
+        <label for="countContextAfterInput">Entries after</label>
+        <div class="link-field-row">
+          <input type="number" id="countContextAfterInput" min="0" step="1" value="0">
+        </div>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="countContextDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="countContextDialogCreate" class="btn-mini">Create</button>
       </div>
     </div>
   </div>
@@ -2944,6 +2979,55 @@ function mergeContextRanges(refEntries, beforeMs, afterMs) {
   return merged;
 }
 
+/* ===================== Count context filter: fixed number of entries
+   around reference entries ===================== */
+
+// Creates a count-context filter: analogous to createContextNode above, but
+// the window is a fixed number of entries before/after each reference entry
+// (in the whole root file's chronological order) instead of a millisecond
+// duration — useful when log density varies too much for a time window to
+// reliably capture "N entries of surrounding context".
+function createCountContextNode(parentId, beforeCount, afterCount) {
+  const parent = state.nodes[parentId];
+  if (!parent) return null;
+  const parts = [];
+  if (beforeCount > 0) parts.push("−" + beforeCount);
+  if (afterCount > 0) parts.push("+" + afterCount);
+  const node = {
+    id: uid("n"), type: "filter", name: parent.name + " ± " + parts.join("/"),
+    parentId, children: [], filterType: "countContext", value: null,
+    countBefore: beforeCount, countAfter: afterCount, inverted: false,
+  };
+  state.nodes[node.id] = node;
+  parent.children.push(node.id);
+  state.activeId = node.id;
+  return node;
+}
+
+// Merges each reference entry's [idx-beforeCount, idx+afterCount] index
+// window (idx = the reference entry's position in the root file's own
+// entries array, via orderIndexMap) into a sorted, non-overlapping list of
+// index ranges — the count-based counterpart of mergeContextRanges above.
+// Two windows merge when they overlap OR sit back-to-back with no gap
+// (w.start <= last.end + 1), since these are discrete integer indices, not
+// continuous timestamps: entries index 10 and 11 are adjacent with nothing
+// between them, so their groups should read as one continuous bracket the
+// same way two touching time windows do.
+function mergeCountContextRanges(refEntries, orderIndexMap, poolLen, beforeCount, afterCount) {
+  const windows = refEntries
+    .map(e => orderIndexMap.get(e.id))
+    .filter(idx => idx !== undefined)
+    .map(idx => ({ start: Math.max(0, idx - beforeCount), end: Math.min(poolLen - 1, idx + afterCount) }))
+    .sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const w of windows) {
+    const last = merged[merged.length - 1];
+    if (last && w.start <= last.end + 1) last.end = Math.max(last.end, w.end);
+    else merged.push({ start: w.start, end: w.end });
+  }
+  return merged;
+}
+
 // Finds the Nth target entry before/after refEntry. targetEntries must be
 // sorted ascending by .ts (true here since every getEntries() result
 // preserves chronological source order). Returns null if there's no such
@@ -3120,6 +3204,9 @@ function cloneSubtree(nodeId, newParentId) {
   } else if (orig.filterType === "context") {
     clone.contextBefore = orig.contextBefore;
     clone.contextAfter = orig.contextAfter;
+  } else if (orig.filterType === "countContext") {
+    clone.countBefore = orig.countBefore;
+    clone.countAfter = orig.countAfter;
   }
   if (orig.filterType === "extract" && orig.assertions) clone.assertions = JSON.parse(JSON.stringify(orig.assertions));
   if (orig.filterType === "extract" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
@@ -3383,6 +3470,35 @@ function getEntries(nodeId) {
       node._contextRanges = ranges; // used by renderVisibleRows to draw the bracket
       node._anchorIds = new Set(parentEntries.map(e => e.id)); // which rows are the reference entries themselves
     }
+  } else if (node.filterType === "countContext") {
+    const fileId = getRootFileId(node.parentId);
+    const file = fileId && state.nodes[fileId];
+    if (!file || parentEntries.length === 0) {
+      result = [];
+      node._contextRanges = [];
+      node._anchorIds = new Set();
+    } else {
+      const pool = file.entries; // sorted ascending by .ts, see the file branch above
+      const orderIndexMap = buildOrderIndexMap(fileId);
+      const idxRanges = mergeCountContextRanges(parentEntries, orderIndexMap, pool.length, node.countBefore || 0, node.countAfter || 0);
+      const keepIds = new Set();
+      for (const r of idxRanges) {
+        for (let i = r.start; i <= r.end; i++) keepIds.add(pool[i].id);
+      }
+      result = pool.filter(e => keepIds.has(e.id));
+      // _contextRanges is read by the SAME renderer as the "context" (time)
+      // filter above, via the ts-based binary search in contextRangeIndex —
+      // so index ranges are re-expressed here in ts-space (the pool's own
+      // boundary entries' timestamps) rather than teaching the renderer a
+      // second, index-based range format. This is exact for the actual
+      // result (computed above from real indices, not from these ts
+      // bounds) — the only edge case is purely cosmetic bracket rendering
+      // when a range boundary entry shares its exact timestamp with an
+      // entry just outside the window (a tie); same accepted trade-off as
+      // the time-context bracket's own tie edge cases (see PROJECT.md).
+      node._contextRanges = idxRanges.map(r => ({ start: pool[r.start].ts, end: pool[r.end].ts }));
+      node._anchorIds = new Set(parentEntries.map(e => e.id));
+    }
   } else {
     result = parentEntries;
   }
@@ -3390,13 +3506,13 @@ function getEntries(nodeId) {
   // "link" results are synthetic pair entries (see buildPairEntry) whose ids
   // never match parentEntries' ids, so a parent-relative set difference
   // wouldn't mean "unmatched refs" — it would just be all of parentEntries.
-  // "context" has the opposite problem: every reference entry's own window
-  // always contains itself, so result is a strict superset of parentEntries
-  // and a parent-relative difference would always be empty. Inversion is
-  // therefore only offered in the UI for the other filter types, but this
-  // guard keeps getEntries() correct even if inverted were ever set on one
-  // of these nodes some other way.
-  if (node.inverted && node.filterType !== "link" && node.filterType !== "context") {
+  // "context"/"countContext" have the opposite problem: every reference
+  // entry's own window always contains itself, so result is a strict
+  // superset of parentEntries and a parent-relative difference would always
+  // be empty. Inversion is therefore only offered in the UI for the other
+  // filter types, but this guard keeps getEntries() correct even if
+  // inverted were ever set on one of these nodes some other way.
+  if (node.inverted && node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
     const keptIds = new Set(result.map(e => e.id));
     result = parentEntries.filter(e => !keptIds.has(e.id));
   }
@@ -3536,6 +3652,7 @@ function snapshotSubtree(nodeId) {
     copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
     copy.linkOrderEnforced = !!node.linkOrderEnforced; copy.linkExclusive = !!node.linkExclusive;
   } else if (node.filterType === "context") { copy.contextBefore = node.contextBefore; copy.contextAfter = node.contextAfter; }
+  else if (node.filterType === "countContext") { copy.countBefore = node.countBefore; copy.countAfter = node.countAfter; }
   if (node.assertions) copy.assertions = JSON.parse(JSON.stringify(node.assertions));
   if (node.ignoredColumns) copy.ignoredColumns = node.ignoredColumns.slice();
   if (node.caseSensitive) copy.caseSensitive = true;
@@ -3570,6 +3687,7 @@ function restoreSubtree(snap) {
     node.linkDirection = snap.linkDirection; node.linkN = snap.linkN;
     node.linkOrderEnforced = !!snap.linkOrderEnforced; node.linkExclusive = !!snap.linkExclusive;
   } else if (snap.filterType === "context") { node.contextBefore = snap.contextBefore; node.contextAfter = snap.contextAfter; }
+  else if (snap.filterType === "countContext") { node.countBefore = snap.countBefore; node.countAfter = snap.countAfter; }
   if (snap.assertions) node.assertions = snap.assertions;
   if (snap.ignoredColumns) node.ignoredColumns = snap.ignoredColumns;
   if (snap.caseSensitive) node.caseSensitive = true;
@@ -4158,6 +4276,7 @@ function typeTagFor(node) {
     case "or": return "OR";
     case "link": return "LNK";
     case "context": return "CTX";
+    case "countContext": return "CNT";
     default: return "?";
   }
 }
@@ -4234,6 +4353,7 @@ function ghostTypeTag(filterType) {
     case "or": return "OR";
     case "link": return "LNK";
     case "context": return "CTX";
+    case "countContext": return "CNT";
     default: return "?";
   }
 }
@@ -4243,7 +4363,7 @@ function ghostIconFor(filterType) {
     : filterType === "extract" ? ICON_TABLE
     : (filterType === "and" || filterType === "or") ? ICON_COMBINE
     : filterType === "link" ? ICON_LINK
-    : filterType === "context" ? ICON_CONTEXT
+    : (filterType === "context" || filterType === "countContext") ? ICON_CONTEXT
     : ICON_CLOCK;
 }
 
@@ -4364,7 +4484,7 @@ function renderNode(id, depth) {
     : node.filterType === "extract" ? ICON_TABLE
     : (node.filterType === "and" || node.filterType === "or") ? ICON_COMBINE
     : node.filterType === "link" ? ICON_LINK
-    : node.filterType === "context" ? ICON_CONTEXT
+    : (node.filterType === "context" || node.filterType === "countContext") ? ICON_CONTEXT
     : ICON_CLOCK;
   row.appendChild(icon);
 
@@ -6584,9 +6704,13 @@ function renderVisibleRows() {
 
   // Bracket rendering only makes sense in the file's natural chronological
   // order (a manual column sort would scatter a group's rows apart), and
-  // only for the active node's own context filter, if any.
+  // only for the active node's own context filter, if any — "context"
+  // (time-based) and "countContext" (entry-count-based) share the exact
+  // same _contextRanges/_anchorIds shape (see getEntries), so one renderer
+  // covers both.
   const activeNode = state.nodes[state.activeId];
-  const ctxNode = (!state.sortColumn && activeNode && activeNode.filterType === "context" && activeNode._contextRanges)
+  const ctxNode = (!state.sortColumn && activeNode &&
+    (activeNode.filterType === "context" || activeNode.filterType === "countContext") && activeNode._contextRanges)
     ? activeNode : null;
 
   const frag = document.createDocumentFragment();
@@ -9614,11 +9738,12 @@ function openTreeContextMenu(ev, clickedId) {
       }
       // "link" results are pair entries with no parent-relative complement
       // (see getEntries), inverting "extract" would only ever keep the
-      // non-matching, nothing-to-extract rows, and "context" always contains
-      // its own reference entries so a parent-relative difference is always
-      // empty — all three excluded for the same reason NOT is disabled in
-      // the filter popup for extract patterns.
-      if (node.filterType !== "link" && node.filterType !== "extract" && node.filterType !== "context") {
+      // non-matching, nothing-to-extract rows, and "context"/"countContext"
+      // always contain their own reference entries so a parent-relative
+      // difference is always empty — all four excluded for the same reason
+      // NOT is disabled in the filter popup for extract patterns.
+      if (node.filterType !== "link" && node.filterType !== "extract" &&
+          node.filterType !== "context" && node.filterType !== "countContext") {
         buckets.edit.push({
           action: "invert",
           label: node.inverted ? "Remove NOT" : "Invert (NOT)",
@@ -9626,6 +9751,7 @@ function openTreeContextMenu(ev, clickedId) {
         });
       }
       buckets.edit.push({ action: "context", label: "Time context…", icon: ICON_CONTEXT });
+      buckets.edit.push({ action: "countContext", label: "Count context…", icon: ICON_CONTEXT });
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
       buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
@@ -9724,6 +9850,10 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "context") {
     if (treeCtxId && state.nodes[treeCtxId]) openContextDialog(treeCtxId);
+    return;
+  }
+  if (action === "countContext") {
+    if (treeCtxId && state.nodes[treeCtxId]) openCountContextDialog(treeCtxId);
     return;
   }
   if (action === "saveFilter") {
@@ -9886,6 +10016,42 @@ el("#contextDialogCreate").addEventListener("click", () => {
   render();
 });
 
+/* ===================== Count context dialog (entries before / after) =====================
+   Mirrors the Time context dialog above exactly — same open/close/backdrop
+   pattern — but the two inputs are entry counts (createCountContextNode)
+   instead of milliseconds. */
+
+const countContextDialog = el("#countContextDialog");
+const countContextRefLabel = el("#countContextRefLabel");
+const countContextBeforeInput = el("#countContextBeforeInput");
+const countContextAfterInput = el("#countContextAfterInput");
+let countContextDialogRefId = null;
+
+function openCountContextDialog(refId) {
+  const ref = state.nodes[refId];
+  if (!ref) return;
+  countContextDialogRefId = refId;
+  countContextRefLabel.textContent = ref.name;
+  countContextBeforeInput.value = 0;
+  countContextAfterInput.value = 0;
+  countContextDialog.classList.remove("hidden");
+  countContextBeforeInput.focus();
+}
+function closeCountContextDialog() { countContextDialog.classList.add("hidden"); countContextDialogRefId = null; }
+countContextDialog.addEventListener("click", ev => { if (ev.target === countContextDialog) closeCountContextDialog(); });
+el("#countContextDialogCancel").addEventListener("click", closeCountContextDialog);
+el("#countContextDialogCreate").addEventListener("click", () => {
+  const before = Math.max(0, Math.round(parseFloat(countContextBeforeInput.value) || 0));
+  const after = Math.max(0, Math.round(parseFloat(countContextAfterInput.value) || 0));
+  // At least one side has to be set, otherwise the "window" is just the
+  // reference entry itself and the filter would be a no-op.
+  if (countContextDialogRefId && (before > 0 || after > 0)) {
+    if (createCountContextNode(countContextDialogRefId, before, after)) revealFilteredView();
+  }
+  closeCountContextDialog();
+  render();
+});
+
 /* ===================== Time range dialog (create/edit a "timerange" filter) =====================
    Single small dialog covering both create (mode "create", targetId = the
    new filter's parent) and edit (mode "edit", targetId = the node being
@@ -9972,7 +10138,7 @@ timeRangeDialogSubmit.addEventListener("click", () => {
 
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context", "countContext"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId) {
@@ -10031,6 +10197,7 @@ function serializeFilterBranch(nodeId) {
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
     }
     if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
+    if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
     if (node.filterType === "extract" && node.assertions) out.assertions = node.assertions;
     if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
@@ -10169,6 +10336,9 @@ function importFilterJson(text) {
     } else if (sn.filterType === "context") {
       node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
       node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
+    } else if (sn.filterType === "countContext") {
+      node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
+      node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
     } else if (sn.filterType === "extract" && sn.assertions && typeof sn.assertions === "object") {
       node.assertions = sn.assertions;
     }
@@ -10695,6 +10865,7 @@ function serializeFilterTreeForCache(fileNode) {
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
     }
     if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
+    if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
     if (node.filterType === "extract" && node.assertions) out.assertions = node.assertions;
     if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
@@ -10811,6 +10982,9 @@ function materializeCachedFilters(fileNode, roots) {
     } else if (sn.filterType === "context") {
       node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
       node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
+    } else if (sn.filterType === "countContext") {
+      node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
+      node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
     } else if (sn.filterType === "extract" && sn.assertions && typeof sn.assertions === "object") {
       node.assertions = sn.assertions;
     }
