@@ -3,8 +3,10 @@ name: Build tester release
 # Manual only — run this from the Actions tab whenever a build should go out
 # to external testers. Stamps PHILOGG_VERSION (in philogg.html) with the
 # short commit hash of the checked-out commit and publishes the stamped file
-# as a GitHub Release asset. Never commits the stamped file back to the repo
-# — the tracked philogg.html always keeps PHILOGG_VERSION = "dev".
+# as a GitHub Release asset, named philogg-<commit-date>-<short-sha>.html so
+# the version and its age are visible from the filename alone. Never commits
+# the stamped file back to the repo — the tracked philogg.html always keeps
+# PHILOGG_VERSION = "dev".
 on:
   workflow_dispatch: {}
 
@@ -21,15 +23,20 @@ jobs:
         id: stamp
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_DATE=$(git show -s --format=%cd --date=format:%Y-%m-%d HEAD)
           sed -i "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
           grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          ASSET_NAME="philogg-${COMMIT_DATE}-${SHORT_SHA}.html"
+          cp philogg.html "${ASSET_NAME}"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "asset_name=${ASSET_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHORT_SHA: ${{ steps.stamp.outputs.short_sha }}
+          ASSET_NAME: ${{ steps.stamp.outputs.asset_name }}
         run: |
-          gh release create "build-${SHORT_SHA}" philogg.html \
+          gh release create "build-${SHORT_SHA}" "${ASSET_NAME}" \
             --title "PhiLogg build ${SHORT_SHA}" \
             --notes "Automated tester build of philogg.html, stamped with version ${SHORT_SHA}. Proprietary — see the in-app License panel. Not for redistribution."
