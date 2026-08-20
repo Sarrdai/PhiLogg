@@ -321,6 +321,21 @@
   .tree-row:hover .tree-del{opacity:1;}
   .tree-del:hover{color:var(--level-error); background:var(--level-error-soft);}
 
+  /* Grayed placeholder row for a file queued in a multi-file load, not yet
+     its turn to be read (see createQueuedFileNode/renderQueuedFileRow) —
+     same "known its spot, not read yet" look as .folder-watch-file above,
+     reused directly in the main tree instead of a separate box. */
+  .tree-row-queued{
+    display:flex; align-items:center; gap:7px;
+    padding:6px 8px 6px 12px;
+    color:var(--text-tertiary); opacity:.55;
+  }
+  .tree-row-queued .tree-icon{flex:0 0 auto; display:flex;}
+  .tree-row-queued .tree-label{
+    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; font-size:12.3px;
+  }
+
   /* Filter-history ghost preview (person-requested, this session): shown
      under a freshly loaded file that has no filters of its own yet, when a
      previous session's filter tree for this exact (or since-grown) file
@@ -1116,12 +1131,13 @@
   }
   .assert-mode-btn.active{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
 
-  /* ---------- Session export / import dialogs ---------- */
-  #sessionExportDialog, #sessionMatchDialog{
+  /* ---------- Session export / import dialogs (+ the multi-file-load merge
+     prompt, which shares the same plain centered-overlay look) ---------- */
+  #sessionExportDialog, #sessionMatchDialog, #mergeLoadDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
     display:flex; align-items:center; justify-content:center;
   }
-  #sessionExportDialog.hidden, #sessionMatchDialog.hidden{display:none;}
+  #sessionExportDialog.hidden, #sessionMatchDialog.hidden, #mergeLoadDialog.hidden{display:none;}
   #sessionExportDialog .link-dialog-card, #sessionMatchDialog .link-dialog-card{width:min(480px, 92%);}
 
   /* ---------- Reusable filter library (FEATURE_BACKLOG.md "Reusable filter
@@ -2050,6 +2066,22 @@
     </div>
   </div>
 
+  <!-- Person-requested: dropping/picking 2+ files at once asks upfront
+       whether to merge them into one chronologically sorted file once
+       loaded (see confirmMergeOnLoad/loadFileDescriptors). "Merge" starts
+       focused so Enter answers Yes via the browser's own default button
+       activation; Escape answers No via the shared global Escape handler. -->
+  <div id="mergeLoadDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Merge these files?</div>
+      <div class="session-dialog-note" id="mergeLoadDialogNote"></div>
+      <div class="link-dialog-actions">
+        <button type="button" id="mergeLoadDialogNo" class="btn-mini-outline">No (Esc)</button>
+        <button type="button" id="mergeLoadDialogYes" class="btn-mini">Merge (Enter)</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Reusable filter library (FEATURE_BACKLOG.md): "Save to library…" on a
        filter node's context menu opens this to name the branch being saved. -->
   <div id="filterLibrarySaveDialog" class="hidden">
@@ -2533,6 +2565,33 @@ function createFileNode(name, folderId) {
   state.activeId = node.id;
   flushLoadRender();
   return node;
+}
+
+// Placeholder root file node for a file that's part of a multi-file load but
+// hasn't started reading yet (see loadFileDescriptors) — inserted into
+// state.rootIds right away so its eventual position in the tree is visible
+// immediately, rendered as a non-interactive grayed row (renderQueuedFileRow)
+// until activateQueuedFileNode flips it into a normal, actively-loading row.
+// Unlike createFileNode, this does NOT set state.activeId or render — landing
+// on/showing a placeholder that can't yet be selected or filtered would be
+// confusing; that only happens once this file's real load actually starts.
+function createQueuedFileNode(name) {
+  const node = {
+    id: uid("f"), type: "file", name, parentId: null, children: [], entries: [],
+    cacheKey: newCacheKey(), queued: true,
+  };
+  state.nodes[node.id] = node;
+  state.rootIds.push(node.id);
+  return node;
+}
+
+// Turns a queued placeholder into a normal, actively-loading file node — the
+// counterpart to createQueuedFileNode's "insert but don't activate".
+function activateQueuedFileNode(node) {
+  delete node.queued;
+  node.loadFraction = 0;
+  state.activeId = node.id;
+  flushLoadRender();
 }
 
 // Normalizes a raw level string to one of the known buckets (or "OTHER").
@@ -4356,8 +4415,13 @@ function flattenTreeIds() {
   const ids = [];
   (function walk(list) {
     list.forEach(id => {
-      ids.push(id);
       const node = state.nodes[id];
+      // A queued placeholder (see createQueuedFileNode) has nothing to
+      // select or filter yet — renderQueuedFileRow gives it no click
+      // handler at all, so arrow-key nav must skip it too, or it could
+      // land on a row with no visible "active" state and no real content.
+      if (node && node.queued) return;
+      ids.push(id);
       if (node) walk(node.children);
     });
   })(state.rootIds);
@@ -4489,8 +4553,37 @@ function renderFilterHistoryPreview(fileNode) {
 // dragstart/dragover/drop handlers). null while no drag is in progress.
 let draggedNodeId = null;
 
+// Grayed placeholder row for a file still waiting its turn in a multi-file
+// load (see createQueuedFileNode/loadFileDescriptors) — visually mirrors
+// folder watch's .folder-watch-file rows (same "known its spot, not read
+// yet" idea, see .tree-row-queued CSS) but sits directly in the main tree at
+// the exact position the file will occupy once loaded, instead of a
+// separate box. Deliberately non-interactive (no click/drag/context-menu):
+// there's nothing yet to select, filter, or reparent. renderNode swaps this
+// out for a normal, fully interactive row the moment activateQueuedFileNode
+// clears node.queued and this file's turn to load arrives.
+function renderQueuedFileRow(node, depth) {
+  const wrap = document.createElement("div");
+  wrap.dataset.type = "file";
+  const row = document.createElement("div");
+  row.className = "tree-row-queued";
+  row.style.paddingLeft = (12 + depth * 16) + "px";
+  const icon = document.createElement("span");
+  icon.className = "tree-icon";
+  icon.innerHTML = ICON_FILE;
+  row.appendChild(icon);
+  const label = document.createElement("span");
+  label.className = "tree-label";
+  label.textContent = node.name;
+  label.title = node.name + " — queued, waiting to load";
+  row.appendChild(label);
+  wrap.appendChild(row);
+  return wrap;
+}
+
 function renderNode(id, depth) {
   const node = state.nodes[id];
+  if (node.type === "file" && node.queued) return renderQueuedFileRow(node, depth);
   const wrap = document.createElement("div");
   wrap.dataset.type = node.type;
 
@@ -8495,8 +8588,14 @@ function loadFiles(fileList) {
 // the very first moment — see createFileNode. Caller owns the final
 // render() around this; the row's progress fill is fully self-managed via
 // scheduleLoadRender in the meantime.
-async function loadOneFileIntoTree(name, file, handle, folderId) {
-  const node = createFileNode(name, folderId);
+// existingNode (optional): reuses an already-inserted queued placeholder
+// (see createQueuedFileNode/loadFileDescriptors) instead of creating a fresh
+// node via createFileNode — activateQueuedFileNode clears its .queued flag
+// and takes over the "insert into the active view" job createFileNode would
+// otherwise have done.
+async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
+  const node = existingNode || createFileNode(name, folderId);
+  if (existingNode) activateQueuedFileNode(node);
   try {
     const text = await readFileWithProgress(file, (loaded, total) => {
       node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
@@ -8539,17 +8638,74 @@ async function loadOneFileIntoTree(name, file, handle, folderId) {
   return node;
 }
 
+// Promise-based Yes/No dialog: when a single drop/pick batch contains 2+
+// files, loadFileDescriptors asks upfront whether to merge them into one
+// chronologically sorted file (mergeFiles) once they're all loaded — person-
+// requested so a routine "load these related logs together" drop doesn't
+// need a separate manual multi-select + right-click afterwards. The "Merge"
+// button is focused on open, so Enter answers Yes via the browser's own
+// default button-activation behavior (no custom keydown handling needed);
+// Escape answers No via the shared global Escape handler below.
+const mergeLoadDialog = el("#mergeLoadDialog");
+let mergeLoadResolver = null;
+function confirmMergeOnLoad(names) {
+  el("#mergeLoadDialogNote").textContent =
+    "Loading " + names.length + " files at once (" + names.join(", ") + "). " +
+    "Merge them into one chronologically sorted file once they're loaded?";
+  mergeLoadDialog.classList.remove("hidden");
+  el("#mergeLoadDialogYes").focus();
+  return new Promise(resolve => { mergeLoadResolver = resolve; });
+}
+function closeMergeLoadDialog(result) {
+  mergeLoadDialog.classList.add("hidden");
+  const r = mergeLoadResolver;
+  mergeLoadResolver = null;
+  if (r) r(result);
+}
+el("#mergeLoadDialogYes").addEventListener("click", () => closeMergeLoadDialog(true));
+el("#mergeLoadDialogNo").addEventListener("click", () => closeMergeLoadDialog(false));
+
 // descs: [{ file: File, handle: FileSystemFileHandle|null }]. A handle enables
 // tailing (see the Tailing section): re-calling handle.getFile() later yields a
 // *fresh* snapshot including bytes appended after load — a plain File can't do that.
+//
+// Every file in the batch gets a grayed placeholder row (createQueuedFileNode)
+// inserted into the tree, IN ORDER, before any reading starts — so a multi-
+// file drop shows every file's eventual position right away instead of only
+// revealing each one once its own turn to load arrives (person-reported: the
+// old behavior only ever showed the file currently being read). Files are
+// still read/parsed one at a time (loadOneFileIntoTree), each placeholder
+// flipping from grayed to a normal, actively-loading row exactly when its
+// turn comes.
 async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
 
+  const queuedNodes = descs.map(d => createQueuedFileNode(d.file.name));
+  render();
+
+  const mergeAfter = descs.length > 1 ? await confirmMergeOnLoad(queuedNodes.map(n => n.name)) : false;
+
+  const loadedIds = [];
   try {
-    for (const { file, handle } of descs) {
-      await loadOneFileIntoTree(file.name, file, handle);
+    for (let i = 0; i < descs.length; i++) {
+      const { file, handle } = descs[i];
+      try {
+        const node = await loadOneFileIntoTree(file.name, file, handle, null, queuedNodes[i]);
+        loadedIds.push(node.id);
+      } catch (err) {
+        // One file's read/parse failure (loadOneFileIntoTree already removed
+        // its own node) must not abort the rest of the batch — every other
+        // queued placeholder still needs its turn, or it would stay grayed
+        // and stuck forever.
+        showCopyToast(`Couldn't load "${file.name}"`);
+      }
     }
   } finally {
+    render();
+  }
+
+  if (mergeAfter && loadedIds.length >= 2) {
+    mergeFiles(loadedIds);
     render();
   }
 }
@@ -10679,6 +10835,7 @@ document.addEventListener("keydown", ev => {
     closeShortcutsPanel();
     closeLicensePanel();
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
+    if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
     if (state.clipboard) { state.clipboard = null; needsRender = true; }
     if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); }
