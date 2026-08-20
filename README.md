@@ -40,6 +40,9 @@ open it in a browser to view it.
 - **Live tailing & folder watch** (Chromium, File System Access API) — an
   actively-written log file updates in place; a watched folder picks up new
   files automatically.
+- **Multi-file drag-and-drop** — every dropped file shows up in the tree
+  right away (grayed while it waits its turn to load), and loading several
+  at once offers to merge them into one chronologically-sorted file.
 - **Deep-link loading** — `philogg.html?url=<encoded-url>` fetches and opens
   a log at boot, for linking straight to a log from CI/a report (requires
   PhiLogg itself served over `http(s)`, not opened as a local file, and CORS
