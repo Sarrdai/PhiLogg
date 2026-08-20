@@ -2947,17 +2947,51 @@ function createAndOrNode(parentId, linkedId, mode) {
 // Entry objects are reused by reference (not cloned) so identity-based
 // features (entryIndex, jump-to-full-log, selection) keep working across it.
 // The merged file starts with no filters of its own.
-function mergeFiles(fileIds) {
+//
+// Same "create the row first, stream progress onto it" pattern a real file
+// load uses (see createFileNode/loadOneFileIntoTree, "File loading" in
+// PROJECT.md): the merged node is inserted into the tree immediately, empty,
+// with loadFraction 0 — instead of being computed synchronously in one
+// blocking call, which could otherwise freeze the UI for a noticeable
+// moment on a merge of several very large files, with nothing on screen to
+// show it's working. COPY_WEIGHT covers gathering every source file's
+// entries in chunks (mirrors READ_WEIGHT/PARSE_WEIGHT's split); the final
+// chronological sort isn't itself chunkable, so it's a single blocking call
+// at the end, but it only ever runs after the copy phase's last progress
+// tick has already had a chance to paint (the loop's own yield below).
+const MERGE_CHUNK_ENTRIES = 20000;
+const MERGE_COPY_WEIGHT = 0.6;
+const MERGE_SORT_WEIGHT = 0.4;
+async function mergeFiles(fileIds) {
   const files = fileIds.map(id => state.nodes[id]).filter(n => n && n.type === "file");
   if (files.length < 2) return null;
-  const entries = files.flatMap(f => f.entries).slice().sort((a, b) => a.ts - b.ts);
+
   const node = {
     id: uid("f"), type: "file", name: files.map(f => f.name).join(" + "),
-    parentId: null, children: [], entries, merged: true, cacheKey: newCacheKey(),
+    parentId: null, children: [], entries: [], merged: true, cacheKey: newCacheKey(),
+    loadFraction: 0,
   };
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
   state.activeId = node.id;
+  flushLoadRender();
+
+  const total = files.reduce((sum, f) => sum + f.entries.length, 0);
+  let copied = 0;
+  for (const f of files) {
+    for (let i = 0; i < f.entries.length; i += MERGE_CHUNK_ENTRIES) {
+      node.entries.push(...f.entries.slice(i, i + MERGE_CHUNK_ENTRIES));
+      copied += Math.min(MERGE_CHUNK_ENTRIES, f.entries.length - i);
+      node.loadFraction = MERGE_COPY_WEIGHT * (total ? copied / total : 1);
+      scheduleLoadRender(node.id);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+  if (state.nodes[node.id] !== node) return node; // removed mid-merge (by the person, or a race)
+
+  node.entries.sort((a, b) => a.ts - b.ts);
+  delete node.loadFraction;
+  flushLoadRender(node.id);
   persistFileNode(node); // fire-and-forget; cached as its own text snapshot (see "Session cache")
   return node;
 }
@@ -8705,7 +8739,7 @@ async function loadFileDescriptors(descs) {
   }
 
   if (mergeAfter && loadedIds.length >= 2) {
-    mergeFiles(loadedIds);
+    await mergeFiles(loadedIds); // async now — see mergeFiles' own comment
     render();
   }
 }
@@ -9960,7 +9994,7 @@ function performBulkAction(action, ids) {
     return;
   }
   if (action === "merge") {
-    mergeFiles(ids);
+    mergeFiles(ids); // fire-and-forget — its own synchronous prefix (node creation + flushLoadRender) already ran by the time this returns; it drives its own progress rendering from here
   } else if (action === "and" || action === "or") {
     if (createAndOrNode(ids[0], ids[1], action)) revealFilteredView();
   }
