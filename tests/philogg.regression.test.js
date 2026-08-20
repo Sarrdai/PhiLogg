@@ -7163,6 +7163,52 @@ await withApp(async (w, d, T) => {
 // straightforward enough to cover by code review instead.
 
 /* ============================================================
+   GROUP 67 — window.philoggLoadUrl: desktop wrapper hands a
+   later-opened file into the already-running window
+   Origin: this session (2026-08-20), person-reported (Windows Electron
+   build): a second file opened via file-association double-click spawned
+   a whole new app window instead of landing in the one already open, and
+   the first file loaded showed up in the tree named "1" instead of its
+   real file name. Root causes: (1) desktop/main.js's "second-instance"
+   handler unconditionally called createWindow() instead of reusing an
+   existing window, and (2) the philogg://local/<id> URL it built carried
+   only the opaque numeric id as its last path segment, which is exactly
+   what loadFromUrlParam's name-from-URL logic (GROUP 66) picks up. Fixed
+   by (1) refactoring loadFromUrlParam's fetch-and-add body out into
+   loadUrlIntoTree(url), exposed as window.philoggLoadUrl for the main
+   process to call via executeJavaScript on an existing window, and (2)
+   having main.js embed the real basename as a second path segment
+   (philogg://local/<id>/<name>) so the existing last-segment naming logic
+   picks up the true file name for free. Covered here: the renderer-side
+   half (loadUrlIntoTree/philoggLoadUrl itself, and that repeated calls
+   accumulate files rather than replace them) — desktop/main.js's Electron
+   APIs (BrowserWindow, single-instance lock) aren't reachable from this
+   jsdom suite, see tests/README.md.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("67a. window.philoggLoadUrl is exposed as the same logic loadFromUrlParam uses");
+  assert(typeof w.philoggLoadUrl === "function", "window.philoggLoadUrl is a function");
+  const logText = makeLog(0, 2);
+  w.fetch = async () => ({ ok: true, status: 200, text: async () => logText });
+  await w.philoggLoadUrl("philogg://local/1/first.log");
+  assert(T.state.rootIds.length === 1, "one file was added, got " + T.state.rootIds.length);
+  assert(T.state.nodes[T.state.rootIds[0]].name === "first.log", "file name comes from the URL's last path segment, got " + T.state.nodes[T.state.rootIds[0]].name);
+});
+
+await withApp(async (w, d, T) => {
+  section("67b. a second philoggLoadUrl call adds a second file instead of replacing the first");
+  const log1 = makeLog(0, 2), log2 = makeLog(0, 3);
+  let requested = [];
+  w.fetch = async (u) => { requested.push(u); const text = requested.length === 1 ? log1 : log2; return { ok: true, status: 200, text: async () => text }; };
+  await w.philoggLoadUrl("philogg://local/1/first.log");
+  await w.philoggLoadUrl("philogg://local/2/second.log");
+  assert(requested.length === 2, "fetch was called once per opened file");
+  assert(T.state.rootIds.length === 2, "both files ended up in the same tree, got " + T.state.rootIds.length);
+  const names = T.state.rootIds.map(id => T.state.nodes[id].name).sort();
+  assert(names[0] === "first.log" && names[1] === "second.log", "both real file names are present, got " + names.join(", "));
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -8137,6 +8183,20 @@ process.exit(failed ? 1 : 0);
               (network/CORS). The file:// guard (skips the fetch attempt
               entirely with a dedicated message) is NOT covered here — see
               the comment right after 66c and tests/README.md "Known gaps".
+   Group 67  — this session (2026-08-20), person-reported (Windows Electron
+              desktop build): a file opened after the first one spawned a
+              whole new app window instead of loading into the one already
+              open, and the first file's tree entry showed the opaque
+              numeric id ("1") instead of its real name. Fixed by exposing
+              loadFromUrlParam's fetch-and-add body as window.philoggLoadUrl
+              (so desktop/main.js can call it on an existing window via
+              executeJavaScript instead of always creating a new one) and by
+              having main.js's philogg://local/ URL carry the real basename
+              as its last path segment. Covers the renderer-side half:
+              philoggLoadUrl is exposed and repeated calls accumulate files
+              in the same tree rather than replacing them. desktop/main.js's
+              own Electron-API changes (window reuse, URL construction)
+              aren't reachable from this jsdom suite.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

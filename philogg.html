@@ -162,7 +162,7 @@
     width:270px; flex:0 0 auto;
     background:var(--bg-panel);
     border-right:1px solid var(--border);
-    display:flex; flex-direction:column; min-height:0;
+    display:flex; flex-direction:column; min-height:0; overflow-y:auto;
   }
   /* Drag handle between the sidebar and the content area, same mechanism as
      #detailResizer below (drag to resize, accent-colored on hover/drag). */
@@ -174,7 +174,7 @@
     background:transparent; transition:background .12s;
   }
   #sidebarResizer:hover::after, #sidebarResizer.dragging::after{ background:var(--accent); }
-  #tree{flex:1 1 auto; overflow-y:auto; padding:8px 0;}
+  #tree{flex:0 0 auto; padding:8px 0;}
 
   /* Folder watch (FEATURE_BACKLOG.md "Folder watch + lazy loading"): a
      watched folder's section sits above #tree, showing its name with a
@@ -8554,19 +8554,21 @@ async function loadFileDescriptors(descs) {
   }
 }
 
-// Deep-link loading: philogg.html?url=<encoded-url> fetches and opens a log
-// at boot, straight into addFile (text already fully in memory, same as a
-// session-cache restore). Two consumers: a CI/report link to a log
-// artifact on a webserver, and the desktop wrapper (see desktop/), which
-// serves a local file through a loopback URL so it can reuse this same
-// path instead of a separate content-injection mechanism.
+// Deep-link loading: fetches a log from `url` and opens it straight into
+// addFile (text already fully in memory, same as a session-cache restore).
+// loadFromUrlParam (below) drives this from philogg.html?url=<encoded-url>
+// at boot — a CI/report link to a log artifact on a webserver, or the
+// desktop wrapper's first file (see desktop/), which serves a local file
+// through a loopback URL so it can reuse this same path instead of a
+// separate content-injection mechanism. The desktop wrapper also calls
+// this directly (as window.philoggLoadUrl, below) for any file opened
+// AFTER boot, so it lands in the already-running window's tree instead of
+// spawning a new one.
 // Requires philogg.html itself to be served over http(s) — a file:// page
 // cannot fetch cross-origin (or even same-origin file://) resources at all,
 // so opening philogg.html directly as a local file with ?url= set can only
 // ever fail; that case gets a specific message instead of a raw fetch error.
-async function loadFromUrlParam() {
-  const url = new URLSearchParams(location.search).get("url");
-  if (!url) return;
+async function loadUrlIntoTree(url) {
   if (location.protocol === "file:") {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
     return;
@@ -8591,6 +8593,18 @@ async function loadFromUrlParam() {
   await addFile(name, text);
   render();
 }
+
+async function loadFromUrlParam() {
+  const url = new URLSearchParams(location.search).get("url");
+  if (!url) return;
+  await loadUrlIntoTree(url);
+}
+
+// Called by the desktop wrapper (see desktop/main.js "second-instance"/
+// "open-file") to hand an already-running window a file opened after boot —
+// e.g. a second file-association double-click — instead of spawning a new
+// window for it. Not used by the web build.
+window.philoggLoadUrl = loadUrlIntoTree;
 
 let dragCounter = 0;
 const dropOverlay = el("#dropOverlay");
