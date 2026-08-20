@@ -1,5 +1,15 @@
 appId: com.kleinphilipp.philogg
 productName: PhiLogg
+# Installer filenames use the commit short-SHA instead of package.json's
+# own "version" (kept as a fixed placeholder — electron-builder expects
+# real semver there, which a git SHA isn't) so the filename matches the
+# in-app version stamp (PHILOGG_VERSION, see desktop-release.yml's "Stamp
+# version" step) — same short-SHA scheme release.yml already uses for the
+# plain philogg.html tester build. desktop-release.yml always sets
+# PHILOGG_SHA before building; a manual local `npm run build` (see
+# desktop/README.md) needs it set by hand or the filename is left with a
+# blank in it.
+artifactName: "${productName}-${env.PHILOGG_SHA}.${ext}"
 directories:
   buildResources: build
 files:

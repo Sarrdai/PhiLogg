@@ -80,8 +80,25 @@ jobs:
         working-directory: desktop
         run: npm install
 
+      # Same short-SHA stamp release.yml uses for the plain philogg.html
+      # tester build (see that workflow's own "Stamp version" step) — never
+      # committed back, just the checked-out copy electron-builder's
+      # extraResources packages a moment later in "Build installer".
+      - name: Stamp version
+        id: stamp
+        shell: bash
+        run: |
+          SHORT_SHA="${{ needs.prepare.outputs.tag }}"
+          SHORT_SHA="${SHORT_SHA#desktop-}"
+          sed -i.bak "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
+          rm -f philogg.html.bak
+          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
       - name: Build installer
         working-directory: desktop
+        env:
+          PHILOGG_SHA: ${{ steps.stamp.outputs.short_sha }}
         run: npm run build
 
       - name: Upload installer(s)
