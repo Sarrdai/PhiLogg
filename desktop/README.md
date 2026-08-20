@@ -10,11 +10,15 @@ was built from for the full design rationale.
 
 ## Status
 
-**Scaffolded, `.github/workflows/desktop-release.yml` has run once** (see
-"Adding an app icon" below for what that run found). Still not run/tested
-interactively on any machine — no display server here for a real
-`BrowserWindow`, so `npm start` and the file-association flow are unverified.
-Before relying on this:
+**Run interactively on real Windows (2026-08-20)** — file associations and
+double-click file opening both work; that run also surfaced and fixed three
+bugs (opened files named after their internal id instead of their real
+filename; a second file opening a whole new window instead of joining the
+existing one — see `PROJECT.md` → "Desktop wrapper" changelog for both) plus
+four earlier frameless-window bugs (also fixed, same section). Not yet run
+interactively on macOS/Linux — this dev environment still has no display
+server for a real `BrowserWindow` there. Before relying on this on a new
+platform:
 
 1. `cd desktop && npm install` on a real machine.
 2. `npm start` — confirms the window opens and loads `philogg.html`
@@ -22,7 +26,8 @@ Before relying on this:
    `main.js`'s top comment for why).
 3. Open a `.log` file via a command-line argument
    (`electron . /path/to/some.log` in dev, or the packaged binary once
-   built) and confirm it loads through the `philogg://local/<id>` route.
+   built) and confirm it loads through the `philogg://local/<id>/<name>`
+   route, named after its real filename.
 4. `npm run build` (electron-builder) — produces an installer for
    whatever platform you're building on. Cross-compiling a signed
    Windows/macOS installer from Linux CI needs extra setup (signing
