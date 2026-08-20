@@ -1,19 +1,20 @@
 # PhiLogg desktop wrapper
 
 A thin Electron shell around the unmodified `../philogg.html` — adds `.log`
-file associations and CLI-argument file opening on Windows/Linux/macOS.
-Separate, optional deliverable: doesn't touch `philogg.html` or its own
-release path (`.github/workflows/release.yml`) at all. See `PROJECT.md`
-→ "Deep-link loading (`?url=`)" and the plan this was built from for the
-full design rationale.
+file associations, CLI-argument file opening, and a frameless window with
+integrated close/minimize/maximize controls (see "Frameless window" below)
+on Windows/Linux/macOS. Separate, optional deliverable: doesn't touch
+`philogg.html` or its own release path (`.github/workflows/release.yml`)
+at all. See `PROJECT.md` → "Deep-link loading (`?url=`)" and the plan this
+was built from for the full design rationale.
 
 ## Status
 
-**Scaffolded, not built or run anywhere yet.** This container has no
-display server (a real `BrowserWindow` needs one) and no way to test
-platform-specific installers/file-association behavior across all three
-OSes, so `npm install` was deliberately not run here. Before relying on
-this:
+**Scaffolded, `.github/workflows/desktop-release.yml` has run once** (see
+"Adding an app icon" below for what that run found). Still not run/tested
+interactively on any machine — no display server here for a real
+`BrowserWindow`, so `npm start` and the file-association flow are unverified.
+Before relying on this:
 
 1. `cd desktop && npm install` on a real machine.
 2. `npm start` — confirms the window opens and loads `philogg.html`
@@ -26,8 +27,74 @@ this:
    whatever platform you're building on. Cross-compiling a signed
    Windows/macOS installer from Linux CI needs extra setup (signing
    certs, `electron-builder`'s own cross-build docs) not covered here.
-5. Add real icons (`build/icons/README.md`) before a release build —
-   electron-builder uses its own default icon until then.
+   Set `PHILOGG_SHA` first (e.g. `PHILOGG_SHA=$(git rev-parse --short
+   HEAD) npm run build`) or the installer filename is left with a blank
+   where the version normally goes — see "Version stamp" below.
+5. Add real icons before a release build — see "Adding an app icon" below.
+6. Confirm the frameless window (see "Frameless window" below) actually
+   works: the window is draggable by its header's empty space, every
+   header button (Session…, Open…, theme toggle, …) is still clickable,
+   and the close/minimize/maximize controls in the top-right are present
+   and functional — none of this has run on a real display yet.
+
+## Frameless window
+
+`main.js` creates the `BrowserWindow` without the native OS frame or the
+default File/Edit/View/Window/Help menu — `philogg.html`'s own `#toolbar`
+is the only header. Windows/Linux use `titleBarStyle: "hidden"` +
+`titleBarOverlay` (Electron's Window Controls Overlay), which draws
+native-looking minimize/maximize/close buttons top-right without any
+custom HTML; macOS uses `titleBarStyle: "hiddenInset"`, which keeps the
+native traffic-light buttons at their normal top-left position rather than
+moving them to match Windows — relocating a Mac app's own window controls
+would be the actually-jarring choice there.
+
+A frameless window has no title bar left to drag by default, so `main.js`
+injects a small stylesheet at runtime (`insertCSS`, never touching
+`philogg.html` on disk) making `#toolbar` draggable and all of its
+buttons/inputs `no-drag` again, plus — Windows/Linux only — right padding
+via the `titlebar-area-*` CSS environment variables Chromium exposes for
+exactly this, so `#toolbar`'s own rightmost button doesn't sit under the
+native overlay buttons. The overlay's colors follow `#btnTheme`'s
+light/dark toggle live too — `main.js` polls the renderer's own
+`data-theme` attribute (~1x/second, no preload/IPC bridge needed — see
+"Why no preload.js" below) and calls `win.setTitleBarOverlay()` on change.
+`TITLEBAR_HEIGHT` in `main.js` is 1px shorter than `#toolbar`'s own 50px so
+its `border-bottom` isn't occluded by the overlay buttons. See the comment
+above `FRAMELESS_CSS` in `main.js` for the full mechanism, including why
+an earlier version's JS-computed padding (measuring
+`navigator.windowControlsOverlay`'s rect instead of using `env()`) went
+stale across maximize/restore/fullscreen — reported after the first real
+Windows run, fixed the same session, not yet re-verified live.
+
+## Version stamp
+
+Matches `release.yml`'s scheme for the plain `philogg.html` tester build:
+`desktop-release.yml`'s `Stamp version` step rewrites the checked-out
+copy's `PHILOGG_VERSION` (`"dev"` in source, never committed back) to the
+commit's short SHA before `npm run build` packages it, so the in-app
+corner text/License panel show the real build instead of "dev". The same
+SHA becomes the installer's own filename via `electron-builder.yml`'s
+`artifactName` (`PhiLogg-<sha>.exe`/`.dmg`/`.AppImage`, replacing
+`package.json`'s placeholder `"1.0.0"` there — `package.json`'s own
+`version` field is left alone since electron-builder expects real semver
+there, which a git SHA isn't).
+
+## Adding an app icon
+
+No app icon exists yet — `electron-builder.yml` has no `icon:` lines and
+`build/` currently has no `icons/` subdirectory. **Keep it that way until
+real artwork exists**: an earlier version of this scaffold shipped an empty
+placeholder `build/icons/` directory, and electron-builder's Linux target
+(`app-builder`) hard-failed the CI build with `icon directory ... doesn't
+contain icons` / `ERR_ELECTRON_BUILDER_CANNOT_EXECUTE` — the directory's
+mere presence is taken as "icons belong here", unlike Windows/macOS which
+silently fall back to Electron's default icon when nothing is configured.
+
+To add a real icon later: drop a single square `build/icon.png` (1024×1024
+recommended; electron-builder derives `.ico`/`.icns` from it), or a
+multi-resolution `build/icons/16x16.png`, `32x32.png`, ... set, then add an
+`icon:` line under the matching platform block in `electron-builder.yml`.
 
 ## Why no `preload.js` / IPC bridge
 

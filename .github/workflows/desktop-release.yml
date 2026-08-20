@@ -4,14 +4,21 @@ name: Build desktop release
 # (release.yml) — philogg.html itself is untouched by this. Builds the
 # Electron wrapper in desktop/ per platform via electron-builder and
 # publishes the installers as GitHub Release assets.
-#
-# UNTESTED as of when this workflow was written: desktop/README.md's own
-# build steps had not been run anywhere yet (no display server / multi-OS
-# setup available while scaffolding desktop/). Treat the first real run of
-# this workflow as that verification, not as a known-good pipeline — check
-# desktop/README.md if it fails.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      build_windows:
+        description: Build Windows (.exe)
+        type: boolean
+        default: true
+      build_mac:
+        description: Build macOS (.dmg)
+        type: boolean
+        default: false
+      build_linux:
+        description: Build Linux (.AppImage)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -24,12 +31,28 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      os_list: ${{ steps.os_list.outputs.list }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Compute release tag
         id: tag
         run: echo "tag=desktop-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      # The `matrix` context isn't available in a job-level `if:` (only in
+      # `runs-on`/`env` and inside steps — an earlier version of this
+      # workflow tried `if: matrix.os == ... && inputs.build_windows` on the
+      # `build` job below and GitHub rejected the whole file at parse time,
+      # 0 jobs created). So the checkboxes are turned into the `build`
+      # job's actual matrix list here instead of filtering a fixed one.
+      - name: Compute selected OS matrix
+        id: os_list
+        run: |
+          list="[]"
+          [ "${{ inputs.build_windows }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["windows-latest"]')
+          [ "${{ inputs.build_mac }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["macos-latest"]')
+          [ "${{ inputs.build_linux }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["ubuntu-latest"]')
+          echo "list=$list" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         env:
@@ -42,8 +65,9 @@ jobs:
   build:
     needs: prepare
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ fromJSON(needs.prepare.outputs.os_list) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -56,15 +80,52 @@ jobs:
         working-directory: desktop
         run: npm install
 
+      # Same short-SHA stamp release.yml uses for the plain philogg.html
+      # tester build (see that workflow's own "Stamp version" step) — never
+      # committed back, just the checked-out copy electron-builder's
+      # extraResources packages a moment later in "Build installer".
+      - name: Stamp version
+        id: stamp
+        shell: bash
+        run: |
+          SHORT_SHA="${{ needs.prepare.outputs.tag }}"
+          SHORT_SHA="${SHORT_SHA#desktop-}"
+          sed -i.bak "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
+          rm -f philogg.html.bak
+          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
       - name: Build installer
         working-directory: desktop
+        env:
+          PHILOGG_SHA: ${{ steps.stamp.outputs.short_sha }}
         run: npm run build
 
       - name: Upload installer(s)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
+        # windows-latest/macos-latest have both failed here before with no
+        # error output at all (build succeeded, `gh release upload` just
+        # exited 1) — matches a transient upload hiccup, not a script bug,
+        # so retry with backoff instead of failing the whole job on the
+        # first blip. `-e` won't abort the loop early: the failing `gh`
+        # call sits inside an `if`, which is exempt from errexit.
         run: |
+          upload_with_retry() {
+            local f="$1" attempt
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "${{ needs.prepare.outputs.tag }}" "$f" --clobber; then
+                return 0
+              fi
+              echo "::warning::upload of $f failed (attempt $attempt/5), retrying in $((attempt * 5))s"
+              sleep $((attempt * 5))
+            done
+            echo "::error::giving up uploading $f after 5 attempts"
+            return 1
+          }
           for f in desktop/dist/*.exe desktop/dist/*.dmg desktop/dist/*.AppImage; do
-            [ -f "$f" ] && gh release upload "${{ needs.prepare.outputs.tag }}" "$f" --clobber
+            if [ -f "$f" ]; then
+              upload_with_retry "$f"
+            fi
           done
