@@ -104,6 +104,8 @@
     color:#0b1016; font-weight:800; font-size:12px;
   }
   .brand-name{font-weight:650; letter-spacing:.2px; font-size:14.5px;}
+  /* Short commit-hash build tag next to the product name — see PHILOGG_VERSION. */
+  .brand-version{margin-left:-5px; font-size:10px; font-weight:500; color:var(--text-tertiary); letter-spacing:.2px;}
   .toolbar-right{display:flex; align-items:center; gap:16px;}
   .status-text{color:var(--text-tertiary); font-size:11.5px; font-variant-numeric:tabular-nums;}
   #btnOpen{
@@ -1478,6 +1480,27 @@
   }
   #shortcutsPanel.hidden{display:none;}
 
+  /* ---------- License popup (#btnLicense) — same fixed-position/toggle
+     pattern as #shortcutsPanel, sitting right beside it. ---------- */
+  #licensePanel{
+    position:fixed; z-index:60; width:380px; max-height:min(520px, 70vh);
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
+    box-shadow:0 16px 36px rgba(0,0,0,.5); display:flex; flex-direction:column;
+  }
+  #licensePanel.hidden{display:none;}
+  #licenseContent{
+    flex:1 1 auto; overflow-y:auto; padding:10px 14px;
+    color:var(--text-tertiary); font-size:11px; line-height:1.6;
+  }
+  #licenseContent p{margin:0 0 10px;}
+  #licenseContent .license-holder{color:var(--text-secondary); font-weight:600;}
+  #licenseContent ol{margin:0 0 10px; padding-left:18px;}
+  #licenseContent li{margin:0 0 6px;}
+  .license-version{
+    padding-top:8px; border-top:1px solid var(--border-soft);
+    color:var(--text-tertiary); font-size:10.5px; font-family:var(--font-mono);
+  }
+
   /* ---------- Drop overlay ---------- */
   #dropOverlay{
     position:fixed; inset:0; z-index:60;
@@ -1540,6 +1563,7 @@
     <div class="brand">
       <span class="brand-mark">L</span>
       <span class="brand-name">PhiLogg</span>
+      <span class="brand-version" id="brandVersion"></span>
     </div>
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
@@ -1580,6 +1604,7 @@
           Folder…
         </div>
       </div>
+      <button id="btnLicense" class="toolbar-icon-btn" title="License"></button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
@@ -2103,10 +2128,33 @@
     </div>
   </div>
 
+  <div id="licensePanel" class="hidden">
+    <div class="bookmarks-panel-title">License</div>
+    <div id="licenseContent">
+      <p class="license-holder">Copyright © Philipp Klein<br>philogg@kleinphilipp.de</p>
+      <p>Alle Rechte vorbehalten. Diese Software ("PhiLogg") wird ausschließlich zum Zweck des Testens und der persönlichen Nutzung im Rahmen einer eingeschränkten Testphase zur Verfügung gestellt. Mit dem Öffnen oder Verwenden der Software werden diese Bedingungen anerkannt.</p>
+      <ol>
+        <li><strong>Nutzungsrecht:</strong> Es wird ein einfaches, nicht übertragbares und jederzeit widerrufliches Recht eingeräumt, diese Software für eigene Testzwecke zu nutzen.</li>
+        <li><strong>Keine Weitergabe:</strong> Die Weitergabe der Software oder von Kopien davon an Dritte — entgeltlich oder unentgeltlich — ist ohne vorherige schriftliche Zustimmung des Rechteinhabers nicht gestattet.</li>
+        <li><strong>Keine Veränderung:</strong> Eine Veränderung, Bearbeitung, Dekompilierung oder Erstellung abgeleiteter Werke der Software ist nicht gestattet, soweit dies nicht durch zwingendes Recht ausdrücklich erlaubt ist.</li>
+        <li><strong>Keine Gewährleistung:</strong> Die Software wird "wie besehen" ohne jegliche Gewährleistung zur Verfügung gestellt. Der Rechteinhaber haftet nicht für Schäden aus der Nutzung der Software, soweit gesetzlich zulässig.</li>
+        <li><strong>Rückruf:</strong> Der Rechteinhaber kann die Nutzung jederzeit ohne Angabe von Gründen untersagen.</li>
+      </ol>
+      <div class="license-version" id="licenseVersion"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
 "use strict";
+
+// Build identifier shown next to the product name and in the License panel —
+// the short hash of the commit this file was built from. Stays "dev" for a
+// plain checkout/local edit; stamped to a real short SHA only by the
+// "Build tester release" GitHub Action (.github/workflows/release.yml), which
+// replaces this exact literal via sed and never touches source control.
+const PHILOGG_VERSION = "dev";
 
 /* ===================== Icons ===================== */
 const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>';
@@ -2138,6 +2186,9 @@ const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" st
 const ICON_MULTILINE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
 const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="1.3"/><path d="M6 2.7v10.6M10.3 2.7v10.6"/></svg>';
 const ICON_HELP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M6.1 6.3a2 2 0 1 1 2.9 1.8c-.6.3-1 .8-1 1.5v.3"/><circle cx="8" cy="11.6" r="0.75" fill="currentColor" stroke="none"/></svg>';
+// Scales-of-justice glyph for the License popup (#btnLicense) — same stroke
+// weight/linecap treatment as the other header icons.
+const ICON_LICENSE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v11.5"/><path d="M4.5 3.6h7"/><path d="M2 6.4 4.3 3.6 6.6 6.4a2.3 2.3 0 0 1-4.6 0Z"/><path d="M9.4 6.4l2.3-2.8 2.3 2.8a2.3 2.3 0 0 1-4.6 0Z"/><path d="M5.3 13.5h5.4"/></svg>';
 // Pencil icon for the tree context menu's "Edit filter…" action (F2 or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
@@ -3918,6 +3969,8 @@ const bookmarksPanelTitle = el("#bookmarksPanelTitle");
 const bookmarksList = el("#bookmarksList");
 const btnShortcuts = el("#btnShortcuts");
 const shortcutsPanel = el("#shortcutsPanel");
+const btnLicense = el("#btnLicense");
+const licensePanel = el("#licensePanel");
 const btnUndo = el("#btnUndo");
 const btnRedo = el("#btnRedo");
 const extractPatternEl = el("#extractPatternView");
@@ -8236,6 +8289,20 @@ btnShortcuts.addEventListener("click", () => {
   else closeShortcutsPanel();
 });
 
+// License popup: same fixed-position/toggle pattern, right beside the
+// keyboard-shortcuts popup above.
+function closeLicensePanel() { licensePanel.classList.add("hidden"); }
+function openLicensePanel() {
+  const rect = btnLicense.getBoundingClientRect();
+  licensePanel.style.top = (rect.bottom + 6) + "px";
+  licensePanel.style.left = Math.min(rect.left, window.innerWidth - 396) + "px";
+  licensePanel.classList.remove("hidden");
+}
+btnLicense.addEventListener("click", () => {
+  if (licensePanel.classList.contains("hidden")) openLicensePanel();
+  else closeLicensePanel();
+});
+
 function renderTable() {
   const hasFiles = state.rootIds.length > 0;
   tableWrap.style.display = hasFiles ? "flex" : "none";
@@ -10528,6 +10595,7 @@ document.addEventListener("click", ev => {
   if (!bookmarksPanel.contains(ev.target) && !btnBookmarks.contains(ev.target)) closeBookmarksPanel();
   if (!columnsPanel.contains(ev.target) && !btnColumns.contains(ev.target)) closeColumnsPanel();
   if (!shortcutsPanel.contains(ev.target) && !btnShortcuts.contains(ev.target)) closeShortcutsPanel();
+  if (!licensePanel.contains(ev.target) && !btnLicense.contains(ev.target)) closeLicensePanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
 });
 
@@ -10557,6 +10625,7 @@ document.addEventListener("keydown", ev => {
     closeFilterLibrarySaveDialog();
     closeFilterLibraryDialog();
     closeShortcutsPanel();
+    closeLicensePanel();
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     let needsRender = false;
     if (state.clipboard) { state.clipboard = null; needsRender = true; }
@@ -11910,6 +11979,9 @@ btnPinBookmarks.innerHTML = ICON_PIN;
 btnMultilineMsg.innerHTML = ICON_MULTILINE;
 btnColumns.innerHTML = ICON_COLUMNS;
 btnShortcuts.innerHTML = ICON_HELP;
+btnLicense.innerHTML = ICON_LICENSE;
+el("#brandVersion").textContent = PHILOGG_VERSION;
+el("#licenseVersion").textContent = "Version: " + PHILOGG_VERSION;
 btnUndo.addEventListener("click", undo);
 btnRedo.addEventListener("click", redo);
 updateUndoRedoButtons();
