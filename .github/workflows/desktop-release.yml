@@ -59,7 +59,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
+        # windows-latest/macos-latest have both failed here before with no
+        # error output at all (build succeeded, `gh release upload` just
+        # exited 1) — matches a transient upload hiccup, not a script bug,
+        # so retry with backoff instead of failing the whole job on the
+        # first blip. `-e` won't abort the loop early: the failing `gh`
+        # call sits inside an `if`, which is exempt from errexit.
         run: |
+          upload_with_retry() {
+            local f="$1" attempt
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "${{ needs.prepare.outputs.tag }}" "$f" --clobber; then
+                return 0
+              fi
+              echo "::warning::upload of $f failed (attempt $attempt/5), retrying in $((attempt * 5))s"
+              sleep $((attempt * 5))
+            done
+            echo "::error::giving up uploading $f after 5 attempts"
+            return 1
+          }
           for f in desktop/dist/*.exe desktop/dist/*.dmg desktop/dist/*.AppImage; do
-            [ -f "$f" ] && gh release upload "${{ needs.prepare.outputs.tag }}" "$f" --clobber
+            if [ -f "$f" ]; then
+              upload_with_retry "$f"
+            fi
           done
