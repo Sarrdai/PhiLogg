@@ -1,11 +1,12 @@
 # PhiLogg desktop wrapper
 
 A thin Electron shell around the unmodified `../philogg.html` — adds `.log`
-file associations and CLI-argument file opening on Windows/Linux/macOS.
-Separate, optional deliverable: doesn't touch `philogg.html` or its own
-release path (`.github/workflows/release.yml`) at all. See `PROJECT.md`
-→ "Deep-link loading (`?url=`)" and the plan this was built from for the
-full design rationale.
+file associations, CLI-argument file opening, and a frameless window with
+integrated close/minimize/maximize controls (see "Frameless window" below)
+on Windows/Linux/macOS. Separate, optional deliverable: doesn't touch
+`philogg.html` or its own release path (`.github/workflows/release.yml`)
+at all. See `PROJECT.md` → "Deep-link loading (`?url=`)" and the plan this
+was built from for the full design rationale.
 
 ## Status
 
@@ -27,6 +28,35 @@ Before relying on this:
    Windows/macOS installer from Linux CI needs extra setup (signing
    certs, `electron-builder`'s own cross-build docs) not covered here.
 5. Add real icons before a release build — see "Adding an app icon" below.
+6. Confirm the frameless window (see "Frameless window" below) actually
+   works: the window is draggable by its header's empty space, every
+   header button (Session…, Open…, theme toggle, …) is still clickable,
+   and the close/minimize/maximize controls in the top-right are present
+   and functional — none of this has run on a real display yet.
+
+## Frameless window
+
+`main.js` creates the `BrowserWindow` without the native OS frame or the
+default File/Edit/View/Window/Help menu — `philogg.html`'s own `#toolbar`
+is the only header. Windows/Linux use `titleBarStyle: "hidden"` +
+`titleBarOverlay` (Electron's Window Controls Overlay), which draws
+native-looking minimize/maximize/close buttons top-right without any
+custom HTML; macOS uses `titleBarStyle: "hiddenInset"`, which keeps the
+native traffic-light buttons at their normal top-left position rather than
+moving them to match Windows — relocating a Mac app's own window controls
+would be the actually-jarring choice there.
+
+A frameless window has no title bar left to drag by default, so `main.js`
+injects a small stylesheet at runtime (`insertCSS`/`executeJavaScript`,
+never touching `philogg.html` on disk) making `#toolbar` draggable and all
+of its buttons/inputs `no-drag` again, plus — Windows/Linux only — right
+padding sized from the live `navigator.windowControlsOverlay` rect so
+`#toolbar`'s own rightmost button doesn't sit under the native overlay
+buttons. See the comment above `FRAMELESS_CSS` in `main.js` for the full
+mechanism and its one known gap: the overlay button colors are fixed to
+the dark theme at window-creation time and don't follow `#btnTheme`'s
+light/dark toggle live (would need a preload/IPC bridge — see "Why no
+preload.js" below).
 
 ## Adding an app icon
 

@@ -10,7 +10,7 @@
 // from a file: page (matching the real browser restriction that guard
 // exists for) — using a privileged custom scheme instead sidesteps that
 // without weakening the guard itself.
-const { app, BrowserWindow, protocol } = require("electron");
+const { app, BrowserWindow, protocol, Menu } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -18,9 +18,56 @@ protocol.registerSchemesAsPrivileged([
   { scheme: "philogg", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 
+// No File/Edit/View/Window/Help bar — this is a frameless window (see
+// createWindow below), that default menu has no OS chrome to live in
+// anyway, and Alt would otherwise still summon it.
+Menu.setApplicationMenu(null);
+
 const PHILOGG_HTML_PATH = app.isPackaged
   ? path.join(process.resourcesPath, "philogg.html")
   : path.join(__dirname, "..", "philogg.html");
+
+const isMac = process.platform === "darwin";
+
+// #toolbar (philogg.html's own 50px header) is what a user actually grabs
+// to move the window now that there's no native title bar — but marking it
+// `-webkit-app-region: drag` also swallows clicks on everything inside it,
+// so every interactive child gets `no-drag` back. Injected at runtime via
+// webContents.insertCSS()/executeJavaScript() instead of editing
+// philogg.html itself, matching this wrapper's "unmodified philogg.html"
+// rule (see PROJECT.md "Desktop wrapper").
+//
+// Windows/Linux additionally reserve real estate on the right so the
+// header's own rightmost button (#btnLicense) doesn't sit under the native
+// Window Controls Overlay buttons electron-builder draws there (see
+// titleBarOverlay below) — sized from the live overlay rect via the
+// `navigator.windowControlsOverlay` API so it tracks DPI/scale changes
+// instead of a guessed constant. macOS traffic lights sit top-left instead
+// (native inset position, not moved to match "top-right" — flipping a Mac
+// app's own window controls to the right would be the actually-jarring
+// choice for a Mac user), so `.brand` gets a static left inset instead.
+//
+// Doesn't track the light/dark theme toggle (#btnTheme) — the overlay
+// button colors are fixed at window-creation time to match the default
+// dark toolbar. Following theme switches live would need a preload/IPC
+// bridge, which this wrapper deliberately doesn't have (see top comment).
+const FRAMELESS_CSS = `
+  #toolbar { -webkit-app-region: drag; }
+  #toolbar button, #toolbar input, #toolbar .ctx-item { -webkit-app-region: no-drag; }
+  ${isMac ? `.brand { padding-left: 72px; }` : `.toolbar-right { padding-right: var(--wco-inset, 0px); }`}
+`;
+
+const FRAMELESS_JS = isMac ? null : `
+  (function () {
+    if (!navigator.windowControlsOverlay) return;
+    const update = () => {
+      const rect = navigator.windowControlsOverlay.getTitlebarAreaRect();
+      document.documentElement.style.setProperty("--wco-inset", Math.max(0, window.innerWidth - rect.width) + "px");
+    };
+    navigator.windowControlsOverlay.addEventListener("geometrychange", update);
+    update();
+  })();
+`;
 
 // id -> absolute local path, served at philogg://local/<id>. Populated only
 // from paths the OS itself handed us (argv / file-association / open-file),
@@ -56,7 +103,19 @@ function registerProtocol() {
 }
 
 function createWindow(filePath) {
-  const win = new BrowserWindow({ width: 1400, height: 900, webPreferences: { sandbox: true } });
+  const win = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    backgroundColor: "#151924", // matches #toolbar/#bg-panel's dark-theme default, avoids a white flash while loading
+    ...(isMac
+      ? { titleBarStyle: "hiddenInset" }
+      : { titleBarStyle: "hidden", titleBarOverlay: { color: "#151924", symbolColor: "#8a92a8", height: 50 } }),
+    webPreferences: { sandbox: true },
+  });
+  win.webContents.on("dom-ready", () => {
+    win.webContents.insertCSS(FRAMELESS_CSS);
+    if (FRAMELESS_JS) win.webContents.executeJavaScript(FRAMELESS_JS);
+  });
   if (filePath) {
     const id = registerLocalFile(filePath);
     win.loadURL(`philogg://app/philogg.html?url=${encodeURIComponent(`philogg://local/${id}`)}`);
