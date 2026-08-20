@@ -1070,7 +1070,7 @@ await withApp(async (w, d, T) => {
   // (2) Merged file entry-sharing survives deleting one of the source files
   const fa = await w.addFile("src-a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("src-b.log", makeLog(0, 5, { msgPrefix: "other" }), () => {});
-  const merged = w.mergeFiles([fa.id, fb.id]);
+  const merged = await w.mergeFiles([fa.id, fb.id]);
   assert(merged.entries.length === 10, "merge combines both source files' entries");
   const sharedEntryId = fa.entries[0].id;
   assert(T.entryIndex[sharedEntryId] === fa.entries[0], "shared entry present in entryIndex before any delete");
@@ -2860,7 +2860,7 @@ await withApp(async (w, d, T) => {
   // --- Merged files are never written to history, even once they have filters ---
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(50, 5), () => {});
-  const merged = w.mergeFiles([fa.id, fb.id]);
+  const merged = await w.mergeFiles([fa.id, fb.id]);
   w.createFilterNode(merged.id, "text", "message 1");
   w.render();
   await w.persistFileHistoryNow();
@@ -7209,6 +7209,165 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 68 — Multi-file load: grayed queued placeholders + merge-on-load
+   prompt
+   Origin: this session (2026-08-20), person-requested (German): dropping/
+   picking several log files at once used to reveal each file's tree row
+   only once its own turn to load arrived — the rest of the batch was
+   invisible until then. Now every file in the batch gets a grayed
+   placeholder row (createQueuedFileNode/renderQueuedFileRow, CSS
+   .tree-row-queued) inserted at its eventual tree position immediately,
+   turning into a normal, actively-loading row (activateQueuedFileNode) one
+   at a time as loadFileDescriptors works through the batch — same idea as
+   folder watch's grayed .folder-watch-file rows, but living directly in the
+   main tree. Second request: loading 2+ files at once now asks upfront
+   (confirmMergeOnLoad, #mergeLoadDialog) whether to merge them into one
+   file once loaded — Enter answers Yes (the Merge button is focused on
+   open, so this is the browser's own default button-activation, no custom
+   keydown code), Escape answers No via the existing global Escape handler.
+   Along the way, a single file's read/parse failure inside a batch no
+   longer aborts the rest of the batch (each file's load is now individually
+   try/caught) — otherwise every queued placeholder after the failed one
+   would stay grayed forever.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("68a. Multi-file load: every file gets a grayed placeholder row immediately, in order, before any reading starts");
+  const fa = new w.File([makeLog(0, 3)], "a.log", { type: "text/plain" });
+  const fb = new w.File([makeLog(0, 3)], "b.log", { type: "text/plain" });
+  const fc = new w.File([makeLog(0, 3)], "c.log", { type: "text/plain" });
+
+  const donePromise = w.loadFileDescriptors([
+    { file: fa, handle: null }, { file: fb, handle: null }, { file: fc, handle: null },
+  ]);
+  // Synchronous prefix of loadFileDescriptors (queued-node creation + one
+  // render()) has already run by the time this line executes — the first
+  // await inside it (confirmMergeOnLoad's Promise) is what actually suspends,
+  // same technique Group 48b uses for the single-file loading row.
+  const queuedRows = [...d.querySelectorAll(".tree-row-queued .tree-label")].map(l => l.textContent);
+  assert(queuedRows.length === 3, "all 3 files get a grayed placeholder row immediately, got " + queuedRows.length);
+  assert(queuedRows.join(",") === "a.log,b.log,c.log", "placeholders appear in the order the files were passed in, got " + queuedRows.join(","));
+  assert(d.querySelectorAll(".tree-row").length === 0, "none of the 3 are real interactive rows yet — no reading has started");
+  assert(T.state.rootIds.length === 3, "each placeholder is already a real state.nodes/rootIds entry, just flagged queued");
+  assert(T.state.nodes[T.state.rootIds[0]].queued === true, "placeholder node carries the queued flag");
+
+  const mergeDialog = d.querySelector("#mergeLoadDialog");
+  assert(!mergeDialog.classList.contains("hidden"), "loading 3 files at once opens the merge-confirm dialog");
+  assert(d.activeElement && d.activeElement.id === "mergeLoadDialogYes", "the Merge button is focused on open, so Enter answers Yes via default button activation");
+
+  // Answer No (via Escape, the person-requested "Esc for No") and let the
+  // batch actually start loading.
+  fireKeydown(d, w, "Escape");
+  assert(mergeDialog.classList.contains("hidden"), "Escape closes the merge dialog");
+
+  await new Promise(r => setTimeout(r, 0)); // let the now-unblocked loop start its first iteration
+  const firstLabel = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "a.log");
+  assert(firstLabel !== undefined, "the first file's placeholder flips to a real, actively-loading row once its turn arrives");
+  assert(firstLabel.closest(".tree-row").querySelector(".tree-load-fill") !== null, "the now-loading first row carries the usual progress fill");
+  const stillQueued = [...d.querySelectorAll(".tree-row-queued .tree-label")].map(l => l.textContent);
+  assert(stillQueued.join(",") === "b.log,c.log", "the other two files stay grayed/queued while the first one is loading, got " + stillQueued.join(","));
+
+  await donePromise;
+  assert(T.state.rootIds.length === 3, "all 3 files ended up loaded");
+  assert(d.querySelectorAll(".tree-row-queued").length === 0, "no grayed placeholders remain once the whole batch has loaded");
+  assert(T.state.rootIds.every(id => !T.state.nodes[id].merged), "answering No means no merged file was created");
+});
+
+await withApp(async (w, d, T) => {
+  section("68b. Merge-on-load: answering Yes merges the batch into one file once loaded");
+  const fa = new w.File([makeLog(0, 4)], "x.log", { type: "text/plain" });
+  const fb = new w.File([makeLog(0, 4, { msgPrefix: "other" })], "y.log", { type: "text/plain" });
+
+  const donePromise = w.loadFileDescriptors([{ file: fa, handle: null }, { file: fb, handle: null }]);
+  const mergeDialog = d.querySelector("#mergeLoadDialog");
+  assert(!mergeDialog.classList.contains("hidden"), "loading 2 files at once also opens the merge-confirm dialog");
+  fireClick(d.querySelector("#mergeLoadDialogYes"), w);
+  assert(mergeDialog.classList.contains("hidden"), "clicking Merge closes the dialog");
+
+  await donePromise;
+  assert(T.state.rootIds.length === 3, "both source files plus one new merged file are in the tree (mergeFiles keeps sources, same as the manual bulk action)");
+  const merged = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.merged);
+  assert(merged !== undefined, "a merged file node was created after both files finished loading");
+  assert(merged.entries.length === 8, "the merged file's entries are the union of both source files, got " + merged.entries.length);
+});
+
+await withApp(async (w, d, T) => {
+  section("68c. A single file loaded on its own (no batch) skips the merge dialog entirely");
+  const fa = new w.File([makeLog(0, 3)], "solo.log", { type: "text/plain" });
+  await w.loadFileDescriptors([{ file: fa, handle: null }]);
+  assert(d.querySelector("#mergeLoadDialog").classList.contains("hidden"), "a single-file load never opens the merge dialog");
+  assert(T.state.rootIds.length === 1, "the one file loaded normally");
+});
+
+await withApp(async (w, d, T) => {
+  section("68d. One file failing inside a batch doesn't abort the rest");
+  const good = new w.File([makeLog(0, 3)], "good.log", { type: "text/plain" });
+  const bad = { name: "bad.log" }; // not a real Blob/File — FileReader.readAsText throws synchronously on it
+  const donePromise = w.loadFileDescriptors([{ file: bad, handle: null }, { file: good, handle: null }]);
+  fireKeydown(d, w, "Escape"); // answer the merge prompt (2 files queued) so the batch actually runs
+  await donePromise;
+  const names = T.state.rootIds.map(id => T.state.nodes[id].name);
+  assert(names.includes("good.log"), "the good file still loaded despite the bad one failing, got " + JSON.stringify(names));
+  assert(!names.includes("bad.log"), "the failed file's placeholder was removed, not left stuck");
+  assert(d.querySelector("#copyToast").textContent.includes("bad.log"), "a toast reports which file failed to load");
+});
+
+/* ============================================================
+   GROUP 69 — mergeFiles follows the same "create the row first, stream
+   progress onto it" pattern as loading a file
+   Origin: this session (2026-08-20), person-requested follow-up ("Für ein
+   File Merge folge der gleichen Logik. Lege den Eintrag zuerst an und Zeige
+   den Fortschritt des Merge an diesem Eintrag."): mergeFiles used to build
+   the whole merged entries array synchronously in one blocking call before
+   the node ever appeared in the tree. It's now async: the merged node is
+   inserted into state.nodes/rootIds immediately (empty, loadFraction 0,
+   already the active/interactive row via flushLoadRender — mirrors
+   createFileNode), then filled in over chunks (MERGE_CHUNK_ENTRIES) with
+   node.loadFraction/scheduleLoadRender driving the same .tree-load-fill
+   progress bar a real file load uses, before a final chronological sort and
+   flushLoadRender clear the fill. Both existing direct mergeFiles() callers
+   in this suite (Groups 10 and 30c) were updated to await it; Group 68b
+   already covers the merge-on-load dialog's own path through the new async
+   mergeFiles indirectly (loadFileDescriptors awaits it internally).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("69. mergeFiles: the merged row exists (grayed-progress, not grayed-placeholder) the instant merging starts, and stays correct once it finishes");
+  // fb's timestamps (baseSec 0) are earlier than fa's (baseSec 100) — proves
+  // the final sort actually reorders, not just concatenates in call order.
+  const fa = await w.addFile("late.log", makeLog(100, 5), () => {});
+  const fb = await w.addFile("early.log", makeLog(0, 5, { msgPrefix: "early" }), () => {});
+
+  const before = new Set(T.state.rootIds);
+  const donePromise = w.mergeFiles([fa.id, fb.id]);
+  // Synchronous prefix (node creation -> flushLoadRender) has already run by
+  // the time this line executes — the first await inside the copy loop is
+  // what actually suspends, same technique Group 48b uses for a real load.
+  const newId = T.state.rootIds.find(id => !before.has(id));
+  assert(newId, "the merged file is already a real root node the instant merging starts, before any chunk has finished copying");
+  const node = T.state.nodes[newId];
+  assert(node.merged === true, "the new node is flagged merged from creation, same as before this change");
+  assert(typeof node.loadFraction === "number", "the merged node carries a loadFraction while it's still being built");
+
+  let label = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "late.log + early.log");
+  assert(label !== undefined, "the merged file's row renders in the tree immediately, not just once merging finishes");
+  assert(label.closest(".tree-row").querySelector(".tree-load-fill") !== null, "the row carries the usual progress-fill bar while merging, same as a plain file load");
+  assert(d.querySelectorAll(".tree-row-queued").length === 0, "the merge uses the loading-progress row, not the grayed queued-placeholder row multi-file loads use");
+
+  await donePromise;
+  assert(typeof node.loadFraction !== "number", "loadFraction is cleared off the node once merging finishes");
+  assert(node.entries.length === 10, "merged entries combine both source files, got " + node.entries.length);
+  for (let i = 1; i < node.entries.length; i++) {
+    assert(node.entries[i].ts >= node.entries[i - 1].ts, "merged entries end up in chronological order (entry " + i + ")");
+  }
+  assert(node.entries[0].message.includes("early"), "the earlier-timestamped source file's entries sort to the front, not just appear in call order");
+  // flushLoadRender's final render() rebuilds #tree from scratch (renderTree
+  // tears down and recreates every row) — re-query instead of reusing the
+  // pre-await `label`, which is now a detached, stale DOM node.
+  label = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "late.log + early.log");
+  assert(label !== undefined, "the merged file still renders as a normal real tree row once merging finishes");
+  assert(label.closest(".tree-row").querySelector(".tree-load-fill") === null, "the progress fill is gone once merging finishes");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -8197,6 +8356,35 @@ process.exit(failed ? 1 : 0);
               in the same tree rather than replacing them. desktop/main.js's
               own Electron-API changes (window reuse, URL construction)
               aren't reachable from this jsdom suite.
+
+   Group 68  — this session (2026-08-20), person-requested (German): a
+              multi-file drop/pick only ever showed the file currently being
+              read, revealing the next one only once its turn arrived.
+              Fixed by createQueuedFileNode/renderQueuedFileRow (grayed
+              .tree-row-queued placeholders for the whole batch, inserted
+              up front) and activateQueuedFileNode (flips one into a real,
+              loading row per iteration). Also added: a merge-on-load
+              prompt (confirmMergeOnLoad/#mergeLoadDialog) when 2+ files
+              load at once, answerable via Enter (Yes, default-focused
+              button) or Escape (No, via the shared global handler); and
+              per-file try/catch in loadFileDescriptors so one failing file
+              no longer strands every later placeholder in the batch as
+              permanently grayed.
+
+   Group 69  — this session (2026-08-20), person-requested follow-up
+              ("Für ein File Merge folge der gleichen Logik. Lege den
+              Eintrag zuerst an und Zeige den Fortschritt des Merge an
+              diesem Eintrag."): mergeFiles is now async and follows the
+              exact same "insert the row first, stream progress onto it"
+              pattern real file loading uses (createFileNode/
+              loadOneFileIntoTree) — the merged node exists as a real,
+              interactive tree row (loadFraction 0, .tree-load-fill
+              visible) the instant merging starts, filled in over
+              MERGE_CHUNK_ENTRIES-sized chunks with a live progress bar,
+              then chronologically sorted and cleared to a normal row.
+              Both pre-existing direct mergeFiles() callers in this suite
+              (Groups 10 and 30c, originally synchronous) were updated to
+              await it.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
