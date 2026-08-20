@@ -162,7 +162,7 @@
     width:270px; flex:0 0 auto;
     background:var(--bg-panel);
     border-right:1px solid var(--border);
-    display:flex; flex-direction:column; min-height:0;
+    display:flex; flex-direction:column; min-height:0; overflow-y:auto;
   }
   /* Drag handle between the sidebar and the content area, same mechanism as
      #detailResizer below (drag to resize, accent-colored on hover/drag). */
@@ -174,7 +174,7 @@
     background:transparent; transition:background .12s;
   }
   #sidebarResizer:hover::after, #sidebarResizer.dragging::after{ background:var(--accent); }
-  #tree{flex:1 1 auto; min-height:0; overflow-y:auto; padding:8px 0;}
+  #tree{flex:0 0 auto; padding:8px 0;}
 
   /* Folder watch (FEATURE_BACKLOG.md "Folder watch + lazy loading"): a
      watched folder's section sits above #tree, showing its name with a
