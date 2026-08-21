@@ -1167,7 +1167,7 @@
   }
   #settingsDialog.hidden{display:none;}
   .settings-page-card{
-    width:min(760px, 92vw); max-height:min(720px, 88vh); display:flex; flex-direction:column;
+    width:min(1140px, 96vw); max-height:min(1080px, 92vh); display:flex; flex-direction:column;
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px;
     box-shadow:0 20px 45px rgba(0,0,0,.5); overflow:hidden;
   }
@@ -2196,7 +2196,7 @@
           <div class="settings-section-desc">Define additional log formats and map filenames to them by pattern — the default format works with zero configuration.</div>
 
           <div id="formatList"></div>
-          <button type="button" id="btnAddFormat" class="btn-mini-secondary">+ Add format…</button>
+          <button type="button" id="btnAddFormat" class="btn-mini">+ Add format…</button>
           <div id="formatEditPanel" class="hidden settings-inline-panel">
             <div class="settings-inline-panel-title" id="formatEditTitle">Add log format</div>
             <div class="link-field">
@@ -2241,7 +2241,7 @@
 
           <div class="settings-subsection-title">Filename rules — first matching pattern wins; files matching none use the default format</div>
           <div id="formatRuleList"></div>
-          <button type="button" id="btnAddFormatRule" class="btn-mini-secondary">+ Add rule…</button>
+          <button type="button" id="btnAddFormatRule" class="btn-mini">+ Add rule…</button>
           <div id="formatRuleEditPanel" class="hidden settings-inline-panel">
             <div class="settings-inline-panel-title" id="formatRuleEditTitle">Add filename rule</div>
             <div class="link-field">
@@ -11670,10 +11670,15 @@ function openFormatEditDialog(id) {
   updateFormatEditModeUI();
   renderFormatEditPreview();
   formatEditPanel.classList.remove("hidden");
+  el("#btnAddFormat").classList.add("hidden"); // only one editor visible at a time
   if (formatEditPanel.scrollIntoView) formatEditPanel.scrollIntoView({ block: "nearest" }); // not implemented in jsdom
   formatEditName.focus();
 }
-function closeFormatEditDialog() { formatEditPanel.classList.add("hidden"); formatEditId = null; }
+function closeFormatEditDialog() {
+  formatEditPanel.classList.add("hidden");
+  el("#btnAddFormat").classList.remove("hidden");
+  formatEditId = null;
+}
 el("#formatEditCancel").addEventListener("click", closeFormatEditDialog);
 
 async function saveFormatEdit() {
@@ -11738,10 +11743,15 @@ function openFormatRuleEditDialog(id) {
   renderFormatRuleFormatOptions();
   formatRuleFormatSelect.value = rule ? rule.formatId : DEFAULT_FORMAT_ID;
   formatRuleEditPanel.classList.remove("hidden");
+  el("#btnAddFormatRule").classList.add("hidden"); // only one editor visible at a time
   if (formatRuleEditPanel.scrollIntoView) formatRuleEditPanel.scrollIntoView({ block: "nearest" }); // not implemented in jsdom
   formatRuleGlob.focus();
 }
-function closeFormatRuleEditDialog() { formatRuleEditPanel.classList.add("hidden"); formatRuleEditId = null; }
+function closeFormatRuleEditDialog() {
+  formatRuleEditPanel.classList.add("hidden");
+  el("#btnAddFormatRule").classList.remove("hidden");
+  formatRuleEditId = null;
+}
 el("#formatRuleEditCancel").addEventListener("click", closeFormatRuleEditDialog);
 
 async function saveFormatRuleEdit() {
