@@ -34,7 +34,8 @@
     --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
   }
 
-  /* Light theme override. Toggled via [data-theme="light"] on <html>, see #btnTheme. */
+  /* Light theme override. Toggled via [data-theme="light"] on <html>, see the
+     Appearance section in Settings (#settingsThemeLight/#settingsThemeDark). */
   :root[data-theme="light"]{
     --bg-app:#f5f6f8;
     --bg-panel:#ffffff;
@@ -126,14 +127,6 @@
   }
   #btnSession:hover{background:var(--bg-elevated-2); border-color:#333c50;}
   #btnSession svg{flex:0 0 auto;}
-  #btnTheme{
-    display:flex; align-items:center; justify-content:center;
-    width:29px; height:29px; flex:0 0 auto;
-    background:var(--bg-elevated); color:var(--text-secondary);
-    border:1px solid var(--border); border-radius:7px;
-    cursor:pointer; transition:background .12s, border-color .12s, color .12s;
-  }
-  #btnTheme:hover{background:var(--bg-elevated-2); border-color:#333c50; color:var(--text-primary);}
   .toolbar-icon-btn{
     display:flex; align-items:center; justify-content:center; position:relative;
     width:29px; height:29px; flex:0 0 auto;
@@ -1144,13 +1137,11 @@
      library") — named presets, applied to any file/filter node in one
      click, IndexedDB-backed (see the "filterLibrary" store near the session
      cache). Same modal-overlay pattern as the dialogs above. ---------- */
-  #filterLibrarySaveDialog, #filterLibraryDialog,
-  #formatManagerDialog, #formatEditDialog, #formatRuleEditDialog{
+  #filterLibrarySaveDialog, #filterLibraryDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
     display:flex; align-items:center; justify-content:center;
   }
-  #filterLibrarySaveDialog.hidden, #filterLibraryDialog.hidden,
-  #formatManagerDialog.hidden, #formatEditDialog.hidden, #formatRuleEditDialog.hidden{display:none;}
+  #filterLibrarySaveDialog.hidden, #filterLibraryDialog.hidden{display:none;}
   #filterLibraryDialog .link-dialog-card{width:min(420px, 92%);}
   #filterLibraryList{max-height:min(360px, 50vh); overflow-y:auto; margin:-2px 0 14px;}
   .filter-library-empty{padding:14px 2px; font-size:11.5px; color:var(--text-tertiary); line-height:1.5;}
@@ -1165,8 +1156,49 @@
   }
   .filter-library-row-del:hover{color:var(--level-error); background:var(--level-error-soft);}
 
-  /* ---------- Format Manager (Settings menu) — reuses the filter-library
-     row layout above for both the format list and the rule list. ---------- */
+  /* ---------- Settings page — a single wide, scrollable, sectioned dialog
+     (not a menu of separate popups). Log Formats reuses the filter-library
+     row layout above for both the format list and the rule list; Add/Edit
+     format/rule embed INLINE within their section instead of opening
+     another dialog on top (.settings-inline-panel). ---------- */
+  #settingsDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #settingsDialog.hidden{display:none;}
+  .settings-page-card{
+    width:min(760px, 92vw); max-height:min(720px, 88vh); display:flex; flex-direction:column;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px;
+    box-shadow:0 20px 45px rgba(0,0,0,.5); overflow:hidden;
+  }
+  .settings-page-header{
+    display:flex; align-items:center; justify-content:space-between; flex:0 0 auto;
+    padding:16px 22px; border-bottom:1px solid var(--border);
+  }
+  .settings-page-title{font-size:14.5px; font-weight:650; color:var(--text-primary);}
+  .settings-page-body{flex:1 1 auto; overflow-y:auto; padding:4px 22px 22px;}
+  .settings-section{padding:20px 0; border-bottom:1px solid var(--border-soft);}
+  .settings-section:last-child{border-bottom:none;}
+  .settings-section-title{font-size:13px; font-weight:650; color:var(--text-primary); margin:0 0 4px;}
+  .settings-section-desc{font-size:11.5px; color:var(--text-tertiary); margin:0 0 14px; line-height:1.5;}
+  .settings-subsection-title{
+    font-size:11px; font-weight:650; color:var(--text-secondary); text-transform:uppercase;
+    letter-spacing:.4px; margin:20px 0 8px;
+  }
+  .settings-row{display:flex; align-items:center; justify-content:space-between; gap:16px; padding:2px 0;}
+  .settings-row-label{font-size:12.5px; color:var(--text-primary);}
+  .settings-row-control.assert-mode-row{margin-bottom:0; width:auto;}
+  .settings-row-control .assert-mode-btn{flex:0 0 auto; padding:6px 16px;}
+  .settings-inline-panel{
+    margin-top:10px; padding:16px 16px 14px; border-radius:10px;
+    background:var(--accent-soft); border:1px solid var(--accent);
+  }
+  .settings-inline-panel-title{font-size:12.5px; font-weight:650; color:var(--text-primary); margin-bottom:12px;}
+  .settings-inline-panel textarea{
+    width:100%; box-sizing:border-box; resize:vertical; min-height:52px;
+    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:7px 9px; font-family:var(--font-mono); font-size:11.5px;
+  }
   #formatList, #formatRuleList{max-height:min(220px, 30vh); overflow-y:auto; margin:-2px 0 8px;}
   .filter-library-row-order{
     background:none; border:none; color:var(--text-tertiary); cursor:pointer;
@@ -1174,6 +1206,13 @@
   }
   .filter-library-row-order:hover:not(:disabled){color:var(--accent-strong); background:var(--accent-soft);}
   .filter-library-row-order:disabled{opacity:.3; cursor:default;}
+  .format-preview{max-height:150px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; background:var(--bg-app);}
+  .format-preview-empty{padding:9px 10px; font-size:11px; color:var(--text-tertiary);}
+  .format-preview-row{padding:6px 9px; border-bottom:1px solid var(--border-soft); font-size:10.8px; font-family:var(--font-mono); line-height:1.6;}
+  .format-preview-row:last-child{border-bottom:none;}
+  .format-preview-field{color:var(--text-tertiary); margin-right:10px; white-space:nowrap;}
+  .format-preview-field b{color:var(--text-primary); font-weight:600;}
+  .format-preview-row.format-preview-nomatch{color:var(--level-error);}
   .session-file-row{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border); font-size:12px;}
   .session-file-row:last-child{border-bottom:none;}
   .session-file-name{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); font-family:var(--font-mono);}
@@ -1601,9 +1640,6 @@
         <button id="btnBookmarks" class="toolbar-icon-btn" title="Bookmarks"></button>
         <button id="btnShortcuts" class="toolbar-icon-btn" title="Keyboard shortcuts"></button>
       </div>
-      <button id="btnTheme" title="Toggle light/dark theme">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" id="btnThemeIcon"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.3v1.6M8 13.1v1.6M2.6 8H1M15 8h-1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/></svg>
-      </button>
       <button id="btnSession">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
         Session…
@@ -1635,12 +1671,6 @@
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.6v1.7M8 12.7v1.7M14.4 8h-1.7M3.3 8H1.6M12.5 3.5l-1.2 1.2M4.7 11.3l-1.2 1.2M12.5 12.5l-1.2-1.2M4.7 4.7 3.5 3.5"/></svg>
       </button>
-      <div id="settingsMenu" class="hidden">
-        <div class="ctx-item" data-action="formatManager">
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12M2 8h12M2 12h12"/><circle cx="5" cy="4" r="1.3" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg>
-          Format Manager…
-        </div>
-      </div>
       <button id="btnLicense" class="toolbar-icon-btn" title="License"></button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
@@ -2135,81 +2165,100 @@
     </div>
   </div>
 
-  <!-- Settings -> Format Manager (FEATURE_BACKLOG.md "Pluggable parser
-       logic"): log format definitions + filename-pattern rules. Same
-       modal-overlay pattern as the filter library dialogs above. -->
-  <div id="formatManagerDialog" class="hidden">
-    <div class="link-dialog-card link-dialog-card-wide">
-      <div class="link-dialog-title">Format Manager</div>
+  <!-- Settings page (FEATURE_BACKLOG.md "Pluggable parser logic" + general
+       settings home). One wide, scrollable, sectioned page rather than a
+       menu of separate popups — Add/Edit format/rule embed INLINE within
+       their section (.settings-inline-panel, highlighted background)
+       instead of opening yet another dialog on top. -->
+  <div id="settingsDialog" class="hidden">
+    <div class="settings-page-card">
+      <div class="settings-page-header">
+        <div class="settings-page-title">Settings</div>
+        <button type="button" id="settingsClose" class="btn-icon" title="Close">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg>
+        </button>
+      </div>
+      <div class="settings-page-body">
 
-      <div class="link-field">
-        <label>Log formats</label>
-        <div id="formatList"></div>
-        <button type="button" id="btnAddFormat" class="btn-mini-secondary">+ Add format…</button>
-      </div>
+        <section class="settings-section">
+          <div class="settings-section-title">Appearance</div>
+          <div class="settings-row">
+            <div class="settings-row-label">Theme</div>
+            <div class="settings-row-control assert-mode-row">
+              <button type="button" class="assert-mode-btn" id="settingsThemeLight" data-theme-choice="light">Light</button>
+              <button type="button" class="assert-mode-btn" id="settingsThemeDark" data-theme-choice="dark">Dark</button>
+            </div>
+          </div>
+        </section>
 
-      <div class="link-field">
-        <label>Filename rules — first matching pattern wins; files matching none use the default format</label>
-        <div id="formatRuleList"></div>
-        <button type="button" id="btnAddFormatRule" class="btn-mini-secondary">+ Add rule…</button>
-      </div>
+        <section class="settings-section">
+          <div class="settings-section-title">Log Formats</div>
+          <div class="settings-section-desc">Define additional log formats and map filenames to them by pattern — the default format works with zero configuration.</div>
 
-      <div class="link-dialog-actions">
-        <button type="button" id="formatManagerClose" class="btn-mini-outline">Close</button>
-      </div>
-    </div>
-  </div>
+          <div id="formatList"></div>
+          <button type="button" id="btnAddFormat" class="btn-mini-secondary">+ Add format…</button>
+          <div id="formatEditPanel" class="hidden settings-inline-panel">
+            <div class="settings-inline-panel-title" id="formatEditTitle">Add log format</div>
+            <div class="link-field">
+              <label for="formatEditName">Name</label>
+              <input type="text" id="formatEditName" placeholder="e.g. Nginx access log" maxlength="80" autocomplete="off">
+            </div>
+            <div class="link-field">
+              <label for="formatEditSample">Example log line(s) <span class="link-target-label">(optional — suggests a pattern below)</span></label>
+              <textarea id="formatEditSample" rows="3" placeholder="Paste one or more sample log lines here…"></textarea>
+            </div>
+            <div class="link-field">
+              <div class="assert-mode-row">
+                <button type="button" class="assert-mode-btn" id="formatEditModePattern" data-mode="pattern">Pattern</button>
+                <button type="button" class="assert-mode-btn" id="formatEditModeRegex" data-mode="regex">Regex</button>
+              </div>
+            </div>
+            <div class="link-field" id="formatEditPatternField">
+              <label for="formatEditPattern">Conversion pattern</label>
+              <input type="text" id="formatEditPattern" placeholder='%d\t%p\t"%t"\t%c\t[%M]\t"%m"%n' autocomplete="off">
+              <div class="session-dialog-note">%d/%date %p/%level %t/%thread %c/%logger %M/%method %m/%message %n — \t \n \\ stand for a literal tab/newline/backslash.</div>
+            </div>
+            <div class="link-field hidden" id="formatEditRegexField">
+              <label for="formatEditRegex">Regex</label>
+              <input type="text" id="formatEditRegex" placeholder="^(?&lt;ts&gt;\S+) (?&lt;level&gt;\w+) ..." autocomplete="off">
+              <div class="session-dialog-note">Needs a (?&lt;message&gt;...) named group; (?&lt;ts&gt;...)/(?&lt;level&gt;...)/(?&lt;thread&gt;...)/(?&lt;location&gt;...)/(?&lt;method&gt;...) are optional.</div>
+            </div>
+            <div class="link-field">
+              <label for="formatEditTsFormat">Timestamp format</label>
+              <input type="text" id="formatEditTsFormat" placeholder="yyyy-MM-dd HH:mm:ss,SSS" autocomplete="off">
+              <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
+            </div>
+            <div class="link-field">
+              <label>Preview <span class="link-target-label">(from the example line(s) above)</span></label>
+              <div id="formatEditPreview" class="format-preview"></div>
+            </div>
+            <div class="time-range-error hidden" id="formatEditError"></div>
+            <div class="link-dialog-actions">
+              <button type="button" id="formatEditCancel" class="btn-mini-outline">Cancel</button>
+              <button type="button" id="formatEditSave" class="btn-mini">Save</button>
+            </div>
+          </div>
 
-  <div id="formatEditDialog" class="hidden">
-    <div class="link-dialog-card">
-      <div class="link-dialog-title" id="formatEditTitle">Add log format</div>
-      <div class="link-field">
-        <label for="formatEditName">Name</label>
-        <input type="text" id="formatEditName" placeholder="e.g. Nginx access log" maxlength="80" autocomplete="off">
-      </div>
-      <div class="link-field">
-        <div class="assert-mode-row">
-          <button type="button" class="assert-mode-btn" id="formatEditModePattern" data-mode="pattern">Pattern</button>
-          <button type="button" class="assert-mode-btn" id="formatEditModeRegex" data-mode="regex">Regex</button>
-        </div>
-      </div>
-      <div class="link-field" id="formatEditPatternField">
-        <label for="formatEditPattern">Conversion pattern</label>
-        <input type="text" id="formatEditPattern" placeholder='%d\t%p\t"%t"\t%c\t[%M]\t"%m"%n' autocomplete="off">
-        <div class="session-dialog-note">%d/%date %p/%level %t/%thread %c/%logger %M/%method %m/%message %n — \t \n \\ stand for a literal tab/newline/backslash.</div>
-      </div>
-      <div class="link-field hidden" id="formatEditRegexField">
-        <label for="formatEditRegex">Regex</label>
-        <input type="text" id="formatEditRegex" placeholder="^(?&lt;ts&gt;\S+) (?&lt;level&gt;\w+) ..." autocomplete="off">
-        <div class="session-dialog-note">Needs a (?&lt;message&gt;...) named group; (?&lt;ts&gt;...)/(?&lt;level&gt;...)/(?&lt;thread&gt;...)/(?&lt;location&gt;...)/(?&lt;method&gt;...) are optional.</div>
-      </div>
-      <div class="link-field">
-        <label for="formatEditTsFormat">Timestamp format</label>
-        <input type="text" id="formatEditTsFormat" placeholder="yyyy-MM-dd HH:mm:ss,SSS" autocomplete="off">
-        <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
-      </div>
-      <div class="time-range-error hidden" id="formatEditError"></div>
-      <div class="link-dialog-actions">
-        <button type="button" id="formatEditCancel" class="btn-mini-outline">Cancel</button>
-        <button type="button" id="formatEditSave" class="btn-mini">Save</button>
-      </div>
-    </div>
-  </div>
+          <div class="settings-subsection-title">Filename rules — first matching pattern wins; files matching none use the default format</div>
+          <div id="formatRuleList"></div>
+          <button type="button" id="btnAddFormatRule" class="btn-mini-secondary">+ Add rule…</button>
+          <div id="formatRuleEditPanel" class="hidden settings-inline-panel">
+            <div class="settings-inline-panel-title" id="formatRuleEditTitle">Add filename rule</div>
+            <div class="link-field">
+              <label for="formatRuleGlob">Filename pattern (glob: * matches any run, ? matches one character)</label>
+              <input type="text" id="formatRuleGlob" placeholder="app-*.log" autocomplete="off">
+            </div>
+            <div class="link-field">
+              <label for="formatRuleFormatSelect">Format</label>
+              <select id="formatRuleFormatSelect"></select>
+            </div>
+            <div class="link-dialog-actions">
+              <button type="button" id="formatRuleEditCancel" class="btn-mini-outline">Cancel</button>
+              <button type="button" id="formatRuleEditSave" class="btn-mini">Save</button>
+            </div>
+          </div>
+        </section>
 
-  <div id="formatRuleEditDialog" class="hidden">
-    <div class="link-dialog-card">
-      <div class="link-dialog-title" id="formatRuleEditTitle">Add filename rule</div>
-      <div class="link-field">
-        <label for="formatRuleGlob">Filename pattern (glob: * matches any run, ? matches one character)</label>
-        <input type="text" id="formatRuleGlob" placeholder="app-*.log" autocomplete="off">
-      </div>
-      <div class="link-field">
-        <label for="formatRuleFormatSelect">Format</label>
-        <select id="formatRuleFormatSelect"></select>
-      </div>
-      <div class="link-dialog-actions">
-        <button type="button" id="formatRuleEditCancel" class="btn-mini-outline">Cancel</button>
-        <button type="button" id="formatRuleEditSave" class="btn-mini">Save</button>
       </div>
     </div>
   </div>
@@ -2330,12 +2379,14 @@ const THEME_STORAGE_KEY = "philogg-theme";
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  const icon = document.getElementById("btnThemeIcon");
-  if (!icon) return;
-  // Sun glyph for light theme, moon glyph for dark — swap the icon markup in place.
-  icon.innerHTML = theme === "light"
-    ? '<path d="M8 1.3v1.6M8 13.1v1.6M2.6 8H1M15 8h-1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/><circle cx="8" cy="8" r="3.2"/>'
-    : '<path d="M13.5 9.3A5.6 5.6 0 0 1 6.7 2.5 5.8 5.8 0 1 0 13.5 9.3Z"/>';
+  // Settings page -> Appearance: a two-way explicit-choice toggle (same
+  // .assert-mode-btn pattern as Format Manager's Pattern/Regex switch),
+  // not a single icon-swap button — kept in sync here so it's correct
+  // whenever/however the theme changes, not just while the page is open.
+  const lightBtn = document.getElementById("settingsThemeLight");
+  const darkBtn = document.getElementById("settingsThemeDark");
+  if (lightBtn) lightBtn.classList.toggle("active", theme === "light");
+  if (darkBtn) darkBtn.classList.toggle("active", theme === "dark");
 }
 
 function initTheme() {
@@ -2345,11 +2396,12 @@ function initTheme() {
   applyTheme(prefersLight ? "light" : "dark");
 }
 
-document.getElementById("btnTheme").addEventListener("click", () => {
-  const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
-  applyTheme(next);
-  localStorage.setItem(THEME_STORAGE_KEY, next);
-});
+function setTheme(theme) {
+  applyTheme(theme);
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+}
+document.getElementById("settingsThemeLight").addEventListener("click", () => setTheme("light"));
+document.getElementById("settingsThemeDark").addEventListener("click", () => setTheme("dark"));
 
 /* ===================== State ===================== */
 const state = {
@@ -8981,26 +9033,11 @@ sessionMenu.addEventListener("click", ev => {
   else if (item.dataset.action === "importSession") importSessionFromFile();
 });
 
-// "Settings" mirrors "Open…"/"Session…"'s button+dropdown pattern — one
-// entry today (Format Manager), built to take more general settings later
-// without redesigning this shell (person-requested).
+// Settings opens a single wide page (not a dropdown menu) — see
+// "Settings page" below (openSettingsDialog) for its sections, built so
+// more general settings can be added as further sections later.
 const btnSettings = el("#btnSettings");
-const settingsMenu = el("#settingsMenu");
-function closeSettingsMenu() { settingsMenu.classList.add("hidden"); }
-function toggleSettingsMenu() {
-  if (!settingsMenu.classList.contains("hidden")) { closeSettingsMenu(); return; }
-  const rect = btnSettings.getBoundingClientRect();
-  settingsMenu.style.top = (rect.bottom + 6) + "px";
-  settingsMenu.style.left = Math.min(rect.left, window.innerWidth - 200) + "px";
-  settingsMenu.classList.remove("hidden");
-}
-btnSettings.addEventListener("click", toggleSettingsMenu);
-settingsMenu.addEventListener("click", ev => {
-  const item = ev.target.closest("[data-action]");
-  if (!item) return;
-  closeSettingsMenu();
-  if (item.dataset.action === "formatManager") openFormatManagerDialog();
-});
+btnSettings.addEventListener("click", openSettingsDialog);
 
 // Reads a file as text via FileReader, reporting byte-level progress
 // (FileReader.onprogress) instead of resolving only once the whole file is in.
@@ -11285,26 +11322,33 @@ async function openFilterLibraryDialog(nodeId) {
 filterLibraryDialog.addEventListener("click", ev => { if (ev.target === filterLibraryDialog) closeFilterLibraryDialog(); });
 el("#filterLibraryDialogClose").addEventListener("click", closeFilterLibraryDialog);
 
-/* ===================== Format Manager dialog =====================
-   Settings -> Format Manager. Two lists (formats, filename rules), reusing
-   the filter-library row layout above. Same modal-overlay/backdrop-click
-   pattern as every other dialog here — note the ev.target === dialog
-   identity check below is already immune to the stopPropagation gotcha
-   (CLAUDE.md) since a click on any descendant button can never equal the
-   dialog element itself; stopPropagation on row buttons is still added for
-   consistency/defense with the rest of the codebase's discipline. */
-const formatManagerDialog = el("#formatManagerDialog");
+/* ===================== Settings page =====================
+   One wide, scrollable, sectioned dialog (Appearance, Log Formats, more
+   sections later) — not a menu of separate popups. Same modal-overlay/
+   backdrop-click pattern as every other dialog here — note the
+   ev.target === dialog identity check below is already immune to the
+   stopPropagation gotcha (CLAUDE.md) since a click on any descendant
+   button can never equal the dialog element itself; stopPropagation on
+   row buttons is still added for consistency/defense with the rest of
+   the codebase's discipline.
+
+   Add/Edit format and Add/Edit rule are NOT separate dialogs — they're
+   inline panels (.settings-inline-panel, highlighted background) that
+   expand within the Log Formats section itself (formatEditPanel/
+   formatRuleEditPanel), closed only via their own Cancel/Save, never by
+   an outside click — there's no backdrop of their own to click. */
+const settingsDialog = el("#settingsDialog");
 const formatList = el("#formatList");
 const formatRuleList = el("#formatRuleList");
 
-function closeFormatManagerDialog() { formatManagerDialog.classList.add("hidden"); }
-function openFormatManagerDialog() {
-  formatManagerDialog.classList.remove("hidden");
+function closeSettingsDialog() { settingsDialog.classList.add("hidden"); }
+function openSettingsDialog() {
+  settingsDialog.classList.remove("hidden");
   renderFormatList();
   renderFormatRuleList();
 }
-formatManagerDialog.addEventListener("click", ev => { if (ev.target === formatManagerDialog) closeFormatManagerDialog(); });
-el("#formatManagerClose").addEventListener("click", closeFormatManagerDialog);
+settingsDialog.addEventListener("click", ev => { if (ev.target === settingsDialog) closeSettingsDialog(); });
+el("#settingsClose").addEventListener("click", closeSettingsDialog);
 
 // Builtin default always sorts first, regardless of createdAt, per the
 // person's explicit request — it's the format most people will look for.
@@ -11435,13 +11479,15 @@ async function removeFormatRule(id) {
   renderFormatRuleList();
 }
 
-// ---- Add/Edit log format sub-dialog ----
-const formatEditDialog = el("#formatEditDialog");
+// ---- Add/Edit log format — inline panel (not a separate dialog) ----
+const formatEditPanel = el("#formatEditPanel");
 const formatEditName = el("#formatEditName");
+const formatEditSample = el("#formatEditSample");
 const formatEditPattern = el("#formatEditPattern");
 const formatEditRegex = el("#formatEditRegex");
 const formatEditTsFormat = el("#formatEditTsFormat");
 const formatEditError = el("#formatEditError");
+const formatEditPreview = el("#formatEditPreview");
 let formatEditId = null;
 let formatEditMode = "pattern";
 
@@ -11451,18 +11497,170 @@ function updateFormatEditModeUI() {
   el("#formatEditPatternField").classList.toggle("hidden", formatEditMode !== "pattern");
   el("#formatEditRegexField").classList.toggle("hidden", formatEditMode !== "regex");
 }
-el("#formatEditModePattern").addEventListener("click", () => { formatEditMode = "pattern"; updateFormatEditModeUI(); });
-el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "regex"; updateFormatEditModeUI(); });
+el("#formatEditModePattern").addEventListener("click", () => { formatEditMode = "pattern"; updateFormatEditModeUI(); renderFormatEditPreview(); });
+el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "regex"; updateFormatEditModeUI(); renderFormatEditPreview(); });
+
+// Common log-level names, longest-first-irrelevant (word-boundary match
+// picks the first occurring regardless of listed order) — used only by
+// the sample-line pattern SUGGESTION below, not by parsing itself.
+const SAMPLE_LEVEL_RE = /\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b/;
+// Timestamp shapes to try against a sample line, most specific first, each
+// paired with the tsFormat token string that reproduces it.
+const SAMPLE_TS_CANDIDATES = [
+  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[.,]\d{1,3}/, fmt: "yyyy-MM-dd HH:mm:ss,SSS" },
+  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/, fmt: "yyyy-MM-dd HH:mm:ss" },
+  { re: /\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/, fmt: "MM/dd/yyyy HH:mm:ss" },
+  { re: /\d{2}:\d{2}:\d{2}[.,]\d{1,3}/, fmt: "HH:mm:ss,SSS" },
+  { re: /\d{2}:\d{2}:\d{2}/, fmt: "HH:mm:ss" },
+];
+
+// Turns a raw literal span from a sample line back into pattern TEXT (the
+// inverse of unescapePatternText, plus escaping the pattern's own "%"
+// trigger character) — so a suggested pattern round-trips through the
+// same editable text field convention a person typing one by hand uses.
+function escapePatternLiteral(s) {
+  return (s || "").replace(/\\/g, "\\\\").replace(/\t/g, "\\t").replace(/\n/g, "\\n").replace(/%/g, "%%");
+}
+
+// Best-effort "guess a pattern from one example line" — never the final
+// word, always left for the person to review/adjust below. Scans the
+// FIRST non-blank sample line for a timestamp, a level word, a quoted or
+// parenthesized thread, and a bracketed method, in that priority order,
+// each only claimed if it doesn't overlap an earlier match; turns
+// everything else into literal text, with the tail becoming %m. Returns
+// null if the sample has no usable line.
+function suggestPatternFromSample(sampleText) {
+  const line = (sampleText || "").split(/\r?\n/).map(l => l.trim()).find(l => l);
+  if (!line) return null;
+
+  const spans = []; // {start, end, token}
+  const isFree = (start, end) => !spans.some(s => start < s.end && end > s.start);
+
+  let tsFormat = "";
+  for (const cand of SAMPLE_TS_CANDIDATES) {
+    const m = cand.re.exec(line);
+    if (m && isFree(m.index, m.index + m[0].length)) {
+      spans.push({ start: m.index, end: m.index + m[0].length, token: "%d" });
+      tsFormat = cand.fmt;
+      break;
+    }
+  }
+
+  const levelM = SAMPLE_LEVEL_RE.exec(line);
+  if (levelM && isFree(levelM.index, levelM.index + levelM[0].length)) {
+    spans.push({ start: levelM.index, end: levelM.index + levelM[0].length, token: "%p" });
+  }
+
+  // Delimiters ("...", (...)) are each exactly one character, so the
+  // CONTENT span (excluding them) is just [m.index+1, m.index+len-1) —
+  // the delimiters themselves are left unclaimed, so the walk below
+  // naturally reconstructs them as literal text framing the token.
+  for (const re of [/"[^"]*"/, /\([^)]*\)/]) {
+    const m = re.exec(line);
+    if (m) {
+      const start = m.index + 1, end = m.index + m[0].length - 1;
+      if (isFree(start, end)) { spans.push({ start, end, token: "%t" }); break; }
+    }
+  }
+
+  const methodM = /\[[^\]]*\]/.exec(line);
+  if (methodM) {
+    const start = methodM.index + 1, end = methodM.index + methodM[0].length - 1;
+    if (isFree(start, end)) spans.push({ start, end, token: "%M" });
+  }
+
+  if (!spans.length) return null; // nothing recognizable — not a useful suggestion
+  spans.sort((a, b) => a.start - b.start);
+
+  let pattern = "", cursor = 0;
+  for (const s of spans) {
+    pattern += escapePatternLiteral(line.slice(cursor, s.start)) + s.token;
+    cursor = s.end;
+  }
+  // A short separator run right after the last token (a closing delimiter
+  // from a quoted/bracketed span, ": ", " - ", a bare space, ...) stays
+  // literal; the rest of the line is the message.
+  const tail = line.slice(cursor);
+  const sep = /^[\s:>)\]"'\-–—.,;]*/.exec(tail)[0];
+  pattern += escapePatternLiteral(sep) + "%m%n";
+
+  return { pattern, tsFormat };
+}
+
+// Compiles the CURRENT mode/pattern/regex/tsFormat for the live preview
+// below — returns null (rather than throwing) on anything uncompilable,
+// same "not the final word" spirit as the suggestion above.
+function compilePreviewFormat(mode, pattern, regex, tsFormat) {
+  if (mode === "regex") {
+    const v = validateFormatRegex(regex || "");
+    return v.error ? null : { regex: v.regex, dateFrag: null };
+  }
+  const c = compileFormatPattern(pattern || "", tsFormat || "");
+  return c.error ? null : { regex: c.regex, dateFrag: compileDateFormat(tsFormat || "") };
+}
+
+// Re-parses the pasted example line(s) with whatever pattern/regex/
+// tsFormat is currently in the fields, so editing any of them updates the
+// preview live — the person never has to save first to see if it works.
+function renderFormatEditPreview() {
+  const lines = formatEditSample.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(0, 5);
+  if (!lines.length) {
+    formatEditPreview.innerHTML = '<div class="format-preview-empty">Paste an example log line above to see a preview here.</div>';
+    return;
+  }
+  const compiled = compilePreviewFormat(formatEditMode, formatEditPattern.value, formatEditRegex.value, formatEditTsFormat.value.trim());
+  if (!compiled) {
+    formatEditPreview.innerHTML = '<div class="format-preview-empty">Fix the pattern/regex above to see a preview.</div>';
+    return;
+  }
+  formatEditPreview.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  lines.forEach(line => {
+    const m = compiled.regex.exec(line);
+    const row = document.createElement("div");
+    if (!m) {
+      row.className = "format-preview-row format-preview-nomatch";
+      row.textContent = "No match: " + line;
+    } else {
+      row.className = "format-preview-row";
+      const groups = m.groups || {};
+      const entry = applyFormatMatch(groups, line, compiled.dateFrag);
+      const parts = ['<span class="format-preview-field"><b>Level</b> ' + escapeHtml(entry.level) + '</span>'];
+      if (groups.ts != null) parts.unshift('<span class="format-preview-field"><b>Time</b> ' + escapeHtml(entry.tsRaw) + (isNaN(entry.ts) ? " (unparsed)" : "") + '</span>');
+      if (groups.thread != null) parts.push('<span class="format-preview-field"><b>Thread</b> ' + escapeHtml(entry.thread) + '</span>');
+      if (groups.method != null) parts.push('<span class="format-preview-field"><b>Method</b> ' + escapeHtml(entry.method) + '</span>');
+      parts.push('<span class="format-preview-field"><b>Message</b> ' + escapeHtml(entry.message) + '</span>');
+      row.innerHTML = parts.join("");
+    }
+    frag.appendChild(row);
+  });
+  formatEditPreview.appendChild(frag);
+}
+[formatEditPattern, formatEditRegex, formatEditTsFormat].forEach(input => {
+  input.addEventListener("input", renderFormatEditPreview);
+});
+formatEditSample.addEventListener("input", () => {
+  const suggestion = suggestPatternFromSample(formatEditSample.value);
+  if (suggestion) {
+    formatEditMode = "pattern";
+    updateFormatEditModeUI();
+    formatEditPattern.value = suggestion.pattern;
+    formatEditTsFormat.value = suggestion.tsFormat;
+  }
+  renderFormatEditPreview();
+});
 
 // Both the builtin default and a brand-new format default to the same
 // canonical pattern (see DEFAULT_LOG_FORMAT / tools/log-simulator.html) —
 // a fresh "Add format" starts from something that already parses, not a
-// blank slate.
+// blank slate. The sample field is never pre-filled (it's a one-time input
+// aid, not a stored format property) even when editing an existing format.
 function openFormatEditDialog(id) {
   formatEditId = id;
   const fmt = id ? state.logFormats.find(f => f.id === id) : null;
   el("#formatEditTitle").textContent = fmt ? "Edit log format" : "Add log format";
   formatEditName.value = fmt ? fmt.name : "";
+  formatEditSample.value = "";
   formatEditMode = fmt ? fmt.mode : "pattern";
   formatEditPattern.value = fmt ? (fmt.pattern || "") : DEFAULT_LOG_FORMAT.pattern;
   formatEditRegex.value = fmt ? (fmt.regex || "") : "";
@@ -11470,11 +11668,12 @@ function openFormatEditDialog(id) {
   formatEditError.textContent = "";
   formatEditError.classList.add("hidden");
   updateFormatEditModeUI();
-  formatEditDialog.classList.remove("hidden");
+  renderFormatEditPreview();
+  formatEditPanel.classList.remove("hidden");
+  if (formatEditPanel.scrollIntoView) formatEditPanel.scrollIntoView({ block: "nearest" }); // not implemented in jsdom
   formatEditName.focus();
 }
-function closeFormatEditDialog() { formatEditDialog.classList.add("hidden"); formatEditId = null; }
-formatEditDialog.addEventListener("click", ev => { if (ev.target === formatEditDialog) closeFormatEditDialog(); });
+function closeFormatEditDialog() { formatEditPanel.classList.add("hidden"); formatEditId = null; }
 el("#formatEditCancel").addEventListener("click", closeFormatEditDialog);
 
 async function saveFormatEdit() {
@@ -11516,8 +11715,8 @@ async function saveFormatEdit() {
 }
 el("#formatEditSave").addEventListener("click", saveFormatEdit);
 
-// ---- Add/Edit filename rule sub-dialog ----
-const formatRuleEditDialog = el("#formatRuleEditDialog");
+// ---- Add/Edit filename rule — inline panel (not a separate dialog) ----
+const formatRuleEditPanel = el("#formatRuleEditPanel");
 const formatRuleGlob = el("#formatRuleGlob");
 const formatRuleFormatSelect = el("#formatRuleFormatSelect");
 let formatRuleEditId = null;
@@ -11538,11 +11737,11 @@ function openFormatRuleEditDialog(id) {
   formatRuleGlob.value = rule ? rule.glob : "";
   renderFormatRuleFormatOptions();
   formatRuleFormatSelect.value = rule ? rule.formatId : DEFAULT_FORMAT_ID;
-  formatRuleEditDialog.classList.remove("hidden");
+  formatRuleEditPanel.classList.remove("hidden");
+  if (formatRuleEditPanel.scrollIntoView) formatRuleEditPanel.scrollIntoView({ block: "nearest" }); // not implemented in jsdom
   formatRuleGlob.focus();
 }
-function closeFormatRuleEditDialog() { formatRuleEditDialog.classList.add("hidden"); formatRuleEditId = null; }
-formatRuleEditDialog.addEventListener("click", ev => { if (ev.target === formatRuleEditDialog) closeFormatRuleEditDialog(); });
+function closeFormatRuleEditDialog() { formatRuleEditPanel.classList.add("hidden"); formatRuleEditId = null; }
 el("#formatRuleEditCancel").addEventListener("click", closeFormatRuleEditDialog);
 
 async function saveFormatRuleEdit() {
@@ -11574,7 +11773,6 @@ document.addEventListener("click", ev => {
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
   if (!sessionMenu.contains(ev.target) && !btnSession.contains(ev.target)) closeSessionMenu();
-  if (!settingsMenu.contains(ev.target) && !btnSettings.contains(ev.target)) closeSettingsMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!bookmarksPanel.contains(ev.target) && !btnBookmarks.contains(ev.target)) closeBookmarksPanel();
   if (!columnsPanel.contains(ev.target) && !btnColumns.contains(ev.target)) closeColumnsPanel();

@@ -1257,13 +1257,19 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 3 — Theme toggle
    Origin: 765d68a9 (design improvements session, test.js, 28 checks).
+   Updated this session (2026-08-21): the single #btnTheme toggle button
+   moved into Settings -> Appearance as an explicit Light/Dark control pair
+   (see GROUP 70h2) — pick whichever side isn't currently active instead of
+   a single toggle click.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("3. Theme toggle");
+  section("3. Theme toggle (now in Settings -> Appearance)");
   const html = d.documentElement;
   const before = html.dataset.theme;
-  fireClick(d.querySelector("#btnTheme"), w);
-  assert(html.dataset.theme !== before, "theme toggle flips data-theme, was " + before + " now " + html.dataset.theme);
+  fireClick(d.querySelector("#btnSettings"), w);
+  const otherBtn = d.querySelector(before === "light" ? "#settingsThemeDark" : "#settingsThemeLight");
+  fireClick(otherBtn, w);
+  assert(html.dataset.theme !== before, "picking the other theme flips data-theme, was " + before + " now " + html.dataset.theme);
   assert(w.localStorage.getItem("philogg-theme") === html.dataset.theme, "theme choice persisted to localStorage");
 });
 
@@ -5098,10 +5104,13 @@ await withApp(async (w, d, T) => {
   assert(T.state.focusRegion === "tree", "the still-loading row is already clickable like a normal tree row, not the old inert placeholder");
 
   // The rest of the UI stays usable: unrelated controls remain clickable —
-  // spot-checked via the theme button, which has nothing to do with loading.
-  const btnThemeBefore = d.documentElement.getAttribute("data-theme");
-  fireClick(d.querySelector("#btnTheme"), w);
-  assert(d.documentElement.getAttribute("data-theme") !== btnThemeBefore, "other toolbar controls remain responsive while a file load is in flight");
+  // spot-checked via the pin-bookmarks toggle, which has nothing to do with
+  // loading (the theme toggle used to live here directly on the toolbar;
+  // it moved into Settings -> Appearance this session, no longer a single
+  // one-click toolbar button — see GROUP 70h2).
+  const pinBefore = T.state.pinBookmarksInFilteredView;
+  fireClick(d.querySelector("#btnPinBookmarks"), w);
+  assert(T.state.pinBookmarksInFilteredView !== pinBefore, "other toolbar controls remain responsive while a file load is in flight");
 
   await donePromise;
   assert(typeof T.state.nodes[newId].loadFraction !== "number", "loadFraction is cleared off the node once loading finishes");
@@ -7479,14 +7488,12 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("70e. End-to-end: add a custom format + filename rule via the Settings UI, then load a matching file");
+  section("70e. End-to-end: add a custom format (via sample-suggested pattern) + filename rule on the Settings page, then load a matching file");
   await waitForFormatConfig(T);
 
   fireClick(d.querySelector("#btnSettings"), w);
-  assert(!d.querySelector("#settingsMenu").classList.contains("hidden"), "Settings menu opens");
-  fireClick(d.querySelector('#settingsMenu [data-action="formatManager"]'), w);
-  assert(d.querySelector("#settingsMenu").classList.contains("hidden"), "picking the menu item closes the Settings menu");
-  assert(!d.querySelector("#formatManagerDialog").classList.contains("hidden"), "...and opens the Format Manager dialog");
+  assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "Settings button opens the settings page directly (no intermediate menu)");
+  assert(d.querySelector("#settingsMenu") === null, "the old separate Format-Manager dropdown menu no longer exists");
 
   const formatRows = () => [...d.querySelectorAll("#formatList .filter-library-row")];
   assert(formatRows().length === 1 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
@@ -7494,29 +7501,47 @@ await withApp(async (w, d, T) => {
   assert(formatRows()[0].querySelector(".filter-library-row-del") === null, "the builtin default has no delete button");
 
   fireClick(d.querySelector("#btnAddFormat"), w);
-  assert(!d.querySelector("#formatEditDialog").classList.contains("hidden"), "Add format dialog opens");
+  const formatEditPanel = d.querySelector("#formatEditPanel");
+  assert(!formatEditPanel.classList.contains("hidden"), "Add format embeds inline (same page, no new dialog)");
+  assert(d.querySelector(".settings-page-card").contains(formatEditPanel), "the inline panel lives inside the same settings-page card, not a separate popup");
+
+  // Paste a sample line instead of typing the pattern by hand — the
+  // suggestion should fill in pattern + tsFormat automatically.
+  const sampleInput = d.querySelector("#formatEditSample");
+  sampleInput.value = "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed";
+  fireInput(sampleInput, w);
+  assert(d.querySelector("#formatEditPattern").value === "[%d] %p (%t) %m%n",
+    "pasting a sample line auto-suggests a matching conversion pattern, got " + d.querySelector("#formatEditPattern").value);
+  assert(d.querySelector("#formatEditTsFormat").value === "yyyy-MM-dd HH:mm:ss", "...and the matching timestamp format");
+
+  const previewRows = () => [...d.querySelectorAll("#formatEditPreview .format-preview-row")];
+  assert(previewRows().length === 1 && !previewRows()[0].classList.contains("format-preview-nomatch"),
+    "the live preview parses the pasted sample line with the suggested pattern");
+  assert(previewRows()[0].textContent.includes("ERROR") && previewRows()[0].textContent.includes("worker-1") && previewRows()[0].textContent.includes("Database connection failed"),
+    "the preview shows the extracted level/thread/message, got " + previewRows()[0].textContent);
+
   d.querySelector("#formatEditName").value = "Bracket format";
-  d.querySelector("#formatEditPattern").value = "[%d] %p (%t) %m%n";
-  d.querySelector("#formatEditTsFormat").value = "yyyy-MM-dd HH:mm:ss";
   fireClick(d.querySelector("#formatEditSave"), w);
   await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async; UI updates only after it resolves
-  assert(d.querySelector("#formatEditDialog").classList.contains("hidden"), "saving closes the format dialog");
+  assert(formatEditPanel.classList.contains("hidden"), "saving closes/collapses the inline format panel");
   assert(formatRows().length === 2, "the new format is now listed alongside the default");
 
   const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
-  assert(newFormat && newFormat.mode === "pattern" && !newFormat.builtin, "new format saved with the entered pattern, not builtin");
+  assert(newFormat && newFormat.mode === "pattern" && !newFormat.builtin, "new format saved with the suggested (then reviewed) pattern, not builtin");
+  assert(newFormat.pattern === "[%d] %p (%t) %m%n" && newFormat.tsFormat === "yyyy-MM-dd HH:mm:ss", "the saved format keeps the suggested pattern/tsFormat unchanged (person didn't edit it further)");
 
   fireClick(d.querySelector("#btnAddFormatRule"), w);
-  assert(!d.querySelector("#formatRuleEditDialog").classList.contains("hidden"), "Add rule dialog opens");
+  const ruleEditPanel = d.querySelector("#formatRuleEditPanel");
+  assert(!ruleEditPanel.classList.contains("hidden"), "Add rule also embeds inline");
   d.querySelector("#formatRuleGlob").value = "bracket-*.log";
   d.querySelector("#formatRuleFormatSelect").value = newFormat.id;
   fireClick(d.querySelector("#formatRuleEditSave"), w);
   await new Promise(r => setTimeout(r, 20)); // saveFormatRuleEdit's IndexedDB write is async
-  assert(d.querySelector("#formatRuleEditDialog").classList.contains("hidden"), "saving closes the rule dialog");
+  assert(ruleEditPanel.classList.contains("hidden"), "saving closes/collapses the inline rule panel");
   assert(T.state.formatRules.length === 1 && T.state.formatRules[0].glob === "bracket-*.log", "rule saved with the entered glob");
 
-  fireClick(d.querySelector("#formatManagerClose"), w);
-  assert(d.querySelector("#formatManagerDialog").classList.contains("hidden"), "Close button closes the Format Manager");
+  fireClick(d.querySelector("#settingsClose"), w);
+  assert(d.querySelector("#settingsDialog").classList.contains("hidden"), "Close button closes the settings page");
 
   const bracketLog = [
     "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed",
@@ -7614,27 +7639,52 @@ section("70g. Session-cache restore keeps a file's format pinned even after its 
 }
 
 await withApp(async (w, d, T) => {
-  section("70h. Settings menu: open/close, opens Format Manager, closes on outside click / backdrop click");
+  section("70h. Settings page: opens directly (no menu), sections present, closes via Close button / backdrop click, theme control reflects current theme");
   const btnSettings = d.querySelector("#btnSettings");
-  const settingsMenu = d.querySelector("#settingsMenu");
-  assert(settingsMenu.classList.contains("hidden"), "sanity: settings menu starts closed");
+  const settingsDialog = d.querySelector("#settingsDialog");
+  assert(settingsDialog.classList.contains("hidden"), "sanity: settings page starts closed");
+  assert(d.querySelector("#btnTheme") === null, "the old dedicated theme toggle button is gone from the toolbar");
 
   fireClick(btnSettings, w);
-  assert(!settingsMenu.classList.contains("hidden"), "clicking the settings button opens the menu");
-  fireClick(btnSettings, w);
-  assert(settingsMenu.classList.contains("hidden"), "clicking it again toggles the menu closed");
+  assert(!settingsDialog.classList.contains("hidden"), "clicking the settings button opens the settings page directly");
+  assert(d.querySelector(".settings-page-card") !== null, "it renders as a settings-page card, not a small dropdown");
+  assert([...d.querySelectorAll(".settings-section-title")].some(el => el.textContent === "Appearance"),
+    "an Appearance section is present");
+  assert([...d.querySelectorAll(".settings-section-title")].some(el => el.textContent === "Log Formats"),
+    "a Log Formats section is present (Format Manager folded into the settings page, not a separate dialog)");
 
-  fireClick(btnSettings, w);
+  const themeLight = d.querySelector("#settingsThemeLight");
+  const themeDark = d.querySelector("#settingsThemeDark");
+  assert(themeLight && themeDark, "Light/Dark theme controls are in the Appearance section");
+  assert(themeDark.classList.contains("active") !== themeLight.classList.contains("active"),
+    "exactly one of Light/Dark is marked active, reflecting the current theme");
+
   fireClick(d.body, w);
-  assert(settingsMenu.classList.contains("hidden"), "clicking outside the menu closes it (global outside-click listener)");
+  assert(!settingsDialog.classList.contains("hidden"), "clicking elsewhere on the page does NOT close the settings page (only Close/backdrop do)");
+
+  fireClick(d.querySelector("#settingsClose"), w);
+  assert(settingsDialog.classList.contains("hidden"), "the Close button closes the settings page");
 
   fireClick(btnSettings, w);
-  fireClick(d.querySelector('#settingsMenu [data-action="formatManager"]'), w);
-  assert(settingsMenu.classList.contains("hidden"), "picking the Format Manager item closes the settings menu");
-  assert(!d.querySelector("#formatManagerDialog").classList.contains("hidden"), "...and opens the Format Manager dialog");
+  fireClick(settingsDialog, w); // click lands on the backdrop itself, not a descendant
+  assert(settingsDialog.classList.contains("hidden"), "clicking the dialog's own backdrop closes it too");
+});
 
-  fireClick(d.querySelector("#formatManagerDialog"), w); // click lands on the backdrop itself
-  assert(d.querySelector("#formatManagerDialog").classList.contains("hidden"), "clicking the dialog's own backdrop closes it");
+await withApp(async (w, d, T) => {
+  section("70h2. Settings page: Light/Dark buttons actually switch and persist the theme");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const themeLight = d.querySelector("#settingsThemeLight");
+  const themeDark = d.querySelector("#settingsThemeDark");
+
+  fireClick(themeLight, w);
+  assert(d.documentElement.getAttribute("data-theme") === "light", "clicking Light switches data-theme to light");
+  assert(themeLight.classList.contains("active") && !themeDark.classList.contains("active"), "Light is now the active control");
+  assert(w.localStorage.getItem("philogg-theme") === "light", "theme choice persisted to localStorage");
+
+  fireClick(themeDark, w);
+  assert(d.documentElement.getAttribute("data-theme") === "dark", "clicking Dark switches data-theme back to dark");
+  assert(themeDark.classList.contains("active") && !themeLight.classList.contains("active"), "Dark is now the active control");
+  assert(w.localStorage.getItem("philogg-theme") === "dark", "theme choice persisted to localStorage");
 });
 
 await withApp(async (w, d, T) => {
