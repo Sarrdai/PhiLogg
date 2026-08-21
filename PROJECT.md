@@ -817,6 +817,8 @@ One thing jsdom **can't** catch: real hit-testing / paint order (`elementFromPoi
 
 Keep this section updated as features land — newest first, short entries, enough for a future session to know what exists without re-reading the whole chat history.
 
+- New: `Enter` on a selected row in the Filtered view (or the Filtered/bottom pane of the Stacked view) mirrors that row's own `dblclick` (this session, 2026-08-21, person-requested, German: *"Wenn eine einzelne Zeile in im Filtered oder im unteren Teil des Stacked View ausgewählt ist, soll Enter das gleiche tun wie ein Doppelklick auf die Zeile."*). New keydown branch alongside the existing tree-focus `Enter` handling: with `state.focusRegion === "entries"`, `state.entriesView === "filter"`, a single `state.selectedId` and no active `state.logMultiSelect`, calls `revealInHighlightView(entryIndex[state.selectedId])` — the exact same call the row's own `dblclick` listener already makes (`renderVisibleRows`), so it centres the Full view on the entry without touching `activeId`/the level filter/the Filter view's own scroll position. Left alone with a multi-selection active (no single obvious target) or with focus elsewhere (tree, Full/Highlight pane). GROUP 78.
+
 - Bugfix, two rounds (person-reported, screenshots, 2026-08-21): the
   horizontal scrollbar in the Filter view (item 17 below, shipped earlier
   the same session) left row backgrounds and the usable scroll range not
