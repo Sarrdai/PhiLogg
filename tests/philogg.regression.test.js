@@ -7841,44 +7841,67 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 72 — Ctrl+1/Ctrl+0 tree<->Filtered view shortcuts + Enter
+   GROUP 72 — Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter
    Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Shortcuts to
-   switch between Tree and Filter view — Ctrl+1/Ctrl+0 to jump back and
-   forth; Enter on a filter also returns to the Filtered view". Ctrl+1 moves
-   keyboard focus (state.focusRegion) to the tree, picking a starting node
-   if nothing's active yet; Ctrl+0 reveals the Filtered view (via the
-   existing revealFilteredView, so it correctly leaves Stacked layout
-   alone) and moves focus to the entries pane; Enter does the same reveal
-   while the tree has focus and the active node is a filter (not a file).
+   switch between Tree and Filter view", REVISED same session per
+   person-requested follow-up feedback (the original Ctrl+1/Ctrl+0 mapping
+   didn't match what was actually wanted): Ctrl+0 focuses the CURRENT FILE
+   in the filter tree (the active node's root, via getRootFileId — not
+   whichever filter happens to be active) so arrow keys immediately
+   navigate its branch; Ctrl+1/2/3 mirror the Full/Filtered/Stacked toggle
+   buttons one-for-one AND focus the entries pane for arrow-key navigation
+   — a new state.entriesView ("filter" | "highlight") decides which of
+   moveSelection/moveHighlightSelection the global ArrowUp/Down handler
+   calls, also updated by a plain click/dblclick in either Log view.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("72. Ctrl+1/Ctrl+0 tree<->Filtered view shortcuts + Enter");
+  section("72. Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const filterA = w.createFilterNode(f.id, "text", "message");
   w.render();
 
-  T.state.activeId = null;
-  fireKeydown(d, w, "1", { ctrlKey: true });
-  assert(T.state.activeId === f.id, "Ctrl+1 with no active node picks a starting node (the first root file)");
-  assert(T.state.focusRegion === "tree", "Ctrl+1 switches focus to the tree");
-
-  w.showFhTab("highlight");
-  assert(T.fhActiveTab === "highlight", "sanity: the Full tab is showing");
+  // Ctrl+0: focus the CURRENT file in the tree, even though a child filter
+  // is active — not just "whatever is active", the file specifically.
+  T.state.activeId = filterA.id;
   fireKeydown(d, w, "0", { ctrlKey: true });
-  assert(T.fhActiveTab === "filter", "Ctrl+0 reveals the Filtered view from the Full tab");
-  assert(T.state.focusRegion === "entries", "Ctrl+0 switches focus to the entries pane");
+  assert(T.state.activeId === f.id, "Ctrl+0 focuses the active node's root FILE, not the filter itself");
+  assert(T.state.focusRegion === "tree", "Ctrl+0 switches focus to the tree");
 
-  // Enter on an active FILTER node while the tree has focus does the same reveal.
-  w.showFhTab("highlight");
+  T.state.activeId = null;
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  assert(T.state.activeId === f.id, "Ctrl+0 with no active node falls back to the first root file");
+
+  // Ctrl+1: opens Full (Highlight) and focuses it for arrow-key navigation.
+  w.applyFhView("filter");
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.fhActiveTab === "highlight", "Ctrl+1 opens the Full view");
+  assert(T.state.focusRegion === "entries" && T.state.entriesView === "highlight", "...and focuses it (entriesView) for arrow-key navigation");
+
+  const beforeHighlightSelect = T.state.selectedId;
+  fireKeydown(d, w, "ArrowDown");
+  assert(T.state.selectedId !== beforeHighlightSelect, "with entriesView \"highlight\", ArrowDown moves the Full view's own selection, not the Filtered view's");
+
+  // Ctrl+2: opens Filtered and focuses it — arrow keys move that view instead.
+  fireKeydown(d, w, "2", { ctrlKey: true });
+  assert(T.fhActiveTab === "filter", "Ctrl+2 opens the Filtered view");
+  assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...and focuses it (entriesView) for arrow-key navigation");
+
+  // Ctrl+3: opens Stacked (both panels visible), defaulting arrow-key focus to Filtered.
+  fireKeydown(d, w, "3", { ctrlKey: true });
+  assert(T.fhLayout === "stacked", "Ctrl+3 opens the Stacked layout");
+  assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...defaulting arrow-key focus to the Filtered pane");
+
+  // Enter on an active FILTER node while the tree has focus reveals the Filtered view.
+  w.applyFhView("highlight");
   T.state.activeId = filterA.id;
   T.state.focusRegion = "tree";
   fireKeydown(d, w, "Enter");
   assert(T.fhActiveTab === "filter", "Enter on an active filter node (tree focus) reveals the Filtered view");
-  assert(T.state.focusRegion === "entries", "...and switches focus to the entries pane");
+  assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...and switches focus to the entries pane");
 
   // Enter on a FILE node (not a filter) is a no-op for the view switch.
-  w.showFhTab("highlight");
+  w.applyFhView("highlight");
   T.state.activeId = f.id;
   T.state.focusRegion = "tree";
   fireKeydown(d, w, "Enter");
@@ -9135,22 +9158,41 @@ process.exit(failed ? 1 : 0);
               (+/- buttons, Reset), and Ctrl+Plus/Ctrl+Minus, all persisted
               to localStorage like the theme toggle.
    Group 72  — this session (2026-08-21), FEATURE_BACKLOG.md "Shortcuts to
-              switch between Tree and Filter view": Ctrl+1 focuses the tree
-              (picking a starting node if none active), Ctrl+0 reveals the
-              Filtered view and focuses the entries pane, and Enter does
-              the same reveal for an active filter node while the tree has
-              focus (but not for a file node).
+              switch between Tree and Filter view", REVISED same session
+              per person-requested follow-up feedback on the original
+              mapping: Ctrl+0 focuses the CURRENT FILE in the filter tree
+              (the active node's root, not whichever filter is active);
+              Ctrl+1/2/3 mirror the Full/Filtered/Stacked toggle buttons
+              and additionally focus that Log view's entries for arrow-key
+              navigation via the new state.entriesView ("filter" |
+              "highlight", also set by a plain click/dblclick in either Log
+              view — see selectEntry/selectHighlightEntry/
+              revealInHighlightView), which the global ArrowUp/Down
+              handler now reads to pick moveSelection vs. the new
+              moveHighlightSelection; Enter still reveals the Filtered view
+              for an active filter node while the tree has focus (not for
+              a file node).
    Group 73  — this session (2026-08-21), FEATURE_BACKLOG.md "Horizontal
-              scrollbar in the Filter view": #tableBody scrolls
-              horizontally (Filter view only, #highlightBody untouched),
-              with #tableHeader's own scrollbar hidden and driven in
-              lockstep via scrollLeft + a width sync (syncTableHeaderWidth)
-              onto the widest currently-rendered row. The actual
-              CSS-driven overflow (`width:fit-content` on `.log-row`) isn't
-              independently verifiable in jsdom (no real layout engine) —
-              this group covers the JS-observable parts only: the
-              overflow-x split (real computed style) and the sync/scroll
-              logic, with tableRows.scrollWidth stubbed directly.
+              scrollbar in the Filter view", REVISED same session after a
+              person-reported bug: the original `width:fit-content` on
+              `.log-row` never actually produced any overflow (verified
+              live via Playwright, not just jsdom — `.col-msg`'s
+              `overflow:hidden` resets its CSS "automatic minimum size" to
+              0, so the message column's `1fr` grid track just kept
+              shrinking to fit, exactly as before the change). Fixed by
+              giving `.col-msg` an explicit `min-width:max-content` instead
+              (Filter view only, `#tableRows .col-msg`), which is what
+              actually makes the grid track — and so the row — refuse to
+              shrink below a long message's natural width. #tableBody
+              scrolls horizontally as a result (Filter view only,
+              #highlightBody untouched), with #tableHeader's own scrollbar
+              hidden and driven in lockstep via scrollLeft + a width sync
+              (syncTableHeaderWidth) onto the widest currently-rendered
+              row. The real overflow itself still isn't independently
+              verifiable in jsdom (no real layout engine) — this group
+              covers the JS-observable parts only: the overflow-x split
+              (real computed style) and the sync/scroll logic, with
+              tableRows.scrollWidth stubbed directly.
    Group 74  — this session (2026-08-21), FEATURE_BACKLOG.md "Double-click
               on a filter opens its edit dialog". Manual click-id+timestamp
               tracking (lastTreeRowClickId/Time) rather than a native
