@@ -817,6 +817,98 @@ One thing jsdom **can't** catch: real hit-testing / paint order (`elementFromPoi
 
 Keep this section updated as features land — newest first, short entries, enough for a future session to know what exists without re-reading the whole chat history.
 
+- Bugfix, two rounds (person-reported, screenshots, 2026-08-21): the
+  horizontal scrollbar in the Filter view (item 17 below, shipped earlier
+  the same session) left row backgrounds and the usable scroll range not
+  actually covering a long message's full width.
+  - **Round 1**: the level-tint row background (`.log-row.lvl-error` etc.)
+    stopped at the viewport edge instead of the scrolled-to message's real
+    width. Root cause: `.log-row`'s own box never grew to match the
+    overflow `#tableRows .col-msg{min-width:max-content}` creates one level
+    down — a `width:auto` block box sizes to its containing block
+    regardless of content; the CSS Grid track inside it can overflow (grid
+    tracks refuse to shrink below their minimum) without the box itself
+    following. First fix: `#tableRows .log-row{width:max-content;
+    min-width:100%}`, making each row's own box follow ITS grid content's
+    natural size. (Note `max-content`, not `fit-content` — item 17's own
+    first attempt at sizing `.log-row` used `fit-content` and was abandoned
+    as a no-op, since `fit-content` clamps to *available* space whenever
+    content is wider than it, mathematically identical to `width:auto`'s
+    stretch in exactly this overflow case; `max-content` has no such
+    clamp.)
+  - **Round 2** (same day, follow-up report): round 1's per-row width was
+    itself the wrong shape — each row sized independently from only ITS OWN
+    message, so short-message rows stayed narrow while only the row
+    holding a long message grew, and the scrollbar's usable range shrank
+    back the instant that row scrolled out of the virtualized window
+    (`#tableRows` only ever has ~30-50 real rows as DOM nodes at a time).
+    Reverted the per-row CSS entirely. Real fix: one width computed up
+    front from the WIDEST message across the WHOLE current view (not just
+    the rendered window), applied to `#tableRows` itself —
+    `computeMaxMessageWidth(currentViewEntries)` (cheap O(n) char-count
+    scan to find the longest single line, ONE canvas `measureText` call on
+    it — monospace font, so char count is a reliable width proxy) feeds
+    `syncTableRowsWidth()`, which sets `tableRows.style.width` to
+    `lastColumnEdgeX + gap + maxMsgPixelWidth + padding` when that exceeds
+    the viewport, or clears the inline style (falls back to the original
+    `left:0;right:0` stretch-fill) when it doesn't — so a file with only
+    short messages still fills the view. `lastColumnEdgeX` is captured by
+    `applyRowGrid` (the existing column-width/visibility recompute) so a
+    column resize/hide keeps the row width in sync too, cheaply (no
+    re-scan of entries — only `cachedMaxMsgPixelWidth`, computed once per
+    `currentViewEntries` change at the same two call sites
+    `buildRowOffsets` already has, is expensive). Every `.log-row` is back
+    to a plain `width:auto` block, so all of them inherit this one shared
+    width uniformly — same background/scroll extent whether a given row's
+    own message is long or empty, exactly what fixes the follow-up report.
+  - **Round 3** (same day, third report): asked to build the exact repro
+    myself — a log with 4 messages of increasing length (short/medium/long/
+    a multi-line stack trace) — and check with Playwright whether scrolling
+    all the way right actually reaches the longest message's last
+    character, or overshoots. It overshot: `#tableRows` was sized correctly
+    per round 2's own math, but consistently wider than where the text
+    actually ended — the gap grew with the message's length (72px on a
+    4878px-wide, 701-character line in the repro). Root cause:
+    `measureMsgWidth` used Canvas2D's `measureText()`, which measurably
+    diverges from Blink's own CSS layout text renderer for an IDENTICAL
+    `font-family`/`font-size` string — confirmed directly, side by side, on
+    the exact same 701-character string: canvas measured 6.957px/char, a
+    real DOM element measured 6.878px/char (~1.15% apart) — small alone,
+    but compounding LINEARLY with message length, so exactly the long-line
+    case this feature exists for was the case it got most wrong. Not a
+    rounding nit — two different browser text-rendering pipelines (canvas
+    glyph shaping vs. layout line-boxing) simply don't promise pixel-
+    identical advance widths for the same font, even within the same engine.
+    Fixed by dropping canvas entirely: `measureMsgWidth` now reads
+    `offsetWidth` off a hidden, reused DOM element carrying the exact same
+    `.col-msg` class real rows use (`position:absolute`, shrink-to-fit,
+    parked off-screen) — literally the same rendering path a real row uses,
+    so it cannot diverge from it. Re-verified the same 4-message repro: the
+    gap dropped from 72px to 15.5px, which is exactly `#tableRows`' own
+    16px right padding (`padding:2px 16px 20px 14px`) — i.e. the real
+    remaining "gap" isn't a bug at all, it's the intentional padding.
+    Checked `offsetWidth` specifically (not `getBoundingClientRect().width`)
+    against `state.fontScale`'s whole-UI `zoom`, with Playwright, before
+    committing to it: `offsetWidth`/`clientWidth`/`scrollWidth` all stay in
+    the same "unscaled CSS px" space regardless of zoom level (confirmed:
+    identical before/after setting `zoom:1.5` on a test element), while
+    `getBoundingClientRect()` returns the zoomed VISUAL size instead — the
+    latter would have put `syncTableRowsWidth`'s math off by the zoom factor
+    at any scale other than 100%, a bug that would only have shown up once
+    someone actually used the font-scale feature at a non-default zoom.
+  Verified with a real Chromium session throughout (Playwright, headless,
+  `#fileInput.setInputFiles` + screenshots + precise `Range`-based text-edge
+  measurements) — jsdom has no real layout engine, the documented blind
+  spot. Round 2 and round 3's actual sizing logic
+  (`computeMaxMessageWidth`/`syncTableRowsWidth`/`measureMsgWidth`) IS plain
+  testable JS though, unlike round 1's pure-CSS fix — GROUP 73b/73c
+  (`tests/philogg.regression.test.js`) cover it directly. jsdom has no real
+  layout engine either, so a freshly created element's `offsetWidth` is
+  always 0 there (same blind spot the highlight-marker tooltip positioning
+  code already works around) — `measureMsgWidth` falls back to a flat
+  per-character estimate (`MONO_CHAR_WIDTH_FALLBACK`) in that case, which is
+  what GROUP 73c's assertions exercise and pin down exactly.
+
 - Bugfix, two rounds (this session, 2026-08-21), person-reported via screenshot: the sample-line pattern **suggestion** (`suggestPatternFromSample`, right below Format Manager) broke on a PLC log, reading everything past the first few lines as one giant message.
   - Round 1: the log uses `;SSS` (semicolon) as the millisecond separator, e.g. `2026-08-14 10:43:18;617`. `SAMPLE_TS_CANDIDATES`'s fractional-seconds regex only matched `.`/`,`, so it fell through to the no-milliseconds shape and left the sample's own ms value (`;617`) as literal pattern text — only lines sharing that exact millisecond kept matching. `compileDateFormat` already escapes whatever literal separator sits between `%d`'s tokens generically, so this was purely a suggestion-heuristic gap — fixed by capturing whichever separator character the sample actually uses and reproducing it in `tsFormat` instead of hardcoding `,`. Incidentally also fixes `.`-separated samples, which previously always got a `,` tsFormat regardless of what the sample used.
   - Round 2 (person reported the fix was still breaking at the same spot): the real remaining cause. The log's header lines (`TRACE\t-\t[System]\t...`) and its FIFO-data lines (`WARN\tAxCtrl\t[-]\t...`) share one shape — `%d %p <bare-word> [%M] %m` — but the suggester only recognized a thread wrapped in quotes or parens, never a bare unquoted one. On the sample line the bare word between level and `[System]` was `-`, which got read as fixed literal text: it matched every header line (all literally `-`) but not the FIFO-data lines, where that position holds a real, varying value (`AxCtrl`, `CrashP`, ...). Fixed by claiming a single whitespace-free token sitting directly between `%p` and an already-claimed `%M` bracket as `%t` — narrow and structurally cued (framed by the level on one side, an immediate `[` on the other) rather than a blind "next word is the thread" guess that would misread an ordinary free-form message's first word.
