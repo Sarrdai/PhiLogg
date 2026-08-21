@@ -11756,13 +11756,18 @@ el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "r
 // the sample-line pattern SUGGESTION below, not by parsing itself.
 const SAMPLE_LEVEL_RE = /\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b/;
 // Timestamp shapes to try against a sample line, most specific first, each
-// paired with the tsFormat token string that reproduces it.
+// paired with the tsFormat token string that reproduces it. The two
+// fractional-seconds shapes capture the actual separator character (".",
+// "," or ";" — whatever the logger used, e.g. some frameworks use ";fff")
+// so it round-trips into tsFormat instead of being hardcoded to ",": a
+// separator baked in as literal text would only match the one sample line
+// that happens to share its millisecond value.
 const SAMPLE_TS_CANDIDATES = [
-  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[.,]\d{1,3}/, fmt: "yyyy-MM-dd HH:mm:ss,SSS" },
-  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/, fmt: "yyyy-MM-dd HH:mm:ss" },
-  { re: /\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/, fmt: "MM/dd/yyyy HH:mm:ss" },
-  { re: /\d{2}:\d{2}:\d{2}[.,]\d{1,3}/, fmt: "HH:mm:ss,SSS" },
-  { re: /\d{2}:\d{2}:\d{2}/, fmt: "HH:mm:ss" },
+  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}([.,;])\d{1,3}/, fmt: m => `yyyy-MM-dd HH:mm:ss${m[1]}SSS` },
+  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/, fmt: () => "yyyy-MM-dd HH:mm:ss" },
+  { re: /\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/, fmt: () => "MM/dd/yyyy HH:mm:ss" },
+  { re: /\d{2}:\d{2}:\d{2}([.,;])\d{1,3}/, fmt: m => `HH:mm:ss${m[1]}SSS` },
+  { re: /\d{2}:\d{2}:\d{2}/, fmt: () => "HH:mm:ss" },
 ];
 
 // Turns a raw literal span from a sample line back into pattern TEXT (the
@@ -11792,7 +11797,7 @@ function suggestPatternFromSample(sampleText) {
     const m = cand.re.exec(line);
     if (m && isFree(m.index, m.index + m[0].length)) {
       spans.push({ start: m.index, end: m.index + m[0].length, token: "%d" });
-      tsFormat = cand.fmt;
+      tsFormat = cand.fmt(m);
       break;
     }
   }
@@ -11818,6 +11823,26 @@ function suggestPatternFromSample(sampleText) {
   if (methodM) {
     const start = methodM.index + 1, end = methodM.index + methodM[0].length - 1;
     if (isFree(start, end)) spans.push({ start, end, token: "%M" });
+  }
+
+  // A bare (unquoted, unparenthesized) thread field: some formats put it
+  // between %p and a bracketed %M with no delimiter of its own to key off
+  // (unlike the quoted/paren case above), e.g. "WARN\tAxCtrl\t[-]\t...".
+  // Only claimed when it sits in the gap directly before an already-claimed
+  // %M bracket AND is a single whitespace-free token — that combination
+  // (framed by the level on one side, an immediate "[" on the other) is a
+  // reliable enough signal to not be mistaken for the start of a free-form
+  // message; a multi-word gap, or no bracket at all, is left as literal
+  // text like before, same "not the final word" fallback.
+  if (methodM && spans.some(s => s.token === "%M") && !spans.some(s => s.token === "%t")) {
+    const prevEnd = Math.max(0, ...spans.filter(s => s.end <= methodM.index).map(s => s.end));
+    const gap = line.slice(prevEnd, methodM.index);
+    const leadingWs = gap.match(/^\s*/)[0].length;
+    const trimmed = gap.slice(leadingWs, gap.length - (gap.match(/\s*$/)[0].length));
+    if (trimmed && /^\S+$/.test(trimmed)) {
+      const start = prevEnd + leadingWs, end = start + trimmed.length;
+      if (isFree(start, end)) spans.push({ start, end, token: "%t" });
+    }
   }
 
   if (!spans.length) return null; // nothing recognizable — not a useful suggestion
