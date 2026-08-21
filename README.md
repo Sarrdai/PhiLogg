@@ -54,6 +54,10 @@ open it in a browser to view it.
   presets you apply across different files.
 - **Session export/import** — package an analysis (files, filters,
   bookmarks) to share with a colleague.
+- **Configurable log formats** (Settings → Format Manager) — define
+  additional formats (a log4net/LogViewPlus-style pattern, or a raw regex
+  for edge cases) and map them to files by filename pattern; the default
+  format still works with zero configuration.
 - **Light & dark theme**, resizable/toggleable columns, multiline message
   display, multi-row select + copy.
 
@@ -75,16 +79,23 @@ open and analyze files, just as static snapshots.
 
 ## The log format it reads
 
-Pattern (log4net-style conversion pattern):
+Out of the box, PhiLogg reads a log4net-style conversion pattern:
 
 ```
-%d\t%p\t"%t"\t%l\t[%method]\t%m%n
+%d\t%p\t"%t"\t%c\t[%M]\t"%m"%n
 ```
 
-i.e. tab-separated `timestamp / level / "thread" / file:line / [method] / "message"`.
-The parser is tolerant: any line that doesn't look like a new entry is
-treated as a continuation of the previous entry's message, so multi-line
-stack traces come through intact.
+i.e. tab-separated `timestamp / level / "thread" / file:line / [method] /
+"message"`. The parser is tolerant: any line that doesn't look like a new
+entry is treated as a continuation of the previous entry's message, so
+multi-line stack traces come through intact.
+
+Other formats are configurable via **Settings → Format Manager**: define a
+format the same way (a `%d %p %t %c %M %m %n`-style pattern) or drop down to
+a raw regex for shapes the pattern language can't express, then map
+filenames to it with a glob rule (e.g. `app-*.log`). See
+[`examples/bracket-format.log`](examples/bracket-format.log) for a sample in
+a different shape to try it against.
 
 ## Repository layout
 
@@ -94,15 +105,16 @@ tests/
   philogg.regression.test.js          jsdom regression suite (drives the real file via DOM events)
   README.md                           testing conventions
 tools/
-  log-simulator.html                  standalone tool: writes a growing .log file, for testing tailing/folder watch
+  log-simulator.html                  standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
 desktop/
   README.md                           Electron wrapper: build/run steps, current status
   main.js, package.json, electron-builder.yml   file associations + CLI file opening (loads philogg.html unmodified)
 homepage/
   index.html                          static feature-tour / marketing page
   screenshots/                        screenshots used by the homepage and this README
-Examples/
-  general.log                         a sample log file in the expected format
+examples/
+  general.log                         a sample log file in the default format
+  bracket-format.log                  a sample log file in a different format, for trying the Format Manager
 scripts/
   install_pkgs.sh                     helper for installing test dependencies
 .github/workflows/release.yml         manual workflow: stamps a version and publishes a tester build

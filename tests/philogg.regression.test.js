@@ -7368,6 +7368,299 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 70 — Format Manager: configurable log formats + filename-pattern
+   rules (FEATURE_BACKLOG.md "Pluggable parser logic")
+   Origin: this session (2026-08-21), person-requested: a Settings menu
+   whose first entry is a Format Manager mapping filename patterns (glob)
+   to configurable log formats (a log4net/LogViewPlus-style conversion
+   pattern, or a raw regex for edge cases), plus a matching pattern field
+   in tools/log-simulator.html and a same-shape example file. Every format
+   still produces the fixed entry schema; the builtin default is a
+   pass-through to the untouched HEADER_RE/parseHeaderLine until edited.
+   ============================================================ */
+
+// state.logFormats/state.formatRules are populated once, asynchronously,
+// by the boot-time loadFormatConfig() call this feature added ahead of
+// loadFromUrlParam()/restoreSessionFromCache() — same "async boot step"
+// consideration as Group 20's session-cache restore poll below, just a
+// much shorter wait (no real IndexedDB I/O when no factory is passed).
+// Any subtest that reads or writes state.logFormats/state.formatRules for
+// its own fixture waits for this first so it never races the one-time
+// boot assignment (state.logFormats = formats inside loadFormatConfig).
+async function waitForFormatConfig(T) {
+  for (let i = 0; i < 40 && T.state.logFormats.length === 0; i++) await new Promise(r => setTimeout(r, 10));
+}
+
+await withApp(async (w, d, T) => {
+  section("70a. compileFormatPattern / compileDateFormat: pattern-mode compiler");
+  const dateFrag = w.compileDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
+  assert(dateFrag && dateFrag.order.join(",") === "yyyy,MM,dd,HH,mm,ss,SSS", "compileDateFormat orders its tokens left-to-right");
+  assert(dateFrag.matchRegex.test("2024-01-15 10:00:00,123"), "compiled date regex matches a well-formed timestamp");
+
+  const c = w.compileFormatPattern('%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n', "yyyy-MM-dd HH:mm:ss,SSS");
+  assert(c && c.regex && c.hasTs, "the canonical default pattern compiles, with a ts group");
+  const line = '2024-01-15 10:00:00,123\tINFO\t"main"\tC:\\src\\App.cs\tline 12\t[Startup]\t"Application started"';
+  const m = c.regex.exec(line);
+  assert(m && m.groups.level === "INFO" && m.groups.thread === "main" && m.groups.method === "Startup" && m.groups.message === "Application started",
+    "compiled regex extracts level/thread/method/message correctly, got " + JSON.stringify(m && m.groups));
+
+  const noMsg = w.compileFormatPattern("%d %p", "");
+  assert(noMsg.error, "a pattern with no %m/%message token is rejected");
+
+  const withEscapes = w.compileFormatPattern("%p\\t%m", "");
+  assert(withEscapes.regex && withEscapes.regex.test("INFO\thello"), "\\t in the pattern text becomes a real tab before compiling");
+
+  const withPercent = w.compileFormatPattern("%%literal %m", "");
+  assert(withPercent.regex && withPercent.regex.test("%literal hi"), "%% compiles to a literal percent sign");
+
+  const bracket = w.compileFormatPattern("[%d] %p (%t) %m%n", "yyyy-MM-dd HH:mm:ss");
+  const bm = bracket.regex.exec("[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed");
+  assert(bm && bm.groups.level === "ERROR" && bm.groups.thread === "worker-1" && bm.groups.message === "Database connection failed",
+    "a differently-shaped pattern (brackets/parens, no method/location) compiles and extracts correctly");
+});
+
+await withApp(async (w, d, T) => {
+  section("70b. Regex mode: named-group validation + graceful degrade on a broken format");
+  const v1 = w.validateFormatRegex("(unterminated");
+  assert(v1.error, "an invalid regex is rejected with an error");
+
+  const v2 = w.validateFormatRegex("^(?<level>\\w+) (?<thread>\\S+)$");
+  assert(v2.error, "a regex without a (?<message>...) group is rejected");
+
+  const v3 = w.validateFormatRegex("^(?<level>\\w+) (?<message>.*)$");
+  assert(!v3.error && v3.warning, "missing (?<ts>...) is a non-blocking warning, not a save-blocking error");
+
+  const v4 = w.validateFormatRegex("^(?<ts>\\S+) (?<level>\\w+) (?<message>.*)$");
+  assert(!v4.error && !v4.warning, "a regex with both ts and message groups passes cleanly");
+
+  const groups = v4.regex.exec("2024-01-15T10:00:00 ERROR boom").groups;
+  const entry = w.applyFormatMatch(groups, "2024-01-15T10:00:00 ERROR boom", null);
+  assert(entry.level === "ERROR" && entry.message === "boom", "applyFormatMatch reads named groups into the fixed entry shape");
+
+  // Defense-in-depth: a format whose regex/pattern fails to compile (should
+  // only happen if save-time validation was bypassed) degrades to
+  // "every line is its own untimestamped entry" instead of throwing.
+  const broken = w.compileOneFormat({ id: "x", mode: "regex", regex: "(unterminated", builtin: false, edited: false });
+  assert(broken.isHeaderLine("anything"), "a broken format's isHeaderLine never throws and always starts a new entry");
+  const e = broken.parseHeader("some raw line");
+  assert(e.message === "some raw line" && e.raw === "some raw line", "a broken format's parseHeader degrades to whole-line-as-message");
+});
+
+await withApp(async (w, d, T) => {
+  section("70c. Glob matcher + filename -> format resolution");
+  assert(w.compileGlob("app-*.log").test("app-1.log"), "'*' matches any run of characters");
+  assert(w.compileGlob("app-*.log").test("app-prod.log"), "'*' matches a longer run too");
+  assert(!w.compileGlob("app-*.log").test("db.log"), "a non-matching filename is rejected");
+  assert(w.compileGlob("app-?.log").test("app-1.log"), "'?' matches exactly one character");
+  assert(!w.compileGlob("app-?.log").test("app-12.log"), "'?' does not match two characters");
+  assert(w.compileGlob("APP-*.LOG").test("app-1.log"), "glob matching is case-insensitive");
+
+  T.state.logFormats = [{ id: "fmt-default", builtin: true, edited: false, name: "d" }, { id: "fmt-a", name: "a" }, { id: "fmt-b", name: "b" }];
+  T.state.formatRules = [
+    { id: "r1", glob: "*.log", formatId: "fmt-a", order: 1 },
+    { id: "r2", glob: "special-*.log", formatId: "fmt-b", order: 0 },
+  ];
+  assert(w.resolveFormatIdForFilename("special-1.log") === "fmt-b", "the lower-order (earlier) rule wins when multiple rules match");
+  assert(w.resolveFormatIdForFilename("plain.log") === "fmt-a", "a filename matching only the later rule still resolves to it");
+  assert(w.resolveFormatIdForFilename("other.txt") === "fmt-default", "a filename matching no rule falls back to the default format");
+});
+
+await withApp(async (w, d, T) => {
+  section("70d. Backward compatibility: unconfigured default format parses exactly as before");
+  const f = await w.addFile("plain.log", makeLog(0, 20), () => {});
+  assert(f.formatId === "fmt-default", "a freshly loaded file with no rules configured resolves to the builtin default");
+  assert(f.entries.length === 20, "entry count matches the fixture");
+  assert(f.entries[0].level === "ERROR" && f.entries[1].level === "INFO", "level extraction unchanged");
+  assert(f.entries[0].thread === "main", "thread extraction unchanged");
+  assert(f.entries[0].method === "DoWork", "method extraction unchanged");
+  assert(f.entries[0].locationShort === "Foo.cs:0", "location extraction unchanged, got " + f.entries[0].locationShort);
+  assert(f.entries[0].message === "message 0", "message extraction unchanged");
+  assert(!isNaN(f.entries[0].ts), "timestamp parses to a valid number");
+});
+
+await withApp(async (w, d, T) => {
+  section("70e. End-to-end: add a custom format + filename rule via the Settings UI, then load a matching file");
+  await waitForFormatConfig(T);
+
+  fireClick(d.querySelector("#btnSettings"), w);
+  assert(!d.querySelector("#settingsMenu").classList.contains("hidden"), "Settings menu opens");
+  fireClick(d.querySelector('#settingsMenu [data-action="formatManager"]'), w);
+  assert(d.querySelector("#settingsMenu").classList.contains("hidden"), "picking the menu item closes the Settings menu");
+  assert(!d.querySelector("#formatManagerDialog").classList.contains("hidden"), "...and opens the Format Manager dialog");
+
+  const formatRows = () => [...d.querySelectorAll("#formatList .filter-library-row")];
+  assert(formatRows().length === 1 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
+    "the builtin default format is listed first, and is the only one initially");
+  assert(formatRows()[0].querySelector(".filter-library-row-del") === null, "the builtin default has no delete button");
+
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  assert(!d.querySelector("#formatEditDialog").classList.contains("hidden"), "Add format dialog opens");
+  d.querySelector("#formatEditName").value = "Bracket format";
+  d.querySelector("#formatEditPattern").value = "[%d] %p (%t) %m%n";
+  d.querySelector("#formatEditTsFormat").value = "yyyy-MM-dd HH:mm:ss";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async; UI updates only after it resolves
+  assert(d.querySelector("#formatEditDialog").classList.contains("hidden"), "saving closes the format dialog");
+  assert(formatRows().length === 2, "the new format is now listed alongside the default");
+
+  const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
+  assert(newFormat && newFormat.mode === "pattern" && !newFormat.builtin, "new format saved with the entered pattern, not builtin");
+
+  fireClick(d.querySelector("#btnAddFormatRule"), w);
+  assert(!d.querySelector("#formatRuleEditDialog").classList.contains("hidden"), "Add rule dialog opens");
+  d.querySelector("#formatRuleGlob").value = "bracket-*.log";
+  d.querySelector("#formatRuleFormatSelect").value = newFormat.id;
+  fireClick(d.querySelector("#formatRuleEditSave"), w);
+  await new Promise(r => setTimeout(r, 20)); // saveFormatRuleEdit's IndexedDB write is async
+  assert(d.querySelector("#formatRuleEditDialog").classList.contains("hidden"), "saving closes the rule dialog");
+  assert(T.state.formatRules.length === 1 && T.state.formatRules[0].glob === "bracket-*.log", "rule saved with the entered glob");
+
+  fireClick(d.querySelector("#formatManagerClose"), w);
+  assert(d.querySelector("#formatManagerDialog").classList.contains("hidden"), "Close button closes the Format Manager");
+
+  const bracketLog = [
+    "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed",
+    "[2024-01-15 10:00:01] INFO (worker-1) Retrying connection, attempt 2/3",
+  ].join("\n") + "\n";
+  const f = await w.addFile("bracket-1.log", bracketLog, () => {});
+  assert(f.formatId === newFormat.id, "the loaded file resolved to the custom format via the glob rule");
+  assert(f.entries.length === 2, "both lines parsed as separate entries");
+  assert(f.entries[0].level === "ERROR" && f.entries[0].thread === "worker-1" && f.entries[0].message === "Database connection failed",
+    "custom pattern correctly extracts level/thread/message");
+  assert(!isNaN(f.entries[0].ts), "timestamp parses under the custom tsFormat");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("70f. Persistence round-trip: save/list/delete formats and rules; delete-while-referenced guard");
+  await waitForFormatConfig(T);
+
+  const fmt = { id: "fmt-test", name: "Test format", mode: "pattern", pattern: "%m%n", regex: "", tsFormat: "", builtin: false, edited: false, createdAt: Date.now() };
+  await w.saveLogFormat(fmt);
+  let stored = await w.listLogFormats();
+  assert(stored.some(f => f.id === "fmt-test"), "format persisted to IndexedDB");
+
+  const rule = { id: "rule-test", glob: "*.log", formatId: "fmt-test", order: 0, createdAt: Date.now() };
+  await w.saveFormatRule(rule);
+  let storedRules = await w.listFormatRules();
+  assert(storedRules.some(r => r.id === "rule-test"), "rule persisted to IndexedDB");
+
+  // removeLogFormat/removeFormatRule (the UI-level wrappers) act on
+  // in-memory state.logFormats/formatRules, kept in sync with IndexedDB by
+  // saveLogFormat/saveFormatRule elsewhere — drive them the same way.
+  T.state.logFormats = stored;
+  T.state.formatRules = storedRules;
+
+  await w.removeLogFormat("fmt-test");
+  assert(T.state.logFormats.some(f => f.id === "fmt-test"), "in-memory: a format still referenced by a rule is not removed");
+  const afterGuard = await w.listLogFormats();
+  assert(afterGuard.some(f => f.id === "fmt-test"), "IndexedDB: the blocked delete never reached the store");
+
+  await w.removeFormatRule("rule-test");
+  assert(!T.state.formatRules.some(r => r.id === "rule-test"), "in-memory: rule removed");
+  storedRules = await w.listFormatRules();
+  assert(!storedRules.some(r => r.id === "rule-test"), "IndexedDB: rule actually deleted");
+
+  await w.removeLogFormat("fmt-test");
+  assert(!T.state.logFormats.some(f => f.id === "fmt-test"), "in-memory: format removable once no rule references it");
+  stored = await w.listLogFormats();
+  assert(!stored.some(f => f.id === "fmt-test"), "IndexedDB: format actually deleted");
+
+  T.state.logFormats = [{ id: "fmt-default", builtin: true, edited: false, name: "Default" }];
+  T.state.formatRules = [];
+  await w.removeLogFormat("fmt-default");
+  assert(T.state.logFormats.some(f => f.id === "fmt-default"), "the builtin default is never removed, regardless of references");
+}, { indexedDB: new IDBFactory() });
+
+section("70g. Session-cache restore keeps a file's format pinned even after its matching rule is later removed");
+{
+  const factory = new IDBFactory();
+  const bracketLog = [
+    "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed",
+    "[2024-01-15 10:00:01] INFO (worker-1) Retrying connection, attempt 2/3",
+  ].join("\n") + "\n";
+
+  await withApp(async (w, d, T) => {
+    await waitForFormatConfig(T);
+    const fmt = { id: "fmt-bracket", name: "Bracket", mode: "pattern", pattern: "[%d] %p (%t) %m%n", regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss", builtin: false, edited: false, createdAt: Date.now() };
+    await w.saveLogFormat(fmt);
+    T.state.logFormats.push(fmt);
+    const rule = { id: "rule-bracket", glob: "bracket-*.log", formatId: fmt.id, order: 0, createdAt: Date.now() };
+    await w.saveFormatRule(rule);
+    T.state.formatRules.push(rule);
+
+    const f = await w.addFile("bracket-1.log", bracketLog, () => {});
+    assert(f.formatId === "fmt-bracket", "sanity: file resolved to the custom format via the rule");
+    assert(f.entries[0].level === "ERROR" && f.entries[0].thread === "worker-1", "sanity: parsed under the custom format before persisting");
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+
+    // Delete the RULE (keep the format definition) so a fresh resolution of
+    // this filename would now fall back to the builtin default — proving
+    // restore uses the file's own pinned formatId, not live re-resolution.
+    await w.removeFormatRule(rule.id); // already updates state.formatRules internally
+    assert(w.resolveFormatIdForFilename("bracket-1.log") === "fmt-default", "sanity: fresh resolution now falls back to default (rule gone)");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    assert(T.state.rootIds.length === 1, "restore: file came back via boot-time restore");
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f.formatId === "fmt-bracket", "restore: file's original formatId is pinned, ignoring the now-deleted rule");
+    assert(f.entries.length === 2, "restore: both entries came back");
+    assert(f.entries[0].level === "ERROR" && f.entries[0].thread === "worker-1" && f.entries[0].message === "Database connection failed",
+      "restore: re-parsed under the ORIGINAL custom format, not the default, got " + JSON.stringify({ level: f.entries[0].level, thread: f.entries[0].thread, message: f.entries[0].message }));
+  }, { indexedDB: factory });
+}
+
+await withApp(async (w, d, T) => {
+  section("70h. Settings menu: open/close, opens Format Manager, closes on outside click / backdrop click");
+  const btnSettings = d.querySelector("#btnSettings");
+  const settingsMenu = d.querySelector("#settingsMenu");
+  assert(settingsMenu.classList.contains("hidden"), "sanity: settings menu starts closed");
+
+  fireClick(btnSettings, w);
+  assert(!settingsMenu.classList.contains("hidden"), "clicking the settings button opens the menu");
+  fireClick(btnSettings, w);
+  assert(settingsMenu.classList.contains("hidden"), "clicking it again toggles the menu closed");
+
+  fireClick(btnSettings, w);
+  fireClick(d.body, w);
+  assert(settingsMenu.classList.contains("hidden"), "clicking outside the menu closes it (global outside-click listener)");
+
+  fireClick(btnSettings, w);
+  fireClick(d.querySelector('#settingsMenu [data-action="formatManager"]'), w);
+  assert(settingsMenu.classList.contains("hidden"), "picking the Format Manager item closes the settings menu");
+  assert(!d.querySelector("#formatManagerDialog").classList.contains("hidden"), "...and opens the Format Manager dialog");
+
+  fireClick(d.querySelector("#formatManagerDialog"), w); // click lands on the backdrop itself
+  assert(d.querySelector("#formatManagerDialog").classList.contains("hidden"), "clicking the dialog's own backdrop closes it");
+});
+
+await withApp(async (w, d, T) => {
+  section("70i. appendTailText is format-aware: a tailed file parses new chunks under ITS OWN format, not the global default");
+  const bracketFmt = { id: "fmt-bracket-tail", name: "Bracket", mode: "pattern", pattern: "[%d] %p (%t) %m%n", regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss", builtin: false, edited: false, createdAt: Date.now() };
+  T.state.logFormats.push(bracketFmt);
+
+  const node = { id: "fake-tail", entries: [], tail: { pending: "" }, formatId: bracketFmt.id };
+  const changed = w.appendTailText(node, "[2024-01-15 10:00:05] WARN (main) tail line one\n");
+  assert(changed === true, "appendTailText reports a change when a new entry lands");
+  assert(node.entries.length === 1, "one entry appended");
+  assert(node.entries[0].level === "WARN" && node.entries[0].thread === "main" && node.entries[0].message === "tail line one",
+    "the appended entry is parsed under the file's OWN custom format, not the default log4net shape");
+
+  // A second chunk in the SAME custom shape keeps working (not a one-shot fluke).
+  w.appendTailText(node, "[2024-01-15 10:00:06] INFO (main) tail line two\n");
+  assert(node.entries.length === 2 && node.entries[1].message === "tail line two", "a subsequent chunk parses correctly too");
+
+  // Default-format node (no formatId) still works via appendTailText, proving
+  // this codepath's dispatch didn't regress the un-configured case either.
+  const defaultNode = { id: "fake-tail-2", entries: [], tail: { pending: "" }, formatId: null };
+  w.appendTailText(defaultNode, makeLog(0, 1));
+  assert(defaultNode.entries.length === 1 && defaultNode.entries[0].message === "message 0", "a node with no formatId still tails under the builtin default");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -8382,6 +8675,28 @@ process.exit(failed ? 1 : 0);
               visible) the instant merging starts, filled in over
               MERGE_CHUNK_ENTRIES-sized chunks with a live progress bar,
               then chronologically sorted and cleared to a normal row.
+
+   Group 70  — this session (2026-08-21), person-requested (German):
+              "Format Manager" — a new Settings menu whose first entry maps
+              filename glob patterns to configurable log formats (a
+              log4net/LogViewPlus-style conversion pattern, or a raw regex
+              for edge cases), so PhiLogg can parse formats beyond its one
+              hardcoded default. compileFormatPattern (mirrors
+              compileExtractPattern's literal-escaping/named-group
+              approach) and validateFormatRegex both funnel into
+              applyFormatMatch, producing the same fixed entry schema
+              every other format uses; the builtin default stays a
+              pass-through to the untouched HEADER_RE/parseHeaderLine
+              until edited. Filenames resolve to formats via
+              resolveFormatIdForFilename (first-match glob rule, editable
+              order), pinned onto the file node at load time and preserved
+              verbatim across a session-cache restore even if rules
+              changed since. Also (same-session follow-ups): Examples/
+              renamed to examples/ with a second sample file in a
+              different shape; tools/log-simulator.html gained a matching
+              configurable pattern field; and a shared canonical default
+              pattern string used identically by both the builtin
+              LogFormat and the simulator's default input.
               Both pre-existing direct mergeFiles() callers in this suite
               (Groups 10 and 30c, originally synchronous) were updated to
               await it.
