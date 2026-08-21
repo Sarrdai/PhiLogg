@@ -18,14 +18,14 @@ item, leave its number retired rather than reusing it.
 11. **Bugfix**: opening the app directly with a file passed as a launch/command-line argument opens the file but doesn't recognize it should be tailed. Consider also periodically re-checking static (non-tailed) files for changes.
 12. **Minimap: line-based instead of time-based** — show position/density by line count rather than by timestamp span.
 13. **Pin/dock the Tree view and Detail view** — pinned panel collapses to a minimized strip instead of taking full space.
-14. **Configurable font size** — adjustable in Settings and via a keyboard shortcut.
-15. **Shortcuts to switch between Tree and Filter view** — `Ctrl+1`/`Ctrl+0` to jump back and forth; `Enter` on a filter also returns to the Filtered view.
+14. ~~**Configurable font size**~~ — done (2026-08-21): a whole-UI zoom, adjustable via a Settings row (+/-/Reset) and `Ctrl+Plus`/`Ctrl+Minus`. See `PROJECT.md`'s "Status / changelog".
+15. ~~**Shortcuts to switch between Tree and Filter view**~~ — done (2026-08-21): `Ctrl+1`/`Ctrl+0` to jump back and forth; `Enter` on a filter also returns to the Filtered view. See `PROJECT.md`'s "Status / changelog".
 16. (maybe) **LogLevel filters also created as OR-linked nodes in the filter tree** when a level is toggled on/off.
-17. **Horizontal scrollbar in the Filter view** — so long messages can be read in full.
-18. **Double-click on a filter opens its edit dialog.**
+17. ~~**Horizontal scrollbar in the Filter view**~~ — done (2026-08-21): long messages can now be read in full. See `PROJECT.md`'s "Status / changelog".
+18. ~~**Double-click on a filter opens its edit dialog.**~~ — done (2026-08-21). See `PROJECT.md`'s "Status / changelog".
 19. **Electron-only: `F11` toggles fullscreen** (no window decorations).
-20. **`Ctrl+W` closes the currently open file.**
-21. **Settings option: "Closing the last log file quits the app"** — default off.
+20. ~~**`Ctrl+W` closes the currently open file.**~~ — done (2026-08-21). See `PROJECT.md`'s "Status / changelog".
+21. ~~**Settings option: "Closing the last log file quits the app"**~~ — done (2026-08-21), default off. See `PROJECT.md`'s "Status / changelog".
 22. **Settings exportable as JSON.** The Electron variant should by default store/load settings in the OS "well-known" config directory (XDG on Linux, e.g. `~/.config/PhiLogg`).
 
 ---

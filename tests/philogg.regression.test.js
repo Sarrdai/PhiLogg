@@ -7801,6 +7801,300 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 71 — Configurable font size
+   Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Configurable font
+   size — adjustable in Settings and via a keyboard shortcut". A whole-UI
+   zoom (document.documentElement.style.zoom) rather than a font-size
+   variable threaded through every hardcoded font-size in the file — see
+   applyFontScale's own comment. Settings row (+/- buttons, a Reset button)
+   and Ctrl+Plus/Ctrl+Minus both funnel into the same function, persisted to
+   localStorage like the theme toggle.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("71. Configurable font size");
+
+  const html = d.documentElement;
+  assert(html.style.zoom === "1", "default font scale is 100% (zoom:1) at boot, got " + JSON.stringify(html.style.zoom));
+  assert(d.getElementById("fontScaleValue").textContent === "100%", "Settings shows 100% by default");
+
+  fireClick(d.getElementById("fontScaleUp"), w);
+  assert(html.style.zoom === "1.1", "the + button increases zoom by one step (10%)");
+  assert(d.getElementById("fontScaleValue").textContent === "110%", "...and the Settings value label updates too");
+  assert(w.localStorage.getItem("philogg-font-scale") === "110", "persisted to localStorage");
+
+  fireClick(d.getElementById("fontScaleDown"), w);
+  fireClick(d.getElementById("fontScaleDown"), w);
+  assert(html.style.zoom === "0.9", "the - button decreases zoom by one step");
+
+  for (let i = 0; i < 10; i++) fireClick(d.getElementById("fontScaleDown"), w);
+  assert(html.style.zoom === "0.7", "font scale clamps at the minimum (70%), got " + html.style.zoom);
+  for (let i = 0; i < 20; i++) fireClick(d.getElementById("fontScaleUp"), w);
+  assert(html.style.zoom === "1.6", "font scale clamps at the maximum (160%), got " + html.style.zoom);
+
+  fireClick(d.getElementById("fontScaleReset"), w);
+  assert(html.style.zoom === "1", "Reset restores 100%");
+
+  fireKeydown(d, w, "+", { ctrlKey: true });
+  assert(html.style.zoom === "1.1", "Ctrl+Plus increases font scale via keyboard");
+  fireKeydown(d, w, "-", { ctrlKey: true });
+  assert(html.style.zoom === "1", "Ctrl+Minus decreases font scale via keyboard, back to 100%");
+});
+
+/* ============================================================
+   GROUP 72 — Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter
+   Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Shortcuts to
+   switch between Tree and Filter view", REVISED twice same session per
+   person-requested follow-up feedback: Ctrl+0 focuses the filter tree at
+   whichever node is ALREADY active — a filter included, not just its root
+   file — so arrow keys continue navigating from wherever the person
+   currently is (an even earlier pass jumped up to the active node's root
+   FILE instead, which undid exactly that); falls back to the first root
+   file only if nothing's active yet. Ctrl+1/2/3 mirror the Full/Filtered/
+   Stacked toggle buttons one-for-one AND focus the entries pane for
+   arrow-key navigation — a new state.entriesView ("filter" | "highlight")
+   decides which of moveSelection/moveHighlightSelection the global
+   ArrowUp/Down handler calls, also updated by a plain click/dblclick in
+   either Log view.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("72. Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const filterA = w.createFilterNode(f.id, "text", "message");
+  w.render();
+
+  // Ctrl+0: focus the tree at whichever node is ALREADY active — a filter
+  // stays the active node, it does NOT jump up to its root file.
+  T.state.activeId = filterA.id;
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  assert(T.state.activeId === filterA.id, "Ctrl+0 keeps the already-active FILTER active, doesn't jump up to its root file");
+  assert(T.state.focusRegion === "tree", "Ctrl+0 switches focus to the tree");
+
+  T.state.activeId = null;
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  assert(T.state.activeId === f.id, "Ctrl+0 with no active node falls back to the first root file");
+
+  // Ctrl+1: opens Full (Highlight) and focuses it for arrow-key navigation.
+  w.applyFhView("filter");
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.fhActiveTab === "highlight", "Ctrl+1 opens the Full view");
+  assert(T.state.focusRegion === "entries" && T.state.entriesView === "highlight", "...and focuses it (entriesView) for arrow-key navigation");
+
+  const beforeHighlightSelect = T.state.selectedId;
+  fireKeydown(d, w, "ArrowDown");
+  assert(T.state.selectedId !== beforeHighlightSelect, "with entriesView \"highlight\", ArrowDown moves the Full view's own selection, not the Filtered view's");
+
+  // Ctrl+2: opens Filtered and focuses it — arrow keys move that view instead.
+  fireKeydown(d, w, "2", { ctrlKey: true });
+  assert(T.fhActiveTab === "filter", "Ctrl+2 opens the Filtered view");
+  assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...and focuses it (entriesView) for arrow-key navigation");
+
+  // Ctrl+3: opens Stacked (both panels visible), defaulting arrow-key focus to Filtered.
+  fireKeydown(d, w, "3", { ctrlKey: true });
+  assert(T.fhLayout === "stacked", "Ctrl+3 opens the Stacked layout");
+  assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...defaulting arrow-key focus to the Filtered pane");
+
+  // Enter on an active FILTER node while the tree has focus reveals the Filtered view.
+  w.applyFhView("highlight");
+  T.state.activeId = filterA.id;
+  T.state.focusRegion = "tree";
+  fireKeydown(d, w, "Enter");
+  assert(T.fhActiveTab === "filter", "Enter on an active filter node (tree focus) reveals the Filtered view");
+  assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...and switches focus to the entries pane");
+
+  // Enter on a FILE node (not a filter) is a no-op for the view switch.
+  w.applyFhView("highlight");
+  T.state.activeId = f.id;
+  T.state.focusRegion = "tree";
+  fireKeydown(d, w, "Enter");
+  assert(T.fhActiveTab === "highlight", "Enter on a file node (not a filter) leaves the Full tab showing");
+  assert(T.state.focusRegion === "tree", "...and focus stays on the tree");
+});
+
+/* ============================================================
+   GROUP 73 — Horizontal scrollbar in the Filter view
+   Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Horizontal
+   scrollbar in the Filter view — so long messages can be read in full".
+   #tableBody scrolls horizontally now (Filter view only — #highlightBody,
+   the Full view, is unaffected); #tableHeader keeps its own scrollbar
+   hidden and has its scrollLeft driven by #tableBody's scroll event, and
+   its .row-grid's width kept in sync with the widest currently-rendered
+   row (syncTableHeaderWidth, called from renderVisibleRows) since the
+   header's own content (short column labels) would otherwise size much
+   narrower than a long message. The actual visual overflow/scrollbar
+   behavior is CSS/layout-driven (`width:fit-content` on `.log-row` under
+   #tableRows) and isn't independently verifiable here — jsdom has no real
+   layout engine (see tests/README's "Known gaps") — so this covers the
+   JS-observable parts: the overflow-x split itself (real computed style,
+   not just a class) and the header sync/scroll-lockstep logic.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("73. Horizontal scrollbar in the Filter view");
+
+  const tableBody = d.getElementById("tableBody");
+  const tableHeader = d.getElementById("tableHeader");
+  const highlightBody = d.getElementById("highlightBody");
+
+  assert(w.getComputedStyle(tableBody).overflowX === "auto", "Filter view's #tableBody scrolls horizontally");
+  assert(w.getComputedStyle(tableHeader).overflowX === "hidden", "the header's own (synced, non-user-facing) scrollbar stays hidden");
+  assert(w.getComputedStyle(highlightBody).overflowX === "hidden", "the Full/Highlight view is unaffected — still clips long messages");
+
+  await w.addFile("a.log", makeLog(0, 5), () => {});
+  w.render();
+
+  const tableRows = d.getElementById("tableRows");
+  Object.defineProperty(tableRows, "scrollWidth", { value: 1234, configurable: true });
+  w.renderVisibleRows();
+  const headerGrid = tableHeader.querySelector(".row-grid");
+  assert(headerGrid.style.width === "1234px", "the header's row-grid width tracks the widest rendered row's natural width, got " + headerGrid.style.width);
+
+  tableBody.scrollLeft = 42;
+  tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  assert(tableHeader.scrollLeft === 42, "scrolling the Filter view's body drives the header's scrollLeft to match");
+});
+
+/* ============================================================
+   GROUP 74 — Double-click a filter row opens its edit dialog
+   Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Double-click on a
+   filter opens its edit dialog". NOT a native "dblclick" listener: a tree
+   row's own click handler always ends in a full render(), which rebuilds
+   every #tree row from scratch (CLAUDE.md's "DOM identity across clicks"
+   gotcha, previously documented for renderVisibleRows()/native dblclick —
+   the same class of bug applies here to a real browser's dblclick pairing,
+   just unobservable from jsdom's directly-dispatched click events). Manual
+   click-id+timestamp tracking (lastTreeRowClickId/Time) sidesteps that
+   entirely. Shares the same editFilterNode helper F2 and the context
+   menu's "Edit filter…" action already use.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("74. Double-click a filter row opens its edit dialog");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  const timeNode = w.createFilterNode(f.id, "after", f.entries[3].ts);
+  w.render();
+  function rowFor(nodeId) { return d.querySelector('.tree-row[data-node-id="' + nodeId + '"]'); }
+
+  fireClick(rowFor(textNode.id), w);
+  assert(d.querySelector("#filterPopup").classList.contains("hidden"), "a single click alone doesn't open the edit dialog");
+  fireClick(rowFor(textNode.id), w);
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "...but a second quick click on the same row does (double-click)");
+  assert(d.querySelector("#filterInput").value === "message 1", "...pre-filled with the existing value (edit mode)");
+  w.closeFilterPopup();
+
+  // A time-range ("after") node opens the OTHER dialog on double-click.
+  w.render();
+  fireClick(rowFor(timeNode.id), w);
+  fireClick(rowFor(timeNode.id), w);
+  assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "double-clicking a time-filter row opens the time-range dialog instead");
+  w.closeTimeRangeDialog();
+
+  // Two Ctrl+clicks (multi-select gesture) never count as a double-click.
+  w.render();
+  const ctrlClick = () => rowFor(textNode.id).dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+  ctrlClick(); ctrlClick();
+  assert(d.querySelector("#filterPopup").classList.contains("hidden"), "two Ctrl+clicks (multi-select) never open the edit dialog");
+
+  // Two clicks spread further apart than the double-click window don't count either.
+  w.render();
+  fireClick(rowFor(textNode.id), w);
+  await new Promise(r => setTimeout(r, 600));
+  fireClick(rowFor(textNode.id), w);
+  assert(d.querySelector("#filterPopup").classList.contains("hidden"), "two clicks well over 450ms apart don't count as a double-click");
+
+  // A file row (not a filter) double-click is a harmless no-op.
+  w.render();
+  fireClick(rowFor(f.id), w);
+  fireClick(rowFor(f.id), w);
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") && d.querySelector("#timeRangeDialog").classList.contains("hidden"),
+    "double-clicking a FILE row opens neither dialog");
+});
+
+/* ============================================================
+   GROUP 75 — Ctrl+W closes the currently open file
+   Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Ctrl+W closes the
+   currently open file". Same close path the tree row's own ✕ button uses
+   (deleteFilterNodeWithUndo via getRootFileId), so it's undo-able and works
+   regardless of which node in the file's chain happens to be active.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("75. Ctrl+W closes the currently open file");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const filterA = w.createFilterNode(f.id, "text", "message");
+  T.state.activeId = filterA.id; // active node is a child filter, not the file itself
+  w.render();
+
+  fireKeydown(d, w, "w", { ctrlKey: true });
+  assert(!T.state.nodes[f.id], "Ctrl+W removes the active node's root FILE, even though a child filter was active");
+  assert(!T.state.nodes[filterA.id], "...and its filter children go with it");
+  assert(T.state.rootIds.length === 0, "no files remain");
+
+  T.state.activeId = null;
+  fireKeydown(d, w, "w", { ctrlKey: true });
+  assert(T.state.rootIds.length === 0, "Ctrl+W with nothing open is a harmless no-op");
+
+  const f2 = await w.addFile("b.log", makeLog(0, 3), () => {});
+  T.state.activeId = f2.id;
+  w.render();
+  fireKeydown(d, w, "w", { ctrlKey: true });
+  assert(T.state.rootIds.length === 0, "sanity: b.log closed");
+  w.undo();
+  assert(T.state.nodes[f2.id], "Ctrl+W's close goes through the same undo-able deleteFilterNodeWithUndo path as the ✕ button");
+});
+
+/* ============================================================
+   GROUP 76 — Settings: "Closing the last log file quits the app"
+   Origin: this session (2026-08-21), FEATURE_BACKLOG.md item, default off.
+   Purely a local app-behavior preference (localStorage, like the theme
+   toggle), meaningful mainly under the Electron desktop wrapper — a bare
+   window.close() is enough there since Electron intercepts a renderer's
+   own window.close() and closes that BrowserWindow (see PROJECT.md
+   "Desktop wrapper"); in an ordinary browser tab it's a no-op. window.close
+   is stubbed here (and restored afterwards) rather than actually invoked,
+   since a real jsdom window.close() would tear the test window down mid-run.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("76. Settings: \"Closing the last log file quits the app\" (default off)");
+
+  const checkbox = d.getElementById("settingsQuitOnLastClose");
+  assert(checkbox.checked === false, "off by default");
+
+  const originalClose = w.close;
+  let closeCalls = 0;
+  w.close = () => { closeCalls++; };
+  try {
+    const f = await w.addFile("a.log", makeLog(0, 3), () => {});
+    T.state.activeId = f.id;
+    w.render();
+
+    fireKeydown(d, w, "w", { ctrlKey: true });
+    assert(closeCalls === 0, "closing the last file does nothing extra while the setting is off");
+    assert(w.localStorage.getItem("philogg-quit-on-last-close") === null, "nothing persisted yet — setting untouched");
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+    assert(w.localStorage.getItem("philogg-quit-on-last-close") === "1", "enabling the checkbox persists it");
+
+    const f2 = await w.addFile("b.log", makeLog(0, 3), () => {});
+    const other = await w.addFile("c.log", makeLog(0, 3), () => {});
+    T.state.activeId = f2.id;
+    w.render();
+
+    fireKeydown(d, w, "w", { ctrlKey: true });
+    assert(closeCalls === 0, "closing one of two open files doesn't quit — one file (\"c.log\") still remains");
+    assert(T.state.rootIds.length === 1, "sanity: one file remains");
+
+    T.state.activeId = other.id;
+    w.render();
+    fireKeydown(d, w, "w", { ctrlKey: true });
+    assert(closeCalls === 1, "closing the very last open file quits the app when the setting is on");
+  } finally {
+    w.close = originalClose;
+  }
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -8860,6 +9154,71 @@ process.exit(failed ? 1 : 0);
               deliberately different pattern (proving parsing actually
               changed, not just display), resets it, then confirms a
               fresh file parses identically to before the edit.
+
+   Group 71  — this session (2026-08-21), FEATURE_BACKLOG.md "Configurable
+              font size": a whole-UI zoom (applyFontScale), a Settings row
+              (+/- buttons, Reset), and Ctrl+Plus/Ctrl+Minus, all persisted
+              to localStorage like the theme toggle.
+   Group 72  — this session (2026-08-21), FEATURE_BACKLOG.md "Shortcuts to
+              switch between Tree and Filter view", REVISED TWICE same
+              session per person-requested follow-up feedback: Ctrl+0
+              focuses the filter tree at whichever node is ALREADY active
+              — a filter included — so arrow keys continue navigating from
+              wherever the person currently is (falling back to the first
+              root file only if nothing's active yet); an intermediate pass
+              had it jump up to the active node's root FILE instead, which
+              undid exactly that. Ctrl+1/2/3 mirror the Full/Filtered/
+              Stacked toggle buttons and additionally focus that Log
+              view's entries for arrow-key navigation via the new
+              state.entriesView ("filter" | "highlight", also set by a
+              plain click/dblclick in either Log view — see selectEntry/
+              selectHighlightEntry/revealInHighlightView), which the
+              global ArrowUp/Down handler now reads to pick moveSelection
+              vs. the new moveHighlightSelection; Enter still reveals the
+              Filtered view for an active filter node while the tree has
+              focus (not for a file node).
+   Group 73  — this session (2026-08-21), FEATURE_BACKLOG.md "Horizontal
+              scrollbar in the Filter view", REVISED same session after a
+              person-reported bug: the original `width:fit-content` on
+              `.log-row` never actually produced any overflow (verified
+              live via Playwright, not just jsdom — `.col-msg`'s
+              `overflow:hidden` resets its CSS "automatic minimum size" to
+              0, so the message column's `1fr` grid track just kept
+              shrinking to fit, exactly as before the change). Fixed by
+              giving `.col-msg` an explicit `min-width:max-content` instead
+              (Filter view only, `#tableRows .col-msg`), which is what
+              actually makes the grid track — and so the row — refuse to
+              shrink below a long message's natural width. #tableBody
+              scrolls horizontally as a result (Filter view only,
+              #highlightBody untouched), with #tableHeader's own scrollbar
+              hidden and driven in lockstep via scrollLeft + a width sync
+              (syncTableHeaderWidth) onto the widest currently-rendered
+              row. The real overflow itself still isn't independently
+              verifiable in jsdom (no real layout engine) — this group
+              covers the JS-observable parts only: the overflow-x split
+              (real computed style) and the sync/scroll logic, with
+              tableRows.scrollWidth stubbed directly.
+   Group 74  — this session (2026-08-21), FEATURE_BACKLOG.md "Double-click
+              on a filter opens its edit dialog". Manual click-id+timestamp
+              tracking (lastTreeRowClickId/Time) rather than a native
+              "dblclick" listener, since a tree row's click handler always
+              ends in a full render() that rebuilds every row (the same
+              "DOM identity across clicks" class of bug Group 6 first
+              caught for renderVisibleRows()/native dblclick, just
+              unobservable from jsdom's directly-dispatched clicks here).
+              Shares the same editFilterNode helper F2/the context menu's
+              "Edit filter…" action were refactored onto in the same
+              session.
+   Group 75  — this session (2026-08-21), FEATURE_BACKLOG.md "Ctrl+W closes
+              the currently open file" — same undo-able
+              deleteFilterNodeWithUndo path (via getRootFileId) the tree
+              row's own ✕ button already uses.
+   Group 76  — this session (2026-08-21), FEATURE_BACKLOG.md "Settings
+              option: 'Closing the last log file quits the app'", default
+              off. A plain localStorage flag (same tier as the theme
+              toggle); window.close() is stubbed (saved/restored) rather
+              than actually invoked, since a real jsdom window.close()
+              would tear the test window down mid-run.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
