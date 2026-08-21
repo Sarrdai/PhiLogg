@@ -2376,6 +2376,7 @@
       <div><kbd>Ctrl</kbd>+<kbd>0</kbd> — focus the filter tree at wherever you currently are</div>
       <div><kbd>Ctrl</kbd>+<kbd>1</kbd> Full · <kbd>Ctrl</kbd>+<kbd>2</kbd> Filtered · <kbd>Ctrl</kbd>+<kbd>3</kbd> Stacked — switch view and focus it for ↑ / ↓</div>
       <div><kbd>Enter</kbd> on a filter (tree focused) — jump to the Filtered view</div>
+      <div><kbd>Enter</kbd> on a selected row (Filtered/Stacked) — same as double-click</div>
       <div>Right-click a row — filter before/after</div>
       <div>Double-click a row — jump to it in the full log</div>
       <div>The Filter view scrolls sideways for long messages</div>
@@ -12328,6 +12329,24 @@ document.addEventListener("keydown", ev => {
       revealFilteredView();
       state.entriesView = "filter";
       state.focusRegion = "entries";
+    }
+    return;
+  }
+
+  // Enter on a single selected row in the Filtered view (or the Filtered
+  // pane, bottom half, of the Stacked view — same entriesView === "filter"
+  // rows either way) mirrors that row's own dblclick handler
+  // (revealInHighlightView, see its comment above): centre the Highlight
+  // view on the entry without touching the Filter view's own scroll/filter
+  // state. Only fires for a single selection — with a multi-select active
+  // (state.logMultiSelect) Enter has no obvious single target, so it's left
+  // alone.
+  if (ev.key === "Enter" && state.focusRegion === "entries" && state.entriesView === "filter" &&
+      state.selectedId && !state.logMultiSelect.size) {
+    const entry = entryIndex[state.selectedId];
+    if (entry) {
+      ev.preventDefault();
+      revealInHighlightView(entry);
     }
     return;
   }
