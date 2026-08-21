@@ -34,7 +34,8 @@
     --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
   }
 
-  /* Light theme override. Toggled via [data-theme="light"] on <html>, see #btnTheme. */
+  /* Light theme override. Toggled via [data-theme="light"] on <html>, see the
+     Appearance section in Settings (#settingsThemeLight/#settingsThemeDark). */
   :root[data-theme="light"]{
     --bg-app:#f5f6f8;
     --bg-panel:#ffffff;
@@ -126,14 +127,6 @@
   }
   #btnSession:hover{background:var(--bg-elevated-2); border-color:#333c50;}
   #btnSession svg{flex:0 0 auto;}
-  #btnTheme{
-    display:flex; align-items:center; justify-content:center;
-    width:29px; height:29px; flex:0 0 auto;
-    background:var(--bg-elevated); color:var(--text-secondary);
-    border:1px solid var(--border); border-radius:7px;
-    cursor:pointer; transition:background .12s, border-color .12s, color .12s;
-  }
-  #btnTheme:hover{background:var(--bg-elevated-2); border-color:#333c50; color:var(--text-primary);}
   .toolbar-icon-btn{
     display:flex; align-items:center; justify-content:center; position:relative;
     width:29px; height:29px; flex:0 0 auto;
@@ -1162,6 +1155,67 @@
     display:flex; padding:4px; border-radius:4px; flex:0 0 auto;
   }
   .filter-library-row-del:hover{color:var(--level-error); background:var(--level-error-soft);}
+
+  /* ---------- Settings page — a single wide, scrollable, sectioned dialog
+     (not a menu of separate popups). Log Formats reuses the filter-library
+     row layout above for both the format list and the rule list; Add/Edit
+     format/rule embed INLINE within their section instead of opening
+     another dialog on top (.settings-inline-panel). ---------- */
+  #settingsDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #settingsDialog.hidden{display:none;}
+  .settings-page-card{
+    width:min(1140px, 96vw); max-height:min(1080px, 92vh); display:flex; flex-direction:column;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px;
+    box-shadow:0 20px 45px rgba(0,0,0,.5); overflow:hidden;
+  }
+  .settings-page-header{
+    display:flex; align-items:center; justify-content:space-between; flex:0 0 auto;
+    padding:16px 22px; border-bottom:1px solid var(--border);
+  }
+  .settings-page-title{font-size:14.5px; font-weight:650; color:var(--text-primary);}
+  .settings-page-body{flex:1 1 auto; overflow-y:auto; padding:4px 22px 22px;}
+  .settings-section{padding:20px 0; border-bottom:1px solid var(--border-soft);}
+  .settings-section:last-child{border-bottom:none;}
+  .settings-section-title{font-size:13px; font-weight:650; color:var(--text-primary); margin:0 0 4px;}
+  .settings-section-desc{font-size:11.5px; color:var(--text-tertiary); margin:0 0 14px; line-height:1.5;}
+  .settings-subsection-title{
+    font-size:11px; font-weight:650; color:var(--text-secondary); text-transform:uppercase;
+    letter-spacing:.4px; margin:20px 0 8px;
+  }
+  .settings-row{display:flex; align-items:center; justify-content:space-between; gap:16px; padding:2px 0;}
+  .settings-row-label{font-size:12.5px; color:var(--text-primary);}
+  .settings-row-control.assert-mode-row{margin-bottom:0; width:auto;}
+  .settings-row-control .assert-mode-btn{flex:0 0 auto; padding:6px 16px;}
+  .settings-inline-panel{
+    margin-top:10px; padding:16px 16px 14px; border-radius:10px;
+    background:var(--accent-soft); border:1px solid var(--accent);
+  }
+  .settings-inline-panel.hidden{display:none;}
+  #btnAddFormat.hidden, #btnAddFormatRule.hidden{display:none;}
+  #formatEditPatternField.hidden, #formatEditRegexField.hidden{display:none;}
+  .settings-inline-panel-title{font-size:12.5px; font-weight:650; color:var(--text-primary); margin-bottom:12px;}
+  .settings-inline-panel textarea{
+    width:100%; box-sizing:border-box; resize:vertical; min-height:52px;
+    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:7px 9px; font-family:var(--font-mono); font-size:11.5px;
+  }
+  #formatList, #formatRuleList{max-height:min(220px, 30vh); overflow-y:auto; margin:-2px 0 8px;}
+  .filter-library-row-order{
+    background:none; border:none; color:var(--text-tertiary); cursor:pointer;
+    display:flex; padding:2px; border-radius:4px; flex:0 0 auto; font-size:10px; line-height:1;
+  }
+  .filter-library-row-order:hover:not(:disabled){color:var(--accent-strong); background:var(--accent-soft);}
+  .filter-library-row-order:disabled{opacity:.3; cursor:default;}
+  .format-preview{max-height:150px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; background:var(--bg-app);}
+  .format-preview-empty{padding:9px 10px; font-size:11px; color:var(--text-tertiary);}
+  .format-preview-row{padding:6px 9px; border-bottom:1px solid var(--border-soft); font-size:10.8px; font-family:var(--font-mono); line-height:1.6;}
+  .format-preview-row:last-child{border-bottom:none;}
+  .format-preview-field{color:var(--text-tertiary); margin-right:10px; white-space:nowrap;}
+  .format-preview-field b{color:var(--text-primary); font-weight:600;}
+  .format-preview-row.format-preview-nomatch{color:var(--level-error);}
   .session-file-row{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border); font-size:12px;}
   .session-file-row:last-child{border-bottom:none;}
   .session-file-name{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); font-family:var(--font-mono);}
@@ -1589,9 +1643,6 @@
         <button id="btnBookmarks" class="toolbar-icon-btn" title="Bookmarks"></button>
         <button id="btnShortcuts" class="toolbar-icon-btn" title="Keyboard shortcuts"></button>
       </div>
-      <button id="btnTheme" title="Toggle light/dark theme">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" id="btnThemeIcon"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.3v1.6M8 13.1v1.6M2.6 8H1M15 8h-1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/></svg>
-      </button>
       <button id="btnSession">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
         Session…
@@ -1620,6 +1671,9 @@
           Folder…
         </div>
       </div>
+      <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.6v1.7M8 12.7v1.7M14.4 8h-1.7M3.3 8H1.6M12.5 3.5l-1.2 1.2M4.7 11.3l-1.2 1.2M12.5 12.5l-1.2-1.2M4.7 4.7 3.5 3.5"/></svg>
+      </button>
       <button id="btnLicense" class="toolbar-icon-btn" title="License"></button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
@@ -2114,6 +2168,104 @@
     </div>
   </div>
 
+  <!-- Settings page (FEATURE_BACKLOG.md "Pluggable parser logic" + general
+       settings home). One wide, scrollable, sectioned page rather than a
+       menu of separate popups — Add/Edit format/rule embed INLINE within
+       their section (.settings-inline-panel, highlighted background)
+       instead of opening yet another dialog on top. -->
+  <div id="settingsDialog" class="hidden">
+    <div class="settings-page-card">
+      <div class="settings-page-header">
+        <div class="settings-page-title">Settings</div>
+        <button type="button" id="settingsClose" class="btn-icon" title="Close">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg>
+        </button>
+      </div>
+      <div class="settings-page-body">
+
+        <section class="settings-section">
+          <div class="settings-section-title">Appearance</div>
+          <div class="settings-row">
+            <div class="settings-row-label">Theme</div>
+            <div class="settings-row-control assert-mode-row">
+              <button type="button" class="assert-mode-btn" id="settingsThemeLight" data-theme-choice="light">Light</button>
+              <button type="button" class="assert-mode-btn" id="settingsThemeDark" data-theme-choice="dark">Dark</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section-title">Log Formats</div>
+          <div class="settings-section-desc">Define additional log formats and map filenames to them by pattern — the default format works with zero configuration.</div>
+
+          <div id="formatList"></div>
+          <button type="button" id="btnAddFormat" class="btn-mini">+ Add format…</button>
+          <div id="formatEditPanel" class="hidden settings-inline-panel">
+            <div class="settings-inline-panel-title" id="formatEditTitle">Add log format</div>
+            <div class="link-field">
+              <label for="formatEditName">Name</label>
+              <input type="text" id="formatEditName" placeholder="e.g. Nginx access log" maxlength="80" autocomplete="off">
+            </div>
+            <div class="link-field">
+              <label for="formatEditSample">Example log line(s) <span class="link-target-label">(optional — suggests a pattern below)</span></label>
+              <textarea id="formatEditSample" rows="3" placeholder="Paste one or more sample log lines here…"></textarea>
+            </div>
+            <div class="link-field">
+              <div class="assert-mode-row">
+                <button type="button" class="assert-mode-btn" id="formatEditModePattern" data-mode="pattern">Pattern</button>
+                <button type="button" class="assert-mode-btn" id="formatEditModeRegex" data-mode="regex">Regex</button>
+              </div>
+            </div>
+            <div class="link-field" id="formatEditPatternField">
+              <label for="formatEditPattern">Conversion pattern</label>
+              <input type="text" id="formatEditPattern" placeholder='%d\t%p\t"%t"\t%c\t[%M]\t"%m"%n' autocomplete="off">
+              <div class="session-dialog-note">%d/%date %p/%level %t/%thread %c/%logger %M/%method %m/%message %n — \t \n \\ stand for a literal tab/newline/backslash.</div>
+            </div>
+            <div class="link-field hidden" id="formatEditRegexField">
+              <label for="formatEditRegex">Regex</label>
+              <input type="text" id="formatEditRegex" placeholder="^(?&lt;ts&gt;\S+) (?&lt;level&gt;\w+) ..." autocomplete="off">
+              <div class="session-dialog-note">Needs a (?&lt;message&gt;...) named group; (?&lt;ts&gt;...)/(?&lt;level&gt;...)/(?&lt;thread&gt;...)/(?&lt;location&gt;...)/(?&lt;method&gt;...) are optional.</div>
+            </div>
+            <div class="link-field">
+              <label for="formatEditTsFormat">Timestamp format</label>
+              <input type="text" id="formatEditTsFormat" placeholder="yyyy-MM-dd HH:mm:ss,SSS" autocomplete="off">
+              <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
+            </div>
+            <div class="link-field">
+              <label>Preview <span class="link-target-label">(from the example line(s) above)</span></label>
+              <div id="formatEditPreview" class="format-preview"></div>
+            </div>
+            <div class="time-range-error hidden" id="formatEditError"></div>
+            <div class="link-dialog-actions">
+              <button type="button" id="formatEditCancel" class="btn-mini-outline">Cancel</button>
+              <button type="button" id="formatEditSave" class="btn-mini">Save</button>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Filename rules — first matching pattern wins; files matching none use the default format</div>
+          <div id="formatRuleList"></div>
+          <button type="button" id="btnAddFormatRule" class="btn-mini">+ Add rule…</button>
+          <div id="formatRuleEditPanel" class="hidden settings-inline-panel">
+            <div class="settings-inline-panel-title" id="formatRuleEditTitle">Add filename rule</div>
+            <div class="link-field">
+              <label for="formatRuleGlob">Filename pattern (glob: * matches any run, ? matches one character)</label>
+              <input type="text" id="formatRuleGlob" placeholder="app-*.log" autocomplete="off">
+            </div>
+            <div class="link-field">
+              <label for="formatRuleFormatSelect">Format</label>
+              <select id="formatRuleFormatSelect"></select>
+            </div>
+            <div class="link-dialog-actions">
+              <button type="button" id="formatRuleEditCancel" class="btn-mini-outline">Cancel</button>
+              <button type="button" id="formatRuleEditSave" class="btn-mini">Save</button>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
   <div id="bookmarksPanel" class="hidden">
     <div class="bookmarks-panel-title" id="bookmarksPanelTitle">Bookmarks</div>
     <div id="bookmarksList"></div>
@@ -2230,12 +2382,14 @@ const THEME_STORAGE_KEY = "philogg-theme";
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
-  const icon = document.getElementById("btnThemeIcon");
-  if (!icon) return;
-  // Sun glyph for light theme, moon glyph for dark — swap the icon markup in place.
-  icon.innerHTML = theme === "light"
-    ? '<path d="M8 1.3v1.6M8 13.1v1.6M2.6 8H1M15 8h-1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/><circle cx="8" cy="8" r="3.2"/>'
-    : '<path d="M13.5 9.3A5.6 5.6 0 0 1 6.7 2.5 5.8 5.8 0 1 0 13.5 9.3Z"/>';
+  // Settings page -> Appearance: a two-way explicit-choice toggle (same
+  // .assert-mode-btn pattern as Format Manager's Pattern/Regex switch),
+  // not a single icon-swap button — kept in sync here so it's correct
+  // whenever/however the theme changes, not just while the page is open.
+  const lightBtn = document.getElementById("settingsThemeLight");
+  const darkBtn = document.getElementById("settingsThemeDark");
+  if (lightBtn) lightBtn.classList.toggle("active", theme === "light");
+  if (darkBtn) darkBtn.classList.toggle("active", theme === "dark");
 }
 
 function initTheme() {
@@ -2245,11 +2399,12 @@ function initTheme() {
   applyTheme(prefersLight ? "light" : "dark");
 }
 
-document.getElementById("btnTheme").addEventListener("click", () => {
-  const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
-  applyTheme(next);
-  localStorage.setItem(THEME_STORAGE_KEY, next);
-});
+function setTheme(theme) {
+  applyTheme(theme);
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+}
+document.getElementById("settingsThemeLight").addEventListener("click", () => setTheme("light"));
+document.getElementById("settingsThemeDark").addEventListener("click", () => setTheme("dark"));
 
 /* ===================== State ===================== */
 const state = {
@@ -2300,6 +2455,15 @@ const state = {
   //   session restore, before the person clicks "Reconnect" — see
   //   restoreWatchedFolders/reconnectFolder.
   folders: [],
+
+  // Log format definitions + filename-pattern rules (Settings -> Format
+  // Manager, see "Log format definitions"). Loaded once at boot via
+  // loadFormatConfig() and IndexedDB-backed ("logFormats"/"formatRules"
+  // stores) exactly like the filter library below — a flat list, not the
+  // filter-node tree, so none of the cloneSubtree/snapshotSubtree/
+  // serializeFilterBranch/serializeFilterTreeForCache carriers apply here.
+  logFormats: [],
+  formatRules: [],
 };
 
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
@@ -2327,10 +2491,12 @@ let uidCounter = 0;
 function uid(prefix) { return prefix + (++uidCounter); }
 
 /* ===================== Log parsing =====================
-   Expected pattern: %d\t%p\t"%t"\t%l\t[%method]\t%m%n
+   Expected pattern: %d\t%p\t"%t"\t%c\t[%M]\t"%m"%n
    A new entry starts with a line beginning "yyyy-MM-dd HH:mm:ss,SSS<TAB>".
    Any line not matching that is treated as a continuation of the
-   previous entry's message (e.g. stack traces).
+   previous entry's message (e.g. stack traces). This is the builtin
+   default LogFormat (id "fmt-default") — see "Log format definitions"
+   below for how other formats are defined and dispatched to.
 */
 const HEADER_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\t/;
 
@@ -2405,14 +2571,15 @@ function parseHeaderLine(line) {
 const PARSE_CHUNK_LINES = 4000;
 
 async function parseLogTextAsync(text, node, onProgress) {
+  const compiled = getCompiledFormat(node.formatId || DEFAULT_FORMAT_ID);
   const lines = text.split(/\r\n|\n/);
   let current = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (HEADER_RE.test(line)) {
+    if (compiled.isHeaderLine(line)) {
       if (current) { entryIndex[current.id] = current; node.entries.push(current); }
-      current = parseHeaderLine(line);
+      current = compiled.parseHeader(line);
     } else if (current && line !== "") {
       current.message += "\n" + line;
       current.raw += "\n" + line;
@@ -2426,6 +2593,263 @@ async function parseLogTextAsync(text, node, onProgress) {
   }
   if (current) { entryIndex[current.id] = current; node.entries.push(current); }
   if (onProgress) onProgress(lines.length, lines.length);
+}
+
+/* ===================== Log format definitions =====================
+   Beyond the builtin default above, a person can define additional log
+   formats (Settings → Format Manager) and map filenames to them via glob
+   rules. Every format still produces the same fixed entry shape used
+   everywhere else in the app ({ts, level, thread, location, method,
+   message}) — only how a line is split into those fields is configurable.
+
+   A format is defined one of two ways:
+   - "pattern" mode: a log4net/LogViewPlus-style conversion pattern, e.g.
+     %d\t%p\t"%t"\t%c\t[%M]\t"%m"%n — compiled by compileFormatPattern below,
+     which mirrors compileExtractPattern's approach (see "Value-extraction
+     patterns") but emits NAMED capture groups instead of positional ones.
+   - "regex" mode: a raw regex supplied directly, with the same named
+     groups (ts/level/thread/location/method/message) — the escape hatch
+     for shapes the token language can't express.
+   Both modes funnel into applyFormatMatch(), so parsing code downstream
+   never needs to know which mode produced the match.
+
+   Token vocabulary (pattern mode): %d/%date (timestamp), %p/%level,
+   %t/%thread, %c/%logger (location), %M/%method, %m/%message (required),
+   %n (line end, no regex contribution — matching is already line-by-line),
+   %% (literal "%"). A single-line text input can't contain a literal tab
+   or newline, so \t / \n / \\ two-character escape sequences in the raw
+   pattern text are unescaped into real bytes before token-scanning — the
+   same convention tools/log-simulator.html's pattern field uses on the
+   generator side, so one pattern string works for both parsing and
+   generating matching test data. Keep that file's copy of this token
+   vocabulary in sync if it ever changes here.
+*/
+
+function unescapePatternText(s) {
+  return (s || "").replace(/\\\\|\\t|\\n/g, m => (m === "\\t" ? "\t" : m === "\\n" ? "\n" : "\\"));
+}
+
+const DATE_TOKEN_RE = /yyyy|MM|dd|HH|mm|ss|SSS/g;
+const DATE_TOKEN_FRAG = { yyyy: "\\d{4}", MM: "\\d{2}", dd: "\\d{2}", HH: "\\d{2}", mm: "\\d{2}", ss: "\\d{2}", SSS: "\\d{1,3}" };
+
+// Compiles a "yyyy-MM-dd HH:mm:ss,SSS"-style token string into a regex
+// (with one capturing group per token, in order) that both matches a
+// timestamp substring AND lets parseTimestampGeneric pull its parts back
+// out afterward. Empty/missing fmt means "free-form" — callers fall back
+// to Date.parse.
+function compileDateFormat(fmt) {
+  if (!fmt) return null;
+  DATE_TOKEN_RE.lastIndex = 0;
+  let lastIndex = 0, regexStr = "";
+  const order = [];
+  let m;
+  while ((m = DATE_TOKEN_RE.exec(fmt)) !== null) {
+    regexStr += escapeRegExp(fmt.slice(lastIndex, m.index));
+    order.push(m[0]);
+    regexStr += "(" + DATE_TOKEN_FRAG[m[0]] + ")";
+    lastIndex = DATE_TOKEN_RE.lastIndex;
+  }
+  regexStr += escapeRegExp(fmt.slice(lastIndex));
+  if (!order.length) return null;
+  let matchRegex;
+  try { matchRegex = new RegExp("^" + regexStr + "$"); } catch (e) { return null; }
+  return { regexStr, matchRegex, order };
+}
+
+function parseTimestampGeneric(raw, compiledDate) {
+  const trimmed = (raw || "").trim();
+  if (!compiledDate) {
+    const t = Date.parse(trimmed);
+    return isNaN(t) ? NaN : t;
+  }
+  const m = compiledDate.matchRegex.exec(trimmed);
+  if (!m) return NaN;
+  const parts = {};
+  compiledDate.order.forEach((tok, i) => { parts[tok] = m[i + 1]; });
+  const y = +parts.yyyy || 1970;
+  const mo = (+parts.MM || 1) - 1;
+  const d = +parts.dd || 1;
+  const h = +parts.HH || 0;
+  const mi = +parts.mm || 0;
+  const s = +parts.ss || 0;
+  const ms = +(parts.SSS || 0);
+  return new Date(y, mo, d, h, mi, s, ms).getTime();
+}
+
+// Longer word-forms listed before their single-letter alias in each
+// alternative so e.g. "%date" isn't consumed as "%d" + leftover "ate".
+const FORMAT_TOKEN_RE = /%(date|d)(?:\{[^}]*\})?|%(level|p)|%(thread|t)|%(logger|c)|%(method|M)|%(message|m)|%n|%%/g;
+const FORMAT_TOKEN_FIELD = {
+  date: "ts", d: "ts",
+  level: "level", p: "level",
+  thread: "thread", t: "thread",
+  logger: "location", c: "location",
+  method: "method", M: "method",
+  message: "message", m: "message",
+};
+
+// Compiles a conversion pattern into { regex, hasTs } with one named
+// capture group per distinct field (ts/level/thread/location/method/
+// message). Returns { error } if the pattern has no %m/%message token or
+// fails to compile.
+function compileFormatPattern(pattern, tsFormat) {
+  const raw = unescapePatternText(pattern || "");
+  const dateFrag = compileDateFormat(tsFormat);
+  FORMAT_TOKEN_RE.lastIndex = 0;
+  let lastIndex = 0, regexStr = "";
+  const fieldsSeen = new Set();
+  let m;
+  while ((m = FORMAT_TOKEN_RE.exec(raw)) !== null) {
+    const tok = m[0];
+    // Literal text before this token (e.g. a closing quote right before
+    // %n) always gets appended first, regardless of what the token itself
+    // is — %n/%% contribute nothing of their own beyond that.
+    regexStr += escapeRegExp(raw.slice(lastIndex, m.index));
+    lastIndex = FORMAT_TOKEN_RE.lastIndex;
+    if (tok === "%n") continue;
+    if (tok === "%%") { regexStr += "%"; continue; }
+    const tokenWord = m[1] || m[2] || m[3] || m[4] || m[5] || m[6];
+    const field = FORMAT_TOKEN_FIELD[tokenWord];
+    const isLast = lastIndex === raw.length;
+    let frag;
+    if (field === "ts") frag = dateFrag ? dateFrag.regexStr : (isLast ? ".*" : ".*?");
+    else if (field === "level" || field === "thread") frag = isLast ? ".*" : "\\S+";
+    else frag = isLast ? ".*" : ".*?";
+    if (fieldsSeen.has(field)) {
+      regexStr += "(" + frag + ")"; // repeated token: still matched, just not re-named
+    } else {
+      fieldsSeen.add(field);
+      regexStr += "(?<" + field + ">" + frag + ")";
+    }
+  }
+  regexStr += escapeRegExp(raw.slice(lastIndex));
+  if (!fieldsSeen.has("message")) return { error: "Pattern needs a %m / %message token." };
+  try {
+    return { regex: new RegExp("^" + regexStr + "$"), regexStr, hasTs: fieldsSeen.has("ts") };
+  } catch (e) {
+    return { error: "Invalid resulting pattern: " + e.message };
+  }
+}
+
+// Regex mode: the person supplies the whole-line regex directly. Must
+// compile and must name a "message" group (the one field with no sane
+// default); missing "ts" is a non-blocking warning, not a save-blocker.
+function validateFormatRegex(src) {
+  let re;
+  try { re = new RegExp(src || ""); } catch (e) { return { error: "Invalid regex: " + e.message }; }
+  if (!/\(\?<message>/.test(src || "")) return { error: 'Regex needs a "(?<message>...)" group.' };
+  const warning = /\(\?<ts>/.test(src) ? "" : 'No "(?<ts>...)" group — entries will not sort chronologically.';
+  return { regex: re, warning };
+}
+
+// The single "matched named groups -> entry object" applier both pattern
+// mode and regex mode funnel through, reusing the same location/quote
+// helpers the builtin default format uses.
+function applyFormatMatch(groups, line, compiledDate) {
+  groups = groups || {};
+  const loc = formatLocation(groups.location || "");
+  return {
+    id: uid("e"),
+    tsRaw: groups.ts || "",
+    ts: groups.ts ? parseTimestampGeneric(groups.ts, compiledDate) : NaN,
+    level: (groups.level || "INFO").trim().toUpperCase(),
+    thread: stripQuotes(groups.thread || ""),
+    locationShort: loc.short,
+    locationFull: loc.full,
+    method: groups.method || "",
+    message: groups.message != null ? stripQuotes(groups.message) : line,
+    raw: line,
+  };
+}
+
+// Filename -> format resolution. Globs compile like compileExtractPattern's
+// literal-escaping style: '*' -> any run of characters, '?' -> any one
+// character, everything else literal.
+function compileGlob(glob) {
+  let src = "";
+  for (const ch of (glob || "")) {
+    if (ch === "*") src += ".*";
+    else if (ch === "?") src += ".";
+    else src += escapeRegExp(ch);
+  }
+  return new RegExp("^" + src + "$", "i");
+}
+
+const globCompileCache = new Map();
+function getCompiledGlob(glob) {
+  let re = globCompileCache.get(glob);
+  if (!re) { re = compileGlob(glob); globCompileCache.set(glob, re); }
+  return re;
+}
+function invalidateGlobCompileCache() { globCompileCache.clear(); }
+
+// First matching rule wins (state.formatRules sorted by .order); a file
+// matching no rule falls back to the builtin default format.
+function resolveFormatIdForFilename(name) {
+  const rules = state.formatRules.slice().sort((a, b) => a.order - b.order);
+  for (const r of rules) {
+    if (getCompiledGlob(r.glob).test(name)) return r.formatId;
+  }
+  return DEFAULT_FORMAT_ID;
+}
+
+const DEFAULT_FORMAT_ID = "fmt-default";
+const DEFAULT_LOG_FORMAT = {
+  id: DEFAULT_FORMAT_ID,
+  name: "Default (log4net-style)",
+  mode: "pattern",
+  pattern: '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n',
+  regex: "",
+  tsFormat: "yyyy-MM-dd HH:mm:ss,SSS",
+  builtin: true,
+  edited: false,
+  createdAt: 0,
+};
+
+// Compiles one LogFormat record into { isHeaderLine(line), parseHeader(line) }.
+// The builtin default, as long as it hasn't been edited, is a thin
+// pass-through to the untouched HEADER_RE/parseHeaderLine above — zero
+// behavior change for existing files/sessions. A format that fails to
+// compile (should only happen if validation was bypassed) degrades to
+// "every line is its own untimestamped entry" rather than throwing.
+function compileOneFormat(fmt) {
+  if (fmt.builtin && !fmt.edited) {
+    return { isHeaderLine: line => HEADER_RE.test(line), parseHeader: line => parseHeaderLine(line) };
+  }
+  const dateFrag = compileDateFormat(fmt.tsFormat);
+  let compiled = null;
+  if (fmt.mode === "regex") {
+    const v = validateFormatRegex(fmt.regex || "");
+    if (!v.error) compiled = { regex: v.regex };
+  } else {
+    const c = compileFormatPattern(fmt.pattern || "", fmt.tsFormat);
+    if (!c.error) compiled = c;
+  }
+  if (!compiled) {
+    return {
+      isHeaderLine: () => true,
+      parseHeader: line => applyFormatMatch({ message: line }, line, dateFrag),
+    };
+  }
+  return {
+    isHeaderLine: line => compiled.regex.test(line),
+    parseHeader: line => {
+      const m = compiled.regex.exec(line);
+      return applyFormatMatch((m && m.groups) || {}, line, dateFrag);
+    },
+  };
+}
+
+const formatCompileCache = new Map();
+function invalidateFormatCompileCache() { formatCompileCache.clear(); }
+
+function getCompiledFormat(formatId) {
+  let c = formatCompileCache.get(formatId);
+  if (c) return c;
+  const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  c = compileOneFormat(fmt);
+  formatCompileCache.set(formatId, c);
+  return c;
 }
 
 // True while rootId is (or is an ancestor of) the currently active/viewed
@@ -2711,8 +3135,26 @@ function releaseEntriesFromIndex(entries, excludeRootId) {
 // File objects, which DO have a read phase first) drives the same
 // node.loadFraction/scheduleLoadRender mechanism itself instead of going
 // through this helper — see there.
-async function addFile(name, text, onProgress) {
+// formatIdOverride: undefined = resolve live from state.formatRules (a
+// genuinely fresh load — URL deep-link, session-log picker, new drop);
+// a string (including "") = pin explicitly, no live re-resolution — used
+// by session-cache/merge restore so a file already parsed once never
+// silently reparses differently just because rules changed since (see
+// "Log format definitions" and restoreSessionFromCache).
+async function addFile(name, text, onProgress, formatIdOverride) {
   const node = createFileNode(name);
+  if (formatIdOverride !== undefined) {
+    const pinnedId = formatIdOverride || DEFAULT_FORMAT_ID;
+    // A restored file's pinned formatId can name a custom format not yet
+    // loaded from IndexedDB — loadFormatConfig() runs in parallel with boot,
+    // not gating it, so an ordinary/default-format load never waits on it.
+    // This is the one place a still-missing lookup would actually mis-parse
+    // a file (falling back to the default), so wait for it here specifically.
+    if (pinnedId !== DEFAULT_FORMAT_ID && !state.logFormats.some(f => f.id === pinnedId)) await formatConfigReady;
+    node.formatId = pinnedId;
+  } else {
+    node.formatId = resolveFormatIdForFilename(name);
+  }
   await parseLogTextAsync(text, node, (done, total) => {
     node.loadFraction = total ? done / total : 1;
     scheduleLoadRender(node.id);
@@ -2970,6 +3412,11 @@ async function mergeFiles(fileIds) {
     id: uid("f"), type: "file", name: files.map(f => f.name).join(" + "),
     parentId: null, children: [], entries: [], merged: true, cacheKey: newCacheKey(),
     loadFraction: 0,
+    // Assumes all sources share one format — the merge itself just reuses
+    // entry objects by reference (never reparses), so a mixed-format merge
+    // still works fine live; only a later session-cache restore, which
+    // reparses raw text under one format, would see this simplification.
+    formatId: (files[0] && files[0].formatId) || DEFAULT_FORMAT_ID,
   };
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
@@ -8589,6 +9036,12 @@ sessionMenu.addEventListener("click", ev => {
   else if (item.dataset.action === "importSession") importSessionFromFile();
 });
 
+// Settings opens a single wide page (not a dropdown menu) — see
+// "Settings page" below (openSettingsDialog) for its sections, built so
+// more general settings can be added as further sections later.
+const btnSettings = el("#btnSettings");
+btnSettings.addEventListener("click", openSettingsDialog);
+
 // Reads a file as text via FileReader, reporting byte-level progress
 // (FileReader.onprogress) instead of resolving only once the whole file is in.
 function readFileWithProgress(file, onProgress) {
@@ -8630,6 +9083,7 @@ function loadFiles(fileList) {
 async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   const node = existingNode || createFileNode(name, folderId);
   if (existingNode) activateQueuedFileNode(node);
+  node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
   try {
     const text = await readFileWithProgress(file, (loaded, total) => {
       node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
@@ -8920,6 +9374,7 @@ function isTailLive(t) {
 // and keeps an unterminated trailing line in tail.pending until the writer
 // finishes it. Returns true if anything visible changed.
 function appendTailText(node, chunkText) {
+  const compiled = getCompiledFormat(node.formatId || DEFAULT_FORMAT_ID);
   const text = node.tail.pending + chunkText;
   const lines = text.split(/\r\n|\n/);
   node.tail.pending = lines.pop(); // last piece has no newline yet — wait for more data
@@ -8927,8 +9382,8 @@ function appendTailText(node, chunkText) {
   let last = node.entries.length ? node.entries[node.entries.length - 1] : null;
   let changed = false;
   for (const line of lines) {
-    if (HEADER_RE.test(line)) {
-      const e = parseHeaderLine(line);
+    if (compiled.isHeaderLine(line)) {
+      const e = compiled.parseHeader(line);
       entryIndex[e.id] = e;
       node.entries.push(e);
       last = e;
@@ -10752,6 +11207,48 @@ function applyFilterFromLibrary(targetId, record) {
   }));
 }
 
+/* ===================== Log format / filename-rule storage =====================
+   Flat IndexedDB CRUD, same shape as the filter library just above — a
+   LogFormat/FormatRule is a standalone record, not a filter-tree node, so
+   there's no serialize/clone/snapshot machinery to mirror here. */
+async function listLogFormats() {
+  const all = await cacheStoreOp("logFormats", "readonly", store => store.getAll());
+  return all || [];
+}
+async function saveLogFormat(fmt) {
+  await cacheStoreOp("logFormats", "readwrite", store => store.put(fmt));
+  invalidateFormatCompileCache();
+}
+async function deleteLogFormatEntry(id) {
+  await cacheStoreOp("logFormats", "readwrite", store => store.delete(id));
+  invalidateFormatCompileCache();
+}
+async function listFormatRules() {
+  const all = await cacheStoreOp("formatRules", "readonly", store => store.getAll());
+  return (all || []).sort((a, b) => a.order - b.order);
+}
+async function saveFormatRule(rule) {
+  await cacheStoreOp("formatRules", "readwrite", store => store.put(rule));
+  invalidateGlobCompileCache();
+}
+async function deleteFormatRuleEntry(id) {
+  await cacheStoreOp("formatRules", "readwrite", store => store.delete(id));
+  invalidateGlobCompileCache();
+}
+
+// Loaded once at boot, before any file parsing can happen (see the Init
+// section). Lazily seeds the builtin default format on a fresh DB, or on
+// an upgrade from a pre-feature session where it's simply missing.
+async function loadFormatConfig() {
+  let formats = await listLogFormats();
+  if (!formats.some(f => f.id === DEFAULT_FORMAT_ID)) {
+    await saveLogFormat(DEFAULT_LOG_FORMAT);
+    formats = formats.concat([DEFAULT_LOG_FORMAT]);
+  }
+  state.logFormats = formats;
+  state.formatRules = await listFormatRules();
+}
+
 const filterLibrarySaveDialog = el("#filterLibrarySaveDialog");
 const filterLibraryNameInput = el("#filterLibraryNameInput");
 const filterLibraryDialog = el("#filterLibraryDialog");
@@ -10827,6 +11324,492 @@ async function openFilterLibraryDialog(nodeId) {
 }
 filterLibraryDialog.addEventListener("click", ev => { if (ev.target === filterLibraryDialog) closeFilterLibraryDialog(); });
 el("#filterLibraryDialogClose").addEventListener("click", closeFilterLibraryDialog);
+
+/* ===================== Settings page =====================
+   One wide, scrollable, sectioned dialog (Appearance, Log Formats, more
+   sections later) — not a menu of separate popups. Same modal-overlay/
+   backdrop-click pattern as every other dialog here — note the
+   ev.target === dialog identity check below is already immune to the
+   stopPropagation gotcha (CLAUDE.md) since a click on any descendant
+   button can never equal the dialog element itself; stopPropagation on
+   row buttons is still added for consistency/defense with the rest of
+   the codebase's discipline.
+
+   Add/Edit format and Add/Edit rule are NOT separate dialogs — they're
+   inline panels (.settings-inline-panel, highlighted background) that
+   expand within the Log Formats section itself (formatEditPanel/
+   formatRuleEditPanel), closed only via their own Cancel/Save, never by
+   an outside click — there's no backdrop of their own to click. */
+const settingsDialog = el("#settingsDialog");
+const formatList = el("#formatList");
+const formatRuleList = el("#formatRuleList");
+
+function closeSettingsDialog() { settingsDialog.classList.add("hidden"); }
+function openSettingsDialog() {
+  settingsDialog.classList.remove("hidden");
+  renderFormatList();
+  renderFormatRuleList();
+}
+settingsDialog.addEventListener("click", ev => { if (ev.target === settingsDialog) closeSettingsDialog(); });
+el("#settingsClose").addEventListener("click", closeSettingsDialog);
+
+// Builtin default always sorts first, regardless of createdAt, per the
+// person's explicit request — it's the format most people will look for.
+function sortedLogFormats() {
+  return [...state.logFormats].sort((a, b) => (b.builtin ? 1 : 0) - (a.builtin ? 1 : 0) || a.createdAt - b.createdAt);
+}
+
+function renderFormatList() {
+  const formats = sortedLogFormats();
+  formatList.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  formats.forEach(fmt => {
+    const rulesUsing = state.formatRules.filter(r => r.formatId === fmt.id).length;
+    const row = document.createElement("div");
+    row.className = "filter-library-row";
+    const main = document.createElement("div");
+    main.className = "filter-library-row-main";
+    main.innerHTML =
+      '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") + '</div>' +
+      '<div class="filter-library-row-meta">' + (fmt.mode === "regex" ? "Regex" : "Pattern") +
+      (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") + '</div>';
+    row.appendChild(main);
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn-mini";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
+    row.appendChild(editBtn);
+    if (fmt.builtin) {
+      const resetBtn = document.createElement("button");
+      resetBtn.type = "button";
+      resetBtn.className = "btn-mini-outline";
+      resetBtn.title = "Revert to the original default pattern";
+      resetBtn.textContent = "Reset";
+      resetBtn.addEventListener("click", ev => { ev.stopPropagation(); resetDefaultFormat(); });
+      row.appendChild(resetBtn);
+    } else {
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "filter-library-row-del";
+      delBtn.title = "Delete format";
+      delBtn.innerHTML = ICON_CLOSE;
+      delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeLogFormat(fmt.id); });
+      row.appendChild(delBtn);
+    }
+    frag.appendChild(row);
+  });
+  formatList.appendChild(frag);
+}
+
+// Reverts the builtin default back to its original pattern/tsFormat/name
+// and clears the `edited` flag — see "Log format definitions": as long as
+// this flag is false, fmt-default is a pass-through to the untouched
+// HEADER_RE/parseHeaderLine fast path, so resetting restores that too, not
+// just the displayed values.
+async function resetDefaultFormat() {
+  const fmt = state.logFormats.find(f => f.id === DEFAULT_FORMAT_ID);
+  if (!fmt || !fmt.builtin) return;
+  Object.assign(fmt, {
+    name: DEFAULT_LOG_FORMAT.name,
+    mode: DEFAULT_LOG_FORMAT.mode,
+    pattern: DEFAULT_LOG_FORMAT.pattern,
+    regex: DEFAULT_LOG_FORMAT.regex,
+    tsFormat: DEFAULT_LOG_FORMAT.tsFormat,
+    edited: false,
+  });
+  await saveLogFormat(fmt);
+  if (formatEditId === fmt.id) closeFormatEditDialog(); // its open editor would otherwise show stale values
+  renderFormatList();
+  renderFormatRuleFormatOptions();
+}
+
+async function removeLogFormat(id) {
+  const fmt = state.logFormats.find(f => f.id === id);
+  if (!fmt || fmt.builtin) return;
+  const usedBy = state.formatRules.filter(r => r.formatId === id).length;
+  if (usedBy) {
+    showCopyToast(usedBy + " rule" + (usedBy === 1 ? "" : "s") + " still use" + (usedBy === 1 ? "s" : "") + " this format — remove them first");
+    return;
+  }
+  await deleteLogFormatEntry(id);
+  state.logFormats = state.logFormats.filter(f => f.id !== id);
+  renderFormatList();
+}
+
+function renderFormatRuleList() {
+  const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
+  formatRuleList.innerHTML = "";
+  if (!rules.length) {
+    formatRuleList.innerHTML = '<div class="filter-library-empty">No filename rules yet — every file uses the default format.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  rules.forEach((rule, i) => {
+    const fmt = state.logFormats.find(f => f.id === rule.formatId);
+    const row = document.createElement("div");
+    row.className = "filter-library-row";
+    const main = document.createElement("div");
+    main.className = "filter-library-row-main";
+    main.innerHTML =
+      '<div class="filter-library-row-name">' + escapeHtml(rule.glob) + '</div>' +
+      '<div class="filter-library-row-meta">→ ' + escapeHtml(fmt ? fmt.name : "(missing format)") + '</div>';
+    row.appendChild(main);
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "filter-library-row-order";
+    upBtn.title = "Move up";
+    upBtn.textContent = "▲";
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatRuleOrder(rule.id, -1); });
+    row.appendChild(upBtn);
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "filter-library-row-order";
+    downBtn.title = "Move down";
+    downBtn.textContent = "▼";
+    downBtn.disabled = i === rules.length - 1;
+    downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatRuleOrder(rule.id, 1); });
+    row.appendChild(downBtn);
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn-mini";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatRuleEditDialog(rule.id); });
+    row.appendChild(editBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "filter-library-row-del";
+    delBtn.title = "Delete rule";
+    delBtn.innerHTML = ICON_CLOSE;
+    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeFormatRule(rule.id); });
+    row.appendChild(delBtn);
+
+    frag.appendChild(row);
+  });
+  formatRuleList.appendChild(frag);
+}
+
+async function moveFormatRuleOrder(id, delta) {
+  const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
+  const idx = rules.findIndex(r => r.id === id);
+  const otherIdx = idx + delta;
+  if (idx === -1 || otherIdx < 0 || otherIdx >= rules.length) return;
+  const a = rules[idx], b = rules[otherIdx];
+  const tmp = a.order; a.order = b.order; b.order = tmp;
+  await saveFormatRule(a);
+  await saveFormatRule(b);
+  renderFormatRuleList();
+}
+
+async function removeFormatRule(id) {
+  await deleteFormatRuleEntry(id);
+  state.formatRules = state.formatRules.filter(r => r.id !== id);
+  renderFormatRuleList();
+}
+
+// ---- Add/Edit log format — inline panel (not a separate dialog) ----
+const formatEditPanel = el("#formatEditPanel");
+const formatEditName = el("#formatEditName");
+const formatEditSample = el("#formatEditSample");
+const formatEditPattern = el("#formatEditPattern");
+const formatEditRegex = el("#formatEditRegex");
+const formatEditTsFormat = el("#formatEditTsFormat");
+const formatEditError = el("#formatEditError");
+const formatEditPreview = el("#formatEditPreview");
+let formatEditId = null;
+let formatEditMode = "pattern";
+
+function updateFormatEditModeUI() {
+  el("#formatEditModePattern").classList.toggle("active", formatEditMode === "pattern");
+  el("#formatEditModeRegex").classList.toggle("active", formatEditMode === "regex");
+  el("#formatEditPatternField").classList.toggle("hidden", formatEditMode !== "pattern");
+  el("#formatEditRegexField").classList.toggle("hidden", formatEditMode !== "regex");
+}
+el("#formatEditModePattern").addEventListener("click", () => { formatEditMode = "pattern"; updateFormatEditModeUI(); renderFormatEditPreview(); });
+el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "regex"; updateFormatEditModeUI(); renderFormatEditPreview(); });
+
+// Common log-level names, longest-first-irrelevant (word-boundary match
+// picks the first occurring regardless of listed order) — used only by
+// the sample-line pattern SUGGESTION below, not by parsing itself.
+const SAMPLE_LEVEL_RE = /\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b/;
+// Timestamp shapes to try against a sample line, most specific first, each
+// paired with the tsFormat token string that reproduces it.
+const SAMPLE_TS_CANDIDATES = [
+  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[.,]\d{1,3}/, fmt: "yyyy-MM-dd HH:mm:ss,SSS" },
+  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/, fmt: "yyyy-MM-dd HH:mm:ss" },
+  { re: /\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/, fmt: "MM/dd/yyyy HH:mm:ss" },
+  { re: /\d{2}:\d{2}:\d{2}[.,]\d{1,3}/, fmt: "HH:mm:ss,SSS" },
+  { re: /\d{2}:\d{2}:\d{2}/, fmt: "HH:mm:ss" },
+];
+
+// Turns a raw literal span from a sample line back into pattern TEXT (the
+// inverse of unescapePatternText, plus escaping the pattern's own "%"
+// trigger character) — so a suggested pattern round-trips through the
+// same editable text field convention a person typing one by hand uses.
+function escapePatternLiteral(s) {
+  return (s || "").replace(/\\/g, "\\\\").replace(/\t/g, "\\t").replace(/\n/g, "\\n").replace(/%/g, "%%");
+}
+
+// Best-effort "guess a pattern from one example line" — never the final
+// word, always left for the person to review/adjust below. Scans the
+// FIRST non-blank sample line for a timestamp, a level word, a quoted or
+// parenthesized thread, and a bracketed method, in that priority order,
+// each only claimed if it doesn't overlap an earlier match; turns
+// everything else into literal text, with the tail becoming %m. Returns
+// null if the sample has no usable line.
+function suggestPatternFromSample(sampleText) {
+  const line = (sampleText || "").split(/\r?\n/).map(l => l.trim()).find(l => l);
+  if (!line) return null;
+
+  const spans = []; // {start, end, token}
+  const isFree = (start, end) => !spans.some(s => start < s.end && end > s.start);
+
+  let tsFormat = "";
+  for (const cand of SAMPLE_TS_CANDIDATES) {
+    const m = cand.re.exec(line);
+    if (m && isFree(m.index, m.index + m[0].length)) {
+      spans.push({ start: m.index, end: m.index + m[0].length, token: "%d" });
+      tsFormat = cand.fmt;
+      break;
+    }
+  }
+
+  const levelM = SAMPLE_LEVEL_RE.exec(line);
+  if (levelM && isFree(levelM.index, levelM.index + levelM[0].length)) {
+    spans.push({ start: levelM.index, end: levelM.index + levelM[0].length, token: "%p" });
+  }
+
+  // Delimiters ("...", (...)) are each exactly one character, so the
+  // CONTENT span (excluding them) is just [m.index+1, m.index+len-1) —
+  // the delimiters themselves are left unclaimed, so the walk below
+  // naturally reconstructs them as literal text framing the token.
+  for (const re of [/"[^"]*"/, /\([^)]*\)/]) {
+    const m = re.exec(line);
+    if (m) {
+      const start = m.index + 1, end = m.index + m[0].length - 1;
+      if (isFree(start, end)) { spans.push({ start, end, token: "%t" }); break; }
+    }
+  }
+
+  const methodM = /\[[^\]]*\]/.exec(line);
+  if (methodM) {
+    const start = methodM.index + 1, end = methodM.index + methodM[0].length - 1;
+    if (isFree(start, end)) spans.push({ start, end, token: "%M" });
+  }
+
+  if (!spans.length) return null; // nothing recognizable — not a useful suggestion
+  spans.sort((a, b) => a.start - b.start);
+
+  let pattern = "", cursor = 0;
+  for (const s of spans) {
+    pattern += escapePatternLiteral(line.slice(cursor, s.start)) + s.token;
+    cursor = s.end;
+  }
+  // A short separator run right after the last token (a closing delimiter
+  // from a quoted/bracketed span, ": ", " - ", a bare space, ...) stays
+  // literal; the rest of the line is the message.
+  const tail = line.slice(cursor);
+  const sep = /^[\s:>)\]"'\-–—.,;]*/.exec(tail)[0];
+  pattern += escapePatternLiteral(sep) + "%m%n";
+
+  return { pattern, tsFormat };
+}
+
+// Compiles the CURRENT mode/pattern/regex/tsFormat for the live preview
+// below — returns null (rather than throwing) on anything uncompilable,
+// same "not the final word" spirit as the suggestion above.
+function compilePreviewFormat(mode, pattern, regex, tsFormat) {
+  if (mode === "regex") {
+    const v = validateFormatRegex(regex || "");
+    return v.error ? null : { regex: v.regex, dateFrag: null };
+  }
+  const c = compileFormatPattern(pattern || "", tsFormat || "");
+  return c.error ? null : { regex: c.regex, dateFrag: compileDateFormat(tsFormat || "") };
+}
+
+// Re-parses the pasted example line(s) with whatever pattern/regex/
+// tsFormat is currently in the fields, so editing any of them updates the
+// preview live — the person never has to save first to see if it works.
+function renderFormatEditPreview() {
+  const lines = formatEditSample.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(0, 5);
+  if (!lines.length) {
+    formatEditPreview.innerHTML = '<div class="format-preview-empty">Paste an example log line above to see a preview here.</div>';
+    return;
+  }
+  const compiled = compilePreviewFormat(formatEditMode, formatEditPattern.value, formatEditRegex.value, formatEditTsFormat.value.trim());
+  if (!compiled) {
+    formatEditPreview.innerHTML = '<div class="format-preview-empty">Fix the pattern/regex above to see a preview.</div>';
+    return;
+  }
+  formatEditPreview.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  lines.forEach(line => {
+    const m = compiled.regex.exec(line);
+    const row = document.createElement("div");
+    if (!m) {
+      row.className = "format-preview-row format-preview-nomatch";
+      row.textContent = "No match: " + line;
+    } else {
+      row.className = "format-preview-row";
+      const groups = m.groups || {};
+      const entry = applyFormatMatch(groups, line, compiled.dateFrag);
+      const parts = ['<span class="format-preview-field"><b>Level</b> ' + escapeHtml(entry.level) + '</span>'];
+      if (groups.ts != null) parts.unshift('<span class="format-preview-field"><b>Time</b> ' + escapeHtml(entry.tsRaw) + (isNaN(entry.ts) ? " (unparsed)" : "") + '</span>');
+      if (groups.thread != null) parts.push('<span class="format-preview-field"><b>Thread</b> ' + escapeHtml(entry.thread) + '</span>');
+      if (groups.method != null) parts.push('<span class="format-preview-field"><b>Method</b> ' + escapeHtml(entry.method) + '</span>');
+      parts.push('<span class="format-preview-field"><b>Message</b> ' + escapeHtml(entry.message) + '</span>');
+      row.innerHTML = parts.join("");
+    }
+    frag.appendChild(row);
+  });
+  formatEditPreview.appendChild(frag);
+}
+[formatEditPattern, formatEditRegex, formatEditTsFormat].forEach(input => {
+  input.addEventListener("input", renderFormatEditPreview);
+});
+formatEditSample.addEventListener("input", () => {
+  const suggestion = suggestPatternFromSample(formatEditSample.value);
+  if (suggestion) {
+    formatEditMode = "pattern";
+    updateFormatEditModeUI();
+    formatEditPattern.value = suggestion.pattern;
+    formatEditTsFormat.value = suggestion.tsFormat;
+  }
+  renderFormatEditPreview();
+});
+
+// Both the builtin default and a brand-new format default to the same
+// canonical pattern (see DEFAULT_LOG_FORMAT / tools/log-simulator.html) —
+// a fresh "Add format" starts from something that already parses, not a
+// blank slate. The sample field is never pre-filled (it's a one-time input
+// aid, not a stored format property) even when editing an existing format.
+function openFormatEditDialog(id) {
+  formatEditId = id;
+  const fmt = id ? state.logFormats.find(f => f.id === id) : null;
+  el("#formatEditTitle").textContent = fmt ? "Edit log format" : "Add log format";
+  formatEditName.value = fmt ? fmt.name : "";
+  formatEditSample.value = "";
+  formatEditMode = fmt ? fmt.mode : "pattern";
+  formatEditPattern.value = fmt ? (fmt.pattern || "") : DEFAULT_LOG_FORMAT.pattern;
+  formatEditRegex.value = fmt ? (fmt.regex || "") : "";
+  formatEditTsFormat.value = fmt ? (fmt.tsFormat || "") : DEFAULT_LOG_FORMAT.tsFormat;
+  formatEditError.textContent = "";
+  formatEditError.classList.add("hidden");
+  updateFormatEditModeUI();
+  renderFormatEditPreview();
+  formatEditPanel.classList.remove("hidden");
+  el("#btnAddFormat").classList.add("hidden"); // only one editor visible at a time
+  if (formatEditPanel.scrollIntoView) formatEditPanel.scrollIntoView({ block: "nearest" }); // not implemented in jsdom
+  formatEditName.focus();
+}
+function closeFormatEditDialog() {
+  formatEditPanel.classList.add("hidden");
+  el("#btnAddFormat").classList.remove("hidden");
+  formatEditId = null;
+}
+el("#formatEditCancel").addEventListener("click", closeFormatEditDialog);
+
+async function saveFormatEdit() {
+  const name = formatEditName.value.trim();
+  if (!name) { formatEditError.textContent = "Name is required."; formatEditError.classList.remove("hidden"); return; }
+  const pattern = formatEditPattern.value;
+  const regex = formatEditRegex.value;
+  const tsFormat = formatEditTsFormat.value.trim();
+
+  if (formatEditMode === "pattern") {
+    const c = compileFormatPattern(pattern, tsFormat);
+    if (c.error) { formatEditError.textContent = c.error; formatEditError.classList.remove("hidden"); return; }
+  } else {
+    const v = validateFormatRegex(regex);
+    if (v.error) { formatEditError.textContent = v.error; formatEditError.classList.remove("hidden"); return; }
+    if (v.warning) { formatEditError.textContent = v.warning; formatEditError.classList.remove("hidden"); } // non-blocking
+  }
+
+  const existing = formatEditId ? state.logFormats.find(f => f.id === formatEditId) : null;
+  const fmt = existing ? Object.assign({}, existing) : {
+    id: "fmt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+    builtin: false, edited: false, createdAt: Date.now(),
+  };
+  fmt.name = name.slice(0, 80);
+  fmt.mode = formatEditMode;
+  fmt.pattern = pattern;
+  fmt.regex = regex;
+  fmt.tsFormat = tsFormat;
+  // See "Log format definitions" — editing the builtin default takes it off
+  // the untouched-HEADER_RE fast path from now on.
+  if (fmt.builtin) fmt.edited = true;
+
+  await saveLogFormat(fmt);
+  const idx = state.logFormats.findIndex(f => f.id === fmt.id);
+  if (idx === -1) state.logFormats.push(fmt); else state.logFormats[idx] = fmt;
+  closeFormatEditDialog();
+  renderFormatList();
+  renderFormatRuleFormatOptions();
+}
+el("#formatEditSave").addEventListener("click", saveFormatEdit);
+
+// ---- Add/Edit filename rule — inline panel (not a separate dialog) ----
+const formatRuleEditPanel = el("#formatRuleEditPanel");
+const formatRuleGlob = el("#formatRuleGlob");
+const formatRuleFormatSelect = el("#formatRuleFormatSelect");
+let formatRuleEditId = null;
+
+function renderFormatRuleFormatOptions() {
+  const formats = sortedLogFormats();
+  const prevValue = formatRuleFormatSelect.value;
+  formatRuleFormatSelect.innerHTML = formats.map(f =>
+    '<option value="' + escapeHtml(f.id) + '">' + escapeHtml(f.name) + '</option>'
+  ).join("");
+  if (formats.some(f => f.id === prevValue)) formatRuleFormatSelect.value = prevValue;
+}
+
+function openFormatRuleEditDialog(id) {
+  formatRuleEditId = id;
+  const rule = id ? state.formatRules.find(r => r.id === id) : null;
+  el("#formatRuleEditTitle").textContent = rule ? "Edit filename rule" : "Add filename rule";
+  formatRuleGlob.value = rule ? rule.glob : "";
+  renderFormatRuleFormatOptions();
+  formatRuleFormatSelect.value = rule ? rule.formatId : DEFAULT_FORMAT_ID;
+  formatRuleEditPanel.classList.remove("hidden");
+  el("#btnAddFormatRule").classList.add("hidden"); // only one editor visible at a time
+  if (formatRuleEditPanel.scrollIntoView) formatRuleEditPanel.scrollIntoView({ block: "nearest" }); // not implemented in jsdom
+  formatRuleGlob.focus();
+}
+function closeFormatRuleEditDialog() {
+  formatRuleEditPanel.classList.add("hidden");
+  el("#btnAddFormatRule").classList.remove("hidden");
+  formatRuleEditId = null;
+}
+el("#formatRuleEditCancel").addEventListener("click", closeFormatRuleEditDialog);
+
+async function saveFormatRuleEdit() {
+  const glob = formatRuleGlob.value.trim();
+  if (!glob) return;
+  const formatId = formatRuleFormatSelect.value;
+  const existing = formatRuleEditId ? state.formatRules.find(r => r.id === formatRuleEditId) : null;
+  const rule = existing ? Object.assign({}, existing) : {
+    id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+    order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
+    createdAt: Date.now(),
+  };
+  rule.glob = glob;
+  rule.formatId = formatId;
+
+  await saveFormatRule(rule);
+  const idx = state.formatRules.findIndex(r => r.id === rule.id);
+  if (idx === -1) state.formatRules.push(rule); else state.formatRules[idx] = rule;
+  closeFormatRuleEditDialog();
+  renderFormatRuleList();
+}
+el("#formatRuleEditSave").addEventListener("click", saveFormatRuleEdit);
+
+el("#btnAddFormat").addEventListener("click", () => openFormatEditDialog(null));
+el("#btnAddFormatRule").addEventListener("click", () => openFormatRuleEditDialog(null));
 
 document.addEventListener("click", ev => {
   if (!contextMenu.contains(ev.target)) closeContextMenu();
@@ -11010,7 +11993,7 @@ document.addEventListener("keydown", ev => {
    whole feature (no UI for it — deliberate, see PROJECT.md). */
 
 const CACHE_DB_NAME = "philogg-session-cache";
-const CACHE_DB_VERSION = 4; // bumped for the "filterLibrary" store (see "Reusable filter library" section)
+const CACHE_DB_VERSION = 5; // bumped for the "logFormats"/"formatRules" stores (see "Log format definitions")
 const CACHE_META_KEY = "session";
 const CACHE_FORMAT_VERSION = 1;
 const CACHE_ENABLED_KEY = "philogg-cache-enabled"; // localStorage; "0" disables
@@ -11039,6 +12022,8 @@ function openCacheDb() {
       if (!db.objectStoreNames.contains("fileHistory")) db.createObjectStore("fileHistory", { keyPath: "key" });
       if (!db.objectStoreNames.contains("folders")) db.createObjectStore("folders", { keyPath: "key" });
       if (!db.objectStoreNames.contains("filterLibrary")) db.createObjectStore("filterLibrary", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("logFormats")) db.createObjectStore("logFormats", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("formatRules")) db.createObjectStore("formatRules", { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
@@ -11099,6 +12084,7 @@ async function persistFileNode(node) {
     // of its owning directory handle.
     handle: (node.tail && !node.folderId) ? node.tail.handle : null,
     text: rebuildFileText(node),
+    formatId: node.formatId || null,
     savedAt: Date.now(),
   }));
 }
@@ -11380,7 +12366,10 @@ async function restoreSessionFromCache() {
       // runs after this function returns), so there's no folder section yet
       // to render it into — the plain tree list is the only place it could
       // show up regardless (see createFileNode/renderFolderSection).
-      const node = await addFile(rec.name, rec.text);
+      // Explicit override (never undefined) so a restored file is pinned to
+      // whatever format it was actually parsed under, even if the person's
+      // filename rules have since changed — see "Log format definitions".
+      const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID);
       node.cacheKey = key; // keep the stored key so the next persist overwrites in place
       if (rec.merged) node.merged = true;
       // Re-links this node to its watched folder, if it had one — the
@@ -11990,7 +12979,10 @@ async function resolveExportedFileManually(rec, nearMissIds, summary) {
     if (choice === "embedded") {
       // The embedded text is the exporter's own rebuilt file content and
       // re-parsing it is a fixed point (see rebuildFileText), so ordinals
-      // are as trustworthy as a tier-1 match.
+      // are as trustworthy as a tier-1 match. Session export records don't
+      // carry a formatId (that's an IndexedDB session-cache concept, not
+      // part of the portable export format) — resolves live by filename,
+      // same as any other fresh load.
       const node = await addFile(String(rec.name || "embedded.log"), rec.text);
       persistFileNode(node); // same fire-and-forget as loadFileDescriptors
       const { refMap, placed, total } = applySessionEntryByOrdinal(rec, node);
@@ -12235,6 +13227,14 @@ applyRowGrid();
 initTheme();
 initFhView();
 render();
+// Log format config (Settings -> Format Manager) loads in parallel with the
+// rest of boot, not gating it — restoreSessionFromCache/loadFromUrlParam
+// fire at their original, unchanged timing below. addFile is the one place
+// that actually needs state.logFormats settled (a restored file pinned to a
+// custom formatId not yet loaded would otherwise mis-parse under the
+// default) and awaits this promise itself, narrowly, only when that
+// specific case applies — see addFile's own comment.
+const formatConfigReady = loadFormatConfig();
 // Deep-link ?url= load, fire-and-forget — independent of session restore
 // below (a link straight into a log doesn't need a prior cached session).
 loadFromUrlParam();

@@ -122,6 +122,21 @@
   </fieldset>
 
   <fieldset>
+    <!-- Same token vocabulary as PhiLogg's Settings -> Format Manager
+         (philogg.html's FORMAT_TOKEN_RE/FORMAT_TOKEN_FIELD) — keep these
+         two lists in sync if either changes. Left untouched, the defaults
+         below reproduce exactly today's log4net-style output. -->
+    <legend>Format</legend>
+    <label>Line pattern</label>
+    <input type="text" id="linePattern" value='%d\t%p\t&quot;%t&quot;\t%c\t[%M]\t&quot;%m&quot;%n'>
+    <div class="hint">%d/%date %p/%level %t/%thread %c/%logger %M/%method %m/%message %n — <code>\t</code> <code>\n</code> <code>\\</code> stand for a literal tab/newline/backslash.</div>
+
+    <label>Timestamp format</label>
+    <input type="text" id="tsFormat" value="yyyy-MM-dd HH:mm:ss,SSS">
+    <div class="hint">Tokens: yyyy MM dd HH mm ss SSS.</div>
+  </fieldset>
+
+  <fieldset>
     <legend>Writing</legend>
     <label>Line interval: <span id="intervalLabel">500 ms</span></label>
     <input type="range" id="interval" min="50" max="3000" step="50" value="500">
@@ -187,6 +202,8 @@
   const btnPickFolder = $("btnPickFolder");
   const folderHint = $("folderHint");
   const filePrefix = $("filePrefix");
+  const linePatternEl = $("linePattern");
+  const tsFormatEl = $("tsFormat");
   const intervalEl = $("interval");
   const intervalLabel = $("intervalLabel");
   const jitterEl = $("jitter");
@@ -242,17 +259,47 @@
   function pad2(n) { return n < 10 ? "0" + n : "" + n; }
   function pad3(n) { return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n; }
 
-  function formatTimestamp(d) {
-    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) + " " +
-      pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) + "," + pad3(d.getMilliseconds());
-  }
-
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
   function randInt(min, max) { return Math.floor(min + Math.random() * (max - min + 1)); }
 
-  // Builds one log4net-style header line: %d\t%p\t"%t"\t%l\t[%method]\t%m%n
-  function buildLine() {
-    const ts = formatTimestamp(new Date());
+  const DEFAULT_LINE_PATTERN = '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n';
+  const DEFAULT_TS_FORMAT = "yyyy-MM-dd HH:mm:ss,SSS";
+
+  // Same token vocabulary as PhiLogg's Settings -> Format Manager
+  // (philogg.html's FORMAT_TOKEN_RE/FORMAT_TOKEN_FIELD) — keep in sync if
+  // either changes. Longer word-forms listed before their single-letter
+  // alias so e.g. "%date" isn't consumed as "%d" + leftover "ate".
+  const FORMAT_TOKEN_RE = /%(date|d)(?:\{[^}]*\})?|%(level|p)|%(thread|t)|%(logger|c)|%(method|M)|%(message|m)|%n|%%/g;
+  const FORMAT_TOKEN_FIELD = {
+    date: "ts", d: "ts", level: "level", p: "level", thread: "thread", t: "thread",
+    logger: "location", c: "location", method: "method", M: "method", message: "message", m: "message",
+  };
+
+  // A single-line text input can't contain a literal tab/newline, so \t/\n/\\
+  // two-character sequences typed there are unescaped into real bytes —
+  // same convention philogg.html's pattern-mode compiler uses, so one
+  // pattern string works for both parsing and generating matching test data.
+  function unescapePatternText(s) {
+    return (s || "").replace(/\\\\|\\t|\\n/g, m => (m === "\\t" ? "\t" : m === "\\n" ? "\n" : "\\"));
+  }
+
+  function formatDateWithTokens(d, tsFormat) {
+    return (tsFormat || DEFAULT_TS_FORMAT).replace(/yyyy|MM|dd|HH|mm|ss|SSS/g, tok => {
+      if (tok === "yyyy") return "" + d.getFullYear();
+      if (tok === "MM") return pad2(d.getMonth() + 1);
+      if (tok === "dd") return pad2(d.getDate());
+      if (tok === "HH") return pad2(d.getHours());
+      if (tok === "mm") return pad2(d.getMinutes());
+      if (tok === "ss") return pad2(d.getSeconds());
+      return pad3(d.getMilliseconds()); // SSS
+    });
+  }
+
+  // Builds one line by substituting values into the configured pattern —
+  // the inverse of philogg.html's compileFormatPattern (which substitutes
+  // MATCH fragments instead of values). Left at the defaults above, this
+  // reproduces exactly the tool's original hardcoded log4net-style output.
+  function buildLineFromPattern(rawPattern, tsFormat) {
     const level = pick(LEVELS);
     const thread = pick(THREADS);
     const src = pick(SOURCES);
@@ -271,8 +318,32 @@
         .replace("{pct}", randInt(0, 100));
     }
 
-    let line = ts + "\t" + level + "\t\"" + thread + "\"\t" + src.file + "\tline " + lineNo +
-      "\t[" + method + "]\t\"" + message + "\"";
+    const values = {
+      ts: formatDateWithTokens(new Date(), tsFormat),
+      level, thread,
+      location: src.file + "\tline " + lineNo,
+      method, message,
+    };
+
+    const pattern = unescapePatternText(rawPattern || DEFAULT_LINE_PATTERN);
+    FORMAT_TOKEN_RE.lastIndex = 0;
+    let lastIndex = 0, line = "";
+    let m;
+    while ((m = FORMAT_TOKEN_RE.exec(pattern)) !== null) {
+      const tok = m[0];
+      // Literal text before this token (e.g. a closing quote right before
+      // %n) always gets appended first — %n/%% contribute nothing of
+      // their own beyond that.
+      line += pattern.slice(lastIndex, m.index);
+      lastIndex = FORMAT_TOKEN_RE.lastIndex;
+      if (tok === "%n") continue;
+      if (tok === "%%") { line += "%"; continue; }
+      const tokenWord = m[1] || m[2] || m[3] || m[4] || m[5] || m[6];
+      const field = FORMAT_TOKEN_FIELD[tokenWord];
+      const val = values[field];
+      line += val != null ? val : "";
+    }
+    line += pattern.slice(lastIndex);
 
     if (level === "ERROR" && optStackTrace.checked && Math.random() < 0.5) {
       line += "\n   at " + src.method + "() in " + src.file + ":line " + lineNo +
@@ -389,7 +460,7 @@
 
   async function writeOneLine() {
     if (!fileHandle) return;
-    const { line, level } = buildLine();
+    const { line, level } = buildLineFromPattern(linePatternEl.value, tsFormatEl.value);
     await writeText(line + "\n");
     linesInFile += 1;
     linesTotal += 1;
