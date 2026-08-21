@@ -639,6 +639,13 @@
     padding:0 16px 0 14px;
   }
   #tableHeader .row-grid, #highlightHeader .row-grid{padding:9px 0;}
+  /* Horizontal scrollbar in the Filter view (FEATURE_BACKLOG.md item), Filter
+     view only — see syncTableHeaderWidth's comment in the script for the
+     full mechanism. #tableHeader isn't a descendant of the scrollable
+     #tableBody (they're flex siblings inside #tableWrap), so it gets its own
+     hidden-scrollbar overflow and has its scrollLeft driven by #tableBody's
+     scroll event instead. */
+  #tableHeader{overflow-x:hidden;}
   .th{
     color:var(--text-tertiary); font-size:10.3px; font-weight:650;
     text-transform:uppercase; letter-spacing:.5px; align-self:center;
@@ -745,7 +752,11 @@
      own copy of this same virtualization scheme (see renderHighlightView) —
      a separate scroll container, so its position is independent of the
      Filter view's. */
-  #tableBody, #highlightBody{flex:1 1 auto; overflow-y:auto; overflow-x:hidden; position:relative;}
+  #tableBody, #highlightBody{flex:1 1 auto; overflow-y:auto; position:relative;}
+  /* Filter view only (see the #tableHeader rule above) — the Full/Highlight
+     view keeps the original clipped/ellipsis behavior. */
+  #tableBody{overflow-x:auto;}
+  #highlightBody{overflow-x:hidden;}
   #tableSpacer, #highlightSpacer{position:relative; width:100%;}
   #tableRows, #highlightRows{position:absolute; top:0; left:0; right:0; box-sizing:border-box; padding:2px 16px 20px 14px;}
 
@@ -823,6 +834,20 @@
   .col-loc{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-method{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-msg{font-family:var(--font-mono); font-size:11.6px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* Horizontal scrollbar in the Filter view (FEATURE_BACKLOG.md item), Filter
+     view only: .col-msg's `overflow:hidden` above resets its "automatic
+     minimum size" to 0 per the CSS Sizing spec (a non-visible-overflow box's
+     content-based minimum is 0 unless min-width says otherwise) — which is
+     exactly why the message column's grid track (the shared --row-grid's
+     trailing `1fr`) always happily shrank to whatever was available instead
+     of ever actually overflowing. Restoring an explicit min-width here (its
+     own natural, un-wrapped text width, thanks to white-space:nowrap already
+     above) makes that track — and so the whole row — refuse to shrink below
+     it, which is what makes #tableBody's horizontal scrollbar (see
+     syncTableHeaderWidth's own comment near renderVisibleRows) actually have
+     something to scroll to. Scoped to #tableRows so the Full/Highlight view
+     (#highlightRows) keeps its original ellipsis-only truncation. */
+  #tableRows .col-msg{min-width:max-content;}
   /* Multiline message display (state.multilineMessages, toggled via
      #btnMultilineMsg): white-space:pre renders literal "\n" line breaks
      already present in e.message (continuation lines accumulated during
@@ -1187,8 +1212,17 @@
   }
   .settings-row{display:flex; align-items:center; justify-content:space-between; gap:16px; padding:2px 0;}
   .settings-row-label{font-size:12.5px; color:var(--text-primary);}
+  .settings-row-hint{font-size:10.5px; color:var(--text-tertiary); font-weight:400;}
   .settings-row-control.assert-mode-row{margin-bottom:0; width:auto;}
   .settings-row-control .assert-mode-btn{flex:0 0 auto; padding:6px 16px;}
+  .font-scale-row{display:flex; align-items:center; gap:8px;}
+  .font-scale-row #fontScaleValue{font-size:12px; font-variant-numeric:tabular-nums; min-width:38px; text-align:center; color:var(--text-secondary);}
+  .font-scale-row .btn-icon{border:1px solid var(--border); font-size:14px; line-height:1; padding:4px 9px;}
+  /* Same accent-colored native checkbox convention used everywhere else in
+     the app (.plot-checkbox-row, .filter-case-toggle, ...) rather than a
+     custom-drawn toggle — see #settingsQuitOnLastClose's row above. */
+  .settings-row-label[for]{cursor:pointer;}
+  #settingsQuitOnLastClose{accent-color:var(--accent); cursor:pointer;}
   .settings-inline-panel{
     margin-top:10px; padding:16px 16px 14px; border-radius:10px;
     background:var(--accent-soft); border:1px solid var(--accent);
@@ -2192,6 +2226,25 @@
               <button type="button" class="assert-mode-btn" id="settingsThemeDark" data-theme-choice="dark">Dark</button>
             </div>
           </div>
+          <div class="settings-row">
+            <div class="settings-row-label">Font size <span class="settings-row-hint">(Ctrl+/Ctrl-)</span></div>
+            <div class="settings-row-control font-scale-row">
+              <button type="button" class="btn-icon" id="fontScaleDown" title="Decrease font size (Ctrl+-)">−</button>
+              <span id="fontScaleValue">100%</span>
+              <button type="button" class="btn-icon" id="fontScaleUp" title="Increase font size (Ctrl++)">+</button>
+              <button type="button" class="btn-mini-secondary" id="fontScaleReset" title="Reset to default">Reset</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="settings-section-title">Behavior</div>
+          <div class="settings-row">
+            <label class="settings-row-label" for="settingsQuitOnLastClose">Closing the last log file quits the app</label>
+            <div class="settings-row-control">
+              <input type="checkbox" id="settingsQuitOnLastClose">
+            </div>
+          </div>
         </section>
 
         <section class="settings-section">
@@ -2297,6 +2350,8 @@
       <div>Right-click a filter — "Save to library…"; right-click any node — "Apply from library…" (reusable, named presets)</div>
       <div>Drag a filter onto another node to move it there</div>
       <div><kbd>Del</kbd> — delete selected filter</div>
+      <div><kbd>Ctrl</kbd>+<kbd>W</kbd> — close the currently open file</div>
+      <div>Double-click a filter — edit it (same as F2/right-click)</div>
       <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo (delete/move/edit)</div>
       <div><kbd>B</kbd> — bookmark the selected row</div>
       <div>Drag the divider right of the tree, above the detail panel, or (in Stacked view) between Full and Filtered to resize</div>
@@ -2306,8 +2361,13 @@
       <div><kbd>Ctrl</kbd>+click / <kbd>Shift</kbd>+click a row — multi-select rows, <kbd>Ctrl</kbd>+<kbd>C</kbd> copies their raw text</div>
       <div>↑ / ↓ — move selection up/down</div>
       <div>Click a tree row/breadcrumb — arrow keys then navigate the tree: ↑ / ↓ move, ← parent, → first child</div>
+      <div><kbd>Ctrl</kbd>+<kbd>0</kbd> — focus the filter tree at wherever you currently are</div>
+      <div><kbd>Ctrl</kbd>+<kbd>1</kbd> Full · <kbd>Ctrl</kbd>+<kbd>2</kbd> Filtered · <kbd>Ctrl</kbd>+<kbd>3</kbd> Stacked — switch view and focus it for ↑ / ↓</div>
+      <div><kbd>Enter</kbd> on a filter (tree focused) — jump to the Filtered view</div>
       <div>Right-click a row — filter before/after</div>
       <div>Double-click a row — jump to it in the full log</div>
+      <div>The Filter view scrolls sideways for long messages</div>
+      <div><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> — increase/decrease font size (also in Settings)</div>
       <div>Files keep updating live (tail) — scroll up to pause, “Newest” to follow again</div>
     </div>
   </div>
@@ -2406,6 +2466,68 @@ function setTheme(theme) {
 document.getElementById("settingsThemeLight").addEventListener("click", () => setTheme("light"));
 document.getElementById("settingsThemeDark").addEventListener("click", () => setTheme("dark"));
 
+/* ===================== Font size (FEATURE_BACKLOG.md "Configurable font
+   size") ===================== */
+// A whole-UI zoom (CSS `zoom`) rather than a font-size variable threaded
+// through the ~100 individually hardcoded font-size declarations in this
+// file — the simplest way to make "everything a bit bigger/smaller" actually
+// cover every element instead of just the ones someone remembered to wire
+// up. Purely a display preference, same tier/reasoning as the theme toggle
+// above: not part of `state`, persisted to localStorage instead.
+const FONT_SCALE_STORAGE_KEY = "philogg-font-scale";
+const FONT_SCALE_MIN = 70, FONT_SCALE_MAX = 160, FONT_SCALE_STEP = 10, FONT_SCALE_DEFAULT = 100;
+let fontScale = FONT_SCALE_DEFAULT;
+
+function applyFontScale(scale) {
+  fontScale = Math.max(FONT_SCALE_MIN, Math.min(FONT_SCALE_MAX, scale));
+  document.documentElement.style.zoom = fontScale / 100;
+  localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(fontScale));
+  const valueEl = document.getElementById("fontScaleValue");
+  if (valueEl) valueEl.textContent = fontScale + "%";
+}
+
+function initFontScale() {
+  const stored = parseInt(localStorage.getItem(FONT_SCALE_STORAGE_KEY), 10);
+  applyFontScale(Number.isFinite(stored) ? stored : FONT_SCALE_DEFAULT);
+}
+
+document.getElementById("fontScaleDown").addEventListener("click", () => applyFontScale(fontScale - FONT_SCALE_STEP));
+document.getElementById("fontScaleUp").addEventListener("click", () => applyFontScale(fontScale + FONT_SCALE_STEP));
+document.getElementById("fontScaleReset").addEventListener("click", () => applyFontScale(FONT_SCALE_DEFAULT));
+
+/* ===================== "Closing the last log file quits the app"
+   (FEATURE_BACKLOG.md item) ===================== */
+// Off by default, as requested. Purely a local app-behavior preference, same
+// tier/reasoning as the theme toggle and font size above — not session/
+// filter data, so a plain localStorage flag rather than something threaded
+// through the session cache. Meaningful mainly under the Electron desktop
+// wrapper (see PROJECT.md "Desktop wrapper"): the renderer stays plain-web
+// (no preload/IPC bridge, per that section's own design), and a bare
+// window.close() is enough there since Electron intercepts a renderer's own
+// window.close() and closes that BrowserWindow. In an ordinary browser tab
+// window.close() is a no-op on a tab the page itself didn't open, so the
+// setting simply has no effect outside the desktop wrapper — matching what
+// it's actually for, with no Electron-specific code needed here.
+const QUIT_ON_LAST_CLOSE_KEY = "philogg-quit-on-last-close";
+let quitOnLastFileClose = false;
+
+function initQuitOnLastClose() {
+  quitOnLastFileClose = localStorage.getItem(QUIT_ON_LAST_CLOSE_KEY) === "1";
+  const cb = document.getElementById("settingsQuitOnLastClose");
+  if (cb) cb.checked = quitOnLastFileClose;
+}
+
+document.getElementById("settingsQuitOnLastClose").addEventListener("change", ev => {
+  quitOnLastFileClose = ev.target.checked;
+  localStorage.setItem(QUIT_ON_LAST_CLOSE_KEY, quitOnLastFileClose ? "1" : "0");
+});
+
+// Called after any user-initiated file close (see deleteFilterNodeWithUndo)
+// — quits (closes the window) once no root files remain, if enabled.
+function maybeQuitOnLastFileClosed() {
+  if (quitOnLastFileClose && state.rootIds.length === 0) window.close();
+}
+
 /* ===================== State ===================== */
 const state = {
   nodes: {},      // id -> node
@@ -2415,6 +2537,10 @@ const state = {
                           // "tree" is set by clicking a tree row/breadcrumb chip or
                           // dropping a drag onto a new parent, "entries" by any entry
                           // selection (see applySelection) — see moveTreeSelection
+  entriesView: "filter",  // "filter" | "highlight" — which Log view arrow keys move
+                          // through while focusRegion is "entries" (Ctrl+1/2/3 below,
+                          // or a plain click/dblclick on a row in either view — see
+                          // selectEntry/selectHighlightEntry)
 
   clipboard: null, // { id, mode: 'copy' | 'cut' }, set via Ctrl+C / Ctrl+X
   levelFilter: new Set(),  // active level toggles (empty = show all)
@@ -4311,12 +4437,13 @@ function deleteFilterNodeWithUndo(nodeId) {
   // removed on close — it returns to the folder's grayed listing instead of
   // vanishing, per FEATURE_BACKLOG.md "Folder watch + lazy loading". See
   // closeFolderFile in the "Folder watch" section.
-  if (node.type === "file" && node.folderId) { closeFolderFile(nodeId); return; }
+  if (node.type === "file" && node.folderId) { closeFolderFile(nodeId); maybeQuitOnLastFileClosed(); return; }
   if (node.type === "file") {
     const index = state.rootIds.indexOf(nodeId);
     const snapshot = snapshotSubtree(nodeId);
     deleteNode(nodeId);
     pushUndo({ kind: "deleteFile", snapshot, index });
+    maybeQuitOnLastFileClosed();
     return;
   }
   const parent = state.nodes[node.parentId];
@@ -5034,6 +5161,40 @@ function renderFilterHistoryPreview(fileNode) {
 // dragstart/dragover/drop handlers). null while no drag is in progress.
 let draggedNodeId = null;
 
+// Manual double-click detection for tree rows (FEATURE_BACKLOG.md item
+// "Double-click on a filter opens its edit dialog"), instead of a native
+// "dblclick" listener: a tree row's own click handler always ends in a full
+// render(), which rebuilds every #tree row from scratch (see CLAUDE.md's
+// "DOM identity across clicks" gotcha) — so by the time a second physical
+// click lands, the row it landed on is a different DOM node than the one
+// the first click fired on, and a real browser never pairs the two clicks
+// into a native "dblclick". Tracking the clicked node id + timestamp in JS
+// instead sidesteps that entirely, since it doesn't depend on element
+// identity surviving the render in between.
+let lastTreeRowClickId = null;
+let lastTreeRowClickTime = 0;
+const TREE_DBLCLICK_MS = 450;
+
+// Opens the same edit dialog the F2 shortcut and the tree's right-click
+// "Edit filter…" item do, for whichever of the two dialogs the node's
+// filterType maps to (see openTreeContextMenu's own comment on this split).
+// Shared by F2, the context-menu action, and a tree row's double-click, so
+// all three stay in sync. Returns whether a dialog was actually opened, for
+// callers that need to know (a "not editable" type is a silent no-op here).
+function editFilterNode(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter") return false;
+  if (isTimeFilterType(node.filterType)) {
+    openTimeRangeDialog("edit", node.id, timeRangeOfNode(node));
+    return true;
+  }
+  if (node.filterType === "text" || node.filterType === "extract") {
+    openEditFilterPopup(node.id);
+    return true;
+  }
+  return false;
+}
+
 // Grayed placeholder row for a file still waiting its turn in a multi-file
 // load (see createQueuedFileNode/loadFileDescriptors) — visually mirrors
 // folder watch's .folder-watch-file rows (same "known its spot, not read
@@ -5181,8 +5342,23 @@ function renderNode(id, depth) {
     if (ev.ctrlKey || ev.metaKey) {
       if (state.multiSelect.has(id)) state.multiSelect.delete(id);
       else state.multiSelect.add(id);
+      lastTreeRowClickId = null; // a Ctrl+click is a multi-select gesture, not half of a double-click
     } else {
       state.multiSelect = new Set([id]);
+      const now = Date.now();
+      if (lastTreeRowClickId === id && now - lastTreeRowClickTime < TREE_DBLCLICK_MS) {
+        // Stops this click from also reaching the document-level "click
+        // outside closes the popup" listener below — without it, the popup
+        // editFilterNode just opened would immediately close again as this
+        // same event finishes bubbling (see CLAUDE.md's "stopPropagation on
+        // any click handler that opens a popup" gotcha).
+        ev.stopPropagation();
+        editFilterNode(id);
+        lastTreeRowClickId = null;
+      } else {
+        lastTreeRowClickId = id;
+        lastTreeRowClickTime = now;
+      }
     }
     state.activeId = id;
     state.focusRegion = "tree";
@@ -7298,6 +7474,33 @@ function setTableScroll(value) {
   tableBody.scrollTop = Math.max(0, value);
 }
 
+/* ===================== Horizontal scroll (FEATURE_BACKLOG.md "Horizontal
+   scrollbar in the Filter view") =====================
+   Filter-view-only (#tableBody/#tableHeader), not the Full/Highlight view —
+   .col-msg's ellipsis truncation there is unchanged. The actual overflow is
+   produced in CSS (see `#tableRows .col-msg{min-width:max-content}`'s own
+   comment, near the base .col-msg rule): restoring the message column's
+   natural content-based minimum width, which `overflow:hidden` otherwise
+   resets to 0, makes the grid track — and so the whole row — refuse to
+   shrink below a long message's un-wrapped width. That overflow bleeds
+   through #tableRows/#tableSpacer (both plain overflow:visible) up to
+   #tableBody, the nearest scrollable ancestor (`overflow-x:auto`), which
+   gets a real horizontal scrollbar as a result.
+   #tableHeader is a separate flex sibling, not a descendant of #tableBody,
+   so it needs its own sync: `overflow-x:hidden` (no second, redundant
+   scrollbar) plus its scrollLeft driven from #tableBody's scroll event
+   below, and its own .row-grid's width kept equal to the widest currently-
+   rendered row (tableRows.scrollWidth) so there's actually something to
+   scroll to — the header's own content (short column labels) would
+   otherwise size much narrower than the data rows. Only reflects the
+   virtualized window's rows (not the full result set), same virtualization-
+   scoped tradeoff as everywhere else in this view. */
+function syncTableHeaderWidth() {
+  const headerGrid = tableHeaderEl.querySelector(".row-grid");
+  if (headerGrid) headerGrid.style.width = tableRows.scrollWidth + "px";
+}
+tableBody.addEventListener("scroll", () => { tableHeaderEl.scrollLeft = tableBody.scrollLeft; });
+
 // Which merged context range (see mergeContextRanges) a timestamp falls
 // into, or -1 if none. Ranges are sorted and non-overlapping, so a binary
 // search applies, same as lowerBoundByTs/upperBoundByTs above.
@@ -7403,6 +7606,7 @@ function renderVisibleRows() {
   }
   tableRows.innerHTML = "";
   tableRows.appendChild(frag);
+  syncTableHeaderWidth();
 }
 
 /* ===================== Highlight view =====================
@@ -8415,6 +8619,7 @@ function applySelection(entryId) {
 
 function selectEntry(entryId, opts) {
   opts = opts || {};
+  state.entriesView = "filter";
   const previousId = applySelection(entryId);
   if (opts.scroll) {
     // opts.index: callers that already know the entry's position (arrow-key
@@ -8434,9 +8639,10 @@ function selectEntry(entryId, opts) {
 // container instead of the Filter view's.
 function selectHighlightEntry(entryId, opts) {
   opts = opts || {};
+  state.entriesView = "highlight";
   const previousId = applySelection(entryId);
   if (opts.scroll) {
-    const idx = currentHighlightViewEntries.findIndex(e => e.id === entryId);
+    const idx = opts.index != null ? opts.index : currentHighlightViewEntries.findIndex(e => e.id === entryId);
     if (idx !== -1) scrollToHighlightIndex(idx, { center: opts.center });
   }
   updateSelectedRowClass(previousId);
@@ -8456,6 +8662,7 @@ function selectHighlightEntry(entryId, opts) {
 // clientHeight is measurable before scrollToHighlightIndex's centering math
 // runs — a hidden (display:none) panel would measure 0.
 function revealInHighlightView(entry) {
+  state.entriesView = "highlight";
   const previousId = applySelection(entry.id);
   state.highlightScrollTargetId = entry.id;
   showFhTab("highlight");
@@ -8502,6 +8709,19 @@ function moveSelection(delta) {
   let idx = state.selectedId ? entries.findIndex(e => e.id === state.selectedId) : -1;
   idx = idx === -1 ? (delta > 0 ? 0 : entries.length - 1) : Math.min(entries.length - 1, Math.max(0, idx + delta));
   selectEntry(entries[idx].id, { scroll: true, index: idx });
+}
+
+// Highlight/Full-view counterpart of moveSelection — same shape, moves
+// through currentHighlightViewEntries instead (FEATURE_BACKLOG.md item
+// "Shortcuts to switch between Tree and Filter view": Ctrl+1 opens the Full
+// view and focuses it, so ↑/↓ afterwards navigate its messages the same way
+// they already did for the Filtered view).
+function moveHighlightSelection(delta) {
+  const entries = currentHighlightViewEntries;
+  if (entries.length === 0) return;
+  let idx = state.selectedId ? entries.findIndex(e => e.id === state.selectedId) : -1;
+  idx = idx === -1 ? (delta > 0 ? 0 : entries.length - 1) : Math.min(entries.length - 1, Math.max(0, idx + delta));
+  selectHighlightEntry(entries[idx].id, { scroll: true, index: idx });
 }
 
 // Switches to the full (unfiltered-by-tree) file view that the current node
@@ -10577,9 +10797,7 @@ treeContextMenu.addEventListener("click", ev => {
   // Single-node actions operate on treeCtxId (the node the menu was opened
   // for), mirroring exactly what Ctrl+C/X/V/Delete do for state.activeId.
   if (action === "edit") {
-    const node = treeCtxId && state.nodes[treeCtxId];
-    if (node && isTimeFilterType(node.filterType)) openTimeRangeDialog("edit", node.id, timeRangeOfNode(node));
-    else if (node) openEditFilterPopup(treeCtxId);
+    if (treeCtxId) editFilterNode(treeCtxId);
     return;
   }
   if (action === "copy" || action === "cut") {
@@ -11873,7 +12091,8 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
     if (extractWrap.style.display !== "none") return; // extraction table has its own click/drag selection
     ev.preventDefault();
-    moveSelection(ev.key === "ArrowDown" ? 1 : -1);
+    const delta = ev.key === "ArrowDown" ? 1 : -1;
+    if (state.entriesView === "highlight") moveHighlightSelection(delta); else moveSelection(delta);
     return;
   }
 
@@ -11888,14 +12107,90 @@ document.addEventListener("keydown", ev => {
   }
 
   if (ev.key === "F2") {
-    const node = state.nodes[state.activeId];
-    if (node && node.type === "filter" && isTimeFilterType(node.filterType)) {
+    if (editFilterNode(state.activeId)) ev.preventDefault();
+    return;
+  }
+
+  // FEATURE_BACKLOG.md "Shortcuts to switch between Tree and Filter view":
+  // Ctrl+0 moves keyboard focus to the filter tree, landing on whichever
+  // node is ALREADY active — a filter included, not just its root file —
+  // so arrow keys continue navigating from wherever the person currently
+  // is, rather than jumping back up to the file; falls back to the first
+  // root file only if nothing's active yet. Ctrl+1/2/3 mirror the three
+  // Full/Filtered/Stacked toggle buttons (#fhTabs) one-for-one — same
+  // applyFhView call each of those already makes on click — and additionally
+  // focus the entries pane for arrow-key navigation: Ctrl+1 -> Full (arrow
+  // keys move through moveHighlightSelection), Ctrl+2 -> Filtered
+  // (moveSelection), Ctrl+3 -> Stacked (both panels visible; defaults arrow
+  // keys to the Filtered pane, same as a plain click there would). Enter on
+  // an active filter node while the tree has focus reveals the Filtered view
+  // the same way Ctrl+2 does, so the tree and the Log views read as a fast
+  // back-and-forth pair either way.
+  if ((ev.ctrlKey || ev.metaKey) && key === "0") {
+    ev.preventDefault();
+    if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
+    state.focusRegion = "tree";
+    render();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && key === "1") {
+    ev.preventDefault();
+    applyFhView("highlight");
+    state.entriesView = "highlight";
+    state.focusRegion = "entries";
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && key === "2") {
+    ev.preventDefault();
+    applyFhView("filter");
+    state.entriesView = "filter";
+    state.focusRegion = "entries";
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && key === "3") {
+    ev.preventDefault();
+    applyFhView("stacked");
+    state.entriesView = "filter";
+    state.focusRegion = "entries";
+    return;
+  }
+  if (ev.key === "Enter" && state.focusRegion === "tree") {
+    const activeNode = state.nodes[state.activeId];
+    if (activeNode && activeNode.type === "filter") {
       ev.preventDefault();
-      openTimeRangeDialog("edit", node.id, timeRangeOfNode(node));
-    } else if (node && node.type === "filter" && (node.filterType === "text" || node.filterType === "extract")) {
-      ev.preventDefault();
-      openEditFilterPopup(state.activeId);
+      revealFilteredView();
+      state.entriesView = "filter";
+      state.focusRegion = "entries";
     }
+    return;
+  }
+
+  // FEATURE_BACKLOG.md "Ctrl+W closes the currently open file" — same close
+  // path as the tree row's own ✕ button (deleteFilterNodeWithUndo), targeting
+  // the active node's root file so it works regardless of which node in that
+  // file's chain is currently active.
+  if ((ev.ctrlKey || ev.metaKey) && key === "w") {
+    const rootId = getRootFileId(state.activeId);
+    if (rootId) {
+      ev.preventDefault();
+      deleteFilterNodeWithUndo(rootId);
+      render();
+    }
+    return;
+  }
+
+  // FEATURE_BACKLOG.md "Configurable font size": Ctrl+Plus/Ctrl+Minus step
+  // the UI-wide zoom set up in applyFontScale (see its own comment, near the
+  // theme toggle) — same keys browsers themselves use for page zoom, so they
+  // read as a natural extension of that rather than a new idiom.
+  if ((ev.ctrlKey || ev.metaKey) && (key === "+" || key === "=")) {
+    ev.preventDefault();
+    applyFontScale(fontScale + FONT_SCALE_STEP);
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && key === "-") {
+    ev.preventDefault();
+    applyFontScale(fontScale - FONT_SCALE_STEP);
     return;
   }
 
@@ -13225,6 +13520,8 @@ updatePinBookmarksButton();
 updateMultilineMsgButton();
 applyRowGrid();
 initTheme();
+initFontScale();
+initQuitOnLastClose();
 initFhView();
 render();
 // Log format config (Settings -> Format Manager) loads in parallel with the
