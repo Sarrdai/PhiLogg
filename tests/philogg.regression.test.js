@@ -7749,6 +7749,57 @@ await withApp(async (w, d, T) => {
   assert(defaultNode.entries.length === 1 && defaultNode.entries[0].message === "message 0", "a node with no formatId still tails under the builtin default");
 });
 
+await withApp(async (w, d, T) => {
+  section("70j. Builtin default row: Edit + Reset (not Delete); Reset reverts both the displayed fields AND actual parsing behavior");
+  await waitForFormatConfig(T);
+  fireClick(d.querySelector("#btnSettings"), w);
+
+  const defaultRow = () => d.querySelector("#formatList .filter-library-row");
+  assert(defaultRow().querySelector(".filter-library-row-del") === null, "the builtin default row has no Delete button");
+  const resetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
+  assert(resetBtn(), "...and has a Reset button in its place");
+  assert(resetBtn().className === "btn-mini-outline", "Reset uses the same secondary-button style as Cancel elsewhere, got " + resetBtn().className);
+
+  // Sanity: an unedited default parses a normal log4net-shaped file correctly.
+  const before = await w.addFile("before.log", makeLog(0, 3), () => {});
+  assert(before.entries[1].level === "INFO" && before.entries[1].thread === "main" && before.entries[1].method === "DoWork" && before.entries[1].message === "message 1",
+    "sanity: unedited default parses a normal file correctly");
+
+  // Edit the default: rename it and replace the pattern with something that
+  // only extracts level+message (drops thread/method entirely) — a clearly
+  // DIFFERENT, verifiable parse result, not just a cosmetic name change.
+  fireClick(defaultRow().querySelector("button.btn-mini"), w); // "Edit"
+  d.querySelector("#formatEditName").value = "Renamed default";
+  d.querySelector("#formatEditPattern").value = "%p %m%n";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async
+
+  const editedFmt = T.state.logFormats.find(f => f.id === "fmt-default");
+  assert(editedFmt.name === "Renamed default" && editedFmt.edited === true, "editing the builtin default updates it in place and flags it edited");
+  assert(defaultRow().querySelector(".filter-library-row-name").textContent.includes("Renamed default"), "the row reflects the new name");
+
+  const duringEdit = await w.addFile("during-edit.log", makeLog(10, 1), () => {});
+  assert(duringEdit.entries.length === 1, "sanity: the edited pattern still matches the line as a single entry, got " + duringEdit.entries.length);
+  assert(duringEdit.entries[0].thread === "" && duringEdit.entries[0].method === "",
+    "while edited, the SAME file shape now parses under the new (different) pattern — thread/method no longer extracted");
+  assert(isNaN(duringEdit.entries[0].ts), "...and the %d-less pattern has no ts group at all, so ts is NaN");
+
+  // Reset: reverts the row AND restores the original untouched fast-path parsing.
+  fireClick(resetBtn(), w);
+  await new Promise(r => setTimeout(r, 20)); // saveLogFormat's IndexedDB write is async
+
+  const resetFmt = T.state.logFormats.find(f => f.id === "fmt-default");
+  assert(resetFmt.edited === false, "Reset clears the edited flag");
+  assert(resetFmt.name === "Default (log4net-style)" && resetFmt.pattern === '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n' && resetFmt.tsFormat === "yyyy-MM-dd HH:mm:ss,SSS",
+    "Reset restores the exact original name/pattern/tsFormat, got " + JSON.stringify(resetFmt.pattern));
+  assert(defaultRow().querySelector(".filter-library-row-name").textContent.includes("Default (log4net-style)") && !defaultRow().querySelector(".filter-library-row-name").textContent.includes("Renamed"),
+    "the row's displayed name reverts too");
+
+  const after = await w.addFile("after-reset.log", makeLog(20, 3), () => {});
+  assert(after.entries[1].level === "INFO" && after.entries[1].thread === "main" && after.entries[1].method === "DoWork" && after.entries[1].message === "message 1",
+    "after Reset, a normal file parses exactly as it did before the edit — not just the displayed fields, the actual parse behavior");
+});
+
 /* ============================================================
    Summary
    ============================================================ */
@@ -8803,6 +8854,12 @@ process.exit(failed ? 1 : 0);
               `classList.contains("hidden")` alone couldn't tell them
               apart from a genuinely-hidden element. 70e now asserts via
               actual computed style, not just the class.
+              Follow-up (2026-08-21, later same day): the builtin default
+              row gained a "Reset" button where a deletable format's
+              Delete button would sit; new 70j edits the default to a
+              deliberately different pattern (proving parsing actually
+              changed, not just display), resets it, then confirms a
+              fresh file parses identically to before the edit.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

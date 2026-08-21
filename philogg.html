@@ -11380,7 +11380,15 @@ function renderFormatList() {
     editBtn.textContent = "Edit";
     editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
     row.appendChild(editBtn);
-    if (!fmt.builtin) {
+    if (fmt.builtin) {
+      const resetBtn = document.createElement("button");
+      resetBtn.type = "button";
+      resetBtn.className = "btn-mini-outline";
+      resetBtn.title = "Revert to the original default pattern";
+      resetBtn.textContent = "Reset";
+      resetBtn.addEventListener("click", ev => { ev.stopPropagation(); resetDefaultFormat(); });
+      row.appendChild(resetBtn);
+    } else {
       const delBtn = document.createElement("button");
       delBtn.type = "button";
       delBtn.className = "filter-library-row-del";
@@ -11392,6 +11400,28 @@ function renderFormatList() {
     frag.appendChild(row);
   });
   formatList.appendChild(frag);
+}
+
+// Reverts the builtin default back to its original pattern/tsFormat/name
+// and clears the `edited` flag — see "Log format definitions": as long as
+// this flag is false, fmt-default is a pass-through to the untouched
+// HEADER_RE/parseHeaderLine fast path, so resetting restores that too, not
+// just the displayed values.
+async function resetDefaultFormat() {
+  const fmt = state.logFormats.find(f => f.id === DEFAULT_FORMAT_ID);
+  if (!fmt || !fmt.builtin) return;
+  Object.assign(fmt, {
+    name: DEFAULT_LOG_FORMAT.name,
+    mode: DEFAULT_LOG_FORMAT.mode,
+    pattern: DEFAULT_LOG_FORMAT.pattern,
+    regex: DEFAULT_LOG_FORMAT.regex,
+    tsFormat: DEFAULT_LOG_FORMAT.tsFormat,
+    edited: false,
+  });
+  await saveLogFormat(fmt);
+  if (formatEditId === fmt.id) closeFormatEditDialog(); // its open editor would otherwise show stale values
+  renderFormatList();
+  renderFormatRuleFormatOptions();
 }
 
 async function removeLogFormat(id) {
