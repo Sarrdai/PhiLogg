@@ -848,6 +848,23 @@
      something to scroll to. Scoped to #tableRows so the Full/Highlight view
      (#highlightRows) keeps its original ellipsis-only truncation. */
   #tableRows .col-msg{min-width:max-content;}
+  /* Bugfix (person-reported, screenshot): the level-tint background below
+     (.log-row.lvl-error etc.) stopped short of a long message's full
+     unwrapped width — it only ever covered the viewport, not the scrolled-
+     to content past it. Root cause: .log-row's own box never grew to match
+     the overflow the rule above creates. A block box with width:auto (the
+     default .log-row had) is sized to its containing block regardless of
+     content — the CSS Grid track can still overflow that box (grid tracks
+     refuse to shrink below their minimum, per the comment above), but the
+     box itself does not expand to follow, so its background stopped at the
+     old edge while the (visually overflowing, still-clipped-by-nothing)
+     text kept going. width:max-content makes the row's own box follow its
+     widest grid track's natural size instead of just the container's,
+     exactly like #tableRows already does one level up (tableRows.scrollWidth,
+     read by syncTableHeaderWidth); min-width:100% keeps it filling the full
+     viewport width when nothing overflows, same as the old auto behavior.
+     Scoped to #tableRows for the same reason as the rule above. */
+  #tableRows .log-row{width:max-content; min-width:100%;}
   /* Multiline message display (state.multilineMessages, toggled via
      #btnMultilineMsg): white-space:pre renders literal "\n" line breaks
      already present in e.message (continuation lines accumulated during

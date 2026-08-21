@@ -817,6 +817,35 @@ One thing jsdom **can't** catch: real hit-testing / paint order (`elementFromPoi
 
 Keep this section updated as features land — newest first, short entries, enough for a future session to know what exists without re-reading the whole chat history.
 
+- Bugfix (person-reported, screenshot, 2026-08-21): the horizontal scrollbar
+  in the Filter view (item 17 below, shipped earlier the same session) left
+  the level-tint row background (`.log-row.lvl-error` etc.) covering only
+  the visible viewport width instead of the full scrolled-to message —
+  scrolling right revealed message text sitting on plain background past
+  where the color stopped, looking like every colored row was only as wide
+  as the window. Root cause: `.log-row`'s own box never grew to match the
+  overflow `#tableRows .col-msg{min-width:max-content}` creates one level
+  down. A block box with `width:auto` sizes to its containing block
+  regardless of content; the CSS Grid track inside it can still overflow
+  (grid tracks refuse to shrink below their minimum), but the box itself
+  doesn't expand to follow, so the background stopped at the old edge while
+  the now-unclipped text kept going past it. Fix: `#tableRows .log-row
+  {width:max-content; min-width:100%;}` — makes the row's own box follow its
+  widest grid track's natural size, same as `#tableRows` itself already does
+  (`tableRows.scrollWidth`, read by `syncTableHeaderWidth`); `min-width:100%`
+  keeps it filling the viewport when nothing overflows. Note this is
+  `max-content`, not `fit-content` — item 17's own first attempt at sizing
+  `.log-row` used `fit-content` and was abandoned as a no-op; `fit-content`
+  clamps to the *available* space whenever content is wider than it, which
+  is mathematically identical to `width:auto`'s stretch behavior in exactly
+  this overflow case, so it changed nothing. `max-content` has no such
+  clamp. Verified visually with a real Chromium session (Playwright,
+  headless, `#fileInput.setInputFiles`) — same "no real layout engine in
+  jsdom" blind spot as item 17's own fix; screenshotted the reported bug
+  reproducing pre-fix and resolved post-fix. No jsdom coverage added for the
+  same reason item 17 has none for its CSS half — see TEST PROVENANCE's
+  "NOT represented" list in `tests/philogg.regression.test.js`.
+
 - New: six FEATURE_BACKLOG.md items in one session (this session, 2026-08-21) — items 14, 15, 17, 18, 20, 21:
   - **Configurable font size** (14): a whole-UI zoom (`applyFontScale`, `document.documentElement.style.zoom`) rather than threading a font-size variable through the many individually hardcoded font-size declarations in the file. Settings -> Appearance gets a +/-/Reset row, `Ctrl+Plus`/`Ctrl+Minus` do the same; both persisted to `localStorage` (`philogg-font-scale`) like the theme toggle, clamped 70%-160% in 10% steps. GROUP 71.
   - **Tree/Log-view shortcuts** (15): `Ctrl+0` focuses the filter tree at whichever node is ALREADY active — a filter included, not just its root file — so arrow keys continue navigating from wherever the person currently is, falling back to the first root file only if nothing's active yet; `Ctrl+1`/`Ctrl+2`/`Ctrl+3` mirror the Full/Filtered/Stacked toggle buttons (`#fhTabs`) one-for-one and additionally focus that Log view's entries for arrow-key navigation. New `state.entriesView` (`"filter"` | `"highlight"`) tracks which of the two Log views owns ↑/↓ right now — set by the shortcuts above and by a plain click/dblclick in either view (`selectEntry`/`selectHighlightEntry`/`revealInHighlightView`) — and is read by the global ArrowUp/Down handler to pick `moveSelection` vs. the new `moveHighlightSelection` (arrow-key navigation didn't exist at all for the Full view before this). `Enter` on an active filter node while the tree has focus still reveals the Filtered view. **Revised twice same session** after person feedback: the first pass had `Ctrl+1` focusing the tree and `Ctrl+0` revealing the Filtered view (the reverse of what was wanted); the second pass got the Ctrl+1/2/3 mapping right but had `Ctrl+0` jump up to the active node's root FILE instead of staying on whatever filter was already active, undoing the "navigate from wherever you are" point of the shortcut — fixed to keep the existing active node as-is. GROUP 72.

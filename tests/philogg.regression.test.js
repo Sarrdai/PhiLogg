@@ -9257,6 +9257,14 @@ process.exit(failed ? 1 : 0);
      state test is meaningful for a pure CSS positioning bug; not
      represented here for the same "jsdom blind spot" reason as the
      flex-direction regression above.
+   - Row-background-stops-short bugfix (2026-08-21, person-reported,
+     `#tableRows .log-row{width:max-content; min-width:100%;}`, see
+     PROJECT.md changelog) — same "jsdom blind spot" as the flex-direction
+     regression and 8f3df18d above: pure CSS box-sizing fix, no state
+     change, and jsdom has no real Grid/overflow layout to assert against.
+     Verified with a real Chromium session (Playwright) instead — see the
+     changelog entry for how. Group 73 (the horizontal-scrollbar feature
+     this bug was found in) still only covers its JS-observable parts.
    - 48678a78 (Q&A session about nested link filters, no code changes) —
      nothing to test.
    - The OLD standalone bottom-left #shortcuts sidebar strip and the OLD
