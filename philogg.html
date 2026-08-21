@@ -9063,28 +9063,52 @@ let lastColumnEdgeX = 0;        // set by applyRowGrid — px position right aft
 let cachedMaxMsgPixelWidth = 0; // set by the currentViewEntries call sites — px width of the widest un-wrapped message line
 
 // ~0.6 * 11.6px .col-msg font-size, a typical monospace advance-width
-// ratio — fallback for when canvas 2D itself isn't available (jsdom's
-// test environment has no canvas backend without the native `canvas` npm
-// package; some locked-down browsers disable canvas entirely). Same
-// graceful-degradation shape as the no-crypto.subtle fallback CLAUDE.md
-// documents: approximate rather than crash.
+// ratio — fallback for when a real layout measurement isn't available
+// (jsdom's test environment has no layout engine at all — offsetWidth on
+// a freshly created, unstubbed element is always 0 there, same documented
+// blind spot the highlight-marker tooltip positioning code already works
+// around). Same graceful-degradation shape as the no-crypto.subtle
+// fallback CLAUDE.md documents: approximate rather than measure garbage.
 const MONO_CHAR_WIDTH_FALLBACK = 6.96;
-let msgMeasureCtx = null;
-let msgMeasureCtxTried = false;
+let msgMeasureEl = null;
 function measureMsgWidth(text) {
-  if (!msgMeasureCtxTried) {
-    msgMeasureCtxTried = true;
-    const canvas = document.createElement("canvas");
-    msgMeasureCtx = canvas.getContext ? canvas.getContext("2d") : null;
+  if (!msgMeasureEl) {
+    msgMeasureEl = document.createElement("div");
+    // Same class .col-msg itself uses, so this can never diverge from
+    // what a real row actually renders — deliberately NOT a canvas 2D
+    // measureText() call (the first attempt, reverted): Canvas2D's text
+    // shaping/rounding measurably diverges from Blink's own CSS layout
+    // text renderer for the SAME font-family/size string — person-
+    // reported (the person's real containers were rendering visibly wider
+    // than any actual message, ~1%+ of the string's width lost per
+    // character, compounding into a large gap on a long line) and
+    // confirmed directly: canvas measureText() and a real DOM element's
+    // getBoundingClientRect() gave different widths for an identical
+    // 700-character test string under an identical font declaration. See
+    // PROJECT.md changelog for the measured numbers.
+    msgMeasureEl.className = "col-msg";
+    // position:absolute + only `left` set (no `right`) makes a width:auto
+    // box shrink-to-fit its content instead of filling a containing
+    // block — exactly what's needed to read its natural, un-wrapped
+    // width back out. Off well past any visible area; visibility:hidden
+    // (not display:none) keeps it laid out so offsetWidth is real.
+    // overflow:visible cancels .col-msg's own overflow:hidden/ellipsis,
+    // neither of which should clip an unconstrained shrink-to-fit box
+    // anyway, but this keeps the intent explicit.
+    msgMeasureEl.style.cssText = "position:absolute; visibility:hidden; left:-99999px; top:0; overflow:visible; width:auto;";
+    document.body.appendChild(msgMeasureEl);
   }
-  if (!msgMeasureCtx) return text.length * MONO_CHAR_WIDTH_FALLBACK;
-  // Matches .col-msg's own font declaration exactly. This canvas is never
-  // inserted into the document, so state.fontScale's whole-UI `zoom` doesn't
-  // skew the measurement — both this value and the --row-grid pixel values
-  // it's added to below are equally "unscaled"; zoom stretches the final
-  // result uniformly at paint time regardless of which CSS pixels fed it.
-  msgMeasureCtx.font = '11.6px "SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace';
-  return msgMeasureCtx.measureText(text).width;
+  msgMeasureEl.textContent = text;
+  // offsetWidth specifically, NOT getBoundingClientRect().width: verified
+  // directly (Playwright, document.documentElement.style.zoom set to 1.5)
+  // that offsetWidth/clientWidth/scrollWidth stay in the same "unscaled
+  // CSS px" space state.columnWidths/lastColumnEdgeX/TABLE_ROWS_H_PADDING
+  // already use regardless of state.fontScale's whole-UI zoom, while
+  // getBoundingClientRect() returns the zoomed VISUAL size instead — mixing
+  // that in here would put contentW off by the zoom factor at any scale
+  // other than 100%.
+  const w = msgMeasureEl.offsetWidth;
+  return w > 0 ? w : text.length * MONO_CHAR_WIDTH_FALLBACK;
 }
 // The widest SINGLE LINE across a message: white-space:nowrap (multiline
 // mode off) collapses a literal "\n" to a space and keeps the whole message
@@ -9099,10 +9123,11 @@ function longestMessageLine(message) {
   message.split("\n").forEach(line => { if (line.length > longest.length) longest = line; });
   return longest;
 }
-// Cheap O(n) character-count scan (not a canvas measurement per entry —
-// too slow over a large file) to find the single longest line, then ONE
-// canvas measurement of just that line. Monospace font (var(--font-mono)),
-// so the longest line in characters is also the widest in pixels.
+// Cheap O(n) character-count scan (not a real measureMsgWidth call per
+// entry — too slow over a large file, each one touches layout) to find
+// the single longest line, then ONE real measurement of just that line.
+// Monospace font (var(--font-mono)), so the longest line in characters is
+// also the widest in pixels.
 function computeMaxMessageWidth(entries) {
   let longest = "";
   for (let i = 0; i < entries.length; i++) {
