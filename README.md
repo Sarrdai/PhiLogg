@@ -58,8 +58,9 @@ open it in a browser to view it.
   additional formats (a log4net/LogViewPlus-style pattern, or a raw regex
   for edge cases) and map them to files by filename pattern; the default
   format still works with zero configuration.
-- **Light & dark theme**, resizable/toggleable columns, multiline message
-  display, multi-row select + copy.
+- **Light & dark theme, configurable font size**, resizable/toggleable
+  columns, multiline message display, multi-row select + copy, and a
+  horizontal scrollbar in the Filter view for reading long messages in full.
 
 See [`homepage/index.html`](homepage/index.html) for the full, illustrated
 feature list, and `PROJECT.md` for how each of these actually works
