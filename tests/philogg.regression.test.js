@@ -8095,6 +8095,46 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 77 — Bugfix: sample-line pattern suggestion recognizes ";SSS"
+   (and any other) millisecond separator, not just "," / "."
+   Origin: this session (2026-08-21), person-reported via screenshot. A
+   PLC log using "10:43:18;617" (semicolon before milliseconds) tripped
+   the fractional-seconds candidate in SAMPLE_TS_CANDIDATES, which only
+   matched "." or ",". The suggester fell back to the no-ms timestamp
+   shape and baked the sample's specific ms value (";617") into the
+   pattern as literal text, so only lines sharing that exact millisecond
+   kept matching — every other line fell through and got read as one
+   giant message. Fixed by capturing whatever separator character is
+   actually present and reproducing it in tsFormat instead of hardcoding
+   "," (compileDateFormat already escapes literal separators generically,
+   so this was purely a suggestion-heuristic gap, not a compiler limit).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("77. Pattern suggestion: semicolon (and other) millisecond separators round-trip into %d/tsFormat instead of becoming literal text");
+
+  const semi = w.suggestPatternFromSample("2026-08-14 10:43:18;617\tTRACE\t-\t[System]\tSafety: ES OK");
+  assert(semi && semi.pattern === "%d\\t%p\\t-\\t[%M]\\t%m%n", "the millisecond value is absorbed into %d, not left as literal \";617\", got " + (semi && semi.pattern));
+  assert(semi.tsFormat === "yyyy-MM-dd HH:mm:ss;SSS", "tsFormat reproduces the semicolon separator actually seen, got " + semi.tsFormat);
+
+  // The suggested pattern/tsFormat must then actually parse a LATER line
+  // with a different millisecond value — the exact failure mode reported:
+  // the old suggestion only matched the one sample line's own ms.
+  const compiled = w.compileFormatPattern(semi.pattern, semi.tsFormat);
+  assert(compiled.regex, "the suggested pattern compiles");
+  const later = compiled.regex.exec("2026-08-14 10:33:45;389\tWARN\t-\t[AxCtrl]\tFB_InitEndlessPosition Error");
+  assert(later, "a later line with a DIFFERENT millisecond value still matches the suggested pattern");
+  assert(later.groups.message === "FB_InitEndlessPosition Error", "...and is parsed as its own entry (not swallowed into a prior message), got " + (later && later.groups.message));
+
+  const dotOrComma = w.suggestPatternFromSample("2024-01-15 10:00:00,123 ERROR boom");
+  assert(dotOrComma.tsFormat === "yyyy-MM-dd HH:mm:ss,SSS", "comma separator still round-trips as before (no regression), got " + dotOrComma.tsFormat);
+  const dot = w.suggestPatternFromSample("2024-01-15 10:00:00.123 ERROR boom");
+  assert(dot.tsFormat === "yyyy-MM-dd HH:mm:ss.SSS", "dot separator still round-trips too, got " + dot.tsFormat);
+
+  const noMs = w.suggestPatternFromSample("2024-01-15 10:00:00 ERROR boom");
+  assert(noMs.tsFormat === "yyyy-MM-dd HH:mm:ss", "a sample with no fractional seconds at all still falls back cleanly, got " + noMs.tsFormat);
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -9219,6 +9259,17 @@ process.exit(failed ? 1 : 0);
               toggle); window.close() is stubbed (saved/restored) rather
               than actually invoked, since a real jsdom window.close()
               would tear the test window down mid-run.
+   Group 77  — this session (2026-08-21), person-reported via screenshot:
+              a PLC log's ";SSS" millisecond separator broke the sample-
+              line pattern suggestion. SAMPLE_TS_CANDIDATES's fractional-
+              seconds regex only matched "." / ",", so the suggester fell
+              back to the no-ms shape and baked the sample's own ms value
+              in as literal text — only lines sharing that exact
+              millisecond kept matching. Fixed generically: the separator
+              actually present is captured and reproduced in tsFormat
+              instead of a hardcoded ",", which incidentally also fixes
+              "." samples (previously always emitted a "," tsFormat
+              regardless of which separator the sample used).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
