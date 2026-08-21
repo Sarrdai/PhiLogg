@@ -7843,16 +7843,18 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 72 — Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter
    Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Shortcuts to
-   switch between Tree and Filter view", REVISED same session per
-   person-requested follow-up feedback (the original Ctrl+1/Ctrl+0 mapping
-   didn't match what was actually wanted): Ctrl+0 focuses the CURRENT FILE
-   in the filter tree (the active node's root, via getRootFileId — not
-   whichever filter happens to be active) so arrow keys immediately
-   navigate its branch; Ctrl+1/2/3 mirror the Full/Filtered/Stacked toggle
-   buttons one-for-one AND focus the entries pane for arrow-key navigation
-   — a new state.entriesView ("filter" | "highlight") decides which of
-   moveSelection/moveHighlightSelection the global ArrowUp/Down handler
-   calls, also updated by a plain click/dblclick in either Log view.
+   switch between Tree and Filter view", REVISED twice same session per
+   person-requested follow-up feedback: Ctrl+0 focuses the filter tree at
+   whichever node is ALREADY active — a filter included, not just its root
+   file — so arrow keys continue navigating from wherever the person
+   currently is (an even earlier pass jumped up to the active node's root
+   FILE instead, which undid exactly that); falls back to the first root
+   file only if nothing's active yet. Ctrl+1/2/3 mirror the Full/Filtered/
+   Stacked toggle buttons one-for-one AND focus the entries pane for
+   arrow-key navigation — a new state.entriesView ("filter" | "highlight")
+   decides which of moveSelection/moveHighlightSelection the global
+   ArrowUp/Down handler calls, also updated by a plain click/dblclick in
+   either Log view.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("72. Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter");
@@ -7861,11 +7863,11 @@ await withApp(async (w, d, T) => {
   const filterA = w.createFilterNode(f.id, "text", "message");
   w.render();
 
-  // Ctrl+0: focus the CURRENT file in the tree, even though a child filter
-  // is active — not just "whatever is active", the file specifically.
+  // Ctrl+0: focus the tree at whichever node is ALREADY active — a filter
+  // stays the active node, it does NOT jump up to its root file.
   T.state.activeId = filterA.id;
   fireKeydown(d, w, "0", { ctrlKey: true });
-  assert(T.state.activeId === f.id, "Ctrl+0 focuses the active node's root FILE, not the filter itself");
+  assert(T.state.activeId === filterA.id, "Ctrl+0 keeps the already-active FILTER active, doesn't jump up to its root file");
   assert(T.state.focusRegion === "tree", "Ctrl+0 switches focus to the tree");
 
   T.state.activeId = null;
@@ -9158,20 +9160,23 @@ process.exit(failed ? 1 : 0);
               (+/- buttons, Reset), and Ctrl+Plus/Ctrl+Minus, all persisted
               to localStorage like the theme toggle.
    Group 72  — this session (2026-08-21), FEATURE_BACKLOG.md "Shortcuts to
-              switch between Tree and Filter view", REVISED same session
-              per person-requested follow-up feedback on the original
-              mapping: Ctrl+0 focuses the CURRENT FILE in the filter tree
-              (the active node's root, not whichever filter is active);
-              Ctrl+1/2/3 mirror the Full/Filtered/Stacked toggle buttons
-              and additionally focus that Log view's entries for arrow-key
-              navigation via the new state.entriesView ("filter" |
-              "highlight", also set by a plain click/dblclick in either Log
-              view — see selectEntry/selectHighlightEntry/
-              revealInHighlightView), which the global ArrowUp/Down
-              handler now reads to pick moveSelection vs. the new
-              moveHighlightSelection; Enter still reveals the Filtered view
-              for an active filter node while the tree has focus (not for
-              a file node).
+              switch between Tree and Filter view", REVISED TWICE same
+              session per person-requested follow-up feedback: Ctrl+0
+              focuses the filter tree at whichever node is ALREADY active
+              — a filter included — so arrow keys continue navigating from
+              wherever the person currently is (falling back to the first
+              root file only if nothing's active yet); an intermediate pass
+              had it jump up to the active node's root FILE instead, which
+              undid exactly that. Ctrl+1/2/3 mirror the Full/Filtered/
+              Stacked toggle buttons and additionally focus that Log
+              view's entries for arrow-key navigation via the new
+              state.entriesView ("filter" | "highlight", also set by a
+              plain click/dblclick in either Log view — see selectEntry/
+              selectHighlightEntry/revealInHighlightView), which the
+              global ArrowUp/Down handler now reads to pick moveSelection
+              vs. the new moveHighlightSelection; Enter still reveals the
+              Filtered view for an active filter node while the tree has
+              focus (not for a file node).
    Group 73  — this session (2026-08-21), FEATURE_BACKLOG.md "Horizontal
               scrollbar in the Filter view", REVISED same session after a
               person-reported bug: the original `width:fit-content` on
