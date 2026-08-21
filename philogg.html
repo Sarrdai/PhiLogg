@@ -2361,7 +2361,7 @@
       <div><kbd>Ctrl</kbd>+click / <kbd>Shift</kbd>+click a row — multi-select rows, <kbd>Ctrl</kbd>+<kbd>C</kbd> copies their raw text</div>
       <div>↑ / ↓ — move selection up/down</div>
       <div>Click a tree row/breadcrumb — arrow keys then navigate the tree: ↑ / ↓ move, ← parent, → first child</div>
-      <div><kbd>Ctrl</kbd>+<kbd>0</kbd> — focus the current file in the filter tree</div>
+      <div><kbd>Ctrl</kbd>+<kbd>0</kbd> — focus the filter tree at wherever you currently are</div>
       <div><kbd>Ctrl</kbd>+<kbd>1</kbd> Full · <kbd>Ctrl</kbd>+<kbd>2</kbd> Filtered · <kbd>Ctrl</kbd>+<kbd>3</kbd> Stacked — switch view and focus it for ↑ / ↓</div>
       <div><kbd>Enter</kbd> on a filter (tree focused) — jump to the Filtered view</div>
       <div>Right-click a row — filter before/after</div>
@@ -12112,11 +12112,11 @@ document.addEventListener("keydown", ev => {
   }
 
   // FEATURE_BACKLOG.md "Shortcuts to switch between Tree and Filter view":
-  // Ctrl+0 moves keyboard focus to the filter tree, landing on the CURRENT
-  // FILE specifically (the active node's root, via getRootFileId — not
-  // whichever filter happens to be active) so arrow keys immediately
-  // navigate that file's own branch of the tree; falls back to the first
-  // root file if nothing's active yet. Ctrl+1/2/3 mirror the three
+  // Ctrl+0 moves keyboard focus to the filter tree, landing on whichever
+  // node is ALREADY active — a filter included, not just its root file —
+  // so arrow keys continue navigating from wherever the person currently
+  // is, rather than jumping back up to the file; falls back to the first
+  // root file only if nothing's active yet. Ctrl+1/2/3 mirror the three
   // Full/Filtered/Stacked toggle buttons (#fhTabs) one-for-one — same
   // applyFhView call each of those already makes on click — and additionally
   // focus the entries pane for arrow-key navigation: Ctrl+1 -> Full (arrow
@@ -12128,8 +12128,7 @@ document.addEventListener("keydown", ev => {
   // back-and-forth pair either way.
   if ((ev.ctrlKey || ev.metaKey) && key === "0") {
     ev.preventDefault();
-    const rootId = getRootFileId(state.activeId) || (state.rootIds.length ? state.rootIds[0] : null);
-    if (rootId) state.activeId = rootId;
+    if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
     state.focusRegion = "tree";
     render();
     return;
