@@ -11825,6 +11825,26 @@ function suggestPatternFromSample(sampleText) {
     if (isFree(start, end)) spans.push({ start, end, token: "%M" });
   }
 
+  // A bare (unquoted, unparenthesized) thread field: some formats put it
+  // between %p and a bracketed %M with no delimiter of its own to key off
+  // (unlike the quoted/paren case above), e.g. "WARN\tAxCtrl\t[-]\t...".
+  // Only claimed when it sits in the gap directly before an already-claimed
+  // %M bracket AND is a single whitespace-free token — that combination
+  // (framed by the level on one side, an immediate "[" on the other) is a
+  // reliable enough signal to not be mistaken for the start of a free-form
+  // message; a multi-word gap, or no bracket at all, is left as literal
+  // text like before, same "not the final word" fallback.
+  if (methodM && spans.some(s => s.token === "%M") && !spans.some(s => s.token === "%t")) {
+    const prevEnd = Math.max(0, ...spans.filter(s => s.end <= methodM.index).map(s => s.end));
+    const gap = line.slice(prevEnd, methodM.index);
+    const leadingWs = gap.match(/^\s*/)[0].length;
+    const trimmed = gap.slice(leadingWs, gap.length - (gap.match(/\s*$/)[0].length));
+    if (trimmed && /^\S+$/.test(trimmed)) {
+      const start = prevEnd + leadingWs, end = start + trimmed.length;
+      if (isFree(start, end)) spans.push({ start, end, token: "%t" });
+    }
+  }
+
   if (!spans.length) return null; // nothing recognizable — not a useful suggestion
   spans.sort((a, b) => a.start - b.start);
 
