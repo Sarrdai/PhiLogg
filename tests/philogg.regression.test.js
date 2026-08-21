@@ -7500,13 +7500,35 @@ await withApp(async (w, d, T) => {
     "the builtin default format is listed first, and is the only one initially");
   assert(formatRows()[0].querySelector(".filter-library-row-del") === null, "the builtin default has no delete button");
 
-  fireClick(d.querySelector("#btnAddFormat"), w);
+  const btnAddFormat = d.querySelector("#btnAddFormat");
+  assert(btnAddFormat.className === "btn-mini", "the Add-format button uses the same style as the row Edit buttons, got " + btnAddFormat.className);
+  fireClick(btnAddFormat, w);
   const formatEditPanel = d.querySelector("#formatEditPanel");
   assert(!formatEditPanel.classList.contains("hidden"), "Add format embeds inline (same page, no new dialog)");
   assert(d.querySelector(".settings-page-card").contains(formatEditPanel), "the inline panel lives inside the same settings-page card, not a separate popup");
+  assert(btnAddFormat.classList.contains("hidden"), "the Add-format button itself hides while its inline panel is open");
 
-  // Paste a sample line instead of typing the pattern by hand — the
-  // suggestion should fill in pattern + tsFormat automatically.
+  // Only the pattern OR the regex field is visible, matching the mode toggle.
+  assert(!d.querySelector("#formatEditPatternField").classList.contains("hidden") && d.querySelector("#formatEditRegexField").classList.contains("hidden"),
+    "pattern mode (the default) shows the pattern field, hides the regex field");
+  fireClick(d.querySelector("#formatEditModeRegex"), w);
+  assert(d.querySelector("#formatEditPatternField").classList.contains("hidden") && !d.querySelector("#formatEditRegexField").classList.contains("hidden"),
+    "switching to regex mode hides the pattern field, shows the regex field");
+  fireClick(d.querySelector("#formatEditModePattern"), w);
+  assert(!d.querySelector("#formatEditPatternField").classList.contains("hidden") && d.querySelector("#formatEditRegexField").classList.contains("hidden"),
+    "switching back to pattern mode shows it again, hides regex");
+
+  // Cancel closes the panel AND brings the Add button back, no format saved.
+  fireClick(d.querySelector("#formatEditCancel"), w);
+  assert(formatEditPanel.classList.contains("hidden"), "Cancel closes the inline panel");
+  assert(!btnAddFormat.classList.contains("hidden"), "...and the Add-format button reappears");
+  assert(formatRows().length === 1, "cancelling adds nothing to the format list");
+
+  // Re-open and actually add one, this time via a pasted sample line instead
+  // of typing the pattern by hand — the suggestion should fill in pattern +
+  // tsFormat automatically.
+  fireClick(btnAddFormat, w);
+  assert(btnAddFormat.classList.contains("hidden"), "hidden again on re-open");
   const sampleInput = d.querySelector("#formatEditSample");
   sampleInput.value = "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed";
   fireInput(sampleInput, w);
@@ -7524,20 +7546,25 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#formatEditSave"), w);
   await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async; UI updates only after it resolves
   assert(formatEditPanel.classList.contains("hidden"), "saving closes/collapses the inline format panel");
+  assert(!btnAddFormat.classList.contains("hidden"), "...and the Add-format button reappears");
   assert(formatRows().length === 2, "the new format is now listed alongside the default");
 
   const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
   assert(newFormat && newFormat.mode === "pattern" && !newFormat.builtin, "new format saved with the suggested (then reviewed) pattern, not builtin");
   assert(newFormat.pattern === "[%d] %p (%t) %m%n" && newFormat.tsFormat === "yyyy-MM-dd HH:mm:ss", "the saved format keeps the suggested pattern/tsFormat unchanged (person didn't edit it further)");
 
-  fireClick(d.querySelector("#btnAddFormatRule"), w);
+  const btnAddFormatRule = d.querySelector("#btnAddFormatRule");
+  assert(btnAddFormatRule.className === "btn-mini", "the Add-rule button uses the same style as the row Edit buttons too, got " + btnAddFormatRule.className);
+  fireClick(btnAddFormatRule, w);
   const ruleEditPanel = d.querySelector("#formatRuleEditPanel");
   assert(!ruleEditPanel.classList.contains("hidden"), "Add rule also embeds inline");
+  assert(btnAddFormatRule.classList.contains("hidden"), "the Add-rule button hides while its panel is open");
   d.querySelector("#formatRuleGlob").value = "bracket-*.log";
   d.querySelector("#formatRuleFormatSelect").value = newFormat.id;
   fireClick(d.querySelector("#formatRuleEditSave"), w);
   await new Promise(r => setTimeout(r, 20)); // saveFormatRuleEdit's IndexedDB write is async
   assert(ruleEditPanel.classList.contains("hidden"), "saving closes/collapses the inline rule panel");
+  assert(!btnAddFormatRule.classList.contains("hidden"), "...and the Add-rule button reappears");
   assert(T.state.formatRules.length === 1 && T.state.formatRules[0].glob === "bracket-*.log", "rule saved with the entered glob");
 
   fireClick(d.querySelector("#settingsClose"), w);
