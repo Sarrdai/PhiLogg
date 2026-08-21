@@ -817,34 +817,59 @@ One thing jsdom **can't** catch: real hit-testing / paint order (`elementFromPoi
 
 Keep this section updated as features land — newest first, short entries, enough for a future session to know what exists without re-reading the whole chat history.
 
-- Bugfix (person-reported, screenshot, 2026-08-21): the horizontal scrollbar
-  in the Filter view (item 17 below, shipped earlier the same session) left
-  the level-tint row background (`.log-row.lvl-error` etc.) covering only
-  the visible viewport width instead of the full scrolled-to message —
-  scrolling right revealed message text sitting on plain background past
-  where the color stopped, looking like every colored row was only as wide
-  as the window. Root cause: `.log-row`'s own box never grew to match the
-  overflow `#tableRows .col-msg{min-width:max-content}` creates one level
-  down. A block box with `width:auto` sizes to its containing block
-  regardless of content; the CSS Grid track inside it can still overflow
-  (grid tracks refuse to shrink below their minimum), but the box itself
-  doesn't expand to follow, so the background stopped at the old edge while
-  the now-unclipped text kept going past it. Fix: `#tableRows .log-row
-  {width:max-content; min-width:100%;}` — makes the row's own box follow its
-  widest grid track's natural size, same as `#tableRows` itself already does
-  (`tableRows.scrollWidth`, read by `syncTableHeaderWidth`); `min-width:100%`
-  keeps it filling the viewport when nothing overflows. Note this is
-  `max-content`, not `fit-content` — item 17's own first attempt at sizing
-  `.log-row` used `fit-content` and was abandoned as a no-op; `fit-content`
-  clamps to the *available* space whenever content is wider than it, which
-  is mathematically identical to `width:auto`'s stretch behavior in exactly
-  this overflow case, so it changed nothing. `max-content` has no such
-  clamp. Verified visually with a real Chromium session (Playwright,
-  headless, `#fileInput.setInputFiles`) — same "no real layout engine in
-  jsdom" blind spot as item 17's own fix; screenshotted the reported bug
-  reproducing pre-fix and resolved post-fix. No jsdom coverage added for the
-  same reason item 17 has none for its CSS half — see TEST PROVENANCE's
-  "NOT represented" list in `tests/philogg.regression.test.js`.
+- Bugfix, two rounds (person-reported, screenshots, 2026-08-21): the
+  horizontal scrollbar in the Filter view (item 17 below, shipped earlier
+  the same session) left row backgrounds and the usable scroll range not
+  actually covering a long message's full width.
+  - **Round 1**: the level-tint row background (`.log-row.lvl-error` etc.)
+    stopped at the viewport edge instead of the scrolled-to message's real
+    width. Root cause: `.log-row`'s own box never grew to match the
+    overflow `#tableRows .col-msg{min-width:max-content}` creates one level
+    down — a `width:auto` block box sizes to its containing block
+    regardless of content; the CSS Grid track inside it can overflow (grid
+    tracks refuse to shrink below their minimum) without the box itself
+    following. First fix: `#tableRows .log-row{width:max-content;
+    min-width:100%}`, making each row's own box follow ITS grid content's
+    natural size. (Note `max-content`, not `fit-content` — item 17's own
+    first attempt at sizing `.log-row` used `fit-content` and was abandoned
+    as a no-op, since `fit-content` clamps to *available* space whenever
+    content is wider than it, mathematically identical to `width:auto`'s
+    stretch in exactly this overflow case; `max-content` has no such
+    clamp.)
+  - **Round 2** (same day, follow-up report): round 1's per-row width was
+    itself the wrong shape — each row sized independently from only ITS OWN
+    message, so short-message rows stayed narrow while only the row
+    holding a long message grew, and the scrollbar's usable range shrank
+    back the instant that row scrolled out of the virtualized window
+    (`#tableRows` only ever has ~30-50 real rows as DOM nodes at a time).
+    Reverted the per-row CSS entirely. Real fix: one width computed up
+    front from the WIDEST message across the WHOLE current view (not just
+    the rendered window), applied to `#tableRows` itself —
+    `computeMaxMessageWidth(currentViewEntries)` (cheap O(n) char-count
+    scan to find the longest single line, ONE canvas `measureText` call on
+    it — monospace font, so char count is a reliable width proxy) feeds
+    `syncTableRowsWidth()`, which sets `tableRows.style.width` to
+    `lastColumnEdgeX + gap + maxMsgPixelWidth + padding` when that exceeds
+    the viewport, or clears the inline style (falls back to the original
+    `left:0;right:0` stretch-fill) when it doesn't — so a file with only
+    short messages still fills the view. `lastColumnEdgeX` is captured by
+    `applyRowGrid` (the existing column-width/visibility recompute) so a
+    column resize/hide keeps the row width in sync too, cheaply (no
+    re-scan of entries — only `cachedMaxMsgPixelWidth`, computed once per
+    `currentViewEntries` change at the same two call sites
+    `buildRowOffsets` already has, is expensive). Every `.log-row` is back
+    to a plain `width:auto` block, so all of them inherit this one shared
+    width uniformly — same background/scroll extent whether a given row's
+    own message is long or empty, exactly what fixes the follow-up report.
+  Both rounds verified visually with a real Chromium session (Playwright,
+  headless, `#fileInput.setInputFiles` + screenshots) — jsdom has no real
+  layout engine, the documented blind spot. Round 2's actual sizing logic
+  (`computeMaxMessageWidth`/`syncTableRowsWidth`) IS plain testable JS
+  though, unlike round 1's pure-CSS fix — GROUP 73b
+  (`tests/philogg.regression.test.js`) covers it directly, with jsdom's
+  canvas backend stubbed (no `canvas` npm package; falls back to a flat
+  per-character estimate — see `measureMsgWidth`'s own
+  `MONO_CHAR_WIDTH_FALLBACK` and the `withApp` `beforeParse` stub).
 
 - New: six FEATURE_BACKLOG.md items in one session (this session, 2026-08-21) — items 14, 15, 17, 18, 20, 21:
   - **Configurable font size** (14): a whole-UI zoom (`applyFontScale`, `document.documentElement.style.zoom`) rather than threading a font-size variable through the many individually hardcoded font-size declarations in the file. Settings -> Appearance gets a +/-/Reset row, `Ctrl+Plus`/`Ctrl+Minus` do the same; both persisted to `localStorage` (`philogg-font-scale`) like the theme toggle, clamped 70%-160% in 10% steps. GROUP 71.
