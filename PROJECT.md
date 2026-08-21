@@ -861,15 +861,53 @@ Keep this section updated as features land — newest first, short entries, enou
     to a plain `width:auto` block, so all of them inherit this one shared
     width uniformly — same background/scroll extent whether a given row's
     own message is long or empty, exactly what fixes the follow-up report.
-  Both rounds verified visually with a real Chromium session (Playwright,
-  headless, `#fileInput.setInputFiles` + screenshots) — jsdom has no real
-  layout engine, the documented blind spot. Round 2's actual sizing logic
-  (`computeMaxMessageWidth`/`syncTableRowsWidth`) IS plain testable JS
-  though, unlike round 1's pure-CSS fix — GROUP 73b
-  (`tests/philogg.regression.test.js`) covers it directly, with jsdom's
-  canvas backend stubbed (no `canvas` npm package; falls back to a flat
-  per-character estimate — see `measureMsgWidth`'s own
-  `MONO_CHAR_WIDTH_FALLBACK` and the `withApp` `beforeParse` stub).
+  - **Round 3** (same day, third report): asked to build the exact repro
+    myself — a log with 4 messages of increasing length (short/medium/long/
+    a multi-line stack trace) — and check with Playwright whether scrolling
+    all the way right actually reaches the longest message's last
+    character, or overshoots. It overshot: `#tableRows` was sized correctly
+    per round 2's own math, but consistently wider than where the text
+    actually ended — the gap grew with the message's length (72px on a
+    4878px-wide, 701-character line in the repro). Root cause:
+    `measureMsgWidth` used Canvas2D's `measureText()`, which measurably
+    diverges from Blink's own CSS layout text renderer for an IDENTICAL
+    `font-family`/`font-size` string — confirmed directly, side by side, on
+    the exact same 701-character string: canvas measured 6.957px/char, a
+    real DOM element measured 6.878px/char (~1.15% apart) — small alone,
+    but compounding LINEARLY with message length, so exactly the long-line
+    case this feature exists for was the case it got most wrong. Not a
+    rounding nit — two different browser text-rendering pipelines (canvas
+    glyph shaping vs. layout line-boxing) simply don't promise pixel-
+    identical advance widths for the same font, even within the same engine.
+    Fixed by dropping canvas entirely: `measureMsgWidth` now reads
+    `offsetWidth` off a hidden, reused DOM element carrying the exact same
+    `.col-msg` class real rows use (`position:absolute`, shrink-to-fit,
+    parked off-screen) — literally the same rendering path a real row uses,
+    so it cannot diverge from it. Re-verified the same 4-message repro: the
+    gap dropped from 72px to 15.5px, which is exactly `#tableRows`' own
+    16px right padding (`padding:2px 16px 20px 14px`) — i.e. the real
+    remaining "gap" isn't a bug at all, it's the intentional padding.
+    Checked `offsetWidth` specifically (not `getBoundingClientRect().width`)
+    against `state.fontScale`'s whole-UI `zoom`, with Playwright, before
+    committing to it: `offsetWidth`/`clientWidth`/`scrollWidth` all stay in
+    the same "unscaled CSS px" space regardless of zoom level (confirmed:
+    identical before/after setting `zoom:1.5` on a test element), while
+    `getBoundingClientRect()` returns the zoomed VISUAL size instead — the
+    latter would have put `syncTableRowsWidth`'s math off by the zoom factor
+    at any scale other than 100%, a bug that would only have shown up once
+    someone actually used the font-scale feature at a non-default zoom.
+  Verified with a real Chromium session throughout (Playwright, headless,
+  `#fileInput.setInputFiles` + screenshots + precise `Range`-based text-edge
+  measurements) — jsdom has no real layout engine, the documented blind
+  spot. Round 2 and round 3's actual sizing logic
+  (`computeMaxMessageWidth`/`syncTableRowsWidth`/`measureMsgWidth`) IS plain
+  testable JS though, unlike round 1's pure-CSS fix — GROUP 73b/73c
+  (`tests/philogg.regression.test.js`) cover it directly. jsdom has no real
+  layout engine either, so a freshly created element's `offsetWidth` is
+  always 0 there (same blind spot the highlight-marker tooltip positioning
+  code already works around) — `measureMsgWidth` falls back to a flat
+  per-character estimate (`MONO_CHAR_WIDTH_FALLBACK`) in that case, which is
+  what GROUP 73c's assertions exercise and pin down exactly.
 
 - New: six FEATURE_BACKLOG.md items in one session (this session, 2026-08-21) — items 14, 15, 17, 18, 20, 21:
   - **Configurable font size** (14): a whole-UI zoom (`applyFontScale`, `document.documentElement.style.zoom`) rather than threading a font-size variable through the many individually hardcoded font-size declarations in the file. Settings -> Appearance gets a +/-/Reset row, `Ctrl+Plus`/`Ctrl+Minus` do the same; both persisted to `localStorage` (`philogg-font-scale`) like the theme toggle, clamped 70%-160% in 10% steps. GROUP 71.

@@ -89,17 +89,6 @@ async function withApp(run, opts = {}) {
         value: { writeText: () => Promise.resolve() }, configurable: true,
       });
       window.matchMedia = window.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
-      // jsdom has no canvas backend (would need the native `canvas` npm
-      // package) — HTMLCanvasElement.getContext("2d") throws "Not
-      // implemented" and logs noisy virtual-console errors otherwise. Used
-      // by measureMsgWidth (Filter view row-width sizing, GROUP 73) purely
-      // for text-width measurement; a flat per-character estimate is close
-      // enough for jsdom's own tests (which don't assert exact pixel
-      // widths — see TEST PROVENANCE's "NOT represented" list for why the
-      // real CSS/canvas sizing itself needs a real browser instead).
-      window.HTMLCanvasElement.prototype.getContext = function () {
-        return { font: "", measureText(text) { return { width: (text || "").length * 7 }; } };
-      };
     },
   });
   const { window } = dom;
@@ -131,6 +120,7 @@ async function withApp(run, opts = {}) {
       get undoStack() { return undoStack; },
       get redoStack() { return redoStack; },
       get entryIndex() { return entryIndex; },
+      get MONO_CHAR_WIDTH_FALLBACK() { return MONO_CHAR_WIDTH_FALLBACK; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -7986,14 +7976,13 @@ await withApp(async (w, d, T) => {
    comment near applyRowGrid for the calculation itself.
    Unlike the GROUP 73 CSS overflow mechanism, this fix's actual logic is
    plain JS over an entries array — genuinely testable here, not a jsdom
-   "layout blind spot" case. jsdom has no canvas backend, so
-   measureMsgWidth falls back to a deterministic per-character estimate
-   (stubbed in withApp's beforeParse to silence jsdom's own "Not
-   implemented" console noise) — fine for relative/threshold assertions,
-   not for exact pixel values, same caveat as the character-count-based
-   approach itself (a real browser's font-metric precision is what
-   ultimately matters, verified separately with Playwright per the
-   changelog entry).
+   "layout blind spot" case. jsdom has no real layout engine, so
+   measureMsgWidth (see its own comment, and GROUP 73c below for its
+   follow-up rewrite) falls back to a deterministic per-character estimate
+   there — fine for relative/threshold assertions, not for exact pixel
+   values, same caveat as the character-count-based approach itself (a real
+   browser's font-metric precision is what ultimately matters, verified
+   separately with Playwright per the changelog entry).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("73b. Row background/scroll-width bugfix (Filter view)");
@@ -8056,6 +8045,72 @@ await withApp(async (w, d, T) => {
   await w.addFile("short.log", makeLog(0, 5), () => {});
   w.render();
   assert(tableRows.style.width === "", "a file with only short messages leaves #tableRows filling the view (no inline width)");
+});
+
+/* ============================================================
+   GROUP 73c — measureMsgWidth rewrite: real DOM measurement, not canvas
+   Origin: this session (2026-08-21), person-reported follow-up to GROUP 73b
+   (built the exact "4 differently-long messages" repro the person asked
+   for — short/medium/long/multi-line-stacktrace — and scrolled all the way
+   right with Playwright): #tableRows WAS sized correctly per GROUP 73b's
+   own logic, but consistently wider than where the longest message's text
+   actually ended — a real, visible gap past the last character, growing
+   with the message's length. Root cause: GROUP 73b's measureMsgWidth used
+   Canvas2D's measureText(), which measurably diverges from Blink's own CSS
+   layout text renderer for an IDENTICAL font-family/size string (confirmed
+   directly: an offscreen canvas and a real DOM element given the same
+   700-character string and the same explicit font declaration came back
+   ~1.1% apart per character — small alone, but compounding linearly with
+   message length, so a genuinely long line — the exact case this feature
+   exists for — could end up hundreds of pixels short of matching reality).
+   Not a rounding nit: two different browser text-rendering pipelines
+   (canvas glyph shaping vs. layout line-boxing) simply don't promise
+   pixel-identical advance widths for the same font, even same-engine.
+   Fixed by dropping canvas entirely: measureMsgWidth now reads the natural
+   width of a hidden, reused DOM element carrying the SAME `.col-msg` class
+   real rows use (position:absolute, shrink-to-fit, off past any visible
+   area) via offsetWidth — literally the same rendering path a real row
+   uses, so it cannot diverge from it. See PROJECT.md changelog for the
+   measured numbers and the offsetWidth-vs-getBoundingClientRect zoom-safety
+   check (offsetWidth stays in unscaled CSS px under state.fontScale's
+   whole-UI zoom; getBoundingClientRect() doesn't — verified with
+   Playwright, not assumed).
+   jsdom has no real layout engine, so a freshly created, unstubbed
+   element's offsetWidth is always 0 — same documented blind spot the
+   highlight-marker tooltip positioning already works around — exercising
+   measureMsgWidth's own MONO_CHAR_WIDTH_FALLBACK path exactly, deterministically.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("73c. measureMsgWidth rewrite: real DOM measurement, not canvas");
+
+  assert(typeof w.measureMsgWidth === "function", "measureMsgWidth exists");
+  assert(w.measureMsgWidth("") === 0, "measureMsgWidth of an empty string is 0");
+  assert(
+    w.measureMsgWidth("hello") === 5 * T.MONO_CHAR_WIDTH_FALLBACK,
+    "in jsdom (no real layout engine, offsetWidth always 0 on a fresh element), measureMsgWidth falls back to exactly length * MONO_CHAR_WIDTH_FALLBACK"
+  );
+  assert(
+    w.measureMsgWidth("a".repeat(50)) === 50 * T.MONO_CHAR_WIDTH_FALLBACK,
+    "...proportionally, for a longer string"
+  );
+
+  // The measuring element is created once and reused (not a fresh element,
+  // and not inserted, per call) — a perf guard: computeMaxMessageWidth
+  // calls this once per render, not once per entry, specifically BECAUSE
+  // a real layout-triggering measurement is too slow to do per-entry over
+  // a large file; if this ever regressed into re-creating/re-inserting the
+  // element every call, a huge file would reflow on every keystroke-speed
+  // render.
+  w.measureMsgWidth("first");
+  const probesAfterFirst = d.querySelectorAll("body > div.col-msg").length;
+  w.measureMsgWidth("second");
+  const probesAfterSecond = d.querySelectorAll("body > div.col-msg").length;
+  assert(probesAfterFirst === 1, "exactly one hidden measuring element exists after the first call, got " + probesAfterFirst);
+  assert(probesAfterSecond === 1, "...and the SAME one is reused on a second call, not a new one appended, got " + probesAfterSecond);
+
+  const probe = d.querySelector("body > div.col-msg");
+  assert(w.getComputedStyle(probe).visibility === "hidden", "the measuring element is visibility:hidden (kept laid out for offsetWidth, just not painted)");
+  assert(w.getComputedStyle(probe).position === "absolute", "...and taken out of flow (position:absolute) so it can't affect real layout");
 });
 
 /* ============================================================
