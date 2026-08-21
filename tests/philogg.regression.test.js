@@ -138,6 +138,14 @@ function fireDblClick(el, w) { el.dispatchEvent(new w.MouseEvent("dblclick", { b
 function fireInput(el, w) { el.dispatchEvent(new w.Event("input", { bubbles: true })); }
 function fireSubmit(el, w) { el.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); }
 function fireKeydown(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts })); }
+// Checks ACTUAL resolved CSS (getComputedStyle), not just whether the
+// "hidden" class is present on the element — jsdom has no real layout
+// engine, but it DOES correctly compute `display` from matching CSS rules,
+// so this catches the class of bug where an element's "hidden" class has
+// no matching CSS rule anywhere (classList.contains("hidden") would say
+// "hidden" while the element is still fully visible on screen — exactly
+// what happened to the Settings inline panels once, see GROUP 70e).
+function isVisible(el, w) { return w.getComputedStyle(el).display !== "none"; }
 function mkDataTransfer(w, extraTypes = []) {
   const store = {};
   return {
@@ -1257,13 +1265,19 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 3 — Theme toggle
    Origin: 765d68a9 (design improvements session, test.js, 28 checks).
+   Updated this session (2026-08-21): the single #btnTheme toggle button
+   moved into Settings -> Appearance as an explicit Light/Dark control pair
+   (see GROUP 70h2) — pick whichever side isn't currently active instead of
+   a single toggle click.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("3. Theme toggle");
+  section("3. Theme toggle (now in Settings -> Appearance)");
   const html = d.documentElement;
   const before = html.dataset.theme;
-  fireClick(d.querySelector("#btnTheme"), w);
-  assert(html.dataset.theme !== before, "theme toggle flips data-theme, was " + before + " now " + html.dataset.theme);
+  fireClick(d.querySelector("#btnSettings"), w);
+  const otherBtn = d.querySelector(before === "light" ? "#settingsThemeDark" : "#settingsThemeLight");
+  fireClick(otherBtn, w);
+  assert(html.dataset.theme !== before, "picking the other theme flips data-theme, was " + before + " now " + html.dataset.theme);
   assert(w.localStorage.getItem("philogg-theme") === html.dataset.theme, "theme choice persisted to localStorage");
 });
 
@@ -5098,10 +5112,13 @@ await withApp(async (w, d, T) => {
   assert(T.state.focusRegion === "tree", "the still-loading row is already clickable like a normal tree row, not the old inert placeholder");
 
   // The rest of the UI stays usable: unrelated controls remain clickable —
-  // spot-checked via the theme button, which has nothing to do with loading.
-  const btnThemeBefore = d.documentElement.getAttribute("data-theme");
-  fireClick(d.querySelector("#btnTheme"), w);
-  assert(d.documentElement.getAttribute("data-theme") !== btnThemeBefore, "other toolbar controls remain responsive while a file load is in flight");
+  // spot-checked via the pin-bookmarks toggle, which has nothing to do with
+  // loading (the theme toggle used to live here directly on the toolbar;
+  // it moved into Settings -> Appearance this session, no longer a single
+  // one-click toolbar button — see GROUP 70h2).
+  const pinBefore = T.state.pinBookmarksInFilteredView;
+  fireClick(d.querySelector("#btnPinBookmarks"), w);
+  assert(T.state.pinBookmarksInFilteredView !== pinBefore, "other toolbar controls remain responsive while a file load is in flight");
 
   await donePromise;
   assert(typeof T.state.nodes[newId].loadFraction !== "number", "loadFraction is cleared off the node once loading finishes");
@@ -7368,6 +7385,422 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 70 — Format Manager: configurable log formats + filename-pattern
+   rules (FEATURE_BACKLOG.md "Pluggable parser logic")
+   Origin: this session (2026-08-21), person-requested: a Settings menu
+   whose first entry is a Format Manager mapping filename patterns (glob)
+   to configurable log formats (a log4net/LogViewPlus-style conversion
+   pattern, or a raw regex for edge cases), plus a matching pattern field
+   in tools/log-simulator.html and a same-shape example file. Every format
+   still produces the fixed entry schema; the builtin default is a
+   pass-through to the untouched HEADER_RE/parseHeaderLine until edited.
+   ============================================================ */
+
+// state.logFormats/state.formatRules are populated once, asynchronously,
+// by the boot-time loadFormatConfig() call this feature added ahead of
+// loadFromUrlParam()/restoreSessionFromCache() — same "async boot step"
+// consideration as Group 20's session-cache restore poll below, just a
+// much shorter wait (no real IndexedDB I/O when no factory is passed).
+// Any subtest that reads or writes state.logFormats/state.formatRules for
+// its own fixture waits for this first so it never races the one-time
+// boot assignment (state.logFormats = formats inside loadFormatConfig).
+async function waitForFormatConfig(T) {
+  for (let i = 0; i < 40 && T.state.logFormats.length === 0; i++) await new Promise(r => setTimeout(r, 10));
+}
+
+await withApp(async (w, d, T) => {
+  section("70a. compileFormatPattern / compileDateFormat: pattern-mode compiler");
+  const dateFrag = w.compileDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
+  assert(dateFrag && dateFrag.order.join(",") === "yyyy,MM,dd,HH,mm,ss,SSS", "compileDateFormat orders its tokens left-to-right");
+  assert(dateFrag.matchRegex.test("2024-01-15 10:00:00,123"), "compiled date regex matches a well-formed timestamp");
+
+  const c = w.compileFormatPattern('%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n', "yyyy-MM-dd HH:mm:ss,SSS");
+  assert(c && c.regex && c.hasTs, "the canonical default pattern compiles, with a ts group");
+  const line = '2024-01-15 10:00:00,123\tINFO\t"main"\tC:\\src\\App.cs\tline 12\t[Startup]\t"Application started"';
+  const m = c.regex.exec(line);
+  assert(m && m.groups.level === "INFO" && m.groups.thread === "main" && m.groups.method === "Startup" && m.groups.message === "Application started",
+    "compiled regex extracts level/thread/method/message correctly, got " + JSON.stringify(m && m.groups));
+
+  const noMsg = w.compileFormatPattern("%d %p", "");
+  assert(noMsg.error, "a pattern with no %m/%message token is rejected");
+
+  const withEscapes = w.compileFormatPattern("%p\\t%m", "");
+  assert(withEscapes.regex && withEscapes.regex.test("INFO\thello"), "\\t in the pattern text becomes a real tab before compiling");
+
+  const withPercent = w.compileFormatPattern("%%literal %m", "");
+  assert(withPercent.regex && withPercent.regex.test("%literal hi"), "%% compiles to a literal percent sign");
+
+  const bracket = w.compileFormatPattern("[%d] %p (%t) %m%n", "yyyy-MM-dd HH:mm:ss");
+  const bm = bracket.regex.exec("[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed");
+  assert(bm && bm.groups.level === "ERROR" && bm.groups.thread === "worker-1" && bm.groups.message === "Database connection failed",
+    "a differently-shaped pattern (brackets/parens, no method/location) compiles and extracts correctly");
+});
+
+await withApp(async (w, d, T) => {
+  section("70b. Regex mode: named-group validation + graceful degrade on a broken format");
+  const v1 = w.validateFormatRegex("(unterminated");
+  assert(v1.error, "an invalid regex is rejected with an error");
+
+  const v2 = w.validateFormatRegex("^(?<level>\\w+) (?<thread>\\S+)$");
+  assert(v2.error, "a regex without a (?<message>...) group is rejected");
+
+  const v3 = w.validateFormatRegex("^(?<level>\\w+) (?<message>.*)$");
+  assert(!v3.error && v3.warning, "missing (?<ts>...) is a non-blocking warning, not a save-blocking error");
+
+  const v4 = w.validateFormatRegex("^(?<ts>\\S+) (?<level>\\w+) (?<message>.*)$");
+  assert(!v4.error && !v4.warning, "a regex with both ts and message groups passes cleanly");
+
+  const groups = v4.regex.exec("2024-01-15T10:00:00 ERROR boom").groups;
+  const entry = w.applyFormatMatch(groups, "2024-01-15T10:00:00 ERROR boom", null);
+  assert(entry.level === "ERROR" && entry.message === "boom", "applyFormatMatch reads named groups into the fixed entry shape");
+
+  // Defense-in-depth: a format whose regex/pattern fails to compile (should
+  // only happen if save-time validation was bypassed) degrades to
+  // "every line is its own untimestamped entry" instead of throwing.
+  const broken = w.compileOneFormat({ id: "x", mode: "regex", regex: "(unterminated", builtin: false, edited: false });
+  assert(broken.isHeaderLine("anything"), "a broken format's isHeaderLine never throws and always starts a new entry");
+  const e = broken.parseHeader("some raw line");
+  assert(e.message === "some raw line" && e.raw === "some raw line", "a broken format's parseHeader degrades to whole-line-as-message");
+});
+
+await withApp(async (w, d, T) => {
+  section("70c. Glob matcher + filename -> format resolution");
+  assert(w.compileGlob("app-*.log").test("app-1.log"), "'*' matches any run of characters");
+  assert(w.compileGlob("app-*.log").test("app-prod.log"), "'*' matches a longer run too");
+  assert(!w.compileGlob("app-*.log").test("db.log"), "a non-matching filename is rejected");
+  assert(w.compileGlob("app-?.log").test("app-1.log"), "'?' matches exactly one character");
+  assert(!w.compileGlob("app-?.log").test("app-12.log"), "'?' does not match two characters");
+  assert(w.compileGlob("APP-*.LOG").test("app-1.log"), "glob matching is case-insensitive");
+
+  T.state.logFormats = [{ id: "fmt-default", builtin: true, edited: false, name: "d" }, { id: "fmt-a", name: "a" }, { id: "fmt-b", name: "b" }];
+  T.state.formatRules = [
+    { id: "r1", glob: "*.log", formatId: "fmt-a", order: 1 },
+    { id: "r2", glob: "special-*.log", formatId: "fmt-b", order: 0 },
+  ];
+  assert(w.resolveFormatIdForFilename("special-1.log") === "fmt-b", "the lower-order (earlier) rule wins when multiple rules match");
+  assert(w.resolveFormatIdForFilename("plain.log") === "fmt-a", "a filename matching only the later rule still resolves to it");
+  assert(w.resolveFormatIdForFilename("other.txt") === "fmt-default", "a filename matching no rule falls back to the default format");
+});
+
+await withApp(async (w, d, T) => {
+  section("70d. Backward compatibility: unconfigured default format parses exactly as before");
+  const f = await w.addFile("plain.log", makeLog(0, 20), () => {});
+  assert(f.formatId === "fmt-default", "a freshly loaded file with no rules configured resolves to the builtin default");
+  assert(f.entries.length === 20, "entry count matches the fixture");
+  assert(f.entries[0].level === "ERROR" && f.entries[1].level === "INFO", "level extraction unchanged");
+  assert(f.entries[0].thread === "main", "thread extraction unchanged");
+  assert(f.entries[0].method === "DoWork", "method extraction unchanged");
+  assert(f.entries[0].locationShort === "Foo.cs:0", "location extraction unchanged, got " + f.entries[0].locationShort);
+  assert(f.entries[0].message === "message 0", "message extraction unchanged");
+  assert(!isNaN(f.entries[0].ts), "timestamp parses to a valid number");
+});
+
+await withApp(async (w, d, T) => {
+  section("70e. End-to-end: add a custom format (via sample-suggested pattern) + filename rule on the Settings page, then load a matching file");
+  await waitForFormatConfig(T);
+
+  fireClick(d.querySelector("#btnSettings"), w);
+  assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "Settings button opens the settings page directly (no intermediate menu)");
+  assert(d.querySelector("#settingsMenu") === null, "the old separate Format-Manager dropdown menu no longer exists");
+
+  const formatRows = () => [...d.querySelectorAll("#formatList .filter-library-row")];
+  assert(formatRows().length === 1 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
+    "the builtin default format is listed first, and is the only one initially");
+  assert(formatRows()[0].querySelector(".filter-library-row-del") === null, "the builtin default has no delete button");
+
+  const btnAddFormat = d.querySelector("#btnAddFormat");
+  assert(btnAddFormat.className === "btn-mini", "the Add-format button uses the same style as the row Edit buttons, got " + btnAddFormat.className);
+  assert(isVisible(btnAddFormat, w), "sanity: the Add-format button is actually visible on screen before anything is clicked");
+  fireClick(btnAddFormat, w);
+  const formatEditPanel = d.querySelector("#formatEditPanel");
+  assert(isVisible(formatEditPanel, w), "Add format embeds inline (same page, no new dialog) and is actually rendered on screen, not just missing the 'hidden' class");
+  assert(d.querySelector(".settings-page-card").contains(formatEditPanel), "the inline panel lives inside the same settings-page card, not a separate popup");
+  assert(!isVisible(btnAddFormat, w), "the Add-format button itself is actually hidden on screen while its inline panel is open — not just class-toggled with no matching CSS rule");
+
+  // Only the pattern OR the regex field is visible, matching the mode toggle
+  // — checked via actual computed display, not just the "hidden" class,
+  // since a class with no matching CSS rule leaves the element fully visible.
+  assert(isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
+    "pattern mode (the default) shows the pattern field, hides the regex field");
+  fireClick(d.querySelector("#formatEditModeRegex"), w);
+  assert(!isVisible(d.querySelector("#formatEditPatternField"), w) && isVisible(d.querySelector("#formatEditRegexField"), w),
+    "switching to regex mode hides the pattern field, shows the regex field");
+  fireClick(d.querySelector("#formatEditModePattern"), w);
+  assert(isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
+    "switching back to pattern mode shows it again, hides regex");
+
+  // Cancel closes the panel AND brings the Add button back, no format saved.
+  fireClick(d.querySelector("#formatEditCancel"), w);
+  assert(!isVisible(formatEditPanel, w), "Cancel closes the inline panel");
+  assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
+  assert(formatRows().length === 1, "cancelling adds nothing to the format list");
+
+  // Re-open and actually add one, this time via a pasted sample line instead
+  // of typing the pattern by hand — the suggestion should fill in pattern +
+  // tsFormat automatically.
+  fireClick(btnAddFormat, w);
+  assert(!isVisible(btnAddFormat, w), "hidden again on re-open");
+  const sampleInput = d.querySelector("#formatEditSample");
+  sampleInput.value = "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed";
+  fireInput(sampleInput, w);
+  assert(d.querySelector("#formatEditPattern").value === "[%d] %p (%t) %m%n",
+    "pasting a sample line auto-suggests a matching conversion pattern, got " + d.querySelector("#formatEditPattern").value);
+  assert(d.querySelector("#formatEditTsFormat").value === "yyyy-MM-dd HH:mm:ss", "...and the matching timestamp format");
+
+  const previewRows = () => [...d.querySelectorAll("#formatEditPreview .format-preview-row")];
+  assert(previewRows().length === 1 && !previewRows()[0].classList.contains("format-preview-nomatch"),
+    "the live preview parses the pasted sample line with the suggested pattern");
+  assert(previewRows()[0].textContent.includes("ERROR") && previewRows()[0].textContent.includes("worker-1") && previewRows()[0].textContent.includes("Database connection failed"),
+    "the preview shows the extracted level/thread/message, got " + previewRows()[0].textContent);
+
+  d.querySelector("#formatEditName").value = "Bracket format";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async; UI updates only after it resolves
+  assert(!isVisible(formatEditPanel, w), "saving closes/collapses the inline format panel");
+  assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
+  assert(formatRows().length === 2, "the new format is now listed alongside the default");
+
+  const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
+  assert(newFormat && newFormat.mode === "pattern" && !newFormat.builtin, "new format saved with the suggested (then reviewed) pattern, not builtin");
+  assert(newFormat.pattern === "[%d] %p (%t) %m%n" && newFormat.tsFormat === "yyyy-MM-dd HH:mm:ss", "the saved format keeps the suggested pattern/tsFormat unchanged (person didn't edit it further)");
+
+  const btnAddFormatRule = d.querySelector("#btnAddFormatRule");
+  assert(btnAddFormatRule.className === "btn-mini", "the Add-rule button uses the same style as the row Edit buttons too, got " + btnAddFormatRule.className);
+  assert(isVisible(btnAddFormatRule, w), "sanity: the Add-rule button is visible before being clicked");
+  fireClick(btnAddFormatRule, w);
+  const ruleEditPanel = d.querySelector("#formatRuleEditPanel");
+  assert(isVisible(ruleEditPanel, w), "Add rule also embeds inline, actually rendered on screen");
+  assert(!isVisible(btnAddFormatRule, w), "the Add-rule button hides while its panel is open");
+  d.querySelector("#formatRuleGlob").value = "bracket-*.log";
+  d.querySelector("#formatRuleFormatSelect").value = newFormat.id;
+  fireClick(d.querySelector("#formatRuleEditSave"), w);
+  await new Promise(r => setTimeout(r, 20)); // saveFormatRuleEdit's IndexedDB write is async
+  assert(!isVisible(ruleEditPanel, w), "saving closes/collapses the inline rule panel");
+  assert(isVisible(btnAddFormatRule, w), "...and the Add-rule button reappears");
+  assert(T.state.formatRules.length === 1 && T.state.formatRules[0].glob === "bracket-*.log", "rule saved with the entered glob");
+
+  fireClick(d.querySelector("#settingsClose"), w);
+  assert(d.querySelector("#settingsDialog").classList.contains("hidden"), "Close button closes the settings page");
+
+  const bracketLog = [
+    "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed",
+    "[2024-01-15 10:00:01] INFO (worker-1) Retrying connection, attempt 2/3",
+  ].join("\n") + "\n";
+  const f = await w.addFile("bracket-1.log", bracketLog, () => {});
+  assert(f.formatId === newFormat.id, "the loaded file resolved to the custom format via the glob rule");
+  assert(f.entries.length === 2, "both lines parsed as separate entries");
+  assert(f.entries[0].level === "ERROR" && f.entries[0].thread === "worker-1" && f.entries[0].message === "Database connection failed",
+    "custom pattern correctly extracts level/thread/message");
+  assert(!isNaN(f.entries[0].ts), "timestamp parses under the custom tsFormat");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("70f. Persistence round-trip: save/list/delete formats and rules; delete-while-referenced guard");
+  await waitForFormatConfig(T);
+
+  const fmt = { id: "fmt-test", name: "Test format", mode: "pattern", pattern: "%m%n", regex: "", tsFormat: "", builtin: false, edited: false, createdAt: Date.now() };
+  await w.saveLogFormat(fmt);
+  let stored = await w.listLogFormats();
+  assert(stored.some(f => f.id === "fmt-test"), "format persisted to IndexedDB");
+
+  const rule = { id: "rule-test", glob: "*.log", formatId: "fmt-test", order: 0, createdAt: Date.now() };
+  await w.saveFormatRule(rule);
+  let storedRules = await w.listFormatRules();
+  assert(storedRules.some(r => r.id === "rule-test"), "rule persisted to IndexedDB");
+
+  // removeLogFormat/removeFormatRule (the UI-level wrappers) act on
+  // in-memory state.logFormats/formatRules, kept in sync with IndexedDB by
+  // saveLogFormat/saveFormatRule elsewhere — drive them the same way.
+  T.state.logFormats = stored;
+  T.state.formatRules = storedRules;
+
+  await w.removeLogFormat("fmt-test");
+  assert(T.state.logFormats.some(f => f.id === "fmt-test"), "in-memory: a format still referenced by a rule is not removed");
+  const afterGuard = await w.listLogFormats();
+  assert(afterGuard.some(f => f.id === "fmt-test"), "IndexedDB: the blocked delete never reached the store");
+
+  await w.removeFormatRule("rule-test");
+  assert(!T.state.formatRules.some(r => r.id === "rule-test"), "in-memory: rule removed");
+  storedRules = await w.listFormatRules();
+  assert(!storedRules.some(r => r.id === "rule-test"), "IndexedDB: rule actually deleted");
+
+  await w.removeLogFormat("fmt-test");
+  assert(!T.state.logFormats.some(f => f.id === "fmt-test"), "in-memory: format removable once no rule references it");
+  stored = await w.listLogFormats();
+  assert(!stored.some(f => f.id === "fmt-test"), "IndexedDB: format actually deleted");
+
+  T.state.logFormats = [{ id: "fmt-default", builtin: true, edited: false, name: "Default" }];
+  T.state.formatRules = [];
+  await w.removeLogFormat("fmt-default");
+  assert(T.state.logFormats.some(f => f.id === "fmt-default"), "the builtin default is never removed, regardless of references");
+}, { indexedDB: new IDBFactory() });
+
+section("70g. Session-cache restore keeps a file's format pinned even after its matching rule is later removed");
+{
+  const factory = new IDBFactory();
+  const bracketLog = [
+    "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed",
+    "[2024-01-15 10:00:01] INFO (worker-1) Retrying connection, attempt 2/3",
+  ].join("\n") + "\n";
+
+  await withApp(async (w, d, T) => {
+    await waitForFormatConfig(T);
+    const fmt = { id: "fmt-bracket", name: "Bracket", mode: "pattern", pattern: "[%d] %p (%t) %m%n", regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss", builtin: false, edited: false, createdAt: Date.now() };
+    await w.saveLogFormat(fmt);
+    T.state.logFormats.push(fmt);
+    const rule = { id: "rule-bracket", glob: "bracket-*.log", formatId: fmt.id, order: 0, createdAt: Date.now() };
+    await w.saveFormatRule(rule);
+    T.state.formatRules.push(rule);
+
+    const f = await w.addFile("bracket-1.log", bracketLog, () => {});
+    assert(f.formatId === "fmt-bracket", "sanity: file resolved to the custom format via the rule");
+    assert(f.entries[0].level === "ERROR" && f.entries[0].thread === "worker-1", "sanity: parsed under the custom format before persisting");
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+
+    // Delete the RULE (keep the format definition) so a fresh resolution of
+    // this filename would now fall back to the builtin default — proving
+    // restore uses the file's own pinned formatId, not live re-resolution.
+    await w.removeFormatRule(rule.id); // already updates state.formatRules internally
+    assert(w.resolveFormatIdForFilename("bracket-1.log") === "fmt-default", "sanity: fresh resolution now falls back to default (rule gone)");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    assert(T.state.rootIds.length === 1, "restore: file came back via boot-time restore");
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f.formatId === "fmt-bracket", "restore: file's original formatId is pinned, ignoring the now-deleted rule");
+    assert(f.entries.length === 2, "restore: both entries came back");
+    assert(f.entries[0].level === "ERROR" && f.entries[0].thread === "worker-1" && f.entries[0].message === "Database connection failed",
+      "restore: re-parsed under the ORIGINAL custom format, not the default, got " + JSON.stringify({ level: f.entries[0].level, thread: f.entries[0].thread, message: f.entries[0].message }));
+  }, { indexedDB: factory });
+}
+
+await withApp(async (w, d, T) => {
+  section("70h. Settings page: opens directly (no menu), sections present, closes via Close button / backdrop click, theme control reflects current theme");
+  const btnSettings = d.querySelector("#btnSettings");
+  const settingsDialog = d.querySelector("#settingsDialog");
+  assert(settingsDialog.classList.contains("hidden"), "sanity: settings page starts closed");
+  assert(d.querySelector("#btnTheme") === null, "the old dedicated theme toggle button is gone from the toolbar");
+
+  fireClick(btnSettings, w);
+  assert(!settingsDialog.classList.contains("hidden"), "clicking the settings button opens the settings page directly");
+  assert(d.querySelector(".settings-page-card") !== null, "it renders as a settings-page card, not a small dropdown");
+  assert([...d.querySelectorAll(".settings-section-title")].some(el => el.textContent === "Appearance"),
+    "an Appearance section is present");
+  assert([...d.querySelectorAll(".settings-section-title")].some(el => el.textContent === "Log Formats"),
+    "a Log Formats section is present (Format Manager folded into the settings page, not a separate dialog)");
+
+  const themeLight = d.querySelector("#settingsThemeLight");
+  const themeDark = d.querySelector("#settingsThemeDark");
+  assert(themeLight && themeDark, "Light/Dark theme controls are in the Appearance section");
+  assert(themeDark.classList.contains("active") !== themeLight.classList.contains("active"),
+    "exactly one of Light/Dark is marked active, reflecting the current theme");
+
+  fireClick(d.body, w);
+  assert(!settingsDialog.classList.contains("hidden"), "clicking elsewhere on the page does NOT close the settings page (only Close/backdrop do)");
+
+  fireClick(d.querySelector("#settingsClose"), w);
+  assert(settingsDialog.classList.contains("hidden"), "the Close button closes the settings page");
+
+  fireClick(btnSettings, w);
+  fireClick(settingsDialog, w); // click lands on the backdrop itself, not a descendant
+  assert(settingsDialog.classList.contains("hidden"), "clicking the dialog's own backdrop closes it too");
+});
+
+await withApp(async (w, d, T) => {
+  section("70h2. Settings page: Light/Dark buttons actually switch and persist the theme");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const themeLight = d.querySelector("#settingsThemeLight");
+  const themeDark = d.querySelector("#settingsThemeDark");
+
+  fireClick(themeLight, w);
+  assert(d.documentElement.getAttribute("data-theme") === "light", "clicking Light switches data-theme to light");
+  assert(themeLight.classList.contains("active") && !themeDark.classList.contains("active"), "Light is now the active control");
+  assert(w.localStorage.getItem("philogg-theme") === "light", "theme choice persisted to localStorage");
+
+  fireClick(themeDark, w);
+  assert(d.documentElement.getAttribute("data-theme") === "dark", "clicking Dark switches data-theme back to dark");
+  assert(themeDark.classList.contains("active") && !themeLight.classList.contains("active"), "Dark is now the active control");
+  assert(w.localStorage.getItem("philogg-theme") === "dark", "theme choice persisted to localStorage");
+});
+
+await withApp(async (w, d, T) => {
+  section("70i. appendTailText is format-aware: a tailed file parses new chunks under ITS OWN format, not the global default");
+  const bracketFmt = { id: "fmt-bracket-tail", name: "Bracket", mode: "pattern", pattern: "[%d] %p (%t) %m%n", regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss", builtin: false, edited: false, createdAt: Date.now() };
+  T.state.logFormats.push(bracketFmt);
+
+  const node = { id: "fake-tail", entries: [], tail: { pending: "" }, formatId: bracketFmt.id };
+  const changed = w.appendTailText(node, "[2024-01-15 10:00:05] WARN (main) tail line one\n");
+  assert(changed === true, "appendTailText reports a change when a new entry lands");
+  assert(node.entries.length === 1, "one entry appended");
+  assert(node.entries[0].level === "WARN" && node.entries[0].thread === "main" && node.entries[0].message === "tail line one",
+    "the appended entry is parsed under the file's OWN custom format, not the default log4net shape");
+
+  // A second chunk in the SAME custom shape keeps working (not a one-shot fluke).
+  w.appendTailText(node, "[2024-01-15 10:00:06] INFO (main) tail line two\n");
+  assert(node.entries.length === 2 && node.entries[1].message === "tail line two", "a subsequent chunk parses correctly too");
+
+  // Default-format node (no formatId) still works via appendTailText, proving
+  // this codepath's dispatch didn't regress the un-configured case either.
+  const defaultNode = { id: "fake-tail-2", entries: [], tail: { pending: "" }, formatId: null };
+  w.appendTailText(defaultNode, makeLog(0, 1));
+  assert(defaultNode.entries.length === 1 && defaultNode.entries[0].message === "message 0", "a node with no formatId still tails under the builtin default");
+});
+
+await withApp(async (w, d, T) => {
+  section("70j. Builtin default row: Edit + Reset (not Delete); Reset reverts both the displayed fields AND actual parsing behavior");
+  await waitForFormatConfig(T);
+  fireClick(d.querySelector("#btnSettings"), w);
+
+  const defaultRow = () => d.querySelector("#formatList .filter-library-row");
+  assert(defaultRow().querySelector(".filter-library-row-del") === null, "the builtin default row has no Delete button");
+  const resetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
+  assert(resetBtn(), "...and has a Reset button in its place");
+  assert(resetBtn().className === "btn-mini-outline", "Reset uses the same secondary-button style as Cancel elsewhere, got " + resetBtn().className);
+
+  // Sanity: an unedited default parses a normal log4net-shaped file correctly.
+  const before = await w.addFile("before.log", makeLog(0, 3), () => {});
+  assert(before.entries[1].level === "INFO" && before.entries[1].thread === "main" && before.entries[1].method === "DoWork" && before.entries[1].message === "message 1",
+    "sanity: unedited default parses a normal file correctly");
+
+  // Edit the default: rename it and replace the pattern with something that
+  // only extracts level+message (drops thread/method entirely) — a clearly
+  // DIFFERENT, verifiable parse result, not just a cosmetic name change.
+  fireClick(defaultRow().querySelector("button.btn-mini"), w); // "Edit"
+  d.querySelector("#formatEditName").value = "Renamed default";
+  d.querySelector("#formatEditPattern").value = "%p %m%n";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async
+
+  const editedFmt = T.state.logFormats.find(f => f.id === "fmt-default");
+  assert(editedFmt.name === "Renamed default" && editedFmt.edited === true, "editing the builtin default updates it in place and flags it edited");
+  assert(defaultRow().querySelector(".filter-library-row-name").textContent.includes("Renamed default"), "the row reflects the new name");
+
+  const duringEdit = await w.addFile("during-edit.log", makeLog(10, 1), () => {});
+  assert(duringEdit.entries.length === 1, "sanity: the edited pattern still matches the line as a single entry, got " + duringEdit.entries.length);
+  assert(duringEdit.entries[0].thread === "" && duringEdit.entries[0].method === "",
+    "while edited, the SAME file shape now parses under the new (different) pattern — thread/method no longer extracted");
+  assert(isNaN(duringEdit.entries[0].ts), "...and the %d-less pattern has no ts group at all, so ts is NaN");
+
+  // Reset: reverts the row AND restores the original untouched fast-path parsing.
+  fireClick(resetBtn(), w);
+  await new Promise(r => setTimeout(r, 20)); // saveLogFormat's IndexedDB write is async
+
+  const resetFmt = T.state.logFormats.find(f => f.id === "fmt-default");
+  assert(resetFmt.edited === false, "Reset clears the edited flag");
+  assert(resetFmt.name === "Default (log4net-style)" && resetFmt.pattern === '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n' && resetFmt.tsFormat === "yyyy-MM-dd HH:mm:ss,SSS",
+    "Reset restores the exact original name/pattern/tsFormat, got " + JSON.stringify(resetFmt.pattern));
+  assert(defaultRow().querySelector(".filter-library-row-name").textContent.includes("Default (log4net-style)") && !defaultRow().querySelector(".filter-library-row-name").textContent.includes("Renamed"),
+    "the row's displayed name reverts too");
+
+  const after = await w.addFile("after-reset.log", makeLog(20, 3), () => {});
+  assert(after.entries[1].level === "INFO" && after.entries[1].thread === "main" && after.entries[1].method === "DoWork" && after.entries[1].message === "message 1",
+    "after Reset, a normal file parses exactly as it did before the edit — not just the displayed fields, the actual parse behavior");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -8385,6 +8818,48 @@ process.exit(failed ? 1 : 0);
               Both pre-existing direct mergeFiles() callers in this suite
               (Groups 10 and 30c, originally synchronous) were updated to
               await it.
+
+   Group 70  — this session (2026-08-21), person-requested (German):
+              "Format Manager" — a new Settings menu whose first entry maps
+              filename glob patterns to configurable log formats (a
+              log4net/LogViewPlus-style conversion pattern, or a raw regex
+              for edge cases), so PhiLogg can parse formats beyond its one
+              hardcoded default. compileFormatPattern (mirrors
+              compileExtractPattern's literal-escaping/named-group
+              approach) and validateFormatRegex both funnel into
+              applyFormatMatch, producing the same fixed entry schema
+              every other format uses; the builtin default stays a
+              pass-through to the untouched HEADER_RE/parseHeaderLine
+              until edited. Filenames resolve to formats via
+              resolveFormatIdForFilename (first-match glob rule, editable
+              order), pinned onto the file node at load time and preserved
+              verbatim across a session-cache restore even if rules
+              changed since. Also (same-session follow-ups): Examples/
+              renamed to examples/ with a second sample file in a
+              different shape; tools/log-simulator.html gained a matching
+              configurable pattern field; and a shared canonical default
+              pattern string used identically by both the builtin
+              LogFormat and the simulator's default input.
+              Follow-up (2026-08-21, later same day): Settings reworked
+              into one real page instead of a dropdown+separate dialogs
+              (70e/70h rewritten, new 70h2); Add-format panel gained a
+              sample-log-line pattern suggestion + live preview; and a
+              bugfix (isVisible(el, w) helper added, see "Known gaps" in
+              tests/README.md) after a person-reported screenshot showed
+              the inline Add-format/Add-rule panels and the pattern/regex
+              field toggle were always visible on screen regardless of
+              their "hidden" class — this app has no global
+              `.hidden{display:none}` rule, and the panels'/fields'
+              element-scoped rules were simply never added, so
+              `classList.contains("hidden")` alone couldn't tell them
+              apart from a genuinely-hidden element. 70e now asserts via
+              actual computed style, not just the class.
+              Follow-up (2026-08-21, later same day): the builtin default
+              row gained a "Reset" button where a deletable format's
+              Delete button would sit; new 70j edits the default to a
+              deliberately different pattern (proving parsing actually
+              changed, not just display), resets it, then confirms a
+              fresh file parses identically to before the edit.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

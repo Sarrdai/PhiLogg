@@ -1,0 +1,15 @@
+[2024-01-15 10:00:00] INFO (main) Application started, version 1.4.2
+[2024-01-15 10:00:00] INFO (main) Configuration loaded from app.config
+[2024-01-15 10:00:00] DEBUG (main) Connecting to database at db01.internal:5432
+[2024-01-15 10:00:01] INFO (main) Database connection established
+[2024-01-15 10:00:03] ERROR (worker-1) Database connection failed
+[2024-01-15 10:00:04] INFO (worker-1) Retrying connection, attempt 2/3
+[2024-01-15 10:00:06] INFO (worker-1) Connection established
+[2024-01-15 10:02:15] INFO (worker-1) Scheduler tick, 0 jobs pending
+[2024-01-15 10:04:47] WARN (worker-1) Job queue latency above threshold (420ms)
+[2024-01-15 10:05:00] INFO (worker-2) Starting job ImportCustomers
+[2024-01-15 10:05:00] DEBUG (worker-2) Fetched 128 records from source
+[2024-01-15 10:05:00] INFO (worker-2) Job ImportCustomers completed in 480ms
+[2024-01-15 10:12:30] DEBUG (main) Heartbeat OK, uptime 12m30s
+[2024-01-15 10:20:05] INFO (worker-1) Scheduler tick, 3 jobs pending
+[2024-01-15 10:20:06] WARN (worker-1) Cache eviction triggered, memory usage 82%
