@@ -12,6 +12,18 @@ Raw ideas only, not yet elaborated. Pick items up individually before implementa
 - **Optional tail auto-follow for the Highlight view** — currently deliberately static while the Filter view follows tailed entries; revisit if live-tailing workflows want it too.
 - **Autocomplete suggestions from recently used filter values/search terms** in the filter popup.
 - **Diff view between two filter results** — e.g. comparing two runs of the same log.
+- **Bugfix**: opening the app directly with a file passed as a launch/command-line argument opens the file but doesn't recognize it should be tailed. Consider also periodically re-checking static (non-tailed) files for changes.
+- **Minimap: line-based instead of time-based** — show position/density by line count rather than by timestamp span.
+- **Pin/dock the Tree view and Detail view** — pinned panel collapses to a minimized strip instead of taking full space.
+- **Configurable font size** — adjustable in Settings and via a keyboard shortcut.
+- **Shortcuts to switch between Tree and Filter view** — `Ctrl+1`/`Ctrl+0` to jump back and forth; `Enter` on a filter also returns to the Filtered view.
+- (maybe) **LogLevel filters also created as OR-linked nodes in the filter tree** when a level is toggled on/off.
+- **Horizontal scrollbar in the Filter view** — so long messages can be read in full.
+- **Double-click on a filter opens its edit dialog.**
+- **Electron-only: `F11` toggles fullscreen** (no window decorations).
+- **`Ctrl+W` closes the currently open file.**
+- **Settings option: "Closing the last log file quits the app"** — default off.
+- **Settings exportable as JSON.** The Electron variant should by default store/load settings in the OS "well-known" config directory (XDG on Linux, e.g. `~/.config/PhiLogg`).
 
 ---
 
