@@ -138,6 +138,14 @@ function fireDblClick(el, w) { el.dispatchEvent(new w.MouseEvent("dblclick", { b
 function fireInput(el, w) { el.dispatchEvent(new w.Event("input", { bubbles: true })); }
 function fireSubmit(el, w) { el.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); }
 function fireKeydown(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts })); }
+// Checks ACTUAL resolved CSS (getComputedStyle), not just whether the
+// "hidden" class is present on the element — jsdom has no real layout
+// engine, but it DOES correctly compute `display` from matching CSS rules,
+// so this catches the class of bug where an element's "hidden" class has
+// no matching CSS rule anywhere (classList.contains("hidden") would say
+// "hidden" while the element is still fully visible on screen — exactly
+// what happened to the Settings inline panels once, see GROUP 70e).
+function isVisible(el, w) { return w.getComputedStyle(el).display !== "none"; }
 function mkDataTransfer(w, extraTypes = []) {
   const store = {};
   return {
@@ -7502,33 +7510,36 @@ await withApp(async (w, d, T) => {
 
   const btnAddFormat = d.querySelector("#btnAddFormat");
   assert(btnAddFormat.className === "btn-mini", "the Add-format button uses the same style as the row Edit buttons, got " + btnAddFormat.className);
+  assert(isVisible(btnAddFormat, w), "sanity: the Add-format button is actually visible on screen before anything is clicked");
   fireClick(btnAddFormat, w);
   const formatEditPanel = d.querySelector("#formatEditPanel");
-  assert(!formatEditPanel.classList.contains("hidden"), "Add format embeds inline (same page, no new dialog)");
+  assert(isVisible(formatEditPanel, w), "Add format embeds inline (same page, no new dialog) and is actually rendered on screen, not just missing the 'hidden' class");
   assert(d.querySelector(".settings-page-card").contains(formatEditPanel), "the inline panel lives inside the same settings-page card, not a separate popup");
-  assert(btnAddFormat.classList.contains("hidden"), "the Add-format button itself hides while its inline panel is open");
+  assert(!isVisible(btnAddFormat, w), "the Add-format button itself is actually hidden on screen while its inline panel is open — not just class-toggled with no matching CSS rule");
 
-  // Only the pattern OR the regex field is visible, matching the mode toggle.
-  assert(!d.querySelector("#formatEditPatternField").classList.contains("hidden") && d.querySelector("#formatEditRegexField").classList.contains("hidden"),
+  // Only the pattern OR the regex field is visible, matching the mode toggle
+  // — checked via actual computed display, not just the "hidden" class,
+  // since a class with no matching CSS rule leaves the element fully visible.
+  assert(isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
     "pattern mode (the default) shows the pattern field, hides the regex field");
   fireClick(d.querySelector("#formatEditModeRegex"), w);
-  assert(d.querySelector("#formatEditPatternField").classList.contains("hidden") && !d.querySelector("#formatEditRegexField").classList.contains("hidden"),
+  assert(!isVisible(d.querySelector("#formatEditPatternField"), w) && isVisible(d.querySelector("#formatEditRegexField"), w),
     "switching to regex mode hides the pattern field, shows the regex field");
   fireClick(d.querySelector("#formatEditModePattern"), w);
-  assert(!d.querySelector("#formatEditPatternField").classList.contains("hidden") && d.querySelector("#formatEditRegexField").classList.contains("hidden"),
+  assert(isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
     "switching back to pattern mode shows it again, hides regex");
 
   // Cancel closes the panel AND brings the Add button back, no format saved.
   fireClick(d.querySelector("#formatEditCancel"), w);
-  assert(formatEditPanel.classList.contains("hidden"), "Cancel closes the inline panel");
-  assert(!btnAddFormat.classList.contains("hidden"), "...and the Add-format button reappears");
+  assert(!isVisible(formatEditPanel, w), "Cancel closes the inline panel");
+  assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
   assert(formatRows().length === 1, "cancelling adds nothing to the format list");
 
   // Re-open and actually add one, this time via a pasted sample line instead
   // of typing the pattern by hand — the suggestion should fill in pattern +
   // tsFormat automatically.
   fireClick(btnAddFormat, w);
-  assert(btnAddFormat.classList.contains("hidden"), "hidden again on re-open");
+  assert(!isVisible(btnAddFormat, w), "hidden again on re-open");
   const sampleInput = d.querySelector("#formatEditSample");
   sampleInput.value = "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed";
   fireInput(sampleInput, w);
@@ -7545,8 +7556,8 @@ await withApp(async (w, d, T) => {
   d.querySelector("#formatEditName").value = "Bracket format";
   fireClick(d.querySelector("#formatEditSave"), w);
   await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async; UI updates only after it resolves
-  assert(formatEditPanel.classList.contains("hidden"), "saving closes/collapses the inline format panel");
-  assert(!btnAddFormat.classList.contains("hidden"), "...and the Add-format button reappears");
+  assert(!isVisible(formatEditPanel, w), "saving closes/collapses the inline format panel");
+  assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
   assert(formatRows().length === 2, "the new format is now listed alongside the default");
 
   const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
@@ -7555,16 +7566,17 @@ await withApp(async (w, d, T) => {
 
   const btnAddFormatRule = d.querySelector("#btnAddFormatRule");
   assert(btnAddFormatRule.className === "btn-mini", "the Add-rule button uses the same style as the row Edit buttons too, got " + btnAddFormatRule.className);
+  assert(isVisible(btnAddFormatRule, w), "sanity: the Add-rule button is visible before being clicked");
   fireClick(btnAddFormatRule, w);
   const ruleEditPanel = d.querySelector("#formatRuleEditPanel");
-  assert(!ruleEditPanel.classList.contains("hidden"), "Add rule also embeds inline");
-  assert(btnAddFormatRule.classList.contains("hidden"), "the Add-rule button hides while its panel is open");
+  assert(isVisible(ruleEditPanel, w), "Add rule also embeds inline, actually rendered on screen");
+  assert(!isVisible(btnAddFormatRule, w), "the Add-rule button hides while its panel is open");
   d.querySelector("#formatRuleGlob").value = "bracket-*.log";
   d.querySelector("#formatRuleFormatSelect").value = newFormat.id;
   fireClick(d.querySelector("#formatRuleEditSave"), w);
   await new Promise(r => setTimeout(r, 20)); // saveFormatRuleEdit's IndexedDB write is async
-  assert(ruleEditPanel.classList.contains("hidden"), "saving closes/collapses the inline rule panel");
-  assert(!btnAddFormatRule.classList.contains("hidden"), "...and the Add-rule button reappears");
+  assert(!isVisible(ruleEditPanel, w), "saving closes/collapses the inline rule panel");
+  assert(isVisible(btnAddFormatRule, w), "...and the Add-rule button reappears");
   assert(T.state.formatRules.length === 1 && T.state.formatRules[0].glob === "bracket-*.log", "rule saved with the entered glob");
 
   fireClick(d.querySelector("#settingsClose"), w);
@@ -8752,6 +8764,9 @@ process.exit(failed ? 1 : 0);
               visible) the instant merging starts, filled in over
               MERGE_CHUNK_ENTRIES-sized chunks with a live progress bar,
               then chronologically sorted and cleared to a normal row.
+              Both pre-existing direct mergeFiles() callers in this suite
+              (Groups 10 and 30c, originally synchronous) were updated to
+              await it.
 
    Group 70  — this session (2026-08-21), person-requested (German):
               "Format Manager" — a new Settings menu whose first entry maps
@@ -8774,9 +8789,20 @@ process.exit(failed ? 1 : 0);
               configurable pattern field; and a shared canonical default
               pattern string used identically by both the builtin
               LogFormat and the simulator's default input.
-              Both pre-existing direct mergeFiles() callers in this suite
-              (Groups 10 and 30c, originally synchronous) were updated to
-              await it.
+              Follow-up (2026-08-21, later same day): Settings reworked
+              into one real page instead of a dropdown+separate dialogs
+              (70e/70h rewritten, new 70h2); Add-format panel gained a
+              sample-log-line pattern suggestion + live preview; and a
+              bugfix (isVisible(el, w) helper added, see "Known gaps" in
+              tests/README.md) after a person-reported screenshot showed
+              the inline Add-format/Add-rule panels and the pattern/regex
+              field toggle were always visible on screen regardless of
+              their "hidden" class — this app has no global
+              `.hidden{display:none}` rule, and the panels'/fields'
+              element-scoped rules were simply never added, so
+              `classList.contains("hidden")` alone couldn't tell them
+              apart from a genuinely-hidden element. 70e now asserts via
+              actual computed style, not just the class.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

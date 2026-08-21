@@ -75,8 +75,18 @@ throwaway test from scratch. When a session adds a feature:
 
 ## Known gaps (things this suite does NOT cover)
 
-- Pure CSS/layout bugs (jsdom has no real layout engine or hit-testing) —
-  needs manual/visual review instead.
+- Pure CSS/layout bugs — geometry, paint order, hit-testing — need
+  manual/visual review instead (jsdom has no real layout engine). This does
+  **not** extend to show/hide correctness, though: jsdom's
+  `getComputedStyle(el).display` DOES correctly resolve the actual CSS
+  cascade, so it reliably catches "a `.hidden`-class-toggle with no matching
+  CSS rule" bugs — the app has no global `.hidden{display:none}`, every
+  toggled element needs its own scoped rule (`#id.hidden{display:none}`),
+  and `classList.contains("hidden")` alone can't tell a genuinely-hidden
+  element from one that's still fully visible on screen (this bit the
+  Settings inline panels once — see PROJECT.md's 2026-08-21 entry). Prefer
+  the `isVisible(el, w)` test helper over raw `classList.contains("hidden")`
+  whenever a test's whole point is "is this actually shown or hidden."
 - The File System Access API itself (`showOpenFilePicker`, `showDirectoryPicker`
   etc.) is faked at the handle level for the tailing tests (Group 12) and the
   folder-watch tests (Group 37); the picker UI/permission flow itself is not
