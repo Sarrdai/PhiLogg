@@ -9325,6 +9325,26 @@ await withApp(async (w, d, T) => {
   assert(detailPanelRule && detailPanelRule[0].includes("flex-direction:column"),
     "#detailPanel keeps its own flex-direction:column — without it, the inline style.display=\"flex\" set from renderMainView/renderTable falls back to row and #detailPanelInner shrinks to content width, got " + (detailPanelRule && detailPanelRule[0]));
 
+  // --- Second regression guard, same root cause, same person-reported
+  //     screenshot round (a follow-up screenshot after the width fix
+  //     above): #detailPanel's rule declares `min-height:80px` (a floor
+  //     for the manual drag-resizer) THEN `min-height:0` later in the same
+  //     rule — last declaration of the same property wins, so the actual
+  //     effective min-height was always 0, the 80px never really applied.
+  //     Moving `min-height:0` onto #detailPanelInner during the same
+  //     #detailPanelInner refactor left `min-height:80px` as the only
+  //     min-height left on #detailPanel — and min-height always clamps the
+  //     used height upward regardless of whether the 34px it's clamping
+  //     comes from this stylesheet or the collapsed-state inline style set
+  //     by toggleDetailCollapsed, so the collapsed panel silently rendered
+  //     at 80px, leaving a real ~46px empty gap below the header instead
+  //     of the header being the panel's bottom edge. Text order matters
+  //     here (CSS cascade = last declaration of the same property, at
+  //     equal specificity, wins) — checking substring order, not just
+  //     presence. ---
+  assert(detailPanelRule && /min-height:80px[\s\S]*min-height:0\b/.test(detailPanelRule[0]),
+    "#detailPanel's min-height:0 comes AFTER min-height:80px in the same rule (so it's the one that actually wins) — without it the 80px floor clamps the collapsed 34px height, leaving an empty gap below the header, got " + (detailPanelRule && detailPanelRule[0]));
+
   // --- Each panel's setting independently gates only that panel's hover ---
   detailCb.checked = false;
   detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
