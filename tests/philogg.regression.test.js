@@ -2474,29 +2474,26 @@ await withApp(async (w, d, T) => {
   assert(cs(crumbEl).fontSize === cs(levelBtnEl).fontSize, "breadcrumb chips use the same text size as the level filter pills");
   assert(cs(crumbEl).paddingTop === cs(levelBtnEl).paddingTop && cs(crumbEl).paddingBottom === cs(levelBtnEl).paddingBottom,
     "breadcrumb chips use the same vertical padding as the level filter pills (same overall height)");
-  // Regression guard, ROUND 2 (person screenshot, this session: the
-  // View-Toggle is still visibly taller than the pills beside it despite
-  // this same font-size/padding match). Root cause: #fhTabs isn't a single
-  // box like .crumb/.level-btn — it's TWO nested boxes (.view-tabs' own
-  // padding+border, then .view-tab's padding inside that), costing it ~4px
-  // more non-content chrome even at equal content height. Round 1's fix
-  // (line-height:normal parity, below) matched the pills to EACH OTHER
-  // correctly but never compared against the actual reference element,
-  // #fhTabs, so the two groups kept drifting apart by that structural 4px.
-  // Fixed by pinning explicit line-height values (not "normal", which is
-  // font-metric/platform-dependent — var(--font-ui)/var(--font-mono) are
-  // system-font stacks) so the arithmetic is provably equal regardless of
-  // platform: #fhTabs' own button = outer padding(2*2) + outer border(2*1)
-  // + its own padding(2*4) + line-height(12) = 4+2+8+12 = 26px; each pill =
-  // padding(2*4) + border(2*1) + line-height(16) = 8+2+16 = 26px. jsdom has
-  // no layout engine (can't assert the resulting 26px directly — see
-  // "Testing approach"), so this asserts the individual declared values
-  // whose sum produces that parity instead.
+  // Regression guard, superseded/simplified this session ("Main window
+  // visual consistency fix"): the row used to chase height parity via
+  // per-element line-height/padding arithmetic (three rounds of it, see git
+  // blame) because #fhTabs (.view-tabs) has TWO nested boxes (its own
+  // padding+border, then .view-tab's padding inside that) while .crumb/
+  // .level-btn are single-box pills — no line-height value made those two
+  // shapes provably equal without hand-computing the sum each time. Fixed
+  // by giving every one of them the SAME explicit height (28px) plus
+  // flex-centering instead: #fhTabs itself is 28px tall (box-sizing:
+  // border-box includes its own padding+border in that), .view-tab fills
+  // it via height:100%, and .crumb/.level-btn are directly 28px tall —
+  // one shared number, no arithmetic to keep in sync.
+  const fhTabsEl = d.querySelector("#fhTabs");
   const viewTabEl = d.querySelector("#fhTabs .view-tab");
-  assert(cs(viewTabEl).lineHeight === "12px",
-    "#fhTabs' own button (.view-tab) uses a pinned 12px line-height, not \"normal\" — it's the height REFERENCE for the rest of the row, so its own height must be deterministic too");
-  assert(cs(crumbEl).lineHeight === "16px" && cs(levelBtnEl).lineHeight === "16px",
-    "breadcrumb chips and level pills use a pinned 16px line-height (not \"normal\") — 4px taller than #fhTabs' own 12px, exactly offsetting the extra chrome #fhTabs' nested outer box (.view-tabs padding+border) costs it over these single-box pills, so both totals land on 26px");
+  assert(cs(fhTabsEl).height === "28px",
+    "#fhTabs (.view-tabs) has the shared row height (28px) directly — the height REFERENCE for the rest of the row is now a plain number, not a line-height sum");
+  assert(cs(viewTabEl).height === "100%",
+    "#fhTabs' own button (.view-tab) fills its container via height:100% + flex-centering, not a pinned line-height");
+  assert(cs(crumbEl).height === "28px" && cs(levelBtnEl).height === "28px",
+    "breadcrumb chips and level pills share the exact same 28px height as #fhTabs, no line-height arithmetic needed");
   // Regression guard for a third reported round on this same row (person
   // screenshot: "top chain row should align with the level filters and
   // STAY that way"): vertical-align:middle aligns a .crumb relative to its
@@ -2507,7 +2504,6 @@ await withApp(async (w, d, T) => {
   // (both are the first content in #viewBar, so a float's top and a
   // normal-flow block's first line both begin flush at #viewBar's
   // content-box top), which holds regardless of font/content changes.
-  const fhTabsEl = d.querySelector("#fhTabs");
   const levelBarEl = d.querySelector("#levelBar");
   assert(cs(crumbEl).verticalAlign === "top", "breadcrumb chips use vertical-align:top, not middle, so they align to where the floats start rather than to a font-baseline-relative position");
   assert(cs(crumbEl).marginTop === "0px", "breadcrumb chips have no top margin, so their top edge isn't pushed down relative to the floats");
@@ -2753,38 +2749,26 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 29b — Bugfix follow-up to Group 29 (person-reported, ROUND 1):
-   #btnPinBookmarks still used `.toolbar-icon-btn`'s fixed 29x29px box
-   after the move into #viewBar, visibly taller than #fhTabs/#levelBar/
-   #breadcrumb next to it. ROUND 2 (person screenshot, this session)
-   reversed the target: #fhTabs — not the pills — is the row's actual
-   height REFERENCE (see Group 26's extended height-parity comment), and
-   its real total is 26px, not the ~22-23px round 1's auto-sizing produced.
-   #btnPinBookmarks now pins an explicit `height:26px` instead (box-sizing:
-   border-box makes this the TOTAL box height); width stays auto and
-   padding stays 4px 8px unchanged from round 1, so only the vertical
-   dimension moved. `.toolbar-icon-btn` itself (and therefore every OTHER
-   header button using it) stays untouched either round — this override is
-   still scoped to the #btnPinBookmarks id only. jsdom has no layout engine
-   (documented blind spot, see "Testing approach" / Group 26's own
-   comment), so this can only assert the CASCADED width/height/padding
-   values rather than an actual rendered pixel height — real visual parity
-   was confirmed separately via a real-browser screenshot, not jsdom.
+   GROUP 29b — Superseded this session by "Main window visual consistency
+   fix": #btnPinBookmarks/#btnMultilineMsg/#btnColumns used to need their
+   own id-specific width/height/padding override to shrink `.toolbar-icon-
+   btn`'s 29x29px header shape down to a 26px pill-matching box in the view
+   bar (two rounds of hand-tuning, see git blame). Now that `.toolbar-icon-
+   btn` itself is the shared 28x28 icon-button shape used by every icon
+   button in the app (header AND view bar alike — see the pill/icon-button
+   system in the CSS), no id-specific size override is needed at all: these
+   three are visually identical to the header's own icon buttons. jsdom has
+   no layout engine (see "Testing approach"), so this asserts the cascaded
+   width/height rather than a rendered pixel size.
    ============================================================ */
 await withApp(async (w, d) => {
-  section("29b. Bugfix: #btnPinBookmarks sized to match #fhTabs (26px), not the header's 29px icon buttons");
-  const btnPin = d.querySelector("#btnPinBookmarks");
+  section("29b. #btnPinBookmarks/#btnMultilineMsg/#btnColumns share .toolbar-icon-btn's 28x28 shape with the header's icon buttons");
   const cs = w.getComputedStyle;
-  assert(cs(btnPin).width === "auto", "#btnPinBookmarks no longer forces the header's fixed 29px width");
-  assert(cs(btnPin).height === "26px", "#btnPinBookmarks pins an explicit 26px height — matching #fhTabs' own total height, the row's height reference — instead of the header's 29px or an auto-sized box");
-  assert(cs(btnPin).padding === "4px 8px", "#btnPinBookmarks keeps the same 4px vertical padding as .level-btn/.crumb, just within a taller fixed box now");
-
-  // --- Header buttons sharing .toolbar-icon-btn are completely unaffected ---
-  ["#btnUndo", "#btnRedo", "#btnBookmarks", "#btnShortcuts"].forEach(sel => {
+  ["#btnUndo", "#btnRedo", "#btnBookmarks", "#btnShortcuts", "#btnPinBookmarks", "#btnMultilineMsg", "#btnColumns"].forEach(sel => {
     const btn = d.querySelector(sel);
     assert(btn !== null, "sanity: " + sel + " exists");
-    const bcs = w.getComputedStyle(btn);
-    assert(bcs.width === "29px" && bcs.height === "29px", sel + " keeps its original fixed 29x29px size (the fix is scoped to #btnPinBookmarks only), got " + bcs.width + "x" + bcs.height);
+    const bcs = cs(btn);
+    assert(bcs.width === "28px" && bcs.height === "28px", sel + " has no id-specific size override — it shares .toolbar-icon-btn's 28x28 shape, got " + bcs.width + "x" + bcs.height);
   });
 });
 
@@ -8506,7 +8490,17 @@ await withApp(async (w, d, T) => {
    to its 34px header, which still shows level/time/first-message-line
    instead of going empty. Both: Ctrl+B/Ctrl+J, resizer double-click,
    localStorage-persisted collapsed flag (display-preference tier, same as
-   theme/font-scale — see THEME_STORAGE_KEY).
+   theme/font-scale — see THEME_STORAGE_KEY). EXTENDED 2026-08-22
+   (person-requested follow-up): both resizers (#sidebarResizer/
+   #detailResizer) are now hidden outright while their panel is collapsed,
+   not just non-functional — a collapsed panel isn't manually resizable
+   (sidebar = fixed 40px rail, detail panel = fixed 34px header), so a
+   visible drag handle would be dead UI. Toggled directly in JS from
+   toggleSidebarCollapsed/toggleDetailCollapsed rather than a CSS selector
+   off the panel's own .collapsed class — #detailResizer in particular
+   PRECEDES #detailPanel in the DOM, so no descendant/sibling-combinator
+   selector keyed off #detailPanel.collapsed could ever reach it (a stale
+   CSS rule tried exactly that and silently never matched — removed).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("80. Collapsible sidebar / detail panel");
@@ -8516,6 +8510,8 @@ await withApp(async (w, d, T) => {
   const sidebarNormalContent = d.querySelector("#sidebarNormalContent");
   const sidebarRail = d.querySelector("#sidebarRail");
   const detailBody = d.querySelector("#detailBody");
+  const sidebarResizerEl = d.querySelector("#sidebarResizer");
+  const detailResizerEl = d.querySelector("#detailResizer");
 
   assert(!sidebarEl.classList.contains("collapsed") && !detailPanel.classList.contains("collapsed"), "both panels start expanded");
   assert(isVisible(sidebarNormalContent, w) && !isVisible(sidebarRail, w), "expanded: normal tree content shown, rail hidden");
@@ -8526,11 +8522,17 @@ await withApp(async (w, d, T) => {
   assert(sidebarEl.style.width === "40px", "collapsed width is set to the 40px rail, got " + sidebarEl.style.width);
   assert(w.localStorage.getItem("philogg-sidebar-collapsed") === "1", "collapsed flag persisted to localStorage");
   assert(!isVisible(sidebarNormalContent, w) && isVisible(sidebarRail, w), "collapsed (not hovering): rail shown, normal content hidden");
+  // A collapsed sidebar has a fixed 40px rail width, not a manually
+  // resizable one, so its own drag handle would be dead UI if left
+  // visible — hidden outright rather than just non-functional (person-
+  // requested follow-up, this session).
+  assert(!isVisible(sidebarResizerEl, w), "collapsed sidebar hides its own drag-resize handle entirely");
 
   w.toggleSidebarCollapsed();
   assert(!sidebarEl.classList.contains("collapsed"), "toggling again expands the sidebar");
   assert(sidebarEl.style.width !== "40px", "width is restored away from the 40px rail value, got " + sidebarEl.style.width);
   assert(w.localStorage.getItem("philogg-sidebar-collapsed") === "0", "expanded flag persisted too");
+  assert(isVisible(sidebarResizerEl, w), "expanding the sidebar brings its drag handle back");
 
   // --- Hover-peek: collapsed + mouseenter shows the exact expanded content
   //     as an overlay (no separate peek-only markup/rendering) ---
@@ -8582,6 +8584,12 @@ await withApp(async (w, d, T) => {
   assert(detailPanel.style.height === "34px", "collapsed height matches the 34px header, got " + detailPanel.style.height);
   assert(!isVisible(detailBody, w), "the message body is hidden while collapsed");
   assert(w.localStorage.getItem("philogg-detail-collapsed") === "1", "collapsed flag persisted");
+  // Same reasoning as the sidebar resizer above (person-requested follow-up,
+  // this session): #detailResizer PRECEDES #detailPanel in the DOM, so a
+  // stale CSS rule keyed off #detailPanel.collapsed #detailResizer never
+  // actually matched (removed) — hiding it is done in JS instead, from
+  // toggleDetailCollapsed directly.
+  assert(!isVisible(detailResizerEl, w), "collapsed detail panel hides its own drag-resize handle entirely");
 
   // Collapsed meta line: level + time + first message line, not the full
   // thread/location/method field set (no room for those in 34px).
@@ -8593,6 +8601,7 @@ await withApp(async (w, d, T) => {
   assert(!detailPanel.classList.contains("collapsed") && isVisible(detailBody, w), "expanding restores the body");
   assert(detailMeta.querySelector(".detail-thread") && !detailMeta.querySelector(".detail-collapsed-msg"),
     "...and the full field set is back in the meta line");
+  assert(isVisible(detailResizerEl, w), "expanding the detail panel brings its drag handle back");
 
   fireKeydown(d, w, "j", { ctrlKey: true });
   assert(detailPanel.classList.contains("collapsed"), "Ctrl+J toggles the detail panel collapse");
@@ -8771,7 +8780,7 @@ await withApp(async (w, d, T) => {
     { selector: "::-webkit-scrollbar-thumb", bad: "#2a3142" },
     { selector: ".brand-mark", bad: "#2f8f8c" },
     { selector: ".brand-mark", bad: "#0b1016" },
-    { selector: "#btnOpen:hover", bad: "#333c50" },
+    { selector: "#btnOpen:hover, #btnSession:hover", bad: "#333c50" },
     { selector: ".toolbar-badge", bad: "#08201f" },
     { selector: ".crumb.current", bad: "rgba(79,199,195,.35)" },
     { selector: ".level-btn.lvl-error", bad: "rgba(241,101,101,.35)" },
@@ -9136,6 +9145,57 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 90 — "Main window visual consistency fix" (this session,
+   2026-08-22): the toolbar/view-bar button system never got the same
+   treatment the Settings dialog's .btn-mini system did — every button-like
+   control hand-tuned its own padding/line-height to coincidentally match
+   its neighbors (three rounds of now-removed "height-parity bugfix"
+   comments; see Group 26/29b's updated assertions for the resulting
+   shared-28px-height behavior this replaced them with), and the three
+   panel resizers (#sidebarResizer/#fhSplitResizer/#detailResizer) were
+   fully transparent at rest, reading as a stray dark seam rather than an
+   intentional divider. This group covers what Group 26/29b don't: the
+   resizers' now-permanent grip affordance, the --border/--border-soft
+   token mismatch at the sidebar/minimap seam, and the #btnOpen/#btnSession
+   rule merge. Asserted via raw stylesheet text (same pattern as Group
+   86a's audit) rather than computed style — jsdom's getComputedStyle
+   doesn't resolve ::after pseudo-element styles, so these are checked as
+   cascaded CSS text instead of computed pixels, same blind spot documented
+   in "Testing approach".
+   ============================================================ */
+await withApp(async (w, d) => {
+  section("90. Main window visual consistency fix: resizer grip affordance, sidebar/minimap border token, #btnOpen/#btnSession merge");
+  const css = d.querySelector("style").textContent;
+
+  // --- Problem 2: resizers get a permanent (non-transparent) grip, not just an on-hover reveal ---
+  ["#sidebarResizer", "#fhSplitResizer", "#detailResizer"].forEach(sel => {
+    const ruleMatch = css.match(new RegExp(sel + "::after\\{[^}]*\\}"));
+    assert(ruleMatch, sel + "::after rule exists");
+    assert(ruleMatch && ruleMatch[0].includes("background:var(--border)"),
+      sel + "::after has a permanent var(--border) grip background at rest, not transparent, got " + (ruleMatch && ruleMatch[0]));
+    assert(ruleMatch && !ruleMatch[0].includes("background:transparent"),
+      sel + "::after no longer starts fully transparent (was the 'stray dark seam' bug)");
+    // Hover/drag brightening to --accent is pre-existing behavior, unchanged by this session.
+    assert(css.includes(sel + ":hover::after, " + sel + ".dragging::after{ background:var(--accent); }"),
+      sel + " still brightens to var(--accent) on hover/drag");
+  });
+
+  // --- Problem 2: sidebar/minimap seam now agrees on the same border token ---
+  const minimapRule = css.match(/#timelineMinimap\{[^}]*\}/);
+  assert(minimapRule && minimapRule[0].includes("border-bottom:1px solid var(--border)") && !minimapRule[0].includes("border-bottom:1px solid var(--border-soft)"),
+    "#timelineMinimap's border-bottom now uses --border (matching #sidebar's own border-right token at the same seam), not --border-soft, got " + (minimapRule && minimapRule[0]));
+  const sidebarRule = css.match(/#sidebar\{[^}]*\}/);
+  assert(sidebarRule && sidebarRule[0].includes("border-right:1px solid var(--border)"),
+    "sanity: #sidebar's own border-right is still var(--border)");
+
+  // --- Problem 1: #btnOpen/#btnSession share one rule (no longer two
+  // copy-pasted blocks) with the shared 28px control height. ---
+  const btnOpenRule = css.match(/#btnOpen, #btnSession\{[^}]*\}/);
+  assert(btnOpenRule && btnOpenRule[0].includes("height:28px"),
+    "#btnOpen/#btnSession share one merged rule with the shared 28px control height, got " + (btnOpenRule && btnOpenRule[0]));
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -9324,14 +9384,16 @@ process.exit(failed ? 1 : 0);
               reported): `#btnPinBookmarks` still carried `.toolbar-icon-
               btn`'s fixed 29x29px header size after the move, visibly
               taller than `#fhTabs`/`#levelBar`/`#breadcrumb` next to it.
-              Fixed with a `#btnPinBookmarks`-scoped `width:auto;
-              height:auto; padding:4px 8px` override — sizes around its
-              icon the way `.level-btn` sizes around its text, without
-              touching `.toolbar-icon-btn` itself. Covers the cascaded
-              width/height/padding values and confirms the four header
-              buttons sharing `.toolbar-icon-btn` keep their original
-              29x29px size (jsdom has no layout engine, so actual rendered
-              pixel height isn't assertable — see the group's own comment).
+              REWRITTEN 2026-08-22 ("Main window visual consistency fix"):
+              the original per-id 26px override (and two more rounds of it
+              across sessions, see Group 26's own history) is gone —
+              `.toolbar-icon-btn` itself is now the shared 28x28 icon-button
+              shape used everywhere (header AND view bar), so
+              `#btnPinBookmarks`/`#btnMultilineMsg`/`#btnColumns` need no
+              override at all any more. Group 29b now asserts all seven
+              `.toolbar-icon-btn` users (four header buttons + these three)
+              share the exact same 28x28 cascaded size (jsdom has no layout
+              engine, so actual rendered pixel height isn't assertable).
    Group 30  — this session (2026-08-14), person-requested: File filter
               history — a per-file filter-tree memory, separate from the
               session cache, that outlives any single session. New
@@ -10305,7 +10367,14 @@ process.exit(failed ? 1 : 0);
               level/time/first-message-line instead of going empty).
               Ctrl+B/Ctrl+J, resizer double-click, localStorage-persisted
               collapsed flag (display-preference tier, same as theme/font
-              scale) restored on init.
+              scale) restored on init. EXTENDED same day, person-requested
+              follow-up: both resizers now hide outright (not just go
+              inert) while their own panel is collapsed — a stale CSS rule
+              tried to hide #detailResizer via `#detailPanel.collapsed
+              #detailResizer` and never actually matched (#detailResizer
+              precedes #detailPanel in the DOM, not a descendant of it);
+              fixed by toggling a `.hidden` class directly from
+              toggleSidebarCollapsed/toggleDetailCollapsed instead.
    Group 85  — this session (2026-08-22), "configurable themes +
               Catppuccin": the Light/Dark button pair became a
               #settingsThemeSelect dropdown covering six built-in themes
@@ -10413,6 +10482,36 @@ process.exit(failed ? 1 : 0);
               absolute-value conditions ([value:float|>=10] matches both 10
               and -15) — same group, not a new one, since it's the same
               feature surface being refined, not a separate concern.
+   Group 90  — this session (2026-08-22), person-requested ("Main window
+              visual consistency fix"): the main window's toolbar/view-bar
+              button system finally got the treatment the Settings dialog's
+              .btn-mini system already had — one shared 28px, flex-centered
+              box model (icon-button shape for .toolbar-icon-btn and its
+              view-bar users; pill shape for .level-btn/.crumb; height:100%
+              for .view-tab inside its 28px-tall .view-tabs) reused by role
+              instead of each control's own hand-tuned padding/line-height
+              (removes the three-round "height-parity bugfix" comment
+              history — see Group 26/29b, both updated in place rather than
+              left testing the old arithmetic). Also: the three panel
+              resizers (#sidebarResizer/#fhSplitResizer/#detailResizer) gained
+              a permanent grip bar (var(--border) at rest, var(--accent) on
+              hover/drag) instead of being fully transparent until dragged —
+              the "gap between Files & Filters and the minimap" bug report
+              was actually this plus a token mismatch: #timelineMinimap's
+              border-bottom now uses var(--border) instead of
+              var(--border-soft), agreeing with #sidebar's own border-right
+              at the same seam. #btnOpen/#btnSession, previously two
+              byte-for-byte-identical rule blocks, were merged into one.
+              Covers the resizers' cascaded ::after background (raw
+              stylesheet text, same pattern as Group 86a — jsdom doesn't
+              resolve ::after through getComputedStyle), the border-token
+              fix, and the merged #btnOpen/#btnSession rule's height.
+              `.tree-action-btn`/`.folder-watch-reconnect`/
+              `.tree-ghost-restore-btn` were deliberately left untouched —
+              the task's concrete shape recipes only named the icon-button/
+              pill/view-tab groups, and none of these three sit in a row
+              that needs cross-control height alignment the way #viewBar's
+              controls do.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

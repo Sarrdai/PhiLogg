@@ -317,27 +317,29 @@
   .brand-version{margin-left:-5px; font-size:10px; font-weight:500; color:var(--text-tertiary); letter-spacing:.2px;}
   .toolbar-right{display:flex; align-items:center; gap:16px;}
   .status-text{color:var(--text-tertiary); font-size:11.5px; font-variant-numeric:tabular-nums;}
-  #btnOpen{
-    display:flex; align-items:center; gap:7px;
+  /* Shared main-window control system (this session): #btnOpen/#btnSession
+     were two literally-identical rule blocks; .toolbar-icon-btn is the one
+     shared "icon button" shape (28x28, border-radius:7px, flex-centered) —
+     reused as-is (no id-specific size override needed any more) by
+     #btnPinBookmarks/#btnMultilineMsg/#btnColumns in the view bar below,
+     and by .level-btn/.crumb's own 28px pill shape further down — one
+     height, one centering mechanism, shared by role instead of each
+     control's own hand-tuned padding/line-height arithmetic (see the
+     removed "height-parity bugfix" comment history on .crumb/.level-btn/
+     #btnPinBookmarks this replaces). */
+  #btnOpen, #btnSession{
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    height:28px; padding:0 12px;
     background:var(--bg-elevated); color:var(--text-primary);
     border:1px solid var(--border); border-radius:7px;
-    padding:7px 12px; font-size:12.5px; cursor:pointer;
+    font-size:12.5px; cursor:pointer;
     transition:background .12s, border-color .12s;
   }
-  #btnOpen:hover{background:var(--bg-elevated-2); border-color:var(--border-hover);}
-  #btnOpen svg{flex:0 0 auto;}
-  #btnSession{
-    display:flex; align-items:center; gap:7px;
-    background:var(--bg-elevated); color:var(--text-primary);
-    border:1px solid var(--border); border-radius:7px;
-    padding:7px 12px; font-size:12.5px; cursor:pointer;
-    transition:background .12s, border-color .12s;
-  }
-  #btnSession:hover{background:var(--bg-elevated-2); border-color:var(--border-hover);}
-  #btnSession svg{flex:0 0 auto;}
+  #btnOpen:hover, #btnSession:hover{background:var(--bg-elevated-2); border-color:var(--border-hover);}
+  #btnOpen svg, #btnSession svg{flex:0 0 auto;}
   .toolbar-icon-btn{
     display:flex; align-items:center; justify-content:center; position:relative;
-    width:29px; height:29px; flex:0 0 auto;
+    width:28px; height:28px; flex:0 0 auto;
     background:var(--bg-elevated); color:var(--text-secondary);
     border:1px solid var(--border); border-radius:7px;
     cursor:pointer; transition:background .12s, border-color .12s, color .12s;
@@ -430,11 +432,23 @@
   #sidebarResizer{
     flex:0 0 auto; width:7px; cursor:col-resize; position:relative; touch-action:none;
   }
+  /* Permanent grip affordance, not just an on-hover reveal (this session):
+     a bare transparent hit area read as a stray dark seam at rest (this
+     surface sits between two --bg-panel panels but showed the darker
+     --bg-app through to the seam) rather than an intentional divider — see
+     "Main window visual consistency fix". Fixed short bar, centered in the
+     resizer's own axis via top:50%/translateY, not top:0/bottom:0 (which
+     would span the whole column height). */
   #sidebarResizer::after{
-    content:""; position:absolute; top:0; bottom:0; left:2px; width:3px; border-radius:2px;
-    background:transparent; transition:background .12s;
+    content:""; position:absolute; left:2px; width:3px; top:50%; height:30px;
+    transform:translateY(-50%); border-radius:2px;
+    background:var(--border); transition:background .12s;
   }
   #sidebarResizer:hover::after, #sidebarResizer.dragging::after{ background:var(--accent); }
+  /* Hidden outright while the sidebar is collapsed (toggleSidebarCollapsed):
+     a collapsed sidebar has a fixed 40px rail width, not a manually
+     resizable one, so the drag handle would be dead UI if left visible. */
+  #sidebarResizer.hidden{display:none;}
   #tree{flex:0 0 auto; padding:8px 0;}
 
   /* Folder watch (FEATURE_BACKLOG.md "Folder watch + lazy loading"): a
@@ -682,59 +696,29 @@
      rule overrides display at rest. float:left is harmless while hidden —
      it only takes effect once JS sets display back to "flex". */
   #fhTabs{display:none; float:left; margin:0 14px 6px 0;}
-  /* #btnPinBookmarks (person-requested move, this session): lives here now
-     instead of the header, between the Full/Filtered/Stacked tabs and the
-     level filter pills — this row is where view content gets controlled
-     (what's shown/hidden), which is what the toggle does, unlike the
-     header's mostly popup-trigger buttons it used to sit next to.
-     Deliberately keeps its existing `.toolbar-icon-btn`/`.active` look
-     (icon button, not a `.level-btn` pill): it's an additive OR toggle,
-     not a subtractive level filter, and looking identical to the pills
-     here would be confusing about what it actually does — same reasoning
-     that already kept it out of #levelBar itself (see "Pin bookmarks into
-     the Filtered View" in PROJECT.md). float:left + the same right/bottom
-     margin as #fhTabs/#levelBar keeps it pinned to the top-left line
-     alongside them, participating in the same float flow described in the
-     #viewBar comment below.
-
-     height override, ROUND 2 (height-parity bugfix, this session,
-     supersedes the round-1 note below): #fhTabs — not the level
-     pills/breadcrumb — is this row's fixed HEIGHT REFERENCE (see
-     .view-tab's comment for why and the exact arithmetic), and its real
-     total height is 26px, not the ~22-23px round 1 assumed. Explicit
-     `height:26px` (box-sizing:border-box, inherited from the `*` rule,
-     makes this the TOTAL box height) matches that reference directly;
-     width stays auto and padding stays 4px 8px so the icon keeps sizing
-     itself horizontally the same way, just centered — via
-     `.toolbar-icon-btn`'s own `display:flex; align-items:center;
-     justify-content:center` — within a taller box now. Scoped to the
-     #btnPinBookmarks id only, same as the float/margin above:
-     `.toolbar-icon-btn` itself is untouched, so every header button using
-     that class (#btnUndo/#btnRedo/#btnBookmarks/#btnShortcuts) keeps its
-     original 29x29px size.
-
-     ROUND 1 (person-reported follow-up, superseded above): `.toolbar-icon-
-     btn`'s fixed 29x29px square read visibly taller than its neighbors
-     here, so width/height were overridden back to auto with the pills'
-     own 4px/1px padding/border pattern — landing at ~22-23px. That matched
-     the pills, which was the wrong target: they were themselves too short
-     relative to #fhTabs, a fact this round's fix corrects at the pills
-     rather than here (see .level-btn/.crumb). */
-  #btnPinBookmarks{float:left; margin:0 14px 6px 0; width:auto; height:26px; padding:4px 8px;}
-  /* #btnMultilineMsg: same float/sizing treatment as #btnPinBookmarks right
-     above (same row, same reasoning — a persistent view-content toggle, not
-     a popup trigger), just its own icon/state. See "Multiline message
-     display toggle" in PROJECT.md. */
-  #btnMultilineMsg{float:left; margin:0 14px 6px 0; width:auto; height:26px; padding:4px 8px;}
-  /* #btnColumns: same float/sizing treatment as #btnPinBookmarks/
-     #btnMultilineMsg right above (bugfix, person-reported: this rule was
-     missing entirely when #btnColumns was added, so it stayed a plain,
-     non-floated 29x29px .toolbar-icon-btn box sitting in normal flow right
-     after three FLOATED siblings — breaking out of their line, pushing
-     itself and everything after it (#levelBar/#breadcrumb) down and out of
-     alignment instead of continuing the same top-left row). See "Log view
-     column visibility / width" in PROJECT.md. */
-  #btnColumns{float:left; margin:0 14px 6px 0; width:auto; height:26px; padding:4px 8px;}
+  /* #btnPinBookmarks/#btnMultilineMsg/#btnColumns: persistent view-content
+     toggles that live in this row (between the Full/Filtered/Stacked tabs
+     and the level filter pills) rather than the header's popup-trigger
+     buttons — this row is where view content gets controlled, which is
+     what these three do. Deliberately keep `.toolbar-icon-btn`'s look
+     (icon buttons, not `.level-btn` pills): each is an additive/persistent
+     toggle, not a subtractive level filter, and looking identical to the
+     pills here would be confusing about what they actually do — same
+     reasoning that already kept #btnPinBookmarks out of #levelBar itself
+     (see "Pin bookmarks into the Filtered View" in PROJECT.md).
+     float:left + the same right/bottom margin as #fhTabs/#levelBar keeps
+     them pinned to the top-left line alongside those, participating in the
+     same float flow described in the #viewBar comment above. No size
+     override needed any more — `.toolbar-icon-btn`'s own 28x28 shape
+     already matches this row's shared 28px control height (see
+     "Main window visual consistency fix": .toolbar-icon-btn, .level-btn
+     and .crumb all now share one 28px/flex-centered box model instead of
+     each hand-tuning padding/line-height to match the others — history of
+     the three-round bugfix this replaced is in git blame, not worth
+     keeping alive here). */
+  #btnPinBookmarks{float:left; margin:0 14px 6px 0;}
+  #btnMultilineMsg{float:left; margin:0 14px 6px 0;}
+  #btnColumns{float:left; margin:0 14px 6px 0;}
 
   #breadcrumb{
     /* Deliberately plain block (not flex/grid, no new block-formatting
@@ -748,52 +732,39 @@
        instead. */
   }
   .crumb{
-    /* line-height:16px (explicit px, not "normal" — superseded this
-       session, see below) is required for height parity with #fhTabs, the
-       row's fixed HEIGHT REFERENCE (see .view-tab's comment). .crumb is
-       inline-block, so its single line of text IS directly sized by
-       line-height; padding(8)+border(2)+line-height(16) = 26px, matching
-       #fhTabs' own total exactly (same arithmetic as .level-btn's comment
-       above — this pill and .level-btn share the identical single-box
-       chrome, so they get the identical line-height value too).
+    /* Shared 28px pill shape (this session — see "Main window visual
+       consistency fix"), same box model as .level-btn right below: a fixed
+       height plus flex-centering instead of the line-height/padding
+       arithmetic three earlier rounds hand-tuned to coincidentally match
+       #fhTabs (that history — chasing padding/line-height/vertical-align
+       parity pixel by pixel — is in git blame, not worth keeping alive as
+       a comment now that the arithmetic itself is gone). inline-flex (not
+       block/flex) keeps the chip an inline-level box so it still wraps
+       around the #fhTabs/#levelBar floats line-by-line like plain text
+       would, while centering its own single line of text vertically
+       without needing a line-height value at all.
 
-       SUPERSEDED REASONING (kept for history — this used to target
-       .level-btn instead of #fhTabs): line-height was previously pinned to
-       "normal" rather than inherited, on the theory that a flex container
-       like .level-btn ignores line-height for its own box height so only
-       padding+content mattered there — that theory turned out to be wrong
-       (verified empirically this session: line-height DOES set a flex
-       item's content-box height when the item is inline text, e.g. the
-       level name inside .level-btn). Both pills were undershooting #fhTabs
-       by the same ~4px because #fhTabs carries an extra nested box
-       (.view-tabs' own padding+border around .view-tab's), which none of
-       the three earlier alignment rounds had accounted for — chasing
-       padding/line-height/vertical-align *parity between the pills*
-       instead of against the actual reference element.
-
-       vertical-align:top (not middle) + margin-top:0 is what pins the
-       chip's own top edge to the SAME y-position #fhTabs/#levelBar's
-       floats start at (both are the first content in #viewBar, so a
-       float's top and a normal-flow block's first line both begin flush
-       at #viewBar's content-box top — floats narrow the available width
-       there, they don't push the line down). vertical-align:middle
-       instead aligns relative to the PARENT's font baseline/x-height,
-       which doesn't reliably line up with where a float starts and can
-       drift a few px depending on inherited font metrics — exactly the
-       "close but not quite aligned" symptom this replaces. */
-    display:inline-block; vertical-align:top; margin:0 4px 6px 0;
-    font-size:10.5px; line-height:16px; color:var(--text-secondary); cursor:pointer;
+       vertical-align:top (not middle) is what pins the chip's own top edge
+       to the SAME y-position #fhTabs/#levelBar's floats start at (both are
+       the first content in #viewBar, so a float's top and a normal-flow
+       inline box's first line both begin flush at #viewBar's content-box
+       top — floats narrow the available width there, they don't push the
+       line down). vertical-align:middle instead aligns relative to the
+       PARENT's font baseline/x-height, which doesn't reliably line up with
+       where a float starts and can drift a few px depending on inherited
+       font metrics. */
+    display:inline-flex; align-items:center; justify-content:center;
+    vertical-align:top; height:28px; margin:0 4px 6px 0;
+    font-size:10.5px; color:var(--text-secondary); cursor:pointer;
     background:var(--bg-elevated); border:1px solid var(--border-soft);
-    padding:4px 9px; border-radius:20px; transition:background .12s, border-color .12s, filter .12s;
+    padding:0 9px; border-radius:20px; transition:background .12s, border-color .12s, filter .12s;
   }
   .crumb:hover{filter:brightness(1.25);}
   .crumb.current{color:var(--accent-strong); border-color:color-mix(in srgb, var(--accent) 35%, transparent); background:var(--accent-soft);}
-  /* margin-top raised 4px -> 7px (height-parity bugfix, this session): now
-     that .crumb is a 26px-tall pill (was 22px), the separator's own ~12px
-     glyph line (line-height:12px, same pinned value as .view-tab's) needs
-     (26-12)/2 = 7px of top margin to stay roughly centered against it —
-     see .crumb's own comment for why the pill grew. */
-  .crumb-sep{display:inline-block; vertical-align:top; margin:7px 3px 6px; line-height:12px; color:var(--text-tertiary); font-size:11px;}
+  /* Separator glyph is plain inline text (no flex-centering box of its
+     own), so it still needs a top margin to center its ~12px glyph line
+     against the 28px pills either side: (28-12)/2 = 8px. */
+  .crumb-sep{display:inline-block; vertical-align:top; margin:8px 3px 6px; line-height:12px; color:var(--text-tertiary); font-size:11px;}
 
   /* ---------- Level filter bar ---------- */
   #levelBar{
@@ -801,26 +772,10 @@
     display:flex; align-items:center; gap:6px; flex-wrap:wrap;
   }
   .level-btn{
-    /* Height-parity bugfix (this session, person-reported via screenshot):
-       #fhTabs (the View-Toggle) is the fixed HEIGHT REFERENCE for the rest
-       of this row — see its own comment on .view-tab. #fhTabs has TWO
-       nested boxes (.view-tabs' own padding+border, then .view-tab's
-       padding inside that), which costs it ~4px more chrome than a
-       single-box pill like this one — a structural difference the three
-       earlier "match the padding/line-height" rounds didn't account for,
-       since they assumed equal box-nesting, not just equal content height.
-       Despite .level-btn being a flex container, line-height still sets
-       its flex items' (the raw level-name text, .cnt) content-box height
-       here — verified empirically, contradicting an older assumption (see
-       .crumb's comment history) that flex containers ignore line-height
-       entirely. line-height:16px (replacing the old implicit "normal",
-       which is font-metric/platform-dependent — var(--font-mono) is a
-       system-font list) is chosen so padding(8) + border(2) + line-height
-       (16) = 26px, arithmetically equal to #fhTabs' own
-       padding(4)+border(2)+.view-tab's padding(8)+line-height(12) = 26px. */
-    display:flex; align-items:center; gap:6px; user-select:none;
+    /* Same shared 28px pill shape as .crumb above. */
+    display:flex; align-items:center; justify-content:center; gap:6px; user-select:none;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
-    padding:4px 9px; line-height:16px; border-radius:20px; cursor:pointer;
+    height:28px; padding:0 9px; border-radius:20px; cursor:pointer;
     background:transparent;
     border:1px solid var(--border); transition:background .12s, border-color .12s, color .12s, filter .12s;
   }
@@ -853,9 +808,15 @@
     flex:0 0 auto; height:7px; cursor:row-resize; position:relative; touch-action:none; display:none;
   }
   #fhSplit.fh-layout-stacked #fhSplitResizer{ display:block; }
+  /* Permanent grip bar, not just an on-hover reveal (this session — see
+     "Main window visual consistency fix"): same reasoning as
+     #sidebarResizer's own grip comment, just the horizontal-resizer
+     variant — a fixed-length bar centered via left:50%/translateX instead
+     of left:0/right:0 (which would span the resizer's full width). */
   #fhSplitResizer::after{
-    content:""; position:absolute; left:0; right:0; top:2px; height:3px; border-radius:2px;
-    background:transparent; transition:background .12s;
+    content:""; position:absolute; left:50%; top:2px; width:30px; height:3px;
+    transform:translateX(-50%); border-radius:2px;
+    background:var(--border); transition:background .12s;
   }
   #fhSplitResizer:hover::after, #fhSplitResizer.dragging::after{ background:var(--accent); }
   #filterSlot{position:relative;} /* #tableWrap/#linkWrap toggle display:flex/none inside here, same as before */
@@ -952,7 +913,13 @@
      view on top, translucent rect = the time range currently scrolled into
      view. See "Timeline minimap" section in the script for the render logic. */
   #timelineMinimap{
-    flex:0 0 auto; height:70px; background:var(--bg-panel); border-bottom:1px solid var(--border-soft);
+    /* border-bottom uses --border, not --border-soft (fixed this session —
+       see "Main window visual consistency fix"): #sidebar's own
+       border-right (its seam against #content) already uses --border, so
+       the two disagreed at the sidebar/content/minimap corner — a
+       lighter-weight token right next to a heavier one at the same visual
+       seam reads as a stray gap rather than one consistent divider. */
+    flex:0 0 auto; height:70px; background:var(--bg-panel); border-bottom:1px solid var(--border);
     position:relative; cursor:pointer; display:flex; flex-direction:column;
   }
   #timelineMinimap.hidden{display:none;}
@@ -1181,9 +1148,13 @@
   #detailResizer{
     flex:0 0 auto; height:7px; cursor:row-resize; position:relative; touch-action:none;
   }
+  /* Permanent grip bar — same treatment/reasoning as #fhSplitResizer's own
+     comment just above and #sidebarResizer's (see "Main window visual
+     consistency fix"). */
   #detailResizer::after{
-    content:""; position:absolute; left:0; right:0; top:2px; height:3px; border-radius:2px;
-    background:transparent; transition:background .12s;
+    content:""; position:absolute; left:50%; top:2px; width:30px; height:3px;
+    transform:translateX(-50%); border-radius:2px;
+    background:var(--border); transition:background .12s;
   }
   #detailResizer:hover::after, #detailResizer.dragging::after{ background:var(--accent); }
 
@@ -1196,7 +1167,6 @@
      directly on #detailPanel.style.height from JS (toggleDetailCollapsed),
      same mechanism as the manual drag-resize below. */
   #detailPanel.collapsed #detailBody{display:none;}
-  #detailPanel.collapsed #detailResizer{display:none;}
 
   /* Single 34px header row: fixed "Entry detail" label, the meta line
      (#detailMeta — full field set expanded, level+time+first-message-line
@@ -1662,20 +1632,24 @@
   .assert-dialog-clear{margin-right:auto;}
 
   /* ---------- Table/Plot view tabs ---------- */
-  .view-tabs{display:flex; gap:2px; background:var(--bg-app); border:1px solid var(--border); border-radius:7px; padding:2px;}
+  /* height:28px (this session — see "Main window visual consistency fix")
+     is #fhTabs' own total box height, matching the shared 28px control
+     height used by .toolbar-icon-btn/.level-btn/.crumb elsewhere in this
+     row — box-sizing:border-box (the `*` rule) means padding(2)+border(1)
+     on each side is included in that 28px, leaving .view-tab's own
+     height:100% below to fill exactly the remaining space with no
+     arithmetic of its own. Replaces three earlier rounds of hand-tuned
+     line-height/padding on .view-tab chasing pixel-parity with this
+     container from the *inside* — flex-centering a fixed height on the
+     container removes the need for that entirely. */
+  .view-tabs{
+    display:flex; gap:2px; height:28px;
+    background:var(--bg-app); border:1px solid var(--border); border-radius:7px; padding:2px;
+  }
   .view-tab{
-    /* line-height:12px (explicit, not "normal" — see the height-parity
-       bugfix below at .level-btn/.crumb/#btnPinBookmarks): #fhTabs is the
-       fixed HEIGHT REFERENCE for the rest of #viewBar's row, so its own
-       height needs to be a known, deterministic number for the others to
-       be matched against — "normal" resolves differently per platform
-       font stack (var(--font-ui) is a system-font list), which is exactly
-       why three earlier rounds of "match the padding/line-height/
-       vertical-align" chasing never actually landed pixel-for-pixel. 12px
-       reproduces this button's own pre-existing rendered height (no visual
-       change to the reference itself), just pinned instead of inherited. */
+    height:100%; display:flex; align-items:center; justify-content:center;
     background:transparent; border:none; color:var(--text-tertiary); font-size:11px; font-weight:600;
-    padding:4px 11px; line-height:12px; border-radius:5px; cursor:pointer; transition:background .12s, color .12s;
+    padding:0 11px; border-radius:5px; cursor:pointer; transition:background .12s, color .12s;
   }
   .view-tab:hover{color:var(--text-secondary);}
   .view-tab.active{background:var(--bg-elevated-2); color:var(--accent-strong);}
@@ -5907,7 +5881,11 @@ function renderMainView() {
   // applies to the link view exactly as it does to the plain table view now
   // that link-view rows can populate that selection too (double-click, via
   // revealInHighlightView).
-  detailResizer.style.display = "block";
+  // detailResizer stays hidden while the panel is collapsed (person-
+  // requested, this session — see updateDetailResizerVisibility): a
+  // collapsed panel has a fixed 34px header height, not a manually
+  // resizable one, so the drag handle would be dead UI if left visible.
+  updateDetailResizerVisibility();
   detailPanel.style.display = "flex";
 
   if (isLink) {
@@ -9011,6 +8989,12 @@ function toggleSidebarCollapsed(collapsed) {
     sidebarEl.classList.remove("collapsed");
     sidebarEl.style.width = sidebarLastWidth + "px";
   }
+  // A collapsed sidebar has a fixed 40px rail width, not a manually
+  // resizable one, so the drag handle would be dead UI if left visible —
+  // hide it outright rather than just leaving it non-functional. Toggled
+  // here in JS (not a CSS sibling/descendant selector on #sidebar.collapsed)
+  // since #sidebarResizer is a sibling of #sidebar, not a descendant.
+  sidebarResizer.classList.toggle("hidden", collapsed);
   localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
   updateSidebarToggleIcon();
   renderVisibleRows();
@@ -9036,6 +9020,22 @@ function initSidebarCollapsed() {
 
 function isDetailCollapsed() { return detailPanel.classList.contains("collapsed"); }
 
+// Single source of truth for #detailResizer's own visibility, called both
+// from here (immediate effect on collapse/expand) and from renderMainView/
+// renderTable (whose hasFiles/extract-mode checks independently drive the
+// SAME element's inline display via style.display, not a CSS class — so a
+// class-based .hidden toggle here would just lose to whichever of those
+// runs next; recomputing the full condition in one place avoids the two
+// mechanisms fighting over the same property). A collapsed panel has a
+// fixed 34px header height, not a manually resizable one, so the drag
+// handle would be dead UI if left visible whenever it's collapsed, on top
+// of the existing no-files/extract-mode hide conditions.
+function updateDetailResizerVisibility() {
+  const activeNode = state.nodes[state.activeId];
+  const isExtract = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "extract");
+  detailResizer.style.display = (state.rootIds.length > 0 && !isExtract && !isDetailCollapsed()) ? "block" : "none";
+}
+
 function toggleDetailCollapsed(collapsed) {
   if (collapsed === undefined) collapsed = !isDetailCollapsed();
   if (collapsed) {
@@ -9046,6 +9046,7 @@ function toggleDetailCollapsed(collapsed) {
     detailPanel.classList.remove("collapsed");
     detailPanel.style.height = detailLastHeight + "px";
   }
+  updateDetailResizerVisibility();
   detailToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
   detailToggleBtn.title = collapsed ? "Expand (Ctrl+J)" : "Collapse (Ctrl+J)";
   localStorage.setItem(DETAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -10395,7 +10396,7 @@ function renderTable() {
   const hasFiles = state.rootIds.length > 0;
   tableWrap.style.display = hasFiles ? "flex" : "none";
   emptyState.style.display = hasFiles ? "none" : "flex";
-  detailResizer.style.display = hasFiles ? "block" : "none";
+  updateDetailResizerVisibility();
   detailPanel.style.display = hasFiles ? "flex" : "none";
   if (!hasFiles) {
     currentViewEntries = [];
