@@ -30,7 +30,10 @@ open it in a browser to view it.
 - **Value extraction** — turn a pattern like `x=[value:float] y=[value:float]`
   into a spreadsheet-style table with per-column stats, value assertions, and
   a Plot tab (line/bar/scatter, zoom/pan, click a point to jump to its log
-  entry).
+  entry). `float`/`int` placeholders can also carry an inline condition —
+  `[value:float>=10]`, `[value:int<20,>10]` for a range, or `[value:float|>=10]`
+  to compare against the absolute value — so a pattern matches/extracts only
+  the entries whose value actually satisfies it.
 - **Link filter** — pair up nearest-preceding/following entries across two
   filters (e.g. "the last position reading before each error"), chainable
   into multi-hop tuples via a guided dialog.
