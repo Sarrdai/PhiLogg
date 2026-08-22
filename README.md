@@ -61,6 +61,10 @@ open it in a browser to view it.
 - **Light & dark theme, configurable font size**, resizable/toggleable
   columns, multiline message display, multi-row select + copy, and a
   horizontal scrollbar in the Filter view for reading long messages in full.
+- **Collapsible sidebar & detail panel** — collapse the file tree to a
+  40px rail (hover to peek the full tree without losing your place) or the
+  detail panel to its header, via the chevron, `Ctrl+B`/`Ctrl+J`, or
+  double-clicking the resizer.
 
 See [`homepage/index.html`](homepage/index.html) for the full, illustrated
 feature list, and `PROJECT.md` for how each of these actually works
