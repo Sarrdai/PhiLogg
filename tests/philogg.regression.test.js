@@ -8583,7 +8583,12 @@ await withApp(async (w, d, T) => {
   select.dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(d.documentElement.getAttribute("data-theme") === "catppuccin-mocha", "picking Catppuccin Mocha sets data-theme");
   const cs = w.getComputedStyle(d.documentElement);
-  assert(cs.getPropertyValue("--bg-app").trim() === "#11111b", "Mocha's --bg-app CSS var resolves via the [data-theme] block, got " + cs.getPropertyValue("--bg-app"));
+  // --bg-app = Base per the style-guide remap (GROUP 84) — the main
+  // content pane is the brightest of the "background pane" tier now,
+  // not Crust (the darkest), which is what the app's own pre-existing
+  // Dark/Light hierarchy would have suggested — see PROJECT.md "Theming".
+  assert(cs.getPropertyValue("--bg-app").trim() === "#1e1e2e", "Mocha's --bg-app CSS var resolves via the [data-theme] block to Base, got " + cs.getPropertyValue("--bg-app"));
+  assert(cs.getPropertyValue("--bg-panel").trim() === "#181825", "Mocha's --bg-panel resolves to Mantle (darker than --bg-app/Base, per the style-guide remap), got " + cs.getPropertyValue("--bg-panel"));
   assert(cs.getPropertyValue("--accent").trim() === "#94e2d5", "Mocha's --accent resolves too, got " + cs.getPropertyValue("--accent"));
   assert(w.localStorage.getItem("philogg-theme") === "catppuccin-mocha", "theme choice persisted to localStorage");
   // Style guide: "Selection Background" = Overlay 2 @ 20-30% opacity —
@@ -8597,15 +8602,16 @@ await withApp(async (w, d, T) => {
   select.value = "catppuccin-latte";
   select.dispatchEvent(new w.Event("change", { bubbles: true }));
   const csLatte = w.getComputedStyle(d.documentElement);
-  // Declared as var(--bg-panel) (Latte maps --bg-panel to Base, #eff1f5) —
-  // per the Catppuccin style guide, "On Accent" text = Base, so
-  // --level-*-on/--accent-on reference that var directly rather than a
-  // hardcoded near-white. jsdom's getComputedStyle doesn't resolve nested
-  // var() the way a real browser does (see tests/README.md "Known gaps"),
-  // so this checks the declared value, not the resolved color; Group 83's
-  // Playwright-verified screenshots confirm the real rendered result.
-  assert(csLatte.getPropertyValue("--level-error-on").trim() === "var(--bg-panel)",
-    "Latte (a light-background flavor) points --level-error-on at its own Base color (--bg-panel) instead of a hardcoded near-white, got " + csLatte.getPropertyValue("--level-error-on"));
+  // Declared as var(--bg-app) (Latte maps --bg-app to Base, #eff1f5, per
+  // the style-guide remap — GROUP 84) — per the Catppuccin style guide,
+  // "On Accent" text = Base, so --level-*-on/--accent-on reference that
+  // var directly rather than a hardcoded near-white. jsdom's
+  // getComputedStyle doesn't resolve nested var() the way a real browser
+  // does (see tests/README.md "Known gaps"), so this checks the declared
+  // value, not the resolved color; Group 83's/84's Playwright-verified
+  // screenshots confirm the real rendered result.
+  assert(csLatte.getPropertyValue("--level-error-on").trim() === "var(--bg-app)",
+    "Latte (a light-background flavor) points --level-error-on at its own Base color (--bg-app) instead of a hardcoded near-white, got " + csLatte.getPropertyValue("--level-error-on"));
 });
 
 await withApp(async (w, d, T) => {
@@ -8878,6 +8884,52 @@ await withApp(async (w, d, T) => {
   const cs = w.getComputedStyle(d.documentElement);
   assert(cs.getPropertyValue("--accent").trim() === "#d20f39", "sanity: the dark Red accent is active");
   assert(cs.getPropertyValue("--accent-on").trim() === "#fff", "a low-luminance accent pick flips --accent-on to white instead of staying near-black, got " + cs.getPropertyValue("--accent-on"));
+});
+
+/* ============================================================
+   GROUP 84 — Catppuccin background hierarchy remapped to match the
+   official style guide's "Background Pane"/"Secondary Panes" roles
+   Origin: this session (2026-08-22), person-directed after a style-guide
+   compliance audit flagged the ORIGINAL mapping (kept for consistency
+   with this app's own pre-existing Dark/Light hierarchy — main pane
+   darkest, panel brighter) as inverted relative to the guide's intent
+   (main pane = Base, a brighter tone; secondary/chrome panes = the
+   darker Crust/Mantle). Asked, and told to remap instead of leaving it —
+   see PROJECT.md "Theming" -> "Catppuccin style-guide compliance" for
+   the full token-role table (--bg-app=Base, --bg-panel=Mantle,
+   --bg-elevated=Surface0, --bg-elevated-2=Surface1, --border-soft=
+   Surface2, --border=Overlay0 — same role mapping for all four flavors,
+   including Latte, where Base happens to be the brightest token instead
+   of a dark-flavor middle tone).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("84. Background/border hierarchy: --bg-app (main pane) resolves to Base, brighter than --bg-panel (Mantle) — same role mapping across all four flavors, including inverted-brightness Latte");
+  const mochaExpected = { "bg-app": "#1e1e2e", "bg-panel": "#181825", "bg-elevated": "#313244", "bg-elevated-2": "#45475a", "border-soft": "#585b70", "border": "#6c7086" };
+  const macchiatoExpected = { "bg-app": "#24273a", "bg-panel": "#1e2030", "bg-elevated": "#363a4f", "bg-elevated-2": "#494d64", "border-soft": "#5b6078", "border": "#6e738d" };
+  const frappeExpected = { "bg-app": "#303446", "bg-panel": "#292c3c", "bg-elevated": "#414559", "bg-elevated-2": "#51576d", "border-soft": "#626880", "border": "#737994" };
+  const latteExpected = { "bg-app": "#eff1f5", "bg-panel": "#e6e9ef", "bg-elevated": "#ccd0da", "bg-elevated-2": "#bcc0cc", "border-soft": "#acb0be", "border": "#9ca0b0" };
+
+  [
+    ["catppuccin-mocha", mochaExpected],
+    ["catppuccin-macchiato", macchiatoExpected],
+    ["catppuccin-frappe", frappeExpected],
+    ["catppuccin-latte", latteExpected],
+  ].forEach(([themeId, expected]) => {
+    w.setTheme(themeId);
+    const cs = w.getComputedStyle(d.documentElement);
+    Object.entries(expected).forEach(([key, hex]) => {
+      assert(cs.getPropertyValue("--" + key).trim() === hex, themeId + "'s --" + key + " is " + hex + " per the guide's role mapping, got " + cs.getPropertyValue("--" + key));
+    });
+  });
+
+  // "On Accent" text = Base = --bg-app in this remap, for every flavor
+  // uniformly (previously --bg-elevated for the dark flavors / --bg-panel
+  // for Latte, back when those vars held Base — see 81a's own comment).
+  ["catppuccin-mocha", "catppuccin-macchiato", "catppuccin-frappe", "catppuccin-latte"].forEach(themeId => {
+    w.setTheme(themeId);
+    const cs = w.getComputedStyle(d.documentElement);
+    assert(cs.getPropertyValue("--accent-on").trim() === "var(--bg-app)", themeId + "'s --accent-on points at --bg-app (Base), got " + cs.getPropertyValue("--accent-on"));
+  });
 });
 
 /* ============================================================
@@ -10105,18 +10157,34 @@ process.exit(failed ? 1 : 0);
               compliance audit (checked against the guide fetched fresh,
               not from memory) found "On Accent text = Base" and
               "Selection Background = Overlay 2 @ 20-30%" not followed —
-              fixed by pointing --accent-on/--level-*-on at var(--bg-elevated)
-              or var(--bg-panel) (whichever = Base per flavor) and adding
-              --selection-bg (reusing --level-debug = Overlay 2). Group
-              81a's Latte assertion was updated in place for the new
-              value (checks the declared "var(--bg-panel)" string, not a
-              resolved color — jsdom doesn't resolve nested var(), see that
-              assertion's own comment) and gained a --selection-bg check
-              for Mocha. Three other gaps the same audit found (background-
-              pane brightness hierarchy inverted vs. the guide; Warnings =
-              Peach not Yellow; Info = Blue not Teal) were deliberately
-              NOT changed — flagged for a person decision in PROJECT.md's
-              "Theming" section instead, not silently altered.
+              fixed by pointing --accent-on/--level-*-on at Base (see
+              Group 84 for where that var landed after the background
+              remap below) and adding --selection-bg (reusing
+              --level-debug = Overlay 2). Group 81a's Latte assertion was
+              updated in place for the new value (checks the declared
+              var() reference string, not a resolved color — jsdom
+              doesn't resolve nested var(), see that assertion's own
+              comment) and gained a --selection-bg check for Mocha. Three
+              other gaps the same audit found were left NOT changed at
+              first, flagged for a person decision in PROJECT.md's
+              "Theming" section rather than silently altered — see Group
+              84 for how one of those three was then resolved.
+   Group 84  — this session (2026-08-22), person directly asked (via
+              AskUserQuestion) whether to keep the app's own pre-existing
+              background brightness hierarchy for Catppuccin flavors or
+              remap to the style guide's literal "Background Pane = Base,
+              Secondary Panes = Crust/Mantle" — chose remap. --bg-app/
+              --bg-panel/--bg-elevated/--bg-elevated-2/--border-soft/
+              --border now map to Base/Mantle/Surface0/Surface1/Surface2/
+              Overlay0 (same role assignment for all four flavors,
+              including Latte, whose Base happens to be the brightest
+              token instead of a dark-flavor mid tone) instead of the
+              previous Crust/Mantle/Base/Surface0/Surface1/Surface0
+              ordering that had preserved this app's own Dark/Light
+              hierarchy. --accent-on/--level-*-on simplified to
+              var(--bg-app) uniformly as a result (Base moved there for
+              every flavor). Warnings=Peach and Info=Blue remain
+              deliberately unchanged (not asked about, see PROJECT.md).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
