@@ -1277,7 +1277,7 @@ await withApp(async (w, d, T) => {
    Updated this session (2026-08-22, "configurable themes + Catppuccin"):
    the Light/Dark button pair was replaced by a #settingsThemeSelect
    dropdown (built-in themes now include the four Catppuccin flavors, plus
-   any user-imported custom ones) — see GROUP 81.
+   any user-imported custom ones) — see GROUP 85.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("3. Theme select (now in Settings -> Appearance)");
@@ -8423,7 +8423,7 @@ await withApp(async (w, d, T) => {
   const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
   assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
   const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
-  assert(appearanceRows.length === 3, "Theme + Accent color (hidden on Dark, no highlightPalette — see GROUP 83) + Font size are all rows inside that one card, got " + appearanceRows.length);
+  assert(appearanceRows.length === 3, "Theme + Accent color (hidden on Dark, no highlightPalette — see GROUP 87) + Font size are all rows inside that one card, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
   // Boolean row: rendered as a switch (input + adjacent track element),
@@ -8560,7 +8560,7 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 81 — Configurable themes: Catppuccin flavors + custom JSON
+   GROUP 85 — Configurable themes: Catppuccin flavors + custom JSON
    import/export
    Origin: this session (2026-08-22). Replaces the Light/Dark button pair
    (#settingsThemeLight/#settingsThemeDark, see GROUP 3/70h/70h2's updated
@@ -8569,7 +8569,7 @@ await withApp(async (w, d, T) => {
    plus any user-imported custom ones (localStorage philogg-custom-themes).
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("81a. Built-in theme dropdown includes the four Catppuccin flavors, and picking one applies its CSS vars");
+  section("85a. Built-in theme dropdown includes the four Catppuccin flavors, and picking one applies its CSS vars");
   fireClick(d.querySelector("#btnSettings"), w);
   const select = d.querySelector("#settingsThemeSelect");
   const optionValues = [...select.options].map(o => o.value);
@@ -8583,7 +8583,7 @@ await withApp(async (w, d, T) => {
   select.dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(d.documentElement.getAttribute("data-theme") === "catppuccin-mocha", "picking Catppuccin Mocha sets data-theme");
   const cs = w.getComputedStyle(d.documentElement);
-  // --bg-app = Base per the style-guide remap (GROUP 84) — the main
+  // --bg-app = Base per the style-guide remap (GROUP 88) — the main
   // content pane is the brightest of the "background pane" tier now,
   // not Crust (the darkest), which is what the app's own pre-existing
   // Dark/Light hierarchy would have suggested — see PROJECT.md "Theming".
@@ -8603,19 +8603,19 @@ await withApp(async (w, d, T) => {
   select.dispatchEvent(new w.Event("change", { bubbles: true }));
   const csLatte = w.getComputedStyle(d.documentElement);
   // Declared as var(--bg-app) (Latte maps --bg-app to Base, #eff1f5, per
-  // the style-guide remap — GROUP 84) — per the Catppuccin style guide,
+  // the style-guide remap — GROUP 88) — per the Catppuccin style guide,
   // "On Accent" text = Base, so --level-*-on/--accent-on reference that
   // var directly rather than a hardcoded near-white. jsdom's
   // getComputedStyle doesn't resolve nested var() the way a real browser
   // does (see tests/README.md "Known gaps"), so this checks the declared
-  // value, not the resolved color; Group 83's/84's Playwright-verified
+  // value, not the resolved color; Group 87's/88's Playwright-verified
   // screenshots confirm the real rendered result.
   assert(csLatte.getPropertyValue("--level-error-on").trim() === "var(--bg-app)",
     "Latte (a light-background flavor) points --level-error-on at its own Base color (--bg-app) instead of a hardcoded near-white, got " + csLatte.getPropertyValue("--level-error-on"));
 });
 
 await withApp(async (w, d, T) => {
-  section("81b. Importing a custom theme JSON: validation, storage, activation, dropdown + list rendering");
+  section("85b. Importing a custom theme JSON: validation, storage, activation, dropdown + list rendering");
   fireClick(d.querySelector("#btnSettings"), w);
 
   assert(d.querySelector("#customThemeList .filter-library-empty"), "custom theme list starts empty");
@@ -8683,14 +8683,14 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("81c. A stale/deleted custom theme id in localStorage falls back to dark on boot instead of leaving data-theme dangling");
+  section("85c. A stale/deleted custom theme id in localStorage falls back to dark on boot instead of leaving data-theme dangling");
   w.localStorage.setItem("philogg-theme", "custom:does-not-exist");
   w.initTheme();
   assert(d.documentElement.getAttribute("data-theme") === "dark", "resolveThemeId falls back to dark for an unknown theme id, got " + d.documentElement.getAttribute("data-theme"));
 });
 
 /* ============================================================
-   GROUP 82 — Theme consistency audit: no more hardcoded UI colors, and a
+   GROUP 86 — Theme consistency audit: no more hardcoded UI colors, and a
    theme-aware "Theme" mode for the highlight-color picker
    Origin: this session (2026-08-22), person-requested follow-up ("Prüfe
    noch mal auf der Website, welche Farbe für was verwendet wird und ob Du
@@ -8710,7 +8710,7 @@ await withApp(async (w, d, T) => {
    belong to the current theme when that mode is on.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("82a. Stylesheet audit: the specific hardcoded hex values found in the audit are gone from the button/badge/row rules that used to hardcode them");
+  section("86a. Stylesheet audit: the specific hardcoded hex values found in the audit are gone from the button/badge/row rules that used to hardcode them");
   const css = d.querySelector("style").textContent;
   // Each of these literals used to appear in a rule OUTSIDE the :root/
   // [data-theme] variable-definition blocks — i.e. hardcoded into a
@@ -8740,7 +8740,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("82b. Highlight-color picker: Free (default) vs Theme mode");
+  section("86b. Highlight-color picker: Free (default) vs Theme mode");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const node = w.createFilterNode(f.id, "text", "msg");
   w.render();
@@ -8787,7 +8787,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("82c. Highlight-color picker mode is restored on init, same as the theme choice itself");
+  section("86c. Highlight-color picker mode is restored on init, same as the theme choice itself");
   w.localStorage.setItem("philogg-cp-mode", "theme");
   w.setColorPickerMode(w.localStorage.getItem("philogg-cp-mode"));
   assert(T.colorPickerMode === "theme", "setColorPickerMode re-applies a persisted mode, same pattern initTheme() uses for the theme itself");
@@ -8796,17 +8796,17 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 83 — Accent color: re-pick the app's OWN accent (buttons, the
+   GROUP 87 — Accent color: re-pick the app's OWN accent (buttons, the
    breadcrumb, the minimap's range highlight) from the active theme's
    own palette
-   Origin: this session (2026-08-22), same-day clarification of the 82
+   Origin: this session (2026-08-22), same-day clarification of the 86
    request — "Highlightfarbe" there meant the app's accent/selection color
    itself ("Highlightfarbe auf den Buttons oder die Markierung auf der
    Minimap für die Zeitabschnitte"), not the per-filter-node highlight
-   color Group 82 covers (a different, unrelated feature that stays as-is).
+   color Group 86 covers (a different, unrelated feature that stays as-is).
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("83a. Accent-color row: hidden for a theme with no highlightPalette, shown with swatches for one that has it");
+  section("87a. Accent-color row: hidden for a theme with no highlightPalette, shown with swatches for one that has it");
   fireClick(d.querySelector("#btnSettings"), w);
   const row = d.querySelector("#settingsAccentRow");
   const picker = d.querySelector("#settingsAccentPicker");
@@ -8829,7 +8829,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("83b. Picking an accent swatch recolors --accent/-strong/-soft/-on together, persists PER THEME, and survives switching away and back");
+  section("87b. Picking an accent swatch recolors --accent/-strong/-soft/-on together, persists PER THEME, and survives switching away and back");
   fireClick(d.querySelector("#btnSettings"), w);
   const select = d.querySelector("#settingsThemeSelect");
   select.value = "catppuccin-mocha";
@@ -8876,7 +8876,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("83c. A dark, low-luminance accent pick flips --accent-on to white (contrast safety net)");
+  section("87c. A dark, low-luminance accent pick flips --accent-on to white (contrast safety net)");
   w.setTheme("catppuccin-latte");
   // Latte's Red (#d20f39) is in its highlightPalette and dark/saturated
   // enough that the default near-black --accent-on would be unreadable.
@@ -8887,7 +8887,7 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 84 — Catppuccin background hierarchy remapped to match the
+   GROUP 88 — Catppuccin background hierarchy remapped to match the
    official style guide's "Background Pane"/"Secondary Panes" roles
    Origin: this session (2026-08-22), person-directed after a style-guide
    compliance audit flagged the ORIGINAL mapping (kept for consistency
@@ -8903,7 +8903,7 @@ await withApp(async (w, d, T) => {
    of a dark-flavor middle tone).
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("84. Background/border hierarchy: --bg-app (main pane) resolves to Base, brighter than --bg-panel (Mantle) — same role mapping across all four flavors, including inverted-brightness Latte");
+  section("88. Background/border hierarchy: --bg-app (main pane) resolves to Base, brighter than --bg-panel (Mantle) — same role mapping across all four flavors, including inverted-brightness Latte");
   const mochaExpected = { "bg-app": "#1e1e2e", "bg-panel": "#181825", "bg-elevated": "#313244", "bg-elevated-2": "#45475a", "border-soft": "#585b70", "border": "#6c7086" };
   const macchiatoExpected = { "bg-app": "#24273a", "bg-panel": "#1e2030", "bg-elevated": "#363a4f", "bg-elevated-2": "#494d64", "border-soft": "#5b6078", "border": "#6e738d" };
   const frappeExpected = { "bg-app": "#303446", "bg-panel": "#292c3c", "bg-elevated": "#414559", "bg-elevated-2": "#51576d", "border-soft": "#626880", "border": "#737994" };
@@ -8924,12 +8924,166 @@ await withApp(async (w, d, T) => {
 
   // "On Accent" text = Base = --bg-app in this remap, for every flavor
   // uniformly (previously --bg-elevated for the dark flavors / --bg-panel
-  // for Latte, back when those vars held Base — see 81a's own comment).
+  // for Latte, back when those vars held Base — see 85a's own comment).
   ["catppuccin-mocha", "catppuccin-macchiato", "catppuccin-frappe", "catppuccin-latte"].forEach(themeId => {
     w.setTheme(themeId);
     const cs = w.getComputedStyle(d.documentElement);
     assert(cs.getPropertyValue("--accent-on").trim() === "var(--bg-app)", themeId + "'s --accent-on points at --bg-app (Base), got " + cs.getPropertyValue("--accent-on"));
   });
+});
+
+/* ============================================================
+   GROUP 81 — Wildcard placeholder value conditions
+   Origin: this session (2026-08-22), person-requested (FEATURE_BACKLOG.md
+   item 5, implemented differently than originally scoped there — a numeric
+   condition folded INTO the existing [value:...] wildcard token instead of
+   a separate filter type, and working through the existing filter/extract
+   paths only, per the person's explicit instructions). Syntax:
+   [value:float>=10] (single condition) or [value:int<20,>10] (","-separated
+   conditions AND-ed together). A same-day follow-up (person asked "hältst
+   du den [Syntax] für sinnvoll... und ich glaube es würde Sinn machen, auch
+   absolut mit reinzunehmen") swapped the separator from the originally
+   shipped ";" to "," (more conventional) and added an absolute-value
+   variant: a "|" prefix on the operator compares |value| instead of value,
+   e.g. [value:float|>=10] matches both 10 and -15. Conditions are parsed by
+   compileExtractPattern onto each column as `.conditions: [{op, value,
+   abs?}]` (float/int only — a condition on time/word/hex makes the whole
+   pattern invalid, same "Invalid pattern" feedback path as a malformed
+   regex) and checked post-match by the shared wildcardMatch() primitive,
+   reused by extraction (getEntries' "extract" branch), a plain "text"
+   filter carrying wildcard tokens (the "Add filter" path), and the filter
+   popup's live-match count/pattern preview — so all four surfaces agree on
+   what a conditioned placeholder matches. No new filter-node field: the
+   condition lives inside the existing `value` pattern string, so every
+   persistence carrier already threads it through untouched (CLAUDE.md's
+   "Known gotchas" note doesn't apply here).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("81. Wildcard placeholder value conditions ([value:float>=10] etc.)");
+  // message 0 score=0 .. message 19 score=19
+  const log = makeLog(0, 20, { suffix: i => "score=" + i });
+  const f = await w.addFile("a.log", log, () => {});
+  w.render();
+  T.state.activeId = f.id;
+
+  /* ---------- compileExtractPattern: parsing ---------- */
+  const spec1 = w.compileExtractPattern("score=[value:int>=10]");
+  assert(spec1 && spec1.columns.length === 1, "single-condition pattern compiles");
+  assert(JSON.stringify(spec1.columns[0].conditions) === JSON.stringify([{ op: ">=", value: 10 }]),
+    "parses a single >= condition, got " + JSON.stringify(spec1 && spec1.columns[0].conditions));
+
+  const spec2 = w.compileExtractPattern("score=[value:int<15,>=10]");
+  assert(spec2 && spec2.columns[0].conditions && spec2.columns[0].conditions.length === 2,
+    "parses two ','-separated conditions, got " + JSON.stringify(spec2 && spec2.columns[0].conditions));
+  assert(spec2.columns[0].conditions[0].op === "<" && spec2.columns[0].conditions[0].value === 15, "first condition parsed in order");
+  assert(spec2.columns[0].conditions[1].op === ">=" && spec2.columns[0].conditions[1].value === 10, "second condition parsed in order");
+  assert(!spec2.columns[0].conditions[0].abs && !spec2.columns[0].conditions[1].abs, "plain conditions carry no .abs flag");
+
+  const specPlain = w.compileExtractPattern("score=[value:int]");
+  assert(specPlain.columns[0].conditions === undefined, "a bare placeholder (no condition) still has no .conditions field — backward compatible");
+
+  assert(w.compileExtractPattern("id=[value:word>=10]") === null, "a condition on a non-numeric type (word) makes the whole pattern invalid");
+  assert(w.compileExtractPattern("t=[value:time>=10]") === null, "same rejection for time");
+  assert(w.compileExtractPattern("h=[value:hex>=10]") === null, "same rejection for hex");
+
+  /* ---------- absolute-value conditions: a "|" prefix on the operator ---------- */
+  const specAbs = w.compileExtractPattern("d=[value:int|>=10]");
+  assert(specAbs && specAbs.columns[0].conditions.length === 1 && specAbs.columns[0].conditions[0].abs === true,
+    "a '|' prefix on the operator sets .abs on the condition, got " + JSON.stringify(specAbs && specAbs.columns[0].conditions));
+  assert(specAbs.columns[0].conditions[0].op === ">=" && specAbs.columns[0].conditions[0].value === 10, "the operator/value themselves parse the same regardless of the abs prefix");
+
+  const specAbsMixed = w.compileExtractPattern("d=[value:int|>10,<=100]");
+  assert(specAbsMixed.columns[0].conditions[0].abs === true && !specAbsMixed.columns[0].conditions[1].abs,
+    "abs applies per-condition — a mix of abs and plain conditions in one placeholder parses correctly, got " + JSON.stringify(specAbsMixed.columns[0].conditions));
+
+  /* ---------- extraction: only rows satisfying the condition are kept ---------- */
+  const geNode = w.createFilterNode(f.id, "extract", "score=[value:int>=10]");
+  assert(w.getEntries(geNode.id).length === 10, "extract >=10 keeps rows 10..19, got " + w.getEntries(geNode.id).length);
+
+  const rangeNode = w.createFilterNode(f.id, "extract", "score=[value:int<15,>=10]");
+  const rangeEntries = w.getEntries(rangeNode.id);
+  assert(rangeEntries.length === 5, "combined </>= condition keeps only rows 10..14, got " + rangeEntries.length);
+  assert(rangeEntries.every(e => { const v = +e.message.match(/score=(\d+)/)[1]; return v >= 10 && v < 15; }),
+    "sanity: every kept row's score is actually in [10,15)");
+
+  /* ---------- absolute-value matching against real signed data ---------- */
+  const deltaLog = [-20, -5, 0, 5, 20]
+    .map((v, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"delta=${v}"`)
+    .join("\n") + "\n";
+  const fd = await w.addFile("d.log", deltaLog, () => {});
+  const absNode = w.createFilterNode(fd.id, "extract", "delta=[value:int|>=10]");
+  const absEntries = w.getEntries(absNode.id);
+  assert(absEntries.length === 2, "|value|>=10 matches both -20 and 20 (not the three values inside [-10,10]), got " + absEntries.length);
+  assert(absEntries.every(e => Math.abs(+e.message.match(/delta=(-?\d+)/)[1]) >= 10), "sanity: every kept row's |delta| is actually >= 10");
+  const nonAbsNode = w.createFilterNode(fd.id, "extract", "delta=[value:int>=10]");
+  assert(w.getEntries(nonAbsNode.id).length === 1, "the same threshold WITHOUT the abs prefix only matches +20 (plain >=10), got " + w.getEntries(nonAbsNode.id).length);
+
+  /* ---------- a plain "text" filter carrying a conditioned wildcard token (the "Add filter" path) respects it too ---------- */
+  const textNode = w.createFilterNode(f.id, "text", "score=[value:int>=10]");
+  assert(w.getEntries(textNode.id).length === 10, "a plain text filter with a conditioned wildcard token matches the same 10 rows");
+
+  /* ---------- table rendering: header badge + every rendered row honors the condition ---------- */
+  T.state.activeId = rangeNode.id;
+  w.render();
+  const headerType = d.querySelector('#extractHead th[data-col="0"] .extract-col-type').textContent;
+  assert(headerType.includes("int") && headerType.includes("<15") && headerType.includes("≥10"),
+    "extraction table header shows the condition next to the type, got " + JSON.stringify(headerType));
+  assert(T.extractRowsData.length === 5 && T.extractRowsData.every(r => { const v = +r.values[0]; return v >= 10 && v < 15; }),
+    "every row actually rendered into the table satisfies the condition");
+
+  /* ---------- post-creation pattern view chip shows the condition too ---------- */
+  const chipText = d.querySelector("#extractPatternView .pattern-chip").textContent;
+  assert(chipText.includes("int") && chipText.includes("<15") && chipText.includes("≥10"),
+    "the pattern-view chip above the table shows the condition alongside the type, got " + JSON.stringify(chipText));
+
+  /* ---------- table header visualizes an abs condition with a leading "|" ---------- */
+  T.state.activeId = absNode.id;
+  w.render();
+  const absHeaderType = d.querySelector('#extractHead th[data-col="0"] .extract-col-type').textContent;
+  assert(absHeaderType.includes("|≥10"), "an abs condition's header badge is prefixed with '|', got " + JSON.stringify(absHeaderType));
+
+  /* ---------- filter popup: live-match count reflects the condition ---------- */
+  T.state.activeId = f.id;
+  w.render();
+  w.openFilterPopup();
+  const filterInput = d.querySelector("#filterInput");
+  filterInput.value = "score=[value:int>=15]";
+  fireInput(filterInput, w);
+  await new Promise(r => setTimeout(r, 200));
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 of 20"),
+    "live-match count only counts rows satisfying the condition (15..19), got " + d.querySelector("#filterLiveMatch").textContent);
+
+  /* ---------- pattern preview: the sample match is one where the condition actually holds, and shows a visible condition badge ---------- */
+  const preview = d.querySelector("#filterPatternPreview");
+  const span = preview.querySelector(".preview-value-span");
+  assert(span && span.textContent === "15",
+    "the preview picks the first entry satisfying the CONDITION (score=15), not just the first structural regex match (score=0), got " + (span && span.textContent));
+  const condBadge = preview.querySelector(".preview-value-cond");
+  assert(condBadge && condBadge.textContent === "≥15", "the preview shows a visible badge with the condition, got " + (condBadge && condBadge.textContent));
+
+  // An unsatisfiable condition (no row has score >= 1000) shows the
+  // "no matching sample" state, same as a pattern that structurally never matches.
+  filterInput.value = "score=[value:int>=1000]";
+  fireInput(filterInput, w);
+  await new Promise(r => setTimeout(r, 200));
+  assert(preview.classList.contains("preview-empty") && preview.textContent.includes("No matching sample"),
+    "an unsatisfiable condition falls back to the 'no matching sample' preview state, not a structural-only match");
+  w.closeFilterPopup();
+
+  /* ---------- pattern preview against signed data: abs badge + a NEGATIVE sample ---------- */
+  T.state.activeId = fd.id;
+  w.render();
+  w.openFilterPopup();
+  const filterInput2 = d.querySelector("#filterInput");
+  filterInput2.value = "delta=[value:int|>=10]";
+  fireInput(filterInput2, w);
+  await new Promise(r => setTimeout(r, 200));
+  const absSpan = preview.querySelector(".preview-value-span");
+  assert(absSpan && absSpan.textContent === "-20",
+    "the preview's first sample for an abs condition can be a NEGATIVE value (-20, the first entry in log order satisfying |delta|>=10), got " + (absSpan && absSpan.textContent));
+  const absCondBadge = preview.querySelector(".preview-value-cond");
+  assert(absCondBadge && absCondBadge.textContent === "|≥10", "the preview's condition badge is prefixed with '|' for an abs condition, got " + (absCondBadge && absCondBadge.textContent));
+  w.closeFilterPopup();
 });
 
 /* ============================================================
@@ -8952,7 +9106,7 @@ process.exit(failed ? 1 : 0);
    Group  1  — initial build (pre-dates project memory)
    Group  2  — 765d68a9 (extraction workflow: live match, token chips)
    Group  3  — 765d68a9 (theme toggle); updated 2026-08-22 for the
-              select-dropdown theme control (see Group 81)
+              select-dropdown theme control (see Group 85)
    Group  4  — 765d68a9 (sortable headers, status strip, severity bar)
               + 32e282b4 follow-up (level filter now updates BOTH views)
    Group  5  — 765d68a9 (extraction column sort + cell-selection regression)
@@ -10103,7 +10257,7 @@ process.exit(failed ? 1 : 0);
               Ctrl+B/Ctrl+J, resizer double-click, localStorage-persisted
               collapsed flag (display-preference tier, same as theme/font
               scale) restored on init.
-   Group 81  — this session (2026-08-22), "configurable themes +
+   Group 85  — this session (2026-08-22), "configurable themes +
               Catppuccin": the Light/Dark button pair became a
               #settingsThemeSelect dropdown covering six built-in themes
               (dark, light, Catppuccin Latte/Frappé/Macchiato/Mocha, each a
@@ -10117,7 +10271,7 @@ process.exit(failed ? 1 : 0);
               70h2 (originally the Light/Dark button pair) were updated in
               place for the new dropdown rather than left testing removed
               buttons.
-   Group 82  — this session (2026-08-22), same-day follow-up ("Prüfe, ob
+   Group 86  — this session (2026-08-22), same-day follow-up ("Prüfe, ob
               konsequent umgesetzt... Highlightfarbe... auf die im Theme
               festgelegten Farben freigegeben"): an audit of the stylesheet
               found ~18 rules (scrollbar thumb, toolbar button hover
@@ -10126,7 +10280,7 @@ process.exit(failed ? 1 : 0);
               still hardcoding DARK theme's own hex/rgba values instead of
               the var every sibling rule used — fixed with new --accent-on/
               --border-hover vars and color-mix(var(--x), transparent) for
-              the alpha-tinted ones. 82a is a static text-content regression
+              the alpha-tinted ones. 86a is a static text-content regression
               guard against those specific literals reappearing (jsdom can't
               resolve color-mix() to a computed color, so it checks the raw
               CSS text instead). Separately, the highlight-color picker
@@ -10137,30 +10291,30 @@ process.exit(failed ? 1 : 0);
               Catppuccin accent colors per flavor, on each BUILTIN_THEMES
               entry; optional on a custom theme's JSON) instead of the
               generic HIGHLIGHT_PRESETS, falling back to HIGHLIGHT_PRESETS
-              for Dark/Light or a custom theme without one. 82b/82c.
-   Group 83  — this session (2026-08-22), same-day clarification: what "82"
+              for Dark/Light or a custom theme without one. 86b/86c.
+   Group 87  — this session (2026-08-22), same-day clarification: what "86"
               called "Highlightfarbe" actually meant the app's OWN accent/
               selection color (buttons, breadcrumb, the minimap's time-span
               highlight — all already var(--accent...)-driven per the
               audit) re-pickable from the theme's own palette, not the
-              per-filter-node picker Group 82 built (which stays, separate
+              per-filter-node picker Group 86 built (which stays, separate
               feature). New "Accent color" row in Settings -> Appearance
               (themeOwnPalette(), no HIGHLIGHT_PRESETS fallback — hidden
               entirely for Dark/Light or a palette-less custom theme, see
-              83a), setAccentChoice()/applyAccentChoice() recompute
+              87a), setAccentChoice()/applyAccentChoice() recompute
               --accent-strong/-soft/-on together via JS (mixHex toward
               white on dark flavors / black on Latte, luminance check for
               -on), persisted PER THEME in localStorage
-              philogg-accent-choice (83b) with a contrast safety net for a
-              dark/saturated pick like Latte's Red (83c).
+              philogg-accent-choice (87b) with a contrast safety net for a
+              dark/saturated pick like Latte's Red (87c).
               Same-day follow-up, no new group: a Catppuccin style-guide
               compliance audit (checked against the guide fetched fresh,
               not from memory) found "On Accent text = Base" and
               "Selection Background = Overlay 2 @ 20-30%" not followed —
               fixed by pointing --accent-on/--level-*-on at Base (see
-              Group 84 for where that var landed after the background
+              Group 88 for where that var landed after the background
               remap below) and adding --selection-bg (reusing
-              --level-debug = Overlay 2). Group 81a's Latte assertion was
+              --level-debug = Overlay 2). Group 85a's Latte assertion was
               updated in place for the new value (checks the declared
               var() reference string, not a resolved color — jsdom
               doesn't resolve nested var(), see that assertion's own
@@ -10168,8 +10322,8 @@ process.exit(failed ? 1 : 0);
               other gaps the same audit found were left NOT changed at
               first, flagged for a person decision in PROJECT.md's
               "Theming" section rather than silently altered — see Group
-              84 for how one of those three was then resolved.
-   Group 84  — this session (2026-08-22), person directly asked (via
+              88 for how one of those three was then resolved.
+   Group 88  — this session (2026-08-22), person directly asked (via
               AskUserQuestion) whether to keep the app's own pre-existing
               background brightness hierarchy for Catppuccin flavors or
               remap to the style guide's literal "Background Pane = Base,
@@ -10185,6 +10339,21 @@ process.exit(failed ? 1 : 0);
               var(--bg-app) uniformly as a result (Base moved there for
               every flavor). Warnings=Peach and Info=Blue remain
               deliberately unchanged (not asked about, see PROJECT.md).
+   Group 81  — this session (2026-08-22), person-requested (FEATURE_BACKLOG.md
+              item 5, implemented differently than scoped there): numeric
+              conditions inside a [value:float]/[value:int] wildcard token
+              ([value:float>=10], [value:int<20,>10]), working through the
+              existing filter/extract paths only — compileExtractPattern
+              parsing, extraction + wildcard-as-text-filter matching, the
+              extraction table header/pattern-view chip visualization, and
+              the filter popup's live-match count + pattern preview (which
+              now picks a sample that satisfies the condition, not just a
+              structural regex match). EXTENDED same session, same-day
+              follow-up: separator changed from ";" to "," (person-requested,
+              more conventional), and a "|" operator prefix added for
+              absolute-value conditions ([value:float|>=10] matches both 10
+              and -15) — same group, not a new one, since it's the same
+              feature surface being refined, not a separate concern.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

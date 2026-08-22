@@ -9,7 +9,7 @@ item, leave its number retired rather than reusing it.
 2. **Bugfix**: view sometimes doesn't refresh when a new filter is created. Needs repro/root cause.
 3. ~~**Pluggable parser logic**~~ — done (2026-08-21): Settings → Format Manager, configurable log formats (conversion-pattern or regex, both compiling to the same fixed entry schema) mapped to files via filename glob rules. See `PROJECT.md`'s "The log formats it parses" and "Status / changelog".
 4. **Sortable columns** in the entry table.
-5. **Numeric greater/less-than filter** without requiring value extraction first.
+5. ~~**Numeric greater/less-than filter** without requiring value extraction first.~~ — done differently than scoped (2026-08-22): rather than a separate filter type, `[value:float]`/`[value:int]` wildcard tokens now accept an inline condition, e.g. `[value:float>=10]` or `[value:int<20,>10]` (`,`-separated conditions AND-ed together), and work through the existing filter/extract wildcard paths. A same-day follow-up added absolute-value conditions — a `|` prefix on the operator, e.g. `[value:float|>=10]`, compares `|value|` instead of `value`. See `PROJECT.md`'s "Value-extraction pattern language" → "Value conditions".
 6. **Dedup check on "Load filter…" / session import** — prevents duplicate branches when the same filter (tree) is loaded/imported again.
 7. **Warn/migrate when an extraction pattern edit shifts columns** — assertions and ignored-columns are index-based and silently point at the wrong column otherwise.
 8. **Optional tail auto-follow for the Highlight view** — currently deliberately static while the Filter view follows tailed entries; revisit if live-tailing workflows want it too.
