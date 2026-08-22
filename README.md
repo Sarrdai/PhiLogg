@@ -71,8 +71,9 @@ open it in a browser to view it.
   40px rail or the detail panel to its header, via the chevron,
   `Ctrl+B`/`Ctrl+J`, or double-clicking the resizer. Hovering either while
   collapsed peeks it back open (sized to its content, up to half the
-  window), without losing your place — toggle this off in Settings →
-  Behavior if you'd rather only expand them by clicking.
+  window, looking exactly like the expanded panel), without losing your
+  place — two independent Settings → Behavior toggles let you turn this
+  off per panel if you'd rather only expand one or both by clicking.
 
 See [`homepage/index.html`](homepage/index.html) for the full, illustrated
 feature list, and `PROJECT.md` for how each of these actually works
