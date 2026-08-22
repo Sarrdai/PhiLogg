@@ -1165,12 +1165,25 @@
   #detailPanel{
     flex:0 0 auto; height:190px; min-height:80px; position:relative;
     background:var(--bg-panel); border-top:1px solid var(--border);
+    /* flex-direction:column (not display:flex — that's set as an inline
+       style from JS, "flex"/"none", to show/hide the whole panel based on
+       whether any file is loaded; see renderMainView/renderTable). Without
+       this, #detailPanel falls back to flex-direction's initial value
+       (row) whenever that inline style is "flex", which turns
+       #detailPanelInner below into a ROW flex item that shrinks to its
+       content width instead of stretching to fill — the "Entry Detail bar
+       doesn't reach the right edge" bug caught by screenshot review this
+       session. */
+    display:flex; flex-direction:column;
   }
   /* #detailPanelInner carries the actual header+body flex layout (moved off
      #detailPanel itself so the SAME wrapper — header, then body below it,
      exactly the expanded look — can be swapped between sitting normally in
      #detailPanel's own box and, while peeking, floating above it as one
-     unit; see the peeking rule below). */
+     unit; see the peeking rule below). No explicit width: as a column-flex
+     item it stretches to fill #detailPanel's cross-axis (width) via the
+     default align-items:stretch, same mechanism #detailPanel itself relies
+     on to fill #content's width as one of ITS flex items. */
   #detailPanelInner{display:flex; flex-direction:column; height:100%; min-height:0;}
   /* Collapsed height (34px, matching #sidebarHeader's rail height) is set
      directly on #detailPanel.style.height from JS (toggleDetailCollapsed),
