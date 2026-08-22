@@ -1915,8 +1915,8 @@
             <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [value:float]" autocomplete="off">
             <div id="filterTokenChips" class="filter-token-chips">
               <span class="filter-section-label">Insert:</span>
-              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [value:float>=10] or [value:float&lt;20;>10]">[float]</button>
-              <button type="button" class="token-chip" data-token="int" title="Add a condition manually, e.g. [value:int>=10] or [value:int&lt;20;>10]">[int]</button>
+              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [value:float>=10], [value:float&lt;20,>10], or [value:float|>=10] for |value|>=10">[float]</button>
+              <button type="button" class="token-chip" data-token="int" title="Add a condition manually, e.g. [value:int>=10], [value:int&lt;20,>10], or [value:int|>=10] for |value|>=10">[int]</button>
               <button type="button" class="token-chip" data-token="time">[time]</button>
               <button type="button" class="token-chip" data-token="word">[word]</button>
               <button type="button" class="token-chip" data-token="hex">[hex]</button>
@@ -3521,13 +3521,16 @@ async function addFile(name, text, onProgress, formatIdOverride) {
 
    float/int placeholders may additionally carry one or more numeric
    conditions right inside the brackets, e.g. [value:float>=10] or
-   [value:int<20;>10] (";"-separated conditions are AND-ed together). These
-   don't change the capturing regex itself (a comparison isn't expressible
-   as a regex quantifier) — compileExtractPattern parses them onto each
-   column as `conditions`, and valueSatisfiesConditions()/wildcardMatch()
-   below apply them as a post-match numeric check, on top of the structural
-   regex match, everywhere a wildcard pattern is tested against an entry
-   (extraction, and a plain "text" filter whose value contains tokens).
+   [value:int<20,>10] (","-separated conditions are AND-ed together). A
+   condition's operator can be prefixed with "|" to compare against the
+   captured value's ABSOLUTE value instead, e.g. [value:float|>=10] matches
+   10 and -15 alike (|value| >= 10). These don't change the capturing regex
+   itself (a comparison isn't expressible as a regex quantifier) —
+   compileExtractPattern parses them onto each column as `conditions`, and
+   valueSatisfiesConditions()/wildcardMatch() below apply them as a
+   post-match numeric check, on top of the structural regex match,
+   everywhere a wildcard pattern is tested against an entry (extraction, and
+   a plain "text" filter whose value contains tokens).
 */
 const EXTRACT_TYPES = {
   float: '[-+]?(?:\\d+\\.\\d+|\\.\\d+|\\d+)',
@@ -3540,11 +3543,22 @@ const EXTRACT_TYPES = {
 
 // Only float/int carry a natural numeric ordering for conditions (time/word/hex
 // don't — see compileExtractPattern's rejection of conditions on those types).
+// VALUE_CONDITION_ONE (one condition, e.g. "|>=10") is the single source for
+// "what one condition looks like", shared by EXTRACT_TOKEN_RE (which only
+// needs to recognize the whole conditions substring as part of a token) and
+// VALUE_CONDITION_RE (which re-parses that substring into individual
+// conditions in parseValueConditions) — kept in sync by construction rather
+// than duplicated as two separate regex literals.
 const VALUE_CONDITION_TYPES = new Set(["float", "int"]);
 const VALUE_CONDITION_NUM = '-?(?:\\d+\\.\\d+|\\.\\d+|\\d+)';
-const VALUE_CONDITION_RE = new RegExp('(>=|<=|==|>|<)(' + VALUE_CONDITION_NUM + ')', 'g');
+const VALUE_CONDITION_OP = '(?:>=|<=|==|>|<)';
+const VALUE_CONDITION_ONE = '\\|?' + VALUE_CONDITION_OP + VALUE_CONDITION_NUM;
+const VALUE_CONDITION_RE = new RegExp('(\\|?)(' + VALUE_CONDITION_OP + ')(' + VALUE_CONDITION_NUM + ')', 'g');
 
-const EXTRACT_TOKEN_RE = /\[(?:value:(float|int|time|word|hex)((?:(?:>=|<=|==|>|<)-?(?:\d+\.\d+|\.\d+|\d+))(?:;(?:>=|<=|==|>|<)-?(?:\d+\.\d+|\.\d+|\d+))*)?|(\*))\]/g;
+const EXTRACT_TOKEN_RE = new RegExp(
+  '\\[(?:value:(float|int|time|word|hex)((?:' + VALUE_CONDITION_ONE + ')(?:,(?:' + VALUE_CONDITION_ONE + '))*)?|(\\*))\\]',
+  'g'
+);
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -3557,46 +3571,53 @@ function isExtractPattern(pattern) {
   return EXTRACT_TOKEN_RE.test(pattern);
 }
 
-// Parses a placeholder's raw condition string (e.g. "<20;>10", from the
-// EXTRACT_TOKEN_RE match's own condition group) into [{op, value}, ...].
-// Returns undefined for no conditions, matching how "no conditions" is
-// represented everywhere else (column.conditions simply absent).
+// Parses a placeholder's raw condition string (e.g. "<20,>10" or
+// "|>=10,|<=100" for an absolute-value pair, from the EXTRACT_TOKEN_RE
+// match's own condition group) into [{op, value, abs?}, ...]. Returns
+// undefined for no conditions, matching how "no conditions" is represented
+// everywhere else (column.conditions simply absent).
 function parseValueConditions(condStr) {
   if (!condStr) return undefined;
   VALUE_CONDITION_RE.lastIndex = 0;
   const conditions = [];
   let mm;
   while ((mm = VALUE_CONDITION_RE.exec(condStr)) !== null) {
-    conditions.push({ op: mm[1], value: parseFloat(mm[2]) });
+    const cond = { op: mm[2], value: parseFloat(mm[3]) };
+    if (mm[1]) cond.abs = true; // leading "|" — compare against |value| instead of value
+    conditions.push(cond);
   }
   return conditions.length ? conditions : undefined;
 }
 
 // Compact human-readable label for a column's conditions, e.g. "≥10" or
-// "<20 ∧ >10" — used by every place that visualizes a value placeholder
-// (the filter popup's live pattern preview, the post-creation pattern
-// view, and the extraction table's column headers).
+// "<20 ∧ >10" or "|≥10" for an absolute-value condition — used by every
+// place that visualizes a value placeholder (the filter popup's live
+// pattern preview, the post-creation pattern view, and the extraction
+// table's column headers).
 const VALUE_CONDITION_SYMBOLS = { ">=": "≥", "<=": "≤", "==": "=", ">": ">", "<": "<" };
 function describeValueConditions(conditions) {
   if (!conditions || !conditions.length) return "";
-  return conditions.map(c => VALUE_CONDITION_SYMBOLS[c.op] + c.value).join(" ∧ ");
+  return conditions.map(c => (c.abs ? "|" : "") + VALUE_CONDITION_SYMBOLS[c.op] + c.value).join(" ∧ ");
 }
 
 // Does a single captured raw substring (e.g. "12.5") satisfy a column's
 // conditions? No conditions = always true. A capture that doesn't parse as
 // a number (shouldn't happen for float/int, the only types conditions are
 // allowed on) fails every condition rather than being treated as a match.
+// An `abs` condition compares |value| instead of value (e.g. [value:float|>=10]
+// matches both 10 and -15).
 function valueSatisfiesConditions(rawStr, conditions) {
   if (!conditions) return true;
   const num = parseFloat(rawStr);
   if (Number.isNaN(num)) return false;
   return conditions.every(c => {
+    const v = c.abs ? Math.abs(num) : num;
     switch (c.op) {
-      case ">=": return num >= c.value;
-      case "<=": return num <= c.value;
-      case ">": return num > c.value;
-      case "<": return num < c.value;
-      case "==": return num === c.value;
+      case ">=": return v >= c.value;
+      case "<=": return v <= c.value;
+      case ">": return v > c.value;
+      case "<": return v < c.value;
+      case "==": return v === c.value;
       default: return true;
     }
   });
