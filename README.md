@@ -61,9 +61,12 @@ open it in a browser to view it.
   additional formats (a log4net/LogViewPlus-style pattern, or a raw regex
   for edge cases) and map them to files by filename pattern; the default
   format still works with zero configuration.
-- **Light & dark theme, configurable font size**, resizable/toggleable
-  columns, multiline message display, multi-row select + copy, and a
-  horizontal scrollbar in the Filter view for reading long messages in full.
+- **Configurable themes** (Settings → Appearance) — Dark, Light, four
+  Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
+  JSON (download a template, fill in your colors, import it back).
+  Configurable font size, resizable/toggleable columns, multiline message
+  display, multi-row select + copy, and a horizontal scrollbar in the Filter
+  view for reading long messages in full.
 - **Collapsible sidebar & detail panel** — collapse the file tree to a
   40px rail (hover to peek the full tree without losing your place) or the
   detail panel to its header, via the chevron, `Ctrl+B`/`Ctrl+J`, or

@@ -29,13 +29,53 @@
     --level-trace:#5b6479;
     --level-trace-soft:rgba(91,100,121,.08);
     --warn:#e8a94a;
+    /* Text color for the four ACTIVE level-quick-filter buttons (see
+       .level-btn.active.lvl-* below) — sits on top of the level color
+       itself, so it needs to flip per-theme rather than being a fixed
+       shade. Themeable like every other var here: see THEME_COLOR_KEYS /
+       THEME_ON_KEYS and applyTheme() in the Theme script section. */
+    --level-error-on:#2a0a0a;
+    --level-warn-on:#2a1c04;
+    --level-info-on:#04122a;
+    --level-debug-on:#0d1016;
+    /* Text color for anything sitting on a solid var(--accent) surface
+       (brand mark, Save button, active chips/badges) — same reasoning as
+       the --level-*-on vars above, split out from a hardcoded near-black
+       so a custom theme with a dark accent can flip it via activeTextLight.
+       Every BUILT-IN theme's --accent stays bright/mid-bright by design
+       (verified across all six — see Theming in PROJECT.md), so none of
+       them override this; it's here for custom themes' safety net. */
+    --accent-on:#08201f;
+    /* A hover-state border, one step more prominent than --border — derived
+       from --border/--text-tertiary via color-mix() rather than given its
+       own value per theme, so it automatically follows whichever theme is
+       active (including a custom one's inline-applied vars) with no extra
+       required JSON key. Was a hardcoded #333c50 repeated in four places
+       (scrollbar thumb hover, #btnOpen/#btnSession/.toolbar-icon-btn hover)
+       — this formula reproduces that exact color for the dark theme. */
+    --border-hover:color-mix(in srgb, var(--border) 70%, var(--text-tertiary) 30%);
+    /* Text-selection tint (::selection below). Default = the existing
+       accent-based look, unchanged for Dark/Light/custom themes — the
+       Catppuccin style guide (General Usage -> Typography -> "Selection
+       Background: Overlay 2, 20%-30% opacity") only governs the four
+       Catppuccin flavors, which override this to their own Overlay 2
+       (reusing --level-debug, already mapped to Overlay 2 per flavor —
+       see those CSS blocks and PROJECT.md "Theming"). */
+    --selection-bg:var(--accent-soft);
     --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
     --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
   }
 
-  /* Light theme override. Toggled via [data-theme="light"] on <html>, see the
-     Appearance section in Settings (#settingsThemeLight/#settingsThemeDark). */
+  /* Theme overrides, selected via [data-theme="..."] on <html> — see the
+     Theme dropdown in Settings -> Appearance (#settingsThemeSelect). Each
+     block below overrides the same set of vars declared in :root above
+     (THEME_COLOR_KEYS in the Theme script section); imported/custom themes
+     apply the identical vars inline via JS instead of a CSS block, see
+     applyTheme(). Level-color backgrounds (log rows, badges, the active
+     level-quick-filter buttons) are near-white in light-ish themes, so
+     those themes also override --level-*-on to light text instead of the
+     near-black used against the brighter dark-mode swatches. */
   :root[data-theme="light"]{
     --bg-app:#f5f6f8;
     --bg-panel:#ffffff;
@@ -60,14 +100,182 @@
     --level-debug-soft:rgba(91,100,116,.10);
     --level-trace:#8991a3;
     --level-trace-soft:rgba(137,145,163,.08);
+    --level-error-on:#fff;
+    --level-warn-on:#fff;
+    --level-info-on:#fff;
+    --level-debug-on:#fff;
   }
-  /* Level-color backgrounds (log rows, badges) are near-white in light mode,
-     so the active toggle buttons need light text instead of the near-black
-     used against the brighter dark-mode swatches. */
-  :root[data-theme="light"] .level-btn.active.lvl-error,
-  :root[data-theme="light"] .level-btn.active.lvl-warn,
-  :root[data-theme="light"] .level-btn.active.lvl-info,
-  :root[data-theme="light"] .level-btn.active.lvl-debug{color:#fff;}
+
+  /* Catppuccin palette (https://catppuccin.com/palette/) — four flavors
+     mapped onto the same var set, background/border quartet per the
+     official style guide's "General Usage" table (see
+     https://github.com/catppuccin/catppuccin/blob/d09787dd98ca6fba08af5ef2ae94a7e09f17daca/docs/style-guide.md
+     and PROJECT.md "Theming" -> "Catppuccin style-guide compliance" for
+     the full writeup, this session, 2026-08-22, person-requested/directed):
+       --bg-app      = Base    ("Background Pane" — the main content area:
+                                page/body background, the log table itself)
+       --bg-panel    = Mantle  ("Secondary Panes" — toolbar, sidebar, table
+                                headers, dialog chrome)
+       --bg-elevated = Surface 0  \
+       --bg-elevated-2 = Surface 1 |  "Surface Elements" — hoverable/
+       --border-soft = Surface 2  |  interactive UI, ascending prominence
+       --border      = Overlay 0 /
+     The SAME token-role mapping applies to all four flavors, including
+     Latte — Base is the brightest token there (unlike the three dark
+     flavors, where it's a middle tone), so bg-app still lands on the
+     correct "main content pane" role, it just means Latte's main pane
+     reads as the BRIGHTEST surface and its Surface-tier popups/dialogs
+     read progressively DARKER/grayer against it, the mirror image of how
+     the three dark flavors' Surface tier reads progressively BRIGHTER —
+     both are the expected shape for their own flavor, not a special case
+     needing its own token choices. (Previously this block instead
+     preserved this app's own pre-Catppuccin Dark/Light brightness
+     ordering — main pane darkest, panel brighter — which inverted the
+     guide's intent; superseded by this remap.) accent uses Teal
+     (Sapphire/Teal for Latte, so accent-strong stays the darker of the
+     two, same convention as the light theme above); level colors use
+     Red/Peach/Blue/Overlay2/Overlay0 for error/warn/info/debug/trace,
+     matching this app's original amber-ish (not yellow) warn hue.
+
+     --accent/-strong/-soft/-on here are the DEFAULT for each flavor —
+     Settings -> Appearance's "Accent color" row lets a person re-pick
+     --accent from the flavor's own highlightPalette below, at which point
+     applyAccentChoice() (Theme script section) computes and overrides all
+     four together via JS (mixing toward white on these three dark flavors
+     / black on Latte, plus a luminance check for -on's text color) — kept
+     as a JS computation rather than a color-mix() CSS formula specifically
+     so the curated defaults here (Teal+Sky, a deliberate two-tone pairing,
+     not a mechanical tint of one color) stay exactly as designed when no
+     override is chosen; color-mix(var(--accent)) would have silently
+     replaced Sky with a mechanically-tinted teal on every page load. */
+  :root[data-theme="catppuccin-mocha"]{
+    --bg-app:#1e1e2e;
+    --bg-panel:#181825;
+    --bg-elevated:#313244;
+    --bg-elevated-2:#45475a;
+    --border:#6c7086;
+    --border-soft:#585b70;
+    --text-primary:#cdd6f4;
+    --text-secondary:#bac2de;
+    --text-tertiary:#a6adc8;
+    --accent:#94e2d5;
+    --accent-soft:rgba(148,226,213,.14);
+    --accent-strong:#89dceb;
+    --warn:#fab387;
+    --level-error:#f38ba8;
+    --level-error-soft:rgba(243,139,168,.14);
+    --level-warn:#fab387;
+    --level-warn-soft:rgba(250,179,135,.14);
+    --level-info:#89b4fa;
+    --level-info-soft:rgba(137,180,250,.10);
+    --level-debug:#9399b2;
+    --level-debug-soft:rgba(147,153,178,.10);
+    --level-trace:#6c7086;
+    --level-trace-soft:rgba(108,112,134,.08);
+    /* Style guide: "On Accent" text = Base = --bg-app now (see the remap
+       comment above this block), "Selection Background" = Overlay 2 @
+       20-30% opacity — see PROJECT.md "Theming" -> "Catppuccin style-guide
+       compliance". */
+    --accent-on:var(--bg-app);
+    --level-error-on:var(--bg-app);
+    --level-warn-on:var(--bg-app);
+    --level-info-on:var(--bg-app);
+    --level-debug-on:var(--bg-app);
+    --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
+  }
+  :root[data-theme="catppuccin-macchiato"]{
+    --bg-app:#24273a;
+    --bg-panel:#1e2030;
+    --bg-elevated:#363a4f;
+    --bg-elevated-2:#494d64;
+    --border:#6e738d;
+    --border-soft:#5b6078;
+    --text-primary:#cad3f5;
+    --text-secondary:#b8c0e0;
+    --text-tertiary:#a5adcb;
+    --accent:#8bd5ca;
+    --accent-soft:rgba(139,213,202,.14);
+    --accent-strong:#91d7e3;
+    --warn:#f5a97f;
+    --level-error:#ed8796;
+    --level-error-soft:rgba(237,135,150,.14);
+    --level-warn:#f5a97f;
+    --level-warn-soft:rgba(245,169,127,.14);
+    --level-info:#8aadf4;
+    --level-info-soft:rgba(138,173,244,.10);
+    --level-debug:#939ab7;
+    --level-debug-soft:rgba(147,154,183,.10);
+    --level-trace:#6e738d;
+    --level-trace-soft:rgba(110,115,141,.08);
+    --accent-on:var(--bg-app);
+    --level-error-on:var(--bg-app);
+    --level-warn-on:var(--bg-app);
+    --level-info-on:var(--bg-app);
+    --level-debug-on:var(--bg-app);
+    --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
+  }
+  :root[data-theme="catppuccin-frappe"]{
+    --bg-app:#303446;
+    --bg-panel:#292c3c;
+    --bg-elevated:#414559;
+    --bg-elevated-2:#51576d;
+    --border:#737994;
+    --border-soft:#626880;
+    --text-primary:#c6d0f5;
+    --text-secondary:#b5bfe2;
+    --text-tertiary:#a5adce;
+    --accent:#81c8be;
+    --accent-soft:rgba(129,200,190,.14);
+    --accent-strong:#99d1db;
+    --warn:#ef9f76;
+    --level-error:#e78284;
+    --level-error-soft:rgba(231,130,132,.14);
+    --level-warn:#ef9f76;
+    --level-warn-soft:rgba(239,159,118,.14);
+    --level-info:#8caaee;
+    --level-info-soft:rgba(140,170,238,.10);
+    --level-debug:#949cbb;
+    --level-debug-soft:rgba(148,156,187,.10);
+    --level-trace:#737994;
+    --level-trace-soft:rgba(115,121,148,.08);
+    --accent-on:var(--bg-app);
+    --level-error-on:var(--bg-app);
+    --level-warn-on:var(--bg-app);
+    --level-info-on:var(--bg-app);
+    --level-debug-on:var(--bg-app);
+    --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
+  }
+  :root[data-theme="catppuccin-latte"]{
+    --bg-app:#eff1f5;
+    --bg-panel:#e6e9ef;
+    --bg-elevated:#ccd0da;
+    --bg-elevated-2:#bcc0cc;
+    --border:#9ca0b0;
+    --border-soft:#acb0be;
+    --text-primary:#4c4f69;
+    --text-secondary:#5c5f77;
+    --text-tertiary:#6c6f85;
+    --accent:#209fb5;
+    --accent-soft:rgba(32,159,181,.12);
+    --accent-strong:#179299;
+    --warn:#fe640b;
+    --level-error:#d20f39;
+    --level-error-soft:rgba(210,15,57,.12);
+    --level-warn:#fe640b;
+    --level-warn-soft:rgba(254,100,11,.12);
+    --level-info:#1e66f5;
+    --level-info-soft:rgba(30,102,245,.10);
+    --level-debug:#7c7f93;
+    --level-debug-soft:rgba(124,127,147,.10);
+    --level-trace:#9ca0b0;
+    --level-trace-soft:rgba(156,160,176,.08);
+    --accent-on:var(--bg-app);
+    --level-error-on:var(--bg-app);
+    --level-warn-on:var(--bg-app);
+    --level-info-on:var(--bg-app);
+    --level-debug-on:var(--bg-app);
+    --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
+  }
 
   *{box-sizing:border-box;}
   html,body{height:100%;}
@@ -80,13 +288,13 @@
     overflow:hidden;
   }
   button{font-family:inherit;}
-  ::selection{background:var(--accent-soft); color:var(--text-primary);}
+  ::selection{background:var(--selection-bg); color:var(--text-primary);}
 
   /* thin scrollbars */
   ::-webkit-scrollbar{width:10px; height:10px;}
   ::-webkit-scrollbar-track{background:transparent;}
-  ::-webkit-scrollbar-thumb{background:#2a3142; border-radius:6px; border:2px solid var(--bg-panel);}
-  ::-webkit-scrollbar-thumb:hover{background:#39435a;}
+  ::-webkit-scrollbar-thumb{background:var(--border); border-radius:6px; border:2px solid var(--bg-panel);}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border-hover);}
 
   #app{display:flex; flex-direction:column; height:100vh;}
 
@@ -101,8 +309,8 @@
   .brand-mark{
     display:inline-flex; align-items:center; justify-content:center;
     width:20px; height:20px; border-radius:5px;
-    background:linear-gradient(135deg, var(--accent), #2f8f8c);
-    color:#0b1016; font-weight:800; font-size:12px;
+    background:linear-gradient(135deg, var(--accent), var(--accent-strong));
+    color:var(--accent-on); font-weight:800; font-size:12px;
   }
   .brand-name{font-weight:650; letter-spacing:.2px; font-size:14.5px;}
   /* Short commit-hash build tag next to the product name — see PHILOGG_VERSION. */
@@ -116,7 +324,7 @@
     padding:7px 12px; font-size:12.5px; cursor:pointer;
     transition:background .12s, border-color .12s;
   }
-  #btnOpen:hover{background:var(--bg-elevated-2); border-color:#333c50;}
+  #btnOpen:hover{background:var(--bg-elevated-2); border-color:var(--border-hover);}
   #btnOpen svg{flex:0 0 auto;}
   #btnSession{
     display:flex; align-items:center; gap:7px;
@@ -125,7 +333,7 @@
     padding:7px 12px; font-size:12.5px; cursor:pointer;
     transition:background .12s, border-color .12s;
   }
-  #btnSession:hover{background:var(--bg-elevated-2); border-color:#333c50;}
+  #btnSession:hover{background:var(--bg-elevated-2); border-color:var(--border-hover);}
   #btnSession svg{flex:0 0 auto;}
   .toolbar-icon-btn{
     display:flex; align-items:center; justify-content:center; position:relative;
@@ -134,7 +342,7 @@
     border:1px solid var(--border); border-radius:7px;
     cursor:pointer; transition:background .12s, border-color .12s, color .12s;
   }
-  .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:#333c50; color:var(--text-primary);}
+  .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
   .toolbar-icon-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
   /* Toggled state for icon buttons that are persistent on/off switches
      rather than popup triggers (currently just #btnPinBookmarks) — reuses
@@ -142,7 +350,7 @@
   .toolbar-icon-btn.active{background:var(--accent-soft); border-color:var(--accent-strong); color:var(--accent-strong);}
   .toolbar-badge{
     position:absolute; top:-5px; right:-5px; min-width:15px; height:15px; padding:0 3px;
-    border-radius:8px; background:var(--accent); color:#08201f;
+    border-radius:8px; background:var(--accent); color:var(--accent-on);
     font-size:9.5px; font-weight:800; line-height:15px; text-align:center;
     font-variant-numeric:tabular-nums;
   }
@@ -579,7 +787,7 @@
     padding:4px 9px; border-radius:20px; transition:background .12s, border-color .12s, filter .12s;
   }
   .crumb:hover{filter:brightness(1.25);}
-  .crumb.current{color:var(--accent-strong); border-color:rgba(79,199,195,.35); background:var(--accent-soft);}
+  .crumb.current{color:var(--accent-strong); border-color:color-mix(in srgb, var(--accent) 35%, transparent); background:var(--accent-soft);}
   /* margin-top raised 4px -> 7px (height-parity bugfix, this session): now
      that .crumb is a 26px-tall pill (was 22px), the separator's own ~12px
      glyph line (line-height:12px, same pinned value as .view-tab's) needs
@@ -619,15 +827,15 @@
   .level-btn .dot{width:6px; height:6px; border-radius:50%; background:currentColor; flex:0 0 auto;}
   .level-btn .cnt{font-variant-numeric:tabular-nums; opacity:.75;}
   .level-btn:hover{filter:brightness(1.25);}
-  .level-btn.lvl-error{color:var(--level-error); border-color:rgba(241,101,101,.35);}
-  .level-btn.lvl-warn{color:var(--level-warn); border-color:rgba(232,169,74,.35);}
-  .level-btn.lvl-info{color:var(--level-info); border-color:rgba(111,168,255,.35);}
-  .level-btn.lvl-debug{color:var(--level-debug); border-color:rgba(118,127,150,.4);}
+  .level-btn.lvl-error{color:var(--level-error); border-color:color-mix(in srgb, var(--level-error) 35%, transparent);}
+  .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
+  .level-btn.lvl-info{color:var(--level-info); border-color:color-mix(in srgb, var(--level-info) 35%, transparent);}
+  .level-btn.lvl-debug{color:var(--level-debug); border-color:color-mix(in srgb, var(--level-debug) 40%, transparent);}
   .level-btn.active{border-color:transparent;}
-  .level-btn.active.lvl-error{background:var(--level-error); color:#2a0a0a;}
-  .level-btn.active.lvl-warn{background:var(--level-warn); color:#2a1c04;}
-  .level-btn.active.lvl-info{background:var(--level-info); color:#04122a;}
-  .level-btn.active.lvl-debug{background:var(--level-debug); color:#0d1016;}
+  .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
+  .level-btn.active.lvl-warn{background:var(--level-warn); color:var(--level-warn-on);}
+  .level-btn.active.lvl-info{background:var(--level-info); color:var(--level-info-on);}
+  .level-btn.active.lvl-debug{background:var(--level-debug); color:var(--level-debug-on);}
 
   /* ---------- Filter/Highlight split (FEATURE_BACKLOG.md item 4) ---------- */
   #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
@@ -937,28 +1145,28 @@
   .multiline-messages .col-msg{white-space:pre; text-overflow:clip; line-height:15px;}
 
   .lvl-error .col-bar{background:var(--level-error);}
-  .lvl-error .level-badge{color:var(--level-error); background:rgba(241,101,101,.28);}
+  .lvl-error .level-badge{color:var(--level-error); background:color-mix(in srgb, var(--level-error) 28%, transparent);}
   .lvl-warn .col-bar{background:var(--level-warn);}
-  .lvl-warn .level-badge{color:var(--level-warn); background:rgba(232,169,74,.28);}
+  .lvl-warn .level-badge{color:var(--level-warn); background:color-mix(in srgb, var(--level-warn) 28%, transparent);}
   .lvl-info .col-bar{background:var(--level-info);}
-  .lvl-info .level-badge{color:var(--level-info); background:rgba(111,168,255,.22);}
+  .lvl-info .level-badge{color:var(--level-info); background:color-mix(in srgb, var(--level-info) 22%, transparent);}
   .lvl-debug .col-bar{background:var(--level-debug);}
-  .lvl-debug .level-badge{color:var(--level-debug); background:rgba(118,127,150,.22);}
+  .lvl-debug .level-badge{color:var(--level-debug); background:color-mix(in srgb, var(--level-debug) 22%, transparent);}
   .lvl-trace .col-bar{background:var(--level-trace);}
   .lvl-trace .level-badge{color:var(--level-trace); background:var(--level-trace-soft);}
   .lvl-other .col-bar{background:var(--text-tertiary);}
   .lvl-other .level-badge{color:var(--text-secondary); background:var(--bg-elevated-2);}
 
   .log-row.lvl-error{background:var(--level-error-soft);}
-  .log-row.lvl-error:hover{background:rgba(241,101,101,.20);}
+  .log-row.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 20%, transparent);}
   .log-row.lvl-warn{background:var(--level-warn-soft);}
-  .log-row.lvl-warn:hover{background:rgba(232,169,74,.20);}
+  .log-row.lvl-warn:hover{background:color-mix(in srgb, var(--level-warn) 20%, transparent);}
   .log-row.lvl-info{background:var(--level-info-soft);}
-  .log-row.lvl-info:hover{background:rgba(111,168,255,.16);}
+  .log-row.lvl-info:hover{background:color-mix(in srgb, var(--level-info) 16%, transparent);}
   .log-row.lvl-debug{background:var(--level-debug-soft);}
-  .log-row.lvl-debug:hover{background:rgba(118,127,150,.16);}
+  .log-row.lvl-debug:hover{background:color-mix(in srgb, var(--level-debug) 16%, transparent);}
   .log-row.lvl-trace{background:var(--level-trace-soft);}
-  .log-row.lvl-trace:hover{background:rgba(91,100,121,.14);}
+  .log-row.lvl-trace:hover{background:color-mix(in srgb, var(--level-trace) 14%, transparent);}
   .log-row.flash{background:var(--accent-soft) !important; transition:background 1.2s ease-out;}
 
   #emptyState{
@@ -1331,6 +1539,35 @@
     margin-top:12px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:10px;
   }
   .settings-card-footer{padding:12px 18px;}
+  .settings-card-footer.theme-footer{display:flex; gap:8px;}
+  .settings-row-control select{
+    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
+  }
+  #settingsThemeSelect{min-width:190px;}
+  /* Accent-color re-pick row (Settings -> Appearance) — only shown for a
+     theme with its own highlightPalette, see renderAccentPicker(). Reuses
+     .cp-preset's circular-swatch look (color-picker popup) but as a wrapping
+     flex row instead of a fixed 6-column grid, since this sits inside a
+     settings-row-control alongside its label instead of a narrow popup. */
+  #settingsAccentRow.hidden{display:none;}
+  .accent-picker{display:flex; flex-wrap:wrap; gap:6px; max-width:280px; justify-content:flex-end;}
+  .accent-swatch{
+    width:22px; height:22px; border-radius:50%; border:1px solid var(--border-soft);
+    cursor:pointer; padding:0; flex:0 0 auto;
+  }
+  .accent-swatch:hover{box-shadow:0 0 0 2px var(--accent);}
+  .accent-swatch.active{box-shadow:0 0 0 2px var(--accent-strong);}
+  .accent-swatch-reset{
+    background:var(--bg-app); color:var(--text-secondary); font-size:12px; line-height:20px;
+  }
+  /* Small at-a-glance swatch in each custom-theme row — bg/accent/error/info
+     strips, enough to tell themes apart in the list without switching. */
+  .theme-row-main{display:flex; align-items:center; min-width:0;}
+  .theme-swatch{
+    flex:0 0 auto; width:44px; height:14px; border-radius:3px;
+    border:1px solid var(--border); margin-right:8px;
+  }
   .settings-row{
     display:grid; grid-template-columns:1fr auto; align-items:center; gap:28px;
     padding:16px 18px; border-bottom:1px solid var(--border-soft);
@@ -1592,11 +1829,11 @@
     transition:background .12s, border-color .12s, color .12s, filter .12s;
   }
   .column-chip:hover{filter:brightness(1.25);}
-  .column-chip.active{background:var(--accent); border-color:transparent; color:#08201f;}
+  .column-chip.active{background:var(--accent); border-color:transparent; color:var(--accent-on);}
   .filter-token-chips{display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
   .token-chip{
     font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--accent-strong);
-    background:var(--accent-soft); border:1px solid rgba(79,199,195,.35); border-radius:5px;
+    background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius:5px;
     padding:2px 7px; cursor:pointer; transition:filter .12s;
   }
   .token-chip:hover{filter:brightness(1.2);}
@@ -1626,7 +1863,7 @@
   .preview-value-span.chip-ignored{opacity:.45; text-decoration:line-through; border-bottom-style:dashed;}
   .preview-value-cond{font-size:9px; font-weight:650; opacity:.8; margin-left:2px; vertical-align:top;}
   .btn-mini{
-    background:var(--accent); color:#08201f; border:none; border-radius:6px;
+    background:var(--accent); color:var(--accent-on); border:none; border-radius:6px;
     padding:8px 12px; font-size:12px; font-weight:650; cursor:pointer;
   }
   .btn-mini:disabled{opacity:.4; cursor:default;}
@@ -1664,7 +1901,14 @@
     box-shadow:0 12px 30px rgba(0,0,0,.5);
   }
   #colorPickerPopup.hidden{display:none;}
+  /* Free/Theme mode toggle (this session, person-requested: a highlight
+     colour picked from the ACTIVE theme's own palette instead of the
+     theme-independent hue wheel) — same .assert-mode-btn pattern as every
+     other two-way switch in the app, just narrower to fit this popup. */
+  .cp-mode-row{margin-bottom:10px;}
+  #colorPickerPopup .assert-mode-btn{padding:5px 4px; font-size:10.5px;}
   .cp-wheel-wrap{display:flex; justify-content:center; margin-bottom:10px;}
+  #cpWheelWrap.hidden{display:none;}
   .cp-wheel{
     width:120px; height:120px; border-radius:50%; cursor:crosshair;
     background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);
@@ -1873,6 +2117,7 @@
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
+      <input type="file" id="themeFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,text/plain">
     </div>
   </header>
@@ -2157,9 +2402,17 @@
   <!-- Custom highlight-colour picker (see FEATURE_BACKLOG.md item 4, session 6:
        deliberately not the native <input type="color"> — Windows' native
        picker UX varies too much for predictable results here). A hue wheel
-       for freeform choice, plus a row of curated presets for one click. -->
+       for freeform choice, plus a row of curated presets for one click.
+       "Free"/"Theme" mode toggle added this session (person-requested): in
+       Theme mode the wheel is hidden and the presets become the ACTIVE
+       theme's own highlight palette instead of the generic curated set —
+       see getActiveHighlightPalette()/setColorPickerMode(). -->
   <div id="colorPickerPopup" class="hidden">
-    <div class="cp-wheel-wrap"><div id="cpWheel" class="cp-wheel" title="Click to pick a hue"></div></div>
+    <div class="cp-mode-row assert-mode-row">
+      <button type="button" class="assert-mode-btn" id="cpModeFree" data-cp-mode="free">Free</button>
+      <button type="button" class="assert-mode-btn" id="cpModeTheme" data-cp-mode="theme">Theme</button>
+    </div>
+    <div class="cp-wheel-wrap" id="cpWheelWrap"><div id="cpWheel" class="cp-wheel" title="Click to pick a hue"></div></div>
     <div class="cp-presets" id="cpPresets"></div>
     <button type="button" class="btn-mini-outline cp-clear" id="cpClearBtn">Clear colour</button>
   </div>
@@ -2420,10 +2673,16 @@
                 <div class="settings-row-label">Theme</div>
                 <div class="settings-row-hint">Dark is the default.</div>
               </div>
-              <div class="settings-row-control assert-mode-row">
-                <button type="button" class="assert-mode-btn" id="settingsThemeLight" data-theme-choice="light">Light</button>
-                <button type="button" class="assert-mode-btn" id="settingsThemeDark" data-theme-choice="dark">Dark</button>
+              <div class="settings-row-control">
+                <select id="settingsThemeSelect"></select>
               </div>
+            </div>
+            <div class="settings-row hidden" id="settingsAccentRow">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Accent color</div>
+                <div class="settings-row-hint">Re-pick the theme's accent — used on buttons, the breadcrumb, and the minimap's range highlight — from this theme's own palette.</div>
+              </div>
+              <div class="settings-row-control accent-picker" id="settingsAccentPicker"></div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
@@ -2438,6 +2697,15 @@
                 </div>
                 <button type="button" class="btn-mini-outline" id="fontScaleReset" title="Reset to default">Reset</button>
               </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Custom themes — import your own color palette as JSON</div>
+          <div class="settings-card" id="customThemeListCard">
+            <div id="customThemeList"></div>
+            <div class="settings-card-footer theme-footer">
+              <button type="button" class="btn-mini-outline" id="btnThemeTemplate">Download template…</button>
+              <button type="button" class="btn-mini-dashed" id="btnThemeImport">+ Import theme…</button>
             </div>
           </div>
         </section>
@@ -2657,33 +2925,414 @@ const ICON_LICENSE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
 
 /* ===================== Theme ===================== */
+// Settings page -> Appearance: a single dropdown (#settingsThemeSelect)
+// listing the built-in themes (dark/light/four Catppuccin flavors, see the
+// CSS `:root[data-theme=...]` blocks near the top of the stylesheet) plus
+// any imported custom ones. Built-ins apply purely via the `data-theme`
+// attribute + CSS cascade; custom themes have no CSS block, so applyTheme()
+// sets the same var set inline on <html> instead — one variable surface,
+// two application paths. Custom themes (JSON, user-imported) persist to
+// localStorage like the theme choice itself — same tier as font-scale/
+// collapse-state, see THEME_STORAGE_KEY.
 const THEME_STORAGE_KEY = "philogg-theme";
+const CUSTOM_THEMES_STORAGE_KEY = "philogg-custom-themes";
+const THEME_FILE_FORMAT = "philogg-theme";
+const THEME_FILE_VERSION = 1;
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  // Settings page -> Appearance: a two-way explicit-choice toggle (same
-  // .assert-mode-btn pattern as Format Manager's Pattern/Regex switch),
-  // not a single icon-swap button — kept in sync here so it's correct
-  // whenever/however the theme changes, not just while the page is open.
-  const lightBtn = document.getElementById("settingsThemeLight");
-  const darkBtn = document.getElementById("settingsThemeDark");
-  if (lightBtn) lightBtn.classList.toggle("active", theme === "light");
-  if (darkBtn) darkBtn.classList.toggle("active", theme === "dark");
+// Every CSS custom property a theme controls (excludes --font-*/--row-grid,
+// which aren't color/theme concerns).
+const THEME_COLOR_KEYS = [
+  "bg-app", "bg-panel", "bg-elevated", "bg-elevated-2",
+  "border", "border-soft",
+  "text-primary", "text-secondary", "text-tertiary",
+  "accent", "accent-soft", "accent-strong",
+  "level-error", "level-error-soft",
+  "level-warn", "level-warn-soft",
+  "level-info", "level-info-soft",
+  "level-debug", "level-debug-soft",
+  "level-trace", "level-trace-soft",
+  "warn",
+];
+// Text color for the four ACTIVE level-quick-filter buttons (see
+// .level-btn.active.lvl-* in the stylesheet) plus anything sitting on a
+// solid var(--accent) surface (brand mark, Save button, active chips —
+// see --accent-on's comment in :root) — controlled by a theme's
+// "activeTextLight" flag rather than exposed as individual JSON keys,
+// since it's an implementation detail of these specific button/badge
+// states, not something a template-filling user should need to think
+// about. None of the six built-in themes override "accent-on" (every
+// built-in --accent stays bright/mid-bright by design, so the :root
+// default reads fine everywhere) — it's here as a custom theme's safety
+// net for a dark/saturated accent color.
+const THEME_ON_KEYS = ["level-error-on", "level-warn-on", "level-info-on", "level-debug-on", "accent-on"];
+
+// highlightPalette: the theme's own curated colors, offered as the ONLY
+// choices in the highlight-color picker's "Theme" mode (see
+// getActiveHighlightPalette/setColorPickerMode) — the 14 named Catppuccin
+// "accent colors" (https://catppuccin.com/palette/) for each flavor.
+// Dark/Light have none: the picker falls back to the generic
+// HIGHLIGHT_PRESETS for them, same swatches "Theme" mode always showed
+// before this option existed.
+const BUILTIN_THEMES = [
+  { id: "dark", name: "Dark" },
+  { id: "light", name: "Light" },
+  {
+    id: "catppuccin-latte", name: "Catppuccin Latte",
+    highlightPalette: ["#dc8a78", "#dd7878", "#ea76cb", "#8839ef", "#d20f39", "#e64553", "#fe640b", "#df8e1d", "#40a02b", "#179299", "#04a5e5", "#209fb5", "#1e66f5", "#7287fd"],
+  },
+  {
+    id: "catppuccin-frappe", name: "Catppuccin Frappé",
+    highlightPalette: ["#f2d5cf", "#eebebe", "#f4b8e4", "#ca9ee6", "#e78284", "#ea999c", "#ef9f76", "#e5c890", "#a6d189", "#81c8be", "#99d1db", "#85c1dc", "#8caaee", "#babbf1"],
+  },
+  {
+    id: "catppuccin-macchiato", name: "Catppuccin Macchiato",
+    highlightPalette: ["#f4dbd6", "#f0c6c6", "#f5bde6", "#c6a0f6", "#ed8796", "#ee99a0", "#f5a97f", "#eed49f", "#a6da95", "#8bd5ca", "#91d7e3", "#7dc4e4", "#8aadf4", "#b7bdf8"],
+  },
+  {
+    id: "catppuccin-mocha", name: "Catppuccin Mocha",
+    highlightPalette: ["#f5e0dc", "#f2cdcd", "#f5c2e7", "#cba6f7", "#f38ba8", "#eba0ac", "#fab387", "#f9e2af", "#a6e3a1", "#94e2d5", "#89dceb", "#74c7ec", "#89b4fa", "#b4befe"],
+  },
+];
+
+let customThemes = [];
+
+function loadCustomThemes() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(CUSTOM_THEMES_STORAGE_KEY) || "[]"); } catch { /* corrupt value, fall through to [] */ }
+  customThemes = Array.isArray(stored) ? stored : [];
+}
+
+function saveCustomThemes() {
+  localStorage.setItem(CUSTOM_THEMES_STORAGE_KEY, JSON.stringify(customThemes));
+}
+
+function currentThemeId() {
+  return document.documentElement.getAttribute("data-theme") || "dark";
+}
+
+function applyTheme(themeId) {
+  document.documentElement.setAttribute("data-theme", themeId);
+  const style = document.documentElement.style;
+  THEME_COLOR_KEYS.concat(THEME_ON_KEYS).forEach(k => style.removeProperty("--" + k));
+  const custom = customThemes.find(t => t.id === themeId);
+  if (custom) {
+    THEME_COLOR_KEYS.forEach(k => { if (custom.colors[k]) style.setProperty("--" + k, custom.colors[k]); });
+    if (custom.activeTextLight) THEME_ON_KEYS.forEach(k => style.setProperty("--" + k, "#fff"));
+  }
+  applyAccentChoice(themeId); // re-picked --accent (if any) for THIS theme, on top of its defaults above
+  const select = document.getElementById("settingsThemeSelect");
+  if (select && select.value !== themeId) select.value = themeId;
+  renderAccentPicker();
+}
+
+/* ---- Accent color: re-pick --accent from the ACTIVE theme's own
+   highlightPalette (this session, follow-up: "die Highlightfarbe auf den
+   Buttons oder die Markierung auf der Minimap" — the app's actual accent
+   color, not the per-filter-node highlight color above). Only offered for
+   a theme that defines a highlightPalette (the four Catppuccin flavors;
+   optionally a custom theme too) — Dark/Light keep their single fixed
+   accent. Persisted PER THEME (picking Mauve for Mocha doesn't affect
+   Latte), same tier as the theme choice itself. ---- */
+const ACCENT_CHOICE_STORAGE_KEY = "philogg-accent-choice";
+let accentChoices = {}; // themeId -> hex, only entries the person actually picked
+
+function loadAccentChoices() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(ACCENT_CHOICE_STORAGE_KEY) || "{}"); } catch { /* corrupt value, fall through to {} */ }
+  accentChoices = (stored && typeof stored === "object") ? stored : {};
+}
+
+function saveAccentChoices() {
+  localStorage.setItem(ACCENT_CHOICE_STORAGE_KEY, JSON.stringify(accentChoices));
+}
+
+// A theme's OWN highlightPalette, no HIGHLIGHT_PRESETS fallback (unlike
+// getActiveHighlightPalette() below, which the per-node picker's Theme
+// mode uses) — Dark/Light/a plain custom theme legitimately have none,
+// and offering the theme-independent generic swatches here as if they
+// were "this theme's colors" would misrepresent what they are.
+function themeOwnPalette(themeId) {
+  const builtin = BUILTIN_THEMES.find(t => t.id === themeId);
+  if (builtin && builtin.highlightPalette) return builtin.highlightPalette;
+  const custom = customThemes.find(t => t.id === themeId);
+  if (custom && Array.isArray(custom.highlightPalette) && custom.highlightPalette.length) return custom.highlightPalette;
+  return null;
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  return m ? [1, 2, 3].map(i => parseInt(m[i], 16)) : [255, 255, 255];
+}
+
+// Standard relative-luminance weighting (not gamma-corrected — a cheap
+// approximation is enough here, this only decides black-vs-white text,
+// not an exact WCAG ratio).
+function relativeLuminance(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function mixHex(hex, towardHex, ratio) {
+  const [r1, g1, b1] = hexToRgb(hex);
+  const [r2, g2, b2] = hexToRgb(towardHex);
+  const mix = (a, b) => Math.round(a * (1 - ratio) + b * ratio).toString(16).padStart(2, "0");
+  return "#" + mix(r1, r2) + mix(g1, g2) + mix(b1, b2);
+}
+
+function hexToRgba(hex, alpha) {
+  const [r, g, b] = hexToRgb(hex);
+  return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+}
+
+// Applies a stored accent override for themeId, if there is one and it's
+// still a valid color in that theme's own palette (a custom theme's
+// palette can shrink on re-import, or the person cleared it) — a no-op
+// otherwise, leaving the theme's own default --accent/-strong/-soft/-on
+// (set by its CSS block or, for a custom theme, by applyTheme() above)
+// untouched. Deliberately a JS computation, not a color-mix() CSS formula
+// — see the big comment above the Catppuccin CSS blocks for why: it would
+// silently replace each flavor's curated two-tone accent/accent-strong
+// pairing (e.g. Mocha's Teal+Sky) with a mechanical tint of one color the
+// moment nothing is overridden, which is wrong for the (most common)
+// no-override case.
+function applyAccentChoice(themeId) {
+  const palette = themeOwnPalette(themeId);
+  if (!palette) return;
+  const chosen = accentChoices[themeId];
+  if (!chosen || !palette.includes(chosen)) return;
+  const style = document.documentElement.style;
+  const bgLuminance = relativeLuminance(getComputedStyle(document.documentElement).getPropertyValue("--bg-app").trim());
+  const isLightTheme = bgLuminance > 140;
+  style.setProperty("--accent", chosen);
+  style.setProperty("--accent-strong", mixHex(chosen, isLightTheme ? "#000000" : "#ffffff", 0.25));
+  style.setProperty("--accent-soft", hexToRgba(chosen, isLightTheme ? 0.12 : 0.14));
+  style.setProperty("--accent-on", relativeLuminance(chosen) > 140 ? "#08201f" : "#fff");
+}
+
+function setAccentChoice(themeId, hex) {
+  if (hex) accentChoices[themeId] = hex; else delete accentChoices[themeId];
+  saveAccentChoices();
+  if (currentThemeId() === themeId) applyTheme(themeId); // re-applies the theme's defaults, then the new (or cleared) override
+}
+
+function renderAccentPicker() {
+  const row = document.getElementById("settingsAccentRow");
+  const list = document.getElementById("settingsAccentPicker");
+  if (!row || !list) return;
+  const themeId = currentThemeId();
+  const palette = themeOwnPalette(themeId);
+  row.classList.toggle("hidden", !palette);
+  if (!palette) return;
+  list.innerHTML = "";
+  const chosen = accentChoices[themeId];
+  const frag = document.createDocumentFragment();
+  palette.forEach(c => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "accent-swatch" + (c === chosen ? " active" : "");
+    b.style.background = c;
+    b.title = c;
+    b.addEventListener("click", () => setAccentChoice(themeId, c));
+    frag.appendChild(b);
+  });
+  list.appendChild(frag);
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "accent-swatch accent-swatch-reset" + (chosen ? "" : " active");
+  resetBtn.title = "Theme default";
+  resetBtn.textContent = "↺";
+  resetBtn.addEventListener("click", () => setAccentChoice(themeId, null));
+  list.appendChild(resetBtn);
+}
+
+// A stored/imported theme id can go stale (its custom theme got deleted
+// elsewhere, e.g. localStorage edited by hand) — fall back to dark rather
+// than leaving data-theme pointing at nothing.
+function resolveThemeId(id) {
+  if (BUILTIN_THEMES.some(t => t.id === id) || customThemes.some(t => t.id === id)) return id;
+  return "dark";
+}
+
+function populateThemeSelect() {
+  const select = document.getElementById("settingsThemeSelect");
+  if (!select) return;
+  const active = currentThemeId();
+  select.innerHTML = "";
+  const builtinGroup = document.createElement("optgroup");
+  builtinGroup.label = "Built-in";
+  BUILTIN_THEMES.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t.id; opt.textContent = t.name;
+    builtinGroup.appendChild(opt);
+  });
+  select.appendChild(builtinGroup);
+  if (customThemes.length) {
+    const customGroup = document.createElement("optgroup");
+    customGroup.label = "Custom";
+    customThemes.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t.id; opt.textContent = t.name;
+      customGroup.appendChild(opt);
+    });
+    select.appendChild(customGroup);
+  }
+  select.value = active;
 }
 
 function initTheme() {
+  loadCustomThemes();
+  loadAccentChoices();
+  populateThemeSelect();
+  renderCustomThemeList();
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark") { applyTheme(stored); return; }
+  if (stored) { applyTheme(resolveThemeId(stored)); return; }
   const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
   applyTheme(prefersLight ? "light" : "dark");
 }
 
-function setTheme(theme) {
-  applyTheme(theme);
-  localStorage.setItem(THEME_STORAGE_KEY, theme);
+function setTheme(themeId) {
+  applyTheme(themeId);
+  localStorage.setItem(THEME_STORAGE_KEY, themeId);
 }
-document.getElementById("settingsThemeLight").addEventListener("click", () => setTheme("light"));
-document.getElementById("settingsThemeDark").addEventListener("click", () => setTheme("dark"));
+document.getElementById("settingsThemeSelect").addEventListener("change", ev => setTheme(ev.target.value));
+
+function themeSwatchStyle(colors) {
+  return "background:linear-gradient(90deg," + colors["bg-app"] + " 0 25%," + colors["accent"] + " 25% 50%," +
+    colors["level-error"] + " 50% 75%," + colors["level-info"] + " 75% 100%)";
+}
+
+function renderCustomThemeList() {
+  const container = document.getElementById("customThemeList");
+  if (!container) return;
+  container.innerHTML = "";
+  if (!customThemes.length) {
+    container.innerHTML = '<div class="filter-library-empty">No custom themes yet — download a template below, fill in your colors, and import it.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  customThemes.forEach(theme => {
+    const row = document.createElement("div");
+    row.className = "filter-library-row";
+    row.style.cursor = "pointer";
+    row.title = "Switch to this theme";
+    row.addEventListener("click", () => setTheme(theme.id));
+
+    const main = document.createElement("div");
+    main.className = "filter-library-row-main theme-row-main";
+    main.innerHTML =
+      '<span class="theme-swatch" style="' + themeSwatchStyle(theme.colors) + '"></span>' +
+      '<span class="filter-library-row-name">' + escapeHtml(theme.name) + '</span>';
+    row.appendChild(main);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "filter-library-row-del";
+    delBtn.title = "Delete theme";
+    delBtn.innerHTML = ICON_CLOSE;
+    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeCustomTheme(theme.id); });
+    row.appendChild(delBtn);
+
+    frag.appendChild(row);
+  });
+  container.appendChild(frag);
+}
+
+function removeCustomTheme(id) {
+  customThemes = customThemes.filter(t => t.id !== id);
+  saveCustomThemes();
+  if (accentChoices[id]) { delete accentChoices[id]; saveAccentChoices(); } // no dangling accent pick for a theme that no longer exists
+  populateThemeSelect();
+  renderCustomThemeList();
+  if (currentThemeId() === id) setTheme("dark"); // the deleted theme was active — fall back
+}
+
+// Seeds the template from the CURRENTLY ACTIVE theme's actual computed
+// colors (whichever built-in or custom theme that is), so "download a
+// template" always hands back a valid, ready-to-tweak starting point
+// instead of a fixed baseline that ignores what's on screen.
+function buildThemeTemplateJson() {
+  const cs = getComputedStyle(document.documentElement);
+  const colors = {};
+  THEME_COLOR_KEYS.forEach(k => { colors[k] = cs.getPropertyValue("--" + k).trim(); });
+  return JSON.stringify({
+    format: THEME_FILE_FORMAT,
+    version: THEME_FILE_VERSION,
+    name: "My Theme",
+    activeTextLight: false,
+    colors,
+  }, null, 2);
+}
+
+async function downloadThemeTemplate() {
+  const json = buildThemeTemplateJson();
+  const suggested = "philogg-theme-template.json";
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "PhiLogg theme", accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err && err.name === "AbortError") return; // user cancelled the picker
+      downloadJsonFallback(json, suggested); // API present but unusable in this context
+      return;
+    }
+  }
+  downloadJsonFallback(json, suggested); // Firefox / legacy: plain download
+}
+
+function importThemeJson(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
+  if (!data || data.format !== THEME_FILE_FORMAT || !data.colors || typeof data.colors !== "object") {
+    showCopyToast("Not a PhiLogg theme file");
+    return;
+  }
+  if (data.version > THEME_FILE_VERSION) { showCopyToast("Theme file was saved by a newer version"); return; }
+  const missing = THEME_COLOR_KEYS.filter(k => typeof data.colors[k] !== "string" || !data.colors[k].trim());
+  if (missing.length) { showCopyToast("Theme file is missing: " + missing.join(", ")); return; }
+
+  const colors = {};
+  THEME_COLOR_KEYS.forEach(k => { colors[k] = data.colors[k].trim(); });
+  const name = (typeof data.name === "string" && data.name.trim()) ? data.name.trim().slice(0, 80) : "Custom theme";
+  const id = "custom:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  customThemes.push({ id, name, colors, activeTextLight: !!data.activeTextLight });
+  saveCustomThemes();
+  populateThemeSelect();
+  renderCustomThemeList();
+  setTheme(id);
+  showCopyToast("Theme imported: " + name);
+}
+
+const themeFileInput = document.getElementById("themeFileInput");
+
+async function loadThemeFromFile() {
+  if (!window.showOpenFilePicker) { themeFileInput.click(); return; }
+  let handles;
+  try {
+    handles = await window.showOpenFilePicker({
+      multiple: false,
+      types: [{ description: "PhiLogg theme", accept: { "application/json": [".json"] } }],
+    });
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    themeFileInput.click();
+    return;
+  }
+  importThemeJson(await (await handles[0].getFile()).text());
+}
+
+themeFileInput.addEventListener("change", ev => {
+  const file = ev.target.files[0];
+  if (file) file.text().then(importThemeJson).catch(() => showCopyToast("Could not read theme file"));
+  themeFileInput.value = "";
+});
+document.getElementById("btnThemeImport").addEventListener("click", () => loadThemeFromFile());
+document.getElementById("btnThemeTemplate").addEventListener("click", () => downloadThemeTemplate());
 
 /* ===================== Font size (FEATURE_BACKLOG.md "Configurable font
    size") ===================== */
@@ -11217,22 +11866,47 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
    Opened from a tree row's swatch (see renderNode). Deliberately not the
    native <input type="color"> — see FEATURE_BACKLOG.md item 4, session 6.
    A hue wheel (click anywhere in the disc, fixed saturation/lightness) for
-   freeform choice, plus a row of curated presets for one click. */
+   freeform choice, plus a row of curated presets for one click.
+
+   "Free"/"Theme" mode (this session, person-requested): in Theme mode the
+   wheel is hidden and the preset row becomes the ACTIVE theme's own
+   highlightPalette (see BUILTIN_THEMES/customThemes) instead of the
+   generic HIGHLIGHT_PRESETS — so a chosen highlight color is guaranteed to
+   already belong to whichever theme is currently active. The mode itself
+   is a display preference, same tier/storage pattern as the theme choice. */
 
 const colorPickerPopup = el("#colorPickerPopup");
 const cpWheel = el("#cpWheel");
+const cpWheelWrap = el("#cpWheelWrap");
 const cpPresets = el("#cpPresets");
 const cpClearBtn = el("#cpClearBtn");
+const cpModeFreeBtn = el("#cpModeFree");
+const cpModeThemeBtn = el("#cpModeTheme");
 let colorPickerTargetId = null;
 
 // Distinct, moderately saturated hues; independent from COLUMN_PALETTE
-// (extraction columns) so the two color systems can't be confused.
+// (extraction columns) so the two color systems can't be confused. Also
+// the Theme-mode fallback for Dark/Light and any custom theme that didn't
+// define its own highlightPalette.
 const HIGHLIGHT_PRESETS = ["#e8555f", "#e8a94a", "#e0d15a", "#6fd17c", "#4fc7c3", "#6fa8ff", "#9d7bf0", "#e87bc9", "#a0a8bd", "#ffffff"];
+
+const CP_MODE_STORAGE_KEY = "philogg-cp-mode";
+let colorPickerMode = localStorage.getItem(CP_MODE_STORAGE_KEY) === "theme" ? "theme" : "free";
+
+function getActiveHighlightPalette() {
+  const id = currentThemeId();
+  const builtin = BUILTIN_THEMES.find(t => t.id === id);
+  if (builtin && builtin.highlightPalette) return builtin.highlightPalette;
+  const custom = customThemes.find(t => t.id === id);
+  if (custom && Array.isArray(custom.highlightPalette) && custom.highlightPalette.length) return custom.highlightPalette;
+  return HIGHLIGHT_PRESETS;
+}
 
 function renderColorPresets() {
   cpPresets.innerHTML = "";
   const frag = document.createDocumentFragment();
-  HIGHLIGHT_PRESETS.forEach(c => {
+  const colors = colorPickerMode === "theme" ? getActiveHighlightPalette() : HIGHLIGHT_PRESETS;
+  colors.forEach(c => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "cp-preset";
@@ -11243,13 +11917,26 @@ function renderColorPresets() {
   });
   cpPresets.appendChild(frag);
 }
-renderColorPresets();
+
+function setColorPickerMode(mode) {
+  colorPickerMode = mode === "theme" ? "theme" : "free";
+  localStorage.setItem(CP_MODE_STORAGE_KEY, colorPickerMode);
+  cpModeFreeBtn.classList.toggle("active", colorPickerMode === "free");
+  cpModeThemeBtn.classList.toggle("active", colorPickerMode === "theme");
+  cpWheelWrap.classList.toggle("hidden", colorPickerMode === "theme");
+  renderColorPresets();
+}
+setColorPickerMode(colorPickerMode); // reflect the persisted/default mode in the UI before first open
+
+cpModeFreeBtn.addEventListener("click", () => setColorPickerMode("free"));
+cpModeThemeBtn.addEventListener("click", () => setColorPickerMode("theme"));
 
 function openColorPicker(nodeId, anchorEl) {
   colorPickerTargetId = nodeId;
+  renderColorPresets(); // picks up a theme switch that happened since the popup was last opened
   const rect = anchorEl.getBoundingClientRect();
   colorPickerPopup.style.left = Math.min(rect.left, window.innerWidth - 196) + "px";
-  colorPickerPopup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 230) + "px";
+  colorPickerPopup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 300) + "px";
   colorPickerPopup.classList.remove("hidden");
 }
 function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPickerTargetId = null; }

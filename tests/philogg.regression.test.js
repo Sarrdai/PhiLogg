@@ -121,6 +121,12 @@ async function withApp(run, opts = {}) {
       get redoStack() { return redoStack; },
       get entryIndex() { return entryIndex; },
       get MONO_CHAR_WIDTH_FALLBACK() { return MONO_CHAR_WIDTH_FALLBACK; },
+      get customThemes() { return customThemes; },
+      get THEME_COLOR_KEYS() { return THEME_COLOR_KEYS; },
+      get BUILTIN_THEMES() { return BUILTIN_THEMES; },
+      get colorPickerMode() { return colorPickerMode; },
+      get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },
+      get accentChoices() { return accentChoices; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -1264,21 +1270,26 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 3 — Theme toggle
+   GROUP 3 — Theme select
    Origin: 765d68a9 (design improvements session, test.js, 28 checks).
-   Updated this session (2026-08-21): the single #btnTheme toggle button
-   moved into Settings -> Appearance as an explicit Light/Dark control pair
-   (see GROUP 70h2) — pick whichever side isn't currently active instead of
-   a single toggle click.
+   Updated 2026-08-21: the single #btnTheme toggle button moved into
+   Settings -> Appearance as an explicit Light/Dark control pair.
+   Updated this session (2026-08-22, "configurable themes + Catppuccin"):
+   the Light/Dark button pair was replaced by a #settingsThemeSelect
+   dropdown (built-in themes now include the four Catppuccin flavors, plus
+   any user-imported custom ones) — see GROUP 85.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("3. Theme toggle (now in Settings -> Appearance)");
+  section("3. Theme select (now in Settings -> Appearance)");
   const html = d.documentElement;
   const before = html.dataset.theme;
   fireClick(d.querySelector("#btnSettings"), w);
-  const otherBtn = d.querySelector(before === "light" ? "#settingsThemeDark" : "#settingsThemeLight");
-  fireClick(otherBtn, w);
+  const select = d.querySelector("#settingsThemeSelect");
+  const other = before === "light" ? "dark" : "light";
+  select.value = other;
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(html.dataset.theme !== before, "picking the other theme flips data-theme, was " + before + " now " + html.dataset.theme);
+  assert(html.dataset.theme === other, "data-theme matches the selected option, got " + html.dataset.theme);
   assert(w.localStorage.getItem("philogg-theme") === html.dataset.theme, "theme choice persisted to localStorage");
 });
 
@@ -7693,11 +7704,10 @@ await withApp(async (w, d, T) => {
   assert([...d.querySelectorAll(".settings-section-title")].some(el => el.textContent === "Log Formats"),
     "a Log Formats section is present (Format Manager folded into the settings page, not a separate dialog)");
 
-  const themeLight = d.querySelector("#settingsThemeLight");
-  const themeDark = d.querySelector("#settingsThemeDark");
-  assert(themeLight && themeDark, "Light/Dark theme controls are in the Appearance section");
-  assert(themeDark.classList.contains("active") !== themeLight.classList.contains("active"),
-    "exactly one of Light/Dark is marked active, reflecting the current theme");
+  const themeSelect = d.querySelector("#settingsThemeSelect");
+  assert(themeSelect, "the theme control is in the Appearance section");
+  assert(themeSelect.value === d.documentElement.getAttribute("data-theme"),
+    "the select's value reflects the current theme, got " + themeSelect.value);
 
   fireClick(d.body, w);
   assert(!settingsDialog.classList.contains("hidden"), "clicking elsewhere on the page does NOT close the settings page (only Close/backdrop do)");
@@ -7711,19 +7721,18 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("70h2. Settings page: Light/Dark buttons actually switch and persist the theme");
+  section("70h2. Settings page: the theme select actually switches and persists the theme");
   fireClick(d.querySelector("#btnSettings"), w);
-  const themeLight = d.querySelector("#settingsThemeLight");
-  const themeDark = d.querySelector("#settingsThemeDark");
+  const themeSelect = d.querySelector("#settingsThemeSelect");
 
-  fireClick(themeLight, w);
-  assert(d.documentElement.getAttribute("data-theme") === "light", "clicking Light switches data-theme to light");
-  assert(themeLight.classList.contains("active") && !themeDark.classList.contains("active"), "Light is now the active control");
+  themeSelect.value = "light";
+  themeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.documentElement.getAttribute("data-theme") === "light", "picking Light switches data-theme to light");
   assert(w.localStorage.getItem("philogg-theme") === "light", "theme choice persisted to localStorage");
 
-  fireClick(themeDark, w);
-  assert(d.documentElement.getAttribute("data-theme") === "dark", "clicking Dark switches data-theme back to dark");
-  assert(themeDark.classList.contains("active") && !themeLight.classList.contains("active"), "Dark is now the active control");
+  themeSelect.value = "dark";
+  themeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.documentElement.getAttribute("data-theme") === "dark", "picking Dark switches data-theme back to dark");
   assert(w.localStorage.getItem("philogg-theme") === "dark", "theme choice persisted to localStorage");
 });
 
@@ -8414,7 +8423,7 @@ await withApp(async (w, d, T) => {
   const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
   assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
   const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
-  assert(appearanceRows.length === 2, "Theme + Font size are both rows inside that one card, got " + appearanceRows.length);
+  assert(appearanceRows.length === 3, "Theme + Accent color (hidden on Dark, no highlightPalette — see GROUP 87) + Font size are all rows inside that one card, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
   // Boolean row: rendered as a switch (input + adjacent track element),
@@ -8548,6 +8557,379 @@ await withApp(async (w, d, T) => {
   w.initDetailCollapsed();
   assert(sidebarEl.classList.contains("collapsed") && detailPanel.classList.contains("collapsed"),
     "initSidebarCollapsed/initDetailCollapsed re-apply a persisted collapsed flag, same as at boot");
+});
+
+/* ============================================================
+   GROUP 85 — Configurable themes: Catppuccin flavors + custom JSON
+   import/export
+   Origin: this session (2026-08-22). Replaces the Light/Dark button pair
+   (#settingsThemeLight/#settingsThemeDark, see GROUP 3/70h/70h2's updated
+   text) with a #settingsThemeSelect dropdown listing six built-in themes
+   (dark, light, four Catppuccin flavors — https://catppuccin.com/palette/)
+   plus any user-imported custom ones (localStorage philogg-custom-themes).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("85a. Built-in theme dropdown includes the four Catppuccin flavors, and picking one applies its CSS vars");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const select = d.querySelector("#settingsThemeSelect");
+  const optionValues = [...select.options].map(o => o.value);
+  assert(T.BUILTIN_THEMES.every(t => optionValues.includes(t.id)),
+    "every BUILTIN_THEMES id has a matching <option>, got " + JSON.stringify(optionValues));
+  ["catppuccin-latte", "catppuccin-frappe", "catppuccin-macchiato", "catppuccin-mocha"].forEach(id => {
+    assert(optionValues.includes(id), "Catppuccin flavor " + id + " is offered");
+  });
+
+  select.value = "catppuccin-mocha";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.documentElement.getAttribute("data-theme") === "catppuccin-mocha", "picking Catppuccin Mocha sets data-theme");
+  const cs = w.getComputedStyle(d.documentElement);
+  // --bg-app = Base per the style-guide remap (GROUP 88) — the main
+  // content pane is the brightest of the "background pane" tier now,
+  // not Crust (the darkest), which is what the app's own pre-existing
+  // Dark/Light hierarchy would have suggested — see PROJECT.md "Theming".
+  assert(cs.getPropertyValue("--bg-app").trim() === "#1e1e2e", "Mocha's --bg-app CSS var resolves via the [data-theme] block to Base, got " + cs.getPropertyValue("--bg-app"));
+  assert(cs.getPropertyValue("--bg-panel").trim() === "#181825", "Mocha's --bg-panel resolves to Mantle (darker than --bg-app/Base, per the style-guide remap), got " + cs.getPropertyValue("--bg-panel"));
+  assert(cs.getPropertyValue("--accent").trim() === "#94e2d5", "Mocha's --accent resolves too, got " + cs.getPropertyValue("--accent"));
+  assert(w.localStorage.getItem("philogg-theme") === "catppuccin-mocha", "theme choice persisted to localStorage");
+  // Style guide: "Selection Background" = Overlay 2 @ 20-30% opacity —
+  // Mocha overrides --selection-bg to reuse --level-debug (already =
+  // Overlay 2, see that CSS block), NOT the accent-tinted default every
+  // non-Catppuccin theme keeps (Dark's own --selection-bg stays var(--accent-soft)).
+  const selectionBg = cs.getPropertyValue("--selection-bg").replace(/\s+/g, "");
+  assert(selectionBg === "color-mix(insrgb,var(--level-debug)25%,transparent)",
+    "Mocha's --selection-bg is the Overlay-2-based color-mix formula, got " + cs.getPropertyValue("--selection-bg"));
+
+  select.value = "catppuccin-latte";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const csLatte = w.getComputedStyle(d.documentElement);
+  // Declared as var(--bg-app) (Latte maps --bg-app to Base, #eff1f5, per
+  // the style-guide remap — GROUP 88) — per the Catppuccin style guide,
+  // "On Accent" text = Base, so --level-*-on/--accent-on reference that
+  // var directly rather than a hardcoded near-white. jsdom's
+  // getComputedStyle doesn't resolve nested var() the way a real browser
+  // does (see tests/README.md "Known gaps"), so this checks the declared
+  // value, not the resolved color; Group 87's/88's Playwright-verified
+  // screenshots confirm the real rendered result.
+  assert(csLatte.getPropertyValue("--level-error-on").trim() === "var(--bg-app)",
+    "Latte (a light-background flavor) points --level-error-on at its own Base color (--bg-app) instead of a hardcoded near-white, got " + csLatte.getPropertyValue("--level-error-on"));
+});
+
+await withApp(async (w, d, T) => {
+  section("85b. Importing a custom theme JSON: validation, storage, activation, dropdown + list rendering");
+  fireClick(d.querySelector("#btnSettings"), w);
+
+  assert(d.querySelector("#customThemeList .filter-library-empty"), "custom theme list starts empty");
+
+  // Not valid JSON at all.
+  w.importThemeJson("{not json");
+  assert(T.customThemes.length === 0, "malformed JSON is rejected, nothing added");
+
+  // Valid JSON but missing the format tag.
+  w.importThemeJson(JSON.stringify({ name: "No tag", colors: {} }));
+  assert(T.customThemes.length === 0, "a JSON file without the philogg-theme format tag is rejected");
+
+  // Valid format tag but missing required color keys.
+  w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 1, name: "Incomplete", colors: { "bg-app": "#111111" } }));
+  assert(T.customThemes.length === 0, "a theme file missing required color keys is rejected");
+
+  // A full, valid theme file — build it from the template generator itself,
+  // proving the round trip (template out -> tweak -> import back in) works.
+  const template = JSON.parse(w.buildThemeTemplateJson());
+  assert(template.format === "philogg-theme" && typeof template.colors === "object", "buildThemeTemplateJson seeds a valid, self-consistent template");
+  assert(T.THEME_COLOR_KEYS.every(k => typeof template.colors[k] === "string" && template.colors[k].length > 0),
+    "the template includes every required color key with a non-empty value");
+  template.name = "My Purple Night";
+  template.colors["bg-app"] = "#120018";
+  template.colors["accent"] = "#bb33ff";
+  template.activeTextLight = true;
+  w.importThemeJson(JSON.stringify(template));
+
+  assert(T.customThemes.length === 1, "a valid theme file is accepted and added to customThemes");
+  const imported = T.customThemes[0];
+  assert(imported.name === "My Purple Night", "the imported theme's name is preserved");
+  assert(imported.colors["bg-app"] === "#120018" && imported.colors["accent"] === "#bb33ff", "imported colors are preserved");
+  assert(JSON.parse(w.localStorage.getItem("philogg-custom-themes"))[0].name === "My Purple Night", "custom themes persist to localStorage");
+
+  assert(d.documentElement.getAttribute("data-theme") === imported.id, "importing a theme switches to it immediately");
+  const cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--bg-app").trim() === "#120018", "the custom theme's colors are applied as inline CSS vars, got " + cs.getPropertyValue("--bg-app"));
+  assert(cs.getPropertyValue("--level-error-on").trim() === "#fff", "activeTextLight:true applies white active-button text");
+
+  const select = d.querySelector("#settingsThemeSelect");
+  assert([...select.options].some(o => o.value === imported.id && o.textContent === "My Purple Night"),
+    "the imported theme appears as an option in the dropdown");
+  assert(select.value === imported.id, "the dropdown reflects the newly-active custom theme");
+
+  const listRow = d.querySelector("#customThemeList .filter-library-row");
+  assert(listRow && listRow.textContent.includes("My Purple Night"), "the imported theme is listed in the Custom themes card");
+
+  // Switching away and back via inline-style clearing: a built-in theme
+  // picked afterwards must not leak the custom theme's inline overrides.
+  select.value = "dark";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const csDark = w.getComputedStyle(d.documentElement);
+  assert(csDark.getPropertyValue("--bg-app").trim() === "#10131a", "switching back to Dark clears the custom theme's inline var overrides, got " + csDark.getPropertyValue("--bg-app"));
+
+  // Deleting a custom theme: removes it everywhere, and falls back to dark
+  // if it was the active theme.
+  select.value = imported.id;
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.documentElement.getAttribute("data-theme") === imported.id, "sanity: custom theme active again before deleting it");
+  d.querySelector("#customThemeList .filter-library-row-del").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+  assert(T.customThemes.length === 0, "deleting the custom theme removes it from customThemes");
+  assert(JSON.parse(w.localStorage.getItem("philogg-custom-themes")).length === 0, "...and from localStorage");
+  assert(d.documentElement.getAttribute("data-theme") === "dark", "deleting the ACTIVE custom theme falls back to dark");
+  assert(d.querySelector("#customThemeList .filter-library-empty"), "the list shows the empty state again");
+});
+
+await withApp(async (w, d, T) => {
+  section("85c. A stale/deleted custom theme id in localStorage falls back to dark on boot instead of leaving data-theme dangling");
+  w.localStorage.setItem("philogg-theme", "custom:does-not-exist");
+  w.initTheme();
+  assert(d.documentElement.getAttribute("data-theme") === "dark", "resolveThemeId falls back to dark for an unknown theme id, got " + d.documentElement.getAttribute("data-theme"));
+});
+
+/* ============================================================
+   GROUP 86 — Theme consistency audit: no more hardcoded UI colors, and a
+   theme-aware "Theme" mode for the highlight-color picker
+   Origin: this session (2026-08-22), person-requested follow-up ("Prüfe
+   noch mal auf der Website, welche Farbe für was verwendet wird und ob Du
+   das konsequent umgesetzt hast"). An audit of the stylesheet found ~18
+   buttons/badges/rows still hardcoding the DARK theme's own hex values
+   (scrollbar thumb, toolbar button hover borders, the brand mark, Save/
+   active-chip text, breadcrumb/level-pill/level-badge/log-row-hover tints)
+   instead of the CSS vars every other rule already used — fixed via new
+   --accent-on/--border-hover vars and color-mix(var(--x), transparent) for
+   the alpha-tinted ones, so every one of those now tracks whichever theme
+   is active instead of only ever matching Dark. Separately, the per-filter-
+   node highlight-color picker (#colorPickerPopup, unrelated to app theming
+   before this session) gained a "Theme" mode: its curated preset row can
+   now show the ACTIVE theme's own highlightPalette (the 14 named
+   Catppuccin accent colors per flavor) instead of the theme-independent
+   generic HIGHLIGHT_PRESETS, so a chosen highlight color is guaranteed to
+   belong to the current theme when that mode is on.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("86a. Stylesheet audit: the specific hardcoded hex values found in the audit are gone from the button/badge/row rules that used to hardcode them");
+  const css = d.querySelector("style").textContent;
+  // Each of these literals used to appear in a rule OUTSIDE the :root/
+  // [data-theme] variable-definition blocks — i.e. hardcoded into a
+  // component rule instead of using var(). They may still legitimately
+  // appear INSIDE a :root[data-theme=...] block itself (that's the var's
+  // own definition, not a violation) — this check targets the specific
+  // component selectors the audit found, not the raw strings globally.
+  const violations = [
+    { selector: "::-webkit-scrollbar-thumb", bad: "#2a3142" },
+    { selector: ".brand-mark", bad: "#2f8f8c" },
+    { selector: ".brand-mark", bad: "#0b1016" },
+    { selector: "#btnOpen:hover", bad: "#333c50" },
+    { selector: ".toolbar-badge", bad: "#08201f" },
+    { selector: ".crumb.current", bad: "rgba(79,199,195,.35)" },
+    { selector: ".level-btn.lvl-error", bad: "rgba(241,101,101,.35)" },
+    { selector: ".lvl-error .level-badge", bad: "rgba(241,101,101,.28)" },
+    { selector: ".log-row.lvl-error:hover", bad: "rgba(241,101,101,.20)" },
+    { selector: ".token-chip", bad: "rgba(79,199,195,.35)" },
+  ];
+  violations.forEach(v => {
+    const ruleMatch = css.match(new RegExp(v.selector.replace(/[.:]/g, "\\$&") + "\\{[^}]*\\}"));
+    assert(ruleMatch && !ruleMatch[0].includes(v.bad), v.selector + " no longer hardcodes " + v.bad + ", got " + (ruleMatch ? ruleMatch[0] : "(rule not found)"));
+  });
+  assert(css.includes("--accent-on:"), "a themeable --accent-on var exists for text-on-accent surfaces");
+  assert(css.includes("--border-hover:"), "a themeable --border-hover var exists for hover-state borders");
+  assert(css.includes("color-mix(in srgb"), "the previously-hardcoded alpha-tinted rules now use color-mix() against a themed var");
+});
+
+await withApp(async (w, d, T) => {
+  section("86b. Highlight-color picker: Free (default) vs Theme mode");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const node = w.createFilterNode(f.id, "text", "msg");
+  w.render();
+
+  assert(T.colorPickerMode === "free", "sanity: Free is the default picker mode, unchanged prior behavior");
+  const swatch = d.querySelector('[data-node-id="' + node.id + '"] .tree-swatch');
+  fireClick(swatch, w);
+  assert(isVisible(d.querySelector("#cpWheelWrap"), w), "Free mode: the hue wheel is visible");
+  let presetTitles = [...d.querySelectorAll(".cp-preset")].map(b => b.title);
+  assert(JSON.stringify(presetTitles) === JSON.stringify(T.HIGHLIGHT_PRESETS), "Free mode: presets are the generic HIGHLIGHT_PRESETS, got " + JSON.stringify(presetTitles));
+  w.closeColorPicker();
+
+  // Switch to a Catppuccin flavor, then to Theme mode.
+  w.setTheme("catppuccin-mocha");
+  fireClick(swatch, w);
+  fireClick(d.querySelector("#cpModeTheme"), w);
+  assert(T.colorPickerMode === "theme", "clicking Theme switches the mode");
+  assert(w.localStorage.getItem("philogg-cp-mode") === "theme", "the mode choice persists to localStorage");
+  assert(!isVisible(d.querySelector("#cpWheelWrap"), w), "Theme mode: the hue wheel is hidden");
+  const mochaTheme = T.BUILTIN_THEMES.find(t => t.id === "catppuccin-mocha");
+  presetTitles = [...d.querySelectorAll(".cp-preset")].map(b => b.title);
+  assert(JSON.stringify(presetTitles) === JSON.stringify(mochaTheme.highlightPalette), "Theme mode: presets are Catppuccin Mocha's own highlightPalette (14 named accent colors), got " + presetTitles.length + " colors");
+
+  // Picking one of the theme swatches sets the node's highlightColor and
+  // closes the popup, same interaction as a Free-mode preset click.
+  const firstSwatch = d.querySelector(".cp-preset");
+  const pickedColor = firstSwatch.title;
+  fireClick(firstSwatch, w);
+  assert(T.state.nodes[node.id].highlightColor === pickedColor, "clicking a theme swatch sets the node's highlightColor to that swatch's color");
+  assert(d.querySelector("#colorPickerPopup").classList.contains("hidden"), "picking a swatch closes the popup");
+
+  // A theme with no highlightPalette (Dark) falls back to the generic set
+  // while still in Theme mode — never an empty preset row.
+  w.setTheme("dark");
+  fireClick(swatch, w);
+  presetTitles = [...d.querySelectorAll(".cp-preset")].map(b => b.title);
+  assert(JSON.stringify(presetTitles) === JSON.stringify(T.HIGHLIGHT_PRESETS), "Theme mode on Dark (no highlightPalette) falls back to the generic HIGHLIGHT_PRESETS, got " + presetTitles.length + " colors");
+
+  // Switching back to Free restores the wheel and generic presets, and
+  // also persists.
+  fireClick(d.querySelector("#cpModeFree"), w);
+  assert(T.colorPickerMode === "free" && w.localStorage.getItem("philogg-cp-mode") === "free", "clicking Free switches back and persists");
+  assert(isVisible(d.querySelector("#cpWheelWrap"), w), "Free mode: the hue wheel is visible again");
+});
+
+await withApp(async (w, d, T) => {
+  section("86c. Highlight-color picker mode is restored on init, same as the theme choice itself");
+  w.localStorage.setItem("philogg-cp-mode", "theme");
+  w.setColorPickerMode(w.localStorage.getItem("philogg-cp-mode"));
+  assert(T.colorPickerMode === "theme", "setColorPickerMode re-applies a persisted mode, same pattern initTheme() uses for the theme itself");
+  assert(d.querySelector("#cpModeTheme").classList.contains("active") && !d.querySelector("#cpModeFree").classList.contains("active"),
+    "the Theme button reflects the restored mode");
+});
+
+/* ============================================================
+   GROUP 87 — Accent color: re-pick the app's OWN accent (buttons, the
+   breadcrumb, the minimap's range highlight) from the active theme's
+   own palette
+   Origin: this session (2026-08-22), same-day clarification of the 86
+   request — "Highlightfarbe" there meant the app's accent/selection color
+   itself ("Highlightfarbe auf den Buttons oder die Markierung auf der
+   Minimap für die Zeitabschnitte"), not the per-filter-node highlight
+   color Group 86 covers (a different, unrelated feature that stays as-is).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("87a. Accent-color row: hidden for a theme with no highlightPalette, shown with swatches for one that has it");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const row = d.querySelector("#settingsAccentRow");
+  const picker = d.querySelector("#settingsAccentPicker");
+
+  assert(!isVisible(row, w), "Dark (no highlightPalette) hides the Accent color row");
+
+  const select = d.querySelector("#settingsThemeSelect");
+  select.value = "catppuccin-mocha";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(isVisible(row, w), "Catppuccin Mocha (has a highlightPalette) shows the row");
+  const swatches = [...picker.querySelectorAll(".accent-swatch:not(.accent-swatch-reset)")];
+  const mochaPalette = T.BUILTIN_THEMES.find(t => t.id === "catppuccin-mocha").highlightPalette;
+  assert(swatches.length === mochaPalette.length && swatches.every((s, i) => s.title === mochaPalette[i]),
+    "the swatches are exactly Mocha's own highlightPalette, in order, got " + swatches.length + " of " + mochaPalette.length);
+  assert(picker.querySelector(".accent-swatch-reset.active"), "with no override chosen yet, the reset/'theme default' swatch is the active one");
+
+  select.value = "light";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(!isVisible(row, w), "Light (no highlightPalette either) hides the row again");
+});
+
+await withApp(async (w, d, T) => {
+  section("87b. Picking an accent swatch recolors --accent/-strong/-soft/-on together, persists PER THEME, and survives switching away and back");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const select = d.querySelector("#settingsThemeSelect");
+  select.value = "catppuccin-mocha";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  const csBefore = w.getComputedStyle(d.documentElement);
+  const defaultAccent = csBefore.getPropertyValue("--accent").trim();
+  assert(defaultAccent === "#94e2d5", "sanity: Mocha's default accent (Teal) is active before picking, got " + defaultAccent);
+
+  // Mauve (#cba6f7) is in Mocha's highlightPalette but clearly NOT the
+  // default accent — a real re-pick, not a no-op.
+  const mauveSwatch = [...d.querySelectorAll("#settingsAccentPicker .accent-swatch")].find(s => s.title === "#cba6f7");
+  fireClick(mauveSwatch, w);
+
+  const cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--accent").trim() === "#cba6f7", "picking Mauve sets --accent to it, got " + cs.getPropertyValue("--accent"));
+  assert(cs.getPropertyValue("--accent-strong").trim() !== "#89dceb" && cs.getPropertyValue("--accent-strong").trim() !== "#cba6f7",
+    "--accent-strong is recomputed too (not left at Mocha's old Sky default, and not identical to --accent either), got " + cs.getPropertyValue("--accent-strong"));
+  assert(cs.getPropertyValue("--accent-soft").trim().startsWith("rgba(203,166,247,"), "--accent-soft is recomputed from the new accent's own RGB, got " + cs.getPropertyValue("--accent-soft"));
+  assert(T.accentChoices["catppuccin-mocha"] === "#cba6f7", "the pick is recorded in accentChoices for Mocha specifically");
+  assert(JSON.parse(w.localStorage.getItem("philogg-accent-choice"))["catppuccin-mocha"] === "#cba6f7", "...and persisted to localStorage");
+  // renderAccentPicker() rebuilds the swatch row on every applyTheme() call
+  // (same "new DOM nodes, not the same element" pattern as renderVisibleRows
+  // — see PROJECT.md's jsdom gotcha), so re-query rather than reuse the
+  // now-stale mauveSwatch reference from before the click.
+  const mauveSwatchAfter = [...d.querySelectorAll("#settingsAccentPicker .accent-swatch")].find(s => s.title === "#cba6f7");
+  assert(mauveSwatchAfter.classList.contains("active"), "the picked swatch shows as active");
+
+  // Switch to a DIFFERENT theme: that theme's own default applies, Mocha's
+  // pick is untouched (per-theme, not global).
+  select.value = "catppuccin-latte";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--accent").trim() === "#209fb5", "Latte shows its OWN default accent, unaffected by Mocha's pick");
+
+  // Switch back to Mocha: the pick survives.
+  select.value = "catppuccin-mocha";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--accent").trim() === "#cba6f7", "switching back to Mocha restores the picked Mauve accent");
+
+  // Reset (the ↺ swatch) clears the override and restores the theme's own default.
+  fireClick(d.querySelector("#settingsAccentPicker .accent-swatch-reset"), w);
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--accent").trim() === "#94e2d5", "the reset swatch restores Mocha's default Teal accent");
+  assert(!("catppuccin-mocha" in T.accentChoices), "...and clears the stored override for Mocha");
+});
+
+await withApp(async (w, d, T) => {
+  section("87c. A dark, low-luminance accent pick flips --accent-on to white (contrast safety net)");
+  w.setTheme("catppuccin-latte");
+  // Latte's Red (#d20f39) is in its highlightPalette and dark/saturated
+  // enough that the default near-black --accent-on would be unreadable.
+  w.setAccentChoice("catppuccin-latte", "#d20f39");
+  const cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--accent").trim() === "#d20f39", "sanity: the dark Red accent is active");
+  assert(cs.getPropertyValue("--accent-on").trim() === "#fff", "a low-luminance accent pick flips --accent-on to white instead of staying near-black, got " + cs.getPropertyValue("--accent-on"));
+});
+
+/* ============================================================
+   GROUP 88 — Catppuccin background hierarchy remapped to match the
+   official style guide's "Background Pane"/"Secondary Panes" roles
+   Origin: this session (2026-08-22), person-directed after a style-guide
+   compliance audit flagged the ORIGINAL mapping (kept for consistency
+   with this app's own pre-existing Dark/Light hierarchy — main pane
+   darkest, panel brighter) as inverted relative to the guide's intent
+   (main pane = Base, a brighter tone; secondary/chrome panes = the
+   darker Crust/Mantle). Asked, and told to remap instead of leaving it —
+   see PROJECT.md "Theming" -> "Catppuccin style-guide compliance" for
+   the full token-role table (--bg-app=Base, --bg-panel=Mantle,
+   --bg-elevated=Surface0, --bg-elevated-2=Surface1, --border-soft=
+   Surface2, --border=Overlay0 — same role mapping for all four flavors,
+   including Latte, where Base happens to be the brightest token instead
+   of a dark-flavor middle tone).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("88. Background/border hierarchy: --bg-app (main pane) resolves to Base, brighter than --bg-panel (Mantle) — same role mapping across all four flavors, including inverted-brightness Latte");
+  const mochaExpected = { "bg-app": "#1e1e2e", "bg-panel": "#181825", "bg-elevated": "#313244", "bg-elevated-2": "#45475a", "border-soft": "#585b70", "border": "#6c7086" };
+  const macchiatoExpected = { "bg-app": "#24273a", "bg-panel": "#1e2030", "bg-elevated": "#363a4f", "bg-elevated-2": "#494d64", "border-soft": "#5b6078", "border": "#6e738d" };
+  const frappeExpected = { "bg-app": "#303446", "bg-panel": "#292c3c", "bg-elevated": "#414559", "bg-elevated-2": "#51576d", "border-soft": "#626880", "border": "#737994" };
+  const latteExpected = { "bg-app": "#eff1f5", "bg-panel": "#e6e9ef", "bg-elevated": "#ccd0da", "bg-elevated-2": "#bcc0cc", "border-soft": "#acb0be", "border": "#9ca0b0" };
+
+  [
+    ["catppuccin-mocha", mochaExpected],
+    ["catppuccin-macchiato", macchiatoExpected],
+    ["catppuccin-frappe", frappeExpected],
+    ["catppuccin-latte", latteExpected],
+  ].forEach(([themeId, expected]) => {
+    w.setTheme(themeId);
+    const cs = w.getComputedStyle(d.documentElement);
+    Object.entries(expected).forEach(([key, hex]) => {
+      assert(cs.getPropertyValue("--" + key).trim() === hex, themeId + "'s --" + key + " is " + hex + " per the guide's role mapping, got " + cs.getPropertyValue("--" + key));
+    });
+  });
+
+  // "On Accent" text = Base = --bg-app in this remap, for every flavor
+  // uniformly (previously --bg-elevated for the dark flavors / --bg-panel
+  // for Latte, back when those vars held Base — see 85a's own comment).
+  ["catppuccin-mocha", "catppuccin-macchiato", "catppuccin-frappe", "catppuccin-latte"].forEach(themeId => {
+    w.setTheme(themeId);
+    const cs = w.getComputedStyle(d.documentElement);
+    assert(cs.getPropertyValue("--accent-on").trim() === "var(--bg-app)", themeId + "'s --accent-on points at --bg-app (Base), got " + cs.getPropertyValue("--accent-on"));
+  });
 });
 
 /* ============================================================
@@ -8723,7 +9105,8 @@ process.exit(failed ? 1 : 0);
 
    Group  1  — initial build (pre-dates project memory)
    Group  2  — 765d68a9 (extraction workflow: live match, token chips)
-   Group  3  — 765d68a9 (theme toggle)
+   Group  3  — 765d68a9 (theme toggle); updated 2026-08-22 for the
+              select-dropdown theme control (see Group 85)
    Group  4  — 765d68a9 (sortable headers, status strip, severity bar)
               + 32e282b4 follow-up (level filter now updates BOTH views)
    Group  5  — 765d68a9 (extraction column sort + cell-selection regression)
@@ -9874,6 +10257,88 @@ process.exit(failed ? 1 : 0);
               Ctrl+B/Ctrl+J, resizer double-click, localStorage-persisted
               collapsed flag (display-preference tier, same as theme/font
               scale) restored on init.
+   Group 85  — this session (2026-08-22), "configurable themes +
+              Catppuccin": the Light/Dark button pair became a
+              #settingsThemeSelect dropdown covering six built-in themes
+              (dark, light, Catppuccin Latte/Frappé/Macchiato/Mocha, each a
+              [data-theme=...] CSS block) plus user-imported custom themes
+              (JSON, validated against THEME_COLOR_KEYS, localStorage
+              philogg-custom-themes) applied via inline CSS vars on <html>
+              instead — see applyTheme(). Settings -> Appearance gained a
+              "Custom themes" card: import, delete, and a
+              buildThemeTemplateJson() template download seeded from the
+              currently active theme's own computed colors. Groups 3/70h/
+              70h2 (originally the Light/Dark button pair) were updated in
+              place for the new dropdown rather than left testing removed
+              buttons.
+   Group 86  — this session (2026-08-22), same-day follow-up ("Prüfe, ob
+              konsequent umgesetzt... Highlightfarbe... auf die im Theme
+              festgelegten Farben freigegeben"): an audit of the stylesheet
+              found ~18 rules (scrollbar thumb, toolbar button hover
+              borders, brand mark, Save/active-chip text, breadcrumb/
+              level-pill/level-badge/log-row-hover/token-chip alpha tints)
+              still hardcoding DARK theme's own hex/rgba values instead of
+              the var every sibling rule used — fixed with new --accent-on/
+              --border-hover vars and color-mix(var(--x), transparent) for
+              the alpha-tinted ones. 86a is a static text-content regression
+              guard against those specific literals reappearing (jsdom can't
+              resolve color-mix() to a computed color, so it checks the raw
+              CSS text instead). Separately, the highlight-color picker
+              (#colorPickerPopup, per-filter-node, previously theme-
+              independent) gained a Free/Theme mode toggle
+              (setColorPickerMode, localStorage philogg-cp-mode): Theme mode
+              shows ONLY the active theme's own highlightPalette (14 named
+              Catppuccin accent colors per flavor, on each BUILTIN_THEMES
+              entry; optional on a custom theme's JSON) instead of the
+              generic HIGHLIGHT_PRESETS, falling back to HIGHLIGHT_PRESETS
+              for Dark/Light or a custom theme without one. 86b/86c.
+   Group 87  — this session (2026-08-22), same-day clarification: what "86"
+              called "Highlightfarbe" actually meant the app's OWN accent/
+              selection color (buttons, breadcrumb, the minimap's time-span
+              highlight — all already var(--accent...)-driven per the
+              audit) re-pickable from the theme's own palette, not the
+              per-filter-node picker Group 86 built (which stays, separate
+              feature). New "Accent color" row in Settings -> Appearance
+              (themeOwnPalette(), no HIGHLIGHT_PRESETS fallback — hidden
+              entirely for Dark/Light or a palette-less custom theme, see
+              87a), setAccentChoice()/applyAccentChoice() recompute
+              --accent-strong/-soft/-on together via JS (mixHex toward
+              white on dark flavors / black on Latte, luminance check for
+              -on), persisted PER THEME in localStorage
+              philogg-accent-choice (87b) with a contrast safety net for a
+              dark/saturated pick like Latte's Red (87c).
+              Same-day follow-up, no new group: a Catppuccin style-guide
+              compliance audit (checked against the guide fetched fresh,
+              not from memory) found "On Accent text = Base" and
+              "Selection Background = Overlay 2 @ 20-30%" not followed —
+              fixed by pointing --accent-on/--level-*-on at Base (see
+              Group 88 for where that var landed after the background
+              remap below) and adding --selection-bg (reusing
+              --level-debug = Overlay 2). Group 85a's Latte assertion was
+              updated in place for the new value (checks the declared
+              var() reference string, not a resolved color — jsdom
+              doesn't resolve nested var(), see that assertion's own
+              comment) and gained a --selection-bg check for Mocha. Three
+              other gaps the same audit found were left NOT changed at
+              first, flagged for a person decision in PROJECT.md's
+              "Theming" section rather than silently altered — see Group
+              88 for how one of those three was then resolved.
+   Group 88  — this session (2026-08-22), person directly asked (via
+              AskUserQuestion) whether to keep the app's own pre-existing
+              background brightness hierarchy for Catppuccin flavors or
+              remap to the style guide's literal "Background Pane = Base,
+              Secondary Panes = Crust/Mantle" — chose remap. --bg-app/
+              --bg-panel/--bg-elevated/--bg-elevated-2/--border-soft/
+              --border now map to Base/Mantle/Surface0/Surface1/Surface2/
+              Overlay0 (same role assignment for all four flavors,
+              including Latte, whose Base happens to be the brightest
+              token instead of a dark-flavor mid tone) instead of the
+              previous Crust/Mantle/Base/Surface0/Surface1/Surface0
+              ordering that had preserved this app's own Dark/Light
+              hierarchy. --accent-on/--level-*-on simplified to
+              var(--bg-app) uniformly as a result (Base moved there for
+              every flavor). Warnings=Peach and Info=Blue remain
+              deliberately unchanged (not asked about, see PROJECT.md).
    Group 81  — this session (2026-08-22), person-requested (FEATURE_BACKLOG.md
               item 5, implemented differently than scoped there): numeric
               conditions inside a [value:float]/[value:int] wildcard token
