@@ -866,6 +866,7 @@ One thing jsdom **can't** catch: real hit-testing / paint order (`elementFromPoi
 
 Keep this section updated as features land — newest first, short entries, enough for a future session to know what exists without re-reading the whole chat history.
 
+- **Entry Detail gets the sidebar's hover-peek behavior; both peeks are now content-sized and capped at 50%; new "Open collapsed views on hover" setting** (this session, 2026-08-22, person-requested, German: *"Entry Detail soll im eingeklappten Zustand das gleiche Hover verhalten bekommen wie Files & Filters... nur eben nach oben ausklappen"*). Three parts. **(1)** `#detailPanel` gained the exact same hover-peek mechanism the sidebar already had (see "Collapsible sidebar/detail panel" below): `mouseenter`/`mouseleave` while collapsed toggle a `.peeking` class, which reveals `#detailBody` — the SAME element/markup shown when expanded, no separate peek-only render — as a `position:absolute` overlay. It expands *upward* rather than rightward: `#detailBody` is anchored `bottom:100%` of the still-34px `#detailPanel` (which gained `position:relative` + `overflow:visible` while collapsed, mirroring `#sidebar`'s own), so it grows up from just above the header without pushing `#fhSplit`/`#extractWrap` down. The header's chevron swaps to the pin icon while peeking (`updateDetailToggleIcon()`, new, mirrors `updateSidebarToggleIcon()`); clicking it while peeking pins the panel fully open via the same `toggleDetailCollapsed()` used everywhere else. **(2)** Both peeks changed from a fixed manual-resize size to content-sized-but-capped: the sidebar's overlay was `width:270px` (whatever the last manual width happened to be) — now `width:max-content; max-width:50vw`, so a short tree shrinks the overlay and a long one is clamped at half the application's width (ellipsis on `.tree-label` already handled overflow at any width, unchanged). The new detail overlay is `max-height:50vh` the same way. **(3)** New Settings → Behavior toggle, "Open collapsed views on hover" (`#settingsHoverExpandCollapsed`, **default ON** — unlike the neighboring "quit on last close" toggle, this one guards an *existing* behavior, so defaulting off would silently change everyone's current experience), gates both panels' `mouseenter` handlers (`hoverExpandCollapsed`, same localStorage-flag mechanism as `quitOnLastFileClose`/`fontScale`); manual click-to-expand and the keyboard shortcuts are unaffected either way. Turning the setting off while a panel happens to be mid-peek exits peek immediately instead of leaving it stuck open until the next `mouseleave`. See "Collapsible sidebar/detail panel" below; `tests/philogg.regression.test.js` Group 91 (new). 1696 passed, 0 failed.
 - **Follow-up: collapsed sidebar/detail panel hide their own drag handle entirely** (this session, 2026-08-22, person-requested follow-up to the entry directly below). `#sidebarResizer`/`#detailResizer` used to keep their new permanent grip bar visible even while their panel was collapsed (fixed 40px rail / 34px header, neither manually resizable in that state), reading as dead UI. `#sidebarResizer` is now hidden via a plain `.hidden{display:none}` class toggled from `toggleSidebarCollapsed` — safe there since nothing else drives that element's `display`. `#detailResizer` needed a different fix: it's ALSO shown/hidden imperatively via `style.display` from three other places (`renderMainView`'s no-files/extract-mode/normal branches and `renderTable`) based on whether files are loaded and the active node's filter type — an inline style always wins over a CSS class regardless of specificity, so a `.hidden` class toggled from `toggleDetailCollapsed` was silently overridden the next time any of those functions ran (caught by the new regression test, not by eye — see "Testing approach"). Fixed by centralizing into one `updateDetailResizerVisibility()` (state.rootIds.length > 0 && !isExtract && !isDetailCollapsed()), called from all four sites instead of each recomputing/overwriting `style.display` independently. `tests/philogg.regression.test.js` Group 80 extended (not a new group — same feature surface): asserts the resizer is actually hidden via `getComputedStyle` (not just `classList`) right after each collapse, and reappears on expand. 1673 passed, 0 failed.
 - **Main window visual consistency fix** (this session, 2026-08-22, person-requested — extends the Settings dialog's own `.btn-mini` button system to the toolbar/view-bar, which had drifted into per-control hand-tuned CSS: three separate rounds of "height-parity bugfix" comments on `.crumb`/`.level-btn`/`#btnPinBookmarks` chasing pixel parity via line-height arithmetic instead of a shared box model). Two problems fixed. **(1)** Introduced a shared 28px, flex-centered control height reused by role instead of copy-pasted padding/line-height: an icon-button shape (28x28, `border-radius:7px`) for `.toolbar-icon-btn` — now also covers `#btnPinBookmarks`/`#btnMultilineMsg`/`#btnColumns` with no id-specific override needed — and a pill shape (`border-radius:20px`, height:28px) for `.level-btn`/`.crumb`; `.view-tabs`/`.view-tab` get the same 28px height via `height:100%` filling its container instead of a hand-computed line-height. `#btnOpen`/`#btnSession` (previously two byte-for-byte-identical rule blocks) were merged into one, also given the 28px height. All the "height-parity bugfix"/ROUND-1/ROUND-2 comments this replaced are gone. **(2)** The three panel resizers (`#sidebarResizer`/`#fhSplitResizer`/`#detailResizer`) were fully transparent at rest, only showing an accent line on hover/drag — between two `--bg-panel` surfaces this read as a stray dark seam (`--bg-app` showing through) rather than an intentional divider, almost certainly the reported "gap between Files & Filters and the minimap." Now show a permanent grip bar (`var(--border)` at rest, `var(--accent)` on hover/drag). Also fixed the actual token mismatch at that seam: `#timelineMinimap`'s `border-bottom` used `--border-soft` while `#sidebar`'s `border-right` (the adjoining seam) used `--border` — both now `--border`. Pure CSS, no functional/DOM changes; `.tree-action-btn`/`.folder-watch-reconnect`/`.tree-ghost-restore-btn` deliberately left alone (not part of a row requiring cross-control alignment). See "Visual language" → "Shared control box model" above. `tests/philogg.regression.test.js` Group 90 (new); Group 26/29b rewritten in place to assert the new 28px-height model instead of the superseded line-height arithmetic; Group 86a's `#btnOpen:hover` selector-text lookup updated for the merged rule. 1669 passed, 0 failed.
 - **Bugfix: a file opened via desktop launch argument now gets tailed** (this session, 2026-08-22, `FEATURE_BACKLOG.md` item 11). `loadUrlIntoTree` — the single path behind every desktop-wrapper file open, including the very first file passed as a command-line/launch argument (`desktop/main.js` `fileArgFromArgv`/`createWindow`), a later file-association double-click (`second-instance`/`open-file`, via `window.philoggLoadUrl`), and an ordinary `?url=` CI report link — built its node purely from already-fetched text via `addFile()`, so it never got a `node.tail`: a live log opened this way just sat as a dead byte snapshot even though the desktop wrapper serves it straight off disk, where it can keep growing. Fixed by recognizing the desktop wrapper's own `philogg://local/<id>/…` scheme (`isDesktopLocalUrl`) — every fetch to it re-reads the file fresh via `fs.promises.readFile`, see `registerProtocol` in `desktop/main.js` — and attaching a `node.tail` whose handle (`urlTailHandle`) just re-fetches that same URL and wraps the bytes in a `Blob`, reusing the existing `tailTick` poll loop (see "Tailing") completely unchanged. An ordinary `http(s)` `?url=` deliberately stays untouched (no repeated background fetches to an arbitrary report link). As a side effect this also covers the backlog item's softer second ask ("periodically re-check static files for changes"): a desktop-opened file that never grows still gets polled every `TAIL_POLL_MS`, instead of never being looked at again after the initial load. `tests/philogg.regression.test.js` Group 89 (new); Groups 66/67's fetch mocks updated from `text()` to `arrayBuffer()` to match the production code's switch (needed for correct byte-offset tracking). 1650 passed, 0 failed.
@@ -983,19 +984,22 @@ Keep this section updated as features land — newest first, short entries, enou
   not the whole tree), reusing the same `ICON_FILE`/`ICON_MERGE` glyphs and
   `node.highlightColor` a normal tree row would; refreshed from
   `renderTree()` itself so it never goes stale. **Hover-peek**: hovering a
-  collapsed rail (`mouseenter`/`mouseleave` on `#sidebar`) adds `.peeking`,
-  which makes `#sidebarNormalContent` — the exact same element/markup used
-  when expanded, not a separate peek-only render — `position:absolute` over
-  the rail and the content area (270px, box-shadow, `overflow:visible` on
-  the still-40px `#sidebar` parent so nothing reflows underneath); the
-  header's chevron swaps to a pin icon (reusing the existing `ICON_PIN` from
-  the bookmarks-pin feature) whose click is the *same* toggle function,
-  exiting `.collapsed` entirely (pins it open) rather than a separate pinned
-  sub-state. `#sidebarToggle` (the header's own button) is consequently only
-  ever visible in two of the three states (expanded, or collapsed+peeking) —
-  the third (collapsed, not peeking) is the rail's own separately rendered
-  button; `updateSidebarToggleIcon()` only distinguishes the two states it's
-  actually shown in.
+  collapsed rail (`mouseenter`/`mouseleave` on `#sidebar`, gated by
+  `hoverExpandCollapsed` — see "Open collapsed views on hover" below) adds
+  `.peeking`, which makes `#sidebarNormalContent` — the exact same
+  element/markup used when expanded, not a separate peek-only render —
+  `position:absolute` over the rail and the content area
+  (`width:max-content; max-width:50vw` — content-sized, capped at half the
+  application's width, not the old fixed 270px; box-shadow, `overflow:
+  visible` on the still-40px `#sidebar` parent so nothing reflows
+  underneath); the header's chevron swaps to a pin icon (reusing the
+  existing `ICON_PIN` from the bookmarks-pin feature) whose click is the
+  *same* toggle function, exiting `.collapsed` entirely (pins it open)
+  rather than a separate pinned sub-state. `#sidebarToggle` (the header's
+  own button) is consequently only ever visible in two of the three states
+  (expanded, or collapsed+peeking) — the third (collapsed, not peeking) is
+  the rail's own separately rendered button; `updateSidebarToggleIcon()`
+  only distinguishes the two states it's actually shown in.
 
   **Collapsible detail panel** (`#detailPanel`, bottom): the previous bare
   `#detailMeta` row is now wrapped in `#detailPanelHeader` (34px — fixed
@@ -1007,7 +1011,27 @@ Keep this section updated as features land — newest first, short entries, enou
   branches on collapsed state: expanded keeps the existing
   level/time/thread/location/method fields; collapsed swaps to
   level/time/first-message-line (`.detail-collapsed-msg`, CSS ellipsis) so
-  the header never goes informationally empty while closed.
+  the header never goes informationally empty while closed. **Hover-peek**
+  (added this session, 2026-08-22, to match the sidebar's — see the "Entry
+  Detail" entry at the top of this changelog): same mechanism as the
+  sidebar, but expanding *upward* — `#detailPanel` gained `position:
+  relative` and `overflow:visible` while collapsed; `mouseenter`/
+  `mouseleave` (gated by `hoverExpandCollapsed`) toggle `.peeking`, which
+  makes `#detailBody` `position:absolute; bottom:100%` of the still-34px
+  panel (i.e. flush above the header) with `max-height:50vh`, growing
+  upward without pushing `#fhSplit`/`#extractWrap` down. Chevron swaps to
+  the pin icon while peeking (`updateDetailToggleIcon()`, mirrors
+  `updateSidebarToggleIcon()`); clicking it while peeking pins the panel
+  open via the same `toggleDetailCollapsed()`.
+
+  **Open collapsed views on hover** (Settings → Behavior toggle, this
+  session, 2026-08-22, default ON): `hoverExpandCollapsed`
+  (`philogg-hover-expand-collapsed` in `localStorage`, same tier/mechanism
+  as `quitOnLastFileClose`) gates both panels' `mouseenter` handlers above —
+  off, hovering a collapsed panel does nothing, and it only expands via a
+  click on its toggle/rail or a keyboard shortcut. Flipping it off while a
+  panel is mid-peek removes `.peeking` immediately rather than waiting for
+  the next `mouseleave`.
 
   **Shared across both**: `Ctrl+B` (sidebar) / `Ctrl+J` (detail) toggle
   shortcuts (added before the existing `Ctrl+Z`/`Ctrl+Y` undo/redo branch in
@@ -1025,7 +1049,9 @@ Keep this section updated as features land — newest first, short entries, enou
   sidebar/detail drag-resizers themselves are session-only (see "Five
   changes to the Filtered/Full split and the tree" above); `sidebarLastWidth`
   /`detailLastHeight` are plain JS variables, refreshed from
-  `getBoundingClientRect()` right before each collapse. GROUP 80.
+  `getBoundingClientRect()` right before each collapse. GROUP 80, extended
+  by GROUP 91 (detail-panel hover-peek, content-sized/capped peek sizing,
+  the hover-toggle setting).
 
   Both parts came with a `.dc.html` design-tool file (colors/radii/spacing
   read directly from it, not eyeballed) and a chat transcript recording one

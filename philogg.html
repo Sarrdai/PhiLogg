@@ -408,9 +408,13 @@
      as an absolutely positioned overlay anchored to the still-40px rail box
      so #content never reflows. Identical markup/rendering to the expanded
      state per design intent ("Hover soll der ausgeklappten Darstellung
-     entsprechen") — no separate peek-only rendering path exists. */
+     entsprechen") — no separate peek-only rendering path exists. Sized to
+     its own content (width:max-content, not the fixed manual-resize width)
+     but capped at 50% of the application's width so a long tree can't take
+     over the screen — see "Open collapsed views on hover" in PROJECT.md. */
   #sidebar.collapsed.peeking #sidebarNormalContent{
-    position:absolute; top:0; left:0; bottom:0; width:270px; z-index:30;
+    position:absolute; top:0; left:0; bottom:0; z-index:30;
+    width:max-content; max-width:50vw;
     background:var(--bg-panel); box-shadow:14px 0 34px rgba(0,0,0,.45);
   }
   .sidebar-rail-sep{width:20px; height:1px; background:var(--border-soft); flex:0 0 auto;}
@@ -1159,14 +1163,33 @@
   #detailResizer:hover::after, #detailResizer.dragging::after{ background:var(--accent); }
 
   #detailPanel{
-    flex:0 0 auto; height:190px; min-height:80px;
+    flex:0 0 auto; height:190px; min-height:80px; position:relative;
     background:var(--bg-panel); border-top:1px solid var(--border);
     display:flex; flex-direction:column; min-height:0;
   }
   /* Collapsed height (34px, matching #sidebarHeader's rail height) is set
      directly on #detailPanel.style.height from JS (toggleDetailCollapsed),
-     same mechanism as the manual drag-resize below. */
-  #detailPanel.collapsed #detailBody{display:none;}
+     same mechanism as the manual drag-resize below. Collapsed-and-not-
+     peeking hides the body entirely, same as the sidebar's rail/normal-
+     content swap (see #sidebar.collapsed:not(.peeking) above) — the
+     :not(.peeking) guard is what lets the peek rule below re-reveal it. */
+  #detailPanel.collapsed:not(.peeking) #detailBody{display:none;}
+  /* Collapsed + hovered (peeking): same overlay mechanism as the sidebar's
+     #sidebarNormalContent peek above, but expanding UPWARD from the still-
+     34px header instead of rightward from the 40px rail — #detailBody sits
+     after the header in DOM order, so anchoring its own bottom edge to
+     100% of #detailPanel's (collapsed, 34px) height places it flush above
+     the header, growing up without pushing #fhSplit/#extractWrap above it
+     (overflow:visible on the collapsed panel lets it render past the 34px
+     box, same reasoning as #sidebar.collapsed{overflow:visible}). Sized to
+     its own content, capped at 50% of the application's height — see "Open
+     collapsed views on hover" in PROJECT.md. */
+  #detailPanel.collapsed{overflow:visible;}
+  #detailPanel.collapsed.peeking #detailBody{
+    position:absolute; left:0; right:0; bottom:100%; z-index:30;
+    max-height:50vh;
+    background:var(--bg-panel); box-shadow:0 -14px 34px rgba(0,0,0,.45);
+  }
 
   /* Single 34px header row: fixed "Entry detail" label, the meta line
      (#detailMeta — full field set expanded, level+time+first-message-line
@@ -2699,6 +2722,18 @@
                 </label>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsHoverExpandCollapsed">Open collapsed views on hover</label>
+                <div class="settings-row-hint">Hovering a collapsed sidebar or entry detail panel temporarily expands it. Turn off to expand them only by clicking.</div>
+              </div>
+              <div class="settings-row-control">
+                <label class="settings-switch">
+                  <input type="checkbox" id="settingsHoverExpandCollapsed">
+                  <span class="settings-switch-track"></span>
+                </label>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -3362,6 +3397,37 @@ function initQuitOnLastClose() {
 document.getElementById("settingsQuitOnLastClose").addEventListener("change", ev => {
   quitOnLastFileClose = ev.target.checked;
   localStorage.setItem(QUIT_ON_LAST_CLOSE_KEY, quitOnLastFileClose ? "1" : "0");
+});
+
+/* ===================== "Open collapsed views on hover" (this session,
+   person-requested) ===================== */
+// On by default (unlike quitOnLastFileClose above) — hover-peek is the
+// existing sidebar behavior this setting only adds an opt-out for, so
+// leaving it off by default would silently change everyone's current
+// experience. Same display-preference tier/mechanism as the toggles above:
+// a plain localStorage flag, read by the mouseenter handlers in the
+// "Collapsible sidebar / detail panel" section below (sidebarEl/detailPanel
+// aren't declared yet at this point in the file, but this only runs inside
+// event-handler closures fired well after boot, not at declaration time).
+const HOVER_EXPAND_COLLAPSED_KEY = "philogg-hover-expand-collapsed";
+let hoverExpandCollapsed = true;
+
+function initHoverExpandCollapsed() {
+  const stored = localStorage.getItem(HOVER_EXPAND_COLLAPSED_KEY);
+  hoverExpandCollapsed = stored === null ? true : stored === "1";
+  const cb = document.getElementById("settingsHoverExpandCollapsed");
+  if (cb) cb.checked = hoverExpandCollapsed;
+}
+
+document.getElementById("settingsHoverExpandCollapsed").addEventListener("change", ev => {
+  hoverExpandCollapsed = ev.target.checked;
+  localStorage.setItem(HOVER_EXPAND_COLLAPSED_KEY, hoverExpandCollapsed ? "1" : "0");
+  // Turning it off while a panel happens to be mid-peek would otherwise
+  // leave it stuck open until the next mouseleave — drop out immediately.
+  if (!hoverExpandCollapsed) {
+    if (sidebarEl.classList.contains("peeking")) { sidebarEl.classList.remove("peeking"); updateSidebarToggleIcon(); }
+    if (detailPanel.classList.contains("peeking")) { detailPanel.classList.remove("peeking"); updateDetailToggleIcon(); }
+  }
 });
 
 // Called after any user-initiated file close (see deleteFilterNodeWithUndo)
@@ -9002,7 +9068,7 @@ function toggleSidebarCollapsed(collapsed) {
 
 sidebarToggleBtn.addEventListener("click", () => toggleSidebarCollapsed());
 sidebarEl.addEventListener("mouseenter", () => {
-  if (!isSidebarCollapsed()) return;
+  if (!isSidebarCollapsed() || !hoverExpandCollapsed) return;
   sidebarEl.classList.add("peeking");
   updateSidebarToggleIcon();
 });
@@ -9019,6 +9085,22 @@ function initSidebarCollapsed() {
 }
 
 function isDetailCollapsed() { return detailPanel.classList.contains("collapsed"); }
+function isDetailPeeking() { return detailPanel.classList.contains("peeking"); }
+
+// Same icon-swap reasoning as updateSidebarToggleIcon above: peeking shows
+// the pin icon (clicking it exits .collapsed entirely, "pinning" the panel
+// open), collapsed-not-peeking shows the up chevron (there's more to
+// expand), expanded shows the down chevron (click collapses).
+function updateDetailToggleIcon() {
+  if (isDetailPeeking()) {
+    detailToggleBtn.innerHTML = ICON_PIN;
+    detailToggleBtn.title = "Pin open (Ctrl+J)";
+  } else {
+    const collapsed = isDetailCollapsed();
+    detailToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
+    detailToggleBtn.title = collapsed ? "Expand (Ctrl+J)" : "Collapse (Ctrl+J)";
+  }
+}
 
 // Single source of truth for #detailResizer's own visibility, called both
 // from here (immediate effect on collapse/expand) and from renderMainView/
@@ -9038,6 +9120,7 @@ function updateDetailResizerVisibility() {
 
 function toggleDetailCollapsed(collapsed) {
   if (collapsed === undefined) collapsed = !isDetailCollapsed();
+  detailPanel.classList.remove("peeking");
   if (collapsed) {
     detailLastHeight = detailPanel.getBoundingClientRect().height || detailLastHeight;
     detailPanel.classList.add("collapsed");
@@ -9047,14 +9130,23 @@ function toggleDetailCollapsed(collapsed) {
     detailPanel.style.height = detailLastHeight + "px";
   }
   updateDetailResizerVisibility();
-  detailToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
-  detailToggleBtn.title = collapsed ? "Expand (Ctrl+J)" : "Collapse (Ctrl+J)";
   localStorage.setItem(DETAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
+  updateDetailToggleIcon();
   updateDetailPanel();
   renderVisibleRows();
 }
 
 detailToggleBtn.addEventListener("click", () => toggleDetailCollapsed());
+detailPanel.addEventListener("mouseenter", () => {
+  if (!isDetailCollapsed() || !hoverExpandCollapsed) return;
+  detailPanel.classList.add("peeking");
+  updateDetailToggleIcon();
+});
+detailPanel.addEventListener("mouseleave", () => {
+  if (!isDetailCollapsed()) return;
+  detailPanel.classList.remove("peeking");
+  updateDetailToggleIcon();
+});
 detailResizer.addEventListener("dblclick", () => toggleDetailCollapsed());
 
 function initDetailCollapsed() {
@@ -15006,6 +15098,7 @@ applyRowGrid();
 initTheme();
 initFontScale();
 initQuitOnLastClose();
+initHoverExpandCollapsed();
 initCollapsePanels();
 initFhView();
 render();
