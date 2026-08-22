@@ -8490,7 +8490,17 @@ await withApp(async (w, d, T) => {
    to its 34px header, which still shows level/time/first-message-line
    instead of going empty. Both: Ctrl+B/Ctrl+J, resizer double-click,
    localStorage-persisted collapsed flag (display-preference tier, same as
-   theme/font-scale — see THEME_STORAGE_KEY).
+   theme/font-scale — see THEME_STORAGE_KEY). EXTENDED 2026-08-22
+   (person-requested follow-up): both resizers (#sidebarResizer/
+   #detailResizer) are now hidden outright while their panel is collapsed,
+   not just non-functional — a collapsed panel isn't manually resizable
+   (sidebar = fixed 40px rail, detail panel = fixed 34px header), so a
+   visible drag handle would be dead UI. Toggled directly in JS from
+   toggleSidebarCollapsed/toggleDetailCollapsed rather than a CSS selector
+   off the panel's own .collapsed class — #detailResizer in particular
+   PRECEDES #detailPanel in the DOM, so no descendant/sibling-combinator
+   selector keyed off #detailPanel.collapsed could ever reach it (a stale
+   CSS rule tried exactly that and silently never matched — removed).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("80. Collapsible sidebar / detail panel");
@@ -8500,6 +8510,8 @@ await withApp(async (w, d, T) => {
   const sidebarNormalContent = d.querySelector("#sidebarNormalContent");
   const sidebarRail = d.querySelector("#sidebarRail");
   const detailBody = d.querySelector("#detailBody");
+  const sidebarResizerEl = d.querySelector("#sidebarResizer");
+  const detailResizerEl = d.querySelector("#detailResizer");
 
   assert(!sidebarEl.classList.contains("collapsed") && !detailPanel.classList.contains("collapsed"), "both panels start expanded");
   assert(isVisible(sidebarNormalContent, w) && !isVisible(sidebarRail, w), "expanded: normal tree content shown, rail hidden");
@@ -8510,11 +8522,17 @@ await withApp(async (w, d, T) => {
   assert(sidebarEl.style.width === "40px", "collapsed width is set to the 40px rail, got " + sidebarEl.style.width);
   assert(w.localStorage.getItem("philogg-sidebar-collapsed") === "1", "collapsed flag persisted to localStorage");
   assert(!isVisible(sidebarNormalContent, w) && isVisible(sidebarRail, w), "collapsed (not hovering): rail shown, normal content hidden");
+  // A collapsed sidebar has a fixed 40px rail width, not a manually
+  // resizable one, so its own drag handle would be dead UI if left
+  // visible — hidden outright rather than just non-functional (person-
+  // requested follow-up, this session).
+  assert(!isVisible(sidebarResizerEl, w), "collapsed sidebar hides its own drag-resize handle entirely");
 
   w.toggleSidebarCollapsed();
   assert(!sidebarEl.classList.contains("collapsed"), "toggling again expands the sidebar");
   assert(sidebarEl.style.width !== "40px", "width is restored away from the 40px rail value, got " + sidebarEl.style.width);
   assert(w.localStorage.getItem("philogg-sidebar-collapsed") === "0", "expanded flag persisted too");
+  assert(isVisible(sidebarResizerEl, w), "expanding the sidebar brings its drag handle back");
 
   // --- Hover-peek: collapsed + mouseenter shows the exact expanded content
   //     as an overlay (no separate peek-only markup/rendering) ---
@@ -8566,6 +8584,12 @@ await withApp(async (w, d, T) => {
   assert(detailPanel.style.height === "34px", "collapsed height matches the 34px header, got " + detailPanel.style.height);
   assert(!isVisible(detailBody, w), "the message body is hidden while collapsed");
   assert(w.localStorage.getItem("philogg-detail-collapsed") === "1", "collapsed flag persisted");
+  // Same reasoning as the sidebar resizer above (person-requested follow-up,
+  // this session): #detailResizer PRECEDES #detailPanel in the DOM, so a
+  // stale CSS rule keyed off #detailPanel.collapsed #detailResizer never
+  // actually matched (removed) — hiding it is done in JS instead, from
+  // toggleDetailCollapsed directly.
+  assert(!isVisible(detailResizerEl, w), "collapsed detail panel hides its own drag-resize handle entirely");
 
   // Collapsed meta line: level + time + first message line, not the full
   // thread/location/method field set (no room for those in 34px).
@@ -8577,6 +8601,7 @@ await withApp(async (w, d, T) => {
   assert(!detailPanel.classList.contains("collapsed") && isVisible(detailBody, w), "expanding restores the body");
   assert(detailMeta.querySelector(".detail-thread") && !detailMeta.querySelector(".detail-collapsed-msg"),
     "...and the full field set is back in the meta line");
+  assert(isVisible(detailResizerEl, w), "expanding the detail panel brings its drag handle back");
 
   fireKeydown(d, w, "j", { ctrlKey: true });
   assert(detailPanel.classList.contains("collapsed"), "Ctrl+J toggles the detail panel collapse");
@@ -10342,7 +10367,14 @@ process.exit(failed ? 1 : 0);
               level/time/first-message-line instead of going empty).
               Ctrl+B/Ctrl+J, resizer double-click, localStorage-persisted
               collapsed flag (display-preference tier, same as theme/font
-              scale) restored on init.
+              scale) restored on init. EXTENDED same day, person-requested
+              follow-up: both resizers now hide outright (not just go
+              inert) while their own panel is collapsed — a stale CSS rule
+              tried to hide #detailResizer via `#detailPanel.collapsed
+              #detailResizer` and never actually matched (#detailResizer
+              precedes #detailPanel in the DOM, not a descendant of it);
+              fixed by toggling a `.hidden` class directly from
+              toggleSidebarCollapsed/toggleDetailCollapsed instead.
    Group 85  — this session (2026-08-22), "configurable themes +
               Catppuccin": the Light/Dark button pair became a
               #settingsThemeSelect dropdown covering six built-in themes

@@ -445,6 +445,10 @@
     background:var(--border); transition:background .12s;
   }
   #sidebarResizer:hover::after, #sidebarResizer.dragging::after{ background:var(--accent); }
+  /* Hidden outright while the sidebar is collapsed (toggleSidebarCollapsed):
+     a collapsed sidebar has a fixed 40px rail width, not a manually
+     resizable one, so the drag handle would be dead UI if left visible. */
+  #sidebarResizer.hidden{display:none;}
   #tree{flex:0 0 auto; padding:8px 0;}
 
   /* Folder watch (FEATURE_BACKLOG.md "Folder watch + lazy loading"): a
@@ -1163,7 +1167,6 @@
      directly on #detailPanel.style.height from JS (toggleDetailCollapsed),
      same mechanism as the manual drag-resize below. */
   #detailPanel.collapsed #detailBody{display:none;}
-  #detailPanel.collapsed #detailResizer{display:none;}
 
   /* Single 34px header row: fixed "Entry detail" label, the meta line
      (#detailMeta — full field set expanded, level+time+first-message-line
@@ -5878,7 +5881,11 @@ function renderMainView() {
   // applies to the link view exactly as it does to the plain table view now
   // that link-view rows can populate that selection too (double-click, via
   // revealInHighlightView).
-  detailResizer.style.display = "block";
+  // detailResizer stays hidden while the panel is collapsed (person-
+  // requested, this session — see updateDetailResizerVisibility): a
+  // collapsed panel has a fixed 34px header height, not a manually
+  // resizable one, so the drag handle would be dead UI if left visible.
+  updateDetailResizerVisibility();
   detailPanel.style.display = "flex";
 
   if (isLink) {
@@ -8982,6 +8989,12 @@ function toggleSidebarCollapsed(collapsed) {
     sidebarEl.classList.remove("collapsed");
     sidebarEl.style.width = sidebarLastWidth + "px";
   }
+  // A collapsed sidebar has a fixed 40px rail width, not a manually
+  // resizable one, so the drag handle would be dead UI if left visible —
+  // hide it outright rather than just leaving it non-functional. Toggled
+  // here in JS (not a CSS sibling/descendant selector on #sidebar.collapsed)
+  // since #sidebarResizer is a sibling of #sidebar, not a descendant.
+  sidebarResizer.classList.toggle("hidden", collapsed);
   localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
   updateSidebarToggleIcon();
   renderVisibleRows();
@@ -9007,6 +9020,22 @@ function initSidebarCollapsed() {
 
 function isDetailCollapsed() { return detailPanel.classList.contains("collapsed"); }
 
+// Single source of truth for #detailResizer's own visibility, called both
+// from here (immediate effect on collapse/expand) and from renderMainView/
+// renderTable (whose hasFiles/extract-mode checks independently drive the
+// SAME element's inline display via style.display, not a CSS class — so a
+// class-based .hidden toggle here would just lose to whichever of those
+// runs next; recomputing the full condition in one place avoids the two
+// mechanisms fighting over the same property). A collapsed panel has a
+// fixed 34px header height, not a manually resizable one, so the drag
+// handle would be dead UI if left visible whenever it's collapsed, on top
+// of the existing no-files/extract-mode hide conditions.
+function updateDetailResizerVisibility() {
+  const activeNode = state.nodes[state.activeId];
+  const isExtract = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "extract");
+  detailResizer.style.display = (state.rootIds.length > 0 && !isExtract && !isDetailCollapsed()) ? "block" : "none";
+}
+
 function toggleDetailCollapsed(collapsed) {
   if (collapsed === undefined) collapsed = !isDetailCollapsed();
   if (collapsed) {
@@ -9017,6 +9046,7 @@ function toggleDetailCollapsed(collapsed) {
     detailPanel.classList.remove("collapsed");
     detailPanel.style.height = detailLastHeight + "px";
   }
+  updateDetailResizerVisibility();
   detailToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
   detailToggleBtn.title = collapsed ? "Expand (Ctrl+J)" : "Collapse (Ctrl+J)";
   localStorage.setItem(DETAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
@@ -10366,7 +10396,7 @@ function renderTable() {
   const hasFiles = state.rootIds.length > 0;
   tableWrap.style.display = hasFiles ? "flex" : "none";
   emptyState.style.display = hasFiles ? "none" : "flex";
-  detailResizer.style.display = hasFiles ? "block" : "none";
+  updateDetailResizerVisibility();
   detailPanel.style.display = hasFiles ? "flex" : "none";
   if (!hasFiles) {
     currentViewEntries = [];
