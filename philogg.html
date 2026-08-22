@@ -1175,6 +1175,16 @@
        doesn't reach the right edge" bug caught by screenshot review this
        session. */
     display:flex; flex-direction:column;
+    /* min-height:0 here (AFTER min-height:80px above, so it's the value
+       that actually wins — see PROJECT.md) overrides that 80px floor,
+       which exists only as a min-height for the manual drag-resizer's
+       lower bound, not for the collapsed 34px state: min-height always
+       clamps height upward regardless of whether the height comes from
+       this stylesheet or the collapsed/peeking inline style set from
+       toggleDetailCollapsed, so without this override the collapsed panel
+       couldn't actually shrink below 80px — a real 46px empty gap under
+       the header, caught by screenshot review this session. */
+    min-height:0;
   }
   /* #detailPanelInner carries the actual header+body flex layout (moved off
      #detailPanel itself so the SAME wrapper — header, then body below it,
