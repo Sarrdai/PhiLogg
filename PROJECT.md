@@ -818,6 +818,38 @@ One thing jsdom **can't** catch: real hit-testing / paint order (`elementFromPoi
 
 Keep this section updated as features land — newest first, short entries, enough for a future session to know what exists without re-reading the whole chat history.
 
+- Bugfix, four rounds (this session, 2026-08-22, person-reported via
+  screenshots, same-session follow-up to the Settings/collapse redesign
+  directly below): **(1)** the sidebar's hover-peek overlay
+  (`#sidebarNormalContent` while `.peeking`, see that entry) had no
+  `background` of its own — visually detached from `#sidebar`'s 40px box via
+  `position:absolute`, so it painted transparent and the log table/timeline
+  minimap underneath bled straight through it; fixed with an explicit
+  `background:var(--bg-panel)` on that rule. **(2)** The detail panel's
+  collapse/expand chevron pointed the wrong way in both states — `.dc.html`
+  names its two path variants by open/closed state, not by the actual
+  direction the chevron draws, and both the static HTML fallback and
+  `ICON_CHEVRON_DOWN`/`ICON_CHEVRON_UP` were copied over with the names and
+  visual directions crossed; swapped both path bodies so `_DOWN` truly
+  points down and `_UP` truly points up, matching their already-correct
+  `collapsed ? ... : ...` usage. **(3)** Settings' left-nav category buttons
+  looked unclickable: their `.active` highlight was driven solely by the
+  scroll-position `IntersectionObserver` (see the entry below), so clicking
+  a category whose section was already fully on screen — no scrolling
+  needed — produced zero visible feedback even though the click handler
+  (and `scrollIntoView`) fired correctly. The click handler now also sets
+  `.active` directly, immediately, independent of whatever the observer
+  decides once scrolling (if any) settles. **(4)** The font-size stepper's
+  `−`/`+` glyphs rendered top-left instead of centered in their 32×30 boxes
+  — the shared base `.btn-icon` class is `display:flex` but never sets
+  `align-items`/`justify-content` (fine for its usual single-SVG-child
+  usage elsewhere, invisible until text content needed real centering);
+  added both to the `.font-scale-stepper .btn-icon` override. All four
+  verified against a real Chromium render (Playwright), not just jsdom,
+  which can't catch pure paint/geometry bugs like these — see "Known gaps"
+  in `tests/README.md`. 1509 passed, 0 failed (no behavior change, so no
+  new test group).
+
 - New: Settings dialog redesign + collapsible sidebar/detail panel (this
   session, 2026-08-22, implementing a Claude-Design handoff bundle —
   "Settings Dialog und Panel-Navigation" — carried over from a prior
