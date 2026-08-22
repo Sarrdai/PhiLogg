@@ -10728,6 +10728,35 @@ async function loadFileDescriptors(descs) {
 // cannot fetch cross-origin (or even same-origin file://) resources at all,
 // so opening philogg.html directly as a local file with ?url= set can only
 // ever fail; that case gets a specific message instead of a raw fetch error.
+//
+// Bugfix (feature backlog #11): a `philogg://local/<id>/…` url is the
+// desktop wrapper's own scheme for a real file on disk (see desktop/main.js
+// "registerProtocol") — every fetch to it re-reads the file fresh via
+// fs.promises.readFile, unlike an arbitrary http(s) report link. That makes
+// it a perfectly good stand-in for a FileSystemHandle: wiring up node.tail
+// with a handle that just re-fetches this same url lets the existing
+// tailTick poll loop (see "Tailing" below) treat a file opened via launch
+// argument / file-association / macOS "open" exactly like a drag-dropped
+// one — growing files get tailed, and a file that never grows still gets
+// re-checked every TAIL_POLL_MS for free (the second part of #11), instead
+// of staying a dead byte snapshot for the rest of the session.
+function isDesktopLocalUrl(url) {
+  try {
+    const u = new URL(url, location.href);
+    return u.protocol === "philogg:" && u.hostname === "local";
+  } catch {
+    return false;
+  }
+}
+function urlTailHandle(url) {
+  return {
+    async getFile() {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return new Blob([await res.arrayBuffer()]);
+    },
+  };
+}
 async function loadUrlIntoTree(url) {
   if (location.protocol === "file:") {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
@@ -10744,13 +10773,27 @@ async function loadUrlIntoTree(url) {
     showCopyToast(`Could not load log from URL (HTTP ${res.status})`);
     return;
   }
-  const text = await res.text();
+  const buf = await res.arrayBuffer();
+  const text = new TextDecoder().decode(buf);
   let name = "remote.log";
   try {
     const last = decodeURIComponent(new URL(url, location.href).pathname.split("/").filter(Boolean).pop() || "");
     if (last) name = last;
   } catch { /* keep the "remote.log" fallback */ }
-  await addFile(name, text);
+  const node = await addFile(name, text);
+  if (isDesktopLocalUrl(url)) {
+    node.tail = {
+      handle: urlTailHandle(url),
+      offset: buf.byteLength,
+      pending: "",
+      failed: false,
+      busy: false,
+      errorCount: 0,
+      lastGrowth: Date.now(),
+      wasLive: true,
+    };
+    state.tailFollow = true;
+  }
   render();
 }
 
