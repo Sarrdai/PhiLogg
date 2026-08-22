@@ -54,6 +54,14 @@
        (scrollbar thumb hover, #btnOpen/#btnSession/.toolbar-icon-btn hover)
        — this formula reproduces that exact color for the dark theme. */
     --border-hover:color-mix(in srgb, var(--border) 70%, var(--text-tertiary) 30%);
+    /* Text-selection tint (::selection below). Default = the existing
+       accent-based look, unchanged for Dark/Light/custom themes — the
+       Catppuccin style guide (General Usage -> Typography -> "Selection
+       Background: Overlay 2, 20%-30% opacity") only governs the four
+       Catppuccin flavors, which override this to their own Overlay 2
+       (reusing --level-debug, already mapped to Overlay 2 per flavor —
+       see those CSS blocks and PROJECT.md "Theming"). */
+    --selection-bg:var(--accent-soft);
     --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
     --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
@@ -144,6 +152,15 @@
     --level-debug-soft:rgba(147,153,178,.10);
     --level-trace:#6c7086;
     --level-trace-soft:rgba(108,112,134,.08);
+    /* Style guide: "On Accent" text = Base, "Selection Background" =
+       Overlay 2 @ 20-30% opacity — see the big comment above this block
+       and PROJECT.md "Theming" -> "Catppuccin style-guide compliance". */
+    --accent-on:var(--bg-elevated);
+    --level-error-on:var(--bg-elevated);
+    --level-warn-on:var(--bg-elevated);
+    --level-info-on:var(--bg-elevated);
+    --level-debug-on:var(--bg-elevated);
+    --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
   :root[data-theme="catppuccin-macchiato"]{
     --bg-app:#181926;
@@ -169,6 +186,12 @@
     --level-debug-soft:rgba(147,154,183,.10);
     --level-trace:#6e738d;
     --level-trace-soft:rgba(110,115,141,.08);
+    --accent-on:var(--bg-elevated);
+    --level-error-on:var(--bg-elevated);
+    --level-warn-on:var(--bg-elevated);
+    --level-info-on:var(--bg-elevated);
+    --level-debug-on:var(--bg-elevated);
+    --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
   :root[data-theme="catppuccin-frappe"]{
     --bg-app:#232634;
@@ -194,6 +217,12 @@
     --level-debug-soft:rgba(148,156,187,.10);
     --level-trace:#737994;
     --level-trace-soft:rgba(115,121,148,.08);
+    --accent-on:var(--bg-elevated);
+    --level-error-on:var(--bg-elevated);
+    --level-warn-on:var(--bg-elevated);
+    --level-info-on:var(--bg-elevated);
+    --level-debug-on:var(--bg-elevated);
+    --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
   :root[data-theme="catppuccin-latte"]{
     --bg-app:#e6e9ef;
@@ -219,10 +248,12 @@
     --level-debug-soft:rgba(124,127,147,.10);
     --level-trace:#9ca0b0;
     --level-trace-soft:rgba(156,160,176,.08);
-    --level-error-on:#fff;
-    --level-warn-on:#fff;
-    --level-info-on:#fff;
-    --level-debug-on:#fff;
+    --accent-on:var(--bg-panel);
+    --level-error-on:var(--bg-panel);
+    --level-warn-on:var(--bg-panel);
+    --level-info-on:var(--bg-panel);
+    --level-debug-on:var(--bg-panel);
+    --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
 
   *{box-sizing:border-box;}
@@ -236,7 +267,7 @@
     overflow:hidden;
   }
   button{font-family:inherit;}
-  ::selection{background:var(--accent-soft); color:var(--text-primary);}
+  ::selection{background:var(--selection-bg); color:var(--text-primary);}
 
   /* thin scrollbars */
   ::-webkit-scrollbar{width:10px; height:10px;}
