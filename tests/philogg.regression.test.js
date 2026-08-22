@@ -121,6 +121,9 @@ async function withApp(run, opts = {}) {
       get redoStack() { return redoStack; },
       get entryIndex() { return entryIndex; },
       get MONO_CHAR_WIDTH_FALLBACK() { return MONO_CHAR_WIDTH_FALLBACK; },
+      get customThemes() { return customThemes; },
+      get THEME_COLOR_KEYS() { return THEME_COLOR_KEYS; },
+      get BUILTIN_THEMES() { return BUILTIN_THEMES; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -1264,21 +1267,26 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 3 — Theme toggle
+   GROUP 3 — Theme select
    Origin: 765d68a9 (design improvements session, test.js, 28 checks).
-   Updated this session (2026-08-21): the single #btnTheme toggle button
-   moved into Settings -> Appearance as an explicit Light/Dark control pair
-   (see GROUP 70h2) — pick whichever side isn't currently active instead of
-   a single toggle click.
+   Updated 2026-08-21: the single #btnTheme toggle button moved into
+   Settings -> Appearance as an explicit Light/Dark control pair.
+   Updated this session (2026-08-22, "configurable themes + Catppuccin"):
+   the Light/Dark button pair was replaced by a #settingsThemeSelect
+   dropdown (built-in themes now include the four Catppuccin flavors, plus
+   any user-imported custom ones) — see GROUP 81.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("3. Theme toggle (now in Settings -> Appearance)");
+  section("3. Theme select (now in Settings -> Appearance)");
   const html = d.documentElement;
   const before = html.dataset.theme;
   fireClick(d.querySelector("#btnSettings"), w);
-  const otherBtn = d.querySelector(before === "light" ? "#settingsThemeDark" : "#settingsThemeLight");
-  fireClick(otherBtn, w);
+  const select = d.querySelector("#settingsThemeSelect");
+  const other = before === "light" ? "dark" : "light";
+  select.value = other;
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(html.dataset.theme !== before, "picking the other theme flips data-theme, was " + before + " now " + html.dataset.theme);
+  assert(html.dataset.theme === other, "data-theme matches the selected option, got " + html.dataset.theme);
   assert(w.localStorage.getItem("philogg-theme") === html.dataset.theme, "theme choice persisted to localStorage");
 });
 
@@ -7693,11 +7701,10 @@ await withApp(async (w, d, T) => {
   assert([...d.querySelectorAll(".settings-section-title")].some(el => el.textContent === "Log Formats"),
     "a Log Formats section is present (Format Manager folded into the settings page, not a separate dialog)");
 
-  const themeLight = d.querySelector("#settingsThemeLight");
-  const themeDark = d.querySelector("#settingsThemeDark");
-  assert(themeLight && themeDark, "Light/Dark theme controls are in the Appearance section");
-  assert(themeDark.classList.contains("active") !== themeLight.classList.contains("active"),
-    "exactly one of Light/Dark is marked active, reflecting the current theme");
+  const themeSelect = d.querySelector("#settingsThemeSelect");
+  assert(themeSelect, "the theme control is in the Appearance section");
+  assert(themeSelect.value === d.documentElement.getAttribute("data-theme"),
+    "the select's value reflects the current theme, got " + themeSelect.value);
 
   fireClick(d.body, w);
   assert(!settingsDialog.classList.contains("hidden"), "clicking elsewhere on the page does NOT close the settings page (only Close/backdrop do)");
@@ -7711,19 +7718,18 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("70h2. Settings page: Light/Dark buttons actually switch and persist the theme");
+  section("70h2. Settings page: the theme select actually switches and persists the theme");
   fireClick(d.querySelector("#btnSettings"), w);
-  const themeLight = d.querySelector("#settingsThemeLight");
-  const themeDark = d.querySelector("#settingsThemeDark");
+  const themeSelect = d.querySelector("#settingsThemeSelect");
 
-  fireClick(themeLight, w);
-  assert(d.documentElement.getAttribute("data-theme") === "light", "clicking Light switches data-theme to light");
-  assert(themeLight.classList.contains("active") && !themeDark.classList.contains("active"), "Light is now the active control");
+  themeSelect.value = "light";
+  themeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.documentElement.getAttribute("data-theme") === "light", "picking Light switches data-theme to light");
   assert(w.localStorage.getItem("philogg-theme") === "light", "theme choice persisted to localStorage");
 
-  fireClick(themeDark, w);
-  assert(d.documentElement.getAttribute("data-theme") === "dark", "clicking Dark switches data-theme back to dark");
-  assert(themeDark.classList.contains("active") && !themeLight.classList.contains("active"), "Dark is now the active control");
+  themeSelect.value = "dark";
+  themeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.documentElement.getAttribute("data-theme") === "dark", "picking Dark switches data-theme back to dark");
   assert(w.localStorage.getItem("philogg-theme") === "dark", "theme choice persisted to localStorage");
 });
 
@@ -8551,6 +8557,116 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 81 — Configurable themes: Catppuccin flavors + custom JSON
+   import/export
+   Origin: this session (2026-08-22). Replaces the Light/Dark button pair
+   (#settingsThemeLight/#settingsThemeDark, see GROUP 3/70h/70h2's updated
+   text) with a #settingsThemeSelect dropdown listing six built-in themes
+   (dark, light, four Catppuccin flavors — https://catppuccin.com/palette/)
+   plus any user-imported custom ones (localStorage philogg-custom-themes).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("81a. Built-in theme dropdown includes the four Catppuccin flavors, and picking one applies its CSS vars");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const select = d.querySelector("#settingsThemeSelect");
+  const optionValues = [...select.options].map(o => o.value);
+  assert(T.BUILTIN_THEMES.every(t => optionValues.includes(t.id)),
+    "every BUILTIN_THEMES id has a matching <option>, got " + JSON.stringify(optionValues));
+  ["catppuccin-latte", "catppuccin-frappe", "catppuccin-macchiato", "catppuccin-mocha"].forEach(id => {
+    assert(optionValues.includes(id), "Catppuccin flavor " + id + " is offered");
+  });
+
+  select.value = "catppuccin-mocha";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.documentElement.getAttribute("data-theme") === "catppuccin-mocha", "picking Catppuccin Mocha sets data-theme");
+  const cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--bg-app").trim() === "#11111b", "Mocha's --bg-app CSS var resolves via the [data-theme] block, got " + cs.getPropertyValue("--bg-app"));
+  assert(cs.getPropertyValue("--accent").trim() === "#94e2d5", "Mocha's --accent resolves too, got " + cs.getPropertyValue("--accent"));
+  assert(w.localStorage.getItem("philogg-theme") === "catppuccin-mocha", "theme choice persisted to localStorage");
+
+  select.value = "catppuccin-latte";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const csLatte = w.getComputedStyle(d.documentElement);
+  assert(csLatte.getPropertyValue("--level-error-on").trim() === "#fff",
+    "Latte (a light-background flavor) overrides --level-error-on to white text like the Light theme does");
+});
+
+await withApp(async (w, d, T) => {
+  section("81b. Importing a custom theme JSON: validation, storage, activation, dropdown + list rendering");
+  fireClick(d.querySelector("#btnSettings"), w);
+
+  assert(d.querySelector("#customThemeList .filter-library-empty"), "custom theme list starts empty");
+
+  // Not valid JSON at all.
+  w.importThemeJson("{not json");
+  assert(T.customThemes.length === 0, "malformed JSON is rejected, nothing added");
+
+  // Valid JSON but missing the format tag.
+  w.importThemeJson(JSON.stringify({ name: "No tag", colors: {} }));
+  assert(T.customThemes.length === 0, "a JSON file without the philogg-theme format tag is rejected");
+
+  // Valid format tag but missing required color keys.
+  w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 1, name: "Incomplete", colors: { "bg-app": "#111111" } }));
+  assert(T.customThemes.length === 0, "a theme file missing required color keys is rejected");
+
+  // A full, valid theme file — build it from the template generator itself,
+  // proving the round trip (template out -> tweak -> import back in) works.
+  const template = JSON.parse(w.buildThemeTemplateJson());
+  assert(template.format === "philogg-theme" && typeof template.colors === "object", "buildThemeTemplateJson seeds a valid, self-consistent template");
+  assert(T.THEME_COLOR_KEYS.every(k => typeof template.colors[k] === "string" && template.colors[k].length > 0),
+    "the template includes every required color key with a non-empty value");
+  template.name = "My Purple Night";
+  template.colors["bg-app"] = "#120018";
+  template.colors["accent"] = "#bb33ff";
+  template.activeTextLight = true;
+  w.importThemeJson(JSON.stringify(template));
+
+  assert(T.customThemes.length === 1, "a valid theme file is accepted and added to customThemes");
+  const imported = T.customThemes[0];
+  assert(imported.name === "My Purple Night", "the imported theme's name is preserved");
+  assert(imported.colors["bg-app"] === "#120018" && imported.colors["accent"] === "#bb33ff", "imported colors are preserved");
+  assert(JSON.parse(w.localStorage.getItem("philogg-custom-themes"))[0].name === "My Purple Night", "custom themes persist to localStorage");
+
+  assert(d.documentElement.getAttribute("data-theme") === imported.id, "importing a theme switches to it immediately");
+  const cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--bg-app").trim() === "#120018", "the custom theme's colors are applied as inline CSS vars, got " + cs.getPropertyValue("--bg-app"));
+  assert(cs.getPropertyValue("--level-error-on").trim() === "#fff", "activeTextLight:true applies white active-button text");
+
+  const select = d.querySelector("#settingsThemeSelect");
+  assert([...select.options].some(o => o.value === imported.id && o.textContent === "My Purple Night"),
+    "the imported theme appears as an option in the dropdown");
+  assert(select.value === imported.id, "the dropdown reflects the newly-active custom theme");
+
+  const listRow = d.querySelector("#customThemeList .filter-library-row");
+  assert(listRow && listRow.textContent.includes("My Purple Night"), "the imported theme is listed in the Custom themes card");
+
+  // Switching away and back via inline-style clearing: a built-in theme
+  // picked afterwards must not leak the custom theme's inline overrides.
+  select.value = "dark";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const csDark = w.getComputedStyle(d.documentElement);
+  assert(csDark.getPropertyValue("--bg-app").trim() === "#10131a", "switching back to Dark clears the custom theme's inline var overrides, got " + csDark.getPropertyValue("--bg-app"));
+
+  // Deleting a custom theme: removes it everywhere, and falls back to dark
+  // if it was the active theme.
+  select.value = imported.id;
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.documentElement.getAttribute("data-theme") === imported.id, "sanity: custom theme active again before deleting it");
+  d.querySelector("#customThemeList .filter-library-row-del").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+  assert(T.customThemes.length === 0, "deleting the custom theme removes it from customThemes");
+  assert(JSON.parse(w.localStorage.getItem("philogg-custom-themes")).length === 0, "...and from localStorage");
+  assert(d.documentElement.getAttribute("data-theme") === "dark", "deleting the ACTIVE custom theme falls back to dark");
+  assert(d.querySelector("#customThemeList .filter-library-empty"), "the list shows the empty state again");
+});
+
+await withApp(async (w, d, T) => {
+  section("81c. A stale/deleted custom theme id in localStorage falls back to dark on boot instead of leaving data-theme dangling");
+  w.localStorage.setItem("philogg-theme", "custom:does-not-exist");
+  w.initTheme();
+  assert(d.documentElement.getAttribute("data-theme") === "dark", "resolveThemeId falls back to dark for an unknown theme id, got " + d.documentElement.getAttribute("data-theme"));
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -8569,7 +8685,8 @@ process.exit(failed ? 1 : 0);
 
    Group  1  — initial build (pre-dates project memory)
    Group  2  — 765d68a9 (extraction workflow: live match, token chips)
-   Group  3  — 765d68a9 (theme toggle)
+   Group  3  — 765d68a9 (theme toggle); updated 2026-08-22 for the
+              select-dropdown theme control (see Group 81)
    Group  4  — 765d68a9 (sortable headers, status strip, severity bar)
               + 32e282b4 follow-up (level filter now updates BOTH views)
    Group  5  — 765d68a9 (extraction column sort + cell-selection regression)
@@ -9720,6 +9837,20 @@ process.exit(failed ? 1 : 0);
               Ctrl+B/Ctrl+J, resizer double-click, localStorage-persisted
               collapsed flag (display-preference tier, same as theme/font
               scale) restored on init.
+   Group 81  — this session (2026-08-22), "configurable themes +
+              Catppuccin": the Light/Dark button pair became a
+              #settingsThemeSelect dropdown covering six built-in themes
+              (dark, light, Catppuccin Latte/Frappé/Macchiato/Mocha, each a
+              [data-theme=...] CSS block) plus user-imported custom themes
+              (JSON, validated against THEME_COLOR_KEYS, localStorage
+              philogg-custom-themes) applied via inline CSS vars on <html>
+              instead — see applyTheme(). Settings -> Appearance gained a
+              "Custom themes" card: import, delete, and a
+              buildThemeTemplateJson() template download seeded from the
+              currently active theme's own computed colors. Groups 3/70h/
+              70h2 (originally the Light/Dark button pair) were updated in
+              place for the new dropdown rather than left testing removed
+              buttons.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
