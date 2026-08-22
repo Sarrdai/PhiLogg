@@ -38,6 +38,22 @@
     --level-warn-on:#2a1c04;
     --level-info-on:#04122a;
     --level-debug-on:#0d1016;
+    /* Text color for anything sitting on a solid var(--accent) surface
+       (brand mark, Save button, active chips/badges) — same reasoning as
+       the --level-*-on vars above, split out from a hardcoded near-black
+       so a custom theme with a dark accent can flip it via activeTextLight.
+       Every BUILT-IN theme's --accent stays bright/mid-bright by design
+       (verified across all six — see Theming in PROJECT.md), so none of
+       them override this; it's here for custom themes' safety net. */
+    --accent-on:#08201f;
+    /* A hover-state border, one step more prominent than --border — derived
+       from --border/--text-tertiary via color-mix() rather than given its
+       own value per theme, so it automatically follows whichever theme is
+       active (including a custom one's inline-applied vars) with no extra
+       required JSON key. Was a hardcoded #333c50 repeated in four places
+       (scrollbar thumb hover, #btnOpen/#btnSession/.toolbar-icon-btn hover)
+       — this formula reproduces that exact color for the dark theme. */
+    --border-hover:color-mix(in srgb, var(--border) 70%, var(--text-tertiary) 30%);
     --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
     --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
@@ -213,8 +229,8 @@
   /* thin scrollbars */
   ::-webkit-scrollbar{width:10px; height:10px;}
   ::-webkit-scrollbar-track{background:transparent;}
-  ::-webkit-scrollbar-thumb{background:#2a3142; border-radius:6px; border:2px solid var(--bg-panel);}
-  ::-webkit-scrollbar-thumb:hover{background:#39435a;}
+  ::-webkit-scrollbar-thumb{background:var(--border); border-radius:6px; border:2px solid var(--bg-panel);}
+  ::-webkit-scrollbar-thumb:hover{background:var(--border-hover);}
 
   #app{display:flex; flex-direction:column; height:100vh;}
 
@@ -229,8 +245,8 @@
   .brand-mark{
     display:inline-flex; align-items:center; justify-content:center;
     width:20px; height:20px; border-radius:5px;
-    background:linear-gradient(135deg, var(--accent), #2f8f8c);
-    color:#0b1016; font-weight:800; font-size:12px;
+    background:linear-gradient(135deg, var(--accent), var(--accent-strong));
+    color:var(--accent-on); font-weight:800; font-size:12px;
   }
   .brand-name{font-weight:650; letter-spacing:.2px; font-size:14.5px;}
   /* Short commit-hash build tag next to the product name — see PHILOGG_VERSION. */
@@ -244,7 +260,7 @@
     padding:7px 12px; font-size:12.5px; cursor:pointer;
     transition:background .12s, border-color .12s;
   }
-  #btnOpen:hover{background:var(--bg-elevated-2); border-color:#333c50;}
+  #btnOpen:hover{background:var(--bg-elevated-2); border-color:var(--border-hover);}
   #btnOpen svg{flex:0 0 auto;}
   #btnSession{
     display:flex; align-items:center; gap:7px;
@@ -253,7 +269,7 @@
     padding:7px 12px; font-size:12.5px; cursor:pointer;
     transition:background .12s, border-color .12s;
   }
-  #btnSession:hover{background:var(--bg-elevated-2); border-color:#333c50;}
+  #btnSession:hover{background:var(--bg-elevated-2); border-color:var(--border-hover);}
   #btnSession svg{flex:0 0 auto;}
   .toolbar-icon-btn{
     display:flex; align-items:center; justify-content:center; position:relative;
@@ -262,7 +278,7 @@
     border:1px solid var(--border); border-radius:7px;
     cursor:pointer; transition:background .12s, border-color .12s, color .12s;
   }
-  .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:#333c50; color:var(--text-primary);}
+  .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
   .toolbar-icon-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
   /* Toggled state for icon buttons that are persistent on/off switches
      rather than popup triggers (currently just #btnPinBookmarks) — reuses
@@ -270,7 +286,7 @@
   .toolbar-icon-btn.active{background:var(--accent-soft); border-color:var(--accent-strong); color:var(--accent-strong);}
   .toolbar-badge{
     position:absolute; top:-5px; right:-5px; min-width:15px; height:15px; padding:0 3px;
-    border-radius:8px; background:var(--accent); color:#08201f;
+    border-radius:8px; background:var(--accent); color:var(--accent-on);
     font-size:9.5px; font-weight:800; line-height:15px; text-align:center;
     font-variant-numeric:tabular-nums;
   }
@@ -707,7 +723,7 @@
     padding:4px 9px; border-radius:20px; transition:background .12s, border-color .12s, filter .12s;
   }
   .crumb:hover{filter:brightness(1.25);}
-  .crumb.current{color:var(--accent-strong); border-color:rgba(79,199,195,.35); background:var(--accent-soft);}
+  .crumb.current{color:var(--accent-strong); border-color:color-mix(in srgb, var(--accent) 35%, transparent); background:var(--accent-soft);}
   /* margin-top raised 4px -> 7px (height-parity bugfix, this session): now
      that .crumb is a 26px-tall pill (was 22px), the separator's own ~12px
      glyph line (line-height:12px, same pinned value as .view-tab's) needs
@@ -747,10 +763,10 @@
   .level-btn .dot{width:6px; height:6px; border-radius:50%; background:currentColor; flex:0 0 auto;}
   .level-btn .cnt{font-variant-numeric:tabular-nums; opacity:.75;}
   .level-btn:hover{filter:brightness(1.25);}
-  .level-btn.lvl-error{color:var(--level-error); border-color:rgba(241,101,101,.35);}
-  .level-btn.lvl-warn{color:var(--level-warn); border-color:rgba(232,169,74,.35);}
-  .level-btn.lvl-info{color:var(--level-info); border-color:rgba(111,168,255,.35);}
-  .level-btn.lvl-debug{color:var(--level-debug); border-color:rgba(118,127,150,.4);}
+  .level-btn.lvl-error{color:var(--level-error); border-color:color-mix(in srgb, var(--level-error) 35%, transparent);}
+  .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
+  .level-btn.lvl-info{color:var(--level-info); border-color:color-mix(in srgb, var(--level-info) 35%, transparent);}
+  .level-btn.lvl-debug{color:var(--level-debug); border-color:color-mix(in srgb, var(--level-debug) 40%, transparent);}
   .level-btn.active{border-color:transparent;}
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
   .level-btn.active.lvl-warn{background:var(--level-warn); color:var(--level-warn-on);}
@@ -1065,28 +1081,28 @@
   .multiline-messages .col-msg{white-space:pre; text-overflow:clip; line-height:15px;}
 
   .lvl-error .col-bar{background:var(--level-error);}
-  .lvl-error .level-badge{color:var(--level-error); background:rgba(241,101,101,.28);}
+  .lvl-error .level-badge{color:var(--level-error); background:color-mix(in srgb, var(--level-error) 28%, transparent);}
   .lvl-warn .col-bar{background:var(--level-warn);}
-  .lvl-warn .level-badge{color:var(--level-warn); background:rgba(232,169,74,.28);}
+  .lvl-warn .level-badge{color:var(--level-warn); background:color-mix(in srgb, var(--level-warn) 28%, transparent);}
   .lvl-info .col-bar{background:var(--level-info);}
-  .lvl-info .level-badge{color:var(--level-info); background:rgba(111,168,255,.22);}
+  .lvl-info .level-badge{color:var(--level-info); background:color-mix(in srgb, var(--level-info) 22%, transparent);}
   .lvl-debug .col-bar{background:var(--level-debug);}
-  .lvl-debug .level-badge{color:var(--level-debug); background:rgba(118,127,150,.22);}
+  .lvl-debug .level-badge{color:var(--level-debug); background:color-mix(in srgb, var(--level-debug) 22%, transparent);}
   .lvl-trace .col-bar{background:var(--level-trace);}
   .lvl-trace .level-badge{color:var(--level-trace); background:var(--level-trace-soft);}
   .lvl-other .col-bar{background:var(--text-tertiary);}
   .lvl-other .level-badge{color:var(--text-secondary); background:var(--bg-elevated-2);}
 
   .log-row.lvl-error{background:var(--level-error-soft);}
-  .log-row.lvl-error:hover{background:rgba(241,101,101,.20);}
+  .log-row.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 20%, transparent);}
   .log-row.lvl-warn{background:var(--level-warn-soft);}
-  .log-row.lvl-warn:hover{background:rgba(232,169,74,.20);}
+  .log-row.lvl-warn:hover{background:color-mix(in srgb, var(--level-warn) 20%, transparent);}
   .log-row.lvl-info{background:var(--level-info-soft);}
-  .log-row.lvl-info:hover{background:rgba(111,168,255,.16);}
+  .log-row.lvl-info:hover{background:color-mix(in srgb, var(--level-info) 16%, transparent);}
   .log-row.lvl-debug{background:var(--level-debug-soft);}
-  .log-row.lvl-debug:hover{background:rgba(118,127,150,.16);}
+  .log-row.lvl-debug:hover{background:color-mix(in srgb, var(--level-debug) 16%, transparent);}
   .log-row.lvl-trace{background:var(--level-trace-soft);}
-  .log-row.lvl-trace:hover{background:rgba(91,100,121,.14);}
+  .log-row.lvl-trace:hover{background:color-mix(in srgb, var(--level-trace) 14%, transparent);}
   .log-row.flash{background:var(--accent-soft) !important; transition:background 1.2s ease-out;}
 
   #emptyState{
@@ -1733,11 +1749,11 @@
     transition:background .12s, border-color .12s, color .12s, filter .12s;
   }
   .column-chip:hover{filter:brightness(1.25);}
-  .column-chip.active{background:var(--accent); border-color:transparent; color:#08201f;}
+  .column-chip.active{background:var(--accent); border-color:transparent; color:var(--accent-on);}
   .filter-token-chips{display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
   .token-chip{
     font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--accent-strong);
-    background:var(--accent-soft); border:1px solid rgba(79,199,195,.35); border-radius:5px;
+    background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius:5px;
     padding:2px 7px; cursor:pointer; transition:filter .12s;
   }
   .token-chip:hover{filter:brightness(1.2);}
@@ -1766,7 +1782,7 @@
   }
   .preview-value-span.chip-ignored{opacity:.45; text-decoration:line-through; border-bottom-style:dashed;}
   .btn-mini{
-    background:var(--accent); color:#08201f; border:none; border-radius:6px;
+    background:var(--accent); color:var(--accent-on); border:none; border-radius:6px;
     padding:8px 12px; font-size:12px; font-weight:650; cursor:pointer;
   }
   .btn-mini:disabled{opacity:.4; cursor:default;}
@@ -1804,7 +1820,14 @@
     box-shadow:0 12px 30px rgba(0,0,0,.5);
   }
   #colorPickerPopup.hidden{display:none;}
+  /* Free/Theme mode toggle (this session, person-requested: a highlight
+     colour picked from the ACTIVE theme's own palette instead of the
+     theme-independent hue wheel) — same .assert-mode-btn pattern as every
+     other two-way switch in the app, just narrower to fit this popup. */
+  .cp-mode-row{margin-bottom:10px;}
+  #colorPickerPopup .assert-mode-btn{padding:5px 4px; font-size:10.5px;}
   .cp-wheel-wrap{display:flex; justify-content:center; margin-bottom:10px;}
+  #cpWheelWrap.hidden{display:none;}
   .cp-wheel{
     width:120px; height:120px; border-radius:50%; cursor:crosshair;
     background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);
@@ -2298,9 +2321,17 @@
   <!-- Custom highlight-colour picker (see FEATURE_BACKLOG.md item 4, session 6:
        deliberately not the native <input type="color"> — Windows' native
        picker UX varies too much for predictable results here). A hue wheel
-       for freeform choice, plus a row of curated presets for one click. -->
+       for freeform choice, plus a row of curated presets for one click.
+       "Free"/"Theme" mode toggle added this session (person-requested): in
+       Theme mode the wheel is hidden and the presets become the ACTIVE
+       theme's own highlight palette instead of the generic curated set —
+       see getActiveHighlightPalette()/setColorPickerMode(). -->
   <div id="colorPickerPopup" class="hidden">
-    <div class="cp-wheel-wrap"><div id="cpWheel" class="cp-wheel" title="Click to pick a hue"></div></div>
+    <div class="cp-mode-row assert-mode-row">
+      <button type="button" class="assert-mode-btn" id="cpModeFree" data-cp-mode="free">Free</button>
+      <button type="button" class="assert-mode-btn" id="cpModeTheme" data-cp-mode="theme">Theme</button>
+    </div>
+    <div class="cp-wheel-wrap" id="cpWheelWrap"><div id="cpWheel" class="cp-wheel" title="Click to pick a hue"></div></div>
     <div class="cp-presets" id="cpPresets"></div>
     <button type="button" class="btn-mini-outline cp-clear" id="cpClearBtn">Clear colour</button>
   </div>
@@ -2835,19 +2866,44 @@ const THEME_COLOR_KEYS = [
   "warn",
 ];
 // Text color for the four ACTIVE level-quick-filter buttons (see
-// .level-btn.active.lvl-* in the stylesheet) — controlled by a theme's
+// .level-btn.active.lvl-* in the stylesheet) plus anything sitting on a
+// solid var(--accent) surface (brand mark, Save button, active chips —
+// see --accent-on's comment in :root) — controlled by a theme's
 // "activeTextLight" flag rather than exposed as individual JSON keys,
-// since it's an implementation detail of that one button state, not
-// something a template-filling user should need to think about.
-const THEME_ON_KEYS = ["level-error-on", "level-warn-on", "level-info-on", "level-debug-on"];
+// since it's an implementation detail of these specific button/badge
+// states, not something a template-filling user should need to think
+// about. None of the six built-in themes override "accent-on" (every
+// built-in --accent stays bright/mid-bright by design, so the :root
+// default reads fine everywhere) — it's here as a custom theme's safety
+// net for a dark/saturated accent color.
+const THEME_ON_KEYS = ["level-error-on", "level-warn-on", "level-info-on", "level-debug-on", "accent-on"];
 
+// highlightPalette: the theme's own curated colors, offered as the ONLY
+// choices in the highlight-color picker's "Theme" mode (see
+// getActiveHighlightPalette/setColorPickerMode) — the 14 named Catppuccin
+// "accent colors" (https://catppuccin.com/palette/) for each flavor.
+// Dark/Light have none: the picker falls back to the generic
+// HIGHLIGHT_PRESETS for them, same swatches "Theme" mode always showed
+// before this option existed.
 const BUILTIN_THEMES = [
   { id: "dark", name: "Dark" },
   { id: "light", name: "Light" },
-  { id: "catppuccin-latte", name: "Catppuccin Latte" },
-  { id: "catppuccin-frappe", name: "Catppuccin Frappé" },
-  { id: "catppuccin-macchiato", name: "Catppuccin Macchiato" },
-  { id: "catppuccin-mocha", name: "Catppuccin Mocha" },
+  {
+    id: "catppuccin-latte", name: "Catppuccin Latte",
+    highlightPalette: ["#dc8a78", "#dd7878", "#ea76cb", "#8839ef", "#d20f39", "#e64553", "#fe640b", "#df8e1d", "#40a02b", "#179299", "#04a5e5", "#209fb5", "#1e66f5", "#7287fd"],
+  },
+  {
+    id: "catppuccin-frappe", name: "Catppuccin Frappé",
+    highlightPalette: ["#f2d5cf", "#eebebe", "#f4b8e4", "#ca9ee6", "#e78284", "#ea999c", "#ef9f76", "#e5c890", "#a6d189", "#81c8be", "#99d1db", "#85c1dc", "#8caaee", "#babbf1"],
+  },
+  {
+    id: "catppuccin-macchiato", name: "Catppuccin Macchiato",
+    highlightPalette: ["#f4dbd6", "#f0c6c6", "#f5bde6", "#c6a0f6", "#ed8796", "#ee99a0", "#f5a97f", "#eed49f", "#a6da95", "#8bd5ca", "#91d7e3", "#7dc4e4", "#8aadf4", "#b7bdf8"],
+  },
+  {
+    id: "catppuccin-mocha", name: "Catppuccin Mocha",
+    highlightPalette: ["#f5e0dc", "#f2cdcd", "#f5c2e7", "#cba6f7", "#f38ba8", "#eba0ac", "#fab387", "#f9e2af", "#a6e3a1", "#94e2d5", "#89dceb", "#74c7ec", "#89b4fa", "#b4befe"],
+  },
 ];
 
 let customThemes = [];
@@ -11468,22 +11524,47 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
    Opened from a tree row's swatch (see renderNode). Deliberately not the
    native <input type="color"> — see FEATURE_BACKLOG.md item 4, session 6.
    A hue wheel (click anywhere in the disc, fixed saturation/lightness) for
-   freeform choice, plus a row of curated presets for one click. */
+   freeform choice, plus a row of curated presets for one click.
+
+   "Free"/"Theme" mode (this session, person-requested): in Theme mode the
+   wheel is hidden and the preset row becomes the ACTIVE theme's own
+   highlightPalette (see BUILTIN_THEMES/customThemes) instead of the
+   generic HIGHLIGHT_PRESETS — so a chosen highlight color is guaranteed to
+   already belong to whichever theme is currently active. The mode itself
+   is a display preference, same tier/storage pattern as the theme choice. */
 
 const colorPickerPopup = el("#colorPickerPopup");
 const cpWheel = el("#cpWheel");
+const cpWheelWrap = el("#cpWheelWrap");
 const cpPresets = el("#cpPresets");
 const cpClearBtn = el("#cpClearBtn");
+const cpModeFreeBtn = el("#cpModeFree");
+const cpModeThemeBtn = el("#cpModeTheme");
 let colorPickerTargetId = null;
 
 // Distinct, moderately saturated hues; independent from COLUMN_PALETTE
-// (extraction columns) so the two color systems can't be confused.
+// (extraction columns) so the two color systems can't be confused. Also
+// the Theme-mode fallback for Dark/Light and any custom theme that didn't
+// define its own highlightPalette.
 const HIGHLIGHT_PRESETS = ["#e8555f", "#e8a94a", "#e0d15a", "#6fd17c", "#4fc7c3", "#6fa8ff", "#9d7bf0", "#e87bc9", "#a0a8bd", "#ffffff"];
+
+const CP_MODE_STORAGE_KEY = "philogg-cp-mode";
+let colorPickerMode = localStorage.getItem(CP_MODE_STORAGE_KEY) === "theme" ? "theme" : "free";
+
+function getActiveHighlightPalette() {
+  const id = currentThemeId();
+  const builtin = BUILTIN_THEMES.find(t => t.id === id);
+  if (builtin && builtin.highlightPalette) return builtin.highlightPalette;
+  const custom = customThemes.find(t => t.id === id);
+  if (custom && Array.isArray(custom.highlightPalette) && custom.highlightPalette.length) return custom.highlightPalette;
+  return HIGHLIGHT_PRESETS;
+}
 
 function renderColorPresets() {
   cpPresets.innerHTML = "";
   const frag = document.createDocumentFragment();
-  HIGHLIGHT_PRESETS.forEach(c => {
+  const colors = colorPickerMode === "theme" ? getActiveHighlightPalette() : HIGHLIGHT_PRESETS;
+  colors.forEach(c => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "cp-preset";
@@ -11494,13 +11575,26 @@ function renderColorPresets() {
   });
   cpPresets.appendChild(frag);
 }
-renderColorPresets();
+
+function setColorPickerMode(mode) {
+  colorPickerMode = mode === "theme" ? "theme" : "free";
+  localStorage.setItem(CP_MODE_STORAGE_KEY, colorPickerMode);
+  cpModeFreeBtn.classList.toggle("active", colorPickerMode === "free");
+  cpModeThemeBtn.classList.toggle("active", colorPickerMode === "theme");
+  cpWheelWrap.classList.toggle("hidden", colorPickerMode === "theme");
+  renderColorPresets();
+}
+setColorPickerMode(colorPickerMode); // reflect the persisted/default mode in the UI before first open
+
+cpModeFreeBtn.addEventListener("click", () => setColorPickerMode("free"));
+cpModeThemeBtn.addEventListener("click", () => setColorPickerMode("theme"));
 
 function openColorPicker(nodeId, anchorEl) {
   colorPickerTargetId = nodeId;
+  renderColorPresets(); // picks up a theme switch that happened since the popup was last opened
   const rect = anchorEl.getBoundingClientRect();
   colorPickerPopup.style.left = Math.min(rect.left, window.innerWidth - 196) + "px";
-  colorPickerPopup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 230) + "px";
+  colorPickerPopup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 300) + "px";
   colorPickerPopup.classList.remove("hidden");
 }
 function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPickerTargetId = null; }
