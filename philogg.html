@@ -201,7 +201,7 @@
      entsprechen") — no separate peek-only rendering path exists. */
   #sidebar.collapsed.peeking #sidebarNormalContent{
     position:absolute; top:0; left:0; bottom:0; width:270px; z-index:30;
-    box-shadow:14px 0 34px rgba(0,0,0,.45);
+    background:var(--bg-panel); box-shadow:14px 0 34px rgba(0,0,0,.45);
   }
   .sidebar-rail-sep{width:20px; height:1px; background:var(--border-soft); flex:0 0 auto;}
   .sidebar-rail-markers{display:flex; flex-direction:column; align-items:center; gap:8px; overflow:hidden;}
@@ -1353,6 +1353,7 @@
   }
   .font-scale-stepper .btn-icon{
     width:32px; height:30px; border:none; font-size:15px; line-height:1; padding:0; border-radius:0;
+    align-items:center; justify-content:center;
   }
   .settings-row-label[for]{cursor:pointer;}
   /* Boolean settings render as an on/off switch (#settingsQuitOnLastClose)
@@ -2115,7 +2116,7 @@
           <div id="detailPanelHeaderLabel">Entry detail</div>
           <div id="detailMeta"></div>
           <button type="button" id="detailToggle" class="panel-toggle-btn" title="Collapse (Ctrl+J)">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 8 5.5l4 4"/><path d="M3.5 12.5h9"/></svg>
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
           </button>
         </div>
         <div id="detailBody">
@@ -8157,8 +8158,13 @@ let detailLastHeight = 190;
 const ICON_CHEVRON_LEFT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4 5.5 8l4 4"/><path d="M12.5 3.5v9"/></svg>';
 const ICON_CHEVRON_RIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4l4 4-4 4"/><path d="M3.5 3.5v9"/></svg>';
 // ICON_PIN reused from the bookmarks-pin feature above (same glyph).
-const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 8 5.5l4 4"/><path d="M3.5 12.5h9"/></svg>';
-const ICON_CHEVRON_UP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>';
+// Both paths were copied from the design file as-is, but the two constant
+// names described the OPPOSITE of what each path actually draws (the design
+// file names its variants by open/closed state, not by visual direction) —
+// swapped here so ICON_CHEVRON_DOWN really is a downward chevron and
+// ICON_CHEVRON_UP really is an upward one, matching their usage below.
+const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>';
+const ICON_CHEVRON_UP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 8 5.5l4 4"/><path d="M3.5 12.5h9"/></svg>';
 
 function isSidebarCollapsed() { return sidebarEl.classList.contains("collapsed"); }
 function isSidebarPeeking() { return sidebarEl.classList.contains("peeking"); }
@@ -12107,6 +12113,12 @@ const settingsNavItems = Array.from(document.querySelectorAll(".settings-nav-ite
 const settingsPageBody = el(".settings-page-body");
 settingsNavItems.forEach(btn => {
   btn.addEventListener("click", () => {
+    // Set .active directly instead of waiting on the IntersectionObserver
+    // below — when a section's short enough that scrollIntoView is a no-op
+    // (nothing to scroll to), the observer never fires again and a click
+    // would otherwise produce no visible feedback at all.
+    settingsNavItems.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
     const target = document.getElementById(btn.dataset.navTarget);
     if (target && target.scrollIntoView) target.scrollIntoView({ block: "start" });
   });
