@@ -7510,7 +7510,7 @@ await withApp(async (w, d, T) => {
   assert(formatRows()[0].querySelector(".filter-library-row-del") === null, "the builtin default has no delete button");
 
   const btnAddFormat = d.querySelector("#btnAddFormat");
-  assert(btnAddFormat.className === "btn-mini", "the Add-format button uses the same style as the row Edit buttons, got " + btnAddFormat.className);
+  assert(btnAddFormat.className === "btn-mini-dashed", "the Add-format button uses the dashed 'add' style, not a filled/outline row-action style, got " + btnAddFormat.className);
   assert(isVisible(btnAddFormat, w), "sanity: the Add-format button is actually visible on screen before anything is clicked");
   fireClick(btnAddFormat, w);
   const formatEditPanel = d.querySelector("#formatEditPanel");
@@ -7566,7 +7566,7 @@ await withApp(async (w, d, T) => {
   assert(newFormat.pattern === "[%d] %p (%t) %m%n" && newFormat.tsFormat === "yyyy-MM-dd HH:mm:ss", "the saved format keeps the suggested pattern/tsFormat unchanged (person didn't edit it further)");
 
   const btnAddFormatRule = d.querySelector("#btnAddFormatRule");
-  assert(btnAddFormatRule.className === "btn-mini", "the Add-rule button uses the same style as the row Edit buttons too, got " + btnAddFormatRule.className);
+  assert(btnAddFormatRule.className === "btn-mini-dashed", "the Add-rule button uses the dashed 'add' style too, got " + btnAddFormatRule.className);
   assert(isVisible(btnAddFormatRule, w), "sanity: the Add-rule button is visible before being clicked");
   fireClick(btnAddFormatRule, w);
   const ruleEditPanel = d.querySelector("#formatRuleEditPanel");
@@ -7769,7 +7769,7 @@ await withApp(async (w, d, T) => {
   // Edit the default: rename it and replace the pattern with something that
   // only extracts level+message (drops thread/method entirely) — a clearly
   // DIFFERENT, verifiable parse result, not just a cosmetic name change.
-  fireClick(defaultRow().querySelector("button.btn-mini"), w); // "Edit"
+  fireClick(defaultRow().querySelector("button.btn-mini-outline"), w); // "Edit"
   d.querySelector("#formatEditName").value = "Renamed default";
   d.querySelector("#formatEditPattern").value = "%p %m%n";
   fireClick(d.querySelector("#formatEditSave"), w);
@@ -8378,6 +8378,176 @@ await withApp(async (w, d, T) => {
   T.state.focusRegion = "tree";
   fireKeydown(d, w, "Enter");
   assert(T.fhActiveTab === "filter", "Enter on the tree still runs its own (unrelated) filter-node behavior, not this new entries-pane path");
+});
+
+/* ============================================================
+   GROUP 79 — Settings dialog redesign: section nav, unified card/row grid,
+   Add-vs-Edit button hierarchy, boolean rows as a switch
+   Origin: this session (2026-08-22), Claude-Design handoff bundle
+   ("Settings Dialog und Panel-Navigation"). See PROJECT.md for the full
+   design reference. IntersectionObserver-driven active-section highlighting
+   on scroll isn't exercised here (jsdom has no IntersectionObserver — see
+   the guard in the app itself); only the click-wiring + default state.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("79. Settings dialog redesign: section nav + unified rows + switch + button hierarchy");
+  await waitForFormatConfig(T);
+
+  fireClick(d.querySelector("#btnSettings"), w);
+
+  const navItems = [...d.querySelectorAll("#settingsNav .settings-nav-item")];
+  assert(navItems.length === 3, "the section nav lists exactly the three sections, got " + navItems.length);
+  const targets = navItems.map(b => b.dataset.navTarget);
+  assert(targets.includes("settingsSectionAppearance") && targets.includes("settingsSectionBehavior") && targets.includes("settingsSectionFormats"),
+    "nav items point at Appearance/Behavior/Log Formats, got " + JSON.stringify(targets));
+  targets.forEach(id => assert(d.getElementById(id), "every nav target id resolves to an actual section, missing " + id));
+
+  const appearanceNavItem = navItems.find(b => b.dataset.navTarget === "settingsSectionAppearance");
+  assert(appearanceNavItem.classList.contains("active"), "Appearance is the default active nav item on open");
+
+  // Clicking a nav item is wired (calls scrollIntoView, guarded for
+  // environments without it — see the app's own comment) and doesn't throw.
+  const formatsNavItem = navItems.find(b => b.dataset.navTarget === "settingsSectionFormats");
+  fireClick(formatsNavItem, w);
+
+  // Row grid: each row group sits inside one .settings-card, using CSS grid.
+  const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
+  assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
+  const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
+  assert(appearanceRows.length === 2, "Theme + Font size are both rows inside that one card, got " + appearanceRows.length);
+  assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
+
+  // Boolean row: rendered as a switch (input + adjacent track element),
+  // still the same real checkbox underneath (see GROUP 76 for its behavior).
+  const quitCheckbox = d.getElementById("settingsQuitOnLastClose");
+  assert(quitCheckbox.closest(".settings-switch"), "the boolean checkbox is wrapped in .settings-switch");
+  assert(quitCheckbox.nextElementSibling && quitCheckbox.nextElementSibling.classList.contains("settings-switch-track"),
+    "...with a switch-track element right next to it for the on/off visual");
+
+  // Button hierarchy: the filled accent (.btn-mini) button is reserved for
+  // the primary action (Save) — list-row actions (Edit/Reset) are outline,
+  // and the "Add…" affordance is a dashed outline, distinct from both.
+  assert(d.querySelectorAll("#formatList .btn-mini, #formatRuleList .btn-mini").length === 0,
+    "no filled accent button inside the format/rule list rows themselves");
+  assert(d.querySelector("#formatList .btn-mini-outline"), "the Default format row's Edit button is outline-styled");
+  assert(d.querySelector("#btnAddFormat").className === "btn-mini-dashed" && d.querySelector("#btnAddFormatRule").className === "btn-mini-dashed",
+    "both Add buttons use the dashed style, distinct from Edit's outline and Save's filled accent");
+  assert(d.querySelector("#formatEditSave").className === "btn-mini" && d.querySelector("#formatRuleEditSave").className === "btn-mini",
+    "Save stays the one filled accent button in each inline panel");
+});
+
+/* ============================================================
+   GROUP 80 — Collapsible sidebar / detail panel
+   Origin: this session (2026-08-22), Claude-Design handoff bundle
+   ("Settings Dialog und Panel-Navigation", part 1b). Sidebar collapses to a
+   40px rail (marker chain for the active node's ancestry, or root files with
+   nothing active); hovering it while collapsed peeks the full tree as an
+   overlay (identical markup to the expanded state, no separate rendering
+   path — see toggleSidebarCollapsed's comment); clicking the toggle while
+   peeking pins it open (exits .collapsed entirely). Detail panel collapses
+   to its 34px header, which still shows level/time/first-message-line
+   instead of going empty. Both: Ctrl+B/Ctrl+J, resizer double-click,
+   localStorage-persisted collapsed flag (display-preference tier, same as
+   theme/font-scale — see THEME_STORAGE_KEY).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("80. Collapsible sidebar / detail panel");
+
+  const sidebarEl = d.querySelector("#sidebar");
+  const detailPanel = d.querySelector("#detailPanel");
+  const sidebarNormalContent = d.querySelector("#sidebarNormalContent");
+  const sidebarRail = d.querySelector("#sidebarRail");
+  const detailBody = d.querySelector("#detailBody");
+
+  assert(!sidebarEl.classList.contains("collapsed") && !detailPanel.classList.contains("collapsed"), "both panels start expanded");
+  assert(isVisible(sidebarNormalContent, w) && !isVisible(sidebarRail, w), "expanded: normal tree content shown, rail hidden");
+
+  // --- Sidebar collapse/expand ---
+  w.toggleSidebarCollapsed();
+  assert(sidebarEl.classList.contains("collapsed"), "toggleSidebarCollapsed() collapses the sidebar");
+  assert(sidebarEl.style.width === "40px", "collapsed width is set to the 40px rail, got " + sidebarEl.style.width);
+  assert(w.localStorage.getItem("philogg-sidebar-collapsed") === "1", "collapsed flag persisted to localStorage");
+  assert(!isVisible(sidebarNormalContent, w) && isVisible(sidebarRail, w), "collapsed (not hovering): rail shown, normal content hidden");
+
+  w.toggleSidebarCollapsed();
+  assert(!sidebarEl.classList.contains("collapsed"), "toggling again expands the sidebar");
+  assert(sidebarEl.style.width !== "40px", "width is restored away from the 40px rail value, got " + sidebarEl.style.width);
+  assert(w.localStorage.getItem("philogg-sidebar-collapsed") === "0", "expanded flag persisted too");
+
+  // --- Hover-peek: collapsed + mouseenter shows the exact expanded content
+  //     as an overlay (no separate peek-only markup/rendering) ---
+  w.toggleSidebarCollapsed(true);
+  sidebarEl.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
+  assert(sidebarEl.classList.contains("peeking"), "hovering a collapsed sidebar enters peek state");
+  assert(isVisible(sidebarNormalContent, w), "...revealing the SAME normal-content element used when expanded, not a separate rendering");
+  sidebarEl.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
+  assert(!sidebarEl.classList.contains("peeking") && isVisible(sidebarRail, w), "leaving reverts to the plain rail");
+
+  // Clicking the toggle while peeking pins it open (same toggle function,
+  // not a separate "pinned" state — see toggleSidebarCollapsed).
+  sidebarEl.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
+  fireClick(d.querySelector("#sidebarToggle"), w);
+  assert(!sidebarEl.classList.contains("collapsed") && !sidebarEl.classList.contains("peeking"), "clicking the toggle while peeking pins the sidebar fully open");
+
+  // --- Rail markers: active node's ancestor chain, clickable, doesn't
+  //     itself expand the sidebar ---
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const filterNode = w.createFilterNode(f.id, "text", "message");
+  T.state.activeId = filterNode.id;
+  w.render();
+  w.toggleSidebarCollapsed(true);
+  const markers = [...d.querySelectorAll("#sidebarRail .sidebar-rail-marker")];
+  assert(markers.length === 2, "rail shows one marker per ancestor (file + the active filter), got " + markers.length);
+  assert(markers[markers.length - 1].classList.contains("active"), "the active node's own marker carries .active");
+  fireClick(markers[0], w); // the file marker
+  assert(T.state.activeId === f.id, "clicking a rail marker sets it active");
+  assert(sidebarEl.classList.contains("collapsed"), "...without expanding the sidebar back out");
+
+  // --- Keyboard shortcut + resizer double-click ---
+  w.toggleSidebarCollapsed(false);
+  fireKeydown(d, w, "b", { ctrlKey: true });
+  assert(sidebarEl.classList.contains("collapsed"), "Ctrl+B toggles the sidebar collapse");
+  d.querySelector("#sidebarResizer").dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true }));
+  assert(!sidebarEl.classList.contains("collapsed"), "double-clicking the sidebar resizer toggles it back open");
+
+  // Plain "b" (no modifier) still runs the existing bookmark shortcut, not
+  // the sidebar toggle — Ctrl+B must not have hijacked it.
+  w.selectEntry(f.entries[0].id);
+  const bookmarksBefore = T.state.bookmarks.size;
+  fireKeydown(d, w, "b");
+  assert(T.state.bookmarks.size === bookmarksBefore + 1, "plain 'b' with a row selected still toggles a bookmark");
+
+  // --- Detail panel collapse/expand ---
+  assert(!detailPanel.classList.contains("collapsed"), "sanity: detail panel starts expanded");
+  w.toggleDetailCollapsed();
+  assert(detailPanel.classList.contains("collapsed"), "toggleDetailCollapsed() collapses the panel");
+  assert(detailPanel.style.height === "34px", "collapsed height matches the 34px header, got " + detailPanel.style.height);
+  assert(!isVisible(detailBody, w), "the message body is hidden while collapsed");
+  assert(w.localStorage.getItem("philogg-detail-collapsed") === "1", "collapsed flag persisted");
+
+  // Collapsed meta line: level + time + first message line, not the full
+  // thread/location/method field set (no room for those in 34px).
+  const detailMeta = d.querySelector("#detailMeta");
+  assert(detailMeta.querySelector(".detail-collapsed-msg") && !detailMeta.querySelector(".detail-thread"),
+    "collapsed header shows the truncated first message line instead of thread/location/method");
+
+  w.toggleDetailCollapsed(false);
+  assert(!detailPanel.classList.contains("collapsed") && isVisible(detailBody, w), "expanding restores the body");
+  assert(detailMeta.querySelector(".detail-thread") && !detailMeta.querySelector(".detail-collapsed-msg"),
+    "...and the full field set is back in the meta line");
+
+  fireKeydown(d, w, "j", { ctrlKey: true });
+  assert(detailPanel.classList.contains("collapsed"), "Ctrl+J toggles the detail panel collapse");
+  d.querySelector("#detailResizer").dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true }));
+  assert(!detailPanel.classList.contains("collapsed"), "double-clicking the detail resizer toggles it back open");
+
+  // --- Persisted flag is honored on (re-)init, same path real boot uses ---
+  w.localStorage.setItem("philogg-sidebar-collapsed", "1");
+  w.localStorage.setItem("philogg-detail-collapsed", "1");
+  w.initSidebarCollapsed();
+  w.initDetailCollapsed();
+  assert(sidebarEl.classList.contains("collapsed") && detailPanel.classList.contains("collapsed"),
+    "initSidebarCollapsed/initDetailCollapsed re-apply a persisted collapsed flag, same as at boot");
 });
 
 /* ============================================================
@@ -9534,6 +9704,22 @@ process.exit(failed ? 1 : 0);
               does (revealInHighlightView) — same entriesView === "filter"
               keydown branch added alongside the existing tree-focus Enter
               handling.
+   Group 79  — this session (2026-08-22), Claude-Design handoff bundle
+              ("Settings Dialog und Panel-Navigation", part 1a): Settings
+              dialog redesign — left section nav (Appearance/Behavior/Log
+              Formats), one unified .settings-card/row-grid per section,
+              boolean rows as a switch instead of a plain checkbox, and a
+              button hierarchy where the filled accent button is reserved
+              for Save (Edit/Reset -> outline, Add -> dashed outline).
+   Group 80  — this session (2026-08-22), same handoff bundle, part 1b:
+              collapsible sidebar (40px rail with the active node's
+              ancestor-chain markers; hover-peek shows the exact expanded
+              tree as an overlay, no separate rendering path; click-to-pin)
+              and collapsible detail panel (34px header keeps
+              level/time/first-message-line instead of going empty).
+              Ctrl+B/Ctrl+J, resizer double-click, localStorage-persisted
+              collapsed flag (display-preference tier, same as theme/font
+              scale) restored on init.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
