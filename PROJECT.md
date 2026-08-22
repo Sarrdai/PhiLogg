@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~13,000 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~14,100 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -812,10 +812,145 @@ One thing jsdom **can't** catch: real hit-testing / paint order (`elementFromPoi
 - (Resolved) In stacked Filter/Highlight layout, the Filter/Highlight tab buttons used to stay visible but functionally inert. The tri-state Full/Filtered/Stacked toggle now switches straight out of Stacked into tabs mode on the clicked panel instead of doing nothing — see "Highlight view (Filter/Highlight split)".
 - A row that's both highlight-matched and part of an active time-context filter's bracket shows both markers in the same left-gutter slot (`.hl-markers`/`.ctx-bracket` both sit at `left:-9px`), overlapping rather than each getting its own lane. Accepted trade-off, not expected to come up often — revisit if it does.
 - Highlight-rule matching walks every colored node in the tree on every Highlight-view render (memoized per-node via `getEntries`'s own cache, so cheap in practice) — would be the first thing to optimize if someone sets colors on a very large number of nodes at once.
+- The collapsed sidebar's 40px rail (see "Collapsible sidebar / detail panel" below) shows only the active node's ancestor chain (or root files if nothing's active), not the whole tree — a 40px strip can't fit a large tree anyway, and hover-peek exists precisely to show the real thing. A person wanting to jump to a sibling branch while collapsed has to peek (hover) rather than click a rail marker for it directly.
 
 ## Status / changelog
 
 Keep this section updated as features land — newest first, short entries, enough for a future session to know what exists without re-reading the whole chat history.
+
+- Bugfix, four rounds (this session, 2026-08-22, person-reported via
+  screenshots, same-session follow-up to the Settings/collapse redesign
+  directly below): **(1)** the sidebar's hover-peek overlay
+  (`#sidebarNormalContent` while `.peeking`, see that entry) had no
+  `background` of its own — visually detached from `#sidebar`'s 40px box via
+  `position:absolute`, so it painted transparent and the log table/timeline
+  minimap underneath bled straight through it; fixed with an explicit
+  `background:var(--bg-panel)` on that rule. **(2)** The detail panel's
+  collapse/expand chevron pointed the wrong way in both states — `.dc.html`
+  names its two path variants by open/closed state, not by the actual
+  direction the chevron draws, and both the static HTML fallback and
+  `ICON_CHEVRON_DOWN`/`ICON_CHEVRON_UP` were copied over with the names and
+  visual directions crossed; swapped both path bodies so `_DOWN` truly
+  points down and `_UP` truly points up, matching their already-correct
+  `collapsed ? ... : ...` usage. **(3)** Settings' left-nav category buttons
+  looked unclickable: their `.active` highlight was driven solely by the
+  scroll-position `IntersectionObserver` (see the entry below), so clicking
+  a category whose section was already fully on screen — no scrolling
+  needed — produced zero visible feedback even though the click handler
+  (and `scrollIntoView`) fired correctly. The click handler now also sets
+  `.active` directly, immediately, independent of whatever the observer
+  decides once scrolling (if any) settles. **(4)** The font-size stepper's
+  `−`/`+` glyphs rendered top-left instead of centered in their 32×30 boxes
+  — the shared base `.btn-icon` class is `display:flex` but never sets
+  `align-items`/`justify-content` (fine for its usual single-SVG-child
+  usage elsewhere, invisible until text content needed real centering);
+  added both to the `.font-scale-stepper .btn-icon` override. All four
+  verified against a real Chromium render (Playwright), not just jsdom,
+  which can't catch pure paint/geometry bugs like these — see "Known gaps"
+  in `tests/README.md`. 1509 passed, 0 failed (no behavior change, so no
+  new test group).
+
+- New: Settings dialog redesign + collapsible sidebar/detail panel (this
+  session, 2026-08-22, implementing a Claude-Design handoff bundle —
+  "Settings Dialog und Panel-Navigation" — carried over from a prior
+  session's design-mockup pass; no new open questions, straight
+  implementation against the mockup + a written handoff doc).
+
+  **Settings dialog** (`#settingsDialog`): added a left section-nav column
+  (`#settingsNav`, Appearance/Behavior/Log Formats, 216px) next to the
+  existing single scrollable body (`.settings-page-body` unchanged in
+  substance — all three sections still render there, in order) — clicking a
+  nav item scrolls to its section; an `IntersectionObserver` (guarded with
+  `typeof IntersectionObserver !== "undefined"` — jsdom has none) keeps the
+  nav highlighted on whichever section is actually in view, `rootMargin:
+  "0px 0px -70% 0px"` so the top-of-viewport section wins. Every settings row
+  now sits inside a `.settings-card` (`--bg-panel`/`--border-soft`/10px
+  radius, matching the design's exact color values, which happened to equal
+  existing tokens 1:1) with a unified `.settings-row` grid
+  (`grid-template-columns:1fr auto`, label+hint left / control right at a
+  shared edge), one control height (30px) and radius throughout, and bigger
+  type (13.5px labels, 12px hints, up from 12.5px/10.5px). Button hierarchy:
+  the filled accent button (`.btn-mini`) is now reserved for the one primary
+  action per panel (Save format/Save rule) — list-row `Edit`/`Reset` moved
+  from `.btn-mini` to the existing `.btn-mini-outline`, and `+ Add
+  format…`/`+ Add rule…` got a new `.btn-mini-dashed` (dashed border,
+  transparent fill) distinct from both. The boolean "Closing the last log
+  file quits the app" row now renders as an on/off switch
+  (`.settings-switch`/`.settings-switch-track`, CSS-only over the same real
+  `<input type=checkbox>` — no JS/behavior change, still just
+  `checked`/`change`) instead of the plain accent-colored checkbox used for
+  filter/plot checkboxes elsewhere, so "app preference" reads visually
+  distinct from "filter option." Font-size stepper (`−`/value/`+`) regrouped
+  into its own `.font-scale-stepper` sub-container so those three sit in one
+  seamless bordered pill (previously each had a full border with a gap
+  between, since `.font-scale-row`'s flex `gap` applied to all four children
+  including `Reset`). GROUP 79.
+
+  **Collapsible sidebar** (`#sidebar`, left/tree): new `#sidebarHeader` (34px
+  — "Files & filters" label + chevron) sits above a `#sidebarScroll` wrapper
+  now holding the pre-existing `#treeActionBar`/`#folderWatchList`/`#tree`
+  (unchanged internally); both together are `#sidebarNormalContent`. Collapse
+  sets `#sidebar`'s width to 40px directly (`sidebarEl.style.width`, same
+  mechanism the existing drag-resizer already used — no new competing CSS
+  width rule) and swaps in `#sidebarRail`, a small hand-built strip (not a
+  second tree renderer) showing one clickable marker per node in the
+  **active node's ancestor chain** (root file down to whichever's active —
+  or per root file if nothing's active yet; see "Known limitations" for why
+  not the whole tree), reusing the same `ICON_FILE`/`ICON_MERGE` glyphs and
+  `node.highlightColor` a normal tree row would; refreshed from
+  `renderTree()` itself so it never goes stale. **Hover-peek**: hovering a
+  collapsed rail (`mouseenter`/`mouseleave` on `#sidebar`) adds `.peeking`,
+  which makes `#sidebarNormalContent` — the exact same element/markup used
+  when expanded, not a separate peek-only render — `position:absolute` over
+  the rail and the content area (270px, box-shadow, `overflow:visible` on
+  the still-40px `#sidebar` parent so nothing reflows underneath); the
+  header's chevron swaps to a pin icon (reusing the existing `ICON_PIN` from
+  the bookmarks-pin feature) whose click is the *same* toggle function,
+  exiting `.collapsed` entirely (pins it open) rather than a separate pinned
+  sub-state. `#sidebarToggle` (the header's own button) is consequently only
+  ever visible in two of the three states (expanded, or collapsed+peeking) —
+  the third (collapsed, not peeking) is the rail's own separately rendered
+  button; `updateSidebarToggleIcon()` only distinguishes the two states it's
+  actually shown in.
+
+  **Collapsible detail panel** (`#detailPanel`, bottom): the previous bare
+  `#detailMeta` row is now wrapped in `#detailPanelHeader` (34px — fixed
+  "Entry detail" label + `#detailMeta` (now `flex:1 1 auto`, single-line,
+  clips instead of wrapping) + chevron), with `#detailBody` (placeholder +
+  message) below it. Collapse sets `#detailPanel`'s height to 34px directly
+  (same style-driven mechanism as the sidebar) and hides `#detailBody` +
+  `#detailResizer` (nothing to drag at 34px). `updateDetailPanel()` now
+  branches on collapsed state: expanded keeps the existing
+  level/time/thread/location/method fields; collapsed swaps to
+  level/time/first-message-line (`.detail-collapsed-msg`, CSS ellipsis) so
+  the header never goes informationally empty while closed.
+
+  **Shared across both**: `Ctrl+B` (sidebar) / `Ctrl+J` (detail) toggle
+  shortcuts (added before the existing `Ctrl+Z`/`Ctrl+Y` undo/redo branch in
+  the keydown handler; `Ctrl+B` returning early there also incidentally
+  fixed a latent ambiguity where it would have fallen through to the plain
+  `b` bookmark-toggle shortcut too, since that check doesn't itself exclude
+  `ctrlKey`) and a resizer double-click (`dblclick` on
+  `#sidebarResizer`/`#detailResizer`) both toggle the same way the header
+  chevron does. Collapsed state persists to `localStorage`
+  (`philogg-sidebar-collapsed`/`philogg-detail-collapsed`, "1"/"0") — same
+  display-preference tier as `THEME_STORAGE_KEY`/`FONT_SCALE_STORAGE_KEY`,
+  restored via `initSidebarCollapsed()`/`initDetailCollapsed()` at boot.
+  **Last dragged width/height is restored in-session, not via
+  localStorage** — matching this codebase's existing convention that the
+  sidebar/detail drag-resizers themselves are session-only (see "Five
+  changes to the Filtered/Full split and the tree" above); `sidebarLastWidth`
+  /`detailLastHeight` are plain JS variables, refreshed from
+  `getBoundingClientRect()` right before each collapse. GROUP 80.
+
+  Both parts came with a `.dc.html` design-tool file (colors/radii/spacing
+  read directly from it, not eyeballed) and a chat transcript recording one
+  clarified requirement worth keeping in mind if this needs revisiting: the
+  hover-peek must show the *exact* expanded-state content, not a reduced
+  preview — an earlier design-tool iteration got that wrong and was
+  corrected before handoff; the implementation here satisfies it
+  structurally (same DOM, not a second render path) rather than by
+  convention. 1509 passed, 0 failed.
 
 - New: `Enter` on a selected row in the Filtered view (or the Filtered/bottom pane of the Stacked view) mirrors that row's own `dblclick` (this session, 2026-08-21, person-requested, German: *"Wenn eine einzelne Zeile in im Filtered oder im unteren Teil des Stacked View ausgewählt ist, soll Enter das gleiche tun wie ein Doppelklick auf die Zeile."*). New keydown branch alongside the existing tree-focus `Enter` handling: with `state.focusRegion === "entries"`, `state.entriesView === "filter"`, a single `state.selectedId` and no active `state.logMultiSelect`, calls `revealInHighlightView(entryIndex[state.selectedId])` — the exact same call the row's own `dblclick` listener already makes (`renderVisibleRows`), so it centres the Full view on the entry without touching `activeId`/the level filter/the Filter view's own scroll position. Left alone with a multi-selection active (no single obvious target) or with focus elsewhere (tree, Full/Highlight pane). GROUP 78.
 
