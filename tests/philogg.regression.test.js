@@ -126,6 +126,7 @@ async function withApp(run, opts = {}) {
       get BUILTIN_THEMES() { return BUILTIN_THEMES; },
       get colorPickerMode() { return colorPickerMode; },
       get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },
+      get accentChoices() { return accentChoices; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -8422,7 +8423,7 @@ await withApp(async (w, d, T) => {
   const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
   assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
   const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
-  assert(appearanceRows.length === 2, "Theme + Font size are both rows inside that one card, got " + appearanceRows.length);
+  assert(appearanceRows.length === 3, "Theme + Accent color (hidden on Dark, no highlightPalette — see GROUP 83) + Font size are all rows inside that one card, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
   // Boolean row: rendered as a switch (input + adjacent track element),
@@ -8772,6 +8773,97 @@ await withApp(async (w, d, T) => {
   assert(T.colorPickerMode === "theme", "setColorPickerMode re-applies a persisted mode, same pattern initTheme() uses for the theme itself");
   assert(d.querySelector("#cpModeTheme").classList.contains("active") && !d.querySelector("#cpModeFree").classList.contains("active"),
     "the Theme button reflects the restored mode");
+});
+
+/* ============================================================
+   GROUP 83 — Accent color: re-pick the app's OWN accent (buttons, the
+   breadcrumb, the minimap's range highlight) from the active theme's
+   own palette
+   Origin: this session (2026-08-22), same-day clarification of the 82
+   request — "Highlightfarbe" there meant the app's accent/selection color
+   itself ("Highlightfarbe auf den Buttons oder die Markierung auf der
+   Minimap für die Zeitabschnitte"), not the per-filter-node highlight
+   color Group 82 covers (a different, unrelated feature that stays as-is).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("83a. Accent-color row: hidden for a theme with no highlightPalette, shown with swatches for one that has it");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const row = d.querySelector("#settingsAccentRow");
+  const picker = d.querySelector("#settingsAccentPicker");
+
+  assert(!isVisible(row, w), "Dark (no highlightPalette) hides the Accent color row");
+
+  const select = d.querySelector("#settingsThemeSelect");
+  select.value = "catppuccin-mocha";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(isVisible(row, w), "Catppuccin Mocha (has a highlightPalette) shows the row");
+  const swatches = [...picker.querySelectorAll(".accent-swatch:not(.accent-swatch-reset)")];
+  const mochaPalette = T.BUILTIN_THEMES.find(t => t.id === "catppuccin-mocha").highlightPalette;
+  assert(swatches.length === mochaPalette.length && swatches.every((s, i) => s.title === mochaPalette[i]),
+    "the swatches are exactly Mocha's own highlightPalette, in order, got " + swatches.length + " of " + mochaPalette.length);
+  assert(picker.querySelector(".accent-swatch-reset.active"), "with no override chosen yet, the reset/'theme default' swatch is the active one");
+
+  select.value = "light";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(!isVisible(row, w), "Light (no highlightPalette either) hides the row again");
+});
+
+await withApp(async (w, d, T) => {
+  section("83b. Picking an accent swatch recolors --accent/-strong/-soft/-on together, persists PER THEME, and survives switching away and back");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const select = d.querySelector("#settingsThemeSelect");
+  select.value = "catppuccin-mocha";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  const csBefore = w.getComputedStyle(d.documentElement);
+  const defaultAccent = csBefore.getPropertyValue("--accent").trim();
+  assert(defaultAccent === "#94e2d5", "sanity: Mocha's default accent (Teal) is active before picking, got " + defaultAccent);
+
+  // Mauve (#cba6f7) is in Mocha's highlightPalette but clearly NOT the
+  // default accent — a real re-pick, not a no-op.
+  const mauveSwatch = [...d.querySelectorAll("#settingsAccentPicker .accent-swatch")].find(s => s.title === "#cba6f7");
+  fireClick(mauveSwatch, w);
+
+  const cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--accent").trim() === "#cba6f7", "picking Mauve sets --accent to it, got " + cs.getPropertyValue("--accent"));
+  assert(cs.getPropertyValue("--accent-strong").trim() !== "#89dceb" && cs.getPropertyValue("--accent-strong").trim() !== "#cba6f7",
+    "--accent-strong is recomputed too (not left at Mocha's old Sky default, and not identical to --accent either), got " + cs.getPropertyValue("--accent-strong"));
+  assert(cs.getPropertyValue("--accent-soft").trim().startsWith("rgba(203,166,247,"), "--accent-soft is recomputed from the new accent's own RGB, got " + cs.getPropertyValue("--accent-soft"));
+  assert(T.accentChoices["catppuccin-mocha"] === "#cba6f7", "the pick is recorded in accentChoices for Mocha specifically");
+  assert(JSON.parse(w.localStorage.getItem("philogg-accent-choice"))["catppuccin-mocha"] === "#cba6f7", "...and persisted to localStorage");
+  // renderAccentPicker() rebuilds the swatch row on every applyTheme() call
+  // (same "new DOM nodes, not the same element" pattern as renderVisibleRows
+  // — see PROJECT.md's jsdom gotcha), so re-query rather than reuse the
+  // now-stale mauveSwatch reference from before the click.
+  const mauveSwatchAfter = [...d.querySelectorAll("#settingsAccentPicker .accent-swatch")].find(s => s.title === "#cba6f7");
+  assert(mauveSwatchAfter.classList.contains("active"), "the picked swatch shows as active");
+
+  // Switch to a DIFFERENT theme: that theme's own default applies, Mocha's
+  // pick is untouched (per-theme, not global).
+  select.value = "catppuccin-latte";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--accent").trim() === "#209fb5", "Latte shows its OWN default accent, unaffected by Mocha's pick");
+
+  // Switch back to Mocha: the pick survives.
+  select.value = "catppuccin-mocha";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--accent").trim() === "#cba6f7", "switching back to Mocha restores the picked Mauve accent");
+
+  // Reset (the ↺ swatch) clears the override and restores the theme's own default.
+  fireClick(d.querySelector("#settingsAccentPicker .accent-swatch-reset"), w);
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--accent").trim() === "#94e2d5", "the reset swatch restores Mocha's default Teal accent");
+  assert(!("catppuccin-mocha" in T.accentChoices), "...and clears the stored override for Mocha");
+});
+
+await withApp(async (w, d, T) => {
+  section("83c. A dark, low-luminance accent pick flips --accent-on to white (contrast safety net)");
+  w.setTheme("catppuccin-latte");
+  // Latte's Red (#d20f39) is in its highlightPalette and dark/saturated
+  // enough that the default near-black --accent-on would be unreadable.
+  w.setAccentChoice("catppuccin-latte", "#d20f39");
+  const cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--accent").trim() === "#d20f39", "sanity: the dark Red accent is active");
+  assert(cs.getPropertyValue("--accent-on").trim() === "#fff", "a low-luminance accent pick flips --accent-on to white instead of staying near-black, got " + cs.getPropertyValue("--accent-on"));
 });
 
 /* ============================================================
@@ -9980,6 +10072,21 @@ process.exit(failed ? 1 : 0);
               entry; optional on a custom theme's JSON) instead of the
               generic HIGHLIGHT_PRESETS, falling back to HIGHLIGHT_PRESETS
               for Dark/Light or a custom theme without one. 82b/82c.
+   Group 83  — this session (2026-08-22), same-day clarification: what "82"
+              called "Highlightfarbe" actually meant the app's OWN accent/
+              selection color (buttons, breadcrumb, the minimap's time-span
+              highlight — all already var(--accent...)-driven per the
+              audit) re-pickable from the theme's own palette, not the
+              per-filter-node picker Group 82 built (which stays, separate
+              feature). New "Accent color" row in Settings -> Appearance
+              (themeOwnPalette(), no HIGHLIGHT_PRESETS fallback — hidden
+              entirely for Dark/Light or a palette-less custom theme, see
+              83a), setAccentChoice()/applyAccentChoice() recompute
+              --accent-strong/-soft/-on together via JS (mixHex toward
+              white on dark flavors / black on Latte, luminance check for
+              -on), persisted PER THEME in localStorage
+              philogg-accent-choice (83b) with a contrast safety net for a
+              dark/saturated pick like Latte's Red (83c).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

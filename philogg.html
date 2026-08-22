@@ -107,7 +107,19 @@
      accent uses Teal (Sapphire/Teal for Latte, so accent-strong stays the
      darker of the two, same convention as the light theme above); level
      colors use Red/Peach/Blue/Overlay2/Overlay0 for error/warn/info/debug/
-     trace, matching this app's original amber-ish (not yellow) warn hue. */
+     trace, matching this app's original amber-ish (not yellow) warn hue.
+
+     --accent/-strong/-soft/-on here are the DEFAULT for each flavor —
+     Settings -> Appearance's "Accent color" row lets a person re-pick
+     --accent from the flavor's own highlightPalette below, at which point
+     applyAccentChoice() (Theme script section) computes and overrides all
+     four together via JS (mixing toward white on these three dark flavors
+     / black on Latte, plus a luminance check for -on's text color) — kept
+     as a JS computation rather than a color-mix() CSS formula specifically
+     so the curated defaults here (Teal+Sky, a deliberate two-tone pairing,
+     not a mechanical tint of one color) stay exactly as designed when no
+     override is chosen; color-mix(var(--accent)) would have silently
+     replaced Sky with a mechanically-tinted teal on every page load. */
   :root[data-theme="catppuccin-mocha"]{
     --bg-app:#11111b;
     --bg-panel:#181825;
@@ -1481,6 +1493,22 @@
     border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
   }
   #settingsThemeSelect{min-width:190px;}
+  /* Accent-color re-pick row (Settings -> Appearance) — only shown for a
+     theme with its own highlightPalette, see renderAccentPicker(). Reuses
+     .cp-preset's circular-swatch look (color-picker popup) but as a wrapping
+     flex row instead of a fixed 6-column grid, since this sits inside a
+     settings-row-control alongside its label instead of a narrow popup. */
+  #settingsAccentRow.hidden{display:none;}
+  .accent-picker{display:flex; flex-wrap:wrap; gap:6px; max-width:280px; justify-content:flex-end;}
+  .accent-swatch{
+    width:22px; height:22px; border-radius:50%; border:1px solid var(--border-soft);
+    cursor:pointer; padding:0; flex:0 0 auto;
+  }
+  .accent-swatch:hover{box-shadow:0 0 0 2px var(--accent);}
+  .accent-swatch.active{box-shadow:0 0 0 2px var(--accent-strong);}
+  .accent-swatch-reset{
+    background:var(--bg-app); color:var(--text-secondary); font-size:12px; line-height:20px;
+  }
   /* Small at-a-glance swatch in each custom-theme row — bg/accent/error/info
      strips, enough to tell themes apart in the list without switching. */
   .theme-row-main{display:flex; align-items:center; min-width:0;}
@@ -2596,6 +2624,13 @@
                 <select id="settingsThemeSelect"></select>
               </div>
             </div>
+            <div class="settings-row hidden" id="settingsAccentRow">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Accent color</div>
+                <div class="settings-row-hint">Re-pick the theme's accent — used on buttons, the breadcrumb, and the minimap's range highlight — from this theme's own palette.</div>
+              </div>
+              <div class="settings-row-control accent-picker" id="settingsAccentPicker"></div>
+            </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Font size</div>
@@ -2931,8 +2966,130 @@ function applyTheme(themeId) {
     THEME_COLOR_KEYS.forEach(k => { if (custom.colors[k]) style.setProperty("--" + k, custom.colors[k]); });
     if (custom.activeTextLight) THEME_ON_KEYS.forEach(k => style.setProperty("--" + k, "#fff"));
   }
+  applyAccentChoice(themeId); // re-picked --accent (if any) for THIS theme, on top of its defaults above
   const select = document.getElementById("settingsThemeSelect");
   if (select && select.value !== themeId) select.value = themeId;
+  renderAccentPicker();
+}
+
+/* ---- Accent color: re-pick --accent from the ACTIVE theme's own
+   highlightPalette (this session, follow-up: "die Highlightfarbe auf den
+   Buttons oder die Markierung auf der Minimap" — the app's actual accent
+   color, not the per-filter-node highlight color above). Only offered for
+   a theme that defines a highlightPalette (the four Catppuccin flavors;
+   optionally a custom theme too) — Dark/Light keep their single fixed
+   accent. Persisted PER THEME (picking Mauve for Mocha doesn't affect
+   Latte), same tier as the theme choice itself. ---- */
+const ACCENT_CHOICE_STORAGE_KEY = "philogg-accent-choice";
+let accentChoices = {}; // themeId -> hex, only entries the person actually picked
+
+function loadAccentChoices() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(ACCENT_CHOICE_STORAGE_KEY) || "{}"); } catch { /* corrupt value, fall through to {} */ }
+  accentChoices = (stored && typeof stored === "object") ? stored : {};
+}
+
+function saveAccentChoices() {
+  localStorage.setItem(ACCENT_CHOICE_STORAGE_KEY, JSON.stringify(accentChoices));
+}
+
+// A theme's OWN highlightPalette, no HIGHLIGHT_PRESETS fallback (unlike
+// getActiveHighlightPalette() below, which the per-node picker's Theme
+// mode uses) — Dark/Light/a plain custom theme legitimately have none,
+// and offering the theme-independent generic swatches here as if they
+// were "this theme's colors" would misrepresent what they are.
+function themeOwnPalette(themeId) {
+  const builtin = BUILTIN_THEMES.find(t => t.id === themeId);
+  if (builtin && builtin.highlightPalette) return builtin.highlightPalette;
+  const custom = customThemes.find(t => t.id === themeId);
+  if (custom && Array.isArray(custom.highlightPalette) && custom.highlightPalette.length) return custom.highlightPalette;
+  return null;
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  return m ? [1, 2, 3].map(i => parseInt(m[i], 16)) : [255, 255, 255];
+}
+
+// Standard relative-luminance weighting (not gamma-corrected — a cheap
+// approximation is enough here, this only decides black-vs-white text,
+// not an exact WCAG ratio).
+function relativeLuminance(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function mixHex(hex, towardHex, ratio) {
+  const [r1, g1, b1] = hexToRgb(hex);
+  const [r2, g2, b2] = hexToRgb(towardHex);
+  const mix = (a, b) => Math.round(a * (1 - ratio) + b * ratio).toString(16).padStart(2, "0");
+  return "#" + mix(r1, r2) + mix(g1, g2) + mix(b1, b2);
+}
+
+function hexToRgba(hex, alpha) {
+  const [r, g, b] = hexToRgb(hex);
+  return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+}
+
+// Applies a stored accent override for themeId, if there is one and it's
+// still a valid color in that theme's own palette (a custom theme's
+// palette can shrink on re-import, or the person cleared it) — a no-op
+// otherwise, leaving the theme's own default --accent/-strong/-soft/-on
+// (set by its CSS block or, for a custom theme, by applyTheme() above)
+// untouched. Deliberately a JS computation, not a color-mix() CSS formula
+// — see the big comment above the Catppuccin CSS blocks for why: it would
+// silently replace each flavor's curated two-tone accent/accent-strong
+// pairing (e.g. Mocha's Teal+Sky) with a mechanical tint of one color the
+// moment nothing is overridden, which is wrong for the (most common)
+// no-override case.
+function applyAccentChoice(themeId) {
+  const palette = themeOwnPalette(themeId);
+  if (!palette) return;
+  const chosen = accentChoices[themeId];
+  if (!chosen || !palette.includes(chosen)) return;
+  const style = document.documentElement.style;
+  const bgLuminance = relativeLuminance(getComputedStyle(document.documentElement).getPropertyValue("--bg-app").trim());
+  const isLightTheme = bgLuminance > 140;
+  style.setProperty("--accent", chosen);
+  style.setProperty("--accent-strong", mixHex(chosen, isLightTheme ? "#000000" : "#ffffff", 0.25));
+  style.setProperty("--accent-soft", hexToRgba(chosen, isLightTheme ? 0.12 : 0.14));
+  style.setProperty("--accent-on", relativeLuminance(chosen) > 140 ? "#08201f" : "#fff");
+}
+
+function setAccentChoice(themeId, hex) {
+  if (hex) accentChoices[themeId] = hex; else delete accentChoices[themeId];
+  saveAccentChoices();
+  if (currentThemeId() === themeId) applyTheme(themeId); // re-applies the theme's defaults, then the new (or cleared) override
+}
+
+function renderAccentPicker() {
+  const row = document.getElementById("settingsAccentRow");
+  const list = document.getElementById("settingsAccentPicker");
+  if (!row || !list) return;
+  const themeId = currentThemeId();
+  const palette = themeOwnPalette(themeId);
+  row.classList.toggle("hidden", !palette);
+  if (!palette) return;
+  list.innerHTML = "";
+  const chosen = accentChoices[themeId];
+  const frag = document.createDocumentFragment();
+  palette.forEach(c => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "accent-swatch" + (c === chosen ? " active" : "");
+    b.style.background = c;
+    b.title = c;
+    b.addEventListener("click", () => setAccentChoice(themeId, c));
+    frag.appendChild(b);
+  });
+  list.appendChild(frag);
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "accent-swatch accent-swatch-reset" + (chosen ? "" : " active");
+  resetBtn.title = "Theme default";
+  resetBtn.textContent = "↺";
+  resetBtn.addEventListener("click", () => setAccentChoice(themeId, null));
+  list.appendChild(resetBtn);
 }
 
 // A stored/imported theme id can go stale (its custom theme got deleted
@@ -2971,6 +3128,7 @@ function populateThemeSelect() {
 
 function initTheme() {
   loadCustomThemes();
+  loadAccentChoices();
   populateThemeSelect();
   renderCustomThemeList();
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -3029,6 +3187,7 @@ function renderCustomThemeList() {
 function removeCustomTheme(id) {
   customThemes = customThemes.filter(t => t.id !== id);
   saveCustomThemes();
+  if (accentChoices[id]) { delete accentChoices[id]; saveAccentChoices(); } // no dangling accent pick for a theme that no longer exists
   populateThemeSelect();
   renderCustomThemeList();
   if (currentThemeId() === id) setTheme("dark"); // the deleted theme was active — fall back
