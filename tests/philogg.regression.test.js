@@ -8586,12 +8586,26 @@ await withApp(async (w, d, T) => {
   assert(cs.getPropertyValue("--bg-app").trim() === "#11111b", "Mocha's --bg-app CSS var resolves via the [data-theme] block, got " + cs.getPropertyValue("--bg-app"));
   assert(cs.getPropertyValue("--accent").trim() === "#94e2d5", "Mocha's --accent resolves too, got " + cs.getPropertyValue("--accent"));
   assert(w.localStorage.getItem("philogg-theme") === "catppuccin-mocha", "theme choice persisted to localStorage");
+  // Style guide: "Selection Background" = Overlay 2 @ 20-30% opacity —
+  // Mocha overrides --selection-bg to reuse --level-debug (already =
+  // Overlay 2, see that CSS block), NOT the accent-tinted default every
+  // non-Catppuccin theme keeps (Dark's own --selection-bg stays var(--accent-soft)).
+  const selectionBg = cs.getPropertyValue("--selection-bg").replace(/\s+/g, "");
+  assert(selectionBg === "color-mix(insrgb,var(--level-debug)25%,transparent)",
+    "Mocha's --selection-bg is the Overlay-2-based color-mix formula, got " + cs.getPropertyValue("--selection-bg"));
 
   select.value = "catppuccin-latte";
   select.dispatchEvent(new w.Event("change", { bubbles: true }));
   const csLatte = w.getComputedStyle(d.documentElement);
-  assert(csLatte.getPropertyValue("--level-error-on").trim() === "#fff",
-    "Latte (a light-background flavor) overrides --level-error-on to white text like the Light theme does");
+  // Declared as var(--bg-panel) (Latte maps --bg-panel to Base, #eff1f5) —
+  // per the Catppuccin style guide, "On Accent" text = Base, so
+  // --level-*-on/--accent-on reference that var directly rather than a
+  // hardcoded near-white. jsdom's getComputedStyle doesn't resolve nested
+  // var() the way a real browser does (see tests/README.md "Known gaps"),
+  // so this checks the declared value, not the resolved color; Group 83's
+  // Playwright-verified screenshots confirm the real rendered result.
+  assert(csLatte.getPropertyValue("--level-error-on").trim() === "var(--bg-panel)",
+    "Latte (a light-background flavor) points --level-error-on at its own Base color (--bg-panel) instead of a hardcoded near-white, got " + csLatte.getPropertyValue("--level-error-on"));
 });
 
 await withApp(async (w, d, T) => {
@@ -10087,6 +10101,22 @@ process.exit(failed ? 1 : 0);
               -on), persisted PER THEME in localStorage
               philogg-accent-choice (83b) with a contrast safety net for a
               dark/saturated pick like Latte's Red (83c).
+              Same-day follow-up, no new group: a Catppuccin style-guide
+              compliance audit (checked against the guide fetched fresh,
+              not from memory) found "On Accent text = Base" and
+              "Selection Background = Overlay 2 @ 20-30%" not followed —
+              fixed by pointing --accent-on/--level-*-on at var(--bg-elevated)
+              or var(--bg-panel) (whichever = Base per flavor) and adding
+              --selection-bg (reusing --level-debug = Overlay 2). Group
+              81a's Latte assertion was updated in place for the new
+              value (checks the declared "var(--bg-panel)" string, not a
+              resolved color — jsdom doesn't resolve nested var(), see that
+              assertion's own comment) and gained a --selection-bg check
+              for Mocha. Three other gaps the same audit found (background-
+              pane brightness hierarchy inverted vs. the guide; Warnings =
+              Peach not Yellow; Info = Blue not Teal) were deliberately
+              NOT changed — flagged for a person decision in PROJECT.md's
+              "Theming" section instead, not silently altered.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
