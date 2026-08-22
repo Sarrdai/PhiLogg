@@ -1624,6 +1624,7 @@
     transition:opacity .12s;
   }
   .preview-value-span.chip-ignored{opacity:.45; text-decoration:line-through; border-bottom-style:dashed;}
+  .preview-value-cond{font-size:9px; font-weight:650; opacity:.8; margin-left:2px; vertical-align:top;}
   .btn-mini{
     background:var(--accent); color:#08201f; border:none; border-radius:6px;
     padding:8px 12px; font-size:12px; font-weight:650; cursor:pointer;
@@ -1914,8 +1915,8 @@
             <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [value:float]" autocomplete="off">
             <div id="filterTokenChips" class="filter-token-chips">
               <span class="filter-section-label">Insert:</span>
-              <button type="button" class="token-chip" data-token="float">[float]</button>
-              <button type="button" class="token-chip" data-token="int">[int]</button>
+              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [value:float>=10], [value:float&lt;20,>10], or [value:float|>=10] for |value|>=10">[float]</button>
+              <button type="button" class="token-chip" data-token="int" title="Add a condition manually, e.g. [value:int>=10], [value:int&lt;20,>10], or [value:int|>=10] for |value|>=10">[int]</button>
               <button type="button" class="token-chip" data-token="time">[time]</button>
               <button type="button" class="token-chip" data-token="word">[word]</button>
               <button type="button" class="token-chip" data-token="hex">[hex]</button>
@@ -3517,6 +3518,19 @@ async function addFile(name, text, onProgress, formatIdOverride) {
      [value:float] [value:int] [value:time] [value:word] [value:hex] [*]
    Matching entries get their placeholder values pulled out into a table
    (see renderExtractTable) instead of being shown as normal log rows.
+
+   float/int placeholders may additionally carry one or more numeric
+   conditions right inside the brackets, e.g. [value:float>=10] or
+   [value:int<20,>10] (","-separated conditions are AND-ed together). A
+   condition's operator can be prefixed with "|" to compare against the
+   captured value's ABSOLUTE value instead, e.g. [value:float|>=10] matches
+   10 and -15 alike (|value| >= 10). These don't change the capturing regex
+   itself (a comparison isn't expressible as a regex quantifier) —
+   compileExtractPattern parses them onto each column as `conditions`, and
+   valueSatisfiesConditions()/wildcardMatch() below apply them as a
+   post-match numeric check, on top of the structural regex match,
+   everywhere a wildcard pattern is tested against an entry (extraction, and
+   a plain "text" filter whose value contains tokens).
 */
 const EXTRACT_TYPES = {
   float: '[-+]?(?:\\d+\\.\\d+|\\.\\d+|\\d+)',
@@ -3527,7 +3541,24 @@ const EXTRACT_TYPES = {
   hex: '(?:0[xX])?[0-9a-fA-F]+',
 };
 
-const EXTRACT_TOKEN_RE = /\[(?:value:(float|int|time|word|hex)|(\*))\]/g;
+// Only float/int carry a natural numeric ordering for conditions (time/word/hex
+// don't — see compileExtractPattern's rejection of conditions on those types).
+// VALUE_CONDITION_ONE (one condition, e.g. "|>=10") is the single source for
+// "what one condition looks like", shared by EXTRACT_TOKEN_RE (which only
+// needs to recognize the whole conditions substring as part of a token) and
+// VALUE_CONDITION_RE (which re-parses that substring into individual
+// conditions in parseValueConditions) — kept in sync by construction rather
+// than duplicated as two separate regex literals.
+const VALUE_CONDITION_TYPES = new Set(["float", "int"]);
+const VALUE_CONDITION_NUM = '-?(?:\\d+\\.\\d+|\\.\\d+|\\d+)';
+const VALUE_CONDITION_OP = '(?:>=|<=|==|>|<)';
+const VALUE_CONDITION_ONE = '\\|?' + VALUE_CONDITION_OP + VALUE_CONDITION_NUM;
+const VALUE_CONDITION_RE = new RegExp('(\\|?)(' + VALUE_CONDITION_OP + ')(' + VALUE_CONDITION_NUM + ')', 'g');
+
+const EXTRACT_TOKEN_RE = new RegExp(
+  '\\[(?:value:(float|int|time|word|hex)((?:' + VALUE_CONDITION_ONE + ')(?:,(?:' + VALUE_CONDITION_ONE + '))*)?|(\\*))\\]',
+  'g'
+);
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -3540,9 +3571,82 @@ function isExtractPattern(pattern) {
   return EXTRACT_TOKEN_RE.test(pattern);
 }
 
+// Parses a placeholder's raw condition string (e.g. "<20,>10" or
+// "|>=10,|<=100" for an absolute-value pair, from the EXTRACT_TOKEN_RE
+// match's own condition group) into [{op, value, abs?}, ...]. Returns
+// undefined for no conditions, matching how "no conditions" is represented
+// everywhere else (column.conditions simply absent).
+function parseValueConditions(condStr) {
+  if (!condStr) return undefined;
+  VALUE_CONDITION_RE.lastIndex = 0;
+  const conditions = [];
+  let mm;
+  while ((mm = VALUE_CONDITION_RE.exec(condStr)) !== null) {
+    const cond = { op: mm[2], value: parseFloat(mm[3]) };
+    if (mm[1]) cond.abs = true; // leading "|" — compare against |value| instead of value
+    conditions.push(cond);
+  }
+  return conditions.length ? conditions : undefined;
+}
+
+// Compact human-readable label for a column's conditions, e.g. "≥10" or
+// "<20 ∧ >10" or "|≥10" for an absolute-value condition — used by every
+// place that visualizes a value placeholder (the filter popup's live
+// pattern preview, the post-creation pattern view, and the extraction
+// table's column headers).
+const VALUE_CONDITION_SYMBOLS = { ">=": "≥", "<=": "≤", "==": "=", ">": ">", "<": "<" };
+function describeValueConditions(conditions) {
+  if (!conditions || !conditions.length) return "";
+  return conditions.map(c => (c.abs ? "|" : "") + VALUE_CONDITION_SYMBOLS[c.op] + c.value).join(" ∧ ");
+}
+
+// Does a single captured raw substring (e.g. "12.5") satisfy a column's
+// conditions? No conditions = always true. A capture that doesn't parse as
+// a number (shouldn't happen for float/int, the only types conditions are
+// allowed on) fails every condition rather than being treated as a match.
+// An `abs` condition compares |value| instead of value (e.g. [value:float|>=10]
+// matches both 10 and -15).
+function valueSatisfiesConditions(rawStr, conditions) {
+  if (!conditions) return true;
+  const num = parseFloat(rawStr);
+  if (Number.isNaN(num)) return false;
+  return conditions.every(c => {
+    const v = c.abs ? Math.abs(num) : num;
+    switch (c.op) {
+      case ">=": return v >= c.value;
+      case "<=": return v <= c.value;
+      case ">": return v > c.value;
+      case "<": return v < c.value;
+      case "==": return v === c.value;
+      default: return true;
+    }
+  });
+}
+
+// Tests `text` against an extraction regex AND, for every captured column
+// that carries conditions, the numeric constraint on its captured value —
+// the single shared "does this wildcard pattern really match" primitive
+// used by extraction (getEntries' "extract" branch), a plain "text" filter
+// whose value contains wildcard tokens, and the live-match/pattern-preview
+// UI, so all four never disagree about what a conditioned placeholder
+// matches. Returns the match array (truthy) on success, null otherwise —
+// callers that just need a boolean use `!!wildcardMatch(...)`, callers that
+// also want the captured substrings (the pattern preview) reuse the array.
+function wildcardMatch(regex, columns, text) {
+  const m = regex.exec(text);
+  if (!m) return null;
+  for (let i = 0; i < columns.length; i++) {
+    if (!valueSatisfiesConditions(m[i + 1], columns[i].conditions)) return null;
+  }
+  return m;
+}
+
 // Compiles a template into { regex, columns }. columns is the ordered list
-// of { name, type } to extract; duplicate types get suffixed (float, float 2, ...).
-// Returns null if the resulting pattern isn't a valid regex.
+// of { name, type, conditions? } to extract; duplicate types get suffixed
+// (float, float 2, ...). Returns null if the resulting pattern isn't a
+// valid regex, OR if a numeric condition was written on a type that has no
+// natural ordering (time/word/hex) — same "invalid pattern" feedback path
+// as any other malformed template.
 function compileExtractPattern(pattern) {
   EXTRACT_TOKEN_RE.lastIndex = 0;
   let lastIndex = 0;
@@ -3552,11 +3656,15 @@ function compileExtractPattern(pattern) {
   let m;
   while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
     regexStr += escapeRegExp(pattern.slice(lastIndex, m.index));
-    const type = m[1] || "text"; // m[2] matched means it was the bare [*] wildcard
+    const type = m[1] || "text"; // m[3] matched means it was the bare [*] wildcard
+    if (m[2] && !VALUE_CONDITION_TYPES.has(type)) return null; // conditions only make sense on float/int
+    const conditions = parseValueConditions(m[2]);
     const base = "value";
     nameCounts[base] = (nameCounts[base] || 0) + 1;
     const name = nameCounts[base] > 1 ? base + " " + nameCounts[base] : base;
-    columns.push({ name, type });
+    const col = { name, type };
+    if (conditions) col.conditions = conditions;
+    columns.push(col);
     lastIndex = EXTRACT_TOKEN_RE.lastIndex;
     const isLast = lastIndex === pattern.length;
     const frag = type === "text" ? (isLast ? ".*" : ".*?") : EXTRACT_TYPES[type];
@@ -4262,13 +4370,16 @@ function textColumnValue(e, key) {
 // clicked, "Add filter" vs. "Extract" (see commitFilter). When set,
 // wildcardRegex is compileExtractPattern's regex (rebuilt with the right
 // case-sensitivity flag) tested against the target text instead of a
-// plain substring check.
-function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex) {
+// plain substring check. `wildcardColumns` (required whenever wildcardRegex
+// is set) is that same compile's `spec.columns` — carries each placeholder's
+// optional numeric `conditions` ([value:float>=10]), checked via
+// wildcardMatch() against structural regex match alone.
+function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wildcardColumns) {
   if (wildcardRegex) {
     if (columns && columns.length) {
-      return columns.some(key => wildcardRegex.test(textColumnValue(e, key)));
+      return columns.some(key => !!wildcardMatch(wildcardRegex, wildcardColumns, textColumnValue(e, key)));
     }
-    return wildcardRegex.test(e.raw);
+    return !!wildcardMatch(wildcardRegex, wildcardColumns, e.raw);
   }
   const q = caseSensitive ? value : value.toLowerCase();
   if (columns && columns.length) {
@@ -4304,7 +4415,7 @@ function getEntries(nodeId) {
     if (isExtractPattern(value)) {
       const spec = compileExtractPattern(value);
       const wildcardRegex = spec && new RegExp(spec.regexStr, node.caseSensitive ? "" : "i");
-      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, wildcardRegex)) : [];
+      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, wildcardRegex, spec.columns)) : [];
     } else {
       result = parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns));
     }
@@ -4324,7 +4435,7 @@ function getEntries(nodeId) {
     result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
   } else if (node.filterType === "extract") {
     const spec = compileExtractPattern(node.value);
-    result = spec ? parentEntries.filter(e => spec.regex.test(e.message)) : [];
+    result = spec ? parentEntries.filter(e => !!wildcardMatch(spec.regex, spec.columns, e.message)) : [];
   } else if (node.filterType === "and" || node.filterType === "or") {
     const linked = state.nodes[node.linkedId];
     if (!linked) {
@@ -6035,7 +6146,8 @@ function renderExtractPatternView(pattern, columns, opts) {
     num.style.background = color;
     num.textContent = chipIdx + 1;
     chip.appendChild(num);
-    chip.appendChild(document.createTextNode(col.type));
+    const condLabel = describeValueConditions(col.conditions);
+    chip.appendChild(document.createTextNode(col.type + (condLabel ? " " + condLabel : "")));
     if (opts && opts.onToggle) {
       chip.classList.add("chip-toggleable");
       chip.title = col.ignored
@@ -6043,7 +6155,7 @@ function renderExtractPatternView(pattern, columns, opts) {
         : "Click to ignore this value (won\u2019t become a column)";
       chip.addEventListener("click", ev => { ev.stopPropagation(); opts.onToggle(chipIdx); });
     } else {
-      chip.title = col.name + " (" + col.type + ")";
+      chip.title = col.name + " (" + col.type + (condLabel ? " " + condLabel : "") + ")";
     }
     chip.addEventListener("mouseenter", () => highlightColumn(chipIdx));
     chip.addEventListener("mouseleave", clearColumnHighlight);
@@ -7376,10 +7488,11 @@ function renderExtractTable(node) {
     // (see renderExtractPatternView) — Index/t(ms) aren't placeholders, so
     // they get no number, just their name.
     const numBadge = i < 0 ? "" : '<span class="pattern-chip-num" style="background:' + color + '">' + (i + 1) + "</span> ";
+    const condLabel = describeValueConditions(c.conditions);
     headHtml +=
       '<th data-col="' + i + '" title="Click: select column · Ctrl+click: add/remove column · Shift+click: extend">' +
       numBadge +
-      escapeHtml(c.name) + '<span class="extract-col-type">' + escapeHtml(c.type) + '</span>' +
+      escapeHtml(c.name) + '<span class="extract-col-type">' + escapeHtml(c.type + (condLabel ? " " + condLabel : "")) + '</span>' +
       '<button type="button" class="extract-sort-btn' + (extractSortCol === i ? " active" : "") + '" data-sort-col="' + i + '" title="Sort by this column">' + arrow + "</button>" +
       assertBtn + badge + "</th>";
   });
@@ -10801,13 +10914,14 @@ function evaluateLiveMatch() {
     const inverted = filterInvertCheckbox.checked;
     const caseSensitive = filterCaseCheckbox.checked;
     const columns = [...filterPopupColumns];
-    let wildcardRegex = null;
+    let wildcardRegex = null, wildcardColumns = null;
     if (isExtractPattern(val)) {
       const spec = compileExtractPattern(val);
       if (!spec) { filterLiveMatch.textContent = "Invalid pattern"; filterLiveMatch.className = "error"; return; }
       wildcardRegex = new RegExp(spec.regexStr, caseSensitive ? "" : "i");
+      wildcardColumns = spec.columns;
     }
-    let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, wildcardRegex) ? 1 : 0), 0);
+    let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, wildcardRegex, wildcardColumns) ? 1 : 0), 0);
     if (inverted) matches = baseEntries.length - matches;
     const label = inverted ? "Kept (NOT): " : "Matches: ";
     filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
@@ -10832,6 +10946,14 @@ function evaluateLiveMatch() {
 // filterPopupIgnored (applied to the node on submit, see filterForm's
 // submit handler) — this is the ignore-toggle UI while authoring; the
 // post-creation #extractPatternView chips offer the same toggle afterward.
+//
+// A placeholder carrying numeric conditions ([value:float>=10]) gets a
+// small badge next to its highlighted span (describeValueConditions) so the
+// constraint is visible while authoring, not just implied by the typed
+// text — and the sample message this previews against is picked with
+// wildcardMatch(), same as real matching, so the shown sample is always one
+// where the condition actually holds (never just a structural regex match
+// that would in fact be rejected once the filter/extraction is created).
 function updateFilterPatternPreview(val, baseEntries) {
   if (!isExtractPattern(val)) { filterPatternPreview.classList.add("hidden"); filterPatternPreview.innerHTML = ""; return; }
   const spec = compileExtractPattern(val);
@@ -10843,7 +10965,7 @@ function updateFilterPatternPreview(val, baseEntries) {
     for (const e of baseEntries) {
       previewRe.lastIndex = 0;
       const mm = previewRe.exec(e.message);
-      if (mm) { sampleEntry = e; m = mm; break; }
+      if (mm && spec.columns.every((c, i) => valueSatisfiesConditions(mm[i + 1], c.conditions))) { sampleEntry = e; m = mm; break; }
     }
   }
 
@@ -10871,15 +10993,24 @@ function updateFilterPatternPreview(val, baseEntries) {
     span.style.color = color;
     span.style.borderColor = hexToRgba(color, 0.5);
     span.style.background = hexToRgba(color, 0.18);
-    span.title = ignored
+    const condLabel = describeValueConditions(col.conditions);
+    span.title = (ignored
       ? "Ignored — click to include as a column"
-      : "Click to ignore this value (won\u2019t become a column)";
+      : "Click to ignore this value (won\u2019t become a column)") + (condLabel ? " · condition: " + condLabel : "");
     span.addEventListener("click", ev => {
       ev.stopPropagation();
       if (filterPopupIgnored.has(i)) filterPopupIgnored.delete(i); else filterPopupIgnored.add(i);
       updateFilterPatternPreview(filterInput.value.trim(), baseEntries);
     });
     frag.appendChild(span);
+    if (condLabel) {
+      const condBadge = document.createElement("span");
+      condBadge.className = "preview-value-cond";
+      condBadge.textContent = condLabel;
+      condBadge.style.color = color;
+      condBadge.title = span.title;
+      frag.appendChild(condBadge);
+    }
     cursor = Math.max(cursor, end);
   });
   if (cursor < msg.length) frag.appendChild(document.createTextNode(msg.slice(cursor)));

@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~14,100 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~14,300 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -102,6 +102,20 @@ A filter query is a candidate for extraction (`isExtractPattern`) the moment it 
 Placeholders: `[value:float]` `[value:int]` `[value:time]` `[value:word]` `[value:hex]` and the bare wildcard `[*]`. `time` matches either a clock time (`16:23:27.697`) or a number+unit duration (`500ms`, `3.5s`). Columns are auto-named `value`, `value 2`, `value 3`... (never the type string itself — that caused a "floatfloat" header rendering bug early on, fixed by decoupling name from type). Regex is case-insensitive; a trailing `[*]` is greedy (captures the rest of the line), a mid-pattern `[*]` is non-greedy.
 
 Right-click a message → **"Extract numbers from this message"** auto-generates a suggested pattern (`buildNumericExtractPattern`) by replacing every number token with a typed placeholder, recognizing embedded clock times/durations as a single `[value:time]` rather than splitting on the colons. It's inserted into the filter popup for review, not auto-submitted.
+
+### Value conditions
+
+`FEATURE_BACKLOG.md` item 5 ("Numeric greater/less-than filter"), implemented differently than originally scoped there per explicit person instruction: not a separate filter type, but a numeric condition folded directly into a `[value:float]`/`[value:int]` placeholder, e.g. `[value:float>=10]` (single condition) or `[value:int<20,>10]` (`,`-separated conditions, AND-ed together — matches ints strictly between 10 and 20). Working through the **existing filter/extract wildcard paths only**, as requested — no new filter type, no new filter-node field (the condition lives inside the pattern string itself, `node.value`, so every persistence carrier already threads it through untouched, unlike CLAUDE.md's "Known gotchas" note on genuinely new fields).
+
+**Same-day follow-up** (person asked whether the syntax was sensible and requested an absolute-value variant — *"größer als absolut zehn"*): the condition separator was swapped from the originally-shipped `;` to `,` (more conventional), and a condition's operator can now be prefixed with `|` to compare against the captured value's **absolute value** instead, e.g. `[value:float|>=10]` matches both `10` and `-15`. `abs` is a per-condition flag, not per-placeholder — `[value:int|>10,<=100]` mixes an abs and a plain condition on the same placeholder.
+
+`EXTRACT_TOKEN_RE` now captures an optional condition group right inside the brackets, and `compileExtractPattern` parses it (`parseValueConditions`) onto that column as `.conditions: [{op, value, abs?}, ...]` — absent (`undefined`) for a bare placeholder, same shape as before. A condition on `time`/`word`/`hex` (no natural numeric ordering) makes the whole pattern invalid (`compileExtractPattern` returns `null`), surfacing through the exact same "Invalid pattern" feedback the popup already had for a malformed regex — no new error path. The per-condition pattern (`VALUE_CONDITION_ONE`, e.g. `\|?(?:>=|<=|==|>|<)-?\d+(?:\.\d+)?`) is a single shared string constant, built once and reused by both `EXTRACT_TOKEN_RE` (recognizing the whole conditions substring as part of a token) and `VALUE_CONDITION_RE` (re-parsing that substring into individual conditions) — the two can't drift apart into recognizing different condition syntax.
+
+**Matching**: the regex itself is unchanged (a comparison isn't expressible as a regex quantifier) — conditions are checked as a post-match numeric step, `Math.abs()`-ing the captured value first when `.abs` is set. `wildcardMatch(regex, columns, text)` is the one shared primitive (`getEntries`'s `"extract"` branch, `textFilterMatches`' wildcard path for a plain `"text"` filter carrying wildcard tokens, and the filter popup's live-match count all call it), so extraction and the wildcard-as-filter `text` path can never disagree about what a conditioned placeholder matches.
+
+**Visualization** ("value pills"): every place that already showed a placeholder's type visually now also shows its condition (`describeValueConditions`, e.g. `≥10`, `<20 ∧ >10`, or `|≥10` for an abs condition) — the filter popup's live pattern preview (a small `.preview-value-cond` badge next to the matched value span), the post-creation `#extractPatternView` pattern-chip, and the extraction table's column header. The pattern preview's sample-message search was also changed to require the condition to actually hold (not just a structural regex match) — before this fix it could show, say, `score=0` as the "match" for `[value:int>=10]`, which the real filter would then reject; it now walks `baseEntries` checking `valueSatisfiesConditions` alongside the regex match, same as the real filter does, and falls back to the existing "No matching sample message yet." state if no entry actually satisfies the condition. For an abs condition, this means the shown sample can legitimately be a negative value.
+
+Regression-tested: **Group 81** — `compileExtractPattern` parsing (single condition, `,`-separated multiple conditions in order, an abs-prefixed condition, a mixed abs/plain pair, the `time`/`word`/`hex` rejection, bare-placeholder backward compatibility), extraction and wildcard-as-text-filter matching against both an abs and a non-abs condition on signed data, the extraction table header + pattern-view chip visualization (including the abs `|` prefix), and the filter popup's live-match count + pattern-preview sample/badge (including the "no entry satisfies the condition" empty state and a negative-value abs sample).
 
 ## Filter popup: Extract vs. Add filter as two buttons, target chain, sectioned layout, "Filter for this ___"
 
@@ -817,6 +831,34 @@ One thing jsdom **can't** catch: real hit-testing / paint order (`elementFromPoi
 ## Status / changelog
 
 Keep this section updated as features land — newest first, short entries, enough for a future session to know what exists without re-reading the whole chat history.
+
+- New: absolute-value wildcard conditions + separator change (this session,
+  2026-08-22, same-day follow-up to the entry directly below — person asked
+  whether the `;`-separated syntax was sensible/conventional and requested
+  an absolute-value option, *"größer als absolut zehn"*). The condition
+  separator changed from `;` to `,` (`[value:int<20,>10]`), and a condition's
+  operator can now be prefixed with `|` to compare against `|value|` instead
+  of `value` — `[value:float|>=10]` matches both `10` and `-15`. Per-condition,
+  not per-placeholder, so an abs and a plain condition can mix on the same
+  placeholder. Every visualization spot (pattern preview badge, pattern-view
+  chip, table header) shows the `|` prefix too, and the pattern preview's
+  sample-match search can now legitimately land on a negative value for an
+  abs condition. See "Value-extraction pattern language" → "Value
+  conditions". 1539 passed, 0 failed (Group 81 extended, not a new group).
+
+- New: wildcard value conditions (this session, 2026-08-22, person-requested,
+  `FEATURE_BACKLOG.md` item 5 implemented differently than scoped there).
+  `[value:float]`/`[value:int]` placeholders can now carry an inline numeric
+  condition — `[value:float>=10]`, or `[value:int<20;>10]` for a `;`-AND-ed
+  range — working through the existing filter/extract wildcard paths only
+  (no new filter type, no new node field). Applies to both extraction and a
+  plain "text" filter carrying wildcard tokens; the filter popup's live-match
+  count and pattern preview (which now only ever shows a sample that
+  actually satisfies the condition) and every place that visualizes a
+  placeholder's type (pattern preview, post-creation pattern-view chip,
+  extraction table column header) now also show the condition. See
+  "Value-extraction pattern language" → "Value conditions". 1529 passed, 0
+  failed (Group 81, new).
 
 - Bugfix, four rounds (this session, 2026-08-22, person-reported via
   screenshots, same-session follow-up to the Settings/collapse redesign
