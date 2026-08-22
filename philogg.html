@@ -107,15 +107,35 @@
   }
 
   /* Catppuccin palette (https://catppuccin.com/palette/) — four flavors
-     mapped onto the same var set. Background/border quartet follows the
-     palette's own crust<mantle<base<surface0 ordering (surface0<surface1
-     for the light Latte flavor, whose base is the brightest tone instead of
-     the darkest — panel is deliberately the brightest surface either way,
-     matching the light theme above's white-panel-on-gray-page design);
-     accent uses Teal (Sapphire/Teal for Latte, so accent-strong stays the
-     darker of the two, same convention as the light theme above); level
-     colors use Red/Peach/Blue/Overlay2/Overlay0 for error/warn/info/debug/
-     trace, matching this app's original amber-ish (not yellow) warn hue.
+     mapped onto the same var set, background/border quartet per the
+     official style guide's "General Usage" table (see
+     https://github.com/catppuccin/catppuccin/blob/d09787dd98ca6fba08af5ef2ae94a7e09f17daca/docs/style-guide.md
+     and PROJECT.md "Theming" -> "Catppuccin style-guide compliance" for
+     the full writeup, this session, 2026-08-22, person-requested/directed):
+       --bg-app      = Base    ("Background Pane" — the main content area:
+                                page/body background, the log table itself)
+       --bg-panel    = Mantle  ("Secondary Panes" — toolbar, sidebar, table
+                                headers, dialog chrome)
+       --bg-elevated = Surface 0  \
+       --bg-elevated-2 = Surface 1 |  "Surface Elements" — hoverable/
+       --border-soft = Surface 2  |  interactive UI, ascending prominence
+       --border      = Overlay 0 /
+     The SAME token-role mapping applies to all four flavors, including
+     Latte — Base is the brightest token there (unlike the three dark
+     flavors, where it's a middle tone), so bg-app still lands on the
+     correct "main content pane" role, it just means Latte's main pane
+     reads as the BRIGHTEST surface and its Surface-tier popups/dialogs
+     read progressively DARKER/grayer against it, the mirror image of how
+     the three dark flavors' Surface tier reads progressively BRIGHTER —
+     both are the expected shape for their own flavor, not a special case
+     needing its own token choices. (Previously this block instead
+     preserved this app's own pre-Catppuccin Dark/Light brightness
+     ordering — main pane darkest, panel brighter — which inverted the
+     guide's intent; superseded by this remap.) accent uses Teal
+     (Sapphire/Teal for Latte, so accent-strong stays the darker of the
+     two, same convention as the light theme above); level colors use
+     Red/Peach/Blue/Overlay2/Overlay0 for error/warn/info/debug/trace,
+     matching this app's original amber-ish (not yellow) warn hue.
 
      --accent/-strong/-soft/-on here are the DEFAULT for each flavor —
      Settings -> Appearance's "Accent color" row lets a person re-pick
@@ -129,12 +149,12 @@
      override is chosen; color-mix(var(--accent)) would have silently
      replaced Sky with a mechanically-tinted teal on every page load. */
   :root[data-theme="catppuccin-mocha"]{
-    --bg-app:#11111b;
+    --bg-app:#1e1e2e;
     --bg-panel:#181825;
-    --bg-elevated:#1e1e2e;
-    --bg-elevated-2:#313244;
-    --border:#45475a;
-    --border-soft:#313244;
+    --bg-elevated:#313244;
+    --bg-elevated-2:#45475a;
+    --border:#6c7086;
+    --border-soft:#585b70;
     --text-primary:#cdd6f4;
     --text-secondary:#bac2de;
     --text-tertiary:#a6adc8;
@@ -152,23 +172,24 @@
     --level-debug-soft:rgba(147,153,178,.10);
     --level-trace:#6c7086;
     --level-trace-soft:rgba(108,112,134,.08);
-    /* Style guide: "On Accent" text = Base, "Selection Background" =
-       Overlay 2 @ 20-30% opacity — see the big comment above this block
-       and PROJECT.md "Theming" -> "Catppuccin style-guide compliance". */
-    --accent-on:var(--bg-elevated);
-    --level-error-on:var(--bg-elevated);
-    --level-warn-on:var(--bg-elevated);
-    --level-info-on:var(--bg-elevated);
-    --level-debug-on:var(--bg-elevated);
+    /* Style guide: "On Accent" text = Base = --bg-app now (see the remap
+       comment above this block), "Selection Background" = Overlay 2 @
+       20-30% opacity — see PROJECT.md "Theming" -> "Catppuccin style-guide
+       compliance". */
+    --accent-on:var(--bg-app);
+    --level-error-on:var(--bg-app);
+    --level-warn-on:var(--bg-app);
+    --level-info-on:var(--bg-app);
+    --level-debug-on:var(--bg-app);
     --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
   :root[data-theme="catppuccin-macchiato"]{
-    --bg-app:#181926;
+    --bg-app:#24273a;
     --bg-panel:#1e2030;
-    --bg-elevated:#24273a;
-    --bg-elevated-2:#363a4f;
-    --border:#494d64;
-    --border-soft:#363a4f;
+    --bg-elevated:#363a4f;
+    --bg-elevated-2:#494d64;
+    --border:#6e738d;
+    --border-soft:#5b6078;
     --text-primary:#cad3f5;
     --text-secondary:#b8c0e0;
     --text-tertiary:#a5adcb;
@@ -186,20 +207,20 @@
     --level-debug-soft:rgba(147,154,183,.10);
     --level-trace:#6e738d;
     --level-trace-soft:rgba(110,115,141,.08);
-    --accent-on:var(--bg-elevated);
-    --level-error-on:var(--bg-elevated);
-    --level-warn-on:var(--bg-elevated);
-    --level-info-on:var(--bg-elevated);
-    --level-debug-on:var(--bg-elevated);
+    --accent-on:var(--bg-app);
+    --level-error-on:var(--bg-app);
+    --level-warn-on:var(--bg-app);
+    --level-info-on:var(--bg-app);
+    --level-debug-on:var(--bg-app);
     --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
   :root[data-theme="catppuccin-frappe"]{
-    --bg-app:#232634;
+    --bg-app:#303446;
     --bg-panel:#292c3c;
-    --bg-elevated:#303446;
-    --bg-elevated-2:#414559;
-    --border:#51576d;
-    --border-soft:#414559;
+    --bg-elevated:#414559;
+    --bg-elevated-2:#51576d;
+    --border:#737994;
+    --border-soft:#626880;
     --text-primary:#c6d0f5;
     --text-secondary:#b5bfe2;
     --text-tertiary:#a5adce;
@@ -217,20 +238,20 @@
     --level-debug-soft:rgba(148,156,187,.10);
     --level-trace:#737994;
     --level-trace-soft:rgba(115,121,148,.08);
-    --accent-on:var(--bg-elevated);
-    --level-error-on:var(--bg-elevated);
-    --level-warn-on:var(--bg-elevated);
-    --level-info-on:var(--bg-elevated);
-    --level-debug-on:var(--bg-elevated);
+    --accent-on:var(--bg-app);
+    --level-error-on:var(--bg-app);
+    --level-warn-on:var(--bg-app);
+    --level-info-on:var(--bg-app);
+    --level-debug-on:var(--bg-app);
     --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
   :root[data-theme="catppuccin-latte"]{
-    --bg-app:#e6e9ef;
-    --bg-panel:#eff1f5;
-    --bg-elevated:#dce0e8;
-    --bg-elevated-2:#ccd0da;
-    --border:#bcc0cc;
-    --border-soft:#ccd0da;
+    --bg-app:#eff1f5;
+    --bg-panel:#e6e9ef;
+    --bg-elevated:#ccd0da;
+    --bg-elevated-2:#bcc0cc;
+    --border:#9ca0b0;
+    --border-soft:#acb0be;
     --text-primary:#4c4f69;
     --text-secondary:#5c5f77;
     --text-tertiary:#6c6f85;
@@ -248,11 +269,11 @@
     --level-debug-soft:rgba(124,127,147,.10);
     --level-trace:#9ca0b0;
     --level-trace-soft:rgba(156,160,176,.08);
-    --accent-on:var(--bg-panel);
-    --level-error-on:var(--bg-panel);
-    --level-warn-on:var(--bg-panel);
-    --level-info-on:var(--bg-panel);
-    --level-debug-on:var(--bg-panel);
+    --accent-on:var(--bg-app);
+    --level-error-on:var(--bg-app);
+    --level-warn-on:var(--bg-app);
+    --level-info-on:var(--bg-app);
+    --level-debug-on:var(--bg-app);
     --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
 
