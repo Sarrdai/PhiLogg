@@ -9303,6 +9303,28 @@ await withApp(async (w, d, T) => {
   assert(!css.match(/#detailPanel\.collapsed\.peeking #detailBody\{[^}]*\}/),
     "the old #detailBody-only peek rule is gone — #detailPanelInner replaces it");
 
+  // --- Regression guard (person-reported via screenshot, same session):
+  //     #detailPanel is shown/hidden via an INLINE style.display "flex"/
+  //     "none" set from renderMainView/renderTable (unrelated to this
+  //     feature — hasFiles/no-files toggling), which overrides any CSS
+  //     `display` on #detailPanel but leaves `flex-direction` alone. When
+  //     #detailPanelInner's introduction dropped `flex-direction:column`
+  //     from #detailPanel's own CSS, that inline "flex" fell back to
+  //     row (flex-direction's initial value) whenever a file was loaded,
+  //     turning #detailPanelInner into a ROW flex item that shrinks to its
+  //     content width — visually: the Entry Detail bar stopping partway
+  //     across the window instead of reaching the right edge, in EVERY
+  //     state (pinned, collapsed, peeking), not just while peeking.
+  //     jsdom's getComputedStyle doesn't resolve real flex cross-axis
+  //     stretch sizing (no layout engine — see "Testing approach" in
+  //     PROJECT.md), so this can't be asserted via a rendered width the
+  //     way the peek rules above are; verified instead via a real
+  //     Playwright screenshot this session, and guarded here the same way
+  //     Group 90's CSS-text audits guard their own pure-CSS fixes. ---
+  const detailPanelRule = css.match(/#detailPanel\{[^}]*\}/);
+  assert(detailPanelRule && detailPanelRule[0].includes("flex-direction:column"),
+    "#detailPanel keeps its own flex-direction:column — without it, the inline style.display=\"flex\" set from renderMainView/renderTable falls back to row and #detailPanelInner shrinks to content width, got " + (detailPanelRule && detailPanelRule[0]));
+
   // --- Each panel's setting independently gates only that panel's hover ---
   detailCb.checked = false;
   detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
