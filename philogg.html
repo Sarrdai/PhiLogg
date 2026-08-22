@@ -29,13 +29,29 @@
     --level-trace:#5b6479;
     --level-trace-soft:rgba(91,100,121,.08);
     --warn:#e8a94a;
+    /* Text color for the four ACTIVE level-quick-filter buttons (see
+       .level-btn.active.lvl-* below) — sits on top of the level color
+       itself, so it needs to flip per-theme rather than being a fixed
+       shade. Themeable like every other var here: see THEME_COLOR_KEYS /
+       THEME_ON_KEYS and applyTheme() in the Theme script section. */
+    --level-error-on:#2a0a0a;
+    --level-warn-on:#2a1c04;
+    --level-info-on:#04122a;
+    --level-debug-on:#0d1016;
     --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
     --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
   }
 
-  /* Light theme override. Toggled via [data-theme="light"] on <html>, see the
-     Appearance section in Settings (#settingsThemeLight/#settingsThemeDark). */
+  /* Theme overrides, selected via [data-theme="..."] on <html> — see the
+     Theme dropdown in Settings -> Appearance (#settingsThemeSelect). Each
+     block below overrides the same set of vars declared in :root above
+     (THEME_COLOR_KEYS in the Theme script section); imported/custom themes
+     apply the identical vars inline via JS instead of a CSS block, see
+     applyTheme(). Level-color backgrounds (log rows, badges, the active
+     level-quick-filter buttons) are near-white in light-ish themes, so
+     those themes also override --level-*-on to light text instead of the
+     near-black used against the brighter dark-mode swatches. */
   :root[data-theme="light"]{
     --bg-app:#f5f6f8;
     --bg-panel:#ffffff;
@@ -60,14 +76,126 @@
     --level-debug-soft:rgba(91,100,116,.10);
     --level-trace:#8991a3;
     --level-trace-soft:rgba(137,145,163,.08);
+    --level-error-on:#fff;
+    --level-warn-on:#fff;
+    --level-info-on:#fff;
+    --level-debug-on:#fff;
   }
-  /* Level-color backgrounds (log rows, badges) are near-white in light mode,
-     so the active toggle buttons need light text instead of the near-black
-     used against the brighter dark-mode swatches. */
-  :root[data-theme="light"] .level-btn.active.lvl-error,
-  :root[data-theme="light"] .level-btn.active.lvl-warn,
-  :root[data-theme="light"] .level-btn.active.lvl-info,
-  :root[data-theme="light"] .level-btn.active.lvl-debug{color:#fff;}
+
+  /* Catppuccin palette (https://catppuccin.com/palette/) — four flavors
+     mapped onto the same var set. Background/border quartet follows the
+     palette's own crust<mantle<base<surface0 ordering (surface0<surface1
+     for the light Latte flavor, whose base is the brightest tone instead of
+     the darkest — panel is deliberately the brightest surface either way,
+     matching the light theme above's white-panel-on-gray-page design);
+     accent uses Teal (Sapphire/Teal for Latte, so accent-strong stays the
+     darker of the two, same convention as the light theme above); level
+     colors use Red/Peach/Blue/Overlay2/Overlay0 for error/warn/info/debug/
+     trace, matching this app's original amber-ish (not yellow) warn hue. */
+  :root[data-theme="catppuccin-mocha"]{
+    --bg-app:#11111b;
+    --bg-panel:#181825;
+    --bg-elevated:#1e1e2e;
+    --bg-elevated-2:#313244;
+    --border:#45475a;
+    --border-soft:#313244;
+    --text-primary:#cdd6f4;
+    --text-secondary:#bac2de;
+    --text-tertiary:#a6adc8;
+    --accent:#94e2d5;
+    --accent-soft:rgba(148,226,213,.14);
+    --accent-strong:#89dceb;
+    --warn:#fab387;
+    --level-error:#f38ba8;
+    --level-error-soft:rgba(243,139,168,.14);
+    --level-warn:#fab387;
+    --level-warn-soft:rgba(250,179,135,.14);
+    --level-info:#89b4fa;
+    --level-info-soft:rgba(137,180,250,.10);
+    --level-debug:#9399b2;
+    --level-debug-soft:rgba(147,153,178,.10);
+    --level-trace:#6c7086;
+    --level-trace-soft:rgba(108,112,134,.08);
+  }
+  :root[data-theme="catppuccin-macchiato"]{
+    --bg-app:#181926;
+    --bg-panel:#1e2030;
+    --bg-elevated:#24273a;
+    --bg-elevated-2:#363a4f;
+    --border:#494d64;
+    --border-soft:#363a4f;
+    --text-primary:#cad3f5;
+    --text-secondary:#b8c0e0;
+    --text-tertiary:#a5adcb;
+    --accent:#8bd5ca;
+    --accent-soft:rgba(139,213,202,.14);
+    --accent-strong:#91d7e3;
+    --warn:#f5a97f;
+    --level-error:#ed8796;
+    --level-error-soft:rgba(237,135,150,.14);
+    --level-warn:#f5a97f;
+    --level-warn-soft:rgba(245,169,127,.14);
+    --level-info:#8aadf4;
+    --level-info-soft:rgba(138,173,244,.10);
+    --level-debug:#939ab7;
+    --level-debug-soft:rgba(147,154,183,.10);
+    --level-trace:#6e738d;
+    --level-trace-soft:rgba(110,115,141,.08);
+  }
+  :root[data-theme="catppuccin-frappe"]{
+    --bg-app:#232634;
+    --bg-panel:#292c3c;
+    --bg-elevated:#303446;
+    --bg-elevated-2:#414559;
+    --border:#51576d;
+    --border-soft:#414559;
+    --text-primary:#c6d0f5;
+    --text-secondary:#b5bfe2;
+    --text-tertiary:#a5adce;
+    --accent:#81c8be;
+    --accent-soft:rgba(129,200,190,.14);
+    --accent-strong:#99d1db;
+    --warn:#ef9f76;
+    --level-error:#e78284;
+    --level-error-soft:rgba(231,130,132,.14);
+    --level-warn:#ef9f76;
+    --level-warn-soft:rgba(239,159,118,.14);
+    --level-info:#8caaee;
+    --level-info-soft:rgba(140,170,238,.10);
+    --level-debug:#949cbb;
+    --level-debug-soft:rgba(148,156,187,.10);
+    --level-trace:#737994;
+    --level-trace-soft:rgba(115,121,148,.08);
+  }
+  :root[data-theme="catppuccin-latte"]{
+    --bg-app:#e6e9ef;
+    --bg-panel:#eff1f5;
+    --bg-elevated:#dce0e8;
+    --bg-elevated-2:#ccd0da;
+    --border:#bcc0cc;
+    --border-soft:#ccd0da;
+    --text-primary:#4c4f69;
+    --text-secondary:#5c5f77;
+    --text-tertiary:#6c6f85;
+    --accent:#209fb5;
+    --accent-soft:rgba(32,159,181,.12);
+    --accent-strong:#179299;
+    --warn:#fe640b;
+    --level-error:#d20f39;
+    --level-error-soft:rgba(210,15,57,.12);
+    --level-warn:#fe640b;
+    --level-warn-soft:rgba(254,100,11,.12);
+    --level-info:#1e66f5;
+    --level-info-soft:rgba(30,102,245,.10);
+    --level-debug:#7c7f93;
+    --level-debug-soft:rgba(124,127,147,.10);
+    --level-trace:#9ca0b0;
+    --level-trace-soft:rgba(156,160,176,.08);
+    --level-error-on:#fff;
+    --level-warn-on:#fff;
+    --level-info-on:#fff;
+    --level-debug-on:#fff;
+  }
 
   *{box-sizing:border-box;}
   html,body{height:100%;}
@@ -624,10 +752,10 @@
   .level-btn.lvl-info{color:var(--level-info); border-color:rgba(111,168,255,.35);}
   .level-btn.lvl-debug{color:var(--level-debug); border-color:rgba(118,127,150,.4);}
   .level-btn.active{border-color:transparent;}
-  .level-btn.active.lvl-error{background:var(--level-error); color:#2a0a0a;}
-  .level-btn.active.lvl-warn{background:var(--level-warn); color:#2a1c04;}
-  .level-btn.active.lvl-info{background:var(--level-info); color:#04122a;}
-  .level-btn.active.lvl-debug{background:var(--level-debug); color:#0d1016;}
+  .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
+  .level-btn.active.lvl-warn{background:var(--level-warn); color:var(--level-warn-on);}
+  .level-btn.active.lvl-info{background:var(--level-info); color:var(--level-info-on);}
+  .level-btn.active.lvl-debug{background:var(--level-debug); color:var(--level-debug-on);}
 
   /* ---------- Filter/Highlight split (FEATURE_BACKLOG.md item 4) ---------- */
   #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
@@ -1331,6 +1459,19 @@
     margin-top:12px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:10px;
   }
   .settings-card-footer{padding:12px 18px;}
+  .settings-card-footer.theme-footer{display:flex; gap:8px;}
+  .settings-row-control select{
+    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
+  }
+  #settingsThemeSelect{min-width:190px;}
+  /* Small at-a-glance swatch in each custom-theme row — bg/accent/error/info
+     strips, enough to tell themes apart in the list without switching. */
+  .theme-row-main{display:flex; align-items:center; min-width:0;}
+  .theme-swatch{
+    flex:0 0 auto; width:44px; height:14px; border-radius:3px;
+    border:1px solid var(--border); margin-right:8px;
+  }
   .settings-row{
     display:grid; grid-template-columns:1fr auto; align-items:center; gap:28px;
     padding:16px 18px; border-bottom:1px solid var(--border-soft);
@@ -1872,6 +2013,7 @@
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
+      <input type="file" id="themeFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,text/plain">
     </div>
   </header>
@@ -2419,9 +2561,8 @@
                 <div class="settings-row-label">Theme</div>
                 <div class="settings-row-hint">Dark is the default.</div>
               </div>
-              <div class="settings-row-control assert-mode-row">
-                <button type="button" class="assert-mode-btn" id="settingsThemeLight" data-theme-choice="light">Light</button>
-                <button type="button" class="assert-mode-btn" id="settingsThemeDark" data-theme-choice="dark">Dark</button>
+              <div class="settings-row-control">
+                <select id="settingsThemeSelect"></select>
               </div>
             </div>
             <div class="settings-row">
@@ -2437,6 +2578,15 @@
                 </div>
                 <button type="button" class="btn-mini-outline" id="fontScaleReset" title="Reset to default">Reset</button>
               </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Custom themes — import your own color palette as JSON</div>
+          <div class="settings-card" id="customThemeListCard">
+            <div id="customThemeList"></div>
+            <div class="settings-card-footer theme-footer">
+              <button type="button" class="btn-mini-outline" id="btnThemeTemplate">Download template…</button>
+              <button type="button" class="btn-mini-dashed" id="btnThemeImport">+ Import theme…</button>
             </div>
           </div>
         </section>
@@ -2656,33 +2806,265 @@ const ICON_LICENSE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
 
 /* ===================== Theme ===================== */
+// Settings page -> Appearance: a single dropdown (#settingsThemeSelect)
+// listing the built-in themes (dark/light/four Catppuccin flavors, see the
+// CSS `:root[data-theme=...]` blocks near the top of the stylesheet) plus
+// any imported custom ones. Built-ins apply purely via the `data-theme`
+// attribute + CSS cascade; custom themes have no CSS block, so applyTheme()
+// sets the same var set inline on <html> instead — one variable surface,
+// two application paths. Custom themes (JSON, user-imported) persist to
+// localStorage like the theme choice itself — same tier as font-scale/
+// collapse-state, see THEME_STORAGE_KEY.
 const THEME_STORAGE_KEY = "philogg-theme";
+const CUSTOM_THEMES_STORAGE_KEY = "philogg-custom-themes";
+const THEME_FILE_FORMAT = "philogg-theme";
+const THEME_FILE_VERSION = 1;
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  // Settings page -> Appearance: a two-way explicit-choice toggle (same
-  // .assert-mode-btn pattern as Format Manager's Pattern/Regex switch),
-  // not a single icon-swap button — kept in sync here so it's correct
-  // whenever/however the theme changes, not just while the page is open.
-  const lightBtn = document.getElementById("settingsThemeLight");
-  const darkBtn = document.getElementById("settingsThemeDark");
-  if (lightBtn) lightBtn.classList.toggle("active", theme === "light");
-  if (darkBtn) darkBtn.classList.toggle("active", theme === "dark");
+// Every CSS custom property a theme controls (excludes --font-*/--row-grid,
+// which aren't color/theme concerns).
+const THEME_COLOR_KEYS = [
+  "bg-app", "bg-panel", "bg-elevated", "bg-elevated-2",
+  "border", "border-soft",
+  "text-primary", "text-secondary", "text-tertiary",
+  "accent", "accent-soft", "accent-strong",
+  "level-error", "level-error-soft",
+  "level-warn", "level-warn-soft",
+  "level-info", "level-info-soft",
+  "level-debug", "level-debug-soft",
+  "level-trace", "level-trace-soft",
+  "warn",
+];
+// Text color for the four ACTIVE level-quick-filter buttons (see
+// .level-btn.active.lvl-* in the stylesheet) — controlled by a theme's
+// "activeTextLight" flag rather than exposed as individual JSON keys,
+// since it's an implementation detail of that one button state, not
+// something a template-filling user should need to think about.
+const THEME_ON_KEYS = ["level-error-on", "level-warn-on", "level-info-on", "level-debug-on"];
+
+const BUILTIN_THEMES = [
+  { id: "dark", name: "Dark" },
+  { id: "light", name: "Light" },
+  { id: "catppuccin-latte", name: "Catppuccin Latte" },
+  { id: "catppuccin-frappe", name: "Catppuccin Frappé" },
+  { id: "catppuccin-macchiato", name: "Catppuccin Macchiato" },
+  { id: "catppuccin-mocha", name: "Catppuccin Mocha" },
+];
+
+let customThemes = [];
+
+function loadCustomThemes() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(CUSTOM_THEMES_STORAGE_KEY) || "[]"); } catch { /* corrupt value, fall through to [] */ }
+  customThemes = Array.isArray(stored) ? stored : [];
+}
+
+function saveCustomThemes() {
+  localStorage.setItem(CUSTOM_THEMES_STORAGE_KEY, JSON.stringify(customThemes));
+}
+
+function currentThemeId() {
+  return document.documentElement.getAttribute("data-theme") || "dark";
+}
+
+function applyTheme(themeId) {
+  document.documentElement.setAttribute("data-theme", themeId);
+  const style = document.documentElement.style;
+  THEME_COLOR_KEYS.concat(THEME_ON_KEYS).forEach(k => style.removeProperty("--" + k));
+  const custom = customThemes.find(t => t.id === themeId);
+  if (custom) {
+    THEME_COLOR_KEYS.forEach(k => { if (custom.colors[k]) style.setProperty("--" + k, custom.colors[k]); });
+    if (custom.activeTextLight) THEME_ON_KEYS.forEach(k => style.setProperty("--" + k, "#fff"));
+  }
+  const select = document.getElementById("settingsThemeSelect");
+  if (select && select.value !== themeId) select.value = themeId;
+}
+
+// A stored/imported theme id can go stale (its custom theme got deleted
+// elsewhere, e.g. localStorage edited by hand) — fall back to dark rather
+// than leaving data-theme pointing at nothing.
+function resolveThemeId(id) {
+  if (BUILTIN_THEMES.some(t => t.id === id) || customThemes.some(t => t.id === id)) return id;
+  return "dark";
+}
+
+function populateThemeSelect() {
+  const select = document.getElementById("settingsThemeSelect");
+  if (!select) return;
+  const active = currentThemeId();
+  select.innerHTML = "";
+  const builtinGroup = document.createElement("optgroup");
+  builtinGroup.label = "Built-in";
+  BUILTIN_THEMES.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t.id; opt.textContent = t.name;
+    builtinGroup.appendChild(opt);
+  });
+  select.appendChild(builtinGroup);
+  if (customThemes.length) {
+    const customGroup = document.createElement("optgroup");
+    customGroup.label = "Custom";
+    customThemes.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t.id; opt.textContent = t.name;
+      customGroup.appendChild(opt);
+    });
+    select.appendChild(customGroup);
+  }
+  select.value = active;
 }
 
 function initTheme() {
+  loadCustomThemes();
+  populateThemeSelect();
+  renderCustomThemeList();
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark") { applyTheme(stored); return; }
+  if (stored) { applyTheme(resolveThemeId(stored)); return; }
   const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
   applyTheme(prefersLight ? "light" : "dark");
 }
 
-function setTheme(theme) {
-  applyTheme(theme);
-  localStorage.setItem(THEME_STORAGE_KEY, theme);
+function setTheme(themeId) {
+  applyTheme(themeId);
+  localStorage.setItem(THEME_STORAGE_KEY, themeId);
 }
-document.getElementById("settingsThemeLight").addEventListener("click", () => setTheme("light"));
-document.getElementById("settingsThemeDark").addEventListener("click", () => setTheme("dark"));
+document.getElementById("settingsThemeSelect").addEventListener("change", ev => setTheme(ev.target.value));
+
+function themeSwatchStyle(colors) {
+  return "background:linear-gradient(90deg," + colors["bg-app"] + " 0 25%," + colors["accent"] + " 25% 50%," +
+    colors["level-error"] + " 50% 75%," + colors["level-info"] + " 75% 100%)";
+}
+
+function renderCustomThemeList() {
+  const container = document.getElementById("customThemeList");
+  if (!container) return;
+  container.innerHTML = "";
+  if (!customThemes.length) {
+    container.innerHTML = '<div class="filter-library-empty">No custom themes yet — download a template below, fill in your colors, and import it.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  customThemes.forEach(theme => {
+    const row = document.createElement("div");
+    row.className = "filter-library-row";
+    row.style.cursor = "pointer";
+    row.title = "Switch to this theme";
+    row.addEventListener("click", () => setTheme(theme.id));
+
+    const main = document.createElement("div");
+    main.className = "filter-library-row-main theme-row-main";
+    main.innerHTML =
+      '<span class="theme-swatch" style="' + themeSwatchStyle(theme.colors) + '"></span>' +
+      '<span class="filter-library-row-name">' + escapeHtml(theme.name) + '</span>';
+    row.appendChild(main);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "filter-library-row-del";
+    delBtn.title = "Delete theme";
+    delBtn.innerHTML = ICON_CLOSE;
+    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeCustomTheme(theme.id); });
+    row.appendChild(delBtn);
+
+    frag.appendChild(row);
+  });
+  container.appendChild(frag);
+}
+
+function removeCustomTheme(id) {
+  customThemes = customThemes.filter(t => t.id !== id);
+  saveCustomThemes();
+  populateThemeSelect();
+  renderCustomThemeList();
+  if (currentThemeId() === id) setTheme("dark"); // the deleted theme was active — fall back
+}
+
+// Seeds the template from the CURRENTLY ACTIVE theme's actual computed
+// colors (whichever built-in or custom theme that is), so "download a
+// template" always hands back a valid, ready-to-tweak starting point
+// instead of a fixed baseline that ignores what's on screen.
+function buildThemeTemplateJson() {
+  const cs = getComputedStyle(document.documentElement);
+  const colors = {};
+  THEME_COLOR_KEYS.forEach(k => { colors[k] = cs.getPropertyValue("--" + k).trim(); });
+  return JSON.stringify({
+    format: THEME_FILE_FORMAT,
+    version: THEME_FILE_VERSION,
+    name: "My Theme",
+    activeTextLight: false,
+    colors,
+  }, null, 2);
+}
+
+async function downloadThemeTemplate() {
+  const json = buildThemeTemplateJson();
+  const suggested = "philogg-theme-template.json";
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "PhiLogg theme", accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err && err.name === "AbortError") return; // user cancelled the picker
+      downloadJsonFallback(json, suggested); // API present but unusable in this context
+      return;
+    }
+  }
+  downloadJsonFallback(json, suggested); // Firefox / legacy: plain download
+}
+
+function importThemeJson(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
+  if (!data || data.format !== THEME_FILE_FORMAT || !data.colors || typeof data.colors !== "object") {
+    showCopyToast("Not a PhiLogg theme file");
+    return;
+  }
+  if (data.version > THEME_FILE_VERSION) { showCopyToast("Theme file was saved by a newer version"); return; }
+  const missing = THEME_COLOR_KEYS.filter(k => typeof data.colors[k] !== "string" || !data.colors[k].trim());
+  if (missing.length) { showCopyToast("Theme file is missing: " + missing.join(", ")); return; }
+
+  const colors = {};
+  THEME_COLOR_KEYS.forEach(k => { colors[k] = data.colors[k].trim(); });
+  const name = (typeof data.name === "string" && data.name.trim()) ? data.name.trim().slice(0, 80) : "Custom theme";
+  const id = "custom:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  customThemes.push({ id, name, colors, activeTextLight: !!data.activeTextLight });
+  saveCustomThemes();
+  populateThemeSelect();
+  renderCustomThemeList();
+  setTheme(id);
+  showCopyToast("Theme imported: " + name);
+}
+
+const themeFileInput = document.getElementById("themeFileInput");
+
+async function loadThemeFromFile() {
+  if (!window.showOpenFilePicker) { themeFileInput.click(); return; }
+  let handles;
+  try {
+    handles = await window.showOpenFilePicker({
+      multiple: false,
+      types: [{ description: "PhiLogg theme", accept: { "application/json": [".json"] } }],
+    });
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    themeFileInput.click();
+    return;
+  }
+  importThemeJson(await (await handles[0].getFile()).text());
+}
+
+themeFileInput.addEventListener("change", ev => {
+  const file = ev.target.files[0];
+  if (file) file.text().then(importThemeJson).catch(() => showCopyToast("Could not read theme file"));
+  themeFileInput.value = "";
+});
+document.getElementById("btnThemeImport").addEventListener("click", () => loadThemeFromFile());
+document.getElementById("btnThemeTemplate").addEventListener("click", () => downloadThemeTemplate());
 
 /* ===================== Font size (FEATURE_BACKLOG.md "Configurable font
    size") ===================== */
