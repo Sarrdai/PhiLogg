@@ -700,16 +700,21 @@
      rule overrides display at rest. float:left is harmless while hidden —
      it only takes effect once JS sets display back to "flex". */
   #fhTabs{display:none; float:left; margin:0 14px 6px 0;}
-  /* #btnPinBookmarks/#btnMultilineMsg/#btnColumns: persistent view-content
-     toggles that live in this row (between the Full/Filtered/Stacked tabs
-     and the level filter pills) rather than the header's popup-trigger
-     buttons — this row is where view content gets controlled, which is
-     what these three do. Deliberately keep `.toolbar-icon-btn`'s look
-     (icon buttons, not `.level-btn` pills): each is an additive/persistent
-     toggle, not a subtractive level filter, and looking identical to the
-     pills here would be confusing about what they actually do — same
-     reasoning that already kept #btnPinBookmarks out of #levelBar itself
-     (see "Pin bookmarks into the Filtered View" in PROJECT.md).
+  /* #btnPinBookmarks/#btnMultilineMsg/#btnColumns/#btnTextMatchHighlight:
+     persistent view-content toggles that live in this row (between the
+     Full/Filtered/Stacked tabs and the level filter pills) rather than the
+     header's popup-trigger buttons — this row is where view content gets
+     controlled, which is what these four do. Deliberately keep
+     `.toolbar-icon-btn`'s look (icon buttons, not `.level-btn` pills): each
+     is an additive/persistent toggle, not a subtractive level filter, and
+     looking identical to the pills here would be confusing about what they
+     actually do — same reasoning that already kept #btnPinBookmarks out of
+     #levelBar itself (see "Pin bookmarks into the Filtered View" in
+     PROJECT.md). #btnTextMatchHighlight joined this group this session,
+     person-requested move out of Settings (the master on/off for text-filter
+     match highlighting used to be a Settings dropdown option; now it's this
+     button, same "reach for it while looking at the view" tier as the other
+     three — see "Text-filter match highlighting" in PROJECT.md).
      float:left + the same right/bottom margin as #fhTabs/#levelBar keeps
      them pinned to the top-left line alongside those, participating in the
      same float flow described in the #viewBar comment above. No size
@@ -723,6 +728,7 @@
   #btnPinBookmarks{float:left; margin:0 14px 6px 0;}
   #btnMultilineMsg{float:left; margin:0 14px 6px 0;}
   #btnColumns{float:left; margin:0 14px 6px 0;}
+  #btnTextMatchHighlight{float:left; margin:0 14px 6px 0;}
 
   #breadcrumb{
     /* Deliberately plain block (not flex/grid, no new block-formatting
@@ -1031,6 +1037,18 @@
      second gutter lane. */
   .hl-markers{position:absolute; left:-9px; top:0; bottom:0; display:flex; gap:1px; pointer-events:none;}
   .hl-marker{width:3px; align-self:stretch; border-radius:1px;}
+
+  /* Text-filter match highlighting (Settings -> Behavior) — unrelated to the
+     highlight-RULE markers above (.hl-marker/.hl-markers, a per-node gutter
+     color) despite the naming proximity; this instead marks the actual
+     matched substring inline in a row/detail field, see markRangesHtml(). A
+     plain <mark>, restyled to use the theme's --warn token (tinted via
+     color-mix so it reads consistently across every theme without a
+     hardcoded color) instead of the browser default yellow. */
+  mark.text-match-mark{
+    background:color-mix(in srgb, var(--warn) 55%, transparent); color:inherit;
+    border-radius:2px; padding:0 1px;
+  }
 
   .log-row{
     height:28px; box-sizing:border-box; position:relative;
@@ -2289,6 +2307,7 @@
         <button id="btnPinBookmarks" class="toolbar-icon-btn" title="Pin bookmarks into Filtered View"></button>
         <button id="btnMultilineMsg" class="toolbar-icon-btn" title="Multi-line message display (line breaks in the message)"></button>
         <button id="btnColumns" class="toolbar-icon-btn" title="Show/hide log view columns"></button>
+        <button id="btnTextMatchHighlight" class="toolbar-icon-btn" title="Highlight text-filter matches (Settings → Behavior configures what gets marked and where)"></button>
         <div id="levelBar"></div>
         <div id="breadcrumb"></div>
       </div>
@@ -2833,6 +2852,42 @@
                 </label>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsTextMatchHighlightScope">Which filters to mark</label>
+                <div class="settings-row-hint">Your standing preference for text-filter match highlighting — always editable here regardless of the view bar's on/off button, which just quickly toggles whatever is configured below.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsTextMatchHighlightScope">
+                  <option value="last">Only the active filter</option>
+                  <option value="any">Any filter in the chain</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsTextMatchHighlightRows">Show matches in filtered rows</label>
+                <div class="settings-row-hint">Marks matches inline in the Filter view's own rows.</div>
+              </div>
+              <div class="settings-row-control">
+                <label class="settings-switch">
+                  <input type="checkbox" id="settingsTextMatchHighlightRows">
+                  <span class="settings-switch-track"></span>
+                </label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsTextMatchHighlightDetail">Show matches in entry detail</label>
+                <div class="settings-row-hint">Marks matches in the bottom entry-detail panel. Independent of the row toggle above — turn both on for both.</div>
+              </div>
+              <div class="settings-row-control">
+                <label class="settings-switch">
+                  <input type="checkbox" id="settingsTextMatchHighlightDetail">
+                  <span class="settings-switch-track"></span>
+                </label>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -3024,6 +3079,10 @@ const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" st
 // "pin". See PROJECT.md "Multiline message display toggle".
 const ICON_MULTILINE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
 const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="1.3"/><path d="M6 2.7v10.6M10.3 2.7v10.6"/></svg>';
+// Highlighter-pen glyph for #btnTextMatchHighlight — a pen tip drawing an
+// underline stroke, standing in for "mark/highlight" the same way
+// ICON_MULTILINE's stacked lines stand in for "multi-line text".
+const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 2.6 13.4 6.4 7.2 12.6 3 13.4l0.8-4.2z"/><path d="M2 14.5h5"/></svg>';
 const ICON_HELP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M6.1 6.3a2 2 0 1 1 2.9 1.8c-.6.3-1 .8-1 1.5v.3"/><circle cx="8" cy="11.6" r="0.75" fill="currentColor" stroke="none"/></svg>';
 // Scales-of-justice glyph for the License popup (#btnLicense) — same stroke
 // weight/linecap treatment as the other header icons.
@@ -3594,6 +3653,75 @@ document.getElementById("settingsHoverChildNavMultistep").addEventListener("chan
   // Turning it off while a deeper cascade happens to be open would otherwise
   // leave levels beyond the first stuck open until the next mouseleave.
   if (!hoverChildNavMultistep) closeChildNavFlyouts(1);
+});
+
+/* ===================== Text-filter match highlighting settings (Settings ->
+   Behavior) — a standing preference, always visible/editable here regardless
+   of the master on/off's current state. The master itself lives on a
+   view-bar toggle button (#btnTextMatchHighlight, wired near
+   #btnPinBookmarks/#btnMultilineMsg further below — same
+   plain-persistent-toggle shape), person-requested move out of Settings
+   this session; a same-day follow-up then explicitly asked for these rows
+   to NOT hide/depend on that button's state — the button is just a quick
+   on/off flip over whatever's configured here, not a gate on configuring it
+   ("es soll also keine Abhängigkeit der Settings vom Zustand des Buttons im
+   Hauptfenster geben"). This block wires the two things Settings owns:
+   which filter nodes contribute matches (textMatchHighlightScope) and where
+   marks show up (InRows/InDetail). Same tier/mechanism as the hover
+   settings above otherwise (plain localStorage flags). The actual
+   highlighting logic/state lives up near textFilterMatches, closer to the
+   match code it drives; this is just the Settings-page wiring.
+   Scope defaults to "last" (only the filter you're currently drilled into)
+   — the least noisy "on" state. Both "where" toggles default on ("both"),
+   matching the "in Beiden" combination called out when the feature was
+   requested. The master button itself also defaults on (see
+   updateTextMatchHighlightButton below). */
+function initTextMatchHighlightSettings() {
+  const enabledStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_ENABLED_KEY);
+  textMatchHighlightEnabled = enabledStored === null ? true : enabledStored === "1";
+  updateTextMatchHighlightButton();
+
+  const scopeStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_SCOPE_KEY);
+  textMatchHighlightScope = (scopeStored === "last" || scopeStored === "any") ? scopeStored : "last";
+  const scopeSelect = document.getElementById("settingsTextMatchHighlightScope");
+  if (scopeSelect) scopeSelect.value = textMatchHighlightScope;
+
+  const rowsStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_ROWS_KEY);
+  textMatchHighlightInRows = rowsStored === null ? true : rowsStored === "1";
+  const rowsCb = document.getElementById("settingsTextMatchHighlightRows");
+  if (rowsCb) rowsCb.checked = textMatchHighlightInRows;
+
+  const detailStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_DETAIL_KEY);
+  textMatchHighlightInDetail = detailStored === null ? true : detailStored === "1";
+  const detailCb = document.getElementById("settingsTextMatchHighlightDetail");
+  if (detailCb) detailCb.checked = textMatchHighlightInDetail;
+}
+
+// Reflects textMatchHighlightEnabled on the view-bar toggle button — called
+// after every toggle (the click handler near #btnMultilineMsg below) and
+// after settings re-init, same pattern as updatePinBookmarksButton/
+// updateMultilineMsgButton.
+function updateTextMatchHighlightButton() {
+  btnTextMatchHighlight.classList.toggle("active", textMatchHighlightEnabled);
+}
+
+document.getElementById("settingsTextMatchHighlightScope").addEventListener("change", ev => {
+  textMatchHighlightScope = ev.target.value;
+  localStorage.setItem(TEXT_MATCH_HIGHLIGHT_SCOPE_KEY, textMatchHighlightScope);
+  renderVisibleRows();
+  updateDetailPanel();
+});
+
+document.getElementById("settingsTextMatchHighlightRows").addEventListener("change", ev => {
+  textMatchHighlightInRows = ev.target.checked;
+  localStorage.setItem(TEXT_MATCH_HIGHLIGHT_ROWS_KEY, textMatchHighlightInRows ? "1" : "0");
+  renderVisibleRows();
+});
+
+document.getElementById("settingsTextMatchHighlightDetail").addEventListener("change", ev => {
+  textMatchHighlightInDetail = ev.target.checked;
+  localStorage.setItem(TEXT_MATCH_HIGHLIGHT_DETAIL_KEY, textMatchHighlightInDetail ? "1" : "0");
+  updateDetailPanel();
 });
 
 // Called after any user-initiated file close (see deleteFilterNodeWithUndo)
@@ -5247,6 +5375,171 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
   return text.includes(q);
 }
 
+/* ===================== Text-filter match highlighting =====================
+   Lighter alternative to FEATURE_BACKLOG.md #13's "why is this row here"
+   popup idea (that entry is left untouched, still unimplemented): instead of
+   a click-to-open explanation, mark the substrings inside a filtered row
+   (and/or the entry detail panel) that a "text" filter node in the active
+   chain actually matched — visible in place, no click needed.
+
+   Master on/off, textMatchHighlightEnabled — a view-bar toggle button
+   (#btnTextMatchHighlight, next to #btnPinBookmarks/#btnMultilineMsg/
+   #btnColumns), same plain-persistent-toggle shape as those, not a Settings
+   checkbox: person-requested (this session) move out of Settings, since it's
+   a per-viewing-session on/off switch someone reaches for constantly, same
+   tier as "pin bookmarks"/"multiline messages" rather than an app
+   preference. Settings -> Behavior keeps only the configuration of WHAT gets
+   highlighted once the feature is on:
+     - textMatchHighlightScope ("last" | "any"): "last" = only the active
+       tree node itself, and only if it IS a "text" filter — deliberately no
+       falling back to a text-filter ancestor when the active node is some
+       other filter type. "any" = every "text" filter node in the active
+       node's own ancestor chain (getChain), root to active.
+     - Two independent "where" toggles, always visible/editable in Settings
+       regardless of the master button's state (a standing preference, not
+       gated by it): textMatchHighlightInRows (the Filter view's own rows,
+       #tableBody) and textMatchHighlightInDetail (the bottom entry-detail
+       panel).
+
+   Every node's own match test is re-run per entry (not "trust the chain
+   already filtered this in") specifically so "or"/"link" nodes elsewhere in
+   the tree — whose entries can reach a view without having passed every
+   linear ancestor — never produce a highlight for text that isn't actually
+   there. Match ranges are searched against whichever text is actually ON
+   SCREEN for a field (formatTime(e.ts), e.locationShort, ...) rather than
+   the raw value the filter engine itself tests (e.tsRaw, e.locationFull —
+   see textColumnValue); those can diverge for "time"/"location" (a
+   formatted/abbreviated display vs. the raw stored string), so searching the
+   displayed text keeps the marked span trivially correct — always a real
+   substring of what's on screen — at the cost of occasionally under/over-
+   marking those two columns relative to the literal underlying match, an
+   accepted cosmetic-only trade-off.
+
+   Purely derived, runtime-only feature (no new filter-node field, nothing
+   persisted on the node itself), so none of CLAUDE.md's "Known gotchas"
+   persistence carriers need touching. */
+const TEXT_MATCH_HIGHLIGHT_ENABLED_KEY = "philogg-text-match-highlight-enabled";
+const TEXT_MATCH_HIGHLIGHT_SCOPE_KEY = "philogg-text-match-highlight-scope"; // "last" | "any"
+const TEXT_MATCH_HIGHLIGHT_ROWS_KEY = "philogg-text-match-highlight-rows";
+const TEXT_MATCH_HIGHLIGHT_DETAIL_KEY = "philogg-text-match-highlight-detail";
+let textMatchHighlightEnabled = true;
+let textMatchHighlightScope = "last";
+let textMatchHighlightInRows = true;
+let textMatchHighlightInDetail = true;
+
+// Which "text" filter nodes to pull match ranges from right now, per
+// textMatchHighlightEnabled/textMatchHighlightScope — see the section
+// comment above.
+function getTextMatchHighlightNodes() {
+  if (!textMatchHighlightEnabled) return [];
+  const activeNode = state.nodes[state.activeId];
+  if (!activeNode) return [];
+  if (textMatchHighlightScope === "last") {
+    return (activeNode.type === "filter" && activeNode.filterType === "text") ? [activeNode] : [];
+  }
+  return getChain(state.activeId).filter(n => n.type === "filter" && n.filterType === "text");
+}
+
+// Same "does this text filter carry a wildcard/value-token pattern"
+// compilation getEntries performs for a "text" node (see its own comment
+// above getEntries), mirrored here since getEntries doesn't expose the
+// compiled pieces. Recomputed fresh per render call (the chain is a handful
+// of nodes at most) rather than cached on the node, so an in-place filter
+// edit (updateFilterNode/applyNodeFields) can never leave a stale spec
+// behind.
+function textFilterMatchSpec(node) {
+  const value = String(node.value);
+  const caseSensitive = !!node.caseSensitive;
+  if (isExtractPattern(value)) {
+    const compiled = compileExtractPattern(value);
+    if (!compiled) return null;
+    return { wildcardRegex: new RegExp(compiled.regexStr, caseSensitive ? "" : "i"), wildcardColumns: compiled.columns, value, caseSensitive };
+  }
+  return { wildcardRegex: null, wildcardColumns: null, value, caseSensitive };
+}
+
+// The columns a "text" filter node's match applies to: its own target-column
+// restriction if set, else every column TEXT_FILTER_COLUMNS lists (a
+// column-less filter searches the whole raw line — see textFilterMatches —
+// which has no single on-screen counterpart once the raw tab-separated line
+// is thrown away, so every displayed column is searched independently).
+function textMatchTargetColumns(node) {
+  return (node.columns && node.columns.length) ? node.columns : TEXT_FILTER_COLUMNS.map(c => c.key);
+}
+
+// Every [start, end) occurrence of spec's pattern inside `text` — not just
+// the first, so a repeated word shows every hit. Wildcard patterns re-run
+// wildcardMatch's own numeric-condition check (valueSatisfiesConditions) per
+// occurrence, since a structurally-matching span can still fail e.g.
+// [value:float>=10].
+function findMatchRanges(text, spec) {
+  const ranges = [];
+  if (!text || !spec) return ranges;
+  if (spec.wildcardRegex) {
+    const flags = spec.wildcardRegex.flags.includes("g") ? spec.wildcardRegex.flags : spec.wildcardRegex.flags + "g";
+    const re = new RegExp(spec.wildcardRegex.source, flags);
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      let ok = true;
+      for (let i = 0; i < spec.wildcardColumns.length; i++) {
+        if (!valueSatisfiesConditions(m[i + 1], spec.wildcardColumns[i].conditions)) { ok = false; break; }
+      }
+      if (ok) ranges.push([m.index, m.index + m[0].length]);
+      if (m[0].length === 0) re.lastIndex++; // guard against a zero-width token looping forever
+    }
+    return ranges;
+  }
+  if (!spec.value) return ranges;
+  const q = spec.caseSensitive ? spec.value : spec.value.toLowerCase();
+  const hay = spec.caseSensitive ? text : text.toLowerCase();
+  let from = 0;
+  for (let idx; (idx = hay.indexOf(q, from)) !== -1; from = idx + q.length) {
+    ranges.push([idx, idx + q.length]);
+  }
+  return ranges;
+}
+
+// Sorts and coalesces overlapping/adjacent ranges so markRangesHtml never has
+// to worry about nested/duplicate <mark> spans from two different matching nodes.
+function mergeMatchRanges(ranges) {
+  if (ranges.length < 2) return ranges;
+  ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const merged = [ranges[0].slice()];
+  for (let i = 1; i < ranges.length; i++) {
+    const last = merged[merged.length - 1];
+    const [s, e] = ranges[i];
+    if (s <= last[1]) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  return merged;
+}
+
+// Match ranges for one displayed field (`text`) across every currently
+// relevant node/spec pair, restricted to nodes whose own target-column
+// restriction includes `columnKey` (or has none, meaning "every column").
+function matchRangesFor(text, columnKey, nodes, specs) {
+  if (!text || !nodes.length) return [];
+  let ranges = [];
+  for (let i = 0; i < nodes.length; i++) {
+    if (!specs[i] || !textMatchTargetColumns(nodes[i]).includes(columnKey)) continue;
+    ranges = ranges.concat(findMatchRanges(text, specs[i]));
+  }
+  return mergeMatchRanges(ranges);
+}
+
+// Wraps each [start,end) range in `text` with <mark>, HTML-escaping every
+// other part the same way the rest of the row-rendering path does (via
+// escapeHtml) — log content is never trusted as markup.
+function markRangesHtml(text, ranges) {
+  if (!ranges || !ranges.length) return escapeHtml(text);
+  let out = "", pos = 0;
+  for (const [s, e] of ranges) {
+    out += escapeHtml(text.slice(pos, s)) + '<mark class="text-match-mark">' + escapeHtml(text.slice(s, e)) + '</mark>';
+    pos = e;
+  }
+  return out + escapeHtml(text.slice(pos));
+}
+
 // Filter results only ever change for a node when it (or an ancestor) gets
 // re-parented — a filter's own type/value never change after creation. So we
 // can safely cache each node's computed entries and only clear the cache for
@@ -5851,6 +6144,7 @@ const linkBody = el("#linkBody");
 const statusStrip = el("#statusStrip");
 const tableHeaderEl = el("#tableHeader");
 const btnColumns = el("#btnColumns");
+const btnTextMatchHighlight = el("#btnTextMatchHighlight");
 const columnsPanel = el("#columnsPanel");
 const btnResetColumns = el("#btnResetColumns");
 const columnToggleInputs = {
@@ -6066,21 +6360,23 @@ function renderMainView() {
   if (isExtract) {
     // Person-requested (this session): extract mode's #viewBar now shows
     // ONLY the filter path (#breadcrumb) — #fhTabs (no Highlight companion
-    // to switch to), #levelBar, and the three Filtered/Highlight-view-only
-    // toggles (#btnPinBookmarks/#btnMultilineMsg/#btnColumns) all hide,
-    // since none of them apply to what's actually on screen here (the
-    // extraction table has its own columns, and applyLevelFilter() inside
-    // renderExtractTable still runs on whatever the level quick-filter was
-    // last set to — just without a visible pill row to change it from while
-    // in this view). Previously only #fhTabs hid; #levelBar/the toggles
-    // used to stay visible-but-inert, which read as a layout glitch once
-    // #btnColumns joined them (see #btnColumns' own CSS comment for the
-    // actual bug that triggered this reconsideration).
+    // to switch to), #levelBar, and the four Filtered/Highlight-view-only
+    // toggles (#btnPinBookmarks/#btnMultilineMsg/#btnColumns/
+    // #btnTextMatchHighlight) all hide, since none of them apply to what's
+    // actually on screen here (the extraction table has its own columns,
+    // and applyLevelFilter() inside renderExtractTable still runs on
+    // whatever the level quick-filter was last set to — just without a
+    // visible pill row to change it from while in this view). Previously
+    // only #fhTabs hid; #levelBar/the toggles used to stay visible-but-inert,
+    // which read as a layout glitch once #btnColumns joined them (see
+    // #btnColumns' own CSS comment for the actual bug that triggered this
+    // reconsideration).
     fhTabs.style.display = "none";
     levelBarEl.style.display = "none";
     btnPinBookmarks.style.display = "none";
     btnMultilineMsg.style.display = "none";
     btnColumns.style.display = "none";
+    btnTextMatchHighlight.style.display = "none";
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
@@ -6099,6 +6395,7 @@ function renderMainView() {
   btnPinBookmarks.style.display = "";
   btnMultilineMsg.style.display = "";
   btnColumns.style.display = "";
+  btnTextMatchHighlight.style.display = "";
   fhSplit.style.display = "flex";
   // Highlight-rule matches are shown in both the Filtered view (renderTable/
   // renderVisibleRows) and the Full view (renderHighlightView) — computed
@@ -8899,6 +9196,13 @@ function renderVisibleRows() {
     (activeNode.filterType === "context" || activeNode.filterType === "countContext") && activeNode._contextRanges)
     ? activeNode : null;
 
+  // Text-filter match highlighting (see the section above textFilterMatches)
+  // — computed once per render call, not per row: the chain is a handful of
+  // nodes at most, cheap to walk/compile up front and reuse for every
+  // visible row below.
+  const matchNodes = textMatchHighlightInRows ? getTextMatchHighlightNodes() : [];
+  const matchSpecs = matchNodes.map(textFilterMatchSpec);
+
   const frag = document.createDocumentFragment();
   for (let i = start; i < end; i++) {
     const e = currentViewEntries[i];
@@ -8942,19 +9246,30 @@ function renderVisibleRows() {
     const prevE = i > 0 ? currentViewEntries[i - 1] : null;
     const deltaMs = (!state.sortColumn && prevE) ? (e.ts - prevE.ts) : null;
 
+    // matchNodes.length short-circuits before any range search when the
+    // feature/row-toggle is off, so this stays a plain escapeHtml call (same
+    // cost as before this feature existed) in the common case.
+    const timeText = formatTime(e.ts);
+    const timeHtml = matchNodes.length ? markRangesHtml(timeText, matchRangesFor(timeText, "time", matchNodes, matchSpecs)) : escapeHtml(timeText);
+    const levelHtml = matchNodes.length ? markRangesHtml(e.level, matchRangesFor(e.level, "level", matchNodes, matchSpecs)) : escapeHtml(e.level);
+    const threadHtml = matchNodes.length ? markRangesHtml(e.thread, matchRangesFor(e.thread, "thread", matchNodes, matchSpecs)) : escapeHtml(e.thread);
+    const locHtml = matchNodes.length ? markRangesHtml(e.locationShort, matchRangesFor(e.locationShort, "location", matchNodes, matchSpecs)) : escapeHtml(e.locationShort);
+    const methodHtml = matchNodes.length ? markRangesHtml(e.method, matchRangesFor(e.method, "method", matchNodes, matchSpecs)) : escapeHtml(e.method);
+    const msgHtml = matchNodes.length ? markRangesHtml(e.message, matchRangesFor(e.message, "message", matchNodes, matchSpecs)) : escapeHtml(e.message);
+
     row.className = cls;
     row.style.height = rowHeightForEntry(e) + "px";
     row.dataset.entryId = e.id;
     row.innerHTML =
       bracketHtml +
       '<span class="col-bar"></span>' +
-      '<span class="col-time">' + escapeHtml(formatTime(e.ts)) + '</span>' +
+      '<span class="col-time">' + timeHtml + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      '<span class="col-level"><span class="level-badge">' + escapeHtml(e.level) + '</span></span>' +
-      '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + escapeHtml(e.thread) + '</span>' +
-      '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + escapeHtml(e.locationShort) + '</span>' +
-      '<span class="col-method" title="' + escapeHtml(e.method) + '">' + escapeHtml(e.method) + '</span>' +
-      '<span class="col-msg">' + escapeHtml(e.message) + '</span>';
+      '<span class="col-level"><span class="level-badge">' + levelHtml + '</span></span>' +
+      '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + threadHtml + '</span>' +
+      '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + locHtml + '</span>' +
+      '<span class="col-method" title="' + escapeHtml(e.method) + '">' + methodHtml + '</span>' +
+      '<span class="col-msg">' + msgHtml + '</span>';
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => revealInHighlightView(e));
@@ -10265,6 +10580,14 @@ function updateDetailPanel() {
 
   detailPanel.classList.remove("empty");
   detailMeta.className = levelClass(entry.level);
+
+  // Text-filter match highlighting (see the section above textFilterMatches)
+  // — same computation as renderVisibleRows, gated by the independent
+  // "entry detail" toggle instead of the "rows" one.
+  const matchNodes = textMatchHighlightInDetail ? getTextMatchHighlightNodes() : [];
+  const matchSpecs = matchNodes.map(textFilterMatchSpec);
+  const markField = (text, columnKey) => matchNodes.length ? markRangesHtml(text, matchRangesFor(text, columnKey, matchNodes, matchSpecs)) : escapeHtml(text);
+
   if (isDetailCollapsed() && !isDetailPeeking()) {
     // Collapsed and not peeking: no room for the full field set, so the
     // header line falls back to level + time + the message's first line
@@ -10276,23 +10599,29 @@ function updateDetailPanel() {
     const firstLine = entry.message.split("\n", 1)[0];
     detailMeta.innerHTML =
       '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
-      '<span class="detail-time">' + escapeHtml(formatTime(entry.ts)) + '</span>' +
+      '<span class="detail-time">' + markField(formatTime(entry.ts), "time") + '</span>' +
       '<span class="detail-sep">·</span>' +
-      '<span class="detail-collapsed-msg">' + escapeHtml(firstLine) + '</span>';
+      '<span class="detail-collapsed-msg">' + markField(firstLine, "message") + '</span>';
   } else {
     detailMeta.innerHTML =
       '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
-      '<span class="detail-time">' + escapeHtml(formatTime(entry.ts)) + '</span>' +
+      '<span class="detail-time">' + markField(formatTime(entry.ts), "time") + '</span>' +
       '<span class="detail-sep">·</span>' +
-      '<span class="detail-thread">' + escapeHtml(entry.thread) + '</span>' +
+      '<span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' +
       '<span class="detail-sep">·</span>' +
-      '<span class="detail-loc" title="' + escapeHtml(entry.locationFull) + '">' + escapeHtml(entry.locationShort) + '</span>' +
+      '<span class="detail-loc" title="' + escapeHtml(entry.locationFull) + '">' + markField(entry.locationShort, "location") + '</span>' +
       '<span class="detail-sep">·</span>' +
-      '<span class="detail-method">' + escapeHtml(entry.method) + '</span>';
+      '<span class="detail-method">' + markField(entry.method, "method") + '</span>';
   }
-  // textContent (not innerHTML) so the message can never be interpreted as markup,
-  // while the CSS white-space:pre-wrap on #detailMessage still preserves line breaks.
-  detailMessageEl.textContent = entry.message;
+  // Plain textContent (message can never be interpreted as markup) unless
+  // there's actually something to mark, in which case markRangesHtml itself
+  // escapes every non-matched slice the same way — the CSS white-space:
+  // pre-wrap on #detailMessage preserves line breaks in either case.
+  if (matchNodes.length) {
+    detailMessageEl.innerHTML = markRangesHtml(entry.message, matchRangesFor(entry.message, "message", matchNodes, matchSpecs));
+  } else {
+    detailMessageEl.textContent = entry.message;
+  }
 }
 
 // Moves the selection to the next/previous entry in the currently visible list.
@@ -10549,6 +10878,25 @@ btnMultilineMsg.addEventListener("click", () => {
   state.multilineMessages = !state.multilineMessages;
   updateMultilineMsgButton();
   render();
+});
+
+// Master on/off for text-filter match highlighting — moved here from a
+// Settings dropdown option (person-requested, this session): reached for
+// while looking at the view, same tier as the two toggles above, rather than
+// an app preference. Just a quick flip of whatever's configured in Settings
+// -> Behavior (textMatchHighlightScope/InRows/InDetail — see
+// initTextMatchHighlightSettings), which stays fully visible/editable there
+// regardless of this button's state (explicit follow-up request: no
+// dependency of Settings on the button). renderVisibleRows()+
+// updateDetailPanel() rather than a full render(): toggling this never
+// changes row heights or which entries are shown, only whether <mark>
+// spans get injected.
+btnTextMatchHighlight.addEventListener("click", () => {
+  textMatchHighlightEnabled = !textMatchHighlightEnabled;
+  localStorage.setItem(TEXT_MATCH_HIGHLIGHT_ENABLED_KEY, textMatchHighlightEnabled ? "1" : "0");
+  updateTextMatchHighlightButton();
+  renderVisibleRows();
+  updateDetailPanel();
 });
 
 /* ===================== Log view column visibility / width (FEATURE_BACKLOG.md
@@ -15418,6 +15766,7 @@ btnBookmarks.innerHTML = ICON_BOOKMARK;
 btnPinBookmarks.innerHTML = ICON_PIN;
 btnMultilineMsg.innerHTML = ICON_MULTILINE;
 btnColumns.innerHTML = ICON_COLUMNS;
+btnTextMatchHighlight.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT;
 btnShortcuts.innerHTML = ICON_HELP;
 btnLicense.innerHTML = ICON_LICENSE;
 el("#brandVersion").textContent = PHILOGG_VERSION;
@@ -15434,6 +15783,7 @@ initFontScale();
 initQuitOnLastClose();
 initHoverExpandSettings();
 initHoverChildNavSettings();
+initTextMatchHighlightSettings();
 initCollapsePanels();
 initFhView();
 render();
