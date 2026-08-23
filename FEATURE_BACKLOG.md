@@ -27,6 +27,8 @@ ideas, grouped by theme instead of by when/how they were added.
 6. **Relative-time display toggle** — show timestamps as offsets from a chosen zero row (selected or bookmarked) instead of absolute time, same reasoning that made extraction's `t(ms)` cumulative-from-first.
 7. **Collapse consecutive duplicate messages** into one row with an ×N badge — noise control for spam loops. Open question: what counts as "duplicate" (raw line, message column, or message-with-numbers-normalized — see message-pattern grouping below).
 38. **Full view: hide the minimap's "covered timespan" visualization** (toggle in Settings) — it's meaningless there since the Full view always covers the entire log. Show the currently-visible row range instead, the same way the minimap already highlights the visible/rendered subset in the Filtered/Stacked view — just applied to the Full log's own rows instead of the filtered rows.
+39. **"Newest" button should only show for trailing files** — hide it for static (non-trailing) files, where jumping to "newest" has no meaning.
+40. **Minimap time-filter drag line: draw at the bottom edge instead of the top** — the line shown while dragging out a time filter on the minimap currently sits at the top; the bottom would read better.
 
 ## Filter tree workflow
 
@@ -35,6 +37,9 @@ ideas, grouped by theme instead of by when/how they were added.
 11. **Mute (disable) a filter node instead of deleting it** — a muted node is skipped in the chain (its children evaluate against its parent) but stays in the tree with its colour, assertions, and children intact. Faster than delete+undo for "does this step matter?". Needs the flag threaded through every persistence carrier (see `CLAUDE.md`'s gotcha list).
 13. **"Why is this row here?" explain popup** — for the selected entry, show which node of the active chain matched it; for an entry visible only in the Full view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the existing "view sometimes doesn't refresh" class of confusion (see Known issues above).
 14. **Regex filter type** — a real `RegExp` alongside the wildcard-token text filter, with the same live match count, case-sensitivity, and target-column options. Complements (doesn't replace) the token language, which stays the friendlier default.
+41. **Middle-click a filter node to delete it** — from both the "Files & Filters" tree panel and the breadcrumbs.
+42. **Full Log → Filtered View jump** — double-click or Enter on a row in the Full Log view (mirroring the existing Filtered→Full jump) should offer a picker of every filter node whose chain matches that entry; picking one jumps into that node's Filtered view. Visualization similar to the existing breadcrumb hover.
+43. **File-independent (universal) cache for the `.html` build** — today the cache appears to be keyed per filename; a shared/universal cache would keep working across renamed or re-opened files. Open question: how to handle a cached payload left over from an incompatible older/newer app version (versioning or invalidation needed).
 
 ## Value extraction & aggregation
 
@@ -61,6 +66,10 @@ ideas, grouped by theme instead of by when/how they were added.
 
 28. **`F11` toggles fullscreen** (no window decorations).
 29. **Settings exportable as JSON.** The Electron variant should by default store/load settings in the OS "well-known" config directory (XDG on Linux, e.g. `~/.config/PhiLogg`).
+44. **Custom window control buttons (fullscreen/minimize/close) have the wrong background color** — ideally Electron would keep the button backgrounds transparent and the buttons themselves would pick up the active theme's highlight color.
+45. **Electron scrollbar corner artifact** — Electron renders scrollbars differently from the browser build (preferred look), but where a horizontal and vertical scrollbar meet there's a white square that doesn't fit the theme. Needs screenshots to nail down the exact styling target.
+46. **Rounded corners for the Electron window** (except when fullscreen).
+47. **"Restore last session on startup" setting is Electron-only in practice** — the plain `.html` build already needs to survive a page refresh regardless of this setting (existing cache behavior), so the toggle really only has meaning in the Electron build; consider hiding/disabling it outside Electron.
 
 ## Settings & UI polish
 
@@ -70,6 +79,7 @@ ideas, grouped by theme instead of by when/how they were added.
 33. **Breadcrumb hover should also work on nodes further back in the current chain**, not just the current/active one, so a new branch can be picked from there too.
 34. **Fix Settings view scroll performance** — currently noticeably janky.
 35. **Code highlighting in the Entry Details view, behind a toggle.**
+48. **"Change Font Size" should scale only the font size, not the whole UI** — currently it appears to scale all UI elements; it should only affect text/log font size.
 
 ## Log formats & parsing
 
