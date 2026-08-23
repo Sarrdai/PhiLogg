@@ -26,6 +26,7 @@ ideas, grouped by theme instead of by when/how they were added.
 5. **Δt between two rows** — mark a row, shift-click a second, get the gap in the status strip. The extraction table already answers this (`t(ms)`), the log view doesn't.
 6. **Relative-time display toggle** — show timestamps as offsets from a chosen zero row (selected or bookmarked) instead of absolute time, same reasoning that made extraction's `t(ms)` cumulative-from-first.
 7. **Collapse consecutive duplicate messages** into one row with an ×N badge — noise control for spam loops. Open question: what counts as "duplicate" (raw line, message column, or message-with-numbers-normalized — see message-pattern grouping below).
+38. **Full view: hide the minimap's "covered timespan" visualization** (toggle in Settings) — it's meaningless there since the Full view always covers the entire log. Show the currently-visible row range instead, the same way the minimap already highlights the visible/rendered subset in the Filtered/Stacked view — just applied to the Full log's own rows instead of the filtered rows.
 
 ## Filter tree workflow
 
@@ -60,3 +61,16 @@ ideas, grouped by theme instead of by when/how they were added.
 
 28. **`F11` toggles fullscreen** (no window decorations).
 29. **Settings exportable as JSON.** The Electron variant should by default store/load settings in the OS "well-known" config directory (XDG on Linux, e.g. `~/.config/PhiLogg`).
+
+## Settings & UI polish
+
+30. **Settings cleanup** — more internal structure/subdivisions within the existing sections (Appearance/Behavior/Log Formats), which today are each just a flat list of rows.
+31. **Fix filter-chain layout when "Level bar creates filter tree nodes" is set to "explicit" (manual)** — the extra "Add to tree" button that mode shows breaks/shifts the layout.
+32. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
+33. **Breadcrumb hover should also work on nodes further back in the current chain**, not just the current/active one, so a new branch can be picked from there too.
+34. **Fix Settings view scroll performance** — currently noticeably janky.
+35. **Code highlighting in the Entry Details view, behind a toggle.**
+
+## Log formats & parsing
+
+36. **Format-specific log levels** — configurable while setting up a parser (Format Manager), with a definable order, shown in the log-level column instead of forcing the fixed ERROR/WARN/INFO/DEBUG set.
