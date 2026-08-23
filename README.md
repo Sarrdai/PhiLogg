@@ -26,7 +26,11 @@ open it in a browser to view it.
 
 - **Nested filter tree** — chain text, time-range, value-extraction, AND/OR,
   nearest-neighbor link, time-context and count-context filters; each level
-  narrows/transforms the result of the one above it.
+  narrows/transforms the result of the one above it. Any node can be
+  **renamed** (`F2` or right-click → "Rename…") with a human-readable label
+  shown in the tree/breadcrumb instead of the raw pattern — handy for turning
+  a chain into a readable narrative ("Step 3: calibration errors"). Editing a
+  filter's actual value moved to `Ctrl+E`.
 - **Level bar can write into the filter tree** — by default, clicking
   ERROR/WARN/INFO/DEBUG on the level bar creates/edits a real, undoable
   filter-tree node at your current position, instead of a separate global
