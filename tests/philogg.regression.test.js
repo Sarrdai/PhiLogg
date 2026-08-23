@@ -10163,6 +10163,55 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 98 — Settings "Behavior" section split into subsections
+   (FEATURE_BACKLOG.md #30). Appearance/Log Formats already grouped their
+   rows into more than one .settings-card (see GROUP 79); Behavior was the
+   one section still a single flat card of 9 unrelated rows. Split into:
+   a standalone general row, "Hover-to-expand panels" (4 rows), "Filter
+   tree" (1 row), and "Text-match highlighting" (3 rows) — same markup
+   pattern (.settings-subsection-title + .settings-card) already used by
+   Appearance's "Custom themes" and Log Formats' "Filename rules". Pure
+   markup regrouping: no ids changed, so every other group's
+   #settingsHoverExpandSidebar/#settingsLevelFilterTreeMode/etc. selectors
+   still resolve — this group only asserts the new grouping itself.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("98. Settings Behavior section: subsection split");
+  await waitForFormatConfig(T);
+
+  fireClick(d.querySelector("#btnSettings"), w);
+  const behaviorSection = d.getElementById("settingsSectionBehavior");
+  assert(behaviorSection, "the Behavior section exists");
+
+  const subsectionTitles = [...behaviorSection.querySelectorAll(".settings-subsection-title")].map(el => el.textContent);
+  assert(subsectionTitles.length === 3,
+    "Behavior now has 3 subsection titles (general row stays un-headed, like Appearance's own first card), got " + JSON.stringify(subsectionTitles));
+  assert(subsectionTitles[0].startsWith("Hover-to-expand panels"), "first subsection is the hover-to-expand group, got " + subsectionTitles[0]);
+  assert(subsectionTitles[1].startsWith("Filter tree"), "second subsection is the filter-tree group, got " + subsectionTitles[1]);
+  assert(subsectionTitles[2].startsWith("Text-match highlighting"), "third subsection is the text-match-highlighting group, got " + subsectionTitles[2]);
+
+  const cards = [...behaviorSection.querySelectorAll(".settings-card")];
+  assert(cards.length === 4, "Behavior is split into 4 cards (general + 3 subsections), got " + cards.length);
+
+  const cardOf = id => d.getElementById(id).closest(".settings-card");
+  assert(cardOf("settingsQuitOnLastClose") === cards[0], "the quit-on-close row sits alone in the first, un-headed card");
+  [ "settingsHoverExpandSidebar", "settingsHoverExpandDetail", "settingsHoverChildNav", "settingsHoverChildNavMultistep" ]
+    .forEach(id => assert(cardOf(id) === cards[1], "#" + id + " sits in the hover-to-expand card"));
+  assert(cardOf("settingsLevelFilterTreeMode") === cards[2], "the level-bar-tree-mode row sits in its own filter-tree card");
+  [ "settingsTextMatchHighlightScope", "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail" ]
+    .forEach(id => assert(cardOf(id) === cards[3], "#" + id + " sits in the text-match-highlighting card"));
+
+  // Every row's control is still reachable/functional after the regrouping
+  // (behavior itself is covered by GROUPs 91/92/93/94 — this just confirms
+  // the move didn't detach anything from the live DOM/listeners).
+  const quitCb = d.getElementById("settingsQuitOnLastClose");
+  const before = quitCb.checked;
+  fireClick(quitCb, w);
+  assert(quitCb.checked === !before, "the relocated quit-on-close switch still toggles");
+  fireClick(quitCb, w); // restore
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -11560,6 +11609,12 @@ process.exit(failed ? 1 : 0);
               near the bottom of a tailed view — not just clicking the
               floating "Newest" button — re-engages follow, mirrored for
               both views and both directions (disengage AND re-engage).
+
+   Group 98  — this session (2026-08-23), FEATURE_BACKLOG.md #30: Settings
+              "Behavior" section split into subsections, matching the
+              .settings-subsection-title + .settings-card pattern already
+              used by Appearance/Log Formats (Group 79) — pure markup
+              regrouping, no ids/behavior changed.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
