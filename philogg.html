@@ -817,7 +817,7 @@
   .level-btn.active.lvl-info{background:var(--level-info); color:var(--level-info-on);}
   .level-btn.active.lvl-debug{background:var(--level-debug); color:var(--level-debug-on);}
 
-  /* ---------- Filter/Highlight split (FEATURE_BACKLOG.md item 4) ---------- */
+  /* ---------- Filter/Highlight split ---------- */
   #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
   #fhSplit .fh-panel{flex:1 1 auto; display:flex; flex-direction:column; min-height:0; min-width:0;}
   /* Tabs layout (default): only the active panel is shown. */
@@ -893,7 +893,7 @@
     padding:0 16px 0 14px;
   }
   #tableHeader .row-grid, #highlightHeader .row-grid{padding:9px 0;}
-  /* Horizontal scrollbar in the Filter view (FEATURE_BACKLOG.md item), Filter
+  /* Horizontal scrollbar in the Filter view, Filter
      view only — see syncTableHeaderWidth's comment in the script for the
      full mechanism. #tableHeader isn't a descendant of the scrollable
      #tableBody (they're flex siblings inside #tableWrap), so it gets its own
@@ -1021,7 +1021,7 @@
   #tableRows, #highlightRows{position:absolute; top:0; left:0; right:0; box-sizing:border-box; padding:2px 16px 20px 14px;}
 
   /* Highlight-rule match markers: thin stripes in the row's left gutter, one
-     per matching rule (see FEATURE_BACKLOG.md item 4, session 6 — no colour
+     per matching rule (session 6 — no colour
      priority/blending, several rules just show several stripes). Shown in
      both the Filtered view (#tableRows) and the Full view (#highlightRows,
      internally still called "Highlight" — see the fhLayout comment below).
@@ -1094,7 +1094,7 @@
   .col-loc{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-method{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-msg{font-family:var(--font-mono); font-size:11.6px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  /* Horizontal scrollbar in the Filter view (FEATURE_BACKLOG.md item), Filter
+  /* Horizontal scrollbar in the Filter view, Filter
      view only: .col-msg's `overflow:hidden` above resets its "automatic
      minimum size" to 0 per the CSS Sizing spec (a non-visible-overflow box's
      content-based minimum is 0 unless min-width says otherwise) — which is
@@ -2257,7 +2257,7 @@
 
       <div id="statusStrip"></div>
 
-      <!-- Filter/Highlight split (FEATURE_BACKLOG.md item 4). Filter view is
+      <!-- Filter/Highlight split. Filter view is
            the pre-existing table/link view, narrowed by the active filter
            tree node, unchanged. Highlight view is new: always the active
            node's whole root file, with checked highlight-rule matches
@@ -2459,7 +2459,7 @@
        bounded by the tree itself. See renderChildNavLevel/closeChildNavFlyouts. -->
   <div id="childNavFlyoutHost"></div>
 
-  <!-- Custom highlight-colour picker (see FEATURE_BACKLOG.md item 4, session 6:
+  <!-- Custom highlight-colour picker (session 6:
        deliberately not the native <input type="color"> — Windows' native
        picker UX varies too much for predictable results here). A hue wheel
        for freeform choice, plus a row of curated presets for one click.
@@ -3471,8 +3471,7 @@ document.getElementById("fontScaleDown").addEventListener("click", () => applyFo
 document.getElementById("fontScaleUp").addEventListener("click", () => applyFontScale(fontScale + FONT_SCALE_STEP));
 document.getElementById("fontScaleReset").addEventListener("click", () => applyFontScale(FONT_SCALE_DEFAULT));
 
-/* ===================== "Closing the last log file quits the app"
-   (FEATURE_BACKLOG.md item) ===================== */
+/* ===================== "Closing the last log file quits the app" ===================== */
 // Off by default, as requested. Purely a local app-behavior preference, same
 // tier/reasoning as the theme toggle and font size above — not session/
 // filter data, so a plain localStorage flag rather than something threaded
@@ -5879,7 +5878,7 @@ const highlightBody = el("#highlightBody");
 const highlightSpacer = el("#highlightSpacer");
 const highlightRows = el("#highlightRows");
 
-/* ===================== Filter/Highlight layout (FEATURE_BACKLOG.md item 4) =====================
+/* ===================== Filter/Highlight layout =====================
    One tri-state UI preference, not part of `state` (same reasoning as the
    theme toggle: purely a display preference, not filter/session data),
    persisted to localStorage like the theme:
@@ -6026,7 +6025,7 @@ function render() {
 // extraction filter. Both views share the #viewBar (level filter /
 // breadcrumb) above them.
 //
-// FEATURE_BACKLOG.md item 4: the plain table view and the link view are both
+// The plain table view and the link view are both
 // "Filter view" flavors now, each paired with the Highlight view via
 // #fhSplit/#fhTabs. The extract view is unaffected — no Highlight
 // companion, full content area to itself, exactly as before.
@@ -6368,8 +6367,7 @@ function renderFilterHistoryPreview(fileNode) {
 // dragstart/dragover/drop handlers). null while no drag is in progress.
 let draggedNodeId = null;
 
-// Manual double-click detection for tree rows (FEATURE_BACKLOG.md item
-// "Double-click on a filter opens its edit dialog"), instead of a native
+// Manual double-click detection for tree rows, instead of a native
 // "dblclick" listener: a tree row's own click handler always ends in a full
 // render(), which rebuilds every #tree row from scratch (see CLAUDE.md's
 // "DOM identity across clicks" gotcha) — so by the time a second physical
@@ -8968,7 +8966,7 @@ function renderVisibleRows() {
 }
 
 /* ===================== Highlight view =====================
-   See FEATURE_BACKLOG.md item 4. Always shows the active node's whole root
+   Always shows the active node's whole root
    file (not narrowed by the filter tree — that's the Filter view's job),
    with checked highlight-rule matches coloured via small edge markers. Its
    own copy of the virtualization scheme above, with one deliberate
@@ -10063,7 +10061,7 @@ function scrollToHighlightIndex(index, opts) {
 // pressed with a brand-new node, so the second click of a double-click hits
 // a different element and the browser never fires "dblclick" at all.
 // Syncs BOTH the Filter view's and the Highlight view's row elements — with
-// state.selectedId shared between them (FEATURE_BACKLOG.md item 4), a
+// state.selectedId shared between them, a
 // selection made in either view needs to be reflected in the other, even
 // though only one of them triggered the change. Whichever container doesn't
 // currently have the relevant row rendered (not in the virtualized window,
@@ -10231,8 +10229,8 @@ function selectHighlightEntry(entryId, opts) {
 // What a Filter-view (or link-view) row double-click does now, in place of
 // the old jumpToFullLog: select the entry and centre the Highlight view on
 // it, WITHOUT jumping the Filter view itself to a different node or
-// touching the level filter (see FEATURE_BACKLOG.md item 4, "the
-// jumpToFullLog collision" — this strictly subsumes what jumpToFullLog used
+// touching the level filter (see "the jumpToFullLog collision" below —
+// this strictly subsumes what jumpToFullLog used
 // to do here, minus the destructive part of losing the Filter view's own
 // position/filter). Deliberately avoids a full render(): that would reset
 // the Filter view's own scroll to the top (see renderTable's "any other
@@ -10307,8 +10305,7 @@ function moveSelection(delta) {
 }
 
 // Highlight/Full-view counterpart of moveSelection — same shape, moves
-// through currentHighlightViewEntries instead (FEATURE_BACKLOG.md item
-// "Shortcuts to switch between Tree and Filter view": Ctrl+1 opens the Full
+// through currentHighlightViewEntries instead (Ctrl+1 opens the Full
 // view and focuses it, so ↑/↓ afterwards navigate its messages the same way
 // they already did for the Filtered view).
 function moveHighlightSelection(delta) {
@@ -10322,7 +10319,7 @@ function moveHighlightSelection(delta) {
 // Switches to the full (unfiltered-by-tree) file view that the current node
 // belongs to, clears the quick level filter, and scrolls/highlights the
 // entry. Only the extract table's double-click uses this destructive jump
-// now (see FEATURE_BACKLOG.md item 4) — it has no Highlight panel of its
+// now — it has no Highlight panel of its
 // own to reveal the entry in instead, unlike the plain table/link view
 // double-clicks, which now use revealInHighlightView.
 function jumpToFullLog(entry) {
@@ -12336,7 +12333,7 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
 
 /* ===================== Highlight-colour picker =====================
    Opened from a tree row's swatch (see renderNode). Deliberately not the
-   native <input type="color"> — see FEATURE_BACKLOG.md item 4, session 6.
+   native <input type="color"> (session 6).
    A hue wheel (click anywhere in the disc, fixed saturation/lightness) for
    freeform choice, plus a row of curated presets for one click.
 
@@ -12433,8 +12430,8 @@ cpWheel.addEventListener("click", ev => {
 cpClearBtn.addEventListener("click", () => { setHighlightColor(colorPickerTargetId, null); closeColorPicker(); });
 
 // Sets or clears a filter node's highlight colour, which is both the colour
-// AND the on/off state for that highlight rule (see FEATURE_BACKLOG.md item
-// 4, session 6 — "has a colour" already means "is a highlight rule", no
+// AND the on/off state for that highlight rule (session 6 — "has a colour"
+// already means "is a highlight rule", no
 // separate boolean). A full render() is enough here (not perf-sensitive —
 // this only happens on a deliberate user click, not per-row).
 function setHighlightColor(nodeId, color) {
