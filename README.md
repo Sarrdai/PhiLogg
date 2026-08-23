@@ -65,8 +65,9 @@ open it in a browser to view it.
   color-highlightable "Full" view of the whole file, side by side or
   stacked.
 - **Live tailing & folder watch** (Chromium, File System Access API) — an
-  actively-written log file updates in place; a watched folder picks up new
-  files automatically.
+  actively-written log file updates in place, with both the Full and
+  Filtered views auto-following the newest entry; a watched folder picks up
+  new files automatically.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file.

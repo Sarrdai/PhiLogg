@@ -876,8 +876,11 @@
 
   /* Floating "jump to newest & follow" button, shown bottom-right over the log
      table whenever a tailed (live-updating) file is viewed but auto-follow has
-     been disengaged by scrolling up or clicking a row. */
-  #tailJumpBtn{
+     been disengaged by scrolling up or clicking a row. #tailJumpBtn lives over
+     the Filtered view (#tableWrap), #tailJumpBtnHighlight is its twin over the
+     Highlight/Full view (#highlightWrap) — FEATURE_BACKLOG #25, live-follow
+     used to be Filtered-only. Both share this look via `.tail-jump-btn`. */
+  .tail-jump-btn{
     position:absolute; right:22px; bottom:16px; z-index:20;
     display:flex; align-items:center; gap:6px;
     background:var(--accent); color:var(--bg-app);
@@ -885,8 +888,9 @@
     font-family:var(--font-ui); font-size:11.5px; font-weight:650;
     cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,.35);
   }
-  #tailJumpBtn:hover{filter:brightness(1.1);}
+  .tail-jump-btn:hover{filter:brightness(1.1);}
   #tailJumpBtn.hidden{display:none;}
+  #tailJumpBtnHighlight.hidden{display:none;}
 
   /* Pulsing "live" dot next to a tailed file's name in the tree. */
   .tree-live{
@@ -2339,6 +2343,10 @@
               <div id="highlightRows"></div>
             </div>
           </div>
+          <button type="button" id="tailJumpBtnHighlight" class="tail-jump-btn hidden" title="Jump to the newest entries and follow live updates">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v10M3.5 8L8 12.5 12.5 8"/></svg>
+            Newest
+          </button>
         </div>
 
         <div id="fhSplitResizer" title="Drag to resize"></div>
@@ -2372,7 +2380,7 @@
                 <div id="tableRows"></div>
               </div>
             </div>
-            <button type="button" id="tailJumpBtn" class="hidden" title="Jump to the newest entries and follow live updates">
+            <button type="button" id="tailJumpBtn" class="tail-jump-btn hidden" title="Jump to the newest entries and follow live updates">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v10M3.5 8L8 12.5 12.5 8"/></svg>
               Newest
             </button>
@@ -3814,8 +3822,10 @@ const state = {
   multiSelect: new Set(),  // node ids selected via checkbox/Ctrl+click in the tree, for bulk actions (merge/AND/OR)
   sortColumn: null,        // active log-table sort column: "time" | "level" | "thread" | "location" | null (chronological)
   sortDir: "asc",          // "asc" | "desc" — only meaningful while sortColumn is set
-  tailFollow: true,        // auto-scroll to the newest entry while a tailed (live) file is viewed;
-                           // disengaged by scrolling up or selecting a row, re-engaged via #tailJumpBtn
+  tailFollow: true,        // auto-scroll to the newest entry, in BOTH the Filtered and Highlight/Full
+                           // views, while a tailed (live) file is viewed; disengaged by scrolling
+                           // away from the bottom or selecting a row in either view, re-engaged by
+                           // scrolling/jumping back to the bottom or the #tailJumpBtn(Highlight) button
   bookmarks: new Map(),    // entry id -> { note: string, bookmarkedAt: number (ms epoch) }, session-only (not persisted)
   pinBookmarksInFilteredView: false, // see PROJECT.md "Pin bookmarks into the Filtered View"
   multilineMessages: false, // see PROJECT.md "Multiline message display toggle"; global, session-cache-persisted
@@ -6259,6 +6269,7 @@ const columnToggleInputs = {
 const columnResizeHandleEls = {};
 tableHeaderEl.querySelectorAll(".col-resize-handle").forEach(h => { columnResizeHandleEls[h.dataset.col] = h; });
 const tailJumpBtn = el("#tailJumpBtn");
+const tailJumpBtnHighlight = el("#tailJumpBtnHighlight");
 const timelineMinimapEl = el("#timelineMinimap");
 const timelineMinimapMetaEl = el("#timelineMinimapMeta");
 const timelineMinimapSvg = el("#timelineMinimapSvg");
@@ -6319,7 +6330,18 @@ function showFhTab(tab) {
   if (fhLayout !== "tabs") return;
   filterSlot.classList.toggle("fh-active", tab === "filter");
   highlightWrap.classList.toggle("fh-active", tab === "highlight");
-  if (tab === "highlight") renderHighlightVisibleRows(); else renderVisibleRows();
+  // A panel hidden (display:none) while tailing grew couldn't actually
+  // scroll — its scrollHeight collapses to 0 while hidden, same as
+  // clientHeight — so becoming visible again needs its own resync to the
+  // bottom if follow is still active, same effect the jump button gives
+  // (FEATURE_BACKLOG #25 — live-follow now applies to both views).
+  if (tab === "highlight") {
+    if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
+    renderHighlightVisibleRows();
+  } else {
+    if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
+    renderVisibleRows();
+  }
 }
 
 // The single entry point for the three-way toggle: view is "highlight"
@@ -6332,6 +6354,10 @@ function applyFhView(view) {
     filterSlot.classList.remove("fh-active");
     highlightWrap.classList.remove("fh-active");
     updateFhTabButtons();
+    // Same resync-to-bottom reasoning as showFhTab above: either panel could
+    // have been the hidden one while tailing grew.
+    if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
+    if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
     renderVisibleRows();
     renderHighlightVisibleRows();
   } else {
@@ -9401,10 +9427,17 @@ let currentViewEntries = []; // entries backing the table right now (post node +
 //   "keep"   — user is reading elsewhere: keep the scroll position untouched
 // null (the default) keeps renderTable's normal reset-to-top behavior.
 let pendingTableScroll = null;
+// Highlight/Full view's own twin of pendingTableScroll above (FEATURE_BACKLOG
+// #25 — live-follow now applies to that view too, not just Filtered). See
+// renderHighlightView's own consumption of it.
+let pendingHighlightScroll = null;
 
 // Timestamp of the last programmatic scrollTop write. The scroll listener uses
 // it to tell "the code moved the view" (follow-scroll, node switch, jump) apart
 // from "the user scrolled" — only the latter may disengage tail auto-follow.
+// Shared by both setTableScroll and setHighlightScroll below: whichever view
+// last moved programmatically stamps it, and each view's own scroll listener
+// only cares about its own scrollTop, so sharing the timestamp is harmless.
 let lastProgrammaticScrollTs = 0;
 
 function setTableScroll(value) {
@@ -9622,6 +9655,7 @@ function computeHighlightMap(fileId) {
 }
 
 function setHighlightScroll(value) {
+  lastProgrammaticScrollTs = performance.now();
   highlightBody.scrollTop = Math.max(0, value);
 }
 
@@ -9665,6 +9699,19 @@ function renderHighlightView(colorMapIsFresh) {
     // start at the top of the new one (same as always).
     lastHighlightRootId = rootId;
     setHighlightScroll(0);
+    renderHighlightVisibleRows();
+    return;
+  }
+
+  // Re-render triggered by newly tailed entries: either follow to the bottom
+  // or leave the reading position exactly where it is — never reset to top.
+  // Mirrors renderTable()'s own pendingTableScroll handling (FEATURE_BACKLOG
+  // #25 — the Highlight/Full view now auto-follows tailed entries too,
+  // instead of always staying static while the Filtered view followed).
+  if (pendingHighlightScroll) {
+    const mode = pendingHighlightScroll;
+    pendingHighlightScroll = null;
+    if (mode === "bottom") setHighlightScroll(highlightBody.scrollHeight);
     renderHighlightVisibleRows();
     return;
   }
@@ -9736,6 +9783,20 @@ function renderHighlightVisibleRows() {
 
 let highlightScrollTicking = false;
 highlightBody.addEventListener("scroll", () => {
+  // Twin of #tableBody's own listener below (FEATURE_BACKLOG #25): manual
+  // scrolling away from the bottom of a tailed Highlight/Full view disengages
+  // auto-follow the same way it does for the Filtered view; scrolling back to
+  // the bottom (or the #tailJumpBtnHighlight button) re-engages it — see
+  // maybeReengageTailFollow below.
+  if (performance.now() - lastProgrammaticScrollTs > 150 && isTailedHighlightViewActive()) {
+    const distFromBottom = highlightBody.scrollHeight - highlightBody.clientHeight - highlightBody.scrollTop;
+    if (state.tailFollow && distFromBottom > ROW_HEIGHT * 1.5) {
+      state.tailFollow = false;
+      updateTailJumpBtn();
+    } else if (!state.tailFollow && distFromBottom <= ROW_HEIGHT * 1.5) {
+      maybeReengageTailFollow();
+    }
+  }
   if (highlightScrollTicking) return;
   highlightScrollTicking = true;
   requestAnimationFrame(() => { renderHighlightVisibleRows(); highlightScrollTicking = false; });
@@ -9746,14 +9807,18 @@ window.addEventListener("resize", () => renderHighlightVisibleRows());
 let scrollTicking = false;
 tableBody.addEventListener("scroll", () => {
   // Manual scrolling away from the bottom of a tailed view disengages
-  // auto-follow (the #tailJumpBtn re-engages it). Programmatic scrolls
-  // (follow itself, jump-to-entry, node switch) are recognized via the
-  // timestamp and never disengage.
-  if (performance.now() - lastProgrammaticScrollTs > 150 && state.tailFollow && isTailedLogViewActive()) {
+  // auto-follow; scrolling (or jumping — e.g. a "go to last row" shortcut)
+  // back to within reach of the bottom re-engages it, same effect as
+  // clicking #tailJumpBtn (FEATURE_BACKLOG #25) — see maybeReengageTailFollow.
+  // Programmatic scrolls (follow itself, jump-to-entry, node switch) are
+  // recognized via the timestamp and never trigger either transition here.
+  if (performance.now() - lastProgrammaticScrollTs > 150 && isTailedLogViewActive()) {
     const distFromBottom = tableBody.scrollHeight - tableBody.clientHeight - tableBody.scrollTop;
-    if (distFromBottom > ROW_HEIGHT * 1.5) {
+    if (state.tailFollow && distFromBottom > ROW_HEIGHT * 1.5) {
       state.tailFollow = false;
       updateTailJumpBtn();
+    } else if (!state.tailFollow && distFromBottom <= ROW_HEIGHT * 1.5) {
+      maybeReengageTailFollow();
     }
   }
   if (scrollTicking) return;
@@ -10779,8 +10844,12 @@ function applySelection(entryId) {
   state.selectedId = entryId;
   state.focusRegion = "entries";
   // Picking a row means the user wants to look at *this* entry — stop the
-  // view from being yanked to the bottom by incoming tailed entries.
-  if (state.tailFollow && isTailedLogViewActive()) {
+  // view from being yanked to the bottom by incoming tailed entries. Checks
+  // both views (FEATURE_BACKLOG #25): a row click in the Highlight/Full view
+  // must disengage follow there too, including while the Filtered pane next
+  // to it is showing a Link view (isTailedLogViewActive() alone misses that
+  // case, since it's gated on the Filtered/table pane specifically).
+  if (state.tailFollow && (isTailedLogViewActive() || isTailedHighlightViewActive())) {
     state.tailFollow = false;
     updateTailJumpBtn();
   }
@@ -11955,9 +12024,14 @@ window.addEventListener("drop", ev => {
    every filtered view updates live too.
 
    Display behavior: while state.tailFollow is true and the active node
-   belongs to a tailed file, the log view scrolls with the newest entry.
-   Scrolling up or clicking a row disengages follow; #tailJumpBtn
-   (bottom-right) jumps back to the end and re-engages it.
+   belongs to a tailed file, BOTH the Filtered view and the Highlight/Full
+   view scroll with the newest entry (FEATURE_BACKLOG #25 — the Highlight
+   view used to stay deliberately static). Scrolling away from the bottom or
+   clicking a row in either view disengages follow (one shared flag for
+   both); scrolling/jumping back within reach of the bottom of either view
+   re-engages it, same effect as clicking that view's own floating "Newest"
+   button (#tailJumpBtn / #tailJumpBtnHighlight, bottom-right) — see
+   maybeReengageTailFollow.
 
    Files loaded as plain File objects (Firefox, legacy <input>) are byte
    snapshots — they can't grow, so they simply never get a node.tail. */
@@ -12081,31 +12155,65 @@ function onTailChange(changedRootIds) {
   changedRootIds.forEach(id => { const n = state.nodes[id]; if (n) schedulePersistFileNode(n); });
   const activeRoot = state.activeId ? getRootFileId(state.activeId) : null;
   // Follow only moves the view when the file behind the *current* view grew.
-  pendingTableScroll =
-    activeRoot && changedRootIds.includes(activeRoot) && state.tailFollow ? "bottom" : "keep";
+  // Both the Filtered view's and the Highlight/Full view's own scroll are
+  // driven off the same decision (FEATURE_BACKLOG #25 — live-follow used to
+  // be Filtered-only) — see renderTable()/renderHighlightView()'s own
+  // pendingTableScroll/pendingHighlightScroll consumption.
+  const followThisChange = !!(activeRoot && changedRootIds.includes(activeRoot) && state.tailFollow);
+  pendingTableScroll = followThisChange ? "bottom" : "keep";
+  pendingHighlightScroll = followThisChange ? "bottom" : "keep";
   render();
   pendingTableScroll = null; // in case renderTable wasn't reached (extract/link view active)
+  pendingHighlightScroll = null; // in case renderHighlightView wasn't reached (extract view active)
 }
 
-// True while the log view is showing a node whose root file is being tailed —
-// the only situation in which follow / the jump button are meaningful.
-function isTailedLogViewActive() {
-  if (!state.activeId) return false;
+// True while the active node's root file is being tailed — the shared
+// precondition for follow / either jump button being meaningful at all.
+function activeTailedRoot() {
+  if (!state.activeId) return null;
   const rootId = getRootFileId(state.activeId);
   const root = rootId ? state.nodes[rootId] : null;
-  return !!(root && root.tail && !root.tail.failed && tableWrap.style.display !== "none");
+  return root && root.tail && !root.tail.failed ? root : null;
+}
+
+// True while the Filtered view specifically is showing a tailed node (not
+// Link/Extract, which carve out their own display in renderMainView).
+function isTailedLogViewActive() {
+  return !!(activeTailedRoot() && tableWrap.style.display !== "none");
+}
+
+// True while the Highlight/Full view is showing a tailed node. That view
+// always renders the active node's whole root file regardless of Link/
+// Extract mode in the Filtered pane next to it (see renderMainView), so it's
+// only gated on #fhSplit itself being visible — hidden for Extract, or with
+// no files loaded at all.
+function isTailedHighlightViewActive() {
+  return !!(activeTailedRoot() && fhSplit.style.display !== "none");
 }
 
 function updateTailJumpBtn() {
   tailJumpBtn.classList.toggle("hidden", !(isTailedLogViewActive() && !state.tailFollow));
+  tailJumpBtnHighlight.classList.toggle("hidden", !(isTailedHighlightViewActive() && !state.tailFollow));
 }
 
-tailJumpBtn.addEventListener("click", () => {
+// Re-engages follow mode without moving the view — used when a manual
+// scroll/jump (not just the jump button itself) lands within reach of the
+// bottom of a tailed view (see the tableBody/highlightBody scroll listeners
+// below). FEATURE_BACKLOG #25, person-requested: "ein scrollen/springen...
+// soll den gleichen Effekt haben wie der jump Button".
+function maybeReengageTailFollow() {
   state.tailFollow = true;
-  setTableScroll(tableBody.scrollHeight);
-  renderVisibleRows();
   updateTailJumpBtn();
-});
+}
+
+function jumpToTailedNewest() {
+  state.tailFollow = true;
+  if (isTailedLogViewActive()) { setTableScroll(tableBody.scrollHeight); renderVisibleRows(); }
+  if (isTailedHighlightViewActive()) { setHighlightScroll(highlightBody.scrollHeight); renderHighlightVisibleRows(); }
+  updateTailJumpBtn();
+}
+tailJumpBtn.addEventListener("click", jumpToTailedNewest);
+tailJumpBtnHighlight.addEventListener("click", jumpToTailedNewest);
 
 setInterval(tailTick, TAIL_POLL_MS);
 
