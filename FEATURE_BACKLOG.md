@@ -51,10 +51,6 @@ ideas, grouped by theme instead of by when/how they were added.
 23. **Per-file clock offset** — a manual `± N ms` correction applied to a file's timestamps before merge or sync. Device clocks drift, and today the only fix is to not compare.
 24. **Cross-file search (read-only)** — one term, hit counts per loaded file, click to jump. Stays inside the "no cross-file filter nodes" design rule precisely by not creating nodes.
 
-## Live tailing
-
-25. **Optional tail auto-follow for the Highlight view** — currently deliberately static while the Filter view follows tailed entries; revisit if live-tailing workflows want it too.
-
 ## Sharing & output
 
 26. **Export the current view** — the filtered result as `.log`/`.csv`/`.tsv`. Only the extraction table can leave the app as text today; session export is JSON for PhiLogg users, not data for Excel or a ticket. Copying selected log rows as raw text via Ctrl+C (Ctrl/Shift-click multi-select + `copyLogSelectionToClipboard`) already exists — column-wise copy and whole-view file export are still open.
