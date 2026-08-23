@@ -32,7 +32,6 @@ ideas, grouped by theme instead of by when/how they were added.
 8. **Dedup check on "Load filter…" / session import** — prevents duplicate branches when the same filter (tree) is loaded/imported again.
 9. **Autocomplete suggestions from recently used filter values/search terms** in the filter popup.
 11. **Mute (disable) a filter node instead of deleting it** — a muted node is skipped in the chain (its children evaluate against its parent) but stays in the tree with its colour, assertions, and children intact. Faster than delete+undo for "does this step matter?". Needs the flag threaded through every persistence carrier (see `CLAUDE.md`'s gotcha list).
-12. **Rename / label filter nodes** — a human-readable step name ("Step 3: calibration errors") shown instead of the raw value, mainly so an exported/shared analysis reads as a narrative rather than a stack of patterns.
 13. **"Why is this row here?" explain popup** — for the selected entry, show which node of the active chain matched it; for an entry visible only in the Full view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the existing "view sometimes doesn't refresh" class of confusion (see Known issues above).
 14. **Regex filter type** — a real `RegExp` alongside the wildcard-token text filter, with the same live match count, case-sensitivity, and target-column options. Complements (doesn't replace) the token language, which stays the friendlier default.
 
