@@ -7,10 +7,12 @@ see `FEATURE_BACKLOG.md`.
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (7,700+ lines, inline CSS,
+PhiLogg: a single self-contained `philogg.html` (~15,000 lines, inline CSS,
 vanilla JS — no framework, no build tooling). Personal tool for browser-based
 log analysis. Companion: `tests/philogg.regression.test.js` (jsdom
-regression suite, see `tests/README.md` for conventions).
+regression suite, see `tests/README.md` for conventions). Optional
+`desktop/` Electron wrapper adds file associations and a frameless window
+around the unmodified `philogg.html` — see `desktop/README.md`.
 
 ## Non-negotiables
 
