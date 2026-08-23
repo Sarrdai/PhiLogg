@@ -700,16 +700,21 @@
      rule overrides display at rest. float:left is harmless while hidden —
      it only takes effect once JS sets display back to "flex". */
   #fhTabs{display:none; float:left; margin:0 14px 6px 0;}
-  /* #btnPinBookmarks/#btnMultilineMsg/#btnColumns: persistent view-content
-     toggles that live in this row (between the Full/Filtered/Stacked tabs
-     and the level filter pills) rather than the header's popup-trigger
-     buttons — this row is where view content gets controlled, which is
-     what these three do. Deliberately keep `.toolbar-icon-btn`'s look
-     (icon buttons, not `.level-btn` pills): each is an additive/persistent
-     toggle, not a subtractive level filter, and looking identical to the
-     pills here would be confusing about what they actually do — same
-     reasoning that already kept #btnPinBookmarks out of #levelBar itself
-     (see "Pin bookmarks into the Filtered View" in PROJECT.md).
+  /* #btnPinBookmarks/#btnMultilineMsg/#btnColumns/#btnTextMatchHighlight:
+     persistent view-content toggles that live in this row (between the
+     Full/Filtered/Stacked tabs and the level filter pills) rather than the
+     header's popup-trigger buttons — this row is where view content gets
+     controlled, which is what these four do. Deliberately keep
+     `.toolbar-icon-btn`'s look (icon buttons, not `.level-btn` pills): each
+     is an additive/persistent toggle, not a subtractive level filter, and
+     looking identical to the pills here would be confusing about what they
+     actually do — same reasoning that already kept #btnPinBookmarks out of
+     #levelBar itself (see "Pin bookmarks into the Filtered View" in
+     PROJECT.md). #btnTextMatchHighlight joined this group this session,
+     person-requested move out of Settings (the master on/off for text-filter
+     match highlighting used to be a Settings dropdown option; now it's this
+     button, same "reach for it while looking at the view" tier as the other
+     three — see "Text-filter match highlighting" in PROJECT.md).
      float:left + the same right/bottom margin as #fhTabs/#levelBar keeps
      them pinned to the top-left line alongside those, participating in the
      same float flow described in the #viewBar comment above. No size
@@ -723,6 +728,7 @@
   #btnPinBookmarks{float:left; margin:0 14px 6px 0;}
   #btnMultilineMsg{float:left; margin:0 14px 6px 0;}
   #btnColumns{float:left; margin:0 14px 6px 0;}
+  #btnTextMatchHighlight{float:left; margin:0 14px 6px 0;}
 
   #breadcrumb{
     /* Deliberately plain block (not flex/grid, no new block-formatting
@@ -1610,10 +1616,11 @@
      flex row instead of a fixed 6-column grid, since this sits inside a
      settings-row-control alongside its label instead of a narrow popup. */
   #settingsAccentRow.hidden{display:none;}
-  /* "Show matches in ..." rows (Settings -> Behavior) — only meaningful once
-     the master mode above isn't "off", same show/hide-the-whole-row pattern
-     as #settingsAccentRow above rather than a greyed-out disabled look. */
-  .text-match-where-row.hidden{display:none;}
+  /* Text-filter match-highlighting settings rows (Settings -> Behavior) —
+     only meaningful once the master #btnTextMatchHighlight view-bar button
+     is on, same show/hide-the-whole-row pattern as #settingsAccentRow above
+     rather than a greyed-out disabled look. */
+  .text-match-settings-row.hidden{display:none;}
   .accent-picker{display:flex; flex-wrap:wrap; gap:6px; max-width:280px; justify-content:flex-end;}
   .accent-swatch{
     width:22px; height:22px; border-radius:50%; border:1px solid var(--border-soft);
@@ -2305,6 +2312,7 @@
         <button id="btnPinBookmarks" class="toolbar-icon-btn" title="Pin bookmarks into Filtered View"></button>
         <button id="btnMultilineMsg" class="toolbar-icon-btn" title="Multi-line message display (line breaks in the message)"></button>
         <button id="btnColumns" class="toolbar-icon-btn" title="Show/hide log view columns"></button>
+        <button id="btnTextMatchHighlight" class="toolbar-icon-btn" title="Highlight text-filter matches (Settings → Behavior configures what gets marked and where)"></button>
         <div id="levelBar"></div>
         <div id="breadcrumb"></div>
       </div>
@@ -2849,20 +2857,19 @@
                 </label>
               </div>
             </div>
-            <div class="settings-row">
+            <div class="settings-row text-match-settings-row" id="settingsTextMatchHighlightScopeRow">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsTextMatchHighlightMode">Highlight text-filter matches</label>
-                <div class="settings-row-hint">Marks the exact substring an active "text" filter matched, right inside the row/message it matched in.</div>
+                <label class="settings-row-label" for="settingsTextMatchHighlightScope">Which filters to mark</label>
+                <div class="settings-row-hint">The on/off switch itself lives in the view bar (next to the multi-line/pin-bookmarks buttons) — this only configures what gets marked once it's on.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsTextMatchHighlightMode">
-                  <option value="off">Off</option>
+                <select id="settingsTextMatchHighlightScope">
                   <option value="last">Only the active filter</option>
                   <option value="any">Any filter in the chain</option>
                 </select>
               </div>
             </div>
-            <div class="settings-row text-match-where-row" id="settingsTextMatchHighlightRowsRow">
+            <div class="settings-row text-match-settings-row" id="settingsTextMatchHighlightRowsRow">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightRows">Show matches in filtered rows</label>
                 <div class="settings-row-hint">Marks matches inline in the Filter view's own rows.</div>
@@ -2874,7 +2881,7 @@
                 </label>
               </div>
             </div>
-            <div class="settings-row text-match-where-row" id="settingsTextMatchHighlightDetailRow">
+            <div class="settings-row text-match-settings-row" id="settingsTextMatchHighlightDetailRow">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightDetail">Show matches in entry detail</label>
                 <div class="settings-row-hint">Marks matches in the bottom entry-detail panel. Independent of the row toggle above — turn both on for both.</div>
@@ -3077,6 +3084,10 @@ const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" st
 // "pin". See PROJECT.md "Multiline message display toggle".
 const ICON_MULTILINE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
 const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="1.3"/><path d="M6 2.7v10.6M10.3 2.7v10.6"/></svg>';
+// Highlighter-pen glyph for #btnTextMatchHighlight — a pen tip drawing an
+// underline stroke, standing in for "mark/highlight" the same way
+// ICON_MULTILINE's stacked lines stand in for "multi-line text".
+const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 2.6 13.4 6.4 7.2 12.6 3 13.4l0.8-4.2z"/><path d="M2 14.5h5"/></svg>';
 const ICON_HELP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M6.1 6.3a2 2 0 1 1 2.9 1.8c-.6.3-1 .8-1 1.5v.3"/><circle cx="8" cy="11.6" r="0.75" fill="currentColor" stroke="none"/></svg>';
 // Scales-of-justice glyph for the License popup (#btnLicense) — same stroke
 // weight/linecap treatment as the other header icons.
@@ -3650,22 +3661,30 @@ document.getElementById("settingsHoverChildNavMultistep").addEventListener("chan
 });
 
 /* ===================== Text-filter match highlighting settings (Settings ->
-   Behavior) — same tier/mechanism as the hover settings above (plain
-   localStorage flags). The actual highlighting logic/state
-   (textMatchHighlightMode/InRows/InDetail, getTextMatchHighlightNodes(), …)
-   lives up near textFilterMatches, closer to the match code it drives; this
-   is just the Settings-page wiring. See that section's own comment for the
-   three-state master and the two independent "where" toggles.
-   Master defaults to "last" (only the filter you're currently drilled into)
-   rather than "any" — the least noisy "on" state, and rather than "off"
-   since this is the actual feature being built, not an opt-out of existing
-   behavior. Both "where" toggles default on ("both"), matching the "in
-   Beiden" combination called out when the feature was requested. */
+   Behavior) — the master on/off lives on a view-bar toggle button
+   (#btnTextMatchHighlight, wired near #btnPinBookmarks/#btnMultilineMsg
+   further below — same plain-persistent-toggle shape), person-requested
+   move out of Settings this session. This block only wires the two things
+   Settings still owns once the feature is on: which filter nodes contribute
+   matches (textMatchHighlightScope) and where marks show up (InRows/
+   InDetail). Same tier/mechanism as the hover settings above otherwise
+   (plain localStorage flags). The actual highlighting logic/state lives up
+   near textFilterMatches, closer to the match code it drives; this is just
+   the Settings-page wiring.
+   Scope defaults to "last" (only the filter you're currently drilled into)
+   — the least noisy "on" state. Both "where" toggles default on ("both"),
+   matching the "in Beiden" combination called out when the feature was
+   requested. The master button itself also defaults on (see
+   updateTextMatchHighlightButton below). */
 function initTextMatchHighlightSettings() {
-  const storedMode = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_MODE_KEY);
-  textMatchHighlightMode = (storedMode === "off" || storedMode === "last" || storedMode === "any") ? storedMode : "last";
-  const modeSelect = document.getElementById("settingsTextMatchHighlightMode");
-  if (modeSelect) modeSelect.value = textMatchHighlightMode;
+  const enabledStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_ENABLED_KEY);
+  textMatchHighlightEnabled = enabledStored === null ? true : enabledStored === "1";
+  updateTextMatchHighlightButton();
+
+  const scopeStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_SCOPE_KEY);
+  textMatchHighlightScope = (scopeStored === "last" || scopeStored === "any") ? scopeStored : "last";
+  const scopeSelect = document.getElementById("settingsTextMatchHighlightScope");
+  if (scopeSelect) scopeSelect.value = textMatchHighlightScope;
 
   const rowsStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_ROWS_KEY);
   textMatchHighlightInRows = rowsStored === null ? true : rowsStored === "1";
@@ -3677,21 +3696,31 @@ function initTextMatchHighlightSettings() {
   const detailCb = document.getElementById("settingsTextMatchHighlightDetail");
   if (detailCb) detailCb.checked = textMatchHighlightInDetail;
 
-  updateTextMatchHighlightWhereRowsVisibility();
+  updateTextMatchHighlightSettingsRowsVisibility();
 }
 
-// Shows/hides the two "where" rows depending on whether the master mode is
-// "off" — same show/hide-the-whole-row pattern as #settingsAccentRow
-// (Appearance section) rather than a greyed-out disabled look.
-function updateTextMatchHighlightWhereRowsVisibility() {
-  const hide = textMatchHighlightMode === "off";
-  document.querySelectorAll(".text-match-where-row").forEach(row => row.classList.toggle("hidden", hide));
+// Reflects textMatchHighlightEnabled on the view-bar toggle button — called
+// after every toggle (the click handler near #btnMultilineMsg below) and
+// after settings re-init, same pattern as updatePinBookmarksButton/
+// updateMultilineMsgButton.
+function updateTextMatchHighlightButton() {
+  btnTextMatchHighlight.classList.toggle("active", textMatchHighlightEnabled);
 }
 
-document.getElementById("settingsTextMatchHighlightMode").addEventListener("change", ev => {
-  textMatchHighlightMode = ev.target.value;
-  localStorage.setItem(TEXT_MATCH_HIGHLIGHT_MODE_KEY, textMatchHighlightMode);
-  updateTextMatchHighlightWhereRowsVisibility();
+// Shows/hides the Settings rows that configure WHAT gets highlighted (scope
+// + the two "where" toggles) depending on whether the master button is on —
+// same show/hide-the-whole-row pattern as #settingsAccentRow (Appearance
+// section) rather than a greyed-out disabled look. Called both from Settings
+// init/changes and from the view-bar button's own click handler, so Settings
+// stays in sync even if the dialog happens to already be open.
+function updateTextMatchHighlightSettingsRowsVisibility() {
+  const hide = !textMatchHighlightEnabled;
+  document.querySelectorAll(".text-match-settings-row").forEach(row => row.classList.toggle("hidden", hide));
+}
+
+document.getElementById("settingsTextMatchHighlightScope").addEventListener("change", ev => {
+  textMatchHighlightScope = ev.target.value;
+  localStorage.setItem(TEXT_MATCH_HIGHLIGHT_SCOPE_KEY, textMatchHighlightScope);
   renderVisibleRows();
   updateDetailPanel();
 });
@@ -5366,17 +5395,24 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
    (and/or the entry detail panel) that a "text" filter node in the active
    chain actually matched — visible in place, no click needed.
 
-   Three-state master, textMatchHighlightMode (Settings -> Behavior):
-     - "off":  feature fully disabled, nothing computed or rendered.
-     - "last": only the active tree node itself, and only if it IS a "text"
-               filter — deliberately no falling back to a text-filter
-               ancestor when the active node is some other filter type.
-     - "any":  every "text" filter node in the active node's own ancestor
-               chain (getChain), root to active.
-   Two independent "where" toggles, only settable in the Settings UI while
-   the master isn't "off" (see the .text-match-where-row show/hide there):
-   textMatchHighlightInRows (the Filter view's own rows, #tableBody) and
-   textMatchHighlightInDetail (the bottom entry-detail panel).
+   Master on/off, textMatchHighlightEnabled — a view-bar toggle button
+   (#btnTextMatchHighlight, next to #btnPinBookmarks/#btnMultilineMsg/
+   #btnColumns), same plain-persistent-toggle shape as those, not a Settings
+   checkbox: person-requested (this session) move out of Settings, since it's
+   a per-viewing-session on/off switch someone reaches for constantly, same
+   tier as "pin bookmarks"/"multiline messages" rather than an app
+   preference. Settings -> Behavior keeps only the configuration of WHAT gets
+   highlighted once the feature is on:
+     - textMatchHighlightScope ("last" | "any"): "last" = only the active
+       tree node itself, and only if it IS a "text" filter — deliberately no
+       falling back to a text-filter ancestor when the active node is some
+       other filter type. "any" = every "text" filter node in the active
+       node's own ancestor chain (getChain), root to active.
+     - Two independent "where" toggles, only settable in the Settings UI
+       while the master button is on (see the .text-match-settings-row
+       show/hide there): textMatchHighlightInRows (the Filter view's own
+       rows, #tableBody) and textMatchHighlightInDetail (the bottom
+       entry-detail panel).
 
    Every node's own match test is re-run per entry (not "trust the chain
    already filtered this in") specifically so "or"/"link" nodes elsewhere in
@@ -5395,20 +5431,23 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
    Purely derived, runtime-only feature (no new filter-node field, nothing
    persisted on the node itself), so none of CLAUDE.md's "Known gotchas"
    persistence carriers need touching. */
-const TEXT_MATCH_HIGHLIGHT_MODE_KEY = "philogg-text-match-highlight-mode"; // "off" | "last" | "any"
+const TEXT_MATCH_HIGHLIGHT_ENABLED_KEY = "philogg-text-match-highlight-enabled";
+const TEXT_MATCH_HIGHLIGHT_SCOPE_KEY = "philogg-text-match-highlight-scope"; // "last" | "any"
 const TEXT_MATCH_HIGHLIGHT_ROWS_KEY = "philogg-text-match-highlight-rows";
 const TEXT_MATCH_HIGHLIGHT_DETAIL_KEY = "philogg-text-match-highlight-detail";
-let textMatchHighlightMode = "last";
+let textMatchHighlightEnabled = true;
+let textMatchHighlightScope = "last";
 let textMatchHighlightInRows = true;
 let textMatchHighlightInDetail = true;
 
 // Which "text" filter nodes to pull match ranges from right now, per
-// textMatchHighlightMode — see the section comment above.
+// textMatchHighlightEnabled/textMatchHighlightScope — see the section
+// comment above.
 function getTextMatchHighlightNodes() {
-  if (textMatchHighlightMode === "off") return [];
+  if (!textMatchHighlightEnabled) return [];
   const activeNode = state.nodes[state.activeId];
   if (!activeNode) return [];
-  if (textMatchHighlightMode === "last") {
+  if (textMatchHighlightScope === "last") {
     return (activeNode.type === "filter" && activeNode.filterType === "text") ? [activeNode] : [];
   }
   return getChain(state.activeId).filter(n => n.type === "filter" && n.filterType === "text");
@@ -6118,6 +6157,7 @@ const linkBody = el("#linkBody");
 const statusStrip = el("#statusStrip");
 const tableHeaderEl = el("#tableHeader");
 const btnColumns = el("#btnColumns");
+const btnTextMatchHighlight = el("#btnTextMatchHighlight");
 const columnsPanel = el("#columnsPanel");
 const btnResetColumns = el("#btnResetColumns");
 const columnToggleInputs = {
@@ -6333,21 +6373,23 @@ function renderMainView() {
   if (isExtract) {
     // Person-requested (this session): extract mode's #viewBar now shows
     // ONLY the filter path (#breadcrumb) — #fhTabs (no Highlight companion
-    // to switch to), #levelBar, and the three Filtered/Highlight-view-only
-    // toggles (#btnPinBookmarks/#btnMultilineMsg/#btnColumns) all hide,
-    // since none of them apply to what's actually on screen here (the
-    // extraction table has its own columns, and applyLevelFilter() inside
-    // renderExtractTable still runs on whatever the level quick-filter was
-    // last set to — just without a visible pill row to change it from while
-    // in this view). Previously only #fhTabs hid; #levelBar/the toggles
-    // used to stay visible-but-inert, which read as a layout glitch once
-    // #btnColumns joined them (see #btnColumns' own CSS comment for the
-    // actual bug that triggered this reconsideration).
+    // to switch to), #levelBar, and the four Filtered/Highlight-view-only
+    // toggles (#btnPinBookmarks/#btnMultilineMsg/#btnColumns/
+    // #btnTextMatchHighlight) all hide, since none of them apply to what's
+    // actually on screen here (the extraction table has its own columns,
+    // and applyLevelFilter() inside renderExtractTable still runs on
+    // whatever the level quick-filter was last set to — just without a
+    // visible pill row to change it from while in this view). Previously
+    // only #fhTabs hid; #levelBar/the toggles used to stay visible-but-inert,
+    // which read as a layout glitch once #btnColumns joined them (see
+    // #btnColumns' own CSS comment for the actual bug that triggered this
+    // reconsideration).
     fhTabs.style.display = "none";
     levelBarEl.style.display = "none";
     btnPinBookmarks.style.display = "none";
     btnMultilineMsg.style.display = "none";
     btnColumns.style.display = "none";
+    btnTextMatchHighlight.style.display = "none";
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
@@ -6366,6 +6408,7 @@ function renderMainView() {
   btnPinBookmarks.style.display = "";
   btnMultilineMsg.style.display = "";
   btnColumns.style.display = "";
+  btnTextMatchHighlight.style.display = "";
   fhSplit.style.display = "flex";
   // Highlight-rule matches are shown in both the Filtered view (renderTable/
   // renderVisibleRows) and the Full view (renderHighlightView) — computed
@@ -10848,6 +10891,23 @@ btnMultilineMsg.addEventListener("click", () => {
   state.multilineMessages = !state.multilineMessages;
   updateMultilineMsgButton();
   render();
+});
+
+// Master on/off for text-filter match highlighting — moved here from a
+// Settings dropdown option (person-requested, this session): reached for
+// while looking at the view, same tier as the two toggles above, rather than
+// an app preference. Settings -> Behavior still owns WHAT gets highlighted
+// once this is on (textMatchHighlightScope) and WHERE (InRows/InDetail) —
+// see initTextMatchHighlightSettings. renderVisibleRows()+updateDetailPanel()
+// rather than a full render(): toggling this never changes row heights or
+// which entries are shown, only whether <mark> spans get injected.
+btnTextMatchHighlight.addEventListener("click", () => {
+  textMatchHighlightEnabled = !textMatchHighlightEnabled;
+  localStorage.setItem(TEXT_MATCH_HIGHLIGHT_ENABLED_KEY, textMatchHighlightEnabled ? "1" : "0");
+  updateTextMatchHighlightButton();
+  updateTextMatchHighlightSettingsRowsVisibility(); // keep Settings in sync if it's already open
+  renderVisibleRows();
+  updateDetailPanel();
 });
 
 /* ===================== Log view column visibility / width (FEATURE_BACKLOG.md
@@ -15717,6 +15777,7 @@ btnBookmarks.innerHTML = ICON_BOOKMARK;
 btnPinBookmarks.innerHTML = ICON_PIN;
 btnMultilineMsg.innerHTML = ICON_MULTILINE;
 btnColumns.innerHTML = ICON_COLUMNS;
+btnTextMatchHighlight.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT;
 btnShortcuts.innerHTML = ICON_HELP;
 btnLicense.innerHTML = ICON_LICENSE;
 el("#brandVersion").textContent = PHILOGG_VERSION;
