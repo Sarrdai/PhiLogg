@@ -6574,26 +6574,30 @@ function nodeIconHTML(node) {
     : ICON_CLOCK;
 }
 
-// Colors a "level" filter node's tree-row label in the log level's own
-// color(s) (the same --level-error/-warn/-info/-debug theme vars the level
-// bar/log-row tinting already use — see levelClass), so which level(s) a
-// node filters reads at a glance without opening it. A single level gets a
-// plain solid color; several get a left-to-right gradient across them, in
-// canonical LEVELS order (matching the node's own name, e.g. "ERROR,
-// INFO"), via background-clip:text — shared by the real tree row
-// (renderNode) and the breadcrumb child-nav flyout (renderChildNavItem),
-// same "look identical either way" precedent as nodeIconHTML above.
-function applyLevelNodeLabelColor(label, levels) {
-  if (!levels || !levels.length) return;
-  if (levels.length === 1) {
-    label.style.color = "var(--level-" + levels[0].toLowerCase() + ")";
-    return;
-  }
-  const stops = levels.map(lvl => "var(--level-" + lvl.toLowerCase() + ")").join(", ");
-  label.style.backgroundImage = "linear-gradient(90deg, " + stops + ")";
-  label.style.webkitBackgroundClip = "text";
-  label.style.backgroundClip = "text";
-  label.style.color = "transparent";
+// Builds a "level" filter node's tree-row label content, each level name in
+// its own solid color (the same --level-error/-warn/-info/-debug theme vars
+// the level bar/log-row tinting already use — see levelClass) — no
+// gradient/blending, so which level(s) a node filters reads as distinct
+// colored words, comma-separated exactly like the node's plain-text name
+// (e.g. "ERROR, INFO"). Real DOM nodes (createElement/textContent), not an
+// HTML string, so an unknown/corrupt value (e.g. from a hand-edited filter
+// file — importFilterJson doesn't otherwise validate a "level" node's value
+// array contents) can never inject markup; an unrecognized entry just
+// renders in the default text color instead of a level color. Shared by the
+// real tree row (renderNode) and the breadcrumb child-nav flyout
+// (renderChildNavItem), same "look identical either way" precedent as
+// nodeIconHTML above.
+function buildLevelNodeLabelContent(node) {
+  const frag = document.createDocumentFragment();
+  if (node.inverted) frag.appendChild(document.createTextNode("¬ "));
+  (node.value || []).forEach((lvl, i) => {
+    if (i > 0) frag.appendChild(document.createTextNode(", "));
+    const word = document.createElement("span");
+    if (LEVELS.includes(lvl)) word.style.color = "var(--level-" + lvl.toLowerCase() + ")";
+    word.textContent = lvl;
+    frag.appendChild(word);
+  });
+  return frag;
 }
 
 function renderTree() {
@@ -6881,9 +6885,9 @@ function renderNode(id, depth) {
 
   const label = document.createElement("span");
   label.className = "tree-label";
-  label.textContent = node.inverted ? "¬ " + node.name : node.name;
+  if (node.type === "filter" && node.filterType === "level") label.appendChild(buildLevelNodeLabelContent(node));
+  else label.textContent = node.inverted ? "¬ " + node.name : node.name;
   label.title = (node.inverted ? "Inverted (NOT): " : "") + node.name;
-  if (node.type === "filter" && node.filterType === "level") applyLevelNodeLabelColor(label, node.value);
   row.appendChild(label);
 
   const typeTag = document.createElement("span");
@@ -7106,8 +7110,8 @@ function renderChildNavItem(nodeId, level) {
 
   const label = document.createElement("span");
   label.className = "tree-label";
-  label.textContent = node.inverted ? "¬ " + node.name : node.name;
-  if (node.type === "filter" && node.filterType === "level") applyLevelNodeLabelColor(label, node.value);
+  if (node.type === "filter" && node.filterType === "level") label.appendChild(buildLevelNodeLabelContent(node));
+  else label.textContent = node.inverted ? "¬ " + node.name : node.name;
   row.appendChild(label);
 
   const tag = document.createElement("span");

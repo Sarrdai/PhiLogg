@@ -9827,59 +9827,67 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 95 — "level" filter node tree-row label colored by log level(s)
+   GROUP 95 — "level" filter node tree-row label colored by log level(s),
+   each word its own solid color (no gradient)
    Origin: this session (2026-08-23), person-requested follow-up to Group
    94's level-tree-node feature: "schreibe die Einträge im Files & Filter
    Tree in der Farbe des Log Levels. auch kombiniert wenn mehrere Level an
-   sind." A single level tints the label in that level's own theme color
-   (var(--level-error) etc., the same vars the level bar/log-row tinting
-   already use); several levels get a left-to-right gradient across them,
-   in canonical LEVELS order, via background-clip:text.
+   sind." First cut used a background-clip:text gradient for a combined
+   node; same-day follow-up ("ohne Farbgradient, jedes Wort in der eigenen
+   Farbe") replaced that with one <span> per level name, each in that
+   level's own solid theme color, comma-separated exactly like the node's
+   plain-text name.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("95. \"level\" filter node tree-row label colored by log level(s)");
+  section("95. \"level\" filter node tree-row label: each level word its own solid color");
 
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   T.state.activeId = f.id;
   w.render();
 
-  /* ---------- Single level: solid color, no gradient ---------- */
+  /* ---------- Single level: one colored word, no gradient/clip styling anywhere ---------- */
   const errorNode = w.createFilterNode(f.id, "level", ["ERROR"]);
   w.render();
   let label = d.querySelector('.tree-row[data-node-id="' + errorNode.id + '"] .tree-label');
-  assert(label.style.color === "var(--level-error)", "a single-level node's label is tinted in that level's own color, got " + label.style.color);
-  assert(!label.style.backgroundImage, "no gradient applied for a single level");
+  let words = [...label.querySelectorAll("span")];
+  assert(words.length === 1 && words[0].textContent === "ERROR" && words[0].style.color === "var(--level-error)",
+    "a single-level node's label has one span, colored in that level's own color");
+  assert(!label.style.color && !label.style.backgroundImage, "no color/gradient on the label element itself — coloring lives on the per-word span");
 
-  /* ---------- Combined levels: left-to-right gradient, canonical order ---------- */
+  /* ---------- Combined levels: each word its own color, comma-separated, no gradient ---------- */
   const comboNode = w.createFilterNode(f.id, "level", ["ERROR", "INFO"]);
   w.render();
   label = d.querySelector('.tree-row[data-node-id="' + comboNode.id + '"] .tree-label');
-  assert(label.style.backgroundImage === "linear-gradient(90deg, var(--level-error), var(--level-info))",
-    "combined levels get a left-to-right gradient across their own colors, in canonical LEVELS order, got " + label.style.backgroundImage);
-  assert(label.style.color === "transparent" && (label.style.webkitBackgroundClip === "text" || label.style.backgroundClip === "text"),
-    "gradient text is clipped to the label via background-clip:text, with color:transparent underneath");
+  words = [...label.querySelectorAll("span")];
+  assert(words.length === 2 && words[0].textContent === "ERROR" && words[0].style.color === "var(--level-error)"
+    && words[1].textContent === "INFO" && words[1].style.color === "var(--level-info)",
+    "combined levels render as two separately-colored words, ERROR red / INFO blue, no blended gradient between them");
+  assert(label.textContent === "ERROR, INFO", "the words plus separator read exactly like the node's plain-text name");
+  assert(!label.style.backgroundImage && !label.style.webkitBackgroundClip, "no gradient/background-clip styling used anywhere for the combined case");
 
-  // Order is canonical (LEVELS order), not click/creation order — a node
-  // built as [INFO, ERROR] out of order still isn't produced by the real
-  // UI (applyLevelSelectionToTree always sorts), but getEntries/name/color
-  // all key off whatever's actually in `value`, so this just documents
-  // that the gradient follows array order as authored.
+  // Word order follows the node's own value array order (canonical LEVELS
+  // order in practice, since that's what applyLevelSelectionToTree always
+  // writes) — not click/creation order.
   const reorderedNode = w.createFilterNode(f.id, "level", ["WARN", "DEBUG"]);
   w.render();
   label = d.querySelector('.tree-row[data-node-id="' + reorderedNode.id + '"] .tree-label');
-  assert(label.style.backgroundImage === "linear-gradient(90deg, var(--level-warn), var(--level-debug))",
-    "gradient stop order follows the node's value array order");
+  words = [...label.querySelectorAll("span")];
+  assert(words[0].textContent === "WARN" && words[0].style.color === "var(--level-warn)"
+    && words[1].textContent === "DEBUG" && words[1].style.color === "var(--level-debug)",
+    "word/color order follows the node's value array order");
 
-  /* ---------- A non-"level" filter node gets no color styling at all ---------- */
+  /* ---------- A non-"level" filter node gets no span/color styling at all ---------- */
   const textNode = w.createFilterNode(f.id, "text", "message 1");
   w.render();
   label = d.querySelector('.tree-row[data-node-id="' + textNode.id + '"] .tree-label');
-  assert(!label.style.color && !label.style.backgroundImage, "a plain text filter node's label is untouched (no level color/gradient)");
+  assert(label.querySelectorAll("span").length === 0 && label.textContent === "“message 1”",
+    "a plain text filter node's label is untouched — plain text, no spans");
 
-  /* ---------- Breadcrumb child-nav flyout row mirrors the same coloring ---------- */
-  const flyoutRow = w.renderChildNavItem(errorNode.id, 0);
-  const flyoutLabel = flyoutRow.querySelector(".tree-label");
-  assert(flyoutLabel.style.color === "var(--level-error)", "the child-nav flyout row (renderChildNavItem) mirrors the tree row's own level coloring");
+  /* ---------- Breadcrumb child-nav flyout row mirrors the same per-word coloring ---------- */
+  const flyoutRow = w.renderChildNavItem(comboNode.id, 0);
+  const flyoutWords = [...flyoutRow.querySelector(".tree-label").querySelectorAll("span")];
+  assert(flyoutWords.length === 2 && flyoutWords[0].style.color === "var(--level-error)" && flyoutWords[1].style.color === "var(--level-info)",
+    "the child-nav flyout row (renderChildNavItem) mirrors the tree row's own per-word coloring");
 });
 
 /* ============================================================
@@ -11261,13 +11269,16 @@ process.exit(failed ? 1 : 0);
               default would otherwise silently change what those clicks do.
    Group 95  — this session (2026-08-23), person-requested follow-up to
               Group 94: a "level" filter node's tree-row label is now
-              colored by the log level(s) it filters — a single level in
-              that level's own var(--level-error/-warn/-info/-debug) theme
-              color, several as a left-to-right gradient across them (in
-              the node's own value array order) via background-clip:text.
-              Shared by the real tree row (renderNode) and the breadcrumb
-              child-nav flyout row (renderChildNavItem). Non-"level" nodes
-              are untouched.
+              colored by the log level(s) it filters — each level name its
+              own <span>, in that level's own var(--level-error/-warn/-info/
+              -debug) theme color, comma-separated exactly like the node's
+              plain-text name. Same-day follow-up ("ohne Farbgradient, jedes
+              Wort in der eigenen Farbe") replaced an initial
+              background-clip:text gradient approach with this per-word
+              solid-color version — assertions rewritten in place, not a new
+              group. Shared by the real tree row (renderNode) and the
+              breadcrumb child-nav flyout row (renderChildNavItem). Non-
+              "level" nodes are untouched.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
