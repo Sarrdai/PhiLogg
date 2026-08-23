@@ -9827,6 +9827,62 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 95 — "level" filter node tree-row label colored by log level(s)
+   Origin: this session (2026-08-23), person-requested follow-up to Group
+   94's level-tree-node feature: "schreibe die Einträge im Files & Filter
+   Tree in der Farbe des Log Levels. auch kombiniert wenn mehrere Level an
+   sind." A single level tints the label in that level's own theme color
+   (var(--level-error) etc., the same vars the level bar/log-row tinting
+   already use); several levels get a left-to-right gradient across them,
+   in canonical LEVELS order, via background-clip:text.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("95. \"level\" filter node tree-row label colored by log level(s)");
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  /* ---------- Single level: solid color, no gradient ---------- */
+  const errorNode = w.createFilterNode(f.id, "level", ["ERROR"]);
+  w.render();
+  let label = d.querySelector('.tree-row[data-node-id="' + errorNode.id + '"] .tree-label');
+  assert(label.style.color === "var(--level-error)", "a single-level node's label is tinted in that level's own color, got " + label.style.color);
+  assert(!label.style.backgroundImage, "no gradient applied for a single level");
+
+  /* ---------- Combined levels: left-to-right gradient, canonical order ---------- */
+  const comboNode = w.createFilterNode(f.id, "level", ["ERROR", "INFO"]);
+  w.render();
+  label = d.querySelector('.tree-row[data-node-id="' + comboNode.id + '"] .tree-label');
+  assert(label.style.backgroundImage === "linear-gradient(90deg, var(--level-error), var(--level-info))",
+    "combined levels get a left-to-right gradient across their own colors, in canonical LEVELS order, got " + label.style.backgroundImage);
+  assert(label.style.color === "transparent" && (label.style.webkitBackgroundClip === "text" || label.style.backgroundClip === "text"),
+    "gradient text is clipped to the label via background-clip:text, with color:transparent underneath");
+
+  // Order is canonical (LEVELS order), not click/creation order — a node
+  // built as [INFO, ERROR] out of order still isn't produced by the real
+  // UI (applyLevelSelectionToTree always sorts), but getEntries/name/color
+  // all key off whatever's actually in `value`, so this just documents
+  // that the gradient follows array order as authored.
+  const reorderedNode = w.createFilterNode(f.id, "level", ["WARN", "DEBUG"]);
+  w.render();
+  label = d.querySelector('.tree-row[data-node-id="' + reorderedNode.id + '"] .tree-label');
+  assert(label.style.backgroundImage === "linear-gradient(90deg, var(--level-warn), var(--level-debug))",
+    "gradient stop order follows the node's value array order");
+
+  /* ---------- A non-"level" filter node gets no color styling at all ---------- */
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  w.render();
+  label = d.querySelector('.tree-row[data-node-id="' + textNode.id + '"] .tree-label');
+  assert(!label.style.color && !label.style.backgroundImage, "a plain text filter node's label is untouched (no level color/gradient)");
+
+  /* ---------- Breadcrumb child-nav flyout row mirrors the same coloring ---------- */
+  const flyoutRow = w.renderChildNavItem(errorNode.id, 0);
+  const flyoutLabel = flyoutRow.querySelector(".tree-label");
+  assert(flyoutLabel.style.color === "var(--level-error)", "the child-nav flyout row (renderChildNavItem) mirrors the tree row's own level coloring");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -11203,6 +11259,15 @@ process.exit(failed ? 1 : 0);
               first so they keep exercising the classic Set-based path
               exactly as originally written, since "auto" becoming the
               default would otherwise silently change what those clicks do.
+   Group 95  — this session (2026-08-23), person-requested follow-up to
+              Group 94: a "level" filter node's tree-row label is now
+              colored by the log level(s) it filters — a single level in
+              that level's own var(--level-error/-warn/-info/-debug) theme
+              color, several as a left-to-right gradient across them (in
+              the node's own value array order) via background-clip:text.
+              Shared by the real tree row (renderNode) and the breadcrumb
+              child-nav flyout row (renderChildNavItem). Non-"level" nodes
+              are untouched.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

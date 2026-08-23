@@ -6574,6 +6574,28 @@ function nodeIconHTML(node) {
     : ICON_CLOCK;
 }
 
+// Colors a "level" filter node's tree-row label in the log level's own
+// color(s) (the same --level-error/-warn/-info/-debug theme vars the level
+// bar/log-row tinting already use — see levelClass), so which level(s) a
+// node filters reads at a glance without opening it. A single level gets a
+// plain solid color; several get a left-to-right gradient across them, in
+// canonical LEVELS order (matching the node's own name, e.g. "ERROR,
+// INFO"), via background-clip:text — shared by the real tree row
+// (renderNode) and the breadcrumb child-nav flyout (renderChildNavItem),
+// same "look identical either way" precedent as nodeIconHTML above.
+function applyLevelNodeLabelColor(label, levels) {
+  if (!levels || !levels.length) return;
+  if (levels.length === 1) {
+    label.style.color = "var(--level-" + levels[0].toLowerCase() + ")";
+    return;
+  }
+  const stops = levels.map(lvl => "var(--level-" + lvl.toLowerCase() + ")").join(", ");
+  label.style.backgroundImage = "linear-gradient(90deg, " + stops + ")";
+  label.style.webkitBackgroundClip = "text";
+  label.style.backgroundClip = "text";
+  label.style.color = "transparent";
+}
+
 function renderTree() {
   renderFolderWatchList();
   treeEl.innerHTML = "";
@@ -6861,6 +6883,7 @@ function renderNode(id, depth) {
   label.className = "tree-label";
   label.textContent = node.inverted ? "¬ " + node.name : node.name;
   label.title = (node.inverted ? "Inverted (NOT): " : "") + node.name;
+  if (node.type === "filter" && node.filterType === "level") applyLevelNodeLabelColor(label, node.value);
   row.appendChild(label);
 
   const typeTag = document.createElement("span");
@@ -7084,6 +7107,7 @@ function renderChildNavItem(nodeId, level) {
   const label = document.createElement("span");
   label.className = "tree-label";
   label.textContent = node.inverted ? "¬ " + node.name : node.name;
+  if (node.type === "filter" && node.filterType === "level") applyLevelNodeLabelColor(label, node.value);
   row.appendChild(label);
 
   const tag = document.createElement("span");
