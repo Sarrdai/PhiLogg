@@ -1616,11 +1616,6 @@
      flex row instead of a fixed 6-column grid, since this sits inside a
      settings-row-control alongside its label instead of a narrow popup. */
   #settingsAccentRow.hidden{display:none;}
-  /* Text-filter match-highlighting settings rows (Settings -> Behavior) —
-     only meaningful once the master #btnTextMatchHighlight view-bar button
-     is on, same show/hide-the-whole-row pattern as #settingsAccentRow above
-     rather than a greyed-out disabled look. */
-  .text-match-settings-row.hidden{display:none;}
   .accent-picker{display:flex; flex-wrap:wrap; gap:6px; max-width:280px; justify-content:flex-end;}
   .accent-swatch{
     width:22px; height:22px; border-radius:50%; border:1px solid var(--border-soft);
@@ -2857,10 +2852,10 @@
                 </label>
               </div>
             </div>
-            <div class="settings-row text-match-settings-row" id="settingsTextMatchHighlightScopeRow">
+            <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightScope">Which filters to mark</label>
-                <div class="settings-row-hint">The on/off switch itself lives in the view bar (next to the multi-line/pin-bookmarks buttons) — this only configures what gets marked once it's on.</div>
+                <div class="settings-row-hint">Your standing preference for text-filter match highlighting — always editable here regardless of the view bar's on/off button, which just quickly toggles whatever is configured below.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsTextMatchHighlightScope">
@@ -2869,7 +2864,7 @@
                 </select>
               </div>
             </div>
-            <div class="settings-row text-match-settings-row" id="settingsTextMatchHighlightRowsRow">
+            <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightRows">Show matches in filtered rows</label>
                 <div class="settings-row-hint">Marks matches inline in the Filter view's own rows.</div>
@@ -2881,7 +2876,7 @@
                 </label>
               </div>
             </div>
-            <div class="settings-row text-match-settings-row" id="settingsTextMatchHighlightDetailRow">
+            <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightDetail">Show matches in entry detail</label>
                 <div class="settings-row-hint">Marks matches in the bottom entry-detail panel. Independent of the row toggle above — turn both on for both.</div>
@@ -3661,16 +3656,21 @@ document.getElementById("settingsHoverChildNavMultistep").addEventListener("chan
 });
 
 /* ===================== Text-filter match highlighting settings (Settings ->
-   Behavior) — the master on/off lives on a view-bar toggle button
-   (#btnTextMatchHighlight, wired near #btnPinBookmarks/#btnMultilineMsg
-   further below — same plain-persistent-toggle shape), person-requested
-   move out of Settings this session. This block only wires the two things
-   Settings still owns once the feature is on: which filter nodes contribute
-   matches (textMatchHighlightScope) and where marks show up (InRows/
-   InDetail). Same tier/mechanism as the hover settings above otherwise
-   (plain localStorage flags). The actual highlighting logic/state lives up
-   near textFilterMatches, closer to the match code it drives; this is just
-   the Settings-page wiring.
+   Behavior) — a standing preference, always visible/editable here regardless
+   of the master on/off's current state. The master itself lives on a
+   view-bar toggle button (#btnTextMatchHighlight, wired near
+   #btnPinBookmarks/#btnMultilineMsg further below — same
+   plain-persistent-toggle shape), person-requested move out of Settings
+   this session; a same-day follow-up then explicitly asked for these rows
+   to NOT hide/depend on that button's state — the button is just a quick
+   on/off flip over whatever's configured here, not a gate on configuring it
+   ("es soll also keine Abhängigkeit der Settings vom Zustand des Buttons im
+   Hauptfenster geben"). This block wires the two things Settings owns:
+   which filter nodes contribute matches (textMatchHighlightScope) and where
+   marks show up (InRows/InDetail). Same tier/mechanism as the hover
+   settings above otherwise (plain localStorage flags). The actual
+   highlighting logic/state lives up near textFilterMatches, closer to the
+   match code it drives; this is just the Settings-page wiring.
    Scope defaults to "last" (only the filter you're currently drilled into)
    — the least noisy "on" state. Both "where" toggles default on ("both"),
    matching the "in Beiden" combination called out when the feature was
@@ -3695,8 +3695,6 @@ function initTextMatchHighlightSettings() {
   textMatchHighlightInDetail = detailStored === null ? true : detailStored === "1";
   const detailCb = document.getElementById("settingsTextMatchHighlightDetail");
   if (detailCb) detailCb.checked = textMatchHighlightInDetail;
-
-  updateTextMatchHighlightSettingsRowsVisibility();
 }
 
 // Reflects textMatchHighlightEnabled on the view-bar toggle button — called
@@ -3705,17 +3703,6 @@ function initTextMatchHighlightSettings() {
 // updateMultilineMsgButton.
 function updateTextMatchHighlightButton() {
   btnTextMatchHighlight.classList.toggle("active", textMatchHighlightEnabled);
-}
-
-// Shows/hides the Settings rows that configure WHAT gets highlighted (scope
-// + the two "where" toggles) depending on whether the master button is on —
-// same show/hide-the-whole-row pattern as #settingsAccentRow (Appearance
-// section) rather than a greyed-out disabled look. Called both from Settings
-// init/changes and from the view-bar button's own click handler, so Settings
-// stays in sync even if the dialog happens to already be open.
-function updateTextMatchHighlightSettingsRowsVisibility() {
-  const hide = !textMatchHighlightEnabled;
-  document.querySelectorAll(".text-match-settings-row").forEach(row => row.classList.toggle("hidden", hide));
 }
 
 document.getElementById("settingsTextMatchHighlightScope").addEventListener("change", ev => {
@@ -5408,11 +5395,11 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
        falling back to a text-filter ancestor when the active node is some
        other filter type. "any" = every "text" filter node in the active
        node's own ancestor chain (getChain), root to active.
-     - Two independent "where" toggles, only settable in the Settings UI
-       while the master button is on (see the .text-match-settings-row
-       show/hide there): textMatchHighlightInRows (the Filter view's own
-       rows, #tableBody) and textMatchHighlightInDetail (the bottom
-       entry-detail panel).
+     - Two independent "where" toggles, always visible/editable in Settings
+       regardless of the master button's state (a standing preference, not
+       gated by it): textMatchHighlightInRows (the Filter view's own rows,
+       #tableBody) and textMatchHighlightInDetail (the bottom entry-detail
+       panel).
 
    Every node's own match test is re-run per entry (not "trust the chain
    already filtered this in") specifically so "or"/"link" nodes elsewhere in
@@ -10896,16 +10883,18 @@ btnMultilineMsg.addEventListener("click", () => {
 // Master on/off for text-filter match highlighting — moved here from a
 // Settings dropdown option (person-requested, this session): reached for
 // while looking at the view, same tier as the two toggles above, rather than
-// an app preference. Settings -> Behavior still owns WHAT gets highlighted
-// once this is on (textMatchHighlightScope) and WHERE (InRows/InDetail) —
-// see initTextMatchHighlightSettings. renderVisibleRows()+updateDetailPanel()
-// rather than a full render(): toggling this never changes row heights or
-// which entries are shown, only whether <mark> spans get injected.
+// an app preference. Just a quick flip of whatever's configured in Settings
+// -> Behavior (textMatchHighlightScope/InRows/InDetail — see
+// initTextMatchHighlightSettings), which stays fully visible/editable there
+// regardless of this button's state (explicit follow-up request: no
+// dependency of Settings on the button). renderVisibleRows()+
+// updateDetailPanel() rather than a full render(): toggling this never
+// changes row heights or which entries are shown, only whether <mark>
+// spans get injected.
 btnTextMatchHighlight.addEventListener("click", () => {
   textMatchHighlightEnabled = !textMatchHighlightEnabled;
   localStorage.setItem(TEXT_MATCH_HIGHLIGHT_ENABLED_KEY, textMatchHighlightEnabled ? "1" : "0");
   updateTextMatchHighlightButton();
-  updateTextMatchHighlightSettingsRowsVisibility(); // keep Settings in sync if it's already open
   renderVisibleRows();
   updateDetailPanel();
 });

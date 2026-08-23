@@ -9534,10 +9534,12 @@ await withApp(async (w, d, T) => {
    on/off is a view-bar toggle button, #btnTextMatchHighlight (same
    plain-persistent-toggle shape as #btnPinBookmarks/#btnMultilineMsg,
    person-requested move out of Settings same-day follow-up). Settings ->
-   Behavior keeps only #settingsTextMatchHighlightScope ("last"/"any",
-   default "last") and the two independent "where" toggles,
-   #settingsTextMatchHighlightRows/-Detail (both default ON) — all three
-   rows only visible while the master button is on.
+   Behavior keeps #settingsTextMatchHighlightScope ("last"/"any", default
+   "last") and the two independent "where" toggles,
+   #settingsTextMatchHighlightRows/-Detail (both default ON) — a same-day
+   follow-up explicitly asked for these rows to stay visible/editable
+   regardless of the master button's state (a standing preference the button
+   just flips, not a gate on configuring it).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("93. Text-filter match highlighting");
@@ -9546,25 +9548,30 @@ await withApp(async (w, d, T) => {
   const scopeSelect = d.querySelector("#settingsTextMatchHighlightScope");
   const rowsCb = d.querySelector("#settingsTextMatchHighlightRows");
   const detailCb = d.querySelector("#settingsTextMatchHighlightDetail");
-  const scopeRow = d.querySelector("#settingsTextMatchHighlightScopeRow");
-  const rowsRow = d.querySelector("#settingsTextMatchHighlightRowsRow");
-  const detailRow = d.querySelector("#settingsTextMatchHighlightDetailRow");
 
   // --- Defaults ---
   assert(btn.classList.contains("active") && T.textMatchHighlightEnabled === true, "master view-bar button defaults ON");
   assert(scopeSelect.value === "last" && T.textMatchHighlightScope === "last", "settings scope defaults to 'last'");
   assert(rowsCb.checked === true && T.textMatchHighlightInRows === true, "'show in rows' defaults ON");
   assert(detailCb.checked === true && T.textMatchHighlightInDetail === true, "'show in entry detail' defaults ON");
-  assert(isVisible(scopeRow, w) && isVisible(rowsRow, w) && isVisible(detailRow, w), "all three settings rows are visible while the master button is on");
+  assert(isVisible(scopeSelect, w) && isVisible(rowsCb, w) && isVisible(detailCb, w), "all three settings controls are visible");
 
-  // --- Clicking the master button off hides all three settings rows ---
+  // --- Clicking the master button off does NOT hide/disable the Settings
+  //     controls — they stay a fully editable standing preference, only the
+  //     highlighting itself (checked separately below) is suppressed ---
   fireClick(btn, w);
   assert(!T.textMatchHighlightEnabled && !btn.classList.contains("active"), "clicking the button turns the master off");
   assert(w.localStorage.getItem("philogg-text-match-highlight-enabled") === "0", "master state persisted as off");
-  assert(!isVisible(scopeRow, w) && !isVisible(rowsRow, w) && !isVisible(detailRow, w), "turning the master button off hides all three settings rows");
+  assert(isVisible(scopeSelect, w) && !scopeSelect.disabled, "scope select stays visible and enabled while the master button is off");
+  assert(isVisible(rowsCb, w) && !rowsCb.disabled && isVisible(detailCb, w) && !detailCb.disabled,
+    "both 'where' toggles stay visible and enabled too — no dependency of Settings on the button's state");
+  scopeSelect.value = "any";
+  scopeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.textMatchHighlightScope === "any", "the scope preference is still changeable while the master button is off");
+  scopeSelect.value = "last";
+  scopeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
   fireClick(btn, w);
   assert(T.textMatchHighlightEnabled && btn.classList.contains("active"), "clicking it again turns the master back on");
-  assert(isVisible(scopeRow, w), "settings rows reappear once the master is on again");
 
   // file -> nodeA (text "alpha", matches everything) -> nodeB (text "1",
   // scoped to the message column — a column-less filter searches the whole
@@ -11032,11 +11039,13 @@ process.exit(failed ? 1 : 0);
               fallback to a text-filter ancestor; "any" = every text-filter
               node in the active chain) plus two independent "where"
               toggles (#settingsTextMatchHighlightRows/-Detail, both default
-              ON); all three settings rows hidden while the master button is
-              off. Highlighting is scoped per-column for a filter restricted
-              to specific target columns, and covers wildcard/value-token
-              text filters too (numeric conditions re-checked per
-              occurrence).
+              ON); a same-day follow-up made all three a standing preference
+              that stays visible/editable in Settings regardless of the
+              master button's on/off state — the button is just a quick
+              flip over whatever's configured there. Highlighting is scoped
+              per-column for a filter restricted to specific target columns,
+              and covers wildcard/value-token text filters too (numeric
+              conditions re-checked per occurrence).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
