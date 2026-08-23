@@ -73,7 +73,6 @@ ideas, grouped by theme instead of by when/how they were added.
 
 ## Settings & UI polish
 
-30. **Settings cleanup** — more internal structure/subdivisions within the existing sections (Appearance/Behavior/Log Formats), which today are each just a flat list of rows.
 31. **Fix filter-chain layout when "Level bar creates filter tree nodes" is set to "explicit" (manual)** — the extra "Add to tree" button that mode shows breaks/shifts the layout.
 32. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
 33. **Breadcrumb hover should also work on nodes further back in the current chain**, not just the current/active one, so a new branch can be picked from there too.
