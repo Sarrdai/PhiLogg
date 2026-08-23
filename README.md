@@ -27,6 +27,15 @@ open it in a browser to view it.
 - **Nested filter tree** — chain text, time-range, value-extraction, AND/OR,
   nearest-neighbor link, time-context and count-context filters; each level
   narrows/transforms the result of the one above it.
+- **Level bar can write into the filter tree** — by default, clicking
+  ERROR/WARN/INFO/DEBUG on the level bar creates/edits a real, undoable
+  filter-tree node at your current position, instead of a separate global
+  toggle. Its label is colored in the log level's own color, each level
+  name its own solid color when several are combined on one node (e.g.
+  "ERROR, INFO" shown as a red word and a blue word, no blending). Settings
+  → Behavior can switch this to "Manual" to keep the original
+  tree-independent quick-filter, with an "Add to tree" button to push the
+  current selection in on demand.
 - **Text-filter match highlighting** — see exactly which substring an active
   text filter matched, marked inline in the Filter view's rows and/or the
   entry-detail panel. Toggle it on/off from the view bar (next to the
