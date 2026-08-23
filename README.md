@@ -30,9 +30,11 @@ open it in a browser to view it.
 - **Level bar can write into the filter tree** — by default, clicking
   ERROR/WARN/INFO/DEBUG on the level bar creates/edits a real, undoable
   filter-tree node at your current position, instead of a separate global
-  toggle. Settings → Behavior can switch this to "Manual" to keep the
-  original tree-independent quick-filter, with an "Add to tree" button to
-  push the current selection in on demand.
+  toggle. Its label is colored in the log level's own color (a gradient
+  across colors when several levels are combined on one node). Settings →
+  Behavior can switch this to "Manual" to keep the original
+  tree-independent quick-filter, with an "Add to tree" button to push the
+  current selection in on demand.
 - **Text-filter match highlighting** — see exactly which substring an active
   text filter matched, marked inline in the Filter view's rows and/or the
   entry-detail panel. Toggle it on/off from the view bar (next to the
