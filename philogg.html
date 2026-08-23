@@ -575,6 +575,12 @@
     white-space:nowrap; font-size:12.3px;
   }
   [data-type="file"] > .tree-row .tree-label{font-weight:600; color:var(--text-primary);}
+  .tree-rename-input{
+    width:100%; min-width:0; font:inherit; font-size:12.3px; color:var(--text-primary);
+    background:var(--bg-app); border:1px solid var(--accent); border-radius:4px;
+    padding:1px 4px; margin:-1px 0;
+  }
+  .tree-rename-input:focus{outline:none;}
   .tree-type-tag{
     flex:0 0 auto; font-family:var(--font-mono); font-size:8.5px; font-weight:700;
     letter-spacing:.3px; color:var(--text-tertiary); background:var(--bg-elevated-2);
@@ -3005,7 +3011,8 @@
     <div class="bookmarks-panel-title">Keyboard shortcuts</div>
     <div id="shortcuts">
       <div><kbd>Ctrl</kbd>+<kbd>F</kbd> — new filter on selected node</div>
-      <div><kbd>F2</kbd> or right-click — edit a filter</div>
+      <div><kbd>F2</kbd> or right-click — rename a filter (display label, doesn't change its pattern)</div>
+      <div><kbd>Ctrl</kbd>+<kbd>E</kbd> or right-click — edit a filter</div>
       <div><kbd>Ctrl</kbd>+<kbd>C</kbd> copy · <kbd>Ctrl</kbd>+<kbd>X</kbd> cut a filter</div>
       <div><kbd>Ctrl</kbd>+<kbd>V</kbd> — paste under selected node</div>
       <div>Right-click a node — copy/cut/paste/delete</div>
@@ -3013,7 +3020,7 @@
       <div>Drag a filter onto another node to move it there</div>
       <div><kbd>Del</kbd> — delete selected filter</div>
       <div><kbd>Ctrl</kbd>+<kbd>W</kbd> — close the currently open file</div>
-      <div>Double-click a filter — edit it (same as F2/right-click)</div>
+      <div>Double-click a filter — edit it (same as Ctrl+E/right-click)</div>
       <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo (delete/move/edit)</div>
       <div><kbd>B</kbd> — bookmark the selected row</div>
       <div>Drag the divider right of the tree, above the detail panel, or (in Stacked view) between Full and Filtered to resize</div>
@@ -3100,9 +3107,13 @@ const ICON_HELP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" s
 // Scales-of-justice glyph for the License popup (#btnLicense) — same stroke
 // weight/linecap treatment as the other header icons.
 const ICON_LICENSE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v11.5"/><path d="M4.5 3.6h7"/><path d="M2 6.4 4.3 3.6 6.6 6.4a2.3 2.3 0 0 1-4.6 0Z"/><path d="M9.4 6.4l2.3-2.8 2.3 2.8a2.3 2.3 0 0 1-4.6 0Z"/><path d="M5.3 13.5h5.4"/></svg>';
-// Pencil icon for the tree context menu's "Edit filter…" action (F2 or
+// Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
+// Price-tag glyph for the tree context menu's "Rename…" action (FEATURE_BACKLOG.md
+// #12 — F2 or right-click any filter node, see startRenameNode). Distinct from
+// ICON_EDIT: this sets a display label, not the filter's actual value.
+const ICON_RENAME = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.3 2 3a1 1 0 0 1 1-1h5.3L14 8.7 8.7 14 2 8.3Z"/><circle cx="5.3" cy="5.3" r="1" fill="currentColor" stroke="none"/></svg>';
 // Ascending-bars icon for a "level" filter node (FEATURE_BACKLOG.md #10) —
 // used both in the tree (nodeIconHTML) and on the level bar's "Add to
 // tree" button (explicit mode, see initLevelFilterTreeModeSettings).
@@ -4861,7 +4872,7 @@ function createAndOrNode(parentId, linkedId, mode) {
   if (!parent || !linked) return null;
   const symbol = mode === "and" ? " ∧ " : " ∨ ";
   const node = {
-    id: uid("n"), type: "filter", name: parent.name + symbol + linked.name,
+    id: uid("n"), type: "filter", name: nodeDisplayName(parent) + symbol + nodeDisplayName(linked),
     parentId, children: [], filterType: mode, value: null, linkedId, inverted: false,
   };
   state.nodes[node.id] = node;
@@ -5026,7 +5037,7 @@ function createContextNode(parentId, beforeMs, afterMs) {
   if (beforeMs > 0) parts.push("−" + formatDuration(beforeMs));
   if (afterMs > 0) parts.push("+" + formatDuration(afterMs));
   const node = {
-    id: uid("n"), type: "filter", name: parent.name + " ± " + parts.join("/"),
+    id: uid("n"), type: "filter", name: nodeDisplayName(parent) + " ± " + parts.join("/"),
     parentId, children: [], filterType: "context", value: null,
     contextBefore: beforeMs, contextAfter: afterMs, inverted: false,
   };
@@ -5070,7 +5081,7 @@ function createCountContextNode(parentId, beforeCount, afterCount) {
   if (beforeCount > 0) parts.push("−" + beforeCount);
   if (afterCount > 0) parts.push("+" + afterCount);
   const node = {
-    id: uid("n"), type: "filter", name: parent.name + " ± " + parts.join("/"),
+    id: uid("n"), type: "filter", name: nodeDisplayName(parent) + " ± " + parts.join("/"),
     parentId, children: [], filterType: "countContext", value: null,
     countBefore: beforeCount, countAfter: afterCount, inverted: false,
   };
@@ -5289,6 +5300,7 @@ function cloneSubtree(nodeId, newParentId) {
   if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
   if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
   if (orig.highlightColor) clone.highlightColor = orig.highlightColor;
+  if (orig.label) clone.label = orig.label;
   state.nodes[clone.id] = clone;
   orig.children.forEach(childId => {
     const childClone = cloneSubtree(childId, clone.id);
@@ -5922,6 +5934,7 @@ function snapshotSubtree(nodeId) {
   if (node.caseSensitive) copy.caseSensitive = true;
   if (node.columns) copy.columns = node.columns.slice();
   if (node.highlightColor) copy.highlightColor = node.highlightColor;
+  if (node.label) copy.label = node.label;
   return copy;
 }
 
@@ -5957,6 +5970,7 @@ function restoreSubtree(snap) {
   if (snap.caseSensitive) node.caseSensitive = true;
   if (snap.columns) node.columns = snap.columns;
   if (snap.highlightColor) node.highlightColor = snap.highlightColor;
+  if (snap.label) node.label = snap.label;
   state.nodes[node.id] = node;
   node.children = snap.children.map(c => restoreSubtree(c).id);
   return node;
@@ -6008,6 +6022,7 @@ function deleteFilterNodeWithUndo(nodeId) {
 function captureNodeFields(node) {
   return {
     filterType: node.filterType, value: node.value, inverted: !!node.inverted, name: node.name,
+    label: node.label,
     ignoredColumns: node.ignoredColumns ? node.ignoredColumns.slice() : undefined,
     caseSensitive: !!node.caseSensitive,
     columns: node.columns ? node.columns.slice() : undefined,
@@ -6017,6 +6032,7 @@ function captureNodeFields(node) {
 function applyNodeFields(node, fields) {
   node.filterType = fields.filterType; node.value = fields.value;
   node.inverted = fields.inverted; node.name = fields.name;
+  if (fields.label) node.label = fields.label; else delete node.label;
   if (fields.ignoredColumns) node.ignoredColumns = fields.ignoredColumns.slice(); else delete node.ignoredColumns;
   if (fields.caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
   if (fields.columns) node.columns = fields.columns.slice(); else delete node.columns;
@@ -6050,6 +6066,22 @@ function toggleInvertWithUndo(nodeId) {
     // used for move/delete is needed here too.
     invalidateAllCaches();
   });
+}
+
+// Sets/clears a node's custom display label (FEATURE_BACKLOG.md #12 — "Rename
+// / label filter nodes"). node.name stays the auto-derived raw-value text
+// untouched (still what editing/library-save/etc. fall back to); node.label,
+// when present, is what the tree/breadcrumb/etc. show instead — see
+// nodeDisplayName. No invalidateAllCaches: a label never affects which
+// entries match, only how the node reads. A no-op rename (trimmed value
+// equals the current label) is skipped so cancelling/re-confirming an
+// unchanged rename doesn't spam the undo stack.
+function renameFilterNodeWithUndo(nodeId, rawLabel) {
+  const node = state.nodes[nodeId];
+  if (!node) return;
+  const next = (rawLabel || "").trim() || undefined;
+  if (next === node.label) return;
+  withFieldEditUndo(nodeId, n => { if (next) n.label = next; else delete n.label; });
 }
 
 function moveFilterNodeWithUndo(nodeId, newParentId) {
@@ -6716,7 +6748,8 @@ function renderGhostRow(sn, depth) {
   row.appendChild(icon);
   const label = document.createElement("span");
   label.className = "tree-label";
-  label.textContent = sn.inverted ? "¬ " + sn.name : sn.name;
+  const ghostName = sn.label || sn.name;
+  label.textContent = sn.inverted ? "¬ " + ghostName : ghostName;
   row.appendChild(label);
   const tag = document.createElement("span");
   tag.className = "tree-type-tag";
@@ -6778,11 +6811,11 @@ let lastTreeRowClickId = null;
 let lastTreeRowClickTime = 0;
 const TREE_DBLCLICK_MS = 450;
 
-// Opens the same edit dialog the F2 shortcut and the tree's right-click
-// "Edit filter…" item do, for whichever of the two dialogs the node's
-// filterType maps to (see openTreeContextMenu's own comment on this split).
-// Shared by F2, the context-menu action, and a tree row's double-click, so
-// all three stay in sync. Returns whether a dialog was actually opened, for
+// Opens the same edit dialog Ctrl+E and the tree's right-click "Edit
+// filter…" item do, for whichever of the two dialogs the node's filterType
+// maps to (see openTreeContextMenu's own comment on this split). Shared by
+// Ctrl+E, the context-menu action, and a tree row's double-click, so all
+// three stay in sync. Returns whether a dialog was actually opened, for
 // callers that need to know (a "not editable" type is a silent no-op here).
 function editFilterNode(nodeId) {
   const node = state.nodes[nodeId];
@@ -6796,6 +6829,42 @@ function editFilterNode(nodeId) {
     return true;
   }
   return false;
+}
+
+// The id of the node currently being renamed, or null when no rename is in progress (F2, or the
+// context menu's "Rename…" — see startRenameNode). renderNode checks this to
+// swap the plain label span for a text input on that one row; null for
+// everyone else. Module-level rather than state.* since it's pure transient
+// UI (never persisted, never undoable on its own — only the committed label
+// change is).
+let renamingNodeId = null;
+
+// FEATURE_BACKLOG.md #12, "Rename / label filter nodes": starts an inline
+// rename on any filter node (every filterType, not just the text/extract
+// pair editFilterNode covers — a "step name" makes sense on an and/or/link/
+// context/level node just as much as a text filter). File nodes keep their
+// real name (their identity IS the source file), so this is a no-op there.
+// Returns whether a rename actually started, same "false = silent no-op"
+// convention as editFilterNode, so F2's keydown handler can decide whether
+// to preventDefault.
+function startRenameNode(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter") return false;
+  renamingNodeId = nodeId;
+  state.activeId = nodeId;
+  state.focusRegion = "tree";
+  render();
+  return true;
+}
+
+// Shared by every place a filter/level/and/or/... node's name is shown to
+// the user (tree row, breadcrumb, child-nav flyout, context menu header,
+// ...): a node.label (see renameFilterNodeWithUndo) overrides the
+// auto-derived node.name for DISPLAY only — node.name itself is untouched,
+// so anything that needs the actual pattern (Edit dialog, library save
+// default, etc.) still reads it directly.
+function nodeDisplayName(node) {
+  return (node.type === "filter" && node.label) ? node.label : node.name;
 }
 
 // Grayed placeholder row for a file still waiting its turn in a multi-file
@@ -6824,6 +6893,52 @@ function renderQueuedFileRow(node, depth) {
   row.appendChild(label);
   wrap.appendChild(row);
   return wrap;
+}
+
+// The text input renderNode swaps in for a row's .tree-label while
+// startRenameNode has it active. Committing (Enter/blur) and cancelling
+// (Escape) both clear renamingNodeId and re-render — the row then goes back
+// through the plain nodeDisplayName branch above. `done` guards against
+// running both: Enter commits directly (not via input.blur() — a real
+// browser DOES fire "blur" synchronously off that, but nothing guarantees
+// the input is actually focused at all when Enter lands, so committing
+// can't depend on blur firing), and render() then removes the input from
+// the document, which triggers a real blur on its own; the guard makes that
+// second call a no-op instead of a duplicate commit/undo entry. Focus/select
+// is deferred a frame: at the point this function runs the input is still a
+// detached DOM node (renderTree only attaches each root's whole subtree
+// once it's fully built), so a synchronous .focus() here would silently
+// no-op.
+function renderRenameInput(id, node) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "tree-rename-input";
+  input.value = node.label || "";
+  input.placeholder = node.name;
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    renamingNodeId = null;
+    renameFilterNodeWithUndo(id, input.value);
+    render();
+  };
+  const cancel = () => {
+    if (done) return;
+    done = true;
+    renamingNodeId = null;
+    render();
+  };
+  input.addEventListener("mousedown", ev => ev.stopPropagation());
+  input.addEventListener("click", ev => ev.stopPropagation());
+  input.addEventListener("keydown", ev => {
+    ev.stopPropagation(); // don't let Delete/arrows/etc. reach the tree's global keydown handler while typing
+    if (ev.key === "Enter") { ev.preventDefault(); commit(); }
+    else if (ev.key === "Escape") { ev.preventDefault(); cancel(); }
+  });
+  input.addEventListener("blur", commit);
+  requestAnimationFrame(() => { input.focus(); input.select(); });
+  return input;
 }
 
 function renderNode(id, depth) {
@@ -6885,9 +7000,16 @@ function renderNode(id, depth) {
 
   const label = document.createElement("span");
   label.className = "tree-label";
-  if (node.type === "filter" && node.filterType === "level") label.appendChild(buildLevelNodeLabelContent(node));
-  else label.textContent = node.inverted ? "¬ " + node.name : node.name;
-  label.title = (node.inverted ? "Inverted (NOT): " : "") + node.name;
+  if (id === renamingNodeId) {
+    label.appendChild(renderRenameInput(id, node));
+  } else if (node.type === "filter" && node.filterType === "level" && !node.label) {
+    label.appendChild(buildLevelNodeLabelContent(node));
+  } else {
+    const displayName = nodeDisplayName(node);
+    label.textContent = node.inverted ? "¬ " + displayName : displayName;
+  }
+  label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
+    (node.label ? "  [" + node.name + "]" : "");
   row.appendChild(label);
 
   const typeTag = document.createElement("span");
@@ -7028,8 +7150,8 @@ function renderBreadcrumb() {
     const isCurrent = node.id === state.activeId;
     const chip = document.createElement("span");
     chip.className = "crumb" + (isCurrent ? " current" : "");
-    chip.textContent = node.name;
-    chip.title = "Select in the filter tree: " + node.name;
+    chip.textContent = nodeDisplayName(node);
+    chip.title = "Select in the filter tree: " + nodeDisplayName(node);
     // Same single-select behavior as a plain (non-Ctrl) tree-row click —
     // lets the breadcrumb double as a quick "jump to an ancestor filter"
     // shortcut without touching the tree's own click handler.
@@ -7110,8 +7232,11 @@ function renderChildNavItem(nodeId, level) {
 
   const label = document.createElement("span");
   label.className = "tree-label";
-  if (node.type === "filter" && node.filterType === "level") label.appendChild(buildLevelNodeLabelContent(node));
-  else label.textContent = node.inverted ? "¬ " + node.name : node.name;
+  if (node.type === "filter" && node.filterType === "level" && !node.label) label.appendChild(buildLevelNodeLabelContent(node));
+  else {
+    const displayName = nodeDisplayName(node);
+    label.textContent = node.inverted ? "¬ " + displayName : displayName;
+  }
   row.appendChild(label);
 
   const tag = document.createElement("span");
@@ -9821,7 +9946,7 @@ function renderSidebarRail() {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "sidebar-rail-marker" + (node.id === state.activeId ? " active" : "");
-      btn.title = node.name + " — " + getEntries(node.id).length.toLocaleString("de-DE");
+      btn.title = nodeDisplayName(node) + " — " + getEntries(node.id).length.toLocaleString("de-DE");
       if (node.type === "file") {
         btn.innerHTML = node.merged ? ICON_MERGE : ICON_FILE;
       } else {
@@ -12411,7 +12536,7 @@ function renderFilterTargetChain() {
     }
     const chip = document.createElement("span");
     chip.className = "crumb" + (i === chain.length - 1 ? " current" : "");
-    chip.textContent = node.name;
+    chip.textContent = nodeDisplayName(node);
     filterTargetChainEl.appendChild(chip);
   });
 }
@@ -13041,6 +13166,11 @@ function openTreeContextMenu(ev, clickedId) {
     const GROUP_ORDER = ["edit", "clipboard", "library", "danger"];
     const buckets = { edit: [], clipboard: [], library: [], danger: [] };
     if (node.type === "filter") {
+      // Rename (FEATURE_BACKLOG.md #12) works on every filterType — a
+      // human-readable step name makes sense on and/or/link/context/level
+      // nodes just as much as a plain text filter — so it's unconditional,
+      // unlike "Edit filter…" below.
+      buckets.edit.push({ action: "rename", label: "Rename…", icon: ICON_RENAME });
       // "text"/"extract" have a plain value the filter popup's single input
       // can represent (see openEditFilterPopup); "after"/"before"/"timerange"
       // go through the dedicated time-range dialog instead (see
@@ -13096,7 +13226,7 @@ function openTreeContextMenu(ev, clickedId) {
       .map(section => section.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join(""))
       .join('<div class="ctx-sep"></div>');
 
-    html = '<div class="ctx-meta">' + escapeHtml(node.name) + "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
+    html = '<div class="ctx-meta">' + escapeHtml(nodeDisplayName(node)) + "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
   }
 
   treeContextMenu.innerHTML = html;
@@ -13125,6 +13255,10 @@ treeContextMenu.addEventListener("click", ev => {
 
   // Single-node actions operate on treeCtxId (the node the menu was opened
   // for), mirroring exactly what Ctrl+C/X/V/Delete do for state.activeId.
+  if (action === "rename") {
+    if (treeCtxId) startRenameNode(treeCtxId);
+    return;
+  }
   if (action === "edit") {
     if (treeCtxId) editFilterNode(treeCtxId);
     return;
@@ -13236,7 +13370,7 @@ function openLinkDialog(ids) {
   const nodes = ids.map(id => state.nodes[id]).filter(Boolean);
   if (nodes.length < 2) return;
   linkDialogIds = nodes.map(n => n.id);
-  linkRefSelect.innerHTML = nodes.map(n => '<option value="' + n.id + '">' + escapeHtml(n.name) + "</option>").join("");
+  linkRefSelect.innerHTML = nodes.map(n => '<option value="' + n.id + '">' + escapeHtml(nodeDisplayName(n)) + "</option>").join("");
   linkOrderEnforceInput.checked = false;
   linkExclusiveInput.checked = false;
   renderLinkHops();
@@ -13257,13 +13391,13 @@ function renderLinkHops() {
   linkHopRows = hopIds.map((targetId, i) => {
     const target = state.nodes[targetId];
     const anchorText = i === 0
-      ? "each " + escapeHtml(refNode ? refNode.name : "") + " entry"
+      ? "each " + escapeHtml(refNode ? nodeDisplayName(refNode) : "") + " entry"
       : "the previous match";
     const row = document.createElement("div");
     row.className = "link-hop-row";
     row.innerHTML =
       '<span class="link-hop-desc">Find the <input type="number" class="link-hop-n" min="1" value="1">' +
-      'th <b>' + escapeHtml(target ? target.name : "") + '</b> entry ' +
+      'th <b>' + escapeHtml(target ? nodeDisplayName(target) : "") + '</b> entry ' +
       '<select class="link-hop-dir"><option value="before">before</option><option value="after">after</option></select> ' +
       '<span class="link-hop-anchor">' + anchorText + '</span></span>';
     row.querySelector(".link-hop-dir").value = "before";
@@ -13514,6 +13648,7 @@ function serializeFilterBranch(nodeId) {
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
+    if (node.label) out.label = node.label;
     return out;
   }
 
@@ -13557,7 +13692,7 @@ async function saveFilterToFile(nodeId) {
     roots: branch.roots,
   }, null, 2);
 
-  const suggested = (node.name.replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "filter") + ".json";
+  const suggested = (nodeDisplayName(node).replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "filter") + ".json";
   if (window.showSaveFilePicker) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -13661,6 +13796,7 @@ function importFilterJson(text) {
       node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
     }
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
+    if (sn.label && typeof sn.label === "string") node.label = sn.label;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
     if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });
@@ -13807,7 +13943,7 @@ function closeFilterLibrarySaveDialog() { filterLibrarySaveDialog.classList.add(
 function openFilterLibrarySaveDialog(nodeId) {
   filterLibrarySaveTargetId = nodeId;
   const node = state.nodes[nodeId];
-  filterLibraryNameInput.value = node ? node.name : "";
+  filterLibraryNameInput.value = node ? nodeDisplayName(node) : "";
   filterLibrarySaveDialog.classList.remove("hidden");
   filterLibraryNameInput.focus();
   filterLibraryNameInput.select();
@@ -14492,7 +14628,16 @@ document.addEventListener("keydown", ev => {
     return;
   }
 
+  // FEATURE_BACKLOG.md #12, "Rename / label filter nodes" — F2 now starts an
+  // inline rename (it used to open the Edit dialog, moved to Ctrl+E right
+  // below, same Explorer/VS Code-style split those two editors use: F2 =
+  // rename, a separate shortcut = edit the actual value).
   if (ev.key === "F2") {
+    if (startRenameNode(state.activeId)) ev.preventDefault();
+    return;
+  }
+
+  if ((ev.ctrlKey || ev.metaKey) && key === "e") {
     if (editFilterNode(state.activeId)) ev.preventDefault();
     return;
   }
@@ -14882,6 +15027,7 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
+    if (node.label) out.label = node.label;
     return out;
   }
 
@@ -15007,6 +15153,7 @@ function materializeCachedFilters(fileNode, roots) {
       node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
     }
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
+    if (sn.label && typeof sn.label === "string") node.label = sn.label;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
     if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });
