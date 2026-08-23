@@ -27,6 +27,11 @@ open it in a browser to view it.
 - **Nested filter tree** — chain text, time-range, value-extraction, AND/OR,
   nearest-neighbor link, time-context and count-context filters; each level
   narrows/transforms the result of the one above it.
+- **Text-filter match highlighting** — see exactly which substring an active
+  text filter matched, marked inline in the Filter view's rows and/or the
+  entry-detail panel. Settings → Behavior controls whether it shows only the
+  filter you're currently drilled into or every text filter in the chain
+  (or is off entirely), and where the marks appear.
 - **Hover the breadcrumb to navigate deeper** — hover the active filter's
   chip in the breadcrumb to pop up its children as a clickable flyout, no
   need to open the tree sidebar. Two Settings → Behavior toggles: turn the
