@@ -130,6 +130,9 @@ async function withApp(run, opts = {}) {
       get hoverChildNavEnabled() { return hoverChildNavEnabled; },
       get hoverChildNavMultistep() { return hoverChildNavMultistep; },
       get childNavPanels() { return childNavPanels; },
+      get textMatchHighlightMode() { return textMatchHighlightMode; },
+      get textMatchHighlightInRows() { return textMatchHighlightInRows; },
+      get textMatchHighlightInDetail() { return textMatchHighlightInDetail; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -9522,6 +9525,142 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 93 — Text-filter match highlighting (this session, 2026-08-23,
+   person-requested alternative implementation of FEATURE_BACKLOG.md #13's
+   "why is this row here" popup idea — that entry itself is left untouched).
+   Marks the substring an active "text" filter node actually matched, right
+   inside the Filter view's rows and/or the entry-detail panel. Three-state
+   master #settingsTextMatchHighlightMode ("off"/"last"/"any", default
+   "last") plus two independent "where" toggles, #settingsTextMatchHighlightRows
+   and #settingsTextMatchHighlightDetail (both default ON), only visible
+   while the master isn't "off".
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("93. Text-filter match highlighting");
+
+  const modeSelect = d.querySelector("#settingsTextMatchHighlightMode");
+  const rowsCb = d.querySelector("#settingsTextMatchHighlightRows");
+  const detailCb = d.querySelector("#settingsTextMatchHighlightDetail");
+  const rowsRow = d.querySelector("#settingsTextMatchHighlightRowsRow");
+  const detailRow = d.querySelector("#settingsTextMatchHighlightDetailRow");
+
+  // --- Defaults ---
+  assert(modeSelect.value === "last" && T.textMatchHighlightMode === "last", "master mode defaults to 'last'");
+  assert(rowsCb.checked === true && T.textMatchHighlightInRows === true, "'show in rows' defaults ON");
+  assert(detailCb.checked === true && T.textMatchHighlightInDetail === true, "'show in entry detail' defaults ON");
+  assert(isVisible(rowsRow, w) && isVisible(detailRow, w), "both 'where' rows are visible while the master mode isn't off");
+
+  // --- Master "off" hides both 'where' rows ---
+  modeSelect.value = "off";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.localStorage.getItem("philogg-text-match-highlight-mode") === "off", "master mode persisted as off");
+  assert(!isVisible(rowsRow, w) && !isVisible(detailRow, w), "turning the master mode off hides both 'where' rows");
+  modeSelect.value = "last";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(isVisible(rowsRow, w), "'where' rows reappear once the master mode is on again");
+
+  // file -> nodeA (text "alpha", matches everything) -> nodeB (text "1",
+  // scoped to the message column — a column-less filter searches the whole
+  // raw line, see textFilterMatches, and the raw line's date/hour always
+  // contains a "1", which would make this scenario trivially match every
+  // row; matches messages containing "1": msg 1 and 10-19 = 11 of 20, same
+  // shape as GROUP 2's substring assertion).
+  const f = await w.addFile("app.log", makeLog(0, 20, { msgPrefix: "alpha" }), () => {});
+  const nodeA = w.createFilterNode(f.id, "text", "alpha", false, null, false, ["message"]);
+  const nodeB = w.createFilterNode(nodeA.id, "text", "1", false, null, false, ["message"]);
+
+  // --- "last" mode, active = nodeB (a text filter): only nodeB's match
+  //     ("1") is marked, not nodeA's ("alpha") ---
+  T.state.activeId = nodeB.id;
+  w.render();
+  let msgEl = d.querySelector("#tableRows .log-row .col-msg");
+  assert(msgEl.innerHTML.includes('<mark class="text-match-mark">1</mark>'), "'last' mode marks the active node's own match");
+  assert(!msgEl.innerHTML.includes(">alpha<") && !/<mark[^>]*>alpha<\/mark>/.test(msgEl.innerHTML),
+    "'last' mode does NOT mark the ancestor's match, only the active node's");
+
+  // --- "last" mode, active = nodeA itself (also a text filter): nodeA's
+  //     own match ("alpha") is marked ---
+  T.state.activeId = nodeA.id;
+  w.render();
+  msgEl = d.querySelector("#tableRows .log-row .col-msg");
+  assert(/<mark class="text-match-mark">alpha<\/mark>/i.test(msgEl.innerHTML), "'last' mode on nodeA marks nodeA's own match");
+
+  // --- "any" mode, active = nodeB: BOTH ancestor chain matches are marked ---
+  modeSelect.value = "any";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  T.state.activeId = nodeB.id;
+  w.render();
+  msgEl = d.querySelector("#tableRows .log-row .col-msg");
+  assert(/<mark class="text-match-mark">alpha<\/mark>/i.test(msgEl.innerHTML) && msgEl.innerHTML.includes('<mark class="text-match-mark">1</mark>'),
+    "'any' mode marks matches from every text-filter node in the chain, not just the active one");
+
+  // --- "last" mode with the active node NOT a text filter: no highlight at
+  //     all, even though its parent (nodeB) is a text filter — no fallback
+  //     to a text-filter ancestor, per the explicit design decision ---
+  modeSelect.value = "last";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const afterNode = w.createFilterNode(nodeB.id, "after", f.entries[0].ts);
+  T.state.activeId = afterNode.id;
+  w.render();
+  msgEl = d.querySelector("#tableRows .log-row .col-msg");
+  assert(!/<mark/.test(msgEl.innerHTML), "'last' mode shows no highlight when the active node itself isn't a text filter (no ancestor fallback)");
+  assert(w.getTextMatchHighlightNodes().length === 0, "getTextMatchHighlightNodes() returns nothing for a non-text active node in 'last' mode");
+
+  // --- Column-scoped text filter: a "thread"-restricted filter marks the
+  //     Thread column, not the Message column (per the "highlight in the
+  //     matching column" design decision) ---
+  const threadNode = w.createFilterNode(f.id, "text", "main", false, null, false, ["thread"]);
+  T.state.activeId = threadNode.id;
+  w.render();
+  const row = d.querySelector("#tableRows .log-row");
+  assert(/<mark class="text-match-mark">main<\/mark>/i.test(row.querySelector(".col-thread").innerHTML), "a thread-scoped filter marks the Thread column");
+  assert(!/<mark/.test(row.querySelector(".col-msg").innerHTML), "...and does NOT mark the Message column, which the filter isn't scoped to");
+
+  // --- "Show in rows" OFF suppresses row marks; "show in entry detail" is
+  //     independent and keeps working ---
+  T.state.activeId = nodeB.id;
+  w.render();
+  rowsCb.checked = false;
+  rowsCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.localStorage.getItem("philogg-text-match-highlight-rows") === "0", "'show in rows' persisted off");
+  msgEl = d.querySelector("#tableRows .log-row .col-msg");
+  assert(!/<mark/.test(msgEl.innerHTML), "turning off 'show in rows' removes row marks immediately");
+
+  T.state.selectedId = f.entries[1].id; // message "alpha 1" — contains nodeB's "1" match
+  w.updateDetailPanel();
+  const detailMsgEl = d.querySelector("#detailMessage");
+  assert(/<mark class="text-match-mark">1<\/mark>/.test(detailMsgEl.innerHTML), "entry-detail message still marks matches while row-highlighting is off (independent toggle)");
+
+  detailCb.checked = false;
+  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.localStorage.getItem("philogg-text-match-highlight-detail") === "0", "'show in entry detail' persisted off");
+  w.updateDetailPanel();
+  assert(!/<mark/.test(d.querySelector("#detailMessage").innerHTML), "turning off 'show in entry detail' removes detail-panel marks immediately");
+  assert(d.querySelector("#detailMessage").textContent.length > 0, "detail message text itself is still shown (falls back to plain textContent, not emptied)");
+
+  // --- Wildcard/value-token text filters are matched too, numeric
+  //     conditions and all (findMatchRanges/textFilterMatchSpec directly,
+  //     same primitives the row/detail rendering above uses) ---
+  const wcNode = w.createFilterNode(f.id, "text", "alpha [value:int>=10]");
+  const spec = w.textFilterMatchSpec(wcNode);
+  assert(spec && spec.wildcardRegex, "a wildcard/value-token text filter compiles a wildcardRegex match spec");
+  const rangesHit = w.findMatchRanges("alpha 15", spec);
+  assert(rangesHit.length === 1 && rangesHit[0][0] === 0 && rangesHit[0][1] === "alpha 15".length,
+    "wildcard match range covers the full matched span for a value that satisfies the numeric condition");
+  const rangesMiss = w.findMatchRanges("alpha 5", spec);
+  assert(rangesMiss.length === 0, "wildcard match finds no range when the numeric condition ([value:int>=10]) isn't satisfied");
+
+  // --- initTextMatchHighlightSettings re-applies persisted flags on
+  //     (re-)init, same path real boot uses ---
+  w.localStorage.setItem("philogg-text-match-highlight-mode", "any");
+  w.localStorage.setItem("philogg-text-match-highlight-rows", "1");
+  w.localStorage.setItem("philogg-text-match-highlight-detail", "1");
+  w.initTextMatchHighlightSettings();
+  assert(T.textMatchHighlightMode === "any" && modeSelect.value === "any", "initTextMatchHighlightSettings re-applies the persisted mode");
+  assert(rowsCb.checked === true && detailCb.checked === true, "...and re-applies both persisted 'where' toggles");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -10856,6 +10995,20 @@ process.exit(failed ? 1 : 0);
               #settingsHoverChildNavMultistep (default OFF — off shows only
               the immediate children; on lets hovering a child cascade a
               further flyout for ITS children, arbitrarily deep).
+   Group 93  — this session (2026-08-23), person-requested alternative
+              implementation of FEATURE_BACKLOG.md #13's popup idea (left
+              untouched): marks the substring an active "text" filter node
+              actually matched, inline in the Filter view's rows and/or the
+              entry-detail panel. Three-state master
+              #settingsTextMatchHighlightMode ("off"/"last"/"any", default
+              "last" — "last" = only the active node's own match, no
+              fallback to a text-filter ancestor; "any" = every text-filter
+              node in the active chain) plus two independent "where"
+              toggles (#settingsTextMatchHighlightRows/-Detail, both default
+              ON), hidden while the master is "off". Highlighting is
+              scoped per-column for a filter restricted to specific target
+              columns, and covers wildcard/value-token text filters too
+              (numeric conditions re-checked per occurrence).
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
