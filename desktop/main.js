@@ -68,31 +68,43 @@ const FRAMELESS_CSS = `
     : `.toolbar-right { padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px)); }`}
 `;
 
-// Windows/Linux only: keeps the overlay buttons' colors following
-// philogg.html's own light/dark toggle (#btnTheme, persisted to
-// localStorage — independent of the OS theme, so nativeTheme can't be used
-// instead). No preload/IPC bridge for this either — same reasoning as the
-// top comment — so it's a light poll of the renderer's own `data-theme`
-// attribute from the main process instead, cheap enough at ~1x/second for
-// a value that only ever changes on an explicit click.
-const OVERLAY_COLORS = {
-  dark: { color: "#151924", symbolColor: "#8a92a8" }, // matches --bg-panel/--text-secondary (dark)
-  light: { color: "#ffffff", symbolColor: "#5b6474" }, // matches --bg-panel/--text-secondary (light)
-};
+// Windows/Linux only: keeps the overlay buttons' background transparent and
+// their symbol color following philogg.html's own active theme/accent
+// (#btnTheme + the per-flavor accent picker, both persisted to localStorage
+// — independent of the OS theme, so nativeTheme can't be used instead). An
+// earlier version hardcoded two fixed {color, symbolColor} pairs keyed off
+// "is data-theme light or not" — which only ever matched the Dark/Light
+// built-ins; every Catppuccin flavor (each with its own --bg-panel) and any
+// custom imported theme got the wrong overlay background (FEATURE_BACKLOG
+// item, "wrong background color"). A transparent background sidesteps
+// hardcoding per-theme colors entirely: `#RRGGBBAA` with alpha `00` is
+// Electron's documented way to make the overlay show whatever `#toolbar`
+// itself paints underneath, for any theme, built-in or custom, with no
+// polling of --bg-panel needed. The symbol color still needs a live value,
+// since the theme's --accent can change without `data-theme` changing at
+// all (the accent picker re-picks it per-theme) — so the poll below reads
+// the renderer's own computed `--accent`, not just the theme id. No
+// preload/IPC bridge for this either — same reasoning as the top comment —
+// so it's a light poll from the main process instead, cheap enough at
+// ~1x/second for a value that only ever changes on an explicit click.
+const OVERLAY_TRANSPARENT = "#00000000";
+const OVERLAY_ACCENT_DEFAULT = "#4fc7c3"; // matches :root's default (dark theme) --accent, used only until the first poll resolves
 
 function watchTheme(win) {
-  let lastTheme = null;
+  let lastAccent = null;
   const poll = async () => {
     if (win.isDestroyed()) return;
-    let theme;
+    let accent;
     try {
-      theme = await win.webContents.executeJavaScript('document.documentElement.getAttribute("data-theme")');
+      accent = await win.webContents.executeJavaScript(
+        'getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()'
+      );
     } catch {
       return; // window/page torn down mid-poll
     }
-    if (theme === lastTheme) return;
-    lastTheme = theme;
-    win.setTitleBarOverlay({ ...OVERLAY_COLORS[theme === "light" ? "light" : "dark"], height: TITLEBAR_HEIGHT });
+    if (!accent || accent === lastAccent) return;
+    lastAccent = accent;
+    win.setTitleBarOverlay({ color: OVERLAY_TRANSPARENT, symbolColor: accent, height: TITLEBAR_HEIGHT });
   };
   const interval = setInterval(poll, 800);
   win.on("closed", () => clearInterval(interval));
@@ -149,7 +161,7 @@ function createWindow(filePath) {
     backgroundColor: "#151924", // matches #toolbar/#bg-panel's dark-theme default, avoids a white flash while loading
     ...(isMac
       ? { titleBarStyle: "hiddenInset" }
-      : { titleBarStyle: "hidden", titleBarOverlay: { ...OVERLAY_COLORS.dark, height: TITLEBAR_HEIGHT } }),
+      : { titleBarStyle: "hidden", titleBarOverlay: { color: OVERLAY_TRANSPARENT, symbolColor: OVERLAY_ACCENT_DEFAULT, height: TITLEBAR_HEIGHT } }),
     webPreferences: { sandbox: true },
   });
   win.webContents.on("dom-ready", () => {
