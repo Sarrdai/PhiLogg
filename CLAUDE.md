@@ -35,6 +35,12 @@ around the unmodified `philogg.html` — see `desktop/README.md`.
 - **Simplest solution that solves the actual problem** — no speculative
   complexity (size caps, expiry, etc.) until it's a real, current problem.
 - Code and comments in English.
+- **`FEATURE_BACKLOG.md` entries get unique, permanent IDs via `LAST_ID`**
+  in the file's header. Adding an entry: read `LAST_ID`, add 1, use that
+  value as the new entry's ID, then update `LAST_ID` to the same value.
+  Editing or moving an entry never changes its ID. Implementing a feature:
+  remove its entry from the backlog; its ID stays retired and is never
+  reused, and `LAST_ID` does not change.
 
 ## Known gotchas — check PROJECT.md before touching related code
 
