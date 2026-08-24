@@ -71,10 +71,8 @@ this point.
 
 ## Desktop wrapper (Electron)
 
-31. **`F11` toggles fullscreen** (no window decorations).
 32. **Settings exportable as JSON.** The Electron variant should by default store/load settings in the OS "well-known" config directory (XDG on Linux, e.g. `~/.config/PhiLogg`).
 33. **Electron scrollbar corner artifact** — Electron renders scrollbars differently from the browser build (preferred look), but where a horizontal and vertical scrollbar meet there's a white square that doesn't fit the theme. Needs screenshots to nail down the exact styling target.
-34. **Rounded corners for the Electron window** (except when fullscreen).
 35. **"Restore last session on startup" setting is Electron-only in practice** — the plain `.html` build already needs to survive a page refresh regardless of this setting (existing cache behavior), so the toggle really only has meaning in the Electron build; consider hiding/disabling it outside Electron.
 
 ## Settings & UI polish
