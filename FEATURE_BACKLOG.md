@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 47
+LAST_ID: 49
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation. Numbers are unique, permanent IDs, not a sort order —
@@ -73,6 +73,8 @@ this point.
 42+44. **Font size and overall UI scale, independently configurable** — "Change Font Size" currently appears to scale the whole UI; split into two separate settings, one for log/text font size, one for overall UI scale.
 43. **`Ctrl+0` should expand the Files & Filters panel if it's collapsed** — including under "manual expand" (hover-to-expand disabled): in that mode `Ctrl+0` should still expand the panel exactly like hover would, and keep it expanded until focus moves to another view (e.g. via `Ctrl+1` or a click into another view).
 46. **Setting to change the UI font family** — must not break the "no dependencies" rule (system-installed fonts only, no web-font fetches).
+48. **Shortcut Manager in Settings** — replaces the current Help button/shortcut guide with a proper manager (view and, if feasible, rebind app shortcuts) inside Settings.
+49. **Respect OS default window behavior** — audit that the app's own shortcuts/mechanics never shadow or override the operating system's default window behavior (e.g. window management shortcuts).
 
 ### Log formats & parsing
 
