@@ -154,11 +154,46 @@ function registerProtocol() {
   });
 }
 
+// FEATURE_BACKLOG.md item 34 ("rounded corners for the Electron window,
+// except when fullscreen"). `roundedCorners` is Electron's own opt-in for
+// this on a frameless/hidden-title-bar BrowserWindow (default `true` — kept
+// explicit here rather than relying on the default, so the intent is
+// visible in one place): rounds on macOS unconditionally, on Windows 11
+// Build 22000+ via DWM (no effect on older Windows, which just stays
+// square), and on Linux only where the desktop environment draws its own
+// client-side decorations (compositor-dependent, outside this app's
+// control either way). The "except when fullscreen" half needs no code at
+// all on macOS/Windows: a window that exactly fills the screen (maximized,
+// or `setFullScreen(true)` below) is squared off automatically by the OS
+// compositor — there's no floating edge left to round. Not verified live
+// (no display server in this environment, same standing limitation as the
+// rest of `desktop/`) — behavior confirmed against Electron's own
+// BrowserWindow option docs, not guessed.
+const ROUNDED_CORNERS = true;
+
+// FEATURE_BACKLOG.md item 31 ("F11 toggles fullscreen, no window
+// decorations"). There's no application menu (`Menu.setApplicationMenu(null)`
+// above) to hang a menu-accelerator on, so F11 is caught directly via
+// `before-input-event` — the per-window, focus-scoped equivalent — instead
+// of `globalShortcut` (which would fire even while the app isn't focused,
+// not what's wanted here). "No window decorations" falls out for free: the
+// window is already frameless (see "Frameless window" in
+// desktop/README.md), and `setFullScreen()` doesn't add a native frame back.
+function watchFullscreenToggle(win) {
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "F11") {
+      event.preventDefault();
+      win.setFullScreen(!win.isFullScreen());
+    }
+  });
+}
+
 function createWindow(filePath) {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     backgroundColor: "#151924", // matches #toolbar/#bg-panel's dark-theme default, avoids a white flash while loading
+    roundedCorners: ROUNDED_CORNERS,
     ...(isMac
       ? { titleBarStyle: "hiddenInset" }
       : { titleBarStyle: "hidden", titleBarOverlay: { color: OVERLAY_TRANSPARENT, symbolColor: OVERLAY_ACCENT_DEFAULT, height: TITLEBAR_HEIGHT } }),
@@ -168,6 +203,7 @@ function createWindow(filePath) {
     win.webContents.insertCSS(FRAMELESS_CSS);
     if (!isMac) watchTheme(win);
   });
+  watchFullscreenToggle(win);
   if (filePath) {
     win.loadURL(`philogg://app/philogg.html?url=${encodeURIComponent(localFileUrl(filePath))}`);
   } else {
