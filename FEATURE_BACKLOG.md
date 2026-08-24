@@ -36,6 +36,7 @@ this point.
 8. **Full view: hide the minimap's "covered timespan" visualization** (toggle in Settings) — it's meaningless there since the Full view always covers the entire log. Show the currently-visible row range instead, the same way the minimap already highlights the visible/rendered subset in the Filtered/Stacked view — just applied to the Full log's own rows instead of the filtered rows.
 9. **"Newest" button should only show for trailing files** — hide it for static (non-trailing) files, where jumping to "newest" has no meaning.
 10. **Minimap time-filter drag line: draw at the bottom edge instead of the top** — the line shown while dragging out a time filter on the minimap currently sits at the top; the bottom would read better.
+43. **Create a filter from the currently visible plot area** — either as a time-range filter, or targeted specifically at the log entries currently "visible" in the plot/minimap. Open question: which of the two (or both) the interaction should produce.
 
 ## Filter tree workflow
 
@@ -47,6 +48,7 @@ this point.
 16. **Middle-click a filter node to delete it** — from both the "Files & Filters" tree panel and the breadcrumbs.
 17. **Full Log → Filtered View jump** — double-click or Enter on a row in the Full Log view (mirroring the existing Filtered→Full jump) should offer a picker of every filter node whose chain matches that entry; picking one jumps into that node's Filtered view. Visualization similar to the existing breadcrumb hover.
 18. **File-independent (universal) cache for the `.html` build** — today the cache appears to be keyed per filename; a shared/universal cache would keep working across renamed or re-opened files. Open question: how to handle a cached payload left over from an incompatible older/newer app version (versioning or invalidation needed).
+44. **Extend match-text highlighting to Highlights, not just Filters** — text filters already support marking the matched substring itself in color (not just the left-edge color bar), scoped to either the active filter or the whole filter path (configurable). Apply the same match-text coloring to Highlights, using the highlight's own color. Open question: whether this needs a separate button, a global setting, or a toggle in the color-picker menu (would then be per-filter configurable, default on).
 
 ## Value extraction & aggregation
 
@@ -74,6 +76,7 @@ this point.
 32. **Settings exportable as JSON.** The Electron variant should by default store/load settings in the OS "well-known" config directory (XDG on Linux, e.g. `~/.config/PhiLogg`).
 33. **Electron scrollbar corner artifact** — Electron renders scrollbars differently from the browser build (preferred look), but where a horizontal and vertical scrollbar meet there's a white square that doesn't fit the theme. Needs screenshots to nail down the exact styling target.
 35. **"Restore last session on startup" setting is Electron-only in practice** — the plain `.html` build already needs to survive a page refresh regardless of this setting (existing cache behavior), so the toggle really only has meaning in the Electron build; consider hiding/disabling it outside Electron.
+45. **Show the minimize/close window controls in `F11` fullscreen too** — reuse the same visualization already used for a maximized window; don't hide the controls just because fullscreen is active.
 
 ## Settings & UI polish
 
@@ -83,6 +86,10 @@ this point.
 39. **Fix Settings view scroll performance** — currently noticeably janky.
 40. **Code highlighting in the Entry Details view, behind a toggle.**
 41. **"Change Font Size" should scale only the font size, not the whole UI** — currently it appears to scale all UI elements; it should only affect text/log font size.
+46. **`Ctrl+0` should expand the Files & Filters panel if it's collapsed** — including under "manual expand" (hover-to-expand disabled): in that mode `Ctrl+0` should still expand the panel exactly like hover would, and keep it expanded until focus moves to another view (e.g. via `Ctrl+1` or a click into another view).
+47. **Font size and overall UI size independently configurable** — companion to #41 above (font size currently scales the whole UI): split into two separate settings, one for log/text font size, one for overall UI scale.
+48. **Theme should be able to follow the OS/system light-dark state** — auto light/dark switching based on system preference, as an alternative to the existing manual toggle.
+49. **Setting to change the UI font family** — must not break the "no dependencies" rule (system-installed fonts only, no web-font fetches).
 
 ## Log formats & parsing
 
