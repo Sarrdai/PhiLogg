@@ -538,6 +538,23 @@ await withApp(async (w, d, T) => {
   assert(bookmarksNode().locked === true, "the auto node is marked locked");
   assert(w.getEntries(bookmarksNode().id).map(e => e.id).includes(fa.entries[1].id), "the auto node actually matches the bookmarked row");
 
+  // Icon fix: the auto "Bookmarks" node shows the recovered bookmark/ribbon
+  // icon (the old per-row marker's glyph), not the generic fallback clock
+  // icon that time-range filter nodes use (PROJECT.md changelog).
+  {
+    const bmRow = d.querySelector('.tree-row[data-node-id="' + bookmarksNode().id + '"]');
+    const bmIcon = bmRow.querySelector(".tree-icon").innerHTML;
+    assert(bmIcon.includes("M4 2.5h8v11l-4-2.6-4 2.6z"), "the 'Bookmarks' filter node renders the recovered bookmark icon, not a fallback");
+    assert(!bmIcon.includes("cx=\"8\" cy=\"8\" r=\"6\""), "the 'Bookmarks' filter node's icon is NOT the clock icon");
+
+    const timeNode = w.createFilterNode(fa.id, "after", fa.entries[0].ts);
+    w.render();
+    const timeRow = d.querySelector('.tree-row[data-node-id="' + timeNode.id + '"]');
+    const timeIcon = timeRow.querySelector(".tree-icon").innerHTML;
+    assert(timeIcon.includes("cx=\"8\" cy=\"8\" r=\"6\""), "a time-range filter node still shows the clock icon, unaffected by the Bookmarks icon change");
+    w.deleteFilterNodeWithUndo(timeNode.id);
+  }
+
   // Context-menu toggle adds a second bookmark — node must persist (not just exist for the first one)
   w.openContextMenu({ clientX: 10, clientY: 10 }, fa.entries[2]);
   assert(d.querySelector("#ctxBookmark").style.display !== "none", "bookmark menu item visible for a real, indexed entry");
@@ -10825,7 +10842,14 @@ process.exit(failed ? 1 : 0);
               fixes): live match-count refresh when the node persists but
               membership changes, and auto-switch back to Full when the
               last bookmark is removed while its node is the active,
-              showing Filtered view (Stacked layout untouched).
+              showing Filtered view (Stacked layout untouched). EXTENDED
+              2026-08-25 (icon fix): the auto "Bookmarks" node was
+              incorrectly falling through to the generic clock icon
+              (ICON_CLOCK) instead of keeping a dedicated icon — restored
+              the old per-row bookmark marker's SVG (ICON_BOOKMARK_FILLED,
+              recovered from before it was removed in the same rework) as
+              this node's tree icon; verified a time-range filter node
+              still shows the clock icon unaffected.
    Group 16  — 7ef2c2a6 (undo/redo)
    Group 17  — 38c96f1d (Highlight/Full view, colour picker,
               computeHighlightMap, revealInHighlightView). The CSS
