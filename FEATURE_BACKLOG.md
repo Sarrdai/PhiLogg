@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 49
+LAST_ID: 52
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation. Numbers are unique, permanent IDs, not a sort order —
@@ -72,6 +72,15 @@ this point.
 ### Log formats & parsing
 
 47. **Format-specific log levels** — configurable while setting up a parser (Format Manager), with a definable order, shown in the log-level column instead of forcing the fixed ERROR/WARN/INFO/DEBUG set.
+
+### Bookmarks & notes
+
+50. **Bookmarks rework** — remove the current Bookmark Manager entirely. Instead, bookmarks become a per-file filter node: a single "Bookmarks" filter, unique per file, that lives directly under the file's root node. It is auto-created the moment at least one bookmark is set on that file, and auto-removed again once no bookmark remains. Like any other filter node it loses its dedicated icon and can be colored/styled the same way. The existing PIN-bookmark feature is unaffected and stays as-is. Alongside this, introduce a general-purpose note feature for *any* log line (bookmarked or not): via the log entry's context menu or `Alt+N`, attach a free-text note. The note is not part of the log data itself, but is rendered as an extra line (or multiple lines, when MultiColumn is active) directly below its entry — visually distinct (its own color), without a level marker on the left edge, and indented slightly to the right. Notes stay visible at every filter stage. `Alt+N` on a selected entry without a note creates one; on an entry that already has a note, the same shortcut opens it for editing instead (no separate `F2` binding for this). Double-click on an existing note also opens it for editing. When an entry with a note is selected, the note's content is also shown in the Entry Detail panel, so a multi-line note stays readable even with MultiColumn/multi-line rendering turned off. Add a dedicated Show/Hide Notes toggle button. Needs scoping: how the per-file Bookmarks filter interacts with the existing filter-tree persistence carriers (see `CLAUDE.md`'s gotcha list), and where notes are stored/persisted per entry.
+
+### Desktop wrapper (Electron)
+
+51. **Improve Electron startup time perception** — startup currently takes several seconds with no feedback. Add a splash screen that appears immediately and indicates loading is in progress until the main window is ready. Additionally, add a "Close to system tray" setting (default: on). With it enabled, closing the app via the window's X button — or, if configured, closing the last open file — does not quit the app but minimizes it to the system tray (not the taskbar); a right-click on the tray icon offers a real Quit. While running in the tray, opening a file or clicking the app icon should jump straight back into the running session, so the app feels instantly available rather than restarting.
+52. **"Open File Location" in the file context menu** — jumps directly to the OS folder containing the selected file.
 
 ## Backlog
 
