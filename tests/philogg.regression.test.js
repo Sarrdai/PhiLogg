@@ -9672,6 +9672,15 @@ await withApp(async (w, d, T) => {
   assert(w.localStorage.getItem("philogg-level-filter-tree-mode") === "explicit", "mode choice persisted");
   assert(isVisible(applyBtn, w), "#btnApplyLevelToTree becomes visible in explicit mode");
   assert(applyBtn.disabled, "...but stays disabled while nothing is selected on the level bar");
+  // FEATURE_BACKLOG.md #37 regression guard: #btnApplyLevelToTree must join
+  // the SAME float:left pinned-top-left flow as #fhTabs/#levelBar/the other
+  // toolbar-icon-btns in #viewBar (see the layout mechanism guard in GROUP
+  // "view bar" above). It's toggled via display:none/"" rather than
+  // removed/re-added, so an unfloated button here drops below the #levelBar
+  // float as a normal-flow block, shoving #breadcrumb's wrap start down
+  // with it the moment Manual mode reveals it — exactly the reported
+  // "extra button shifts the filter chain" bug.
+  assert(w.getComputedStyle(applyBtn).float === "left", "#btnApplyLevelToTree floats left, same pinned-top-left mechanism as #fhTabs/#levelBar, so revealing it doesn't shift #breadcrumb");
 
   fireClick(findLevelBtn("ERROR"), w);
   assert(T.state.levelFilter.has("ERROR"), "explicit mode: clicking a level toggles the classic state.levelFilter Set");
@@ -10466,6 +10475,46 @@ await withApp(async (w, d, T) => {
   T.state.activeId = h.id;
   w.render();
   assert(isVisible(d.getElementById("tailJumpBtn"), w) === false, "a file with no node.tail at all never shows the jump button");
+});
+
+/* ============================================================
+   GROUP 102 — Bugfix: #btnApplyLevelToTree shifts the filter chain
+   (FEATURE_BACKLOG.md #37)
+   Origin: this session (2026-08-25), bug report with screenshots: switching
+   Settings -> Behavior's level-filter-tree mode to "explicit" (Manual)
+   reveals #btnApplyLevelToTree ("Add to tree") in #viewBar, and the active
+   filter chain (#breadcrumb) visibly shifts/wraps differently than in
+   "auto" mode where the button stays hidden. Root cause: every other
+   button pinned to #viewBar's top-left float line (#fhTabs,
+   #btnPinBookmarks, #btnMultilineMsg, #btnColumns,
+   #btnTextMatchHighlight, #levelBar — see the "Unified view bar" CSS
+   comment) carries float:left plus the shared 14px/6px margin, but
+   #btnApplyLevelToTree never got that rule. Toggled via display:none/""
+   rather than added/removed from the DOM, so once visible it sat as an
+   unfloated normal-flow block sibling of the #levelBar float and dropped
+   below it, pushing #breadcrumb's line-wrap start down too. Fix: give
+   #btnApplyLevelToTree the same float:left + margin as its siblings, so it
+   just extends the SAME dynamic top-left line no matter how many buttons
+   end up on it — scales to future buttons in that row without further
+   layout work.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("102. #btnApplyLevelToTree joins the pinned top-left float flow");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const select = d.querySelector("#settingsLevelFilterTreeMode");
+  select.value = "explicit";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const applyBtn = d.querySelector("#btnApplyLevelToTree");
+  assert(isVisible(applyBtn, w), "sanity: explicit mode reveals #btnApplyLevelToTree");
+
+  const cs = w.getComputedStyle;
+  assert(cs(applyBtn).float === "left", "#btnApplyLevelToTree floats left, joining #fhTabs/#levelBar's pinned top-left line");
+  assert(cs(applyBtn).marginRight === "14px" && cs(applyBtn).marginBottom === "6px",
+    "...with the SAME 14px/6px margin as its sibling toolbar-icon-btns, so it doesn't sit any differently on the line");
 });
 
 /* ============================================================
@@ -11888,6 +11937,12 @@ process.exit(failed ? 1 : 0);
               the old check treated nearly every real file as "trailing"
               forever. `tailTick()`'s liveness-only pass (Group 63a) now
               also calls `updateTailJumpBtn()`, not just `renderTree()`.
+   Group 102 — this session (2026-08-25), FEATURE_BACKLOG.md #37: fixed
+              #btnApplyLevelToTree missing float:left/margin, which had it
+              drop below #levelBar's float and shift #breadcrumb's wrap
+              whenever "explicit" (Manual) level-filter-tree mode revealed
+              it. Also added a matching float assertion inline in Group 94
+              where the button's visibility toggle is already exercised.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
