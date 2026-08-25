@@ -127,15 +127,16 @@ async function withApp(run, opts = {}) {
       get colorPickerMode() { return colorPickerMode; },
       get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },
       get accentChoices() { return accentChoices; },
-      get hoverChildNavEnabled() { return hoverChildNavEnabled; },
-      get hoverChildNavMultistep() { return hoverChildNavMultistep; },
-      get childNavPanels() { return childNavPanels; },
       get textMatchHighlightEnabled() { return textMatchHighlightEnabled; },
       get textMatchHighlightScope() { return textMatchHighlightScope; },
       get textMatchHighlightInRows() { return textMatchHighlightInRows; },
       get textMatchHighlightInDetail() { return textMatchHighlightInDetail; },
       get levelFilterTreeMode() { return levelFilterTreeMode; },
       set levelFilterTreeMode(v) { levelFilterTreeMode = v; },
+      get tempAnchorMode() { return tempAnchorMode; },
+      get tempAnchorFadeSeconds() { return tempAnchorFadeSeconds; },
+      get sidebarForcedPeek() { return sidebarForcedPeek; },
+      get sidebarAltPeek() { return sidebarAltPeek; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -154,6 +155,7 @@ function fireDblClick(el, w) { el.dispatchEvent(new w.MouseEvent("dblclick", { b
 function fireInput(el, w) { el.dispatchEvent(new w.Event("input", { bubbles: true })); }
 function fireSubmit(el, w) { el.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); }
 function fireKeydown(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts })); }
+function fireKeyup(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keyup", { key, bubbles: true, cancelable: true, ...opts })); }
 // Checks ACTUAL resolved CSS (getComputedStyle), not just whether the
 // "hidden" class is present on the element — jsdom has no real layout
 // engine, but it DOES correctly compute `display` from matching CSS rules,
@@ -9428,128 +9430,6 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 92 — Breadcrumb "hover the current entry to reveal its children"
-   (person-requested, this session, mockup attached): hovering the ACTIVE
-   ("current") chip in #breadcrumb pops up its child filters as a flyout
-   (#childNavFlyoutHost > .child-nav-flyout), letting you navigate deeper in
-   the filter tree without opening the sidebar. Two new settings:
-   #settingsHoverChildNav (master on/off, default ON) and
-   #settingsHoverChildNavMultistep (default OFF) — off shows only the
-   immediate children; on lets hovering one of those children cascade a
-   further flyout for ITS children (arbitrarily deep), tracked as one
-   .child-nav-flyout panel per depth in childNavPanels.
-   ============================================================ */
-await withApp(async (w, d, T) => {
-  section("92. Breadcrumb hover child-nav flyout + its two settings");
-
-  const enabledCb = d.querySelector("#settingsHoverChildNav");
-  const multistepCb = d.querySelector("#settingsHoverChildNavMultistep");
-  const host = d.querySelector("#childNavFlyoutHost");
-
-  // --- Defaults ---
-  assert(enabledCb.checked === true && T.hoverChildNavEnabled === true, "master setting defaults ON");
-  assert(multistepCb.checked === false && T.hoverChildNavMultistep === false, "multistep setting defaults OFF");
-
-  // file -> one -> two -> three, three levels deep past the root.
-  const f = await w.addFile("app.log", makeLog(0, 5, { msgPrefix: "one two three" }), () => {});
-  const one = w.createFilterNode(f.id, "text", "one");
-  const two = w.createFilterNode(one.id, "text", "two");
-  const three = w.createFilterNode(two.id, "text", "three");
-
-  T.state.activeId = one.id;
-  w.render();
-
-  const chips = d.querySelectorAll("#breadcrumb .crumb");
-  assert(chips.length === 2, "breadcrumb shows file + 'one' for the active 'one' node");
-  const fileChip = chips[0], currentChip = chips[1];
-  assert(currentChip.classList.contains("current"), "second chip is the current one");
-
-  // --- Hovering an ANCESTOR chip does nothing — only the current chip does ---
-  fileChip.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 0, "hovering a non-current ancestor chip opens no flyout");
-
-  // --- Hovering the CURRENT chip opens its children as a flyout ---
-  currentChip.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 1, "hovering the current chip opens one flyout panel");
-  let panel = host.querySelector(".child-nav-flyout");
-  let items = panel.querySelectorAll(".child-nav-item");
-  assert(items.length === 1 && items[0].dataset.nodeId === two.id, "flyout lists 'one''s only child, 'two'");
-  assert(items[0].querySelector(".tree-label").textContent === two.name, "item shows the child's name (as displayed in the tree, e.g. a quoted text filter)");
-  assert(items[0].querySelector(".tree-type-tag").textContent === "TXT", "item shows the child's type tag");
-  assert(items[0].querySelector(".tree-count").textContent === w.getEntries(two.id).length.toLocaleString("de-DE"),
-    "item shows the child's own entry count");
-  assert(!items[0].querySelector(".child-nav-caret"), "no cascade caret while multistep is off, even though 'two' has its own child");
-
-  // --- Clicking a flyout item navigates straight to it and closes the flyout ---
-  fireClick(items[0], w);
-  assert(T.state.activeId === two.id, "clicking the flyout item selects it as the active node");
-  assert(host.children.length === 0, "...and closes the flyout");
-
-  // --- A leaf (no children) current node opens nothing ---
-  T.state.activeId = three.id;
-  w.render();
-  const leafChips = d.querySelectorAll("#breadcrumb .crumb");
-  leafChips[leafChips.length - 1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 0, "a childless current node's flyout hover is a no-op");
-
-  // --- Multistep OFF (default): hovering a child that itself has children
-  //     does NOT cascade a second panel ---
-  T.state.activeId = one.id;
-  w.render();
-  d.querySelectorAll("#breadcrumb .crumb")[1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  panel = host.querySelector(".child-nav-flyout");
-  let twoItem = panel.querySelector('.child-nav-item[data-node-id="' + two.id + '"]');
-  twoItem.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(T.childNavPanels.length === 1, "multistep off: hovering a child with children does not open a second level");
-
-  // --- Turn multistep ON: now hovering that same child cascades level 1 ---
-  multistepCb.checked = true;
-  multistepCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.localStorage.getItem("philogg-hover-child-nav-multistep") === "1", "multistep setting persisted");
-  d.querySelectorAll("#breadcrumb .crumb")[1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  panel = host.querySelector(".child-nav-flyout");
-  twoItem = panel.querySelector('.child-nav-item[data-node-id="' + two.id + '"]');
-  assert(!!twoItem.querySelector(".child-nav-caret"), "with multistep on, an item with children now shows the cascade caret");
-  twoItem.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(T.childNavPanels.length === 2, "multistep on: hovering 'two' (which has 'three' as a child) cascades a second flyout level");
-  const level1Panel = host.querySelectorAll(".child-nav-flyout")[1];
-  const level1Items = level1Panel.querySelectorAll(".child-nav-item");
-  assert(level1Items.length === 1 && level1Items[0].dataset.nodeId === three.id, "the cascaded level shows 'two''s own child, 'three'");
-
-  // --- Turning multistep off while a level-1+ cascade is open closes it,
-  //     keeping level 0 alive ---
-  multistepCb.checked = false;
-  multistepCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(T.childNavPanels.length === 1, "turning multistep off mid-cascade drops levels 1+ but keeps level 0 open");
-
-  // --- Turning the MASTER setting off closes any open flyout immediately ---
-  enabledCb.checked = false;
-  enabledCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.localStorage.getItem("philogg-hover-child-nav") === "0", "master setting persisted as off");
-  assert(host.children.length === 0, "turning the master setting off closes any open flyout right away");
-
-  // ...and with it off, hovering the current chip is a no-op even though it has children.
-  d.querySelectorAll("#breadcrumb .crumb")[1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 0, "master off: hovering the current chip opens nothing");
-
-  // --- Re-enable, open a flyout, and confirm Escape closes it ---
-  enabledCb.checked = true;
-  enabledCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  d.querySelectorAll("#breadcrumb .crumb")[1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 1, "sanity: flyout reopens once the master setting is back on");
-  fireKeydown(d, w, "Escape");
-  assert(host.children.length === 0, "Escape closes an open child-nav flyout, same as it does the other transient popups");
-
-  // --- initHoverChildNavSettings re-applies persisted flags on (re-)init,
-  //     same path real boot uses ---
-  w.localStorage.setItem("philogg-hover-child-nav", "0");
-  w.localStorage.setItem("philogg-hover-child-nav-multistep", "1");
-  w.initHoverChildNavSettings();
-  assert(enabledCb.checked === false && multistepCb.checked === true,
-    "initHoverChildNavSettings re-applies persisted flags for both settings, same as at boot");
-});
-
-/* ============================================================
    GROUP 93 — Text-filter match highlighting (this session, 2026-08-23,
    person-requested alternative implementation of FEATURE_BACKLOG.md #13's
    "why is this row here" popup idea — that entry itself is left untouched).
@@ -9889,12 +9769,6 @@ await withApp(async (w, d, T) => {
   label = d.querySelector('.tree-row[data-node-id="' + textNode.id + '"] .tree-label');
   assert(label.querySelectorAll("span").length === 0 && label.textContent === "“message 1”",
     "a plain text filter node's label is untouched — plain text, no spans");
-
-  /* ---------- Breadcrumb child-nav flyout row mirrors the same per-word coloring ---------- */
-  const flyoutRow = w.renderChildNavItem(comboNode.id, 0);
-  const flyoutWords = [...flyoutRow.querySelector(".tree-label").querySelectorAll("span")];
-  assert(flyoutWords.length === 2 && flyoutWords[0].style.color === "var(--level-error)" && flyoutWords[1].style.color === "var(--level-info)",
-    "the child-nav flyout row (renderChildNavItem) mirrors the tree row's own per-word coloring");
 });
 
 /* ============================================================
@@ -10195,7 +10069,7 @@ await withApp(async (w, d, T) => {
 
   const cardOf = id => d.getElementById(id).closest(".settings-card");
   assert(cardOf("settingsQuitOnLastClose") === cards[0], "the quit-on-close row sits alone in the first, un-headed card");
-  [ "settingsHoverExpandSidebar", "settingsHoverExpandDetail", "settingsHoverChildNav", "settingsHoverChildNavMultistep" ]
+  [ "settingsHoverExpandSidebar", "settingsHoverExpandDetail" ]
     .forEach(id => assert(cardOf(id) === cards[1], "#" + id + " sits in the hover-to-expand card"));
   assert(cardOf("settingsLevelFilterTreeMode") === cards[2], "the level-bar-tree-mode row sits in its own filter-tree card");
   [ "settingsTextMatchHighlightScope", "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail" ]
@@ -10209,6 +10083,265 @@ await withApp(async (w, d, T) => {
   fireClick(quitCb, w);
   assert(quitCb.checked === !before, "the relocated quit-on-close switch still toggles");
   fireClick(quitCb, w); // restore
+});
+
+/* ============================================================
+   GROUP 99 — Ctrl+0/Alt+Arrow tree peek+nav, Alt+Enter extraction, and the
+   temporary anchor (FEATURE_BACKLOG.md #18, person-requested; a prior
+   in-session design built a centered/keyboard-navigable breadcrumb flyout
+   popup for this instead — reverted after trying it live, replaced with
+   this simpler "forward Alt+Arrow straight to the existing Files & Filters
+   tree" approach; the breadcrumb hover flyout itself is UNCHANGED from
+   before this session, see GROUP 92). Alt rather than Ctrl for the arrow
+   nav — same-day person-requested follow-up — since Ctrl+Arrow is standard
+   OS/app behavior for jumps within a document and should stay free for
+   that.
+
+   Two independent peek mechanisms, same-day person-refined so each closes
+   the way it should rather than one rule for both:
+   - Ctrl+0 keeps its existing "focus the tree" behavior, and ADDITIONALLY
+     force-peeks the panel open (setSidebarForcedPeek, sidebarForcedPeek
+     flag) if it's collapsed. Stays open until focus genuinely LEAVES the
+     panel — picking a filter (Enter while the tree has focus), switching
+     Full/Filtered/Stacked view (applyFhView, Ctrl+1/2/3 or a tab click), or
+     clicking outside the sidebar — deliberately NOT tied to releasing Ctrl
+     itself (Ctrl+0's own keystroke releases Ctrl immediately after).
+   - Alt, held down (with or without an arrow), peeks a collapsed panel open
+     for exactly as long as it's held (sidebarAltPeek flag, dedicated
+     keydown/keyup listeners) — a plain toggle, so a quick tap-and-release
+     just glances at the tree without navigating anything. Alt+Arrow ALSO
+     forwards straight to moveTreeSelection WITHOUT touching
+     state.focusRegion — the Log view stays "focused" for plain arrow keys.
+     Alt+Enter's own dialog (see below) can open while Alt is down;
+     releasing Alt then defers closing the peek until the dialog itself
+     closes (maybeCloseSidebarAltPeek, checked from both Alt's keyup and
+     closeFilterPopup).
+   - Alt+Enter opens "Filter for this message" for the selected row directly
+     (openFilterForEntryColumn, shared with the right-click menu item).
+   - The temporary anchor (state.tempAnchor): switching the active filter —
+     via a tree row click OR Alt+Arrow tree nav, the only two ways to do
+     that now — while the selected row doesn't match the new filter shows it
+     at its would-be position instead of losing it, per
+     #settingsTempAnchorMode (Off/Persistent/Fade, its fade-duration row
+     only shown for Fade).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("99. Ctrl+0/Alt+Arrow tree peek+nav, Alt+Enter, temporary anchor");
+
+  // messages: "message 0 keep", "message 1 skip", "message 2 keep", ...
+  const f = await w.addFile("app.log", makeLog(0, 5, { suffix: i => (i % 2 === 0 ? "keep" : "skip") }), () => {});
+  const keepFilter = w.createFilterNode(f.id, "text", "keep"); // matches entries 0,2,4
+  const skipFilter = w.createFilterNode(f.id, "text", "skip"); // matches entries 1,3
+  w.render();
+
+  const sidebarEl = d.querySelector("#sidebar");
+  const highlightRow = i => d.querySelectorAll("#highlightRows .log-row")[i];
+
+  // --- Ctrl+0: unchanged while expanded, force-peeks once collapsed, and
+  //     that peek persists until focus genuinely leaves the panel (picking
+  //     a filter, switching view, or clicking outside) — NOT tied to
+  //     releasing Ctrl itself ---
+  T.state.activeId = keepFilter.id;
+  w.render();
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  assert(T.state.focusRegion === "tree", "Ctrl+0 still moves focus to the tree, exactly as before");
+  assert(!sidebarEl.classList.contains("peeking") && T.sidebarForcedPeek === false,
+    "...and does nothing extra while the panel is already expanded");
+
+  w.toggleSidebarCollapsed(true);
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  assert(sidebarEl.classList.contains("peeking") && T.sidebarForcedPeek === true,
+    "Ctrl+0 force-peeks the panel open once it's collapsed");
+  fireKeyup(d, w, "Control");
+  assert(T.sidebarForcedPeek === true && sidebarEl.classList.contains("peeking"),
+    "releasing Ctrl right after Ctrl+0 does NOT close the peek — only leaving the panel's focus does");
+
+  fireKeydown(d, w, "1", { ctrlKey: true }); // Ctrl+1 -> Full view, via applyFhView
+  assert(T.sidebarForcedPeek === false, "switching to the Full view (Ctrl+1) clears the forced peek");
+  assert(!sidebarEl.classList.contains("peeking"), "...and the panel collapses back to its rail");
+
+  w.toggleSidebarCollapsed(true);
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  fireClick(d.body, w);
+  assert(T.sidebarForcedPeek === false, "a click outside the sidebar also clears the forced peek");
+
+  w.toggleSidebarCollapsed(true);
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  T.state.focusRegion = "tree";
+  fireKeydown(d, w, "Enter"); // picking the active filter node while the tree has focus
+  assert(T.sidebarForcedPeek === false, "picking a filter (Enter while the tree has focus) also clears the forced peek");
+
+  // --- Alt (held down) peeks a collapsed panel open for as long as it's
+  //     held — a plain toggle, independent of navigation — and Alt+Arrow
+  //     forwards to tree navigation WITHOUT taking focus away from the
+  //     current Log view ---
+  T.state.focusRegion = "entries";
+  w.toggleSidebarCollapsed(true); // re-collapse
+  assert(T.sidebarAltPeek === false, "sanity: no Alt peek yet");
+
+  fireKeydown(d, w, "Alt"); // holding Alt down — a real browser fires this before any Alt+<key> combo
+  assert(T.sidebarAltPeek === true && sidebarEl.classList.contains("peeking"),
+    "holding Alt alone peeks a collapsed panel open, even without an arrow press");
+  fireKeyup(d, w, "Alt");
+  assert(T.sidebarAltPeek === false && !sidebarEl.classList.contains("peeking"),
+    "releasing Alt closes it back up again, since it was collapsed before the peek");
+
+  fireKeydown(d, w, "Alt");
+  fireKeydown(d, w, "ArrowDown", { altKey: true });
+  assert(T.sidebarAltPeek === true, "sanity: Alt peek still on during Alt+ArrowDown");
+  assert(T.state.focusRegion === "entries",
+    "...but Alt+Arrow does NOT switch focus into the tree — it stays wherever it was");
+  assert(T.state.activeId === skipFilter.id, "...while still moving the tree selection itself (keepFilter -> skipFilter)");
+
+  fireKeydown(d, w, "ArrowUp", { altKey: true });
+  assert(T.state.activeId === keepFilter.id, "Alt+ArrowUp moves it back");
+  assert(T.state.focusRegion === "entries", "focus still hasn't moved");
+
+  fireKeyup(d, w, "Alt");
+  assert(T.sidebarAltPeek === false && !sidebarEl.classList.contains("peeking"),
+    "releasing Alt after navigating with it closes the panel back up");
+
+  // --- Alt+Enter's own dialog can open while Alt is down — releasing Alt
+  //     right after typing that chord must not close the panel out from
+  //     under the still-open dialog; only actually closing the dialog does ---
+  w.applyFhView("highlight");
+  T.state.entriesView = "highlight";
+  fireClick(highlightRow(0), w);
+  fireKeydown(d, w, "Alt");
+  fireKeydown(d, w, "Enter", { altKey: true });
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "sanity: Alt+Enter opened the dialog");
+  assert(T.sidebarAltPeek === true, "sanity: Alt held it peeked open");
+  fireKeyup(d, w, "Alt");
+  assert(T.sidebarAltPeek === true && sidebarEl.classList.contains("peeking"),
+    "releasing Alt while the Alt+Enter dialog is still open does NOT close the panel");
+  w.closeFilterPopup();
+  d.querySelector("#filterInput").blur();
+  assert(T.sidebarAltPeek === false && !sidebarEl.classList.contains("peeking"),
+    "...but closing the dialog afterward does, since Alt was already released");
+
+  w.toggleSidebarCollapsed(false); // re-expand for the rest of this group
+
+  // --- Alt+Enter opens "Filter for this message" for the selected row,
+  //     in both Full and Filtered view ---
+  w.applyFhView("highlight");
+  T.state.entriesView = "highlight";
+  fireClick(highlightRow(0), w); // "message 0 keep"
+  fireKeydown(d, w, "Enter", { altKey: true });
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Alt+Enter opens the filter popup from the Full view");
+  assert(d.querySelector("#filterInput").value === "message [value:int] keep", "prefilled with the message column's numeric-wildcard pattern");
+  assert(d.querySelector('.column-chip[data-col="message"]').classList.contains("active"), "message column pre-selected (no mouse event to resolve one from)");
+  w.closeFilterPopup();
+  d.querySelector("#filterInput").blur(); // openFilterPopup() focuses it; left focused would swallow every keydown below as "typing" (inInput guard)
+
+  T.state.activeId = keepFilter.id;
+  T.state.entriesView = "filter";
+  w.render();
+  fireClick(d.querySelectorAll("#tableRows .log-row")[0], w); // "message 0 keep" in the Filtered view
+  fireKeydown(d, w, "Enter", { altKey: true });
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Alt+Enter also works from the Filtered view");
+  w.closeFilterPopup();
+  d.querySelector("#filterInput").blur();
+
+  // Regression: plain Enter (no Alt) in the Filtered view still does its
+  // existing job (reveal Highlight view on the row) instead of Alt+Enter's.
+  T.state.entriesView = "filter";
+  w.render();
+  fireClick(d.querySelectorAll("#tableRows .log-row")[0], w);
+  fireKeydown(d, w, "Enter");
+  assert(T.state.entriesView === "highlight", "plain Enter on a Filtered row still reveals the Highlight view, unaffected by the new Alt+Enter branch");
+
+  // --- Temporary anchor: switching the active filter — via a tree row
+  //     click OR Alt+Arrow tree nav — while the selected row doesn't
+  //     match the new filter ---
+  w.applyFhView("highlight");
+  T.state.entriesView = "highlight";
+  fireClick(highlightRow(1), w); // "message 1 skip" — not a member of keepFilter
+  const skip1Id = T.state.selectedId;
+  assert(!!skip1Id, "sanity: clicking a Full-view row selects it");
+
+  T.state.activeId = skipFilter.id; // start somewhere that DOES match
+  w.render();
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(T.state.activeId === keepFilter.id, "clicking the tree row switches the active node as usual");
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id && T.state.tempAnchor.nodeId === keepFilter.id,
+    "...and anchors the still-selected row at its would-be position, since 'keep' doesn't match it");
+
+  let anchorRow = d.querySelector("#tableRows .log-row.temp-anchor-row");
+  assert(anchorRow && anchorRow.dataset.entryId === skip1Id, "Persistent mode (default) draws the temp anchor row in the Filtered table");
+  const rows = [...d.querySelectorAll("#tableRows .log-row")].map(r => r.dataset.entryId);
+  assert(rows.indexOf(anchorRow.dataset.entryId) === 1,
+    "the anchor sits between 'keep 0' and 'keep 2' chronologically (would-be position), got index " + rows.indexOf(anchorRow.dataset.entryId));
+
+  fireClick(d.querySelector('.tree-row[data-node-id="' + skipFilter.id + '"]'), w);
+  assert(T.state.tempAnchor === null, "clicking into a filter that DOES match the selected row clears the anchor");
+
+  // Same mechanic via Alt+Arrow tree navigation, not just a mouse click.
+  T.state.activeId = skipFilter.id;
+  T.state.selectedId = skip1Id;
+  T.state.tempAnchor = null;
+  w.render();
+  fireKeydown(d, w, "ArrowUp", { altKey: true }); // skipFilter -> keepFilter (flattened tree order)
+  assert(T.state.activeId === keepFilter.id, "sanity: Alt+ArrowUp moved onto keepFilter");
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id && T.state.tempAnchor.nodeId === keepFilter.id,
+    "Alt+Arrow tree navigation applies the SAME anchor mechanic as a tree row click");
+
+  // --- Fade-duration row visibility: only shown for the Fade mode ---
+  const modeSelect = d.querySelector("#settingsTempAnchorMode");
+  assert(d.querySelector("#settingsTempAnchorFadeRow").style.display === "none",
+    "the fade-duration row is hidden while mode is Persistent (the default)");
+
+  // --- Off mode: never drawn, but Up/Down still respect its position ---
+  modeSelect.value = "off";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.tempAnchorMode === "off", "mode setting persisted");
+  assert(d.querySelector("#settingsTempAnchorFadeRow").style.display === "none", "...and the fade-duration row stays hidden for Off too");
+
+  T.state.activeId = skipFilter.id;
+  T.state.selectedId = skip1Id;
+  T.state.tempAnchor = null;
+  w.render();
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(d.querySelector("#tableRows .log-row.temp-anchor-row") === null, "Off mode never draws the anchor row");
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id, "...but the anchor position is still remembered");
+
+  // The tree click itself moves focus to the tree (existing, unchanged
+  // behavior) — put it back on the Log view to test plain row Up/Down here.
+  T.state.focusRegion = "entries";
+  fireKeydown(d, w, "ArrowDown"); // plain, no ctrl — ordinary row nav
+  const keep2Id = d.querySelectorAll("#tableRows .log-row")[1].dataset.entryId;
+  assert(T.state.selectedId === keep2Id, "Down from an off-mode (undrawn) anchor moves to the next REAL row after its position");
+
+  T.state.tempAnchor = { entryId: skip1Id, nodeId: keepFilter.id, faded: false };
+  T.state.selectedId = skip1Id;
+  w.render();
+  fireKeydown(d, w, "ArrowUp");
+  const keep0Id = d.querySelectorAll("#tableRows .log-row")[0].dataset.entryId;
+  assert(T.state.selectedId === keep0Id, "Up from the same anchor moves to the real row BEFORE its position");
+
+  // --- Fade mode: shown right after the switch, then removed once the
+  //     configured duration elapses — no jarring full re-render/scroll jump ---
+  w.applyTempAnchorFadeSeconds(0.5); // the stepper's own minimum
+  assert(d.querySelector("#tempAnchorFadeValue").textContent === "0.5s", "the fade-duration stepper shows the value without a % suffix, unlike Font Size");
+  modeSelect.value = "fade";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#settingsTempAnchorFadeRow").style.display !== "none", "the fade-duration row is shown once mode is Fade");
+
+  T.state.activeId = skipFilter.id;
+  T.state.selectedId = skip1Id;
+  T.state.tempAnchor = null;
+  w.render();
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(!!d.querySelector("#tableRows .log-row.temp-anchor-row"), "Fade mode draws the anchor row right after the switch");
+  const fadeTableBody = d.querySelector("#tableBody");
+  fadeTableBody.scrollTop = 5; // arbitrary non-zero value
+  const entriesLengthBeforeFade = T.currentViewEntries.length;
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  assert(d.querySelector("#tableRows .log-row.temp-anchor-row") === null, "...and removes it once the fade duration elapses");
+  assert(T.state.tempAnchor && T.state.tempAnchor.faded === true, "the position stays remembered (faded flag) after the fade completes");
+  assert(T.currentViewEntries.length === entriesLengthBeforeFade - 1,
+    "the faded anchor is dropped from the in-memory list too, kept in sync with the DOM removal");
+  assert(fadeTableBody.scrollTop === 5,
+    "the fade completing does NOT trigger a full re-render/scroll-anchor recompute that could jump the view — only that one row's own height collapses");
 });
 
 /* ============================================================
@@ -11539,13 +11672,13 @@ process.exit(failed ? 1 : 0);
               click-to-expand is unaffected either way.
    Group 92  — this session (2026-08-22), person-requested (mockup
               attached): hovering the active/"current" chip in #breadcrumb
-              reveals its child filters as a hover flyout
-              (#childNavFlyoutHost), so you can navigate deeper in the
-              filter tree without opening the sidebar. Two new settings:
-              #settingsHoverChildNav (master on/off, default ON) and
-              #settingsHoverChildNavMultistep (default OFF — off shows only
-              the immediate children; on lets hovering a child cascade a
-              further flyout for ITS children, arbitrarily deep).
+              revealed its child filters as a hover flyout, so you could
+              navigate deeper in the filter tree without opening the
+              sidebar. **Removed** 2026-08-25 (person-requested, same
+              session as FEATURE_BACKLOG.md #18): superseded by Alt+Arrow
+              tree navigation (see Group 99), which covers the same need
+              without a mouse. Its own test group was deleted rather than
+              kept around testing dead code.
    Group 93  — this session (2026-08-23), person-requested alternative
               implementation of FEATURE_BACKLOG.md #13's popup idea (left
               untouched): marks the substring an active "text" filter node
@@ -11597,9 +11730,10 @@ process.exit(failed ? 1 : 0);
               Wort in der eigenen Farbe") replaced an initial
               background-clip:text gradient approach with this per-word
               solid-color version — assertions rewritten in place, not a new
-              group. Shared by the real tree row (renderNode) and the
-              breadcrumb child-nav flyout row (renderChildNavItem). Non-
-              "level" nodes are untouched.
+              group. Used by the real tree row (renderNode); non-"level"
+              nodes are untouched. (Originally also shared by the breadcrumb
+              child-nav flyout row, renderChildNavItem — removed along with
+              that feature, see Group 92.)
 
    Group 97  — this session (2026-08-23), FEATURE_BACKLOG.md #25: tail
               auto-follow now applies to the Highlight/Full view too, not
