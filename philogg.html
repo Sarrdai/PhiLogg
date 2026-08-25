@@ -735,6 +735,17 @@
   #btnMultilineMsg{float:left; margin:0 14px 6px 0;}
   #btnColumns{float:left; margin:0 14px 6px 0;}
   #btnTextMatchHighlight{float:left; margin:0 14px 6px 0;}
+  /* #btnApplyLevelToTree ("Add to tree", Settings → Behavior: Manual mode
+     only) sits after #levelBar in the same float flow. It's toggled via
+     display:none/"" by JS (see updateLevelBarVisibility/similar), not
+     removed from the DOM, so it must carry the SAME float:left + margin
+     as every other toolbar-icon-btn in this row — otherwise, being an
+     unfloated block sibling of floats, it drops below the #levelBar float
+     instead of continuing the line, shoving #breadcrumb's wrap start down
+     with it whenever Manual mode reveals the button. Floating it keeps the
+     row's line-length dynamic no matter how many buttons this line ends up
+     with. */
+  #btnApplyLevelToTree{float:left; margin:0 14px 6px 0;}
 
   #breadcrumb{
     /* Deliberately plain block (not flex/grid, no new block-formatting
