@@ -15252,6 +15252,18 @@ document.addEventListener("keydown", ev => {
 
   if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
     if (extractWrap.style.display !== "none") return; // extraction table has its own click/drag selection
+    // A Link filter is active in the Filtered pane (linkWrap visible, not
+    // tableWrap): renderMainView() calls renderLinkView() instead of
+    // renderTable() for it, so currentViewEntries is never refreshed and
+    // still holds whatever filter's list was active before the switch (via
+    // a tree click OR Alt+Arrow tree nav, see moveTreeSelection). Without
+    // this guard, moveSelection below would navigate that STALE list —
+    // updateDetailPanel shows an entry from the old filter while no row in
+    // the (unrelated) Link view ever matches it, i.e. the panel updates but
+    // nothing visibly selects. The Link view has its own click-driven pair
+    // selection (linkSelectedPairIndex), no Up/Down navigation of its own,
+    // so this is a no-op rather than routing into a different mechanism.
+    if (state.entriesView === "filter" && linkWrap.style.display !== "none") return;
     ev.preventDefault();
     const delta = ev.key === "ArrowDown" ? 1 : -1;
     if (state.entriesView === "highlight") moveHighlightSelection(delta); else moveSelection(delta);
