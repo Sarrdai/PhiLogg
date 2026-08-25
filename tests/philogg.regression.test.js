@@ -139,6 +139,7 @@ async function withApp(run, opts = {}) {
       get tempAnchorMode() { return tempAnchorMode; },
       get tempAnchorFadeSeconds() { return tempAnchorFadeSeconds; },
       get sidebarForcedPeek() { return sidebarForcedPeek; },
+      get sidebarAltPeek() { return sidebarAltPeek; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -10227,17 +10228,25 @@ await withApp(async (w, d, T) => {
    OS/app behavior for jumps within a document and should stay free for
    that.
 
+   Two independent peek mechanisms, same-day person-refined so each closes
+   the way it should rather than one rule for both:
    - Ctrl+0 keeps its existing "focus the tree" behavior, and ADDITIONALLY
-     force-peeks the panel open (setSidebarForcedPeek) if it's collapsed —
-     same visual .peeking overlay a mouse hover already shows, just not
-     closed by mouseleave.
-   - Alt+Arrow forwards straight to moveTreeSelection WITHOUT touching
-     state.focusRegion — the Log view stays "focused" for plain arrow keys —
-     and also force-peeks a collapsed panel.
-   - A forced peek is cleared by switching Full/Filtered/Stacked view
-     (applyFhView, Ctrl+1/2/3 or a tab click), by clicking outside the
-     sidebar, or by releasing whichever modifier forced it open (Ctrl for
-     Ctrl+0, Alt for Alt+Arrow).
+     force-peeks the panel open (setSidebarForcedPeek, sidebarForcedPeek
+     flag) if it's collapsed. Stays open until focus genuinely LEAVES the
+     panel — picking a filter (Enter while the tree has focus), switching
+     Full/Filtered/Stacked view (applyFhView, Ctrl+1/2/3 or a tab click), or
+     clicking outside the sidebar — deliberately NOT tied to releasing Ctrl
+     itself (Ctrl+0's own keystroke releases Ctrl immediately after).
+   - Alt, held down (with or without an arrow), peeks a collapsed panel open
+     for exactly as long as it's held (sidebarAltPeek flag, dedicated
+     keydown/keyup listeners) — a plain toggle, so a quick tap-and-release
+     just glances at the tree without navigating anything. Alt+Arrow ALSO
+     forwards straight to moveTreeSelection WITHOUT touching
+     state.focusRegion — the Log view stays "focused" for plain arrow keys.
+     Alt+Enter's own dialog (see below) can open while Alt is down;
+     releasing Alt then defers closing the peek until the dialog itself
+     closes (maybeCloseSidebarAltPeek, checked from both Alt's keyup and
+     closeFilterPopup).
    - Alt+Enter opens "Filter for this message" for the selected row directly
      (openFilterForEntryColumn, shared with the right-click menu item).
    - The temporary anchor (state.tempAnchor): switching the active filter —
@@ -10259,7 +10268,10 @@ await withApp(async (w, d, T) => {
   const sidebarEl = d.querySelector("#sidebar");
   const highlightRow = i => d.querySelectorAll("#highlightRows .log-row")[i];
 
-  // --- Ctrl+0: unchanged while expanded, force-peeks once collapsed ---
+  // --- Ctrl+0: unchanged while expanded, force-peeks once collapsed, and
+  //     that peek persists until focus genuinely leaves the panel (picking
+  //     a filter, switching view, or clicking outside) — NOT tied to
+  //     releasing Ctrl itself ---
   T.state.activeId = keepFilter.id;
   w.render();
   fireKeydown(d, w, "0", { ctrlKey: true });
@@ -10271,42 +10283,72 @@ await withApp(async (w, d, T) => {
   fireKeydown(d, w, "0", { ctrlKey: true });
   assert(sidebarEl.classList.contains("peeking") && T.sidebarForcedPeek === true,
     "Ctrl+0 force-peeks the panel open once it's collapsed");
-
-  // --- Alt+Arrow forwards to tree navigation WITHOUT taking focus away
-  //     from the current Log view ---
-  T.state.focusRegion = "entries";
-  w.toggleSidebarCollapsed(true); // re-collapse — also clears the forced peek
-  assert(T.sidebarForcedPeek === false, "manually toggling the panel clears any forced peek");
-
-  fireKeydown(d, w, "ArrowDown", { altKey: true });
+  fireKeyup(d, w, "Control");
   assert(T.sidebarForcedPeek === true && sidebarEl.classList.contains("peeking"),
-    "Alt+ArrowDown force-peeks a collapsed panel too");
+    "releasing Ctrl right after Ctrl+0 does NOT close the peek — only leaving the panel's focus does");
+
+  fireKeydown(d, w, "1", { ctrlKey: true }); // Ctrl+1 -> Full view, via applyFhView
+  assert(T.sidebarForcedPeek === false, "switching to the Full view (Ctrl+1) clears the forced peek");
+  assert(!sidebarEl.classList.contains("peeking"), "...and the panel collapses back to its rail");
+
+  w.toggleSidebarCollapsed(true);
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  fireClick(d.body, w);
+  assert(T.sidebarForcedPeek === false, "a click outside the sidebar also clears the forced peek");
+
+  w.toggleSidebarCollapsed(true);
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  T.state.focusRegion = "tree";
+  fireKeydown(d, w, "Enter"); // picking the active filter node while the tree has focus
+  assert(T.sidebarForcedPeek === false, "picking a filter (Enter while the tree has focus) also clears the forced peek");
+
+  // --- Alt (held down) peeks a collapsed panel open for as long as it's
+  //     held — a plain toggle, independent of navigation — and Alt+Arrow
+  //     forwards to tree navigation WITHOUT taking focus away from the
+  //     current Log view ---
+  T.state.focusRegion = "entries";
+  w.toggleSidebarCollapsed(true); // re-collapse
+  assert(T.sidebarAltPeek === false, "sanity: no Alt peek yet");
+
+  fireKeydown(d, w, "Alt"); // holding Alt down — a real browser fires this before any Alt+<key> combo
+  assert(T.sidebarAltPeek === true && sidebarEl.classList.contains("peeking"),
+    "holding Alt alone peeks a collapsed panel open, even without an arrow press");
+  fireKeyup(d, w, "Alt");
+  assert(T.sidebarAltPeek === false && !sidebarEl.classList.contains("peeking"),
+    "releasing Alt closes it back up again, since it was collapsed before the peek");
+
+  fireKeydown(d, w, "Alt");
+  fireKeydown(d, w, "ArrowDown", { altKey: true });
+  assert(T.sidebarAltPeek === true, "sanity: Alt peek still on during Alt+ArrowDown");
   assert(T.state.focusRegion === "entries",
-    "...but does NOT switch focus into the tree — it stays wherever it was");
+    "...but Alt+Arrow does NOT switch focus into the tree — it stays wherever it was");
   assert(T.state.activeId === skipFilter.id, "...while still moving the tree selection itself (keepFilter -> skipFilter)");
 
   fireKeydown(d, w, "ArrowUp", { altKey: true });
   assert(T.state.activeId === keepFilter.id, "Alt+ArrowUp moves it back");
   assert(T.state.focusRegion === "entries", "focus still hasn't moved");
 
-  // --- The peek persists across further Alt+Arrow presses, only clearing
-  //     on a view switch or a click outside the sidebar ---
-  fireKeydown(d, w, "1", { ctrlKey: true }); // Ctrl+1 -> Full view, via applyFhView
-  assert(T.sidebarForcedPeek === false, "switching to the Full view (Ctrl+1) clears the forced peek");
-  assert(!sidebarEl.classList.contains("peeking"), "...and the panel collapses back to its rail");
-
-  w.toggleSidebarCollapsed(true);
-  fireKeydown(d, w, "ArrowDown", { altKey: true });
-  assert(T.sidebarForcedPeek === true, "sanity: forced peek is back on");
-  fireClick(d.body, w);
-  assert(T.sidebarForcedPeek === false, "a click outside the sidebar also clears the forced peek");
-
-  // --- Releasing Alt also closes a peek IT forced open ---
-  fireKeydown(d, w, "ArrowDown", { altKey: true });
-  assert(T.sidebarForcedPeek === true && sidebarEl.classList.contains("peeking"), "sanity: forced peek is on again");
   fireKeyup(d, w, "Alt");
-  assert(T.sidebarForcedPeek === false && !sidebarEl.classList.contains("peeking"),
-    "releasing Alt closes the sidebar back up, since it was collapsed before the peek");
+  assert(T.sidebarAltPeek === false && !sidebarEl.classList.contains("peeking"),
+    "releasing Alt after navigating with it closes the panel back up");
+
+  // --- Alt+Enter's own dialog can open while Alt is down — releasing Alt
+  //     right after typing that chord must not close the panel out from
+  //     under the still-open dialog; only actually closing the dialog does ---
+  w.applyFhView("highlight");
+  T.state.entriesView = "highlight";
+  fireClick(highlightRow(0), w);
+  fireKeydown(d, w, "Alt");
+  fireKeydown(d, w, "Enter", { altKey: true });
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "sanity: Alt+Enter opened the dialog");
+  assert(T.sidebarAltPeek === true, "sanity: Alt held it peeked open");
+  fireKeyup(d, w, "Alt");
+  assert(T.sidebarAltPeek === true && sidebarEl.classList.contains("peeking"),
+    "releasing Alt while the Alt+Enter dialog is still open does NOT close the panel");
+  w.closeFilterPopup();
+  d.querySelector("#filterInput").blur();
+  assert(T.sidebarAltPeek === false && !sidebarEl.classList.contains("peeking"),
+    "...but closing the dialog afterward does, since Alt was already released");
 
   w.toggleSidebarCollapsed(false); // re-expand for the rest of this group
 
