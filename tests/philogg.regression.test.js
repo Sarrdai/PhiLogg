@@ -127,9 +127,6 @@ async function withApp(run, opts = {}) {
       get colorPickerMode() { return colorPickerMode; },
       get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },
       get accentChoices() { return accentChoices; },
-      get hoverChildNavEnabled() { return hoverChildNavEnabled; },
-      get hoverChildNavMultistep() { return hoverChildNavMultistep; },
-      get childNavPanels() { return childNavPanels; },
       get textMatchHighlightEnabled() { return textMatchHighlightEnabled; },
       get textMatchHighlightScope() { return textMatchHighlightScope; },
       get textMatchHighlightInRows() { return textMatchHighlightInRows; },
@@ -9433,128 +9430,6 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 92 — Breadcrumb "hover the current entry to reveal its children"
-   (person-requested, this session, mockup attached): hovering the ACTIVE
-   ("current") chip in #breadcrumb pops up its child filters as a flyout
-   (#childNavFlyoutHost > .child-nav-flyout), letting you navigate deeper in
-   the filter tree without opening the sidebar. Two new settings:
-   #settingsHoverChildNav (master on/off, default ON) and
-   #settingsHoverChildNavMultistep (default OFF) — off shows only the
-   immediate children; on lets hovering one of those children cascade a
-   further flyout for ITS children (arbitrarily deep), tracked as one
-   .child-nav-flyout panel per depth in childNavPanels.
-   ============================================================ */
-await withApp(async (w, d, T) => {
-  section("92. Breadcrumb hover child-nav flyout + its two settings");
-
-  const enabledCb = d.querySelector("#settingsHoverChildNav");
-  const multistepCb = d.querySelector("#settingsHoverChildNavMultistep");
-  const host = d.querySelector("#childNavFlyoutHost");
-
-  // --- Defaults ---
-  assert(enabledCb.checked === true && T.hoverChildNavEnabled === true, "master setting defaults ON");
-  assert(multistepCb.checked === false && T.hoverChildNavMultistep === false, "multistep setting defaults OFF");
-
-  // file -> one -> two -> three, three levels deep past the root.
-  const f = await w.addFile("app.log", makeLog(0, 5, { msgPrefix: "one two three" }), () => {});
-  const one = w.createFilterNode(f.id, "text", "one");
-  const two = w.createFilterNode(one.id, "text", "two");
-  const three = w.createFilterNode(two.id, "text", "three");
-
-  T.state.activeId = one.id;
-  w.render();
-
-  const chips = d.querySelectorAll("#breadcrumb .crumb");
-  assert(chips.length === 2, "breadcrumb shows file + 'one' for the active 'one' node");
-  const fileChip = chips[0], currentChip = chips[1];
-  assert(currentChip.classList.contains("current"), "second chip is the current one");
-
-  // --- Hovering an ANCESTOR chip does nothing — only the current chip does ---
-  fileChip.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 0, "hovering a non-current ancestor chip opens no flyout");
-
-  // --- Hovering the CURRENT chip opens its children as a flyout ---
-  currentChip.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 1, "hovering the current chip opens one flyout panel");
-  let panel = host.querySelector(".child-nav-flyout");
-  let items = panel.querySelectorAll(".child-nav-item");
-  assert(items.length === 1 && items[0].dataset.nodeId === two.id, "flyout lists 'one''s only child, 'two'");
-  assert(items[0].querySelector(".tree-label").textContent === two.name, "item shows the child's name (as displayed in the tree, e.g. a quoted text filter)");
-  assert(items[0].querySelector(".tree-type-tag").textContent === "TXT", "item shows the child's type tag");
-  assert(items[0].querySelector(".tree-count").textContent === w.getEntries(two.id).length.toLocaleString("de-DE"),
-    "item shows the child's own entry count");
-  assert(!items[0].querySelector(".child-nav-caret"), "no cascade caret while multistep is off, even though 'two' has its own child");
-
-  // --- Clicking a flyout item navigates straight to it and closes the flyout ---
-  fireClick(items[0], w);
-  assert(T.state.activeId === two.id, "clicking the flyout item selects it as the active node");
-  assert(host.children.length === 0, "...and closes the flyout");
-
-  // --- A leaf (no children) current node opens nothing ---
-  T.state.activeId = three.id;
-  w.render();
-  const leafChips = d.querySelectorAll("#breadcrumb .crumb");
-  leafChips[leafChips.length - 1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 0, "a childless current node's flyout hover is a no-op");
-
-  // --- Multistep OFF (default): hovering a child that itself has children
-  //     does NOT cascade a second panel ---
-  T.state.activeId = one.id;
-  w.render();
-  d.querySelectorAll("#breadcrumb .crumb")[1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  panel = host.querySelector(".child-nav-flyout");
-  let twoItem = panel.querySelector('.child-nav-item[data-node-id="' + two.id + '"]');
-  twoItem.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(T.childNavPanels.length === 1, "multistep off: hovering a child with children does not open a second level");
-
-  // --- Turn multistep ON: now hovering that same child cascades level 1 ---
-  multistepCb.checked = true;
-  multistepCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.localStorage.getItem("philogg-hover-child-nav-multistep") === "1", "multistep setting persisted");
-  d.querySelectorAll("#breadcrumb .crumb")[1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  panel = host.querySelector(".child-nav-flyout");
-  twoItem = panel.querySelector('.child-nav-item[data-node-id="' + two.id + '"]');
-  assert(!!twoItem.querySelector(".child-nav-caret"), "with multistep on, an item with children now shows the cascade caret");
-  twoItem.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(T.childNavPanels.length === 2, "multistep on: hovering 'two' (which has 'three' as a child) cascades a second flyout level");
-  const level1Panel = host.querySelectorAll(".child-nav-flyout")[1];
-  const level1Items = level1Panel.querySelectorAll(".child-nav-item");
-  assert(level1Items.length === 1 && level1Items[0].dataset.nodeId === three.id, "the cascaded level shows 'two''s own child, 'three'");
-
-  // --- Turning multistep off while a level-1+ cascade is open closes it,
-  //     keeping level 0 alive ---
-  multistepCb.checked = false;
-  multistepCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(T.childNavPanels.length === 1, "turning multistep off mid-cascade drops levels 1+ but keeps level 0 open");
-
-  // --- Turning the MASTER setting off closes any open flyout immediately ---
-  enabledCb.checked = false;
-  enabledCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.localStorage.getItem("philogg-hover-child-nav") === "0", "master setting persisted as off");
-  assert(host.children.length === 0, "turning the master setting off closes any open flyout right away");
-
-  // ...and with it off, hovering the current chip is a no-op even though it has children.
-  d.querySelectorAll("#breadcrumb .crumb")[1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 0, "master off: hovering the current chip opens nothing");
-
-  // --- Re-enable, open a flyout, and confirm Escape closes it ---
-  enabledCb.checked = true;
-  enabledCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  d.querySelectorAll("#breadcrumb .crumb")[1].dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(host.children.length === 1, "sanity: flyout reopens once the master setting is back on");
-  fireKeydown(d, w, "Escape");
-  assert(host.children.length === 0, "Escape closes an open child-nav flyout, same as it does the other transient popups");
-
-  // --- initHoverChildNavSettings re-applies persisted flags on (re-)init,
-  //     same path real boot uses ---
-  w.localStorage.setItem("philogg-hover-child-nav", "0");
-  w.localStorage.setItem("philogg-hover-child-nav-multistep", "1");
-  w.initHoverChildNavSettings();
-  assert(enabledCb.checked === false && multistepCb.checked === true,
-    "initHoverChildNavSettings re-applies persisted flags for both settings, same as at boot");
-});
-
-/* ============================================================
    GROUP 93 — Text-filter match highlighting (this session, 2026-08-23,
    person-requested alternative implementation of FEATURE_BACKLOG.md #13's
    "why is this row here" popup idea — that entry itself is left untouched).
@@ -9894,12 +9769,6 @@ await withApp(async (w, d, T) => {
   label = d.querySelector('.tree-row[data-node-id="' + textNode.id + '"] .tree-label');
   assert(label.querySelectorAll("span").length === 0 && label.textContent === "“message 1”",
     "a plain text filter node's label is untouched — plain text, no spans");
-
-  /* ---------- Breadcrumb child-nav flyout row mirrors the same per-word coloring ---------- */
-  const flyoutRow = w.renderChildNavItem(comboNode.id, 0);
-  const flyoutWords = [...flyoutRow.querySelector(".tree-label").querySelectorAll("span")];
-  assert(flyoutWords.length === 2 && flyoutWords[0].style.color === "var(--level-error)" && flyoutWords[1].style.color === "var(--level-info)",
-    "the child-nav flyout row (renderChildNavItem) mirrors the tree row's own per-word coloring");
 });
 
 /* ============================================================
@@ -10200,7 +10069,7 @@ await withApp(async (w, d, T) => {
 
   const cardOf = id => d.getElementById(id).closest(".settings-card");
   assert(cardOf("settingsQuitOnLastClose") === cards[0], "the quit-on-close row sits alone in the first, un-headed card");
-  [ "settingsHoverExpandSidebar", "settingsHoverExpandDetail", "settingsHoverChildNav", "settingsHoverChildNavMultistep" ]
+  [ "settingsHoverExpandSidebar", "settingsHoverExpandDetail" ]
     .forEach(id => assert(cardOf(id) === cards[1], "#" + id + " sits in the hover-to-expand card"));
   assert(cardOf("settingsLevelFilterTreeMode") === cards[2], "the level-bar-tree-mode row sits in its own filter-tree card");
   [ "settingsTextMatchHighlightScope", "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail" ]
@@ -11803,13 +11672,13 @@ process.exit(failed ? 1 : 0);
               click-to-expand is unaffected either way.
    Group 92  — this session (2026-08-22), person-requested (mockup
               attached): hovering the active/"current" chip in #breadcrumb
-              reveals its child filters as a hover flyout
-              (#childNavFlyoutHost), so you can navigate deeper in the
-              filter tree without opening the sidebar. Two new settings:
-              #settingsHoverChildNav (master on/off, default ON) and
-              #settingsHoverChildNavMultistep (default OFF — off shows only
-              the immediate children; on lets hovering a child cascade a
-              further flyout for ITS children, arbitrarily deep).
+              revealed its child filters as a hover flyout, so you could
+              navigate deeper in the filter tree without opening the
+              sidebar. **Removed** 2026-08-25 (person-requested, same
+              session as FEATURE_BACKLOG.md #18): superseded by Alt+Arrow
+              tree navigation (see Group 99), which covers the same need
+              without a mouse. Its own test group was deleted rather than
+              kept around testing dead code.
    Group 93  — this session (2026-08-23), person-requested alternative
               implementation of FEATURE_BACKLOG.md #13's popup idea (left
               untouched): marks the substring an active "text" filter node
@@ -11861,9 +11730,10 @@ process.exit(failed ? 1 : 0);
               Wort in der eigenen Farbe") replaced an initial
               background-clip:text gradient approach with this per-word
               solid-color version — assertions rewritten in place, not a new
-              group. Shared by the real tree row (renderNode) and the
-              breadcrumb child-nav flyout row (renderChildNavItem). Non-
-              "level" nodes are untouched.
+              group. Used by the real tree row (renderNode); non-"level"
+              nodes are untouched. (Originally also shared by the breadcrumb
+              child-nav flyout row, renderChildNavItem — removed along with
+              that feature, see Group 92.)
 
    Group 97  — this session (2026-08-23), FEATURE_BACKLOG.md #25: tail
               auto-follow now applies to the Highlight/Full view too, not

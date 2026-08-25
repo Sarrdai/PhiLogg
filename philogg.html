@@ -782,27 +782,6 @@
      against the 28px pills either side: (28-12)/2 = 8px. */
   .crumb-sep{display:inline-block; vertical-align:top; margin:8px 3px 6px; line-height:12px; color:var(--text-tertiary); font-size:11px;}
 
-  /* ---------- Breadcrumb "hover the current entry to reveal its children"
-     flyout (settingsHoverChildNav/-Multistep) — one .child-nav-flyout panel
-     per depth level, positioned/created directly in JS (see
-     renderChildNavLevel). Reuses .tree-icon/.tree-label/.tree-type-tag/
-     .tree-count from the tree itself so an item here looks identical to its
-     real tree row, just laid out in a flat flyout list instead of an indented
-     tree. */
-  .child-nav-flyout{
-    position:fixed; z-index:56; background:var(--bg-elevated);
-    border:1px solid var(--border); border-radius:8px; padding:5px;
-    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:180px; max-width:280px;
-  }
-  .child-nav-item{
-    display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:6px;
-    font-size:12px; color:var(--text-primary); cursor:pointer; white-space:nowrap;
-  }
-  .child-nav-item:hover, .child-nav-item.hover-open{background:var(--accent-soft); color:var(--accent-strong);}
-  .child-nav-item .tree-label{flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; min-width:0;}
-  .child-nav-caret{flex:0 0 auto; color:var(--text-tertiary); font-size:10px;}
-  .child-nav-empty-note{padding:6px 8px; font-size:11px; color:var(--text-tertiary); font-style:italic; max-width:220px;}
-
   /* ---------- Level filter bar ---------- */
   #levelBar{
     float:left; margin:0 14px 6px 0;
@@ -2515,13 +2494,6 @@
 
   <div id="treeContextMenu" class="hidden"></div>
 
-  <!-- Cascading hover flyout(s) for "hover the current breadcrumb entry to
-       reveal its children" (settingsHoverChildNav/-Multistep) — level panels
-       are appended/removed here directly in JS (childNavFlyoutHost), one per
-       depth, rather than a fixed set of elements, since the depth is only
-       bounded by the tree itself. See renderChildNavLevel/closeChildNavFlyouts. -->
-  <div id="childNavFlyoutHost"></div>
-
   <!-- Custom highlight-colour picker (session 6:
        deliberately not the native <input type="color"> — Windows' native
        picker UX varies too much for predictable results here). A hue wheel
@@ -2872,30 +2844,6 @@
               <div class="settings-row-control">
                 <label class="settings-switch">
                   <input type="checkbox" id="settingsHoverExpandDetail">
-                  <span class="settings-switch-track"></span>
-                </label>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsHoverChildNav">Hover the current breadcrumb entry to reveal its children</label>
-                <div class="settings-row-hint">Hovering the active file/filter chip in the breadcrumb shows its child filters as a flyout, so you can navigate deeper without opening the tree.</div>
-              </div>
-              <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsHoverChildNav">
-                  <span class="settings-switch-track"></span>
-                </label>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsHoverChildNavMultistep">Keep hovering through multiple levels</label>
-                <div class="settings-row-hint">With this on, hovering a child in the flyout reveals its own children too, letting you drill down several levels deep. Off shows only the immediate children.</div>
-              </div>
-              <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsHoverChildNavMultistep">
                   <span class="settings-switch-track"></span>
                 </label>
               </div>
@@ -3707,55 +3655,6 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
     updateDetailToggleIcon();
     updateDetailPanel();
   }
-});
-
-/* ===================== "Hover the current breadcrumb entry to reveal its
-   children" (this session, person-requested, mockup attached: hovering the
-   active/"current" chip in #breadcrumb pops up its child filters as a
-   flyout list, letting you jump straight to a deeper node without opening
-   the tree sidebar). Two independent toggles, same tier/mechanism as the
-   hover-expand settings above (plain localStorage flags, on by default is
-   fine here too — see below):
-     - hoverChildNavEnabled: master on/off for the whole feature.
-     - hoverChildNavMultistep: off (default) shows only the hovered chip's
-       immediate children; on lets hovering one of THOSE children cascade a
-       further flyout for ITS children, and so on, arbitrarily deep.
-   Master defaults ON (it's a discoverable, hover-only affordance that never
-   changes any existing click behavior, unlike the hover-expand settings
-   above which are an opt-out of something that already auto-happened).
-   Multistep defaults OFF, matching the mockup (a single child level shown)
-   and the person's own description order ("wenn off, wird nur die Child
-   Ebene angezeigt"). See renderChildNavLevel/closeChildNavFlyouts below for
-   the flyout implementation itself. */
-const HOVER_CHILD_NAV_KEY = "philogg-hover-child-nav";
-const HOVER_CHILD_NAV_MULTISTEP_KEY = "philogg-hover-child-nav-multistep";
-let hoverChildNavEnabled = true;
-let hoverChildNavMultistep = false;
-
-function initHoverChildNavSettings() {
-  const enabledStored = localStorage.getItem(HOVER_CHILD_NAV_KEY);
-  hoverChildNavEnabled = enabledStored === null ? true : enabledStored === "1";
-  const enabledCb = document.getElementById("settingsHoverChildNav");
-  if (enabledCb) enabledCb.checked = hoverChildNavEnabled;
-
-  const multistepStored = localStorage.getItem(HOVER_CHILD_NAV_MULTISTEP_KEY);
-  hoverChildNavMultistep = multistepStored === null ? false : multistepStored === "1";
-  const multistepCb = document.getElementById("settingsHoverChildNavMultistep");
-  if (multistepCb) multistepCb.checked = hoverChildNavMultistep;
-}
-
-document.getElementById("settingsHoverChildNav").addEventListener("change", ev => {
-  hoverChildNavEnabled = ev.target.checked;
-  localStorage.setItem(HOVER_CHILD_NAV_KEY, hoverChildNavEnabled ? "1" : "0");
-  if (!hoverChildNavEnabled) closeChildNavFlyouts(0);
-});
-
-document.getElementById("settingsHoverChildNavMultistep").addEventListener("change", ev => {
-  hoverChildNavMultistep = ev.target.checked;
-  localStorage.setItem(HOVER_CHILD_NAV_MULTISTEP_KEY, hoverChildNavMultistep ? "1" : "0");
-  // Turning it off while a deeper cascade happens to be open would otherwise
-  // leave levels beyond the first stuck open until the next mouseleave.
-  if (!hoverChildNavMultistep) closeChildNavFlyouts(1);
 });
 
 /* ===================== Text-filter match highlighting settings (Settings ->
@@ -6326,7 +6225,6 @@ function getChain(id) {
 const el = sel => document.querySelector(sel);
 const treeEl = el("#tree");
 const breadcrumbEl = el("#breadcrumb");
-const childNavFlyoutHost = el("#childNavFlyoutHost");
 const levelBarEl = el("#levelBar");
 const btnApplyLevelToTree = el("#btnApplyLevelToTree");
 const tableBody = el("#tableBody");
@@ -6749,10 +6647,7 @@ function typeTagFor(node) {
   }
 }
 
-// Shared icon lookup — used by both a real tree row (renderNode) and the
-// breadcrumb child-nav flyout (renderChildNavItem, "hover the current entry
-// to reveal its children"), so an item looks identical whether opened from
-// the tree or from a hover flyout.
+// Icon lookup for a tree row (renderNode).
 function nodeIconHTML(node) {
   return node.type === "file" ? (node.merged ? ICON_MERGE : ICON_FILE)
     : node.filterType === "text" ? ICON_FILTER
@@ -6773,10 +6668,8 @@ function nodeIconHTML(node) {
 // HTML string, so an unknown/corrupt value (e.g. from a hand-edited filter
 // file — importFilterJson doesn't otherwise validate a "level" node's value
 // array contents) can never inject markup; an unrecognized entry just
-// renders in the default text color instead of a level color. Shared by the
-// real tree row (renderNode) and the breadcrumb child-nav flyout
-// (renderChildNavItem), same "look identical either way" precedent as
-// nodeIconHTML above.
+// renders in the default text color instead of a level color. Used by a
+// tree row's own label (renderNode).
 function buildLevelNodeLabelContent(node) {
   const frag = document.createDocumentFragment();
   if (node.inverted) frag.appendChild(document.createTextNode("¬ "));
@@ -7040,8 +6933,8 @@ function startRenameNode(nodeId) {
 }
 
 // Shared by every place a filter/level/and/or/... node's name is shown to
-// the user (tree row, breadcrumb, child-nav flyout, context menu header,
-// ...): a node.label (see renameFilterNodeWithUndo) overrides the
+// the user (tree row, breadcrumb, context menu header, ...): a node.label
+// (see renameFilterNodeWithUndo) overrides the
 // auto-derived node.name for DISPLAY only — node.name itself is untouched,
 // so anything that needs the actual pattern (Edit dialog, library save
 // default, etc.) still reads it directly.
@@ -7316,10 +7209,6 @@ function renderNode(id, depth) {
 }
 
 function renderBreadcrumb() {
-  // Chip elements are rebuilt from scratch below, so any flyout anchored to
-  // a PREVIOUS render's chip would be left pointing at a detached element —
-  // closing here keeps the flyout's lifetime tied to "still the same render".
-  closeChildNavFlyouts(0);
   breadcrumbEl.innerHTML = "";
   if (!state.activeId || !state.nodes[state.activeId]) return;
   const chain = getChain(state.activeId);
@@ -7344,162 +7233,8 @@ function renderBreadcrumb() {
       state.focusRegion = "tree";
       render();
     });
-    // "Hover the current breadcrumb entry to reveal its children" — only the
-    // CURRENT (rightmost/active) chip, not every ancestor in the chain, per
-    // the feature request ("den aktuellen File/Filter Eintrag des aktuellen
-    // Pfads"). See openChildNavLevel/closeChildNavFlyouts below.
-    if (isCurrent) {
-      chip.addEventListener("mouseenter", () => {
-        cancelChildNavClose();
-        if (hoverChildNavEnabled) openChildNavLevel(node.id, chip, 0);
-      });
-      chip.addEventListener("mouseleave", scheduleChildNavClose);
-    }
     breadcrumbEl.appendChild(chip);
   });
-}
-
-// ===================== Breadcrumb child-nav flyout =====================
-// "Hover the current breadcrumb entry to reveal its children" (person-
-// requested, this session, mockup attached) — hovering the active chip
-// pops up its children as a clickable list next to it, so you can navigate
-// deeper in the filter tree without opening the sidebar. With
-// hoverChildNavMultistep on, hovering one of those children cascades a
-// further flyout for ITS children, and so on — one .child-nav-flyout panel
-// per depth, tracked in childNavPanels (level 0 = children of the
-// breadcrumb chip itself). Gated entirely by hoverChildNavEnabled/
-// hoverChildNavMultistep (see their init above); with the master setting
-// off this whole module is simply never called.
-
-let childNavPanels = []; // [{ level, el }], ordered by ascending level (a stack)
-let childNavCloseTimer = null;
-
-function cancelChildNavClose() {
-  if (childNavCloseTimer) { clearTimeout(childNavCloseTimer); childNavCloseTimer = null; }
-}
-
-// Closing hover-out is delayed slightly so moving the mouse from the chip
-// into the flyout (or from one cascaded panel into the next) doesn't flash
-// it shut in the gap between the two elements.
-function scheduleChildNavClose() {
-  cancelChildNavClose();
-  childNavCloseTimer = setTimeout(() => closeChildNavFlyouts(0), 150);
-}
-
-// Removes every open panel at `fromLevel` and deeper. childNavPanels is
-// always ordered by ascending level with at most one panel per level (see
-// openChildNavLevel, which itself closes fromLevel-and-deeper before
-// pushing its own new panel) — so the tail of the array is exactly
-// "fromLevel and deeper".
-function closeChildNavFlyouts(fromLevel = 0) {
-  while (childNavPanels.length && childNavPanels[childNavPanels.length - 1].level >= fromLevel) {
-    childNavPanels.pop().el.remove();
-  }
-}
-
-// One row in a flyout panel — visually the same icon/label/type-tag/count
-// as a real tree row (see nodeIconHTML/typeTagFor), just laid out flat
-// instead of indented. `level` is this row's OWN node's depth in the
-// cascade (i.e. the level a further click-through flyout for its children
-// would open at).
-function renderChildNavItem(nodeId, level) {
-  const node = state.nodes[nodeId];
-  const row = document.createElement("div");
-  row.className = "child-nav-item";
-  row.dataset.nodeId = nodeId;
-
-  const icon = document.createElement("span");
-  icon.className = "tree-icon";
-  icon.innerHTML = nodeIconHTML(node);
-  row.appendChild(icon);
-
-  const label = document.createElement("span");
-  label.className = "tree-label";
-  if (node.type === "filter" && node.filterType === "level" && !node.label) label.appendChild(buildLevelNodeLabelContent(node));
-  else {
-    const displayName = nodeDisplayName(node);
-    label.textContent = node.inverted ? "¬ " + displayName : displayName;
-  }
-  row.appendChild(label);
-
-  const tag = document.createElement("span");
-  tag.className = "tree-type-tag";
-  tag.textContent = typeTagFor(node);
-  row.appendChild(tag);
-
-  const count = document.createElement("span");
-  count.className = "tree-count";
-  count.textContent = getEntries(nodeId).length.toLocaleString("de-DE");
-  row.appendChild(count);
-
-  const hasChildren = node.children && node.children.length > 0;
-  // Only hinted when multistep is actually on — otherwise hovering this item
-  // won't cascade anything, and the caret would promise an interaction that
-  // doesn't happen.
-  if (hasChildren && hoverChildNavMultistep) {
-    const caret = document.createElement("span");
-    caret.className = "child-nav-caret";
-    caret.textContent = "›";
-    row.appendChild(caret);
-  }
-
-  // Clicking any item at any depth jumps straight to it, same as clicking
-  // its row in the tree would.
-  row.addEventListener("click", ev => {
-    ev.stopPropagation();
-    state.multiSelect = new Set([nodeId]);
-    state.activeId = nodeId;
-    state.focusRegion = "tree";
-    closeChildNavFlyouts(0);
-    render();
-  });
-
-  row.addEventListener("mouseenter", () => {
-    cancelChildNavClose();
-    row.parentElement && Array.from(row.parentElement.children).forEach(sib => sib.classList.remove("hover-open"));
-    if (hoverChildNavMultistep && hasChildren) {
-      row.classList.add("hover-open");
-      openChildNavLevel(nodeId, row, level + 1);
-    } else {
-      // Not cascading from this item — make sure a deeper cascade left open
-      // by a PREVIOUS sibling in this same panel doesn't linger.
-      closeChildNavFlyouts(level + 1);
-    }
-  });
-
-  return row;
-}
-
-// Positions a freshly-appended panel next to its anchor: level 0 (anchored
-// to the breadcrumb chip) drops BELOW the chip like a dropdown; level 1+
-// (anchored to an item inside another flyout panel) cascades to the RIGHT
-// of that item, like a nested submenu. Clamped to stay within the viewport.
-function positionChildNavPanel(panel, anchorEl, level) {
-  const anchorRect = anchorEl.getBoundingClientRect();
-  const panelRect = panel.getBoundingClientRect();
-  let left = level === 0 ? anchorRect.left : anchorRect.right + 4;
-  let top = level === 0 ? anchorRect.bottom + 4 : anchorRect.top;
-  left = Math.max(8, Math.min(left, window.innerWidth - panelRect.width - 8));
-  top = Math.max(8, Math.min(top, window.innerHeight - panelRect.height - 8));
-  panel.style.left = left + "px";
-  panel.style.top = top + "px";
-}
-
-// Opens (or replaces) the flyout panel for `nodeId`'s children at `level`,
-// anchored to `anchorEl` (the chip for level 0, a child-nav-item row for
-// level 1+). A no-op if the node has no children — nothing to show.
-function openChildNavLevel(nodeId, anchorEl, level) {
-  closeChildNavFlyouts(level);
-  const node = state.nodes[nodeId];
-  if (!node || !node.children || node.children.length === 0) return;
-  const panel = document.createElement("div");
-  panel.className = "child-nav-flyout";
-  node.children.forEach(childId => panel.appendChild(renderChildNavItem(childId, level)));
-  panel.addEventListener("mouseenter", cancelChildNavClose);
-  panel.addEventListener("mouseleave", scheduleChildNavClose);
-  childNavFlyoutHost.appendChild(panel);
-  positionChildNavPanel(panel, anchorEl, level);
-  childNavPanels.push({ level, el: panel });
 }
 
 // The level array of the "level" filter node currently sitting at
@@ -15041,7 +14776,6 @@ document.addEventListener("keydown", ev => {
     closeFilterLibraryDialog();
     closeShortcutsPanel();
     closeLicensePanel();
-    closeChildNavFlyouts();
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
@@ -16594,7 +16328,6 @@ initTheme();
 initFontScale();
 initQuitOnLastClose();
 initHoverExpandSettings();
-initHoverChildNavSettings();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();
 initTempAnchorSettings();
