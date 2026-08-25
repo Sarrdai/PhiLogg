@@ -96,13 +96,13 @@ open it in a browser to view it.
   a log at boot, for linking straight to a log from CI/a report (requires
   PhiLogg itself served over `http(s)`, not opened as a local file, and CORS
   on the remote log server).
-- **Bookmarks, undo/redo, timeline minimap with drag-to-select.**
+- **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with drag-to-select.**
 - **Session cache** — reload the browser tab and get your files, filters,
   and settings back.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
   presets you apply across different files.
 - **Session export/import** — package an analysis (files, filters,
-  bookmarks) to share with a colleague.
+  bookmarks, notes) to share with a colleague.
 - **Configurable log formats** (Settings → Format Manager) — define
   additional formats (a log4net-style conversion pattern, or a raw regex
   for edge cases) and map them to files by filename pattern; the log4net-style
