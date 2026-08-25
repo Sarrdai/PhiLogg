@@ -47,27 +47,22 @@ this point.
 ### Navigation & reading
 
 8. **Full view: hide the minimap's "covered timespan" visualization** (toggle in Settings) — it's meaningless there since the Full view always covers the entire log. Show the currently-visible row range instead, the same way the minimap already highlights the visible/rendered subset in the Filtered/Stacked view — just applied to the Full log's own rows instead of the filtered rows.
-9. **"Newest" button should only show for trailing files** — hide it for static (non-trailing) files, where jumping to "newest" has no meaning.
-10. **Minimap time-filter drag line: draw at the bottom edge instead of the top** — the line shown while dragging out a time filter on the minimap currently sits at the top; the bottom would read better.
 11. **Create a filter from the currently visible plot area** — either as a time-range filter, or targeted specifically at the log entries currently "visible" in the plot/minimap. Open question: which of the two (or both) the interaction should produce.
 
 ### Filter tree workflow
 
 16. **Regex filter type** — a real `RegExp` alongside the wildcard-token text filter, with the same live match count, case-sensitivity, and target-column options. Complements (doesn't replace) the token language, which stays the friendlier default.
-17. **Middle-click a filter node to delete it** — from both the "Files & Filters" tree panel and the breadcrumbs.
 20. **Extend match-text highlighting to Highlights, not just Filters** — text filters already support marking the matched substring itself in color (not just the left-edge color bar), scoped to either the active filter or the whole filter path (configurable). Apply the same match-text coloring to Highlights, using the highlight's own color. Open question: whether this needs a separate button, a global setting, or a toggle in the color-picker menu (would then be per-filter configurable, default on).
 
 ### Desktop wrapper (Electron)
 
 33. **Settings exportable as JSON.** The Electron variant should by default store/load settings in the OS "well-known" config directory (XDG on Linux, e.g. `~/.config/PhiLogg`).
 35. **"Restore last session on startup" setting is Electron-only in practice** — the plain `.html` build already needs to survive a page refresh regardless of this setting (existing cache behavior), so the toggle really only has meaning in the Electron build; consider hiding/disabling it outside Electron.
-36. **Show the minimize/close window controls in `F11` fullscreen too** — reuse the same visualization already used for a maximized window; don't hide the controls just because fullscreen is active.
 
 ### Settings & UI polish
 
 37. **Fix filter-chain layout when "Level bar creates filter tree nodes" is set to "explicit" (manual)** — the extra "Add to tree" button that mode shows breaks/shifts the layout.
 38. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
-39. **Breadcrumb hover should also work on nodes further back in the current chain**, not just the current/active one, so a new branch can be picked from there too.
 40. **Fix Settings view scroll performance** — currently noticeably janky.
 42+44. **Font size and overall UI scale, independently configurable** — "Change Font Size" currently appears to scale the whole UI; split into two separate settings, one for log/text font size, one for overall UI scale.
 43. **`Ctrl+0` should expand the Files & Filters panel if it's collapsed** — including under "manual expand" (hover-to-expand disabled): in that mode `Ctrl+0` should still expand the panel exactly like hover would, and keep it expanded until focus moves to another view (e.g. via `Ctrl+1` or a click into another view).
@@ -110,7 +105,6 @@ this point.
 
 ### Settings & UI polish
 
-41. **Code highlighting in the Entry Details view, behind a toggle.**
 45. **Theme should be able to follow the OS/system light-dark state** — auto light/dark switching based on system preference, as an alternative to the existing manual toggle.
 
 ## Wiedervorlage
@@ -148,5 +142,5 @@ this point.
 
 ## Verworfen
 
-_None yet. Moving an entry here requires a stated reason — add it inline
-next to the entry when it happens._
+39. **Breadcrumb hover should also work on nodes further back in the current chain**, not just the current/active one, so a new branch can be picked from there too. — The feature this depended on (hovering the active breadcrumb chip to reveal a child-filter flyout) was itself removed 2026-08-25, superseded by Alt+Arrow tree navigation; nothing left to extend.
+41. **Code highlighting in the Entry Details view, behind a toggle.** — Already covered another way: text-filter/highlight match coloring (2026-08-23) already marks the relevant substrings inline in the entry-detail panel.

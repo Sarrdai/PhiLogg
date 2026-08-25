@@ -993,7 +993,7 @@
   }
   #timelineMinimapDragRect.hidden{display:none;}
   #timelineMinimapDragLabel{
-    position:absolute; top:4px; transform:translateX(-50%);
+    position:absolute; bottom:4px; transform:translateX(-50%);
     padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
     border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
     pointer-events:none; white-space:nowrap; z-index:11;
@@ -7161,6 +7161,16 @@ function renderNode(id, depth) {
     render();
   });
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openTreeContextMenu(ev, id); });
+  // Middle-click (FEATURE_BACKLOG #17): same delete as the row's own ✕
+  // button, without needing to reach for it. mousedown preventDefault stops
+  // the browser's middle-click autoscroll indicator from appearing first.
+  row.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
+  row.addEventListener("auxclick", ev => {
+    if (ev.button !== 1) return;
+    ev.preventDefault();
+    deleteFilterNodeWithUndo(id);
+    render();
+  });
 
   // Drag-and-drop reparenting: any filter node can be dragged (moveNode()
   // itself guards against the one genuinely unsafe case — being dropped onto
@@ -7231,6 +7241,15 @@ function renderBreadcrumb() {
       state.multiSelect = new Set([node.id]);
       state.activeId = node.id;
       state.focusRegion = "tree";
+      render();
+    });
+    // Middle-click (FEATURE_BACKLOG #17): same delete as the tree row's own
+    // ✕ button / middle-click, reachable straight from the breadcrumb.
+    chip.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
+    chip.addEventListener("auxclick", ev => {
+      if (ev.button !== 1) return;
+      ev.preventDefault();
+      deleteFilterNodeWithUndo(node.id);
       render();
     });
     breadcrumbEl.appendChild(chip);
