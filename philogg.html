@@ -2070,10 +2070,6 @@
     font-family:var(--font-ui); cursor:pointer;
   }
   .note-row:hover{background:var(--bg-elevated-2);}
-  .row-bookmark-dot{
-    position:absolute; left:1px; top:50%; transform:translateY(-50%);
-    color:var(--accent); pointer-events:none;
-  }
   /* Pin bookmarks into Filtered View (see PROJECT.md): a row shown in the
      Filtered View only because it's a bookmark, not because it matched the
      active filter chain/level filter, gets this inset left edge — a plain
@@ -3174,10 +3170,8 @@ const ICON_INVERT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none"
 const ICON_TARGET = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.2"/></svg>';
 const ICON_UNDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v4h4"/><path d="M4.4 8A5 5 0 1 1 5.6 12.4"/></svg>';
 const ICON_REDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4H8"/><path d="M11.6 8A5 5 0 1 0 10.4 12.4"/></svg>';
-const ICON_BOOKMARK_FILLED = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
 const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6c-2.4 0-4.3 1.9-4.3 4.3 0 3.2 4.3 8.5 4.3 8.5s4.3-5.3 4.3-8.5c0-2.4-1.9-4.3-4.3-4.3z"/><circle cx="8" cy="5.9" r="1.5"/></svg>';
-// Show/Hide Notes toggle (#btnNotes) — a small note card with lines of text,
-// distinct from the filled-square ICON_BOOKMARK_FILLED dot rows already use.
+// Show/Hide Notes toggle (#btnNotes) — a small note card with lines of text.
 const ICON_NOTE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 2.2h9.6v11l-2.8-1.9H3.2z"/><path d="M5.4 5.4h5.2M5.4 8h5.2M5.4 10.6h3"/></svg>';
 // Multiline message toggle (#btnMultilineMsg) — three stacked lines, standing
 // in for "multi-line text" the same way ICON_PIN's teardrop stands in for
@@ -9674,8 +9668,6 @@ function renderVisibleRows() {
         if (ctxNode._anchorIds.has(e.id)) bracketHtml += '<span class="ctx-anchor-dot" title="Reference entry"></span>';
       }
     }
-    if (state.bookmarks.has(e.id)) bracketHtml += '<span class="row-bookmark-dot" title="Bookmarked">' + ICON_BOOKMARK_FILLED + '</span>';
-
     // Δt is only meaningful when rows are in chronological order — under a
     // column sort, adjacent rows aren't temporally adjacent, so it's dashed
     // out rather than shown misleadingly (same reasoning as the context
@@ -9896,8 +9888,6 @@ function renderHighlightVisibleRows() {
     let markerHtml = colors && colors.length
       ? '<span class="hl-markers">' + colors.map(c => '<span class="hl-marker" style="background:' + c + '"></span>').join("") + '</span>'
       : "";
-    if (state.bookmarks.has(e.id)) markerHtml += '<span class="row-bookmark-dot" title="Bookmarked">' + ICON_BOOKMARK_FILLED + '</span>';
-
     const prevE = i > 0 ? currentHighlightViewEntries[i - 1] : null;
     const deltaMs = prevE ? (e.ts - prevE.ts) : null;
 
@@ -11350,7 +11340,22 @@ function syncBookmarksFilterNode(rootId) {
     root.children.unshift(node.id);
     invalidateAllCaches();
   } else if (!hasAny && existing) {
+    // If this node is the one currently active AND the Filtered tab is what's
+    // showing, deleting it would leave the tabs-layout Filtered view pointing
+    // at a node that no longer exists (deleteNode falls back state.activeId
+    // to the parent file, but the Filtered tab would then be showing the
+    // file's own — nonsensical — "filter" result). Switch back to Full.
+    // Stacked layout shows Full alongside Filtered already, nothing to fix.
+    const wasActiveAndShowing = state.activeId === existing.id
+      && fhLayout === "tabs" && fhActiveTab === "filter";
     deleteNode(existing.id);
+    if (wasActiveAndShowing) applyFhView("highlight");
+  } else if (hasAny && existing) {
+    // Node already exists and still should: membership within it may have
+    // changed anyway (a bookmark added/removed without crossing the "any
+    // bookmarks at all" threshold) — invalidate so its match count (and any
+    // downstream and/or/link node reading it) recomputes on next renderTree.
+    invalidateAllCaches();
   }
 }
 
@@ -14001,6 +14006,27 @@ noteDialogDelete.addEventListener("click", () => {
 el("#noteDialogSave").addEventListener("click", () => {
   if (noteDialogEntryId) setNoteAndRepaint(noteDialogEntryId, noteDialogInput.value);
   closeNoteDialog();
+});
+// Person-requested binding: Enter alone saves and closes (matches most
+// single-purpose text-entry dialogs elsewhere in the app); Shift+Enter is
+// left to the browser's default textarea behavior so it inserts a newline
+// for normal multi-line note editing. Delete only deletes the note when the
+// textarea is already empty, so it never collides with using the Delete key
+// to remove characters while editing.
+noteDialogInput.addEventListener("keydown", ev => {
+  ev.stopPropagation(); // don't let Enter/Delete/etc. reach the tree's global keydown handler while typing
+  if (ev.key === "Enter" && !ev.shiftKey) {
+    ev.preventDefault();
+    if (noteDialogEntryId) setNoteAndRepaint(noteDialogEntryId, noteDialogInput.value);
+    closeNoteDialog();
+  } else if (ev.key === "Delete" && noteDialogInput.value === "") {
+    ev.preventDefault();
+    if (noteDialogEntryId) setNoteAndRepaint(noteDialogEntryId, "");
+    closeNoteDialog();
+  } else if (ev.key === "Escape") {
+    ev.preventDefault();
+    closeNoteDialog();
+  }
 });
 
 /* ===================== Filter save / load (JSON files) =====================
