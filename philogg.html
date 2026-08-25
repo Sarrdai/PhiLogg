@@ -987,6 +987,18 @@
      on purpose — those are rebuilt from scratch on every
      renderTimelineMinimap() call, which would otherwise wipe an in-progress
      drag mid-gesture. */
+  /* FEATURE_BACKLOG #10, final shape (person-clarified after two wrong
+     attempts, screenshots each time): the line stays at the TOP — flush
+     with #timelineMinimapDragRect's own top edge, which JS pins exactly to
+     timelineMinimapSvg.offsetTop/offsetHeight (see showMinimapDragOverlay
+     below), so it reads as "inside, at the SVG's own top edge" even though
+     this div is a DOM sibling of <svg>, not a child of it — deliberately
+     kept outside the SVG's own innerHTML (see the comment above) so a
+     mid-drag renderTimelineMinimap() rebuild (tail tick, level toggle)
+     can't wipe the in-progress selection; genuinely nesting the line inside
+     <svg> would reopen that bug. Plain border (not border-bottom, not an
+     inset box-shadow — both tried and failed to render visibly, see git
+     history) — this is the original, confirmed-visible styling. */
   #timelineMinimapDragRect{
     position:absolute; background:var(--accent-soft); border:1px solid var(--accent);
     opacity:.7; pointer-events:none; z-index:6;
@@ -7161,6 +7173,16 @@ function renderNode(id, depth) {
     render();
   });
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openTreeContextMenu(ev, id); });
+  // Middle-click (FEATURE_BACKLOG #17): same delete as the row's own ✕
+  // button, without needing to reach for it. mousedown preventDefault stops
+  // the browser's middle-click autoscroll indicator from appearing first.
+  row.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
+  row.addEventListener("auxclick", ev => {
+    if (ev.button !== 1) return;
+    ev.preventDefault();
+    deleteFilterNodeWithUndo(id);
+    render();
+  });
 
   // Drag-and-drop reparenting: any filter node can be dragged (moveNode()
   // itself guards against the one genuinely unsafe case — being dropped onto
@@ -7231,6 +7253,15 @@ function renderBreadcrumb() {
       state.multiSelect = new Set([node.id]);
       state.activeId = node.id;
       state.focusRegion = "tree";
+      render();
+    });
+    // Middle-click (FEATURE_BACKLOG #17): same delete as the tree row's own
+    // ✕ button / middle-click, reachable straight from the breadcrumb.
+    chip.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
+    chip.addEventListener("auxclick", ev => {
+      if (ev.button !== 1) return;
+      ev.preventDefault();
+      deleteFilterNodeWithUndo(node.id);
       render();
     });
     breadcrumbEl.appendChild(chip);
@@ -12206,7 +12237,15 @@ async function tailTick() {
     if (t.wasLive !== live) { t.wasLive = live; liveStatusChanged = true; }
   }
   if (changedRootIds.length) onTailChange(changedRootIds);
-  else if (liveStatusChanged) renderTree(); // cheap: only the dot changed, no data/caches to touch
+  else if (liveStatusChanged) {
+    renderTree(); // cheap: only the dot changed, no data/caches to touch
+    // activeTailedRoot() (and so the jump button's own visibility) is now
+    // gated on this same isTailLive() staleness, not just byte growth — see
+    // FEATURE_BACKLOG #9 — so a liveness flip with zero new bytes still
+    // needs this recomputed, or the button would keep showing after its
+    // file has gone stale until some unrelated render happened to fire.
+    updateTailJumpBtn();
+  }
 }
 
 function onTailChange(changedRootIds) {
@@ -12230,11 +12269,21 @@ function onTailChange(changedRootIds) {
 
 // True while the active node's root file is being tailed — the shared
 // precondition for follow / either jump button being meaningful at all.
+// Gated on isTailLive(), not merely `tail` existing: a file opened via a
+// real FileSystemFileHandle (the common case — showOpenFilePicker/drag-drop
+// both hand one over) keeps its node.tail object for the rest of the
+// session even once it's gone fully static, since node.tail only ever gets
+// deleted on... never, actually — it just stops growing. Without the
+// isTailLive() check, "static (non-trailing) file" from FEATURE_BACKLOG #9
+// would only ever mean "opened via the legacy <input type=file> fallback",
+// which barely anyone hits — effectively every file would count as
+// trailing forever (person-reported: "zu Beginn werden ja aktuell alle
+// Dateien als trailing betrachtet").
 function activeTailedRoot() {
   if (!state.activeId) return null;
   const rootId = getRootFileId(state.activeId);
   const root = rootId ? state.nodes[rootId] : null;
-  return root && root.tail && !root.tail.failed ? root : null;
+  return root && isTailLive(root.tail) ? root : null;
 }
 
 // True while the Filtered view specifically is showing a tailed node (not
