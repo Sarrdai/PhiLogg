@@ -10345,6 +10345,46 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 100 — Middle-click a filter node to delete it
+   Origin: this session (2026-08-25), FEATURE_BACKLOG #17: middle-click a
+   tree row or a breadcrumb chip deletes that node the same way its ✕
+   button / context-menu "Remove" would, undoably (deleteFilterNodeWithUndo).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("100. Middle-click a filter node (tree row / breadcrumb chip) deletes it");
+
+  const f = await w.addFile("app.log", makeLog(0, 5), () => {});
+  const filt = w.createFilterNode(f.id, "text", "message");
+  T.state.activeId = filt.id;
+  w.render();
+
+  const undoLenBefore = T.undoStack.length;
+  const row = d.querySelector('.tree-row[data-node-id="' + filt.id + '"]');
+  row.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+  assert(!T.state.nodes[filt.id], "middle-clicking a tree row deletes that filter node");
+  assert(f.children.length === 0, "...removed from its parent's children");
+  assert(T.undoStack.length === undoLenBefore + 1 && T.undoStack[T.undoStack.length - 1].kind === "delete",
+    "the middle-click delete goes through deleteFilterNodeWithUndo — a real, undoable action");
+  w.undo();
+  assert(T.state.nodes[filt.id], "undo restores the middle-click-deleted node");
+  w.render();
+
+  // A non-primary/non-middle button (right-click, handled separately by the
+  // context menu) must NOT also trigger this delete path via auxclick.
+  const rowAgain = d.querySelector('.tree-row[data-node-id="' + filt.id + '"]');
+  rowAgain.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }));
+  assert(!!T.state.nodes[filt.id], "auxclick with a non-middle button does not delete the node");
+
+  // Breadcrumb chip: same behavior, reachable from the chain display too.
+  T.state.activeId = filt.id;
+  w.render();
+  const crumb = [...d.querySelectorAll("#breadcrumb .crumb")].find(c => c.classList.contains("current"));
+  crumb.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+  assert(!T.state.nodes[filt.id], "middle-clicking the active breadcrumb chip deletes that filter node too");
+  assert(f.children.length === 0, "...removed from its parent's children");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -11749,6 +11789,13 @@ process.exit(failed ? 1 : 0);
               .settings-subsection-title + .settings-card pattern already
               used by Appearance/Log Formats (Group 79) — pure markup
               regrouping, no ids/behavior changed.
+   Group 100 — this session (2026-08-25), FEATURE_BACKLOG.md #17:
+              middle-click a filter tree row or breadcrumb chip deletes
+              that node, same undoable path as its ✕ button
+              (deleteFilterNodeWithUndo). auxclick (not click) is the
+              event used since middle-click doesn't fire a plain "click"
+              in browsers; mousedown on button 1 is preventDefault'd to
+              suppress the autoscroll-icon cursor some browsers show.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

@@ -10,7 +10,7 @@
 // from a file: page (matching the real browser restriction that guard
 // exists for) — using a privileged custom scheme instead sidesteps that
 // without weakening the guard itself.
-const { app, BrowserWindow, protocol, Menu } = require("electron");
+const { app, BrowserWindow, protocol, Menu, screen } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -179,13 +179,46 @@ const ROUNDED_CORNERS = true;
 // not what's wanted here). "No window decorations" falls out for free: the
 // window is already frameless (see "Frameless window" in
 // desktop/README.md), and `setFullScreen()` doesn't add a native frame back.
+//
+// Windows/Linux: real `setFullScreen(true)` is deliberately NOT used —
+// Chromium only paints the Window Controls Overlay (the native-looking
+// minimize/close buttons from `titleBarOverlay` above) inside a "titlebar
+// area", which doesn't exist in genuine OS fullscreen, so the controls
+// simply vanished (FEATURE_BACKLOG.md item 36, person-reported). A window
+// resized to exactly cover its display's bounds gets the *same* automatic
+// square-cornered, no-frame treatment from the OS compositor a maximized
+// window gets (see ROUNDED_CORNERS' own comment on that), while
+// `titleBarStyle`/`titleBarOverlay` stay untouched — so the overlay buttons
+// keep rendering exactly as they do while merely maximized, "reusing" that
+// visualization instead of building a second, custom set of controls.
+// macOS keeps real `setFullScreen()`: its native fullscreen already reveals
+// the traffic-light controls on a mouse move to the top edge, no separate
+// fix needed there.
+const windowedFullscreenBounds = new WeakMap(); // win -> pre-fullscreen bounds, for restore
+
+function isWindowedFullscreen(win) {
+  return windowedFullscreenBounds.has(win);
+}
+
+function toggleWindowedFullscreen(win) {
+  if (windowedFullscreenBounds.has(win)) {
+    win.setBounds(windowedFullscreenBounds.get(win));
+    windowedFullscreenBounds.delete(win);
+  } else {
+    windowedFullscreenBounds.set(win, win.getBounds());
+    win.setBounds(screen.getDisplayMatching(win.getBounds()).bounds);
+  }
+}
+
 function watchFullscreenToggle(win) {
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" && input.key === "F11") {
       event.preventDefault();
-      win.setFullScreen(!win.isFullScreen());
+      if (isMac) win.setFullScreen(!win.isFullScreen());
+      else toggleWindowedFullscreen(win);
     }
   });
+  win.on("closed", () => windowedFullscreenBounds.delete(win));
 }
 
 function createWindow(filePath) {
