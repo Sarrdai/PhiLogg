@@ -72,6 +72,15 @@ an earlier version's JS-computed padding (measuring
 stale across maximize/restore/fullscreen — reported after the first real
 Windows run, fixed the same session, not yet re-verified live.
 
+`F11` toggles fullscreen (caught via a per-window `before-input-event`
+listener, since there's no app menu to hang an accelerator on) and the
+window requests rounded corners (`roundedCorners: true`) that the OS
+compositor automatically squares off once the window fills the screen —
+maximized or fullscreen alike — with no extra code needed for that case.
+See the `ROUNDED_CORNERS`/`watchFullscreenToggle` comments in `main.js` for
+the per-platform caveats (Windows pre-11-Build-22000 stays square either
+way; Linux rounding depends on the desktop environment's own compositor).
+
 ## Version stamp
 
 Matches `release.yml`'s scheme for the plain `philogg.html` tester build:
