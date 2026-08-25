@@ -68,7 +68,7 @@ open it in a browser to view it.
   need to open the tree sidebar. Two Settings → Behavior toggles: turn the
   whole thing off, or let it cascade through multiple levels as you keep
   hovering instead of stopping at the first one.
-- **Keyboard filter navigation without losing your place** — `Ctrl+Arrow`
+- **Keyboard filter navigation without losing your place** — `Alt+Arrow`
   moves the active filter selection in "Files & Filters" without taking
   keyboard focus off the log view you're reading, peeking the panel open if
   it's collapsed (`Ctrl+0` does the same peek). `Alt+Enter` opens "Filter for
