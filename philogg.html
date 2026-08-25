@@ -987,13 +987,20 @@
      on purpose — those are rebuilt from scratch on every
      renderTimelineMinimap() call, which would otherwise wipe an in-progress
      drag mid-gesture. */
+  /* FEATURE_BACKLOG #10 (person-corrected: the line, not the label, moves —
+     the label stays at top:4px, matching #timelineMinimapTooltip's own
+     position above, since it's the same on-hover-style readout). The
+     selection's boundary line reads clearest against the plain strip
+     above/below the bars rather than crossing them, so only border-bottom
+     draws it (no border-top/left/right) — bottom, per the person's
+     screenshot, instead of the original top. */
   #timelineMinimapDragRect{
-    position:absolute; background:var(--accent-soft); border:1px solid var(--accent);
+    position:absolute; background:var(--accent-soft); border-bottom:2px solid var(--accent);
     opacity:.7; pointer-events:none; z-index:6;
   }
   #timelineMinimapDragRect.hidden{display:none;}
   #timelineMinimapDragLabel{
-    position:absolute; bottom:4px; transform:translateX(-50%);
+    position:absolute; top:4px; transform:translateX(-50%);
     padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
     border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
     pointer-events:none; white-space:nowrap; z-index:11;
