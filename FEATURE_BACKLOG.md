@@ -65,7 +65,6 @@ this point.
 38. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
 40. **Fix Settings view scroll performance** — currently noticeably janky.
 42+44. **Font size and overall UI scale, independently configurable** — "Change Font Size" currently appears to scale the whole UI; split into two separate settings, one for log/text font size, one for overall UI scale.
-43. **`Ctrl+0` should expand the Files & Filters panel if it's collapsed** — including under "manual expand" (hover-to-expand disabled): in that mode `Ctrl+0` should still expand the panel exactly like hover would, and keep it expanded until focus moves to another view (e.g. via `Ctrl+1` or a click into another view).
 46. **Setting to change the UI font family** — must not break the "no dependencies" rule (system-installed fonts only, no web-font fetches).
 48. **Shortcut Manager in Settings** — replaces the current Help button/shortcut guide with a proper manager (view and, if feasible, rebind app shortcuts) inside Settings.
 49. **Respect OS default window behavior** — audit that the app's own shortcuts/mechanics never shadow or override the operating system's default window behavior (e.g. window management shortcuts).
@@ -105,6 +104,7 @@ this point.
 
 ### Settings & UI polish
 
+41. **Syntax highlighting for structured messages, behind a toggle** — when an entry's message body is itself structured (JSON, XML, ...), colorize it instead of showing it as flat text. Open question: where this renders (Entry Detail only, or also inline in the log rows), and how detection works (sniff the message content vs. a per-format setting).
 45. **Theme should be able to follow the OS/system light-dark state** — auto light/dark switching based on system preference, as an alternative to the existing manual toggle.
 
 ## Wiedervorlage
@@ -143,4 +143,3 @@ this point.
 ## Verworfen
 
 39. **Breadcrumb hover should also work on nodes further back in the current chain**, not just the current/active one, so a new branch can be picked from there too. — The feature this depended on (hovering the active breadcrumb chip to reveal a child-filter flyout) was itself removed 2026-08-25, superseded by Alt+Arrow tree navigation; nothing left to extend.
-41. **Code highlighting in the Entry Details view, behind a toggle.** — Already covered another way: text-filter/highlight match coloring (2026-08-23) already marks the relevant substrings inline in the entry-detail panel.
