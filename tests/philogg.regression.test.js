@@ -283,17 +283,20 @@ await withApp(async (w, d, T) => {
   w.jumpToEntry(someEntry.id);
   assert(T.fhActiveTab === "filter", "bookmark jump (jumpToEntry) reveals the Filtered view — was a real bug before (invisible scroll target)");
 
-  // Bookmark toggle repaints BOTH views immediately
+  // Bookmark toggle repaints BOTH views immediately (row bookmark icon was
+  // removed — coloring the auto "Bookmarks" filter node is the only visual
+  // marker now, see GROUP 15 — so this just checks the row itself repaints)
   w.applyFhView("stacked");
   T.state.activeId = fa.id; w.render();
   const firstEntry = fa.entries[0];
   w.selectEntry(firstEntry.id);
+  const rowSel = '[data-entry-id="' + firstEntry.id + '"]';
   w.toggleBookmark(firstEntry.id);
-  const sel = '[data-entry-id="' + firstEntry.id + '"] .row-bookmark-dot';
-  assert(!!d.querySelector("#tableRows " + sel), "bookmark dot appears in Filter view immediately (was stale before an unrelated render)");
-  assert(!!d.querySelector("#highlightRows " + sel), "bookmark dot appears in Full view immediately (was NEVER repainted by the context-menu path before)");
+  assert(!!d.querySelector("#tableRows " + rowSel), "row still present in Filter view immediately after bookmarking");
+  assert(!!d.querySelector("#highlightRows " + rowSel), "row still present in Full view immediately after bookmarking");
+  assert(!d.querySelector("#tableRows " + rowSel + " .row-bookmark-dot") && !d.querySelector("#highlightRows " + rowSel + " .row-bookmark-dot"),
+    "no per-row bookmark icon is rendered anywhere (removed — the colorable 'Bookmarks' filter node is the marker now)");
   w.toggleBookmark(firstEntry.id);
-  assert(!d.querySelector("#tableRows " + sel) && !d.querySelector("#highlightRows " + sel), "bookmark dot removed from both views immediately");
 
   // Level-count cache
   const countsA = w.getLevelCounts(fa.id);
@@ -569,6 +572,40 @@ await withApp(async (w, d, T) => {
   w.jumpToEntry(fa.entries[2].id);
   assert(T.state.activeId === fa.id, "jumpToEntry resolves the bookmark's OWN root file, not whatever chain was active");
   assert(T.state.selectedId === fa.entries[2].id, "jumpToEntry selects the bookmarked entry");
+
+  // Bugfix: the node's displayed match count updates live on add/remove,
+  // not just its existence (syncBookmarksFilterNode used to only invalidate
+  // caches on the add/remove-node transition, leaving a stale count when
+  // membership changed but the node itself persisted).
+  T.state.activeId = fa.id; w.render();
+  // Normalize to a known baseline: fa.entries[0] and [2] are both bookmarked
+  // by this point (from the earlier "restricted"/jumpToEntry checks above) —
+  // clear entries[0] so exactly one bookmark (entries[2]) remains on fa.
+  if (T.state.bookmarks.has(fa.entries[0].id)) w.toggleBookmark(fa.entries[0].id);
+  const node2 = bookmarksNode();
+  assert(w.getEntries(node2.id).length === 1, "sanity: one bookmark before the live-count check");
+  w.toggleBookmark(fa.entries[3].id); // second bookmark on the same file — node persists, membership changes
+  assert(bookmarksNode().id === node2.id, "sanity: same node persisted (didn't cross the exists/doesn't-exist threshold)");
+  assert(w.getEntries(node2.id).length === 2, "bookmark node's match count updates live when a bookmark is added while the node already existed");
+  w.toggleBookmark(fa.entries[3].id);
+  assert(w.getEntries(node2.id).length === 1, "bookmark node's match count updates live when a bookmark is removed while the node still exists");
+
+  // Bugfix: removing the last bookmark while its filter node is the active,
+  // showing Filtered view falls back to the Full log instead of leaving the
+  // Filtered tab pointing at a node that's about to be deleted.
+  T.state.activeId = node2.id;
+  w.applyFhView("filter");
+  w.toggleBookmark(fa.entries[2].id); // removes the LAST bookmark on fa -> node deleted
+  assert(!bookmarksNode(), "sanity: node was actually removed");
+  assert(T.fhActiveTab === "highlight", "removing the last bookmark while its node was the active, showing Filtered view switches back to Full");
+
+  // Same removal while Stacked layout is active must NOT touch fhLayout —
+  // both panels are already visible, nothing needs to change.
+  w.toggleBookmark(fa.entries[2].id); // re-add
+  T.state.activeId = bookmarksNode().id;
+  w.applyFhView("stacked");
+  w.toggleBookmark(fa.entries[2].id); // remove the last one again
+  assert(T.fhLayout === "stacked", "removing the last bookmark while Stacked layout is active leaves the layout untouched");
 });
 
 /* ============================================================
@@ -10679,6 +10716,62 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 105 — Bugfix: Note dialog keyboard shortcuts. Person-requested
+   binding (see PROJECT.md): Enter alone saves+closes, Shift+Enter inserts a
+   newline (left to native textarea behavior), Delete with an empty textarea
+   deletes the note, Escape cancels without saving.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("105. Note dialog: Enter saves, Shift+Enter newlines, Delete-when-empty deletes, Escape cancels");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  // Enter alone saves and closes
+  w.openNoteEditor(f.entries[0].id);
+  const input = d.querySelector("#noteDialogInput");
+  input.value = "typed note";
+  fireKeydown(input, w, "Enter");
+  assert(d.querySelector("#noteDialog").classList.contains("hidden"), "Enter alone closes the dialog");
+  assert(T.state.notes.get(f.entries[0].id) === "typed note", "Enter alone saves the note text");
+
+  // Shift+Enter does NOT save/close — it's left to native textarea behavior (newline insertion)
+  w.openNoteEditor(f.entries[1].id);
+  const input2 = d.querySelector("#noteDialogInput");
+  input2.value = "line one";
+  fireKeydown(input2, w, "Enter", { shiftKey: true });
+  assert(!d.querySelector("#noteDialog").classList.contains("hidden"), "Shift+Enter leaves the dialog open");
+  assert(!T.state.notes.has(f.entries[1].id), "Shift+Enter does not save the note");
+  w.closeNoteDialog();
+
+  // Delete with an empty textarea deletes the note and closes
+  w.openNoteEditor(f.entries[0].id); // already has "typed note" from above
+  const input3 = d.querySelector("#noteDialogInput");
+  assert(input3.value === "typed note", "sanity: editing the note saved earlier");
+  input3.value = "";
+  fireKeydown(input3, w, "Delete");
+  assert(d.querySelector("#noteDialog").classList.contains("hidden"), "Delete on an empty textarea closes the dialog");
+  assert(!T.state.notes.has(f.entries[0].id), "Delete on an empty textarea deletes the note");
+
+  // Delete with non-empty textarea content is NOT intercepted (normal in-field character deletion)
+  w.openNoteEditor(f.entries[2].id);
+  const input4 = d.querySelector("#noteDialogInput");
+  input4.value = "some text";
+  fireKeydown(input4, w, "Delete");
+  assert(!d.querySelector("#noteDialog").classList.contains("hidden"), "Delete with non-empty textarea does not close the dialog");
+  assert(!T.state.notes.has(f.entries[2].id), "Delete with non-empty textarea does not delete the note");
+  w.closeNoteDialog();
+
+  // Escape cancels without saving
+  w.openNoteEditor(f.entries[3].id);
+  const input5 = d.querySelector("#noteDialogInput");
+  input5.value = "should not be saved";
+  fireKeydown(input5, w, "Escape");
+  assert(d.querySelector("#noteDialog").classList.contains("hidden"), "Escape closes the dialog");
+  assert(!T.state.notes.has(f.entries[3].id), "Escape does not save the note");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -10728,7 +10821,11 @@ process.exit(failed ? 1 : 0);
               an auto-managed, restricted per-file "Bookmarks" filter node
               (syncBookmarksFilterNode) on top of the unchanged state.bookmarks
               Set. See Group 104 for the new general-purpose Notes feature
-              introduced in the same rework.
+              introduced in the same rework. EXTENDED 2026-08-25 (follow-up
+              fixes): live match-count refresh when the node persists but
+              membership changes, and auto-switch back to Full when the
+              last bookmark is removed while its node is the active,
+              showing Filtered view (Stacked layout untouched).
    Group 16  — 7ef2c2a6 (undo/redo)
    Group 17  — 38c96f1d (Highlight/Full view, colour picker,
               computeHighlightMap, revealInHighlightView). The CSS
@@ -10745,7 +10842,11 @@ process.exit(failed ? 1 : 0);
               minimap background-bucket memoization, scoped tail-cache
               invalidation, per-node level-count cache, single
               computeHighlightMap call per renderMainView, arrow-key
-              index hint.
+              index hint. AMENDED 2026-08-25: the per-row bookmark icon
+              (.row-bookmark-dot/ICON_BOOKMARK_FILLED) was removed — the
+              colorable auto "Bookmarks" filter node is the marker now —
+              so its assertions were swapped for a check that the row
+              still repaints and that no such icon is rendered anywhere.
    Group 20  — this session (2026-08-11): session cache (IndexedDB
               persistence of files/filters/bookmarks/settings across a
               reload). Uses fake-indexeddb (new devDependency): one shared
@@ -12126,6 +12227,10 @@ process.exit(failed ? 1 : 0);
               display, the Show/Hide Notes toggle, and buildCacheMeta
               persistence). See Group 15's rewrite for the other half of
               the same rework (the auto-managed "Bookmarks" filter node).
+   Group 105 — this session (2026-08-25), bugfix: note dialog keyboard
+              shortcuts (Enter alone saves+closes, Shift+Enter newlines,
+              Delete-when-empty deletes, Escape cancels) — person-requested
+              binding, see PROJECT.md.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
