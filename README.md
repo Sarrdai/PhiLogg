@@ -1,14 +1,31 @@
 # PhiLogg
 
-A local, single-file, offline-capable log viewer for a pipe/tab-delimited
-log4net-style log format. Built to replace LogViewPlus for that specific
-format, with a nested filter tree, value extraction into a spreadsheet-like
-table, plotting, and nearest-neighbor event correlation across log lines.
+A log viewer for line-oriented log files with a **freely configurable line
+format** (log4net-style by default), a nested filter tree, value extraction
+into a spreadsheet-like table, plotting, and nearest-neighbor event
+correlation across log lines.
 
-No install, no build step, no server, no external dependencies (not even a
-CDN font). The entire application is one `philogg.html` file — download it,
-open it in a browser, and it works, including offline and directly from
-`file://`.
+The application itself is one self-contained `philogg.html` file — no build
+step, no external dependencies (not even a CDN font), no server-side
+component required. That single-file nature is about the app, not about how
+many log files it can open at once (it loads and merges several, see
+"Multi-file drag-and-drop" below) — and it's what makes several different
+deployments possible:
+
+- **Open the file directly** — download `philogg.html` and double-click it
+  (or `File → Open` from any browser). No install, no server, fully offline,
+  works straight from `file://`. Best for a quick, ad-hoc look at a log on
+  your own machine.
+- **Serve it yourself** — put `philogg.html` on any static web server or
+  internal tool (including a CI pipeline's artifact/report host) and open it
+  over `http(s)`. This is what enables **deep-link loading**
+  (`philogg.html?url=<encoded-url>`), so a CI job or report page can link
+  straight into a pre-loaded log for a teammate — not possible from a local
+  `file://` open.
+- **Desktop app** — the optional Electron wrapper in `desktop/` packages
+  `philogg.html` unmodified into a native-feeling app with `.log` file
+  associations and a frameless window, so double-clicking a log file opens
+  it straight into PhiLogg like any other document. See `desktop/README.md`.
 
 ## Screenshots
 
@@ -46,11 +63,15 @@ open it in a browser to view it.
   multi-line/pin-bookmarks buttons); Settings → Behavior controls whether it
   shows only the filter you're currently drilled into or every text filter
   in the chain, and where the marks appear.
-- **Hover the breadcrumb to navigate deeper** — hover the active filter's
-  chip in the breadcrumb to pop up its children as a clickable flyout, no
-  need to open the tree sidebar. Two Settings → Behavior toggles: turn the
-  whole thing off, or let it cascade through multiple levels as you keep
-  hovering instead of stopping at the first one.
+- **Keyboard filter navigation without losing your place** — `Alt+Arrow`
+  moves the active filter selection in "Files & Filters" without taking
+  keyboard focus off the log view you're reading, peeking the panel open if
+  it's collapsed (`Ctrl+0` does the same peek). `Alt+Enter` opens "Filter for
+  this message" for the selected row directly. Switching filters while the
+  selected row doesn't match the new one shows it at its would-be position
+  as a temporary anchor instead of losing it — configurable in Settings →
+  Behavior (always shown, shown briefly then removed, or never drawn but
+  still remembered for Up/Down).
 - **Value extraction** — turn a pattern like `x=[value:float] y=[value:float]`
   into a spreadsheet-style table with per-column stats, value assertions, and
   a Plot tab (line/bar/scatter, zoom/pan, click a point to jump to its log
@@ -83,9 +104,9 @@ open it in a browser to view it.
 - **Session export/import** — package an analysis (files, filters,
   bookmarks) to share with a colleague.
 - **Configurable log formats** (Settings → Format Manager) — define
-  additional formats (a log4net/LogViewPlus-style pattern, or a raw regex
-  for edge cases) and map them to files by filename pattern; the default
-  format still works with zero configuration.
+  additional formats (a log4net-style conversion pattern, or a raw regex
+  for edge cases) and map them to files by filename pattern; the log4net-style
+  default format still works with zero configuration.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
   Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
   JSON (download a template, fill in your colors, import it back).
@@ -118,7 +139,17 @@ open and analyze files, just as static snapshots.
 
 ## The log format it reads
 
-Out of the box, PhiLogg reads a log4net-style conversion pattern:
+Log line formats are not fixed — they're fully configurable via
+**Settings → Format Manager**: define any number of formats as a
+`%d %p %t %c %M %m %n`-style conversion pattern, or drop down to a raw regex
+for shapes the pattern language can't express, then map filenames to a format
+with a glob rule (e.g. `app-*.log`). Every configured format still produces
+the same fixed entry schema (timestamp/level/thread/location/method/message),
+so filters, sorting, and export work identically regardless of which format
+parsed a given file.
+
+Out of the box, with zero configuration, PhiLogg falls back to a log4net-style
+conversion pattern:
 
 ```
 %d\t%p\t"%t"\t%c\t[%M]\t"%m"%n
@@ -127,14 +158,11 @@ Out of the box, PhiLogg reads a log4net-style conversion pattern:
 i.e. tab-separated `timestamp / level / "thread" / file:line / [method] /
 "message"`. The parser is tolerant: any line that doesn't look like a new
 entry is treated as a continuation of the previous entry's message, so
-multi-line stack traces come through intact.
+multi-line stack traces come through intact — for the default format and any
+custom one alike.
 
-Other formats are configurable via **Settings → Format Manager**: define a
-format the same way (a `%d %p %t %c %M %m %n`-style pattern) or drop down to
-a raw regex for shapes the pattern language can't express, then map
-filenames to it with a glob rule (e.g. `app-*.log`). See
-[`examples/bracket-format.log`](examples/bracket-format.log) for a sample in
-a different shape to try it against.
+See [`examples/bracket-format.log`](examples/bracket-format.log) for a sample
+in a different shape to try the Format Manager against.
 
 ## Repository layout
 

@@ -10,7 +10,7 @@
 // from a file: page (matching the real browser restriction that guard
 // exists for) — using a privileged custom scheme instead sidesteps that
 // without weakening the guard itself.
-const { app, BrowserWindow, protocol, Menu } = require("electron");
+const { app, BrowserWindow, protocol, Menu, screen } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -68,31 +68,43 @@ const FRAMELESS_CSS = `
     : `.toolbar-right { padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px)); }`}
 `;
 
-// Windows/Linux only: keeps the overlay buttons' colors following
-// philogg.html's own light/dark toggle (#btnTheme, persisted to
-// localStorage — independent of the OS theme, so nativeTheme can't be used
-// instead). No preload/IPC bridge for this either — same reasoning as the
-// top comment — so it's a light poll of the renderer's own `data-theme`
-// attribute from the main process instead, cheap enough at ~1x/second for
-// a value that only ever changes on an explicit click.
-const OVERLAY_COLORS = {
-  dark: { color: "#151924", symbolColor: "#8a92a8" }, // matches --bg-panel/--text-secondary (dark)
-  light: { color: "#ffffff", symbolColor: "#5b6474" }, // matches --bg-panel/--text-secondary (light)
-};
+// Windows/Linux only: keeps the overlay buttons' background transparent and
+// their symbol color following philogg.html's own active theme/accent
+// (#btnTheme + the per-flavor accent picker, both persisted to localStorage
+// — independent of the OS theme, so nativeTheme can't be used instead). An
+// earlier version hardcoded two fixed {color, symbolColor} pairs keyed off
+// "is data-theme light or not" — which only ever matched the Dark/Light
+// built-ins; every Catppuccin flavor (each with its own --bg-panel) and any
+// custom imported theme got the wrong overlay background (FEATURE_BACKLOG
+// item, "wrong background color"). A transparent background sidesteps
+// hardcoding per-theme colors entirely: `#RRGGBBAA` with alpha `00` is
+// Electron's documented way to make the overlay show whatever `#toolbar`
+// itself paints underneath, for any theme, built-in or custom, with no
+// polling of --bg-panel needed. The symbol color still needs a live value,
+// since the theme's --accent can change without `data-theme` changing at
+// all (the accent picker re-picks it per-theme) — so the poll below reads
+// the renderer's own computed `--accent`, not just the theme id. No
+// preload/IPC bridge for this either — same reasoning as the top comment —
+// so it's a light poll from the main process instead, cheap enough at
+// ~1x/second for a value that only ever changes on an explicit click.
+const OVERLAY_TRANSPARENT = "#00000000";
+const OVERLAY_ACCENT_DEFAULT = "#4fc7c3"; // matches :root's default (dark theme) --accent, used only until the first poll resolves
 
 function watchTheme(win) {
-  let lastTheme = null;
+  let lastAccent = null;
   const poll = async () => {
     if (win.isDestroyed()) return;
-    let theme;
+    let accent;
     try {
-      theme = await win.webContents.executeJavaScript('document.documentElement.getAttribute("data-theme")');
+      accent = await win.webContents.executeJavaScript(
+        'getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()'
+      );
     } catch {
       return; // window/page torn down mid-poll
     }
-    if (theme === lastTheme) return;
-    lastTheme = theme;
-    win.setTitleBarOverlay({ ...OVERLAY_COLORS[theme === "light" ? "light" : "dark"], height: TITLEBAR_HEIGHT });
+    if (!accent || accent === lastAccent) return;
+    lastAccent = accent;
+    win.setTitleBarOverlay({ color: OVERLAY_TRANSPARENT, symbolColor: accent, height: TITLEBAR_HEIGHT });
   };
   const interval = setInterval(poll, 800);
   win.on("closed", () => clearInterval(interval));
@@ -142,20 +154,89 @@ function registerProtocol() {
   });
 }
 
+// FEATURE_BACKLOG.md item 34 ("rounded corners for the Electron window,
+// except when fullscreen"). `roundedCorners` is Electron's own opt-in for
+// this on a frameless/hidden-title-bar BrowserWindow (default `true` — kept
+// explicit here rather than relying on the default, so the intent is
+// visible in one place): rounds on macOS unconditionally, on Windows 11
+// Build 22000+ via DWM (no effect on older Windows, which just stays
+// square), and on Linux only where the desktop environment draws its own
+// client-side decorations (compositor-dependent, outside this app's
+// control either way). The "except when fullscreen" half needs no code at
+// all on macOS/Windows: a window that exactly fills the screen (maximized,
+// or `setFullScreen(true)` below) is squared off automatically by the OS
+// compositor — there's no floating edge left to round. Not verified live
+// (no display server in this environment, same standing limitation as the
+// rest of `desktop/`) — behavior confirmed against Electron's own
+// BrowserWindow option docs, not guessed.
+const ROUNDED_CORNERS = true;
+
+// FEATURE_BACKLOG.md item 31 ("F11 toggles fullscreen, no window
+// decorations"). There's no application menu (`Menu.setApplicationMenu(null)`
+// above) to hang a menu-accelerator on, so F11 is caught directly via
+// `before-input-event` — the per-window, focus-scoped equivalent — instead
+// of `globalShortcut` (which would fire even while the app isn't focused,
+// not what's wanted here). "No window decorations" falls out for free: the
+// window is already frameless (see "Frameless window" in
+// desktop/README.md), and `setFullScreen()` doesn't add a native frame back.
+//
+// Windows/Linux: real `setFullScreen(true)` is deliberately NOT used —
+// Chromium only paints the Window Controls Overlay (the native-looking
+// minimize/close buttons from `titleBarOverlay` above) inside a "titlebar
+// area", which doesn't exist in genuine OS fullscreen, so the controls
+// simply vanished (FEATURE_BACKLOG.md item 36, person-reported). A window
+// resized to exactly cover its display's bounds gets the *same* automatic
+// square-cornered, no-frame treatment from the OS compositor a maximized
+// window gets (see ROUNDED_CORNERS' own comment on that), while
+// `titleBarStyle`/`titleBarOverlay` stay untouched — so the overlay buttons
+// keep rendering exactly as they do while merely maximized, "reusing" that
+// visualization instead of building a second, custom set of controls.
+// macOS keeps real `setFullScreen()`: its native fullscreen already reveals
+// the traffic-light controls on a mouse move to the top edge, no separate
+// fix needed there.
+const windowedFullscreenBounds = new WeakMap(); // win -> pre-fullscreen bounds, for restore
+
+function isWindowedFullscreen(win) {
+  return windowedFullscreenBounds.has(win);
+}
+
+function toggleWindowedFullscreen(win) {
+  if (windowedFullscreenBounds.has(win)) {
+    win.setBounds(windowedFullscreenBounds.get(win));
+    windowedFullscreenBounds.delete(win);
+  } else {
+    windowedFullscreenBounds.set(win, win.getBounds());
+    win.setBounds(screen.getDisplayMatching(win.getBounds()).bounds);
+  }
+}
+
+function watchFullscreenToggle(win) {
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "F11") {
+      event.preventDefault();
+      if (isMac) win.setFullScreen(!win.isFullScreen());
+      else toggleWindowedFullscreen(win);
+    }
+  });
+  win.on("closed", () => windowedFullscreenBounds.delete(win));
+}
+
 function createWindow(filePath) {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     backgroundColor: "#151924", // matches #toolbar/#bg-panel's dark-theme default, avoids a white flash while loading
+    roundedCorners: ROUNDED_CORNERS,
     ...(isMac
       ? { titleBarStyle: "hiddenInset" }
-      : { titleBarStyle: "hidden", titleBarOverlay: { ...OVERLAY_COLORS.dark, height: TITLEBAR_HEIGHT } }),
+      : { titleBarStyle: "hidden", titleBarOverlay: { color: OVERLAY_TRANSPARENT, symbolColor: OVERLAY_ACCENT_DEFAULT, height: TITLEBAR_HEIGHT } }),
     webPreferences: { sandbox: true },
   });
   win.webContents.on("dom-ready", () => {
     win.webContents.insertCSS(FRAMELESS_CSS);
     if (!isMac) watchTheme(win);
   });
+  watchFullscreenToggle(win);
   if (filePath) {
     win.loadURL(`philogg://app/philogg.html?url=${encodeURIComponent(localFileUrl(filePath))}`);
   } else {

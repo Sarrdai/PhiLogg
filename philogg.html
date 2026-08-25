@@ -735,6 +735,17 @@
   #btnMultilineMsg{float:left; margin:0 14px 6px 0;}
   #btnColumns{float:left; margin:0 14px 6px 0;}
   #btnTextMatchHighlight{float:left; margin:0 14px 6px 0;}
+  /* #btnApplyLevelToTree ("Add to tree", Settings → Behavior: Manual mode
+     only) sits after #levelBar in the same float flow. It's toggled via
+     display:none/"" by JS (see updateLevelBarVisibility/similar), not
+     removed from the DOM, so it must carry the SAME float:left + margin
+     as every other toolbar-icon-btn in this row — otherwise, being an
+     unfloated block sibling of floats, it drops below the #levelBar float
+     instead of continuing the line, shoving #breadcrumb's wrap start down
+     with it whenever Manual mode reveals the button. Floating it keeps the
+     row's line-length dynamic no matter how many buttons this line ends up
+     with. */
+  #btnApplyLevelToTree{float:left; margin:0 14px 6px 0;}
 
   #breadcrumb{
     /* Deliberately plain block (not flex/grid, no new block-formatting
@@ -781,27 +792,6 @@
      own), so it still needs a top margin to center its ~12px glyph line
      against the 28px pills either side: (28-12)/2 = 8px. */
   .crumb-sep{display:inline-block; vertical-align:top; margin:8px 3px 6px; line-height:12px; color:var(--text-tertiary); font-size:11px;}
-
-  /* ---------- Breadcrumb "hover the current entry to reveal its children"
-     flyout (settingsHoverChildNav/-Multistep) — one .child-nav-flyout panel
-     per depth level, positioned/created directly in JS (see
-     renderChildNavLevel). Reuses .tree-icon/.tree-label/.tree-type-tag/
-     .tree-count from the tree itself so an item here looks identical to its
-     real tree row, just laid out in a flat flyout list instead of an indented
-     tree. */
-  .child-nav-flyout{
-    position:fixed; z-index:56; background:var(--bg-elevated);
-    border:1px solid var(--border); border-radius:8px; padding:5px;
-    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:180px; max-width:280px;
-  }
-  .child-nav-item{
-    display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:6px;
-    font-size:12px; color:var(--text-primary); cursor:pointer; white-space:nowrap;
-  }
-  .child-nav-item:hover, .child-nav-item.hover-open{background:var(--accent-soft); color:var(--accent-strong);}
-  .child-nav-item .tree-label{flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; min-width:0;}
-  .child-nav-caret{flex:0 0 auto; color:var(--text-tertiary); font-size:10px;}
-  .child-nav-empty-note{padding:6px 8px; font-size:11px; color:var(--text-tertiary); font-style:italic; max-width:220px;}
 
   /* ---------- Level filter bar ---------- */
   #levelBar{
@@ -1008,6 +998,18 @@
      on purpose — those are rebuilt from scratch on every
      renderTimelineMinimap() call, which would otherwise wipe an in-progress
      drag mid-gesture. */
+  /* FEATURE_BACKLOG #10, final shape (person-clarified after two wrong
+     attempts, screenshots each time): the line stays at the TOP — flush
+     with #timelineMinimapDragRect's own top edge, which JS pins exactly to
+     timelineMinimapSvg.offsetTop/offsetHeight (see showMinimapDragOverlay
+     below), so it reads as "inside, at the SVG's own top edge" even though
+     this div is a DOM sibling of <svg>, not a child of it — deliberately
+     kept outside the SVG's own innerHTML (see the comment above) so a
+     mid-drag renderTimelineMinimap() rebuild (tail tick, level toggle)
+     can't wipe the in-progress selection; genuinely nesting the line inside
+     <svg> would reopen that bug. Plain border (not border-bottom, not an
+     inset box-shadow — both tried and failed to render visibly, see git
+     history) — this is the original, confirmed-visible styling. */
   #timelineMinimapDragRect{
     position:absolute; background:var(--accent-soft); border:1px solid var(--accent);
     opacity:.7; pointer-events:none; z-index:6;
@@ -1667,6 +1669,23 @@
     width:32px; height:30px; border:none; font-size:15px; line-height:1; padding:0; border-radius:0;
     align-items:center; justify-content:center;
   }
+  /* Same −/value/+ stepper shape as .font-scale-stepper above (FEATURE_BACKLOG
+     #18, person-requested: "orientiere dich an der Einstellung der Font Size,
+     nur eben ohne %") — kept as its own class rather than reusing
+     .font-scale-stepper directly, since that name is specifically about font
+     scaling elsewhere in the file. */
+  .temp-anchor-fade-row{display:flex; align-items:center; gap:8px;}
+  .temp-anchor-fade-stepper{
+    display:flex; align-items:center; height:30px;
+    background:var(--bg-app); border:1px solid var(--border); border-radius:8px; overflow:hidden;
+  }
+  .temp-anchor-fade-stepper #tempAnchorFadeValue{
+    font-size:12.5px; font-variant-numeric:tabular-nums; min-width:34px; text-align:center; color:var(--text-primary);
+  }
+  .temp-anchor-fade-stepper .btn-icon{
+    width:32px; height:30px; border:none; font-size:15px; line-height:1; padding:0; border-radius:0;
+    align-items:center; justify-content:center;
+  }
   .settings-row-label[for]{cursor:pointer;}
   /* Boolean settings render as an on/off switch (#settingsQuitOnLastClose)
      rather than the plain accent-colored checkbox used for filter/plot
@@ -2040,6 +2059,18 @@
      background tint would fight the existing lvl-error/warn/etc. row
      tinting, an inset box-shadow doesn't touch background-color at all. */
   .log-row.pinned-row{box-shadow:inset 3px 0 0 var(--accent-strong);}
+
+  /* Temporary anchor row (FEATURE_BACKLOG #18): the currently selected entry
+     shown at its would-be position after switching the active filter to one
+     it doesn't actually match — not a real member of the list, just a
+     placeholder so Up/Down still has somewhere to navigate from. Dashed
+     inset edge distinguishes it from a real match/pinned-bookmark row.
+     .temp-anchor-fading collapses its OWN height to 0 as it fades (JS sets
+     the actual height/opacity targets, see scheduleTempAnchorFade) so the
+     surrounding rows close up by exactly one row's worth of space instead
+     of a full re-render yanking the scroll position elsewhere. */
+  .log-row.temp-anchor-row{border-left:3px dashed var(--text-secondary); font-style:italic; opacity:.85;}
+  .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
   /* ---------- Log view columns popup (#btnColumns) — same fixed-position/
      toggle pattern as #bookmarksPanel/#shortcutsPanel. ---------- */
@@ -2486,13 +2517,6 @@
 
   <div id="treeContextMenu" class="hidden"></div>
 
-  <!-- Cascading hover flyout(s) for "hover the current breadcrumb entry to
-       reveal its children" (settingsHoverChildNav/-Multistep) — level panels
-       are appended/removed here directly in JS (childNavFlyoutHost), one per
-       depth, rather than a fixed set of elements, since the depth is only
-       bounded by the tree itself. See renderChildNavLevel/closeChildNavFlyouts. -->
-  <div id="childNavFlyoutHost"></div>
-
   <!-- Custom highlight-colour picker (session 6:
        deliberately not the native <input type="color"> — Windows' native
        picker UX varies too much for predictable results here). A hue wheel
@@ -2819,6 +2843,10 @@
                 </label>
               </div>
             </div>
+          </div>
+
+          <div class="settings-subsection-title">Hover-to-expand panels</div>
+          <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsHoverExpandSidebar">Open Files &amp; Filters on hover</label>
@@ -2843,30 +2871,10 @@
                 </label>
               </div>
             </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsHoverChildNav">Hover the current breadcrumb entry to reveal its children</label>
-                <div class="settings-row-hint">Hovering the active file/filter chip in the breadcrumb shows its child filters as a flyout, so you can navigate deeper without opening the tree.</div>
-              </div>
-              <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsHoverChildNav">
-                  <span class="settings-switch-track"></span>
-                </label>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsHoverChildNavMultistep">Keep hovering through multiple levels</label>
-                <div class="settings-row-hint">With this on, hovering a child in the flyout reveals its own children too, letting you drill down several levels deep. Off shows only the immediate children.</div>
-              </div>
-              <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsHoverChildNavMultistep">
-                  <span class="settings-switch-track"></span>
-                </label>
-              </div>
-            </div>
+          </div>
+
+          <div class="settings-subsection-title">Filter tree</div>
+          <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsLevelFilterTreeMode">Level bar creates filter tree nodes</label>
@@ -2879,6 +2887,36 @@
                 </select>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsTempAnchorMode">Show temporary anchor after a no-match filter switch</label>
+                <div class="settings-row-hint">Switching the active filter (tree click or Alt+Arrow) while the current row doesn't match it shows that row at its would-be position as a temporary anchor, not a real bookmark. "Off" never draws it (Up/Down still remembers its position). "Persistent" keeps it shown until a different row is selected. "Fade" shows it briefly, then removes it after the configured duration.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsTempAnchorMode">
+                  <option value="off">Off</option>
+                  <option value="persistent">Persistent</option>
+                  <option value="fade">Fade</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row" id="settingsTempAnchorFadeRow">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Anchor fade duration</div>
+                <div class="settings-row-hint">How long the temporary anchor stays visible before it's removed.</div>
+              </div>
+              <div class="settings-row-control temp-anchor-fade-row">
+                <div class="temp-anchor-fade-stepper">
+                  <button type="button" class="btn-icon" id="tempAnchorFadeDown" title="Decrease duration">−</button>
+                  <span id="tempAnchorFadeValue">3s</span>
+                  <button type="button" class="btn-icon" id="tempAnchorFadeUp" title="Increase duration">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Text-match highlighting</div>
+          <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightScope">Which filters to mark</label>
@@ -3642,55 +3680,6 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
   }
 });
 
-/* ===================== "Hover the current breadcrumb entry to reveal its
-   children" (this session, person-requested, mockup attached: hovering the
-   active/"current" chip in #breadcrumb pops up its child filters as a
-   flyout list, letting you jump straight to a deeper node without opening
-   the tree sidebar). Two independent toggles, same tier/mechanism as the
-   hover-expand settings above (plain localStorage flags, on by default is
-   fine here too — see below):
-     - hoverChildNavEnabled: master on/off for the whole feature.
-     - hoverChildNavMultistep: off (default) shows only the hovered chip's
-       immediate children; on lets hovering one of THOSE children cascade a
-       further flyout for ITS children, and so on, arbitrarily deep.
-   Master defaults ON (it's a discoverable, hover-only affordance that never
-   changes any existing click behavior, unlike the hover-expand settings
-   above which are an opt-out of something that already auto-happened).
-   Multistep defaults OFF, matching the mockup (a single child level shown)
-   and the person's own description order ("wenn off, wird nur die Child
-   Ebene angezeigt"). See renderChildNavLevel/closeChildNavFlyouts below for
-   the flyout implementation itself. */
-const HOVER_CHILD_NAV_KEY = "philogg-hover-child-nav";
-const HOVER_CHILD_NAV_MULTISTEP_KEY = "philogg-hover-child-nav-multistep";
-let hoverChildNavEnabled = true;
-let hoverChildNavMultistep = false;
-
-function initHoverChildNavSettings() {
-  const enabledStored = localStorage.getItem(HOVER_CHILD_NAV_KEY);
-  hoverChildNavEnabled = enabledStored === null ? true : enabledStored === "1";
-  const enabledCb = document.getElementById("settingsHoverChildNav");
-  if (enabledCb) enabledCb.checked = hoverChildNavEnabled;
-
-  const multistepStored = localStorage.getItem(HOVER_CHILD_NAV_MULTISTEP_KEY);
-  hoverChildNavMultistep = multistepStored === null ? false : multistepStored === "1";
-  const multistepCb = document.getElementById("settingsHoverChildNavMultistep");
-  if (multistepCb) multistepCb.checked = hoverChildNavMultistep;
-}
-
-document.getElementById("settingsHoverChildNav").addEventListener("change", ev => {
-  hoverChildNavEnabled = ev.target.checked;
-  localStorage.setItem(HOVER_CHILD_NAV_KEY, hoverChildNavEnabled ? "1" : "0");
-  if (!hoverChildNavEnabled) closeChildNavFlyouts(0);
-});
-
-document.getElementById("settingsHoverChildNavMultistep").addEventListener("change", ev => {
-  hoverChildNavMultistep = ev.target.checked;
-  localStorage.setItem(HOVER_CHILD_NAV_MULTISTEP_KEY, hoverChildNavMultistep ? "1" : "0");
-  // Turning it off while a deeper cascade happens to be open would otherwise
-  // leave levels beyond the first stuck open until the next mouseleave.
-  if (!hoverChildNavMultistep) closeChildNavFlyouts(1);
-});
-
 /* ===================== Text-filter match highlighting settings (Settings ->
    Behavior) — a standing preference, always visible/editable here regardless
    of the master on/off's current state. The master itself lives on a
@@ -3792,6 +3781,57 @@ document.getElementById("settingsLevelFilterTreeMode").addEventListener("change"
   render();
 });
 
+/* ===================== Temporary anchor settings (FEATURE_BACKLOG #18) =====
+   How (or whether) the "temp anchor" row — the selected entry's would-be
+   position after switching the active filter to one it doesn't actually
+   match, see state.tempAnchor / spliceTempAnchor below — gets drawn. Mode is
+   the same plain-localStorage-preference wiring as the settings above; the
+   fade-duration row is only relevant (and only shown, #settingsTempAnchorFadeRow)
+   while mode is "fade", and uses the same −/value/+ stepper shape as the
+   Font Size row's own #fontScaleValue control instead of a native number
+   input. */
+const TEMP_ANCHOR_MODE_KEY = "philogg-temp-anchor-mode";
+const TEMP_ANCHOR_FADE_SECONDS_KEY = "philogg-temp-anchor-fade-seconds";
+const TEMP_ANCHOR_FADE_MIN = 0.5, TEMP_ANCHOR_FADE_MAX = 30, TEMP_ANCHOR_FADE_STEP = 0.5;
+let tempAnchorMode = "persistent"; // "off" | "persistent" | "fade"
+let tempAnchorFadeSeconds = 3;
+
+function updateTempAnchorFadeRowVisibility() {
+  const row = document.getElementById("settingsTempAnchorFadeRow");
+  if (row) row.style.display = tempAnchorMode === "fade" ? "" : "none";
+}
+
+function initTempAnchorSettings() {
+  const modeStored = localStorage.getItem(TEMP_ANCHOR_MODE_KEY);
+  tempAnchorMode = (modeStored === "off" || modeStored === "fade") ? modeStored : "persistent";
+  const modeSelect = document.getElementById("settingsTempAnchorMode");
+  if (modeSelect) modeSelect.value = tempAnchorMode;
+  updateTempAnchorFadeRowVisibility();
+
+  const secStored = parseFloat(localStorage.getItem(TEMP_ANCHOR_FADE_SECONDS_KEY));
+  tempAnchorFadeSeconds = Number.isFinite(secStored) && secStored > 0 ? secStored : 3;
+  const valueEl = document.getElementById("tempAnchorFadeValue");
+  if (valueEl) valueEl.textContent = tempAnchorFadeSeconds + "s";
+}
+
+document.getElementById("settingsTempAnchorMode").addEventListener("change", ev => {
+  tempAnchorMode = ev.target.value === "off" || ev.target.value === "fade" ? ev.target.value : "persistent";
+  localStorage.setItem(TEMP_ANCHOR_MODE_KEY, tempAnchorMode);
+  updateTempAnchorFadeRowVisibility();
+  if (tempAnchorMode === "fade") scheduleTempAnchorFade(); else clearTempAnchorFadeTimer();
+  renderMainView();
+});
+
+function applyTempAnchorFadeSeconds(v) {
+  tempAnchorFadeSeconds = Math.max(TEMP_ANCHOR_FADE_MIN, Math.min(TEMP_ANCHOR_FADE_MAX, Math.round(v * 2) / 2));
+  localStorage.setItem(TEMP_ANCHOR_FADE_SECONDS_KEY, String(tempAnchorFadeSeconds));
+  const valueEl = document.getElementById("tempAnchorFadeValue");
+  if (valueEl) valueEl.textContent = tempAnchorFadeSeconds + "s";
+  if (tempAnchorMode === "fade") scheduleTempAnchorFade();
+}
+document.getElementById("tempAnchorFadeDown").addEventListener("click", () => applyTempAnchorFadeSeconds(tempAnchorFadeSeconds - TEMP_ANCHOR_FADE_STEP));
+document.getElementById("tempAnchorFadeUp").addEventListener("click", () => applyTempAnchorFadeSeconds(tempAnchorFadeSeconds + TEMP_ANCHOR_FADE_STEP));
+
 // Called after any user-initiated file close (see deleteFilterNodeWithUndo)
 // — quits (closes the window) once no root files remain, if enabled.
 function maybeQuitOnLastFileClosed() {
@@ -3818,6 +3858,13 @@ const state = {
   highlightScrollTargetId: null, // twin of scrollTargetId, but for the Highlight view (see revealInHighlightView)
   tableSelection: null,    // Set of "row,col" keys selected in the extraction table view (null = none)
   selectedId: null,        // currently selected entry id
+  tempAnchor: null,        // { entryId, nodeId, faded } | null — the selected entry's
+                           // remembered would-be position in a filter node it doesn't
+                           // actually match, set whenever the active tree node changes
+                           // (tree row click or Alt+Arrow tree nav) while that entry
+                           // isn't a member of the new node's own result (see
+                           // FEATURE_BACKLOG #18, computeTempAnchorForNode/
+                           // applyTempAnchorOnActiveNodeSwitch, spliceTempAnchor).
   logMultiSelect: new Set(), // entry ids multi-selected in the log view (Filter/Highlight), via Ctrl+click (toggle) or Shift+click (range) — Ctrl+C copies these (falling back to just selectedId when empty) as raw log lines; see copyLogSelectionToClipboard
   multiSelect: new Set(),  // node ids selected via checkbox/Ctrl+click in the tree, for bulk actions (merge/AND/OR)
   sortColumn: null,        // active log-table sort column: "time" | "level" | "thread" | "location" | null (chronological)
@@ -6201,7 +6248,6 @@ function getChain(id) {
 const el = sel => document.querySelector(sel);
 const treeEl = el("#tree");
 const breadcrumbEl = el("#breadcrumb");
-const childNavFlyoutHost = el("#childNavFlyoutHost");
 const levelBarEl = el("#levelBar");
 const btnApplyLevelToTree = el("#btnApplyLevelToTree");
 const tableBody = el("#tableBody");
@@ -6345,7 +6391,14 @@ function showFhTab(tab) {
 }
 
 // The single entry point for the three-way toggle: view is "highlight"
-// (Full), "filter" (Filtered), or "stacked".
+// (Full), "filter" (Filtered), or "stacked". NOTE: also called internally by
+// revealFilteredView() as a side effect of plain tree navigation (a filter
+// becoming active auto-reveals the Filtered pane) — clearing a Ctrl+0/
+// Alt+Arrow-forced sidebar peek (FEATURE_BACKLOG.md #18) does NOT belong
+// here, or that automatic reveal would immediately cancel a peek the same
+// keypress just set. Only the PERSON explicitly choosing a view (the
+// Ctrl+1/2/3 shortcuts, the #fhTabs click listener) clears it — see those
+// call sites instead.
 function applyFhView(view) {
   if (view === "stacked") {
     fhLayout = "stacked";
@@ -6397,7 +6450,7 @@ function revealFilteredView() {
 let lastActiveIdForReveal = null;
 fhTabs.addEventListener("click", ev => {
   const btn = ev.target.closest(".view-tab");
-  if (btn) applyFhView(btn.dataset.fhTab);
+  if (btn) { clearSidebarForcedPeek(); applyFhView(btn.dataset.fhTab); }
 });
 
 
@@ -6617,10 +6670,7 @@ function typeTagFor(node) {
   }
 }
 
-// Shared icon lookup — used by both a real tree row (renderNode) and the
-// breadcrumb child-nav flyout (renderChildNavItem, "hover the current entry
-// to reveal its children"), so an item looks identical whether opened from
-// the tree or from a hover flyout.
+// Icon lookup for a tree row (renderNode).
 function nodeIconHTML(node) {
   return node.type === "file" ? (node.merged ? ICON_MERGE : ICON_FILE)
     : node.filterType === "text" ? ICON_FILTER
@@ -6641,10 +6691,8 @@ function nodeIconHTML(node) {
 // HTML string, so an unknown/corrupt value (e.g. from a hand-edited filter
 // file — importFilterJson doesn't otherwise validate a "level" node's value
 // array contents) can never inject markup; an unrecognized entry just
-// renders in the default text color instead of a level color. Shared by the
-// real tree row (renderNode) and the breadcrumb child-nav flyout
-// (renderChildNavItem), same "look identical either way" precedent as
-// nodeIconHTML above.
+// renders in the default text color instead of a level color. Used by a
+// tree row's own label (renderNode).
 function buildLevelNodeLabelContent(node) {
   const frag = document.createDocumentFragment();
   if (node.inverted) frag.appendChild(document.createTextNode("¬ "));
@@ -6702,6 +6750,29 @@ function flattenTreeIds() {
 // entry-table selection, see applySelection). Up/Down step through the
 // flattened visual order; Left/Right jump to the parent/first child —
 // there's no collapse state to toggle here, every node is always expanded.
+// Whether `entry` is actually a member of `nodeId`'s own filtered result —
+// returns a ready-to-assign state.tempAnchor value (null if it IS a member,
+// no anchor needed). Shared by applyTempAnchorOnActiveNodeSwitch below,
+// itself called from both moveTreeSelection (Alt+Arrow tree nav) and the
+// "Files & Filters" tree row click (renderNode) — same mechanic, reused
+// wherever the active filter node changes while a row is selected
+// (FEATURE_BACKLOG #18).
+function computeTempAnchorForNode(nodeId, entry) {
+  if (!entry) return null;
+  return getEntries(nodeId).some(e => e.id === entry.id) ? null : { entryId: entry.id, nodeId, faded: false };
+}
+
+// Switching the active tree node doesn't touch the row selection/entries
+// view at all — the Filtered pane just keeps whatever row was already
+// selected — but it should still show that row as a temporary anchor the
+// moment the new node's list doesn't actually contain it. Clears any stale
+// anchor when nothing's selected or the new node DOES contain it.
+function applyTempAnchorOnActiveNodeSwitch(nodeId) {
+  const entry = state.selectedId ? entryIndex[state.selectedId] : null;
+  state.tempAnchor = entry ? computeTempAnchorForNode(nodeId, entry) : null;
+  if (state.tempAnchor && tempAnchorMode === "fade") scheduleTempAnchorFade();
+}
+
 function moveTreeSelection(key) {
   const ids = flattenTreeIds();
   if (ids.length === 0) return;
@@ -6720,6 +6791,7 @@ function moveTreeSelection(key) {
   }
   if (!targetId) return;
 
+  applyTempAnchorOnActiveNodeSwitch(targetId);
   state.multiSelect = new Set([targetId]);
   state.activeId = targetId;
   render();
@@ -6884,8 +6956,8 @@ function startRenameNode(nodeId) {
 }
 
 // Shared by every place a filter/level/and/or/... node's name is shown to
-// the user (tree row, breadcrumb, child-nav flyout, context menu header,
-// ...): a node.label (see renameFilterNodeWithUndo) overrides the
+// the user (tree row, breadcrumb, context menu header, ...): a node.label
+// (see renameFilterNodeWithUndo) overrides the
 // auto-derived node.name for DISPLAY only — node.name itself is untouched,
 // so anything that needs the actual pattern (Edit dialog, library save
 // default, etc.) still reads it directly.
@@ -7106,6 +7178,7 @@ function renderNode(id, depth) {
         lastTreeRowClickTime = now;
       }
     }
+    applyTempAnchorOnActiveNodeSwitch(id);
     state.activeId = id;
     state.focusRegion = "tree";
     // render()'s own activeId-changed tracking (see lastActiveIdForReveal)
@@ -7118,6 +7191,16 @@ function renderNode(id, depth) {
     render();
   });
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openTreeContextMenu(ev, id); });
+  // Middle-click (FEATURE_BACKLOG #17): same delete as the row's own ✕
+  // button, without needing to reach for it. mousedown preventDefault stops
+  // the browser's middle-click autoscroll indicator from appearing first.
+  row.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
+  row.addEventListener("auxclick", ev => {
+    if (ev.button !== 1) return;
+    ev.preventDefault();
+    deleteFilterNodeWithUndo(id);
+    render();
+  });
 
   // Drag-and-drop reparenting: any filter node can be dragged (moveNode()
   // itself guards against the one genuinely unsafe case — being dropped onto
@@ -7166,10 +7249,6 @@ function renderNode(id, depth) {
 }
 
 function renderBreadcrumb() {
-  // Chip elements are rebuilt from scratch below, so any flyout anchored to
-  // a PREVIOUS render's chip would be left pointing at a detached element —
-  // closing here keeps the flyout's lifetime tied to "still the same render".
-  closeChildNavFlyouts(0);
   breadcrumbEl.innerHTML = "";
   if (!state.activeId || !state.nodes[state.activeId]) return;
   const chain = getChain(state.activeId);
@@ -7194,162 +7273,17 @@ function renderBreadcrumb() {
       state.focusRegion = "tree";
       render();
     });
-    // "Hover the current breadcrumb entry to reveal its children" — only the
-    // CURRENT (rightmost/active) chip, not every ancestor in the chain, per
-    // the feature request ("den aktuellen File/Filter Eintrag des aktuellen
-    // Pfads"). See openChildNavLevel/closeChildNavFlyouts below.
-    if (isCurrent) {
-      chip.addEventListener("mouseenter", () => {
-        cancelChildNavClose();
-        if (hoverChildNavEnabled) openChildNavLevel(node.id, chip, 0);
-      });
-      chip.addEventListener("mouseleave", scheduleChildNavClose);
-    }
+    // Middle-click (FEATURE_BACKLOG #17): same delete as the tree row's own
+    // ✕ button / middle-click, reachable straight from the breadcrumb.
+    chip.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
+    chip.addEventListener("auxclick", ev => {
+      if (ev.button !== 1) return;
+      ev.preventDefault();
+      deleteFilterNodeWithUndo(node.id);
+      render();
+    });
     breadcrumbEl.appendChild(chip);
   });
-}
-
-// ===================== Breadcrumb child-nav flyout =====================
-// "Hover the current breadcrumb entry to reveal its children" (person-
-// requested, this session, mockup attached) — hovering the active chip
-// pops up its children as a clickable list next to it, so you can navigate
-// deeper in the filter tree without opening the sidebar. With
-// hoverChildNavMultistep on, hovering one of those children cascades a
-// further flyout for ITS children, and so on — one .child-nav-flyout panel
-// per depth, tracked in childNavPanels (level 0 = children of the
-// breadcrumb chip itself). Gated entirely by hoverChildNavEnabled/
-// hoverChildNavMultistep (see their init above); with the master setting
-// off this whole module is simply never called.
-
-let childNavPanels = []; // [{ level, el }], ordered by ascending level (a stack)
-let childNavCloseTimer = null;
-
-function cancelChildNavClose() {
-  if (childNavCloseTimer) { clearTimeout(childNavCloseTimer); childNavCloseTimer = null; }
-}
-
-// Closing hover-out is delayed slightly so moving the mouse from the chip
-// into the flyout (or from one cascaded panel into the next) doesn't flash
-// it shut in the gap between the two elements.
-function scheduleChildNavClose() {
-  cancelChildNavClose();
-  childNavCloseTimer = setTimeout(() => closeChildNavFlyouts(0), 150);
-}
-
-// Removes every open panel at `fromLevel` and deeper. childNavPanels is
-// always ordered by ascending level with at most one panel per level (see
-// openChildNavLevel, which itself closes fromLevel-and-deeper before
-// pushing its own new panel) — so the tail of the array is exactly
-// "fromLevel and deeper".
-function closeChildNavFlyouts(fromLevel = 0) {
-  while (childNavPanels.length && childNavPanels[childNavPanels.length - 1].level >= fromLevel) {
-    childNavPanels.pop().el.remove();
-  }
-}
-
-// One row in a flyout panel — visually the same icon/label/type-tag/count
-// as a real tree row (see nodeIconHTML/typeTagFor), just laid out flat
-// instead of indented. `level` is this row's OWN node's depth in the
-// cascade (i.e. the level a further click-through flyout for its children
-// would open at).
-function renderChildNavItem(nodeId, level) {
-  const node = state.nodes[nodeId];
-  const row = document.createElement("div");
-  row.className = "child-nav-item";
-  row.dataset.nodeId = nodeId;
-
-  const icon = document.createElement("span");
-  icon.className = "tree-icon";
-  icon.innerHTML = nodeIconHTML(node);
-  row.appendChild(icon);
-
-  const label = document.createElement("span");
-  label.className = "tree-label";
-  if (node.type === "filter" && node.filterType === "level" && !node.label) label.appendChild(buildLevelNodeLabelContent(node));
-  else {
-    const displayName = nodeDisplayName(node);
-    label.textContent = node.inverted ? "¬ " + displayName : displayName;
-  }
-  row.appendChild(label);
-
-  const tag = document.createElement("span");
-  tag.className = "tree-type-tag";
-  tag.textContent = typeTagFor(node);
-  row.appendChild(tag);
-
-  const count = document.createElement("span");
-  count.className = "tree-count";
-  count.textContent = getEntries(nodeId).length.toLocaleString("de-DE");
-  row.appendChild(count);
-
-  const hasChildren = node.children && node.children.length > 0;
-  // Only hinted when multistep is actually on — otherwise hovering this item
-  // won't cascade anything, and the caret would promise an interaction that
-  // doesn't happen.
-  if (hasChildren && hoverChildNavMultistep) {
-    const caret = document.createElement("span");
-    caret.className = "child-nav-caret";
-    caret.textContent = "›";
-    row.appendChild(caret);
-  }
-
-  // Clicking any item at any depth jumps straight to it, same as clicking
-  // its row in the tree would.
-  row.addEventListener("click", ev => {
-    ev.stopPropagation();
-    state.multiSelect = new Set([nodeId]);
-    state.activeId = nodeId;
-    state.focusRegion = "tree";
-    closeChildNavFlyouts(0);
-    render();
-  });
-
-  row.addEventListener("mouseenter", () => {
-    cancelChildNavClose();
-    row.parentElement && Array.from(row.parentElement.children).forEach(sib => sib.classList.remove("hover-open"));
-    if (hoverChildNavMultistep && hasChildren) {
-      row.classList.add("hover-open");
-      openChildNavLevel(nodeId, row, level + 1);
-    } else {
-      // Not cascading from this item — make sure a deeper cascade left open
-      // by a PREVIOUS sibling in this same panel doesn't linger.
-      closeChildNavFlyouts(level + 1);
-    }
-  });
-
-  return row;
-}
-
-// Positions a freshly-appended panel next to its anchor: level 0 (anchored
-// to the breadcrumb chip) drops BELOW the chip like a dropdown; level 1+
-// (anchored to an item inside another flyout panel) cascades to the RIGHT
-// of that item, like a nested submenu. Clamped to stay within the viewport.
-function positionChildNavPanel(panel, anchorEl, level) {
-  const anchorRect = anchorEl.getBoundingClientRect();
-  const panelRect = panel.getBoundingClientRect();
-  let left = level === 0 ? anchorRect.left : anchorRect.right + 4;
-  let top = level === 0 ? anchorRect.bottom + 4 : anchorRect.top;
-  left = Math.max(8, Math.min(left, window.innerWidth - panelRect.width - 8));
-  top = Math.max(8, Math.min(top, window.innerHeight - panelRect.height - 8));
-  panel.style.left = left + "px";
-  panel.style.top = top + "px";
-}
-
-// Opens (or replaces) the flyout panel for `nodeId`'s children at `level`,
-// anchored to `anchorEl` (the chip for level 0, a child-nav-item row for
-// level 1+). A no-op if the node has no children — nothing to show.
-function openChildNavLevel(nodeId, anchorEl, level) {
-  closeChildNavFlyouts(level);
-  const node = state.nodes[nodeId];
-  if (!node || !node.children || node.children.length === 0) return;
-  const panel = document.createElement("div");
-  panel.className = "child-nav-flyout";
-  node.children.forEach(childId => panel.appendChild(renderChildNavItem(childId, level)));
-  panel.addEventListener("mouseenter", cancelChildNavClose);
-  panel.addEventListener("mouseleave", scheduleChildNavClose);
-  childNavFlyoutHost.appendChild(panel);
-  positionChildNavPanel(panel, anchorEl, level);
-  childNavPanels.push({ level, el: panel });
 }
 
 // The level array of the "level" filter node currently sitting at
@@ -9429,6 +9363,81 @@ function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
 
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
+/* ===================== Temporary anchor rendering (FEATURE_BACKLOG #18) ===
+   Splices state.tempAnchor's entry into the Filtered table's own entry list
+   at its would-be chronological position, so it renders (and is reachable
+   by plain Up/Down) like any other row — see applyTempAnchorOnActiveNodeSwitch
+   above for how it gets set. The spliced object is a shallow copy flagged
+   _tempAnchor (never written into entryIndex/node.entries — purely a
+   render-time placeholder), so row rendering/click/context-menu code all
+   keep working against it unmodified. */
+
+// Where `entry` would sort into `list` by timestamp — the same chronological
+// order getVisibleEntries()/getEntries() already return, before any column
+// sort is layered on top (that sort, when active, is applied to the WHOLE
+// list including the spliced anchor right after — see renderTable — so it
+// ends up correctly positioned there too without any extra logic here).
+function tempAnchorInsertIndex(list, entry) {
+  let idx = 0;
+  while (idx < list.length && list[idx].ts <= entry.ts) idx++;
+  return idx;
+}
+
+function spliceTempAnchor(list) {
+  const a = state.tempAnchor;
+  if (!a || a.nodeId !== state.activeId) return list;
+  if (tempAnchorMode === "off" || (tempAnchorMode === "fade" && a.faded)) return list;
+  const entry = entryIndex[a.entryId];
+  if (!entry || list.some(e => e.id === entry.id)) return list;
+  const out = list.slice();
+  out.splice(tempAnchorInsertIndex(out, entry), 0, Object.assign({}, entry, { _tempAnchor: true }));
+  return out;
+}
+
+let tempAnchorFadeTimer = null;
+function clearTempAnchorFadeTimer() {
+  if (tempAnchorFadeTimer) { clearTimeout(tempAnchorFadeTimer); tempAnchorFadeTimer = null; }
+}
+
+// "Fade" mode: briefly shows the anchor row, collapses its OWN height to 0
+// as it fades (via .temp-anchor-fading's CSS transition), then removes just
+// that DOM row and drops it from state.tempAnchor/currentViewEntries —
+// matching Off's behavior of still remembering the position for Up/Down
+// (see moveSelection) without drawing it any more. Deliberately does NOT
+// call renderMainView() at the end — a full re-render there would re-run
+// captureViewAnchor/restoreViewAnchor's own "keep some anchor row in view"
+// heuristic, which doesn't know this ONE row is what just disappeared, and
+// could jump the scroll position somewhere else entirely — removing a
+// single already-collapsed-to-0-height row instead lets the surrounding
+// rows close up by exactly its own height, in whichever direction normal
+// document flow shifts them, and nothing else.
+function scheduleTempAnchorFade() {
+  clearTempAnchorFadeTimer();
+  if (tempAnchorMode !== "fade" || !state.tempAnchor) return;
+  tempAnchorFadeTimer = setTimeout(() => {
+    tempAnchorFadeTimer = null;
+    if (!state.tempAnchor) return;
+    const rowEl = tableRows.querySelector('.log-row.temp-anchor-row');
+    if (!rowEl) { state.tempAnchor.faded = true; return; } // scrolled out of the rendered window — nothing to animate, just drop the state
+    rowEl.style.height = rowEl.getBoundingClientRect().height + "px"; // pin the current height so the collapse below has something to transition FROM
+    rowEl.classList.add("temp-anchor-fading");
+    // Two nested rAFs: the height pin above and the collapse below must land
+    // in separate paint frames, or the browser coalesces them into one and
+    // the transition never visibly runs.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      rowEl.style.height = "0px";
+      rowEl.style.opacity = "0";
+    }));
+    setTimeout(() => {
+      if (!state.tempAnchor) return;
+      state.tempAnchor.faded = true;
+      const idx = currentViewEntries.findIndex(e => e._tempAnchor);
+      if (idx !== -1) currentViewEntries.splice(idx, 1);
+      rowEl.remove();
+    }, 300);
+  }, tempAnchorFadeSeconds * 1000);
+}
+
 // Set by the tail engine right before a live-update render:
 //   "bottom" — follow mode: scroll to the newest entry
 //   "keep"   — user is reading elsewhere: keep the scroll position untouched
@@ -9534,7 +9543,8 @@ function renderVisibleRows() {
     const row = document.createElement("div");
     let cls = "log-row row-grid " + levelClass(e.level) + (e.id === state.selectedId ? " selected" : "") +
       (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
-      (pinnedOnlyIds.has(e.id) ? " pinned-row" : "");
+      (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") +
+      (e._tempAnchor ? " temp-anchor-row" : "");
 
     let bracketHtml = "";
     // Highlight-rule matches (see computeHighlightMap) — shown here too now,
@@ -10044,9 +10054,55 @@ function renderSidebarRail() {
   sidebarRailEl.appendChild(label);
 }
 
+// FEATURE_BACKLOG.md #18, person-requested (this and the same-day follow-up
+// right below): Ctrl+0 (jump to the tree) and Alt (held down, with or
+// without an arrow — see the keydown/keyup listeners further below) should
+// still let you SEE the "Files & Filters" panel while it's collapsed,
+// without permanently expanding it. Both reuse the exact same `.peeking`
+// overlay a mouse hover already shows (same CSS, same icon swap), just kept
+// open past what a hover alone would — but the two have different "how do I
+// close again" rules, so they're tracked as two independent flags rather
+// than one, combined only for the shared visual (updateSidebarPeekVisual):
+//   - sidebarForcedPeek (Ctrl+0): stays open until the person's focus
+//     genuinely leaves the panel — picking a filter (Enter on a tree node),
+//     switching Full/Filtered/Stacked view (Ctrl+1/2/3 or a tab click), or
+//     clicking anywhere outside the sidebar. Deliberately NOT tied to the
+//     Ctrl key's own press/release — releasing Ctrl right after Ctrl+0
+//     (the normal way to type it) must not immediately close what was just
+//     opened.
+//   - sidebarAltPeek (Alt, held): open for exactly as long as Alt is
+//     physically held down (altKeyPhysicallyDown, tracked by dedicated
+//     keydown/keyup listeners) — a plain "peek while held" toggle, letting
+//     you glance at the tree (optionally navigating it via Alt+Arrow) without
+//     committing to anything. The one exception: Alt+Enter's "Filter for
+//     this ___" dialog (openFilterForEntryColumn) can itself open while Alt
+//     is down — releasing Alt then must NOT close the panel out from under
+//     an open dialog, so the actual close is deferred to
+//     maybeCloseSidebarAltPeek(), checked on both Alt's own keyup AND the
+//     dialog's close (closeFilterPopup).
+let sidebarForcedPeek = false;
+let sidebarAltPeek = false;
+function updateSidebarPeekVisual() {
+  const shouldPeek = (sidebarForcedPeek || sidebarAltPeek) && isSidebarCollapsed();
+  sidebarEl.classList.toggle("peeking", shouldPeek);
+  updateSidebarToggleIcon();
+}
+function setSidebarForcedPeek() {
+  if (!isSidebarCollapsed()) return; // already visible — nothing to force
+  sidebarForcedPeek = true;
+  updateSidebarPeekVisual();
+}
+function clearSidebarForcedPeek() {
+  if (!sidebarForcedPeek) return;
+  sidebarForcedPeek = false;
+  updateSidebarPeekVisual();
+}
+
 function toggleSidebarCollapsed(collapsed) {
   if (collapsed === undefined) collapsed = !isSidebarCollapsed();
   sidebarEl.classList.remove("peeking");
+  sidebarForcedPeek = false;
+  sidebarAltPeek = false;
   if (collapsed) {
     sidebarLastWidth = sidebarEl.getBoundingClientRect().width || sidebarLastWidth;
     sidebarEl.classList.add("collapsed");
@@ -10074,11 +10130,43 @@ sidebarEl.addEventListener("mouseenter", () => {
   updateSidebarToggleIcon();
 });
 sidebarEl.addEventListener("mouseleave", () => {
-  if (!isSidebarCollapsed()) return;
+  if (!isSidebarCollapsed() || sidebarForcedPeek || sidebarAltPeek) return; // a forced/Alt peek only ends via its own rules above
   sidebarEl.classList.remove("peeking");
   updateSidebarToggleIcon();
 });
 sidebarResizer.addEventListener("dblclick", () => toggleSidebarCollapsed());
+
+// Alt (held, with or without an arrow) peeks a collapsed sidebar open for
+// exactly as long as it's held — see sidebarAltPeek's own comment above.
+// Deliberately separate top-level listeners rather than folded into the
+// giant document keydown handler further below: this needs to fire even
+// while typing in an input (inInput there would otherwise skip it), and
+// key-repeat firing this again while already true is a harmless no-op.
+let altKeyPhysicallyDown = false;
+document.addEventListener("keydown", ev => {
+  if (ev.key !== "Alt") return;
+  altKeyPhysicallyDown = true;
+  if (!isSidebarCollapsed()) return;
+  sidebarAltPeek = true;
+  updateSidebarPeekVisual();
+});
+document.addEventListener("keyup", ev => {
+  if (ev.key !== "Alt") return;
+  altKeyPhysicallyDown = false;
+  maybeCloseSidebarAltPeek();
+});
+// Alt+Enter can open the "Filter for this ___" dialog while Alt is still
+// down (see the main keydown handler) — releasing Alt right after typing
+// that chord must not yank the panel shut out from under an open dialog, so
+// closing is deferred until BOTH Alt is up AND the dialog isn't open.
+// Checked from Alt's own keyup above and from closeFilterPopup() (in case
+// Alt was released while the dialog was still open).
+function maybeCloseSidebarAltPeek() {
+  if (altKeyPhysicallyDown || !sidebarAltPeek) return;
+  if (!filterPopup.classList.contains("hidden")) return; // dialog still open — stays peeked until it closes
+  sidebarAltPeek = false;
+  updateSidebarPeekVisual();
+}
 
 function initSidebarCollapsed() {
   updateSidebarToggleIcon();
@@ -10850,6 +10938,9 @@ function applySelection(entryId) {
   const previousId = state.selectedId;
   state.selectedId = entryId;
   state.focusRegion = "entries";
+  // A no-match temp anchor (FEATURE_BACKLOG #18) is only meaningful for the
+  // exact entry it was created for — any OTHER real selection drops it.
+  if (state.tempAnchor && state.tempAnchor.entryId !== entryId) state.tempAnchor = null;
   // Picking a row means the user wants to look at *this* entry — stop the
   // view from being yanked to the bottom by incoming tailed entries. Checks
   // both views (FEATURE_BACKLOG #25): a row click in the Highlight/Full view
@@ -10990,6 +11081,18 @@ function moveSelection(delta) {
   const entries = currentViewEntries;
   if (entries.length === 0) return;
   let idx = state.selectedId ? entries.findIndex(e => e.id === state.selectedId) : -1;
+  // A temp anchor not currently drawn (Off mode, or Fade after it faded —
+  // see spliceTempAnchor) isn't in `entries` at all, so the findIndex above
+  // misses it — recover its remembered would-be position here so Up/Down
+  // still act as if it were really there (FEATURE_BACKLOG #18).
+  if (idx === -1 && state.selectedId && state.tempAnchor &&
+      state.tempAnchor.entryId === state.selectedId && state.tempAnchor.nodeId === state.activeId) {
+    const anchorEntry = entryIndex[state.tempAnchor.entryId];
+    if (anchorEntry) {
+      const insertIdx = tempAnchorInsertIndex(entries, anchorEntry);
+      idx = delta > 0 ? insertIdx - 1 : insertIdx; // land on the correct-side neighbor, since insertIdx itself isn't a real row
+    }
+  }
   idx = idx === -1 ? (delta > 0 ? 0 : entries.length - 1) : Math.min(entries.length - 1, Math.max(0, idx + delta));
   selectEntry(entries[idx].id, { scroll: true, index: idx });
 }
@@ -11073,7 +11176,7 @@ function toggleBookmark(entryId) {
   // the Filtered view showing the stale pre-change set until some UNRELATED
   // full render happened to run.
   if (state.pinBookmarksInFilteredView) {
-    currentViewEntries = getVisibleEntries();
+    currentViewEntries = spliceTempAnchor(getVisibleEntries());
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
     tableRowOffsets = state.multilineMessages ? buildRowOffsets(currentViewEntries) : null;
     tableSpacer.style.height = ((state.multilineMessages ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
@@ -11546,7 +11649,7 @@ function renderTable() {
   // special-cased transition).
   const scrollAnchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
 
-  currentViewEntries = getVisibleEntries();
+  currentViewEntries = spliceTempAnchor(getVisibleEntries());
   // Captured before the optional column-sort copy below: the minimap buckets
   // by entry.ts directly, so it needs the real chronological list regardless
   // of what order the table itself ends up sorted into.
@@ -12152,7 +12255,15 @@ async function tailTick() {
     if (t.wasLive !== live) { t.wasLive = live; liveStatusChanged = true; }
   }
   if (changedRootIds.length) onTailChange(changedRootIds);
-  else if (liveStatusChanged) renderTree(); // cheap: only the dot changed, no data/caches to touch
+  else if (liveStatusChanged) {
+    renderTree(); // cheap: only the dot changed, no data/caches to touch
+    // activeTailedRoot() (and so the jump button's own visibility) is now
+    // gated on this same isTailLive() staleness, not just byte growth — see
+    // FEATURE_BACKLOG #9 — so a liveness flip with zero new bytes still
+    // needs this recomputed, or the button would keep showing after its
+    // file has gone stale until some unrelated render happened to fire.
+    updateTailJumpBtn();
+  }
 }
 
 function onTailChange(changedRootIds) {
@@ -12176,11 +12287,21 @@ function onTailChange(changedRootIds) {
 
 // True while the active node's root file is being tailed — the shared
 // precondition for follow / either jump button being meaningful at all.
+// Gated on isTailLive(), not merely `tail` existing: a file opened via a
+// real FileSystemFileHandle (the common case — showOpenFilePicker/drag-drop
+// both hand one over) keeps its node.tail object for the rest of the
+// session even once it's gone fully static, since node.tail only ever gets
+// deleted on... never, actually — it just stops growing. Without the
+// isTailLive() check, "static (non-trailing) file" from FEATURE_BACKLOG #9
+// would only ever mean "opened via the legacy <input type=file> fallback",
+// which barely anyone hits — effectively every file would count as
+// trailing forever (person-reported: "zu Beginn werden ja aktuell alle
+// Dateien als trailing betrachtet").
 function activeTailedRoot() {
   if (!state.activeId) return null;
   const rootId = getRootFileId(state.activeId);
   const root = rootId ? state.nodes[rootId] : null;
-  return root && root.tail && !root.tail.failed ? root : null;
+  return root && isTailLive(root.tail) ? root : null;
 }
 
 // True while the Filtered view specifically is showing a tailed node (not
@@ -12719,6 +12840,10 @@ function closeFilterPopup() {
   filterPopupColumns = new Set();
   filterPatternPreview.classList.add("hidden");
   filterPatternPreview.innerHTML = "";
+  // FEATURE_BACKLOG.md #18: closes a sidebar peek Alt+Enter opened, if Alt
+  // was already released while this dialog was still open (see
+  // maybeCloseSidebarAltPeek's own comment) — a no-op otherwise.
+  maybeCloseSidebarAltPeek();
 }
 
 // Inserts a placeholder token at the current cursor position (replacing any
@@ -13062,11 +13187,12 @@ function buildNumericExtractPattern(message) {
 // numeric content (most Method/Thread values, or a message that's plain
 // text) falls back to the exact literal text instead of doing nothing, so
 // the action is useful there too: "find this exact line again."
-el("#ctxFilterForColumn").addEventListener("click", ev => {
-  ev.stopPropagation();
-  const entry = ctxEntry;
-  const column = ctxFilterColumn;
-  closeContextMenu();
+// Shared by the click handler right below and Alt+Enter (FEATURE_BACKLOG
+// #18, "extraction dialog directly from the currently selected row" — no
+// mouse event there to resolve a clicked column from, so it's always called
+// with the message column, the one every entry always has meaningful text
+// in, same as the mouse path's own no-numeric-content fallback target).
+function openFilterForEntryColumn(entry, column) {
   if (!entry || !state.activeId) return;
   const value = textColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
@@ -13077,6 +13203,14 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
   renderFilterColumnChips();
   updateExtractAvailability();
   evaluateLiveMatch();
+}
+
+el("#ctxFilterForColumn").addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  const column = ctxFilterColumn;
+  closeContextMenu();
+  openFilterForEntryColumn(entry, column);
 });
 
 /* ===================== Highlight-colour picker =====================
@@ -14676,6 +14810,10 @@ document.addEventListener("click", ev => {
   if (!shortcutsPanel.contains(ev.target) && !btnShortcuts.contains(ev.target)) closeShortcutsPanel();
   if (!licensePanel.contains(ev.target) && !btnLicense.contains(ev.target)) closeLicensePanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
+  // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
+  // on a click anywhere outside the sidebar itself — a click ON a tree row is
+  // deliberately NOT treated as "outside" (still navigating the tree).
+  if (sidebarForcedPeek && !sidebarEl.contains(ev.target)) clearSidebarForcedPeek();
 });
 
 /* ===================== Keyboard shortcuts ===================== */
@@ -14705,7 +14843,6 @@ document.addEventListener("keydown", ev => {
     closeFilterLibraryDialog();
     closeShortcutsPanel();
     closeLicensePanel();
-    closeChildNavFlyouts();
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
@@ -14717,6 +14854,27 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (inInput) return; // let normal copy/paste and text-cursor movement happen inside text inputs
+
+  // FEATURE_BACKLOG.md #18, person-requested (Alt, not Ctrl — same-day
+  // follow-up: Ctrl+Arrow is standard OS/app behavior for jumps within a
+  // document and should stay free for that; Alt+Arrow doesn't collide with
+  // anything existing here): Alt+Arrow forwards straight to "Files &
+  // Filters" tree navigation (moveTreeSelection) WITHOUT taking focus away
+  // from whichever Log view the person is currently in — state.focusRegion
+  // is deliberately left untouched here, unlike the plain (non-Alt)
+  // tree-arrow-nav block right below, so plain arrow keys keep moving
+  // rows/tree exactly as they did before this was pressed. Checked ahead of
+  // that block (and everything else) so it always takes priority once Alt
+  // is held, regardless of which region currently has focus. No need to
+  // force-peek a collapsed sidebar open here — Alt is already down to reach
+  // this branch at all, so the dedicated Alt keydown listener above already
+  // did that the moment Alt itself was pressed.
+  if (ev.altKey &&
+      (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
+    ev.preventDefault();
+    moveTreeSelection(ev.key);
+    return;
+  }
 
   if (state.focusRegion === "tree" &&
       (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
@@ -14776,11 +14934,17 @@ document.addEventListener("keydown", ev => {
     ev.preventDefault();
     if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
     state.focusRegion = "tree";
+    // FEATURE_BACKLOG.md #18, person-requested: jumping focus into a
+    // COLLAPSED tree would otherwise be invisible — force-peek it open
+    // (setSidebarForcedPeek), staying open until focus genuinely leaves the
+    // panel again (see that function's own comment for the full list).
+    setSidebarForcedPeek();
     render();
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "1") {
     ev.preventDefault();
+    clearSidebarForcedPeek();
     applyFhView("highlight");
     state.entriesView = "highlight";
     state.focusRegion = "entries";
@@ -14788,6 +14952,7 @@ document.addEventListener("keydown", ev => {
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "2") {
     ev.preventDefault();
+    clearSidebarForcedPeek();
     applyFhView("filter");
     state.entriesView = "filter";
     state.focusRegion = "entries";
@@ -14795,6 +14960,7 @@ document.addEventListener("keydown", ev => {
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "3") {
     ev.preventDefault();
+    clearSidebarForcedPeek();
     applyFhView("stacked");
     state.entriesView = "filter";
     state.focusRegion = "entries";
@@ -14804,6 +14970,7 @@ document.addEventListener("keydown", ev => {
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") {
       ev.preventDefault();
+      clearSidebarForcedPeek(); // FEATURE_BACKLOG.md #18: picking a filter this way leaves the panel same as any other focus-leaving action
       revealFilteredView();
       state.entriesView = "filter";
       state.focusRegion = "entries";
@@ -14819,12 +14986,29 @@ document.addEventListener("keydown", ev => {
   // state. Only fires for a single selection — with a multi-select active
   // (state.logMultiSelect) Enter has no obvious single target, so it's left
   // alone.
-  if (ev.key === "Enter" && state.focusRegion === "entries" && state.entriesView === "filter" &&
+  if (ev.key === "Enter" && !ev.altKey && state.focusRegion === "entries" && state.entriesView === "filter" &&
       state.selectedId && !state.logMultiSelect.size) {
     const entry = entryIndex[state.selectedId];
     if (entry) {
       ev.preventDefault();
       revealInHighlightView(entry);
+    }
+    return;
+  }
+
+  // FEATURE_BACKLOG.md #18, "Alt+Enter extraction" — opens the same "Filter
+  // for this ___" popup a right-click does (see openFilterForEntryColumn),
+  // directly from the currently selected row, in Full OR Filtered view alike
+  // (unlike plain Enter above, not restricted to entriesView === "filter").
+  // Always targets the message column: there's no mouse event here to
+  // resolve a clicked column from, and message is the one column every
+  // entry always has meaningful text in (same fallback the mouse path uses).
+  if (ev.key === "Enter" && ev.altKey && state.focusRegion === "entries" && state.selectedId) {
+    const entry = entryIndex[state.selectedId];
+    if (entry) {
+      ev.preventDefault();
+      const messageColumn = TEXT_FILTER_COLUMNS.find(c => c.key === "message");
+      openFilterForEntryColumn(entry, messageColumn);
     }
     return;
   }
@@ -14930,6 +15114,7 @@ document.addEventListener("keydown", ev => {
     }
   }
 });
+
 
 /* ===================== Session cache (IndexedDB) =====================
    Persists the working session across a browser reload: loaded files
@@ -16210,9 +16395,9 @@ initTheme();
 initFontScale();
 initQuitOnLastClose();
 initHoverExpandSettings();
-initHoverChildNavSettings();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();
+initTempAnchorSettings();
 initCollapsePanels();
 initFhView();
 render();
