@@ -1,12 +1,14 @@
 # PhiLogg desktop wrapper
 
 A thin Electron shell around the unmodified `../philogg.html` — adds `.log`
-file associations, CLI-argument file opening, and a frameless window with
-integrated close/minimize/maximize controls (see "Frameless window" below)
-on Windows/Linux/macOS. Separate, optional deliverable: doesn't touch
-`philogg.html` or its own release path (`.github/workflows/release.yml`)
-at all. See `PROJECT.md` → "Deep-link loading (`?url=`)" and the plan this
-was built from for the full design rationale.
+file associations, CLI-argument file opening, a frameless window with
+integrated close/minimize/maximize controls (see "Frameless window" below),
+a startup splash screen, and a system-tray "close to tray" mode (see
+"Startup perception (splash + tray)" below) on Windows/Linux/macOS.
+Separate, optional deliverable: doesn't touch `philogg.html` or its own
+release path (`.github/workflows/release.yml`) at all. See `PROJECT.md` →
+"Deep-link loading (`?url=`)" and the plan this was built from for the full
+design rationale.
 
 ## Status
 
@@ -80,6 +82,19 @@ maximized or fullscreen alike — with no extra code needed for that case.
 See the `ROUNDED_CORNERS`/`watchFullscreenToggle` comments in `main.js` for
 the per-platform caveats (Windows pre-11-Build-22000 stays square either
 way; Linux rounding depends on the desktop environment's own compositor).
+
+## Startup perception (splash + tray)
+
+Launch shows a small always-on-top splash window immediately (an inline
+`data:` URL, no asset file) while `philogg.html` loads underneath; the main
+window stays hidden until it fires `"ready-to-show"`, at which point it's
+shown and the splash is destroyed. Separately, Settings → Behavior's "Close
+to system tray" toggle (on by default) makes the window's close button —
+and `"Closing the last log file quits the app"`'s own close path — hide the
+window to a tray icon instead of quitting; right-click the tray icon for a
+real Quit, left-click/"Open PhiLogg" to jump straight back in. See
+`PROJECT.md` → "Desktop wrapper" → "Startup perception" for the full
+mechanism (`createSplash`/`watchCloseToTray`/`createTray` in `main.js`).
 
 ## Version stamp
 
