@@ -63,11 +63,15 @@ open it in a browser to view it.
   multi-line/pin-bookmarks buttons); Settings → Behavior controls whether it
   shows only the filter you're currently drilled into or every text filter
   in the chain, and where the marks appear.
-- **Hover the breadcrumb to navigate deeper** — hover the active filter's
-  chip in the breadcrumb to pop up its children as a clickable flyout, no
-  need to open the tree sidebar. Two Settings → Behavior toggles: turn the
-  whole thing off, or let it cascade through multiple levels as you keep
-  hovering instead of stopping at the first one.
+- **Keyboard filter navigation without losing your place** — `Alt+Arrow`
+  moves the active filter selection in "Files & Filters" without taking
+  keyboard focus off the log view you're reading, peeking the panel open if
+  it's collapsed (`Ctrl+0` does the same peek). `Alt+Enter` opens "Filter for
+  this message" for the selected row directly. Switching filters while the
+  selected row doesn't match the new one shows it at its would-be position
+  as a temporary anchor instead of losing it — configurable in Settings →
+  Behavior (always shown, shown briefly then removed, or never drawn but
+  still remembered for Up/Down).
 - **Value extraction** — turn a pattern like `x=[value:float] y=[value:float]`
   into a spreadsheet-style table with per-column stats, value assertions, and
   a Plot tab (line/bar/scatter, zoom/pan, click a point to jump to its log
