@@ -7108,6 +7108,13 @@ function renderNode(id, depth) {
     }
     state.activeId = id;
     state.focusRegion = "tree";
+    // render()'s own activeId-changed tracking (see lastActiveIdForReveal)
+    // only reveals the Filtered view when clicking a filter actually changes
+    // the active node — re-clicking the already-active filter (e.g. after a
+    // double-click on a row jumped to the Full view) leaves activeId
+    // unchanged, so it would otherwise never jump back. Call it explicitly
+    // here too; revealFilteredView() itself no-ops when already revealed.
+    if (node.type === "filter") revealFilteredView();
     render();
   });
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openTreeContextMenu(ev, id); });
