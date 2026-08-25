@@ -157,6 +157,7 @@ function fireDblClick(el, w) { el.dispatchEvent(new w.MouseEvent("dblclick", { b
 function fireInput(el, w) { el.dispatchEvent(new w.Event("input", { bubbles: true })); }
 function fireSubmit(el, w) { el.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); }
 function fireKeydown(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts })); }
+function fireKeyup(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keyup", { key, bubbles: true, cancelable: true, ...opts })); }
 // Checks ACTUAL resolved CSS (getComputedStyle), not just whether the
 // "hidden" class is present on the element — jsdom has no real layout
 // engine, but it DOES correctly compute `display` from matching CSS rules,
@@ -10215,35 +10216,39 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 99 — Ctrl+0/Ctrl+Arrow tree peek+nav, Alt+Enter extraction, and the
+   GROUP 99 — Ctrl+0/Alt+Arrow tree peek+nav, Alt+Enter extraction, and the
    temporary anchor (FEATURE_BACKLOG.md #18, person-requested; a prior
    in-session design built a centered/keyboard-navigable breadcrumb flyout
    popup for this instead — reverted after trying it live, replaced with
-   this simpler "forward Ctrl+Arrow straight to the existing Files & Filters
+   this simpler "forward Alt+Arrow straight to the existing Files & Filters
    tree" approach; the breadcrumb hover flyout itself is UNCHANGED from
-   before this session, see GROUP 92).
+   before this session, see GROUP 92). Alt rather than Ctrl for the arrow
+   nav — same-day person-requested follow-up — since Ctrl+Arrow is standard
+   OS/app behavior for jumps within a document and should stay free for
+   that.
 
    - Ctrl+0 keeps its existing "focus the tree" behavior, and ADDITIONALLY
      force-peeks the panel open (setSidebarForcedPeek) if it's collapsed —
      same visual .peeking overlay a mouse hover already shows, just not
      closed by mouseleave.
-   - Ctrl+Arrow forwards straight to moveTreeSelection WITHOUT touching
+   - Alt+Arrow forwards straight to moveTreeSelection WITHOUT touching
      state.focusRegion — the Log view stays "focused" for plain arrow keys —
      and also force-peeks a collapsed panel.
    - A forced peek is cleared by switching Full/Filtered/Stacked view
-     (applyFhView, Ctrl+1/2/3 or a tab click) or by clicking outside the
-     sidebar.
+     (applyFhView, Ctrl+1/2/3 or a tab click), by clicking outside the
+     sidebar, or by releasing whichever modifier forced it open (Ctrl for
+     Ctrl+0, Alt for Alt+Arrow).
    - Alt+Enter opens "Filter for this message" for the selected row directly
      (openFilterForEntryColumn, shared with the right-click menu item).
    - The temporary anchor (state.tempAnchor): switching the active filter —
-     via a tree row click OR Ctrl+Arrow tree nav, the only two ways to do
+     via a tree row click OR Alt+Arrow tree nav, the only two ways to do
      that now — while the selected row doesn't match the new filter shows it
      at its would-be position instead of losing it, per
      #settingsTempAnchorMode (Off/Persistent/Fade, its fade-duration row
      only shown for Fade).
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("99. Ctrl+0/Ctrl+Arrow tree peek+nav, Alt+Enter, temporary anchor");
+  section("99. Ctrl+0/Alt+Arrow tree peek+nav, Alt+Enter, temporary anchor");
 
   // messages: "message 0 keep", "message 1 skip", "message 2 keep", ...
   const f = await w.addFile("app.log", makeLog(0, 5, { suffix: i => (i % 2 === 0 ? "keep" : "skip") }), () => {});
@@ -10267,34 +10272,42 @@ await withApp(async (w, d, T) => {
   assert(sidebarEl.classList.contains("peeking") && T.sidebarForcedPeek === true,
     "Ctrl+0 force-peeks the panel open once it's collapsed");
 
-  // --- Ctrl+Arrow forwards to tree navigation WITHOUT taking focus away
+  // --- Alt+Arrow forwards to tree navigation WITHOUT taking focus away
   //     from the current Log view ---
   T.state.focusRegion = "entries";
   w.toggleSidebarCollapsed(true); // re-collapse — also clears the forced peek
   assert(T.sidebarForcedPeek === false, "manually toggling the panel clears any forced peek");
 
-  fireKeydown(d, w, "ArrowDown", { ctrlKey: true });
+  fireKeydown(d, w, "ArrowDown", { altKey: true });
   assert(T.sidebarForcedPeek === true && sidebarEl.classList.contains("peeking"),
-    "Ctrl+ArrowDown force-peeks a collapsed panel too");
+    "Alt+ArrowDown force-peeks a collapsed panel too");
   assert(T.state.focusRegion === "entries",
     "...but does NOT switch focus into the tree — it stays wherever it was");
   assert(T.state.activeId === skipFilter.id, "...while still moving the tree selection itself (keepFilter -> skipFilter)");
 
-  fireKeydown(d, w, "ArrowUp", { ctrlKey: true });
-  assert(T.state.activeId === keepFilter.id, "Ctrl+ArrowUp moves it back");
+  fireKeydown(d, w, "ArrowUp", { altKey: true });
+  assert(T.state.activeId === keepFilter.id, "Alt+ArrowUp moves it back");
   assert(T.state.focusRegion === "entries", "focus still hasn't moved");
 
-  // --- The peek persists across further Ctrl+Arrow presses, only clearing
+  // --- The peek persists across further Alt+Arrow presses, only clearing
   //     on a view switch or a click outside the sidebar ---
   fireKeydown(d, w, "1", { ctrlKey: true }); // Ctrl+1 -> Full view, via applyFhView
   assert(T.sidebarForcedPeek === false, "switching to the Full view (Ctrl+1) clears the forced peek");
   assert(!sidebarEl.classList.contains("peeking"), "...and the panel collapses back to its rail");
 
   w.toggleSidebarCollapsed(true);
-  fireKeydown(d, w, "ArrowDown", { ctrlKey: true });
+  fireKeydown(d, w, "ArrowDown", { altKey: true });
   assert(T.sidebarForcedPeek === true, "sanity: forced peek is back on");
   fireClick(d.body, w);
   assert(T.sidebarForcedPeek === false, "a click outside the sidebar also clears the forced peek");
+
+  // --- Releasing Alt also closes a peek IT forced open ---
+  fireKeydown(d, w, "ArrowDown", { altKey: true });
+  assert(T.sidebarForcedPeek === true && sidebarEl.classList.contains("peeking"), "sanity: forced peek is on again");
+  fireKeyup(d, w, "Alt");
+  assert(T.sidebarForcedPeek === false && !sidebarEl.classList.contains("peeking"),
+    "releasing Alt closes the sidebar back up, since it was collapsed before the peek");
+
   w.toggleSidebarCollapsed(false); // re-expand for the rest of this group
 
   // --- Alt+Enter opens "Filter for this message" for the selected row,
@@ -10327,7 +10340,7 @@ await withApp(async (w, d, T) => {
   assert(T.state.entriesView === "highlight", "plain Enter on a Filtered row still reveals the Highlight view, unaffected by the new Alt+Enter branch");
 
   // --- Temporary anchor: switching the active filter — via a tree row
-  //     click OR Ctrl+Arrow tree nav — while the selected row doesn't
+  //     click OR Alt+Arrow tree nav — while the selected row doesn't
   //     match the new filter ---
   w.applyFhView("highlight");
   T.state.entriesView = "highlight";
@@ -10351,15 +10364,15 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('.tree-row[data-node-id="' + skipFilter.id + '"]'), w);
   assert(T.state.tempAnchor === null, "clicking into a filter that DOES match the selected row clears the anchor");
 
-  // Same mechanic via Ctrl+Arrow tree navigation, not just a mouse click.
+  // Same mechanic via Alt+Arrow tree navigation, not just a mouse click.
   T.state.activeId = skipFilter.id;
   T.state.selectedId = skip1Id;
   T.state.tempAnchor = null;
   w.render();
-  fireKeydown(d, w, "ArrowUp", { ctrlKey: true }); // skipFilter -> keepFilter (flattened tree order)
-  assert(T.state.activeId === keepFilter.id, "sanity: Ctrl+ArrowUp moved onto keepFilter");
+  fireKeydown(d, w, "ArrowUp", { altKey: true }); // skipFilter -> keepFilter (flattened tree order)
+  assert(T.state.activeId === keepFilter.id, "sanity: Alt+ArrowUp moved onto keepFilter");
   assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id && T.state.tempAnchor.nodeId === keepFilter.id,
-    "Ctrl+Arrow tree navigation applies the SAME anchor mechanic as a tree row click");
+    "Alt+Arrow tree navigation applies the SAME anchor mechanic as a tree row click");
 
   // --- Fade-duration row visibility: only shown for the Fade mode ---
   const modeSelect = d.querySelector("#settingsTempAnchorMode");

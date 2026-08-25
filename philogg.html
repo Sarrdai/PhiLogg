@@ -2919,7 +2919,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTempAnchorMode">Show temporary anchor after a no-match filter switch</label>
-                <div class="settings-row-hint">Switching the active filter (tree click or Ctrl+Arrow) while the current row doesn't match it shows that row at its would-be position as a temporary anchor, not a real bookmark. "Off" never draws it (Up/Down still remembers its position). "Persistent" keeps it shown until a different row is selected. "Fade" shows it briefly, then removes it after the configured duration.</div>
+                <div class="settings-row-hint">Switching the active filter (tree click or Alt+Arrow) while the current row doesn't match it shows that row at its would-be position as a temporary anchor, not a real bookmark. "Off" never draws it (Up/Down still remembers its position). "Persistent" keeps it shown until a different row is selected. "Fade" shows it briefly, then removes it after the configured duration.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsTempAnchorMode">
@@ -3939,7 +3939,7 @@ const state = {
   tempAnchor: null,        // { entryId, nodeId, faded } | null — the selected entry's
                            // remembered would-be position in a filter node it doesn't
                            // actually match, set whenever the active tree node changes
-                           // (tree row click or Ctrl+Arrow tree nav) while that entry
+                           // (tree row click or Alt+Arrow tree nav) while that entry
                            // isn't a member of the new node's own result (see
                            // FEATURE_BACKLOG #18, computeTempAnchorForNode/
                            // applyTempAnchorOnActiveNodeSwitch, spliceTempAnchor).
@@ -6473,7 +6473,7 @@ function showFhTab(tab) {
 // (Full), "filter" (Filtered), or "stacked". NOTE: also called internally by
 // revealFilteredView() as a side effect of plain tree navigation (a filter
 // becoming active auto-reveals the Filtered pane) — clearing a Ctrl+0/
-// Ctrl+Arrow-forced sidebar peek (FEATURE_BACKLOG.md #18) does NOT belong
+// Alt+Arrow-forced sidebar peek (FEATURE_BACKLOG.md #18) does NOT belong
 // here, or that automatic reveal would immediately cancel a peek the same
 // keypress just set. Only the PERSON explicitly choosing a view (the
 // Ctrl+1/2/3 shortcuts, the #fhTabs click listener) clears it — see those
@@ -6837,7 +6837,7 @@ function flattenTreeIds() {
 // Whether `entry` is actually a member of `nodeId`'s own filtered result —
 // returns a ready-to-assign state.tempAnchor value (null if it IS a member,
 // no anchor needed). Shared by applyTempAnchorOnActiveNodeSwitch below,
-// itself called from both moveTreeSelection (Ctrl+Arrow tree nav) and the
+// itself called from both moveTreeSelection (Alt+Arrow tree nav) and the
 // "Files & Filters" tree row click (renderNode) — same mechanic, reused
 // wherever the active filter node changes while a row is selected
 // (FEATURE_BACKLOG #18).
@@ -10271,14 +10271,18 @@ function renderSidebarRail() {
 }
 
 // FEATURE_BACKLOG.md #18, person-requested: Ctrl+0 (jump to the tree) and
-// Ctrl+Arrow (see the keydown handler's tree-forwarding block) should still
+// Alt+Arrow (see the keydown handler's tree-forwarding block) should still
 // let you SEE the "Files & Filters" panel while navigating it by keyboard,
 // even while it's collapsed — without permanently expanding it. Reuses the
 // exact same `.peeking` overlay a mouse hover already shows (same CSS, same
 // icon swap), just kept open regardless of the mouse until the person
 // switches Full/Filtered/Stacked view (applyFhView, both the Ctrl+1/2/3
-// shortcuts and a click on the view tabs funnel through it) or clicks
-// anywhere outside the sidebar (see the document-level click listener).
+// shortcuts and a click on the view tabs funnel through it), clicks
+// anywhere outside the sidebar (see the document-level click listener), or
+// releases Ctrl/Cmd (see the document-level keyup listener) — same-day
+// person-requested follow-up: since a forced peek only ever starts because
+// the sidebar WAS collapsed, releasing the key that triggered it should
+// close it back up again, exactly restoring the pre-peek state.
 let sidebarForcedPeek = false;
 function setSidebarForcedPeek() {
   if (!isSidebarCollapsed()) return; // already visible — nothing to force
@@ -14950,7 +14954,7 @@ document.addEventListener("click", ev => {
   if (!shortcutsPanel.contains(ev.target) && !btnShortcuts.contains(ev.target)) closeShortcutsPanel();
   if (!licensePanel.contains(ev.target) && !btnLicense.contains(ev.target)) closeLicensePanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
-  // FEATURE_BACKLOG.md #18: a Ctrl+0/Ctrl+Arrow-forced sidebar peek also ends
+  // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
   // on a click anywhere outside the sidebar itself — a click ON a tree row is
   // deliberately NOT treated as "outside" (still navigating the tree).
   if (sidebarForcedPeek && !sidebarEl.contains(ev.target)) clearSidebarForcedPeek();
@@ -14996,17 +15000,20 @@ document.addEventListener("keydown", ev => {
   }
   if (inInput) return; // let normal copy/paste and text-cursor movement happen inside text inputs
 
-  // FEATURE_BACKLOG.md #18, person-requested: Ctrl+Arrow forwards straight
-  // to "Files & Filters" tree navigation (moveTreeSelection) WITHOUT taking
-  // focus away from whichever Log view the person is currently in —
-  // state.focusRegion is deliberately left untouched here, unlike the plain
-  // (non-Ctrl) tree-arrow-nav block right below, so plain arrow keys keep
-  // moving rows/tree exactly as they did before this was pressed. Checked
-  // ahead of that block (and everything else) so it always takes priority
-  // once Ctrl/Cmd is held, regardless of which region currently has focus.
-  // If the sidebar happens to be collapsed, also force-peeks it open so the
-  // navigation is actually visible (setSidebarForcedPeek).
-  if ((ev.ctrlKey || ev.metaKey) &&
+  // FEATURE_BACKLOG.md #18, person-requested (Alt, not Ctrl — same-day
+  // follow-up: Ctrl+Arrow is standard OS/app behavior for jumps within a
+  // document and should stay free for that; Alt+Arrow doesn't collide with
+  // anything existing here): Alt+Arrow forwards straight to "Files &
+  // Filters" tree navigation (moveTreeSelection) WITHOUT taking focus away
+  // from whichever Log view the person is currently in — state.focusRegion
+  // is deliberately left untouched here, unlike the plain (non-Alt)
+  // tree-arrow-nav block right below, so plain arrow keys keep moving
+  // rows/tree exactly as they did before this was pressed. Checked ahead of
+  // that block (and everything else) so it always takes priority once Alt
+  // is held, regardless of which region currently has focus. If the sidebar
+  // happens to be collapsed, also force-peeks it open so the navigation is
+  // actually visible (setSidebarForcedPeek).
+  if (ev.altKey &&
       (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
     ev.preventDefault();
     setSidebarForcedPeek();
@@ -15074,7 +15081,7 @@ document.addEventListener("keydown", ev => {
     state.focusRegion = "tree";
     // FEATURE_BACKLOG.md #18, person-requested: jumping focus into a
     // COLLAPSED tree would otherwise be invisible — force-peek it open the
-    // same way Ctrl+Arrow does (see setSidebarForcedPeek).
+    // same way Alt+Arrow does (see setSidebarForcedPeek).
     setSidebarForcedPeek();
     render();
     return;
@@ -15249,6 +15256,18 @@ document.addEventListener("keydown", ev => {
       render();
     }
   }
+});
+
+// FEATURE_BACKLOG.md #18, same-day person-requested follow-up: releasing
+// whichever modifier forced a sidebar peek open closes it back up again —
+// Ctrl/Cmd for Ctrl+0, Alt for Alt+Arrow (see setSidebarForcedPeek) — since
+// a forced peek only ever exists because the sidebar was collapsed to begin
+// with, so closing it on key-release simply restores the pre-peek state. A
+// peek the person pinned open some other way (there isn't one currently,
+// but clearSidebarForcedPeek is itself a no-op unless sidebarForcedPeek is
+// actually set) is left alone either way.
+document.addEventListener("keyup", ev => {
+  if (ev.key === "Control" || ev.key === "Meta" || ev.key === "Alt") clearSidebarForcedPeek();
 });
 
 /* ===================== Session cache (IndexedDB) =====================
