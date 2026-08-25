@@ -497,56 +497,78 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 15 — Bookmarks
-   Origin: 7ef2c2a6 (item 3). Covers toggle via keyboard shortcut and
-   context menu, the panel listing/note editing, and jumpToEntry's
+   GROUP 15 — Bookmarks rework: auto-managed per-file filter node
+   Origin: 7ef2c2a6 (item 3), REPLACED this session (FEATURE_BACKLOG.md
+   "Bookmarks rework") — the old Bookmark Manager panel (#btnBookmarks/
+   #bookmarksPanel/#bookmarksList/renderBookmarksPanel/openBookmarksPanel)
+   is gone entirely; bookmarks are now backed by state.bookmarks (unchanged
+   as the source of truth for the row dot/pin feature) PLUS a single
+   auto-managed, restricted "Bookmarks" filter node per file
+   (syncBookmarksFilterNode). Covers: toggle via keyboard shortcut and
+   context menu still work; the node appears the moment the first bookmark
+   on a file is set and disappears only once the LAST one is cleared (not
+   before); the node actually matches the bookmarked rows; it's excluded
+   from the tree's normal drag/delete/reorder operations while its swatch/
+   color is still separately settable (moveFilterNodeWithUndo elsewhere
+   already covers the delete-blocked path via `locked`); jumpToEntry's
    root-file resolution (works from anywhere, unlike the old jumpToFullLog
-   which assumed the current chain).
+   which assumed the current chain) is unaffected.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("15. Bookmarks");
+  section("15. Bookmarks rework");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(0, 5, { msgPrefix: "other" }), () => {});
   w.render();
   T.state.activeId = fa.id;
   w.render();
 
+  assert(!d.querySelector("#btnBookmarks"), "the old Bookmark Manager toolbar button is gone");
+  assert(!d.querySelector("#bookmarksPanel"), "the old Bookmark Manager panel is gone from the DOM");
+
+  const bookmarksNode = () => fa.children.map(id => T.state.nodes[id]).find(n => n && n.filterType === "bookmarks");
+
   // Keyboard shortcut "B"
   w.selectEntry(fa.entries[1].id);
   fireKeydown(d, w, "b");
   assert(T.state.bookmarks.has(fa.entries[1].id), "'B' shortcut bookmarks the selected entry");
-  assert(d.querySelector("#btnBookmarks .toolbar-badge").textContent === "1", "toolbar badge shows the bookmark count");
-  fireKeydown(d, w, "b");
-  assert(!T.state.bookmarks.has(fa.entries[1].id), "'B' again removes the bookmark");
+  assert(bookmarksNode(), "the auto 'Bookmarks' filter node appears under the root the moment the first bookmark is set");
+  assert(bookmarksNode().locked === true, "the auto node is marked locked");
+  assert(w.getEntries(bookmarksNode().id).map(e => e.id).includes(fa.entries[1].id), "the auto node actually matches the bookmarked row");
 
-  // Context-menu toggle (entry not in entryIndex, e.g. a pair entry, must be hidden — spot-checked via a real entry here)
+  // Context-menu toggle adds a second bookmark — node must persist (not just exist for the first one)
   w.openContextMenu({ clientX: 10, clientY: 10 }, fa.entries[2]);
   assert(d.querySelector("#ctxBookmark").style.display !== "none", "bookmark menu item visible for a real, indexed entry");
   fireClick(d.querySelector("#ctxBookmark"), w);
   assert(T.state.bookmarks.has(fa.entries[2].id), "context-menu 'Bookmark this row' sets the bookmark");
+  assert(bookmarksNode(), "node still present with 2 bookmarks");
 
-  // Panel: listing, sorted by time, note editing
-  w.toggleBookmark(fa.entries[0].id); // add a second, earlier bookmark to check sort order
-  w.openBookmarksPanel();
-  const rows = [...d.querySelectorAll("#bookmarksList .bookmark-row")];
-  assert(rows.length === 2, "bookmarks panel lists both bookmarks");
-  const noteInput = rows[0].querySelector(".bookmark-row-note");
-  noteInput.value = "check this";
-  noteInput.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(T.state.bookmarks.get(fa.entries[0].id).note === "check this", "editing a bookmark's note persists it to state.bookmarks");
+  // Removing ONE of two bookmarks must NOT remove the node
+  fireKeydown(d, w, "b"); // fa.entries[1] was reselected above, still selected — toggles it off
+  assert(!T.state.bookmarks.has(fa.entries[1].id), "first bookmark removed");
+  assert(bookmarksNode(), "node persists while at least one bookmark remains on this file");
+
+  // Removing the LAST bookmark removes the node
+  w.toggleBookmark(fa.entries[2].id);
+  assert(!T.state.bookmarks.has(fa.entries[2].id), "last bookmark removed");
+  assert(!bookmarksNode(), "the auto node is removed once no bookmark remains on this file");
+
+  // Restricted: not draggable/deletable/reorderable via the normal filter-tree operations API
+  w.toggleBookmark(fa.entries[0].id);
+  const node = bookmarksNode();
+  assert(node, "node re-created for the next check");
+  const childrenBefore = fa.children.slice();
+  assert(w.deleteFilterNodeWithUndo(node.id) === undefined && T.state.nodes[node.id], "deleteFilterNodeWithUndo is a no-op on a locked node — it survives");
+  assert(w.moveFilterNodeWithUndo(node.id, fb.id) === false, "moveFilterNodeWithUndo refuses to move a locked node");
+  assert(T.state.nodes[node.id].parentId === fa.id, "locked node's parent is unchanged after the refused move");
+  assert(fa.children.join(",") === childrenBefore.join(","), "locked node's position among siblings is unchanged");
 
   // jumpToEntry: works from a completely different file/filter than the bookmark's own root
+  w.toggleBookmark(fa.entries[2].id); // re-bookmark for this check (still real, indexed entries either way)
   T.state.activeId = fb.id;
   w.render();
   w.jumpToEntry(fa.entries[2].id);
   assert(T.state.activeId === fa.id, "jumpToEntry resolves the bookmark's OWN root file, not whatever chain was active");
   assert(T.state.selectedId === fa.entries[2].id, "jumpToEntry selects the bookmarked entry");
-
-  // A bookmark whose entry no longer resolves renders gracefully, not silently dropped
-  const ghostId = "nonexistent-entry-id";
-  T.state.bookmarks.set(ghostId, { note: "", bookmarkedAt: Date.now() });
-  w.renderBookmarksPanel();
-  assert(d.querySelector("#bookmarksList").textContent.includes("no longer available"), "an unresolvable bookmark shows 'no longer available' instead of vanishing");
 });
 
 /* ============================================================
@@ -1466,7 +1488,7 @@ section("20. Session cache: persist in one window, restore in the next");
     const bEntry = f.entries[5];
     savedEntryRaw = bEntry.raw;
     w.toggleBookmark(bEntry.id);
-    T.state.bookmarks.get(bEntry.id).note = "check this";
+    T.state.notes.set(bEntry.id, "check this"); // general-purpose note, independent of the bookmark itself
     T.state.levelFilter.add("ERROR");
     T.state.activeId = combo.id;
 
@@ -1475,8 +1497,14 @@ section("20. Session cache: persist in one window, restore in the next");
 
     const meta = await w.cacheStoreOp("meta", "readonly", s => s.get("session"));
     assert(meta && meta.fileOrder.length === 1, "cache: meta record written with one file");
-    assert(meta.bookmarks.length === 1 && meta.bookmarks[0].ordinal === 5 && meta.bookmarks[0].note === "check this",
-      "cache: bookmark persisted as ordinal + note");
+    assert(meta.bookmarks.length === 1 && meta.bookmarks[0].ordinal === 5,
+      "cache: bookmark persisted as ordinal");
+    assert(meta.notes.length === 1 && meta.notes[0].ordinal === 5 && meta.notes[0].text === "check this",
+      "cache: note persisted as ordinal + text, separately from the bookmark");
+    // The auto "Bookmarks" filter node is deliberately NOT part of the
+    // persisted filter tree (see syncBookmarksFilterNode) — only the two
+    // manually-created filters below are.
+    assert(meta.filters[f.cacheKey].length === 2, "cache: the auto 'Bookmarks' node is excluded from the persisted filter tree");
     assert(meta.settings.active && meta.settings.active.ref != null, "cache: active filter persisted as ref");
     const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
     assert(rec && rec.text.includes("at Baz.Qux()"), "cache: file text persisted incl. continuation lines");
@@ -1492,9 +1520,15 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(f.entries[3].message === savedMsg3, "restore: multi-line message round-tripped");
     assert(f.entries[5].raw === savedEntryRaw, "restore: entry raw identical after re-parse");
 
-    assert(f.children.length === 2, "restore: both top-level filters back");
-    const r1 = T.state.nodes[f.children[0]];
-    const r2 = T.state.nodes[f.children[1]];
+    // 3 children, not 2: the two restored filters PLUS the auto "Bookmarks"
+    // node re-derived from the restored state.bookmarks (see
+    // syncBookmarksFilterNode, called at the end of restoreSessionFromCache)
+    // — unshifted to the front, so the two real filters are children[1]/[2].
+    assert(f.children.length === 3, "restore: both top-level filters back, plus the re-derived auto 'Bookmarks' node");
+    const autoNode = T.state.nodes[f.children[0]];
+    assert(autoNode.filterType === "bookmarks" && autoNode.locked === true, "restore: the auto 'Bookmarks' node is re-created, not persisted-and-reloaded verbatim");
+    const r1 = T.state.nodes[f.children[1]];
+    const r2 = T.state.nodes[f.children[2]];
     assert(r1.filterType === "text" && r1.value === "message 1", "restore: first filter type/value");
     assert(r2.highlightColor === "#ff0000", "restore: highlight colour preserved");
     assert(r1.children.length === 1, "restore: nested AND node present");
@@ -1506,8 +1540,9 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(w.getEntries(combo.id).length === 2, "restore: AND node re-evaluates to the correct result");
 
     assert(T.state.bookmarks.size === 1, "restore: bookmark came back");
-    const [bid, bm] = [...T.state.bookmarks.entries()][0];
-    assert(bid === f.entries[5].id && bm.note === "check this", "restore: bookmark maps to ordinal 5 with note");
+    const [bid] = [...T.state.bookmarks.entries()][0];
+    assert(bid === f.entries[5].id, "restore: bookmark maps to ordinal 5");
+    assert(T.state.notes.size === 1 && T.state.notes.get(f.entries[5].id) === "check this", "restore: note maps to ordinal 5 with its text");
     assert(T.state.levelFilter.has("ERROR") && T.state.levelFilter.size === 1, "restore: level filter preserved");
     assert(T.state.activeId === combo.id, "restore: active node is the restored AND filter");
 
@@ -1587,7 +1622,7 @@ section("20. Session cache: persist in one window, restore in the next");
     savedRaw5 = f.entries[5].raw;
     savedRaw15 = f.entries[15].raw;
     w.toggleBookmark(f.entries[5].id);
-    T.state.bookmarks.get(f.entries[5].id).note = "check this";
+    T.state.notes.set(f.entries[5].id, "check this"); // general-purpose note, independent of the bookmark itself
     w.toggleBookmark(f.entries[15].id);
     T.state.levelFilter.add("ERROR");
     T.state.sortColumn = "level";
@@ -1638,9 +1673,10 @@ section("20. Session cache: persist in one window, restore in the next");
       "export: timeSpan spans first..last entry ts");
     assert(rec.text === undefined, "export: log text NOT embedded by default");
     assert(rec.bookmarks.length === 2 && rec.bookmarks[0].ordinal === 5
-      && typeof rec.bookmarks[0].ts === "number" && rec.bookmarks[0].raw === w.fingerprintText(savedRaw5)
-      && rec.bookmarks[0].note === "check this",
-      "export: bookmarks carry ordinal + ts + raw fingerprint + note");
+      && typeof rec.bookmarks[0].ts === "number" && rec.bookmarks[0].raw === w.fingerprintText(savedRaw5),
+      "export: bookmarks carry ordinal + ts + raw fingerprint");
+    assert(rec.notes.length === 1 && rec.notes[0].ordinal === 5 && rec.notes[0].text === "check this",
+      "export: notes carry ordinal + text, separately from bookmarks");
     assert(doc.settings.levelFilter.includes("ERROR") && doc.settings.sortColumn === "level"
       && doc.settings.sortDir === "desc", "export: session-wide settings serialized");
     assert(doc.settings.active && doc.settings.active.exportId === rec.exportId && doc.settings.active.ref != null,
@@ -1665,23 +1701,30 @@ section("20. Session cache: persist in one window, restore in the next");
     await sleep(80);
     assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"),
       "tier1: identical content auto-matches with no dialog (name is display-only)");
-    assert(f.children.length === 2, "tier1: both top-level filters applied");
-    const r1 = T.state.nodes[f.children[0]], r2 = T.state.nodes[f.children[1]];
+    // 3, not 2: the two imported filters plus the auto "Bookmarks" node
+    // re-derived from the imported bookmarks (see syncBookmarksFilterNode,
+    // called at the end of applySessionEntryByOrdinal/ByContent) — unshifted
+    // to the front, so the two real filters are children[1]/[2].
+    assert(f.children.length === 3, "tier1: both top-level filters applied, plus the re-derived auto 'Bookmarks' node");
+    assert(T.state.nodes[f.children[0]].filterType === "bookmarks", "tier1: auto 'Bookmarks' node re-created from the imported bookmarks");
+    const r1 = T.state.nodes[f.children[1]], r2 = T.state.nodes[f.children[2]];
     assert(r1.filterType === "text" && r1.value === "message 1" && r2.highlightColor === "#ff0000",
       "tier1: filter values + highlight colour round-trip");
     const combo = T.state.nodes[r1.children[0]];
     assert(combo && combo.filterType === "and" && combo.linkedId === r2.id,
       "tier1: AND node's linkedRef remapped to the imported sibling");
     assert(w.getEntries(combo.id).length === 2, "tier1: AND node re-evaluates correctly (msgs 10,15)");
-    assert(T.state.bookmarks.size === 2 && T.state.bookmarks.has(f.entries[5].id)
-      && T.state.bookmarks.get(f.entries[5].id).note === "check this",
-      "tier1: bookmarks attach by ordinal with notes");
+    assert(T.state.bookmarks.size === 2 && T.state.bookmarks.has(f.entries[5].id),
+      "tier1: bookmarks attach by ordinal");
+    assert(T.state.notes.size === 1 && T.state.notes.get(f.entries[5].id) === "check this",
+      "tier1: notes attach by ordinal, separately from bookmarks");
     assert(T.state.levelFilter.has("ERROR") && T.state.sortColumn === "level" && T.state.sortDir === "desc",
       "tier1: session-wide settings applied");
     assert(T.state.activeId === combo.id, "tier1: active node restored via exportId + ref");
     assert(d.querySelector("#copyToast").textContent.includes("1 file matched automatically")
-      && d.querySelector("#copyToast").textContent.includes("2 of 2 bookmarks placed"),
-      "tier1: summary toast reports files + bookmark placement");
+      && d.querySelector("#copyToast").textContent.includes("2 of 2 bookmarks placed")
+      && d.querySelector("#copyToast").textContent.includes("1 of 1 note placed"),
+      "tier1: summary toast reports files + bookmark + note placement");
   });
 
   // --- Tier 2: receiving copy of the tailed log kept growing ---
@@ -1696,7 +1739,7 @@ section("20. Session cache: persist in one window, restore in the next");
     await sleep(80);
     assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"),
       "tier2: grown file auto-matches via the overlapping time window");
-    assert(f.children.length === 2, "tier2: filters applied to the grown file");
+    assert(f.children.length === 3, "tier2: filters applied to the grown file, plus the auto 'Bookmarks' node");
     assert(T.state.bookmarks.has(f.entries[5].id) && f.entries[5].raw === savedRaw5,
       "tier2: ordinal-based bookmark lands on the identical in-window entry");
   });
@@ -1722,11 +1765,13 @@ section("20. Session cache: persist in one window, restore in the next");
     radio.checked = true;
     fireClick(d.querySelector("#sessionMatchApply"), w);
     await sleep(80);
-    assert(f.children.length === 2, "tier3: filters applied to the manually picked file");
+    assert(f.children.length === 3, "tier3: filters applied to the manually picked file, plus the auto 'Bookmarks' node");
     assert(T.state.bookmarks.size === 1, "tier3: only the still-present bookmarked line resolves");
     const [bid] = [...T.state.bookmarks.keys()];
     assert(T.entryIndex[bid].raw === savedRaw5,
       "tier3: bookmark re-anchored via ts + raw fingerprint, not the stale ordinal");
+    assert(T.state.notes.size === 1 && T.state.notes.get(bid) === "check this",
+      "tier3: note re-anchored the same way, landing on the same surviving entry");
     assert(d.querySelector("#copyToast").textContent.includes("1 resolved manually")
       && d.querySelector("#copyToast").textContent.includes("1 of 2 bookmarks placed"),
       "tier3: summary toast reports manual resolution + partial bookmark placement");
@@ -1762,9 +1807,9 @@ section("20. Session cache: persist in one window, restore in the next");
     const f = T.state.nodes[T.state.rootIds[0]];
     assert(f.name === "worker-3.log" && f.entries.length === 30,
       "embedded: name + entry count round-trip through the embedded text");
-    assert(f.children.length === 2 && T.state.bookmarks.has(f.entries[5].id),
-      "embedded: filters + ordinal bookmarks applied to the materialized file");
-    const combo = T.state.nodes[T.state.nodes[f.children[0]].children[0]];
+    assert(f.children.length === 3 && T.state.bookmarks.has(f.entries[5].id),
+      "embedded: filters + ordinal bookmarks applied to the materialized file, plus the auto 'Bookmarks' node");
+    const combo = T.state.nodes[T.state.nodes[f.children[1]].children[0]];
     assert(T.state.activeId === combo.id, "embedded: active filter restored");
   });
 
@@ -2783,7 +2828,7 @@ await withApp(async (w, d, T) => {
 await withApp(async (w, d) => {
   section("29b. #btnPinBookmarks/#btnMultilineMsg/#btnColumns share .toolbar-icon-btn's 28x28 shape with the header's icon buttons");
   const cs = w.getComputedStyle;
-  ["#btnUndo", "#btnRedo", "#btnBookmarks", "#btnShortcuts", "#btnPinBookmarks", "#btnMultilineMsg", "#btnColumns"].forEach(sel => {
+  ["#btnUndo", "#btnRedo", "#btnShortcuts", "#btnPinBookmarks", "#btnNotes", "#btnMultilineMsg", "#btnColumns"].forEach(sel => {
     const btn = d.querySelector(sel);
     assert(btn !== null, "sanity: " + sel + " exists");
     const bcs = cs(btn);
@@ -10546,6 +10591,94 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 104 — Notes: general-purpose per-entry notes (FEATURE_BACKLOG.md
+   "Bookmarks rework", this session). Covers: Alt+N add/edit; the log-row
+   context menu's "Add note"/"Edit note"; double-click an existing note-row
+   to edit; a note renders as its own sub-row below its entry (own class,
+   no level marker) and in the Entry Detail panel; the Show/Hide Notes
+   toggle; state.notes persists through buildCacheMeta (same ordinal-anchor
+   scheme as bookmarks, but a fully separate array/store).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("104. Notes: add/edit via Alt+N and context menu, rendering, toggle, persistence");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  // Alt+N on a selected entry with no note yet -> opens empty, Add-mode dialog
+  w.selectEntry(f.entries[1].id);
+  fireKeydown(d, w, "n", { altKey: true });
+  assert(!d.querySelector("#noteDialog").classList.contains("hidden"), "Alt+N opens the note dialog");
+  assert(d.querySelector("#noteDialogTitle").textContent === "Add note", "empty note -> dialog titled 'Add note'");
+  assert(d.querySelector("#noteDialogInput").value === "", "dialog starts empty for a new note");
+  d.querySelector("#noteDialogInput").value = "line one\nline two";
+  fireClick(d.querySelector("#noteDialogSave"), w);
+  assert(d.querySelector("#noteDialog").classList.contains("hidden"), "Save closes the dialog");
+  assert(T.state.notes.get(f.entries[1].id) === "line one\nline two", "note text saved to state.notes, newlines preserved");
+
+  // Alt+N again on the SAME entry -> now prefilled, Edit-mode dialog (no separate F2 binding)
+  fireKeydown(d, w, "n", { altKey: true });
+  assert(d.querySelector("#noteDialogTitle").textContent === "Edit note", "existing note -> dialog titled 'Edit note'");
+  assert(d.querySelector("#noteDialogInput").value === "line one\nline two", "dialog prefilled with the existing note text");
+  fireClick(d.querySelector("#noteDialogCancel"), w);
+  assert(T.state.notes.get(f.entries[1].id) === "line one\nline two", "Cancel leaves the note untouched");
+
+  // Context menu: "Add note"/"Edit note" label swap, same pattern as the bookmark item
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[2]);
+  assert(d.querySelector("#ctxNoteLabel").textContent === "Add note", "context menu offers 'Add note' for an entry with none");
+  fireClick(d.querySelector("#ctxNote"), w);
+  d.querySelector("#noteDialogInput").value = "via context menu";
+  fireClick(d.querySelector("#noteDialogSave"), w);
+  assert(T.state.notes.get(f.entries[2].id) === "via context menu", "context-menu 'Add note' opens the same editor and saves");
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[2]);
+  assert(d.querySelector("#ctxNoteLabel").textContent === "Edit note", "context menu now offers 'Edit note' for the same entry");
+  w.closeContextMenu();
+
+  // Deleting a note via the dialog's Delete button
+  w.openNoteEditor(f.entries[2].id);
+  assert(!d.querySelector("#noteDialogDelete").style.display.includes("none"), "Delete button shown when editing an existing note");
+  fireClick(d.querySelector("#noteDialogDelete"), w);
+  assert(!T.state.notes.has(f.entries[2].id), "Delete button removes the note");
+
+  // Rendering: a note-row appears below its entry's row when Show Notes is on (default off)
+  assert(T.state.showNotes === false, "sanity: notes hidden by default");
+  const btnNotes = d.querySelector("#btnNotes");
+  assert(!btnNotes.classList.contains("active"), "Show/Hide Notes button starts inactive");
+  fireClick(btnNotes, w);
+  assert(T.state.showNotes === true, "clicking #btnNotes turns notes on");
+  assert(btnNotes.classList.contains("active"), "#btnNotes reflects the active state");
+  let noteRow = [...d.querySelectorAll("#tableRows .note-row")].find(r => r.dataset.entryId === f.entries[1].id);
+  assert(noteRow && noteRow.textContent === "line one\nline two", "note-row renders below its entry with the full note text");
+  assert(!noteRow.className.includes("row-grid") && !noteRow.querySelector(".col-bar"), "note-row is a plain block, not part of .row-grid, no level marker");
+
+  // Toggling Show/Hide Notes off hides the note-rows again
+  fireClick(btnNotes, w);
+  assert(T.state.showNotes === false, "clicking #btnNotes again turns notes off");
+  assert(d.querySelectorAll("#tableRows .note-row").length === 0, "no note-rows rendered while Show Notes is off");
+  fireClick(btnNotes, w); // back on for the rest of this group
+
+  // Double-click an existing note-row opens it for editing
+  noteRow = [...d.querySelectorAll("#tableRows .note-row")].find(r => r.dataset.entryId === f.entries[1].id);
+  noteRow.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  assert(!d.querySelector("#noteDialog").classList.contains("hidden"), "double-clicking a note-row opens the note editor");
+  assert(d.querySelector("#noteDialogInput").value === "line one\nline two", "...prefilled with that row's note");
+  w.closeNoteDialog();
+
+  // Entry Detail panel shows the full note text for the selected entry
+  w.selectEntry(f.entries[1].id);
+  assert(d.querySelector("#detailNote").style.display !== "none" && d.querySelector("#detailNote").textContent === "line one\nline two",
+    "Entry Detail panel shows the selected entry's full note");
+  w.selectEntry(f.entries[0].id);
+  assert(d.querySelector("#detailNote").style.display === "none", "Entry Detail panel hides the note block for an entry with none");
+
+  // Persistence: buildCacheMeta stores notes as { file, ordinal, text }, separately from bookmarks
+  const meta = w.buildCacheMeta();
+  assert(Array.isArray(meta.notes) && meta.notes.length === 1 && meta.notes[0].ordinal === 1 && meta.notes[0].text === "line one\nline two",
+    "buildCacheMeta persists state.notes as ordinal-anchored records, independent of state.bookmarks");
+  assert(meta.settings.showNotes === true, "buildCacheMeta persists the Show/Hide Notes toggle");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -10588,7 +10721,14 @@ process.exit(failed ? 1 : 0);
    Group 12  — 727a344e (tailing: growth, split-line buffering, rotation)
    Group 13  — b647f247 (Δt column, timeline minimap)
    Group 14  — 7ef2c2a6 (value assertions, column statistics)
-   Group 15  — 7ef2c2a6 (bookmarks)
+   Group 15  — 7ef2c2a6 (bookmarks); REWRITTEN this session (FEATURE_BACKLOG.md
+              "Bookmarks rework") — the old Bookmark Manager panel
+              (#btnBookmarks/#bookmarksPanel/#bookmarksList/renderBookmarks-
+              Panel/openBookmarksPanel) is gone; bookmarks are now backed by
+              an auto-managed, restricted per-file "Bookmarks" filter node
+              (syncBookmarksFilterNode) on top of the unchanged state.bookmarks
+              Set. See Group 104 for the new general-purpose Notes feature
+              introduced in the same rework.
    Group 16  — 7ef2c2a6 (undo/redo)
    Group 17  — 38c96f1d (Highlight/Full view, colour picker,
               computeHighlightMap, revealInHighlightView). The CSS
@@ -11979,9 +12119,26 @@ process.exit(failed ? 1 : 0);
               render()'s reveal check, so clicking the same filter again
               after a double-click-to-Full jump left the user stuck on Full.
 
+   Group 104 — this session (2026-08-25), FEATURE_BACKLOG.md "Bookmarks
+              rework": general-purpose per-entry notes (Alt+N, right-click
+              "Add note"/"Edit note", double-click an existing note-row to
+              edit, note-row rendering below its entry, Entry Detail panel
+              display, the Show/Hide Notes toggle, and buildCacheMeta
+              persistence). See Group 15's rewrite for the other half of
+              the same rework (the auto-managed "Bookmarks" filter node).
+
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
    against current code or silently test nothing):
+   - The Bookmark Manager panel (#btnBookmarks/#bookmarksPanel/
+     #bookmarksList/renderBookmarksPanel/openBookmarksPanel/
+     closeBookmarksPanel/updateBookmarksButton), 7ef2c2a6 — removed outright
+     this session (FEATURE_BACKLOG.md "Bookmarks rework") in favor of the
+     auto-managed per-file "Bookmarks" filter node; Group 15 (rewritten) is
+     the current coverage. Its own per-bookmark free-text note field
+     (state.bookmarks.get(id).note) went with it — notes are now a
+     completely separate, general-purpose per-entry feature (state.notes,
+     Group 104), not tied to a row being bookmarked.
    - The "Extract values" checkbox (#filterExtractCheckbox, shipped
      earlier the 2026-08-17 session in Groups 39/40) — replaced the SAME
      session by two plain buttons, #filterExtractBtn ("Extract") and the

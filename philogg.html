@@ -732,6 +732,7 @@
      the three-round bugfix this replaced is in git blame, not worth
      keeping alive here). */
   #btnPinBookmarks{float:left; margin:0 14px 6px 0;}
+  #btnNotes{float:left; margin:0 14px 6px 0;}
   #btnMultilineMsg{float:left; margin:0 14px 6px 0;}
   #btnColumns{float:left; margin:0 14px 6px 0;}
   #btnTextMatchHighlight{float:left; margin:0 14px 6px 0;}
@@ -1314,6 +1315,19 @@
   #detailPanel.empty #detailMessage{display:none;}
   #detailPanel:not(.empty) #detailPlaceholder{display:none;}
   #detailPanel:not(.empty) #detailMessage{display:block;}
+  /* The selected entry's note, shown in full below its message — same
+     "readable even with multi-line row rendering off" reasoning as the
+     backlog item itself: a note-row in the log view can be one line tall,
+     this always shows the complete text. Empty (no note on this entry) or
+     the panel itself empty: hidden via display:none, set directly by JS
+     (updateDetailPanel) rather than a CSS-only rule (no stable class to key
+     an :empty-style selector off here — a note's own text could legitimately
+     be blank while being edited, so absence has to be tracked, not inferred). */
+  #detailNote{
+    margin:10px 0 0; padding-top:10px; border-top:1px dashed var(--border-soft);
+    font-family:var(--font-ui); font-size:12px; line-height:1.6; font-style:italic;
+    color:var(--accent-strong); white-space:pre-wrap; word-break:break-word;
+  }
 
   /* ---------- Extraction table view ---------- */
   #extractWrap{flex:1 1 auto; display:none; flex-direction:column; min-height:0;}
@@ -2017,38 +2031,45 @@
   .cp-preset:hover{box-shadow:0 0 0 2px var(--accent);}
   .cp-clear{width:100%;}
 
-  /* ---------- Bookmarks panel ---------- */
-  #bookmarksPanel{
-    position:fixed; z-index:60; width:320px; max-height:min(420px, 70vh);
-    background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
-    box-shadow:0 16px 36px rgba(0,0,0,.5); display:flex; flex-direction:column;
+  /* ---------- Note dialog (#noteDialog) — same fixed-position card pattern
+     as #timeRangeDialog/#assertDialog above. ---------- */
+  #noteDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
   }
-  #bookmarksPanel.hidden{display:none;}
+  #noteDialog.hidden{display:none;}
+  #noteDialogInput{
+    width:100%; box-sizing:border-box; resize:vertical; background:var(--bg-app);
+    border:1px solid var(--border); color:var(--text-primary); border-radius:6px;
+    padding:8px 10px; font-family:var(--font-ui); font-size:12.5px; line-height:1.5;
+  }
+  #noteDialogDelete{margin-right:auto;}
+
+  /* Shared panel-title style — despite the name (a holdover from the removed
+     Bookmark Manager panel, the first one to use it), this class is generic
+     and still styles #columnsPanel/#shortcutsPanel/#licensePanel's own
+     headers below (see "Bookmarks rework" in PROJECT.md for why the
+     Bookmark Manager panel itself is gone but this shared class stayed). */
   .bookmarks-panel-title{
     padding:10px 12px; font-size:11.5px; font-weight:650; color:var(--text-primary);
     border-bottom:1px solid var(--border-soft); flex:0 0 auto;
   }
-  #bookmarksList{overflow-y:auto; flex:1 1 auto;}
-  .bookmark-empty{padding:16px 12px; font-size:11.5px; color:var(--text-tertiary); line-height:1.5;}
-  .bookmark-row{
-    display:flex; flex-direction:column; gap:3px; padding:8px 12px;
-    border-bottom:1px solid var(--border-soft); cursor:pointer;
+
+  /* ---------- Note sub-row (FEATURE_BACKLOG.md "Bookmarks rework" —
+     general-purpose per-entry notes): rendered as a plain block sibling
+     directly below its entry's row (both Filter/Full log views), not part of
+     the row-grid — no level marker, own colour, slightly indented. Stays
+     visible regardless of the active filter (it belongs to whichever entry
+     row is already on screen); hideable in bulk via #btnNotes
+     (state.showNotes). See noteHeightForEntry/rowHeightForEntry for how its
+     height is folded into the virtualization math. */
+  .note-row{
+    box-sizing:border-box; padding:3px 10px 3px 32px; font-size:11px; line-height:16px;
+    color:var(--accent-strong); font-style:italic; white-space:pre-wrap; word-break:break-word;
+    font-family:var(--font-ui); cursor:pointer;
   }
-  .bookmark-row:hover{background:var(--bg-elevated-2);}
-  .bookmark-row-top{display:flex; align-items:center; gap:6px; font-size:10.8px; font-family:var(--font-mono); color:var(--text-secondary);}
-  .bookmark-row-msg{
-    font-size:11.3px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis;
-    white-space:nowrap; font-family:var(--font-mono);
-  }
-  .bookmark-row-note{
-    background:var(--bg-app); border:1px solid var(--border); border-radius:5px;
-    color:var(--text-secondary); font-size:11px; padding:4px 6px; font-family:var(--font-ui);
-  }
-  .bookmark-row-del{
-    margin-left:auto; background:none; border:none; color:var(--text-tertiary);
-    cursor:pointer; display:flex; padding:2px; border-radius:4px; flex:0 0 auto;
-  }
-  .bookmark-row-del:hover{color:var(--level-error); background:var(--level-error-soft);}
+  .note-row:hover{background:var(--bg-elevated-2);}
   .row-bookmark-dot{
     position:absolute; left:1px; top:50%; transform:translateY(-50%);
     color:var(--accent); pointer-events:none;
@@ -2073,7 +2094,7 @@
   .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
   /* ---------- Log view columns popup (#btnColumns) — same fixed-position/
-     toggle pattern as #bookmarksPanel/#shortcutsPanel. ---------- */
+     toggle pattern as #shortcutsPanel/#licensePanel. ---------- */
   #columnsPanel{
     position:fixed; z-index:60; width:190px;
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
@@ -2090,7 +2111,7 @@
   #btnResetColumns{margin:0 8px 8px;}
 
   /* ---------- Keyboard shortcuts popup (moved here from the bottom of the
-     sidebar; same fixed-position/toggle pattern as #bookmarksPanel,
+     sidebar; same fixed-position/toggle pattern as #columnsPanel,
      triggered by the header's #btnShortcuts button) ---------- */
   #shortcutsPanel{
     position:fixed; z-index:60; width:340px; max-height:min(480px, 70vh);
@@ -2189,7 +2210,6 @@
       <div class="toolbar-group">
         <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" disabled></button>
         <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" disabled></button>
-        <button id="btnBookmarks" class="toolbar-icon-btn" title="Bookmarks"></button>
         <button id="btnShortcuts" class="toolbar-icon-btn" title="Keyboard shortcuts"></button>
       </div>
       <button id="btnSession">
@@ -2346,6 +2366,7 @@
           <button type="button" class="view-tab" data-fh-tab="stacked" title="Show Full and Filtered at once, split top/bottom">Stacked</button>
         </div>
         <button id="btnPinBookmarks" class="toolbar-icon-btn" title="Pin bookmarks into Filtered View"></button>
+        <button id="btnNotes" class="toolbar-icon-btn" title="Show/hide notes"></button>
         <button id="btnMultilineMsg" class="toolbar-icon-btn" title="Multi-line message display (line breaks in the message)"></button>
         <button id="btnColumns" class="toolbar-icon-btn" title="Show/hide log view columns"></button>
         <button id="btnTextMatchHighlight" class="toolbar-icon-btn" title="Highlight text-filter matches (Settings → Behavior configures what gets marked and where)"></button>
@@ -2485,6 +2506,7 @@
           <div id="detailBody">
             <div id="detailPlaceholder">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</div>
             <div id="detailMessage"></div>
+            <div id="detailNote"></div>
           </div>
         </div>
       </div>
@@ -2507,6 +2529,10 @@
     <div class="ctx-item" id="ctxBookmark">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>
       <span id="ctxBookmarkLabel">Bookmark this row</span>
+    </div>
+    <div class="ctx-item" id="ctxNote">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 2.5h9v11l-2.5-1.8H3.5z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg>
+      <span id="ctxNoteLabel">Add note</span>
     </div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" id="ctxFilterForColumn">
@@ -3033,9 +3059,19 @@
     </div>
   </div>
 
-  <div id="bookmarksPanel" class="hidden">
-    <div class="bookmarks-panel-title" id="bookmarksPanelTitle">Bookmarks</div>
-    <div id="bookmarksList"></div>
+  <!-- Note editor (Alt+N / context menu "Add note"/"Edit note" / double-click
+       an existing note-row — see openNoteEditor). Same fixed-position card
+       pattern as #timeRangeDialog just below. -->
+  <div id="noteDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title" id="noteDialogTitle">Add note</div>
+      <textarea id="noteDialogInput" rows="6" placeholder="Note text…"></textarea>
+      <div class="link-dialog-actions">
+        <button type="button" id="noteDialogDelete" class="btn-mini-outline assert-dialog-clear">Delete</button>
+        <button type="button" id="noteDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="noteDialogSave" class="btn-mini">Save</button>
+      </div>
+    </div>
   </div>
 
   <!-- Log view column visibility (FEATURE_BACKLOG.md "Column visibility /
@@ -3069,6 +3105,7 @@
       <div>Double-click a filter — edit it (same as Ctrl+E/right-click)</div>
       <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo (delete/move/edit)</div>
       <div><kbd>B</kbd> — bookmark the selected row</div>
+      <div><kbd>Alt</kbd>+<kbd>N</kbd> or right-click — add/edit a note on the selected row; double-click an existing note to edit it</div>
       <div>Drag the divider right of the tree, above the detail panel, or (in Stacked view) between Full and Filtered to resize</div>
       <div>Filter with <kbd>[value:float]</kbd> etc. to extract a table</div>
       <div>Check 2+ nodes for merge/combine actions</div>
@@ -3137,9 +3174,11 @@ const ICON_INVERT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none"
 const ICON_TARGET = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.2"/></svg>';
 const ICON_UNDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v4h4"/><path d="M4.4 8A5 5 0 1 1 5.6 12.4"/></svg>';
 const ICON_REDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4H8"/><path d="M11.6 8A5 5 0 1 0 10.4 12.4"/></svg>';
-const ICON_BOOKMARK = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
 const ICON_BOOKMARK_FILLED = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
 const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6c-2.4 0-4.3 1.9-4.3 4.3 0 3.2 4.3 8.5 4.3 8.5s4.3-5.3 4.3-8.5c0-2.4-1.9-4.3-4.3-4.3z"/><circle cx="8" cy="5.9" r="1.5"/></svg>';
+// Show/Hide Notes toggle (#btnNotes) — a small note card with lines of text,
+// distinct from the filled-square ICON_BOOKMARK_FILLED dot rows already use.
+const ICON_NOTE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 2.2h9.6v11l-2.8-1.9H3.2z"/><path d="M5.4 5.4h5.2M5.4 8h5.2M5.4 10.6h3"/></svg>';
 // Multiline message toggle (#btnMultilineMsg) — three stacked lines, standing
 // in for "multi-line text" the same way ICON_PIN's teardrop stands in for
 // "pin". See PROJECT.md "Multiline message display toggle".
@@ -3873,7 +3912,15 @@ const state = {
                            // views, while a tailed (live) file is viewed; disengaged by scrolling
                            // away from the bottom or selecting a row in either view, re-engaged by
                            // scrolling/jumping back to the bottom or the #tailJumpBtn(Highlight) button
-  bookmarks: new Map(),    // entry id -> { note: string, bookmarkedAt: number (ms epoch) }, session-only (not persisted)
+  bookmarks: new Map(),    // entry id -> { bookmarkedAt: number (ms epoch) }. Persisted (session export/cache) —
+                           // see syncBookmarksFilterNode for the auto-managed per-file "Bookmarks" filter node
+                           // this Set backs (see "Bookmarks rework" in PROJECT.md).
+  notes: new Map(),        // entry id -> free-text note string. Any real log entry (bookmarked or not) can carry
+                           // one — see "Notes" in PROJECT.md. Same id scheme/persistence tier as state.bookmarks.
+  showNotes: false,        // Show/Hide Notes toggle (#btnNotes) — per-file/session tier, same as multilineMessages.
+                           // Off by default, same reasoning as multilineMessages: the plain fixed-ROW_HEIGHT
+                           // virtualization path (needsRowOffsets() false) stays the unaffected default until
+                           // a person actually has notes they want to see inline.
   pinBookmarksInFilteredView: false, // see PROJECT.md "Pin bookmarks into the Filtered View"
   multilineMessages: false, // see PROJECT.md "Multiline message display toggle"; global, session-cache-persisted
   // Log view column visibility/width (FEATURE_BACKLOG.md "Column visibility
@@ -5358,6 +5405,10 @@ function cloneSubtree(nodeId, newParentId) {
   if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
   if (orig.highlightColor) clone.highlightColor = orig.highlightColor;
   if (orig.label) clone.label = orig.label;
+  // Deliberately NOT copying orig.locked: a copy/paste of the auto-managed
+  // "Bookmarks" node produces a plain, unlocked filter node (still matching
+  // the same bookmarked rows) — only syncBookmarksFilterNode's own original
+  // stays restricted. See "Bookmarks rework" in PROJECT.md.
   state.nodes[clone.id] = clone;
   orig.children.forEach(childId => {
     const childClone = cloneSubtree(childId, clone.id);
@@ -5716,6 +5767,14 @@ function getEntries(nodeId) {
   } else if (node.filterType === "extract") {
     const spec = compileExtractPattern(node.value);
     result = spec ? parentEntries.filter(e => !!wildcardMatch(spec.regex, spec.columns, e.message)) : [];
+  } else if (node.filterType === "bookmarks") {
+    // Auto-managed per-file node (see syncBookmarksFilterNode) — its match
+    // set is exactly "this file's entries currently in state.bookmarks",
+    // not a text/regex pattern. state.bookmarks is the single source of
+    // truth (also read directly by getPinnedBookmarkEntries/the row
+    // bookmark dot), so this just mirrors it through the normal filter-node
+    // matching path instead of inventing a parallel one.
+    result = parentEntries.filter(e => state.bookmarks.has(e.id));
   } else if (node.filterType === "level") {
     // value = array of active level names (e.g. ["ERROR", "WARN"]) — the
     // tree-node counterpart of the level bar's own quick-filter (see
@@ -6051,6 +6110,11 @@ function pushUndo(action) {
 function deleteFilterNodeWithUndo(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return;
+  // Restricted node (the auto-managed per-file "Bookmarks" filter — see
+  // syncBookmarksFilterNode): only ever added/removed by that function
+  // itself, not through the tree UI's delete affordances (✕ button,
+  // middle-click, context menu, Delete key — all route through here).
+  if (node.locked) return;
   // A file loaded from a watched folder (node.folderId) doesn't get fully
   // removed on close — it returns to the folder's grayed listing instead of
   // vanishing, per FEATURE_BACKLOG.md "Folder watch + lazy loading". See
@@ -6143,7 +6207,7 @@ function renameFilterNodeWithUndo(nodeId, rawLabel) {
 
 function moveFilterNodeWithUndo(nodeId, newParentId) {
   const node = state.nodes[nodeId];
-  if (!node) return false;
+  if (!node || node.locked) return false; // restricted node — see deleteFilterNodeWithUndo's comment
   const oldParentId = node.parentId;
   const oldParent = state.nodes[oldParentId];
   const oldIndex = oldParent ? oldParent.children.indexOf(nodeId) : -1;
@@ -6260,17 +6324,15 @@ const detailResizer = el("#detailResizer");
 const detailPanel = el("#detailPanel");
 const detailMeta = el("#detailMeta");
 const detailMessageEl = el("#detailMessage");
+const detailNoteEl = el("#detailNote");
 const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
 const extractInfo = el("#extractInfo");
 const extractStatsBar = el("#extractStatsBar");
-const btnBookmarks = el("#btnBookmarks");
 const btnPinBookmarks = el("#btnPinBookmarks");
+const btnNotes = el("#btnNotes");
 const btnMultilineMsg = el("#btnMultilineMsg");
-const bookmarksPanel = el("#bookmarksPanel");
-const bookmarksPanelTitle = el("#bookmarksPanelTitle");
-const bookmarksList = el("#bookmarksList");
 const btnShortcuts = el("#btnShortcuts");
 const shortcutsPanel = el("#shortcutsPanel");
 const btnLicense = el("#btnLicense");
@@ -6556,6 +6618,7 @@ function renderMainView() {
     fhTabs.style.display = "none";
     levelBarEl.style.display = "none";
     btnPinBookmarks.style.display = "none";
+    btnNotes.style.display = "none";
     btnMultilineMsg.style.display = "none";
     btnColumns.style.display = "none";
     btnTextMatchHighlight.style.display = "none";
@@ -6575,6 +6638,7 @@ function renderMainView() {
   fhTabs.style.display = "flex";
   levelBarEl.style.display = "";
   btnPinBookmarks.style.display = "";
+  btnNotes.style.display = "";
   btnMultilineMsg.style.display = "";
   btnColumns.style.display = "";
   btnTextMatchHighlight.style.display = "";
@@ -6666,6 +6730,7 @@ function typeTagFor(node) {
     case "context": return "CTX";
     case "countContext": return "CNT";
     case "level": return "LVL";
+    case "bookmarks": return "BKM";
     default: return "?";
   }
 }
@@ -6812,6 +6877,7 @@ function ghostTypeTag(filterType) {
     case "context": return "CTX";
     case "countContext": return "CNT";
     case "level": return "LVL";
+    case "bookmarks": return "BKM";
     default: return "?";
   }
 }
@@ -7135,14 +7201,18 @@ function renderNode(id, depth) {
   }
   row.appendChild(pct);
 
-  const del = document.createElement("button");
-  del.className = "tree-del";
-  del.innerHTML = ICON_CLOSE;
-  del.title = node.type === "file"
-    ? (node.folderId ? "Close file (stays listed in its watched folder)" : "Remove file")
-    : "Remove filter";
-  del.addEventListener("click", ev => { ev.stopPropagation(); deleteFilterNodeWithUndo(id); render(); });
-  row.appendChild(del);
+  // Restricted node (see syncBookmarksFilterNode/deleteFilterNodeWithUndo):
+  // no ✕ button at all — it's only ever added/removed automatically.
+  if (!node.locked) {
+    const del = document.createElement("button");
+    del.className = "tree-del";
+    del.innerHTML = ICON_CLOSE;
+    del.title = node.type === "file"
+      ? (node.folderId ? "Close file (stays listed in its watched folder)" : "Remove file")
+      : "Remove filter";
+    del.addEventListener("click", ev => { ev.stopPropagation(); deleteFilterNodeWithUndo(id); render(); });
+    row.appendChild(del);
+  }
 
   // Progress fill along the row's bottom edge while this file is still
   // being read/parsed (see createFileNode/loadOneFileIntoTree) — the row
@@ -7196,7 +7266,7 @@ function renderNode(id, depth) {
   // the browser's middle-click autoscroll indicator from appearing first.
   row.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
   row.addEventListener("auxclick", ev => {
-    if (ev.button !== 1) return;
+    if (ev.button !== 1 || node.locked) return;
     ev.preventDefault();
     deleteFilterNodeWithUndo(id);
     render();
@@ -7207,7 +7277,7 @@ function renderNode(id, depth) {
   // its own linkedId target's subtree, for and/or/link nodes); every node
   // (file or filter) is a valid drop target to become the new parent, exactly
   // matching what Ctrl+V already allows.
-  if (node.type === "filter") {
+  if (node.type === "filter" && !node.locked) {
     row.draggable = true;
     row.addEventListener("dragstart", ev => {
       draggedNodeId = id;
@@ -7277,7 +7347,7 @@ function renderBreadcrumb() {
     // ✕ button / middle-click, reachable straight from the breadcrumb.
     chip.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
     chip.addEventListener("auxclick", ev => {
-      if (ev.button !== 1) return;
+      if (ev.button !== 1 || node.locked) return;
       ev.preventDefault();
       deleteFilterNodeWithUndo(node.id);
       render();
@@ -9267,11 +9337,43 @@ const BUFFER_ROWS = 10;
    state.multilineMessages so the off-by-default path is unaffected. */
 const MULTILINE_LINE_HEIGHT = 15; // must match .multiline-messages .col-msg's line-height
 function messageLineCount(message) { return message ? message.split("\n").length : 1; }
-function rowHeightForEntry(e) {
+// A note-row's own height (0 when notes are hidden or this entry has none) —
+// see .note-row's CSS (3px+3px vertical padding, 16px line-height per line).
+const NOTE_LINE_HEIGHT = 16;
+const NOTE_ROW_VPAD = 6;
+function noteHeightForEntry(e) {
+  if (!state.showNotes) return 0;
+  const note = state.notes.get(e.id);
+  if (!note) return 0;
+  return messageLineCount(note) * NOTE_LINE_HEIGHT + NOTE_ROW_VPAD;
+}
+// The entry's OWN row height, excluding any note-row rendered as its sibling
+// right below it (used for the .log-row element's own style.height — the
+// note-row gets its own separate height, see renderVisibleRows/
+// renderHighlightVisibleRows).
+function baseRowHeightForEntry(e) {
   if (!state.multilineMessages) return ROW_HEIGHT;
   const n = messageLineCount(e.message);
   return n > 1 ? ROW_HEIGHT + (n - 1) * MULTILINE_LINE_HEIGHT : ROW_HEIGHT;
 }
+// A row's TOTAL height in either virtualized view: the entry's own line(s)
+// plus its note-row, if any (see noteHeightForEntry/needsRowOffsets — a note
+// forces the offsets-array virtualization path exactly like multiline
+// messages already do, since a note-bearing row is no longer a fixed
+// ROW_HEIGHT even with state.multilineMessages off). This is what
+// buildRowOffsets sums over — it MUST equal baseRowHeightForEntry(e) +
+// noteHeightForEntry(e) exactly, or the two DOM elements' real heights drift
+// out of sync with the virtualization math.
+function rowHeightForEntry(e) {
+  return baseRowHeightForEntry(e) + noteHeightForEntry(e);
+}
+// Whether the offsets-array virtualization path (tableRowOffsets/
+// highlightRowOffsets, built via buildRowOffsets) is needed instead of the
+// plain `index * ROW_HEIGHT` arithmetic — true whenever ANY row's height can
+// differ from the fixed ROW_HEIGHT default: multiline messages, or notes
+// being shown at all (cheaper to always build the array while notes are on
+// than to track "does any currently-loaded entry actually have a note").
+function needsRowOffsets() { return state.multilineMessages || state.showNotes; }
 function buildRowOffsets(entries) {
   const offsets = new Float64Array(entries.length + 1);
   for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i]);
@@ -9507,7 +9609,7 @@ function renderVisibleRows() {
   const viewportH = tableBody.clientHeight || 400;
   const scrollTop = tableBody.scrollTop;
   let start, end;
-  if (state.multilineMessages && tableRowOffsets) {
+  if (needsRowOffsets() && tableRowOffsets) {
     const centerIdx = findOffsetIndex(tableRowOffsets, scrollTop);
     start = Math.max(0, centerIdx - BUFFER_ROWS);
     end = Math.min(total, findOffsetIndex(tableRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
@@ -9593,7 +9695,7 @@ function renderVisibleRows() {
     const msgHtml = matchNodes.length ? markRangesHtml(e.message, matchRangesFor(e.message, "message", matchNodes, matchSpecs)) : escapeHtml(e.message);
 
     row.className = cls;
-    row.style.height = rowHeightForEntry(e) + "px";
+    row.style.height = baseRowHeightForEntry(e) + "px";
     row.dataset.entryId = e.id;
     row.innerHTML =
       bracketHtml +
@@ -9609,10 +9711,33 @@ function renderVisibleRows() {
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => revealInHighlightView(e));
     frag.appendChild(row);
+    appendNoteRow(frag, e);
   }
   tableRows.innerHTML = "";
   tableRows.appendChild(frag);
   syncTableHeaderWidth();
+}
+
+// Shared by renderVisibleRows/renderHighlightVisibleRows: appends a note-row
+// sibling right after `e`'s own row, when notes are shown and this entry has
+// one (FEATURE_BACKLOG.md "Bookmarks rework" — general-purpose per-entry
+// notes). A plain block element, not part of .row-grid — no level marker, own
+// colour, indented (see .note-row's CSS). Its own click/dblclick listeners
+// are attached fresh every render, same as every other per-row listener in
+// this file (renderVisibleRows/renderNode) — DOM identity across renders is
+// never assumed (see CLAUDE.md's "renderVisibleRows() rebuilds nodes" gotcha).
+function appendNoteRow(frag, e) {
+  if (!state.showNotes) return;
+  const note = state.notes.get(e.id);
+  if (!note) return;
+  const noteRow = document.createElement("div");
+  noteRow.className = "note-row";
+  noteRow.style.height = noteHeightForEntry(e) + "px";
+  noteRow.dataset.entryId = e.id;
+  noteRow.textContent = note;
+  noteRow.title = "Double-click to edit";
+  noteRow.addEventListener("dblclick", ev => { ev.stopPropagation(); openNoteEditor(e.id); });
+  frag.appendChild(noteRow);
 }
 
 /* ===================== Highlight view =====================
@@ -9695,9 +9820,9 @@ function renderHighlightView(colorMapIsFresh) {
   // renderLevelBar()'s click handler, which reveals the Filtered view on
   // every level-filter change so the effect is actually visible somewhere.
   currentHighlightViewEntries = rootId ? state.nodes[rootId].entries : [];
-  highlightRowOffsets = state.multilineMessages ? buildRowOffsets(currentHighlightViewEntries) : null;
+  highlightRowOffsets = needsRowOffsets() ? buildRowOffsets(currentHighlightViewEntries) : null;
   highlightSpacer.style.height =
-    ((state.multilineMessages ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
+    ((needsRowOffsets() ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
   if (!colorMapIsFresh) highlightColorMap = computeHighlightMap(rootId);
 
   if (state.highlightScrollTargetId) {
@@ -9748,7 +9873,7 @@ function renderHighlightVisibleRows() {
   const viewportH = highlightBody.clientHeight || 400;
   const scrollTop = highlightBody.scrollTop;
   let start, end;
-  if (state.multilineMessages && highlightRowOffsets) {
+  if (needsRowOffsets() && highlightRowOffsets) {
     const centerIdx = findOffsetIndex(highlightRowOffsets, scrollTop);
     start = Math.max(0, centerIdx - BUFFER_ROWS);
     end = Math.min(total, findOffsetIndex(highlightRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
@@ -9777,7 +9902,7 @@ function renderHighlightVisibleRows() {
     const deltaMs = prevE ? (e.ts - prevE.ts) : null;
 
     row.className = cls;
-    row.style.height = rowHeightForEntry(e) + "px";
+    row.style.height = baseRowHeightForEntry(e) + "px";
     row.dataset.entryId = e.id;
     row.innerHTML =
       markerHtml +
@@ -9793,6 +9918,7 @@ function renderHighlightVisibleRows() {
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true, center: true }));
     frag.appendChild(row);
+    appendNoteRow(frag, e);
   }
   highlightRows.innerHTML = "";
   highlightRows.appendChild(frag);
@@ -10525,7 +10651,7 @@ function updateMinimapRenderedRange() {
   // clamp at 0, so that scenario indexed straight past the end of the array.
   const maxIdx = currentViewEntries.length - 1;
   let startIdx, endIdx;
-  if (state.multilineMessages && tableRowOffsets) {
+  if (needsRowOffsets() && tableRowOffsets) {
     startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(tableRowOffsets, tableBody.scrollTop)));
     endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(tableRowOffsets, tableBody.scrollTop + viewportH)));
   } else {
@@ -10739,7 +10865,7 @@ function scrollToIndex(index, opts) {
   opts = opts || {};
   const viewportH = tableBody.clientHeight || 400;
   let rowTop, rowH;
-  if (state.multilineMessages && tableRowOffsets) {
+  if (needsRowOffsets() && tableRowOffsets) {
     rowTop = tableRowOffsets[index] || 0;
     rowH = tableRowOffsets[index + 1] - rowTop || ROW_HEIGHT;
   } else {
@@ -10777,7 +10903,7 @@ function scrollToHighlightIndex(index, opts) {
   opts = opts || {};
   const viewportH = highlightBody.clientHeight || 400;
   let rowTop, rowH;
-  if (state.multilineMessages && highlightRowOffsets) {
+  if (needsRowOffsets() && highlightRowOffsets) {
     rowTop = highlightRowOffsets[index] || 0;
     rowH = highlightRowOffsets[index + 1] - rowTop || ROW_HEIGHT;
   } else {
@@ -11027,6 +11153,8 @@ function updateDetailPanel() {
     detailMeta.className = "";
     detailMeta.innerHTML = "";
     detailMessageEl.textContent = "";
+    detailNoteEl.style.display = "none";
+    detailNoteEl.textContent = "";
     return;
   }
 
@@ -11073,6 +11201,19 @@ function updateDetailPanel() {
     detailMessageEl.innerHTML = markRangesHtml(entry.message, matchRangesFor(entry.message, "message", matchNodes, matchSpecs));
   } else {
     detailMessageEl.textContent = entry.message;
+  }
+
+  // Full note text, always shown here regardless of state.showNotes/
+  // multilineMessages — the one place a multi-line note stays readable even
+  // with note-rows hidden or MultiColumn's single-line rendering (see
+  // FEATURE_BACKLOG.md "Bookmarks rework").
+  const note = state.notes.get(entry.id);
+  if (note) {
+    detailNoteEl.style.display = "block";
+    detailNoteEl.textContent = note;
+  } else {
+    detailNoteEl.style.display = "none";
+    detailNoteEl.textContent = "";
   }
 }
 
@@ -11131,12 +11272,16 @@ function jumpToFullLog(entry) {
 }
 
 /* ===================== Bookmarks =====================
-   state.bookmarks: entry id -> { note, bookmarkedAt }. Session-only (not
-   part of filter save/load) — bookmarks anchor a spot in the DATA, not a
-   filter definition, so they don't belong in a filter-tree JSON file.
-   Deliberately scoped to real log entries selected in the plain log view
-   (state.selectedId) — not pair entries (link view) or extraction rows,
-   which have their own synthetic/derived ids not tracked in entryIndex.
+   state.bookmarks: entry id -> { bookmarkedAt }. Persisted (session export/
+   cache — see buildCacheMeta/buildSessionExport), NOT part of filter save/
+   load — bookmarks anchor a spot in the DATA, not a filter definition, so
+   they don't belong in a filter-tree JSON file; the auto-managed per-file
+   "Bookmarks" filter node (syncBookmarksFilterNode) that mirrors this Set
+   is itself excluded from that same filter-tree persistence, for the same
+   reason (see its own comment below). Deliberately scoped to real log
+   entries selected in the plain log view (state.selectedId) — not pair
+   entries (link view) or extraction rows, which have their own synthetic/
+   derived ids not tracked in entryIndex.
    Jumping reuses the same activeId/scrollTargetId mechanism as
    jumpToFullLog, but resolves the entry's root file itself (see
    findRootIdForEntry) rather than assuming it belongs to whatever chain is
@@ -11154,14 +11299,71 @@ function findRootIdForEntry(entryId) {
   return null;
 }
 
+// Generalized jumpToFullLog: jumps to an arbitrary entry regardless of which
+// node/file is currently active, by resolving the entry's own root file
+// rather than trusting the current chain — used wherever an entry id is
+// known without knowing (or wanting to disturb) whatever chain is currently
+// active, e.g. scrollToIndex-driven virtualization tests and any future
+// "jump to this entry" affordance.
+function jumpToEntry(entryId) {
+  const entry = entryIndex[entryId];
+  const rootId = entry ? findRootIdForEntry(entryId) : null;
+  if (!entry || !rootId) { showCopyToast("That entry is no longer available"); return; }
+  state.activeId = rootId;
+  state.levelFilter.clear();
+  state.selectedId = entry.id;
+  state.scrollTargetId = entry.id;
+  // Same reasoning as jumpToFullLog: the scroll+flash targets the Filter
+  // view, which is hidden while the Full tab is active in tabs layout.
+  revealFilteredView();
+  render();
+}
+
+// Creates/removes the single, auto-managed "Bookmarks" filter node directly
+// under a root file, depending on whether that file currently has ≥1
+// bookmarked entry (FEATURE_BACKLOG.md "Bookmarks rework"). Called after
+// every state.bookmarks mutation that could affect this root — toggleBookmark
+// below, and every bookmark-restore path (session cache/import). Idempotent:
+// safe to call even when nothing actually changed.
+//
+// The node is `locked: true` (see deleteFilterNodeWithUndo/moveFilterNodeWithUndo/
+// renderNode's draggable guard and the tree context menu's restricted-node
+// branch) — colorable/styleable like any other filter node, but never
+// directly draggable/deletable/reorderable by the user; only this function
+// ever adds or removes it. It's excluded from filter-tree persistence
+// (serializeFilterBranch/serializeFilterTreeForCache skip filterType
+// "bookmarks") since its membership is entirely derived from state.bookmarks,
+// which is itself persisted separately — re-deriving the node here after any
+// bookmarks restore keeps it in sync without needing its own serialized
+// shape at all.
+function syncBookmarksFilterNode(rootId) {
+  const root = state.nodes[rootId];
+  if (!root || root.type !== "file") return;
+  const existing = root.children.map(id => state.nodes[id]).find(n => n && n.filterType === "bookmarks");
+  const hasAny = root.entries.some(e => state.bookmarks.has(e.id));
+  if (hasAny && !existing) {
+    const node = {
+      id: uid("n"), type: "filter", name: "Bookmarks", parentId: rootId,
+      children: [], filterType: "bookmarks", value: null, inverted: false, locked: true,
+    };
+    state.nodes[node.id] = node;
+    root.children.unshift(node.id);
+    invalidateAllCaches();
+  } else if (!hasAny && existing) {
+    deleteNode(existing.id);
+  }
+}
+
 function toggleBookmark(entryId) {
   if (!entryId) return;
   if (state.bookmarks.has(entryId)) {
     state.bookmarks.delete(entryId);
   } else {
-    state.bookmarks.set(entryId, { note: "", bookmarkedAt: Date.now() });
+    state.bookmarks.set(entryId, { bookmarkedAt: Date.now() });
   }
-  updateBookmarksButton();
+  const rootId = findRootIdForEntry(entryId);
+  if (rootId) syncBookmarksFilterNode(rootId);
+  renderTree(); // repaint the sidebar in case the auto "Bookmarks" node just appeared/disappeared
   // While pin mode is on, a bookmark change can change WHICH rows belong in
   // the Filtered view (a newly bookmarked entry outside the filter needs to
   // be added; unbookmarking a pinned-only entry needs to drop its row) — so
@@ -11178,8 +11380,8 @@ function toggleBookmark(entryId) {
   if (state.pinBookmarksInFilteredView) {
     currentViewEntries = spliceTempAnchor(getVisibleEntries());
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
-    tableRowOffsets = state.multilineMessages ? buildRowOffsets(currentViewEntries) : null;
-    tableSpacer.style.height = ((state.multilineMessages ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+    tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
+    tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
     cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
     syncTableRowsWidth();
     renderStatusStrip();
@@ -11192,36 +11394,6 @@ function toggleBookmark(entryId) {
   // detection: neither trigger is the first half of a row double-click.
   renderVisibleRows();
   renderHighlightVisibleRows();
-  if (!bookmarksPanel.classList.contains("hidden")) renderBookmarksPanel();
-}
-
-// Generalized jumpToFullLog: jumps to an arbitrary entry regardless of which
-// node/file is currently active, by resolving the entry's own root file
-// rather than trusting the current chain.
-function jumpToEntry(entryId) {
-  const entry = entryIndex[entryId];
-  const rootId = entry ? findRootIdForEntry(entryId) : null;
-  if (!entry || !rootId) { showCopyToast("That entry is no longer available"); return; }
-  state.activeId = rootId;
-  state.levelFilter.clear();
-  state.selectedId = entry.id;
-  state.scrollTargetId = entry.id;
-  closeBookmarksPanel();
-  // Same reasoning as jumpToFullLog: the scroll+flash targets the Filter
-  // view, which is hidden while the Full tab is active in tabs layout.
-  revealFilteredView();
-  render();
-}
-
-function updateBookmarksButton() {
-  const n = state.bookmarks.size;
-  let badge = btnBookmarks.querySelector(".toolbar-badge");
-  if (n > 0) {
-    if (!badge) { badge = document.createElement("span"); badge.className = "toolbar-badge"; btnBookmarks.appendChild(badge); }
-    badge.textContent = n > 99 ? "99+" : String(n);
-  } else if (badge) {
-    badge.remove();
-  }
 }
 
 // Reflects state.pinBookmarksInFilteredView on the toggle button — called
@@ -11240,84 +11412,6 @@ function updateMultilineMsgButton() {
   document.body.classList.toggle("multiline-messages", state.multilineMessages);
 }
 
-function closeBookmarksPanel() { bookmarksPanel.classList.add("hidden"); }
-
-function renderBookmarksPanel() {
-  const list = [...state.bookmarks.entries()]
-    .map(([id, b]) => ({ id, ...b, entry: entryIndex[id] }))
-    .sort((a, b) => (a.entry ? a.entry.ts : 0) - (b.entry ? b.entry.ts : 0));
-
-  bookmarksPanelTitle.textContent = "Bookmarks" + (list.length ? " (" + list.length + ")" : "");
-
-  if (list.length === 0) {
-    bookmarksList.innerHTML = '<div class="bookmark-empty">No bookmarks yet. Right-click a row (or press "B" with a row selected) to bookmark it.</div>';
-    return;
-  }
-
-  bookmarksList.innerHTML = "";
-  const frag = document.createDocumentFragment();
-  list.forEach(b => {
-    const row = document.createElement("div");
-    row.className = "bookmark-row";
-    if (!b.entry) {
-      row.innerHTML = '<div class="bookmark-row-top">Entry no longer available</div>';
-      const del = document.createElement("button");
-      del.className = "bookmark-row-del";
-      del.innerHTML = ICON_CLOSE;
-      del.title = "Remove bookmark";
-      del.addEventListener("click", ev => { ev.stopPropagation(); state.bookmarks.delete(b.id); updateBookmarksButton(); renderBookmarksPanel(); });
-      row.querySelector(".bookmark-row-top").appendChild(del);
-      frag.appendChild(row);
-      return;
-    }
-    const top = document.createElement("div");
-    top.className = "bookmark-row-top";
-    top.innerHTML =
-      '<span class="level-badge ' + levelClass(b.entry.level) + '">' + escapeHtml(b.entry.level) + '</span>' +
-      '<span>' + escapeHtml(formatTime(b.entry.ts)) + '</span>';
-    const del = document.createElement("button");
-    del.className = "bookmark-row-del";
-    del.innerHTML = ICON_CLOSE;
-    del.title = "Remove bookmark";
-    del.addEventListener("click", ev => { ev.stopPropagation(); toggleBookmark(b.id); });
-    top.appendChild(del);
-    row.appendChild(top);
-
-    const msg = document.createElement("div");
-    msg.className = "bookmark-row-msg";
-    msg.textContent = b.entry.message;
-    row.appendChild(msg);
-
-    const note = document.createElement("input");
-    note.type = "text";
-    note.className = "bookmark-row-note";
-    note.placeholder = "Add a note…";
-    note.value = b.note || "";
-    note.addEventListener("click", ev => ev.stopPropagation());
-    note.addEventListener("change", () => {
-      const rec = state.bookmarks.get(b.id);
-      if (rec) rec.note = note.value;
-    });
-    row.appendChild(note);
-
-    row.addEventListener("click", () => jumpToEntry(b.id));
-    frag.appendChild(row);
-  });
-  bookmarksList.appendChild(frag);
-}
-
-function openBookmarksPanel() {
-  renderBookmarksPanel();
-  const rect = btnBookmarks.getBoundingClientRect();
-  bookmarksPanel.style.top = (rect.bottom + 6) + "px";
-  bookmarksPanel.style.left = Math.min(rect.left, window.innerWidth - 336) + "px";
-  bookmarksPanel.classList.remove("hidden");
-}
-btnBookmarks.addEventListener("click", () => {
-  if (bookmarksPanel.classList.contains("hidden")) openBookmarksPanel();
-  else closeBookmarksPanel();
-});
-
 // A plain persistent toggle, not a popup — full render() (rather than the
 // targeted renderMainView() the level-filter pills use) is simplest here
 // and correctness matters more than the render cost for a rare click: it
@@ -11325,6 +11419,23 @@ btnBookmarks.addEventListener("click", () => {
 btnPinBookmarks.addEventListener("click", () => {
   state.pinBookmarksInFilteredView = !state.pinBookmarksInFilteredView;
   updatePinBookmarksButton();
+  render();
+});
+
+// Reflects state.showNotes on the toggle button — called after every toggle
+// and after session restore, same pattern as updatePinBookmarksButton.
+function updateNotesButton() {
+  btnNotes.classList.toggle("active", state.showNotes);
+}
+
+// Show/Hide Notes (FEATURE_BACKLOG.md "Bookmarks rework"). Same
+// plain-persistent-toggle shape as #btnMultilineMsg right below: note-rows
+// changing height/appearing/disappearing shifts row heights exactly like
+// multiline-message toggling does, so a full render() is used here too
+// rather than a targeted repaint.
+btnNotes.addEventListener("click", () => {
+  state.showNotes = !state.showNotes;
+  updateNotesButton();
   render();
 });
 
@@ -11655,8 +11766,8 @@ function renderTable() {
   // of what order the table itself ends up sorted into.
   const minimapViewEntries = currentViewEntries;
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
-  tableRowOffsets = state.multilineMessages ? buildRowOffsets(currentViewEntries) : null;
-  tableSpacer.style.height = ((state.multilineMessages ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
+  tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
   cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
   syncTableRowsWidth();
   renderStatusStrip();
@@ -13078,6 +13189,8 @@ const contextMenu = el("#contextMenu");
 const ctxMeta = el("#ctxMeta");
 const ctxBookmark = el("#ctxBookmark");
 const ctxBookmarkLabel = el("#ctxBookmarkLabel");
+const ctxNote = el("#ctxNote");
+const ctxNoteLabel = el("#ctxNoteLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
 let ctxEntry = null;
 
@@ -13118,6 +13231,9 @@ function openContextMenu(ev, entry) {
   const bookmarkable = !!entryIndex[entry.id];
   ctxBookmark.style.display = bookmarkable ? "" : "none";
   if (bookmarkable) ctxBookmarkLabel.textContent = state.bookmarks.has(entry.id) ? "Remove bookmark" : "Bookmark this row";
+  // Notes: same "real log entry only" eligibility as bookmarks above.
+  ctxNote.style.display = bookmarkable ? "" : "none";
+  if (bookmarkable) ctxNoteLabel.textContent = state.notes.has(entry.id) ? "Edit note" : "Add note";
   contextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   contextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 170) + "px";
   contextMenu.classList.remove("hidden");
@@ -13140,6 +13256,10 @@ el("#ctxBefore").addEventListener("click", () => {
 el("#ctxBookmark").addEventListener("click", () => {
   // toggleBookmark repaints both views' visible rows itself.
   if (ctxEntry && entryIndex[ctxEntry.id]) toggleBookmark(ctxEntry.id);
+  closeContextMenu();
+});
+el("#ctxNote").addEventListener("click", () => {
+  if (ctxEntry && entryIndex[ctxEntry.id]) openNoteEditor(ctxEntry.id);
   closeContextMenu();
 });
 
@@ -13414,7 +13534,14 @@ function openTreeContextMenu(ev, clickedId) {
     // group's members aren't naturally contiguous in push order.
     const GROUP_ORDER = ["edit", "clipboard", "library", "danger"];
     const buckets = { edit: [], clipboard: [], library: [], danger: [] };
-    if (node.type === "filter") {
+    // Restricted node (auto-managed "Bookmarks" filter, see
+    // syncBookmarksFilterNode): only "Copy" is offered — no rename/edit/
+    // invert/context/cut/save/delete, since it's only ever
+    // added/removed automatically, not edited or moved by hand. Recolor/
+    // restyle still work (the swatch above is unconditional).
+    if (node.type === "filter" && node.locked) {
+      buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
+    } else if (node.type === "filter") {
       // Rename (FEATURE_BACKLOG.md #12) works on every filterType — a
       // human-readable step name makes sense on and/or/link/context/level
       // nodes just as much as a plain text filter — so it's unconditional,
@@ -13453,21 +13580,27 @@ function openTreeContextMenu(ev, clickedId) {
     // to the whole file, reproducing the original overall result. Same for
     // the library (FEATURE_BACKLOG.md "Reusable filter library") — its
     // presets are file-agnostic on purpose, so applying one makes sense
-    // from any node, not just filters.
-    buckets.library.push({ action: "loadFilter", label: "Load filter…", icon: ICON_LOAD });
-    buckets.library.push({ action: "applyFromLibrary", label: "Apply from library…", icon: ICON_LOAD });
+    // from any node, not just filters. Skipped for the restricted "Bookmarks"
+    // node — loading/applying something onto it would just be discarded the
+    // next time syncBookmarksFilterNode runs.
+    if (!node.locked) {
+      buckets.library.push({ action: "loadFilter", label: "Load filter…", icon: ICON_LOAD });
+      buckets.library.push({ action: "applyFromLibrary", label: "Apply from library…", icon: ICON_LOAD });
+    }
     // Session export/import used to live here too (session-global, so they
     // appeared on every node), but that made them a context menu action on
     // a file for something that has nothing to do with that file — moved to
     // the "Session…" toolbar button (analogous to "Open…") instead.
-    if (state.clipboard && state.nodes[state.clipboard.id]) {
+    if (!node.locked && state.clipboard && state.nodes[state.clipboard.id]) {
       buckets.clipboard.push({ action: "paste", label: "Paste", icon: ICON_PASTE });
     }
-    buckets.danger.push({
-      action: "delete",
-      label: node.type === "file" ? (node.folderId ? "Close file" : "Remove file") : "Remove filter",
-      icon: ICON_CLOSE,
-    });
+    if (!node.locked) {
+      buckets.danger.push({
+        action: "delete",
+        label: node.type === "file" ? (node.folderId ? "Close file" : "Remove file") : "Remove filter",
+        icon: ICON_CLOSE,
+      });
+    }
 
     const sectionsHtml = GROUP_ORDER
       .map(g => buckets[g])
@@ -13806,6 +13939,70 @@ timeRangeDialogSubmit.addEventListener("click", () => {
   render();
 });
 
+/* ===================== Notes =====================
+   state.notes: entry id -> free-text note string. Same id scheme as
+   state.bookmarks (a real log entry's id — see entryIndex), and persisted
+   through the same tiers (session export, session cache — see "Bookmarks"
+   above and its buildCacheMeta/buildSessionExport call sites). Any real log
+   entry can carry one, bookmarked or not (FEATURE_BACKLOG.md "Bookmarks
+   rework"). Rendered as a note-row sibling below its entry (appendNoteRow,
+   in the virtualized row renderers above) and, for the currently selected
+   entry, in the Entry Detail panel (updateDetailPanel). */
+
+const noteDialog = el("#noteDialog");
+const noteDialogTitle = el("#noteDialogTitle");
+const noteDialogInput = el("#noteDialogInput");
+let noteDialogEntryId = null;
+
+// Opens the note editor for a real log entry — empty (new note) or prefilled
+// (editing an existing one). Called from Alt+N, the context menu's "Add
+// note"/"Edit note", and double-clicking an existing note-row.
+function openNoteEditor(entryId) {
+  if (!entryId || !entryIndex[entryId]) return;
+  noteDialogEntryId = entryId;
+  const existing = state.notes.get(entryId) || "";
+  noteDialogInput.value = existing;
+  noteDialogTitle.textContent = existing ? "Edit note" : "Add note";
+  noteDialogDelete.style.display = existing ? "" : "none";
+  noteDialog.classList.remove("hidden");
+  noteDialogInput.focus();
+}
+function closeNoteDialog() {
+  noteDialog.classList.add("hidden");
+  noteDialogEntryId = null;
+}
+noteDialog.addEventListener("click", ev => { if (ev.target === noteDialog) closeNoteDialog(); });
+el("#noteDialogCancel").addEventListener("click", closeNoteDialog);
+
+// Sets/clears the note on the given entry and repaints just what needs to
+// change — row heights can shift (a note-row appearing/disappearing/
+// resizing), so this mirrors toggleBookmark's own targeted-repaint approach
+// (recompute both views' row offsets + spacer height, then their visible
+// windows + the detail panel) rather than a full render(), which would reset
+// scroll position (see renderTable's "any other change... starts back at the
+// top" comment).
+function setNoteAndRepaint(entryId, text) {
+  const trimmed = (text || "").replace(/\s+$/, ""); // trailing whitespace/newlines only — leading/internal formatting is the person's own
+  if (trimmed) state.notes.set(entryId, trimmed); else state.notes.delete(entryId);
+  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
+  tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  highlightRowOffsets = needsRowOffsets() ? buildRowOffsets(currentHighlightViewEntries) : null;
+  highlightSpacer.style.height = ((needsRowOffsets() ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  renderVisibleRows();
+  renderHighlightVisibleRows();
+  updateDetailPanel();
+  schedulePersistMeta();
+}
+const noteDialogDelete = el("#noteDialogDelete");
+noteDialogDelete.addEventListener("click", () => {
+  if (noteDialogEntryId) setNoteAndRepaint(noteDialogEntryId, "");
+  closeNoteDialog();
+});
+el("#noteDialogSave").addEventListener("click", () => {
+  if (noteDialogEntryId) setNoteAndRepaint(noteDialogEntryId, noteDialogInput.value);
+  closeNoteDialog();
+});
+
 /* ===================== Filter save / load (JSON files) =====================
    "Save filter…" writes the *branch* a filter belongs to: the ancestor
    chain from just below the root file down to the clicked node, plus the
@@ -13832,7 +14029,7 @@ timeRangeDialogSubmit.addEventListener("click", () => {
 
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context", "countContext", "level"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context", "countContext", "level", "bookmarks"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId) {
@@ -14003,7 +14200,12 @@ function importFilterJson(text) {
   // Validate the whole tree before creating anything, so a corrupt file
   // never leaves half-built nodes behind.
   function validate(sn) {
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType)) return false;
+    // filterType "bookmarks" is deliberately rejected here: it's the
+    // auto-managed per-file node (see syncBookmarksFilterNode) and is never
+    // written to a saved filter file in the first place — an imported one
+    // (hand-edited file, or an old export from before this restriction
+    // existed) would just be an unlocked look-alike with a stale match set.
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
     return (sn.children || []).every(validate);
   }
   if (!data.roots.every(validate)) { showCopyToast("Filter file contains unknown filter types"); return; }
@@ -14805,7 +15007,6 @@ document.addEventListener("click", ev => {
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
   if (!sessionMenu.contains(ev.target) && !btnSession.contains(ev.target)) closeSessionMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
-  if (!bookmarksPanel.contains(ev.target) && !btnBookmarks.contains(ev.target)) closeBookmarksPanel();
   if (!columnsPanel.contains(ev.target) && !btnColumns.contains(ev.target)) closeColumnsPanel();
   if (!shortcutsPanel.contains(ev.target) && !btnShortcuts.contains(ev.target)) closeShortcutsPanel();
   if (!licensePanel.contains(ev.target) && !btnLicense.contains(ev.target)) closeLicensePanel();
@@ -14835,7 +15036,7 @@ document.addEventListener("keydown", ev => {
     closeContextDialog();
     closeTimeRangeDialog();
     closeAssertDialog();
-    closeBookmarksPanel();
+    closeNoteDialog();
     closeColumnsPanel();
     closeColorPicker();
     closeSessionExportDialog();
@@ -14873,6 +15074,16 @@ document.addEventListener("keydown", ev => {
       (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
     ev.preventDefault();
     moveTreeSelection(ev.key);
+    return;
+  }
+
+  // FEATURE_BACKLOG.md "Bookmarks rework" — Alt+N on the selected row opens
+  // the note editor: empty (new note) if it has none yet, prefilled (edit)
+  // if it already has one — openNoteEditor itself picks which, no separate
+  // F2 binding for this (per the backlog's own wording).
+  if (ev.altKey && key === "n" && state.selectedId && entryIndex[state.selectedId]) {
+    ev.preventDefault();
+    openNoteEditor(state.selectedId);
     return;
   }
 
@@ -15305,6 +15516,15 @@ function serializeFilterTreeForCache(fileNode) {
   })(fileNode.id);
   delete refs[fileNode.id]; // the file itself is addressed by cacheKey, not by ref
 
+  // The auto-managed "Bookmarks" node (filterType "bookmarks", see
+  // syncBookmarksFilterNode) is deliberately excluded from persistence here:
+  // its membership is entirely derived from state.bookmarks, which is
+  // persisted separately (below) and re-synced into a node on restore — so
+  // serializing the node itself would just be redundant, drifting state to
+  // keep in sync. (A filter manually added as its CHILD, if the person did
+  // that, is lost along with it — an accepted edge case, see PROJECT.md.)
+  const persistableChildren = ids => ids.filter(id => state.nodes[id] && state.nodes[id].filterType !== "bookmarks");
+
   function ser(id) {
     const node = state.nodes[id];
     const out = {
@@ -15312,7 +15532,7 @@ function serializeFilterTreeForCache(fileNode) {
       filterType: node.filterType,
       name: node.name,
       inverted: !!node.inverted,
-      children: node.children.map(ser),
+      children: persistableChildren(node.children).map(ser),
     };
     if (node.value !== null && node.value !== undefined) out.value = node.value;
     if (node.linkedId && refs[node.linkedId]) out.linkedRef = refs[node.linkedId];
@@ -15331,13 +15551,14 @@ function serializeFilterTreeForCache(fileNode) {
     return out;
   }
 
-  return { roots: fileNode.children.map(ser), refs };
+  return { roots: persistableChildren(fileNode.children).map(ser), refs };
 }
 
 function buildCacheMeta() {
   const fileOrder = [];
   const filters = {};
   const bookmarks = [];
+  const notes = [];
   let active = null;
 
   for (const rootId of state.rootIds) {
@@ -15367,7 +15588,23 @@ function buildCacheMeta() {
         if (!remaining.has(e.id)) return;
         remaining.delete(e.id);
         const b = state.bookmarks.get(e.id);
-        bookmarks.push({ file: root.cacheKey, ordinal: i, note: b.note, bookmarkedAt: b.bookmarkedAt });
+        bookmarks.push({ file: root.cacheKey, ordinal: i, bookmarkedAt: b.bookmarkedAt });
+      });
+    }
+  }
+
+  // state.notes: same ordinal-anchor scheme as bookmarks just above — an
+  // entirely separate per-entry store, not tied to being bookmarked.
+  if (state.notes.size) {
+    const remaining = new Set(state.notes.keys());
+    for (const rootId of state.rootIds) {
+      if (!remaining.size) break;
+      const root = state.nodes[rootId];
+      if (!root) continue;
+      root.entries.forEach((e, i) => {
+        if (!remaining.has(e.id)) return;
+        remaining.delete(e.id);
+        notes.push({ file: root.cacheKey, ordinal: i, text: state.notes.get(e.id) });
       });
     }
   }
@@ -15379,12 +15616,14 @@ function buildCacheMeta() {
     fileOrder,
     filters,
     bookmarks,
+    notes,
     settings: {
       levelFilter: [...state.levelFilter],
       sortColumn: state.sortColumn,
       sortDir: state.sortDir,
       pinBookmarksInFilteredView: state.pinBookmarksInFilteredView,
       multilineMessages: state.multilineMessages,
+      showNotes: state.showNotes,
       columnVisible: { ...state.columnVisible },
       columnWidths: { ...state.columnWidths },
       active,
@@ -15419,7 +15658,10 @@ function materializeCachedFilters(fileNode, roots) {
   const pending = [];
 
   function valid(sn) {
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType)) return false;
+    // Same "bookmarks" exclusion as importFilterJson's validate() — the
+    // cache never writes this type either (see serializeFilterTreeForCache's
+    // persistableChildren), so any that show up here are stale/foreign.
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
     return (sn.children || []).every(valid);
   }
 
@@ -15554,11 +15796,18 @@ async function restoreSessionFromCache() {
     (meta.bookmarks || []).forEach(b => {
       const fileNode = byKey[b.file];
       const entry = fileNode && fileNode.entries[b.ordinal];
-      if (entry) state.bookmarks.set(entry.id, {
-        note: String(b.note || ""),
-        bookmarkedAt: +b.bookmarkedAt || Date.now(),
-      });
+      if (entry) state.bookmarks.set(entry.id, { bookmarkedAt: +b.bookmarkedAt || Date.now() });
     });
+    (meta.notes || []).forEach(n => {
+      const fileNode = byKey[n.file];
+      const entry = fileNode && fileNode.entries[n.ordinal];
+      if (entry && n.text) state.notes.set(entry.id, String(n.text));
+    });
+    // Re-derive the auto "Bookmarks" filter node for every restored root now
+    // that state.bookmarks is back (see syncBookmarksFilterNode — the node
+    // itself is never persisted, only re-created from the Set on any path
+    // that restores bookmarks).
+    Object.values(byKey).forEach(fileNode => syncBookmarksFilterNode(fileNode.id));
 
     const s = meta.settings || {};
     if (Array.isArray(s.levelFilter)) {
@@ -15569,6 +15818,7 @@ async function restoreSessionFromCache() {
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
     state.multilineMessages = !!s.multilineMessages;
+    state.showNotes = !!s.showNotes;
     if (s.columnVisible && typeof s.columnVisible === "object") {
       HIDEABLE_COLUMNS.forEach(key => { if (typeof s.columnVisible[key] === "boolean") state.columnVisible[key] = s.columnVisible[key]; });
     }
@@ -15588,8 +15838,8 @@ async function restoreSessionFromCache() {
     return false;
   } finally {
     sessionRestoreInProgress = false;
-    updateBookmarksButton();
     updatePinBookmarksButton();
+    updateNotesButton();
     updateMultilineMsgButton();
     applyRowGrid();
     render();
@@ -15712,6 +15962,7 @@ function buildSessionExport(fileIds, embedTextIds) {
       fullHash: getFileFullHash(node),
       filters: roots,
       bookmarks: [],
+      notes: [],
     };
     if (embedTextIds && embedTextIds.has(id)) rec.text = rebuildFileText(node);
     files.push(rec);
@@ -15731,8 +15982,21 @@ function buildSessionExport(fileIds, embedTextIds) {
         // alone is only trustworthy against a provably identical file.
         info.rec.bookmarks.push({
           ordinal: i, ts: e.ts, raw: fingerprintText(e.raw),
-          note: b.note, bookmarkedAt: b.bookmarkedAt,
+          bookmarkedAt: b.bookmarkedAt,
         });
+      });
+    }
+  }
+
+  if (state.notes.size) {
+    const remaining = new Set(state.notes.keys());
+    for (const id of fileIds) {
+      const info = perFile.get(id);
+      if (!info || !remaining.size) continue;
+      state.nodes[id].entries.forEach((e, i) => {
+        if (!remaining.has(e.id)) return;
+        remaining.delete(e.id);
+        info.rec.notes.push({ ordinal: i, ts: e.ts, raw: fingerprintText(e.raw), text: state.notes.get(e.id) });
       });
     }
   }
@@ -15883,10 +16147,22 @@ function applySessionEntryByOrdinal(rec, fileNode) {
     total++;
     const entry = fileNode.entries[b.ordinal];
     if (!entry) return;
-    state.bookmarks.set(entry.id, { note: String(b.note || ""), bookmarkedAt: +b.bookmarkedAt || Date.now() });
+    state.bookmarks.set(entry.id, { bookmarkedAt: +b.bookmarkedAt || Date.now() });
     placed++;
   });
-  return { refMap, placed, total };
+  // state.notes: same ordinal trust as bookmarks on this (tier 1/2) path —
+  // counted separately from placed/total above (bookmarks specifically),
+  // returned as notesPlaced/notesTotal.
+  let notesPlaced = 0, notesTotal = 0;
+  (rec.notes || []).forEach(n => {
+    notesTotal++;
+    const entry = fileNode.entries[n.ordinal];
+    if (!entry || !n.text) return;
+    state.notes.set(entry.id, String(n.text));
+    notesPlaced++;
+  });
+  syncBookmarksFilterNode(fileNode.id);
+  return { refMap, placed, total, notesPlaced, notesTotal };
 }
 
 // Tier 3 path (manually picked target): ordinals are not trustworthy, so
@@ -15905,14 +16181,33 @@ function applySessionEntryByContent(rec, fileNode) {
       for (const idx of (off === 0 ? [at] : [at - off, at + off])) {
         const entry = fileNode.entries[idx];
         if (entry && fingerprintText(entry.raw) === b.raw) {
-          state.bookmarks.set(entry.id, { note: String(b.note || ""), bookmarkedAt: +b.bookmarkedAt || Date.now() });
+          state.bookmarks.set(entry.id, { bookmarkedAt: +b.bookmarkedAt || Date.now() });
           placed++;
           return;
         }
       }
     }
   });
-  return { refMap, placed, total };
+  // Same re-anchor-by-timestamp-then-confirm-by-fingerprint scheme as
+  // bookmarks just above, applied to state.notes.
+  let notesPlaced = 0, notesTotal = 0;
+  (rec.notes || []).forEach(n => {
+    notesTotal++;
+    if (typeof n.ts !== "number" || typeof n.raw !== "string" || !n.text) return;
+    const at = lowerBoundByTs(fileNode.entries, n.ts);
+    for (let off = 0; off <= 2; off++) {
+      for (const idx of (off === 0 ? [at] : [at - off, at + off])) {
+        const entry = fileNode.entries[idx];
+        if (entry && fingerprintText(entry.raw) === n.raw) {
+          state.notes.set(entry.id, String(n.text));
+          notesPlaced++;
+          return;
+        }
+      }
+    }
+  });
+  syncBookmarksFilterNode(fileNode.id);
+  return { refMap, placed, total, notesPlaced, notesTotal };
 }
 
 /* ---------- Import flow ---------- */
@@ -15954,7 +16249,7 @@ function importSessionJson(text) {
 }
 
 async function runSessionImport(data) {
-  const summary = { auto: 0, tier2Names: [], manual: 0, skipped: 0, placed: 0, totalBookmarks: 0 };
+  const summary = { auto: 0, tier2Names: [], manual: 0, skipped: 0, placed: 0, totalBookmarks: 0, notesPlaced: 0, totalNotes: 0 };
   const resolved = new Map(); // exportId -> { fileNode, refMap }
   const unresolved = [];
 
@@ -15966,11 +16261,13 @@ async function runSessionImport(data) {
     const { matchId, tier, nearMissIds } = matchExportedFile(rec, state.rootIds);
     if (matchId) {
       const fileNode = state.nodes[matchId];
-      const { refMap, placed, total } = applySessionEntryByOrdinal(rec, fileNode);
+      const { refMap, placed, total, notesPlaced, notesTotal } = applySessionEntryByOrdinal(rec, fileNode);
       resolved.set(rec.exportId, { fileNode, refMap });
       summary.auto++;
       summary.placed += placed;
       summary.totalBookmarks += total;
+      summary.notesPlaced += notesPlaced;
+      summary.totalNotes += notesTotal;
       if (tier === 2) {
         summary.tier2Names.push(fileNode.name);
         showCopyToast('"' + fileNode.name + '" matched via overlapping time range');
@@ -16009,7 +16306,6 @@ async function runSessionImport(data) {
     revealFilteredView(); // imported filters are new filters — same visibility rule
   }
 
-  updateBookmarksButton();
   updatePinBookmarksButton();
   render();
 
@@ -16018,6 +16314,9 @@ async function runSessionImport(data) {
   if (summary.skipped) parts.push(summary.skipped + " skipped");
   if (summary.totalBookmarks) {
     parts.push(summary.placed + " of " + summary.totalBookmarks + " bookmark" + (summary.totalBookmarks === 1 ? "" : "s") + " placed");
+  }
+  if (summary.totalNotes) {
+    parts.push(summary.notesPlaced + " of " + summary.totalNotes + " note" + (summary.totalNotes === 1 ? "" : "s") + " placed");
   }
   showCopyToast("Import: " + parts.join(", "));
 }
@@ -16145,9 +16444,11 @@ async function resolveExportedFileManually(rec, nearMissIds, summary) {
       // same as any other fresh load.
       const node = await addFile(String(rec.name || "embedded.log"), rec.text);
       persistFileNode(node); // same fire-and-forget as loadFileDescriptors
-      const { refMap, placed, total } = applySessionEntryByOrdinal(rec, node);
+      const { refMap, placed, total, notesPlaced, notesTotal } = applySessionEntryByOrdinal(rec, node);
       summary.placed += placed;
       summary.totalBookmarks += total;
+      summary.notesPlaced += notesPlaced;
+      summary.totalNotes += notesTotal;
       render();
       return { fileNode: node, refMap };
     }
@@ -16157,9 +16458,11 @@ async function resolveExportedFileManually(rec, nearMissIds, summary) {
       if (!node) continue; // picker cancelled — back to the dialog
       const { matchId } = matchExportedFile(rec, [node.id]);
       if (matchId) {
-        const { refMap, placed, total } = applySessionEntryByOrdinal(rec, node);
+        const { refMap, placed, total, notesPlaced, notesTotal } = applySessionEntryByOrdinal(rec, node);
         summary.placed += placed;
         summary.totalBookmarks += total;
+        summary.notesPlaced += notesPlaced;
+        summary.totalNotes += notesTotal;
         return { fileNode: node, refMap };
       }
       near = [...new Set([...near, node.id])]; // no confident match — offer it as a manual pick
@@ -16169,9 +16472,11 @@ async function resolveExportedFileManually(rec, nearMissIds, summary) {
     if (choice.startsWith("file:")) {
       const node = state.nodes[choice.slice(5)];
       if (!node || node.type !== "file") continue;
-      const { refMap, placed, total } = applySessionEntryByContent(rec, node);
+      const { refMap, placed, total, notesPlaced, notesTotal } = applySessionEntryByContent(rec, node);
       summary.placed += placed;
       summary.totalBookmarks += total;
+      summary.notesPlaced += notesPlaced;
+      summary.totalNotes += notesTotal;
       return { fileNode: node, refMap };
     }
   }
@@ -16369,8 +16674,8 @@ async function matchFileHistory(node) {
 /* ===================== Init ===================== */
 btnUndo.innerHTML = ICON_UNDO;
 btnRedo.innerHTML = ICON_REDO;
-btnBookmarks.innerHTML = ICON_BOOKMARK;
 btnPinBookmarks.innerHTML = ICON_PIN;
+btnNotes.innerHTML = ICON_NOTE;
 btnMultilineMsg.innerHTML = ICON_MULTILINE;
 btnColumns.innerHTML = ICON_COLUMNS;
 btnTextMatchHighlight.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT;
@@ -16387,8 +16692,8 @@ el("#licenseVersion").textContent = "Version: " + PHILOGG_VERSION;
 btnUndo.addEventListener("click", undo);
 btnRedo.addEventListener("click", redo);
 updateUndoRedoButtons();
-updateBookmarksButton();
 updatePinBookmarksButton();
+updateNotesButton();
 updateMultilineMsgButton();
 applyRowGrid();
 initTheme();
