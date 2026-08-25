@@ -78,7 +78,6 @@ this point.
 
 ### Desktop wrapper (Electron)
 
-51. **Improve Electron startup time perception** — startup currently takes several seconds with no feedback. Add a splash screen that appears immediately and indicates loading is in progress until the main window is ready. Additionally, add a "Close to system tray" setting (default: on). With it enabled, closing the app via the window's X button — or, if configured, closing the last open file — does not quit the app but minimizes it to the system tray (not the taskbar); a right-click on the tray icon offers a real Quit. While running in the tray, opening a file or clicking the app icon should jump straight back into the running session, so the app feels instantly available rather than restarting.
 52. **"Open File Location" in the file context menu** — jumps directly to the OS folder containing the selected file.
 
 ## Backlog

@@ -2843,6 +2843,18 @@
                 </label>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsCloseToTray">Close to system tray</label>
+                <div class="settings-row-hint">Only effective in the desktop build. The window's close button hides it to the tray instead of quitting; right-click the tray icon to quit for real.</div>
+              </div>
+              <div class="settings-row-control">
+                <label class="settings-switch">
+                  <input type="checkbox" id="settingsCloseToTray">
+                  <span class="settings-switch-track"></span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <div class="settings-subsection-title">Hover-to-expand panels</div>
@@ -3628,6 +3640,29 @@ function initQuitOnLastClose() {
 document.getElementById("settingsQuitOnLastClose").addEventListener("change", ev => {
   quitOnLastFileClose = ev.target.checked;
   localStorage.setItem(QUIT_ON_LAST_CLOSE_KEY, quitOnLastFileClose ? "1" : "0");
+});
+
+/* ===================== "Close to system tray" (FEATURE_BACKLOG item 51) ===================== */
+// On by default, unlike quitOnLastFileClose above — this is the requested
+// default behavior for the desktop build, not an opt-in change to existing
+// behavior. Same mechanism/tier as the settings above: a plain localStorage
+// flag, no preload/IPC bridge. main.js reads it directly out of the
+// renderer's localStorage (via executeJavaScript, same trick watchTheme
+// already uses for --accent) whenever its own BrowserWindow "close" event
+// fires, so this file only needs to persist the flag — it never has to know
+// whether it's running under Electron or a plain browser tab, where the
+// value is simply never read.
+const CLOSE_TO_TRAY_KEY = "philogg-close-to-tray";
+
+function initCloseToTray() {
+  const stored = localStorage.getItem(CLOSE_TO_TRAY_KEY);
+  const closeToTray = stored === null ? true : stored === "1";
+  const cb = document.getElementById("settingsCloseToTray");
+  if (cb) cb.checked = closeToTray;
+}
+
+document.getElementById("settingsCloseToTray").addEventListener("change", ev => {
+  localStorage.setItem(CLOSE_TO_TRAY_KEY, ev.target.checked ? "1" : "0");
 });
 
 /* ===================== "Open Files & Filters/Entry Detail on hover"
@@ -16394,6 +16429,7 @@ applyRowGrid();
 initTheme();
 initFontScale();
 initQuitOnLastClose();
+initCloseToTray();
 initHoverExpandSettings();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();

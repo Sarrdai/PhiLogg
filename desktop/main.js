@@ -10,7 +10,7 @@
 // from a file: page (matching the real browser restriction that guard
 // exists for) — using a privileged custom scheme instead sidesteps that
 // without weakening the guard itself.
-const { app, BrowserWindow, protocol, Menu, screen } = require("electron");
+const { app, BrowserWindow, protocol, Menu, screen, Tray, nativeImage } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -221,10 +221,107 @@ function watchFullscreenToggle(win) {
   win.on("closed", () => windowedFullscreenBounds.delete(win));
 }
 
+// FEATURE_BACKLOG.md item 51 ("Improve Electron startup time perception"),
+// splash half. Loading philogg://app/philogg.html (which itself reads/
+// renders a potentially-large restored session on "dom-ready") can take
+// several seconds with nothing on screen in the meantime — a small always-
+// on-top, undecorated window shown immediately covers that gap. It's a
+// self-contained data: URL (a few lines of inline HTML/CSS), not a file on
+// disk, so there's nothing new to package/ship. Closed the moment the main
+// window fires "ready-to-show" (i.e. has actually painted its first frame),
+// not on "dom-ready" — that would just swap one blank window for another.
+const SPLASH_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+  html, body { margin: 0; height: 100%; background: #151924; color: #cfd8e3;
+    font: 13px -apple-system, "Segoe UI", sans-serif; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; -webkit-user-select: none; user-select: none; }
+  .spinner { width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid rgba(79, 199, 195, 0.25); border-top-color: #4fc7c3;
+    animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style></head><body><div class="spinner"></div><div>Loading PhiLogg…</div></body></html>`;
+
+function createSplash() {
+  const splash = new BrowserWindow({
+    width: 320,
+    height: 180,
+    frame: false,
+    resizable: false,
+    movable: false,
+    show: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    backgroundColor: "#151924",
+    webPreferences: { sandbox: true },
+  });
+  splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(SPLASH_HTML));
+  return splash;
+}
+
+// FEATURE_BACKLOG.md item 51, "Close to system tray" half. The setting
+// itself lives in philogg.html's own localStorage (settingsCloseToTray,
+// default on) — same "no preload/IPC bridge" reasoning as every other
+// desktop-only toggle there (see philogg.html's own comment on
+// CLOSE_TO_TRAY_KEY): main.js just reads it back via executeJavaScript
+// when it actually needs the answer, on the BrowserWindow's own "close".
+// `isQuitting` distinguishes that hide-to-tray path from a real quit
+// (tray menu's Quit, Cmd+Q, OS shutdown, ...) — those all fire
+// "before-quit" first, which is set here rather than left for each quit
+// path to remember individually.
+const CLOSE_TO_TRAY_KEY = "philogg-close-to-tray";
+let isQuitting = false;
+let tray = null;
+
+app.on("before-quit", () => { isQuitting = true; });
+
+function watchCloseToTray(win) {
+  win.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    win.webContents.executeJavaScript(`localStorage.getItem(${JSON.stringify(CLOSE_TO_TRAY_KEY)})`)
+      .then((stored) => (stored === null ? true : stored === "1"))
+      .catch(() => true) // renderer unreachable — fail toward the default (on), not a stuck-open window
+      .then((closeToTray) => {
+        if (closeToTray) {
+          createTray(win);
+          win.hide();
+        } else {
+          isQuitting = true;
+          win.close();
+        }
+      });
+  });
+}
+
+// A minimal 16x16 dot as the tray icon — see desktop/README.md "Adding an
+// app icon" for why no real artwork/build/icons exist yet; this is an
+// inline data URL rather than a new binary asset file for the same reason
+// (kept out of electron-builder's icon pipeline entirely, so it can't
+// trip the Linux "empty icons dir" failure that section documents).
+const TRAY_ICON_DATA_URL =
+  "data:image/svg+xml;base64," + Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">' +
+    '<circle cx="8" cy="8" r="7" fill="#4fc7c3"/></svg>'
+  ).toString("base64");
+
+function createTray(win) {
+  if (tray) return;
+  tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON_DATA_URL));
+  tray.setToolTip("PhiLogg");
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Open PhiLogg", click: () => { win.show(); focusWindow(win); } },
+    { type: "separator" },
+    { label: "Quit", click: () => { isQuitting = true; app.quit(); } },
+  ]));
+  tray.on("click", () => { win.show(); focusWindow(win); });
+}
+
 function createWindow(filePath) {
+  const splash = createSplash();
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
+    show: false, // shown once ready-to-show fires, once the splash above can be dismissed in its place
     backgroundColor: "#151924", // matches #toolbar/#bg-panel's dark-theme default, avoids a white flash while loading
     roundedCorners: ROUNDED_CORNERS,
     ...(isMac
@@ -232,11 +329,16 @@ function createWindow(filePath) {
       : { titleBarStyle: "hidden", titleBarOverlay: { color: OVERLAY_TRANSPARENT, symbolColor: OVERLAY_ACCENT_DEFAULT, height: TITLEBAR_HEIGHT } }),
     webPreferences: { sandbox: true },
   });
+  win.once("ready-to-show", () => {
+    if (!splash.isDestroyed()) splash.destroy();
+    win.show();
+  });
   win.webContents.on("dom-ready", () => {
     win.webContents.insertCSS(FRAMELESS_CSS);
     if (!isMac) watchTheme(win);
   });
   watchFullscreenToggle(win);
+  watchCloseToTray(win);
   if (filePath) {
     win.loadURL(`philogg://app/philogg.html?url=${encodeURIComponent(localFileUrl(filePath))}`);
   } else {
@@ -246,6 +348,7 @@ function createWindow(filePath) {
 
 function focusWindow(win) {
   if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
   win.focus();
 }
 

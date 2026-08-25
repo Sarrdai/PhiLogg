@@ -10546,6 +10546,31 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 104 — Settings: "Close to system tray" (FEATURE_BACKLOG.md #51)
+   Origin: this session (2026-08-25). Purely a local app-behavior
+   preference (localStorage, like GROUP 76's quit-on-last-close), default
+   ON this time (unlike GROUP 76's default off) since that's the requested
+   desktop-build default. main.js (Electron, untestable under jsdom) reads
+   this same key back via executeJavaScript when its own BrowserWindow
+   "close" fires; this file only owns persisting the checkbox state.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("104. Settings: \"Close to system tray\" (default on)");
+
+  const checkbox = d.getElementById("settingsCloseToTray");
+  assert(checkbox.checked === true, "on by default");
+  assert(w.localStorage.getItem("philogg-close-to-tray") === null, "nothing persisted yet — default comes from the null->true fallback, not a stored value");
+
+  checkbox.checked = false;
+  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.localStorage.getItem("philogg-close-to-tray") === "0", "disabling the checkbox persists it");
+
+  checkbox.checked = true;
+  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.localStorage.getItem("philogg-close-to-tray") === "1", "re-enabling persists back to \"1\"");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -11971,6 +11996,13 @@ process.exit(failed ? 1 : 0);
               whenever "explicit" (Manual) level-filter-tree mode revealed
               it. Also added a matching float assertion inline in Group 94
               where the button's visibility toggle is already exercised.
+   Group 104 — this session (2026-08-25), FEATURE_BACKLOG.md #51 ("Improve
+              Electron startup time perception"): the localStorage half of
+              the new "Close to system tray" setting (default on). The
+              splash-screen and Tray/BrowserWindow-close-interception halves
+              live entirely in desktop/main.js, outside jsdom's reach —
+              not covered here, same standing limitation as the rest of
+              desktop/ (see desktop/README.md's own "Status" section).
 
    Group 103 — this session (2026-08-25), bugfix: re-clicking the
               already-active filter in the Files & Filter Tree now reveals
