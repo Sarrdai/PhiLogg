@@ -1667,6 +1667,23 @@
     width:32px; height:30px; border:none; font-size:15px; line-height:1; padding:0; border-radius:0;
     align-items:center; justify-content:center;
   }
+  /* Same −/value/+ stepper shape as .font-scale-stepper above (FEATURE_BACKLOG
+     #18, person-requested: "orientiere dich an der Einstellung der Font Size,
+     nur eben ohne %") — kept as its own class rather than reusing
+     .font-scale-stepper directly, since that name is specifically about font
+     scaling elsewhere in the file. */
+  .temp-anchor-fade-row{display:flex; align-items:center; gap:8px;}
+  .temp-anchor-fade-stepper{
+    display:flex; align-items:center; height:30px;
+    background:var(--bg-app); border:1px solid var(--border); border-radius:8px; overflow:hidden;
+  }
+  .temp-anchor-fade-stepper #tempAnchorFadeValue{
+    font-size:12.5px; font-variant-numeric:tabular-nums; min-width:34px; text-align:center; color:var(--text-primary);
+  }
+  .temp-anchor-fade-stepper .btn-icon{
+    width:32px; height:30px; border:none; font-size:15px; line-height:1; padding:0; border-radius:0;
+    align-items:center; justify-content:center;
+  }
   .settings-row-label[for]{cursor:pointer;}
   /* Boolean settings render as an on/off switch (#settingsQuitOnLastClose)
      rather than the plain accent-colored checkbox used for filter/plot
@@ -2040,6 +2057,18 @@
      background tint would fight the existing lvl-error/warn/etc. row
      tinting, an inset box-shadow doesn't touch background-color at all. */
   .log-row.pinned-row{box-shadow:inset 3px 0 0 var(--accent-strong);}
+
+  /* Temporary anchor row (FEATURE_BACKLOG #18): the currently selected entry
+     shown at its would-be position after switching the active filter to one
+     it doesn't actually match — not a real member of the list, just a
+     placeholder so Up/Down still has somewhere to navigate from. Dashed
+     inset edge distinguishes it from a real match/pinned-bookmark row.
+     .temp-anchor-fading collapses its OWN height to 0 as it fades (JS sets
+     the actual height/opacity targets, see scheduleTempAnchorFade) so the
+     surrounding rows close up by exactly one row's worth of space instead
+     of a full re-render yanking the scroll position elsewhere. */
+  .log-row.temp-anchor-row{border-left:3px dashed var(--text-secondary); font-style:italic; opacity:.85;}
+  .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
   /* ---------- Log view columns popup (#btnColumns) — same fixed-position/
      toggle pattern as #bookmarksPanel/#shortcutsPanel. ---------- */
@@ -2885,6 +2914,32 @@
                   <option value="auto">Automatic</option>
                   <option value="explicit">Manual (Add to tree button)</option>
                 </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsTempAnchorMode">Show temporary anchor after a no-match filter switch</label>
+                <div class="settings-row-hint">Switching the active filter (tree click or Ctrl+Arrow) while the current row doesn't match it shows that row at its would-be position as a temporary anchor, not a real bookmark. "Off" never draws it (Up/Down still remembers its position). "Persistent" keeps it shown until a different row is selected. "Fade" shows it briefly, then removes it after the configured duration.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsTempAnchorMode">
+                  <option value="off">Off</option>
+                  <option value="persistent">Persistent</option>
+                  <option value="fade">Fade</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row" id="settingsTempAnchorFadeRow">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Anchor fade duration</div>
+                <div class="settings-row-hint">How long the temporary anchor stays visible before it's removed.</div>
+              </div>
+              <div class="settings-row-control temp-anchor-fade-row">
+                <div class="temp-anchor-fade-stepper">
+                  <button type="button" class="btn-icon" id="tempAnchorFadeDown" title="Decrease duration">−</button>
+                  <span id="tempAnchorFadeValue">3s</span>
+                  <button type="button" class="btn-icon" id="tempAnchorFadeUp" title="Increase duration">+</button>
+                </div>
               </div>
             </div>
           </div>
@@ -3804,6 +3859,57 @@ document.getElementById("settingsLevelFilterTreeMode").addEventListener("change"
   render();
 });
 
+/* ===================== Temporary anchor settings (FEATURE_BACKLOG #18) =====
+   How (or whether) the "temp anchor" row — the selected entry's would-be
+   position after switching the active filter to one it doesn't actually
+   match, see state.tempAnchor / spliceTempAnchor below — gets drawn. Mode is
+   the same plain-localStorage-preference wiring as the settings above; the
+   fade-duration row is only relevant (and only shown, #settingsTempAnchorFadeRow)
+   while mode is "fade", and uses the same −/value/+ stepper shape as the
+   Font Size row's own #fontScaleValue control instead of a native number
+   input. */
+const TEMP_ANCHOR_MODE_KEY = "philogg-temp-anchor-mode";
+const TEMP_ANCHOR_FADE_SECONDS_KEY = "philogg-temp-anchor-fade-seconds";
+const TEMP_ANCHOR_FADE_MIN = 0.5, TEMP_ANCHOR_FADE_MAX = 30, TEMP_ANCHOR_FADE_STEP = 0.5;
+let tempAnchorMode = "persistent"; // "off" | "persistent" | "fade"
+let tempAnchorFadeSeconds = 3;
+
+function updateTempAnchorFadeRowVisibility() {
+  const row = document.getElementById("settingsTempAnchorFadeRow");
+  if (row) row.style.display = tempAnchorMode === "fade" ? "" : "none";
+}
+
+function initTempAnchorSettings() {
+  const modeStored = localStorage.getItem(TEMP_ANCHOR_MODE_KEY);
+  tempAnchorMode = (modeStored === "off" || modeStored === "fade") ? modeStored : "persistent";
+  const modeSelect = document.getElementById("settingsTempAnchorMode");
+  if (modeSelect) modeSelect.value = tempAnchorMode;
+  updateTempAnchorFadeRowVisibility();
+
+  const secStored = parseFloat(localStorage.getItem(TEMP_ANCHOR_FADE_SECONDS_KEY));
+  tempAnchorFadeSeconds = Number.isFinite(secStored) && secStored > 0 ? secStored : 3;
+  const valueEl = document.getElementById("tempAnchorFadeValue");
+  if (valueEl) valueEl.textContent = tempAnchorFadeSeconds + "s";
+}
+
+document.getElementById("settingsTempAnchorMode").addEventListener("change", ev => {
+  tempAnchorMode = ev.target.value === "off" || ev.target.value === "fade" ? ev.target.value : "persistent";
+  localStorage.setItem(TEMP_ANCHOR_MODE_KEY, tempAnchorMode);
+  updateTempAnchorFadeRowVisibility();
+  if (tempAnchorMode === "fade") scheduleTempAnchorFade(); else clearTempAnchorFadeTimer();
+  renderMainView();
+});
+
+function applyTempAnchorFadeSeconds(v) {
+  tempAnchorFadeSeconds = Math.max(TEMP_ANCHOR_FADE_MIN, Math.min(TEMP_ANCHOR_FADE_MAX, Math.round(v * 2) / 2));
+  localStorage.setItem(TEMP_ANCHOR_FADE_SECONDS_KEY, String(tempAnchorFadeSeconds));
+  const valueEl = document.getElementById("tempAnchorFadeValue");
+  if (valueEl) valueEl.textContent = tempAnchorFadeSeconds + "s";
+  if (tempAnchorMode === "fade") scheduleTempAnchorFade();
+}
+document.getElementById("tempAnchorFadeDown").addEventListener("click", () => applyTempAnchorFadeSeconds(tempAnchorFadeSeconds - TEMP_ANCHOR_FADE_STEP));
+document.getElementById("tempAnchorFadeUp").addEventListener("click", () => applyTempAnchorFadeSeconds(tempAnchorFadeSeconds + TEMP_ANCHOR_FADE_STEP));
+
 // Called after any user-initiated file close (see deleteFilterNodeWithUndo)
 // — quits (closes the window) once no root files remain, if enabled.
 function maybeQuitOnLastFileClosed() {
@@ -3830,6 +3936,13 @@ const state = {
   highlightScrollTargetId: null, // twin of scrollTargetId, but for the Highlight view (see revealInHighlightView)
   tableSelection: null,    // Set of "row,col" keys selected in the extraction table view (null = none)
   selectedId: null,        // currently selected entry id
+  tempAnchor: null,        // { entryId, nodeId, faded } | null — the selected entry's
+                           // remembered would-be position in a filter node it doesn't
+                           // actually match, set whenever the active tree node changes
+                           // (tree row click or Ctrl+Arrow tree nav) while that entry
+                           // isn't a member of the new node's own result (see
+                           // FEATURE_BACKLOG #18, computeTempAnchorForNode/
+                           // applyTempAnchorOnActiveNodeSwitch, spliceTempAnchor).
   logMultiSelect: new Set(), // entry ids multi-selected in the log view (Filter/Highlight), via Ctrl+click (toggle) or Shift+click (range) — Ctrl+C copies these (falling back to just selectedId when empty) as raw log lines; see copyLogSelectionToClipboard
   multiSelect: new Set(),  // node ids selected via checkbox/Ctrl+click in the tree, for bulk actions (merge/AND/OR)
   sortColumn: null,        // active log-table sort column: "time" | "level" | "thread" | "location" | null (chronological)
@@ -6357,7 +6470,14 @@ function showFhTab(tab) {
 }
 
 // The single entry point for the three-way toggle: view is "highlight"
-// (Full), "filter" (Filtered), or "stacked".
+// (Full), "filter" (Filtered), or "stacked". NOTE: also called internally by
+// revealFilteredView() as a side effect of plain tree navigation (a filter
+// becoming active auto-reveals the Filtered pane) — clearing a Ctrl+0/
+// Ctrl+Arrow-forced sidebar peek (FEATURE_BACKLOG.md #18) does NOT belong
+// here, or that automatic reveal would immediately cancel a peek the same
+// keypress just set. Only the PERSON explicitly choosing a view (the
+// Ctrl+1/2/3 shortcuts, the #fhTabs click listener) clears it — see those
+// call sites instead.
 function applyFhView(view) {
   if (view === "stacked") {
     fhLayout = "stacked";
@@ -6409,7 +6529,7 @@ function revealFilteredView() {
 let lastActiveIdForReveal = null;
 fhTabs.addEventListener("click", ev => {
   const btn = ev.target.closest(".view-tab");
-  if (btn) applyFhView(btn.dataset.fhTab);
+  if (btn) { clearSidebarForcedPeek(); applyFhView(btn.dataset.fhTab); }
 });
 
 
@@ -6714,6 +6834,29 @@ function flattenTreeIds() {
 // entry-table selection, see applySelection). Up/Down step through the
 // flattened visual order; Left/Right jump to the parent/first child —
 // there's no collapse state to toggle here, every node is always expanded.
+// Whether `entry` is actually a member of `nodeId`'s own filtered result —
+// returns a ready-to-assign state.tempAnchor value (null if it IS a member,
+// no anchor needed). Shared by applyTempAnchorOnActiveNodeSwitch below,
+// itself called from both moveTreeSelection (Ctrl+Arrow tree nav) and the
+// "Files & Filters" tree row click (renderNode) — same mechanic, reused
+// wherever the active filter node changes while a row is selected
+// (FEATURE_BACKLOG #18).
+function computeTempAnchorForNode(nodeId, entry) {
+  if (!entry) return null;
+  return getEntries(nodeId).some(e => e.id === entry.id) ? null : { entryId: entry.id, nodeId, faded: false };
+}
+
+// Switching the active tree node doesn't touch the row selection/entries
+// view at all — the Filtered pane just keeps whatever row was already
+// selected — but it should still show that row as a temporary anchor the
+// moment the new node's list doesn't actually contain it. Clears any stale
+// anchor when nothing's selected or the new node DOES contain it.
+function applyTempAnchorOnActiveNodeSwitch(nodeId) {
+  const entry = state.selectedId ? entryIndex[state.selectedId] : null;
+  state.tempAnchor = entry ? computeTempAnchorForNode(nodeId, entry) : null;
+  if (state.tempAnchor && tempAnchorMode === "fade") scheduleTempAnchorFade();
+}
+
 function moveTreeSelection(key) {
   const ids = flattenTreeIds();
   if (ids.length === 0) return;
@@ -6732,6 +6875,7 @@ function moveTreeSelection(key) {
   }
   if (!targetId) return;
 
+  applyTempAnchorOnActiveNodeSwitch(targetId);
   state.multiSelect = new Set([targetId]);
   state.activeId = targetId;
   render();
@@ -7118,6 +7262,7 @@ function renderNode(id, depth) {
         lastTreeRowClickTime = now;
       }
     }
+    applyTempAnchorOnActiveNodeSwitch(id);
     state.activeId = id;
     state.focusRegion = "tree";
     render();
@@ -9434,6 +9579,81 @@ function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
 
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
+/* ===================== Temporary anchor rendering (FEATURE_BACKLOG #18) ===
+   Splices state.tempAnchor's entry into the Filtered table's own entry list
+   at its would-be chronological position, so it renders (and is reachable
+   by plain Up/Down) like any other row — see applyTempAnchorOnActiveNodeSwitch
+   above for how it gets set. The spliced object is a shallow copy flagged
+   _tempAnchor (never written into entryIndex/node.entries — purely a
+   render-time placeholder), so row rendering/click/context-menu code all
+   keep working against it unmodified. */
+
+// Where `entry` would sort into `list` by timestamp — the same chronological
+// order getVisibleEntries()/getEntries() already return, before any column
+// sort is layered on top (that sort, when active, is applied to the WHOLE
+// list including the spliced anchor right after — see renderTable — so it
+// ends up correctly positioned there too without any extra logic here).
+function tempAnchorInsertIndex(list, entry) {
+  let idx = 0;
+  while (idx < list.length && list[idx].ts <= entry.ts) idx++;
+  return idx;
+}
+
+function spliceTempAnchor(list) {
+  const a = state.tempAnchor;
+  if (!a || a.nodeId !== state.activeId) return list;
+  if (tempAnchorMode === "off" || (tempAnchorMode === "fade" && a.faded)) return list;
+  const entry = entryIndex[a.entryId];
+  if (!entry || list.some(e => e.id === entry.id)) return list;
+  const out = list.slice();
+  out.splice(tempAnchorInsertIndex(out, entry), 0, Object.assign({}, entry, { _tempAnchor: true }));
+  return out;
+}
+
+let tempAnchorFadeTimer = null;
+function clearTempAnchorFadeTimer() {
+  if (tempAnchorFadeTimer) { clearTimeout(tempAnchorFadeTimer); tempAnchorFadeTimer = null; }
+}
+
+// "Fade" mode: briefly shows the anchor row, collapses its OWN height to 0
+// as it fades (via .temp-anchor-fading's CSS transition), then removes just
+// that DOM row and drops it from state.tempAnchor/currentViewEntries —
+// matching Off's behavior of still remembering the position for Up/Down
+// (see moveSelection) without drawing it any more. Deliberately does NOT
+// call renderMainView() at the end — a full re-render there would re-run
+// captureViewAnchor/restoreViewAnchor's own "keep some anchor row in view"
+// heuristic, which doesn't know this ONE row is what just disappeared, and
+// could jump the scroll position somewhere else entirely — removing a
+// single already-collapsed-to-0-height row instead lets the surrounding
+// rows close up by exactly its own height, in whichever direction normal
+// document flow shifts them, and nothing else.
+function scheduleTempAnchorFade() {
+  clearTempAnchorFadeTimer();
+  if (tempAnchorMode !== "fade" || !state.tempAnchor) return;
+  tempAnchorFadeTimer = setTimeout(() => {
+    tempAnchorFadeTimer = null;
+    if (!state.tempAnchor) return;
+    const rowEl = tableRows.querySelector('.log-row.temp-anchor-row');
+    if (!rowEl) { state.tempAnchor.faded = true; return; } // scrolled out of the rendered window — nothing to animate, just drop the state
+    rowEl.style.height = rowEl.getBoundingClientRect().height + "px"; // pin the current height so the collapse below has something to transition FROM
+    rowEl.classList.add("temp-anchor-fading");
+    // Two nested rAFs: the height pin above and the collapse below must land
+    // in separate paint frames, or the browser coalesces them into one and
+    // the transition never visibly runs.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      rowEl.style.height = "0px";
+      rowEl.style.opacity = "0";
+    }));
+    setTimeout(() => {
+      if (!state.tempAnchor) return;
+      state.tempAnchor.faded = true;
+      const idx = currentViewEntries.findIndex(e => e._tempAnchor);
+      if (idx !== -1) currentViewEntries.splice(idx, 1);
+      rowEl.remove();
+    }, 300);
+  }, tempAnchorFadeSeconds * 1000);
+}
+
 // Set by the tail engine right before a live-update render:
 //   "bottom" — follow mode: scroll to the newest entry
 //   "keep"   — user is reading elsewhere: keep the scroll position untouched
@@ -9539,7 +9759,8 @@ function renderVisibleRows() {
     const row = document.createElement("div");
     let cls = "log-row row-grid " + levelClass(e.level) + (e.id === state.selectedId ? " selected" : "") +
       (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
-      (pinnedOnlyIds.has(e.id) ? " pinned-row" : "");
+      (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") +
+      (e._tempAnchor ? " temp-anchor-row" : "");
 
     let bracketHtml = "";
     // Highlight-rule matches (see computeHighlightMap) — shown here too now,
@@ -10049,9 +10270,33 @@ function renderSidebarRail() {
   sidebarRailEl.appendChild(label);
 }
 
+// FEATURE_BACKLOG.md #18, person-requested: Ctrl+0 (jump to the tree) and
+// Ctrl+Arrow (see the keydown handler's tree-forwarding block) should still
+// let you SEE the "Files & Filters" panel while navigating it by keyboard,
+// even while it's collapsed — without permanently expanding it. Reuses the
+// exact same `.peeking` overlay a mouse hover already shows (same CSS, same
+// icon swap), just kept open regardless of the mouse until the person
+// switches Full/Filtered/Stacked view (applyFhView, both the Ctrl+1/2/3
+// shortcuts and a click on the view tabs funnel through it) or clicks
+// anywhere outside the sidebar (see the document-level click listener).
+let sidebarForcedPeek = false;
+function setSidebarForcedPeek() {
+  if (!isSidebarCollapsed()) return; // already visible — nothing to force
+  sidebarForcedPeek = true;
+  sidebarEl.classList.add("peeking");
+  updateSidebarToggleIcon();
+}
+function clearSidebarForcedPeek() {
+  if (!sidebarForcedPeek) return;
+  sidebarForcedPeek = false;
+  if (isSidebarCollapsed()) sidebarEl.classList.remove("peeking");
+  updateSidebarToggleIcon();
+}
+
 function toggleSidebarCollapsed(collapsed) {
   if (collapsed === undefined) collapsed = !isSidebarCollapsed();
   sidebarEl.classList.remove("peeking");
+  sidebarForcedPeek = false;
   if (collapsed) {
     sidebarLastWidth = sidebarEl.getBoundingClientRect().width || sidebarLastWidth;
     sidebarEl.classList.add("collapsed");
@@ -10079,7 +10324,7 @@ sidebarEl.addEventListener("mouseenter", () => {
   updateSidebarToggleIcon();
 });
 sidebarEl.addEventListener("mouseleave", () => {
-  if (!isSidebarCollapsed()) return;
+  if (!isSidebarCollapsed() || sidebarForcedPeek) return; // a forced peek only ends via clearSidebarForcedPeek
   sidebarEl.classList.remove("peeking");
   updateSidebarToggleIcon();
 });
@@ -10855,6 +11100,9 @@ function applySelection(entryId) {
   const previousId = state.selectedId;
   state.selectedId = entryId;
   state.focusRegion = "entries";
+  // A no-match temp anchor (FEATURE_BACKLOG #18) is only meaningful for the
+  // exact entry it was created for — any OTHER real selection drops it.
+  if (state.tempAnchor && state.tempAnchor.entryId !== entryId) state.tempAnchor = null;
   // Picking a row means the user wants to look at *this* entry — stop the
   // view from being yanked to the bottom by incoming tailed entries. Checks
   // both views (FEATURE_BACKLOG #25): a row click in the Highlight/Full view
@@ -10995,6 +11243,18 @@ function moveSelection(delta) {
   const entries = currentViewEntries;
   if (entries.length === 0) return;
   let idx = state.selectedId ? entries.findIndex(e => e.id === state.selectedId) : -1;
+  // A temp anchor not currently drawn (Off mode, or Fade after it faded —
+  // see spliceTempAnchor) isn't in `entries` at all, so the findIndex above
+  // misses it — recover its remembered would-be position here so Up/Down
+  // still act as if it were really there (FEATURE_BACKLOG #18).
+  if (idx === -1 && state.selectedId && state.tempAnchor &&
+      state.tempAnchor.entryId === state.selectedId && state.tempAnchor.nodeId === state.activeId) {
+    const anchorEntry = entryIndex[state.tempAnchor.entryId];
+    if (anchorEntry) {
+      const insertIdx = tempAnchorInsertIndex(entries, anchorEntry);
+      idx = delta > 0 ? insertIdx - 1 : insertIdx; // land on the correct-side neighbor, since insertIdx itself isn't a real row
+    }
+  }
   idx = idx === -1 ? (delta > 0 ? 0 : entries.length - 1) : Math.min(entries.length - 1, Math.max(0, idx + delta));
   selectEntry(entries[idx].id, { scroll: true, index: idx });
 }
@@ -11078,7 +11338,7 @@ function toggleBookmark(entryId) {
   // the Filtered view showing the stale pre-change set until some UNRELATED
   // full render happened to run.
   if (state.pinBookmarksInFilteredView) {
-    currentViewEntries = getVisibleEntries();
+    currentViewEntries = spliceTempAnchor(getVisibleEntries());
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
     tableRowOffsets = state.multilineMessages ? buildRowOffsets(currentViewEntries) : null;
     tableSpacer.style.height = ((state.multilineMessages ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
@@ -11551,7 +11811,7 @@ function renderTable() {
   // special-cased transition).
   const scrollAnchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
 
-  currentViewEntries = getVisibleEntries();
+  currentViewEntries = spliceTempAnchor(getVisibleEntries());
   // Captured before the optional column-sort copy below: the minimap buckets
   // by entry.ts directly, so it needs the real chronological list regardless
   // of what order the table itself ends up sorted into.
@@ -13067,11 +13327,12 @@ function buildNumericExtractPattern(message) {
 // numeric content (most Method/Thread values, or a message that's plain
 // text) falls back to the exact literal text instead of doing nothing, so
 // the action is useful there too: "find this exact line again."
-el("#ctxFilterForColumn").addEventListener("click", ev => {
-  ev.stopPropagation();
-  const entry = ctxEntry;
-  const column = ctxFilterColumn;
-  closeContextMenu();
+// Shared by the click handler right below and Alt+Enter (FEATURE_BACKLOG
+// #18, "extraction dialog directly from the currently selected row" — no
+// mouse event there to resolve a clicked column from, so it's always called
+// with the message column, the one every entry always has meaningful text
+// in, same as the mouse path's own no-numeric-content fallback target).
+function openFilterForEntryColumn(entry, column) {
   if (!entry || !state.activeId) return;
   const value = textColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
@@ -13082,6 +13343,14 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
   renderFilterColumnChips();
   updateExtractAvailability();
   evaluateLiveMatch();
+}
+
+el("#ctxFilterForColumn").addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  const column = ctxFilterColumn;
+  closeContextMenu();
+  openFilterForEntryColumn(entry, column);
 });
 
 /* ===================== Highlight-colour picker =====================
@@ -14681,6 +14950,10 @@ document.addEventListener("click", ev => {
   if (!shortcutsPanel.contains(ev.target) && !btnShortcuts.contains(ev.target)) closeShortcutsPanel();
   if (!licensePanel.contains(ev.target) && !btnLicense.contains(ev.target)) closeLicensePanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
+  // FEATURE_BACKLOG.md #18: a Ctrl+0/Ctrl+Arrow-forced sidebar peek also ends
+  // on a click anywhere outside the sidebar itself — a click ON a tree row is
+  // deliberately NOT treated as "outside" (still navigating the tree).
+  if (sidebarForcedPeek && !sidebarEl.contains(ev.target)) clearSidebarForcedPeek();
 });
 
 /* ===================== Keyboard shortcuts ===================== */
@@ -14722,6 +14995,24 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (inInput) return; // let normal copy/paste and text-cursor movement happen inside text inputs
+
+  // FEATURE_BACKLOG.md #18, person-requested: Ctrl+Arrow forwards straight
+  // to "Files & Filters" tree navigation (moveTreeSelection) WITHOUT taking
+  // focus away from whichever Log view the person is currently in —
+  // state.focusRegion is deliberately left untouched here, unlike the plain
+  // (non-Ctrl) tree-arrow-nav block right below, so plain arrow keys keep
+  // moving rows/tree exactly as they did before this was pressed. Checked
+  // ahead of that block (and everything else) so it always takes priority
+  // once Ctrl/Cmd is held, regardless of which region currently has focus.
+  // If the sidebar happens to be collapsed, also force-peeks it open so the
+  // navigation is actually visible (setSidebarForcedPeek).
+  if ((ev.ctrlKey || ev.metaKey) &&
+      (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
+    ev.preventDefault();
+    setSidebarForcedPeek();
+    moveTreeSelection(ev.key);
+    return;
+  }
 
   if (state.focusRegion === "tree" &&
       (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
@@ -14781,11 +15072,16 @@ document.addEventListener("keydown", ev => {
     ev.preventDefault();
     if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
     state.focusRegion = "tree";
+    // FEATURE_BACKLOG.md #18, person-requested: jumping focus into a
+    // COLLAPSED tree would otherwise be invisible — force-peek it open the
+    // same way Ctrl+Arrow does (see setSidebarForcedPeek).
+    setSidebarForcedPeek();
     render();
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "1") {
     ev.preventDefault();
+    clearSidebarForcedPeek();
     applyFhView("highlight");
     state.entriesView = "highlight";
     state.focusRegion = "entries";
@@ -14793,6 +15089,7 @@ document.addEventListener("keydown", ev => {
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "2") {
     ev.preventDefault();
+    clearSidebarForcedPeek();
     applyFhView("filter");
     state.entriesView = "filter";
     state.focusRegion = "entries";
@@ -14800,6 +15097,7 @@ document.addEventListener("keydown", ev => {
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "3") {
     ev.preventDefault();
+    clearSidebarForcedPeek();
     applyFhView("stacked");
     state.entriesView = "filter";
     state.focusRegion = "entries";
@@ -14824,12 +15122,29 @@ document.addEventListener("keydown", ev => {
   // state. Only fires for a single selection — with a multi-select active
   // (state.logMultiSelect) Enter has no obvious single target, so it's left
   // alone.
-  if (ev.key === "Enter" && state.focusRegion === "entries" && state.entriesView === "filter" &&
+  if (ev.key === "Enter" && !ev.altKey && state.focusRegion === "entries" && state.entriesView === "filter" &&
       state.selectedId && !state.logMultiSelect.size) {
     const entry = entryIndex[state.selectedId];
     if (entry) {
       ev.preventDefault();
       revealInHighlightView(entry);
+    }
+    return;
+  }
+
+  // FEATURE_BACKLOG.md #18, "Alt+Enter extraction" — opens the same "Filter
+  // for this ___" popup a right-click does (see openFilterForEntryColumn),
+  // directly from the currently selected row, in Full OR Filtered view alike
+  // (unlike plain Enter above, not restricted to entriesView === "filter").
+  // Always targets the message column: there's no mouse event here to
+  // resolve a clicked column from, and message is the one column every
+  // entry always has meaningful text in (same fallback the mouse path uses).
+  if (ev.key === "Enter" && ev.altKey && state.focusRegion === "entries" && state.selectedId) {
+    const entry = entryIndex[state.selectedId];
+    if (entry) {
+      ev.preventDefault();
+      const messageColumn = TEXT_FILTER_COLUMNS.find(c => c.key === "message");
+      openFilterForEntryColumn(entry, messageColumn);
     }
     return;
   }
@@ -16218,6 +16533,7 @@ initHoverExpandSettings();
 initHoverChildNavSettings();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();
+initTempAnchorSettings();
 initCollapsePanels();
 initFhView();
 render();
