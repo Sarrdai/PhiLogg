@@ -61,7 +61,6 @@ this point.
 
 ### Settings & UI polish
 
-37. **Fix filter-chain layout when "Level bar creates filter tree nodes" is set to "explicit" (manual)** — the extra "Add to tree" button that mode shows breaks/shifts the layout.
 38. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
 40. **Fix Settings view scroll performance** — currently noticeably janky.
 42+44. **Font size and overall UI scale, independently configurable** — "Change Font Size" currently appears to scale the whole UI; split into two separate settings, one for log/text font size, one for overall UI scale.
