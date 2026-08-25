@@ -10045,6 +10045,34 @@ await withApp(async (w, d, T) => {
   assert(tableBody.scrollTop === 3000, "...and the Filtered view is brought along too (one shared follow state)");
 });
 
+await withApp(async (w, d, T) => {
+  section("103. Re-clicking the already-active filter in the tree (after a dblclick jumped to Full) still reveals the Filtered view");
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const nodeA = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = nodeA.id;
+  w.render();
+
+  const rowFor = id => [...d.querySelectorAll(".tree-row")].find(r => r.dataset.nodeId === id);
+
+  assert(T.fhActiveTab === "filter", "sanity: selecting the filter starts out on the Filtered tab");
+  w.applyFhView("highlight");
+  assert(T.fhActiveTab === "highlight", "sanity: jumped to Full (e.g. via double-click on a Filtered row)");
+
+  // activeId is already nodeA — clicking its own tree row again does NOT
+  // change state.activeId, so render()'s activeId-changed check
+  // (lastActiveIdForReveal) alone would never fire. Regression for the bug
+  // where clicking an already-selected filter left the user stuck on Full.
+  fireClick(rowFor(nodeA.id), w);
+  assert(T.state.activeId === nodeA.id, "sanity: activeId unchanged — same filter clicked again");
+  assert(T.fhActiveTab === "filter", "re-clicking the already-active filter still jumps Full -> Filtered");
+
+  /* ---------- Stacked: re-clicking the same filter does NOT change fhLayout ---------- */
+  w.applyFhView("stacked");
+  fireClick(rowFor(nodeA.id), w);
+  assert(T.fhLayout === "stacked", "Stacked stays unchanged when re-clicking the already-active filter");
+});
+
 /* ============================================================
    GROUP 98 — Settings "Behavior" section split into subsections
    (FEATURE_BACKLOG.md #30). Appearance/Log Formats already grouped their
@@ -11943,6 +11971,13 @@ process.exit(failed ? 1 : 0);
               whenever "explicit" (Manual) level-filter-tree mode revealed
               it. Also added a matching float assertion inline in Group 94
               where the button's visibility toggle is already exercised.
+
+   Group 103 — this session (2026-08-25), bugfix: re-clicking the
+              already-active filter in the Files & Filter Tree now reveals
+              the Filtered view too, mirroring the existing switch-filter
+              auto-reveal. Previously only a real activeId change triggered
+              render()'s reveal check, so clicking the same filter again
+              after a double-click-to-Full jump left the user stuck on Full.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
