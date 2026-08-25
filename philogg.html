@@ -65,6 +65,12 @@
     --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
     --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
+    /* Color-mark gutter (see updateColorMarkGutter): width of the .hl-markers
+       lane, sized for the true max number of simultaneous colored-filter
+       matches any one row reaches across the whole file, so N marks always
+       fit without clipping. Recomputed whenever that max changes; 3px here
+       (room for exactly one mark) is just the pre-JS fallback. */
+    --color-mark-w:3px;
   }
 
   /* Theme overrides, selected via [data-theme="..."] on <html> — see the
@@ -1037,7 +1043,15 @@
   #tableBody{overflow-x:auto;}
   #highlightBody{overflow-x:hidden;}
   #tableSpacer, #highlightSpacer{position:relative; width:100%;}
-  #tableRows, #highlightRows{position:absolute; top:0; left:0; right:0; box-sizing:border-box; padding:2px 16px 20px 14px;}
+  /* Left padding is a fixed 14px base gutter (bookmark icon lane + at least
+     one color mark) plus however much extra room --color-mark-w needs beyond
+     its own single-mark default of 3px (see updateColorMarkGutter) — grows
+     leftward, away from the row content, as the true max simultaneous color
+     count goes up, so N marks always fit instead of overlapping col-bar. */
+  #tableRows, #highlightRows{
+    position:absolute; top:0; left:0; right:0; box-sizing:border-box;
+    padding:2px 16px 20px calc(26px + (var(--color-mark-w) - 3px));
+  }
 
   /* Highlight-rule match markers: thin stripes in the row's left gutter, one
      per matching rule (session 6 — no colour
@@ -1047,9 +1061,32 @@
      Shares the same left:-9px gutter slot as .ctx-bracket; a row that's
      both part of an active context filter AND highlight-matched will show
      both markers overlapping — a known, accepted edge case rather than a
-     second gutter lane. */
-  .hl-markers{position:absolute; left:-9px; top:0; bottom:0; display:flex; gap:1px; pointer-events:none;}
-  .hl-marker{width:3px; align-self:stretch; border-radius:1px;}
+     second gutter lane. Width is --color-mark-w (see updateColorMarkGutter):
+     the lane's RIGHT edge (nearest the row content) stays fixed at -9px/-6px
+     regardless of count, and it grows further LEFT as the true max
+     simultaneous color count goes up — #tableRows/#highlightRows' own left
+     padding grows by the same amount, so extra marks never clip into
+     col-bar. */
+  .hl-markers{
+    position:absolute; left:calc(-9px - (var(--color-mark-w) - 3px)); top:0; bottom:0;
+    width:var(--color-mark-w); display:flex; gap:1px; pointer-events:none; overflow:hidden;
+  }
+  .hl-marker{width:3px; flex:0 0 auto; align-self:stretch; border-radius:1px;}
+
+  /* Bookmark icon lane (Task A, person-reported regression follow-up): a
+     purely visual full-height column left of the color-mark lane above,
+     showing ICON_BOOKMARK_FILLED in the theme's accent/highlight color
+     whenever state.bookmarks.has(entry.id) — replaces the old per-row
+     .row-bookmark-dot corner glyph that was removed when bookmarks became a
+     filter-tree node (d815203), which left a bookmarked row visually
+     indistinguishable from any other unless the Bookmarks node itself had a
+     color assigned. Its left offset chains off --color-mark-w the same way
+     .hl-markers does, so it stays clear of it as the color-mark lane grows. */
+  .col-bookmark-icon{
+    position:absolute; left:calc(-9px - (var(--color-mark-w) - 3px) - 14px); top:0; bottom:0; width:10px;
+    display:flex; align-items:center; justify-content:center; color:var(--accent); pointer-events:none;
+  }
+  .col-bookmark-icon svg{width:10px; height:10px;}
 
   /* Text-filter match highlighting (Settings -> Behavior) — unrelated to the
      highlight-RULE markers above (.hl-marker/.hl-markers, a per-node gutter
@@ -6651,6 +6688,7 @@ function renderMainView() {
   // so the repeat call is cheap).
   // (renderHighlightView is told below not to recompute it a second time.)
   highlightColorMap = computeHighlightMap(getRootFileId(state.activeId));
+  updateColorMarkGutter();
   // Detail panel isn't tied to the Filter view specifically — it already
   // sources from the global state.selectedId (see updateDetailPanel) — so it
   // applies to the link view exactly as it does to the plain table view now
@@ -9536,6 +9574,15 @@ function scheduleTempAnchorFade() {
       state.tempAnchor.faded = true;
       const idx = currentViewEntries.findIndex(e => e._tempAnchor);
       if (idx !== -1) currentViewEntries.splice(idx, 1);
+      // The fading row's own note-row (appendNoteRow) is a separate sibling
+      // element, not a child of rowEl — removing rowEl alone left it behind,
+      // orphaned under nothing once the entry it belonged to was gone
+      // (person-reported). It's always rendered immediately after its entry's
+      // row (see renderVisibleRows), so it's rowEl's next sibling here too.
+      const noteEl = rowEl.nextElementSibling;
+      if (noteEl && noteEl.classList.contains("note-row") && noteEl.dataset.entryId === rowEl.dataset.entryId) {
+        noteEl.remove();
+      }
       rowEl.remove();
     }, 300);
   }, tempAnchorFadeSeconds * 1000);
@@ -9698,6 +9745,7 @@ function renderVisibleRows() {
     row.dataset.entryId = e.id;
     row.innerHTML =
       bracketHtml +
+      (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
       '<span class="col-bar"></span>' +
       '<span class="col-time">' + timeHtml + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
@@ -9755,6 +9803,32 @@ function appendNoteRow(frag, e) {
 let currentHighlightViewEntries = [];
 let highlightColorMap = new Map(); // entry id -> [colours...], recomputed each render, see computeHighlightMap
 let lastHighlightRootId = null;
+
+// Cached "current max simultaneous color count for this file" (Task B) —
+// the highest number of distinct colored-filter matches any single entry in
+// highlightColorMap reaches. Row rendering never scans the whole map itself
+// (that would mean an O(entries) pass on every single virtualized row
+// render, same reasoning invalidateAllCaches's own comment gives for not
+// recomputing per-row); instead this is recomputed once, right alongside
+// highlightColorMap itself, and rows just read the cached value + CSS var to
+// size their own color-mark lane consistently (see --color-mark-w/.hl-markers).
+let maxSimultaneousColorCount = 0;
+
+// Recomputes maxSimultaneousColorCount from the just-(re)computed
+// highlightColorMap and pushes it out as the --color-mark-w CSS var, which
+// both #tableRows/#highlightRows (left padding) and .hl-markers (lane width)
+// key off — so the gutter rescales live wherever this is called from:
+// whenever highlightColorMap itself is (re)computed (renderMainView,
+// renderHighlightView) and from toggleBookmark (Task C: a bookmark add/
+// remove changes the auto-managed Bookmarks node's membership, which is
+// exactly what highlightColorMap/this count depend on).
+function updateColorMarkGutter() {
+  let max = 0;
+  highlightColorMap.forEach(colors => { if (colors.length > max) max = colors.length; });
+  maxSimultaneousColorCount = max;
+  const w = max > 0 ? (max * 3 + (max - 1) * 1) : 3; // 3px per mark + 1px gap, matches .hl-marker/.hl-markers
+  document.documentElement.style.setProperty("--color-mark-w", w + "px");
+}
 
 // Walks every filter-type node under `fileId` (not just the active chain —
 // a highlight rule anywhere in the tree should show up) and, for each one
@@ -9822,7 +9896,7 @@ function renderHighlightView(colorMapIsFresh) {
   highlightRowOffsets = needsRowOffsets() ? buildRowOffsets(currentHighlightViewEntries) : null;
   highlightSpacer.style.height =
     ((needsRowOffsets() ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
-  if (!colorMapIsFresh) highlightColorMap = computeHighlightMap(rootId);
+  if (!colorMapIsFresh) { highlightColorMap = computeHighlightMap(rootId); updateColorMarkGutter(); }
 
   if (state.highlightScrollTargetId) {
     const targetId = state.highlightScrollTargetId;
@@ -9903,6 +9977,7 @@ function renderHighlightVisibleRows() {
     row.dataset.entryId = e.id;
     row.innerHTML =
       markerHtml +
+      (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
       '<span class="col-bar"></span>' +
       '<span class="col-time">' + escapeHtml(formatTime(e.ts)) + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
@@ -11376,6 +11451,19 @@ function toggleBookmark(entryId) {
   const rootId = findRootIdForEntry(entryId);
   if (rootId) syncBookmarksFilterNode(rootId);
   renderTree(); // repaint the sidebar in case the auto "Bookmarks" node just appeared/disappeared
+  // Bug fix (person-reported): a bookmark add/remove changes membership of
+  // the auto-managed "Bookmarks" filter node, which is exactly what
+  // highlightColorMap's color-marks (and Task B's max-simultaneous-count
+  // gutter width) depend on — but this function repaints row DOM directly
+  // below instead of going through renderMainView, so without this the
+  // color-mark stayed stale until some unrelated full render happened to run
+  // (e.g. switching Full <-> Filtered). Only recompute when the toggled
+  // entry's file is the one actually on screen — cheap, and the map is
+  // meaningless for any other root anyway.
+  if (rootId && rootId === getRootFileId(state.activeId)) {
+    highlightColorMap = computeHighlightMap(rootId);
+    updateColorMarkGutter();
+  }
   // While pin mode is on, a bookmark change can change WHICH rows belong in
   // the Filtered view (a newly bookmarked entry outside the filter needs to
   // be added; unbookmarking a pinned-only entry needs to drop its row) — so
