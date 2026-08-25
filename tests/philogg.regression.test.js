@@ -136,6 +136,9 @@ async function withApp(run, opts = {}) {
       get textMatchHighlightInDetail() { return textMatchHighlightInDetail; },
       get levelFilterTreeMode() { return levelFilterTreeMode; },
       set levelFilterTreeMode(v) { levelFilterTreeMode = v; },
+      get tempAnchorMode() { return tempAnchorMode; },
+      get tempAnchorFadeSeconds() { return tempAnchorFadeSeconds; },
+      get sidebarForcedPeek() { return sidebarForcedPeek; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -10209,6 +10212,212 @@ await withApp(async (w, d, T) => {
   fireClick(quitCb, w);
   assert(quitCb.checked === !before, "the relocated quit-on-close switch still toggles");
   fireClick(quitCb, w); // restore
+});
+
+/* ============================================================
+   GROUP 99 — Ctrl+0/Ctrl+Arrow tree peek+nav, Alt+Enter extraction, and the
+   temporary anchor (FEATURE_BACKLOG.md #18, person-requested; a prior
+   in-session design built a centered/keyboard-navigable breadcrumb flyout
+   popup for this instead — reverted after trying it live, replaced with
+   this simpler "forward Ctrl+Arrow straight to the existing Files & Filters
+   tree" approach; the breadcrumb hover flyout itself is UNCHANGED from
+   before this session, see GROUP 92).
+
+   - Ctrl+0 keeps its existing "focus the tree" behavior, and ADDITIONALLY
+     force-peeks the panel open (setSidebarForcedPeek) if it's collapsed —
+     same visual .peeking overlay a mouse hover already shows, just not
+     closed by mouseleave.
+   - Ctrl+Arrow forwards straight to moveTreeSelection WITHOUT touching
+     state.focusRegion — the Log view stays "focused" for plain arrow keys —
+     and also force-peeks a collapsed panel.
+   - A forced peek is cleared by switching Full/Filtered/Stacked view
+     (applyFhView, Ctrl+1/2/3 or a tab click) or by clicking outside the
+     sidebar.
+   - Alt+Enter opens "Filter for this message" for the selected row directly
+     (openFilterForEntryColumn, shared with the right-click menu item).
+   - The temporary anchor (state.tempAnchor): switching the active filter —
+     via a tree row click OR Ctrl+Arrow tree nav, the only two ways to do
+     that now — while the selected row doesn't match the new filter shows it
+     at its would-be position instead of losing it, per
+     #settingsTempAnchorMode (Off/Persistent/Fade, its fade-duration row
+     only shown for Fade).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("99. Ctrl+0/Ctrl+Arrow tree peek+nav, Alt+Enter, temporary anchor");
+
+  // messages: "message 0 keep", "message 1 skip", "message 2 keep", ...
+  const f = await w.addFile("app.log", makeLog(0, 5, { suffix: i => (i % 2 === 0 ? "keep" : "skip") }), () => {});
+  const keepFilter = w.createFilterNode(f.id, "text", "keep"); // matches entries 0,2,4
+  const skipFilter = w.createFilterNode(f.id, "text", "skip"); // matches entries 1,3
+  w.render();
+
+  const sidebarEl = d.querySelector("#sidebar");
+  const highlightRow = i => d.querySelectorAll("#highlightRows .log-row")[i];
+
+  // --- Ctrl+0: unchanged while expanded, force-peeks once collapsed ---
+  T.state.activeId = keepFilter.id;
+  w.render();
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  assert(T.state.focusRegion === "tree", "Ctrl+0 still moves focus to the tree, exactly as before");
+  assert(!sidebarEl.classList.contains("peeking") && T.sidebarForcedPeek === false,
+    "...and does nothing extra while the panel is already expanded");
+
+  w.toggleSidebarCollapsed(true);
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  assert(sidebarEl.classList.contains("peeking") && T.sidebarForcedPeek === true,
+    "Ctrl+0 force-peeks the panel open once it's collapsed");
+
+  // --- Ctrl+Arrow forwards to tree navigation WITHOUT taking focus away
+  //     from the current Log view ---
+  T.state.focusRegion = "entries";
+  w.toggleSidebarCollapsed(true); // re-collapse — also clears the forced peek
+  assert(T.sidebarForcedPeek === false, "manually toggling the panel clears any forced peek");
+
+  fireKeydown(d, w, "ArrowDown", { ctrlKey: true });
+  assert(T.sidebarForcedPeek === true && sidebarEl.classList.contains("peeking"),
+    "Ctrl+ArrowDown force-peeks a collapsed panel too");
+  assert(T.state.focusRegion === "entries",
+    "...but does NOT switch focus into the tree — it stays wherever it was");
+  assert(T.state.activeId === skipFilter.id, "...while still moving the tree selection itself (keepFilter -> skipFilter)");
+
+  fireKeydown(d, w, "ArrowUp", { ctrlKey: true });
+  assert(T.state.activeId === keepFilter.id, "Ctrl+ArrowUp moves it back");
+  assert(T.state.focusRegion === "entries", "focus still hasn't moved");
+
+  // --- The peek persists across further Ctrl+Arrow presses, only clearing
+  //     on a view switch or a click outside the sidebar ---
+  fireKeydown(d, w, "1", { ctrlKey: true }); // Ctrl+1 -> Full view, via applyFhView
+  assert(T.sidebarForcedPeek === false, "switching to the Full view (Ctrl+1) clears the forced peek");
+  assert(!sidebarEl.classList.contains("peeking"), "...and the panel collapses back to its rail");
+
+  w.toggleSidebarCollapsed(true);
+  fireKeydown(d, w, "ArrowDown", { ctrlKey: true });
+  assert(T.sidebarForcedPeek === true, "sanity: forced peek is back on");
+  fireClick(d.body, w);
+  assert(T.sidebarForcedPeek === false, "a click outside the sidebar also clears the forced peek");
+  w.toggleSidebarCollapsed(false); // re-expand for the rest of this group
+
+  // --- Alt+Enter opens "Filter for this message" for the selected row,
+  //     in both Full and Filtered view ---
+  w.applyFhView("highlight");
+  T.state.entriesView = "highlight";
+  fireClick(highlightRow(0), w); // "message 0 keep"
+  fireKeydown(d, w, "Enter", { altKey: true });
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Alt+Enter opens the filter popup from the Full view");
+  assert(d.querySelector("#filterInput").value === "message [value:int] keep", "prefilled with the message column's numeric-wildcard pattern");
+  assert(d.querySelector('.column-chip[data-col="message"]').classList.contains("active"), "message column pre-selected (no mouse event to resolve one from)");
+  w.closeFilterPopup();
+  d.querySelector("#filterInput").blur(); // openFilterPopup() focuses it; left focused would swallow every keydown below as "typing" (inInput guard)
+
+  T.state.activeId = keepFilter.id;
+  T.state.entriesView = "filter";
+  w.render();
+  fireClick(d.querySelectorAll("#tableRows .log-row")[0], w); // "message 0 keep" in the Filtered view
+  fireKeydown(d, w, "Enter", { altKey: true });
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Alt+Enter also works from the Filtered view");
+  w.closeFilterPopup();
+  d.querySelector("#filterInput").blur();
+
+  // Regression: plain Enter (no Alt) in the Filtered view still does its
+  // existing job (reveal Highlight view on the row) instead of Alt+Enter's.
+  T.state.entriesView = "filter";
+  w.render();
+  fireClick(d.querySelectorAll("#tableRows .log-row")[0], w);
+  fireKeydown(d, w, "Enter");
+  assert(T.state.entriesView === "highlight", "plain Enter on a Filtered row still reveals the Highlight view, unaffected by the new Alt+Enter branch");
+
+  // --- Temporary anchor: switching the active filter — via a tree row
+  //     click OR Ctrl+Arrow tree nav — while the selected row doesn't
+  //     match the new filter ---
+  w.applyFhView("highlight");
+  T.state.entriesView = "highlight";
+  fireClick(highlightRow(1), w); // "message 1 skip" — not a member of keepFilter
+  const skip1Id = T.state.selectedId;
+  assert(!!skip1Id, "sanity: clicking a Full-view row selects it");
+
+  T.state.activeId = skipFilter.id; // start somewhere that DOES match
+  w.render();
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(T.state.activeId === keepFilter.id, "clicking the tree row switches the active node as usual");
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id && T.state.tempAnchor.nodeId === keepFilter.id,
+    "...and anchors the still-selected row at its would-be position, since 'keep' doesn't match it");
+
+  let anchorRow = d.querySelector("#tableRows .log-row.temp-anchor-row");
+  assert(anchorRow && anchorRow.dataset.entryId === skip1Id, "Persistent mode (default) draws the temp anchor row in the Filtered table");
+  const rows = [...d.querySelectorAll("#tableRows .log-row")].map(r => r.dataset.entryId);
+  assert(rows.indexOf(anchorRow.dataset.entryId) === 1,
+    "the anchor sits between 'keep 0' and 'keep 2' chronologically (would-be position), got index " + rows.indexOf(anchorRow.dataset.entryId));
+
+  fireClick(d.querySelector('.tree-row[data-node-id="' + skipFilter.id + '"]'), w);
+  assert(T.state.tempAnchor === null, "clicking into a filter that DOES match the selected row clears the anchor");
+
+  // Same mechanic via Ctrl+Arrow tree navigation, not just a mouse click.
+  T.state.activeId = skipFilter.id;
+  T.state.selectedId = skip1Id;
+  T.state.tempAnchor = null;
+  w.render();
+  fireKeydown(d, w, "ArrowUp", { ctrlKey: true }); // skipFilter -> keepFilter (flattened tree order)
+  assert(T.state.activeId === keepFilter.id, "sanity: Ctrl+ArrowUp moved onto keepFilter");
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id && T.state.tempAnchor.nodeId === keepFilter.id,
+    "Ctrl+Arrow tree navigation applies the SAME anchor mechanic as a tree row click");
+
+  // --- Fade-duration row visibility: only shown for the Fade mode ---
+  const modeSelect = d.querySelector("#settingsTempAnchorMode");
+  assert(d.querySelector("#settingsTempAnchorFadeRow").style.display === "none",
+    "the fade-duration row is hidden while mode is Persistent (the default)");
+
+  // --- Off mode: never drawn, but Up/Down still respect its position ---
+  modeSelect.value = "off";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.tempAnchorMode === "off", "mode setting persisted");
+  assert(d.querySelector("#settingsTempAnchorFadeRow").style.display === "none", "...and the fade-duration row stays hidden for Off too");
+
+  T.state.activeId = skipFilter.id;
+  T.state.selectedId = skip1Id;
+  T.state.tempAnchor = null;
+  w.render();
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(d.querySelector("#tableRows .log-row.temp-anchor-row") === null, "Off mode never draws the anchor row");
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id, "...but the anchor position is still remembered");
+
+  // The tree click itself moves focus to the tree (existing, unchanged
+  // behavior) — put it back on the Log view to test plain row Up/Down here.
+  T.state.focusRegion = "entries";
+  fireKeydown(d, w, "ArrowDown"); // plain, no ctrl — ordinary row nav
+  const keep2Id = d.querySelectorAll("#tableRows .log-row")[1].dataset.entryId;
+  assert(T.state.selectedId === keep2Id, "Down from an off-mode (undrawn) anchor moves to the next REAL row after its position");
+
+  T.state.tempAnchor = { entryId: skip1Id, nodeId: keepFilter.id, faded: false };
+  T.state.selectedId = skip1Id;
+  w.render();
+  fireKeydown(d, w, "ArrowUp");
+  const keep0Id = d.querySelectorAll("#tableRows .log-row")[0].dataset.entryId;
+  assert(T.state.selectedId === keep0Id, "Up from the same anchor moves to the real row BEFORE its position");
+
+  // --- Fade mode: shown right after the switch, then removed once the
+  //     configured duration elapses — no jarring full re-render/scroll jump ---
+  w.applyTempAnchorFadeSeconds(0.5); // the stepper's own minimum
+  assert(d.querySelector("#tempAnchorFadeValue").textContent === "0.5s", "the fade-duration stepper shows the value without a % suffix, unlike Font Size");
+  modeSelect.value = "fade";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#settingsTempAnchorFadeRow").style.display !== "none", "the fade-duration row is shown once mode is Fade");
+
+  T.state.activeId = skipFilter.id;
+  T.state.selectedId = skip1Id;
+  T.state.tempAnchor = null;
+  w.render();
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(!!d.querySelector("#tableRows .log-row.temp-anchor-row"), "Fade mode draws the anchor row right after the switch");
+  const fadeTableBody = d.querySelector("#tableBody");
+  fadeTableBody.scrollTop = 5; // arbitrary non-zero value
+  const entriesLengthBeforeFade = T.currentViewEntries.length;
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  assert(d.querySelector("#tableRows .log-row.temp-anchor-row") === null, "...and removes it once the fade duration elapses");
+  assert(T.state.tempAnchor && T.state.tempAnchor.faded === true, "the position stays remembered (faded flag) after the fade completes");
+  assert(T.currentViewEntries.length === entriesLengthBeforeFade - 1,
+    "the faded anchor is dropped from the in-memory list too, kept in sync with the DOM removal");
+  assert(fadeTableBody.scrollTop === 5,
+    "the fade completing does NOT trigger a full re-render/scroll-anchor recompute that could jump the view — only that one row's own height collapses");
 });
 
 /* ============================================================
