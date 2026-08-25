@@ -3155,6 +3155,11 @@ const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
 const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
 const ICON_CLOCK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.3l2.2 1.3"/></svg>';
+// Recovered from the old per-row bookmark marker (removed in the "Bookmarks
+// rework" — see PROJECT.md) and reused as the "Bookmarks" filter-tree node's
+// own icon (nodeIconHTML/ghostIconFor) so it no longer falls through to
+// ICON_CLOCK, which stays exclusively for time-range filter nodes.
+const ICON_BOOKMARK_FILLED = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
 const ICON_CLOSE = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>';
 const ICON_TABLE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>';
 const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2.2v4.3c0 2 1.8 3 3.6 3M12 2.2v4.3c0 2-1.8 3-3.6 3v3.3"/><circle cx="4" cy="2.2" r="1.2"/><circle cx="12" cy="2.2" r="1.2"/><circle cx="8.4" cy="13.8" r="1.2"/></svg>';
@@ -6738,6 +6743,7 @@ function nodeIconHTML(node) {
     : node.filterType === "link" ? ICON_LINK
     : (node.filterType === "context" || node.filterType === "countContext") ? ICON_CONTEXT
     : node.filterType === "level" ? ICON_LEVEL
+    : node.filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
     : ICON_CLOCK;
 }
 
@@ -6883,6 +6889,7 @@ function ghostIconFor(filterType) {
     : filterType === "link" ? ICON_LINK
     : (filterType === "context" || filterType === "countContext") ? ICON_CONTEXT
     : filterType === "level" ? ICON_LEVEL
+    : filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
     : ICON_CLOCK;
 }
 
