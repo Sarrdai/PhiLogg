@@ -10270,37 +10270,55 @@ function renderSidebarRail() {
   sidebarRailEl.appendChild(label);
 }
 
-// FEATURE_BACKLOG.md #18, person-requested: Ctrl+0 (jump to the tree) and
-// Alt+Arrow (see the keydown handler's tree-forwarding block) should still
-// let you SEE the "Files & Filters" panel while navigating it by keyboard,
-// even while it's collapsed — without permanently expanding it. Reuses the
-// exact same `.peeking` overlay a mouse hover already shows (same CSS, same
-// icon swap), just kept open regardless of the mouse until the person
-// switches Full/Filtered/Stacked view (applyFhView, both the Ctrl+1/2/3
-// shortcuts and a click on the view tabs funnel through it), clicks
-// anywhere outside the sidebar (see the document-level click listener), or
-// releases Ctrl/Cmd (see the document-level keyup listener) — same-day
-// person-requested follow-up: since a forced peek only ever starts because
-// the sidebar WAS collapsed, releasing the key that triggered it should
-// close it back up again, exactly restoring the pre-peek state.
+// FEATURE_BACKLOG.md #18, person-requested (this and the same-day follow-up
+// right below): Ctrl+0 (jump to the tree) and Alt (held down, with or
+// without an arrow — see the keydown/keyup listeners further below) should
+// still let you SEE the "Files & Filters" panel while it's collapsed,
+// without permanently expanding it. Both reuse the exact same `.peeking`
+// overlay a mouse hover already shows (same CSS, same icon swap), just kept
+// open past what a hover alone would — but the two have different "how do I
+// close again" rules, so they're tracked as two independent flags rather
+// than one, combined only for the shared visual (updateSidebarPeekVisual):
+//   - sidebarForcedPeek (Ctrl+0): stays open until the person's focus
+//     genuinely leaves the panel — picking a filter (Enter on a tree node),
+//     switching Full/Filtered/Stacked view (Ctrl+1/2/3 or a tab click), or
+//     clicking anywhere outside the sidebar. Deliberately NOT tied to the
+//     Ctrl key's own press/release — releasing Ctrl right after Ctrl+0
+//     (the normal way to type it) must not immediately close what was just
+//     opened.
+//   - sidebarAltPeek (Alt, held): open for exactly as long as Alt is
+//     physically held down (altKeyPhysicallyDown, tracked by dedicated
+//     keydown/keyup listeners) — a plain "peek while held" toggle, letting
+//     you glance at the tree (optionally navigating it via Alt+Arrow) without
+//     committing to anything. The one exception: Alt+Enter's "Filter for
+//     this ___" dialog (openFilterForEntryColumn) can itself open while Alt
+//     is down — releasing Alt then must NOT close the panel out from under
+//     an open dialog, so the actual close is deferred to
+//     maybeCloseSidebarAltPeek(), checked on both Alt's own keyup AND the
+//     dialog's close (closeFilterPopup).
 let sidebarForcedPeek = false;
+let sidebarAltPeek = false;
+function updateSidebarPeekVisual() {
+  const shouldPeek = (sidebarForcedPeek || sidebarAltPeek) && isSidebarCollapsed();
+  sidebarEl.classList.toggle("peeking", shouldPeek);
+  updateSidebarToggleIcon();
+}
 function setSidebarForcedPeek() {
   if (!isSidebarCollapsed()) return; // already visible — nothing to force
   sidebarForcedPeek = true;
-  sidebarEl.classList.add("peeking");
-  updateSidebarToggleIcon();
+  updateSidebarPeekVisual();
 }
 function clearSidebarForcedPeek() {
   if (!sidebarForcedPeek) return;
   sidebarForcedPeek = false;
-  if (isSidebarCollapsed()) sidebarEl.classList.remove("peeking");
-  updateSidebarToggleIcon();
+  updateSidebarPeekVisual();
 }
 
 function toggleSidebarCollapsed(collapsed) {
   if (collapsed === undefined) collapsed = !isSidebarCollapsed();
   sidebarEl.classList.remove("peeking");
   sidebarForcedPeek = false;
+  sidebarAltPeek = false;
   if (collapsed) {
     sidebarLastWidth = sidebarEl.getBoundingClientRect().width || sidebarLastWidth;
     sidebarEl.classList.add("collapsed");
@@ -10328,11 +10346,43 @@ sidebarEl.addEventListener("mouseenter", () => {
   updateSidebarToggleIcon();
 });
 sidebarEl.addEventListener("mouseleave", () => {
-  if (!isSidebarCollapsed() || sidebarForcedPeek) return; // a forced peek only ends via clearSidebarForcedPeek
+  if (!isSidebarCollapsed() || sidebarForcedPeek || sidebarAltPeek) return; // a forced/Alt peek only ends via its own rules above
   sidebarEl.classList.remove("peeking");
   updateSidebarToggleIcon();
 });
 sidebarResizer.addEventListener("dblclick", () => toggleSidebarCollapsed());
+
+// Alt (held, with or without an arrow) peeks a collapsed sidebar open for
+// exactly as long as it's held — see sidebarAltPeek's own comment above.
+// Deliberately separate top-level listeners rather than folded into the
+// giant document keydown handler further below: this needs to fire even
+// while typing in an input (inInput there would otherwise skip it), and
+// key-repeat firing this again while already true is a harmless no-op.
+let altKeyPhysicallyDown = false;
+document.addEventListener("keydown", ev => {
+  if (ev.key !== "Alt") return;
+  altKeyPhysicallyDown = true;
+  if (!isSidebarCollapsed()) return;
+  sidebarAltPeek = true;
+  updateSidebarPeekVisual();
+});
+document.addEventListener("keyup", ev => {
+  if (ev.key !== "Alt") return;
+  altKeyPhysicallyDown = false;
+  maybeCloseSidebarAltPeek();
+});
+// Alt+Enter can open the "Filter for this ___" dialog while Alt is still
+// down (see the main keydown handler) — releasing Alt right after typing
+// that chord must not yank the panel shut out from under an open dialog, so
+// closing is deferred until BOTH Alt is up AND the dialog isn't open.
+// Checked from Alt's own keyup above and from closeFilterPopup() (in case
+// Alt was released while the dialog was still open).
+function maybeCloseSidebarAltPeek() {
+  if (altKeyPhysicallyDown || !sidebarAltPeek) return;
+  if (!filterPopup.classList.contains("hidden")) return; // dialog still open — stays peeked until it closes
+  sidebarAltPeek = false;
+  updateSidebarPeekVisual();
+}
 
 function initSidebarCollapsed() {
   updateSidebarToggleIcon();
@@ -12988,6 +13038,10 @@ function closeFilterPopup() {
   filterPopupColumns = new Set();
   filterPatternPreview.classList.add("hidden");
   filterPatternPreview.innerHTML = "";
+  // FEATURE_BACKLOG.md #18: closes a sidebar peek Alt+Enter opened, if Alt
+  // was already released while this dialog was still open (see
+  // maybeCloseSidebarAltPeek's own comment) — a no-op otherwise.
+  maybeCloseSidebarAltPeek();
 }
 
 // Inserts a placeholder token at the current cursor position (replacing any
@@ -15010,13 +15064,13 @@ document.addEventListener("keydown", ev => {
   // tree-arrow-nav block right below, so plain arrow keys keep moving
   // rows/tree exactly as they did before this was pressed. Checked ahead of
   // that block (and everything else) so it always takes priority once Alt
-  // is held, regardless of which region currently has focus. If the sidebar
-  // happens to be collapsed, also force-peeks it open so the navigation is
-  // actually visible (setSidebarForcedPeek).
+  // is held, regardless of which region currently has focus. No need to
+  // force-peek a collapsed sidebar open here — Alt is already down to reach
+  // this branch at all, so the dedicated Alt keydown listener above already
+  // did that the moment Alt itself was pressed.
   if (ev.altKey &&
       (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
     ev.preventDefault();
-    setSidebarForcedPeek();
     moveTreeSelection(ev.key);
     return;
   }
@@ -15080,8 +15134,9 @@ document.addEventListener("keydown", ev => {
     if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
     state.focusRegion = "tree";
     // FEATURE_BACKLOG.md #18, person-requested: jumping focus into a
-    // COLLAPSED tree would otherwise be invisible — force-peek it open the
-    // same way Alt+Arrow does (see setSidebarForcedPeek).
+    // COLLAPSED tree would otherwise be invisible — force-peek it open
+    // (setSidebarForcedPeek), staying open until focus genuinely leaves the
+    // panel again (see that function's own comment for the full list).
     setSidebarForcedPeek();
     render();
     return;
@@ -15114,6 +15169,7 @@ document.addEventListener("keydown", ev => {
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") {
       ev.preventDefault();
+      clearSidebarForcedPeek(); // FEATURE_BACKLOG.md #18: picking a filter this way leaves the panel same as any other focus-leaving action
       revealFilteredView();
       state.entriesView = "filter";
       state.focusRegion = "entries";
@@ -15258,17 +15314,6 @@ document.addEventListener("keydown", ev => {
   }
 });
 
-// FEATURE_BACKLOG.md #18, same-day person-requested follow-up: releasing
-// whichever modifier forced a sidebar peek open closes it back up again —
-// Ctrl/Cmd for Ctrl+0, Alt for Alt+Arrow (see setSidebarForcedPeek) — since
-// a forced peek only ever exists because the sidebar was collapsed to begin
-// with, so closing it on key-release simply restores the pre-peek state. A
-// peek the person pinned open some other way (there isn't one currently,
-// but clearSidebarForcedPeek is itself a no-op unless sidebarForcedPeek is
-// actually set) is left alone either way.
-document.addEventListener("keyup", ev => {
-  if (ev.key === "Control" || ev.key === "Meta" || ev.key === "Alt") clearSidebarForcedPeek();
-});
 
 /* ===================== Session cache (IndexedDB) =====================
    Persists the working session across a browser reload: loaded files
