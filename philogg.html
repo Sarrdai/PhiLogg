@@ -987,17 +987,20 @@
      on purpose — those are rebuilt from scratch on every
      renderTimelineMinimap() call, which would otherwise wipe an in-progress
      drag mid-gesture. */
-  /* FEATURE_BACKLOG #10 (person-corrected twice: the line, not the label,
-     moves — the label stays at top:4px, matching #timelineMinimapTooltip's
-     own position above, since it's the same on-hover-style readout. A first
-     attempt at moving the line used border-bottom, which a content-box
-     element draws OUTSIDE its own set height, right at the outer edge of
-     the whole #timelineMinimap widget — screenshotted as still showing up
-     top, unaffected. An inset box-shadow instead draws strictly INSIDE the
-     rect's own painted bounds, so its position is unambiguous regardless of
-     box-sizing or container clipping.) */
+  /* FEATURE_BACKLOG #10, final shape (person-clarified after two wrong
+     attempts, screenshots each time): the line stays at the TOP — flush
+     with #timelineMinimapDragRect's own top edge, which JS pins exactly to
+     timelineMinimapSvg.offsetTop/offsetHeight (see showMinimapDragOverlay
+     below), so it reads as "inside, at the SVG's own top edge" even though
+     this div is a DOM sibling of <svg>, not a child of it — deliberately
+     kept outside the SVG's own innerHTML (see the comment above) so a
+     mid-drag renderTimelineMinimap() rebuild (tail tick, level toggle)
+     can't wipe the in-progress selection; genuinely nesting the line inside
+     <svg> would reopen that bug. Plain border (not border-bottom, not an
+     inset box-shadow — both tried and failed to render visibly, see git
+     history) — this is the original, confirmed-visible styling. */
   #timelineMinimapDragRect{
-    position:absolute; background:var(--accent-soft); box-shadow:inset 0 -2px 0 0 var(--accent);
+    position:absolute; background:var(--accent-soft); border:1px solid var(--accent);
     opacity:.7; pointer-events:none; z-index:6;
   }
   #timelineMinimapDragRect.hidden{display:none;}
