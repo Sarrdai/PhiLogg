@@ -3798,6 +3798,24 @@ function applyLogTextScale(scale) {
   localStorage.setItem(LOG_TEXT_SCALE_STORAGE_KEY, String(logTextScale));
   const valueEl = document.getElementById("logTextScaleValue");
   if (valueEl) valueEl.textContent = logTextScale + "%";
+  // The CSS rules for .col-time/.col-msg/#extractTable/.pair-row-* all key
+  // their font-size off --log-text-scale directly (see :root), but the
+  // fixed-pixel row heights the main/extraction/link-pair virtualized views
+  // enforce via inline style (ROW_HEIGHT/EXTRACT_ROW_HEIGHT/
+  // LINK_PAIR_ROW_HEIGHT, all declared `let` specifically for this) never
+  // followed — person-reported: a larger Log text size grew the text right
+  // out of its still-base-size row, clipping/overflowing every cell.
+  // Rescaled in lockstep here, then a real render() re-runs whichever
+  // view is actually on screen (renderTable/renderHighlightView/
+  // renderExtractTable/renderLinkView, all dispatched from
+  // renderMainView — see its own comment) so every row (and, via
+  // renderTable's unconditional computeMaxMessageWidth call, the message
+  // column's cached width) picks the new heights/font metrics up
+  // immediately instead of only on the next unrelated re-render.
+  ROW_HEIGHT = Math.round(ROW_HEIGHT_BASE * logTextScale / 100);
+  EXTRACT_ROW_HEIGHT = Math.round(EXTRACT_ROW_HEIGHT_BASE * logTextScale / 100);
+  LINK_PAIR_ROW_HEIGHT = Math.round(LINK_PAIR_ROW_HEIGHT_BASE * logTextScale / 100);
+  render();
 }
 
 function initFontScale() {
@@ -4713,7 +4731,20 @@ function createFileNode(name, folderId) {
   // one, changing render after render during the loop). Restoring instead
   // leaves state.activeId untouched here; restoreSessionFromCache sets it
   // exactly once, after every file is back, to the correct final value.
-  if (!sessionRestoreInProgress) state.activeId = node.id;
+  // Also drops any stale state.multiSelect entry left over from a PRIOR
+  // plain tree-row click (a regular, non-Ctrl click sets multiSelect to
+  // exactly that one row's id, see renderNode's click handler — it's not
+  // Ctrl-specific) — person-reported (screenshots): loading a second file
+  // while a first file's row was previously clicked left THAT row still
+  // carrying ".multi-selected" (same --accent-soft background .active
+  // uses) forever after, alongside the new file's genuine ".active" row,
+  // making it look like two files were selected at once. A fresh file
+  // load is exactly the kind of state.activeId change that should also
+  // reset what's tree-multi-selected, just like a real click on this new
+  // row would. Skipped during session restore for the same reason
+  // state.activeId is: restoreSessionFromCache's own final correction is
+  // the single source of truth for both once every file is back.
+  if (!sessionRestoreInProgress) { state.activeId = node.id; state.multiSelect = new Set(); }
   flushLoadRender();
   return node;
 }
@@ -4742,7 +4773,11 @@ function createQueuedFileNode(name) {
 function activateQueuedFileNode(node) {
   delete node.queued;
   node.loadFraction = 0;
+  // See createFileNode's own comment on this same pairing: a stale
+  // state.multiSelect entry from an earlier plain tree-row click must not
+  // outlive the row it pointed at becoming inactive.
   state.activeId = node.id;
+  state.multiSelect = new Set();
   flushLoadRender();
 }
 
@@ -7798,7 +7833,13 @@ let extractSortDir = "asc";
 // single sticky <thead> row) — extractHead.offsetHeight is read directly
 // wherever the body's scroll offset needs to exclude it, rather than
 // assuming a fixed header height.
-const EXTRACT_ROW_HEIGHT = 28;
+// `let`, not `const`: rescaled in place by applyLogTextScale() (see its own
+// comment) whenever --log-text-scale changes, since a bigger log-text-scale
+// grows this row's actual font-size (its CSS rules key off that same var)
+// without growing this fixed pixel height to match — left as `const 28`, a
+// larger scale would visibly clip/overflow every extraction-table row.
+let EXTRACT_ROW_HEIGHT = 28;
+const EXTRACT_ROW_HEIGHT_BASE = 28;
 const EXTRACT_BUFFER_ROWS = 15;
 
 // Two synthetic columns prepended to every extraction table, leftmost: a
@@ -8102,7 +8143,9 @@ let linkSelectedPairIndex = null;
 // from its tuple size alone, with no DOM measurement needed. Matches
 // .pair-rows' own `gap:2px` (LINK_ROWS_GAP, between every adjacent row/
 // delta child) and .pair-block's `margin-bottom:8px` (LINK_BLOCK_MARGIN).
-const LINK_PAIR_ROW_HEIGHT = 26;
+// `let`, not `const` — same reasoning/rescaling as EXTRACT_ROW_HEIGHT above.
+let LINK_PAIR_ROW_HEIGHT = 26;
+const LINK_PAIR_ROW_HEIGHT_BASE = 26;
 const LINK_DELTA_HEIGHT = 16;
 const LINK_ROWS_GAP = 2;
 const LINK_BLOCK_MARGIN = 8;
@@ -9576,7 +9619,14 @@ window.addEventListener("mouseup", () => { isCellDragging = false; });
    normally; #tableRows holds just the rendered window and is offset with
    an inline `top`. This is what keeps navigation smooth regardless of
    whether a view has 50 or 500,000 matching entries. */
-const ROW_HEIGHT = 28;
+// `let`, not `const` — rescaled in place by applyLogTextScale() whenever
+// --log-text-scale changes (see that function's own comment): the CSS rules
+// for .col-time/.col-msg/etc. already grow their font-size off that same
+// var, but this fixed pixel row height never followed, so a larger log text
+// size used to overflow/clip out of a still-28px row. ROW_HEIGHT_BASE is
+// the unscaled value every rescale multiplies from (never itself mutated).
+let ROW_HEIGHT = 28;
+const ROW_HEIGHT_BASE = 28;
 const BUFFER_ROWS = 10;
 
 /* ---------- Multiline message display (state.multilineMessages) ----------
@@ -12128,11 +12178,25 @@ function renderTable() {
   // self-match that would otherwise silently defeat scroll-to-end. Gated on
   // currentViewEntries actually being non-empty so the true structural
   // no-anchor fallback (top of a brand new empty table) is untouched.
+  // Only CLEARS the flag once the file is actually done loading
+  // (rootNode.loadFraction is deleted by loadOneFileIntoTree's `finally`
+  // the moment reading+parsing both finish — see "File loading" above) —
+  // person-reported: on a large file, the flag used to be consumed on the
+  // very NEXT renderTable() after creation, which fires on the very first
+  // parse chunk (getVisibleEntries() already non-empty after just
+  // PARSE_CHUNK_LINES lines), landing at whatever "end" existed at that
+  // instant instead of the file's true end. Until loading finishes, every
+  // tick keeps re-scrolling to the bottom instead — the exact same
+  // "trail the growing bottom" mechanism state.tailFollow already uses for
+  // live tailing (see the Tailing section), just driven by the initial
+  // parse instead of a poll, so this composes with Tailing being on
+  // (already re-engages tailFollow once the flag clears) exactly as it
+  // would if the flag had never existed.
   const rootNode = state.nodes[getRootFileId(state.activeId)];
   if (rootNode && rootNode._openScrollToEnd && currentViewEntries.length) {
-    delete rootNode._openScrollToEnd;
     setTableScroll(tableBody.scrollHeight);
     renderVisibleRows();
+    if (typeof rootNode.loadFraction !== "number") delete rootNode._openScrollToEnd;
     return;
   }
 
