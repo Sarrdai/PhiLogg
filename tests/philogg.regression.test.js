@@ -80,6 +80,9 @@ async function withApp(run, opts = {}) {
         Object.defineProperty(window, "indexedDB", { value: opts.indexedDB, configurable: true });
         Object.defineProperty(window, "IDBKeyRange", { value: IDBKeyRange, configurable: true });
       }
+      if (opts.philogg) {
+        Object.defineProperty(window, "philogg", { value: opts.philogg, configurable: true });
+      }
       Object.defineProperty(window.Element.prototype, "clientHeight", { get() { return 400; }, configurable: true });
       Object.defineProperty(window.Element.prototype, "clientWidth", { get() { return 800; }, configurable: true });
       window.Element.prototype.getBoundingClientRect = function () {
@@ -11603,6 +11606,55 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 113 — Desktop-only UI font extension: window.philogg.listSystemFonts
+   Origin: this session (person-requested follow-up to GROUP 111f). The
+   plain HTML build can't enumerate installed fonts (no permission-prompt
+   UI for the Local Font Access API), but the desktop wrapper can shell out
+   to the OS via preload.js's listSystemFonts bridge (font-list package in
+   main.js) with no permission dialog needed, since it's a Node process. On
+   the desktop build the picker appends every reported name as an extra
+   <option> (deduped against the curated list); selecting one stores a
+   "sys:<name>" id and applies '"<name>",<default fallback stack>' as
+   --font-ui. Outside Electron (no window.philogg) nothing changes from
+   GROUP 111f's plain curated-list behavior.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("113a. No window.philogg (plain HTML build): font list stays curated-only");
+
+  const select = d.querySelector("#settingsUiFontSelect");
+  const before = select.options.length;
+  assert(!select.querySelector("optgroup"), "no system-fonts optgroup without window.philogg");
+  assert(select.options.length === before, "option count unchanged from the curated list");
+});
+
+await withApp(async (w, d, T) => {
+  section("113b. window.philogg.listSystemFonts (desktop build): extra fonts appended and selectable");
+
+  const select = d.querySelector("#settingsUiFontSelect");
+  const curatedCount = select.options.length;
+
+  // initUiFont() already ran during JSDOM's synchronous script execution and
+  // kicked off the listSystemFonts().then(...) microtask; await it directly.
+  await w.philogg.listSystemFonts().then(() => Promise.resolve());
+  // Let the microtask queue (the real .then() chain inside initUiFont) flush.
+  await new Promise(r => setTimeout(r, 0));
+
+  const group = select.querySelector("optgroup");
+  assert(group, "a system-fonts optgroup is appended once listSystemFonts resolves");
+  assert(select.options.length > curatedCount, "extra options beyond the curated list are present");
+  const firaOption = [...select.options].find(o => o.textContent === "Fira Code");
+  assert(firaOption, "\"Fira Code\" (reported by the stub) is offered as an option");
+  assert(firaOption.value === "sys:Fira Code", "its option value carries the sys: prefix + exact reported name");
+  assert(![...select.options].some(o => o.textContent === "Arial"), "a name duplicating the curated list (\"Arial\") is not appended twice");
+
+  select.value = firaOption.value;
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.document.documentElement.style.getPropertyValue("--font-ui").startsWith('"Fira Code",'),
+    "selecting a system font sets --font-ui to the quoted name plus the default fallback stack");
+  assert(w.localStorage.getItem("philogg-ui-font") === "sys:Fira Code", "the sys:-prefixed id persists to localStorage like any other font choice");
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve(["Fira Code", "Iosevka", "Arial"]) } });
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -13151,6 +13203,15 @@ process.exit(failed ? 1 : 0);
               drag-and-drop load of a second file, with the first file's
               tree row previously clicked and a log entry selected,
               produced exactly this dual-highlight in a screenshot.
+   Group 113 — this session (2026-08-26), person-requested follow-up to
+              Group 111's UI font family setting: the desktop wrapper (only)
+              now appends every OS-installed font name (via a new
+              window.philogg.listSystemFonts bridge — preload.js/main.js,
+              backed by the font-list npm package, Node-side so no browser
+              permission prompt is needed) to the picker, deduped against
+              the curated list; selecting one persists a "sys:<name>" id
+              and applies '"<name>",<default fallback stack>'. The plain
+              HTML build (no window.philogg) is unaffected.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
