@@ -2971,6 +2971,18 @@
                 </select>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsTempAnchorAcrossFiles">Show temporary anchor across files</label>
+                <div class="settings-row-hint">When the active filter switches to one belonging to a different file than the currently selected row, still show that row as a temporary anchor. Turn off to only show the anchor when switching filters within the same file.</div>
+              </div>
+              <div class="settings-row-control">
+                <label class="settings-switch">
+                  <input type="checkbox" id="settingsTempAnchorAcrossFiles">
+                  <span class="settings-switch-track"></span>
+                </label>
+              </div>
+            </div>
             <div class="settings-row" id="settingsTempAnchorFadeRow">
               <div class="settings-row-text">
                 <div class="settings-row-label">Anchor fade duration</div>
@@ -3902,9 +3914,11 @@ document.getElementById("settingsLevelFilterTreeMode").addEventListener("change"
    input. */
 const TEMP_ANCHOR_MODE_KEY = "philogg-temp-anchor-mode";
 const TEMP_ANCHOR_FADE_SECONDS_KEY = "philogg-temp-anchor-fade-seconds";
+const TEMP_ANCHOR_ACROSS_FILES_KEY = "philogg-temp-anchor-across-files";
 const TEMP_ANCHOR_FADE_MIN = 0.5, TEMP_ANCHOR_FADE_MAX = 30, TEMP_ANCHOR_FADE_STEP = 0.5;
-let tempAnchorMode = "persistent"; // "off" | "persistent" | "fade"
+let tempAnchorMode = "fade"; // "off" | "persistent" | "fade"
 let tempAnchorFadeSeconds = 3;
+let temporaryAnchorAcrossFiles = true; // default keeps the pre-existing behavior: anchor shown even when the target filter belongs to a different file
 
 function updateTempAnchorFadeRowVisibility() {
   const row = document.getElementById("settingsTempAnchorFadeRow");
@@ -3913,7 +3927,7 @@ function updateTempAnchorFadeRowVisibility() {
 
 function initTempAnchorSettings() {
   const modeStored = localStorage.getItem(TEMP_ANCHOR_MODE_KEY);
-  tempAnchorMode = (modeStored === "off" || modeStored === "fade") ? modeStored : "persistent";
+  tempAnchorMode = (modeStored === "off" || modeStored === "persistent") ? modeStored : "fade";
   const modeSelect = document.getElementById("settingsTempAnchorMode");
   if (modeSelect) modeSelect.value = tempAnchorMode;
   updateTempAnchorFadeRowVisibility();
@@ -3922,14 +3936,24 @@ function initTempAnchorSettings() {
   tempAnchorFadeSeconds = Number.isFinite(secStored) && secStored > 0 ? secStored : 3;
   const valueEl = document.getElementById("tempAnchorFadeValue");
   if (valueEl) valueEl.textContent = tempAnchorFadeSeconds + "s";
+
+  const acrossStored = localStorage.getItem(TEMP_ANCHOR_ACROSS_FILES_KEY);
+  temporaryAnchorAcrossFiles = acrossStored === null ? true : acrossStored === "1";
+  const acrossCheckbox = document.getElementById("settingsTempAnchorAcrossFiles");
+  if (acrossCheckbox) acrossCheckbox.checked = temporaryAnchorAcrossFiles;
 }
 
 document.getElementById("settingsTempAnchorMode").addEventListener("change", ev => {
-  tempAnchorMode = ev.target.value === "off" || ev.target.value === "fade" ? ev.target.value : "persistent";
+  tempAnchorMode = ev.target.value === "off" || ev.target.value === "persistent" ? ev.target.value : "fade";
   localStorage.setItem(TEMP_ANCHOR_MODE_KEY, tempAnchorMode);
   updateTempAnchorFadeRowVisibility();
   if (tempAnchorMode === "fade") scheduleTempAnchorFade(); else clearTempAnchorFadeTimer();
   renderMainView();
+});
+
+document.getElementById("settingsTempAnchorAcrossFiles").addEventListener("change", ev => {
+  temporaryAnchorAcrossFiles = ev.target.checked;
+  localStorage.setItem(TEMP_ANCHOR_ACROSS_FILES_KEY, temporaryAnchorAcrossFiles ? "1" : "0");
 });
 
 function applyTempAnchorFadeSeconds(v) {
@@ -6897,7 +6921,12 @@ function flattenTreeIds() {
 // (FEATURE_BACKLOG #18).
 function computeTempAnchorForNode(nodeId, entry) {
   if (!entry) return null;
-  return getEntries(nodeId).some(e => e.id === entry.id) ? null : { entryId: entry.id, nodeId, faded: false };
+  if (getEntries(nodeId).some(e => e.id === entry.id)) return null;
+  if (!temporaryAnchorAcrossFiles) {
+    const file = state.nodes[getRootFileId(nodeId)];
+    if (!file || !file.entries.includes(entry)) return null;
+  }
+  return { entryId: entry.id, nodeId, faded: false };
 }
 
 // Switching the active tree node doesn't touch the row selection/entries
@@ -7324,7 +7353,12 @@ function renderNode(id, depth) {
     }
     applyTempAnchorOnActiveNodeSwitch(id);
     state.activeId = id;
-    state.focusRegion = "tree";
+    // Same choice as Alt+Arrow tree nav (see the keydown handler's comment):
+    // a mouse click on a filter switches the active filter but should not
+    // steal arrow-key focus away from the log — leave focusRegion as
+    // "entries" so plain arrow keys keep navigating log rows from here,
+    // continuing from the temp anchor set above when one applies.
+    state.focusRegion = "entries";
     // render()'s own activeId-changed tracking (see lastActiveIdForReveal)
     // only reveals the Filtered view when clicking a filter actually changes
     // the active node — re-clicking the already-active filter (e.g. after a
