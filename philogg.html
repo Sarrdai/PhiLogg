@@ -28,6 +28,23 @@
     --level-debug-soft:rgba(118,127,150,.10);
     --level-trace:#5b6479;
     --level-trace-soft:rgba(91,100,121,.08);
+    /* Rotating categorical palette for CUSTOM level names — a format may
+       name its own levels (NOTICE, FATAL, VERBOSE, ...) beyond the five that
+       have a dedicated --level-* var; each custom name in a format's list is
+       assigned a slot by its position among that format's custom names (see
+       customLevelSlot/levelClass), wrapping after six. Six genuinely
+       distinct hues per theme, picked in the spirit of COLUMN_PALETTE — and
+       deliberately NOT in THEME_COLOR_KEYS, so an imported custom theme
+       (which predates them) stays valid and simply inherits these. The
+       -soft/-on shades every consumer needs are derived with color-mix from
+       the base color plus one --level-custom-on per theme. */
+    --level-custom-1:#c792ea;
+    --level-custom-2:#4fc7c3;
+    --level-custom-3:#8bd17c;
+    --level-custom-4:#f0708a;
+    --level-custom-5:#8f8cf0;
+    --level-custom-6:#d0b45a;
+    --level-custom-on:#0d1016;
     --warn:#e8a94a;
     /* Text color for the four ACTIVE level-quick-filter buttons (see
        .level-btn.active.lvl-* below) — sits on top of the level color
@@ -38,6 +55,12 @@
     --level-warn-on:#2a1c04;
     --level-info-on:#04122a;
     --level-debug-on:#0d1016;
+    /* TRACE became a level-bar button only once a format could put it in its
+       own level list (per-format levels); it has no per-theme "on" color of
+       its own — it deliberately follows --level-debug-on, which every theme
+       already defines and which sits on the same neutral grey family as
+       --level-trace, so this single var() reference resolves per theme. */
+    --level-trace-on:var(--level-debug-on);
     /* Text color for anything sitting on a solid var(--accent) surface
        (brand mark, Save button, active chips/badges) — same reasoning as
        the --level-*-on vars above, split out from a hardcoded near-black
@@ -111,6 +134,13 @@
     --level-debug-soft:rgba(91,100,116,.10);
     --level-trace:#8991a3;
     --level-trace-soft:rgba(137,145,163,.08);
+    --level-custom-1:#8e44ad;
+    --level-custom-2:#1b8f8a;
+    --level-custom-3:#4a8f3c;
+    --level-custom-4:#c2185b;
+    --level-custom-5:#4a4fbf;
+    --level-custom-6:#8a6d1f;
+    --level-custom-on:#fff;
     --level-error-on:#fff;
     --level-warn-on:#fff;
     --level-info-on:#fff;
@@ -183,6 +213,13 @@
     --level-debug-soft:rgba(147,153,178,.10);
     --level-trace:#6c7086;
     --level-trace-soft:rgba(108,112,134,.08);
+    --level-custom-1:#cba6f7;
+    --level-custom-2:#94e2d5;
+    --level-custom-3:#a6e3a1;
+    --level-custom-4:#f5c2e7;
+    --level-custom-5:#74c7ec;
+    --level-custom-6:#f9e2af;
+    --level-custom-on:var(--bg-app);
     /* Style guide: "On Accent" text = Base = --bg-app now (see the remap
        comment above this block), "Selection Background" = Overlay 2 @
        20-30% opacity — see PROJECT.md "Theming" -> "Catppuccin style-guide
@@ -218,6 +255,13 @@
     --level-debug-soft:rgba(147,154,183,.10);
     --level-trace:#6e738d;
     --level-trace-soft:rgba(110,115,141,.08);
+    --level-custom-1:#c6a0f6;
+    --level-custom-2:#8bd5ca;
+    --level-custom-3:#a6da95;
+    --level-custom-4:#f5bde6;
+    --level-custom-5:#7dc4e4;
+    --level-custom-6:#eed49f;
+    --level-custom-on:var(--bg-app);
     --accent-on:var(--bg-app);
     --level-error-on:var(--bg-app);
     --level-warn-on:var(--bg-app);
@@ -249,6 +293,13 @@
     --level-debug-soft:rgba(148,156,187,.10);
     --level-trace:#737994;
     --level-trace-soft:rgba(115,121,148,.08);
+    --level-custom-1:#ca9ee6;
+    --level-custom-2:#81c8be;
+    --level-custom-3:#a6d189;
+    --level-custom-4:#f4b8e4;
+    --level-custom-5:#85c1dc;
+    --level-custom-6:#e5c890;
+    --level-custom-on:var(--bg-app);
     --accent-on:var(--bg-app);
     --level-error-on:var(--bg-app);
     --level-warn-on:var(--bg-app);
@@ -280,6 +331,13 @@
     --level-debug-soft:rgba(124,127,147,.10);
     --level-trace:#9ca0b0;
     --level-trace-soft:rgba(156,160,176,.08);
+    --level-custom-1:#8839ef;
+    --level-custom-2:#179299;
+    --level-custom-3:#40a02b;
+    --level-custom-4:#ea76cb;
+    --level-custom-5:#209fb5;
+    --level-custom-6:#df8e1d;
+    --level-custom-on:var(--bg-app);
     --accent-on:var(--bg-app);
     --level-error-on:var(--bg-app);
     --level-warn-on:var(--bg-app);
@@ -815,11 +873,26 @@
   .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
   .level-btn.lvl-info{color:var(--level-info); border-color:color-mix(in srgb, var(--level-info) 35%, transparent);}
   .level-btn.lvl-debug{color:var(--level-debug); border-color:color-mix(in srgb, var(--level-debug) 40%, transparent);}
+  .level-btn.lvl-trace{color:var(--level-trace); border-color:color-mix(in srgb, var(--level-trace) 40%, transparent);}
+  /* Custom level names (see --level-custom-* above). */
+  .level-btn.lvl-custom-1{color:var(--level-custom-1); border-color:color-mix(in srgb, var(--level-custom-1) 35%, transparent);}
+  .level-btn.lvl-custom-2{color:var(--level-custom-2); border-color:color-mix(in srgb, var(--level-custom-2) 35%, transparent);}
+  .level-btn.lvl-custom-3{color:var(--level-custom-3); border-color:color-mix(in srgb, var(--level-custom-3) 35%, transparent);}
+  .level-btn.lvl-custom-4{color:var(--level-custom-4); border-color:color-mix(in srgb, var(--level-custom-4) 35%, transparent);}
+  .level-btn.lvl-custom-5{color:var(--level-custom-5); border-color:color-mix(in srgb, var(--level-custom-5) 35%, transparent);}
+  .level-btn.lvl-custom-6{color:var(--level-custom-6); border-color:color-mix(in srgb, var(--level-custom-6) 35%, transparent);}
   .level-btn.active{border-color:transparent;}
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
   .level-btn.active.lvl-warn{background:var(--level-warn); color:var(--level-warn-on);}
   .level-btn.active.lvl-info{background:var(--level-info); color:var(--level-info-on);}
   .level-btn.active.lvl-debug{background:var(--level-debug); color:var(--level-debug-on);}
+  .level-btn.active.lvl-trace{background:var(--level-trace); color:var(--level-trace-on);}
+  .level-btn.active.lvl-custom-1{background:var(--level-custom-1); color:var(--level-custom-on);}
+  .level-btn.active.lvl-custom-2{background:var(--level-custom-2); color:var(--level-custom-on);}
+  .level-btn.active.lvl-custom-3{background:var(--level-custom-3); color:var(--level-custom-on);}
+  .level-btn.active.lvl-custom-4{background:var(--level-custom-4); color:var(--level-custom-on);}
+  .level-btn.active.lvl-custom-5{background:var(--level-custom-5); color:var(--level-custom-on);}
+  .level-btn.active.lvl-custom-6{background:var(--level-custom-6); color:var(--level-custom-on);}
 
   /* ---------- Filter/Highlight split ---------- */
   #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
@@ -971,6 +1044,12 @@
   .minimap-lvl-info{fill:var(--level-info);}
   .minimap-lvl-debug{fill:var(--level-debug);}
   .minimap-lvl-trace{fill:var(--level-trace);}
+  .minimap-lvl-custom-1{fill:var(--level-custom-1);}
+  .minimap-lvl-custom-2{fill:var(--level-custom-2);}
+  .minimap-lvl-custom-3{fill:var(--level-custom-3);}
+  .minimap-lvl-custom-4{fill:var(--level-custom-4);}
+  .minimap-lvl-custom-5{fill:var(--level-custom-5);}
+  .minimap-lvl-custom-6{fill:var(--level-custom-6);}
   .minimap-lvl-other{fill:var(--text-secondary);}
   /* Full range = the whole time span the Filtered view's result set covers
      (every match, regardless of scroll/virtualization) — same look this
@@ -1209,6 +1288,18 @@
   .lvl-debug .level-badge{color:var(--level-debug); background:color-mix(in srgb, var(--level-debug) 22%, transparent);}
   .lvl-trace .col-bar{background:var(--level-trace);}
   .lvl-trace .level-badge{color:var(--level-trace); background:var(--level-trace-soft);}
+  .lvl-custom-1 .col-bar{background:var(--level-custom-1);}
+  .lvl-custom-1 .level-badge{color:var(--level-custom-1); background:color-mix(in srgb, var(--level-custom-1) 28%, transparent);}
+  .lvl-custom-2 .col-bar{background:var(--level-custom-2);}
+  .lvl-custom-2 .level-badge{color:var(--level-custom-2); background:color-mix(in srgb, var(--level-custom-2) 28%, transparent);}
+  .lvl-custom-3 .col-bar{background:var(--level-custom-3);}
+  .lvl-custom-3 .level-badge{color:var(--level-custom-3); background:color-mix(in srgb, var(--level-custom-3) 28%, transparent);}
+  .lvl-custom-4 .col-bar{background:var(--level-custom-4);}
+  .lvl-custom-4 .level-badge{color:var(--level-custom-4); background:color-mix(in srgb, var(--level-custom-4) 28%, transparent);}
+  .lvl-custom-5 .col-bar{background:var(--level-custom-5);}
+  .lvl-custom-5 .level-badge{color:var(--level-custom-5); background:color-mix(in srgb, var(--level-custom-5) 28%, transparent);}
+  .lvl-custom-6 .col-bar{background:var(--level-custom-6);}
+  .lvl-custom-6 .level-badge{color:var(--level-custom-6); background:color-mix(in srgb, var(--level-custom-6) 28%, transparent);}
   .lvl-other .col-bar{background:var(--text-tertiary);}
   .lvl-other .level-badge{color:var(--text-secondary); background:var(--bg-elevated-2);}
 
@@ -1222,6 +1313,18 @@
   .log-row.lvl-debug:hover{background:color-mix(in srgb, var(--level-debug) 16%, transparent);}
   .log-row.lvl-trace{background:var(--level-trace-soft);}
   .log-row.lvl-trace:hover{background:color-mix(in srgb, var(--level-trace) 14%, transparent);}
+  .log-row.lvl-custom-1{background:color-mix(in srgb, var(--level-custom-1) 12%, transparent);}
+  .log-row.lvl-custom-1:hover{background:color-mix(in srgb, var(--level-custom-1) 20%, transparent);}
+  .log-row.lvl-custom-2{background:color-mix(in srgb, var(--level-custom-2) 12%, transparent);}
+  .log-row.lvl-custom-2:hover{background:color-mix(in srgb, var(--level-custom-2) 20%, transparent);}
+  .log-row.lvl-custom-3{background:color-mix(in srgb, var(--level-custom-3) 12%, transparent);}
+  .log-row.lvl-custom-3:hover{background:color-mix(in srgb, var(--level-custom-3) 20%, transparent);}
+  .log-row.lvl-custom-4{background:color-mix(in srgb, var(--level-custom-4) 12%, transparent);}
+  .log-row.lvl-custom-4:hover{background:color-mix(in srgb, var(--level-custom-4) 20%, transparent);}
+  .log-row.lvl-custom-5{background:color-mix(in srgb, var(--level-custom-5) 12%, transparent);}
+  .log-row.lvl-custom-5:hover{background:color-mix(in srgb, var(--level-custom-5) 20%, transparent);}
+  .log-row.lvl-custom-6{background:color-mix(in srgb, var(--level-custom-6) 12%, transparent);}
+  .log-row.lvl-custom-6:hover{background:color-mix(in srgb, var(--level-custom-6) 20%, transparent);}
   .log-row.flash{background:var(--accent-soft) !important; transition:background 1.2s ease-out;}
 
   #emptyState{
@@ -1481,6 +1584,12 @@
   .lvl-info .pair-row-bar{background:var(--level-info);}
   .lvl-debug .pair-row-bar{background:var(--level-debug);}
   .lvl-trace .pair-row-bar{background:var(--level-trace);}
+  .lvl-custom-1 .pair-row-bar{background:var(--level-custom-1);}
+  .lvl-custom-2 .pair-row-bar{background:var(--level-custom-2);}
+  .lvl-custom-3 .pair-row-bar{background:var(--level-custom-3);}
+  .lvl-custom-4 .pair-row-bar{background:var(--level-custom-4);}
+  .lvl-custom-5 .pair-row-bar{background:var(--level-custom-5);}
+  .lvl-custom-6 .pair-row-bar{background:var(--level-custom-6);}
   .lvl-other .pair-row-bar{background:var(--text-tertiary);}
   .pair-row-time{font-family:var(--font-mono); font-size:calc(10.8px * var(--log-text-scale)); color:var(--text-secondary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
   .pair-row-msg{font-family:var(--font-mono); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0;}
@@ -1781,6 +1890,17 @@
   }
   .settings-inline-panel.hidden{display:none;}
   #btnAddFormat.hidden, #btnAddFormatRule.hidden{display:none;}
+  /* Per-format log-level list inside the format editor — same ▲/▼ reorder
+     idiom as the filename-rule list, plus a checkbox per level. */
+  #formatEditLevels{display:flex; flex-direction:column; gap:4px;}
+  .format-level-row{display:flex; align-items:center; gap:8px; padding:3px 6px; border-radius:6px; background:var(--bg-panel);}
+  .format-level-row .format-level-name{flex:1; font-size:12px;}
+  /* Custom (format-defined) level names are removable rather than
+     uncheckable — they aren't part of a fixed set to toggle back on. */
+  #formatEditLevelAdd{display:flex; gap:6px; margin-top:6px;}
+  #formatEditLevelAdd input{flex:1 1 auto; min-width:0;}
+  .format-level-error{font-size:11px; color:var(--level-error); margin-top:5px;}
+  .format-level-error.hidden{display:none;}
   #formatEditPatternField.hidden, #formatEditRegexField.hidden{display:none;}
   .settings-inline-panel-title{font-size:12.5px; font-weight:650; color:var(--text-primary); margin-bottom:12px;}
   .settings-inline-panel textarea{
@@ -3127,6 +3247,16 @@
               <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
             </div>
             <div class="link-field">
+              <label>Log levels <span class="link-target-label">(which ones this format uses, and in which order)</span></label>
+              <div id="formatEditLevels"></div>
+              <div id="formatEditLevelAdd">
+                <input type="text" id="formatEditLevelNew" placeholder="Custom level name (e.g. NOTICE)" autocomplete="off" spellcheck="false">
+                <button type="button" id="formatEditLevelAddBtn" class="btn-mini-outline">Add</button>
+              </div>
+              <div id="formatEditLevelError" class="format-level-error hidden"></div>
+              <div class="session-dialog-note">Only checked levels get a quick-filter button for files using this format; anything else falls into OTHER. Custom names match a line's level text exactly (case-insensitive) and get a color from a rotating palette.</div>
+            </div>
+            <div class="link-field">
               <label>Preview <span class="link-target-label">(from the example line(s) above)</span></label>
               <div id="formatEditPreview" class="format-preview"></div>
             </div>
@@ -4240,10 +4370,118 @@ const state = {
   formatRules: [],
 };
 
+// The five level buckets that have a dedicated --level-* theme var of their
+// own (the implicit OTHER catch-all deliberately has none — see levelBucket).
+// A log format's level list (LogFormat.levels) may pick any subset of these,
+// in any order, AND add arbitrary custom names of its own (NOTICE, FATAL,
+// VERBOSE, ...) — those get a color from the rotating --level-custom-N
+// palette instead (see customLevelSlot/levelClass).
+const ALL_LEVELS = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
+
+// How many --level-custom-N slots the CSS defines, per theme. Custom names
+// beyond this many in one format's list wrap around and reuse a color.
+const CUSTOM_LEVEL_SLOTS = 6;
+
+// Level names are compared/stored uppercase and trimmed, everywhere.
+function normalizeLevelName(name) { return String(name == null ? "" : name).trim().toUpperCase(); }
+
+// True for a name that may NOT be used as a custom level: the five that
+// already own a color, and the reserved OTHER catch-all.
+function isReservedLevelName(name) {
+  const n = normalizeLevelName(name);
+  return ALL_LEVELS.includes(n) || n === "OTHER";
+}
+
+// The default level list used by every format that doesn't define its own
+// (all builtin formats, and any user format created before per-format levels
+// existed) — the fixed set the level bar showed before this was configurable.
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
 
-// Severity ordering used when the log table is sorted by the Level column.
-const LEVEL_SORT_RANK = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3, TRACE: 4, OTHER: 5 };
+// The level list of one format, falling back to LEVELS. Names are normalized
+// (trimmed/uppercased) and de-duplicated; empty entries and the reserved
+// OTHER are dropped, so a hand-edited/older record can't smuggle in a name
+// that would collide with the implicit catch-all bucket. Any other name —
+// including one nobody has ever heard of — is kept: that IS custom levels.
+function formatLevels(formatId) {
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  const raw = fmt && Array.isArray(fmt.levels) ? fmt.levels : null;
+  if (!raw) return LEVELS;
+  const out = [];
+  raw.forEach(l => {
+    const n = normalizeLevelName(l);
+    if (n && n !== "OTHER" && !out.includes(n)) out.push(n);
+  });
+  return out.length ? out : LEVELS;
+}
+
+// Which --level-custom-N slot a custom level name gets: its position among
+// the CUSTOM (non-ALL_LEVELS) names of the owning format's list, wrapping
+// after CUSTOM_LEVEL_SLOTS — so the same format always paints the same
+// custom level the same color. Returns 0 for "not a custom level of any
+// format in play" (the five known ones, OTHER, and unrecognized free text).
+// With no formatId (a bare bucket name — the level bar, a filter-node label)
+// every stored format is searched in order, first match wins, which keeps
+// the color stable regardless of who asks.
+function customLevelSlot(name, formatId) {
+  const n = normalizeLevelName(name);
+  if (!n || isReservedLevelName(n)) return 0;
+  const slotIn = list => {
+    const i = list.filter(l => !ALL_LEVELS.includes(l)).indexOf(n);
+    return i === -1 ? 0 : (i % CUSTOM_LEVEL_SLOTS) + 1;
+  };
+  if (formatId != null) return slotIn(formatLevels(formatId));
+  for (const f of state.logFormats) {
+    const s = slotIn(formatLevels(f.id));
+    if (s) return s;
+  }
+  return 0;
+}
+
+// The CSS color for a level BUCKET name, or null if it has none (OTHER and
+// anything unrecognized fall back to the caller's default text color).
+function levelColorVar(name, formatId) {
+  const n = normalizeLevelName(name);
+  if (ALL_LEVELS.includes(n)) return "var(--level-" + n.toLowerCase() + ")";
+  const slot = customLevelSlot(n, formatId);
+  return slot ? "var(--level-custom-" + slot + ")" : null;
+}
+
+// The union of the level lists of every format currently in play — each open
+// root file's format contributes its own list, concatenated in tree order and
+// de-duplicated as names first appear. This is what the level bar renders and
+// what a level filter node's value array is canonically ordered by.
+function activeLevelOrder() {
+  const out = [];
+  const push = l => { if (!out.includes(l)) out.push(l); };
+  state.rootIds.forEach(id => {
+    const n = state.nodes[id];
+    if (n) formatLevels(n.formatId || DEFAULT_FORMAT_ID).forEach(push);
+  });
+  if (!out.length) LEVELS.forEach(push);
+  return out;
+}
+
+// Re-sorts a set of picked level names into activeLevelOrder(). Anything not
+// in that order (e.g. OTHER, or a level from a format no longer open, coming
+// from an imported filter file) is kept, appended in its original order,
+// rather than silently dropped.
+function canonicalLevelOrder(levels) {
+  const order = activeLevelOrder();
+  return order.filter(l => levels.includes(l)).concat(levels.filter(l => !order.includes(l)));
+}
+
+// Severity ordering used when the log table is sorted by the Level column,
+// and as the minimap's "most severe bucket" index. Custom level names sit
+// between TRACE and OTHER, ordered by their palette slot (see levelSortRank)
+// — OTHER stays last, so its rank leaves room for CUSTOM_LEVEL_SLOTS slots.
+const LEVEL_SORT_RANK = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3, TRACE: 4, OTHER: 5 + CUSTOM_LEVEL_SLOTS };
+
+function levelSortRank(bucket, formatId) {
+  const r = LEVEL_SORT_RANK[bucket];
+  if (r !== undefined) return r;
+  const slot = customLevelSlot(bucket, formatId);
+  return slot ? 4 + slot : LEVEL_SORT_RANK.OTHER;
+}
 
 // Builds a comparator for the sortable log-table headers. Only ever applied
 // to a *copy* of the current view's entries (see renderTable) — never to the
@@ -4254,7 +4492,7 @@ function entryComparator(column, dir) {
   return (a, b) => {
     let cmp = 0;
     if (column === "time") cmp = a.ts - b.ts;
-    else if (column === "level") cmp = LEVEL_SORT_RANK[levelBucket(a.level)] - LEVEL_SORT_RANK[levelBucket(b.level)];
+    else if (column === "level") cmp = levelSortRank(levelBucket(a.level, a.formatId), a.formatId) - levelSortRank(levelBucket(b.level, b.formatId), b.formatId);
     else if (column === "thread") cmp = String(a.thread).localeCompare(String(b.thread));
     else if (column === "location") cmp = String(a.locationShort).localeCompare(String(b.locationShort));
     return cmp * sign;
@@ -4345,7 +4583,8 @@ function parseHeaderLine(line) {
 const PARSE_CHUNK_LINES = 4000;
 
 async function parseLogTextAsync(text, node, onProgress) {
-  const compiled = getCompiledFormat(node.formatId || DEFAULT_FORMAT_ID);
+  const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const compiled = getCompiledFormat(formatId);
   const lines = text.split(/\r\n|\n/);
   let current = null;
 
@@ -4354,6 +4593,9 @@ async function parseLogTextAsync(text, node, onProgress) {
     if (compiled.isHeaderLine(line)) {
       if (current) { entryIndex[current.id] = current; node.entries.push(current); }
       current = compiled.parseHeader(line);
+      // Which format produced this entry — lets level rendering resolve the
+      // owning format's level list per-entry, without needing the tree node.
+      current.formatId = formatId;
     } else if (current && line !== "") {
       current.message += "\n" + line;
       current.raw += "\n" + line;
@@ -4575,6 +4817,10 @@ const DEFAULT_LOG_FORMAT = {
   pattern: '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n',
   regex: "",
   tsFormat: "yyyy-MM-dd HH:mm:ss,SSS",
+  // Which level buckets this format actually uses, in the order the level bar
+  // shows them (see formatLevels/activeLevelOrder). Optional on a record: a
+  // missing/empty list means "the default LEVELS set".
+  levels: LEVELS.slice(),
   builtin: true,
   edited: false,
   createdAt: 0,
@@ -4826,9 +5072,22 @@ function activateQueuedFileNode(node) {
   flushLoadRender();
 }
 
-// Normalizes a raw level string to one of the known buckets (or "OTHER").
-function levelBucket(level) {
-  const l = (level || "").toUpperCase();
+// Normalizes a raw level string to a bucket, in the context of the format
+// that produced the entry (entry.formatId, stamped at parse time):
+//   1. an exact (case-insensitive) match against that format's own configured
+//      level list wins — that's what makes a custom name like NOTICE its own
+//      named, colored bucket rather than collapsing into OTHER;
+//   2. otherwise the historical prefix cascade, so the five known buckets
+//      keep their forgiving matching (FATAL/ERR -> ERROR, WARNING -> WARN,
+//      ...) even for a format whose list happens to omit one of them;
+//   3. otherwise "OTHER" — the single catch-all. Unrecognized free text
+//      deliberately does NOT get a bucket of its own: only names a format
+//      explicitly lists are ever their own bucket, which keeps the count
+//      aggregation and the level bar bounded by configuration.
+function levelBucket(level, formatId) {
+  const l = normalizeLevelName(level);
+  if (!l) return "OTHER";
+  if (formatLevels(formatId).includes(l)) return l;
   if (l.startsWith("ERR") || l.startsWith("FATAL")) return "ERROR";
   if (l.startsWith("WARN")) return "WARN";
   if (l.startsWith("INFO")) return "INFO";
@@ -4837,8 +5096,21 @@ function levelBucket(level) {
   return "OTHER";
 }
 
-function levelClass(level) {
-  return "lvl-" + levelBucket(level).toLowerCase();
+// The lvl-* class for a level. Called both with an entry's raw level text
+// (plus its formatId) and with a bare bucket NAME (the level bar, which
+// unions several formats' lists and so has no single format context) — in
+// the latter case a name no format lists still ends up lvl-other.
+function levelClass(level, formatId) {
+  const bucket = levelBucket(level, formatId);
+  if (bucket !== "OTHER") {
+    const slot = customLevelSlot(bucket, formatId);
+    return slot ? "lvl-custom-" + slot : "lvl-" + bucket.toLowerCase();
+  }
+  if (formatId == null) {
+    const slot = customLevelSlot(level);
+    if (slot) return "lvl-custom-" + slot;
+  }
+  return "lvl-other";
 }
 
 function formatTime(ms) {
@@ -6104,7 +6376,7 @@ function getEntries(nodeId) {
     // applyLevelFilter/FEATURE_BACKLOG.md #10). An empty array never lives
     // in the tree (see applyLevelSelectionToTree, which deletes the node
     // instead), but is treated as "match nothing" here for safety.
-    result = parentEntries.filter(e => node.value.includes(levelBucket(e.level)));
+    result = parentEntries.filter(e => node.value.includes(levelBucket(e.level, e.formatId)));
   } else if (node.filterType === "and" || node.filterType === "or") {
     const linked = state.nodes[node.linkedId];
     if (!linked) {
@@ -6298,7 +6570,9 @@ function getLevelCounts(nodeId) {
   if (!node._levelCounts) {
     const counts = {};
     for (const e of getEntries(nodeId)) {
-      const b = levelBucket(e.level);
+      // Keyed by the entry's OWN computed bucket, never by iterating a fixed
+      // name list — that's what makes per-format custom buckets counted too.
+      const b = levelBucket(e.level, e.formatId);
       counts[b] = (counts[b] || 0) + 1;
     }
     node._levelCounts = counts;
@@ -7184,7 +7458,11 @@ function buildLevelNodeLabelContent(node) {
   (node.value || []).forEach((lvl, i) => {
     if (i > 0) frag.appendChild(document.createTextNode(", "));
     const word = document.createElement("span");
-    if (LEVELS.includes(lvl)) word.style.color = "var(--level-" + lvl.toLowerCase() + ")";
+    // Custom level names (added by a format) color via their own rotating
+    // palette slot; anything no format knows about keeps the default text
+    // color, exactly as before.
+    const color = levelColorVar(lvl);
+    if (color) word.style.color = color;
     word.textContent = lvl;
     frag.appendChild(word);
   });
@@ -7840,7 +8118,7 @@ function renderLevelBar() {
   const counts = getLevelCounts(levelBarCountsBaseId()) || {};
   const activeLevels = activeLevelSetForBar();
 
-  LEVELS.forEach(lvl => {
+  activeLevelOrder().forEach(lvl => {
     const btn = document.createElement("button");
     const isActive = activeLevels.has(lvl);
     btn.className = "level-btn " + levelClass(lvl) + (isActive ? " active" : "");
@@ -7853,7 +8131,7 @@ function renderLevelBar() {
         const current = currentTreeLevelSelection();
         const idx = current.indexOf(lvl);
         if (idx === -1) current.push(lvl); else current.splice(idx, 1);
-        applyLevelSelectionToTree(LEVELS.filter(l => current.includes(l)));
+        applyLevelSelectionToTree(canonicalLevelOrder(current));
         return;
       }
       if (state.levelFilter.has(lvl)) state.levelFilter.delete(lvl);
@@ -7892,7 +8170,7 @@ function updateLevelBarCounts() {
 
 function applyLevelFilter(entries) {
   if (state.levelFilter.size === 0) return entries;
-  return entries.filter(e => state.levelFilter.has(levelBucket(e.level)));
+  return entries.filter(e => state.levelFilter.has(levelBucket(e.level, e.formatId)));
 }
 
 // Bookmarked entries belonging to a given root file, resolved via an
@@ -8446,7 +8724,7 @@ function buildPairBlock(entryData, index) {
 
 function buildPairRow(entry) {
   const row = document.createElement("div");
-  row.className = "pair-row " + levelClass(entry.level);
+  row.className = "pair-row " + levelClass(entry.level, entry.formatId);
   row.style.height = LINK_PAIR_ROW_HEIGHT + "px";
   row.innerHTML =
     '<span class="pair-row-bar"></span>' +
@@ -10098,7 +10376,7 @@ function renderVisibleRows() {
   for (let i = start; i < end; i++) {
     const e = currentViewEntries[i];
     const row = document.createElement("div");
-    let cls = "log-row row-grid " + levelClass(e.level) + (e.id === state.selectedId ? " selected" : "") +
+    let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
       (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
       (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") +
       (e._tempAnchor ? " temp-anchor-row" : "");
@@ -10369,7 +10647,7 @@ function renderHighlightVisibleRows() {
   for (let i = start; i < end; i++) {
     const e = currentHighlightViewEntries[i];
     const row = document.createElement("div");
-    const cls = "log-row row-grid " + levelClass(e.level) + (e.id === state.selectedId ? " selected" : "") +
+    const cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
       (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "");
 
     const colors = highlightColorMap.get(e.id);
@@ -10925,6 +11203,9 @@ let minimapBucketCount = 0;
 let minimapBgCounts = [];
 let minimapOvCounts = [];
 let minimapOvRank = [];
+// Bucket NAME behind each minimapOvRank entry — the rank alone no longer
+// names its bucket now that custom levels share the 5..10 rank slots.
+let minimapOvName = [];
 let minimapInteractive = false;
 // Cached inputs so a window resize can rebuild without going through renderTable.
 let minimapLastRootId = null;
@@ -11030,15 +11311,18 @@ function renderTimelineMinimap(rootId, viewEntries) {
 
   const ovCounts = new Array(bucketCount).fill(0);
   const ovRank = new Array(bucketCount).fill(Infinity);
+  const ovName = new Array(bucketCount).fill("");
   for (const e of viewEntries) {
     const b = bucketOf(e.ts);
     ovCounts[b]++;
-    const rank = LEVEL_SORT_RANK[levelBucket(e.level)];
-    if (rank < ovRank[b]) ovRank[b] = rank;
+    const bucket = levelBucket(e.level, e.formatId);
+    const rank = levelSortRank(bucket, e.formatId);
+    if (rank < ovRank[b]) { ovRank[b] = rank; ovName[b] = bucket; }
   }
   minimapBgCounts = bgCounts;
   minimapOvCounts = ovCounts;
   minimapOvRank = ovRank;
+  minimapOvName = ovName;
 
   // Log scale: without it, a single burst bucket flattens every quieter
   // bucket down to invisibility, which defeats the "spot the gap/burst"
@@ -11048,7 +11332,11 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const barW = W / bucketCount;
   const usableH = H - 3;
   const heightFor = count => count === 0 ? 0 : Math.max(1.5, (Math.log(count + 1) / Math.log(maxCount + 1)) * usableH);
-  const rankClass = ["minimap-lvl-error", "minimap-lvl-warn", "minimap-lvl-info", "minimap-lvl-debug", "minimap-lvl-trace", "minimap-lvl-other"];
+  // Index = levelSortRank: the five known buckets, then one slot per
+  // --level-custom-N, then OTHER last.
+  const rankClass = ["minimap-lvl-error", "minimap-lvl-warn", "minimap-lvl-info", "minimap-lvl-debug", "minimap-lvl-trace"]
+    .concat(Array.from({ length: CUSTOM_LEVEL_SLOTS }, (_, i) => "minimap-lvl-custom-" + (i + 1)))
+    .concat(["minimap-lvl-other"]);
 
   let bgParts = "", ovParts = "";
   for (let i = 0; i < bucketCount; i++) {
@@ -11226,7 +11514,7 @@ timelineMinimapSvg.addEventListener("mousemove", ev => {
   const b = Math.min(minimapBucketCount - 1, Math.max(0, Math.floor((localX / rect.width) * minimapBucketCount)));
   const bucketTs = minimapTMin + (b / minimapBucketCount) * (minimapTMax - minimapTMin);
   const rank = minimapOvRank[b];
-  const rankLabel = Number.isFinite(rank) ? " · " + Object.keys(LEVEL_SORT_RANK)[rank] : "";
+  const rankLabel = Number.isFinite(rank) && minimapOvName[b] ? " · " + minimapOvName[b] : "";
   timelineMinimapTooltip.textContent = formatTime(bucketTs) + " · " + minimapOvCounts[b] + "/" + minimapBgCounts[b] + rankLabel;
   timelineMinimapTooltip.style.left = Math.min(rect.width - 4, Math.max(4, localX)) + "px";
   timelineMinimapTooltip.classList.remove("hidden");
@@ -11638,7 +11926,7 @@ function updateDetailPanel() {
   }
 
   detailPanel.classList.remove("empty");
-  detailMeta.className = levelClass(entry.level);
+  detailMeta.className = levelClass(entry.level, entry.formatId);
 
   // Text-filter match highlighting (see the section above textFilterMatches)
   // — same computation as renderVisibleRows, gated by the independent
@@ -12811,7 +13099,8 @@ function isTailLive(t) {
 // and keeps an unterminated trailing line in tail.pending until the writer
 // finishes it. Returns true if anything visible changed.
 function appendTailText(node, chunkText) {
-  const compiled = getCompiledFormat(node.formatId || DEFAULT_FORMAT_ID);
+  const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const compiled = getCompiledFormat(formatId);
   const text = node.tail.pending + chunkText;
   const lines = text.split(/\r\n|\n/);
   node.tail.pending = lines.pop(); // last piece has no newline yet — wait for more data
@@ -12821,6 +13110,7 @@ function appendTailText(node, chunkText) {
   for (const line of lines) {
     if (compiled.isHeaderLine(line)) {
       const e = compiled.parseHeader(line);
+      e.formatId = formatId; // same stamping as parseLogTextAsync
       entryIndex[e.id] = e;
       node.entries.push(e);
       last = e;
@@ -15268,7 +15558,8 @@ function renderFormatList() {
     main.innerHTML =
       '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") + '</div>' +
       '<div class="filter-library-row-meta">' + (fmt.mode === "regex" ? "Regex" : "Pattern") +
-      (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") + '</div>';
+      (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") +
+      (formatLevels(fmt.id).join(",") !== LEVELS.join(",") ? " · " + escapeHtml(formatLevels(fmt.id).join(" ")) : "") + '</div>';
     row.appendChild(main);
     const editBtn = document.createElement("button");
     editBtn.type = "button";
@@ -15312,9 +15603,11 @@ async function resetDefaultFormat() {
     pattern: DEFAULT_LOG_FORMAT.pattern,
     regex: DEFAULT_LOG_FORMAT.regex,
     tsFormat: DEFAULT_LOG_FORMAT.tsFormat,
+    levels: DEFAULT_LOG_FORMAT.levels.slice(),
     edited: false,
   });
   await saveLogFormat(fmt);
+  renderLevelBar();
   if (formatEditId === fmt.id) closeFormatEditDialog(); // its open editor would otherwise show stale values
   renderFormatList();
   renderFormatRuleFormatOptions();
@@ -15417,8 +15710,152 @@ const formatEditRegex = el("#formatEditRegex");
 const formatEditTsFormat = el("#formatEditTsFormat");
 const formatEditError = el("#formatEditError");
 const formatEditPreview = el("#formatEditPreview");
+const formatEditLevelsEl = el("#formatEditLevels");
+const formatEditLevelNew = el("#formatEditLevelNew");
+const formatEditLevelError = el("#formatEditLevelError");
 let formatEditId = null;
 let formatEditMode = "pattern";
+// Working state of the editor's level list: the arranged order of every row
+// (the five fixed ALL_LEVELS rows, which are always present and merely
+// checked/unchecked, plus any CUSTOM names this format defines, which exist
+// only while listed and are deleted rather than unchecked), and which of
+// them are enabled. The saved LogFormat.levels is the enabled ones in
+// exactly this order (see saveFormatEdit) — a disabled fixed level keeps a
+// position so unchecking and re-checking one doesn't lose where it sat.
+let formatEditLevelOrder = LEVELS.slice();
+let formatEditLevelOn = new Set(LEVELS);
+
+// Seeds the working level state from a stored format (or the defaults for a
+// brand-new one): its own levels first, in their stored order (custom names
+// included), then every remaining FIXED level appended unchecked.
+function setFormatEditLevels(levels) {
+  const picked = [];
+  (Array.isArray(levels) ? levels : LEVELS).forEach(l => {
+    const n = normalizeLevelName(l);
+    if (n && n !== "OTHER" && !picked.includes(n)) picked.push(n);
+  });
+  const base = picked.length ? picked : LEVELS.slice();
+  formatEditLevelOrder = base.concat(ALL_LEVELS.filter(l => !base.includes(l)));
+  formatEditLevelOn = new Set(base);
+  formatEditLevelError.textContent = "";
+  formatEditLevelError.classList.add("hidden");
+  formatEditLevelNew.value = "";
+  renderFormatEditLevels();
+}
+
+// A custom name's palette slot as the editor's own list currently stands —
+// customLevelSlot works off a SAVED format, which the in-progress editor
+// isn't yet, so the preview color is computed from the working order.
+function formatEditLevelSlot(lvl) {
+  const i = formatEditLevelOrder.filter(l => !ALL_LEVELS.includes(l)).indexOf(lvl);
+  return i === -1 ? 0 : (i % CUSTOM_LEVEL_SLOTS) + 1;
+}
+
+function showFormatEditLevelError(msg) {
+  formatEditLevelError.textContent = msg;
+  formatEditLevelError.classList.toggle("hidden", !msg);
+}
+
+// Appends a custom level name typed into the add field. Rejects empty /
+// whitespace-only input and any name already in the list (case-insensitively
+// — including one of the five fixed rows, which is a re-check, not a new row).
+function addFormatEditLevel() {
+  const name = normalizeLevelName(formatEditLevelNew.value);
+  if (!name) { showFormatEditLevelError("Enter a level name."); return; }
+  if (name === "OTHER") { showFormatEditLevelError("OTHER is the built-in catch-all and can't be added."); return; }
+  if (formatEditLevelOrder.includes(name)) {
+    showFormatEditLevelError('"' + name + '" is already in the list.');
+    return;
+  }
+  formatEditLevelOrder.push(name);
+  formatEditLevelOn.add(name);
+  formatEditLevelNew.value = "";
+  showFormatEditLevelError("");
+  renderFormatEditLevels();
+}
+
+function removeFormatEditLevel(lvl) {
+  const idx = formatEditLevelOrder.indexOf(lvl);
+  if (idx === -1 || ALL_LEVELS.includes(lvl)) return; // fixed rows are unchecked, never removed
+  formatEditLevelOrder.splice(idx, 1);
+  formatEditLevelOn.delete(lvl);
+  showFormatEditLevelError("");
+  renderFormatEditLevels();
+}
+
+function renderFormatEditLevels() {
+  formatEditLevelsEl.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  formatEditLevelOrder.forEach((lvl, i) => {
+    const row = document.createElement("div");
+    row.className = "format-level-row";
+    row.dataset.level = lvl;
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = formatEditLevelOn.has(lvl);
+    cb.title = "Use this level for this format";
+    cb.addEventListener("change", () => {
+      if (cb.checked) formatEditLevelOn.add(lvl); else formatEditLevelOn.delete(lvl);
+    });
+    row.appendChild(cb);
+
+    const isCustom = !ALL_LEVELS.includes(lvl);
+    const name = document.createElement("div");
+    name.className = "format-level-name";
+    const slot = isCustom ? formatEditLevelSlot(lvl) : 0;
+    name.style.color = isCustom ? "var(--level-custom-" + slot + ")" : "var(--level-" + lvl.toLowerCase() + ")";
+    name.textContent = lvl;
+    row.appendChild(name);
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "filter-library-row-order";
+    upBtn.title = "Move up";
+    upBtn.textContent = "▲";
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditLevel(lvl, -1); });
+    row.appendChild(upBtn);
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "filter-library-row-order";
+    downBtn.title = "Move down";
+    downBtn.textContent = "▼";
+    downBtn.disabled = i === formatEditLevelOrder.length - 1;
+    downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditLevel(lvl, 1); });
+    row.appendChild(downBtn);
+
+    if (isCustom) {
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "filter-library-row-del";
+      delBtn.title = "Remove this custom level";
+      delBtn.innerHTML = ICON_CLOSE;
+      delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeFormatEditLevel(lvl); });
+      row.appendChild(delBtn);
+    }
+
+    frag.appendChild(row);
+  });
+  formatEditLevelsEl.appendChild(frag);
+}
+
+function moveFormatEditLevel(lvl, delta) {
+  const idx = formatEditLevelOrder.indexOf(lvl);
+  const other = idx + delta;
+  if (idx === -1 || other < 0 || other >= formatEditLevelOrder.length) return;
+  formatEditLevelOrder[idx] = formatEditLevelOrder[other];
+  formatEditLevelOrder[other] = lvl;
+  renderFormatEditLevels();
+}
+
+el("#formatEditLevelAddBtn").addEventListener("click", ev => { ev.stopPropagation(); addFormatEditLevel(); });
+formatEditLevelNew.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  ev.preventDefault(); // the editor sits inside a dialog — Enter must not submit/close it
+  addFormatEditLevel();
+});
 
 function updateFormatEditModeUI() {
   el("#formatEditModePattern").classList.toggle("active", formatEditMode === "pattern");
@@ -15619,6 +16056,7 @@ function openFormatEditDialog(id) {
   formatEditPattern.value = fmt ? (fmt.pattern || "") : DEFAULT_LOG_FORMAT.pattern;
   formatEditRegex.value = fmt ? (fmt.regex || "") : "";
   formatEditTsFormat.value = fmt ? (fmt.tsFormat || "") : DEFAULT_LOG_FORMAT.tsFormat;
+  setFormatEditLevels(fmt ? fmt.levels : null);
   formatEditError.textContent = "";
   formatEditError.classList.add("hidden");
   updateFormatEditModeUI();
@@ -15641,6 +16079,8 @@ async function saveFormatEdit() {
   const pattern = formatEditPattern.value;
   const regex = formatEditRegex.value;
   const tsFormat = formatEditTsFormat.value.trim();
+  const levels = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
+  if (!levels.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
 
   if (formatEditMode === "pattern") {
     const c = compileFormatPattern(pattern, tsFormat);
@@ -15661,6 +16101,7 @@ async function saveFormatEdit() {
   fmt.pattern = pattern;
   fmt.regex = regex;
   fmt.tsFormat = tsFormat;
+  fmt.levels = levels;
   // See "Log format definitions" — editing the builtin default takes it off
   // the untouched-HEADER_RE fast path from now on.
   if (fmt.builtin) fmt.edited = true;
@@ -15671,6 +16112,7 @@ async function saveFormatEdit() {
   closeFormatEditDialog();
   renderFormatList();
   renderFormatRuleFormatOptions();
+  renderLevelBar(); // its buttons/order come from the formats currently in play
 }
 el("#formatEditSave").addEventListener("click", saveFormatEdit);
 
@@ -17447,7 +17889,7 @@ btnColumns.innerHTML = ICON_COLUMNS;
 btnTextMatchHighlight.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT;
 btnApplyLevelToTree.innerHTML = ICON_LEVEL;
 btnApplyLevelToTree.addEventListener("click", () => {
-  const levels = LEVELS.filter(l => state.levelFilter.has(l));
+  const levels = canonicalLevelOrder([...state.levelFilter]);
   if (!levels.length) return;
   applyLevelSelectionToTree(levels);
 });
