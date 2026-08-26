@@ -117,7 +117,9 @@ open it in a browser to view it.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
   Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
   JSON (download a template, fill in your colors, import it back). Pick a
-  system-installed UI font family, and independently scale the overall UI
+  system-installed UI font family (the desktop wrapper additionally offers
+  every font actually installed on your machine, e.g. Fira Code or
+  Iosevka), and independently scale the overall UI
   and the log/text content size. Resizable/toggleable columns, multiline
   message display, multi-row select + copy, and a horizontal scrollbar in
   the Filter view for reading long messages in full.

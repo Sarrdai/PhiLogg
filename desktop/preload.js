@@ -15,6 +15,9 @@
 //    revealLocalUrl covers a philogg://local/<id>/… url (launch-arg/
 //    file-association opens, see main.js's localFiles map), revealPath
 //    covers a plain OS path already resolved via getPathForFile above.
+//  - listSystemFonts: lets the UI-font picker offer every font actually
+//    installed on this machine (desktop only — see main.js's
+//    listSystemFonts comment for why the plain HTML version can't).
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 // FEATURE_BACKLOG.md #33: hydrate localStorage from settings.json (in the
@@ -47,4 +50,5 @@ contextBridge.exposeInMainWorld("philogg", {
   },
   revealPath: filePath => ipcRenderer.invoke("philogg:reveal-path", filePath),
   revealLocalUrl: url => ipcRenderer.invoke("philogg:reveal-local-url", url),
+  listSystemFonts: () => ipcRenderer.invoke("philogg:list-system-fonts"),
 });
