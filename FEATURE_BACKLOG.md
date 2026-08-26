@@ -70,7 +70,6 @@ this point.
 
 ### Log formats & parsing
 
-47. **Format-specific log levels** — configurable while setting up a parser (Format Manager), with a definable order, shown in the log-level column instead of forcing the fixed ERROR/WARN/INFO/DEBUG set.
 
 ## Backlog
 

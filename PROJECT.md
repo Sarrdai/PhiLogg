@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~17,406 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~17,556 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -19,6 +19,16 @@ definitions" (`philogg.html`, right after "Log parsing") for the full
 mechanism: pattern-mode vs. regex-mode compilation, filename→format glob
 rules (Settings → Format Manager), and how a file's resolved format is
 pinned to it for the rest of its session-cache lifetime.
+
+A format also carries its own **ordered level list** (`LogFormat.levels`, a
+subset of the fixed bucket set `ERROR/WARN/INFO/DEBUG/TRACE` — `OTHER` stays
+the implicit catch-all and is never listed). It decides which level buttons
+the level bar offers, and in which order, for files using that format; a
+format without the field (every builtin, and anything created before this
+existed) falls back to `LEVELS` = `ERROR, WARN, INFO, DEBUG`. Every entry is
+stamped with the `formatId` it was parsed under (`parseLogTextAsync` and
+`appendTailText`). See `docs/ui-and-views.md` → "Level bar" for how several
+open formats combine (`activeLevelOrder`/`canonicalLevelOrder`).
 
 The builtin default (`fmt-default`, non-deletable, always sorts first in the
 Format Manager) is the original hardcoded log4net-style conversion pattern:
