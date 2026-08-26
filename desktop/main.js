@@ -10,9 +10,17 @@
 // from a file: page (matching the real browser restriction that guard
 // exists for) — using a privileged custom scheme instead sidesteps that
 // without weakening the guard itself.
-const { app, BrowserWindow, protocol, Menu, screen, Tray, nativeImage } = require("electron");
+const { app, BrowserWindow, protocol, Menu, screen, Tray, nativeImage, shell, ipcMain } = require("electron");
 const fs = require("fs");
 const path = require("path");
+
+// FEATURE_BACKLOG.md #52 ("Open File Location") is the one feature that
+// needs the renderer to reach into Node/Electron APIs it otherwise never
+// gets (see the "no preload needed" note above) — resolving a File's real
+// OS path (webUtils) and revealing it in the file manager (shell) are both
+// main-process-only. preload.js is the sole, narrow bridge for that; the
+// renderer still gets no other Node access.
+const PRELOAD_PATH = path.join(__dirname, "preload.js");
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "philogg", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -130,6 +138,25 @@ function registerLocalFile(filePath) {
 function localFileUrl(filePath) {
   const id = registerLocalFile(filePath);
   return `philogg://local/${id}/${encodeURIComponent(path.basename(filePath))}`;
+}
+
+// FEATURE_BACKLOG.md #52 ("Open File Location"): the two handlers behind
+// preload.js's revealPath/revealLocalUrl. Both end up calling the same
+// shell.showItemInFolder — revealLocalUrl exists only because the renderer
+// knows a philogg://local/<id>/… file solely by that url (never a raw
+// path, see localFileUrl above), so it needs this process to do the
+// id -> path lookup via the same localFiles map registerProtocol reads.
+function registerRevealHandlers() {
+  ipcMain.handle("philogg:reveal-path", (_event, filePath) => {
+    if (typeof filePath === "string" && filePath) shell.showItemInFolder(filePath);
+  });
+  ipcMain.handle("philogg:reveal-local-url", (_event, url) => {
+    if (typeof url !== "string") return;
+    let id;
+    try { id = new URL(url).pathname.split("/").filter(Boolean)[0]; } catch { return; }
+    const filePath = localFiles.get(id);
+    if (filePath) shell.showItemInFolder(filePath);
+  });
 }
 
 function registerProtocol() {
@@ -327,7 +354,7 @@ function createWindow(filePath) {
     ...(isMac
       ? { titleBarStyle: "hiddenInset" }
       : { titleBarStyle: "hidden", titleBarOverlay: { color: OVERLAY_TRANSPARENT, symbolColor: OVERLAY_ACCENT_DEFAULT, height: TITLEBAR_HEIGHT } }),
-    webPreferences: { sandbox: true },
+    webPreferences: { sandbox: true, preload: PRELOAD_PATH },
   });
   win.once("ready-to-show", () => {
     if (!splash.isDestroyed()) splash.destroy();
@@ -395,6 +422,7 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     registerProtocol();
+    registerRevealHandlers();
     createWindow(pendingOpenFile || fileArgFromArgv(process.argv));
   });
 

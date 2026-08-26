@@ -72,10 +72,6 @@ this point.
 
 47. **Format-specific log levels** — configurable while setting up a parser (Format Manager), with a definable order, shown in the log-level column instead of forcing the fixed ERROR/WARN/INFO/DEBUG set.
 
-### Desktop wrapper (Electron)
-
-52. **"Open File Location" in the file context menu** — jumps directly to the OS folder containing the selected file.
-
 ## Backlog
 
 ### Navigation & reading

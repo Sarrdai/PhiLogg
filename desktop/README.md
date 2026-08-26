@@ -125,14 +125,22 @@ recommended; electron-builder derives `.ico`/`.icns` from it), or a
 multi-resolution `build/icons/16x16.png`, `32x32.png`, ... set, then add an
 `icon:` line under the matching platform block in `electron-builder.yml`.
 
-## Why no `preload.js` / IPC bridge
+## Why (almost) no `preload.js` / IPC bridge
 
-The renderer never needs Node access. `main.js` reads a local file via
-Node `fs` (bypassing the browser's gesture requirement) and serves it back
-over a custom `philogg://` scheme instead — `philogg.html`'s existing
-`?url=` deep-link loader (`loadFromUrlParam()`) just `fetch()`es it, the
-exact same code path a remote CI log link uses. One loading mechanism,
-not two.
+The renderer never needs Node access for *loading*. `main.js` reads a local
+file via Node `fs` (bypassing the browser's gesture requirement) and serves
+it back over a custom `philogg://` scheme instead — `philogg.html`'s
+existing `?url=` deep-link loader (`loadFromUrlParam()`) just `fetch()`es
+it, the exact same code path a remote CI log link uses. One loading
+mechanism, not two.
+
+One feature does need a narrow bridge: "Open File Location"
+(`FEATURE_BACKLOG.md` #52) has to resolve a `File`'s real OS path
+(`webUtils.getPathForFile`, main-process-only) and reveal it in the file
+manager (`shell.showItemInFolder`, same). `preload.js` exposes exactly
+those two capabilities on `window.philogg` via `contextBridge` — the
+renderer still gets no other Node access, `sandbox: true` stays on. See
+`PROJECT.md` → "Desktop wrapper" → "Open File Location" for the full design.
 
 ## Why a custom scheme instead of `file://`
 
