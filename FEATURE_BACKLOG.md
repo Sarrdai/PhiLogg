@@ -56,7 +56,6 @@ this point.
 
 ### Desktop wrapper (Electron)
 
-33. **Settings exportable as JSON.** The Electron variant should by default store/load settings in the OS "well-known" config directory (XDG on Linux, e.g. `~/.config/PhiLogg`).
 35. **"Restore last session on startup" setting is Electron-only in practice** — the plain `.html` build already needs to survive a page refresh regardless of this setting (existing cache behavior), so the toggle really only has meaning in the Electron build; consider hiding/disabling it outside Electron.
 
 ### Settings & UI polish
