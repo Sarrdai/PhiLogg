@@ -38,6 +38,12 @@
     --level-warn-on:#2a1c04;
     --level-info-on:#04122a;
     --level-debug-on:#0d1016;
+    /* TRACE became a level-bar button only once a format could put it in its
+       own level list (per-format levels); it has no per-theme "on" color of
+       its own — it deliberately follows --level-debug-on, which every theme
+       already defines and which sits on the same neutral grey family as
+       --level-trace, so this single var() reference resolves per theme. */
+    --level-trace-on:var(--level-debug-on);
     /* Text color for anything sitting on a solid var(--accent) surface
        (brand mark, Save button, active chips/badges) — same reasoning as
        the --level-*-on vars above, split out from a hardcoded near-black
@@ -815,11 +821,13 @@
   .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
   .level-btn.lvl-info{color:var(--level-info); border-color:color-mix(in srgb, var(--level-info) 35%, transparent);}
   .level-btn.lvl-debug{color:var(--level-debug); border-color:color-mix(in srgb, var(--level-debug) 40%, transparent);}
+  .level-btn.lvl-trace{color:var(--level-trace); border-color:color-mix(in srgb, var(--level-trace) 40%, transparent);}
   .level-btn.active{border-color:transparent;}
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
   .level-btn.active.lvl-warn{background:var(--level-warn); color:var(--level-warn-on);}
   .level-btn.active.lvl-info{background:var(--level-info); color:var(--level-info-on);}
   .level-btn.active.lvl-debug{background:var(--level-debug); color:var(--level-debug-on);}
+  .level-btn.active.lvl-trace{background:var(--level-trace); color:var(--level-trace-on);}
 
   /* ---------- Filter/Highlight split ---------- */
   #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
@@ -1781,6 +1789,11 @@
   }
   .settings-inline-panel.hidden{display:none;}
   #btnAddFormat.hidden, #btnAddFormatRule.hidden{display:none;}
+  /* Per-format log-level list inside the format editor — same ▲/▼ reorder
+     idiom as the filename-rule list, plus a checkbox per level. */
+  #formatEditLevels{display:flex; flex-direction:column; gap:4px;}
+  .format-level-row{display:flex; align-items:center; gap:8px; padding:3px 6px; border-radius:6px; background:var(--bg-panel);}
+  .format-level-row .format-level-name{flex:1; font-size:12px;}
   #formatEditPatternField.hidden, #formatEditRegexField.hidden{display:none;}
   .settings-inline-panel-title{font-size:12.5px; font-weight:650; color:var(--text-primary); margin-bottom:12px;}
   .settings-inline-panel textarea{
@@ -3124,6 +3137,11 @@
               <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
             </div>
             <div class="link-field">
+              <label>Log levels <span class="link-target-label">(which ones this format uses, and in which order)</span></label>
+              <div id="formatEditLevels"></div>
+              <div class="session-dialog-note">Only checked levels get a quick-filter button for files using this format; anything else falls into OTHER.</div>
+            </div>
+            <div class="link-field">
               <label>Preview <span class="link-target-label">(from the example line(s) above)</span></label>
               <div id="formatEditPreview" class="format-preview"></div>
             </div>
@@ -4237,7 +4255,47 @@ const state = {
   formatRules: [],
 };
 
+// Every level bucket that has its own color/CSS class (the implicit OTHER
+// catch-all deliberately has none — see levelBucket). A log format may pick
+// any subset of these, in any order, as ITS level list (LogFormat.levels).
+const ALL_LEVELS = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
+
+// The default level list used by every format that doesn't define its own
+// (all builtin formats, and any user format created before per-format levels
+// existed) — the fixed set the level bar showed before this was configurable.
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
+
+// The level list of one format, falling back to LEVELS. Unknown names in a
+// stored list (hand-edited/older records) are dropped rather than trusted.
+function formatLevels(formatId) {
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  const list = fmt && Array.isArray(fmt.levels) ? fmt.levels.filter(l => ALL_LEVELS.includes(l)) : null;
+  return (list && list.length) ? list : LEVELS;
+}
+
+// The union of the level lists of every format currently in play — each open
+// root file's format contributes its own list, concatenated in tree order and
+// de-duplicated as names first appear. This is what the level bar renders and
+// what a level filter node's value array is canonically ordered by.
+function activeLevelOrder() {
+  const out = [];
+  const push = l => { if (!out.includes(l)) out.push(l); };
+  state.rootIds.forEach(id => {
+    const n = state.nodes[id];
+    if (n) formatLevels(n.formatId || DEFAULT_FORMAT_ID).forEach(push);
+  });
+  if (!out.length) LEVELS.forEach(push);
+  return out;
+}
+
+// Re-sorts a set of picked level names into activeLevelOrder(). Anything not
+// in that order (e.g. OTHER, or a level from a format no longer open, coming
+// from an imported filter file) is kept, appended in its original order,
+// rather than silently dropped.
+function canonicalLevelOrder(levels) {
+  const order = activeLevelOrder();
+  return order.filter(l => levels.includes(l)).concat(levels.filter(l => !order.includes(l)));
+}
 
 // Severity ordering used when the log table is sorted by the Level column.
 const LEVEL_SORT_RANK = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3, TRACE: 4, OTHER: 5 };
@@ -4342,7 +4400,8 @@ function parseHeaderLine(line) {
 const PARSE_CHUNK_LINES = 4000;
 
 async function parseLogTextAsync(text, node, onProgress) {
-  const compiled = getCompiledFormat(node.formatId || DEFAULT_FORMAT_ID);
+  const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const compiled = getCompiledFormat(formatId);
   const lines = text.split(/\r\n|\n/);
   let current = null;
 
@@ -4351,6 +4410,9 @@ async function parseLogTextAsync(text, node, onProgress) {
     if (compiled.isHeaderLine(line)) {
       if (current) { entryIndex[current.id] = current; node.entries.push(current); }
       current = compiled.parseHeader(line);
+      // Which format produced this entry — lets level rendering resolve the
+      // owning format's level list per-entry, without needing the tree node.
+      current.formatId = formatId;
     } else if (current && line !== "") {
       current.message += "\n" + line;
       current.raw += "\n" + line;
@@ -4572,6 +4634,10 @@ const DEFAULT_LOG_FORMAT = {
   pattern: '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n',
   regex: "",
   tsFormat: "yyyy-MM-dd HH:mm:ss,SSS",
+  // Which level buckets this format actually uses, in the order the level bar
+  // shows them (see formatLevels/activeLevelOrder). Optional on a record: a
+  // missing/empty list means "the default LEVELS set".
+  levels: LEVELS.slice(),
   builtin: true,
   edited: false,
   createdAt: 0,
@@ -7082,7 +7148,7 @@ function buildLevelNodeLabelContent(node) {
   (node.value || []).forEach((lvl, i) => {
     if (i > 0) frag.appendChild(document.createTextNode(", "));
     const word = document.createElement("span");
-    if (LEVELS.includes(lvl)) word.style.color = "var(--level-" + lvl.toLowerCase() + ")";
+    if (ALL_LEVELS.includes(lvl)) word.style.color = "var(--level-" + lvl.toLowerCase() + ")";
     word.textContent = lvl;
     frag.appendChild(word);
   });
@@ -7738,7 +7804,7 @@ function renderLevelBar() {
   const counts = getLevelCounts(levelBarCountsBaseId()) || {};
   const activeLevels = activeLevelSetForBar();
 
-  LEVELS.forEach(lvl => {
+  activeLevelOrder().forEach(lvl => {
     const btn = document.createElement("button");
     const isActive = activeLevels.has(lvl);
     btn.className = "level-btn " + levelClass(lvl) + (isActive ? " active" : "");
@@ -7751,7 +7817,7 @@ function renderLevelBar() {
         const current = currentTreeLevelSelection();
         const idx = current.indexOf(lvl);
         if (idx === -1) current.push(lvl); else current.splice(idx, 1);
-        applyLevelSelectionToTree(LEVELS.filter(l => current.includes(l)));
+        applyLevelSelectionToTree(canonicalLevelOrder(current));
         return;
       }
       if (state.levelFilter.has(lvl)) state.levelFilter.delete(lvl);
@@ -12717,7 +12783,8 @@ function isTailLive(t) {
 // and keeps an unterminated trailing line in tail.pending until the writer
 // finishes it. Returns true if anything visible changed.
 function appendTailText(node, chunkText) {
-  const compiled = getCompiledFormat(node.formatId || DEFAULT_FORMAT_ID);
+  const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const compiled = getCompiledFormat(formatId);
   const text = node.tail.pending + chunkText;
   const lines = text.split(/\r\n|\n/);
   node.tail.pending = lines.pop(); // last piece has no newline yet — wait for more data
@@ -12727,6 +12794,7 @@ function appendTailText(node, chunkText) {
   for (const line of lines) {
     if (compiled.isHeaderLine(line)) {
       const e = compiled.parseHeader(line);
+      e.formatId = formatId; // same stamping as parseLogTextAsync
       entryIndex[e.id] = e;
       node.entries.push(e);
       last = e;
@@ -15174,7 +15242,8 @@ function renderFormatList() {
     main.innerHTML =
       '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") + '</div>' +
       '<div class="filter-library-row-meta">' + (fmt.mode === "regex" ? "Regex" : "Pattern") +
-      (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") + '</div>';
+      (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") +
+      (formatLevels(fmt.id).join(",") !== LEVELS.join(",") ? " · " + escapeHtml(formatLevels(fmt.id).join(" ")) : "") + '</div>';
     row.appendChild(main);
     const editBtn = document.createElement("button");
     editBtn.type = "button";
@@ -15218,9 +15287,11 @@ async function resetDefaultFormat() {
     pattern: DEFAULT_LOG_FORMAT.pattern,
     regex: DEFAULT_LOG_FORMAT.regex,
     tsFormat: DEFAULT_LOG_FORMAT.tsFormat,
+    levels: DEFAULT_LOG_FORMAT.levels.slice(),
     edited: false,
   });
   await saveLogFormat(fmt);
+  renderLevelBar();
   if (formatEditId === fmt.id) closeFormatEditDialog(); // its open editor would otherwise show stale values
   renderFormatList();
   renderFormatRuleFormatOptions();
@@ -15323,8 +15394,82 @@ const formatEditRegex = el("#formatEditRegex");
 const formatEditTsFormat = el("#formatEditTsFormat");
 const formatEditError = el("#formatEditError");
 const formatEditPreview = el("#formatEditPreview");
+const formatEditLevelsEl = el("#formatEditLevels");
 let formatEditId = null;
 let formatEditMode = "pattern";
+// Working state of the editor's level list: ALL_LEVELS in the order the
+// person arranged them, plus which of them are enabled. The saved
+// LogFormat.levels is the enabled ones in exactly this order (see
+// saveFormatEdit) — disabled levels keep a position so unchecking and
+// re-checking one doesn't lose where it sat.
+let formatEditLevelOrder = LEVELS.slice();
+let formatEditLevelOn = new Set(LEVELS);
+
+// Seeds the working level state from a stored format (or the defaults for a
+// brand-new one): its own levels first, in their stored order, then every
+// remaining known level appended unchecked.
+function setFormatEditLevels(levels) {
+  const picked = (Array.isArray(levels) ? levels : LEVELS).filter(l => ALL_LEVELS.includes(l));
+  const base = picked.length ? picked : LEVELS.slice();
+  formatEditLevelOrder = base.concat(ALL_LEVELS.filter(l => !base.includes(l)));
+  formatEditLevelOn = new Set(base);
+  renderFormatEditLevels();
+}
+
+function renderFormatEditLevels() {
+  formatEditLevelsEl.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  formatEditLevelOrder.forEach((lvl, i) => {
+    const row = document.createElement("div");
+    row.className = "format-level-row";
+    row.dataset.level = lvl;
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = formatEditLevelOn.has(lvl);
+    cb.title = "Use this level for this format";
+    cb.addEventListener("change", () => {
+      if (cb.checked) formatEditLevelOn.add(lvl); else formatEditLevelOn.delete(lvl);
+    });
+    row.appendChild(cb);
+
+    const name = document.createElement("div");
+    name.className = "format-level-name";
+    name.style.color = "var(--level-" + lvl.toLowerCase() + ")";
+    name.textContent = lvl;
+    row.appendChild(name);
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "filter-library-row-order";
+    upBtn.title = "Move up";
+    upBtn.textContent = "▲";
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditLevel(lvl, -1); });
+    row.appendChild(upBtn);
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "filter-library-row-order";
+    downBtn.title = "Move down";
+    downBtn.textContent = "▼";
+    downBtn.disabled = i === formatEditLevelOrder.length - 1;
+    downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditLevel(lvl, 1); });
+    row.appendChild(downBtn);
+
+    frag.appendChild(row);
+  });
+  formatEditLevelsEl.appendChild(frag);
+}
+
+function moveFormatEditLevel(lvl, delta) {
+  const idx = formatEditLevelOrder.indexOf(lvl);
+  const other = idx + delta;
+  if (idx === -1 || other < 0 || other >= formatEditLevelOrder.length) return;
+  formatEditLevelOrder[idx] = formatEditLevelOrder[other];
+  formatEditLevelOrder[other] = lvl;
+  renderFormatEditLevels();
+}
 
 function updateFormatEditModeUI() {
   el("#formatEditModePattern").classList.toggle("active", formatEditMode === "pattern");
@@ -15525,6 +15670,7 @@ function openFormatEditDialog(id) {
   formatEditPattern.value = fmt ? (fmt.pattern || "") : DEFAULT_LOG_FORMAT.pattern;
   formatEditRegex.value = fmt ? (fmt.regex || "") : "";
   formatEditTsFormat.value = fmt ? (fmt.tsFormat || "") : DEFAULT_LOG_FORMAT.tsFormat;
+  setFormatEditLevels(fmt ? fmt.levels : null);
   formatEditError.textContent = "";
   formatEditError.classList.add("hidden");
   updateFormatEditModeUI();
@@ -15547,6 +15693,8 @@ async function saveFormatEdit() {
   const pattern = formatEditPattern.value;
   const regex = formatEditRegex.value;
   const tsFormat = formatEditTsFormat.value.trim();
+  const levels = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
+  if (!levels.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
 
   if (formatEditMode === "pattern") {
     const c = compileFormatPattern(pattern, tsFormat);
@@ -15567,6 +15715,7 @@ async function saveFormatEdit() {
   fmt.pattern = pattern;
   fmt.regex = regex;
   fmt.tsFormat = tsFormat;
+  fmt.levels = levels;
   // See "Log format definitions" — editing the builtin default takes it off
   // the untouched-HEADER_RE fast path from now on.
   if (fmt.builtin) fmt.edited = true;
@@ -15577,6 +15726,7 @@ async function saveFormatEdit() {
   closeFormatEditDialog();
   renderFormatList();
   renderFormatRuleFormatOptions();
+  renderLevelBar(); // its buttons/order come from the formats currently in play
 }
 el("#formatEditSave").addEventListener("click", saveFormatEdit);
 
@@ -17354,7 +17504,7 @@ btnColumns.innerHTML = ICON_COLUMNS;
 btnTextMatchHighlight.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT;
 btnApplyLevelToTree.innerHTML = ICON_LEVEL;
 btnApplyLevelToTree.addEventListener("click", () => {
-  const levels = LEVELS.filter(l => state.levelFilter.has(l));
+  const levels = canonicalLevelOrder([...state.levelFilter]);
   if (!levels.length) return;
   applyLevelSelectionToTree(levels);
 });
