@@ -135,6 +135,7 @@ async function withApp(run, opts = {}) {
       set levelFilterTreeMode(v) { levelFilterTreeMode = v; },
       get tempAnchorMode() { return tempAnchorMode; },
       get tempAnchorFadeSeconds() { return tempAnchorFadeSeconds; },
+      get temporaryAnchorAcrossFiles() { return temporaryAnchorAcrossFiles; },
       get sidebarForcedPeek() { return sidebarForcedPeek; },
       get sidebarAltPeek() { return sidebarAltPeek; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
@@ -3782,8 +3783,12 @@ await withApp(async (w, d, T) => {
   const fileRow = [...d.querySelectorAll(".tree-row")].find(r => r.querySelector(".tree-label").textContent === "a.log");
   fireClick(fileRow, w);
   assert(T.state.activeId === f.id, "clicking the file's tree row makes it active");
-  assert(T.state.focusRegion === "tree", "clicking a tree row switches focusRegion to \"tree\"");
+  assert(T.state.focusRegion === "entries", "clicking a tree row leaves focusRegion as \"entries\" (person-requested: arrow keys keep navigating the log, same as Alt+Arrow tree nav) rather than switching to \"tree\"");
 
+  // Force tree focus (e.g. Ctrl+0) to exercise moveTreeSelection's own
+  // arrow-key traversal below — independent of the click-focus behavior
+  // just asserted above.
+  T.state.focusRegion = "tree";
   fireKeydown(d, w, "ArrowDown");
   assert(T.state.activeId === filterA.id, "ArrowDown from the file moves to its first child (filterA)");
   fireKeydown(d, w, "ArrowDown");
@@ -5229,8 +5234,9 @@ await withApp(async (w, d, T) => {
   // The row is already fully interactive, not an inert placeholder: a real
   // click on it runs the normal tree-row click handler.
   T.state.focusRegion = "entries";
+  T.state.activeId = null;
   fireClick(row, w);
-  assert(T.state.focusRegion === "tree", "the still-loading row is already clickable like a normal tree row, not the old inert placeholder");
+  assert(T.state.activeId === newId, "the still-loading row is already clickable like a normal tree row, not the old inert placeholder");
 
   // The rest of the UI stays usable: unrelated controls remain clickable —
   // spot-checked via the pin-bookmarks toggle, which has nothing to do with
@@ -10395,6 +10401,12 @@ await withApp(async (w, d, T) => {
   const skip1Id = T.state.selectedId;
   assert(!!skip1Id, "sanity: clicking a Full-view row selects it");
 
+  // Persistent mode explicitly, so this part of the group tests the anchor
+  // mechanic itself rather than the (now Fade-by-default) mode's own timeout.
+  const modeSelectEarly = d.querySelector("#settingsTempAnchorMode");
+  modeSelectEarly.value = "persistent";
+  modeSelectEarly.dispatchEvent(new w.Event("change", { bubbles: true }));
+
   T.state.activeId = skipFilter.id; // start somewhere that DOES match
   w.render();
   fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
@@ -10403,7 +10415,7 @@ await withApp(async (w, d, T) => {
     "...and anchors the still-selected row at its would-be position, since 'keep' doesn't match it");
 
   let anchorRow = d.querySelector("#tableRows .log-row.temp-anchor-row");
-  assert(anchorRow && anchorRow.dataset.entryId === skip1Id, "Persistent mode (default) draws the temp anchor row in the Filtered table");
+  assert(anchorRow && anchorRow.dataset.entryId === skip1Id, "Persistent mode draws the temp anchor row in the Filtered table");
   const rows = [...d.querySelectorAll("#tableRows .log-row")].map(r => r.dataset.entryId);
   assert(rows.indexOf(anchorRow.dataset.entryId) === 1,
     "the anchor sits between 'keep 0' and 'keep 2' chronologically (would-be position), got index " + rows.indexOf(anchorRow.dataset.entryId));
@@ -10422,9 +10434,9 @@ await withApp(async (w, d, T) => {
     "Alt+Arrow tree navigation applies the SAME anchor mechanic as a tree row click");
 
   // --- Fade-duration row visibility: only shown for the Fade mode ---
-  const modeSelect = d.querySelector("#settingsTempAnchorMode");
+  const modeSelect = modeSelectEarly;
   assert(d.querySelector("#settingsTempAnchorFadeRow").style.display === "none",
-    "the fade-duration row is hidden while mode is Persistent (the default)");
+    "the fade-duration row is hidden while mode is Persistent");
 
   // --- Off mode: never drawn, but Up/Down still respect its position ---
   modeSelect.value = "off";
@@ -10440,9 +10452,8 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#tableRows .log-row.temp-anchor-row") === null, "Off mode never draws the anchor row");
   assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id, "...but the anchor position is still remembered");
 
-  // The tree click itself moves focus to the tree (existing, unchanged
-  // behavior) — put it back on the Log view to test plain row Up/Down here.
-  T.state.focusRegion = "entries";
+  // A tree click leaves focusRegion as "entries" (Group 108b below), so
+  // plain row Up/Down already works here without any extra step.
   fireKeydown(d, w, "ArrowDown"); // plain, no ctrl — ordinary row nav
   const keep2Id = d.querySelectorAll("#tableRows .log-row")[1].dataset.entryId;
   assert(T.state.selectedId === keep2Id, "Down from an off-mode (undrawn) anchor moves to the next REAL row after its position");
@@ -11125,6 +11136,132 @@ await withApp(async (w, d, T) => {
     assert(f.localPath === "/srv/logs/cached.log", "restore: localPath preserved, got " + f.localPath);
     assert(f.sourceUrl === "https://ci.example.com/cached.log", "restore: sourceUrl preserved, got " + f.sourceUrl);
   }, { indexedDB: factory });
+});
+
+/* ============================================================
+   GROUP 110 — Person-requested follow-ups to the Alt+Arrow/temp-anchor
+   mechanism from GROUP 99:
+   (a) A mouse click on a filter tree row now leaves focusRegion as
+       "entries" (see the renderNode click handler, philogg.html) instead of
+       switching to "tree" — plain arrow keys keep navigating the log right
+       after a tree click, exactly like Alt+Arrow tree nav already did,
+       continuing from a temp anchor when one applies (applyTempAnchorOnActiveNodeSwitch
+       runs for both paths, unchanged).
+   (b) New Settings -> Behavior toggle, "Show temporary anchor across files"
+       (#settingsTempAnchorAcrossFiles, localStorage philogg-temp-anchor-across-files,
+       default ON = the pre-existing behavior, i.e. an anchor is shown even
+       when the newly active filter belongs to a different file than the
+       still-selected row). Turning it off suppresses the anchor (returns
+       null from computeTempAnchorForNode) whenever the target filter's root
+       file doesn't actually contain the selected entry.
+   (c) The temp-anchor display-mode default (#settingsTempAnchorMode) changed
+       from "persistent" to "fade" — GROUP 99's own assertions were updated
+       in place to set "persistent" explicitly where they rely on it.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("110a. A tree-row click leaves focusRegion as \"entries\" — plain arrow keys keep navigating the log, anchor included");
+
+  const f = await w.addFile("app.log", makeLog(0, 5, { suffix: i => (i % 2 === 0 ? "keep" : "skip") }), () => {});
+  const keepFilter = w.createFilterNode(f.id, "text", "keep"); // matches entries 0,2,4
+  const skipFilter = w.createFilterNode(f.id, "text", "skip"); // matches entries 1,3
+  w.render();
+
+  T.state.activeId = skipFilter.id;
+  w.applyFhView("highlight");
+  T.state.entriesView = "highlight";
+  w.render();
+  fireClick([...d.querySelectorAll("#highlightRows .log-row")][1], w); // "message 1 skip"
+  const skip1Id = T.state.selectedId;
+  assert(!!skip1Id, "sanity: clicking a Full-view row selects it");
+
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(T.state.activeId === keepFilter.id, "sanity: the click switched the active filter");
+  assert(T.state.focusRegion === "entries", "a plain tree-row click leaves focusRegion as \"entries\", not \"tree\"");
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id && T.state.tempAnchor.nodeId === keepFilter.id,
+    "the temp anchor is set exactly as it already was for Alt+Arrow — the click doesn't skip that mechanic");
+
+  // Plain ArrowDown must navigate the LOG (from the anchor's would-be
+  // position), not the filter tree, since focusRegion never left "entries".
+  fireKeydown(d, w, "ArrowDown");
+  // Fade is the default mode now, so the anchor row itself is also drawn in
+  // #tableRows (between "keep 0" and "keep 2") — skip it to get the real rows.
+  const realRows = [...d.querySelectorAll("#tableRows .log-row")].filter(r => !r.classList.contains("temp-anchor-row"));
+  const keep2Id = realRows[1].dataset.entryId; // realRows: [keep0, keep2, keep4]
+  assert(T.state.selectedId === keep2Id,
+    "plain ArrowDown right after a tree-row click moves the LOG selection, continuing from the temp anchor, not the filter tree");
+  assert(T.state.activeId === keepFilter.id, "...and the active filter itself is untouched by that arrow key");
+});
+
+await withApp(async (w, d, T) => {
+  section("110b. Settings: \"Show temporary anchor across files\" toggle");
+
+  const checkbox = d.querySelector("#settingsTempAnchorAcrossFiles");
+  assert(checkbox, "the new checkbox exists in the settings panel");
+  assert(checkbox.checked === true, "default is ON (checked) — matches the pre-existing cross-file behavior");
+  assert(T.temporaryAnchorAcrossFiles === true, "default is ON at the state level too");
+
+  const fileA = await w.addFile("a.log", makeLog(0, 3, { suffix: () => "match" }), () => {});
+  const fileB = await w.addFile("b.log", makeLog(0, 3, { suffix: () => "other" }), () => {});
+  const filterA = w.createFilterNode(fileA.id, "text", "match"); // matches all of fileA's entries
+  const filterB = w.createFilterNode(fileB.id, "text", "other"); // matches all of fileB's entries — none of fileA's
+  w.render();
+
+  T.state.activeId = filterA.id;
+  w.applyFhView("highlight");
+  T.state.entriesView = "highlight";
+  w.render();
+  // Select fileA's own entry 0 while viewing fileA (Full view shows every
+  // loaded file's entries merged, but the row itself still belongs to fileA).
+  const fileAEntry0 = fileA.entries[0];
+  const rowForEntry = id => [...d.querySelectorAll("#highlightRows .log-row")].find(r => r.dataset.entryId === id);
+  fireClick(rowForEntry(fileAEntry0.id), w);
+  assert(T.state.selectedId === fileAEntry0.id, "sanity: selected an entry belonging to fileA");
+
+  // Cross-file ON (default): switching to filterB (fileB's own filter, which
+  // can never match a fileA entry) still anchors the fileA row.
+  fireClick(d.querySelector('.tree-row[data-node-id="' + filterB.id + '"]'), w);
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === fileAEntry0.id,
+    "cross-file ON: the anchor is still shown even though filterB belongs to a different file than the selected row");
+
+  // Turn the setting off, persisted to localStorage.
+  checkbox.checked = false;
+  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.temporaryAnchorAcrossFiles === false, "unchecking flips the state flag");
+  assert(w.localStorage.getItem("philogg-temp-anchor-across-files") === "0", "...and persists it to localStorage");
+
+  T.state.activeId = filterA.id;
+  T.state.tempAnchor = null;
+  w.render();
+  fireClick(d.querySelector('.tree-row[data-node-id="' + filterB.id + '"]'), w);
+  assert(T.state.tempAnchor === null,
+    "cross-file OFF: no anchor is shown when the target filter's file doesn't contain the selected row");
+
+  // Switching within the SAME file (fileA) must still anchor normally even
+  // with the setting off — the gate is specifically about crossing files.
+  const filterANarrow = w.createFilterNode(fileA.id, "text", "message 2"); // matches only entry index 2 of fileA
+  w.render();
+  T.state.activeId = filterA.id;
+  T.state.selectedId = fileAEntry0.id;
+  T.state.tempAnchor = null;
+  w.render();
+  fireClick(d.querySelector('.tree-row[data-node-id="' + filterANarrow.id + '"]'), w);
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === fileAEntry0.id,
+    "cross-file OFF: switching between two filters of the SAME file still shows the anchor normally");
+
+  // Re-enabling restores the cross-file behavior.
+  checkbox.checked = true;
+  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.temporaryAnchorAcrossFiles === true && w.localStorage.getItem("philogg-temp-anchor-across-files") === "1",
+    "re-checking flips the flag back on and persists \"1\"");
+});
+
+await withApp(async (w, d, T) => {
+  section("110c. Temp-anchor display-mode default changed from Persistent to Fade");
+
+  assert(T.tempAnchorMode === "fade", "the default mode (nothing in localStorage) is now \"fade\", not \"persistent\"");
+  assert(d.querySelector("#settingsTempAnchorMode").value === "fade", "the settings select reflects the new default on init");
+  assert(d.querySelector("#settingsTempAnchorFadeRow").style.display !== "none",
+    "the fade-duration row is shown by default now, since Fade is the default mode");
 });
 
 /* ============================================================
@@ -12624,6 +12761,19 @@ process.exit(failed ? 1 : 0);
               filesystem path at all. A plain http(s) ?url= node instead
               gets "Copy URL". Both node.localPath/node.sourceUrl round-trip
               through the session cache.
+   Group 110 — this session (2026-08-26), person-requested follow-ups to
+              Group 99's Alt+Arrow/temp-anchor mechanism: (a) a tree-row
+              click now leaves focusRegion as "entries" instead of "tree",
+              so plain arrow keys keep navigating the log right after a
+              mouse click on a filter, same as Alt+Arrow already did,
+              anchor included; (b) new "Show temporary anchor across files"
+              setting (default ON = pre-existing behavior) gates the anchor
+              on same-file switches only when off; (c) the temp-anchor
+              display-mode default changed from "persistent" to "fade".
+              Group 99/36/GROUP-around-5233's own assertions that relied on
+              a tree click flipping focusRegion, or on "persistent" being
+              the default mode, were updated in place rather than left
+              testing the old behavior.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
