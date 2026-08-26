@@ -14,6 +14,16 @@ const { app, BrowserWindow, protocol, Menu, screen, Tray, nativeImage, shell, ip
 const fs = require("fs");
 const path = require("path");
 
+// FEATURE_BACKLOG.md #33: without this, app.getPath("userData") (and thus
+// every path derived from it below) resolves against package.json's own
+// "name" ("philogg-desktop") in a dev checkout, but against
+// electron-builder.yml's "productName" ("PhiLogg") once packaged — two
+// different config directories for the same app depending on how it's run.
+// Setting the name explicitly, before anything (requestSingleInstanceLock
+// included) touches userData, makes both cases resolve to the same
+// well-known directory (e.g. `~/.config/PhiLogg` on Linux).
+app.setName("PhiLogg");
+
 // FEATURE_BACKLOG.md #52 ("Open File Location") is the one feature that
 // needs the renderer to reach into Node/Electron APIs it otherwise never
 // gets (see the "no preload needed" note above) — resolving a File's real
@@ -146,6 +156,82 @@ function localFileUrl(filePath) {
 // knows a philogg://local/<id>/… file solely by that url (never a raw
 // path, see localFileUrl above), so it needs this process to do the
 // id -> path lookup via the same localFiles map registerProtocol reads.
+// FEATURE_BACKLOG.md #33: mirror philogg.html's `philogg-*` localStorage
+// settings into a plain, human-editable settings.json in the same
+// well-known config directory the IndexedDB cache lives in (see
+// app.setName() above) — so both can be inspected/edited/deleted outside
+// the app, without touching philogg.html's own storage mechanism at all.
+// Only keys prefixed "philogg-" are ever written here (that prefix covers
+// every settings key philogg.html defines, see PROJECT.md "Desktop
+// wrapper" — the cache's own IndexedDB keys use different names and stay
+// out of this file entirely).
+const SETTINGS_PATH = path.join(app.getPath("userData"), "settings.json");
+
+function readSettingsFile() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {}; // missing file (first run) or corrupt/hand-edited JSON — start clean rather than crash
+  }
+}
+
+function writeSettingsFile(values) {
+  fs.promises.writeFile(SETTINGS_PATH, JSON.stringify(values, null, 2)).catch(() => {});
+}
+
+// Preload's synchronous read happens before philogg.html's own script runs
+// (see preload.js) — early enough for the many `philogg-*` keys it reads
+// once, synchronously, at top-level script parse. That's earlier than any
+// `dom-ready`/`did-finish-load` hook here in the main process could manage,
+// which is why hydration lives in preload.js instead of here.
+function registerSettingsHandlers() {
+  ipcMain.on("philogg:settings-read", (event) => {
+    event.returnValue = readSettingsFile();
+  });
+}
+
+// Capturing every settings *write* the same way (from preload, before
+// philogg.html's script runs) isn't needed — writes only ever happen later,
+// in response to a user action, well after the page has loaded — so this
+// reuses the same polling pattern watchTheme()/watchCloseToTray() already
+// rely on instead of adding a second IPC channel: cheap at ~1x/second for
+// values that only change on explicit user interaction.
+let lastSettingsDump = null;
+
+function watchSettings(win) {
+  const poll = async () => {
+    if (win.isDestroyed()) return;
+    let dump;
+    try {
+      dump = await win.webContents.executeJavaScript(
+        'Object.fromEntries(Object.keys(localStorage).filter(k => k.startsWith("philogg-")).map(k => [k, localStorage.getItem(k)]))'
+      );
+    } catch {
+      return; // window/page torn down mid-poll
+    }
+    const json = JSON.stringify(dump);
+    if (json === lastSettingsDump) return;
+    lastSettingsDump = json;
+    writeSettingsFile(dump);
+  };
+  const interval = setInterval(poll, 1000);
+  win.on("closed", () => clearInterval(interval));
+  win.on("close", () => { poll(); }); // best-effort final flush so the last change before quitting isn't lost
+  poll();
+}
+
+// FEATURE_BACKLOG.md #33's cache half: IndexedDB already lives under
+// app.getPath("userData") automatically (Chromium's own default, see
+// app.setName() above) — no relocation code needed. "Deletable" just needs
+// a reachable action, since the LevelDB files themselves aren't meant to be
+// hand-edited; the tray menu (always present, see createTray) is that
+// action, next to the same well-known folder for the JSON settings file.
+async function clearCache(win) {
+  await win.webContents.session.clearStorageData({ storages: ["indexdb"] });
+  if (!win.isDestroyed()) win.webContents.reload();
+}
+
 function registerRevealHandlers() {
   ipcMain.handle("philogg:reveal-path", (_event, filePath) => {
     if (typeof filePath === "string" && filePath) shell.showItemInFolder(filePath);
@@ -338,6 +424,14 @@ function createTray(win) {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open PhiLogg", click: () => { win.show(); focusWindow(win); } },
     { type: "separator" },
+    // FEATURE_BACKLOG.md #33: the well-known config directory (settings.json
+    // + the IndexedDB cache) has no dedicated UI otherwise — there's no
+    // application menu to hang these on (Menu.setApplicationMenu(null)
+    // above), so the always-present tray (see createWindow) is the one
+    // reachable place for both.
+    { label: "Open Config Folder", click: () => { shell.openPath(app.getPath("userData")); } },
+    { label: "Clear Cache", click: () => clearCache(win) },
+    { type: "separator" },
     { label: "Quit", click: () => { isQuitting = true; app.quit(); } },
   ]));
   tray.on("click", () => { win.show(); focusWindow(win); });
@@ -363,9 +457,14 @@ function createWindow(filePath) {
   win.webContents.on("dom-ready", () => {
     win.webContents.insertCSS(FRAMELESS_CSS);
     if (!isMac) watchTheme(win);
+    watchSettings(win);
   });
   watchFullscreenToggle(win);
   watchCloseToTray(win);
+  // Always present now (FEATURE_BACKLOG.md #33), not just once "close to
+  // tray" hides the window for the first time — it's the one reachable
+  // place for "Open Config Folder"/"Clear Cache" (see createTray).
+  createTray(win);
   if (filePath) {
     win.loadURL(`philogg://app/philogg.html?url=${encodeURIComponent(localFileUrl(filePath))}`);
   } else {
@@ -423,6 +522,7 @@ if (!gotLock) {
   app.whenReady().then(() => {
     registerProtocol();
     registerRevealHandlers();
+    registerSettingsHandlers();
     createWindow(pendingOpenFile || fileArgFromArgv(process.argv));
   });
 
