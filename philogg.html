@@ -3592,16 +3592,47 @@ const UI_FONT_OPTIONS = [
 const UI_FONT_STORAGE_KEY = "philogg-ui-font";
 const UI_FONT_DEFAULT = "default";
 
+const SYSTEM_FONT_ID_PREFIX = "sys:";
+
 function populateUiFontSelect() {
   const select = document.getElementById("settingsUiFontSelect");
   select.innerHTML = UI_FONT_OPTIONS.map(f => '<option value="' + f.id + '">' + escapeHtml(f.label) + '</option>').join("");
 }
 
-function applyUiFont(fontId) {
-  const opt = UI_FONT_OPTIONS.find(f => f.id === fontId) || UI_FONT_OPTIONS[0];
-  document.documentElement.style.setProperty("--font-ui", opt.stack);
+/* Desktop wrapper only (window.philogg.listSystemFonts, see desktop/preload.js):
+   appends every font name the OS reports to the picker, so e.g. "Fira Code"
+   or "Iosevka" show up if installed. The plain HTML version has no
+   permission-prompt UI to gate the browser's Local Font Access API, so it
+   stays limited to the curated list above — see FEATURE_BACKLOG.md. */
+function appendSystemFontOptions(names) {
   const select = document.getElementById("settingsUiFontSelect");
-  if (select) select.value = opt.id;
+  if (!select || !names.length) return;
+  const curated = new Set(UI_FONT_OPTIONS.map(f => f.stack.split(",")[0].replace(/"/g, "").toLowerCase()));
+  const group = document.createElement("optgroup");
+  group.label = "System fonts (this device)";
+  names.forEach(name => {
+    if (curated.has(name.toLowerCase())) return;
+    const option = document.createElement("option");
+    option.value = SYSTEM_FONT_ID_PREFIX + name;
+    option.textContent = name;
+    group.appendChild(option);
+  });
+  if (group.children.length) select.appendChild(group);
+}
+
+function fontStackForId(fontId) {
+  if (typeof fontId === "string" && fontId.indexOf(SYSTEM_FONT_ID_PREFIX) === 0) {
+    const name = fontId.slice(SYSTEM_FONT_ID_PREFIX.length).replace(/"/g, "");
+    return '"' + name + '",' + UI_FONT_OPTIONS[0].stack;
+  }
+  const opt = UI_FONT_OPTIONS.find(f => f.id === fontId) || UI_FONT_OPTIONS[0];
+  return opt.stack;
+}
+
+function applyUiFont(fontId) {
+  document.documentElement.style.setProperty("--font-ui", fontStackForId(fontId));
+  const select = document.getElementById("settingsUiFontSelect");
+  if (select && select.querySelector('option[value="' + CSS.escape(fontId) + '"]')) select.value = fontId;
 }
 
 function setUiFont(fontId) {
@@ -3611,7 +3642,17 @@ function setUiFont(fontId) {
 
 function initUiFont() {
   populateUiFontSelect();
-  applyUiFont(localStorage.getItem(UI_FONT_STORAGE_KEY) || UI_FONT_DEFAULT);
+  const storedFontId = localStorage.getItem(UI_FONT_STORAGE_KEY) || UI_FONT_DEFAULT;
+  applyUiFont(storedFontId);
+  if (window.philogg && typeof window.philogg.listSystemFonts === "function") {
+    window.philogg.listSystemFonts().then(names => {
+      if (Array.isArray(names) && names.length) {
+        appendSystemFontOptions(names);
+        const select = document.getElementById("settingsUiFontSelect");
+        if (select && select.querySelector('option[value="' + CSS.escape(storedFontId) + '"]')) select.value = storedFontId;
+      }
+    }).catch(() => {});
+  }
 }
 document.getElementById("settingsUiFontSelect").addEventListener("change", ev => setUiFont(ev.target.value));
 
