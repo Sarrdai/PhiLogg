@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 52
+LAST_ID: 57
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation. Numbers are unique, permanent IDs, not a sort order —
@@ -48,11 +48,13 @@ this point.
 
 8. **Full view: hide the minimap's "covered timespan" visualization** (toggle in Settings) — it's meaningless there since the Full view always covers the entire log. Show the currently-visible row range instead, the same way the minimap already highlights the visible/rendered subset in the Filtered/Stacked view — just applied to the Full log's own rows instead of the filtered rows.
 11. **Create a filter from the currently visible plot area** — either as a time-range filter, or targeted specifically at the log entries currently "visible" in the plot/minimap. Open question: which of the two (or both) the interaction should produce.
+53. **Back/forward navigation through "where I looked"**, modeled on the back/forward history in Visual Studio/Rider (and browsers): steps through previously visited filters/views and scrolls back to the row/position that was interacted with or spent time on there — not a linear undo stack of edits. Must stay clearly separate from Undo/Redo, which tracks "what was changed", not "where I looked"; confirm today's Undo/Redo doesn't already jump between views, and if it does, split that behavior out. Placement: top-right, browser-style, next to the new Open/Save buttons and the version tag (see item 55 below). Should also pick up back/forward mouse-button input where the OS/browser has that button bound for back/forward navigation.
 
 ### Filter tree workflow
 
 16. **Regex filter type** — a real `RegExp` alongside the wildcard-token text filter, with the same live match count, case-sensitivity, and target-column options. Complements (doesn't replace) the token language, which stays the friendlier default.
 20. **Extend match-text highlighting to Highlights, not just Filters** — text filters already support marking the matched substring itself in color (not just the left-edge color bar), scoped to either the active filter or the whole filter path (configurable). Apply the same match-text coloring to Highlights, using the highlight's own color. Open question: whether this needs a separate button, a global setting, or a toggle in the color-picker menu (would then be per-filter configurable, default on).
+54. **"Prune" action when a filter and a file are both selected** — discards everything from memory/view that isn't part of the filter's result set, not just hides it. Especially useful for time filters (throw away everything outside the range) but not restricted to that case. Where content was pruned, insert a placeholder in its place (at least in the Full view) so the cut is visible rather than silently making rows disappear.
 
 ### Desktop wrapper (Electron)
 
@@ -63,6 +65,8 @@ this point.
 38. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
 40. **Fix Settings view scroll performance** — currently noticeably janky.
 49. **Respect OS default window behavior** — audit that the app's own shortcuts/mechanics never shadow or override the operating system's default window behavior (e.g. window management shortcuts).
+55. **Clean up the text under Keyboard Shortcuts** — drop the usage-instruction prose entirely. Shortcuts that can't be rebound should still be listed (so the list stays complete), just greyed out to mark them as fixed.
+56. **Regroup the top toolbar: Open/Save instead of Open/Session, and move both off the top bar.** Open covers File(s)/Folder/Session (session import goes under Open); Save covers Session only (for now). Move both out of the top-right area entirely: place them next to the Files/Filters section header as small icon buttons — a `[+]` button for Open, a download-arrow button for Save — right next to where the new back/forward navigation buttons (item 53) also land. See attached screenshot for the approximate target area. The version tag (currently top-left next to the wordmark) needs a new position once the top-right area is freed up by this move and by the back/forward buttons.
 
 ### Log formats & parsing
 
@@ -73,6 +77,7 @@ this point.
 ### Navigation & reading
 
 5. **Δt between two rows** — mark a row, shift-click a second, get the gap in the status strip. The extraction table already answers this (`t(ms)`), the log view doesn't.
+57. **Folder view with a timeline**, to make orienting among multiple opened files/folders easier.
 
 ### Filter tree workflow
 
