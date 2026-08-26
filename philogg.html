@@ -51,7 +51,7 @@
        own value per theme, so it automatically follows whichever theme is
        active (including a custom one's inline-applied vars) with no extra
        required JSON key. Was a hardcoded #333c50 repeated in four places
-       (scrollbar thumb hover, #btnOpen/#btnSession/.toolbar-icon-btn hover)
+       (scrollbar thumb hover, #btnOpen/.panel-toggle-btn/.toolbar-icon-btn hover)
        — this formula reproduces that exact color for the dark theme. */
     --border-hover:color-mix(in srgb, var(--border) 70%, var(--text-tertiary) 30%);
     /* Text-selection tint (::selection below). Default = the existing
@@ -328,26 +328,16 @@
   .brand-version{margin-left:-5px; font-size:10px; font-weight:500; color:var(--text-tertiary); letter-spacing:.2px;}
   .toolbar-right{display:flex; align-items:center; gap:16px;}
   .status-text{color:var(--text-tertiary); font-size:11.5px; font-variant-numeric:tabular-nums;}
-  /* Shared main-window control system (this session): #btnOpen/#btnSession
-     were two literally-identical rule blocks; .toolbar-icon-btn is the one
-     shared "icon button" shape (28x28, border-radius:7px, flex-centered) —
-     reused as-is (no id-specific size override needed any more) by
-     #btnPinBookmarks/#btnMultilineMsg/#btnColumns in the view bar below,
-     and by .level-btn/.crumb's own 28px pill shape further down — one
-     height, one centering mechanism, shared by role instead of each
-     control's own hand-tuned padding/line-height arithmetic (see the
-     removed "height-parity bugfix" comment history on .crumb/.level-btn/
-     #btnPinBookmarks this replaces). */
-  #btnOpen, #btnSession{
-    display:flex; align-items:center; justify-content:center; gap:7px;
-    height:28px; padding:0 12px;
-    background:var(--bg-elevated); color:var(--text-primary);
-    border:1px solid var(--border); border-radius:7px;
-    font-size:12.5px; cursor:pointer;
-    transition:background .12s, border-color .12s;
-  }
-  #btnOpen:hover, #btnSession:hover{background:var(--bg-elevated-2); border-color:var(--border-hover);}
-  #btnOpen svg, #btnSession svg{flex:0 0 auto;}
+  /* Shared main-window control system (this session): .toolbar-icon-btn is
+     the one shared "icon button" shape (28x28, border-radius:7px,
+     flex-centered) — reused as-is by #btnPinBookmarks/#btnMultilineMsg/
+     #btnColumns in the view bar below, and by .level-btn/.crumb's own 28px
+     pill shape further down — one height, one centering mechanism, shared
+     by role instead of each control's own hand-tuned padding/line-height
+     arithmetic (see the removed "height-parity bugfix" comment history on
+     .crumb/.level-btn/#btnPinBookmarks this replaces). #btnOpen/#btnSave
+     (FEATURE_BACKLOG.md #56) moved into #sidebarHeader and now use the
+     smaller .panel-toggle-btn shape shared with #sidebarToggle instead. */
   .toolbar-icon-btn{
     display:flex; align-items:center; justify-content:center; position:relative;
     width:28px; height:28px; flex:0 0 auto;
@@ -381,6 +371,7 @@
     transition:background .12s, color .12s;
   }
   .panel-toggle-btn:hover{background:var(--bg-elevated-2); color:var(--accent-strong);}
+  .panel-toggle-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
 
   #sidebar{
     width:270px; flex:0 0 auto;
@@ -2044,13 +2035,13 @@
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
   /* ---------- Context menu ---------- */
-  #contextMenu, #treeContextMenu, #openMenu, #sessionMenu{
+  #contextMenu, #treeContextMenu, #openMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px;
   }
-  #openMenu, #sessionMenu{min-width:180px;}
-  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #sessionMenu.hidden{display:none;}
+  #openMenu{min-width:180px;}
+  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden{display:none;}
   .ctx-item{
     display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px;
     font-size:12.3px; color:var(--text-primary); cursor:pointer;
@@ -2240,7 +2231,6 @@
     <div class="brand">
       <span class="brand-mark">L</span>
       <span class="brand-name">PhiLogg</span>
-      <span class="brand-version" id="brandVersion"></span>
     </div>
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
@@ -2248,34 +2238,7 @@
         <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" disabled></button>
         <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" disabled></button>
       </div>
-      <button id="btnSession">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
-        Session…
-      </button>
-      <div id="sessionMenu" class="hidden">
-        <div class="ctx-item" data-action="exportSession">
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
-          Export session…
-        </div>
-        <div class="ctx-item" data-action="importSession">
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 2v8M8 10 5.4 7.4M8 10l2.6-2.6"/></svg>
-          Import session…
-        </div>
-      </div>
-      <button id="btnOpen">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5a1 1 0 0 1 1-1h3l1.3 1.6H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>
-        Open…
-      </button>
-      <div id="openMenu" class="hidden">
-        <div class="ctx-item" data-action="files">
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>
-          File(s)…
-        </div>
-        <div class="ctx-item" data-action="folder">
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>
-          Folder…
-        </div>
-      </div>
+      <span class="brand-version" id="brandVersion"></span>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -2293,6 +2256,34 @@
       <div id="sidebarNormalContent">
         <div id="sidebarHeader">
           <div id="sidebarHeaderLabel">Files &amp; filters</div>
+          <div class="toolbar-group">
+            <button type="button" id="btnNavBack" class="panel-toggle-btn" title="Back" disabled>
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4 5.5 8l4 4"/></svg>
+            </button>
+            <button type="button" id="btnNavForward" class="panel-toggle-btn" title="Forward" disabled>
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4l4 4-4 4"/></svg>
+            </button>
+          </div>
+          <button type="button" id="btnOpen" class="panel-toggle-btn" title="Open File(s)/Folder/Session…">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 2.5v11M2.5 8h11"/></svg>
+          </button>
+          <div id="openMenu" class="hidden">
+            <div class="ctx-item" data-action="files">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>
+              File(s)…
+            </div>
+            <div class="ctx-item" data-action="folder">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>
+              Folder…
+            </div>
+            <div class="ctx-item" data-action="importSession">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 2v8M8 10 5.4 7.4M8 10l2.6-2.6"/></svg>
+              Import session…
+            </div>
+          </div>
+          <button type="button" id="btnSave" class="panel-toggle-btn" title="Save session…">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
+          </button>
           <button type="button" id="sidebarToggle" class="panel-toggle-btn" title="Collapse (Ctrl+B)">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4 5.5 8l4 4"/><path d="M12.5 3.5v9"/></svg>
           </button>
@@ -6826,6 +6817,103 @@ function revealFilteredView() {
 // explicitly. No-op (via revealFilteredView's own guard) when Stacked is
 // active or the Filtered tab is already showing.
 let lastActiveIdForReveal = null;
+
+// Back/forward "where I looked" navigation (FEATURE_BACKLOG.md #53) — a
+// browser/IDE-style history of visited nodes, distinct from Undo/Redo
+// (which tracks filter-tree *edits*, not view visits; see undo()/redo()
+// above — they never touch scroll position or navHistory). Piggybacks on
+// the same activeId-changed detection render() already does for
+// revealFilteredView() above, since that's the one place all ~30
+// state.activeId call sites funnel through.
+let navHistory = []; // [{nodeId, scrollTop}]
+let navHistoryIndex = -1;
+let navigatingHistory = false; // true while goBack/goForward is applying an entry, so render() doesn't record it as a new visit
+const btnNavBack = el("#btnNavBack");
+const btnNavForward = el("#btnNavForward");
+
+// The scroll container backing whichever "view" is currently on screen for
+// the active node — the one thing that needs to be remembered per history
+// entry beyond the node id itself. Mirrors the isLink/isExtract branching
+// in renderMainView().
+function activeNavScroller() {
+  const node = state.nodes[state.activeId];
+  if (node && node.type === "filter") {
+    if (node.filterType === "extract") return extractScroll;
+    if (node.filterType === "link") return linkScroll;
+  }
+  return tableBody;
+}
+
+function captureNavScroll(index) {
+  const entry = navHistory[index];
+  if (!entry) return;
+  entry.scrollTop = activeNavScroller().scrollTop;
+}
+
+function updateNavHistoryButtons() {
+  btnNavBack.disabled = navHistoryIndex <= 0;
+  btnNavForward.disabled = navHistoryIndex < 0 || navHistoryIndex >= navHistory.length - 1;
+}
+
+// Called from render() whenever state.activeId actually changed. `fromId`
+// is the node we're leaving (may be null/gone by now) so its dwell scroll
+// position gets frozen into its own history entry before we move on.
+function recordNavVisit(fromId) {
+  if (navigatingHistory) { navigatingHistory = false; return; }
+  if (navHistoryIndex >= 0) captureNavScroll(navHistoryIndex);
+  // A fresh visit always branches off the current point, discarding any
+  // "forward" entries — same as browser history after navigating past a
+  // back step.
+  navHistory = navHistory.slice(0, navHistoryIndex + 1);
+  navHistory.push({ nodeId: state.activeId, scrollTop: 0 });
+  navHistoryIndex = navHistory.length - 1;
+  updateNavHistoryButtons();
+}
+
+// Continuously updates the *current* entry's remembered scroll position
+// while the user dwells on it (not just once on the way out), so e.g.
+// Back then Forward lands back exactly where they'd scrolled to.
+function trackNavScroll() {
+  if (navigatingHistory || navHistoryIndex < 0) return;
+  captureNavScroll(navHistoryIndex);
+}
+tableBody.addEventListener("scroll", trackNavScroll);
+extractScroll.addEventListener("scroll", trackNavScroll);
+linkScroll.addEventListener("scroll", trackNavScroll);
+
+function goToNavHistoryIndex(newIndex) {
+  const entry = navHistory[newIndex];
+  if (!entry) return;
+  if (!state.nodes[entry.nodeId]) {
+    // Node was deleted since — drop the stale entry and try the next one
+    // in the same direction instead of getting stuck.
+    navHistory.splice(newIndex, 1);
+    if (newIndex > navHistoryIndex) goToNavHistoryIndex(newIndex);
+    else { navHistoryIndex = Math.min(navHistoryIndex, navHistory.length - 1); goToNavHistoryIndex(navHistoryIndex); }
+    return;
+  }
+  if (navHistoryIndex >= 0) captureNavScroll(navHistoryIndex);
+  navigatingHistory = true;
+  navHistoryIndex = newIndex;
+  state.activeId = entry.nodeId;
+  state.multiSelect = new Set();
+  render();
+  activeNavScroller().scrollTop = entry.scrollTop;
+  updateNavHistoryButtons();
+}
+function navigateBack() { if (navHistoryIndex > 0) goToNavHistoryIndex(navHistoryIndex - 1); }
+function navigateForward() { if (navHistoryIndex < navHistory.length - 1) goToNavHistoryIndex(navHistoryIndex + 1); }
+btnNavBack.addEventListener("click", navigateBack);
+btnNavForward.addEventListener("click", navigateForward);
+
+// Browser/OS "back"/"forward" mouse buttons (button 3/4) — held back from
+// the app's own history navigation by preventDefault so a browser tab
+// doesn't also try to navigate itself away in the same gesture.
+document.addEventListener("mouseup", ev => {
+  if (ev.button === 3) { ev.preventDefault(); navigateBack(); }
+  else if (ev.button === 4) { ev.preventDefault(); navigateForward(); }
+});
+
 fhTabs.addEventListener("click", ev => {
   const btn = ev.target.closest(".view-tab");
   if (btn) { clearSidebarForcedPeek(); applyFhView(btn.dataset.fhTab); }
@@ -6854,9 +6942,11 @@ function updateSortIndicators() {
 
 function render() {
   if (state.activeId !== lastActiveIdForReveal) {
+    const fromId = lastActiveIdForReveal;
     lastActiveIdForReveal = state.activeId;
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") revealFilteredView();
+    if (state.activeId) recordNavVisit(fromId);
   }
   renderTree();
   renderBreadcrumb();
@@ -12269,9 +12359,14 @@ async function openFolderPickerFlow() {
   addWatchedFolder(handle);
 }
 
-// "Open…" is a single button with a small dropdown menu (File(s)…/Folder…)
-// instead of two separate buttons — same fixed-position/toggle pattern as
-// the columns popup (openColumnsPanel).
+// "Open…" is a single button with a small dropdown menu (File(s)…/Folder…/
+// Import session…) instead of separate buttons — same fixed-position/toggle
+// pattern as the columns popup (openColumnsPanel). Lives in #sidebarHeader,
+// next to the back/forward navigation buttons (FEATURE_BACKLOG.md #56) —
+// import session used to sit under a separate "Session…" toolbar button
+// alongside export, but export is the only session action left there now
+// (see #btnSave below), so import moved in with the other "bring stuff in"
+// actions instead.
 const btnOpen = el("#btnOpen");
 const openMenu = el("#openMenu");
 function closeOpenMenu() { openMenu.classList.add("hidden"); }
@@ -12289,31 +12384,18 @@ openMenu.addEventListener("click", ev => {
   closeOpenMenu();
   if (item.dataset.action === "files") openFilesPicker();
   else if (item.dataset.action === "folder") openFolderPickerFlow();
-});
-
-// "Session…" mirrors "Open…"'s button+dropdown pattern: Export/Import
-// session used to live in the tree's context menu (reachable on any node,
-// plus the empty-tree background — see the old openTreeContextMenu code),
-// but both actions are session-global, not tied to whichever file/filter
-// the menu happened to be opened on, so they belong in the toolbar instead.
-const btnSession = el("#btnSession");
-const sessionMenu = el("#sessionMenu");
-function closeSessionMenu() { sessionMenu.classList.add("hidden"); }
-function toggleSessionMenu() {
-  if (!sessionMenu.classList.contains("hidden")) { closeSessionMenu(); return; }
-  const rect = btnSession.getBoundingClientRect();
-  sessionMenu.style.top = (rect.bottom + 6) + "px";
-  sessionMenu.style.left = Math.min(rect.left, window.innerWidth - 200) + "px";
-  sessionMenu.classList.remove("hidden");
-}
-btnSession.addEventListener("click", toggleSessionMenu);
-sessionMenu.addEventListener("click", ev => {
-  const item = ev.target.closest("[data-action]");
-  if (!item) return;
-  closeSessionMenu();
-  if (item.dataset.action === "exportSession") openSessionExportDialog();
   else if (item.dataset.action === "importSession") importSessionFromFile();
 });
+
+// "Save" now covers session export only (FEATURE_BACKLOG.md #56) — a single
+// icon button, no dropdown, since there's only the one action. Session
+// export/import used to live in the tree's context menu (reachable on any
+// node, plus the empty-tree background — see the old openTreeContextMenu
+// code), but both actions are session-global, not tied to whichever
+// file/filter the menu happened to be opened on, so they moved to the
+// toolbar/sidebar header instead.
+const btnSave = el("#btnSave");
+btnSave.addEventListener("click", openSessionExportDialog);
 
 // Settings opens a single wide page (not a dropdown menu) — see
 // "Settings page" below (openSettingsDialog) for its sections, built so
@@ -15642,7 +15724,6 @@ document.addEventListener("click", ev => {
   if (!contextMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
-  if (!sessionMenu.contains(ev.target) && !btnSession.contains(ev.target)) closeSessionMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.contains(ev.target)) closeColumnsPanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
