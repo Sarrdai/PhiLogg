@@ -6467,6 +6467,27 @@ await withApp(async (w, d, T) => {
   T.state.focusRegion = "tree";
   fireKeydown(d, w, "c", { ctrlKey: true });
   assert(T.state.clipboard && T.state.clipboard.id === filterNode.id, "with focusRegion 'tree', Ctrl+C still copies the active FILTER NODE (tree clipboard), unaffected by the new log-row copy path");
+
+  // --- FEATURE_BACKLOG.md #55: a text selection inside the Entry Detail
+  // panel takes priority over the raw-line copy — Ctrl+C is left alone
+  // (not preventDefault'd, not overridden) so the browser's native copy
+  // grabs just the selected substring instead of the whole line. ---
+  T.state.focusRegion = "entries";
+  T.state.activeId = f.id;
+  w.selectEntry(f.entries[3].id);
+  w.render();
+  copied = null;
+  const realGetSelection = w.getSelection.bind(w);
+  w.getSelection = () => ({ toString: () => "some substring", anchorNode: d.querySelector("#detailMessage") });
+  const ev = new w.KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true });
+  d.dispatchEvent(ev);
+  assert(copied === null, "a selection inside Entry Detail is not overridden with the full raw line");
+  assert(!ev.defaultPrevented, "the keydown is left un-prevented so native copy handles the Entry Detail selection");
+  w.getSelection = realGetSelection;
+
+  // --- Sanity: with no selection inside Entry Detail, Ctrl+C still copies the raw line as before ---
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(copied === f.entries[3].raw, "without a Detail selection, Ctrl+C still copies the selected entry's raw line");
 });
 
 /* ============================================================
@@ -11637,23 +11658,31 @@ await withApp(async (w, d, T) => {
    Origin: this session. Replaces the old standalone #shortcutsPanel popup
    (GROUP 26) with a dedicated "Shortcuts" section inside Settings: a
    rebindable-actions table (matchesShortcut(ev, actionId) looks up
-   localStorage-backed overrides instead of a hardcoded key check) plus a
-   fixed reference list (#shortcuts, unchanged content minus the entries now
-   covered by the table) for everything else (mouse-driven or too
-   context-dependent to safely rebind).
+   localStorage-backed overrides instead of a hardcoded key check).
+   Updated (FEATURE_BACKLOG.md #55): the old usage-instruction prose above
+   the table and the separate "fixed reference" text block below it are
+   gone. Fixed (non-rebindable) shortcuts are now appended as extra,
+   greyed-out rows (.shortcut-row-fixed, no rebind/reset controls) inside
+   the SAME #shortcutBindingsList, so the list still reads as complete.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("114a. Settings' Shortcuts section: rebindable table + fixed reference list");
+  section("114a. Settings' Shortcuts section: rebindable rows + greyed-out fixed rows, no prose");
 
   assert(d.querySelector("#settingsDialog").classList.contains("hidden"), "sanity: Settings starts closed");
   w.openSettingsDialog();
   assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "openSettingsDialog opens Settings");
   assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
-  assert(d.querySelector("#shortcutBindingsList").children.length === 16, "the rebindable-actions table renders one row per registered action");
-  assert(d.querySelector("#shortcuts").textContent.includes("Ctrl") && d.querySelector("#shortcuts").parentElement.id === "settingsSectionShortcuts",
-    "the fixed reference list lives inside the Shortcuts settings section");
-  assert(!d.querySelector("#shortcuts").textContent.includes("new filter on selected node"),
-    "entries now covered by the rebindable table (e.g. Ctrl+F) are no longer duplicated in the fixed reference list");
+  assert(!d.querySelector("#settingsSectionShortcuts .settings-section-desc"), "the usage-instruction prose under the section title is gone");
+  const rebindableRows = d.querySelectorAll("#shortcutBindingsList > div[data-action-id]");
+  assert(rebindableRows.length === 16, "the rebindable-actions rows render one per registered action");
+  const fixedRows = d.querySelectorAll("#shortcutBindingsList > div.shortcut-row-fixed");
+  assert(fixedRows.length > 0, "fixed (non-rebindable) shortcuts are listed too, so the list stays complete");
+  fixedRows.forEach(row => {
+    assert(!row.querySelector(".shortcut-rebind-btn") && !row.querySelector(".shortcut-reset-btn"),
+      "a fixed row has no Change/Reset controls — it can't be edited or deleted");
+  });
+  assert(d.querySelector("#shortcutBindingsList").children.length === rebindableRows.length + fixedRows.length,
+    "rebindable and fixed rows together make up the whole list");
 });
 
 await withApp(async (w, d, T) => {
@@ -12710,7 +12739,11 @@ process.exit(failed ? 1 : 0);
               Escape clearing the selection (state + DOM class); and the
               selection/DOM-class being shared between the Filter and
               Highlight views for the same underlying entries, same sharing
-              as state.selectedId itself.
+              as state.selectedId itself. Updated 2026-08-26,
+              FEATURE_BACKLOG.md #55: a text selection inside the Entry
+              Detail panel now takes priority over the raw-line copy — the
+              keydown is left un-prevented so native copy grabs just the
+              selected substring instead of the whole line.
    Group 58  — this session (2026-08-18), FEATURE_BACKLOG.md "Column
               visibility / width persistence in the log view". #btnColumns
               popup toggles Δt/Thread/Location/Method visibility (Time/
@@ -13440,6 +13473,16 @@ process.exit(failed ? 1 : 0);
               GROUP 26/114's own #btnShortcuts assertions updated in place;
               GROUP 79's section-count assertion bumped 4 → 5 plus a new
               check that License sorts last. 2133 passed, 0 failed.
+   Group 114 follow-up 2 — this session (2026-08-26), FEATURE_BACKLOG.md #55:
+              dropped the usage-instruction prose (the section-desc line
+              above the table, and the separate "Everything else (fixed
+              reference, not rebindable)" subsection below it). The fixed
+              shortcuts are now extra rows (FIXED_SHORTCUTS) appended into
+              the SAME #shortcutBindingsList, greyed out via
+              .shortcut-row-fixed and rendered with no Change/Reset
+              controls, so the list still reads as complete but nothing in
+              it looks editable. Group 114a rewritten for the merged list
+              and the absence of the prose; #shortcuts no longer exists.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
