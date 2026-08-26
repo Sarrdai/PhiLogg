@@ -64,6 +64,11 @@
     --selection-bg:var(--accent-soft);
     --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    /* Multiplier applied (via calc()) to the font-size of actual log/text
+       content — table rows, extraction table cells, entry detail message,
+       link-pair rows — independently of --ui-scale's whole-interface zoom.
+       Driven by the "Log text size" setting, see applyLogTextScale(). */
+    --log-text-scale:1;
     --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
     /* Color-mark gutter (see updateColorMarkGutter): width of the .hl-markers
        lane, sized for the true max number of simultaneous colored-filter
@@ -1147,21 +1152,21 @@
      rather than actually disappearing. col-thread/col-loc/col-method/col-msg
      already had this; col-time/col-delta didn't, since neither used to be
      resizable to zero before that feature existed. */
-  .col-time{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .col-time{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   /* Time since the previous row *in the order currently shown* — only computed
      in chronological order (see renderVisibleRows), dashed out otherwise. */
-  .col-delta{font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .col-delta{font-family:var(--font-mono); font-size:calc(11px * var(--log-text-scale)); color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .col-delta.delta-warn{color:var(--level-warn);}
   .col-delta.delta-error{color:var(--level-error); font-weight:650;}
   .col-level{align-self:center;}
   .level-badge{
-    font-family:var(--font-mono); font-size:10px; font-weight:700; letter-spacing:.3px;
+    font-family:var(--font-mono); font-size:calc(10px * var(--log-text-scale)); font-weight:700; letter-spacing:.3px;
     padding:2px 6px; border-radius:4px; white-space:nowrap;
   }
-  .col-thread{font-family:var(--font-mono); font-size:11.3px; color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-loc{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-method{font-family:var(--font-mono); font-size:11.3px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-msg{font-family:var(--font-mono); font-size:11.6px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-thread{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-loc{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-method{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-msg{font-family:var(--font-mono); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   /* Horizontal scrollbar in the Filter view, Filter
      view only: .col-msg's `overflow:hidden` above resets its "automatic
      minimum size" to 0 per the CSS Sizing spec (a non-visible-overflow box's
@@ -1345,7 +1350,7 @@
     color:var(--text-tertiary); font-size:12px; text-align:center;
   }
   #detailMessage{
-    display:none; margin:0; font-family:var(--font-mono); font-size:12px; line-height:1.65;
+    display:none; margin:0; font-family:var(--font-mono); font-size:calc(12px * var(--log-text-scale)); line-height:1.65;
     color:var(--text-primary); white-space:pre-wrap; word-break:break-word;
   }
   #detailPanel.empty #detailPlaceholder{display:flex;}
@@ -1399,7 +1404,7 @@
   .btn-mini-outline:hover{border-color:var(--accent); color:var(--accent-strong);}
 
   #extractScroll{flex:1 1 auto; overflow:auto; padding:0 16px 16px;}
-  #extractTable{border-collapse:collapse; font-family:var(--font-mono); font-size:12px; min-width:100%; user-select:none;}
+  #extractTable{border-collapse:collapse; font-family:var(--font-mono); font-size:calc(12px * var(--log-text-scale)); min-width:100%; user-select:none;}
   #extractTable th, #extractTable td{
     padding:7px 12px; border-bottom:1px solid var(--border-soft); border-right:1px solid var(--border-soft);
     white-space:nowrap; text-align:left;
@@ -1487,8 +1492,8 @@
   .lvl-debug .pair-row-bar{background:var(--level-debug);}
   .lvl-trace .pair-row-bar{background:var(--level-trace);}
   .lvl-other .pair-row-bar{background:var(--text-tertiary);}
-  .pair-row-time{font-family:var(--font-mono); font-size:10.8px; color:var(--text-secondary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
-  .pair-row-msg{font-family:var(--font-mono); font-size:11.6px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0;}
+  .pair-row-time{font-family:var(--font-mono); font-size:calc(10.8px * var(--log-text-scale)); color:var(--text-secondary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
+  .pair-row-msg{font-family:var(--font-mono); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0;}
   .pair-delta{
     font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);
     padding:0 8px 0 15px; letter-spacing:.2px; display:flex; align-items:center;
@@ -2274,7 +2279,7 @@
         </div>
       </div>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.6v1.7M8 12.7v1.7M14.4 8h-1.7M3.3 8H1.6M12.5 3.5l-1.2 1.2M4.7 11.3l-1.2 1.2M12.5 12.5l-1.2-1.2M4.7 4.7 3.5 3.5"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
       <button id="btnLicense" class="toolbar-icon-btn" title="License"></button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
@@ -2854,6 +2859,15 @@
                 <select id="settingsThemeSelect"></select>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">UI font</div>
+                <div class="settings-row-hint">System-installed fonts only — no downloads.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsUiFontSelect"></select>
+              </div>
+            </div>
             <div class="settings-row hidden" id="settingsAccentRow">
               <div class="settings-row-text">
                 <div class="settings-row-label">Accent color</div>
@@ -2863,16 +2877,30 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <div class="settings-row-label">Font size</div>
-                <div class="settings-row-hint">Scales the whole interface, 70–160%. Also via Ctrl+ / Ctrl−.</div>
+                <div class="settings-row-label">UI scale</div>
+                <div class="settings-row-hint">Scales toolbars, panels and other interface chrome, 70–160%. Also via Ctrl+ / Ctrl−.</div>
               </div>
               <div class="settings-row-control font-scale-row">
                 <div class="font-scale-stepper">
-                  <button type="button" class="btn-icon" id="fontScaleDown" title="Decrease font size (Ctrl+-)">−</button>
+                  <button type="button" class="btn-icon" id="fontScaleDown" title="Decrease UI scale (Ctrl+-)">−</button>
                   <span id="fontScaleValue">100%</span>
-                  <button type="button" class="btn-icon" id="fontScaleUp" title="Increase font size (Ctrl++)">+</button>
+                  <button type="button" class="btn-icon" id="fontScaleUp" title="Increase UI scale (Ctrl++)">+</button>
                 </div>
                 <button type="button" class="btn-mini-outline" id="fontScaleReset" title="Reset to default">Reset</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Log text size</div>
+                <div class="settings-row-hint">Scales only log/text content — log rows, extraction table, entry detail — 70–160%, independently of UI scale.</div>
+              </div>
+              <div class="settings-row-control font-scale-row">
+                <div class="font-scale-stepper">
+                  <button type="button" class="btn-icon" id="logTextScaleDown" title="Decrease log text size">−</button>
+                  <span id="logTextScaleValue">100%</span>
+                  <button type="button" class="btn-icon" id="logTextScaleUp" title="Increase log text size">+</button>
+                </div>
+                <button type="button" class="btn-mini-outline" id="logTextScaleReset" title="Reset to default">Reset</button>
               </div>
             </div>
           </div>
@@ -2890,6 +2918,18 @@
         <section class="settings-section" id="settingsSectionBehavior">
           <div class="settings-section-title">Behavior</div>
           <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsOpenScrollPosition">On open, scroll log to</label>
+                <div class="settings-row-hint">"Start" stays at the top (default). "End" scrolls to and stays at the bottom — with Tailing on, following begins immediately from there.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsOpenScrollPosition">
+                  <option value="start">Start</option>
+                  <option value="end">End</option>
+                </select>
+              </div>
+            </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsQuitOnLastClose">Closing the last log file quits the app</label>
@@ -3236,11 +3276,11 @@ const ICON_INVERT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none"
 const ICON_TARGET = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.2"/></svg>';
 const ICON_UNDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v4h4"/><path d="M4.4 8A5 5 0 1 1 5.6 12.4"/></svg>';
 const ICON_REDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4H8"/><path d="M11.6 8A5 5 0 1 0 10.4 12.4"/></svg>';
-const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6c-2.4 0-4.3 1.9-4.3 4.3 0 3.2 4.3 8.5 4.3 8.5s4.3-5.3 4.3-8.5c0-2.4-1.9-4.3-4.3-4.3z"/><circle cx="8" cy="5.9" r="1.5"/></svg>';
+const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.3" r="2.6"/><path d="M8 7.9V14"/></svg>';
 // Show/Hide Notes toggle (#btnNotes) — a small note card with lines of text.
 const ICON_NOTE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 2.2h9.6v11l-2.8-1.9H3.2z"/><path d="M5.4 5.4h5.2M5.4 8h5.2M5.4 10.6h3"/></svg>';
 // Multiline message toggle (#btnMultilineMsg) — three stacked lines, standing
-// in for "multi-line text" the same way ICON_PIN's teardrop stands in for
+// in for "multi-line text" the same way ICON_PIN's thumbtack stands in for
 // "pin". See PROJECT.md "Multiline message display toggle".
 const ICON_MULTILINE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
 const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="1.3"/><path d="M6 2.7v10.6M10.3 2.7v10.6"/></svg>';
@@ -3536,6 +3576,45 @@ function setTheme(themeId) {
 }
 document.getElementById("settingsThemeSelect").addEventListener("change", ev => setTheme(ev.target.value));
 
+/* ===================== UI font family (FEATURE_BACKLOG.md #46) =====================
+   Curated list of common system-installed font stacks — no @font-face, no
+   web fonts, nothing fetched, per the "no dependencies" rule. Applied by
+   overriding the --font-ui custom property (body and most UI chrome already
+   key off it); the first entry reproduces the previous hardcoded default so
+   existing users see no change until they pick something else. */
+const UI_FONT_OPTIONS = [
+  { id: "default", label: "System default", stack: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif' },
+  { id: "arial", label: "Arial / Helvetica", stack: 'Arial,Helvetica,sans-serif' },
+  { id: "georgia", label: "Georgia (serif)", stack: 'Georgia,"Times New Roman",serif' },
+  { id: "verdana", label: "Verdana", stack: 'Verdana,Geneva,sans-serif' },
+  { id: "mono", label: "Monospace", stack: 'var(--font-mono)' },
+];
+const UI_FONT_STORAGE_KEY = "philogg-ui-font";
+const UI_FONT_DEFAULT = "default";
+
+function populateUiFontSelect() {
+  const select = document.getElementById("settingsUiFontSelect");
+  select.innerHTML = UI_FONT_OPTIONS.map(f => '<option value="' + f.id + '">' + escapeHtml(f.label) + '</option>').join("");
+}
+
+function applyUiFont(fontId) {
+  const opt = UI_FONT_OPTIONS.find(f => f.id === fontId) || UI_FONT_OPTIONS[0];
+  document.documentElement.style.setProperty("--font-ui", opt.stack);
+  const select = document.getElementById("settingsUiFontSelect");
+  if (select) select.value = opt.id;
+}
+
+function setUiFont(fontId) {
+  applyUiFont(fontId);
+  localStorage.setItem(UI_FONT_STORAGE_KEY, fontId);
+}
+
+function initUiFont() {
+  populateUiFontSelect();
+  applyUiFont(localStorage.getItem(UI_FONT_STORAGE_KEY) || UI_FONT_DEFAULT);
+}
+document.getElementById("settingsUiFontSelect").addEventListener("change", ev => setUiFont(ev.target.value));
+
 function themeSwatchStyle(colors) {
   return "background:linear-gradient(90deg," + colors["bg-app"] + " 0 25%," + colors["accent"] + " 25% 50%," +
     colors["level-error"] + " 50% 75%," + colors["level-info"] + " 75% 100%)";
@@ -3675,16 +3754,35 @@ document.getElementById("btnThemeImport").addEventListener("click", () => loadTh
 document.getElementById("btnThemeTemplate").addEventListener("click", () => downloadThemeTemplate());
 
 /* ===================== Font size (FEATURE_BACKLOG.md "Configurable font
-   size") ===================== */
-// A whole-UI zoom (CSS `zoom`) rather than a font-size variable threaded
-// through the ~100 individually hardcoded font-size declarations in this
-// file — the simplest way to make "everything a bit bigger/smaller" actually
-// cover every element instead of just the ones someone remembered to wire
-// up. Purely a display preference, same tier/reasoning as the theme toggle
-// above: not part of `state`, persisted to localStorage instead.
+   size", later split into independent "UI scale" / "Log text size" —
+   backlog #42+44) ===================== */
+// UI scale is a whole-UI zoom (CSS `zoom`) rather than a font-size variable
+// threaded through the ~100 individually hardcoded font-size declarations in
+// this file — the simplest way to make "everything a bit bigger/smaller"
+// actually cover every element instead of just the ones someone remembered
+// to wire up. Purely a display preference, same tier/reasoning as the theme
+// toggle above: not part of `state`, persisted to localStorage instead.
+//
+// Log text size is independent: it does NOT use zoom (nesting a second zoom
+// inside the already-zoomed document would throw off measureMsgWidth's
+// column-width math — see that function's own comment on offsetWidth being
+// zoom-invariant only at the single root level it was verified against).
+// Instead it drives --log-text-scale, a CSS custom property multiplied via
+// calc() into the font-size of the actual log/text content rules only
+// (.col-*, #detailMessage, #extractTable, .pair-row-*) — see :root. Chrome
+// (toolbars, buttons, panels) is untouched by it, only by UI scale.
+//
+// Storage key for UI scale is unchanged from the original single-setting
+// "philogg-font-scale" key (same concept, same effect on everything but log
+// text) so existing users keep their current combined visual scale with no
+// migration needed; log text size is a new key defaulting to 100 (i.e.
+// --log-text-scale:1, no extra change on top of UI scale) so the combined
+// look on upgrade is pixel-identical to before either slider is touched.
 const FONT_SCALE_STORAGE_KEY = "philogg-font-scale";
+const LOG_TEXT_SCALE_STORAGE_KEY = "philogg-log-text-scale";
 const FONT_SCALE_MIN = 70, FONT_SCALE_MAX = 160, FONT_SCALE_STEP = 10, FONT_SCALE_DEFAULT = 100;
 let fontScale = FONT_SCALE_DEFAULT;
+let logTextScale = FONT_SCALE_DEFAULT;
 
 function applyFontScale(scale) {
   fontScale = Math.max(FONT_SCALE_MIN, Math.min(FONT_SCALE_MAX, scale));
@@ -3694,14 +3792,27 @@ function applyFontScale(scale) {
   if (valueEl) valueEl.textContent = fontScale + "%";
 }
 
+function applyLogTextScale(scale) {
+  logTextScale = Math.max(FONT_SCALE_MIN, Math.min(FONT_SCALE_MAX, scale));
+  document.documentElement.style.setProperty("--log-text-scale", String(logTextScale / 100));
+  localStorage.setItem(LOG_TEXT_SCALE_STORAGE_KEY, String(logTextScale));
+  const valueEl = document.getElementById("logTextScaleValue");
+  if (valueEl) valueEl.textContent = logTextScale + "%";
+}
+
 function initFontScale() {
   const stored = parseInt(localStorage.getItem(FONT_SCALE_STORAGE_KEY), 10);
   applyFontScale(Number.isFinite(stored) ? stored : FONT_SCALE_DEFAULT);
+  const storedLog = parseInt(localStorage.getItem(LOG_TEXT_SCALE_STORAGE_KEY), 10);
+  applyLogTextScale(Number.isFinite(storedLog) ? storedLog : FONT_SCALE_DEFAULT);
 }
 
 document.getElementById("fontScaleDown").addEventListener("click", () => applyFontScale(fontScale - FONT_SCALE_STEP));
 document.getElementById("fontScaleUp").addEventListener("click", () => applyFontScale(fontScale + FONT_SCALE_STEP));
 document.getElementById("fontScaleReset").addEventListener("click", () => applyFontScale(FONT_SCALE_DEFAULT));
+document.getElementById("logTextScaleDown").addEventListener("click", () => applyLogTextScale(logTextScale - FONT_SCALE_STEP));
+document.getElementById("logTextScaleUp").addEventListener("click", () => applyLogTextScale(logTextScale + FONT_SCALE_STEP));
+document.getElementById("logTextScaleReset").addEventListener("click", () => applyLogTextScale(FONT_SCALE_DEFAULT));
 
 /* ===================== "Closing the last log file quits the app" ===================== */
 // Off by default, as requested. Purely a local app-behavior preference, same
@@ -3901,6 +4012,19 @@ document.getElementById("settingsLevelFilterTreeMode").addEventListener("change"
   state.levelFilter.clear();
   updateApplyLevelToTreeButtonVisibility();
   render();
+});
+
+/* ===================== "On open, scroll log to" setting (Settings ->
+   Behavior) — see the openScrollPosition module comment above. */
+function initOpenScrollPositionSetting() {
+  const stored = localStorage.getItem(OPEN_SCROLL_POSITION_KEY);
+  openScrollPosition = stored === "end" ? "end" : "start";
+  const select = document.getElementById("settingsOpenScrollPosition");
+  if (select) select.value = openScrollPosition;
+}
+document.getElementById("settingsOpenScrollPosition").addEventListener("change", ev => {
+  openScrollPosition = ev.target.value === "end" ? "end" : "start";
+  localStorage.setItem(OPEN_SCROLL_POSITION_KEY, openScrollPosition);
 });
 
 /* ===================== Temporary anchor settings (FEATURE_BACKLOG #18) =====
@@ -4571,9 +4695,25 @@ function createFileNode(name, folderId) {
     id: uid("f"), type: "file", name, parentId: null, children: [], entries: [],
     cacheKey: newCacheKey(), folderId: folderId || null, loadFraction: 0,
   };
+  if (openScrollPosition === "end") node._openScrollToEnd = true;
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
-  state.activeId = node.id;
+  // NOT during a session/cache restore (see restoreSessionFromCache): that
+  // function calls addFile()/createFileNode() once per restored file in a
+  // loop, and every call used to hijack state.activeId — the tree's
+  // background-selection highlight visibly thrashed through every restored
+  // file in sequence before restoreSessionFromCache's own final correction
+  // (its `s.active` handling) snapped it back to the actually-persisted
+  // active node. Person-reported: "sieht aus als wäre die alte und die
+  // aktuelle Version selektiert" (looks like both the old and current file
+  // are selected) "besonders beim neu laden" (especially on reload) — this
+  // is that thrash, not a genuine two-rows-active state (renderTree()
+  // rebuilds the whole tree from scratch every time, so only ever one row
+  // truly has the "active" class on any single render — the bug was WHICH
+  // one, changing render after render during the loop). Restoring instead
+  // leaves state.activeId untouched here; restoreSessionFromCache sets it
+  // exactly once, after every file is back, to the correct final value.
+  if (!sessionRestoreInProgress) state.activeId = node.id;
   flushLoadRender();
   return node;
 }
@@ -4591,6 +4731,7 @@ function createQueuedFileNode(name) {
     id: uid("f"), type: "file", name, parentId: null, children: [], entries: [],
     cacheKey: newCacheKey(), queued: true,
   };
+  if (openScrollPosition === "end") node._openScrollToEnd = true;
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
   return node;
@@ -5703,6 +5844,13 @@ let textMatchHighlightInDetail = true;
    standing preference (same tier as textMatchHighlightScope above), not
    session-cache state. */
 const LEVEL_FILTER_TREE_MODE_KEY = "philogg-level-filter-tree-mode";
+// "On open, scroll log to" (Settings -> Behavior): "start" (default, unchanged
+// behavior) or "end" — see createFileNode/createQueuedFileNode (sets a
+// one-shot _openScrollToEnd flag on the new root node) and renderTable's
+// no-anchor fallback (consumes it). Same plain-localStorage tier as the
+// level-filter-tree-mode setting above.
+const OPEN_SCROLL_POSITION_KEY = "philogg-open-scroll-position";
+let openScrollPosition = "start";
 let levelFilterTreeMode = "auto";
 
 // Which "text" filter nodes to pull match ranges from right now, per
@@ -11965,6 +12113,29 @@ function renderTable() {
     return;
   }
 
+  // "On open, scroll log to" = End: a one-shot flag set on the root file
+  // node the moment it was created (see createFileNode/activateQueuedFileNode)
+  // and consumed here, the first time that file actually has entries to
+  // scroll through. Checked BEFORE restoreViewAnchor, not after: a file
+  // that was just created has nothing worth "preserving" yet, but
+  // captureViewAnchor/restoreViewAnchor would otherwise still find and
+  // "restore" a trivial match here — createFileNode's synchronous
+  // getVisibleEntries() (called from THIS same render, immediately on
+  // creation, entries still empty) and the one at load completion end up
+  // reading the SAME underlying node.entries array by reference, so once
+  // parsing fills it in, the anchor captured off "the old top row" resolves
+  // to this file's own first entry again in the "new" list — a coincidental
+  // self-match that would otherwise silently defeat scroll-to-end. Gated on
+  // currentViewEntries actually being non-empty so the true structural
+  // no-anchor fallback (top of a brand new empty table) is untouched.
+  const rootNode = state.nodes[getRootFileId(state.activeId)];
+  if (rootNode && rootNode._openScrollToEnd && currentViewEntries.length) {
+    delete rootNode._openScrollToEnd;
+    setTableScroll(tableBody.scrollHeight);
+    renderVisibleRows();
+    return;
+  }
+
   if (restoreViewAnchor(scrollAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScroll)) {
     renderVisibleRows();
     return;
@@ -15272,6 +15443,7 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (ev.key === "Escape") {
+    closeSettingsDialog();
     closeFilterPopup();
     closeContextMenu();
     closeTreeContextMenu();
@@ -16097,6 +16269,14 @@ async function restoreSessionFromCache() {
       const viaRef = s.active.ref != null && refMaps[s.active.file]
         ? refMaps[s.active.file][s.active.ref] : null;
       state.activeId = viaRef && state.nodes[viaRef] ? viaRef : byKey[s.active.file].id;
+    } else {
+      // No persisted active node (missing/stale record) — createFileNode no
+      // longer defaults state.activeId during a restore (see its own
+      // comment), so fall back to the first restored file in the original
+      // fileOrder rather than leaving activeId at whatever it was before
+      // this restore began (null on a fresh boot).
+      const firstKey = meta.fileOrder.find(k => byKey[k]);
+      if (firstKey) state.activeId = byKey[firstKey].id;
     }
     return true;
   } catch (err) {
@@ -16962,12 +17142,14 @@ updateNotesButton();
 updateMultilineMsgButton();
 applyRowGrid();
 initTheme();
+initUiFont();
 initFontScale();
 initQuitOnLastClose();
 initCloseToTray();
 initHoverExpandSettings();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();
+initOpenScrollPositionSetting();
 initTempAnchorSettings();
 initCollapsePanels();
 initFhView();
