@@ -199,7 +199,9 @@ scripts/
   install_pkgs.sh                     helper for installing test dependencies
 .github/workflows/release.yml         manual workflow: stamps a version and publishes a tester build
 .github/workflows/desktop-release.yml manual workflow: builds the desktop/ Electron wrapper per OS (untested, see desktop/README.md)
-PROJECT.md                            architecture, design decisions, full changelog (start here to work on the code)
+PROJECT.md                            architecture entry point + index into docs/ (start here to work on the code)
+docs/                                 per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
+CHANGELOG.md                          full chronological, dated changelog
 FEATURE_BACKLOG.md                    unelaborated feature ideas
 CLAUDE.md                             instructions for AI coding sessions on this repo
 ```
@@ -222,9 +224,14 @@ live tailing / folder watch against a real, growing file.
 Project documentation is split by audience:
 
 - **This README** — what PhiLogg is and how to use it, for people.
-- **`PROJECT.md`** — architecture, design rationale, known gotchas, and the
-  full session-by-session changelog. Read this first before changing code,
-  human or AI session alike.
+- **`PROJECT.md`** — architecture entry point: core data model, known
+  gotchas, and an index into `docs/*.md` for per-feature detail. Read this
+  first before changing code, human or AI session alike.
+- **`docs/*.md`** — current-state architecture reference, one file per
+  topic cluster (filters, UI/views, extraction/plotting,
+  persistence/sync, desktop, testing/limitations).
+- **`CHANGELOG.md`** — the full chronological, dated history of what
+  shipped and why.
 - **`FEATURE_BACKLOG.md`** — raw, unelaborated ideas for future work.
 - **`CLAUDE.md`** — short, load-every-session instructions for AI coding
   sessions.
