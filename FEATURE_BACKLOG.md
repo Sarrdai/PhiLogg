@@ -63,8 +63,6 @@ this point.
 
 38. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
 40. **Fix Settings view scroll performance** — currently noticeably janky.
-42+44. **Font size and overall UI scale, independently configurable** — "Change Font Size" currently appears to scale the whole UI; split into two separate settings, one for log/text font size, one for overall UI scale.
-46. **Setting to change the UI font family** — must not break the "no dependencies" rule (system-installed fonts only, no web-font fetches).
 48. **Shortcut Manager in Settings** — replaces the current Help button/shortcut guide with a proper manager (view and, if feasible, rebind app shortcuts) inside Settings.
 49. **Respect OS default window behavior** — audit that the app's own shortcuts/mechanics never shadow or override the operating system's default window behavior (e.g. window management shortcuts).
 

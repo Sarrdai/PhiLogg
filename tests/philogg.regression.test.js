@@ -138,6 +138,9 @@ async function withApp(run, opts = {}) {
       get temporaryAnchorAcrossFiles() { return temporaryAnchorAcrossFiles; },
       get sidebarForcedPeek() { return sidebarForcedPeek; },
       get sidebarAltPeek() { return sidebarAltPeek; },
+      get ROW_HEIGHT() { return ROW_HEIGHT; },
+      get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
+      get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -8594,7 +8597,10 @@ await withApp(async (w, d, T) => {
   const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
   assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
   const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
-  assert(appearanceRows.length === 3, "Theme + Accent color (hidden on Dark, no highlightPalette — see GROUP 87) + Font size are all rows inside that one card, got " + appearanceRows.length);
+  // Theme + UI font (this session) + Accent color (hidden on Dark, no
+  // highlightPalette — see GROUP 87) + UI scale + Log text size (this
+  // session, split from the old single Font size row — see GROUP 111e).
+  assert(appearanceRows.length === 5, "Theme + UI font + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
   // Boolean row: rendered as a switch (input + adjacent track element),
@@ -11265,6 +11271,338 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 111 — This session: icon swaps, Escape closes Settings, file-
+   selection thrash bugfix on session restore, "On open, scroll log to"
+   setting, UI scale / Log text size split, UI font family setting.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("111a. Settings icon + pin icon identity, Escape closes the Settings dialog");
+
+  // Gear/cog icon on #btnSettings (was a sun icon) — identity check via the
+  // shape's own distinctive marker (a <circle> "hub" plus radiating <path>
+  // spokes), not a byte-for-byte string match that would be brittle to
+  // harmless attribute reordering.
+  const settingsSvg = d.querySelector("#btnSettings svg");
+  assert(settingsSvg && settingsSvg.querySelector("circle") && settingsSvg.querySelectorAll("path").length >= 1,
+    "#btnSettings renders an svg icon with a circle+path shape (the gear)");
+
+  // ICON_PIN (shared by #btnPinBookmarks, the sidebar peek toggle, and the
+  // detail-panel peek toggle) is now a thumbtack (circle head + straight
+  // needle path), not the old teardrop map-pin outline.
+  const pinBtn = d.querySelector("#btnPinBookmarks");
+  const pinSvg = pinBtn.querySelector("svg");
+  assert(pinSvg.querySelector("circle") && pinSvg.querySelector("path"),
+    "#btnPinBookmarks (ICON_PIN) is a circle+path thumbtack shape");
+  assert(!pinSvg.innerHTML.includes("c-2.4 0-4.3"), "the old teardrop map-pin path is gone from ICON_PIN");
+
+  assert(d.querySelector("#settingsDialog").classList.contains("hidden"), "settings dialog starts hidden");
+  fireClick(d.querySelector("#btnSettings"), w);
+  assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "clicking the toolbar button opens the settings dialog");
+  fireKeydown(d, w, "Escape");
+  assert(d.querySelector("#settingsDialog").classList.contains("hidden"), "Escape closes the settings dialog, same as the other popups");
+});
+
+await withApp(async (w, d, T) => {
+  section("111b. Bugfix: session restore no longer thrashes state.activeId (file-selection clarity)");
+
+  const factory = new (require("fake-indexeddb").IDBFactory)();
+  // Build+persist THREE files with the FIRST one active (not the last) —
+  // the thrash bug (createFileNode unconditionally setting state.activeId
+  // on every restored file) would have left activeId on the LAST restored
+  // file, or visibly bounced through all three, before restoreSessionFromCache's
+  // own correction. Verified against a real withApp instance below.
+  await withApp(async (w2, d2, T2) => {
+    const f1 = await w2.addFile("a.log", makeLog(0, 5), () => {});
+    const f2 = await w2.addFile("b.log", makeLog(0, 5), () => {});
+    const f3 = await w2.addFile("c.log", makeLog(0, 5), () => {});
+    T2.state.activeId = f1.id;
+    w2.render();
+    await w2.persistFileNode(f1);
+    await w2.persistFileNode(f2);
+    await w2.persistFileNode(f3);
+    await w2.persistMetaNow();
+  }, { indexedDB: factory });
+
+  await withApp(async (w2, d2, T2) => {
+    const activeIdsSeenDuringRestore = [];
+    const origRender = w2.render;
+    w2.render = function () { activeIdsSeenDuringRestore.push(T2.state.activeId); return origRender.apply(this, arguments); };
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 60 && T2.state.rootIds.length < 3; i++) await sleep(50);
+    await sleep(150);
+
+    assert(T2.state.rootIds.length === 3, "sanity: all three files came back via boot-time restore");
+    const aNode = T2.state.rootIds.map(id => T2.state.nodes[id]).find(n => n.name === "a.log");
+    assert(T2.state.activeId === aNode.id, "restore: activeId ends on the PERSISTED active file (a.log, the first one), not the last-loaded one");
+
+    // No thrash: every render() call fired WHILE files were still being
+    // restored (i.e. every one before the final result) must NOT have shown
+    // some other, wrong file as active — createFileNode no longer sets
+    // state.activeId at all during a restore, so those renders see it still
+    // null/unset instead of bouncing through a1/b1/c1's ids in turn.
+    const finalActiveId = activeIdsSeenDuringRestore[activeIdsSeenDuringRestore.length - 1];
+    assert(finalActiveId === aNode.id, "the LAST render (post-restore) carries the correct final activeId");
+    const midRestoreValues = activeIdsSeenDuringRestore.slice(0, -1);
+    assert(midRestoreValues.every(v => v == null),
+      "no render DURING the restore loop ever showed a wrong file as active (no thrash) — got: " + JSON.stringify(midRestoreValues));
+
+    // Exactly one .tree-row ever carries .active in the resulting DOM.
+    const activeRows = [...d2.querySelectorAll(".tree-row")].filter(r => r.classList.contains("active"));
+    assert(activeRows.length === 1, "exactly one tree row is marked active after restore, got " + activeRows.length);
+    assert(activeRows[0].querySelector(".tree-label").textContent === "a.log", "...and it's the correct (persisted-active) file's row");
+  }, { indexedDB: factory });
+});
+
+await withApp(async (w, d, T) => {
+  section("111c. Bugfix: session restore falls back to the first file when no active node was persisted");
+
+  const factory = new (require("fake-indexeddb").IDBFactory)();
+  await withApp(async (w2, d2, T2) => {
+    const f1 = await w2.addFile("only.log", makeLog(0, 3), () => {});
+    await w2.persistFileNode(f1);
+    // buildCacheMeta only records an active node while state.activeId is
+    // set — clearing it first persists a meta record with active:null,
+    // simulating a stale/missing record without hand-building the shape.
+    T2.state.activeId = null;
+    await w2.persistFileNode(f1);
+    await w2.persistMetaNow();
+  }, { indexedDB: factory });
+
+  await withApp(async (w2, d2, T2) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 40 && T2.state.rootIds.length === 0; i++) await sleep(50);
+    await sleep(100);
+    assert(T2.state.rootIds.length === 1, "sanity: the one file restored");
+    assert(T2.state.activeId === T2.state.rootIds[0], "no persisted active node: falls back to the first (only) restored file instead of staying null");
+  }, { indexedDB: factory });
+});
+
+await withApp(async (w, d, T) => {
+  section("111d. Settings: \"On open, scroll log to\" (Start / End)");
+
+  const select = d.querySelector("#settingsOpenScrollPosition");
+  assert(select, "the new select exists in Settings -> Behavior");
+  assert(select.value === "start", "default is \"Start\" — unchanged existing behavior");
+
+  // jsdom has no real layout engine, so scrollHeight isn't naturally
+  // non-zero — stub it directly, same pattern as Group 97.
+  const tableBody0 = d.querySelector("#tableBody");
+  Object.defineProperty(tableBody0, "scrollHeight", { value: 3000, configurable: true });
+
+  // Default (Start): a freshly opened file's table scroll stays at 0.
+  // addFile() itself creates+activates the node and drives every render, so
+  // NOT re-setting state.activeId/calling render() again afterward here —
+  // a redundant extra render would run the ordinary scroll-anchor "keep
+  // reading position" logic against the just-opened file's own (unchanged)
+  // entries and shift the scroll away from where the real open-time logic
+  // already put it, defeating the very thing under test.
+  const fStart = await w.addFile("start.log", makeLog(0, 60), () => {});
+  assert(T.state.activeId === fStart.id, "sanity: addFile activates the newly opened file");
+  assert(d.querySelector("#tableBody").scrollTop === 0, "default \"Start\": table scroll stays at 0 after opening a file");
+
+  // Switch to "End".
+  select.value = "end";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.localStorage.getItem("philogg-open-scroll-position") === "end", "\"End\" persists to localStorage");
+
+  const fEnd = await w.addFile("end.log", makeLog(0, 60), () => {});
+  const tableBody = d.querySelector("#tableBody");
+  assert(tableBody.scrollTop > 0 && tableBody.scrollTop === tableBody.scrollHeight,
+    "\"End\": table scroll jumps to the bottom right after opening a file");
+  // tailFollow defaults true and is untouched by this — "Tailing begins
+  // immediately from there" per the setting's own hint.
+  assert(T.state.tailFollow === true, "tailFollow stays on (default) so tailing would continue from the bottom");
+
+  // One-shot: the flag is consumed by the very first render that had
+  // entries to scroll through, so a LATER re-render of the same file (e.g.
+  // switching away and back) must not re-trigger the jump-to-end.
+  const fOther = await w.addFile("other.log", makeLog(0, 5), () => {});
+  assert(T.state.activeId === fOther.id, "sanity: addFile activates fOther");
+  tableBody.scrollTop = 0; // simulate having scrolled/reset away from the bottom
+  T.state.activeId = fEnd.id;
+  T.state.tempAnchor = null;
+  w.render();
+  assert(tableBody.scrollTop === 0, "switching back to an already-opened file does not re-trigger scroll-to-end (one-shot flag already consumed)");
+
+  select.value = "start";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+});
+
+await withApp(async (w, d, T) => {
+  section("111e. Font size split: UI scale (zoom) and Log text size (--log-text-scale) are independent");
+
+  const uiDown = d.querySelector("#fontScaleDown");
+  const uiValue = d.querySelector("#fontScaleValue");
+  const logDown = d.querySelector("#logTextScaleDown");
+  const logUp = d.querySelector("#logTextScaleUp");
+  const logValue = d.querySelector("#logTextScaleValue");
+  assert(uiDown && logDown && logUp, "both UI scale and Log text size steppers exist in Settings -> Appearance");
+  assert(uiValue.textContent === "100%" && logValue.textContent === "100%", "both default to 100%");
+  assert(w.document.documentElement.style.getPropertyValue("--log-text-scale") === "1", "--log-text-scale starts at 1 (no extra log-text scaling on top of UI scale, by default)");
+
+  // Changing Log text size does NOT touch the whole-UI zoom.
+  const zoomBefore = w.document.documentElement.style.zoom;
+  fireClick(logUp, w);
+  assert(logValue.textContent === "110%", "Log text size stepper moves independently");
+  assert(w.document.documentElement.style.getPropertyValue("--log-text-scale") === "1.1", "--log-text-scale updated to 1.1");
+  assert(w.document.documentElement.style.zoom === zoomBefore, "UI scale (zoom) is untouched by changing Log text size");
+  assert(w.localStorage.getItem("philogg-log-text-scale") === "110", "Log text size persists under its own, separate localStorage key");
+
+  // Changing UI scale does NOT touch --log-text-scale.
+  const logVarBefore = w.document.documentElement.style.getPropertyValue("--log-text-scale");
+  fireClick(uiDown, w);
+  assert(uiValue.textContent === "90%", "UI scale stepper moves independently");
+  assert(w.document.documentElement.style.getPropertyValue("--log-text-scale") === logVarBefore, "--log-text-scale is untouched by changing UI scale");
+  assert(w.localStorage.getItem("philogg-font-scale") === "90", "UI scale persists under the original \"philogg-font-scale\" key (no migration needed)");
+
+  // Reset both back to default.
+  fireClick(d.querySelector("#fontScaleReset"), w);
+  fireClick(d.querySelector("#logTextScaleReset"), w);
+  assert(uiValue.textContent === "100%" && logValue.textContent === "100%", "both reset independently back to 100%");
+});
+
+await withApp(async (w, d, T) => {
+  section("111f. Settings: UI font family (system stacks only, no web fonts)");
+
+  const select = d.querySelector("#settingsUiFontSelect");
+  assert(select, "the UI font select exists in Settings -> Appearance");
+  assert(select.options.length >= 2, "offers a curated list of more than one font option");
+  assert(select.value === "default", "defaults to the system-default stack");
+  assert(w.document.documentElement.style.getPropertyValue("--font-ui").includes("-apple-system"),
+    "default option reproduces the original --font-ui stack (no visual change until touched)");
+  // No @font-face / remote font loading anywhere among the options — every
+  // stack must be plain comma-separated system font names.
+  [...select.options].forEach(opt => {
+    assert(!/http|@font-face|url\(/i.test(opt.value), "font option \"" + opt.value + "\" fetches nothing external");
+  });
+
+  select.value = "mono";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.document.documentElement.style.getPropertyValue("--font-ui") === "var(--font-mono)", "selecting \"Monospace\" applies the monospace stack via --font-ui");
+  assert(w.localStorage.getItem("philogg-ui-font") === "mono", "selection persists to localStorage");
+
+  select.value = "default";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+});
+
+/* ============================================================
+   GROUP 112 — Three person-reported follow-ups to GROUP 111's own
+   settings work (this session): Log text size not rescaling ROW_HEIGHT
+   (rows overflowed/clipped at larger scales), "On open, scroll log to"
+   End firing before a large file finished loading, and a stale
+   state.multiSelect entry leaving a second file's sidebar row showing
+   the SAME highlight as the newly active file's row.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("112a. Bugfix: Log text size rescales ROW_HEIGHT (and EXTRACT_ROW_HEIGHT/LINK_PAIR_ROW_HEIGHT), not just font-size");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  w.render();
+  const rowBefore = d.querySelector(".log-row");
+  assert(rowBefore && rowBefore.style.height === "28px", "sanity: a row is 28px tall at 100% log text size");
+
+  const logUp = d.querySelector("#logTextScaleUp");
+  // 100% -> 110% -> 120% -> ... -> 160% (six clicks of the default 10% step).
+  for (let i = 0; i < 6; i++) fireClick(logUp, w);
+  assert(d.querySelector("#logTextScaleValue").textContent === "160%", "sanity: Log text size is now 160%");
+
+  const rowAfter = d.querySelector(".log-row");
+  assert(rowAfter.style.height === "45px", "row height rescaled proportionally with Log text size (28 * 1.6 = 44.8, rounded to 45), got " + rowAfter.style.height);
+
+  // The extraction table and link/pair views use the same --log-text-scale
+  // var in their CSS (#extractTable, .pair-row-time/.pair-row-msg — see
+  // :root) — their own fixed-pixel row heights must rescale in lockstep.
+  assert(T.EXTRACT_ROW_HEIGHT === 45, "EXTRACT_ROW_HEIGHT rescaled the same way, got " + T.EXTRACT_ROW_HEIGHT);
+  assert(T.LINK_PAIR_ROW_HEIGHT === 42, "LINK_PAIR_ROW_HEIGHT rescaled the same way (26 * 1.6 = 41.6, rounded to 42), got " + T.LINK_PAIR_ROW_HEIGHT);
+
+  // Resetting back to 100% restores the original heights exactly (no
+  // rounding drift left over from the round trip).
+  fireClick(d.querySelector("#logTextScaleReset"), w);
+  assert(d.querySelector(".log-row").style.height === "28px", "resetting Log text size back to 100% restores the original 28px row height");
+  assert(T.EXTRACT_ROW_HEIGHT === 28 && T.LINK_PAIR_ROW_HEIGHT === 26, "EXTRACT_ROW_HEIGHT/LINK_PAIR_ROW_HEIGHT also reset to their base values");
+});
+
+await withApp(async (w, d, T) => {
+  section("112b. Bugfix: \"On open, scroll log to\" End keeps trailing the bottom through every load tick, not just the first one");
+
+  const select = d.querySelector("#settingsOpenScrollPosition");
+  select.value = "end";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  const tableBody = d.querySelector("#tableBody");
+  Object.defineProperty(tableBody, "scrollHeight", { value: 3000, configurable: true });
+
+  // Simulate a large file: the real row (createFileNode) exists and is
+  // active, entries have streamed in from an early parse chunk, but the
+  // node is still mid-load (loadFraction a number, not yet deleted — see
+  // loadOneFileIntoTree's `finally`). Before the fix, renderTable()
+  // consumed and deleted the one-shot _openScrollToEnd flag on this very
+  // first non-empty render, landing at whatever "end" existed at that
+  // instant instead of the file's true end.
+  const node = w.createFileNode("big.log");
+  assert(node._openScrollToEnd === true, "sanity: the one-shot flag was set at file creation (\"End\" is selected)");
+  await w.parseLogTextAsync(makeLog(0, 20), node, () => {});
+  node.loadFraction = 0.4; // still loading — a later chunk hasn't landed yet
+  w.renderTable();
+  assert(tableBody.scrollTop === tableBody.scrollHeight, "mid-load: still trails to the (partial) bottom on this tick");
+  assert(node._openScrollToEnd === true, "mid-load: the flag is NOT consumed yet — the file isn't done loading");
+
+  // More entries land on a later chunk (grows scrollHeight, as a real
+  // parse tick would) while still mid-load.
+  Object.defineProperty(tableBody, "scrollHeight", { value: 5000, configurable: true });
+  w.renderTable();
+  assert(tableBody.scrollTop === 5000, "still-loading: keeps re-trailing to the NEW bottom as more entries stream in, not stuck at the old one");
+  assert(node._openScrollToEnd === true, "still-loading: flag still held");
+
+  // Loading finishes for real.
+  delete node.loadFraction;
+  w.renderTable();
+  assert(tableBody.scrollTop === 5000, "load finished: settles at the true final bottom");
+  assert(node._openScrollToEnd === undefined, "load finished: the one-shot flag is NOW consumed");
+
+  // One-shot, still: a later re-render (e.g. switching away and back) must
+  // not re-trigger the jump now that the flag is gone (same guarantee
+  // GROUP 111d already covers for the non-chunked case).
+  tableBody.scrollTop = 0;
+  w.renderTable();
+  assert(tableBody.scrollTop !== 5000, "post-completion re-render does not re-force the scroll back to the bottom (flag already consumed)");
+
+  select.value = "start";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+});
+
+await withApp(async (w, d, T) => {
+  section("112c. Bugfix: loading a second file no longer leaves a stale multi-selected highlight on the first file's row");
+
+  const f1 = await w.addFile("app-1.log", makeLog(0, 5), () => {});
+  w.render();
+
+  // A plain (non-Ctrl) click on a file's own tree row — completely
+  // ordinary navigation, e.g. switching to inspect it — sets
+  // state.multiSelect to that row alone (renderNode's click handler).
+  const row1 = d.querySelector('.tree-row[data-node-id="' + f1.id + '"]');
+  fireClick(row1, w);
+  assert(T.state.multiSelect.has(f1.id) && T.state.multiSelect.size === 1, "sanity: clicking app-1.log's tree row sets multiSelect to just that row");
+
+  // Select a log entry too, matching the person's own repro description.
+  const logRow = d.querySelector(".log-row");
+  if (logRow) fireClick(logRow, w);
+
+  // Load a second file (drag-and-drop and the file input both funnel
+  // through loadFileDescriptors -> createFileNode/activateQueuedFileNode).
+  const f2 = await w.addFile("app-2.log", makeLog(100, 3), () => {});
+  w.render();
+
+  assert(T.state.activeId === f2.id, "sanity: app-2.log is now the active file");
+  assert(!T.state.multiSelect.has(f1.id), "loading app-2.log clears the stale multiSelect entry pointing at app-1.log's row");
+
+  const rows = [...d.querySelectorAll(".tree-row")];
+  const highlighted = rows.filter(r => r.classList.contains("active") || r.classList.contains("multi-selected"));
+  assert(highlighted.length === 1, "exactly one tree row carries an active/selected visual state after loading the second file, got " + highlighted.length);
+  assert(highlighted[0].dataset.nodeId === f2.id, "...and it's the newly loaded, genuinely active file's row");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -12774,6 +13112,45 @@ process.exit(failed ? 1 : 0);
               a tree click flipping focusRegion, or on "persistent" being
               the default mode, were updated in place rather than left
               testing the old behavior.
+   Group 111 — this session (2026-08-26), person-requested batch: icon
+              swaps (#btnSettings, ICON_PIN), Escape closes the Settings
+              dialog, the session-restore activeId-thrash bugfix
+              (createFileNode skips its state.activeId assignment while
+              sessionRestoreInProgress), the new "On open, scroll log to"
+              (Start/End) setting, Font size split into independent UI
+              scale / Log text size (--log-text-scale), and the new UI
+              font family setting.
+   Group 112 — this session (2026-08-26), person-reported follow-ups to
+              Group 111's own work (screenshots): (a) Log text size only
+              grew font-size via --log-text-scale, never the fixed-pixel
+              ROW_HEIGHT/EXTRACT_ROW_HEIGHT/LINK_PAIR_ROW_HEIGHT the main/
+              extraction/link-pair virtualized views enforce via inline
+              style — text overflowed/clipped its row at larger scales;
+              fixed by making all three `let` (were `const`) and
+              rescaling them in applyLogTextScale(), then a real render()
+              to redraw immediately. (b) "On open, scroll log to" = End
+              consumed its one-shot _openScrollToEnd flag on the very
+              first renderTable() with any entries — the first parse
+              chunk of a large file, not the file's true end; fixed by
+              only clearing the flag once rootNode.loadFraction is no
+              longer a number (loadOneFileIntoTree's `finally` deletes it
+              exactly when reading+parsing both finish), re-trailing the
+              bottom on every tick in between. (c) createFileNode/
+              activateQueuedFileNode set state.activeId on every file
+              load but never touched state.multiSelect — a stale entry
+              left over from an earlier plain (non-Ctrl) tree-row click
+              on the FIRST file kept rendering ".multi-selected" (same
+              --accent-soft background ".active" uses) on that row
+              forever after, alongside the newly loaded file's genuine
+              ".active" row, looking like two files were highlighted at
+              once; fixed by clearing state.multiSelect alongside
+              state.activeId in both functions. All three confirmed via
+              a real Chromium (Playwright) session before the jsdom tests
+              were written: (a) a real row's rendered height stuck at
+              28px while its font-size visibly grew past it; (c) a real
+              drag-and-drop load of a second file, with the first file's
+              tree row previously clicked and a log entry selected,
+              produced exactly this dual-highlight in a screenshot.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
