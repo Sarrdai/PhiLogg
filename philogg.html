@@ -1764,9 +1764,10 @@
 
   /* ---------- Shortcut Manager (Settings > Shortcuts) — rebindable-action
      rows share .settings-row/.settings-card with the rest of Settings; only
-     the combo display + rebind controls are specific to this section. The
-     static reference list below it reuses #shortcuts/kbd styling that used
-     to live on the standalone #shortcutsPanel popup this section replaced. */
+     the combo display + rebind controls are specific to this section.
+     Fixed (non-rebindable) shortcuts are appended as extra rows in the same
+     list, greyed out via .shortcut-row-fixed and with no rebind/reset
+     controls — see FIXED_SHORTCUTS/renderShortcutBindingsList. */
   .shortcut-binding-control{display:flex; align-items:center; gap:8px;}
   .shortcut-combo{display:flex; align-items:center; gap:3px; min-width:70px;}
   .shortcut-combo kbd{
@@ -1776,15 +1777,8 @@
   }
   .shortcut-rebind-btn.recording{color:var(--accent-strong); border-color:var(--accent-strong);}
   .shortcut-conflict-note{font-size:11px; color:var(--danger, #e5484d); margin-top:6px;}
-  #shortcuts{
-    padding:12px 14px; color:var(--text-tertiary); font-size:10.8px; line-height:1.7;
-  }
-  #shortcuts div{margin-bottom:2px;}
-  #shortcuts kbd{
-    background:var(--bg-elevated); border:1px solid var(--border);
-    border-radius:4px; padding:0 4px; font-family:var(--font-mono);
-    color:var(--text-secondary); font-size:10px;
-  }
+  .shortcut-row-fixed{opacity:.55;}
+  .shortcut-row-fixed .settings-row-label{color:var(--text-tertiary); font-weight:450;}
   .settings-subsection-title{
     font-size:11.5px; font-weight:650; color:var(--text-secondary); text-transform:uppercase;
     letter-spacing:.4px; margin:26px 0 8px;
@@ -3291,37 +3285,12 @@
 
         <section class="settings-section" id="settingsSectionShortcuts">
           <div class="settings-section-title">Keyboard Shortcuts</div>
-          <div class="settings-section-desc">Rebind the shortcuts below, or use them as a quick reference. Click "Change", then press the new key combination. Everything else in the app is mouse-driven (right-click, drag, double-click) and isn't rebindable.</div>
 
           <div class="settings-card" id="shortcutBindingsCard">
             <div id="shortcutBindingsList"></div>
             <div class="settings-card-footer"><button type="button" id="btnResetShortcuts" class="btn-mini-outline">Reset all to defaults</button></div>
           </div>
           <div class="shortcut-conflict-note hidden" id="shortcutConflictNote"></div>
-
-          <div class="settings-subsection-title">Everything else (fixed reference, not rebindable)</div>
-          <div id="shortcuts">
-            <div><kbd>Ctrl</kbd>+<kbd>C</kbd> copy · <kbd>Ctrl</kbd>+<kbd>X</kbd> cut a filter</div>
-            <div><kbd>Ctrl</kbd>+<kbd>V</kbd> — paste under selected node</div>
-            <div>Right-click a node — copy/cut/paste/delete</div>
-            <div>Right-click a filter — "Save to library…"; right-click any node — "Apply from library…" (reusable, named presets)</div>
-            <div>Drag a filter onto another node to move it there</div>
-            <div><kbd>Del</kbd> — delete selected filter</div>
-            <div>Double-click a filter — edit it (same as Ctrl+E/right-click)</div>
-            <div>Drag the divider right of the tree, above the detail panel, or (in Stacked view) between Full and Filtered to resize</div>
-            <div>Filter with <kbd>[value:float]</kbd> etc. to extract a table</div>
-            <div>Check 2+ nodes for merge/combine actions</div>
-            <div>Click a row — select it</div>
-            <div><kbd>Ctrl</kbd>+click / <kbd>Shift</kbd>+click a row — multi-select rows, <kbd>Ctrl</kbd>+<kbd>C</kbd> copies their raw text</div>
-            <div>↑ / ↓ — move selection up/down</div>
-            <div>Click a tree row/breadcrumb — arrow keys then navigate the tree: ↑ / ↓ move, ← parent, → first child</div>
-            <div><kbd>Enter</kbd> on a filter (tree focused) — jump to the Filtered view</div>
-            <div><kbd>Enter</kbd> on a selected row (Filtered/Stacked) — same as double-click</div>
-            <div>Right-click a row — filter before/after</div>
-            <div>Double-click a row — jump to it in the full log</div>
-            <div>The Filter view scrolls sideways for long messages</div>
-            <div>Files keep updating live (tail) — scroll up to pause, “Newest” to follow again</div>
-          </div>
         </section>
 
         <section class="settings-section" id="settingsSectionLicense">
@@ -15422,6 +15391,31 @@ const SHORTCUT_ACTIONS = [
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
 ];
 
+// Fixed shortcuts (mouse-driven or otherwise not a single rebindable combo)
+// still listed here, greyed out, so the manager reads as the complete
+// reference — but with no Change/Reset controls, since they can't be
+// rebound. Rendered as extra rows appended after SHORTCUT_ACTIONS in
+// renderShortcutBindingsList().
+const FIXED_SHORTCUTS = [
+  { label: "Copy a filter",                          display: ["Ctrl", "C"] },
+  { label: "Cut a filter",                           display: ["Ctrl", "X"] },
+  { label: "Paste under selected node",               display: ["Ctrl", "V"] },
+  { label: "Delete selected filter",                  display: ["Del"] },
+  { label: "Right-click a node — copy/cut/paste/delete", display: null },
+  { label: "Right-click a filter — save to library…; right-click any node — apply from library…", display: null },
+  { label: "Drag a filter onto another node to move it there", display: null },
+  { label: "Double-click a filter — edit it",         display: null },
+  { label: "Drag the divider beside the tree/detail panel, or between Full and Filtered in Stacked view, to resize", display: null },
+  { label: "Click a row — select it",                 display: null },
+  { label: "Multi-select rows",                       display: ["Ctrl", "click"] },
+  { label: "Move selection up/down",                  display: ["↑", "↓"] },
+  { label: "Navigate the tree (row/breadcrumb focused)", display: ["↑", "↓", "←", "→"] },
+  { label: "Jump to Filtered view (filter selected in tree)", display: ["Enter"] },
+  { label: "Same as double-click (row selected in Filtered/Stacked)", display: ["Enter"] },
+  { label: "Right-click a row — filter before/after",  display: null },
+  { label: "Double-click a row — jump to it in the full log", display: null },
+];
+
 let shortcutBindingOverrides = {};
 try { shortcutBindingOverrides = JSON.parse(localStorage.getItem(SHORTCUT_BINDINGS_STORAGE_KEY) || "{}"); }
 catch { shortcutBindingOverrides = {}; } // corrupt value, fall through to {}
@@ -15492,6 +15486,17 @@ function renderShortcutBindingsList() {
       setShortcutConflictNote("");
       renderShortcutBindingsList();
     });
+    list.appendChild(row);
+  });
+  FIXED_SHORTCUTS.forEach(fixed => {
+    const row = document.createElement("div");
+    row.className = "settings-row shortcut-row-fixed";
+    const comboHtml = fixed.display
+      ? `<span class="shortcut-combo">${fixed.display.map(p => `<kbd>${p}</kbd>`).join("")}</span>`
+      : "";
+    row.innerHTML = `
+      <div class="settings-row-text"><div class="settings-row-label">${fixed.label}</div></div>
+      <div class="settings-row-control shortcut-binding-control">${comboHtml}</div>`;
     list.appendChild(row);
   });
 }
@@ -16485,7 +16490,13 @@ document.addEventListener("keydown", ev => {
     // interacted with — copy ITS raw text (see copyLogSelectionToClipboard),
     // in preference to the tree's own filter-node copy/paste clipboard below
     // (state.clipboard), which only makes sense while focusRegion is "tree".
+    // Exception: if the person has selected text inside the Entry Detail
+    // panel (e.g. to grab a substring of a long message), let the browser's
+    // native copy handle that selection instead of overriding it with the
+    // full raw line.
     if (state.focusRegion === "entries" && state.selectedId) {
+      const sel = window.getSelection();
+      if (sel && sel.toString().length && detailPanel.contains(sel.anchorNode)) return;
       ev.preventDefault();
       copyLogSelectionToClipboard();
       return;
