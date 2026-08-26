@@ -11725,21 +11725,39 @@ await withApp(async (w, d, T) => {
    Undo/Redo (which never touches navHistory — see the undo()/redo() code,
    unchanged). #56: "Session…"/"Open…" toolbar buttons became "Open…"
    (files/folder/import-session) and "Save" (export-session only), moved out
-   of #toolbar entirely into #sidebarHeader alongside the new back/forward
-   buttons; the version tag moved from next to the wordmark into
-   #toolbar's now-freed-up right side.
+   of #toolbar entirely into #sidebarHeader.
+   Follow-up (same session, person-requested): the version tag moved OUT of
+   #toolbar's right side into its own line directly under the "PhiLogg"
+   wordmark (`.brand` is now a column: `.brand-row` for mark+name, then
+   `.brand-version` below — the wordmark's own position is unchanged). The
+   back/forward buttons moved OUT of #sidebarHeader into #toolbar itself,
+   in the same row as Settings/Undo/Redo but left-aligned right next to the
+   brand (via `.toolbar-spacer` absorbing the rest of the row's width) —
+   closer to the wordmark than the other toolbar-right buttons, which stay
+   flush right exactly as before.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("115a. Toolbar regroup: sidebar header carries nav/open/save, #btnSession is gone, version tag moved");
-  assert(!!d.querySelector("#sidebarHeader #btnNavBack"), "back button lives in #sidebarHeader");
-  assert(!!d.querySelector("#sidebarHeader #btnNavForward"), "forward button lives in #sidebarHeader");
-  assert(!!d.querySelector("#sidebarHeader #btnOpen"), "Open button moved into #sidebarHeader");
+  section("115a. Toolbar regroup: nav buttons live in #toolbar near the wordmark, open/save in #sidebarHeader, #btnSession is gone, version tag under the wordmark");
+  assert(!!d.querySelector("#toolbar #btnNavBack"), "back button lives in #toolbar");
+  assert(!!d.querySelector("#toolbar #btnNavForward"), "forward button lives in #toolbar");
+  assert(d.querySelector("#sidebarHeader #btnNavBack") === null, "back button no longer lives in #sidebarHeader");
+  assert(d.querySelector("#sidebarHeader #btnNavForward") === null, "forward button no longer lives in #sidebarHeader");
+  assert(!!d.querySelector("#sidebarHeader #btnOpen"), "Open button lives in #sidebarHeader");
   assert(!!d.querySelector("#sidebarHeader #btnSave"), "Save button lives in #sidebarHeader");
-  assert(d.querySelector("#toolbar #btnOpen") === null, "Open button no longer in the top toolbar");
+  assert(d.querySelector("#toolbar #btnOpen") === null, "Open button is not in the top toolbar");
   assert(d.querySelector("#btnSession") === null, "#btnSession no longer exists");
   assert(d.querySelector("#sessionMenu") === null, "#sessionMenu no longer exists");
-  assert(!!d.querySelector("#toolbar #brandVersion"), "version tag moved into #toolbar's right side");
-  assert(d.querySelector(".brand #brandVersion") === null, "version tag no longer sits next to the wordmark");
+  assert(!!d.querySelector(".brand #brandVersion"), "version tag sits under the wordmark, inside .brand");
+  assert(d.querySelector(".toolbar-right #brandVersion") === null, "version tag no longer sits in the toolbar's right side");
+  assert(!!d.querySelector(".brand .brand-row .brand-name"), "the wordmark itself stays in its own row, unmoved");
+  // Nav group must come right after .brand and before the spacer that
+  // pushes the rest of the toolbar's controls to the far right.
+  const toolbarChildren = [...d.querySelector("#toolbar").children].map(c => c.className || c.id);
+  const brandIdx = toolbarChildren.findIndex(c => c === "brand");
+  const navIdx = toolbarChildren.findIndex(c => c === "toolbar-group" || c.includes("toolbar-group"));
+  const spacerIdx = toolbarChildren.findIndex(c => c === "toolbar-spacer");
+  assert(brandIdx === 0 && navIdx === 1 && spacerIdx === 2,
+    "DOM order is brand, nav group, spacer, then the rest — got " + toolbarChildren.join(","));
   assert(d.querySelector("#btnNavBack").disabled, "back starts disabled with nothing visited yet");
   assert(d.querySelector("#btnNavForward").disabled, "forward starts disabled with nothing visited yet");
 });
