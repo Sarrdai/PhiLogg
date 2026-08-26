@@ -12084,6 +12084,17 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   const node = existingNode || createFileNode(name, folderId);
   if (existingNode) activateQueuedFileNode(node);
   node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
+  // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
+  // when running under the Electron wrapper (window.philogg, exposed by
+  // desktop/preload.js) — a plain browser never exposes a File's real OS
+  // path (that's the whole point of the File System Access sandbox), so
+  // outside Electron this just stays unset and the context-menu item below
+  // never offers itself. Works for both a plain File (input/drop) and a
+  // FileSystemFileHandle-backed one (folder watch) — webUtils resolves either.
+  if (window.philogg && typeof window.philogg.getPathForFile === "function") {
+    const resolvedPath = window.philogg.getPathForFile(file);
+    if (resolvedPath) node.localPath = resolvedPath;
+  }
   try {
     const text = await readFileWithProgress(file, (loaded, total) => {
       node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
@@ -12265,6 +12276,11 @@ async function loadUrlIntoTree(url) {
     if (last) name = last;
   } catch { /* keep the "remote.log" fallback */ }
   const node = await addFile(name, text);
+  // FEATURE_BACKLOG.md #52 ("Open File Location" / "Copy URL"): kept for
+  // every ?url= deep-link, not just the desktop-local ones — a plain
+  // http(s) report link has no OS folder to reveal, but the context menu
+  // still offers "Copy URL" for it (see openTreeContextMenu).
+  node.sourceUrl = url;
   if (isDesktopLocalUrl(url)) {
     node.tail = {
       handle: urlTailHandle(url),
@@ -13674,6 +13690,30 @@ function openTreeContextMenu(ev, clickedId) {
     // invert/context/cut/save/delete, since it's only ever
     // added/removed automatically, not edited or moved by hand. Recolor/
     // restyle still work (the swatch above is unconditional).
+    // FEATURE_BACKLOG.md #52 ("Open File Location") — deliberately generic,
+    // not Electron-only in spirit: offered on any file node whose actual
+    // location is known and directly openable. "Known" means one of:
+    //  - node.localPath: a real OS path, resolved via webUtils.getPathForFile
+    //    at load time (Electron only — see loadOneFileIntoTree). Covers
+    //    files opened through the in-app picker/drag-drop/folder watch.
+    //  - node.sourceUrl pointing at philogg://local/…: the desktop wrapper's
+    //    own scheme for a file opened via launch arg / file-association
+    //    (see desktop/main.js) — main.js already holds the real path for it.
+    // Both need window.philogg (desktop/preload.js) to actually reveal
+    // anything; in a plain browser build neither the OS folder picker nor
+    // any web API can resolve a File back to a filesystem path at all — so
+    // the item simply never appears there, rather than a fake affordance
+    // that would always fail. A plain http(s) node.sourceUrl (no OS folder
+    // to reveal) instead gets "Copy URL" — the useful analogue for a
+    // remotely-loaded log (works in every build, no Electron needed).
+    if (node.type === "file" && window.philogg) {
+      if (node.localPath || (node.sourceUrl && isDesktopLocalUrl(node.sourceUrl))) {
+        buckets.edit.push({ action: "revealLocation", label: "Open File Location", icon: ICON_FOLDER });
+      }
+    }
+    if (node.type === "file" && node.sourceUrl && !isDesktopLocalUrl(node.sourceUrl)) {
+      buckets.edit.push({ action: "copyUrl", label: "Copy URL", icon: ICON_COPY });
+    }
     if (node.type === "filter" && node.locked) {
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
     } else if (node.type === "filter") {
@@ -13772,6 +13812,19 @@ treeContextMenu.addEventListener("click", ev => {
 
   // Single-node actions operate on treeCtxId (the node the menu was opened
   // for), mirroring exactly what Ctrl+C/X/V/Delete do for state.activeId.
+  if (action === "revealLocation") {
+    const n = treeCtxId && state.nodes[treeCtxId];
+    if (n && window.philogg) {
+      if (n.localPath) window.philogg.revealPath(n.localPath);
+      else if (n.sourceUrl && isDesktopLocalUrl(n.sourceUrl)) window.philogg.revealLocalUrl(n.sourceUrl);
+    }
+    return;
+  }
+  if (action === "copyUrl") {
+    const n = treeCtxId && state.nodes[treeCtxId];
+    if (n && n.sourceUrl) copyTextToClipboard(n.sourceUrl);
+    return;
+  }
   if (action === "rename") {
     if (treeCtxId) startRenameNode(treeCtxId);
     return;
@@ -15622,6 +15675,14 @@ async function persistFileNode(node) {
     handle: (node.tail && !node.folderId) ? node.tail.handle : null,
     text: rebuildFileText(node),
     formatId: node.formatId || null,
+    // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (Electron
+    // only, resolved via webUtils.getPathForFile at load time) and
+    // sourceUrl (any ?url=/philoggLoadUrl deep-link) both need to survive a
+    // reload same as everything else about the file, or the context menu
+    // item would silently vanish after a refresh even though the file is
+    // still the same one on disk / at that URL.
+    localPath: node.localPath || null,
+    sourceUrl: node.sourceUrl || null,
     savedAt: Date.now(),
   }));
 }
@@ -15946,6 +16007,8 @@ async function restoreSessionFromCache() {
       // folder record itself (including its handle) comes back separately
       // via restoreWatchedFolders, called right after this function returns.
       if (rec.folderId) node.folderId = rec.folderId;
+      if (rec.localPath) node.localPath = rec.localPath;
+      if (rec.sourceUrl) node.sourceUrl = rec.sourceUrl;
       // Plain (non-folder) file that was being tailed before the reload:
       // try to resume silently — see tryReattachFileTail.
       if (rec.handle && !rec.folderId) await tryReattachFileTail(node, rec.handle);
