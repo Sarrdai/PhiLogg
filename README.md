@@ -114,9 +114,10 @@ open it in a browser to view it.
   additional formats (a log4net-style conversion pattern, or a raw regex
   for edge cases) and map them to files by filename pattern; the log4net-style
   default format still works with zero configuration. Each format also picks
-  **which log levels it uses and in what order** (any subset of
-  ERROR/WARN/INFO/DEBUG/TRACE) — that's what the level quick-filter bar shows
-  for files using it; anything else falls into OTHER.
+  **which log levels it uses and in what order** — any subset of
+  ERROR/WARN/INFO/DEBUG/TRACE plus your own custom names (NOTICE, FATAL,
+  VERBOSE, …), each getting a color of its own — that's what the level
+  quick-filter bar shows for files using it; anything else falls into OTHER.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
   Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
   JSON (download a template, fill in your colors, import it back). Pick a
