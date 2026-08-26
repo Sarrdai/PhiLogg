@@ -245,6 +245,32 @@ function registerRevealHandlers() {
   });
 }
 
+// FEATURE_BACKLOG.md (font selection): philogg.html's own UI-font picker is
+// stuck with a curated system-stack list because a plain static HTML file
+// has no permission-prompt UI to gate the browser's Local Font Access API.
+// The desktop wrapper has no such restriction — it's a Node process, so it
+// can shell out to the OS's own font enumeration (fc-list/PowerShell/
+// system_profiler via the `font-list` package) with no permission dialog
+// needed. Renderer calls this once via preload.js; a failure (missing
+// binary, sandboxed OS, etc.) just means no extra options show up — the
+// curated list still works everywhere.
+let cachedSystemFonts = null;
+async function listSystemFonts() {
+  if (cachedSystemFonts) return cachedSystemFonts;
+  try {
+    const fontList = require("font-list");
+    const names = await fontList.getFonts({ disableQuoting: true });
+    cachedSystemFonts = Array.isArray(names) ? names.filter(Boolean).sort() : [];
+  } catch {
+    cachedSystemFonts = [];
+  }
+  return cachedSystemFonts;
+}
+
+function registerFontHandlers() {
+  ipcMain.handle("philogg:list-system-fonts", () => listSystemFonts());
+}
+
 function registerProtocol() {
   protocol.handle("philogg", async (request) => {
     const url = new URL(request.url);
@@ -523,6 +549,7 @@ if (!gotLock) {
     registerProtocol();
     registerRevealHandlers();
     registerSettingsHandlers();
+    registerFontHandlers();
     createWindow(pendingOpenFile || fileArgFromArgv(process.argv));
   });
 
