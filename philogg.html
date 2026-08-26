@@ -528,16 +528,6 @@
   .folder-watch-note{
     padding:7px 10px; font-size:10.8px; color:var(--text-tertiary); font-style:italic;
   }
-  #shortcuts{
-    flex:1 1 auto; overflow-y:auto; padding:10px 14px;
-    color:var(--text-tertiary); font-size:10.8px; line-height:1.7;
-  }
-  #shortcuts kbd{
-    background:var(--bg-elevated); border:1px solid var(--border);
-    border-radius:4px; padding:0 4px; font-family:var(--font-mono);
-    color:var(--text-secondary); font-size:10px;
-  }
-
   #treeActionBar{
     flex:0 0 auto; display:none; align-items:center; gap:6px; flex-wrap:wrap;
     padding:9px 12px; border-bottom:1px solid var(--border-soft); background:var(--bg-elevated);
@@ -1662,6 +1652,30 @@
   .settings-section:last-child{border-bottom:none;}
   .settings-section-title{font-size:16px; font-weight:650; color:var(--text-primary); margin:0 0 4px; letter-spacing:-.1px;}
   .settings-section-desc{font-size:12.5px; color:var(--text-secondary); margin:0 0 14px; line-height:1.55;}
+
+  /* ---------- Shortcut Manager (Settings > Shortcuts) — rebindable-action
+     rows share .settings-row/.settings-card with the rest of Settings; only
+     the combo display + rebind controls are specific to this section. The
+     static reference list below it reuses #shortcuts/kbd styling that used
+     to live on the standalone #shortcutsPanel popup this section replaced. */
+  .shortcut-binding-control{display:flex; align-items:center; gap:8px;}
+  .shortcut-combo{display:flex; align-items:center; gap:3px; min-width:70px;}
+  .shortcut-combo kbd{
+    background:var(--bg-elevated); border:1px solid var(--border);
+    border-radius:4px; padding:1px 6px; font-family:var(--font-mono);
+    color:var(--text-secondary); font-size:11px;
+  }
+  .shortcut-rebind-btn.recording{color:var(--accent-strong); border-color:var(--accent-strong);}
+  .shortcut-conflict-note{font-size:11px; color:var(--danger, #e5484d); margin-top:6px;}
+  #shortcuts{
+    padding:12px 14px; color:var(--text-tertiary); font-size:10.8px; line-height:1.7;
+  }
+  #shortcuts div{margin-bottom:2px;}
+  #shortcuts kbd{
+    background:var(--bg-elevated); border:1px solid var(--border);
+    border-radius:4px; padding:0 4px; font-family:var(--font-mono);
+    color:var(--text-secondary); font-size:10px;
+  }
   .settings-subsection-title{
     font-size:11.5px; font-weight:650; color:var(--text-secondary); text-transform:uppercase;
     letter-spacing:.4px; margin:26px 0 8px;
@@ -2090,9 +2104,9 @@
 
   /* Shared panel-title style — despite the name (a holdover from the removed
      Bookmark Manager panel, the first one to use it), this class is generic
-     and still styles #columnsPanel/#shortcutsPanel/#licensePanel's own
-     headers below (see "Bookmarks rework" in PROJECT.md for why the
-     Bookmark Manager panel itself is gone but this shared class stayed). */
+     and still styles #columnsPanel/#licensePanel's own headers below (see
+     "Bookmarks rework" in PROJECT.md for why the Bookmark Manager panel
+     itself is gone but this shared class stayed). */
   .bookmarks-panel-title{
     padding:10px 12px; font-size:11.5px; font-weight:650; color:var(--text-primary);
     border-bottom:1px solid var(--border-soft); flex:0 0 auto;
@@ -2132,7 +2146,7 @@
   .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
   /* ---------- Log view columns popup (#btnColumns) — same fixed-position/
-     toggle pattern as #shortcutsPanel/#licensePanel. ---------- */
+     toggle pattern as #licensePanel. ---------- */
   #columnsPanel{
     position:fixed; z-index:60; width:190px;
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
@@ -2148,18 +2162,8 @@
   .column-toggle-row input{margin:0;}
   #btnResetColumns{margin:0 8px 8px;}
 
-  /* ---------- Keyboard shortcuts popup (moved here from the bottom of the
-     sidebar; same fixed-position/toggle pattern as #columnsPanel,
-     triggered by the header's #btnShortcuts button) ---------- */
-  #shortcutsPanel{
-    position:fixed; z-index:60; width:340px; max-height:min(480px, 70vh);
-    background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
-    box-shadow:0 16px 36px rgba(0,0,0,.5); display:flex; flex-direction:column;
-  }
-  #shortcutsPanel.hidden{display:none;}
-
   /* ---------- License popup (#btnLicense) — same fixed-position/toggle
-     pattern as #shortcutsPanel, sitting right beside it. ---------- */
+     pattern as #columnsPanel. ---------- */
   #licensePanel{
     position:fixed; z-index:60; width:380px; max-height:min(520px, 70vh);
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
@@ -2842,6 +2846,10 @@
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="1.4"/><path d="M2 6.2h12M5.6 6.2v7.2"/></svg>
             Log Formats
           </button>
+          <button type="button" class="settings-nav-item" data-nav-target="settingsSectionShortcuts">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="4" width="12.8" height="8" rx="1.4"/><path d="M4 7h.01M6.4 7h.01M8.8 7h.01M11.2 7h.01M4.8 9.4h6.4"/></svg>
+            Shortcuts
+          </button>
           <div class="settings-nav-footnote">Settings are global and saved locally.</div>
         </nav>
         <div class="settings-page-body">
@@ -3151,6 +3159,41 @@
           </div>
         </section>
 
+        <section class="settings-section" id="settingsSectionShortcuts">
+          <div class="settings-section-title">Keyboard Shortcuts</div>
+          <div class="settings-section-desc">Rebind the shortcuts below, or use them as a quick reference. Click "Change", then press the new key combination. Everything else in the app is mouse-driven (right-click, drag, double-click) and isn't rebindable.</div>
+
+          <div class="settings-card" id="shortcutBindingsCard">
+            <div id="shortcutBindingsList"></div>
+            <div class="settings-card-footer"><button type="button" id="btnResetShortcuts" class="btn-mini-outline">Reset all to defaults</button></div>
+          </div>
+          <div class="shortcut-conflict-note hidden" id="shortcutConflictNote"></div>
+
+          <div class="settings-subsection-title">Everything else (fixed reference, not rebindable)</div>
+          <div id="shortcuts">
+            <div><kbd>Ctrl</kbd>+<kbd>C</kbd> copy · <kbd>Ctrl</kbd>+<kbd>X</kbd> cut a filter</div>
+            <div><kbd>Ctrl</kbd>+<kbd>V</kbd> — paste under selected node</div>
+            <div>Right-click a node — copy/cut/paste/delete</div>
+            <div>Right-click a filter — "Save to library…"; right-click any node — "Apply from library…" (reusable, named presets)</div>
+            <div>Drag a filter onto another node to move it there</div>
+            <div><kbd>Del</kbd> — delete selected filter</div>
+            <div>Double-click a filter — edit it (same as Ctrl+E/right-click)</div>
+            <div>Drag the divider right of the tree, above the detail panel, or (in Stacked view) between Full and Filtered to resize</div>
+            <div>Filter with <kbd>[value:float]</kbd> etc. to extract a table</div>
+            <div>Check 2+ nodes for merge/combine actions</div>
+            <div>Click a row — select it</div>
+            <div><kbd>Ctrl</kbd>+click / <kbd>Shift</kbd>+click a row — multi-select rows, <kbd>Ctrl</kbd>+<kbd>C</kbd> copies their raw text</div>
+            <div>↑ / ↓ — move selection up/down</div>
+            <div>Click a tree row/breadcrumb — arrow keys then navigate the tree: ↑ / ↓ move, ← parent, → first child</div>
+            <div><kbd>Enter</kbd> on a filter (tree focused) — jump to the Filtered view</div>
+            <div><kbd>Enter</kbd> on a selected row (Filtered/Stacked) — same as double-click</div>
+            <div>Right-click a row — filter before/after</div>
+            <div>Double-click a row — jump to it in the full log</div>
+            <div>The Filter view scrolls sideways for long messages</div>
+            <div>Files keep updating live (tail) — scroll up to pause, “Newest” to follow again</div>
+          </div>
+        </section>
+
         </div>
       </div>
     </div>
@@ -3184,42 +3227,6 @@
       <label class="column-toggle-row"><input type="checkbox" id="colToggleMethod"> Method</label>
     </div>
     <button type="button" id="btnResetColumns" class="btn-mini-outline">Reset widths</button>
-  </div>
-
-  <div id="shortcutsPanel" class="hidden">
-    <div class="bookmarks-panel-title">Keyboard shortcuts</div>
-    <div id="shortcuts">
-      <div><kbd>Ctrl</kbd>+<kbd>F</kbd> — new filter on selected node</div>
-      <div><kbd>F2</kbd> or right-click — rename a filter (display label, doesn't change its pattern)</div>
-      <div><kbd>Ctrl</kbd>+<kbd>E</kbd> or right-click — edit a filter</div>
-      <div><kbd>Ctrl</kbd>+<kbd>C</kbd> copy · <kbd>Ctrl</kbd>+<kbd>X</kbd> cut a filter</div>
-      <div><kbd>Ctrl</kbd>+<kbd>V</kbd> — paste under selected node</div>
-      <div>Right-click a node — copy/cut/paste/delete</div>
-      <div>Right-click a filter — "Save to library…"; right-click any node — "Apply from library…" (reusable, named presets)</div>
-      <div>Drag a filter onto another node to move it there</div>
-      <div><kbd>Del</kbd> — delete selected filter</div>
-      <div><kbd>Ctrl</kbd>+<kbd>W</kbd> — close the currently open file</div>
-      <div>Double-click a filter — edit it (same as Ctrl+E/right-click)</div>
-      <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo (delete/move/edit)</div>
-      <div><kbd>B</kbd> — bookmark the selected row</div>
-      <div><kbd>Alt</kbd>+<kbd>N</kbd> or right-click — add/edit a note on the selected row; double-click an existing note to edit it</div>
-      <div>Drag the divider right of the tree, above the detail panel, or (in Stacked view) between Full and Filtered to resize</div>
-      <div>Filter with <kbd>[value:float]</kbd> etc. to extract a table</div>
-      <div>Check 2+ nodes for merge/combine actions</div>
-      <div>Click a row — select it</div>
-      <div><kbd>Ctrl</kbd>+click / <kbd>Shift</kbd>+click a row — multi-select rows, <kbd>Ctrl</kbd>+<kbd>C</kbd> copies their raw text</div>
-      <div>↑ / ↓ — move selection up/down</div>
-      <div>Click a tree row/breadcrumb — arrow keys then navigate the tree: ↑ / ↓ move, ← parent, → first child</div>
-      <div><kbd>Ctrl</kbd>+<kbd>0</kbd> — focus the filter tree at wherever you currently are</div>
-      <div><kbd>Ctrl</kbd>+<kbd>1</kbd> Full · <kbd>Ctrl</kbd>+<kbd>2</kbd> Filtered · <kbd>Ctrl</kbd>+<kbd>3</kbd> Stacked — switch view and focus it for ↑ / ↓</div>
-      <div><kbd>Enter</kbd> on a filter (tree focused) — jump to the Filtered view</div>
-      <div><kbd>Enter</kbd> on a selected row (Filtered/Stacked) — same as double-click</div>
-      <div>Right-click a row — filter before/after</div>
-      <div>Double-click a row — jump to it in the full log</div>
-      <div>The Filter view scrolls sideways for long messages</div>
-      <div><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> — increase/decrease font size (also in Settings)</div>
-      <div>Files keep updating live (tail) — scroll up to pause, “Newest” to follow again</div>
-    </div>
   </div>
 
   <div id="licensePanel" class="hidden">
@@ -6653,7 +6660,6 @@ const btnPinBookmarks = el("#btnPinBookmarks");
 const btnNotes = el("#btnNotes");
 const btnMultilineMsg = el("#btnMultilineMsg");
 const btnShortcuts = el("#btnShortcuts");
-const shortcutsPanel = el("#shortcutsPanel");
 const btnLicense = el("#btnLicense");
 const licensePanel = el("#licensePanel");
 const btnUndo = el("#btnUndo");
@@ -12120,22 +12126,13 @@ window.addEventListener("mouseup", () => {
   schedulePersistMeta();
 });
 
-// Keyboard-shortcuts popup: same fixed-position/toggle pattern as the
-// bookmarks panel above, just with static content (no render step needed).
-function closeShortcutsPanel() { shortcutsPanel.classList.add("hidden"); }
-function openShortcutsPanel() {
-  const rect = btnShortcuts.getBoundingClientRect();
-  shortcutsPanel.style.top = (rect.bottom + 6) + "px";
-  shortcutsPanel.style.left = Math.min(rect.left, window.innerWidth - 356) + "px";
-  shortcutsPanel.classList.remove("hidden");
-}
-btnShortcuts.addEventListener("click", () => {
-  if (shortcutsPanel.classList.contains("hidden")) openShortcutsPanel();
-  else closeShortcutsPanel();
-});
+// FEATURE_BACKLOG.md #48 "Shortcut Manager in Settings": the header help
+// button used to toggle a standalone shortcuts popup; it now opens the
+// Settings dialog straight to the dedicated Shortcuts section instead.
+btnShortcuts.addEventListener("click", () => openSettingsDialog("settingsSectionShortcuts"));
 
-// License popup: same fixed-position/toggle pattern, right beside the
-// keyboard-shortcuts popup above.
+// License popup: same fixed-position/toggle pattern as the bookmarks panel
+// above.
 function closeLicensePanel() { licensePanel.classList.add("hidden"); }
 function openLicensePanel() {
   const rect = btnLicense.getBoundingClientRect();
@@ -12302,7 +12299,7 @@ async function openFolderPickerFlow() {
 
 // "Open…" is a single button with a small dropdown menu (File(s)…/Folder…)
 // instead of two separate buttons — same fixed-position/toggle pattern as
-// the keyboard-shortcuts popup (openShortcutsPanel).
+// the columns popup (openColumnsPanel).
 const btnOpen = el("#btnOpen");
 const openMenu = el("#openMenu");
 function closeOpenMenu() { openMenu.classList.add("hidden"); }
@@ -14997,11 +14994,21 @@ const settingsDialog = el("#settingsDialog");
 const formatList = el("#formatList");
 const formatRuleList = el("#formatRuleList");
 
-function closeSettingsDialog() { settingsDialog.classList.add("hidden"); }
-function openSettingsDialog() {
+function closeSettingsDialog() { settingsDialog.classList.add("hidden"); stopShortcutRecording(); }
+// sectionId (FEATURE_BACKLOG.md #48, Shortcut Manager): optional — jumps
+// straight to a given section (e.g. the header help button opening
+// "settingsSectionShortcuts") instead of wherever the dialog last scrolled to.
+function openSettingsDialog(sectionId) {
   settingsDialog.classList.remove("hidden");
   renderFormatList();
   renderFormatRuleList();
+  renderShortcutBindingsList();
+  if (sectionId) {
+    const target = document.getElementById(sectionId);
+    const navItem = settingsNavItems.find(b => b.dataset.navTarget === sectionId);
+    if (target && target.scrollIntoView) target.scrollIntoView({ block: "start" });
+    if (navItem) { settingsNavItems.forEach(b => b.classList.remove("active")); navItem.classList.add("active"); }
+  }
 }
 settingsDialog.addEventListener("click", ev => { if (ev.target === settingsDialog) closeSettingsDialog(); });
 el("#settingsClose").addEventListener("click", closeSettingsDialog);
@@ -15036,6 +15043,154 @@ if (typeof IntersectionObserver !== "undefined") {
   }, { root: settingsPageBody, threshold: 0, rootMargin: "0px 0px -70% 0px" });
   document.querySelectorAll(".settings-section").forEach(sec => settingsSectionObserver.observe(sec));
 }
+
+/* ===================== Shortcut Manager (Settings > Shortcuts) =====================
+   FEATURE_BACKLOG.md #48: view AND rebind app shortcuts from Settings,
+   replacing the old static #btnShortcuts popup. Only scoped to the subset of
+   keyboard shortcuts below that are single-purpose and unambiguous (a plain
+   key/modifier combo triggering exactly one action) — the rest of the app's
+   shortcuts are mouse-driven (right-click/drag/double-click) or deeply
+   context-dependent (Ctrl+C/X/V, Del, Enter, arrows — see the fixed
+   reference list in the HTML) and stay fixed. The main keydown handler below
+   checks matchesShortcut(ev, id) for each of these instead of a hardcoded
+   key comparison, so a rebind here takes effect immediately. */
+const SHORTCUT_BINDINGS_STORAGE_KEY = "philogg.shortcutBindings";
+
+const SHORTCUT_ACTIONS = [
+  { id: "newFilter",     label: "New filter on selected node",         default: { ctrl: true, key: "f" } },
+  { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
+  { id: "editFilter",    label: "Edit a filter",                       default: { ctrl: true, key: "e" } },
+  { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" } },
+  { id: "toggleSidebar", label: "Collapse/expand Files & Filters",     default: { ctrl: true, key: "b" } },
+  { id: "toggleDetail",  label: "Collapse/expand Entry Detail",        default: { ctrl: true, key: "j" } },
+  { id: "undo",          label: "Undo",                                default: { ctrl: true, key: "z" } },
+  { id: "redo",          label: "Redo",                                default: { ctrl: true, shift: true, key: "z" } },
+  { id: "bookmark",      label: "Bookmark the selected row",           default: { key: "b" } },
+  { id: "addNote",       label: "Add/edit a note on the selected row", default: { alt: true, key: "n" } },
+  { id: "focusTree",     label: "Focus the filter tree",               default: { ctrl: true, key: "0" } },
+  { id: "viewFull",      label: "Switch to Full view",                 default: { ctrl: true, key: "1" } },
+  { id: "viewFiltered",  label: "Switch to Filtered view",             default: { ctrl: true, key: "2" } },
+  { id: "viewStacked",   label: "Switch to Stacked view",              default: { ctrl: true, key: "3" } },
+  { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
+  { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
+];
+
+let shortcutBindingOverrides = {};
+try { shortcutBindingOverrides = JSON.parse(localStorage.getItem(SHORTCUT_BINDINGS_STORAGE_KEY) || "{}"); }
+catch { shortcutBindingOverrides = {}; } // corrupt value, fall through to {}
+
+function saveShortcutBindingOverrides() {
+  localStorage.setItem(SHORTCUT_BINDINGS_STORAGE_KEY, JSON.stringify(shortcutBindingOverrides));
+}
+function getShortcutBinding(actionId) {
+  return shortcutBindingOverrides[actionId] || SHORTCUT_ACTIONS.find(a => a.id === actionId).default;
+}
+// "=" and "+" are the same physical key on most layouts (Ctrl+= zooms too in
+// every browser) — normalized to "+" so either press satisfies a "+" combo.
+function comboFromEvent(ev) {
+  let key = ev.key.toLowerCase();
+  if (key === "=") key = "+";
+  return { ctrl: !!(ev.ctrlKey || ev.metaKey), shift: !!ev.shiftKey, alt: !!ev.altKey, key };
+}
+function comboEquals(a, b) {
+  return !!a.ctrl === !!b.ctrl && !!a.shift === !!b.shift && !!a.alt === !!b.alt && a.key === b.key;
+}
+function matchesShortcut(ev, actionId) {
+  return comboEquals(comboFromEvent(ev), getShortcutBinding(actionId));
+}
+function comboLabelParts(combo) {
+  const parts = [];
+  if (combo.ctrl) parts.push("Ctrl");
+  if (combo.alt) parts.push("Alt");
+  if (combo.shift) parts.push("Shift");
+  parts.push(combo.key === "f2" ? "F2" : combo.key.length === 1 ? combo.key.toUpperCase() : combo.key);
+  return parts;
+}
+// A combo already in use by another rebindable action, so assigning it here
+// would silently steal that action's shortcut — surfaced as a blocking note
+// rather than allowed to happen quietly.
+function findShortcutConflict(combo, excludingId) {
+  return SHORTCUT_ACTIONS.find(a => a.id !== excludingId && comboEquals(getShortcutBinding(a.id), combo));
+}
+
+let shortcutRecordingId = null;
+const shortcutConflictNote = el("#shortcutConflictNote");
+function setShortcutConflictNote(text) {
+  shortcutConflictNote.textContent = text || "";
+  shortcutConflictNote.classList.toggle("hidden", !text);
+}
+function renderShortcutBindingsList() {
+  const list = el("#shortcutBindingsList");
+  list.innerHTML = "";
+  SHORTCUT_ACTIONS.forEach(action => {
+    const row = document.createElement("div");
+    row.className = "settings-row";
+    row.dataset.actionId = action.id;
+    const combo = getShortcutBinding(action.id);
+    const recording = shortcutRecordingId === action.id;
+    const comboHtml = recording
+      ? '<span class="shortcut-combo">Press keys…</span>'
+      : `<span class="shortcut-combo">${comboLabelParts(combo).map(p => `<kbd>${p}</kbd>`).join("")}</span>`;
+    row.innerHTML = `
+      <div class="settings-row-text"><div class="settings-row-label">${action.label}</div></div>
+      <div class="settings-row-control shortcut-binding-control">
+        ${comboHtml}
+        <button type="button" class="btn-mini-outline shortcut-rebind-btn${recording ? " recording" : ""}">${recording ? "Press keys…" : "Change"}</button>
+        <button type="button" class="btn-mini-outline shortcut-reset-btn" title="Reset to default">↺</button>
+      </div>`;
+    row.querySelector(".shortcut-rebind-btn").addEventListener("click", () => startShortcutRecording(action.id));
+    row.querySelector(".shortcut-reset-btn").addEventListener("click", () => {
+      delete shortcutBindingOverrides[action.id];
+      saveShortcutBindingOverrides();
+      setShortcutConflictNote("");
+      renderShortcutBindingsList();
+    });
+    list.appendChild(row);
+  });
+}
+function stopShortcutRecording() {
+  if (shortcutRecordingId === null) return;
+  shortcutRecordingId = null;
+  renderShortcutBindingsList();
+}
+function startShortcutRecording(actionId) {
+  if (shortcutRecordingId === actionId) { stopShortcutRecording(); return; }
+  shortcutRecordingId = actionId;
+  setShortcutConflictNote("");
+  renderShortcutBindingsList();
+}
+// Called from the very top of the main keydown handler below (instead of a
+// separate capturing listener) — a keydown event fired directly on
+// `document` (as every event in this app's own dispatch, and every synthetic
+// one in the regression suite, is) reaches document-level listeners in
+// registration order regardless of the capture flag, so a second listener
+// added here later would run AFTER the long-lived main handler, not before
+// it. Checking shortcutRecordingId first thing in that one handler sidesteps
+// the whole capture/bubble ordering question.
+function onShortcutRecordingKeydown(ev) {
+  ev.preventDefault();
+  const actionId = shortcutRecordingId;
+  if (ev.key === "Escape") { stopShortcutRecording(); return; }
+  // A bare modifier key press (nothing else down yet) isn't a usable combo —
+  // keep listening for the actual key that follows it.
+  if (["Control", "Shift", "Alt", "Meta"].includes(ev.key)) return;
+  const combo = comboFromEvent(ev);
+  const conflict = findShortcutConflict(combo, actionId);
+  if (conflict) {
+    setShortcutConflictNote(`Already used by "${conflict.label}" — choose a different combination.`);
+    return;
+  }
+  shortcutBindingOverrides[actionId] = combo;
+  saveShortcutBindingOverrides();
+  setShortcutConflictNote("");
+  stopShortcutRecording();
+}
+el("#btnResetShortcuts").addEventListener("click", () => {
+  shortcutBindingOverrides = {};
+  saveShortcutBindingOverrides();
+  setShortcutConflictNote("");
+  renderShortcutBindingsList();
+});
 
 // Builtin default always sorts first, regardless of createdAt, per the
 // person's explicit request — it's the format most people will look for.
@@ -15527,7 +15682,6 @@ document.addEventListener("click", ev => {
   if (!sessionMenu.contains(ev.target) && !btnSession.contains(ev.target)) closeSessionMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.contains(ev.target)) closeColumnsPanel();
-  if (!shortcutsPanel.contains(ev.target) && !btnShortcuts.contains(ev.target)) closeShortcutsPanel();
   if (!licensePanel.contains(ev.target) && !btnLicense.contains(ev.target)) closeLicensePanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
   // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
@@ -15539,10 +15693,15 @@ document.addEventListener("click", ev => {
 /* ===================== Keyboard shortcuts ===================== */
 
 document.addEventListener("keydown", ev => {
+  // Shortcut Manager (Settings > Shortcuts) is listening for the next key
+  // press to rebind an action — consume it here, before any of the app's
+  // own bindings below can react to it.
+  if (shortcutRecordingId !== null) { onShortcutRecordingKeydown(ev); return; }
+
   const key = ev.key.toLowerCase();
   const inInput = document.activeElement && document.activeElement.tagName === "INPUT";
 
-  if ((ev.ctrlKey || ev.metaKey) && key === "f") {
+  if (matchesShortcut(ev, "newFilter")) {
     ev.preventDefault();
     if (state.activeId) openFilterPopup();
     return;
@@ -15562,7 +15721,6 @@ document.addEventListener("keydown", ev => {
     closeSessionExportDialog();
     closeFilterLibrarySaveDialog();
     closeFilterLibraryDialog();
-    closeShortcutsPanel();
     closeLicensePanel();
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
@@ -15601,7 +15759,7 @@ document.addEventListener("keydown", ev => {
   // the note editor: empty (new note) if it has none yet, prefilled (edit)
   // if it already has one — openNoteEditor itself picks which, no separate
   // F2 binding for this (per the backlog's own wording).
-  if (ev.altKey && key === "n" && state.selectedId && entryIndex[state.selectedId]) {
+  if (matchesShortcut(ev, "addNote") && state.selectedId && entryIndex[state.selectedId]) {
     ev.preventDefault();
     openNoteEditor(state.selectedId);
     return;
@@ -15648,12 +15806,12 @@ document.addEventListener("keydown", ev => {
   // inline rename (it used to open the Edit dialog, moved to Ctrl+E right
   // below, same Explorer/VS Code-style split those two editors use: F2 =
   // rename, a separate shortcut = edit the actual value).
-  if (ev.key === "F2") {
+  if (matchesShortcut(ev, "renameFilter")) {
     if (startRenameNode(state.activeId)) ev.preventDefault();
     return;
   }
 
-  if ((ev.ctrlKey || ev.metaKey) && key === "e") {
+  if (matchesShortcut(ev, "editFilter")) {
     if (editFilterNode(state.activeId)) ev.preventDefault();
     return;
   }
@@ -15673,7 +15831,7 @@ document.addEventListener("keydown", ev => {
   // an active filter node while the tree has focus reveals the Filtered view
   // the same way Ctrl+2 does, so the tree and the Log views read as a fast
   // back-and-forth pair either way.
-  if ((ev.ctrlKey || ev.metaKey) && key === "0") {
+  if (matchesShortcut(ev, "focusTree")) {
     ev.preventDefault();
     if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
     state.focusRegion = "tree";
@@ -15685,7 +15843,7 @@ document.addEventListener("keydown", ev => {
     render();
     return;
   }
-  if ((ev.ctrlKey || ev.metaKey) && key === "1") {
+  if (matchesShortcut(ev, "viewFull")) {
     ev.preventDefault();
     clearSidebarForcedPeek();
     applyFhView("highlight");
@@ -15693,7 +15851,7 @@ document.addEventListener("keydown", ev => {
     state.focusRegion = "entries";
     return;
   }
-  if ((ev.ctrlKey || ev.metaKey) && key === "2") {
+  if (matchesShortcut(ev, "viewFiltered")) {
     ev.preventDefault();
     clearSidebarForcedPeek();
     applyFhView("filter");
@@ -15701,7 +15859,7 @@ document.addEventListener("keydown", ev => {
     state.focusRegion = "entries";
     return;
   }
-  if ((ev.ctrlKey || ev.metaKey) && key === "3") {
+  if (matchesShortcut(ev, "viewStacked")) {
     ev.preventDefault();
     clearSidebarForcedPeek();
     applyFhView("stacked");
@@ -15760,7 +15918,7 @@ document.addEventListener("keydown", ev => {
   // path as the tree row's own ✕ button (deleteFilterNodeWithUndo), targeting
   // the active node's root file so it works regardless of which node in that
   // file's chain is currently active.
-  if ((ev.ctrlKey || ev.metaKey) && key === "w") {
+  if (matchesShortcut(ev, "closeFile")) {
     const rootId = getRootFileId(state.activeId);
     if (rootId) {
       ev.preventDefault();
@@ -15774,12 +15932,12 @@ document.addEventListener("keydown", ev => {
   // the UI-wide zoom set up in applyFontScale (see its own comment, near the
   // theme toggle) — same keys browsers themselves use for page zoom, so they
   // read as a natural extension of that rather than a new idiom.
-  if ((ev.ctrlKey || ev.metaKey) && (key === "+" || key === "=")) {
+  if (matchesShortcut(ev, "zoomIn")) {
     ev.preventDefault();
     applyFontScale(fontScale + FONT_SCALE_STEP);
     return;
   }
-  if ((ev.ctrlKey || ev.metaKey) && key === "-") {
+  if (matchesShortcut(ev, "zoomOut")) {
     ev.preventDefault();
     applyFontScale(fontScale - FONT_SCALE_STEP);
     return;
@@ -15788,21 +15946,25 @@ document.addEventListener("keydown", ev => {
   // Collapsible sidebar / detail panel (see "Collapsible sidebar / detail
   // panel" above, near the resizer JS) — Ctrl+B/Ctrl+J mirror each panel's
   // own header chevron and resizer double-click.
-  if ((ev.ctrlKey || ev.metaKey) && key === "b") {
+  if (matchesShortcut(ev, "toggleSidebar")) {
     ev.preventDefault();
     toggleSidebarCollapsed();
     return;
   }
-  if ((ev.ctrlKey || ev.metaKey) && key === "j") {
+  if (matchesShortcut(ev, "toggleDetail")) {
     ev.preventDefault();
     toggleDetailCollapsed();
     return;
   }
 
-  if ((ev.ctrlKey || ev.metaKey) && key === "z") {
+  if (matchesShortcut(ev, "redo")) {
     ev.preventDefault();
-    if (ev.shiftKey) redo();
-    else undo();
+    redo();
+    return;
+  }
+  if (matchesShortcut(ev, "undo")) {
+    ev.preventDefault();
+    undo();
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "y") {
@@ -15811,7 +15973,7 @@ document.addEventListener("keydown", ev => {
     return;
   }
 
-  if (key === "b" && state.selectedId) {
+  if (matchesShortcut(ev, "bookmark") && state.selectedId) {
     ev.preventDefault();
     toggleBookmark(state.selectedId);
     return;

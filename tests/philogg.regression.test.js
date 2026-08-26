@@ -1149,14 +1149,15 @@ await withApp(async (w, d, T) => {
   fireKeydown(d, w, "Escape");
   assert(d.querySelector("#licensePanel").classList.contains("hidden"), "Escape closes the license popup, same as the other popups");
 
-  // Independent from the neighboring shortcuts popup: opening one doesn't
-  // implicitly open or leave the other stuck open.
+  // Independent from the Settings dialog (the header help button, GROUP 66,
+  // opens Settings rather than a popup since the Shortcut Manager session):
+  // opening one doesn't implicitly open or leave the other stuck open.
   const btnShortcuts = d.querySelector("#btnShortcuts");
   fireClick(btnShortcuts, w);
-  assert(!d.querySelector("#shortcutsPanel").classList.contains("hidden"), "sanity: shortcuts popup opens on its own button");
-  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "opening the shortcuts popup does not also open the license popup");
+  assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "sanity: the help button opens Settings on its own");
+  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "opening Settings does not also open the license popup");
   fireClick(btnLicense, w);
-  assert(!d.querySelector("#licensePanel").classList.contains("hidden"), "license popup opens independently while the shortcuts popup is also open");
+  assert(!d.querySelector("#licensePanel").classList.contains("hidden"), "license popup opens independently while Settings is also open");
 });
 
 /* ============================================================
@@ -2483,7 +2484,9 @@ await withApp(async (w, d, T) => {
    and (3) moved the keyboard-shortcuts list out of a permanent bottom-left
    sidebar strip into a popup behind a new #btnShortcuts header button,
    following the exact same open/close/outside-click/Escape pattern as the
-   pre-existing #bookmarksPanel. Follow-up in the same session: #fhTabs/
+   pre-existing #bookmarksPanel (that popup itself was later superseded by
+   the Shortcut Manager in Settings, GROUP 66 — #btnShortcuts's own
+   assertions live there now). Follow-up in the same session: #fhTabs/
    #levelBar switched from flex items to floats so they stay pinned to the
    top-left line even when the breadcrumb wraps, with the breadcrumb (now a
    plain block with inline-block chips) using the full row width on wrapped
@@ -2647,23 +2650,9 @@ await withApp(async (w, d, T) => {
   T.state.activeId = textNode.id; // reset for the popup checks below
   w.render();
 
-  // --- Shortcuts popup ---
-  assert(d.querySelector("#shortcuts").parentElement.id === "shortcutsPanel", "the shortcuts list now lives inside #shortcutsPanel, not directly in the sidebar");
+  // --- Sidebar no longer has a permanent shortcuts strip (superseded, see
+  // GROUP 66 for the current Shortcut Manager / #btnShortcuts behavior) ---
   assert(d.querySelector("#sidebar #shortcuts") === null, "the sidebar no longer has a permanent shortcuts strip");
-  assert(d.querySelector("#shortcutsPanel").classList.contains("hidden"), "shortcuts popup starts hidden");
-
-  const btnShortcuts = d.querySelector("#btnShortcuts");
-  fireClick(btnShortcuts, w);
-  assert(!d.querySelector("#shortcutsPanel").classList.contains("hidden"), "clicking the header button opens the shortcuts popup");
-  assert(d.querySelector("#shortcutsPanel").textContent.includes("new filter on selected node"), "popup shows the shortcut reference content");
-
-  fireClick(d.body, w); // outside click
-  assert(d.querySelector("#shortcutsPanel").classList.contains("hidden"), "clicking outside closes the shortcuts popup");
-
-  fireClick(btnShortcuts, w);
-  assert(!d.querySelector("#shortcutsPanel").classList.contains("hidden"), "sanity: reopened for the Escape check");
-  fireKeydown(d, w, "Escape");
-  assert(d.querySelector("#shortcutsPanel").classList.contains("hidden"), "Escape closes the shortcuts popup, same as the other popups");
 });
 
 /* ============================================================
@@ -8581,11 +8570,13 @@ await withApp(async (w, d, T) => {
 
   fireClick(d.querySelector("#btnSettings"), w);
 
+  // 4 sections as of GROUP 114 (Shortcut Manager added "Shortcuts").
   const navItems = [...d.querySelectorAll("#settingsNav .settings-nav-item")];
-  assert(navItems.length === 3, "the section nav lists exactly the three sections, got " + navItems.length);
+  assert(navItems.length === 4, "the section nav lists exactly the four sections, got " + navItems.length);
   const targets = navItems.map(b => b.dataset.navTarget);
-  assert(targets.includes("settingsSectionAppearance") && targets.includes("settingsSectionBehavior") && targets.includes("settingsSectionFormats"),
-    "nav items point at Appearance/Behavior/Log Formats, got " + JSON.stringify(targets));
+  assert(targets.includes("settingsSectionAppearance") && targets.includes("settingsSectionBehavior") &&
+    targets.includes("settingsSectionFormats") && targets.includes("settingsSectionShortcuts"),
+    "nav items point at Appearance/Behavior/Log Formats/Shortcuts, got " + JSON.stringify(targets));
   targets.forEach(id => assert(d.getElementById(id), "every nav target id resolves to an actual section, missing " + id));
 
   const appearanceNavItem = navItems.find(b => b.dataset.navTarget === "settingsSectionAppearance");
@@ -11655,6 +11646,93 @@ await withApp(async (w, d, T) => {
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve(["Fira Code", "Iosevka", "Arial"]) } });
 
 /* ============================================================
+   GROUP 114 — Shortcut Manager in Settings (FEATURE_BACKLOG.md #48)
+   Origin: this session. Replaces the old standalone #shortcutsPanel popup
+   (GROUP 26) with a dedicated "Shortcuts" section inside Settings: a
+   rebindable-actions table (matchesShortcut(ev, actionId) looks up
+   localStorage-backed overrides instead of a hardcoded key check) plus a
+   fixed reference list (#shortcuts, unchanged content minus the entries now
+   covered by the table) for everything else (mouse-driven or too
+   context-dependent to safely rebind).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("114a. Header help button opens Settings on the Shortcuts section");
+
+  assert(d.querySelector("#settingsDialog").classList.contains("hidden"), "sanity: Settings starts closed");
+  const btnShortcuts = d.querySelector("#btnShortcuts");
+  fireClick(btnShortcuts, w);
+  assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "clicking the header help button opens Settings");
+  assert(d.querySelector(".settings-nav-item[data-nav-target='settingsSectionShortcuts']").classList.contains("active"),
+    "the Shortcuts nav item is marked active");
+  assert(d.querySelector("#shortcutBindingsList").children.length === 16, "the rebindable-actions table renders one row per registered action");
+  assert(d.querySelector("#shortcuts").textContent.includes("Ctrl") && d.querySelector("#shortcuts").parentElement.id === "settingsSectionShortcuts",
+    "the fixed reference list now lives inside the Shortcuts settings section");
+  assert(!d.querySelector("#shortcuts").textContent.includes("new filter on selected node"),
+    "entries now covered by the rebindable table (e.g. Ctrl+F) are no longer duplicated in the fixed reference list");
+});
+
+await withApp(async (w, d, T) => {
+  section("114b. Rebinding an action changes which key triggers it");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  w.render();
+  w.selectEntry(f.entries[1].id);
+
+  // Default: bare "B" bookmarks the selected row.
+  fireKeydown(d, w, "b");
+  assert(T.state.bookmarks.has(f.entries[1].id), "sanity: default 'B' shortcut still bookmarks");
+  w.toggleBookmark(f.entries[1].id); // undo, back to a clean slate
+
+  w.openSettingsDialog("settingsSectionShortcuts");
+  // Each render*/rebind step rebuilds #shortcutBindingsList's rows from
+  // scratch (renderShortcutBindingsList), so every query below is re-run
+  // fresh against the DOM rather than caching a row/button reference across
+  // a re-render (which would silently go stale/detached).
+  fireClick(d.querySelector("[data-action-id='bookmark'] .shortcut-rebind-btn"), w);
+  assert(d.querySelector("[data-action-id='bookmark'] .shortcut-rebind-btn").classList.contains("recording"),
+    "the rebind button shows a recording state while listening");
+  fireKeydown(d, w, "k");
+  assert(w.localStorage.getItem("philogg.shortcutBindings") === JSON.stringify({ bookmark: { ctrl: false, shift: false, alt: false, key: "k" } }),
+    "the new combo persists to localStorage under the action's id");
+  assert(!d.querySelector("[data-action-id='bookmark'] .shortcut-rebind-btn").classList.contains("recording"),
+    "recording ends once a key is captured (row re-rendered)");
+
+  fireKeydown(d, w, "b");
+  assert(!T.state.bookmarks.has(f.entries[1].id), "'B' no longer bookmarks after being rebound");
+  fireKeydown(d, w, "k");
+  assert(T.state.bookmarks.has(f.entries[1].id), "the newly bound 'K' now bookmarks the selected row instead");
+});
+
+await withApp(async (w, d, T) => {
+  section("114c. Conflict detection, reset-one, and reset-all");
+
+  w.openSettingsDialog("settingsSectionShortcuts");
+
+  // Conflict: try to rebind "toggleDetail" (default Ctrl+J) onto "editFilter"'s (Ctrl+E) combo.
+  fireClick(d.querySelector("[data-action-id='toggleDetail'] .shortcut-rebind-btn"), w);
+  fireKeydown(d, w, "e", { ctrlKey: true });
+  assert(!d.querySelector("#shortcutConflictNote").classList.contains("hidden"), "a conflicting combo shows the conflict note");
+  assert(d.querySelector("#shortcutConflictNote").textContent.includes("Edit a filter"), "the conflict note names the action already using that combo");
+  assert(w.localStorage.getItem("philogg.shortcutBindings") === null || !JSON.parse(w.localStorage.getItem("philogg.shortcutBindings") || "{}").toggleDetail,
+    "the conflicting rebind is rejected — no override is stored for toggleDetail");
+  fireKeydown(d, w, "Escape"); // cancel the still-active recording
+
+  // Reset a single rebound action back to its default.
+  fireClick(d.querySelector("[data-action-id='bookmark'] .shortcut-rebind-btn"), w);
+  fireKeydown(d, w, "k");
+  fireClick(d.querySelector("[data-action-id='bookmark'] .shortcut-reset-btn"), w);
+  assert(!JSON.parse(w.localStorage.getItem("philogg.shortcutBindings") || "{}").bookmark, "the reset button clears that action's override");
+
+  // Reset-all.
+  fireClick(d.querySelector("[data-action-id='closeFile'] .shortcut-rebind-btn"), w);
+  fireKeydown(d, w, "q", { ctrlKey: true });
+  assert(JSON.parse(w.localStorage.getItem("philogg.shortcutBindings")).closeFile, "sanity: an override is stored before reset-all");
+  fireClick(d.querySelector("#btnResetShortcuts"), w);
+  assert(JSON.parse(w.localStorage.getItem("philogg.shortcutBindings")) && Object.keys(JSON.parse(w.localStorage.getItem("philogg.shortcutBindings"))).length === 0,
+    "\"Reset all to defaults\" clears every override");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -13213,9 +13291,26 @@ process.exit(failed ? 1 : 0);
               and applies '"<name>",<default fallback stack>'. The plain
               HTML build (no window.philogg) is unaffected.
 
+   Group 114 — this session (2026-08-26), FEATURE_BACKLOG.md #48 "Shortcut
+              Manager in Settings": the old standalone #shortcutsPanel popup
+              (#btnShortcuts) is replaced by a dedicated "Shortcuts" section
+              inside Settings — a rebindable-actions table (16 single-
+              purpose keyboard-only actions; matchesShortcut(ev, actionId)
+              looks up localStorage-backed overrides, "philogg.
+              shortcutBindings", instead of a hardcoded key check) plus the
+              old fixed reference list for everything else (mouse-driven or
+              too context-dependent to safely rebind: Ctrl+C/X/V, Del,
+              Enter, arrows, right-click/drag actions).
+
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
    against current code or silently test nothing):
+   - The standalone #shortcutsPanel popup (opened/closed via #btnShortcuts,
+     Group 26's own assertions for it) — this session (FEATURE_BACKLOG.md
+     #48) replaced it with the Shortcuts section inside Settings; Group 26
+     now only checks that the sidebar no longer has a permanent shortcuts
+     strip, Group 114 covers #btnShortcuts's current behavior and the new
+     Shortcut Manager itself.
    - The Bookmark Manager panel (#btnBookmarks/#bookmarksPanel/
      #bookmarksList/renderBookmarksPanel/openBookmarksPanel/
      closeBookmarksPanel/updateBookmarksButton), 7ef2c2a6 — removed outright
