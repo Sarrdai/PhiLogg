@@ -116,10 +116,14 @@ open it in a browser to view it.
   default format still works with zero configuration.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
   Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
-  JSON (download a template, fill in your colors, import it back).
-  Configurable font size, resizable/toggleable columns, multiline message
-  display, multi-row select + copy, and a horizontal scrollbar in the Filter
-  view for reading long messages in full.
+  JSON (download a template, fill in your colors, import it back). Pick a
+  system-installed UI font family, and independently scale the overall UI
+  and the log/text content size. Resizable/toggleable columns, multiline
+  message display, multi-row select + copy, and a horizontal scrollbar in
+  the Filter view for reading long messages in full.
+- **"On open, scroll log to"** (Settings → Behavior) — start at the top
+  (default) or jump straight to the bottom, continuing to follow live
+  updates from there if Tailing is on.
 - **Collapsible sidebar & detail panel** — collapse the file tree to a
   40px rail or the detail panel to its header, via the chevron,
   `Ctrl+B`/`Ctrl+J`, or double-clicking the resizer. Hovering either while
