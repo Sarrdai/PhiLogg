@@ -2104,9 +2104,9 @@
 
   /* Shared panel-title style — despite the name (a holdover from the removed
      Bookmark Manager panel, the first one to use it), this class is generic
-     and still styles #columnsPanel/#licensePanel's own headers below (see
-     "Bookmarks rework" in PROJECT.md for why the Bookmark Manager panel
-     itself is gone but this shared class stayed). */
+     and still styles #columnsPanel's own header below (see "Bookmarks
+     rework" in PROJECT.md for why the Bookmark Manager panel itself is gone
+     but this shared class stayed). */
   .bookmarks-panel-title{
     padding:10px 12px; font-size:11.5px; font-weight:650; color:var(--text-primary);
     border-bottom:1px solid var(--border-soft); flex:0 0 auto;
@@ -2145,8 +2145,10 @@
   .log-row.temp-anchor-row{border-left:3px dashed var(--text-secondary); font-style:italic; opacity:.85;}
   .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
-  /* ---------- Log view columns popup (#btnColumns) — same fixed-position/
-     toggle pattern as #licensePanel. ---------- */
+  /* ---------- Log view columns popup (#btnColumns) — own fixed-position/
+     toggle pattern (used to share it with the License popup, which has
+     since moved into Settings as its own section — see #licenseContent
+     below). ---------- */
   #columnsPanel{
     position:fixed; z-index:60; width:190px;
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
@@ -2162,16 +2164,9 @@
   .column-toggle-row input{margin:0;}
   #btnResetColumns{margin:0 8px 8px;}
 
-  /* ---------- License popup (#btnLicense) — same fixed-position/toggle
-     pattern as #columnsPanel. ---------- */
-  #licensePanel{
-    position:fixed; z-index:60; width:380px; max-height:min(520px, 70vh);
-    background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
-    box-shadow:0 16px 36px rgba(0,0,0,.5); display:flex; flex-direction:column;
-  }
-  #licensePanel.hidden{display:none;}
+  /* ---------- License (Settings > License) — plain in-section content now,
+     no longer a popup. ---------- */
   #licenseContent{
-    flex:1 1 auto; overflow-y:auto; padding:10px 14px;
     color:var(--text-tertiary); font-size:11px; line-height:1.6;
   }
   #licenseContent p{margin:0 0 10px;}
@@ -2252,7 +2247,6 @@
       <div class="toolbar-group">
         <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" disabled></button>
         <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" disabled></button>
-        <button id="btnShortcuts" class="toolbar-icon-btn" title="Keyboard shortcuts"></button>
       </div>
       <button id="btnSession">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
@@ -2285,7 +2279,6 @@
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
-      <button id="btnLicense" class="toolbar-icon-btn" title="License"></button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
@@ -2850,6 +2843,10 @@
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="4" width="12.8" height="8" rx="1.4"/><path d="M4 7h.01M6.4 7h.01M8.8 7h.01M11.2 7h.01M4.8 9.4h6.4"/></svg>
             Shortcuts
           </button>
+          <button type="button" class="settings-nav-item" data-nav-target="settingsSectionLicense">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6 2.4 3.9V7.4C2.4 10.8 4.7 13.6 8 14.6c3.3-1 5.6-3.8 5.6-7.2V3.9Z"/><path d="M5.6 8 7.3 9.7 10.6 6.2"/></svg>
+            License
+          </button>
           <div class="settings-nav-footnote">Settings are global and saved locally.</div>
         </nav>
         <div class="settings-page-body">
@@ -3194,6 +3191,22 @@
           </div>
         </section>
 
+        <section class="settings-section" id="settingsSectionLicense">
+          <div class="settings-section-title">License</div>
+          <div id="licenseContent">
+            <p class="license-holder">Copyright © Philipp Klein<br>philogg@kleinphilipp.de</p>
+            <p>Alle Rechte vorbehalten. Diese Software ("PhiLogg") wird ausschließlich zum Zweck des Testens und der persönlichen Nutzung im Rahmen einer eingeschränkten Testphase zur Verfügung gestellt. Mit dem Öffnen oder Verwenden der Software werden diese Bedingungen anerkannt.</p>
+            <ol>
+              <li><strong>Nutzungsrecht:</strong> Es wird ein einfaches, nicht übertragbares und jederzeit widerrufliches Recht eingeräumt, diese Software für eigene Testzwecke zu nutzen.</li>
+              <li><strong>Keine Weitergabe:</strong> Die Weitergabe der Software oder von Kopien davon an Dritte — entgeltlich oder unentgeltlich — ist ohne vorherige schriftliche Zustimmung des Rechteinhabers nicht gestattet.</li>
+              <li><strong>Keine Veränderung:</strong> Eine Veränderung, Bearbeitung, Dekompilierung oder Erstellung abgeleiteter Werke der Software ist nicht gestattet, soweit dies nicht durch zwingendes Recht ausdrücklich erlaubt ist.</li>
+              <li><strong>Keine Gewährleistung:</strong> Die Software wird "wie besehen" ohne jegliche Gewährleistung zur Verfügung gestellt. Der Rechteinhaber haftet nicht für Schäden aus der Nutzung der Software, soweit gesetzlich zulässig.</li>
+              <li><strong>Rückruf:</strong> Der Rechteinhaber kann die Nutzung jederzeit ohne Angabe von Gründen untersagen.</li>
+            </ol>
+            <div class="license-version" id="licenseVersion"></div>
+          </div>
+        </section>
+
         </div>
       </div>
     </div>
@@ -3229,21 +3242,6 @@
     <button type="button" id="btnResetColumns" class="btn-mini-outline">Reset widths</button>
   </div>
 
-  <div id="licensePanel" class="hidden">
-    <div class="bookmarks-panel-title">License</div>
-    <div id="licenseContent">
-      <p class="license-holder">Copyright © Philipp Klein<br>philogg@kleinphilipp.de</p>
-      <p>Alle Rechte vorbehalten. Diese Software ("PhiLogg") wird ausschließlich zum Zweck des Testens und der persönlichen Nutzung im Rahmen einer eingeschränkten Testphase zur Verfügung gestellt. Mit dem Öffnen oder Verwenden der Software werden diese Bedingungen anerkannt.</p>
-      <ol>
-        <li><strong>Nutzungsrecht:</strong> Es wird ein einfaches, nicht übertragbares und jederzeit widerrufliches Recht eingeräumt, diese Software für eigene Testzwecke zu nutzen.</li>
-        <li><strong>Keine Weitergabe:</strong> Die Weitergabe der Software oder von Kopien davon an Dritte — entgeltlich oder unentgeltlich — ist ohne vorherige schriftliche Zustimmung des Rechteinhabers nicht gestattet.</li>
-        <li><strong>Keine Veränderung:</strong> Eine Veränderung, Bearbeitung, Dekompilierung oder Erstellung abgeleiteter Werke der Software ist nicht gestattet, soweit dies nicht durch zwingendes Recht ausdrücklich erlaubt ist.</li>
-        <li><strong>Keine Gewährleistung:</strong> Die Software wird "wie besehen" ohne jegliche Gewährleistung zur Verfügung gestellt. Der Rechteinhaber haftet nicht für Schäden aus der Nutzung der Software, soweit gesetzlich zulässig.</li>
-        <li><strong>Rückruf:</strong> Der Rechteinhaber kann die Nutzung jederzeit ohne Angabe von Gründen untersagen.</li>
-      </ol>
-      <div class="license-version" id="licenseVersion"></div>
-    </div>
-  </div>
 
 </div>
 
@@ -3295,10 +3293,6 @@ const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none
 // underline stroke, standing in for "mark/highlight" the same way
 // ICON_MULTILINE's stacked lines stand in for "multi-line text".
 const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 2.6 13.4 6.4 7.2 12.6 3 13.4l0.8-4.2z"/><path d="M2 14.5h5"/></svg>';
-const ICON_HELP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M6.1 6.3a2 2 0 1 1 2.9 1.8c-.6.3-1 .8-1 1.5v.3"/><circle cx="8" cy="11.6" r="0.75" fill="currentColor" stroke="none"/></svg>';
-// Scales-of-justice glyph for the License popup (#btnLicense) — same stroke
-// weight/linecap treatment as the other header icons.
-const ICON_LICENSE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v11.5"/><path d="M4.5 3.6h7"/><path d="M2 6.4 4.3 3.6 6.6 6.4a2.3 2.3 0 0 1-4.6 0Z"/><path d="M9.4 6.4l2.3-2.8 2.3 2.8a2.3 2.3 0 0 1-4.6 0Z"/><path d="M5.3 13.5h5.4"/></svg>';
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
@@ -6659,9 +6653,6 @@ const extractStatsBar = el("#extractStatsBar");
 const btnPinBookmarks = el("#btnPinBookmarks");
 const btnNotes = el("#btnNotes");
 const btnMultilineMsg = el("#btnMultilineMsg");
-const btnShortcuts = el("#btnShortcuts");
-const btnLicense = el("#btnLicense");
-const licensePanel = el("#licensePanel");
 const btnUndo = el("#btnUndo");
 const btnRedo = el("#btnRedo");
 const extractPatternEl = el("#extractPatternView");
@@ -12126,25 +12117,6 @@ window.addEventListener("mouseup", () => {
   schedulePersistMeta();
 });
 
-// FEATURE_BACKLOG.md #48 "Shortcut Manager in Settings": the header help
-// button used to toggle a standalone shortcuts popup; it now opens the
-// Settings dialog straight to the dedicated Shortcuts section instead.
-btnShortcuts.addEventListener("click", () => openSettingsDialog("settingsSectionShortcuts"));
-
-// License popup: same fixed-position/toggle pattern as the bookmarks panel
-// above.
-function closeLicensePanel() { licensePanel.classList.add("hidden"); }
-function openLicensePanel() {
-  const rect = btnLicense.getBoundingClientRect();
-  licensePanel.style.top = (rect.bottom + 6) + "px";
-  licensePanel.style.left = Math.min(rect.left, window.innerWidth - 396) + "px";
-  licensePanel.classList.remove("hidden");
-}
-btnLicense.addEventListener("click", () => {
-  if (licensePanel.classList.contains("hidden")) openLicensePanel();
-  else closeLicensePanel();
-});
-
 function renderTable() {
   const hasFiles = state.rootIds.length > 0;
   tableWrap.style.display = hasFiles ? "flex" : "none";
@@ -14995,20 +14967,11 @@ const formatList = el("#formatList");
 const formatRuleList = el("#formatRuleList");
 
 function closeSettingsDialog() { settingsDialog.classList.add("hidden"); stopShortcutRecording(); }
-// sectionId (FEATURE_BACKLOG.md #48, Shortcut Manager): optional — jumps
-// straight to a given section (e.g. the header help button opening
-// "settingsSectionShortcuts") instead of wherever the dialog last scrolled to.
-function openSettingsDialog(sectionId) {
+function openSettingsDialog() {
   settingsDialog.classList.remove("hidden");
   renderFormatList();
   renderFormatRuleList();
   renderShortcutBindingsList();
-  if (sectionId) {
-    const target = document.getElementById(sectionId);
-    const navItem = settingsNavItems.find(b => b.dataset.navTarget === sectionId);
-    if (target && target.scrollIntoView) target.scrollIntoView({ block: "start" });
-    if (navItem) { settingsNavItems.forEach(b => b.classList.remove("active")); navItem.classList.add("active"); }
-  }
 }
 settingsDialog.addEventListener("click", ev => { if (ev.target === settingsDialog) closeSettingsDialog(); });
 el("#settingsClose").addEventListener("click", closeSettingsDialog);
@@ -15682,7 +15645,6 @@ document.addEventListener("click", ev => {
   if (!sessionMenu.contains(ev.target) && !btnSession.contains(ev.target)) closeSessionMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.contains(ev.target)) closeColumnsPanel();
-  if (!licensePanel.contains(ev.target) && !btnLicense.contains(ev.target)) closeLicensePanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
   // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
   // on a click anywhere outside the sidebar itself — a click ON a tree row is
@@ -15721,7 +15683,6 @@ document.addEventListener("keydown", ev => {
     closeSessionExportDialog();
     closeFilterLibrarySaveDialog();
     closeFilterLibraryDialog();
-    closeLicensePanel();
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
@@ -17397,8 +17358,6 @@ btnApplyLevelToTree.addEventListener("click", () => {
   if (!levels.length) return;
   applyLevelSelectionToTree(levels);
 });
-btnShortcuts.innerHTML = ICON_HELP;
-btnLicense.innerHTML = ICON_LICENSE;
 el("#brandVersion").textContent = PHILOGG_VERSION;
 el("#licenseVersion").textContent = "Version: " + PHILOGG_VERSION;
 btnUndo.addEventListener("click", undo);

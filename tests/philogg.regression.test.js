@@ -1109,55 +1109,40 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 65 — License popup + version display
+   GROUP 65 — License section (Settings) + version display
    Origin: this session (2026-08-20), person-requested: a proprietary
    license (no redistribution, no modification, rights holder Philipp
-   Klein) reachable via a new header button next to the existing
-   #btnShortcuts help button, same popup pattern (Group 26). Also a short
-   commit-hash "version" shown both next to the product name and inside
-   the license popup — PHILOGG_VERSION defaults to the literal "dev" in
-   source control; only the "Build tester release" GitHub Action
-   (.github/workflows/release.yml) stamps it to a real short SHA, in a
-   build artifact that's never committed back. This suite runs against
+   Klein). Originally a popup behind a dedicated header button, same
+   pattern as the old #shortcutsPanel (Group 26) — both header buttons
+   (#btnShortcuts/#btnLicense) and their popups were removed in a later
+   session (FEATURE_BACKLOG.md #48 follow-up): License is now its own
+   Settings section (GROUP 115 covers Settings' own section list/order),
+   reached only through Settings, with no direct header shortcut to it.
+   Also a short commit-hash "version" shown both next to the product name
+   and inside the license section — PHILOGG_VERSION defaults to the
+   literal "dev" in source control; only the "Build tester release" GitHub
+   Action (.github/workflows/release.yml) stamps it to a real short SHA, in
+   a build artifact that's never committed back. This suite runs against
    the literal source file, so it always sees "dev".
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("65. License popup + version display");
+  section("65. License section (Settings) + version display");
+
+  assert(!d.querySelector("#btnShortcuts"), "the header help button is gone (FEATURE_BACKLOG.md #48 follow-up)");
+  assert(!d.querySelector("#btnLicense"), "the header license button is gone (moved into Settings)");
 
   // --- Version display (unstamped source -> literal "dev") ---
   assert(d.querySelector("#brandVersion").textContent === "dev", "brand-name version tag shows PHILOGG_VERSION verbatim, no \"v\" prefix");
-  assert(d.querySelector("#licenseVersion").textContent === "Version: dev", "license panel's own version line shows the same PHILOGG_VERSION");
 
-  // --- License popup: same fixed-position/toggle pattern as #shortcutsPanel ---
-  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "license popup starts hidden");
-
-  const btnLicense = d.querySelector("#btnLicense");
-  fireClick(btnLicense, w);
-  assert(!d.querySelector("#licensePanel").classList.contains("hidden"), "clicking the header button opens the license popup");
-  const licenseText = d.querySelector("#licensePanel").textContent;
-  assert(licenseText.includes("Philipp Klein"), "license popup names the rights holder");
-  assert(licenseText.includes("philogg@kleinphilipp.de"), "license popup shows the contact address");
-  assert(licenseText.includes("Keine Weitergabe"), "license popup prohibits redistribution");
-  assert(licenseText.includes("Keine Veränderung"), "license popup prohibits modification");
-  assert(licenseText.includes("Version: dev"), "license popup includes the version line while open");
-
-  fireClick(d.body, w); // outside click
-  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "clicking outside closes the license popup");
-
-  fireClick(btnLicense, w);
-  assert(!d.querySelector("#licensePanel").classList.contains("hidden"), "sanity: reopened for the Escape check");
-  fireKeydown(d, w, "Escape");
-  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "Escape closes the license popup, same as the other popups");
-
-  // Independent from the Settings dialog (the header help button, GROUP 66,
-  // opens Settings rather than a popup since the Shortcut Manager session):
-  // opening one doesn't implicitly open or leave the other stuck open.
-  const btnShortcuts = d.querySelector("#btnShortcuts");
-  fireClick(btnShortcuts, w);
-  assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "sanity: the help button opens Settings on its own");
-  assert(d.querySelector("#licensePanel").classList.contains("hidden"), "opening Settings does not also open the license popup");
-  fireClick(btnLicense, w);
-  assert(!d.querySelector("#licensePanel").classList.contains("hidden"), "license popup opens independently while Settings is also open");
+  w.openSettingsDialog();
+  const licenseSection = d.querySelector("#settingsSectionLicense");
+  assert(licenseSection, "a dedicated License section exists in Settings");
+  assert(d.querySelector("#licenseVersion").textContent === "Version: dev", "the section's own version line shows the same PHILOGG_VERSION");
+  const licenseText = licenseSection.textContent;
+  assert(licenseText.includes("Philipp Klein"), "License section names the rights holder");
+  assert(licenseText.includes("philogg@kleinphilipp.de"), "License section shows the contact address");
+  assert(licenseText.includes("Keine Weitergabe"), "License section prohibits redistribution");
+  assert(licenseText.includes("Keine Veränderung"), "License section prohibits modification");
 });
 
 /* ============================================================
@@ -2485,8 +2470,9 @@ await withApp(async (w, d, T) => {
    sidebar strip into a popup behind a new #btnShortcuts header button,
    following the exact same open/close/outside-click/Escape pattern as the
    pre-existing #bookmarksPanel (that popup itself was later superseded by
-   the Shortcut Manager in Settings, GROUP 66 — #btnShortcuts's own
-   assertions live there now). Follow-up in the same session: #fhTabs/
+   the Shortcut Manager in Settings, GROUP 114 — and #btnShortcuts itself
+   was removed outright in a follow-up to that session, see GROUP 65).
+   Follow-up in the same session: #fhTabs/
    #levelBar switched from flex items to floats so they stay pinned to the
    top-left line even when the breadcrumb wraps, with the breadcrumb (now a
    plain block with inline-block chips) using the full row width on wrapped
@@ -2651,7 +2637,8 @@ await withApp(async (w, d, T) => {
   w.render();
 
   // --- Sidebar no longer has a permanent shortcuts strip (superseded, see
-  // GROUP 66 for the current Shortcut Manager / #btnShortcuts behavior) ---
+  // GROUP 114 for the current Shortcut Manager; #btnShortcuts itself is gone
+  // too, see GROUP 65) ---
   assert(d.querySelector("#sidebar #shortcuts") === null, "the sidebar no longer has a permanent shortcuts strip");
 });
 
@@ -2878,7 +2865,7 @@ await withApp(async (w, d, T) => {
 await withApp(async (w, d) => {
   section("29b. #btnPinBookmarks/#btnMultilineMsg/#btnColumns share .toolbar-icon-btn's 28x28 shape with the header's icon buttons");
   const cs = w.getComputedStyle;
-  ["#btnUndo", "#btnRedo", "#btnShortcuts", "#btnPinBookmarks", "#btnNotes", "#btnMultilineMsg", "#btnColumns"].forEach(sel => {
+  ["#btnUndo", "#btnRedo", "#btnPinBookmarks", "#btnNotes", "#btnMultilineMsg", "#btnColumns"].forEach(sel => {
     const btn = d.querySelector(sel);
     assert(btn !== null, "sanity: " + sel + " exists");
     const bcs = cs(btn);
@@ -8570,13 +8557,16 @@ await withApp(async (w, d, T) => {
 
   fireClick(d.querySelector("#btnSettings"), w);
 
-  // 4 sections as of GROUP 114 (Shortcut Manager added "Shortcuts").
+  // 5 sections: GROUP 114 added "Shortcuts", a later follow-up (removing the
+  // header's help/license buttons) added "License" as the last section.
   const navItems = [...d.querySelectorAll("#settingsNav .settings-nav-item")];
-  assert(navItems.length === 4, "the section nav lists exactly the four sections, got " + navItems.length);
+  assert(navItems.length === 5, "the section nav lists exactly the five sections, got " + navItems.length);
   const targets = navItems.map(b => b.dataset.navTarget);
   assert(targets.includes("settingsSectionAppearance") && targets.includes("settingsSectionBehavior") &&
-    targets.includes("settingsSectionFormats") && targets.includes("settingsSectionShortcuts"),
-    "nav items point at Appearance/Behavior/Log Formats/Shortcuts, got " + JSON.stringify(targets));
+    targets.includes("settingsSectionFormats") && targets.includes("settingsSectionShortcuts") &&
+    targets.includes("settingsSectionLicense"),
+    "nav items point at Appearance/Behavior/Log Formats/Shortcuts/License, got " + JSON.stringify(targets));
+  assert(targets[targets.length - 1] === "settingsSectionLicense", "License is always the last section in the list");
   targets.forEach(id => assert(d.getElementById(id), "every nav target id resolves to an actual section, missing " + id));
 
   const appearanceNavItem = navItems.find(b => b.dataset.navTarget === "settingsSectionAppearance");
@@ -11656,17 +11646,15 @@ await withApp(async (w, d, T) => {
    context-dependent to safely rebind).
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("114a. Header help button opens Settings on the Shortcuts section");
+  section("114a. Settings' Shortcuts section: rebindable table + fixed reference list");
 
   assert(d.querySelector("#settingsDialog").classList.contains("hidden"), "sanity: Settings starts closed");
-  const btnShortcuts = d.querySelector("#btnShortcuts");
-  fireClick(btnShortcuts, w);
-  assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "clicking the header help button opens Settings");
-  assert(d.querySelector(".settings-nav-item[data-nav-target='settingsSectionShortcuts']").classList.contains("active"),
-    "the Shortcuts nav item is marked active");
+  w.openSettingsDialog();
+  assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "openSettingsDialog opens Settings");
+  assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
   assert(d.querySelector("#shortcutBindingsList").children.length === 16, "the rebindable-actions table renders one row per registered action");
   assert(d.querySelector("#shortcuts").textContent.includes("Ctrl") && d.querySelector("#shortcuts").parentElement.id === "settingsSectionShortcuts",
-    "the fixed reference list now lives inside the Shortcuts settings section");
+    "the fixed reference list lives inside the Shortcuts settings section");
   assert(!d.querySelector("#shortcuts").textContent.includes("new filter on selected node"),
     "entries now covered by the rebindable table (e.g. Ctrl+F) are no longer duplicated in the fixed reference list");
 });
@@ -11683,7 +11671,7 @@ await withApp(async (w, d, T) => {
   assert(T.state.bookmarks.has(f.entries[1].id), "sanity: default 'B' shortcut still bookmarks");
   w.toggleBookmark(f.entries[1].id); // undo, back to a clean slate
 
-  w.openSettingsDialog("settingsSectionShortcuts");
+  w.openSettingsDialog();
   // Each render*/rebind step rebuilds #shortcutBindingsList's rows from
   // scratch (renderShortcutBindingsList), so every query below is re-run
   // fresh against the DOM rather than caching a row/button reference across
@@ -11706,7 +11694,7 @@ await withApp(async (w, d, T) => {
 await withApp(async (w, d, T) => {
   section("114c. Conflict detection, reset-one, and reset-all");
 
-  w.openSettingsDialog("settingsSectionShortcuts");
+  w.openSettingsDialog();
 
   // Conflict: try to rebind "toggleDetail" (default Ctrl+J) onto "editFilter"'s (Ctrl+E) combo.
   fireClick(d.querySelector("[data-action-id='toggleDetail'] .shortcut-rebind-btn"), w);
@@ -13301,16 +13289,32 @@ process.exit(failed ? 1 : 0);
               old fixed reference list for everything else (mouse-driven or
               too context-dependent to safely rebind: Ctrl+C/X/V, Del,
               Enter, arrows, right-click/drag actions).
+   Group 114 follow-up — this session (2026-08-26), person-requested:
+              removed the header's #btnShortcuts ("?") and #btnLicense
+              buttons entirely — both are now reachable only through
+              Settings. #btnLicense's own popup content moved into a new
+              "License" section, always the LAST item in the Settings nav
+              (openSettingsDialog() lost its since-unused optional sectionId
+              param in the same pass — nothing else called it). GROUP 65
+              rewritten for the License section instead of the old popup;
+              GROUP 26/114's own #btnShortcuts assertions updated in place;
+              GROUP 79's section-count assertion bumped 4 → 5 plus a new
+              check that License sorts last. 2133 passed, 0 failed.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
    against current code or silently test nothing):
    - The standalone #shortcutsPanel popup (opened/closed via #btnShortcuts,
-     Group 26's own assertions for it) — this session (FEATURE_BACKLOG.md
-     #48) replaced it with the Shortcuts section inside Settings; Group 26
-     now only checks that the sidebar no longer has a permanent shortcuts
-     strip, Group 114 covers #btnShortcuts's current behavior and the new
-     Shortcut Manager itself.
+     Group 26's own assertions for it) — FEATURE_BACKLOG.md #48 replaced it
+     with the Shortcuts section inside Settings; a same-topic follow-up then
+     removed #btnShortcuts itself (and #btnLicense) from the header
+     entirely, so there's no button left to assert about — Group 26 now only
+     checks that the sidebar no longer has a permanent shortcuts strip,
+     Group 114 covers the Shortcut Manager itself.
+   - The standalone #licensePanel popup (opened/closed via #btnLicense,
+     Group 65's own assertions for it) — same follow-up session moved its
+     content into a new "License" Settings section, always sorted last;
+     Group 65 rewritten for the new section instead of the old popup.
    - The Bookmark Manager panel (#btnBookmarks/#bookmarksPanel/
      #bookmarksList/renderBookmarksPanel/openBookmarksPanel/
      closeBookmarksPanel/updateBookmarksButton), 7ef2c2a6 — removed outright

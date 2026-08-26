@@ -241,6 +241,5 @@ short SHA into a copy of the file and publishes it as a GitHub Release asset
 
 PhiLogg is **proprietary software**, © Philipp Klein. All rights reserved.
 It is currently shared only for a limited testing phase; redistribution and
-modification are not permitted. See the in-app **License** panel
-(the scales-of-justice icon in the toolbar) for the full terms, or contact
-philogg@kleinphilipp.de.
+modification are not permitted. See the in-app **Settings → License**
+section for the full terms, or contact philogg@kleinphilipp.de.
