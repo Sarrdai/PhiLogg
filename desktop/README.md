@@ -3,12 +3,13 @@
 A thin Electron shell around the unmodified `../philogg.html` — adds `.log`
 file associations, CLI-argument file opening, a frameless window with
 integrated close/minimize/maximize controls (see "Frameless window" below),
-a startup splash screen, and a system-tray "close to tray" mode (see
-"Startup perception (splash + tray)" below) on Windows/Linux/macOS.
-Separate, optional deliverable: doesn't touch `philogg.html` or its own
-release path (`.github/workflows/release.yml`) at all. See `PROJECT.md` →
-"Deep-link loading (`?url=`)" and the plan this was built from for the full
-design rationale.
+a startup splash screen, an always-present system tray (both "close to
+tray", see "Startup perception (splash + tray)" below, and config/cache
+management, see "Persistent data (settings + cache)" below) on
+Windows/Linux/macOS. Separate, optional deliverable: doesn't touch
+`philogg.html` or its own release path (`.github/workflows/release.yml`)
+at all. See `PROJECT.md` → "Deep-link loading (`?url=`)" and the plan this
+was built from for the full design rationale.
 
 ## Status
 
@@ -95,6 +96,34 @@ window to a tray icon instead of quitting; right-click the tray icon for a
 real Quit, left-click/"Open PhiLogg" to jump straight back in. See
 `PROJECT.md` → "Desktop wrapper" → "Startup perception" for the full
 mechanism (`createSplash`/`watchCloseToTray`/`createTray` in `main.js`).
+
+## Persistent data (settings + cache)
+
+Both live in the OS "well-known" per-app config directory — `app.setName("PhiLogg")`
+in `main.js` makes `app.getPath("userData")` resolve there consistently in
+both `npm start` (dev) and a packaged build:
+
+- Linux: `~/.config/PhiLogg`
+- macOS: `~/Library/Application Support/PhiLogg`
+- Windows: `%APPDATA%\PhiLogg`
+
+**Settings** — every `philogg-*` `localStorage` key (theme, layout, toggles,
+…) is mirrored into a plain `settings.json` there: read once by
+`preload.js` before `philogg.html`'s own script runs (so its keys are
+already populated when the page reads them), written back by `main.js`
+polling `localStorage` (~1x/second, same pattern as the theme-overlay
+watcher above) whenever it changes. `philogg.html` itself is untouched —
+it never knows this file exists, and hand-editing `settings.json` while
+the app is closed just changes what gets hydrated on the next launch.
+
+**Cache** — the IndexedDB cache (parsed files, session/file history,
+saved filters, format definitions) already lives under the same directory
+automatically, since that's just where Chromium keeps IndexedDB for any
+app's `userData` path — nothing extra needed for that half. It's binary
+(LevelDB), so it's not meant to be hand-edited; **Open Config Folder** /
+**Clear Cache** in the tray icon's right-click menu (always present, not
+just while "close to tray" is active) reveal the directory and wipe the
+cache respectively.
 
 ## Version stamp
 
