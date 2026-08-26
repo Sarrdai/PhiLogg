@@ -64,7 +64,6 @@ this point.
 38. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
 40. **Fix Settings view scroll performance** — currently noticeably janky.
 49. **Respect OS default window behavior** — audit that the app's own shortcuts/mechanics never shadow or override the operating system's default window behavior (e.g. window management shortcuts).
-55. **Clean up the text under Keyboard Shortcuts** — drop the usage-instruction prose entirely. Shortcuts that can't be rebound should still be listed (so the list stays complete), just greyed out to mark them as fixed.
 
 ### Log formats & parsing
 
