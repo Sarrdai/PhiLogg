@@ -144,6 +144,8 @@ async function withApp(run, opts = {}) {
       get ROW_HEIGHT() { return ROW_HEIGHT; },
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
+      get navHistory() { return navHistory; },
+      get navHistoryIndex() { return navHistoryIndex; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -1676,9 +1678,10 @@ section("20. Session cache: persist in one window, restore in the next");
     T.state.sortDir = "desc";
     T.state.activeId = combo.id;
 
-    // Import/Export lives behind the toolbar's "Session…" button+dropdown
-    // now (analogous to "Open…"), NOT the per-node/tree-background context
-    // menu — the node menu must no longer carry either entry.
+    // Import/Export lives behind the "Open…"/"Save" icon buttons in the
+    // sidebar header now (FEATURE_BACKLOG.md #56), NOT the per-node/
+    // tree-background context menu — the node menu must no longer carry
+    // either entry.
     w.render();
     fireContextMenu(d.querySelector(".tree-row"), w);
     const menuHtml = d.querySelector("#treeContextMenu").innerHTML;
@@ -1686,16 +1689,17 @@ section("20. Session cache: persist in one window, restore in the next");
       "export: node context menu no longer offers Export/Import session");
     w.closeTreeContextMenu();
 
-    const btnSession = d.querySelector("#btnSession");
-    const sessionMenu = d.querySelector("#sessionMenu");
-    assert(sessionMenu.classList.contains("hidden"), "session menu starts hidden");
-    fireClick(btnSession, w);
-    assert(!sessionMenu.classList.contains("hidden"), "clicking \"Session…\" reveals the dropdown");
-    const sessionActions = [...sessionMenu.querySelectorAll("[data-action]")].map(i => i.dataset.action);
-    assert(sessionActions.join(",") === "exportSession,importSession",
-      "session menu offers Export session…/Import session…, got " + sessionActions.join(","));
+    const btnOpenSess = d.querySelector("#btnOpen");
+    const openMenuSess = d.querySelector("#openMenu");
+    assert(openMenuSess.classList.contains("hidden"), "open menu starts hidden");
+    fireClick(btnOpenSess, w);
+    assert(!openMenuSess.classList.contains("hidden"), "clicking \"Open\" reveals the dropdown");
+    const openActions = [...openMenuSess.querySelectorAll("[data-action]")].map(i => i.dataset.action);
+    assert(openActions.join(",") === "files,folder,importSession",
+      "open menu offers File(s)…/Folder…/Import session…, got " + openActions.join(","));
     fireClick(d.body, w);
-    assert(sessionMenu.classList.contains("hidden"), "clicking outside the session menu closes it");
+    assert(openMenuSess.classList.contains("hidden"), "clicking outside the open menu closes it");
+    assert(!!d.querySelector("#btnSave"), "\"Save\" button (session export) exists");
 
     // Export dialog: one row per root file, per-file include + embed checkboxes.
     let captured = [];
@@ -5172,21 +5176,21 @@ await withApp(async (w, d, T) => {
       never claimed to cover.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("48a. Session menu reachable with zero files loaded (old empty-tree context menu superseded)");
+  section("48a. Open menu reachable with zero files loaded (old empty-tree context menu superseded)");
   assert(T.state.rootIds.length === 0, "sanity: no files loaded yet");
   assert(d.querySelector("#progressOverlay") === null, "the old blocking #progressOverlay element no longer exists in the page at all");
 
-  const btnSession = d.querySelector("#btnSession");
-  const sessionMenu = d.querySelector("#sessionMenu");
-  fireClick(btnSession, w);
-  assert(!sessionMenu.classList.contains("hidden"), "\"Session…\" opens even with an empty tree");
-  const importItem = d.querySelector('#sessionMenu [data-action="importSession"]');
-  assert(importItem !== null, "Import session… is reachable from the toolbar with zero files loaded");
+  const btnOpen48a = d.querySelector("#btnOpen");
+  const openMenu48a = d.querySelector("#openMenu");
+  fireClick(btnOpen48a, w);
+  assert(!openMenu48a.classList.contains("hidden"), "\"Open\" opens even with an empty tree");
+  const importItem = d.querySelector('#openMenu [data-action="importSession"]');
+  assert(importItem !== null, "Import session… is reachable from the sidebar header with zero files loaded");
 
   // Right-clicking the empty tree background no longer produces a menu at
   // all (the whole special-cased empty-background context menu was removed
   // — this behavior is superseded by the always-available toolbar button).
-  fireClick(d.body, w); // close the session menu first
+  fireClick(d.body, w); // close the open menu first
   fireContextMenu(d.querySelector("#tree"), w);
   assert(d.querySelector("#treeContextMenu").classList.contains("hidden"),
     "right-clicking the empty tree background no longer opens a context menu");
@@ -8908,7 +8912,6 @@ await withApp(async (w, d, T) => {
     { selector: "::-webkit-scrollbar-thumb", bad: "#2a3142" },
     { selector: ".brand-mark", bad: "#2f8f8c" },
     { selector: ".brand-mark", bad: "#0b1016" },
-    { selector: "#btnOpen:hover, #btnSession:hover", bad: "#333c50" },
     { selector: ".toolbar-badge", bad: "#08201f" },
     { selector: ".crumb.current", bad: "rgba(79,199,195,.35)" },
     { selector: ".level-btn.lvl-error", bad: "rgba(241,101,101,.35)" },
@@ -9292,7 +9295,7 @@ await withApp(async (w, d, T) => {
    in "Testing approach".
    ============================================================ */
 await withApp(async (w, d) => {
-  section("90. Main window visual consistency fix: resizer grip affordance, sidebar/minimap border token, #btnOpen/#btnSession merge");
+  section("90. Main window visual consistency fix: resizer grip affordance, sidebar/minimap border token");
   const css = d.querySelector("style").textContent;
 
   // --- Problem 2: resizers get a permanent (non-transparent) grip, not just an on-hover reveal ---
@@ -9315,12 +9318,6 @@ await withApp(async (w, d) => {
   const sidebarRule = css.match(/#sidebar\{[^}]*\}/);
   assert(sidebarRule && sidebarRule[0].includes("border-right:1px solid var(--border)"),
     "sanity: #sidebar's own border-right is still var(--border)");
-
-  // --- Problem 1: #btnOpen/#btnSession share one rule (no longer two
-  // copy-pasted blocks) with the shared 28px control height. ---
-  const btnOpenRule = css.match(/#btnOpen, #btnSession\{[^}]*\}/);
-  assert(btnOpenRule && btnOpenRule[0].includes("height:28px"),
-    "#btnOpen/#btnSession share one merged rule with the shared 28px control height, got " + (btnOpenRule && btnOpenRule[0]));
 });
 
 /* ============================================================
@@ -11718,6 +11715,149 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#btnResetShortcuts"), w);
   assert(JSON.parse(w.localStorage.getItem("philogg.shortcutBindings")) && Object.keys(JSON.parse(w.localStorage.getItem("philogg.shortcutBindings"))).length === 0,
     "\"Reset all to defaults\" clears every override");
+});
+
+/* ============================================================
+   GROUP 115 — Back/forward "where I looked" navigation (FEATURE_BACKLOG.md
+   #53) and the toolbar regroup (FEATURE_BACKLOG.md #56).
+   Origin: this session, person-requested. #53: a browser/IDE-style history
+   of visited filter nodes (+ per-node scroll position), distinct from
+   Undo/Redo (which never touches navHistory — see the undo()/redo() code,
+   unchanged). #56: "Session…"/"Open…" toolbar buttons became "Open…"
+   (files/folder/import-session) and "Save" (export-session only), moved out
+   of #toolbar entirely into #sidebarHeader.
+   Follow-up (same session, person-requested): the version tag moved OUT of
+   #toolbar's right side into its own line directly under the "PhiLogg"
+   wordmark (`.brand` is now a column: `.brand-row` for mark+name, then
+   `.brand-version` below — the wordmark's own position is unchanged). The
+   back/forward buttons moved OUT of #sidebarHeader into #toolbar itself,
+   in the same row as Settings/Undo/Redo but left-aligned right next to the
+   brand (via `.toolbar-spacer` absorbing the rest of the row's width) —
+   closer to the wordmark than the other toolbar-right buttons, which stay
+   flush right exactly as before.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("115a. Toolbar regroup: nav buttons live in #toolbar near the wordmark, open/save in #sidebarHeader, #btnSession is gone, version tag under the wordmark");
+  assert(!!d.querySelector("#toolbar #btnNavBack"), "back button lives in #toolbar");
+  assert(!!d.querySelector("#toolbar #btnNavForward"), "forward button lives in #toolbar");
+  assert(d.querySelector("#sidebarHeader #btnNavBack") === null, "back button no longer lives in #sidebarHeader");
+  assert(d.querySelector("#sidebarHeader #btnNavForward") === null, "forward button no longer lives in #sidebarHeader");
+  assert(!!d.querySelector("#sidebarHeader #btnOpen"), "Open button lives in #sidebarHeader");
+  assert(!!d.querySelector("#sidebarHeader #btnSave"), "Save button lives in #sidebarHeader");
+  assert(d.querySelector("#toolbar #btnOpen") === null, "Open button is not in the top toolbar");
+  assert(d.querySelector("#btnSession") === null, "#btnSession no longer exists");
+  assert(d.querySelector("#sessionMenu") === null, "#sessionMenu no longer exists");
+  assert(!!d.querySelector(".brand #brandVersion"), "version tag sits under the wordmark, inside .brand");
+  assert(d.querySelector(".toolbar-right #brandVersion") === null, "version tag no longer sits in the toolbar's right side");
+  assert(!!d.querySelector(".brand .brand-row .brand-name"), "the wordmark itself stays in its own row, unmoved");
+  // Nav group must come right after .brand and before the spacer that
+  // pushes the rest of the toolbar's controls to the far right.
+  const toolbarChildren = [...d.querySelector("#toolbar").children].map(c => c.className || c.id);
+  const brandIdx = toolbarChildren.findIndex(c => c === "brand");
+  const navIdx = toolbarChildren.findIndex(c => c === "toolbar-group" || c.includes("toolbar-group"));
+  const spacerIdx = toolbarChildren.findIndex(c => c === "toolbar-spacer");
+  assert(brandIdx === 0 && navIdx === 1 && spacerIdx === 2,
+    "DOM order is brand, nav group, spacer, then the rest — got " + toolbarChildren.join(","));
+  assert(d.querySelector("#btnNavBack").disabled, "back starts disabled with nothing visited yet");
+  assert(d.querySelector("#btnNavForward").disabled, "forward starts disabled with nothing visited yet");
+});
+
+await withApp(async (w, d, T) => {
+  section("115b. Back/forward steps through visited filter nodes, distinct from Undo/Redo");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const n1 = w.createFilterNode(f.id, "text", "message");
+  w.render();
+  const n2 = w.createFilterNode(f.id, "text", "ERROR");
+  w.render();
+  assert(T.state.activeId === n2.id, "sanity: creating n2 made it active");
+  assert(T.navHistory.length === 3, "history has file + n1 + n2, got " + T.navHistory.length); // file root counts as the first visit
+  assert(!d.querySelector("#btnNavBack").disabled, "back is enabled after two navigations");
+  assert(d.querySelector("#btnNavForward").disabled, "forward is disabled at the head of history");
+
+  fireClick(d.querySelector("#btnNavBack"), w);
+  assert(T.state.activeId === n1.id, "back moved active node from n2 to n1");
+  assert(!d.querySelector("#btnNavForward").disabled, "forward is enabled after going back");
+
+  fireClick(d.querySelector("#btnNavBack"), w);
+  assert(T.state.activeId === f.id, "back again moved to the file root");
+  assert(d.querySelector("#btnNavBack").disabled, "back is disabled at the start of history");
+
+  fireClick(d.querySelector("#btnNavForward"), w);
+  fireClick(d.querySelector("#btnNavForward"), w);
+  assert(T.state.activeId === n2.id, "forward twice returns to n2");
+
+  // Undo/Redo is untouched by any of this — it only ever tracks tree edits.
+  assert(T.undoStack.length === 0, "sanity: Undo/Redo stayed empty, back/forward is not recorded as an edit");
+});
+
+await withApp(async (w, d, T) => {
+  section("115c. A fresh navigation truncates any forward history, same as browser back/forward");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const n1 = w.createFilterNode(f.id, "text", "message");
+  w.render();
+  const n2 = w.createFilterNode(f.id, "text", "ERROR");
+  w.render();
+  fireClick(d.querySelector("#btnNavBack"), w); // back to n1
+  assert(T.state.activeId === n1.id, "sanity: back landed on n1");
+
+  const n3 = w.createFilterNode(f.id, "text", "warn");
+  w.render();
+  assert(T.state.activeId === n3.id, "sanity: creating n3 made it active");
+  assert(d.querySelector("#btnNavForward").disabled, "forward is disabled — n2 was dropped by the new branch");
+  fireClick(d.querySelector("#btnNavBack"), w);
+  assert(T.state.activeId === n1.id, "back from n3 goes to n1, not the discarded n2");
+});
+
+await withApp(async (w, d, T) => {
+  section("115d. Scroll position round-trips through back/forward");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const n1 = w.createFilterNode(f.id, "text", "message");
+  w.render();
+  const tableBody = d.querySelector("#tableBody");
+  tableBody.scrollTop = 240;
+  tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+
+  const n2 = w.createFilterNode(f.id, "text", "ERROR");
+  w.render();
+  tableBody.scrollTop = 0; // n2's own view starts at the top
+
+  fireClick(d.querySelector("#btnNavBack"), w);
+  assert(T.state.activeId === n1.id, "sanity: back landed on n1");
+  assert(tableBody.scrollTop === 240, "going back restores the scroll position last seen on n1, got " + tableBody.scrollTop);
+});
+
+await withApp(async (w, d, T) => {
+  section("115e. Deleting the node a stale history entry points at doesn't break further back/forward");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const n1 = w.createFilterNode(f.id, "text", "message");
+  w.render();
+  const n2 = w.createFilterNode(f.id, "text", "ERROR");
+  w.render();
+  fireClick(d.querySelector("#btnNavBack"), w); // active is n1, n2 still ahead in forward history
+  assert(T.state.activeId === n1.id, "sanity: back landed on n1");
+
+  w.deleteNode(n2.id);
+  w.render();
+
+  // Forward history still references the now-deleted n2 — must not throw
+  // and must not get stuck on a dangling id.
+  fireClick(d.querySelector("#btnNavForward"), w);
+  assert(T.state.nodes[T.state.activeId] !== undefined, "forward after a deleted target lands on a node that still exists, got " + T.state.activeId);
+});
+
+await withApp(async (w, d, T) => {
+  section("115f. Mouse back/forward buttons (button 3/4) drive the same navigation");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const n1 = w.createFilterNode(f.id, "text", "message");
+  w.render();
+  w.createFilterNode(f.id, "text", "ERROR");
+  w.render();
+
+  d.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 3 }));
+  assert(T.state.activeId === n1.id, "mouse back-button (button 3) navigates back");
+
+  d.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 4 }));
+  assert(T.state.activeId !== n1.id, "mouse forward-button (button 4) navigates forward");
 });
 
 /* ============================================================

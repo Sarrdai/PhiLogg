@@ -48,7 +48,6 @@ this point.
 
 8. **Full view: hide the minimap's "covered timespan" visualization** (toggle in Settings) — it's meaningless there since the Full view always covers the entire log. Show the currently-visible row range instead, the same way the minimap already highlights the visible/rendered subset in the Filtered/Stacked view — just applied to the Full log's own rows instead of the filtered rows.
 11. **Create a filter from the currently visible plot area** — either as a time-range filter, or targeted specifically at the log entries currently "visible" in the plot/minimap. Open question: which of the two (or both) the interaction should produce.
-53. **Back/forward navigation through "where I looked"**, modeled on the back/forward history in Visual Studio/Rider (and browsers): steps through previously visited filters/views and scrolls back to the row/position that was interacted with or spent time on there — not a linear undo stack of edits. Must stay clearly separate from Undo/Redo, which tracks "what was changed", not "where I looked"; confirm today's Undo/Redo doesn't already jump between views, and if it does, split that behavior out. Placement: top-right, browser-style, next to the new Open/Save buttons and the version tag (see item 55 below). Should also pick up back/forward mouse-button input where the OS/browser has that button bound for back/forward navigation.
 
 ### Filter tree workflow
 
@@ -66,7 +65,6 @@ this point.
 40. **Fix Settings view scroll performance** — currently noticeably janky.
 49. **Respect OS default window behavior** — audit that the app's own shortcuts/mechanics never shadow or override the operating system's default window behavior (e.g. window management shortcuts).
 55. **Clean up the text under Keyboard Shortcuts** — drop the usage-instruction prose entirely. Shortcuts that can't be rebound should still be listed (so the list stays complete), just greyed out to mark them as fixed.
-56. **Regroup the top toolbar: Open/Save instead of Open/Session, and move both off the top bar.** Open covers File(s)/Folder/Session (session import goes under Open); Save covers Session only (for now). Move both out of the top-right area entirely: place them next to the Files/Filters section header as small icon buttons — a `[+]` button for Open, a download-arrow button for Save — right next to where the new back/forward navigation buttons (item 53) also land. See attached screenshot for the approximate target area. The version tag (currently top-left next to the wordmark) needs a new position once the top-right area is freed up by this move and by the back/forward buttons.
 
 ### Log formats & parsing
 
