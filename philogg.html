@@ -312,11 +312,16 @@
   /* ---------- Header ---------- */
   #toolbar{
     height:50px; flex:0 0 auto;
-    display:flex; align-items:center; justify-content:space-between;
+    display:flex; align-items:center; gap:16px;
     padding:0 16px; border-bottom:1px solid var(--border);
     background:var(--bg-panel);
   }
-  .brand{display:flex; align-items:baseline; gap:9px;}
+  /* Column layout so the version tag (.brand-version) sits in its own line
+     directly under the wordmark row (.brand-row) instead of beside it —
+     the wordmark itself stays put, only the version tag moved here (see
+     "Toolbar regroup" in docs/ui-and-views.md). */
+  .brand{display:flex; flex-direction:column; justify-content:center; gap:1px;}
+  .brand-row{display:flex; align-items:baseline; gap:9px;}
   .brand-mark{
     display:inline-flex; align-items:center; justify-content:center;
     width:20px; height:20px; border-radius:5px;
@@ -324,8 +329,12 @@
     color:var(--accent-on); font-weight:800; font-size:12px;
   }
   .brand-name{font-weight:650; letter-spacing:.2px; font-size:14.5px;}
-  /* Short commit-hash build tag next to the product name — see PHILOGG_VERSION. */
-  .brand-version{margin-left:-5px; font-size:10px; font-weight:500; color:var(--text-tertiary); letter-spacing:.2px;}
+  /* Short commit-hash build tag under the product name — see PHILOGG_VERSION. */
+  .brand-version{margin-left:1px; font-size:9.5px; font-weight:500; color:var(--text-tertiary); letter-spacing:.2px;}
+  /* Eats the space between the back/forward nav group (kept close to the
+     wordmark) and the rest of the toolbar controls (kept flush right) —
+     see "Back/forward navigation" in docs/ui-and-views.md. */
+  .toolbar-spacer{flex:1 1 auto;}
   .toolbar-right{display:flex; align-items:center; gap:16px;}
   .status-text{color:var(--text-tertiary); font-size:11.5px; font-variant-numeric:tabular-nums;}
   /* Shared main-window control system (this session): .toolbar-icon-btn is
@@ -2229,16 +2238,27 @@
 
   <header id="toolbar">
     <div class="brand">
-      <span class="brand-mark">L</span>
-      <span class="brand-name">PhiLogg</span>
+      <div class="brand-row">
+        <span class="brand-mark">L</span>
+        <span class="brand-name">PhiLogg</span>
+      </div>
+      <span class="brand-version" id="brandVersion"></span>
     </div>
+    <div class="toolbar-group" id="navHistoryGroup">
+      <button type="button" id="btnNavBack" class="toolbar-icon-btn" title="Back" disabled>
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4 5.5 8l4 4"/></svg>
+      </button>
+      <button type="button" id="btnNavForward" class="toolbar-icon-btn" title="Forward" disabled>
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4l4 4-4 4"/></svg>
+      </button>
+    </div>
+    <div class="toolbar-spacer"></div>
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
       <div class="toolbar-group">
         <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" disabled></button>
         <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" disabled></button>
       </div>
-      <span class="brand-version" id="brandVersion"></span>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -2256,14 +2276,6 @@
       <div id="sidebarNormalContent">
         <div id="sidebarHeader">
           <div id="sidebarHeaderLabel">Files &amp; filters</div>
-          <div class="toolbar-group">
-            <button type="button" id="btnNavBack" class="panel-toggle-btn" title="Back" disabled>
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4 5.5 8l4 4"/></svg>
-            </button>
-            <button type="button" id="btnNavForward" class="panel-toggle-btn" title="Forward" disabled>
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4l4 4-4 4"/></svg>
-            </button>
-          </div>
           <button type="button" id="btnOpen" class="panel-toggle-btn" title="Open File(s)/Folder/Session…">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 2.5v11M2.5 8h11"/></svg>
           </button>
