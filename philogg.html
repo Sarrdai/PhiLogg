@@ -4275,7 +4275,9 @@ const state = {
   clipboard: null, // { id, mode: 'copy' | 'cut' }, set via Ctrl+C / Ctrl+X
   levelFilter: new Set(),  // active level toggles (empty = show all)
   scrollTargetId: null,    // entry id to scroll to & flash on next table render
+  scrollTargetOffset: null, // pixel offset (from viewport top) to land scrollTargetId at, captured from the source view; null = center (nothing to preserve)
   highlightScrollTargetId: null, // twin of scrollTargetId, but for the Highlight view (see revealInHighlightView)
+  highlightScrollTargetOffset: null, // twin of scrollTargetOffset, for highlightScrollTargetId
   tableSelection: null,    // Set of "row,col" keys selected in the extraction table view (null = none)
   selectedId: null,        // currently selected entry id
   tempAnchor: null,        // { entryId, nodeId, faded } | null — the selected entry's
@@ -8701,7 +8703,7 @@ function buildPairRow(entry) {
     '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
     '<span class="pair-row-msg">' + escapeHtml(entry.message) + '</span>';
   row.title = entry.message;
-  row.addEventListener("dblclick", () => revealInHighlightView(entry));
+  row.addEventListener("dblclick", () => revealInHighlightView(entry, row, linkScroll));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, entry); });
   return row;
 }
@@ -9908,7 +9910,7 @@ function renderExtractVisibleRows() {
         escapeHtml(row.values[ci]) + "</td>";
     });
     tr.innerHTML = rowHtml;
-    tr.addEventListener("dblclick", () => jumpToFullLog(row.entry));
+    tr.addEventListener("dblclick", () => jumpToFullLog(row.entry, tr, extractScroll));
     const gutter = tr.querySelector(".extract-gutter");
     gutter.addEventListener("mouseenter", highlightAllColumns);
     gutter.addEventListener("mouseleave", clearColumnHighlight);
@@ -10141,6 +10143,25 @@ function captureViewAnchor(entries, offsets, scrollEl) {
 // (leaving scrollEl untouched) when the anchored entry isn't in the new
 // list at all — e.g. it got filtered out — so the caller can fall back to
 // its own default instead.
+// Captures the on-screen pixel offset (distance from the scroll container's
+// own top edge) of a given DOM row, for cross-view jumps (double-click,
+// bookmark jump, Enter, …) that want to land the entry at that SAME screen
+// position in the destination view instead of hard-centering — see
+// scrollToIndex/scrollToHighlightIndex's opts.offset. Uses live layout
+// geometry rather than an offsets array so it works uniformly across every
+// source view (virtualized or not: Filter/Highlight tables, the
+// non-virtualized Link view, the Extraction table). Returns null when the
+// row isn't actually on screen (nothing rendered, or scrolled out of the
+// container's own viewport) — callers fall back to centering, same as
+// captureViewAnchor's "wasn't visible before" case.
+function captureRowScreenOffset(rowEl, scrollEl) {
+  if (!rowEl) return null;
+  const rowRect = rowEl.getBoundingClientRect();
+  const containerRect = scrollEl.getBoundingClientRect();
+  const offset = rowRect.top - containerRect.top;
+  return (offset >= 0 && offset <= containerRect.height) ? offset : null;
+}
+
 function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
   if (!anchor) return false;
   const idx = entries.findIndex(e => e.id === anchor.id);
@@ -10410,7 +10431,7 @@ function renderVisibleRows() {
       '<span class="col-msg">' + msgHtml + '</span>';
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
-    row.addEventListener("dblclick", () => revealInHighlightView(e));
+    row.addEventListener("dblclick", () => revealInHighlightView(e, row, tableBody));
     frag.appendChild(row);
     appendNoteRow(frag, e);
   }
@@ -10554,11 +10575,13 @@ function renderHighlightView(colorMapIsFresh) {
 
   if (state.highlightScrollTargetId) {
     const targetId = state.highlightScrollTargetId;
+    const offset = state.highlightScrollTargetOffset;
     state.highlightScrollTargetId = null;
+    state.highlightScrollTargetOffset = null;
     const idx = currentHighlightViewEntries.findIndex(e => e.id === targetId);
     if (idx !== -1) {
       lastHighlightRootId = rootId;
-      scrollToHighlightIndex(idx, { center: true, flash: true });
+      scrollToHighlightIndex(idx, offset != null ? { offset, flash: true } : { center: true, flash: true });
       return;
     }
   }
@@ -10642,7 +10665,7 @@ function renderHighlightVisibleRows() {
       '<span class="col-msg">' + escapeHtml(e.message) + '</span>';
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries, selectHighlightEntry));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
-    row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true, center: true }));
+    row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
     frag.appendChild(row);
     appendNoteRow(frag, e);
   }
@@ -11609,7 +11632,13 @@ function scrollToIndex(index, opts) {
     rowH = ROW_HEIGHT;
   }
   let target;
-  if (opts.center) {
+  if (opts.offset != null) {
+    // Preserve the entry's previous on-screen pixel position instead of
+    // centering — setTableScroll's own Math.max(0, …) clamp naturally
+    // covers "not enough rows above to keep that offset" by pinning the
+    // row as high as it can go (offset 0) instead of the requested one.
+    target = rowTop - opts.offset;
+  } else if (opts.center) {
     target = rowTop - viewportH / 2 + rowH / 2;
   } else if (rowTop < tableBody.scrollTop) {
     target = rowTop;
@@ -11647,7 +11676,11 @@ function scrollToHighlightIndex(index, opts) {
     rowH = ROW_HEIGHT;
   }
   let target;
-  if (opts.center) {
+  if (opts.offset != null) {
+    // Same "preserve pixel position, clamp to as-high-as-possible" logic as
+    // scrollToIndex's own opts.offset — see its comment.
+    target = rowTop - opts.offset;
+  } else if (opts.center) {
     target = rowTop - viewportH / 2 + rowH / 2;
   } else if (rowTop < highlightBody.scrollTop) {
     target = rowTop;
@@ -11867,10 +11900,15 @@ function selectHighlightEntry(entryId, opts) {
 // preserve. Reveals the Highlight panel first (in tabs layout) so its
 // clientHeight is measurable before scrollToHighlightIndex's centering math
 // runs — a hidden (display:none) panel would measure 0.
-function revealInHighlightView(entry) {
+function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
   state.entriesView = "highlight";
   const previousId = applySelection(entry.id);
   state.highlightScrollTargetId = entry.id;
+  // Preserve the row's current on-screen position instead of centering it —
+  // captured from wherever the double-click/Enter actually came from
+  // (Filter table, Link view, …), before showFhTab below can change layout.
+  state.highlightScrollTargetOffset = sourceRowEl && sourceScrollEl
+    ? captureRowScreenOffset(sourceRowEl, sourceScrollEl) : null;
   showFhTab("highlight");
   updateSelectedRowClass(previousId);
   renderHighlightView();
@@ -11992,7 +12030,7 @@ function moveHighlightSelection(delta) {
 // now — it has no Highlight panel of its
 // own to reveal the entry in instead, unlike the plain table/link view
 // double-clicks, which now use revealInHighlightView.
-function jumpToFullLog(entry) {
+function jumpToFullLog(entry, sourceRowEl, sourceScrollEl) {
   const chain = getChain(state.activeId);
   const fileNode = chain.find(n => n.type === "file");
   if (!fileNode) return;
@@ -12000,6 +12038,10 @@ function jumpToFullLog(entry) {
   state.levelFilter.clear();
   state.selectedId = entry.id;
   state.scrollTargetId = entry.id;
+  // Preserve the entry's on-screen position from wherever it was jumped
+  // from (extraction table row, plot mark) instead of centering it.
+  state.scrollTargetOffset = sourceRowEl && sourceScrollEl
+    ? captureRowScreenOffset(sourceRowEl, sourceScrollEl) : null;
   // The scroll+flash below happens inside the Filter view (renderTable's
   // scrollTargetId path) — invisible while the Full tab is showing, so
   // reveal the Filtered panel first.
@@ -12049,6 +12091,7 @@ function jumpToEntry(entryId) {
   state.levelFilter.clear();
   state.selectedId = entry.id;
   state.scrollTargetId = entry.id;
+  state.scrollTargetOffset = null; // no meaningful "previous screen position" — jumps in from outside the log views entirely (e.g. a bookmark panel click)
   // Same reasoning as jumpToFullLog: the scroll+flash targets the Filter
   // view, which is hidden while the Full tab is active in tabs layout.
   revealFilteredView();
@@ -12517,9 +12560,11 @@ function renderTable() {
   if (state.scrollTargetId) {
     // Jumping to a specific entry: scroll straight to it instead of resetting to top.
     const targetId = state.scrollTargetId;
+    const offset = state.scrollTargetOffset;
     state.scrollTargetId = null;
+    state.scrollTargetOffset = null;
     const idx = currentViewEntries.findIndex(e => e.id === targetId);
-    if (idx !== -1) { scrollToIndex(idx, { center: true, flash: true }); return; }
+    if (idx !== -1) { scrollToIndex(idx, offset != null ? { offset, flash: true } : { center: true, flash: true }); return; }
   }
 
   // Re-render triggered by newly tailed entries: either follow to the bottom
@@ -16393,7 +16438,8 @@ document.addEventListener("keydown", ev => {
     const entry = entryIndex[state.selectedId];
     if (entry) {
       ev.preventDefault();
-      revealInHighlightView(entry);
+      const rowEl = tableRows.querySelector('[data-entry-id="' + CSS.escape(entry.id) + '"]');
+      revealInHighlightView(entry, rowEl, tableBody);
     }
     return;
   }
