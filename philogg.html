@@ -7066,6 +7066,12 @@ function showFhTab(tab) {
   // layout, where neither box's fhLayout==="tabs" gate ever fires.
   updateMinimapFullRange();
   updateMinimapRenderedRange();
+  // The selection pin is gated on fhLayout/fhActiveTab too now (see
+  // minimapMarkedEntries) — a selection that's only a member of the pane
+  // just hidden (or only of the one just revealed) needs the pin
+  // shown/hidden immediately on the switch itself, same reasoning as the two
+  // range boxes above.
+  updateMinimapSelectionMarkers();
 }
 
 // The single entry point for the three-way toggle: view is "highlight"
@@ -7097,6 +7103,7 @@ function applyFhView(view) {
     // (this branch doesn't go through showFhTab, so it needs its own).
     updateMinimapFullRange();
     updateMinimapRenderedRange();
+    updateMinimapSelectionMarkers(); // see showFhTab's own call for why
   } else {
     fhLayout = "tabs";
     fhSplit.classList.add("fh-layout-tabs");
@@ -10292,7 +10299,19 @@ function scheduleTempAnchorFade() {
     tempAnchorFadeTimer = null;
     if (!state.tempAnchor) return;
     const rowEl = tableRows.querySelector('.log-row.temp-anchor-row');
-    if (!rowEl) { state.tempAnchor.faded = true; return; } // scrolled out of the rendered window — nothing to animate, just drop the state
+    if (!rowEl) {
+      // Scrolled out of the rendered window — nothing to animate, just drop
+      // the state. Still splice it out of currentViewEntries and refresh the
+      // minimap's selection pin right away (same as the animated branch
+      // below) rather than leaving both stale until the next full render —
+      // the entry is logically gone from the view the moment it faded,
+      // whether or not it happened to have a DOM row at that instant.
+      state.tempAnchor.faded = true;
+      const idx = currentViewEntries.findIndex(e => e._tempAnchor);
+      if (idx !== -1) currentViewEntries.splice(idx, 1);
+      updateMinimapSelectionMarkers();
+      return;
+    }
     rowEl.style.height = rowEl.getBoundingClientRect().height + "px"; // pin the current height so the collapse below has something to transition FROM
     rowEl.classList.add("temp-anchor-fading");
     // Two nested rAFs: the height pin above and the collapse below must land
@@ -10317,6 +10336,12 @@ function scheduleTempAnchorFade() {
         noteEl.remove();
       }
       rowEl.remove();
+      // The pin only means something while the entry it marks is showing as
+      // a selected row somewhere on screen (see minimapMarkedEntries) — now
+      // that this row is genuinely gone, drop the pin along with it instead
+      // of leaving it pointing at a position nothing on screen marks any
+      // more until some unrelated future render happens to refresh it.
+      updateMinimapSelectionMarkers();
     }, 300);
   }, tempAnchorFadeSeconds * 1000);
 }
@@ -11495,7 +11520,17 @@ function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
     startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollEl.scrollTop / ROW_HEIGHT)));
     endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollEl.scrollTop + viewportH) / ROW_HEIGHT)));
   }
-  return { left: minimapBarSpan(entries[startIdx].ts).left, right: minimapBarSpan(entries[endIdx].ts).right };
+  // The temp anchor row (see spliceTempAnchor) is a foreign entry that's
+  // genuinely rendered in the viewport but isn't a real member of the view —
+  // it must not bound the "currently rendered" time span either (bugfix,
+  // same root cause as renderTimelineMinimap's own minimapViewEntries fix:
+  // an anchor sitting outside the view's real span made this box balloon
+  // out to cover it too). Walk inward from both ends to the nearest real row.
+  let s = startIdx, e = endIdx;
+  while (s <= e && entries[s]._tempAnchor) s++;
+  while (e >= s && entries[e]._tempAnchor) e--;
+  if (s > e) return null; // only the anchor row is in view — nothing real to bound
+  return { left: minimapBarSpan(entries[s].ts).left, right: minimapBarSpan(entries[e].ts).right };
 }
 
 // Repositions the "currently rendered" sub-rectangle to match what actually
@@ -11530,6 +11565,7 @@ function updateMinimapRenderedRange() {
     // Filtered table's own column-sort state).
     if (currentHighlightViewEntries.length === 0) { rect.classList.add("hidden"); return; }
     const span = minimapRenderedSpan(currentHighlightViewEntries, highlightBody, highlightRowOffsets);
+    if (!span) { rect.classList.add("hidden"); return; }
     rect.setAttribute("x", span.left.toFixed(1));
     rect.setAttribute("width", Math.max(2, span.right - span.left).toFixed(1));
     rect.classList.remove("hidden");
@@ -11538,6 +11574,7 @@ function updateMinimapRenderedRange() {
 
   if (!minimapInteractive || currentViewEntries.length === 0) { rect.classList.add("hidden"); return; }
   const span = minimapRenderedSpan(currentViewEntries, tableBody, tableRowOffsets);
+  if (!span) { rect.classList.add("hidden"); return; }
   rect.setAttribute("x", span.left.toFixed(1));
   rect.setAttribute("width", Math.max(2, span.right - span.left).toFixed(1));
   rect.classList.remove("hidden");
@@ -11555,13 +11592,24 @@ function updateMinimapRenderedRange() {
 //     which doesn't happen just from switching away to an unrelated node —
 //     without this gate, a pair left selected before navigating away would
 //     keep incorrectly marking its old entries.
-//  2. The ordinary single selection, state.selectedId — resolved via
-//     entryIndex first (fast, and works even off-screen, same as
-//     updateDetailPanel), falling back to a scan of currentViewEntries/
-//     currentHighlightViewEntries for the one case entryIndex can't cover: a
-//     selected row that's itself a synthetic Link pair entry (duck-types as
-//     a normal entry — see "Link filter" in PROJECT.md — but is never
-//     entryIndex-registered, only real parsed entries are).
+//  2. The ordinary single selection, state.selectedId — only marked while
+//     it's actually showing as a selected row in a pane that's actually on
+//     screen right now (same fhLayout/fhActiveTab split
+//     updateMinimapRenderedRange/the click-to-jump listener use elsewhere):
+//     currentHighlightViewEntries while the Full tab is the one visible,
+//     currentViewEntries while the Filtered tab is, both in Stacked layout.
+//     Bugfix (person-reported): this used to resolve via entryIndex first —
+//     fast, but finds ANY real entry ever selected regardless of whether
+//     it's actually a member of what's on screen right now — so the pin kept
+//     showing even once nothing was actually marked anywhere visible, e.g. a
+//     faded temp anchor row (dropped from currentViewEntries by
+//     spliceTempAnchor, see its own comment) whose entryId
+//     state.selectedId/state.tempAnchor still reference internally for
+//     Up/Down continuation, or a stale selection left over after switching
+//     to an unrelated node/root file. currentViewEntries/
+//     currentHighlightViewEntries themselves cover the synthetic-Link-pair-
+//     entry case entryIndex used to be needed for too (see "Link filter" in
+//     PROJECT.md) — they hold those exactly the same as real parsed entries.
 // Returns [] when nothing should be marked.
 function minimapMarkedEntries() {
   const activeNode = state.nodes[state.activeId];
@@ -11570,9 +11618,12 @@ function minimapMarkedEntries() {
     return linkPairsData[linkSelectedPairIndex].realEntries;
   }
   if (!state.selectedId) return [];
-  const found = entryIndex[state.selectedId]
-    || currentViewEntries.find(e => e.id === state.selectedId)
-    || currentHighlightViewEntries.find(e => e.id === state.selectedId);
+  if (fhLayout === "tabs" && fhActiveTab === "highlight") {
+    const found = currentHighlightViewEntries.find(e => e.id === state.selectedId);
+    return found ? [found] : [];
+  }
+  const found = currentViewEntries.find(e => e.id === state.selectedId)
+    || (fhLayout === "stacked" ? currentHighlightViewEntries.find(e => e.id === state.selectedId) : null);
   return found ? [found] : [];
 }
 
@@ -12670,11 +12721,13 @@ function renderTable() {
   // special-cased transition).
   const scrollAnchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
 
-  currentViewEntries = spliceTempAnchor(getVisibleEntries());
-  // Captured before the optional column-sort copy below: the minimap buckets
-  // by entry.ts directly, so it needs the real chronological list regardless
-  // of what order the table itself ends up sorted into.
-  const minimapViewEntries = currentViewEntries;
+  // Captured before spliceTempAnchor below: the temp anchor is a foreign
+  // entry stitched into the table for context, not a member of the actual
+  // filtered view, so it must not skew the minimap's time-range bucketing
+  // (bugfix — person-reported: an anchor from far outside the filter's real
+  // span made the minimap's highlighted range balloon to cover it).
+  const minimapViewEntries = getVisibleEntries();
+  currentViewEntries = spliceTempAnchor(minimapViewEntries);
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
