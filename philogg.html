@@ -2712,6 +2712,11 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
       <span id="ctxFilterForColumnLabel">Filter for this message</span>
     </div>
+    <div class="ctx-sep" id="ctxFilterFromSelectionSep"></div>
+    <div class="ctx-item" id="ctxFilterFromSelection">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
+      <span id="ctxFilterFromSelectionLabel">Filter from selection</span>
+    </div>
   </div>
 
   <div id="treeContextMenu" class="hidden"></div>
@@ -14383,6 +14388,9 @@ const ctxBookmarkLabel = el("#ctxBookmarkLabel");
 const ctxNote = el("#ctxNote");
 const ctxNoteLabel = el("#ctxNoteLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
+const ctxFilterFromSelection = el("#ctxFilterFromSelection");
+const ctxFilterFromSelectionSep = el("#ctxFilterFromSelectionSep");
+const ctxFilterFromSelectionLabel = el("#ctxFilterFromSelectionLabel");
 let ctxEntry = null;
 
 // Maps a row's .col-* span class (see renderTable's row-grid markup) to its
@@ -14425,6 +14433,12 @@ function openContextMenu(ev, entry) {
   // Notes: same "real log entry only" eligibility as bookmarks above.
   ctxNote.style.display = bookmarkable ? "" : "none";
   if (bookmarkable) ctxNoteLabel.textContent = state.notes.has(entry.id) ? "Edit note" : "Add note";
+  // "Filter from selection" only makes sense with an actual multi-selection
+  // (2+ rows) — a single row is already covered by "Filter for this ___".
+  const hasMultiSelection = state.logMultiSelect.size >= 2;
+  ctxFilterFromSelectionSep.style.display = hasMultiSelection ? "" : "none";
+  ctxFilterFromSelection.style.display = hasMultiSelection ? "" : "none";
+  if (hasMultiSelection) ctxFilterFromSelectionLabel.textContent = "Filter from selection (" + state.logMultiSelect.size + " rows)";
   contextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   contextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 170) + "px";
   contextMenu.classList.remove("hidden");
@@ -14522,6 +14536,26 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
   const column = ctxFilterColumn;
   closeContextMenu();
   openFilterForEntryColumn(entry, column);
+});
+
+// "Filter from selection" — turns the current multi-selected log rows
+// (state.logMultiSelect, the same set copyLogSelectionToClipboard reads)
+// into an explicit "idset" filter node matching exactly those entries.
+// Reuses the "idset" filterType introduced for "create filter from plot
+// view" (see getEntries' "idset" branch) rather than inventing a second,
+// parallel entry-set filter type — same generic "second, non-parent source
+// of truth baked into node.value at creation time" shape as "timerange".
+function createFilterFromLogSelection() {
+  if (!state.activeId || state.logMultiSelect.size < 2) return;
+  const ids = [...state.logMultiSelect];
+  createFilterNode(state.activeId, "idset", ids);
+  revealFilteredView();
+  render();
+}
+el("#ctxFilterFromSelection").addEventListener("click", ev => {
+  ev.stopPropagation();
+  closeContextMenu();
+  createFilterFromLogSelection();
 });
 
 /* ===================== Highlight-colour picker =====================
