@@ -12529,6 +12529,154 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 120 — Bugfix: the temp anchor (a foreign entry stitched into the
+   Filtered table for context — see spliceTempAnchor) must not skew the
+   timeline minimap's time-range computation, in EITHER of its two boxes:
+     a) #minimapFullRangeRect (renderTimelineMinimap): renderMainView used to
+        pass the POST-splice list (currentViewEntries, anchor row included)
+        into renderTimelineMinimap, so an anchor sitting far outside the
+        actual filtered entries' own time span made the box balloon out to
+        cover it. Fixed by capturing minimapViewEntries from
+        getVisibleEntries() BEFORE spliceTempAnchor runs.
+     b) #minimapRenderedRangeRect (updateMinimapRenderedRange /
+        minimapRenderedSpan): this box sources from currentViewEntries
+        directly (the anchor row IS genuinely rendered on screen, unlike
+        (a)'s bucketing pass), so (a)'s fix alone left this second box still
+        stretching out to the anchor — the person-reported follow-up this
+        group's (b) covers. minimapRenderedSpan now walks its computed
+        start/end index inward past any `_tempAnchor`-flagged row to the
+        nearest real one before converting to a pixel span, returning null
+        (box hidden) in the folded-corner case where only the anchor row is
+        actually in view.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("120a. Temp anchor is excluded from the minimap's time-range bucketing (#minimapFullRangeRect)");
+
+  // 60 entries, 1s apart: indices 0-49 -> "skip", 50-59 -> "keep". keepFilter
+  // therefore only ever matches a narrow, LATE slice of the file's timeline.
+  const f = await w.addFile("app.log", makeLog(0, 60, { suffix: i => (i >= 50 ? "keep" : "skip") }), () => {});
+  const skipFilter = w.createFilterNode(f.id, "text", "skip"); // matches entries 0-49
+  const keepFilter = w.createFilterNode(f.id, "text", "keep"); // matches entries 50-59
+  d.querySelector("#settingsTempAnchorMode").value = "persistent";
+  d.querySelector("#settingsTempAnchorMode").dispatchEvent(new w.Event("change", { bubbles: true }));
+  w.render();
+
+  T.state.activeId = skipFilter.id;
+  w.render();
+  fireClick([...d.querySelectorAll("#tableRows .log-row")][0], w); // entry index 0 (earliest in the file)
+  const anchoredEntryId = T.state.selectedId;
+  assert(anchoredEntryId === f.entries[0].id, "sanity: anchored entry is the file's very first (earliest) one");
+
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === anchoredEntryId,
+    "sanity: switching to keepFilter set a temp anchor pointing at the far-earlier entry 0");
+
+  const fullRect = d.querySelector("#minimapFullRangeRect");
+  const x1 = parseFloat(fullRect.getAttribute("x"));
+  const expectedLeft = w.minimapBarSpan(f.entries[50].ts).left;
+  assert(Math.abs(x1 - expectedLeft) < 1.5,
+    "minimapFullRangeRect's left edge matches keepFilter's own earliest real entry (index 50), " +
+    "not the far-earlier anchored entry 0 — got x=" + x1.toFixed(1) + ", expected ~" + expectedLeft.toFixed(1));
+
+  // --- (b): #minimapRenderedRangeRect must not stretch to the anchor either.
+  // All of keepFilter's 10 real rows (plus the anchor) fit inside the
+  // (mocked 400px-tall) viewport, so the anchor row really is on-screen —
+  // exactly the case this box's own fix has to handle, distinct from (a)'s
+  // bucketing-pass fix above.
+  w.updateMinimapRenderedRange();
+  const renderedRect = d.querySelector("#minimapRenderedRangeRect");
+  assert(!renderedRect.classList.contains("hidden"), "sanity: the rendered-range box is visible (real rows are on screen)");
+  const rx1 = parseFloat(renderedRect.getAttribute("x"));
+  assert(Math.abs(rx1 - expectedLeft) < 1.5,
+    "minimapRenderedRangeRect's left edge also matches keepFilter's own earliest real entry (index 50), " +
+    "not the far-earlier anchored entry 0 — got x=" + rx1.toFixed(1) + ", expected ~" + expectedLeft.toFixed(1));
+});
+
+/* ============================================================
+   GROUP 121 — Bugfix (person-reported, follow-up to Group 120): the
+   minimap's selection pin (updateMinimapSelectionMarkers/
+   minimapMarkedEntries) must only show while the selected entry is actually
+   a member of whatever pane is presently on screen (currentViewEntries for
+   the Filtered tab, currentHighlightViewEntries for the Full tab, either in
+   Stacked). It used to resolve via a plain entryIndex lookup first, which
+   finds ANY real entry ever selected regardless of view membership — so the
+   pin kept pointing at a position nothing on screen actually marked any
+   more:
+     a) A faded temp anchor (spliceTempAnchor drops it from currentViewEntries
+        once tempAnchorMode is "fade" and it's faded) used to leave the pin
+        showing at the anchor's old position. scheduleTempAnchorFade now
+        calls updateMinimapSelectionMarkers() itself right when the fade
+        completes (both the animated-row branch and the "scrolled out of the
+        rendered window" early-return branch), instead of waiting for some
+        unrelated future render to refresh it.
+     b) Switching to a Filtered-tab-only (or Full-tab-only) selection while
+        the OTHER tab is the one on screen now hides the pin immediately —
+        showFhTab/applyFhView's Stacked branch both call
+        updateMinimapSelectionMarkers() on every tab switch, same pattern as
+        their existing updateMinimapFullRange/updateMinimapRenderedRange
+        calls.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("121a. The minimap's selection pin disappears when a fading temp anchor's row is actually removed");
+
+  const f = await w.addFile("app.log", makeLog(0, 60, { suffix: i => (i >= 50 ? "keep" : "skip") }), () => {});
+  const skipFilter = w.createFilterNode(f.id, "text", "skip"); // matches entries 0-49
+  const keepFilter = w.createFilterNode(f.id, "text", "keep"); // matches entries 50-59
+  w.applyTempAnchorFadeSeconds(0.5);
+  const modeSelect = d.querySelector("#settingsTempAnchorMode");
+  modeSelect.value = "fade";
+  modeSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  T.state.activeId = skipFilter.id;
+  w.render();
+  fireClick([...d.querySelectorAll("#tableRows .log-row")][0], w); // entry index 0
+  const anchoredEntryId = T.state.selectedId;
+
+  fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
+  assert(T.state.tempAnchor && T.state.tempAnchor.entryId === anchoredEntryId, "sanity: switching set a temp anchor");
+  const markersEl = d.querySelector("#minimapSelectionMarkers");
+  assert(markersEl.innerHTML.length > 0, "sanity: the pin is drawn right after the switch, while the anchor row is still shown");
+
+  await new Promise(resolve => setTimeout(resolve, 1000)); // past the 0.5s fade duration + its own 300ms removal step
+  assert(T.state.tempAnchor.faded === true, "sanity: the anchor has faded");
+  assert(markersEl.innerHTML === "",
+    "BUGFIX: the pin is cleared the moment the faded anchor row is actually removed, not left pointing at its old position");
+});
+
+await withApp(async (w, d, T) => {
+  section("121b. The minimap's selection pin is gated on which fh pane is actually on screen");
+
+  const fileA = await w.addFile("a.log", makeLog(0, 5, { suffix: () => "match" }), () => {});
+  const fileB = await w.addFile("b.log", makeLog(100, 5, { suffix: () => "other" }), () => {});
+  const filterA = w.createFilterNode(fileA.id, "text", "match"); // matches all of fileA
+  T.state.activeId = filterA.id;
+  w.render();
+  fireClick([...d.querySelectorAll("#tableRows .log-row")][0], w); // selects a fileA entry, in the Filtered pane
+  assert(T.state.selectedId === fileA.entries[0].id, "sanity: selected fileA's own entry 0");
+
+  // renderTimelineMinimap rebuilds #minimapSelectionMarkers' element identity
+  // from scratch on every full render (svg.innerHTML = ...), so it's
+  // re-queried after each render below rather than cached once.
+  assert(d.querySelector("#minimapSelectionMarkers").innerHTML.length > 0,
+    "sanity: pin shows while the Filtered tab (where the selection lives) is on screen");
+
+  // Switch the active node to fileB — the Full tab now reflects fileB's own
+  // entries, which never contain fileA's entry 0 — and reveal the Full tab.
+  T.state.activeId = fileB.id;
+  w.render();
+  w.applyFhView("highlight");
+  assert(d.querySelector("#minimapSelectionMarkers").innerHTML === "",
+    "BUGFIX: the pin hides once the Full tab (showing fileB, not fileA) is what's on screen — the old fileA selection isn't a member of it");
+
+  // Switching back to the Filtered tab doesn't resurrect it either — fileA's
+  // filter node isn't the active node any more, so currentViewEntries (now
+  // fileB's) doesn't contain it either.
+  w.applyFhView("filter");
+  assert(d.querySelector("#minimapSelectionMarkers").innerHTML === "",
+    "...and the Filtered tab shows fileB's own (still-)active filter now too — same result");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -14178,6 +14326,40 @@ process.exit(failed ? 1 : 0);
               Behavior subsection-count/order assertions for the new
               "Timeline minimap" subsection inserted between "Hover-to-expand
               panels" and "Filter tree".
+
+   Group 120 — this session (2026-08-27), bugfix (person-reported, two
+              rounds): the temp anchor (a foreign entry stitched into the
+              Filtered table for context — spliceTempAnchor) was skewing
+              BOTH of the minimap's range boxes. (a) #minimapFullRangeRect:
+              renderTimelineMinimap was being fed the POST-splice
+              currentViewEntries, so an anchor from far outside the filter's
+              own time span made the box balloon out to cover it — fixed by
+              capturing minimapViewEntries from getVisibleEntries() before
+              spliceTempAnchor runs. (b) #minimapRenderedRangeRect: (a)'s fix
+              alone didn't cover this second box, since it sources from
+              currentViewEntries directly and the anchor row really is
+              rendered on screen — person re-reported the same symptom on
+              this box specifically. Fixed in minimapRenderedSpan by walking
+              its computed start/end index inward past any
+              `_tempAnchor`-flagged row before converting to a pixel span.
+
+   Group 121 — this session (2026-08-27), bugfix (person-reported, follow-up
+              to Group 120): the minimap's selection pin (a plain entryIndex
+              lookup in minimapMarkedEntries) found ANY real entry ever
+              selected regardless of whether it's a member of what's
+              actually on screen right now, so it kept pointing at a
+              position nothing on screen actually marked any more — e.g. a
+              faded temp anchor's old position, or a selection left over
+              from a since-abandoned root file/pane. minimapMarkedEntries now
+              resolves against currentHighlightViewEntries while the Full tab
+              is on screen, currentViewEntries while the Filtered tab is
+              (both in Stacked), dropping the entryIndex fallback entirely.
+              scheduleTempAnchorFade calls updateMinimapSelectionMarkers()
+              itself the moment a faded anchor's row is actually removed
+              (both branches — the animated-collapse one and the "scrolled
+              out of the rendered window" early return); showFhTab and
+              applyFhView's Stacked branch call it on every tab switch too,
+              same pattern as their existing minimap-range-box calls.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
