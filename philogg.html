@@ -3106,6 +3106,22 @@
             </div>
           </div>
 
+          <div class="settings-subsection-title">Timeline minimap</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsHideMinimapFullRangeInFullView">Hide minimap's covered-timespan box in Full view</label>
+                <div class="settings-row-hint">The minimap's outer "covered timespan" box is meaningless in the Full view, which always covers the entire log. Turn this on to hide it there — the inner "currently rendered" box stays visible and tracks the Full view's own scroll position instead. Both boxes keep their normal behavior in the Filtered and Stacked views.</div>
+              </div>
+              <div class="settings-row-control">
+                <label class="settings-switch">
+                  <input type="checkbox" id="settingsHideMinimapFullRangeInFullView">
+                  <span class="settings-switch-track"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div class="settings-subsection-title">Filter tree</div>
           <div class="settings-card">
             <div class="settings-row">
@@ -4073,6 +4089,33 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
     updateDetailToggleIcon();
     updateDetailPanel();
   }
+});
+
+/* ===================== Timeline minimap: hide the "covered timespan" box
+   in the Full view (Settings -> Behavior, this session, FEATURE_BACKLOG.md
+   #8) ===================== */
+// Off by default — this is an opt-OUT of existing behavior (the box has
+// always shown there), not a bugfix, so defaulting it on would silently
+// change what everyone currently sees. Same plain-localStorage-flag
+// mechanism as the hover-expand settings above; the actual gating lives in
+// updateMinimapFullRange() itself, near the rest of the minimap code, since
+// that's the single place the box's visibility is ever decided.
+const HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY = "philogg-hide-minimap-full-range-in-full-view";
+let hideMinimapFullRangeInFullView = false;
+
+function initMinimapFullRangeSetting() {
+  hideMinimapFullRangeInFullView = localStorage.getItem(HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY) === "1";
+  const cb = document.getElementById("settingsHideMinimapFullRangeInFullView");
+  if (cb) cb.checked = hideMinimapFullRangeInFullView;
+}
+
+document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListener("change", ev => {
+  hideMinimapFullRangeInFullView = ev.target.checked;
+  localStorage.setItem(HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY, hideMinimapFullRangeInFullView ? "1" : "0");
+  // Re-evaluate immediately — without this, flipping the toggle while the
+  // Full tab is already showing would leave the box exactly as it was until
+  // the next unrelated render/scroll happened to call updateMinimapFullRange.
+  updateMinimapFullRange();
 });
 
 /* ===================== Text-filter match highlighting settings (Settings ->
@@ -6999,21 +7042,30 @@ function updateFhTabButtons() {
 function showFhTab(tab) {
   fhActiveTab = tab;
   updateFhTabButtons();
-  if (fhLayout !== "tabs") return;
-  filterSlot.classList.toggle("fh-active", tab === "filter");
-  highlightWrap.classList.toggle("fh-active", tab === "highlight");
-  // A panel hidden (display:none) while tailing grew couldn't actually
-  // scroll — its scrollHeight collapses to 0 while hidden, same as
-  // clientHeight — so becoming visible again needs its own resync to the
-  // bottom if follow is still active, same effect the jump button gives
-  // (FEATURE_BACKLOG #25 — live-follow now applies to both views).
-  if (tab === "highlight") {
-    if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
-    renderHighlightVisibleRows();
-  } else {
-    if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
-    renderVisibleRows();
+  if (fhLayout === "tabs") {
+    filterSlot.classList.toggle("fh-active", tab === "filter");
+    highlightWrap.classList.toggle("fh-active", tab === "highlight");
+    // A panel hidden (display:none) while tailing grew couldn't actually
+    // scroll — its scrollHeight collapses to 0 while hidden, same as
+    // clientHeight — so becoming visible again needs its own resync to the
+    // bottom if follow is still active, same effect the jump button gives
+    // (FEATURE_BACKLOG #25 — live-follow now applies to both views).
+    if (tab === "highlight") {
+      if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
+      renderHighlightVisibleRows();
+    } else {
+      if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
+      renderVisibleRows();
+    }
   }
+  // Both minimap range boxes depend on fhLayout/fhActiveTab (the Full-view
+  // opt-out toggle and the "which pane's scroll to reflect" branch — see
+  // updateMinimapFullRange/updateMinimapRenderedRange) — re-evaluate on every
+  // tab switch so it takes effect immediately, without waiting on a
+  // scroll/render that happens to touch them. Harmless no-op cost in Stacked
+  // layout, where neither box's fhLayout==="tabs" gate ever fires.
+  updateMinimapFullRange();
+  updateMinimapRenderedRange();
 }
 
 // The single entry point for the three-way toggle: view is "highlight"
@@ -7039,11 +7091,17 @@ function applyFhView(view) {
     if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
     renderVisibleRows();
     renderHighlightVisibleRows();
+    // Entering Stacked always shows Box #1 (see updateMinimapFullRange) and
+    // ties Box #2 back to the Filtered pane (see updateMinimapRenderedRange)
+    // — re-evaluate immediately, same reasoning as showFhTab's own call below
+    // (this branch doesn't go through showFhTab, so it needs its own).
+    updateMinimapFullRange();
+    updateMinimapRenderedRange();
   } else {
     fhLayout = "tabs";
     fhSplit.classList.add("fh-layout-tabs");
     fhSplit.classList.remove("fh-layout-stacked");
-    showFhTab(view);
+    showFhTab(view); // showFhTab re-evaluates both minimap range boxes itself
   }
   localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout === "stacked" ? "stacked" : fhActiveTab);
 }
@@ -10553,6 +10611,13 @@ function setHighlightScroll(value) {
 // either view renders) and passes true — building the same map twice per
 // render was a measurable cost with coloured rules on large files. Other
 // callers (revealInHighlightView) omit it and get a recompute.
+// Every return path below calls updateMinimapRenderedRange() before
+// returning — this function runs even while the Link view is on screen (to
+// keep the Full view's own data current in the background, see renderMainView),
+// so that call is what keeps Box #2 tracking the Full view's own scroll
+// position whenever the Full tab is actually the one visible (see its own
+// fhLayout/fhActiveTab branch — a no-op whenever the Filtered tab or Stacked
+// layout is what's showing instead).
 function renderHighlightView(colorMapIsFresh) {
   const rootId = getRootFileId(state.activeId);
   const sameRoot = rootId === lastHighlightRootId;
@@ -10582,6 +10647,7 @@ function renderHighlightView(colorMapIsFresh) {
     if (idx !== -1) {
       lastHighlightRootId = rootId;
       scrollToHighlightIndex(idx, offset != null ? { offset, flash: true } : { center: true, flash: true });
+      updateMinimapRenderedRange();
       return;
     }
   }
@@ -10592,6 +10658,7 @@ function renderHighlightView(colorMapIsFresh) {
     lastHighlightRootId = rootId;
     setHighlightScroll(0);
     renderHighlightVisibleRows();
+    updateMinimapRenderedRange();
     return;
   }
 
@@ -10605,6 +10672,7 @@ function renderHighlightView(colorMapIsFresh) {
     pendingHighlightScroll = null;
     if (mode === "bottom") setHighlightScroll(highlightBody.scrollHeight);
     renderHighlightVisibleRows();
+    updateMinimapRenderedRange();
     return;
   }
 
@@ -10616,6 +10684,7 @@ function renderHighlightView(colorMapIsFresh) {
   // into a large file should never silently yank the view back to the top.
   restoreViewAnchor(scrollAnchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll);
   renderHighlightVisibleRows();
+  updateMinimapRenderedRange();
 }
 
 function renderHighlightVisibleRows() {
@@ -10691,7 +10760,11 @@ highlightBody.addEventListener("scroll", () => {
   }
   if (highlightScrollTicking) return;
   highlightScrollTicking = true;
-  requestAnimationFrame(() => { renderHighlightVisibleRows(); highlightScrollTicking = false; });
+  // Twin of #tableBody's own rAF-batched updateMinimapRenderedRange() call
+  // below — keeps Box #2 tracking the Full view's own scroll position while
+  // the Full tab is what's showing (see that function's fhLayout/fhActiveTab
+  // branch; a no-op otherwise).
+  requestAnimationFrame(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); highlightScrollTicking = false; });
 });
 window.addEventListener("resize", () => renderHighlightVisibleRows());
 
@@ -10723,9 +10796,12 @@ window.addEventListener("resize", () => {
     renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
     // Bucket geometry just changed (bar width depends on container width) —
     // the rendered-range rect's pixel position/width need recomputing too,
-    // same as renderTable()'s own explicit call; only meaningful while the
-    // table view (not the Link view) is what's on screen.
-    if (tableWrap.style.display !== "none") updateMinimapRenderedRange();
+    // same as renderTable()'s own explicit call. Unconditional now (used to
+    // be gated on tableWrap being visible): updateMinimapRenderedRange()
+    // itself resolves which pane's geometry to use (or stays hidden for the
+    // Link view), so gating the call here would wrongly skip Box #2 whenever
+    // the Full tab is what's actually on screen.
+    updateMinimapRenderedRange();
   }
 });
 
@@ -10811,7 +10887,8 @@ window.addEventListener("mousemove", ev => {
     renderHighlightVisibleRows();
     if (!timelineMinimapEl.classList.contains("hidden")) {
       renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
-      if (tableWrap.style.display !== "none") updateMinimapRenderedRange();
+      // Unconditional — see the window "resize" listener's identical comment above.
+      updateMinimapRenderedRange();
     }
     sidebarResizeTicking = false;
   });
@@ -11351,12 +11428,12 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // (table view and Link view alike — see renderLinkView) since both only
   // depend on minimapLastViewEntries/the current selection, not on which
   // scrollable container is on screen. The rendered-range sub-rectangle is
-  // NOT updated here on purpose — it depends on the table's own scroll
-  // position (tableBody), which only means something when the table view is
-  // what's actually showing; renderTable() calls updateMinimapRenderedRange()
-  // itself right after this, and renderLinkView() simply never does, leaving
-  // that rect hidden (the Link view has no virtualization — see its own
-  // comment for why "rendered subset" doesn't apply there).
+  // NOT updated here on purpose — it depends on whichever scrollable
+  // container (tableBody or highlightBody) is actually on screen right now,
+  // which this function has no opinion on; renderTable()/renderHighlightView()
+  // both call updateMinimapRenderedRange() themselves right after whatever
+  // triggered this render, and that function's own Link-view guard keeps the
+  // rect hidden while the Link view is active (see its own comment).
   updateMinimapFullRange();
   updateMinimapSelectionMarkers();
 }
@@ -11374,6 +11451,15 @@ function renderTimelineMinimap(rootId, viewEntries) {
 function updateMinimapFullRange() {
   const rect = el("#minimapFullRangeRect");
   if (!rect) return;
+  // Settings -> Behavior opt-out (FEATURE_BACKLOG.md #8): the box is
+  // meaningless while the Full view is what's on screen (it always covers
+  // the whole log), so hide it there when the person has turned this on.
+  // Stacked layout is untouched — the Filtered pane is visible alongside the
+  // Full pane there, so the box stays meaningful.
+  if (hideMinimapFullRangeInFullView && fhLayout === "tabs" && fhActiveTab === "highlight") {
+    rect.classList.add("hidden");
+    return;
+  }
   const entries = minimapLastViewEntries;
   if (!entries || entries.length === 0) { rect.classList.add("hidden"); return; }
   let minTs = Infinity, maxTs = -Infinity;
@@ -11388,39 +11474,72 @@ function updateMinimapFullRange() {
   rect.classList.remove("hidden");
 }
 
+// Shared by both branches of updateMinimapRenderedRange below: finds the
+// start/end index of `entries` actually sitting in scrollEl's visible
+// viewport right now and returns the pixel {left, right} span their bars
+// cover. Both indices clamped to entries' bounds on both ends — scrollTop
+// can briefly be stale for the list `entries` just became (e.g. switching to
+// a much smaller result while previously scrolled deep into a larger one;
+// the actual scroll-position reset happens later in renderTable()/
+// renderHighlightView(), after this runs). Bugfix (predates the Full-view
+// branch below): startIdx used to only clamp at 0, so that scenario indexed
+// straight past the end of the array.
+function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
+  const viewportH = scrollEl.clientHeight || 400;
+  const maxIdx = entries.length - 1;
+  let startIdx, endIdx;
+  if (needsRowOffsets() && rowOffsets) {
+    startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(rowOffsets, scrollEl.scrollTop)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(rowOffsets, scrollEl.scrollTop + viewportH)));
+  } else {
+    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollEl.scrollTop / ROW_HEIGHT)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollEl.scrollTop + viewportH) / ROW_HEIGHT)));
+  }
+  return { left: minimapBarSpan(entries[startIdx].ts).left, right: minimapBarSpan(entries[endIdx].ts).right };
+}
+
 // Repositions the "currently rendered" sub-rectangle to match what actually
 // has DOM rows right now, nested inside the full-range rectangle above —
-// cheap enough to call on every scroll frame (see the tableBody scroll
-// listener below). Table-view-only: the table virtualizes (only rows within
-// BUFFER_ROWS of the scrolled viewport exist as DOM nodes at all), so this
-// sub-range is normally a real, narrower subset of the full filtered range;
-// only renderTable() calls this (see renderTimelineMinimap's own comment for
-// why it isn't called from there directly).
+// cheap enough to call on every scroll frame (see the tableBody/highlightBody
+// scroll listeners below). Both the Filtered table and the Full view
+// virtualize (only rows within BUFFER_ROWS of the scrolled viewport exist as
+// DOM nodes at all), so this sub-range is normally a real, narrower subset of
+// the full range; which one this reflects depends on which pane is actually
+// on screen (see the fhLayout/fhActiveTab branch below) — renderTable()/
+// renderHighlightView() each call this themselves right after whichever of
+// them just ran (see renderTimelineMinimap's own comment for why it isn't
+// called from there directly), and showFhTab/applyFhView call it on every
+// tab switch so flipping panes re-evaluates it immediately too.
 function updateMinimapRenderedRange() {
   const rect = el("#minimapRenderedRangeRect");
   if (!rect) return;
-  if (!minimapInteractive || currentViewEntries.length === 0) { rect.classList.add("hidden"); return; }
+  // The Link view has no row virtualization at all (every pair-block is
+  // already a real DOM node), so there's no meaningful "rendered subset"
+  // there — always hidden regardless of which fh tab was last active. This
+  // can't rely on simply never being called while the Link view is showing
+  // any more: renderHighlightView() (below) keeps running even then, to keep
+  // the Full view's own data current in the background — see its own
+  // comment — so the guard has to live here instead.
+  if (linkWrap.style.display !== "none") { rect.classList.add("hidden"); return; }
 
-  const viewportH = tableBody.clientHeight || 400;
-  // Both clamped to the list's bounds — scrollTop can briefly be stale for
-  // the list currentViewEntries just became (e.g. switching to a much
-  // smaller filtered result while previously scrolled deep into a larger
-  // one; the actual scroll-position reset happens later in renderTable(),
-  // after this runs — see its own comment). Bugfix: startIdx used to only
-  // clamp at 0, so that scenario indexed straight past the end of the array.
-  const maxIdx = currentViewEntries.length - 1;
-  let startIdx, endIdx;
-  if (needsRowOffsets() && tableRowOffsets) {
-    startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(tableRowOffsets, tableBody.scrollTop)));
-    endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(tableRowOffsets, tableBody.scrollTop + viewportH)));
-  } else {
-    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(tableBody.scrollTop / ROW_HEIGHT)));
-    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((tableBody.scrollTop + viewportH) / ROW_HEIGHT)));
+  if (fhLayout === "tabs" && fhActiveTab === "highlight") {
+    // Full tab on screen: reflect the Full view's own scroll/entries instead
+    // of the (currently invisible) Filtered view's. No column sort exists in
+    // the Full view, so — unlike the Filtered branch below — this isn't
+    // gated on minimapInteractive (that flag is specifically about the
+    // Filtered table's own column-sort state).
+    if (currentHighlightViewEntries.length === 0) { rect.classList.add("hidden"); return; }
+    const span = minimapRenderedSpan(currentHighlightViewEntries, highlightBody, highlightRowOffsets);
+    rect.setAttribute("x", span.left.toFixed(1));
+    rect.setAttribute("width", Math.max(2, span.right - span.left).toFixed(1));
+    rect.classList.remove("hidden");
+    return;
   }
-  const x1 = minimapBarSpan(currentViewEntries[startIdx].ts).left;
-  const x2 = minimapBarSpan(currentViewEntries[endIdx].ts).right;
-  rect.setAttribute("x", x1.toFixed(1));
-  rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
+
+  if (!minimapInteractive || currentViewEntries.length === 0) { rect.classList.add("hidden"); return; }
+  const span = minimapRenderedSpan(currentViewEntries, tableBody, tableRowOffsets);
+  rect.setAttribute("x", span.left.toFixed(1));
+  rect.setAttribute("width", Math.max(2, span.right - span.left).toFixed(1));
   rect.classList.remove("hidden");
 }
 
@@ -11484,12 +11603,24 @@ function updateMinimapSelectionMarkers() {
 // see the module comment above. Also withheld right after a drag-select
 // gesture: mouseup fires a trailing "click" on whatever element is under the
 // pointer, which would otherwise re-interpret the drag's end point as a jump.
+// Resolves against whichever pane is actually visible right now — same
+// fhLayout/fhActiveTab branch updateMinimapRenderedRange uses — so a click
+// while the Full tab is showing jumps the Full view itself instead of
+// silently moving the (invisible) Filtered view in the background.
 timelineMinimapSvg.addEventListener("click", ev => {
   if (minimapDragSuppressClick) { minimapDragSuppressClick = false; return; }
-  if (!minimapInteractive || currentViewEntries.length === 0) return;
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
   const ts = minimapXToTs(x);
+  if (fhLayout === "tabs" && fhActiveTab === "highlight") {
+    // No column sort exists in the Full view, so — unlike the Filtered
+    // branch below — this isn't gated on minimapInteractive.
+    if (currentHighlightViewEntries.length === 0) return;
+    const idx = Math.min(currentHighlightViewEntries.length - 1, lowerBoundByTs(currentHighlightViewEntries, ts));
+    selectHighlightEntry(currentHighlightViewEntries[idx].id, { scroll: true, center: true, index: idx });
+    return;
+  }
+  if (!minimapInteractive || currentViewEntries.length === 0) return;
   const idx = Math.min(currentViewEntries.length - 1, lowerBoundByTs(currentViewEntries, ts));
   selectEntry(currentViewEntries[idx].id, { scroll: true, center: true, index: idx });
 });
@@ -17965,6 +18096,7 @@ initFontScale();
 initQuitOnLastClose();
 initCloseToTray();
 initHoverExpandSettings();
+initMinimapFullRangeSetting();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();
 initOpenScrollPositionSetting();
