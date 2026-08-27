@@ -46,7 +46,6 @@ this point.
 
 ### Navigation & reading
 
-8. **Full view: hide the minimap's "covered timespan" visualization** (toggle in Settings) — it's meaningless there since the Full view always covers the entire log. Show the currently-visible row range instead, the same way the minimap already highlights the visible/rendered subset in the Filtered/Stacked view — just applied to the Full log's own rows instead of the filtered rows.
 11. **Create a filter from the currently visible plot area** — either as a time-range filter, or targeted specifically at the log entries currently "visible" in the plot/minimap. Open question: which of the two (or both) the interaction should produce.
 
 ### Filter tree workflow
