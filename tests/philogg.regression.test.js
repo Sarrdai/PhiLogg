@@ -12531,16 +12531,26 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 120 — Bugfix: the temp anchor (a foreign entry stitched into the
    Filtered table for context — see spliceTempAnchor) must not skew the
-   timeline minimap's time-range computation. renderMainView used to pass
-   the POST-splice list (currentViewEntries, anchor row included) into
-   renderTimelineMinimap, so an anchor sitting far outside the actual
-   filtered entries' own time span made minimapFullRangeRect balloon out to
-   cover it — the box no longer reflected the real filtered view's span.
-   Fix: minimapViewEntries is now captured from getVisibleEntries() BEFORE
-   spliceTempAnchor runs.
+   timeline minimap's time-range computation, in EITHER of its two boxes:
+     a) #minimapFullRangeRect (renderTimelineMinimap): renderMainView used to
+        pass the POST-splice list (currentViewEntries, anchor row included)
+        into renderTimelineMinimap, so an anchor sitting far outside the
+        actual filtered entries' own time span made the box balloon out to
+        cover it. Fixed by capturing minimapViewEntries from
+        getVisibleEntries() BEFORE spliceTempAnchor runs.
+     b) #minimapRenderedRangeRect (updateMinimapRenderedRange /
+        minimapRenderedSpan): this box sources from currentViewEntries
+        directly (the anchor row IS genuinely rendered on screen, unlike
+        (a)'s bucketing pass), so (a)'s fix alone left this second box still
+        stretching out to the anchor — the person-reported follow-up this
+        group's (b) covers. minimapRenderedSpan now walks its computed
+        start/end index inward past any `_tempAnchor`-flagged row to the
+        nearest real one before converting to a pixel span, returning null
+        (box hidden) in the folded-corner case where only the anchor row is
+        actually in view.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("120. Temp anchor is excluded from the minimap's time-range bucketing");
+  section("120a. Temp anchor is excluded from the minimap's time-range bucketing (#minimapFullRangeRect)");
 
   // 60 entries, 1s apart: indices 0-49 -> "skip", 50-59 -> "keep". keepFilter
   // therefore only ever matches a narrow, LATE slice of the file's timeline.
@@ -12567,6 +12577,19 @@ await withApp(async (w, d, T) => {
   assert(Math.abs(x1 - expectedLeft) < 1.5,
     "minimapFullRangeRect's left edge matches keepFilter's own earliest real entry (index 50), " +
     "not the far-earlier anchored entry 0 — got x=" + x1.toFixed(1) + ", expected ~" + expectedLeft.toFixed(1));
+
+  // --- (b): #minimapRenderedRangeRect must not stretch to the anchor either.
+  // All of keepFilter's 10 real rows (plus the anchor) fit inside the
+  // (mocked 400px-tall) viewport, so the anchor row really is on-screen —
+  // exactly the case this box's own fix has to handle, distinct from (a)'s
+  // bucketing-pass fix above.
+  w.updateMinimapRenderedRange();
+  const renderedRect = d.querySelector("#minimapRenderedRangeRect");
+  assert(!renderedRect.classList.contains("hidden"), "sanity: the rendered-range box is visible (real rows are on screen)");
+  const rx1 = parseFloat(renderedRect.getAttribute("x"));
+  assert(Math.abs(rx1 - expectedLeft) < 1.5,
+    "minimapRenderedRangeRect's left edge also matches keepFilter's own earliest real entry (index 50), " +
+    "not the far-earlier anchored entry 0 — got x=" + rx1.toFixed(1) + ", expected ~" + expectedLeft.toFixed(1));
 });
 
 /* ============================================================
@@ -14220,14 +14243,21 @@ process.exit(failed ? 1 : 0);
               "Timeline minimap" subsection inserted between "Hover-to-expand
               panels" and "Filter tree".
 
-   Group 120 — this session (2026-08-27), bugfix (person-reported): the temp
-              anchor (a foreign entry stitched into the Filtered table for
-              context — spliceTempAnchor) was being fed into
-              renderTimelineMinimap along with the real filtered entries, so
-              an anchor from far outside the filter's own time span made the
-              minimap's range box balloon out to cover it. Fixed by capturing
-              minimapViewEntries from getVisibleEntries() before
-              spliceTempAnchor runs, instead of after.
+   Group 120 — this session (2026-08-27), bugfix (person-reported, two
+              rounds): the temp anchor (a foreign entry stitched into the
+              Filtered table for context — spliceTempAnchor) was skewing
+              BOTH of the minimap's range boxes. (a) #minimapFullRangeRect:
+              renderTimelineMinimap was being fed the POST-splice
+              currentViewEntries, so an anchor from far outside the filter's
+              own time span made the box balloon out to cover it — fixed by
+              capturing minimapViewEntries from getVisibleEntries() before
+              spliceTempAnchor runs. (b) #minimapRenderedRangeRect: (a)'s fix
+              alone didn't cover this second box, since it sources from
+              currentViewEntries directly and the anchor row really is
+              rendered on screen — person re-reported the same symptom on
+              this box specifically. Fixed in minimapRenderedSpan by walking
+              its computed start/end index inward past any
+              `_tempAnchor`-flagged row before converting to a pixel span.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
