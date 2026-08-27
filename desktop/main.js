@@ -10,7 +10,7 @@
 // from a file: page (matching the real browser restriction that guard
 // exists for) — using a privileged custom scheme instead sidesteps that
 // without weakening the guard itself.
-const { app, BrowserWindow, protocol, Menu, screen, Tray, nativeImage, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, protocol, Menu, Tray, nativeImage, shell, ipcMain } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -319,45 +319,26 @@ const ROUNDED_CORNERS = true;
 // window is already frameless (see "Frameless window" in
 // desktop/README.md), and `setFullScreen()` doesn't add a native frame back.
 //
-// Windows/Linux: real `setFullScreen(true)` is deliberately NOT used —
-// Chromium only paints the Window Controls Overlay (the native-looking
-// minimize/close buttons from `titleBarOverlay` above) inside a "titlebar
-// area", which doesn't exist in genuine OS fullscreen, so the controls
-// simply vanished (FEATURE_BACKLOG.md item 36, person-reported). A window
-// resized to exactly cover its display's bounds gets the *same* automatic
-// square-cornered, no-frame treatment from the OS compositor a maximized
-// window gets (see ROUNDED_CORNERS' own comment on that), while
-// `titleBarStyle`/`titleBarOverlay` stay untouched — so the overlay buttons
-// keep rendering exactly as they do while merely maximized, "reusing" that
-// visualization instead of building a second, custom set of controls.
-// macOS keeps real `setFullScreen()`: its native fullscreen already reveals
-// the traffic-light controls on a mouse move to the top edge, no separate
-// fix needed there.
-const windowedFullscreenBounds = new WeakMap(); // win -> pre-fullscreen bounds, for restore
-
-function isWindowedFullscreen(win) {
-  return windowedFullscreenBounds.has(win);
-}
-
-function toggleWindowedFullscreen(win) {
-  if (windowedFullscreenBounds.has(win)) {
-    win.setBounds(windowedFullscreenBounds.get(win));
-    windowedFullscreenBounds.delete(win);
-  } else {
-    windowedFullscreenBounds.set(win, win.getBounds());
-    win.setBounds(screen.getDisplayMatching(win.getBounds()).bounds);
-  }
-}
-
+// F11 simply toggles the same native `win.setFullScreen()` state the OS
+// window controls use (the maximize/restore button in the Window Controls
+// Overlay on Windows/Linux, the green traffic-light button on macOS) —
+// no separate bounds-juggling implementation. That equivalence is the
+// point: both triggers flip the identical underlying state, so either one
+// can exit what the other entered. Previously (FEATURE_BACKLOG.md item 36)
+// Windows/Linux used a custom bounds-resize hack instead, specifically to
+// keep the Window Controls Overlay buttons visible — Chromium only paints
+// them inside a "titlebar area", which doesn't exist in genuine OS
+// fullscreen, so real fullscreen made them vanish there. That trade-off
+// was reversed on purpose: matching the native window control's behavior
+// takes priority over keeping the overlay buttons visible while
+// fullscreen.
 function watchFullscreenToggle(win) {
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" && input.key === "F11") {
       event.preventDefault();
-      if (isMac) win.setFullScreen(!win.isFullScreen());
-      else toggleWindowedFullscreen(win);
+      win.setFullScreen(!win.isFullScreen());
     }
   });
-  win.on("closed", () => windowedFullscreenBounds.delete(win));
 }
 
 // FEATURE_BACKLOG.md item 51 ("Improve Electron startup time perception"),
