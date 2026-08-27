@@ -11495,7 +11495,17 @@ function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
     startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollEl.scrollTop / ROW_HEIGHT)));
     endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollEl.scrollTop + viewportH) / ROW_HEIGHT)));
   }
-  return { left: minimapBarSpan(entries[startIdx].ts).left, right: minimapBarSpan(entries[endIdx].ts).right };
+  // The temp anchor row (see spliceTempAnchor) is a foreign entry that's
+  // genuinely rendered in the viewport but isn't a real member of the view —
+  // it must not bound the "currently rendered" time span either (bugfix,
+  // same root cause as renderTimelineMinimap's own minimapViewEntries fix:
+  // an anchor sitting outside the view's real span made this box balloon
+  // out to cover it too). Walk inward from both ends to the nearest real row.
+  let s = startIdx, e = endIdx;
+  while (s <= e && entries[s]._tempAnchor) s++;
+  while (e >= s && entries[e]._tempAnchor) e--;
+  if (s > e) return null; // only the anchor row is in view — nothing real to bound
+  return { left: minimapBarSpan(entries[s].ts).left, right: minimapBarSpan(entries[e].ts).right };
 }
 
 // Repositions the "currently rendered" sub-rectangle to match what actually
@@ -11530,6 +11540,7 @@ function updateMinimapRenderedRange() {
     // Filtered table's own column-sort state).
     if (currentHighlightViewEntries.length === 0) { rect.classList.add("hidden"); return; }
     const span = minimapRenderedSpan(currentHighlightViewEntries, highlightBody, highlightRowOffsets);
+    if (!span) { rect.classList.add("hidden"); return; }
     rect.setAttribute("x", span.left.toFixed(1));
     rect.setAttribute("width", Math.max(2, span.right - span.left).toFixed(1));
     rect.classList.remove("hidden");
@@ -11538,6 +11549,7 @@ function updateMinimapRenderedRange() {
 
   if (!minimapInteractive || currentViewEntries.length === 0) { rect.classList.add("hidden"); return; }
   const span = minimapRenderedSpan(currentViewEntries, tableBody, tableRowOffsets);
+  if (!span) { rect.classList.add("hidden"); return; }
   rect.setAttribute("x", span.left.toFixed(1));
   rect.setAttribute("width", Math.max(2, span.right - span.left).toFixed(1));
   rect.classList.remove("hidden");
