@@ -75,9 +75,13 @@ an earlier version's JS-computed padding (measuring
 stale across maximize/restore/fullscreen — reported after the first real
 Windows run, fixed the same session, not yet re-verified live.
 
-`F11` toggles fullscreen (caught via a per-window `before-input-event`
-listener, since there's no app menu to hang an accelerator on) and the
-window requests rounded corners (`roundedCorners: true`) that the OS
+`F11` toggles native OS fullscreen (`win.setFullScreen()`, caught via a
+per-window `before-input-event` listener, since there's no app menu to hang
+an accelerator on) — the same state the native window controls (the
+Windows/Linux overlay's maximize/restore button, macOS's green
+traffic-light button) toggle, so F11 and the window control are fully
+equivalent: either can enter or exit what the other started. The window
+also requests rounded corners (`roundedCorners: true`) that the OS
 compositor automatically squares off once the window fills the screen —
 maximized or fullscreen alike — with no extra code needed for that case.
 See the `ROUNDED_CORNERS`/`watchFullscreenToggle` comments in `main.js` for
