@@ -88,6 +88,16 @@ Both are attached as a new child under the extraction node itself (`extractNodeI
 
 Regression-tested: **Group 123** — the `"idset"` `getEntries` branch and its `cloneSubtree` round trip directly, both buttons under the home (un-zoomed) view creating a filter that spans/matches the WHOLE extraction, the same buttons under a real zoomed viewport creating a filter scoped to exactly the rows visible there, and the empty-viewport no-op case.
 
+## "Filter from selection" — an `"idset"` filter from multi-selected log rows
+
+Turns the log view's existing Ctrl/Shift-click multi-selection (`state.logMultiSelect` — see `docs/ui-and-views.md` → "Row multi-select + copy", the same set `copyLogSelectionToClipboard` reads for Ctrl+C) directly into an `"idset"` filter node (above) matching exactly those entries. Reuses the same generic entry-set filter type "create a filter from the plot view" introduced, rather than a second, parallel type — the two producers differ only in how they name the ids they hand to `createFilterNode(parentId, "idset", ids)`.
+
+**UI**: a new context-menu item, `#ctxFilterFromSelection` ("Filter from selection (N rows)"), added to the log row right-click menu (`#contextMenu`, next to "Filter for this ___") and shown only when `state.logMultiSelect.size >= 2` — a single row is already covered by "Filter for this ___" and the after/before actions. Clicking it creates the `"idset"` node as a new child of `state.activeId` (the currently active filter node, same "new child of whatever's active" placement every other context-menu filter action uses) from `[...state.logMultiSelect]`, then reveals it via `revealFilteredView()`.
+
+No new persistence-carrier code needed, same as the plot-view producer — the value rides the existing generic `node.value` field.
+
+Regression-tested: **Group 124** — the context-menu item's visibility gated on selection size, the created node's `filterType`/`value`/`getEntries` result, that it's placed under the active node and becomes active itself, and a `cloneSubtree` copy/paste round trip.
+
 ## Text-filter match highlighting
 
 Lighter alternative to `FEATURE_BACKLOG.md` #13's "why is this row here" popup idea (that entry is left as-is, still unimplemented, per explicit person instruction — this feature was requested as a separate implementation, not a replacement). Marks the exact substring an active `text` filter node matched, inline in the Filter view's rows and/or the entry-detail panel, instead of requiring a click to find out why a row is present.

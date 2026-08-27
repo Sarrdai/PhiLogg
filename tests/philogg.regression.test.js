@@ -12926,6 +12926,69 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 124 — "Filter from selection": turn the log view's Ctrl/Shift-click
+   multi-selection (state.logMultiSelect, GROUP 57) into a filter matching
+   exactly those entries. Reuses the "idset" filterType (an explicit array
+   of entry ids) that GROUP 123's "create filter from plot view" introduced,
+   rather than adding a second, parallel entry-set filter type — same
+   generic node.value shape, no new persistence-carrier code needed.
+   Origin: this session. New context-menu item #ctxFilterFromSelection,
+   shown only when 2+ rows are multi-selected (a single row is already
+   covered by "Filter for this ___").
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("124. \"Filter from selection\": idset filter from the log view's multi-selected rows");
+
+  const f = await w.addFile("selfilter.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const rowAt = i => d.querySelector('#tableRows [data-entry-id="' + f.entries[i].id + '"]');
+  const clickWith = (el, opts) => el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ...opts }));
+
+  // --- With only a single selection, the context menu item stays hidden ---
+  clickWith(rowAt(2), {});
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[2]);
+  assert(isVisible(d.querySelector("#ctxFilterFromSelection"), w) === false,
+    "\"Filter from selection\" is hidden in the context menu when fewer than 2 rows are multi-selected");
+  w.closeContextMenu();
+
+  // --- Multi-select 3 rows (Ctrl+click twice) ---
+  clickWith(rowAt(2), {});
+  clickWith(rowAt(5), { ctrlKey: true });
+  clickWith(rowAt(7), { ctrlKey: true });
+  assert(T.state.logMultiSelect.size === 3, "sanity: 3 rows multi-selected");
+
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[7]);
+  assert(isVisible(d.querySelector("#ctxFilterFromSelection"), w) === true,
+    "\"Filter from selection\" is shown once 2+ rows are multi-selected");
+  assert(d.querySelector("#ctxFilterFromSelectionLabel").textContent.includes("3"),
+    "the menu label reports the current multi-selected row count");
+
+  const beforeChildren = f.children.length;
+  fireClick(d.querySelector("#ctxFilterFromSelection"), w);
+  assert(f.children.length === beforeChildren + 1, "clicking the item creates exactly one new filter node under the active file");
+  const idsetNode = T.state.nodes[f.children[f.children.length - 1]];
+  const expectedIds = [2, 5, 7].map(i => f.entries[i].id);
+  assert(idsetNode.filterType === "idset" && idsetNode.value.length === 3 && expectedIds.every(id => idsetNode.value.includes(id)),
+    "the created node is an \"idset\" filter whose value is exactly the 3 multi-selected entry ids");
+  const result = w.getEntries(idsetNode.id).map(e => e.id).sort();
+  assert(JSON.stringify(result) === JSON.stringify(expectedIds.slice().sort()), "the idset filter's own getEntries result matches exactly those 3 entries, regardless of selection order");
+  assert(T.state.activeId === idsetNode.id, "creating the filter reveals it as the active node (revealFilteredView)");
+
+  // --- Persistence carriers: idset rides the generic node.value field, so
+  // clone/save-load/session-cache round trips need no new code — verified
+  // via the same copy/paste round trip GROUP 123 used for the plot-created
+  // idset node, confirming the log-selection-created one behaves identically. ---
+  T.state.clipboard = { id: idsetNode.id, mode: "copy" };
+  T.state.activeId = f.id;
+  w.pasteClipboard();
+  const pastedNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(pastedNode.filterType === "idset" && JSON.stringify(pastedNode.value.slice().sort()) === JSON.stringify(idsetNode.value.slice().sort()),
+    "cloneSubtree (copy/paste) carries the log-selection idset node's entry-id array to the pasted copy");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -14649,6 +14712,13 @@ process.exit(failed ? 1 : 0);
               `value` field every filter type already gets copied through,
               same precedent as "timerange") — verified directly via
               getEntries and a copy/paste round trip in this group.
+   Group 124 — this session (2026-08-27), "filter from selection": turns the
+              log view's Ctrl/Shift-click multi-selection (state.logMultiSelect,
+              Group 57) into a filter matching exactly those entries, via a
+              new "Filter from selection" context-menu item (shown only when
+              2+ rows are multi-selected). Reuses the "idset" filterType from
+              Group 123 rather than introducing a second entry-set filter
+              type — no new persistence-carrier code needed.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
