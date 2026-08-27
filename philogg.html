@@ -2015,6 +2015,8 @@
   }
   #plotZoomBar button:hover{background:var(--bg-app); color:var(--text-primary);}
   #plotZoomResetBtn{font-size:10px; padding:5px 8px;}
+  .plot-zoom-bar-sep{width:1px; align-self:stretch; margin:3px 2px; background:var(--border);}
+  #plotFilterTimeRangeBtn, #plotFilterEntriesBtn{font-size:10px; padding:5px 8px; white-space:nowrap;}
   #plotZoomLevelInput{
     width:44px; text-align:center; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:5px; padding:5px 2px; font-family:var(--font-mono); font-size:11px;
@@ -2100,6 +2102,18 @@
   }
   .filter-case-toggle input{accent-color:var(--accent); cursor:pointer;}
   .filter-case-toggle:has(input:checked){color:var(--accent-strong);}
+  /* Regex toggle — sits above everything else in the popup (FEATURE_BACKLOG.md
+     #16): a real RegExp alternative to the wildcard-token language, kept as a
+     per-filter checkbox rather than a second dialog so switching back and
+     forth costs one click. */
+  .filter-regex-toggle{
+    display:flex; align-items:center; gap:6px; flex:0 0 auto;
+    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
+    cursor:pointer; user-select:none; white-space:nowrap;
+  }
+  .filter-regex-toggle input{accent-color:var(--accent); cursor:pointer;}
+  .filter-regex-toggle:has(input:checked){color:var(--accent-strong);}
+  #filterInput.input-regex-error{border-color:var(--level-error);}
   .filter-column-chips{
     display:flex; align-items:center; gap:5px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
@@ -2113,6 +2127,7 @@
   .column-chip:hover{filter:brightness(1.25);}
   .column-chip.active{background:var(--accent); border-color:transparent; color:var(--accent-on);}
   .filter-token-chips{display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
+  .filter-token-chips.hidden{display:none;}
   .token-chip{
     font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--accent-strong);
     background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius:5px;
@@ -2438,6 +2453,9 @@
           </button>
         </div>
         <form id="filterForm">
+          <label class="filter-regex-toggle" id="filterRegexRow" title="Compile the input as a real JavaScript RegExp instead of the wildcard-token language">
+            <input type="checkbox" id="filterRegexCheckbox"> Interpret input as regex
+          </label>
           <div class="filter-input-section">
             <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [value:float]" autocomplete="off">
             <div id="filterTokenChips" class="filter-token-chips">
@@ -2636,6 +2654,9 @@
               <input type="text" id="plotZoomLevelInput" inputmode="numeric" title="Zoom level — click to edit">
               <button type="button" id="plotZoomInBtn" title="Zoom in">+</button>
               <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
+              <span class="plot-zoom-bar-sep"></span>
+              <button type="button" id="plotFilterTimeRangeBtn" title="Create a time-range filter spanning what's currently visible in the plot">Filter: time range</button>
+              <button type="button" id="plotFilterEntriesBtn" title="Create a filter matching exactly the log entries currently visible in the plot">Filter: these entries</button>
             </div>
             <div id="plotDragRect" class="hidden"></div>
             <div id="plotTooltip" class="hidden"></div>
@@ -5443,26 +5464,38 @@ function timeRangeFilterName(value) {
   return "any time";
 }
 
-function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null) {
+function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null, isRegex = false) {
   const parent = state.nodes[parentId];
   if (!parent) return null;
   let name;
-  if (filterType === "text") name = `“${value}”`;
+  if (filterType === "text") name = (isRegex ? "/" + value + "/" : `“${value}”`);
   else if (filterType === "after") name = `≥ ${formatTime(value)}`;
   else if (filterType === "before") name = `≤ ${formatTime(value)}`;
   else if (filterType === "extract") name = value;
   else if (filterType === "timerange") name = timeRangeFilterName(value);
   else if (filterType === "level") name = value.join(", ");
+  else if (filterType === "idset") name = idSetFilterName(value);
   else name = String(value);
 
   const node = { id: uid("n"), type: "filter", name, parentId, children: [], filterType, value, inverted };
   if (filterType === "extract" && ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
   if (filterType === "text" && caseSensitive) node.caseSensitive = true;
   if (filterType === "text" && columns && columns.length) node.columns = columns.slice();
+  if (filterType === "text" && isRegex) node.isRegex = true;
   state.nodes[node.id] = node;
   parent.children.push(node.id);
   state.activeId = node.id;
   return node;
+}
+
+// Display name for an "idset" filter node — value is a plain array of entry
+// ids (see getEntries' "idset" branch). No richer description is available
+// at name-time (the ids alone don't say WHY they were picked), so this just
+// reports the count; the "plot view" framing lives in the UI action that
+// created it instead.
+function idSetFilterName(ids) {
+  const n = Array.isArray(ids) ? ids.length : 0;
+  return n + (n === 1 ? " entry (plot view)" : " entries (plot view)");
 }
 
 // Edits an existing "text"/"extract" filter node in place (see
@@ -5473,13 +5506,16 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
 // same global invalidation used for move/delete/invert is needed here too.
 // The plain mutator — callers that should be undoable go through
 // updateFilterNodeWithUndo (see the undo/redo section) instead.
-function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns) {
+function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex) {
   const node = state.nodes[nodeId];
   if (!node) return;
   node.filterType = filterType;
   node.value = value;
   node.inverted = inverted;
-  node.name = filterType === "text" ? `“${value}”` : filterType === "level" ? value.join(", ") : value;
+  node.name = filterType === "text" ? (isRegex ? "/" + value + "/" : `“${value}”`)
+    : filterType === "level" ? value.join(", ")
+    : filterType === "idset" ? idSetFilterName(value)
+    : value;
   if (filterType === "extract" && ignoredColumns !== undefined) {
     if (ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
     else delete node.ignoredColumns;
@@ -5487,9 +5523,11 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, c
   if (filterType === "text") {
     if (caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
     if (columns && columns.length) node.columns = columns.slice(); else delete node.columns;
+    if (isRegex) node.isRegex = true; else delete node.isRegex;
   } else {
     delete node.caseSensitive;
     delete node.columns;
+    delete node.isRegex;
   }
   invalidateAllCaches();
 }
@@ -6005,6 +6043,7 @@ function cloneSubtree(nodeId, newParentId) {
   if (orig.filterType === "extract" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
   if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
   if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
+  if (orig.filterType === "text" && orig.isRegex) clone.isRegex = true;
   if (orig.highlightColor) clone.highlightColor = orig.highlightColor;
   if (orig.label) clone.label = orig.label;
   // Deliberately NOT copying orig.locked: a copy/paste of the auto-managed
@@ -6129,7 +6168,21 @@ function textColumnValue(e, key) {
 // is set) is that same compile's `spec.columns` — carries each placeholder's
 // optional numeric `conditions` ([value:float>=10]), checked via
 // wildcardMatch() against structural regex match alone.
-function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wildcardColumns) {
+// Compiles a person-typed regex source string into a real RegExp — used
+// both by getEntries' "text"/isRegex branch and the filter popup's live
+// preview/match count, so the two can never disagree about what's a valid
+// pattern. Returns null on a SyntaxError (unbalanced group, bad escape,
+// etc.) instead of throwing, so an invalid regex degrades to "0 matches" /
+// an inline error state rather than crashing the render.
+function compileRegexFilter(source, caseSensitive) {
+  try { return new RegExp(source, caseSensitive ? "" : "i"); } catch (err) { return null; }
+}
+
+function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wildcardColumns, regexObj) {
+  if (regexObj) {
+    if (columns && columns.length) return columns.some(key => regexObj.test(textColumnValue(e, key)));
+    return regexObj.test(e.raw);
+  }
   if (wildcardRegex) {
     if (columns && columns.length) {
       return columns.some(key => !!wildcardMatch(wildcardRegex, wildcardColumns, textColumnValue(e, key)));
@@ -6346,13 +6399,21 @@ function getEntries(nodeId) {
   let result;
   if (node.filterType === "text") {
     const value = String(node.value);
-    // A "text" filter's value can itself contain [value:...]/[*] tokens
-    // when it was authored by clicking "Add filter" instead of "Extract"
-    // (wildcard used as a match-shape hint, not to build an extraction
-    // table — see the filter popup's commitFilter). Compiled to the same
-    // regex compileExtractPattern would use for extraction, just tested
-    // rather than captured.
-    if (isExtractPattern(value)) {
+    if (node.isRegex) {
+      // Real RegExp mode (FEATURE_BACKLOG.md #16) — an alternative to the
+      // wildcard-token language, toggled per-node via the filter popup's
+      // "Interpret input as regex" checkbox. An invalid pattern fails
+      // gracefully to an empty result (matching the "Invalid pattern"
+      // inline state the popup already shows) rather than throwing.
+      const re = compileRegexFilter(value, !!node.caseSensitive);
+      result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, re)) : [];
+    } else if (isExtractPattern(value)) {
+      // A "text" filter's value can itself contain [value:...]/[*] tokens
+      // when it was authored by clicking "Add filter" instead of "Extract"
+      // (wildcard used as a match-shape hint, not to build an extraction
+      // table — see the filter popup's commitFilter). Compiled to the same
+      // regex compileExtractPattern would use for extraction, just tested
+      // rather than captured.
       const spec = compileExtractPattern(value);
       const wildcardRegex = spec && new RegExp(spec.regexStr, node.caseSensitive ? "" : "i");
       result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, wildcardRegex, spec.columns)) : [];
@@ -6376,6 +6437,17 @@ function getEntries(nodeId) {
   } else if (node.filterType === "extract") {
     const spec = compileExtractPattern(node.value);
     result = spec ? parentEntries.filter(e => !!wildcardMatch(spec.regex, spec.columns, e.message)) : [];
+  } else if (node.filterType === "idset") {
+    // value = array of entry ids — an explicit, pre-computed match set
+    // rather than a rule evaluated per entry. Built by "Create filter from
+    // plot view" (see openPlotViewportFilterMenu/createIdSetFilterFromPlot)
+    // to pin down exactly the entries currently visible in the Plot tab's
+    // zoomed/panned viewport. Kept generic (not plot-specific) so any other
+    // future "exact entry set" producer could reuse it the same way
+    // "timerange" is generic rather than tied to the minimap that first
+    // created it.
+    const idSet = new Set(Array.isArray(node.value) ? node.value : []);
+    result = parentEntries.filter(e => idSet.has(e.id));
   } else if (node.filterType === "bookmarks") {
     // Auto-managed per-file node (see syncBookmarksFilterNode) — its match
     // set is exactly "this file's entries currently in state.bookmarks",
@@ -6660,6 +6732,7 @@ function snapshotSubtree(nodeId) {
   if (node.ignoredColumns) copy.ignoredColumns = node.ignoredColumns.slice();
   if (node.caseSensitive) copy.caseSensitive = true;
   if (node.columns) copy.columns = node.columns.slice();
+  if (node.isRegex) copy.isRegex = true;
   if (node.highlightColor) copy.highlightColor = node.highlightColor;
   if (node.label) copy.label = node.label;
   return copy;
@@ -6696,6 +6769,7 @@ function restoreSubtree(snap) {
   if (snap.ignoredColumns) node.ignoredColumns = snap.ignoredColumns;
   if (snap.caseSensitive) node.caseSensitive = true;
   if (snap.columns) node.columns = snap.columns;
+  if (snap.isRegex) node.isRegex = true;
   if (snap.highlightColor) node.highlightColor = snap.highlightColor;
   if (snap.label) node.label = snap.label;
   state.nodes[node.id] = node;
@@ -6758,6 +6832,7 @@ function captureNodeFields(node) {
     ignoredColumns: node.ignoredColumns ? node.ignoredColumns.slice() : undefined,
     caseSensitive: !!node.caseSensitive,
     columns: node.columns ? node.columns.slice() : undefined,
+    isRegex: !!node.isRegex,
     assertions: node.assertions ? JSON.parse(JSON.stringify(node.assertions)) : undefined,
   };
 }
@@ -6768,6 +6843,7 @@ function applyNodeFields(node, fields) {
   if (fields.ignoredColumns) node.ignoredColumns = fields.ignoredColumns.slice(); else delete node.ignoredColumns;
   if (fields.caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
   if (fields.columns) node.columns = fields.columns.slice(); else delete node.columns;
+  if (fields.isRegex) node.isRegex = true; else delete node.isRegex;
   if (fields.assertions) node.assertions = JSON.parse(JSON.stringify(fields.assertions)); else delete node.assertions;
 }
 function withFieldEditUndo(nodeId, mutateFn) {
@@ -6783,8 +6859,8 @@ function withFieldEditUndo(nodeId, mutateFn) {
 // assertion dialog's Save/Clear handlers instead call withFieldEditUndo
 // directly, since their mutation is a one-liner) — see the module comment
 // above for the full list of "edit" call sites.
-function updateFilterNodeWithUndo(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns) {
-  withFieldEditUndo(nodeId, () => updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns));
+function updateFilterNodeWithUndo(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex) {
+  withFieldEditUndo(nodeId, () => updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex));
 }
 function updateTimeRangeFilterNodeWithUndo(nodeId, from, to) {
   withFieldEditUndo(nodeId, () => updateTimeRangeFilterNode(nodeId, from, to));
@@ -7460,6 +7536,7 @@ function typeTagFor(node) {
     case "countContext": return "CNT";
     case "level": return "LVL";
     case "bookmarks": return "BKM";
+    case "idset": return "SET";
     default: return "?";
   }
 }
@@ -7617,6 +7694,7 @@ function ghostTypeTag(filterType) {
     case "countContext": return "CNT";
     case "level": return "LVL";
     case "bookmarks": return "BKM";
+    case "idset": return "SET";
     default: return "?";
   }
 }
@@ -8996,6 +9074,53 @@ plotZoomOutBtn.addEventListener("click", () => {
 plotZoomResetBtn.addEventListener("click", () => { plotZoom = null; renderPlotChart(); });
 plotZoomLevelInput.addEventListener("change", () => { setPlotZoomLevel(parseFloat(plotZoomLevelInput.value)); updatePlotZoomIndicator(); });
 plotZoomLevelInput.addEventListener("keydown", ev => { if (ev.key === "Enter") plotZoomLevelInput.blur(); });
+
+// "Create filter from plot view" (FEATURE_BACKLOG.md #11) — resolves the
+// backlog item's open question by offering BOTH: (a) a time-range filter
+// spanning the visible viewport's timestamps, reusing the existing generic
+// "timerange" filter type (see "Time filters" in docs/filters.md), and
+// (b) a filter matching exactly the entries currently plotted in view, via
+// a new "idset" filter type (an explicit entry-id set, the same "second,
+// non-parent source of truth baked into node.value at creation time" shape
+// "timerange" already established — see getEntries' "idset" branch).
+//
+// "Currently visible" = the plot's current zoomed/panned viewport
+// (plotLastRender's xDomainMin/xDomainMax — the home view's own full range
+// when no zoom is active), NOT the whole extraction result. Read off
+// extractRowsData/plotConfig.xCol the same way renderPlotChart itself
+// derives each row's X position, so this can never disagree with what's
+// actually drawn.
+function getPlotViewportEntries() {
+  if (!plotLastRender || !extractRowsData.length || plotConfig.xCol == null) return [];
+  const { xDomainMin, xDomainMax, isBarChart } = plotLastRender;
+  const xCol = findExtractColumn(plotConfig.xCol);
+  const xType = xCol ? xCol.type : null;
+  const out = [];
+  extractRowsData.forEach((row, r) => {
+    // Bar's X is categorical row-index space (see renderPlotChart) — each
+    // row occupies the pixel slot [r, r+1), so its center is what a visible
+    // domain range actually needs to cover.
+    const x = isBarChart ? r + 0.5 : parseValueForPlot(row.values[plotConfig.xCol], xType);
+    if (Number.isFinite(x) && x >= xDomainMin - 1e-9 && x <= xDomainMax + 1e-9 && row.entry) out.push(row.entry);
+  });
+  return out;
+}
+el("#plotFilterTimeRangeBtn").addEventListener("click", () => {
+  const entries = getPlotViewportEntries();
+  if (!entries.length) { showCopyToast("No entries currently visible in the plot."); return; }
+  let from = Infinity, to = -Infinity;
+  entries.forEach(e => { if (e.ts < from) from = e.ts; if (e.ts > to) to = e.ts; });
+  createFilterNode(extractNodeId, "timerange", { from, to });
+  revealFilteredView();
+  render();
+});
+el("#plotFilterEntriesBtn").addEventListener("click", () => {
+  const entries = getPlotViewportEntries();
+  if (!entries.length) { showCopyToast("No entries currently visible in the plot."); return; }
+  createFilterNode(extractNodeId, "idset", entries.map(e => e.id));
+  revealFilteredView();
+  render();
+});
 
 // Mouse wheel: zoom in/out anchored at the cursor's data-space position.
 // Only active when the cursor is actually over the plot rectangle, so
@@ -13833,6 +13958,7 @@ const filterLiveMatch = el("#filterLiveMatch");
 const filterPatternPreview = el("#filterPatternPreview");
 const filterInvertCheckbox = el("#filterInvertCheckbox");
 const filterCaseCheckbox = el("#filterCaseCheckbox");
+const filterRegexCheckbox = el("#filterRegexCheckbox");
 const filterExtractBtn = el("#filterExtractBtn");
 const filterColumnChips = el("#filterColumnChips");
 const filterTargetChainEl = el("#filterTargetChain");
@@ -13913,6 +14039,8 @@ function openFilterPopup() {
   filterInput.value = "";
   filterInvertCheckbox.checked = false;
   filterCaseCheckbox.checked = false;
+  filterRegexCheckbox.checked = false;
+  updateRegexModeUI();
   renderFilterColumnChips();
   updateExtractAvailability();
   filterLiveMatch.textContent = "";
@@ -13944,6 +14072,8 @@ function openEditFilterPopup(nodeId) {
   filterInput.value = node.value;
   filterInvertCheckbox.checked = !!node.inverted;
   filterCaseCheckbox.checked = node.filterType === "text" && !!node.caseSensitive;
+  filterRegexCheckbox.checked = node.filterType === "text" && !!node.isRegex;
+  updateRegexModeUI();
   renderFilterColumnChips();
   updateExtractAvailability();
   filterLiveMatch.textContent = "";
@@ -13995,6 +14125,26 @@ filterTokenChips.addEventListener("click", ev => {
   insertTokenAtCursor(type === "*" ? "[*]" : "[value:" + type + "]");
 });
 
+// Regex mode (FEATURE_BACKLOG.md #16): hides/disables ONLY the UI that's
+// specific to the wildcard-token language and meaningless for a raw
+// JS regex — the token-insert chips (#filterTokenChips) and the pattern
+// preview (which shows placeholder capture groups, a wildcard-only concept).
+// Everything else (live match count, case-sensitivity, NOT, column
+// restriction, target chain) stays visible/usable in both modes.
+function updateRegexModeUI() {
+  const isRegex = filterRegexCheckbox.checked;
+  filterTokenChips.classList.toggle("hidden", isRegex);
+  if (isRegex) {
+    filterPatternPreview.classList.add("hidden");
+    filterPatternPreview.innerHTML = "";
+  }
+}
+filterRegexCheckbox.addEventListener("change", () => {
+  updateRegexModeUI();
+  updateExtractAvailability();
+  evaluateLiveMatch();
+});
+
 // Live-evaluates the current input against the rows the filter would apply
 // to (filterPopupBaseId's visible entries — the new filter's parent-to-be
 // in create mode, the edited filter's existing parent in edit mode), so the
@@ -14023,11 +14173,28 @@ function evaluateLiveMatch() {
       return;
     }
     const baseEntries = applyLevelFilter(getEntries(filterPopupBaseId));
-    updateFilterPatternPreview(val, baseEntries);
-
     const inverted = filterInvertCheckbox.checked;
     const caseSensitive = filterCaseCheckbox.checked;
     const columns = [...filterPopupColumns];
+
+    if (filterRegexCheckbox.checked) {
+      // Regex mode has no wildcard-token pattern preview to show — the
+      // preview box stays hidden the whole time (see updateRegexModeUI).
+      filterPatternPreview.classList.add("hidden");
+      filterPatternPreview.innerHTML = "";
+      const re = compileRegexFilter(val, caseSensitive);
+      if (!re) { filterInput.classList.add("input-regex-error"); filterLiveMatch.textContent = "Invalid regex"; filterLiveMatch.className = "error"; return; }
+      filterInput.classList.remove("input-regex-error");
+      let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, null, null, re) ? 1 : 0), 0);
+      if (inverted) matches = baseEntries.length - matches;
+      const label = inverted ? "Kept (NOT): " : "Matches: ";
+      filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
+      if (matches === 0) filterLiveMatch.className = "warn";
+      return;
+    }
+    filterInput.classList.remove("input-regex-error");
+    updateFilterPatternPreview(val, baseEntries);
+
     let wildcardRegex = null, wildcardColumns = null;
     if (isExtractPattern(val)) {
       const spec = compileExtractPattern(val);
@@ -14142,7 +14309,11 @@ function updateFilterPatternPreview(val, baseEntries) {
 // filter, and that decision is never made ahead of time by anything typed
 // or toggled here.
 function updateExtractAvailability() {
-  filterExtractBtn.disabled = !isExtractPattern(filterInput.value);
+  // Regex mode has no [value:...]/[*] placeholders to extract — the raw
+  // pattern text carries no capture-group vocabulary the extraction table
+  // could build columns from, so Extract stays disabled the whole time it's
+  // on, regardless of what's typed.
+  filterExtractBtn.disabled = filterRegexCheckbox.checked || !isExtractPattern(filterInput.value);
 }
 filterInput.addEventListener("input", () => { updateExtractAvailability(); evaluateLiveMatch(); });
 filterInvertCheckbox.addEventListener("change", evaluateLiveMatch);
@@ -14161,8 +14332,16 @@ filterCaseCheckbox.addEventListener("change", evaluateLiveMatch);
 function commitFilter(asExtract) {
   const val = filterInput.value.trim();
   if (!val || !filterPopupBaseId) { closeFilterPopup(); return; }
+  const isRegex = !asExtract && filterRegexCheckbox.checked;
 
-  if (isExtractPattern(val) && !compileExtractPattern(val)) {
+  if (isRegex) {
+    if (!compileRegexFilter(val, filterCaseCheckbox.checked)) {
+      filterInput.classList.remove("input-regex-error");
+      void filterInput.offsetWidth;
+      filterInput.classList.add("input-regex-error");
+      return; // keep the popup open so the regex can be fixed
+    }
+  } else if (isExtractPattern(val) && !compileExtractPattern(val)) {
     filterInput.classList.remove("input-error");
     void filterInput.offsetWidth; // restart the animation if it's already mid-flash
     filterInput.classList.add("input-error");
@@ -14175,8 +14354,8 @@ function commitFilter(asExtract) {
   } else {
     const caseSensitive = filterCaseCheckbox.checked;
     const columns = [...filterPopupColumns];
-    if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, filterInvertCheckbox.checked, undefined, caseSensitive, columns);
-    else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, null, caseSensitive, columns);
+    if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, filterInvertCheckbox.checked, undefined, caseSensitive, columns, isRegex);
+    else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, null, caseSensitive, columns, isRegex);
   }
   closeFilterPopup();
   revealFilteredView(); // a new/edited filter's result lives in the Filtered view
@@ -15099,7 +15278,7 @@ noteDialogInput.addEventListener("keydown", ev => {
 
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context", "countContext", "level", "bookmarks"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context", "countContext", "level", "bookmarks", "idset"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId) {
@@ -15163,6 +15342,7 @@ function serializeFilterBranch(nodeId) {
     if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
+    if (node.filterType === "text" && node.isRegex) out.isRegex = true;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
     return out;
@@ -15316,6 +15496,7 @@ function importFilterJson(text) {
     if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
       node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
     }
+    if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     state.nodes[node.id] = node;
@@ -16985,6 +17166,7 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
+    if (node.filterType === "text" && node.isRegex) out.isRegex = true;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
     return out;
@@ -17133,6 +17315,7 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
       node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
     }
+    if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     state.nodes[node.id] = node;
