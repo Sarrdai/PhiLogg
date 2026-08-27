@@ -12670,11 +12670,13 @@ function renderTable() {
   // special-cased transition).
   const scrollAnchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
 
-  currentViewEntries = spliceTempAnchor(getVisibleEntries());
-  // Captured before the optional column-sort copy below: the minimap buckets
-  // by entry.ts directly, so it needs the real chronological list regardless
-  // of what order the table itself ends up sorted into.
-  const minimapViewEntries = currentViewEntries;
+  // Captured before spliceTempAnchor below: the temp anchor is a foreign
+  // entry stitched into the table for context, not a member of the actual
+  // filtered view, so it must not skew the minimap's time-range bucketing
+  // (bugfix — person-reported: an anchor from far outside the filter's real
+  // span made the minimap's highlighted range balloon to cover it).
+  const minimapViewEntries = getVisibleEntries();
+  currentViewEntries = spliceTempAnchor(minimapViewEntries);
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
