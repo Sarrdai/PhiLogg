@@ -8900,7 +8900,7 @@ let plotNodeId = null;
 // same world-units-per-data-unit scale (so real physical proportions between
 // them are preserved, same reasoning as 2D's axisEqual); any axis outside
 // the chosen group stays independently auto-scaled to fill the view.
-let plotConfig = { type: "line", xCol: null, yCols: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
+let plotConfig = { type: "line", xCol: null, yCols: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
 // The exact HTML string #plotControls last had — see renderPlotControls's
 // own comment for why this matters (a rebuild while tailing was silently
 // closing a native <select> the person had open).
@@ -8940,7 +8940,7 @@ let plot3dLastRender = null;
 
 function resetPlotConfig() {
   plotNodeId = null;
-  plotConfig = { type: "line", xCol: null, yCols: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
+  plotConfig = { type: "line", xCol: null, yCols: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
   plotZoom = null;
   resetPlot3dView();
   lastPlotControlsHtml = null; // force a real rebuild next render, regardless of whether the new node's generated HTML happens to coincide with the old one
@@ -9417,6 +9417,19 @@ function renderPlotControls() {
       '</select></div>';
     html += '<button type="button" class="plot-zoom-bar-group" id="plot3dResetBtn" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-elevated-2); color:var(--text-secondary); cursor:pointer; font-size:11px;">Reset view</button>';
     html += '<div class="plot-3d-hint">Drag to rotate &middot; middle-drag or shift-drag to pan &middot; scroll to zoom &middot; click a point to jump to its log entry.</div>';
+    // Manual axis ranges, same "auto unless overridden" shape as 2D's X/Y
+    // range inputs — used as the data extent each axis is centered/scaled
+    // from (see renderPlot3D), same IDs as 2D's own X/Y range inputs since
+    // the two chart types never render their controls at the same time.
+    html += '<div class="plot-field"><label>X range</label><div class="plot-range-row">' +
+      '<input type="number" id="plotXMin" placeholder="auto" value="' + plotConfig.xMin + '">' +
+      '<input type="number" id="plotXMax" placeholder="auto" value="' + plotConfig.xMax + '"></div></div>';
+    html += '<div class="plot-field"><label>Y range</label><div class="plot-range-row">' +
+      '<input type="number" id="plotYMin" placeholder="auto" value="' + plotConfig.yMin + '">' +
+      '<input type="number" id="plotYMax" placeholder="auto" value="' + plotConfig.yMax + '"></div></div>';
+    html += '<div class="plot-field"><label>Z range</label><div class="plot-range-row">' +
+      '<input type="number" id="plotZMin" placeholder="auto" value="' + plotConfig.zMin + '">' +
+      '<input type="number" id="plotZMax" placeholder="auto" value="' + plotConfig.zMax + '"></div></div>';
   } else {
     html += '<div class="plot-field"><label>X axis</label><select id="plotXSelect">' + colOptions + '</select></div>';
   }
@@ -9514,16 +9527,16 @@ function renderPlotControls() {
   const axisEqCb = el("#plotAxisEqual");
   if (axisEqCb) axisEqCb.addEventListener("change", () => { plotConfig.axisEqual = axisEqCb.checked; renderPlotChart(); });
 
-  if (plotConfig.type !== "3d") {
-    ["plotXMin", "plotXMax", "plotYMin", "plotYMax"].forEach(id => {
-      el("#" + id).addEventListener("change", ev => {
-        const key = id.replace("plot", "").replace(/^./, c0 => c0.toLowerCase());
-        plotConfig[key] = ev.target.value;
-        plotZoom = null; // a new manual axis override redefines the home view itself
-        renderPlotChart();
-      });
+  const rangeIds = ["plotXMin", "plotXMax", "plotYMin", "plotYMax"];
+  if (plotConfig.type === "3d") rangeIds.push("plotZMin", "plotZMax");
+  rangeIds.forEach(id => {
+    el("#" + id).addEventListener("change", ev => {
+      const key = id.replace("plot", "").replace(/^./, c0 => c0.toLowerCase());
+      plotConfig[key] = ev.target.value;
+      plotZoom = null; // a new manual axis override redefines the home view itself (no-op for 3D, which has no plotZoom)
+      renderPlotChart();
     });
-  }
+  });
 }
 
 function plotTypeIcon(type) {
@@ -9939,10 +9952,18 @@ function renderPlot3D() {
     return;
   }
 
+  // Data extent per axis, same "manual override if set, else the data's own
+  // range" shape as 2D's xMin/xMax/yMin/yMax — the extent each axis is
+  // centered/scaled from below, not a point filter (a point outside a
+  // manual range still renders, just off-center/off-scale, since 3D has no
+  // clip-path the way the 2D SVG chart does).
   const xs = pts.map(p => p.x), ys = pts.map(p => p.y), zs = pts.map(p => p.z);
-  const xLo = Math.min(...xs), xHi = Math.max(...xs);
-  const yLo = Math.min(...ys), yHi = Math.max(...ys);
-  const zLo = Math.min(...zs), zHi = Math.max(...zs);
+  const xLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : Math.min(...xs);
+  const xHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : Math.max(...xs);
+  const yLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : Math.min(...ys);
+  const yHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : Math.max(...ys);
+  const zLo = plotConfig.zMin !== "" ? parseFloat(plotConfig.zMin) : Math.min(...zs);
+  const zHi = plotConfig.zMax !== "" ? parseFloat(plotConfig.zMax) : Math.max(...zs);
   const xMid = (xLo + xHi) / 2, yMid = (yLo + yHi) / 2, zMid = (zLo + zHi) / 2;
   const xRange = (xHi - xLo) || 1, yRange = (yHi - yLo) || 1, zRange = (zHi - zLo) || 1;
 
