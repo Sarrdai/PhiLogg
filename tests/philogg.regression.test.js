@@ -13569,6 +13569,126 @@ await withApp(async (w, d, T) => {
 }
 
 /* ============================================================
+   GROUP 128 — "Detach copy" (person-requested "squash"): collapses a
+   filter node's whole dependency chain (its ancestor chain plus any
+   linkedId targets' ancestor chains — the same "needed" set
+   serializeFilterBranch already computes for Save/Load) into a brand-new,
+   self-contained set of nodes, independent of everything else in the tree.
+   Reuses materializeSerializedRoots (refactored out of importFilterJson,
+   now shared) instead of cloneSubtree, specifically because cloneSubtree
+   keeps linkedId pointing at the ORIGINAL target — exactly the cross-tree
+   reference this action exists to break. Every node the detached copy
+   needs except the originally-clicked one gets hiddenInTree — renderNode
+   treats that as transparent (no row of its own, but its children still
+   render at the same depth) — so the whole private chain shows up in the
+   tree as exactly one row. All cloned nodes share one fresh squashGroup id
+   so deleteFilterNodeWithUndo can clean up the whole private chain
+   together instead of leaving hidden orphans behind, and moving/dragging
+   the visible row is blocked (its own parentId is required by its hidden
+   ancestor chain).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("128. \"Detach copy\": collapses a link-based chain into one self-contained row");
+
+  const f = await w.addFile("detach.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+
+  const posFilter = w.createFilterNode(f.id, "text", "pos");
+  const valFilter = w.createFilterNode(f.id, "text", "val");
+  const link = w.createLinkNode(posFilter.id, valFilter.id, "before", 1, {});
+  const extract = w.createFilterNode(link.id, "extract", "[value:float]");
+  T.state.activeId = extract.id;
+  w.render();
+
+  const beforeNodeCount = Object.keys(T.state.nodes).length;
+  const newId = w.detachFilterChain(extract.id);
+  assert(newId && T.state.nodes[newId], "detachFilterChain returns the fresh id of the clicked node's own clone");
+  const clone = T.state.nodes[newId];
+  assert(clone.filterType === "extract" && clone.value === "[value:float]", "the clone keeps the original's filterType/value — still editable as a normal extraction");
+  assert(newId !== extract.id, "it's a genuinely new node, not the original");
+  assert(T.state.nodes[extract.id], "the original chain is left completely untouched");
+
+  // --- Structurally independent: its private chain uses FRESH ids, and its
+  // linkedId (inside the private link clone) points at the fresh value-
+  // filter clone, never at the original valFilter. ---
+  const cloneLink = T.state.nodes[clone.parentId];
+  assert(cloneLink.filterType === "link", "the clone's own parent is a private link-node clone");
+  assert(cloneLink.id !== link.id, "...a fresh clone, not the original link node");
+  assert(cloneLink.linkedId && cloneLink.linkedId !== valFilter.id, "the private link's linkedId points at a fresh clone of the value filter, not the original");
+  const clonePos = T.state.nodes[cloneLink.parentId];
+  assert(clonePos.id !== posFilter.id && clonePos.filterType === "text" && clonePos.value === "pos", "the private position-filter clone is a fresh node with the same value");
+  const cloneVal = T.state.nodes[cloneLink.linkedId];
+  assert(cloneVal.filterType === "text" && cloneVal.value === "val", "the private value-filter clone carries the same value too");
+
+  // --- squashGroup/hiddenInTree tagging ---
+  const groupId = clone.squashGroup;
+  assert(groupId && cloneLink.squashGroup === groupId && clonePos.squashGroup === groupId && cloneVal.squashGroup === groupId,
+    "every node in the private chain (display included) shares one squashGroup id");
+  assert(!clone.hiddenInTree, "the clicked node's own clone is NOT hidden — it's the one visible row");
+  assert(cloneLink.hiddenInTree && clonePos.hiddenInTree && cloneVal.hiddenInTree, "every OTHER node in the private chain is hiddenInTree");
+  assert(Object.keys(T.state.nodes).length === beforeNodeCount + 4, "created exactly 4 new nodes: position/value/link/extract clones");
+
+  // --- Tree rendering: exactly one row for the whole group, at the top level ---
+  w.render();
+  assert(d.querySelector('.tree-row[data-node-id="' + newId + '"]') !== null, "the clone's own row IS rendered");
+  [cloneLink.id, clonePos.id, cloneVal.id].forEach(id => {
+    assert(d.querySelector('.tree-row[data-node-id="' + id + '"]') === null, "a hiddenInTree member (" + id + ") gets no row of its own");
+  });
+  assert(w.flattenTreeIds().includes(newId) && !w.flattenTreeIds().includes(cloneLink.id),
+    "arrow-key tree nav (flattenTreeIds) sees the visible clone but skips past the hidden chain, same passthrough as rendering");
+
+  // --- Still behaves exactly like a normal extraction node ---
+  let threwOnGetEntries = false;
+  try { w.getEntries(newId); } catch { threwOnGetEntries = true; }
+  assert(!threwOnGetEntries, "getEntries computes normally through the private chain without throwing");
+
+  // --- Dragging/moving the visible row is blocked (its parentId is
+  // required by the hidden chain) — Copy still works, producing a plain,
+  // unflagged node (cloneSubtree deliberately drops squashGroup/hiddenInTree). ---
+  const moved = w.moveFilterNodeWithUndo(newId, f.id);
+  assert(moved === false, "moveFilterNodeWithUndo refuses to reparent a squash group's visible node");
+  assert(T.state.nodes[newId].parentId === cloneLink.id, "its parentId is unchanged after the refused move");
+
+  // --- Deleting the visible row cascades to the whole private group — no
+  // orphans left behind — and undo restores every member with its
+  // original id and flags. ---
+  w.deleteFilterNodeWithUndo(newId);
+  assert(!T.state.nodes[newId] && !T.state.nodes[cloneLink.id] && !T.state.nodes[clonePos.id] && !T.state.nodes[cloneVal.id],
+    "deleting the visible node removes the ENTIRE private group, not just itself");
+  assert(Object.keys(T.state.nodes).length === beforeNodeCount, "no orphaned hidden nodes remain in state.nodes");
+  assert(T.state.nodes[extract.id] && T.state.nodes[link.id] && T.state.nodes[posFilter.id] && T.state.nodes[valFilter.id],
+    "the ORIGINAL (non-detached) chain is untouched by deleting its detached copy");
+
+  w.undo();
+  assert(T.state.nodes[newId] && T.state.nodes[cloneLink.id] && T.state.nodes[clonePos.id] && T.state.nodes[cloneVal.id],
+    "undo restores every group member, with their original (post-detach) ids");
+  assert(T.state.nodes[newId].squashGroup === groupId && T.state.nodes[cloneLink.id].hiddenInTree === true,
+    "restored members keep their squashGroup/hiddenInTree flags");
+  w.render();
+  assert(d.querySelector('.tree-row[data-node-id="' + newId + '"]') !== null, "the group renders back to its single-row form after undo");
+
+  // --- Session cache round trip: squashGroup/hiddenInTree survive a
+  // serialize/materialize cycle verbatim (opaque tag, same file both
+  // times, no remapping needed). ---
+  const { roots } = w.serializeFilterTreeForCache(f);
+  // Disambiguate from the ORIGINAL (non-detached) extract node, which has
+  // the identical name/filterType — squashGroup is exactly the thing
+  // proving it's the clone, so filter on that rather than name/type.
+  const serializedClone = (function find(list) {
+    for (const n of list) { if (n.squashGroup === groupId && n.filterType === "extract") return n; const r = find(n.children); if (r) return r; }
+    return null;
+  })(roots);
+  assert(serializedClone && serializedClone.squashGroup === groupId, "serializeFilterTreeForCache carries squashGroup through");
+  const f2 = await w.addFile("detach2.log", makeLog(0, 10), () => {});
+  const refMap2 = w.materializeCachedFilters(f2, roots);
+  const restoredCloneId = Object.values(refMap2).find(id => T.state.nodes[id].squashGroup === groupId && T.state.nodes[id].filterType === "extract");
+  assert(restoredCloneId, "sanity: the re-materialized clone exists in the fresh file");
+  assert(T.state.nodes[restoredCloneId].squashGroup === groupId, "materializeCachedFilters carries squashGroup through unchanged (opaque, same-file tag)");
+  const restoredLinkId = T.state.nodes[restoredCloneId].parentId;
+  assert(T.state.nodes[restoredLinkId].hiddenInTree === true, "hiddenInTree round-trips through the session cache too");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -15456,5 +15576,33 @@ process.exit(failed ? 1 : 0);
      headers, Group 50's in particular for the full same-session arc);
      Group 49 (explicit render() calls, not load ticks) is unaffected and
      still accurately covers what an EXPLICIT render shows mid-parse.
+
+   Group 128 — this session, person-requested "squash": "Detach copy" (see
+              detachFilterChain in philogg.html) clones a filter node's
+              whole dependency chain (ancestors + any linkedId targets'
+              ancestors — the same "needed" set serializeFilterBranch
+              already computes for Save/Load) into a fresh, self-contained
+              copy, independent of the rest of the tree. Reuses
+              materializeSerializedRoots, newly factored out of
+              importFilterJson so Save/Load and this same-file action share
+              one rebuild step instead of two copies of it. Every cloned
+              node except the originally-clicked one is tagged
+              hiddenInTree, which renderNode/flattenTreeIds now treat as
+              transparent (no row of its own, children render through at
+              the same depth) — so the whole private chain reads as one
+              tree row. All cloned nodes share one fresh squashGroup id, so
+              deleteFilterNodeWithUndo can find and delete the whole
+              private chain together (new "deleteGroup" undo/redo kind)
+              instead of leaving hidden orphans behind, and
+              moveFilterNodeWithUndo refuses to reparent the visible node
+              (its own parentId is required by the hidden chain). Covers:
+              the clone's independence from the original (fresh ids,
+              linkedId repointed at a fresh clone, original untouched),
+              squashGroup/hiddenInTree tagging, single-row tree rendering
+              and tree-nav passthrough, move refusal, group delete + undo
+              restoring every member with its flags intact, and the
+              session-cache round trip (serializeFilterTreeForCache /
+              materializeCachedFilters) carrying both fields through
+              unchanged.
 
    ============================================================ */
