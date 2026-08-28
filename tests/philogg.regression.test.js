@@ -3228,6 +3228,44 @@ await withApp(async (w, d, T) => {
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: jumpX, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: jumpX, clientY: 10 }));
   assert(T.state.selectedId != null, "a plain (non-dragged) click on the minimap still jumps to the nearest entry");
+
+  // --- Bugfix (this session, person-reported: drag-select "no longer
+  // works"). A mid-drag re-render (tail tick, level toggle, window resize —
+  // renderTimelineMinimap() can fire any time, see its own module comment)
+  // used to desync the gesture: the drag's anchor was stored as a raw
+  // minimapWidth-unit x position at mousedown, but minimapTMin/minimapTMax
+  // (and minimapXToTs's mapping from x to time) can change before mouseup —
+  // e.g. new tail entries extend minimapTMax — so re-evaluating the SAME
+  // stored x against the NEW time range no longer pointed at the entry the
+  // person actually dragged from. The anchor is now captured as a real
+  // timestamp at mousedown instead, immune to any later re-render. Simulates
+  // a tail tick landing mid-gesture (appendTailText + the resulting
+  // renderTimelineMinimap call, exactly as onTailChange's poll does) between
+  // mousedown and mouseup. ---
+  T.state.selectedId = null;
+  const dragFromTs = f.entries[5].ts, dragToXBefore = w.minimapTsToX(f.entries[14].ts);
+  const dragFromX = w.minimapTsToX(dragFromTs);
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: dragFromX, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: (dragFromX + dragToXBefore) / 2, clientY: 10 }));
+
+  // Tail tick mid-drag: append 10 more entries (10:00:20 .. 10:00:29),
+  // extending minimapTMax well past the drag's original endpoint — this is
+  // what desynced the old pixel-unit anchor.
+  const tailLines = [];
+  for (let i = 20; i < 30; i++) tailLines.push(`2024-01-15 10:00:${String(i).padStart(2, "0")},000\tINFO\t"main"\tFoo.cs\tline 0\t[DoWork]\t"entry ${i}"`);
+  f.tail = f.tail || { pending: "" };
+  w.appendTailText(f, tailLines.join("\n") + "\n");
+  w.renderTimelineMinimap(f.id, f.entries);
+
+  // Same real screen position as before (dragToXBefore) — the on-screen
+  // pixel the person's mouse is actually at doesn't move just because the
+  // underlying data did.
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
+  svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
+
+  const midDragRangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.from === dragFromTs);
+  assert(midDragRangeNode, "a tail tick landing mid-drag doesn't desync the gesture — the resulting filter's \"from\" still matches the entry actually dragged from");
 });
 
 /* ============================================================
@@ -12923,6 +12961,21 @@ await withApp(async (w, d, T) => {
   const beforeEmptyClickCount = node.children.length;
   fireClick(d.querySelector("#plotFilterEntriesBtn"), w);
   assert(node.children.length === beforeEmptyClickCount, "a viewport with zero visible entries creates no filter node at all (a toast is shown instead)");
+
+  // --- Bugfix (this session, person-reported): getPlotViewportEntries used
+  // to only check the X domain, so a row panned/zoomed OUT of view on the Y
+  // axis alone (in range on X, off-screen on Y) was still counted as
+  // "visible" and included in the created filter. Full X range, Y range
+  // narrowed to rows with n=20/30/40 (indices 2..4) only, excluding n=0/10
+  // (indices 0..1) which stay in X range but fall below the Y window. ---
+  T.state.activeId = node.id;
+  T.plotZoom = { x0: -1e6, x1: 1e6, y0: 15, y1: 45 };
+  w.renderPlotChart();
+  const yFiltered = w.getPlotViewportEntries();
+  assert(yFiltered.length === 3 &&
+    [f.entries[2].id, f.entries[3].id, f.entries[4].id].every(id => yFiltered.some(e => e.id === id)) &&
+    ![f.entries[0].id, f.entries[1].id].some(id => yFiltered.some(e => e.id === id)),
+    "getPlotViewportEntries excludes rows that are in the X range but panned/zoomed out of the Y range, got " + yFiltered.length);
 });
 
 /* ============================================================
@@ -12975,6 +13028,13 @@ await withApp(async (w, d, T) => {
   assert(sel1.locked !== true, "unlike the auto-managed Bookmarks node, a selection filter is NOT locked");
   assert(T.state.activeId === sel1.id, "creating it reveals it as the active node (revealFilteredView)");
 
+  // --- Bugfix (this session, person-reported): a new selection is named as
+  // a plain ordinal ("Selection 1", "Selection 2", ...) via
+  // nextSelectionFilterName(), not the initial entry count (idSetFilterName's
+  // "N entries (selection)"), which used to go stale the moment "Add to
+  // selection" grew the set. ---
+  assert(sel1.name === "Selection 1", "a new selection filter is named \"Selection 1\", not by its initial entry count, got " + sel1.name);
+
   // --- Deletable via the normal filter-node delete action (unlike Bookmarks) ---
   const beforeDeleteCount = f.children.length;
   w.deleteFilterNodeWithUndo(sel1.id);
@@ -13002,7 +13062,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#ctxAddToSelection"), w);
   const existingItem = menuAction('data-selection-id="' + sel1.id + '"');
   assert(existingItem && existingItem.textContent === sel1.name,
-    "the submenu now lists the existing selection filter by its name (idSetFilterName's \"N entries (selection)\" auto-name)");
+    "the submenu now lists the existing selection filter by its name (nextSelectionFilterName's \"Selection N\" auto-name)");
 
   const childCountBeforeAdd = f.children.length;
   fireClick(existingItem, w);
@@ -13012,6 +13072,7 @@ await withApp(async (w, d, T) => {
     "the multi-selected rows' ids were added to the existing node's value array (the original single-row id, already present, wasn't duplicated)");
   const result = w.getEntries(sel1.id).map(e => e.id).sort();
   assert(JSON.stringify(result) === JSON.stringify(expectedIds.slice().sort()), "getEntries on the selection filter matches exactly those 3 entries");
+  assert(sel1.name === "Selection 1", "growing the selection from 1 to 4 entries doesn't rewrite its ordinal name, got " + sel1.name);
 
   // --- Adding an already-present id again doesn't duplicate it ---
   T.state.activeId = f.id;
@@ -13031,6 +13092,14 @@ await withApp(async (w, d, T) => {
     "the plot-view idset node is excluded from the submenu's list of selection filters");
   assert(menuAction('data-selection-id="' + sel1.id + '"') !== null, "...while the real selection filter still is listed");
   w.closeContextMenu();
+
+  // --- A second "Create new selection filter" gets the next ordinal ---
+  T.state.activeId = f.id;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[9]);
+  fireClick(d.querySelector("#ctxAddToSelection"), w);
+  fireClick(menuAction('data-selection-action="create"'), w);
+  const sel2 = T.state.nodes[f.children[0]];
+  assert(sel2.selectionFilter === true && sel2.name === "Selection 2", "a second new selection filter is named \"Selection 2\", got " + sel2.name);
 
   // --- Persistence carriers: selectionFilter is a NEW field (unlike the
   // shared idset value/getEntries machinery, which needed no new code) —
@@ -13327,7 +13396,12 @@ process.exit(failed ? 1 : 0);
               show/hide across the full gesture, the pre-existing scrolled-
               viewport indicator (`#minimapViewportRect`) continuing to work
               unmodified — the explicit caution in FEATURE_BACKLOG.md — and
-              a plain click still falling through to click-to-jump.
+              a plain click still falling through to click-to-jump. UPDATED
+              this session (2026-08-28, person-reported: "no longer works"):
+              the drag anchor moved from a raw minimapWidth-unit x position
+              to a real timestamp, immune to a mid-drag renderTimelineMinimap()
+              changing minimapTMin/TMax/Width out from under the gesture —
+              added a case simulating a tail tick landing mid-drag.
    Group 32  — this session (2026-08-16), person-reported follow-up to
               Group 31's drag-select: "I'd like the result as a single
               filter, without the two sub-filters." Introduces a unified
@@ -14780,7 +14854,12 @@ process.exit(failed ? 1 : 0);
               persistence-carrier code (its value rides the same generic
               `value` field every filter type already gets copied through,
               same precedent as "timerange") — verified directly via
-              getEntries and a copy/paste round trip in this group.
+              getEntries and a copy/paste round trip in this group. UPDATED
+              this session (2026-08-28, person-reported): getPlotViewportEntries
+              used to check only the X domain, so a row panned/zoomed out of
+              view on Y alone (in-range X, off-screen Y) was still counted as
+              "visible" — now also checks yDomainMin/yDomainMax against every
+              selected Y column; added a case zooming the Y axis only.
    Group 124 — this session (2026-08-27), "Add to selection" (redesign of the
               same-day "Filter from selection" item above): selection filters
               ("idset" nodes, new node.selectionFilter flag) are now created
@@ -14796,7 +14875,14 @@ process.exit(failed ? 1 : 0);
               cloneSubtree, snapshot/restore (undo/redo), and the
               serializeFilterTreeForCache/materializeCachedFilters round trip
               — not just assumed to ride along like idset's shared value field
-              did in Group 123.
+              did in Group 123. UPDATED this session (2026-08-28,
+              person-reported): a new selection was named by its initial entry
+              count (idSetFilterName's "N entries (selection)"), which went
+              stale the moment "Add to selection" grew it — now named as a
+              plain ordinal via nextSelectionFilterName() ("Selection 1",
+              "Selection 2", ...), unaffected by later size changes; added
+              assertions for the initial name, the name surviving a later add,
+              and a second selection getting the next ordinal.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail
