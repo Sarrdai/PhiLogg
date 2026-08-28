@@ -7031,22 +7031,68 @@ function moveFilterNodeWithUndo(nodeId, newParentId) {
   }
 
   // A visible "Detach copy" node (see detachFilterChain) — node.squashGroup
-  // set, node.hiddenInTree NOT set — has its own private, hidden ancestor
-  // chain (parentId points at a hiddenInTree node the group needs for its
-  // own computation, e.g. a link node). Reparenting it IN PLACE would
-  // silently detach it from that chain instead of moving the group, so
-  // it's the one choke point that blocks a same-file move regardless of
-  // entry point (drag/drop, Ctrl+X+paste, or a future call site) — same
-  // reasoning as the `locked` check above. hiddenInTree members never
-  // reach here: they have no tree row, so nothing can drag/cut them in the
-  // first place.
-  if (node.squashGroup && !node.hiddenInTree) return false;
+  // set, node.hiddenInTree NOT set — has its OWN parentId pointing at a
+  // private hidden ancestor (e.g. a link node) the group needs for its own
+  // computation. Reparenting the DISPLAY node itself in place would
+  // silently detach it from that chain — so instead, move the group's own
+  // TOP-LEVEL members (the ones sitting directly under the file, same set
+  // deleteFilterNodeWithUndo's cascade already identifies) to newParentId
+  // as one compound action; the display node's own parentId never changes,
+  // only where the group as a whole is filed. This is what actually lets a
+  // detached filter be dragged/cut-pasted anywhere a normal filter can be
+  // (person-reported: it was flatly blocked before, not just "moved
+  // differently").
+  if (node.squashGroup && !node.hiddenInTree) {
+    return moveSquashGroupWithUndo(node.squashGroup, newParentId) ? nodeId : false;
+  }
   const oldParentId = node.parentId;
   const oldParent = state.nodes[oldParentId];
   const oldIndex = oldParent ? oldParent.children.indexOf(nodeId) : -1;
   const moved = moveNode(nodeId, newParentId);
   if (moved) pushUndo({ kind: "move", nodeId, oldParentId, oldIndex, newParentId });
   return moved ? nodeId : false;
+}
+
+// Moves every TOP-LEVEL member of a squash group (see detachFilterChain) to
+// newParentId together, as one compound undoable action — the group's
+// nested/hiddenInTree members never need reparenting themselves, since
+// they're still children of whichever top-level member they already sit
+// under (moveNode only touches the top-level ones' own parentId). Guards
+// against dropping the group onto/into itself the same way moveNode's own
+// isDescendantOrSelf guard does for a plain node.
+function moveSquashGroupWithUndo(groupId, newParentId) {
+  const newParent = state.nodes[newParentId];
+  if (!newParent) return false;
+  const topLevelMembers = Object.keys(state.nodes).filter(id => {
+    const n = state.nodes[id];
+    if (n.squashGroup !== groupId) return false;
+    const p = state.nodes[n.parentId];
+    return !p || p.squashGroup !== groupId;
+  });
+  if (!topLevelMembers.length) return false;
+  if (topLevelMembers.some(id => id === newParentId || isDescendantOrSelf(id, newParentId))) return false;
+
+  const moves = topLevelMembers.map(id => {
+    const n = state.nodes[id];
+    const oldParentId = n.parentId;
+    const oldParent = state.nodes[oldParentId];
+    const oldIndex = oldParent ? oldParent.children.indexOf(id) : -1;
+    return { nodeId: id, oldParentId, oldIndex, newParentId };
+  });
+  moves.forEach(m => moveNode(m.nodeId, m.newParentId));
+  pushUndo({ kind: "moveGroup", moves, groupId });
+  return true;
+}
+
+// The group's visible (non-hiddenInTree) member — undo/redo of a
+// "moveGroup" action reactivates it, since the moved top-level members
+// themselves are never the row a person actually looks at.
+function squashGroupDisplayId(groupId) {
+  const found = Object.keys(state.nodes).find(id => {
+    const n = state.nodes[id];
+    return n.squashGroup === groupId && !n.hiddenInTree;
+  });
+  return found || null;
 }
 
 function insertAt(parent, nodeId, index) {
@@ -7059,7 +7105,7 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
-  deleteGroup: "detached filter delete",
+  deleteGroup: "detached filter delete", moveGroup: "detached filter move",
 };
 
 function undo() {
@@ -7093,6 +7139,16 @@ function undo() {
       insertAt(state.nodes[item.parentId], restored.id, item.index);
     });
     state.activeId = state.nodes[action.displayId] ? action.displayId : state.activeId;
+  } else if (action.kind === "moveGroup") {
+    action.moves.forEach(m => {
+      const node = state.nodes[m.nodeId];
+      if (!node) return;
+      const curParent = state.nodes[node.parentId];
+      if (curParent) curParent.children = curParent.children.filter(id => id !== m.nodeId);
+      insertAt(state.nodes[m.oldParentId], m.nodeId, m.oldIndex);
+      node.parentId = m.oldParentId;
+    });
+    state.activeId = squashGroupDisplayId(action.groupId) || state.activeId;
   }
   redoStack.push(action);
   updateUndoRedoButtons();
@@ -7124,6 +7180,9 @@ function redo() {
       if (state.nodes[item.snapshot.id]) deleteNode(item.snapshot.id);
     });
     state.activeId = action.items[0] ? action.items[0].parentId : state.activeId;
+  } else if (action.kind === "moveGroup") {
+    action.moves.forEach(m => { if (state.nodes[m.nodeId]) moveNode(m.nodeId, m.newParentId); });
+    state.activeId = squashGroupDisplayId(action.groupId) || state.activeId;
   }
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
@@ -8350,7 +8409,7 @@ function renderNode(id, depth) {
   // its own linkedId target's subtree, for and/or/link nodes); every node
   // (file or filter) is a valid drop target to become the new parent, exactly
   // matching what Ctrl+V already allows.
-  if (node.type === "filter" && !node.locked && !node.squashGroup) {
+  if (node.type === "filter" && !node.locked) {
     row.draggable = true;
     row.addEventListener("dragstart", ev => {
       draggedNodeId = id;
@@ -15599,12 +15658,7 @@ function openTreeContextMenu(ev, clickedId) {
       buckets.edit.push({ action: "context", label: "Time context…", icon: ICON_CONTEXT });
       buckets.edit.push({ action: "countContext", label: "Count context…", icon: ICON_CONTEXT });
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
-      // Cut/move is withheld for a "Detach copy" node's visible row (see
-      // moveFilterNodeWithUndo) — its own parentId is required by its
-      // private hidden chain, so offering Cut here would just fail at
-      // paste-time with a confusing "circular reference" toast. Copy stays
-      // available (produces a plain, ordinary node — see cloneSubtree).
-      if (!node.squashGroup) buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
+      buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
       buckets.library.push({ action: "saveToLibrary", label: "Save to library…", icon: ICON_SAVE });
       // "Detach copy" (see detachFilterChain): clones this node's whole

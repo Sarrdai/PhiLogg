@@ -13687,12 +13687,20 @@ await withApp(async (w, d, T) => {
   try { w.getEntries(newId); } catch { threwOnGetEntries = true; }
   assert(!threwOnGetEntries, "getEntries computes normally through the private chain without throwing");
 
-  // --- Dragging/moving the visible row is blocked (its parentId is
-  // required by the hidden chain) — Copy still works, producing a plain,
-  // unflagged node (cloneSubtree deliberately drops squashGroup/hiddenInTree). ---
-  const moved = w.moveFilterNodeWithUndo(newId, f.id);
-  assert(moved === false, "moveFilterNodeWithUndo refuses to reparent a squash group's visible node");
-  assert(T.state.nodes[newId].parentId === cloneLink.id, "its parentId is unchanged after the refused move");
+  // --- Dragging/moving the visible row moves the WHOLE group's top-level
+  // members together (person-reported: it used to be flatly blocked) — the
+  // display node's own parentId (still the private link clone) never
+  // changes, only where the group's top-level roots are filed. ---
+  const otherTarget = w.createFilterNode(f.id, "text", "other");
+  const movedId = w.moveFilterNodeWithUndo(newId, otherTarget.id);
+  assert(movedId === newId, "moveFilterNodeWithUndo succeeds and returns the SAME id (the display node itself never gets a new id)");
+  assert(clonePos.parentId === otherTarget.id, "the group's top-level position-filter clone was reparented to the drop target");
+  assert(T.state.nodes[newId].parentId === cloneLink.id, "the display node's OWN parentId is untouched — still the private link clone");
+  assert(d.querySelectorAll('.tree-row[data-node-id="' + newId + '"]').length === 1, "still renders as exactly one row after the move");
+  w.undo();
+  assert(clonePos.parentId === f.id, "undo restores the group's top-level position to directly under the file");
+  assert(T.state.nodes[newId].parentId === cloneLink.id, "the display node's parentId was never touched by the move OR its undo");
+  T.state.activeId = newId;
 
   // --- Deleting the visible row cascades to the whole private group — no
   // orphans left behind — and undo restores every member with its
@@ -13700,7 +13708,7 @@ await withApp(async (w, d, T) => {
   w.deleteFilterNodeWithUndo(newId);
   assert(!T.state.nodes[newId] && !T.state.nodes[cloneLink.id] && !T.state.nodes[clonePos.id] && !T.state.nodes[cloneVal.id],
     "deleting the visible node removes the ENTIRE private group, not just itself");
-  assert(Object.keys(T.state.nodes).length === beforeNodeCount, "no orphaned hidden nodes remain in state.nodes");
+  assert(Object.keys(T.state.nodes).length === beforeNodeCount + 1, "no orphaned hidden nodes remain in state.nodes (+1 for otherTarget, created above and untouched by the delete)");
   assert(T.state.nodes[extract.id] && T.state.nodes[link.id] && T.state.nodes[posFilter.id] && T.state.nodes[valFilter.id],
     "the ORIGINAL (non-detached) chain is untouched by deleting its detached copy");
 
