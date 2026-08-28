@@ -4942,92 +4942,63 @@ function getCompiledFormat(formatId) {
   return c;
 }
 
-// Cheap, targeted update for a loading file's own tree row AND every
-// currently-rendered filter row already created under it (own count; a
-// file row's progress-fill width; a filter row's percentage-of-parent bar)
-// — direct DOM writes via queries, same "direct write on a hot path" idea
-// the old (pre-2026-08-18) setLoadingFileProgress used, instead of running
-// any render() at all. Called on EVERY load-progress tick, active view or
-// not: renderTree() (the only thing that would otherwise pick up these
-// changes) tears down and rebuilds every row in the tree from scratch,
-// including whichever OTHER row a person might be mid-click on — running
-// that dozens of times a second while a file loads was person-reported as
-// clicks on a different, already-loaded file not reliably registering
-// (mousedown/mouseup landing on a row element that got replaced out from
-// under the gesture). The recursive walk (not just the root's own row)
-// matters for a separate, same-session person request — a filter created
-// under a still-loading file needs its own row's count to keep updating
-// live too, exactly the way it would if the growth came from tailing
-// instead of the initial parse, not freeze at whatever it had when it was
-// created. Structural tree changes (a row appearing/disappearing) still go
-// through a real render() — see createFileNode and flushLoadRender below —
-// just never a per-tick one.
-function updateLoadRowLiveData(rootId) {
-  if (!state.nodes[rootId]) return;
-  (function walk(id) {
-    const node = state.nodes[id];
-    if (!node) return;
-    const row = document.querySelector('.tree-row[data-node-id="' + id + '"]');
-    if (row) {
-      const ownCount = getEntries(id).length;
-      const count = row.querySelector(".tree-count");
-      if (count) count.textContent = ownCount.toLocaleString("de-DE");
-      if (node.type === "file") {
-        const fill = row.querySelector(".tree-load-fill");
-        if (fill) fill.style.width = Math.round(Math.max(0, Math.min(1, node.loadFraction || 0)) * 100) + "%";
-      } else {
-        const pctFill = row.querySelector(".tree-pct-fill");
-        if (pctFill) {
-          const parentCount = getEntries(node.parentId).length;
-          const fraction = parentCount > 0 ? Math.min(1, ownCount / parentCount) : 0;
-          pctFill.style.width = (fraction * 100) + "%";
-          const pctEl = row.querySelector(".tree-pct");
-          if (pctEl) pctEl.title = Math.round(fraction * 100) + "% of parent (" + parentCount.toLocaleString("de-DE") + ")";
-        }
-      }
-    }
-    node.children.forEach(walk);
-  })(rootId);
+// Cheap, targeted update for JUST the loading file's own tree row (progress
+// fill + entry count) — a direct DOM write via a query, same "direct write
+// on a hot path" idea the old (pre-2026-08-18) setLoadingFileProgress used,
+// instead of running any render() at all. Deliberately does NOT walk into
+// any filter rows already created under this file (their counts/percentage
+// bars only catch up once the load finishes, or a real render happens for
+// another reason) — a filter's row is not "the loading bar or the counter
+// next to it", and the recursive query walk it used to do had its own cost.
+function updateLoadRowProgress(rootId) {
+  const node = state.nodes[rootId];
+  if (!node) return;
+  const row = document.querySelector('.tree-row[data-node-id="' + rootId + '"]');
+  if (!row) return;
+  const fill = row.querySelector(".tree-load-fill");
+  if (fill) fill.style.width = Math.round(Math.max(0, Math.min(1, node.loadFraction || 0)) * 100) + "%";
+  const count = row.querySelector(".tree-count");
+  if (count) count.textContent = node.entries.length.toLocaleString("de-DE");
 }
 
 // scheduleLoadRender is called on EVERY load-progress tick (parseLogTextAsync's
-// onProgress, and loadOneFileIntoTree's own read-phase progress) and is
-// deliberately cheap ONLY — it never triggers a live Filtered/Full/minimap
-// view update or even a level-bar/tree-row rebuild beyond the two targeted
-// writes above, regardless of whether the loading file is the active view.
-// Earlier this session it DID drive a live, tailing-style view during the
-// load (auto-coalesced onto requestAnimationFrame, later also time-throttled
-// and stripped of its own O(entries-so-far) minimap/column-width work) — but
-// even with all of that, a large/fast load still felt measurably slower with
-// it on than with it off (person-reported, this session: "Das ist noch immer
-// merkbar langsamer... Lässt es sich hier was entkoppeln?"), and the person's
-// own preferred fallback, once real decoupling turned out not to be
-// realistic for this codebase, was simpler: turn the live visualization off
-// during loading entirely and keep just the progress bar ("Der Ladebalken
-// genügt mir beim Laden."). So a load tick now does exactly two things — the
-// loading file's own row (progress fill/count, this file's whole filter
-// subtree's counts too) via updateLoadRowLiveData, and the level bar's counts
-// via updateLevelBarCounts — both direct DOM writes, no render() at all. The
-// Filtered/Full/minimap views for the loading file (if it's the active view)
-// simply don't update again until the load's natural completion
-// (flushLoadRender's real, full render()) — switching to a DIFFERENT,
-// already-loaded file mid-load, or an explicit action that calls render()
-// anyway, both still show whatever's genuinely current at that moment, same
-// as before.
-//
-// Also invalidates the loading file's (and its dependents') cached
-// getEntries()/getLevelCounts() results right away — same reasoning as
-// onTailChange's own invalidateCachesForRoots: a file node's entries growing
-// mid-parse is exactly the kind of content change those caches don't
-// otherwise know to distrust, so without this the level bar would cache
-// whatever (possibly still-empty) counts happened to be current at the first
-// render after the node was created, and never update again — including once
-// the person switches TO the file after it's done loading in the background.
+// onProgress, and loadOneFileIntoTree's own read-phase progress) but only
+// actually DOES anything at most once per LOAD_TICK_MIN_INTERVAL_MS of real
+// time — a reduced update rate for the progress bar/counter themselves, not
+// just everything else. This is the last step of the same-session arc that
+// progressively stripped the tailing-style live view down: full live
+// Filtered/Full/minimap/level-bar updates during a load were removed
+// outright earlier this session (person: "Baue die Visualisierung einfach
+// aus. Der Ladebalken genügt mir beim Laden.") in favor of exactly two cheap
+// per-tick writes — the row's own progress fill/count, and the level bar's
+// counts — but a further person-reported follow-up found switching to a
+// DIFFERENT, already-loaded file mid-load still felt noticeably faster than
+// staying on the loading one, suspecting the still-live level-bar counts as
+// the remaining cost ("Liegt das daran, dass die Zähler für die Level...
+// noch mitzählen? Nehme... alle Visualisierungen des Ladevorgangs raus...
+// Und auch Ladebalken etc. darf eine etwas reduzierte Updaterate
+// bekommen."). Two changes: `updateLevelBarCounts()` is gone from this path
+// entirely — the level bar (like the Filtered/Full/minimap views) now only
+// reflects a loading file once the load finishes or an unrelated render
+// happens anyway; and the row update itself (`updateLoadRowProgress`, above)
+// is now time-throttled rather than run on literally every chunk/byte tick.
+const LOAD_TICK_MIN_INTERVAL_MS = 200;
+let lastLoadTickTs = 0;
 function scheduleLoadRender(rootId) {
   if (!rootId) return;
+  const now = performance.now();
+  if (now - lastLoadTickTs < LOAD_TICK_MIN_INTERVAL_MS) return; // too soon — the next tick retries; flushLoadRender always catches the true final state regardless
+  lastLoadTickTs = now;
+  // Invalidates the loading file's (and its dependents') cached
+  // getEntries()/getLevelCounts() results — same reasoning as onTailChange's
+  // own invalidateCachesForRoots: a file node's entries growing mid-parse is
+  // exactly the kind of content change those caches don't otherwise know to
+  // distrust. Only needed at this reduced rate (not every single tick) —
+  // its job is just to keep a mid-load click onto this file (which DOES
+  // trigger a real, full render) from ever seeing a cache stale enough to
+  // matter, not to feed a per-tick visualization that no longer exists.
   invalidateCachesForRoots([rootId]);
-  updateLoadRowLiveData(rootId);
-  updateLevelBarCounts();
+  updateLoadRowProgress(rootId);
 }
 function flushLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
@@ -7951,7 +7922,7 @@ function renderNode(id, depth) {
   const invertClass = node.inverted ? " inverted" : "";
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
   row.style.paddingLeft = (12 + depth * 16) + "px";
-  // Lets a load tick (see updateLoadRowLiveData) find and update this exact
+  // Lets a load tick (see updateLoadRowProgress) find and update this exact
   // row's count/progress-fill/percentage-of-parent directly, without a full
   // render() — every row, not just file rows, since a filter created under
   // a still-loading file needs its own count to keep updating live too.
@@ -8210,8 +8181,8 @@ function activeLevelSetForBar() {
   return levelFilterTreeMode === "explicit" ? state.levelFilter : new Set(currentTreeLevelSelection());
 }
 
-// The node whose result the level bar's per-button preview counts (and
-// updateLevelBarCounts' live refresh) are computed against — the active
+// The node whose result the level bar's per-button preview counts are
+// computed against — the active
 // node itself, unless it IS a level node already, in which case its own
 // result is already narrowed to the current selection and counting against
 // it would hide every not-yet-selected level. Using the level node's own
@@ -8252,7 +8223,7 @@ function renderLevelBar() {
     const isActive = activeLevels.has(lvl);
     btn.className = "level-btn " + levelClass(lvl) + (isActive ? " active" : "");
     btn.type = "button";
-    btn.dataset.level = lvl; // lets updateLevelBarCounts find this button's .cnt directly, without a rebuild
+    btn.dataset.level = lvl; // queried directly by name elsewhere (tests, format editor rows) without needing a rebuild
     btn.innerHTML =
       '<span class="dot"></span>' + lvl + ' <span class="cnt">' + (counts[lvl] || 0).toLocaleString("de-DE") + '</span>';
     btn.addEventListener("click", () => {
@@ -8281,21 +8252,6 @@ function renderLevelBar() {
   });
 }
 
-// Cheap counterpart to renderLevelBar used by a load tick (renderLoadTick-
-// MainView) — refreshes each button's own .cnt text in place instead of
-// tearing down and recreating all four buttons (and their click listeners)
-// on every tick, which is what made toggling a level filter unreliable
-// while a file was still loading (same class of bug as renderTree() during
-// a load tick — see updateLoadRowLiveData's own comment). Never changes
-// which buttons are .active — that only ever changes via a real click,
-// which already goes through the full renderLevelBar().
-function updateLevelBarCounts() {
-  const counts = getLevelCounts(levelBarCountsBaseId()) || {};
-  levelBarEl.querySelectorAll(".level-btn").forEach(btn => {
-    const cnt = btn.querySelector(".cnt");
-    if (cnt) cnt.textContent = (counts[btn.dataset.level] || 0).toLocaleString("de-DE");
-  });
-}
 
 function applyLevelFilter(entries) {
   if (state.levelFilter.size === 0) return entries;
