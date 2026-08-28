@@ -617,6 +617,13 @@
   }
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
+  /* linkedId dependency highlight (computeLinkedDependencyHighlight) — an
+     and/or/link node's second reference can sit anywhere else in the tree,
+     invisibly, so selecting either end highlights the other. Two distinct
+     colors/directions, both different from .active's own --accent so all
+     three read apart at a glance when a dep row also happens to be hovered. */
+  .tree-row.dep-target{background:color-mix(in srgb, var(--warn) 14%, transparent); border-left-color:var(--warn);}
+  .tree-row.dep-user{background:color-mix(in srgb, var(--accent-strong) 14%, transparent); border-left-color:var(--accent-strong);}
   .tree-row[draggable="true"]{cursor:grab;}
   .tree-row.dragging{opacity:.4;}
   .tree-row.drag-over{background:var(--accent-soft); box-shadow:inset 0 0 0 1.5px var(--accent);}
@@ -627,6 +634,17 @@
   .tree-swatch:hover{border-color:var(--accent);}
   .tree-swatch.empty{background:var(--bg-app); border-style:dashed;}
   .tree-swatch-spacer{flex:0 0 auto; width:13px;}
+  /* Expand/collapse chevron for a "Detach copy" group — see
+     detachFilterChain/toggleSquashGroupExpanded. Rotates via a transform,
+     not a different glyph, so collapse/expand reads as one smooth flip. */
+  .tree-squash-toggle{
+    flex:0 0 auto; width:14px; height:14px; margin:0 2px 0 0; padding:0;
+    border:none; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    color:var(--text-tertiary); border-radius:4px; transition:transform .12s ease;
+    transform:rotate(-90deg);
+  }
+  .tree-squash-toggle.expanded{transform:rotate(0deg);}
+  .tree-squash-toggle:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
   .tree-row.active .tree-icon{color:var(--accent);}
   .tree-label{
@@ -6076,23 +6094,61 @@ function pasteClipboard() {
   if (!clip || !targetParent || !state.nodes[clip.id]) { state.clipboard = null; return; }
 
   if (clip.mode === "cut") {
-    const moved = moveFilterNodeWithUndo(clip.id, state.activeId);
-    if (moved) {
-      state.activeId = clip.id;
+    const movedId = moveFilterNodeWithUndo(clip.id, state.activeId);
+    if (movedId) {
+      state.activeId = movedId; // cross-file: a fresh id, reconstructed — see moveFilterNodeWithUndo
       state.clipboard = null;
     } else {
       showCopyToast("Can't move here — would create a circular reference");
     }
-  } else {
-    if (subtreeHasLinkedCycle(clip.id, state.activeId)) {
-      showCopyToast("Can't paste here — would create a circular reference");
-      return;
-    }
-    const clone = cloneSubtree(clip.id, state.activeId);
-    targetParent.children.push(clone.id);
-    state.activeId = clone.id;
-    // clipboard stays active: the same filter can be pasted again elsewhere
+    return;
   }
+
+  const sourceFileId = getRootFileId(clip.id);
+  const destFileId = getRootFileId(state.activeId);
+  if (sourceFileId && destFileId && sourceFileId !== destFileId) {
+    // Cross-file Copy: same reasoning as moveFilterNodeWithUndo's own
+    // cross-file branch, just without deleting the original afterward —
+    // cloneSubtree's "keep pointing at the original" behavior (correct
+    // within one file) would otherwise leave a linkedId/squashGroup
+    // pointing back into a DIFFERENT file. Reconstructs the whole needed
+    // chain fresh here instead (see importBranchAt).
+    const newId = importBranchAt(clip.id, state.activeId);
+    if (newId) state.activeId = newId;
+    else showCopyToast("Can't copy here");
+    // clipboard stays active either way: the same filter can be pasted again elsewhere
+    return;
+  }
+
+  if (subtreeHasLinkedCycle(clip.id, state.activeId)) {
+    showCopyToast("Can't paste here — would create a circular reference");
+    return;
+  }
+  const clone = cloneSubtree(clip.id, state.activeId);
+  targetParent.children.push(clone.id);
+  state.activeId = clone.id;
+  // clipboard stays active: the same filter can be pasted again elsewhere
+}
+
+// Cross-file paste/move helper, shared by pasteClipboard (Copy) and
+// moveFilterNodeWithUndo (Cut/drag-and-drop): rebuilds nodeId's whole
+// needed dependency chain (serializeFilterBranch's own definition — its
+// ancestors plus any linkedId targets' ancestors) as brand-new,
+// independent nodes attached under targetId, using the exact same rebuild
+// step Save/Load and the reusable library use (materializeSerializedRoots)
+// — just without the JSON round trip. Returns the id of the rebuilt node
+// corresponding to nodeId itself (branch.activeRef), or null if nodeId
+// isn't a real filter node or targetId has no resolvable root file.
+function importBranchAt(nodeId, targetId) {
+  const branch = serializeFilterBranch(nodeId);
+  if (!branch) return null;
+  const target = state.nodes[targetId];
+  if (!target) return null;
+  const fileId = getRootFileId(targetId);
+  if (!fileId) return null;
+  const { refMap } = materializeSerializedRoots(branch.roots,
+    attach => attach === "file" && fileId ? fileId : targetId);
+  return refMap[branch.activeRef] || null;
 }
 function moveNode(nodeId, newParentId) {
   const node = state.nodes[nodeId];
@@ -6746,6 +6802,7 @@ function snapshotSubtree(nodeId) {
   if (node.selectionFilter) copy.selectionFilter = true;
   if (node.squashGroup) copy.squashGroup = node.squashGroup;
   if (node.hiddenInTree) copy.hiddenInTree = true;
+  if (node.squashExpanded) copy.squashExpanded = true;
   return copy;
 }
 
@@ -6787,6 +6844,7 @@ function restoreSubtree(snap) {
   if (snap.selectionFilter) node.selectionFilter = true;
   if (snap.squashGroup) node.squashGroup = snap.squashGroup;
   if (snap.hiddenInTree) node.hiddenInTree = true;
+  if (snap.squashExpanded) node.squashExpanded = true;
   state.nodes[node.id] = node;
   node.children = snap.children.map(c => restoreSubtree(c).id);
   return node;
@@ -6938,25 +6996,57 @@ function renameFilterNodeWithUndo(nodeId, rawLabel) {
   withFieldEditUndo(nodeId, n => { if (next) n.label = next; else delete n.label; });
 }
 
+// Returns the id the node ends up living under on success (same as nodeId
+// for a same-file move — the "truthy on success" contract every caller
+// already relied on still holds), or false on failure.
 function moveFilterNodeWithUndo(nodeId, newParentId) {
   const node = state.nodes[nodeId];
   if (!node || node.locked) return false; // restricted node — see deleteFilterNodeWithUndo's comment
+  const newParent = state.nodes[newParentId];
+  if (!newParent) return false;
+
+  // Cross-file move (drag-and-drop, or Ctrl+X+Ctrl+V, onto a node under a
+  // DIFFERENT root file): a plain reparent would leave and/or/link's
+  // linkedId — or a squash group's private hidden chain — pointing at
+  // nodes that still live in the ORIGINAL file, exactly the surprising
+  // behavior discussed in this session (see "Core data model" in
+  // PROJECT.md, and docs/filters.md's "Squash / Detach copy"). Reconstructs
+  // the whole needed chain fresh at the destination instead — the same
+  // Save/Load rebuild step, without the JSON round trip — then deletes the
+  // original via the normal, undoable delete path (deleteFilterNodeWithUndo
+  // already handles a squashGroup cascade too, so this works for a
+  // squashed node exactly as well as a plain one — no parentId is being
+  // reassigned in place, so the squashGroup-block below doesn't apply
+  // here). The reconstruction itself isn't a separate undo step, same as
+  // Load/Apply-from-library aren't undoable actions either — only the
+  // delete of the original is.
+  const sourceFileId = getRootFileId(node.parentId);
+  const destFileId = getRootFileId(newParentId);
+  if (sourceFileId && destFileId && sourceFileId !== destFileId) {
+    if (node.locked) return false;
+    const newId = importBranchAt(nodeId, newParentId);
+    if (!newId) return false;
+    deleteFilterNodeWithUndo(nodeId);
+    return newId;
+  }
+
   // A visible "Detach copy" node (see detachFilterChain) — node.squashGroup
   // set, node.hiddenInTree NOT set — has its own private, hidden ancestor
   // chain (parentId points at a hiddenInTree node the group needs for its
-  // own computation, e.g. a link node). Reparenting it would silently
-  // detach it from that chain instead of moving the group, so it's the one
-  // choke point that blocks the move regardless of entry point (drag/drop,
-  // Ctrl+X+paste, or a future call site) — same reasoning as the `locked`
-  // check above. hiddenInTree members never reach here: they have no tree
-  // row, so nothing can drag/cut them in the first place.
+  // own computation, e.g. a link node). Reparenting it IN PLACE would
+  // silently detach it from that chain instead of moving the group, so
+  // it's the one choke point that blocks a same-file move regardless of
+  // entry point (drag/drop, Ctrl+X+paste, or a future call site) — same
+  // reasoning as the `locked` check above. hiddenInTree members never
+  // reach here: they have no tree row, so nothing can drag/cut them in the
+  // first place.
   if (node.squashGroup && !node.hiddenInTree) return false;
   const oldParentId = node.parentId;
   const oldParent = state.nodes[oldParentId];
   const oldIndex = oldParent ? oldParent.children.indexOf(nodeId) : -1;
   const moved = moveNode(nodeId, newParentId);
   if (moved) pushUndo({ kind: "move", nodeId, oldParentId, oldIndex, newParentId });
-  return moved;
+  return moved ? nodeId : false;
 }
 
 function insertAt(parent, nodeId, index) {
@@ -7651,8 +7741,30 @@ function buildLevelNodeLabelContent(node) {
   return frag;
 }
 
+// Cross-tree `linkedId` dependency highlight (person-requested design
+// follow-up to "Detach copy" — and/or/link's second reference can sit
+// anywhere else in the tree, invisibly, unlike parentId's own nesting).
+// Recomputed once per renderTree() call (cheap — a single O(n) scan over
+// state.nodes, same cost class as invalidateAllCaches' own sweep) and read
+// by renderNode via these two module-level values, the same "computed once
+// centrally, read by the recursive per-row renderer" shape draggedNodeId
+// already uses for drag-and-drop.
+let depTargetId = null;  // active node's OWN linkedId, if any — "what I depend on"
+let depUserIds = null;   // ids whose linkedId === active node's id — "who depends on me"
+function computeLinkedDependencyHighlight() {
+  const active = state.activeId ? state.nodes[state.activeId] : null;
+  depTargetId = active && active.linkedId ? active.linkedId : null;
+  depUserIds = new Set();
+  if (state.activeId) {
+    Object.keys(state.nodes).forEach(id => {
+      if (state.nodes[id].linkedId === state.activeId) depUserIds.add(id);
+    });
+  }
+}
+
 function renderTree() {
   renderFolderWatchList();
+  computeLinkedDependencyHighlight();
   treeEl.innerHTML = "";
   // A file loaded from a watched folder renders inside its folder's own
   // section (renderFolderSection, above) instead of here, so its position
@@ -7686,7 +7798,7 @@ function flattenTreeIds() {
       // see detachFilterChain) have no row to land on either, but arrow-key
       // nav must still reach whatever they lead to, same passthrough
       // renderNode itself uses.
-      if (node && node.hiddenInTree) { walk(node.children); return; }
+      if (node && node.hiddenInTree && !node.squashExpanded) { walk(node.children); return; }
       ids.push(id);
       if (node) walk(node.children);
     });
@@ -8031,7 +8143,11 @@ function renderNode(id, depth) {
   // depth+1), so the chain "passes through" straight to whichever
   // descendant is the group's actual visible node. Returns a
   // DocumentFragment instead of a wrap element — appendChild accepts both.
-  if (node.hiddenInTree) {
+  // node.squashExpanded (toggled via the expand/collapse chevron every
+  // squashGroup member shows — see below) opts back into normal rendering:
+  // every member gets its own real row again, each still tagged with the
+  // chevron so the group can be re-collapsed from any of them.
+  if (node.hiddenInTree && !node.squashExpanded) {
     const frag = document.createDocumentFragment();
     node.children.forEach(cid => frag.appendChild(renderNode(cid, depth)));
     return frag;
@@ -8044,7 +8160,14 @@ function renderNode(id, depth) {
   const clipClass = clip && clip.id === id ? (clip.mode === "cut" ? " cut" : " copied") : "";
   const multiClass = state.multiSelect.has(id) ? " multi-selected" : "";
   const invertClass = node.inverted ? " inverted" : "";
-  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
+  // linkedId dependency highlight (see computeLinkedDependencyHighlight) —
+  // never both at once for one row (a node can't be both the active node's
+  // OWN target and something pointing back at the active node without a
+  // linkedId cycle, which wouldCreateLinkedCycle already prevents).
+  const depClass = id === depTargetId ? " dep-target" : (depUserIds && depUserIds.has(id) ? " dep-user" : "");
+  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass + depClass;
+  if (depClass === " dep-target") row.title = "This is what “" + nodeDisplayName(state.nodes[state.activeId]) + "” is combined/linked with";
+  else if (depClass === " dep-user") row.title = "This is combined/linked with the currently selected filter";
   row.style.paddingLeft = (12 + depth * 16) + "px";
   // Lets a load tick (see updateLoadRowProgress) find and update this exact
   // row's count/progress-fill/percentage-of-parent directly, without a full
@@ -8073,6 +8196,23 @@ function renderNode(id, depth) {
     const spacer = document.createElement("span");
     spacer.className = "tree-swatch-spacer";
     row.appendChild(spacer);
+  }
+
+  // Expand/collapse chevron for a "Detach copy" group (node.squashGroup —
+  // see detachFilterChain/toggleSquashGroupExpanded): shown on whichever
+  // row(s) of the group are currently visible — just the display node
+  // while collapsed, every member once expanded — so the group can be
+  // toggled from any of its rows.
+  if (node.squashGroup) {
+    const chevron = document.createElement("button");
+    chevron.type = "button";
+    chevron.className = "tree-squash-toggle" + (node.squashExpanded ? " expanded" : "");
+    chevron.title = node.squashExpanded
+      ? "Collapse this detached filter's private chain back into one row"
+      : "Expand this detached filter's private chain (see what it depends on)";
+    chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+    chevron.addEventListener("click", ev => { ev.stopPropagation(); toggleSquashGroupExpanded(id); });
+    row.appendChild(chevron);
   }
 
   const icon = document.createElement("span");
@@ -8236,8 +8376,8 @@ function renderNode(id, depth) {
     ev.preventDefault();
     row.classList.remove("drag-over");
     if (!draggedNodeId) return;
-    const moved = moveFilterNodeWithUndo(draggedNodeId, id);
-    if (moved) { state.activeId = draggedNodeId; state.focusRegion = "tree"; }
+    const movedId = moveFilterNodeWithUndo(draggedNodeId, id);
+    if (movedId) { state.activeId = movedId; state.focusRegion = "tree"; }
     else showCopyToast("Can't move here — would create a circular reference");
     draggedNodeId = null;
     render();
@@ -8258,7 +8398,7 @@ function renderBreadcrumb() {
   // is hiddenInTree in the tree itself — filtered out here too, or the
   // breadcrumb would give away exactly the internal structure the tree
   // view hides (and offer a "jump to" chip for a row that doesn't exist).
-  const chain = getChain(state.activeId).filter(n => !n.hiddenInTree);
+  const chain = getChain(state.activeId).filter(n => !n.hiddenInTree || n.squashExpanded);
   chain.forEach((node, i) => {
     if (i > 0) {
       const sep = document.createElement("span");
@@ -14552,7 +14692,7 @@ filterColumnChips.addEventListener("click", ev => {
 function renderFilterTargetChain() {
   filterTargetChainEl.innerHTML = "";
   if (!filterPopupBaseId || !state.nodes[filterPopupBaseId]) return;
-  const chain = getChain(filterPopupBaseId).filter(n => !n.hiddenInTree); // see renderBreadcrumb
+  const chain = getChain(filterPopupBaseId).filter(n => !n.hiddenInTree || n.squashExpanded); // see renderBreadcrumb
   chain.forEach((node, i) => {
     if (i > 0) {
       const sep = document.createElement("span");
@@ -16011,6 +16151,26 @@ function serializeFilterBranch(nodeId) {
   const refs = {};
   needed.forEach(id => { refs[id] = ++refCounter; });
 
+  // A "Detach copy" group (see detachFilterChain) is exported as a group
+  // too, not unpacked back to plain visible nodes: squashGroup is an
+  // opaque per-node tag, not itself a node, so it can't ride the same
+  // ref/linkedRef scheme linkedId uses — instead every member of a group
+  // points at a `squashGroupRef`, the REF NUMBER of that group's one
+  // visible (non-hiddenInTree) member, and materializeSerializedRoots
+  // turns that back into a real squashGroup tag on import (reusing the
+  // freshly materialized display node's own new id as the tag, same as
+  // detachFilterChain itself picks an arbitrary opaque string). A group
+  // exported on its own always has its display member included in
+  // `needed` too — it's either `nodeId` itself or one of its ancestors/
+  // linkedId-pulled-in nodes, all of which the collection above already
+  // covers, since a hiddenInTree node's very purpose is to be a private,
+  // otherwise-unreachable dependency of that one visible node.
+  const groupDisplayId = {};
+  needed.forEach(id => {
+    const n = state.nodes[id];
+    if (n.squashGroup && !n.hiddenInTree) groupDisplayId[n.squashGroup] = id;
+  });
+
   function serializeSubtree(id) {
     const node = state.nodes[id];
     const kids = node.children.filter(cid => needed.has(cid)).map(serializeSubtree);
@@ -16038,6 +16198,14 @@ function serializeFilterBranch(nodeId) {
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
     if (node.selectionFilter) out.selectionFilter = true;
+    // See groupDisplayId above — only emitted when the group's display
+    // member actually made it into this export (it always should, but a
+    // partial/hand-edited chain shouldn't crash over it).
+    if (node.squashGroup && groupDisplayId[node.squashGroup] != null && refs[groupDisplayId[node.squashGroup]] != null) {
+      out.squashGroupRef = refs[groupDisplayId[node.squashGroup]];
+    }
+    if (node.hiddenInTree) out.hiddenInTree = true;
+    if (node.squashExpanded) out.squashExpanded = true;
     return out;
   }
 
@@ -16114,6 +16282,27 @@ function detachFilterChain(nodeId) {
 
   invalidateAllCaches();
   return displayId;
+}
+
+// Toggles a "Detach copy" group's expand/collapse state (the chevron every
+// squashGroup member's row shows — see renderNode) — a pure display
+// preference, not a structural change: flips node.squashExpanded on EVERY
+// node sharing this squashGroup (not just the clicked one), since
+// renderNode's hidden-passthrough check reads it per-node and the whole
+// group must agree, or a hiddenInTree member would randomly show/hide
+// depending on which other member happened to set it. No undo entry (same
+// "cosmetic tree state, not model state" tier as sidebar-collapsed or the
+// Settings panel's own open/closed sections) and no cache invalidation
+// needed (getEntries never reads either field).
+function toggleSquashGroupExpanded(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || !node.squashGroup) return;
+  const groupId = node.squashGroup;
+  const expand = !node.squashExpanded;
+  Object.keys(state.nodes).forEach(id => {
+    if (state.nodes[id].squashGroup === groupId) state.nodes[id].squashExpanded = expand;
+  });
+  render();
 }
 
 function downloadJsonFallback(json, filename) {
@@ -16202,8 +16391,9 @@ filterFileInput.addEventListener("change", ev => {
 // data.roots' own order, refMap resolves a serialized `ref` to its fresh id
 // (activeRef included).
 function materializeSerializedRoots(roots, resolveParentId) {
-  const refMap = {};   // serialized ref -> new uid
-  const pending = [];  // linkedRef assignments resolved after all nodes exist
+  const refMap = {};       // serialized ref -> new uid
+  const pending = [];      // linkedRef assignments resolved after all nodes exist
+  const pendingSquash = []; // squashGroupRef assignments, same deferred-resolution shape
 
   function materialize(sn, parentId) {
     const node = {
@@ -16246,9 +16436,12 @@ function materializeSerializedRoots(roots, resolveParentId) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.hiddenInTree) node.hiddenInTree = true;
+    if (sn.squashExpanded) node.squashExpanded = true;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
     if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });
+    if (sn.squashGroupRef != null) pendingSquash.push({ node, squashGroupRef: sn.squashGroupRef });
     (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
     return node;
   }
@@ -16268,6 +16461,17 @@ function materializeSerializedRoots(roots, resolveParentId) {
     const linkedId = refMap[p.linkedRef];
     if (linkedId) p.node.linkedId = linkedId;
     else deleteNode(p.node.id);
+  });
+
+  // Rewire a "Detach copy" group (see detachFilterChain/serializeFilterBranch's
+  // own squashGroupRef comment): every member pointed at the REF of the
+  // group's visible member — resolve that to its fresh runtime id and reuse
+  // IT as the new, opaque squashGroup tag (consistent regardless of which
+  // member happens to be processed first; a node dropped above by the
+  // linkedRef cleanup just never gets tagged, same graceful degradation).
+  pendingSquash.forEach(p => {
+    const displayId = refMap[p.squashGroupRef];
+    if (displayId && state.nodes[p.node.id]) p.node.squashGroup = displayId;
   });
 
   return { created, refMap };
@@ -17957,6 +18161,7 @@ function serializeFilterTreeForCache(fileNode) {
     // no cross-node indirection needed" reasoning idset's node.value uses.
     if (node.squashGroup) out.squashGroup = node.squashGroup;
     if (node.hiddenInTree) out.hiddenInTree = true;
+    if (node.squashExpanded) out.squashExpanded = true;
     return out;
   }
 
@@ -18113,6 +18318,7 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.selectionFilter) node.selectionFilter = true;
     if (sn.squashGroup) node.squashGroup = sn.squashGroup;
     if (sn.hiddenInTree) node.hiddenInTree = true;
+    if (sn.squashExpanded) node.squashExpanded = true;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
     if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });

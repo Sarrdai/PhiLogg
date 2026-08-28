@@ -1237,21 +1237,55 @@ await withApp(async (w, d, T) => {
   assert(movedBad === false, "moveNode rejects placing a node as descendant of its own linkedId target (cycle guard)");
   assert(andNode.parentId === fFilterA.id, "AND node's parentId is unchanged after a blocked move");
 
-  // A blocked CUT must keep the clipboard active (not silently clear it) —
-  // exercised via pasteClipboard's cut branch.
+  // childOfB lives under fFilterB, which is in file B — cutting andNode
+  // (file A) onto it is therefore a CROSS-FILE paste, not the same-file
+  // in-place reparent moveNode's own cycle guard exists for. Since this
+  // session, pasteClipboard/moveFilterNodeWithUndo route a cross-file
+  // cut/copy through import-style reconstruction instead (see Group 129,
+  // and docs/filters.md's "Squash / Detach copy" / "Core data model" in
+  // PROJECT.md) — a fresh, independent copy can never actually cycle back
+  // into its own ancestry, so this now SUCCEEDS, unlike the in-place
+  // same-file case. Sanity-checked here; the real cross-file coverage
+  // lives in Group 129.
   T.state.activeId = andNode.id;
   T.state.clipboard = { id: andNode.id, mode: "cut" };
   T.state.activeId = childOfB.id;
   w.pasteClipboard();
-  assert(T.state.clipboard !== null, "a blocked cut-paste keeps the clipboard active instead of clearing it");
+  assert(T.state.clipboard === null, "cross-file cut succeeds via reconstruction (no real cycle risk once independent) — see Group 129");
+  assert(!T.state.nodes[andNode.id], "the original andNode was deleted as part of the cross-file move");
+  const movedAndCopy = T.state.nodes[T.state.activeId];
+  assert(movedAndCopy && movedAndCopy.filterType === "and", "a fresh, reconstructed AND copy is now the active node");
+  // Its own ancestor chain is rebuilt too (fFilterA's own clone), nested
+  // under childOfB — same "chain, not just the clicked node" shape
+  // serializeFilterBranch already uses for Save/Load.
+  const rebuiltParent = T.state.nodes[movedAndCopy.parentId];
+  assert(rebuiltParent && rebuiltParent.filterType === "text" && rebuiltParent.parentId === childOfB.id,
+    "the AND copy's own rebuilt ancestor (a fresh fFilterA clone) lives directly under childOfB");
+  assert(movedAndCopy.linkedId && movedAndCopy.linkedId !== fFilterB.id,
+    "the copy's linkedId points at a FRESH clone of fFilterB, never the original (which is now in a different file's tree than the copy's own chain)");
 
-  // Legit move still works
+  // The actual "blocked cut keeps the clipboard active" case needs a
+  // genuinely SAME-FILE cyclic target — a fresh and/or pair entirely
+  // within file A, so pasteClipboard's cut branch takes the same-file
+  // (moveNode + cycle guard) path instead of the cross-file one above.
+  const gA = w.createFilterNode(fa.id, "text", "g");
+  const gB = w.createFilterNode(fa.id, "text", "h");
+  const gAnd = w.createAndOrNode(gA.id, gB.id, "and");
+  const gChildOfB = w.createFilterNode(gB.id, "text", "i");
+  T.state.activeId = gAnd.id;
+  T.state.clipboard = { id: gAnd.id, mode: "cut" };
+  T.state.activeId = gChildOfB.id;
+  w.pasteClipboard();
+  assert(T.state.clipboard !== null, "a same-file blocked cut-paste keeps the clipboard active instead of clearing it");
+  assert(gAnd.parentId === gA.id, "gAnd's parentId is unchanged after the blocked same-file move");
+
+  // Legit same-file move still works
   const otherFilterA = w.createFilterNode(fa.id, "text", "y");
   T.state.activeId = otherFilterA.id;
-  const movedOk = w.moveNode(andNode.id, otherFilterA.id);
+  const movedOk = w.moveNode(gAnd.id, otherFilterA.id);
   assert(movedOk === true, "moveNode allows a non-cyclic reparent");
-  assert(andNode.parentId === otherFilterA.id, "AND node's parentId updated after a legit move");
-  assert(andNode.linkedId === fFilterB.id, "linkedId survives a legit move untouched");
+  assert(gAnd.parentId === otherFilterA.id, "AND node's parentId updated after a legit move");
+  assert(gAnd.linkedId === gB.id, "linkedId survives a legit move untouched");
 
   // Real drag-and-drop DOM path + isFileDrag() overlay gate
   w.render();
@@ -13697,6 +13731,209 @@ await withApp(async (w, d, T) => {
   assert(T.state.nodes[restoredCloneId].squashGroup === groupId, "materializeCachedFilters carries squashGroup through unchanged (opaque, same-file tag)");
   const restoredLinkId = T.state.nodes[restoredCloneId].parentId;
   assert(T.state.nodes[restoredLinkId].hiddenInTree === true, "hiddenInTree round-trips through the session cache too");
+});
+
+/* ============================================================
+   GROUP 129 — Cross-file paste/move now reconstructs instead of keeping
+   linkedId pointing at the original file (person-requested design
+   follow-up to Group 128's "Detach copy"). pasteClipboard's Copy path and
+   moveFilterNodeWithUndo (Cut+Paste AND real drag-and-drop both route
+   through it) now detect a cross-file target via getRootFileId and, when
+   the source/destination differ, use importBranchAt — the same
+   serializeFilterBranch + materializeSerializedRoots rebuild Save/Load
+   uses — instead of cloneSubtree (Copy) or a plain reparent (Cut/drag).
+   Same-file behavior is unchanged (see Group 7 for that coverage).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("129. Cross-file paste/move reconstructs instead of cross-file linkedId");
+
+  const fa = await w.addFile("129a.log", makeLog(0, 10), () => {});
+  const fb = await w.addFile("129b.log", makeLog(0, 10, { msgPrefix: "other" }), () => {});
+  w.render();
+
+  // --- Cross-file COPY: an AND node (linkedId into file A itself) copied
+  // into file B must not leave its linkedId pointing back into file A. ---
+  const refA = w.createFilterNode(fa.id, "text", "message");
+  const targetA = w.createFilterNode(fa.id, "text", "message");
+  const andA = w.createAndOrNode(refA.id, targetA.id, "and");
+  const destInB = w.createFilterNode(fb.id, "text", "other");
+  w.render();
+
+  T.state.activeId = andA.id;
+  T.state.clipboard = { id: andA.id, mode: "copy" };
+  T.state.activeId = destInB.id;
+  const beforeChildren = destInB.children.length;
+  w.pasteClipboard();
+  assert(destInB.children.length === beforeChildren + 1, "cross-file copy inserts a new node under the destination");
+  const copiedAnd = T.state.nodes[T.state.activeId];
+  assert(copiedAnd && copiedAnd.filterType === "and", "the copy is placed active");
+  assert(T.state.nodes[andA.id], "the ORIGINAL and node is untouched by a Copy");
+  assert(copiedAnd.linkedId && copiedAnd.linkedId !== targetA.id, "the copy's linkedId points at a FRESH clone, never the original file-A node");
+  assert(w.getRootFileId(copiedAnd.linkedId) === fb.id, "...and that fresh clone lives in file B, the copy's own file, not file A");
+  assert(T.state.clipboard !== null, "clipboard stays active after a Copy, same as the same-file convention");
+
+  // --- Cross-file CUT: the original is deleted, a fresh reconstruction
+  // takes its place at the destination. ---
+  const refA2 = w.createFilterNode(fa.id, "text", "message");
+  const targetA2 = w.createFilterNode(fa.id, "text", "message");
+  const andA2 = w.createAndOrNode(refA2.id, targetA2.id, "and");
+  const destInB2 = w.createFilterNode(fb.id, "text", "other");
+  w.render();
+
+  T.state.activeId = andA2.id;
+  T.state.clipboard = { id: andA2.id, mode: "cut" };
+  T.state.activeId = destInB2.id;
+  w.pasteClipboard();
+  assert(!T.state.nodes[andA2.id], "cross-file cut deletes the original node");
+  assert(T.state.clipboard === null, "clipboard clears after a successful Cut, same as the same-file convention");
+  const cutAndCopy = T.state.nodes[T.state.activeId];
+  assert(cutAndCopy && cutAndCopy.filterType === "and" && w.getRootFileId(cutAndCopy.linkedId) === fb.id,
+    "the moved copy's linkedId also points into file B, not the deleted original's file A");
+
+  // --- Same shared function via a real drag-and-drop drop (not just
+  // pasteClipboard) — moveFilterNodeWithUndo is the one choke point both
+  // go through, so this proves drag-and-drop gets the same fix for free. ---
+  const refA3 = w.createFilterNode(fa.id, "text", "message");
+  const targetA3 = w.createFilterNode(fa.id, "text", "message");
+  const andA3 = w.createAndOrNode(refA3.id, targetA3.id, "and");
+  const destInB3 = w.createFilterNode(fb.id, "text", "other");
+  const movedId = w.moveFilterNodeWithUndo(andA3.id, destInB3.id);
+  assert(typeof movedId === "string" && movedId !== andA3.id, "moveFilterNodeWithUndo returns a FRESH id for a cross-file move, not the original nodeId");
+  assert(!T.state.nodes[andA3.id], "the original is deleted");
+  assert(T.state.nodes[movedId] && w.getRootFileId(T.state.nodes[movedId].linkedId) === fb.id,
+    "the reconstructed node's linkedId points into the destination file");
+
+  // --- Same-file behavior is completely unaffected: a plain reparent,
+  // same nodeId, linkedId untouched (Group 7 covers this in depth; this is
+  // just a sanity check that the new cross-file branch doesn't fire here). ---
+  const refA4 = w.createFilterNode(fa.id, "text", "message");
+  const targetA4 = w.createFilterNode(fa.id, "text", "message");
+  const andA4 = w.createAndOrNode(refA4.id, targetA4.id, "and");
+  const otherInA = w.createFilterNode(fa.id, "text", "message");
+  const sameFileMoved = w.moveFilterNodeWithUndo(andA4.id, otherInA.id);
+  assert(sameFileMoved === andA4.id, "a same-file move returns the SAME nodeId (nothing reconstructed)");
+  assert(andA4.linkedId === targetA4.id, "same-file move leaves linkedId completely untouched");
+});
+
+/* ============================================================
+   GROUP 130 — A "Detach copy" group now stays collapsed through Save/Load
+   JSON (person-requested: it was unpacking back to plain visible nodes on
+   import) + a new manual expand/collapse chevron
+   (toggleSquashGroupExpanded). serializeFilterBranch now emits
+   `squashGroupRef` (the REF NUMBER of the group's one visible member —
+   squashGroup itself is an opaque per-node tag, not a node, so it can't
+   ride the existing ref/linkedRef scheme directly) alongside
+   `hiddenInTree`/`squashExpanded`; materializeSerializedRoots resolves
+   `squashGroupRef` back into a real (freshly-generated-equivalent)
+   squashGroup tag shared by the whole reconstructed group, reusing the
+   display member's own new id as that tag.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("130. Detach copy stays collapsed through Save/Load, plus manual expand/collapse");
+
+  const f = await w.addFile("130.log", makeLog(0, 10), () => {});
+  const posFilter = w.createFilterNode(f.id, "text", "pos");
+  const valFilter = w.createFilterNode(f.id, "text", "val");
+  const link = w.createLinkNode(posFilter.id, valFilter.id, "before", 1, {});
+  const extract = w.createFilterNode(link.id, "extract", "[value:float]");
+  T.state.activeId = extract.id;
+  const displayId = w.detachFilterChain(extract.id);
+  w.render();
+  assert(d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 1, "sanity: the detached group renders as one row before export");
+
+  // --- Save/Load JSON round trip onto a FRESH file keeps it collapsed ---
+  const branch = w.serializeFilterBranch(displayId);
+  assert(branch, "sanity: serializeFilterBranch succeeds on a squashed node");
+  const squashedRoot = branch.roots.find(r => r.attach === "target");
+  assert(squashedRoot && squashedRoot.squashGroupRef != null, "the exported branch carries squashGroupRef");
+
+  const f2 = await w.addFile("130b.log", makeLog(0, 10), () => {});
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const setLoadTarget = targetId => {
+    const s = d.createElement("script");
+    s.textContent = `loadFilterTargetId = ${JSON.stringify(targetId)};`;
+    d.body.appendChild(s);
+  };
+  setLoadTarget(f2.id);
+  w.importFilterJson(json);
+  w.render();
+
+  const loadedDisplayId = T.state.activeId;
+  const loadedDisplay = T.state.nodes[loadedDisplayId];
+  assert(loadedDisplay && loadedDisplay.filterType === "extract" && loadedDisplay.squashGroup, "the loaded node is the display member of a freshly-tagged squashGroup");
+  assert(!loadedDisplay.hiddenInTree, "...and is itself NOT hidden — it's the one visible row");
+  const loadedLink = T.state.nodes[loadedDisplay.parentId];
+  assert(loadedLink && loadedLink.hiddenInTree && loadedLink.squashGroup === loadedDisplay.squashGroup,
+    "its private link-node ancestor was reconstructed hiddenInTree, same squashGroup tag");
+  assert(d.querySelectorAll('.tree-row[data-node-id="' + loadedDisplayId + '"]').length === 1, "renders as exactly one row");
+  assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') === null, "the private link clone still gets no row of its own — stayed collapsed, was NOT unpacked");
+
+  // --- Manual expand/collapse chevron ---
+  const chevronBefore = d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-squash-toggle');
+  assert(chevronBefore && !chevronBefore.classList.contains("expanded"), "the display row shows a collapsed expand/collapse chevron");
+  w.toggleSquashGroupExpanded(loadedDisplayId);
+  w.render();
+  assert(T.state.nodes[loadedLink.id].squashExpanded === true, "toggling sets squashExpanded on every group member");
+  assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') !== null, "expanding reveals the private link clone as a real row");
+  assert(d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-squash-toggle').classList.contains("expanded"), "the chevron reflects the expanded state");
+
+  // Collapse again via the OTHER member's own chevron (any member's row can
+  // toggle the whole group, not just the original display's).
+  w.toggleSquashGroupExpanded(loadedLink.id);
+  w.render();
+  assert(T.state.nodes[loadedDisplayId].squashExpanded === false, "re-collapsing from a different group member's row flips the WHOLE group back");
+  assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') === null, "the group is one row again");
+
+  // --- squashExpanded also round-trips through the session cache ---
+  w.toggleSquashGroupExpanded(loadedDisplayId); // leave it expanded for this check
+  const { roots: cacheRoots } = w.serializeFilterTreeForCache(f2);
+  const findExpanded = list => {
+    for (const n of list) { if (n.squashExpanded) return n; const r = findExpanded(n.children); if (r) return r; }
+    return null;
+  };
+  assert(findExpanded(cacheRoots), "serializeFilterTreeForCache carries squashExpanded through");
+});
+
+/* ============================================================
+   GROUP 131 — linkedId dependency highlight (person-requested design
+   follow-up): selecting an and/or/link node highlights its linkedId
+   target elsewhere in the tree (.dep-target); selecting a node that's
+   POINTED AT by another node's linkedId highlights that other node
+   (.dep-user) — computeLinkedDependencyHighlight, called once per
+   renderTree(), read by renderNode via the module-level
+   depTargetId/depUserIds.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("131. linkedId dependency highlight on selection");
+
+  const f = await w.addFile("131.log", makeLog(0, 10), () => {});
+  const refFilter = w.createFilterNode(f.id, "text", "message");
+  const targetFilter = w.createFilterNode(f.id, "text", "message");
+  const andNode = w.createAndOrNode(refFilter.id, targetFilter.id, "and");
+  const unrelated = w.createFilterNode(f.id, "text", "message");
+
+  // Selecting the AND node highlights its linkedId TARGET.
+  T.state.activeId = andNode.id;
+  w.render();
+  const targetRow = () => d.querySelector('.tree-row[data-node-id="' + targetFilter.id + '"]');
+  const andRow = () => d.querySelector('.tree-row[data-node-id="' + andNode.id + '"]');
+  const unrelatedRow = () => d.querySelector('.tree-row[data-node-id="' + unrelated.id + '"]');
+  assert(targetRow().classList.contains("dep-target"), "the AND node's linkedId target is marked .dep-target while the AND node is selected");
+  assert(!andRow().classList.contains("dep-target") && !andRow().classList.contains("dep-user"), "the selected node itself never highlights its own row (that's .active's job)");
+  assert(!unrelatedRow().classList.contains("dep-target") && !unrelatedRow().classList.contains("dep-user"), "an unrelated node gets no highlight class");
+
+  // Selecting the TARGET highlights the AND node back (.dep-user).
+  T.state.activeId = targetFilter.id;
+  w.render();
+  assert(andRow().classList.contains("dep-user"), "selecting the linkedId TARGET highlights the node that points at it (.dep-user)");
+  assert(!targetRow().classList.contains("dep-target") && !targetRow().classList.contains("dep-user"), "the newly-selected node itself is unmarked");
+
+  // Selecting an unrelated node highlights nothing.
+  T.state.activeId = unrelated.id;
+  w.render();
+  assert(!andRow().classList.contains("dep-target") && !andRow().classList.contains("dep-user") &&
+    !targetRow().classList.contains("dep-target") && !targetRow().classList.contains("dep-user"),
+    "selecting a node with no linkedId relationship at all highlights nothing");
 });
 
 /* ============================================================
