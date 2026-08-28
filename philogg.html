@@ -2196,7 +2196,7 @@
   #contextMenu, #treeContextMenu, #openMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
-    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
   }
   #openMenu{min-width:180px;}
   #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden{display:none;}
@@ -2208,7 +2208,15 @@
   .ctx-item svg{flex:0 0 auto; color:var(--text-tertiary);}
   .ctx-item:hover svg{color:var(--accent-strong);}
   .ctx-sep{height:1px; background:var(--border-soft); margin:5px 4px;}
-  .ctx-meta{padding:6px 10px 4px; font-size:10.3px; color:var(--text-tertiary); font-family:var(--font-mono);}
+  /* white-space/word-break/overflow-wrap: a long filter name (a text/extract
+     value, or a link/detach-copy node whose name concatenates its two
+     source names) used to have nothing stopping it from forcing the whole
+     #treeContextMenu wider than the viewport — person-reported. Wraps
+     inside the menu's own max-width instead. */
+  .ctx-meta{
+    padding:6px 10px 4px; font-size:10.3px; color:var(--text-tertiary); font-family:var(--font-mono);
+    white-space:normal; word-break:break-word; overflow-wrap:anywhere;
+  }
   .ctx-note{padding:8px 10px; font-size:11.5px; color:var(--text-tertiary); max-width:220px; line-height:1.5;}
   /* "Add to selection" submenu trigger (#ctxAddToSelection) — the arrow just
      signals "this opens another menu", #addToSelectionMenu itself reuses the
@@ -16084,8 +16092,13 @@ function detachFilterChain(nodeId) {
   if (!fileId) return null;
   const file = state.nodes[fileId];
 
+  // materializeSerializedRoots already attaches each root to fileId's own
+  // children (a plain push, same placement Load/library-apply already use)
+  // — do NOT also push/unshift them here, or every root ends up listed
+  // twice in file.children and renders as two rows for the same node id
+  // (this was a real bug: both rows then show ".active" together, since
+  // the active-check compares by id and both DOM rows share one).
   const { created, refMap } = materializeSerializedRoots(branch.roots, () => fileId);
-  created.forEach(n => file.children.unshift(n.id)); // top-level, unshifted — see comment above
   const displayId = refMap[branch.activeRef];
   if (!displayId) return null;
 

@@ -13628,9 +13628,20 @@ await withApp(async (w, d, T) => {
   assert(cloneLink.hiddenInTree && clonePos.hiddenInTree && cloneVal.hiddenInTree, "every OTHER node in the private chain is hiddenInTree");
   assert(Object.keys(T.state.nodes).length === beforeNodeCount + 4, "created exactly 4 new nodes: position/value/link/extract clones");
 
+  // --- Bugfix (this session, person-reported): materializeSerializedRoots
+  // already attaches each top-level root to file.children itself (a plain
+  // push) — detachFilterChain used to ALSO unshift them afterward, so every
+  // root ended up listed twice in file.children and rendered as two rows
+  // for the same node id, both showing ".active" together. ---
+  assert(new Set(f.children).size === f.children.length, "no id appears twice in the file's own children array after detach");
+  assert(f.children.filter(id => id === clonePos.id).length === 1 && f.children.filter(id => id === cloneVal.id).length === 1,
+    "each top-level clone (position, value) is listed exactly once");
+
   // --- Tree rendering: exactly one row for the whole group, at the top level ---
   w.render();
   assert(d.querySelector('.tree-row[data-node-id="' + newId + '"]') !== null, "the clone's own row IS rendered");
+  assert(d.querySelectorAll('.tree-row[data-node-id="' + newId + '"]').length === 1,
+    "...and exactly ONCE, not twice (the duplicate-row bug above)");
   [cloneLink.id, clonePos.id, cloneVal.id].forEach(id => {
     assert(d.querySelector('.tree-row[data-node-id="' + id + '"]') === null, "a hiddenInTree member (" + id + ") gets no row of its own");
   });
