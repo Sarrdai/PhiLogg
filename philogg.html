@@ -689,7 +689,9 @@
      is what your filters looked like", but carry no click/drag/context-menu
      handlers at all. Disappears the instant the file gets a real filter
      child (restored or freshly created) — driven by node.children.length in
-     renderNode, not a separate dismiss flag to track.  */
+     renderNode — or the person clicks Cancel (below), which just clears
+     node.filterHistoryMatch directly; neither is a separate dismiss FLAG to
+     track, both just remove the thing renderNode's own gate checks for.  */
   .tree-ghost{
     margin:2px 8px 8px; padding:4px 4px 8px;
     border:1px dashed var(--border); border-radius:8px;
@@ -709,14 +711,23 @@
     border:1px solid var(--border-soft); border-radius:4px; padding:1px 4px;
   }
   .tree-ghost-note{padding:2px 6px 6px; font-size:10.5px; color:var(--text-tertiary);}
+  .tree-ghost-actions{display:flex; gap:6px; margin-top:2px;}
   .tree-ghost-restore-btn{
-    display:flex; align-items:center; justify-content:center; width:100%;
-    margin-top:2px; padding:6px 9px; font-size:11px; font-weight:600;
+    display:flex; align-items:center; justify-content:center; flex:1 1 auto;
+    padding:6px 9px; font-size:11px; font-weight:600;
     color:var(--accent-strong); background:var(--accent-soft);
     border:1px solid var(--accent-strong); border-radius:6px; cursor:pointer;
     transition:filter .12s;
   }
   .tree-ghost-restore-btn:hover{filter:brightness(1.15);}
+  .tree-ghost-cancel-btn{
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+    padding:6px 12px; font-size:11px; font-weight:600;
+    color:var(--text-secondary); background:var(--bg-elevated-2);
+    border:1px solid var(--border-soft); border-radius:6px; cursor:pointer;
+    transition:filter .12s, color .12s;
+  }
+  .tree-ghost-cancel-btn:hover{filter:brightness(1.1); color:var(--text-primary);}
 
   /* ---------- Content ---------- */
   #content{flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0; position:relative;}
@@ -4942,123 +4953,53 @@ function getCompiledFormat(formatId) {
   return c;
 }
 
-// True while rootId is (or is an ancestor of) the currently active/viewed
-// node — i.e. a load happening on rootId is actually what's on screen right
-// now, as opposed to a file loading in the background while some OTHER
-// already-loaded file is what the person is actually looking at.
-function loadRenderRootIsActive(rootId) {
-  return !!(rootId && state.activeId && getRootFileId(state.activeId) === rootId);
+// Cheap, targeted update for JUST the loading file's own tree row (progress
+// fill + entry count) — a direct DOM write via a query, same "direct write
+// on a hot path" idea the old (pre-2026-08-18) setLoadingFileProgress used,
+// instead of running any render() at all. Deliberately does NOT walk into
+// any filter rows already created under this file (their counts/percentage
+// bars only catch up once the load finishes, or a real render happens for
+// another reason) — a filter's row is not "the loading bar or the counter
+// next to it", and the recursive query walk it used to do had its own cost.
+function updateLoadRowProgress(rootId) {
+  const node = state.nodes[rootId];
+  if (!node) return;
+  const row = document.querySelector('.tree-row[data-node-id="' + rootId + '"]');
+  if (!row) return;
+  const fill = row.querySelector(".tree-load-fill");
+  if (fill) fill.style.width = Math.round(Math.max(0, Math.min(1, node.loadFraction || 0)) * 100) + "%";
+  const count = row.querySelector(".tree-count");
+  if (count) count.textContent = node.entries.length.toLocaleString("de-DE");
 }
 
-// Cheap, targeted update for a loading file's own tree row AND every
-// currently-rendered filter row already created under it (own count; a
-// file row's progress-fill width; a filter row's percentage-of-parent bar)
-// — direct DOM writes via queries, same "direct write on a hot path" idea
-// the old (pre-2026-08-18) setLoadingFileProgress used, instead of running
-// any render() at all. Called on EVERY load-progress tick, active view or
-// not: renderTree() (the only thing that would otherwise pick up these
-// changes) tears down and rebuilds every row in the tree from scratch,
-// including whichever OTHER row a person might be mid-click on — running
-// that dozens of times a second while a file loads was person-reported as
-// clicks on a different, already-loaded file not reliably registering
-// (mousedown/mouseup landing on a row element that got replaced out from
-// under the gesture). The recursive walk (not just the root's own row)
-// matters for a separate, same-session person request — a filter created
-// under a still-loading file needs its own row's count to keep updating
-// live too, exactly the way it would if the growth came from tailing
-// instead of the initial parse, not freeze at whatever it had when it was
-// created. Structural tree changes (a row appearing/disappearing) still go
-// through a real render() — see createFileNode and flushLoadRender below —
-// just never a per-tick one.
-function updateLoadRowLiveData(rootId) {
-  if (!state.nodes[rootId]) return;
-  (function walk(id) {
-    const node = state.nodes[id];
-    if (!node) return;
-    const row = document.querySelector('.tree-row[data-node-id="' + id + '"]');
-    if (row) {
-      const ownCount = getEntries(id).length;
-      const count = row.querySelector(".tree-count");
-      if (count) count.textContent = ownCount.toLocaleString("de-DE");
-      if (node.type === "file") {
-        const fill = row.querySelector(".tree-load-fill");
-        if (fill) fill.style.width = Math.round(Math.max(0, Math.min(1, node.loadFraction || 0)) * 100) + "%";
-      } else {
-        const pctFill = row.querySelector(".tree-pct-fill");
-        if (pctFill) {
-          const parentCount = getEntries(node.parentId).length;
-          const fraction = parentCount > 0 ? Math.min(1, ownCount / parentCount) : 0;
-          pctFill.style.width = (fraction * 100) + "%";
-          const pctEl = row.querySelector(".tree-pct");
-          if (pctEl) pctEl.title = Math.round(fraction * 100) + "% of parent (" + parentCount.toLocaleString("de-DE") + ")";
-        }
-      }
-    }
-    node.children.forEach(walk);
-  })(rootId);
-}
-
-// The rest of what a load tick needs while its file IS the active view —
-// table/minimap/status, so the view keeps filling in live exactly like
-// Group 49 established — deliberately WITHOUT renderTree() (see
-// updateLoadRowLiveData) or the other render() steps that can't change from
-// a parse tick alone (breadcrumb, detail panel, tail-jump button all depend
-// on activeId/selection, untouched here; a real render() from an actual
-// click already refreshes those the moment activeId genuinely changes).
-// The level bar specifically uses updateLevelBarCounts (a targeted count
-// write), not renderLevelBar (which, like renderTree, tears down and
-// rebuilds every button — including whichever one a person is trying to
-// toggle to filter by level while the file is still loading).
-function renderLoadTickMainView() {
-  updateLevelBarCounts();
-  renderMainView();
-  renderStatus();
-}
-
-// Throttles renderLoadTickMainView (used for every progress tick —
-// parseLogTextAsync's onProgress, and loadOneFileIntoTree's own read-phase
-// progress) to at most one per animation frame while the loading file IS
-// the active view — a large file can yield many chunks between two frames,
-// so firing it on every single chunk would be wasteful even then. Same
-// rAF-coalescing shape as the scroll/resize handlers elsewhere (see
-// scrollTicking). updateLoadRowLiveData itself is NOT throttled — it's called
-// synchronously on every tick regardless of active state, since it's cheap
-// and never touches #tree's structure (see its own comment for why that
-// distinction is the whole point). flushLoadRender cancels any still-
-// pending tick and always runs a full render() immediately instead — used
-// only at the true start/end of a load (a row appearing/disappearing IS a
-// structural tree change), never per-tick.
-//
-// Both take the loading file's own node id and invalidate its (and its
-// dependents') cached getEntries()/getLevelCounts() results right away,
-// active view or not — same reasoning as onTailChange's
-// invalidateCachesForRoots: a file node's entries growing mid-parse is
-// exactly the kind of content change those caches don't otherwise know to
-// distrust, so without this the level bar would cache whatever (possibly
-// still-empty) counts happened to be current at the first render after the
-// node was created, and never update again — including once the person
-// switches TO the file after it's done loading in the background.
-let loadRenderRafId = null;
+// scheduleLoadRender is called on EVERY load-progress tick (parseLogTextAsync's
+// onProgress, and loadOneFileIntoTree's own read-phase progress) and does its
+// cheap work on every single one — a real-time throttle was tried here (this
+// session) but made no noticeable difference (the earlier removal of the
+// level bar's live counts and the filter-subtree walk was what actually
+// mattered — see updateLoadRowProgress's own comment) and looked visibly
+// "stockend" (stuttery), so it was taken back out. This is the last step of
+// the same-session arc that progressively stripped the tailing-style live
+// view down: full live Filtered/Full/minimap/level-bar updates during a load
+// were removed outright earlier (person: "Baue die Visualisierung einfach
+// aus. Der Ladebalken genügt mir beim Laden."), then the level bar's own
+// live counts and a filter's live-growing row count were removed too
+// (person: "Nehme... alle Visualisierungen des Ladevorgangs raus.") —
+// leaving just this one write, which runs at full tick rate again.
 function scheduleLoadRender(rootId) {
-  if (rootId) invalidateCachesForRoots([rootId]);
-  if (rootId) updateLoadRowLiveData(rootId);
-  if (!rootId || !loadRenderRootIsActive(rootId)) return; // background: the row update above is all there is to do
-  if (loadRenderRafId != null) return;
-  // Re-checks active state again at fire time, not just at schedule time —
-  // the person can switch away between this tick being scheduled and the
-  // next actual animation frame, and the pending main-view render must not
-  // fire anyway once that's happened (the row itself is already current,
-  // via the synchronous updateLoadRowLiveData call above), or a switch-away
-  // would still cost one unwanted extra render.
-  loadRenderRafId = requestAnimationFrame(() => {
-    loadRenderRafId = null;
-    if (rootId && !loadRenderRootIsActive(rootId)) return;
-    renderLoadTickMainView();
-  });
+  if (!rootId) return;
+  // Invalidates the loading file's (and its dependents') cached
+  // getEntries()/getLevelCounts() results right away — same reasoning as
+  // onTailChange's own invalidateCachesForRoots: a file node's entries
+  // growing mid-parse is exactly the kind of content change those caches
+  // don't otherwise know to distrust, so without this a mid-load click onto
+  // this file (which DOES trigger a real, full render) could see a stale
+  // cache.
+  invalidateCachesForRoots([rootId]);
+  updateLoadRowProgress(rootId);
 }
 function flushLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
-  if (loadRenderRafId != null) { cancelAnimationFrame(loadRenderRafId); loadRenderRafId = null; }
   render();
 }
 
@@ -5134,11 +5075,21 @@ function createQueuedFileNode(name) {
 function activateQueuedFileNode(node) {
   delete node.queued;
   node.loadFraction = 0;
-  // See createFileNode's own comment on this same pairing: a stale
-  // state.multiSelect entry from an earlier plain tree-row click must not
-  // outlive the row it pointed at becoming inactive.
-  state.activeId = node.id;
-  state.multiSelect = new Set();
+  // NOT during a session/cache restore — same reasoning, and same guard, as
+  // createFileNode's own (see its comment): restoreSessionFromCache now
+  // routes every restored file through this same queued-placeholder path
+  // too (see its own comment), and setting activeId per file here would
+  // reintroduce the exact activeId-thrashing bug that guard was written to
+  // fix, just through a new call path. state.activeId is left untouched;
+  // restoreSessionFromCache's own final correction (`s.active`/its
+  // fallback) remains the single source of truth once every file is back.
+  if (!sessionRestoreInProgress) {
+    // See createFileNode's own comment on this same pairing: a stale
+    // state.multiSelect entry from an earlier plain tree-row click must not
+    // outlive the row it pointed at becoming inactive.
+    state.activeId = node.id;
+    state.multiSelect = new Set();
+  }
   flushLoadRender();
 }
 
@@ -5291,8 +5242,9 @@ function releaseEntriesFromIndex(entries, excludeRootId) {
 // by session-cache/merge restore so a file already parsed once never
 // silently reparses differently just because rules changed since (see
 // "Log format definitions" and restoreSessionFromCache).
-async function addFile(name, text, onProgress, formatIdOverride) {
-  const node = createFileNode(name);
+async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
+  const node = existingNode || createFileNode(name);
+  if (existingNode) activateQueuedFileNode(node);
   if (formatIdOverride !== undefined) {
     const pinnedId = formatIdOverride || DEFAULT_FORMAT_ID;
     // A restored file's pinned formatId can name a custom format not yet
@@ -7805,6 +7757,9 @@ function renderFilterHistoryPreview(fileNode) {
     "filter" + (n === 1 ? "" : "s") + " from a previous session (" + n + ")";
   box.appendChild(note);
 
+  const actions = document.createElement("div");
+  actions.className = "tree-ghost-actions";
+
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "tree-ghost-restore-btn";
@@ -7814,8 +7769,29 @@ function renderFilterHistoryPreview(fileNode) {
     state.activeId = fileNode.id;
     render();
   });
-  box.appendChild(btn);
+  actions.appendChild(btn);
 
+  // Dismisses the preview without building a filter tree — person-
+  // requested: previously the only way to get rid of an unwanted ghost
+  // preview was to create a real filter yourself (children.length > 0 is
+  // the whole visibility gate, see renderNode's call site). Just clears
+  // filterHistoryMatch, the same field the real Restore path (and
+  // buildFileHistoryRecords, once a real tree exists) already clears — a
+  // plain dismissal, not a "forget this history forever": the underlying
+  // stored record is untouched (filterHistoryTouched deliberately NOT set
+  // here, unlike the add-then-remove-all-filters case that function
+  // documents), so the same match can still resurface on a later reload.
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "tree-ghost-cancel-btn";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", () => {
+    fileNode.filterHistoryMatch = null;
+    render();
+  });
+  actions.appendChild(cancelBtn);
+
+  box.appendChild(actions);
   return box;
 }
 
@@ -7979,7 +7955,7 @@ function renderNode(id, depth) {
   const invertClass = node.inverted ? " inverted" : "";
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
   row.style.paddingLeft = (12 + depth * 16) + "px";
-  // Lets a load tick (see updateLoadRowLiveData) find and update this exact
+  // Lets a load tick (see updateLoadRowProgress) find and update this exact
   // row's count/progress-fill/percentage-of-parent directly, without a full
   // render() — every row, not just file rows, since a filter created under
   // a still-loading file needs its own count to keep updating live too.
@@ -8238,8 +8214,8 @@ function activeLevelSetForBar() {
   return levelFilterTreeMode === "explicit" ? state.levelFilter : new Set(currentTreeLevelSelection());
 }
 
-// The node whose result the level bar's per-button preview counts (and
-// updateLevelBarCounts' live refresh) are computed against — the active
+// The node whose result the level bar's per-button preview counts are
+// computed against — the active
 // node itself, unless it IS a level node already, in which case its own
 // result is already narrowed to the current selection and counting against
 // it would hide every not-yet-selected level. Using the level node's own
@@ -8280,7 +8256,7 @@ function renderLevelBar() {
     const isActive = activeLevels.has(lvl);
     btn.className = "level-btn " + levelClass(lvl) + (isActive ? " active" : "");
     btn.type = "button";
-    btn.dataset.level = lvl; // lets updateLevelBarCounts find this button's .cnt directly, without a rebuild
+    btn.dataset.level = lvl; // queried directly by name elsewhere (tests, format editor rows) without needing a rebuild
     btn.innerHTML =
       '<span class="dot"></span>' + lvl + ' <span class="cnt">' + (counts[lvl] || 0).toLocaleString("de-DE") + '</span>';
     btn.addEventListener("click", () => {
@@ -8309,21 +8285,6 @@ function renderLevelBar() {
   });
 }
 
-// Cheap counterpart to renderLevelBar used by a load tick (renderLoadTick-
-// MainView) — refreshes each button's own .cnt text in place instead of
-// tearing down and recreating all four buttons (and their click listeners)
-// on every tick, which is what made toggling a level filter unreliable
-// while a file was still loading (same class of bug as renderTree() during
-// a load tick — see updateLoadRowLiveData's own comment). Never changes
-// which buttons are .active — that only ever changes via a real click,
-// which already goes through the full renderLevelBar().
-function updateLevelBarCounts() {
-  const counts = getLevelCounts(levelBarCountsBaseId()) || {};
-  levelBarEl.querySelectorAll(".level-btn").forEach(btn => {
-    const cnt = btn.querySelector(".cnt");
-    if (cnt) cnt.textContent = (counts[btn.dataset.level] || 0).toLocaleString("de-DE");
-  });
-}
 
 function applyLevelFilter(entries) {
   if (state.levelFilter.size === 0) return entries;
@@ -18010,11 +17971,33 @@ async function restoreSessionFromCache() {
 
   sessionRestoreInProgress = true;
   try {
-    const byKey = {}; // cacheKey -> restored file node
-    for (let i = 0; i < meta.fileOrder.length; i++) {
-      const key = meta.fileOrder[i];
+    // Two passes, same "grayed placeholder for every file immediately, then
+    // fill them in one by one" shape loadFileDescriptors uses for a plain
+    // multi-file "Open…"/drop (see createQueuedFileNode/activateQueuedFileNode
+    // there) — person-reported: a restored file used to only appear once
+    // every file BEFORE it in fileOrder had finished its own full parse, so
+    // a session with several large files looked like they were trickling in
+    // one at a time with no visibility into what was still queued. First
+    // pass fetches every file's metadata (name, cheap) and inserts a queued
+    // placeholder row for it right away, in order, with a single render() —
+    // exactly what the person now sees immediately. Second pass turns each
+    // one into a real, actively-loading row (activateQueuedFileNode, via
+    // addFile's own existingNode param) and parses it, in the same order.
+    const recs = []; // { key, rec } | null (rec fetch failed/out of sync) per fileOrder entry
+    for (const key of meta.fileOrder) {
       const rec = await cacheStoreOp("files", "readonly", store => store.get(key));
-      if (!rec || typeof rec.text !== "string") continue; // meta/file records out of sync — skip
+      recs.push(rec && typeof rec.text === "string" ? { key, rec } : null);
+    }
+    const queued = recs.map(entry => entry && createQueuedFileNode(entry.rec.name));
+    if (queued.some(Boolean)) render();
+
+    const byKey = {}; // cacheKey -> restored file node
+    for (let i = 0; i < recs.length; i++) {
+      const entry = recs[i];
+      if (!entry) continue; // meta/file records out of sync — skip
+      const { key, rec } = entry;
+      const placeholder = queued[i];
+      placeholder.cacheKey = key; // keep the stored key so the next persist overwrites in place, same as before
       // Not folder-tagged even for a file that WILL end up with a folderId
       // below: state.folders is still empty this early (restoreWatchedFolders
       // runs after this function returns), so there's no folder section yet
@@ -18023,8 +18006,7 @@ async function restoreSessionFromCache() {
       // Explicit override (never undefined) so a restored file is pinned to
       // whatever format it was actually parsed under, even if the person's
       // filename rules have since changed — see "Log format definitions".
-      const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID);
-      node.cacheKey = key; // keep the stored key so the next persist overwrites in place
+      const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
       if (rec.merged) node.merged = true;
       // Re-links this node to its watched folder, if it had one — the
       // folder record itself (including its handle) comes back separately
