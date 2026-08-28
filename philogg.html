@@ -689,7 +689,9 @@
      is what your filters looked like", but carry no click/drag/context-menu
      handlers at all. Disappears the instant the file gets a real filter
      child (restored or freshly created) — driven by node.children.length in
-     renderNode, not a separate dismiss flag to track.  */
+     renderNode — or the person clicks Cancel (below), which just clears
+     node.filterHistoryMatch directly; neither is a separate dismiss FLAG to
+     track, both just remove the thing renderNode's own gate checks for.  */
   .tree-ghost{
     margin:2px 8px 8px; padding:4px 4px 8px;
     border:1px dashed var(--border); border-radius:8px;
@@ -709,14 +711,23 @@
     border:1px solid var(--border-soft); border-radius:4px; padding:1px 4px;
   }
   .tree-ghost-note{padding:2px 6px 6px; font-size:10.5px; color:var(--text-tertiary);}
+  .tree-ghost-actions{display:flex; gap:6px; margin-top:2px;}
   .tree-ghost-restore-btn{
-    display:flex; align-items:center; justify-content:center; width:100%;
-    margin-top:2px; padding:6px 9px; font-size:11px; font-weight:600;
+    display:flex; align-items:center; justify-content:center; flex:1 1 auto;
+    padding:6px 9px; font-size:11px; font-weight:600;
     color:var(--accent-strong); background:var(--accent-soft);
     border:1px solid var(--accent-strong); border-radius:6px; cursor:pointer;
     transition:filter .12s;
   }
   .tree-ghost-restore-btn:hover{filter:brightness(1.15);}
+  .tree-ghost-cancel-btn{
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+    padding:6px 12px; font-size:11px; font-weight:600;
+    color:var(--text-secondary); background:var(--bg-elevated-2);
+    border:1px solid var(--border-soft); border-radius:6px; cursor:pointer;
+    transition:filter .12s, color .12s;
+  }
+  .tree-ghost-cancel-btn:hover{filter:brightness(1.1); color:var(--text-primary);}
 
   /* ---------- Content ---------- */
   #content{flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0; position:relative;}
@@ -4962,41 +4973,28 @@ function updateLoadRowProgress(rootId) {
 }
 
 // scheduleLoadRender is called on EVERY load-progress tick (parseLogTextAsync's
-// onProgress, and loadOneFileIntoTree's own read-phase progress) but only
-// actually DOES anything at most once per LOAD_TICK_MIN_INTERVAL_MS of real
-// time — a reduced update rate for the progress bar/counter themselves, not
-// just everything else. This is the last step of the same-session arc that
-// progressively stripped the tailing-style live view down: full live
-// Filtered/Full/minimap/level-bar updates during a load were removed
-// outright earlier this session (person: "Baue die Visualisierung einfach
-// aus. Der Ladebalken genügt mir beim Laden.") in favor of exactly two cheap
-// per-tick writes — the row's own progress fill/count, and the level bar's
-// counts — but a further person-reported follow-up found switching to a
-// DIFFERENT, already-loaded file mid-load still felt noticeably faster than
-// staying on the loading one, suspecting the still-live level-bar counts as
-// the remaining cost ("Liegt das daran, dass die Zähler für die Level...
-// noch mitzählen? Nehme... alle Visualisierungen des Ladevorgangs raus...
-// Und auch Ladebalken etc. darf eine etwas reduzierte Updaterate
-// bekommen."). Two changes: `updateLevelBarCounts()` is gone from this path
-// entirely — the level bar (like the Filtered/Full/minimap views) now only
-// reflects a loading file once the load finishes or an unrelated render
-// happens anyway; and the row update itself (`updateLoadRowProgress`, above)
-// is now time-throttled rather than run on literally every chunk/byte tick.
-const LOAD_TICK_MIN_INTERVAL_MS = 200;
-let lastLoadTickTs = 0;
+// onProgress, and loadOneFileIntoTree's own read-phase progress) and does its
+// cheap work on every single one — a real-time throttle was tried here (this
+// session) but made no noticeable difference (the earlier removal of the
+// level bar's live counts and the filter-subtree walk was what actually
+// mattered — see updateLoadRowProgress's own comment) and looked visibly
+// "stockend" (stuttery), so it was taken back out. This is the last step of
+// the same-session arc that progressively stripped the tailing-style live
+// view down: full live Filtered/Full/minimap/level-bar updates during a load
+// were removed outright earlier (person: "Baue die Visualisierung einfach
+// aus. Der Ladebalken genügt mir beim Laden."), then the level bar's own
+// live counts and a filter's live-growing row count were removed too
+// (person: "Nehme... alle Visualisierungen des Ladevorgangs raus.") —
+// leaving just this one write, which runs at full tick rate again.
 function scheduleLoadRender(rootId) {
   if (!rootId) return;
-  const now = performance.now();
-  if (now - lastLoadTickTs < LOAD_TICK_MIN_INTERVAL_MS) return; // too soon — the next tick retries; flushLoadRender always catches the true final state regardless
-  lastLoadTickTs = now;
   // Invalidates the loading file's (and its dependents') cached
-  // getEntries()/getLevelCounts() results — same reasoning as onTailChange's
-  // own invalidateCachesForRoots: a file node's entries growing mid-parse is
-  // exactly the kind of content change those caches don't otherwise know to
-  // distrust. Only needed at this reduced rate (not every single tick) —
-  // its job is just to keep a mid-load click onto this file (which DOES
-  // trigger a real, full render) from ever seeing a cache stale enough to
-  // matter, not to feed a per-tick visualization that no longer exists.
+  // getEntries()/getLevelCounts() results right away — same reasoning as
+  // onTailChange's own invalidateCachesForRoots: a file node's entries
+  // growing mid-parse is exactly the kind of content change those caches
+  // don't otherwise know to distrust, so without this a mid-load click onto
+  // this file (which DOES trigger a real, full render) could see a stale
+  // cache.
   invalidateCachesForRoots([rootId]);
   updateLoadRowProgress(rootId);
 }
@@ -5077,11 +5075,21 @@ function createQueuedFileNode(name) {
 function activateQueuedFileNode(node) {
   delete node.queued;
   node.loadFraction = 0;
-  // See createFileNode's own comment on this same pairing: a stale
-  // state.multiSelect entry from an earlier plain tree-row click must not
-  // outlive the row it pointed at becoming inactive.
-  state.activeId = node.id;
-  state.multiSelect = new Set();
+  // NOT during a session/cache restore — same reasoning, and same guard, as
+  // createFileNode's own (see its comment): restoreSessionFromCache now
+  // routes every restored file through this same queued-placeholder path
+  // too (see its own comment), and setting activeId per file here would
+  // reintroduce the exact activeId-thrashing bug that guard was written to
+  // fix, just through a new call path. state.activeId is left untouched;
+  // restoreSessionFromCache's own final correction (`s.active`/its
+  // fallback) remains the single source of truth once every file is back.
+  if (!sessionRestoreInProgress) {
+    // See createFileNode's own comment on this same pairing: a stale
+    // state.multiSelect entry from an earlier plain tree-row click must not
+    // outlive the row it pointed at becoming inactive.
+    state.activeId = node.id;
+    state.multiSelect = new Set();
+  }
   flushLoadRender();
 }
 
@@ -5234,8 +5242,9 @@ function releaseEntriesFromIndex(entries, excludeRootId) {
 // by session-cache/merge restore so a file already parsed once never
 // silently reparses differently just because rules changed since (see
 // "Log format definitions" and restoreSessionFromCache).
-async function addFile(name, text, onProgress, formatIdOverride) {
-  const node = createFileNode(name);
+async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
+  const node = existingNode || createFileNode(name);
+  if (existingNode) activateQueuedFileNode(node);
   if (formatIdOverride !== undefined) {
     const pinnedId = formatIdOverride || DEFAULT_FORMAT_ID;
     // A restored file's pinned formatId can name a custom format not yet
@@ -7748,6 +7757,9 @@ function renderFilterHistoryPreview(fileNode) {
     "filter" + (n === 1 ? "" : "s") + " from a previous session (" + n + ")";
   box.appendChild(note);
 
+  const actions = document.createElement("div");
+  actions.className = "tree-ghost-actions";
+
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "tree-ghost-restore-btn";
@@ -7757,8 +7769,29 @@ function renderFilterHistoryPreview(fileNode) {
     state.activeId = fileNode.id;
     render();
   });
-  box.appendChild(btn);
+  actions.appendChild(btn);
 
+  // Dismisses the preview without building a filter tree — person-
+  // requested: previously the only way to get rid of an unwanted ghost
+  // preview was to create a real filter yourself (children.length > 0 is
+  // the whole visibility gate, see renderNode's call site). Just clears
+  // filterHistoryMatch, the same field the real Restore path (and
+  // buildFileHistoryRecords, once a real tree exists) already clears — a
+  // plain dismissal, not a "forget this history forever": the underlying
+  // stored record is untouched (filterHistoryTouched deliberately NOT set
+  // here, unlike the add-then-remove-all-filters case that function
+  // documents), so the same match can still resurface on a later reload.
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "tree-ghost-cancel-btn";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", () => {
+    fileNode.filterHistoryMatch = null;
+    render();
+  });
+  actions.appendChild(cancelBtn);
+
+  box.appendChild(actions);
   return box;
 }
 
@@ -17938,11 +17971,33 @@ async function restoreSessionFromCache() {
 
   sessionRestoreInProgress = true;
   try {
-    const byKey = {}; // cacheKey -> restored file node
-    for (let i = 0; i < meta.fileOrder.length; i++) {
-      const key = meta.fileOrder[i];
+    // Two passes, same "grayed placeholder for every file immediately, then
+    // fill them in one by one" shape loadFileDescriptors uses for a plain
+    // multi-file "Open…"/drop (see createQueuedFileNode/activateQueuedFileNode
+    // there) — person-reported: a restored file used to only appear once
+    // every file BEFORE it in fileOrder had finished its own full parse, so
+    // a session with several large files looked like they were trickling in
+    // one at a time with no visibility into what was still queued. First
+    // pass fetches every file's metadata (name, cheap) and inserts a queued
+    // placeholder row for it right away, in order, with a single render() —
+    // exactly what the person now sees immediately. Second pass turns each
+    // one into a real, actively-loading row (activateQueuedFileNode, via
+    // addFile's own existingNode param) and parses it, in the same order.
+    const recs = []; // { key, rec } | null (rec fetch failed/out of sync) per fileOrder entry
+    for (const key of meta.fileOrder) {
       const rec = await cacheStoreOp("files", "readonly", store => store.get(key));
-      if (!rec || typeof rec.text !== "string") continue; // meta/file records out of sync — skip
+      recs.push(rec && typeof rec.text === "string" ? { key, rec } : null);
+    }
+    const queued = recs.map(entry => entry && createQueuedFileNode(entry.rec.name));
+    if (queued.some(Boolean)) render();
+
+    const byKey = {}; // cacheKey -> restored file node
+    for (let i = 0; i < recs.length; i++) {
+      const entry = recs[i];
+      if (!entry) continue; // meta/file records out of sync — skip
+      const { key, rec } = entry;
+      const placeholder = queued[i];
+      placeholder.cacheKey = key; // keep the stored key so the next persist overwrites in place, same as before
       // Not folder-tagged even for a file that WILL end up with a folderId
       // below: state.folders is still empty this early (restoreWatchedFolders
       // runs after this function returns), so there's no folder section yet
@@ -17951,8 +18006,7 @@ async function restoreSessionFromCache() {
       // Explicit override (never undefined) so a restored file is pinned to
       // whatever format it was actually parsed under, even if the person's
       // filename rules have since changed — see "Log format definitions".
-      const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID);
-      node.cacheKey = key; // keep the stored key so the next persist overwrites in place
+      const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
       if (rec.merged) node.merged = true;
       // Re-links this node to its watched folder, if it had one — the
       // folder record itself (including its handle) comes back separately
