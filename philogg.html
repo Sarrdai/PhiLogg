@@ -6040,6 +6040,15 @@ function cloneSubtree(nodeId, newParentId) {
   // "Bookmarks" node produces a plain, unlocked filter node (still matching
   // the same bookmarked rows) — only syncBookmarksFilterNode's own original
   // stays restricted. See "Bookmarks rework" in PROJECT.md.
+  // Deliberately NOT copying orig.squashGroup/orig.hiddenInTree either: a
+  // copy of a "Detach copy" node's visible row (see detachFilterChain) has
+  // none of its private hidden ancestor chain to go with it (cloneSubtree
+  // only ever walks REAL children, and the hidden chain sits above the
+  // node, not below it) — carrying the flags over would just produce a
+  // dangling "hidden group member" reference to a group that was never
+  // cloned. The copy comes out as a plain, ordinary node instead — same
+  // "copied away from its real parent chain" limitation a link-derived
+  // extraction already has today if copied on its own.
   state.nodes[clone.id] = clone;
   orig.children.forEach(childId => {
     const childClone = cloneSubtree(childId, clone.id);
@@ -6727,6 +6736,8 @@ function snapshotSubtree(nodeId) {
   if (node.highlightColor) copy.highlightColor = node.highlightColor;
   if (node.label) copy.label = node.label;
   if (node.selectionFilter) copy.selectionFilter = true;
+  if (node.squashGroup) copy.squashGroup = node.squashGroup;
+  if (node.hiddenInTree) copy.hiddenInTree = true;
   return copy;
 }
 
@@ -6766,6 +6777,8 @@ function restoreSubtree(snap) {
   if (snap.highlightColor) node.highlightColor = snap.highlightColor;
   if (snap.label) node.label = snap.label;
   if (snap.selectionFilter) node.selectionFilter = true;
+  if (snap.squashGroup) node.squashGroup = snap.squashGroup;
+  if (snap.hiddenInTree) node.hiddenInTree = true;
   state.nodes[node.id] = node;
   node.children = snap.children.map(c => restoreSubtree(c).id);
   return node;
@@ -6805,6 +6818,37 @@ function deleteFilterNodeWithUndo(nodeId) {
     deleteNode(nodeId);
     pushUndo({ kind: "deleteFile", snapshot, index });
     maybeQuitOnLastFileClosed();
+    return;
+  }
+  // A "Detach copy" node (see detachFilterChain) is really several tree
+  // nodes sharing one squashGroup id, shown as a single row — its private
+  // ancestor chain (position/link/... filters it needs to compute its own
+  // result) is hiddenInTree, so it never gets a row and could never be
+  // deleted through the UI on its own. Deleting the visible node must take
+  // that whole private chain with it, or the hidden members would be
+  // orphaned forever: still sitting in state.nodes/every persistence
+  // carrier, but unreachable through any row ever again. Only the group's
+  // own TOP-LEVEL members (parentId not itself a group member) need their
+  // own snapshot/delete/restore — snapshotSubtree/restoreSubtree already
+  // recurse through each one's own children, so a nested chain member
+  // (e.g. the link node under the top-level source filter) comes along for
+  // free via its parent's snapshot; snapshotting it AGAIN separately would
+  // duplicate it on restore.
+  if (node.squashGroup) {
+    const groupId = node.squashGroup;
+    const topLevelMembers = Object.keys(state.nodes).filter(id => {
+      const n = state.nodes[id];
+      if (n.squashGroup !== groupId) return false;
+      const p = state.nodes[n.parentId];
+      return !p || p.squashGroup !== groupId;
+    });
+    const items = topLevelMembers.map(id => {
+      const n = state.nodes[id];
+      const parent = state.nodes[n.parentId];
+      return { snapshot: snapshotSubtree(id), parentId: n.parentId, index: parent ? parent.children.indexOf(id) : -1 };
+    });
+    topLevelMembers.forEach(deleteNode);
+    pushUndo({ kind: "deleteGroup", items, displayId: nodeId });
     return;
   }
   const parent = state.nodes[node.parentId];
@@ -6889,6 +6933,16 @@ function renameFilterNodeWithUndo(nodeId, rawLabel) {
 function moveFilterNodeWithUndo(nodeId, newParentId) {
   const node = state.nodes[nodeId];
   if (!node || node.locked) return false; // restricted node — see deleteFilterNodeWithUndo's comment
+  // A visible "Detach copy" node (see detachFilterChain) — node.squashGroup
+  // set, node.hiddenInTree NOT set — has its own private, hidden ancestor
+  // chain (parentId points at a hiddenInTree node the group needs for its
+  // own computation, e.g. a link node). Reparenting it would silently
+  // detach it from that chain instead of moving the group, so it's the one
+  // choke point that blocks the move regardless of entry point (drag/drop,
+  // Ctrl+X+paste, or a future call site) — same reasoning as the `locked`
+  // check above. hiddenInTree members never reach here: they have no tree
+  // row, so nothing can drag/cut them in the first place.
+  if (node.squashGroup && !node.hiddenInTree) return false;
   const oldParentId = node.parentId;
   const oldParent = state.nodes[oldParentId];
   const oldIndex = oldParent ? oldParent.children.indexOf(nodeId) : -1;
@@ -6907,6 +6961,7 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
+  deleteGroup: "detached filter delete",
 };
 
 function undo() {
@@ -6934,6 +6989,12 @@ function undo() {
   } else if (action.kind === "edit") {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.before); state.activeId = action.nodeId; }
+  } else if (action.kind === "deleteGroup") {
+    action.items.forEach(item => {
+      const restored = restoreSubtree(item.snapshot);
+      insertAt(state.nodes[item.parentId], restored.id, item.index);
+    });
+    state.activeId = state.nodes[action.displayId] ? action.displayId : state.activeId;
   }
   redoStack.push(action);
   updateUndoRedoButtons();
@@ -6960,6 +7021,11 @@ function redo() {
   } else if (action.kind === "edit") {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.after); state.activeId = action.nodeId; }
+  } else if (action.kind === "deleteGroup") {
+    action.items.forEach(item => {
+      if (state.nodes[item.snapshot.id]) deleteNode(item.snapshot.id);
+    });
+    state.activeId = action.items[0] ? action.items[0].parentId : state.activeId;
   }
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
@@ -7608,6 +7674,11 @@ function flattenTreeIds() {
       // handler at all, so arrow-key nav must skip it too, or it could
       // land on a row with no visible "active" state and no real content.
       if (node && node.queued) return;
+      // hiddenInTree nodes (a "Detach copy" node's private ancestor chain —
+      // see detachFilterChain) have no row to land on either, but arrow-key
+      // nav must still reach whatever they lead to, same passthrough
+      // renderNode itself uses.
+      if (node && node.hiddenInTree) { walk(node.children); return; }
       ids.push(id);
       if (node) walk(node.children);
     });
@@ -7945,6 +8016,18 @@ function renderRenameInput(id, node) {
 function renderNode(id, depth) {
   const node = state.nodes[id];
   if (node.type === "file" && node.queued) return renderQueuedFileRow(node, depth);
+  // A "Detach copy" node's private ancestor chain (see detachFilterChain)
+  // is marked hiddenInTree so the group reads as one tree row instead of
+  // the whole chain it privately depends on — treated as transparent here:
+  // no row of its own, but its children still render at THIS depth (not
+  // depth+1), so the chain "passes through" straight to whichever
+  // descendant is the group's actual visible node. Returns a
+  // DocumentFragment instead of a wrap element — appendChild accepts both.
+  if (node.hiddenInTree) {
+    const frag = document.createDocumentFragment();
+    node.children.forEach(cid => frag.appendChild(renderNode(cid, depth)));
+    return frag;
+  }
   const wrap = document.createElement("div");
   wrap.dataset.type = node.type;
 
@@ -8119,7 +8202,7 @@ function renderNode(id, depth) {
   // its own linkedId target's subtree, for and/or/link nodes); every node
   // (file or filter) is a valid drop target to become the new parent, exactly
   // matching what Ctrl+V already allows.
-  if (node.type === "filter" && !node.locked) {
+  if (node.type === "filter" && !node.locked && !node.squashGroup) {
     row.draggable = true;
     row.addEventListener("dragstart", ev => {
       draggedNodeId = id;
@@ -8163,7 +8246,11 @@ function renderNode(id, depth) {
 function renderBreadcrumb() {
   breadcrumbEl.innerHTML = "";
   if (!state.activeId || !state.nodes[state.activeId]) return;
-  const chain = getChain(state.activeId);
+  // A "Detach copy" node's private ancestor chain (see detachFilterChain)
+  // is hiddenInTree in the tree itself — filtered out here too, or the
+  // breadcrumb would give away exactly the internal structure the tree
+  // view hides (and offer a "jump to" chip for a row that doesn't exist).
+  const chain = getChain(state.activeId).filter(n => !n.hiddenInTree);
   chain.forEach((node, i) => {
     if (i > 0) {
       const sep = document.createElement("span");
@@ -14457,7 +14544,7 @@ filterColumnChips.addEventListener("click", ev => {
 function renderFilterTargetChain() {
   filterTargetChainEl.innerHTML = "";
   if (!filterPopupBaseId || !state.nodes[filterPopupBaseId]) return;
-  const chain = getChain(filterPopupBaseId);
+  const chain = getChain(filterPopupBaseId).filter(n => !n.hiddenInTree); // see renderBreadcrumb
   chain.forEach((node, i) => {
     if (i > 0) {
       const sep = document.createElement("span");
@@ -15364,9 +15451,21 @@ function openTreeContextMenu(ev, clickedId) {
       buckets.edit.push({ action: "context", label: "Time context…", icon: ICON_CONTEXT });
       buckets.edit.push({ action: "countContext", label: "Count context…", icon: ICON_CONTEXT });
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
-      buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
+      // Cut/move is withheld for a "Detach copy" node's visible row (see
+      // moveFilterNodeWithUndo) — its own parentId is required by its
+      // private hidden chain, so offering Cut here would just fail at
+      // paste-time with a confusing "circular reference" toast. Copy stays
+      // available (produces a plain, ordinary node — see cloneSubtree).
+      if (!node.squashGroup) buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
       buckets.library.push({ action: "saveToLibrary", label: "Save to library…", icon: ICON_SAVE });
+      // "Detach copy" (see detachFilterChain): clones this node's whole
+      // needed chain (its ancestors plus any linkedId targets) into a
+      // fresh, self-contained copy, independent of the rest of the tree —
+      // shown as this one row afterward. Offered unconditionally on any
+      // filter node, same as Save/Load — even a plain node with no
+      // cross-references benefits (a private, safely-editable copy).
+      buckets.library.push({ action: "detach", label: "Detach copy (break references)", icon: ICON_COPY });
     }
     // Loading is offered on file nodes too: the saved branch is then applied
     // to the whole file, reproducing the original overall result. Same for
@@ -15490,6 +15589,13 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "saveFilter") {
     if (treeCtxId && state.nodes[treeCtxId]) saveFilterToFile(treeCtxId);
+    return;
+  }
+  if (action === "detach") {
+    if (treeCtxId && state.nodes[treeCtxId]) {
+      const newId = detachFilterChain(treeCtxId);
+      if (newId) { state.activeId = newId; render(); showCopyToast("Detached copy created"); }
+    }
     return;
   }
   if (action === "saveToLibrary") {
@@ -15944,6 +16050,59 @@ function serializeFilterBranch(nodeId) {
   return { roots, activeRef: refs[nodeId] || null };
 }
 
+// "Detach copy" (person-requested "squash"): clones the WHOLE chain a node
+// structurally depends on — its own ancestor chain plus any linkedId
+// targets' ancestor chains, exactly serializeFilterBranch's own definition
+// of "needed" for Save/Load — into a brand-new, self-contained set of
+// nodes, independent of everything else in the tree. Reuses
+// materializeSerializedRoots (the same rebuild step Save/Load and the
+// library use) rather than cloneSubtree, specifically because cloneSubtree
+// only ever walks REAL children and keeps linkedId pointing at the
+// ORIGINAL target (see "Core data model" in PROJECT.md) — exactly the
+// cross-tree-reference behavior this action exists to break.
+//
+// The clicked node's own clone keeps behaving exactly like the original
+// (same filterType — an extraction clone still toggles Extract<->Save
+// normally); every OTHER node the clone needs (its private copy of
+// whatever position/value/link/... chain the original depended on) is
+// tagged hiddenInTree so it never gets its own tree row — renderNode
+// treats a hiddenInTree node as transparent, rendering straight through to
+// its children at the same depth — so the whole private chain shows up in
+// the tree as exactly one row, at the top level (same "independent, near
+// the top" placement Bookmarks/selection filters already use). All cloned
+// nodes (the visible one included) share one fresh squashGroup id, purely
+// so deleteFilterNodeWithUndo can find and clean up the whole private
+// chain together instead of leaving hidden orphans behind — see there.
+// Returns the new, visible node's id (the one to make active), or null if
+// nodeId isn't a real filter node.
+function detachFilterChain(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter") return null;
+  const branch = serializeFilterBranch(nodeId);
+  if (!branch) return null;
+  const fileId = getRootFileId(node.parentId);
+  if (!fileId) return null;
+  const file = state.nodes[fileId];
+
+  const { created, refMap } = materializeSerializedRoots(branch.roots, () => fileId);
+  created.forEach(n => file.children.unshift(n.id)); // top-level, unshifted — see comment above
+  const displayId = refMap[branch.activeRef];
+  if (!displayId) return null;
+
+  const groupId = uid("sq");
+  const allIds = [];
+  function collect(id) { allIds.push(id); state.nodes[id].children.forEach(collect); }
+  created.forEach(n => collect(n.id));
+  allIds.forEach(id => {
+    const n = state.nodes[id];
+    n.squashGroup = groupId;
+    if (id !== displayId) n.hiddenInTree = true;
+  });
+
+  invalidateAllCaches();
+  return displayId;
+}
+
 function downloadJsonFallback(json, filename) {
   const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
   const a = document.createElement("a");
@@ -16014,31 +16173,22 @@ filterFileInput.addEventListener("change", ev => {
   filterFileInput.value = "";
 });
 
-function importFilterJson(text) {
-  const target = state.nodes[loadFilterTargetId];
-  if (!target) return;
-
-  let data;
-  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
-  if (!data || data.format !== FILTER_FILE_FORMAT || !Array.isArray(data.roots)) {
-    showCopyToast("Not a PhiLogg filter file");
-    return;
-  }
-  if (data.version > FILTER_FILE_VERSION) { showCopyToast("Filter file was saved by a newer version"); return; }
-
-  // Validate the whole tree before creating anything, so a corrupt file
-  // never leaves half-built nodes behind.
-  function validate(sn) {
-    // filterType "bookmarks" is deliberately rejected here: it's the
-    // auto-managed per-file node (see syncBookmarksFilterNode) and is never
-    // written to a saved filter file in the first place — an imported one
-    // (hand-edited file, or an old export from before this restriction
-    // existed) would just be an unlocked look-alike with a stale match set.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
-    return (sn.children || []).every(validate);
-  }
-  if (!data.roots.every(validate)) { showCopyToast("Filter file contains unknown filter types"); return; }
-
+// Shared rebuild step behind serializeFilterBranch()'s roots — used by
+// importFilterJson (Save/Load filter JSON, cross-file), the reusable
+// filter library's apply step (same JSON shape, see below), and
+// detachFilterChain (same-file "Detach copy" — see there for why it needs
+// this instead of cloneSubtree). Materializes every serialized node with a
+// FRESH id, wires and/or/link's linkedRef back to the matching fresh id
+// (dropping a node whose target never resolved — a hand-edited file might
+// have a dangling one; a real serializeFilterBranch() output never does),
+// and attaches each top-level root via resolveParentId(root.attach) — the
+// one thing that differs per caller (cross-file: "target" = wherever the
+// person invoked Load on, "file" = that file's root; same-file detach:
+// everything lands at the file's own top level, see detachFilterChain).
+// Returns { created, refMap } — created is the top-level roots in
+// data.roots' own order, refMap resolves a serialized `ref` to its fresh id
+// (activeRef included).
+function materializeSerializedRoots(roots, resolveParentId) {
   const refMap = {};   // serialized ref -> new uid
   const pending = [];  // linkedRef assignments resolved after all nodes exist
 
@@ -16090,9 +16240,8 @@ function importFilterJson(text) {
     return node;
   }
 
-  const fileId = getRootFileId(target.id);
-  const created = data.roots.map(r => {
-    const parentId = r.attach === "file" && fileId ? fileId : target.id;
+  const created = roots.map(r => {
+    const parentId = resolveParentId(r.attach);
     const parent = state.nodes[parentId];
     const node = materialize(r, parentId);
     if (parent) parent.children.push(node.id);
@@ -16107,6 +16256,38 @@ function importFilterJson(text) {
     if (linkedId) p.node.linkedId = linkedId;
     else deleteNode(p.node.id);
   });
+
+  return { created, refMap };
+}
+
+function importFilterJson(text) {
+  const target = state.nodes[loadFilterTargetId];
+  if (!target) return;
+
+  let data;
+  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
+  if (!data || data.format !== FILTER_FILE_FORMAT || !Array.isArray(data.roots)) {
+    showCopyToast("Not a PhiLogg filter file");
+    return;
+  }
+  if (data.version > FILTER_FILE_VERSION) { showCopyToast("Filter file was saved by a newer version"); return; }
+
+  // Validate the whole tree before creating anything, so a corrupt file
+  // never leaves half-built nodes behind.
+  function validate(sn) {
+    // filterType "bookmarks" is deliberately rejected here: it's the
+    // auto-managed per-file node (see syncBookmarksFilterNode) and is never
+    // written to a saved filter file in the first place — an imported one
+    // (hand-edited file, or an old export from before this restriction
+    // existed) would just be an unlocked look-alike with a stale match set.
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
+    return (sn.children || []).every(validate);
+  }
+  if (!data.roots.every(validate)) { showCopyToast("Filter file contains unknown filter types"); return; }
+
+  const fileId = getRootFileId(target.id);
+  const { created, refMap } = materializeSerializedRoots(data.roots,
+    attach => attach === "file" && fileId ? fileId : target.id);
 
   const activeId = data.activeRef != null ? refMap[data.activeRef] : null;
   if (activeId && state.nodes[activeId]) state.activeId = activeId;
@@ -17755,6 +17936,14 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
     if (node.selectionFilter) out.selectionFilter = true;
+    // squashGroup/hiddenInTree (see detachFilterChain) carry over verbatim,
+    // not via the ref scheme linkedRef uses: a squash group's members are
+    // always all inside this same file (detachFilterChain places the whole
+    // group there), restored back into that same file as one unit, so the
+    // raw group id round-trips fine without remapping — same "opaque tag,
+    // no cross-node indirection needed" reasoning idset's node.value uses.
+    if (node.squashGroup) out.squashGroup = node.squashGroup;
+    if (node.hiddenInTree) out.hiddenInTree = true;
     return out;
   }
 
@@ -17909,6 +18098,8 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.squashGroup) node.squashGroup = sn.squashGroup;
+    if (sn.hiddenInTree) node.hiddenInTree = true;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
     if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });
