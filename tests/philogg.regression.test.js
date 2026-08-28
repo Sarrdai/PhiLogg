@@ -116,6 +116,7 @@ async function withApp(run, opts = {}) {
       get extractColumns() { return extractColumns; },
       get plotConfig() { return plotConfig; },
       get plotZoom() { return plotZoom; },
+      set plotZoom(v) { plotZoom = v; },
       get plotLastRender() { return plotLastRender; },
       get linkPairsData() { return linkPairsData; },
       get linkBlockOffsets() { return linkBlockOffsets; },
@@ -12677,6 +12678,386 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 122 — Regex filter type: "Interpret input as regex" toggle
+   Origin: this session (FEATURE_BACKLOG.md #16). A real JS RegExp,
+   alongside (not replacing) the wildcard-token "text" filter language —
+   toggled per-node via node.isRegex on the SAME "text" filterType (no new
+   filter type), gated at the top of the filter popup by
+   #filterRegexCheckbox. Case-sensitivity/column-restriction stay available
+   in both modes; only the wildcard-token-specific UI (token chips, the
+   pattern preview) hides while regex mode is on. An invalid regex degrades
+   to an empty match set (getEntries) / an inline error state (the popup),
+   never a thrown exception. Threaded through every persistence carrier per
+   CLAUDE.md's "Known gotchas": cloneSubtree, snapshotSubtree/restoreSubtree
+   (+ the field-edit-undo captureNodeFields/applyNodeFields carrier),
+   serializeFilterBranch/importFilterJson, serializeFilterTreeForCache/
+   materializeCachedFilters.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("122. Regex filter type: \"Interpret input as regex\" toggle");
+
+  const lines = [
+    `2024-01-15 10:00:00,000\tERROR\t"worker-1"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"connection reset by peer"`, // 0
+    `2024-01-15 10:00:01,000\tINFO\t"worker-2"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"connection established"`,     // 1
+    `2024-01-15 10:00:02,000\tINFO\t"worker-2"\tC:\\src\\Foo.cs\tline 2\t[DoWork]\t"nothing interesting"`,        // 2
+    `2024-01-15 10:00:03,000\tERROR\t"main"\tC:\\src\\Foo.cs\tline 3\t[DoWork]\t"CONNECTION timed out"`,          // 3
+  ];
+  const logText = lines.join("\n") + "\n";
+  const f = await w.addFile("regex.log", logText, () => {});
+  w.render();
+
+  // --- getEntries semantics: node.isRegex compiles a real RegExp ---
+  // Restricted to the "message" column so "^" anchors to the message text
+  // itself, not the raw tab-separated line (which starts with the
+  // timestamp) — same textColumnValue lookup textFilterMatches always uses.
+  const re = w.createFilterNode(f.id, "text", "^connection", false, null, false, ["message"], true);
+  assert(re.filterType === "text" && re.isRegex === true, "isRegex:true stays a plain \"text\" node — no new filterType");
+  assert(w.getEntries(re.id).length === 3 && [0, 1, 3].every(i => w.getEntries(re.id).some(e => e.id === f.entries[i].id)),
+    "a real regex ('^connection') matches by real regex semantics (anchored to the start of the message) — entries 0, 1 and 3, case-insensitively by default (unlike a wildcard-token pattern, this is a genuine RegExp)");
+
+  // --- Case-sensitivity still applies to regex mode ---
+  const reCaseSensitive = w.createFilterNode(f.id, "text", "^CONNECTION", false, null, true, ["message"], true);
+  assert(w.getEntries(reCaseSensitive.id).length === 1 && w.getEntries(reCaseSensitive.id)[0].id === f.entries[3].id,
+    "case-sensitive regex mode matches only the exact-case 'CONNECTION' at entry 3");
+
+  // --- Column restriction still applies to regex mode ---
+  const reColumns = w.createFilterNode(f.id, "text", "^worker-2$", false, null, false, ["thread"], true);
+  assert(w.getEntries(reColumns.id).length === 2 && w.getEntries(reColumns.id).every(e => e.thread === "worker-2"),
+    "column-restricted regex mode ('thread' only) matches entries 1 and 2 by their thread field");
+
+  // --- An invalid regex fails gracefully (empty result, no throw) ---
+  const reInvalid = w.createFilterNode(f.id, "text", "(unterminated", false, null, false, null, true);
+  let threw = false;
+  let invalidResult;
+  try { invalidResult = w.getEntries(reInvalid.id); } catch (err) { threw = true; }
+  assert(!threw, "an invalid regex (unbalanced group) does not throw inside getEntries");
+  assert(Array.isArray(invalidResult) && invalidResult.length === 0, "an invalid regex degrades to an empty match set");
+
+  // --- Popup UI: toggling regex mode hides wildcard-token-specific UI, keeps the rest ---
+  T.state.activeId = f.id;
+  w.render();
+  w.openFilterPopup();
+  assert(d.querySelector("#filterRegexCheckbox").checked === false, "regex checkbox defaults to UNCHECKED, same as case/NOT");
+  assert(isVisible(d.querySelector("#filterTokenChips"), w), "sanity: token chips visible before regex mode is toggled on");
+
+  fireClick(d.querySelector("#filterRegexCheckbox"), w);
+  assert(!isVisible(d.querySelector("#filterTokenChips"), w), "turning regex mode on hides the wildcard-token insert chips");
+  assert(!d.querySelector("#filterCaseCheckbox").disabled && !d.querySelector("#filterColumnChips").classList.contains("hidden"),
+    "case-sensitivity and column-restriction stay visible/enabled in regex mode — only wildcard-specific UI is hidden");
+
+  fireClick(d.querySelector('.column-chip[data-col="message"]'), w); // anchor "^" against the message text, not the raw line
+  const filterInput = d.querySelector("#filterInput");
+  filterInput.value = "^connection";
+  fireInput(filterInput, w);
+  await new Promise(r => setTimeout(r, 200));
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 of 4"), "live match count works in regex mode too (case-insensitive '^connection' also matches entry 3's 'CONNECTION')");
+  assert(d.querySelector("#filterExtractBtn").disabled === true, "Extract stays disabled in regex mode (no [value:...] placeholder vocabulary to extract)");
+
+  // Invalid regex while typing -> inline error state, not a crash
+  filterInput.value = "(unterminated";
+  fireInput(filterInput, w);
+  await new Promise(r => setTimeout(r, 200));
+  assert(d.querySelector("#filterLiveMatch").textContent === "Invalid regex" && d.querySelector("#filterLiveMatch").className === "error",
+    "an invalid regex shows an inline \"Invalid regex\" error instead of crashing the live-match preview");
+
+  // Submitting an invalid regex keeps the popup open instead of creating a broken node
+  const beforeSubmitCount = f.children.length;
+  fireSubmit(d.querySelector("#filterForm"), w);
+  assert(f.children.length === beforeSubmitCount, "submitting an invalid regex does not create a filter node");
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "the popup stays open so the regex can be fixed");
+
+  // Fix it and submit for real
+  filterInput.value = "^connection";
+  fireInput(filterInput, w);
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const uiCreated = T.state.nodes[T.state.activeId];
+  assert(uiCreated.filterType === "text" && uiCreated.isRegex === true && uiCreated.value === "^connection",
+    "submitting the popup with regex mode on creates a \"text\" node with isRegex:true");
+
+  // --- Persistence carriers ---
+
+  // cloneSubtree (copy/paste)
+  const cloneSource = w.createFilterNode(f.id, "text", "^connection", false, null, true, ["message"], true);
+  T.state.activeId = cloneSource.id;
+  T.state.clipboard = { id: cloneSource.id, mode: "copy" };
+  T.state.activeId = f.id;
+  w.pasteClipboard();
+  const pasted = T.state.nodes[f.children[f.children.length - 1]];
+  assert(pasted.isRegex === true, "cloneSubtree (copy/paste) carries isRegex to the pasted copy");
+
+  // snapshotSubtree/restoreSubtree (undo/redo, via delete)
+  const undoNode = w.createFilterNode(f.id, "text", "^connection", false, null, false, null, true);
+  w.deleteFilterNodeWithUndo(undoNode.id);
+  assert(!T.state.nodes[undoNode.id], "sanity: node deleted");
+  w.undo();
+  const restored = T.state.nodes[undoNode.id];
+  assert(restored && restored.isRegex === true, "undo (snapshotSubtree/restoreSubtree) preserves isRegex");
+
+  // withFieldEditUndo's captureNodeFields/applyNodeFields (in-place edit undo)
+  const editNode = w.createFilterNode(f.id, "text", "old", false, null, false, null, false);
+  w.updateFilterNodeWithUndo(editNode.id, "text", "^connection", false, undefined, false, null, true);
+  assert(editNode.isRegex === true, "sanity: the edit itself set isRegex");
+  w.undo();
+  assert(!editNode.isRegex, "undoing an in-place field edit (captureNodeFields/applyNodeFields) reverts isRegex too");
+  w.redo();
+  assert(editNode.isRegex === true, "redo re-applies isRegex");
+
+  // serializeFilterBranch / importFilterJson (save/load JSON)
+  const fSave = await w.addFile("regex-save-src.log", logText, () => {});
+  const saveNode = w.createFilterNode(fSave.id, "text", "^connection", false, null, false, null, true);
+  w.render();
+  const branch = w.serializeFilterBranch(saveNode.id);
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const fLoad = await w.addFile("regex-save-dest.log", logText, () => {});
+  w.render();
+  const setScript = d.createElement("script");
+  setScript.textContent = `loadFilterTargetId = ${JSON.stringify(fLoad.id)};`;
+  d.body.appendChild(setScript);
+  w.importFilterJson(json);
+  const loaded = T.state.nodes[fLoad.children[fLoad.children.length - 1]];
+  assert(loaded.isRegex === true && loaded.value === "^connection", "save/load JSON round trip preserves isRegex");
+
+  // serializeFilterTreeForCache / materializeCachedFilters (session cache)
+  const fCacheSrc = await w.addFile("regex-cache-src.log", logText, () => {});
+  w.createFilterNode(fCacheSrc.id, "text", "^connection", false, null, false, null, true);
+  w.render();
+  const { roots: cacheRoots } = w.serializeFilterTreeForCache(fCacheSrc);
+  const fCacheDest = await w.addFile("regex-cache-dest.log", logText, () => {});
+  w.materializeCachedFilters(fCacheDest, cacheRoots);
+  const cached = Object.values(T.state.nodes).find(n => n.parentId === fCacheDest.id);
+  assert(cached && cached.isRegex === true, "session-cache serialize/materialize round trip preserves isRegex");
+});
+
+/* ============================================================
+   GROUP 123 — "Create filter from plot view" (FEATURE_BACKLOG.md #11)
+   Origin: this session. Resolves the backlog item's open question by
+   offering BOTH options off the Plot tab's zoomed/panned viewport
+   (plotLastRender's xDomainMin/xDomainMax — the currently-visible range,
+   not the full extraction result): (a) a "timerange" filter spanning the
+   viewport's timestamps (reusing the existing generic time-filter node),
+   and (b) a new "idset" filter (an explicit array of entry ids) matching
+   exactly the entries currently plotted in view. Two toolbar buttons in
+   #plotZoomBar (#plotFilterTimeRangeBtn/#plotFilterEntriesBtn), following
+   the same "small buttons in the plot's own toolbar" convention as the
+   zoom controls already there.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("123. \"Create filter from plot view\": timerange + idset from the Plot tab's visible viewport");
+
+  // 5 entries, 1s apart, extracting a distinct int per row (0,10,20,30,40) —
+  // the synthetic Index column (default X axis, plottable[0]) then gives a
+  // clean, exact 0..4 row-index domain to zoom into.
+  const lines = [0, 10, 20, 30, 40].map((n, i) =>
+    `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"n=${n}"`
+  );
+  const logText = lines.join("\n") + "\n";
+  const f = await w.addFile("plotfilter.log", logText, () => {});
+  w.render();
+
+  // --- getEntries "idset" branch, direct sanity check ---
+  const idNode = w.createFilterNode(f.id, "idset", [f.entries[1].id, f.entries[3].id]);
+  assert(idNode.filterType === "idset" && idNode.name.includes("2") && idNode.name.includes("entries"),
+    "an idset node's display name reports its entry count");
+  const idResult = w.getEntries(idNode.id);
+  assert(idResult.length === 2 && idResult.some(e => e.id === f.entries[1].id) && idResult.some(e => e.id === f.entries[3].id),
+    "an idset filter matches exactly the entries in its value array, regardless of order in the parent");
+
+  // "idset" needed no new persistence-carrier code — its value rides the
+  // same generic node.value field every filter type already gets copied
+  // through (same precedent as "timerange", see docs/filters.md) — verified
+  // directly via a real cloneSubtree (copy/paste) round trip.
+  T.state.activeId = idNode.id;
+  T.state.clipboard = { id: idNode.id, mode: "copy" };
+  T.state.activeId = f.id;
+  w.pasteClipboard();
+  const pastedIdNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(pastedIdNode.filterType === "idset" && JSON.stringify(pastedIdNode.value.slice().sort()) === JSON.stringify(idNode.value.slice().sort()),
+    "cloneSubtree (copy/paste) carries an idset node's entry-id array to the pasted copy, confirming the generic value-field precedent holds");
+
+  const node = w.createFilterNode(f.id, "extract", "n=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.switchExtractView("plot");
+  assert(T.extractRowsData.length === 5, "sanity: one extraction row per entry");
+  assert(T.plotConfig.xCol === -2, "sanity: the synthetic Index column (-2) is the default X axis");
+
+  const beforeChildren = node.children.length;
+
+  // No zoom active yet (home view) — the whole extraction is "visible".
+  fireClick(d.querySelector("#plotFilterTimeRangeBtn"), w);
+  assert(node.children.length === beforeChildren + 1, "clicking \"Filter: time range\" with no zoom active creates one new child filter");
+  const homeTimeNode = T.state.nodes[node.children[node.children.length - 1]];
+  assert(homeTimeNode.filterType === "timerange" && homeTimeNode.value.from === f.entries[0].ts && homeTimeNode.value.to === f.entries[4].ts,
+    "with no zoom, the time-range filter spans the FULL extraction's timestamps (home view == the whole result)");
+
+  // Zoom the plot's X domain down to rows [1.5, 3.5] — i.e. rows 2 and 3
+  // only (Index values 2 and 3) — directly via the plotZoom test hook
+  // (equivalent to what the wheel/drag-rect zoom interaction would produce),
+  // then re-render so plotLastRender reflects it.
+  T.state.activeId = node.id;
+  T.plotZoom = { x0: 1.5, x1: 3.5, y0: -1e6, y1: 1e6 };
+  w.renderPlotChart();
+  assert(T.plotLastRender.xDomainMin > 1 && T.plotLastRender.xDomainMax < 4, "sanity: the zoomed render's X domain is narrowed to roughly [1.5, 3.5]");
+
+  fireClick(d.querySelector("#plotFilterEntriesBtn"), w);
+  const idsetNode = T.state.nodes[node.children[node.children.length - 1]];
+  assert(idsetNode.filterType === "idset" && idsetNode.value.length === 2 &&
+    idsetNode.value.includes(f.entries[2].id) && idsetNode.value.includes(f.entries[3].id),
+    "\"Filter: these entries\" with the zoomed viewport creates an idset filter with EXACTLY rows 2 and 3 (Index 2 and 3), not the whole extraction");
+  assert(w.getEntries(idsetNode.id).length === 2, "the created idset filter's own getEntries result matches those same 2 entries");
+
+  T.state.activeId = node.id;
+  fireClick(d.querySelector("#plotFilterTimeRangeBtn"), w);
+  const zoomedTimeNode = T.state.nodes[node.children[node.children.length - 1]];
+  assert(zoomedTimeNode.filterType === "timerange" && zoomedTimeNode.value.from === f.entries[2].ts && zoomedTimeNode.value.to === f.entries[3].ts,
+    "with the same zoom, \"Filter: time range\" spans only rows 2..3's timestamps, not the full extraction's");
+
+  // Zooming into a gap with no rows at all (strictly between two integer
+  // Index values, well inside the home domain so clampZoomAxis's
+  // zoom-out-buffer snapping can't pull a real row back into view at an
+  // edge) must not create a broken/empty filter.
+  T.state.activeId = node.id;
+  T.plotZoom = { x0: 2.6, x1: 2.9, y0: -1e6, y1: 1e6 };
+  w.renderPlotChart();
+  assert(w.getPlotViewportEntries().length === 0, "sanity: this zoom window genuinely contains no row's Index value");
+  const beforeEmptyClickCount = node.children.length;
+  fireClick(d.querySelector("#plotFilterEntriesBtn"), w);
+  assert(node.children.length === beforeEmptyClickCount, "a viewport with zero visible entries creates no filter node at all (a toast is shown instead)");
+});
+
+/* ============================================================
+   GROUP 124 — "Add to selection": redesigned (this session) from the
+   original "Filter from selection" single menu item. Selection filters
+   ("idset" nodes, node.selectionFilter === true) are now always created
+   TOP-LEVEL directly under the file, alongside the auto-managed "Bookmarks"
+   node (syncBookmarksFilterNode) — never nested under whatever filter node
+   happens to be active. A single right-clicked row now qualifies too, not
+   just a 2+ row multi-selection. The single context-menu item is now a
+   submenu trigger, #ctxAddToSelection, opening #addToSelectionMenu: existing
+   top-level selection filters listed by name (clicking one ADDS the current
+   row(s) to its value array, deduped) plus, below a separator, "Create new
+   selection filter". Unlike Bookmarks: deletable (no `locked`), no
+   "always show"/pin toggle, and membership never touches state.bookmarks.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("124. \"Add to selection\": top-level, named, deletable idset filters from log rows");
+
+  const f = await w.addFile("selfilter.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const rowAt = i => d.querySelector('#tableRows [data-entry-id="' + f.entries[i].id + '"]');
+  const clickWith = (el, opts) => el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ...opts }));
+  const menuAction = sel => d.querySelector('#addToSelectionMenu [' + sel + ']');
+
+  // --- A SINGLE right-clicked row (no multi-selection) now qualifies too ---
+  clickWith(rowAt(2), {});
+  assert(T.state.logMultiSelect.size <= 1, "sanity: no 2+ row multi-selection active");
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[2]);
+  assert(isVisible(d.querySelector("#ctxAddToSelection"), w) === true,
+    "\"Add to selection\" is offered even for a single selected/right-clicked row");
+
+  fireClick(d.querySelector("#ctxAddToSelection"), w);
+  assert(isVisible(d.querySelector("#addToSelectionMenu"), w) === true, "clicking it opens the submenu");
+  assert(menuAction('data-selection-id') === null,
+    "with zero existing selection filters, the submenu lists none — just \"Create new selection filter\", no broken empty list");
+  const createItem = menuAction('data-selection-action="create"');
+  assert(createItem && createItem.textContent.includes("Create new selection filter"), "the create entry is present and labeled");
+
+  const beforeRootChildren = f.children.slice();
+  fireClick(createItem, w);
+  assert(f.children.length === beforeRootChildren.length + 1, "creates exactly one new node");
+  const addedId = f.children.find(id => !beforeRootChildren.includes(id));
+  const sel1 = T.state.nodes[addedId];
+  assert(sel1.filterType === "idset" && sel1.selectionFilter === true, "the created node is an \"idset\" filter marked selectionFilter:true");
+  assert(sel1.value.length === 1 && sel1.value[0] === f.entries[2].id, "its value is exactly the single right-clicked row's entry id");
+  assert(f.children[0] === sel1.id, "placed TOP-LEVEL as the file's first child — alongside where Bookmarks live — not nested under any other filter, regardless of state.activeId at click time");
+  assert(sel1.locked !== true, "unlike the auto-managed Bookmarks node, a selection filter is NOT locked");
+  assert(T.state.activeId === sel1.id, "creating it reveals it as the active node (revealFilteredView)");
+
+  // --- Deletable via the normal filter-node delete action (unlike Bookmarks) ---
+  const beforeDeleteCount = f.children.length;
+  w.deleteFilterNodeWithUndo(sel1.id);
+  assert(f.children.length === beforeDeleteCount - 1 && !T.state.nodes[sel1.id],
+    "a selection filter is deletable through deleteFilterNodeWithUndo, same as any ordinary unlocked filter node");
+  w.undo();
+  assert(T.state.nodes[sel1.id], "sanity: undo restores it for the rest of this test");
+  T.state.activeId = sel1.id;
+
+  // --- No "always show" control: the global bookmarks-pin toggle is
+  // hard-wired to state.bookmarks specifically and never references
+  // selection filters at all — nothing analogous exists for them. ---
+  assert(T.state.bookmarks.size === 0, "creating/populating a selection filter never touches state.bookmarks — no bookmark icon/state is set on member entries");
+
+  // --- Multi-select 3 rows, then "Add to selection" -> the EXISTING
+  // selection filter (sel1) instead of creating a second one ---
+  T.state.activeId = f.id; // back to the full file (not sel1's own 1-row filtered result) so every row is on screen
+  w.render();
+  clickWith(rowAt(2), {});
+  clickWith(rowAt(5), { ctrlKey: true });
+  clickWith(rowAt(7), { ctrlKey: true });
+  assert(T.state.logMultiSelect.size === 3, "sanity: 3 rows multi-selected");
+
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[7]);
+  fireClick(d.querySelector("#ctxAddToSelection"), w);
+  const existingItem = menuAction('data-selection-id="' + sel1.id + '"');
+  assert(existingItem && existingItem.textContent === sel1.name,
+    "the submenu now lists the existing selection filter by its name (idSetFilterName's \"N entries (selection)\" auto-name)");
+
+  const childCountBeforeAdd = f.children.length;
+  fireClick(existingItem, w);
+  assert(f.children.length === childCountBeforeAdd, "clicking an EXISTING selection adds to it — creates no new node");
+  const expectedIds = [f.entries[2].id, f.entries[5].id, f.entries[7].id];
+  assert(sel1.value.length === 3 && expectedIds.every(id => sel1.value.includes(id)),
+    "the multi-selected rows' ids were added to the existing node's value array (the original single-row id, already present, wasn't duplicated)");
+  const result = w.getEntries(sel1.id).map(e => e.id).sort();
+  assert(JSON.stringify(result) === JSON.stringify(expectedIds.slice().sort()), "getEntries on the selection filter matches exactly those 3 entries");
+
+  // --- Adding an already-present id again doesn't duplicate it ---
+  T.state.activeId = f.id;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[2]);
+  fireClick(d.querySelector("#ctxAddToSelection"), w);
+  fireClick(menuAction('data-selection-id="' + sel1.id + '"'), w);
+  assert(sel1.value.length === 3, "re-adding a row already in the selection is deduped, not appended again");
+
+  // --- A plot-view-created "idset" node (no selectionFilter flag) must NOT
+  // appear in the "Add to selection" submenu — it's a different producer. ---
+  const plotNode = w.createFilterNode(f.id, "idset", [f.entries[0].id]);
+  assert(!plotNode.selectionFilter, "sanity: a plain createFilterNode idset call (the plot-view producer's path) leaves selectionFilter unset");
+  T.state.activeId = f.id;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[3]);
+  fireClick(d.querySelector("#ctxAddToSelection"), w);
+  assert(menuAction('data-selection-id="' + plotNode.id + '"') === null,
+    "the plot-view idset node is excluded from the submenu's list of selection filters");
+  assert(menuAction('data-selection-id="' + sel1.id + '"') !== null, "...while the real selection filter still is listed");
+  w.closeContextMenu();
+
+  // --- Persistence carriers: selectionFilter is a NEW field (unlike the
+  // shared idset value/getEntries machinery, which needed no new code) —
+  // verify it explicitly rides cloneSubtree, snapshot/restore (undo/redo,
+  // already exercised above), and the session-cache serialize/materialize
+  // round trip. ---
+  T.state.clipboard = { id: sel1.id, mode: "copy" };
+  T.state.activeId = f.id;
+  w.pasteClipboard();
+  const pastedNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(pastedNode.filterType === "idset" && pastedNode.selectionFilter === true
+    && JSON.stringify(pastedNode.value.slice().sort()) === JSON.stringify(sel1.value.slice().sort()),
+    "cloneSubtree (copy/paste) carries selectionFilter:true and the full value array to the pasted copy");
+
+  const { roots } = w.serializeFilterTreeForCache(f);
+  const serializedSel1 = roots.find(r => r.value && JSON.stringify(r.value.slice().sort()) === JSON.stringify(sel1.value.slice().sort()) && r.selectionFilter);
+  assert(serializedSel1, "serializeFilterTreeForCache writes selectionFilter:true for a selection filter node");
+
+  const cacheFile = { id: w.uid("n"), type: "file", name: "cachefile", children: [], entries: f.entries, cacheKey: "ck1" };
+  T.state.nodes[cacheFile.id] = cacheFile;
+  w.materializeCachedFilters(cacheFile, roots);
+  const restoredSel1 = cacheFile.children.map(id => T.state.nodes[id]).find(n => n.filterType === "idset" && n.selectionFilter);
+  assert(restoredSel1 && JSON.stringify(restoredSel1.value.slice().sort()) === JSON.stringify(sel1.value.slice().sort()),
+    "materializeCachedFilters restores selectionFilter:true and the value array from the cache round trip");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -14360,6 +14741,62 @@ process.exit(failed ? 1 : 0);
               out of the rendered window" early return); showFhTab and
               applyFhView's Stacked branch call it on every tab switch too,
               same pattern as their existing minimap-range-box calls.
+
+   Group 122 — this session (2026-08-27), FEATURE_BACKLOG.md #16 ("Regex
+              filter type"): a real JS RegExp alternative to the wildcard-
+              token "text" filter language, toggled per-node via
+              node.isRegex (no new filterType) and gated at the top of the
+              filter popup by #filterRegexCheckbox ("Interpret input as
+              regex"). getEntries/textFilterMatches/evaluateLiveMatch all
+              route through the new compileRegexFilter() helper, which
+              degrades an invalid pattern to null (empty match set /
+              inline "Invalid regex" error) instead of throwing.
+              Case-sensitivity and column-restriction stay available in
+              both modes; only the wildcard-token-specific UI (the insert
+              chips, the pattern preview) hides while regex mode is on, and
+              Extract stays disabled (no [value:...] vocabulary to
+              extract). Threaded through every persistence carrier per
+              CLAUDE.md's "Known gotchas": cloneSubtree,
+              snapshotSubtree/restoreSubtree, the field-edit-undo
+              captureNodeFields/applyNodeFields carrier,
+              serializeFilterBranch/importFilterJson,
+              serializeFilterTreeForCache/materializeCachedFilters.
+
+   Group 123 — this session (2026-08-27), FEATURE_BACKLOG.md #11 ("Create a
+              filter from the currently visible plot area"): resolves the
+              backlog item's "time-range vs. exact-entries" open question by
+              offering BOTH off the Plot tab's own zoomed/panned viewport
+              (plotLastRender's xDomainMin/xDomainMax) via two new toolbar
+              buttons in #plotZoomBar — #plotFilterTimeRangeBtn (a
+              "timerange" filter spanning the viewport's timestamps,
+              reusing the existing generic time-filter node type) and
+              #plotFilterEntriesBtn (a new "idset" filterType — a plain
+              array of entry ids in node.value — matching exactly the
+              entries currently plotted in view). getPlotViewportEntries()
+              derives "currently visible" the same way renderPlotChart
+              itself positions each row (bar: row-index center; line/
+              scatter: the X column's parsed value), so it can never
+              disagree with what's actually drawn. "idset" needed no new
+              persistence-carrier code (its value rides the same generic
+              `value` field every filter type already gets copied through,
+              same precedent as "timerange") — verified directly via
+              getEntries and a copy/paste round trip in this group.
+   Group 124 — this session (2026-08-27), "Add to selection" (redesign of the
+              same-day "Filter from selection" item above): selection filters
+              ("idset" nodes, new node.selectionFilter flag) are now created
+              TOP-LEVEL directly under the file — alongside the auto-managed
+              Bookmarks node, never nested under whatever's active — via a new
+              #ctxAddToSelection submenu (#addToSelectionMenu) that lists
+              existing selection filters by name (click adds the current
+              row(s), deduped) plus a "Create new selection filter" entry.
+              Works for a single right-clicked row now, not just 2+
+              multi-selected. Deletable (unlike Bookmarks), no "always show"
+              toggle, never touches state.bookmarks. selectionFilter, being a
+              genuinely new field, is verified explicitly through
+              cloneSubtree, snapshot/restore (undo/redo), and the
+              serializeFilterTreeForCache/materializeCachedFilters round trip
+              — not just assumed to ride along like idset's shared value field
+              did in Group 123.
 
    Deliberately DROPPED (features superseded or removed since the
    originating session — keeping their old assertions would either fail

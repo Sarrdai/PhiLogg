@@ -46,11 +46,8 @@ this point.
 
 ### Navigation & reading
 
-11. **Create a filter from the currently visible plot area** — either as a time-range filter, or targeted specifically at the log entries currently "visible" in the plot/minimap. Open question: which of the two (or both) the interaction should produce.
-
 ### Filter tree workflow
 
-16. **Regex filter type** — a real `RegExp` alongside the wildcard-token text filter, with the same live match count, case-sensitivity, and target-column options. Complements (doesn't replace) the token language, which stays the friendlier default.
 20. **Extend match-text highlighting to Highlights, not just Filters** — text filters already support marking the matched substring itself in color (not just the left-edge color bar), scoped to either the active filter or the whole filter path (configurable). Apply the same match-text coloring to Highlights, using the highlight's own color. Open question: whether this needs a separate button, a global setting, or a toggle in the color-picker menu (would then be per-filter configurable, default on).
 54. **"Prune" action when a filter and a file are both selected** — discards everything from memory/view that isn't part of the filter's result set, not just hides it. Especially useful for time filters (throw away everything outside the range) but not restricted to that case. Where content was pruned, insert a placeholder in its place (at least in the Full view) so the cut is visible rather than silently making rows disappear.
 
