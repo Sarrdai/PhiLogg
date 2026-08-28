@@ -2190,6 +2190,16 @@
   .ctx-sep{height:1px; background:var(--border-soft); margin:5px 4px;}
   .ctx-meta{padding:6px 10px 4px; font-size:10.3px; color:var(--text-tertiary); font-family:var(--font-mono);}
   .ctx-note{padding:8px 10px; font-size:11.5px; color:var(--text-tertiary); max-width:220px; line-height:1.5;}
+  /* "Add to selection" submenu trigger (#ctxAddToSelection) — the arrow just
+     signals "this opens another menu", #addToSelectionMenu itself reuses the
+     exact same .ctx-item/.ctx-sep/.ctx-meta styling as #contextMenu below. */
+  .ctx-submenu-arrow{margin-left:auto;}
+  #addToSelectionMenu{
+    position:fixed; z-index:51; background:var(--bg-elevated);
+    border:1px solid var(--border); border-radius:8px; padding:5px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
+  }
+  #addToSelectionMenu.hidden{display:none;}
 
   /* ---------- Highlight-colour picker (tree swatch) ---------- */
   #colorPickerPopup{
@@ -2712,12 +2722,15 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
       <span id="ctxFilterForColumnLabel">Filter for this message</span>
     </div>
-    <div class="ctx-sep" id="ctxFilterFromSelectionSep"></div>
-    <div class="ctx-item" id="ctxFilterFromSelection">
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" id="ctxAddToSelection">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
-      <span id="ctxFilterFromSelectionLabel">Filter from selection</span>
+      <span id="ctxAddToSelectionLabel">Add to selection</span>
+      <svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
     </div>
   </div>
+
+  <div id="addToSelectionMenu" class="hidden"></div>
 
   <div id="treeContextMenu" class="hidden"></div>
 
@@ -5496,11 +5509,12 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
 // Display name for an "idset" filter node — value is a plain array of entry
 // ids (see getEntries' "idset" branch). No richer description is available
 // at name-time (the ids alone don't say WHY they were picked), so this just
-// reports the count; the "plot view" framing lives in the UI action that
-// created it instead.
-function idSetFilterName(ids) {
+// reports the count plus which producer created it — "plot view" (the
+// default) or "selection" (the "Add to selection" context-menu feature,
+// createSelectionFilterNode).
+function idSetFilterName(ids, origin = "plot view") {
   const n = Array.isArray(ids) ? ids.length : 0;
-  return n + (n === 1 ? " entry (plot view)" : " entries (plot view)");
+  return n + (n === 1 ? " entry (" + origin + ")" : " entries (" + origin + ")");
 }
 
 // Edits an existing "text"/"extract" filter node in place (see
@@ -6051,6 +6065,7 @@ function cloneSubtree(nodeId, newParentId) {
   if (orig.filterType === "text" && orig.isRegex) clone.isRegex = true;
   if (orig.highlightColor) clone.highlightColor = orig.highlightColor;
   if (orig.label) clone.label = orig.label;
+  if (orig.selectionFilter) clone.selectionFilter = true;
   // Deliberately NOT copying orig.locked: a copy/paste of the auto-managed
   // "Bookmarks" node produces a plain, unlocked filter node (still matching
   // the same bookmarked rows) — only syncBookmarksFilterNode's own original
@@ -6740,6 +6755,7 @@ function snapshotSubtree(nodeId) {
   if (node.isRegex) copy.isRegex = true;
   if (node.highlightColor) copy.highlightColor = node.highlightColor;
   if (node.label) copy.label = node.label;
+  if (node.selectionFilter) copy.selectionFilter = true;
   return copy;
 }
 
@@ -6777,6 +6793,7 @@ function restoreSubtree(snap) {
   if (snap.isRegex) node.isRegex = true;
   if (snap.highlightColor) node.highlightColor = snap.highlightColor;
   if (snap.label) node.label = snap.label;
+  if (snap.selectionFilter) node.selectionFilter = true;
   state.nodes[node.id] = node;
   node.children = snap.children.map(c => restoreSubtree(c).id);
   return node;
@@ -14388,9 +14405,8 @@ const ctxBookmarkLabel = el("#ctxBookmarkLabel");
 const ctxNote = el("#ctxNote");
 const ctxNoteLabel = el("#ctxNoteLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
-const ctxFilterFromSelection = el("#ctxFilterFromSelection");
-const ctxFilterFromSelectionSep = el("#ctxFilterFromSelectionSep");
-const ctxFilterFromSelectionLabel = el("#ctxFilterFromSelectionLabel");
+const ctxAddToSelection = el("#ctxAddToSelection");
+const addToSelectionMenu = el("#addToSelectionMenu");
 let ctxEntry = null;
 
 // Maps a row's .col-* span class (see renderTable's row-grid markup) to its
@@ -14435,15 +14451,11 @@ function openContextMenu(ev, entry) {
   if (bookmarkable) ctxNoteLabel.textContent = state.notes.has(entry.id) ? "Edit note" : "Add note";
   // "Filter from selection" only makes sense with an actual multi-selection
   // (2+ rows) — a single row is already covered by "Filter for this ___".
-  const hasMultiSelection = state.logMultiSelect.size >= 2;
-  ctxFilterFromSelectionSep.style.display = hasMultiSelection ? "" : "none";
-  ctxFilterFromSelection.style.display = hasMultiSelection ? "" : "none";
-  if (hasMultiSelection) ctxFilterFromSelectionLabel.textContent = "Filter from selection (" + state.logMultiSelect.size + " rows)";
   contextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   contextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 170) + "px";
   contextMenu.classList.remove("hidden");
 }
-function closeContextMenu() { contextMenu.classList.add("hidden"); ctxEntry = null; }
+function closeContextMenu() { contextMenu.classList.add("hidden"); closeAddToSelectionMenu(); ctxEntry = null; }
 
 // Both create a unified "timerange" node with only one bound set, rather
 // than the legacy single-bound "after"/"before" types — same result, but now
@@ -14538,24 +14550,116 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
   openFilterForEntryColumn(entry, column);
 });
 
-// "Filter from selection" — turns the current multi-selected log rows
-// (state.logMultiSelect, the same set copyLogSelectionToClipboard reads)
-// into an explicit "idset" filter node matching exactly those entries.
-// Reuses the "idset" filterType introduced for "create filter from plot
-// view" (see getEntries' "idset" branch) rather than inventing a second,
-// parallel entry-set filter type — same generic "second, non-parent source
-// of truth baked into node.value at creation time" shape as "timerange".
-function createFilterFromLogSelection() {
-  if (!state.activeId || state.logMultiSelect.size < 2) return;
-  const ids = [...state.logMultiSelect];
-  createFilterNode(state.activeId, "idset", ids);
+// "Add to selection" — turns the right-clicked row (or the full
+// state.logMultiSelect multi-selection, when 2+ rows are multi-selected) into
+// an "idset" filter node (getEntries' "idset" branch), same as "create a
+// filter from the plot view" above. Redesigned this session (person request)
+// from the original "Filter from selection" single menu item: selections now
+// live as person-manageable, NAMED, top-level nodes — directly under the
+// file, alongside the auto-managed "Bookmarks" node (syncBookmarksFilterNode)
+// — rather than as one-off children of whatever filter node happened to be
+// active. A right-click can now ADD to any number of existing selections, not
+// just create a brand new one every time, so this is a submenu (built here,
+// on demand, into #addToSelectionMenu — the app's other dynamic menu,
+// #treeContextMenu, uses the same "build innerHTML from data, one shared
+// container" shape) rather than a single click target.
+//
+// selectionFilter:true marks a node as one of these (see createFilterNode) —
+// needed because "idset" is also used by the plot-view producer above, whose
+// nodes must NOT show up in this submenu or be treated as person-manageable
+// selections. Differences from Bookmarks, all deliberate (person-specified):
+// deletable (no `locked`, so the normal delete affordances just work),
+// no "always show"/pin toggle (that's #btnPinBookmarks, hard-wired to
+// state.bookmarks specifically — nothing analogous is added here), and
+// entries added to a selection are NOT bookmarked (state.bookmarks is never
+// touched by any of this — membership lives purely in the idset node's own
+// `value` array).
+function currentSelectionRowIds() {
+  if (state.logMultiSelect.size >= 2) return [...state.logMultiSelect];
+  return ctxEntry ? [ctxEntry.id] : [];
+}
+
+// All person-created selection filters directly under a root file — the
+// exact set the "Add to selection" submenu lists and the only nodes this
+// feature ever mutates. Deliberately excludes plot-view-created "idset"
+// nodes (no selectionFilter flag) even if one happens to sit at top level.
+function selectionFilterNodesForRoot(rootId) {
+  const root = state.nodes[rootId];
+  if (!root) return [];
+  return root.children.map(id => state.nodes[id]).filter(n => n && n.filterType === "idset" && n.selectionFilter);
+}
+
+// Creates a brand-new top-level selection filter under `rootId` — same
+// "top-level, alongside Bookmarks" placement syncBookmarksFilterNode uses
+// (root.children.unshift), NOT a child of state.activeId like every other
+// context-menu filter action. Named the same auto-generated way idset nodes
+// already are (idSetFilterName) — no dedicated naming prompt exists anywhere
+// else in the filter tree either; renaming afterward goes through the
+// standard "Rename…" tree action like any other filter node.
+function createSelectionFilterNode(rootId, ids) {
+  const root = state.nodes[rootId];
+  if (!root || !ids || !ids.length) return null;
+  const node = {
+    id: uid("n"), type: "filter", name: idSetFilterName(ids, "selection"), parentId: rootId,
+    children: [], filterType: "idset", value: ids.slice(), inverted: false, selectionFilter: true,
+  };
+  state.nodes[node.id] = node;
+  root.children.unshift(node.id);
+  state.activeId = node.id;
+  return node;
+}
+
+// Adds `ids` to an existing selection filter's value array, deduped. Never
+// touches node.name — a person may have renamed it, and unlike creation
+// (where the count-based auto-name is the only name it will ever have unless
+// renamed) an add shouldn't silently overwrite that.
+function addRowsToSelectionFilter(nodeId, ids) {
+  const node = state.nodes[nodeId];
+  if (!node || node.filterType !== "idset" || !node.selectionFilter || !Array.isArray(node.value)) return;
+  const have = new Set(node.value);
+  let changed = false;
+  (ids || []).forEach(id => { if (!have.has(id)) { node.value.push(id); have.add(id); changed = true; } });
+  if (changed) invalidateAllCaches();
+  state.activeId = node.id;
+}
+
+function closeAddToSelectionMenu() { addToSelectionMenu.classList.add("hidden"); }
+
+function openAddToSelectionMenu(ev) {
+  const rootId = getRootFileId(state.activeId);
+  const existing = rootId ? selectionFilterNodesForRoot(rootId) : [];
+  let html = existing.map(n =>
+    '<div class="ctx-item" data-selection-id="' + n.id + '">' + escapeHtml(nodeDisplayName(n)) + "</div>"
+  ).join("");
+  if (existing.length) html += '<div class="ctx-sep"></div>';
+  html += '<div class="ctx-item" data-selection-action="create">Create new selection filter</div>';
+  addToSelectionMenu.innerHTML = html;
+  const anchorRect = ctxAddToSelection.getBoundingClientRect();
+  addToSelectionMenu.style.left = Math.min(anchorRect.right, window.innerWidth - 260) + "px";
+  addToSelectionMenu.style.top = Math.min(anchorRect.top, window.innerHeight - 200) + "px";
+  addToSelectionMenu.classList.remove("hidden");
+}
+
+ctxAddToSelection.addEventListener("click", ev => {
+  ev.stopPropagation();
+  openAddToSelectionMenu(ev);
+});
+
+addToSelectionMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest("[data-selection-id], [data-selection-action]");
+  if (!item) return;
+  const rows = currentSelectionRowIds();
+  closeContextMenu();
+  if (!rows.length) { render(); return; }
+  if (item.dataset.selectionAction === "create") {
+    const rootId = getRootFileId(state.activeId);
+    if (rootId) createSelectionFilterNode(rootId, rows);
+  } else if (item.dataset.selectionId) {
+    addRowsToSelectionFilter(item.dataset.selectionId, rows);
+  }
   revealFilteredView();
   render();
-}
-el("#ctxFilterFromSelection").addEventListener("click", ev => {
-  ev.stopPropagation();
-  closeContextMenu();
-  createFilterFromLogSelection();
 });
 
 /* ===================== Highlight-colour picker =====================
@@ -15379,6 +15483,7 @@ function serializeFilterBranch(nodeId) {
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
+    if (node.selectionFilter) out.selectionFilter = true;
     return out;
   }
 
@@ -15533,6 +15638,7 @@ function importFilterJson(text) {
     if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
+    if (sn.selectionFilter) node.selectionFilter = true;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
     if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });
@@ -17203,6 +17309,7 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
+    if (node.selectionFilter) out.selectionFilter = true;
     return out;
   }
 
@@ -17352,6 +17459,7 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
+    if (sn.selectionFilter) node.selectionFilter = true;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
     if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });
