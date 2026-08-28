@@ -5434,43 +5434,31 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 50 — A background file load stays cheap: no render() while it's
-   NOT the active view, so switching to a different, already-loaded file
-   stays fully responsive
-   Origin: this session, person-requested follow-up to Group 49: *"Aktuell
-   blockiert das Laden und die Animation teilweise das UI. Ich möchte eine
-   Datei Laden und während die Animation läuft auf eine andere, bereits
-   geladenen Datei wechseln können. Das UI soll dann sofort bedienbar sein
-   und das andere Log in Minimap und Views anzeigen. Von dem gerade ladenden
-   Log möchte ich dann nur noch den Fortschrittsbalken am Dateinamen sehen.
-   Wichtig ist, dass das UI in der Zeit komplett responsive bleibt."*
-
-   Group 49's scheduleLoadRender/flushLoadRender always ran a full render()
-   on every parse-chunk tick, even while the loading file wasn't what was
-   actually on screen — harmless for the single-file case Group 49 covers,
-   but a background load competing for full tree/table/minimap rebuilds on
-   every animation frame is exactly what made the UI feel sluggish once a
-   SECOND, already-loaded file was the actual active view. Fixed with
-   loadRenderRootIsActive (see philogg.html): scheduleLoadRender now only
-   runs a full render while its root IS the active view; otherwise it calls
-   the new updateLoadRowProgress, a direct DOM write to just that row's
-   .tree-load-fill width, same "cheap write on a hot path" idea the old
-   (pre-2026-08-18) setLoadingFileProgress used. The active-check is
-   re-verified again inside the rAF callback itself, not just at schedule
-   time, so a switch-away that happens between scheduling and the next
-   actual frame doesn't still cost one unwanted full render.
-
-   requestAnimationFrame/cancelAnimationFrame are mocked (manually
-   flushable via a captured-callback map) rather than raced against real
-   timing the way Group 47 does — a file large enough to still be
-   genuinely mid-parse by the time a REAL animation frame eventually fires
-   (found, while writing this group, to take a lot less than Group 47's own
-   50ms wait for even a 9000-line/3-chunk file) would need to be too large
-   to keep this suite fast. The mock makes the schedule-vs-fire race, and
-   the fire-time re-check it exists to close, fully deterministic instead.
+   GROUP 50 — Load ticks NEVER call render() — active view or background —
+   only the tree row's progress/count and the level bar's counts update
+   live; the loading file's own Filtered/Full/minimap view does not update
+   again until the load's natural completion
+   Origin: this session, in two steps. First (2026-08-18, person-requested):
+   *"Aktuell blockiert das Laden und die Animation teilweise das UI. Ich
+   möchte eine Datei Laden und während die Animation läuft auf eine andere,
+   bereits geladenen Datei wechseln können... Von dem gerade ladenden Log
+   möchte ich dann nur noch den Fortschrittsbalken am Dateinamen sehen."* —
+   originally fixed by only skipping the full render for a BACKGROUND load
+   (not the active view), later made to also throttle and then skip parts of
+   the active-view render (see CHANGELOG.md's history for that arc). Then,
+   same session, a further follow-up made this apply unconditionally: *"Das
+   ist noch immer merkbar langsamer... Falls das nicht möglich ist würde ich
+   die Visualisierung beim Laden lieber ausschalten."* — real decoupling
+   (parsing off the main thread) isn't realistic for this codebase's single
+   file/no-build-tooling shape, so scheduleLoadRender was simplified instead:
+   it now ALWAYS takes the cheap path (updateLoadRowLiveData + a level-bar
+   count refresh), never a render(), regardless of whether the loading file
+   is the active view. The active-view's actual table/minimap only reflect
+   the loading file again once flushLoadRender's real render runs at the
+   load's natural completion (or an unrelated action calls render() anyway).
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("50. A file loading in the background updates cheaply (no render()); switching away stays fully live for the other file");
+  section("50. Load ticks never call render(), active view or background — only the row/level-bar counts stay live");
 
   // File A: small, finishes instantly — the file the person is actually
   // looking at throughout this test.
@@ -5478,85 +5466,91 @@ await withApp(async (w, d, T) => {
   T.state.activeId = fa.id;
   w.render();
 
-  // Monkey-patch render() to count calls, and requestAnimationFrame/
-  // cancelAnimationFrame to a manually-flushable mock — same injected-
-  // script technique Group 47 uses for render()-call counting (a second
-  // <script> in the same document shares the realm's lexical scope, so
-  // reassigning a top-level function declaration is visible page-wide).
+  // Monkey-patch render() to count calls — same injected-script technique
+  // used throughout this suite (a second <script> in the same document
+  // shares the realm's lexical scope, so reassigning a top-level function
+  // declaration is visible page-wide).
   const s = d.createElement("script");
   s.textContent = `
     const __origRender = render;
     render = function() { window.__renderCalls = (window.__renderCalls||0)+1; return __origRender(); };
-    window.__rafCallbacks = {};
-    window.__rafNextId = 1;
-    window.requestAnimationFrame = function(cb) { const id = window.__rafNextId++; window.__rafCallbacks[id] = cb; return id; };
-    window.cancelAnimationFrame = function(id) { delete window.__rafCallbacks[id]; };
-    window.__flushRaf = function() {
-      const cbs = window.__rafCallbacks; window.__rafCallbacks = {};
-      Object.keys(cbs).forEach(id => cbs[id]());
-    };
   `;
   d.body.appendChild(s);
 
   // File B: large enough (15 PARSE_CHUNK_LINES chunks) that a handful of
-  // background parse ticks still leaves plenty left over — not racing real
-  // rAF timing anymore (see above), but still exercising the real parse
+  // parse ticks still leaves plenty left over, exercising the real parse
   // loop's own setTimeout(0) yields for genuinely mid-parse entries/DOM
-  // state, same idiom Group 49 uses.
+  // state — same idiom Group 49 uses. Auto-activates, so it IS the active
+  // view for what follows (the scenario that used to matter most).
   const textB = makeLog(0, 60000);
   w.__renderCalls = 0;
-  const donePromise = w.addFile("huge-bg.log", textB);
+  const donePromise = w.addFile("huge.log", textB);
   const newId = T.state.rootIds.find(id => id !== fa.id);
   const nodeB = T.state.nodes[newId];
   assert(newId, "the new file is a real root node immediately, before it's read a single chunk");
   assert(T.state.activeId === newId, "sanity: creating a new file auto-activates it (unchanged, existing behavior)");
   assert(w.__renderCalls === 1, "creating the node renders exactly once, to insert its row — got " + w.__renderCalls);
-  assert(Object.keys(w.__rafCallbacks).length === 1, "the first parse chunk (still active) scheduled exactly one pending animation-frame render");
 
-  // The person immediately switches back to file A — exactly the reported
-  // scenario: starting a load, then wanting to keep working on something
-  // already open instead of watching the new one load.
-  T.state.activeId = fa.id;
-  w.render();
-  w.__renderCalls = 0; // only count what happens FROM HERE, while B loads in the background
+  // The Filtered view's captured state right after creation (still empty —
+  // parsing hasn't produced any entries yet).
+  const visibleAtStart = w.getVisibleEntries().length;
+  w.__renderCalls = 0;
 
-  // Fire the animation frame that was scheduled BEFORE the switch-away —
-  // the fire-time re-check must fall back to the cheap row update now that
-  // B isn't active anymore, not run the full render it was originally
-  // scheduled for; otherwise every switch-away would still cost one
-  // unwanted full render.
-  w.__flushRaf();
-  assert(w.__renderCalls === 0, "the render scheduled while B was still active does NOT fire once B is no longer active by the time it runs — got " + w.__renderCalls);
-  assert(Object.keys(w.__rafCallbacks).length === 0, "the fallback did not itself schedule a new animation frame");
-
-  // Let B's parse loop actually continue in the background (real
-  // setTimeout(0) yields) and confirm every further tick also stays on the
-  // cheap path — no render() calls, no animation frame even scheduled at
-  // all anymore, since the active check now short-circuits before ever
-  // touching rAF.
+  // Let several real parse chunks land while B stays the active view.
   for (let i = 0; i < 3 && nodeB.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
   assert(nodeB.entries.length > 0 && nodeB.entries.length < 60000,
-    "file B keeps streaming in the background while A is the active view, without finishing outright — got " + nodeB.entries.length + "/60000");
-  assert(T.state.activeId === fa.id, "switching to A stuck — B's background progress did not steal the active view back");
-  assert(w.__renderCalls === 0, "none of B's further background ticks called render() either — got " + w.__renderCalls);
-  assert(Object.keys(w.__rafCallbacks).length === 0, "none of B's background ticks scheduled an animation frame at all");
+    "file B is genuinely still mid-parse — got " + nodeB.entries.length + "/60000");
+  assert(w.__renderCalls === 0, "none of B's parse ticks called render(), even though B IS the active view — got " + w.__renderCalls);
 
-  // The view genuinely still shows A, completely undisturbed by B.
-  assert(w.getVisibleEntries().length === fa.entries.length, "the Filtered view still shows file A's own entries, unaffected by B's background load");
+  // The Filtered view's actual painted DOM does NOT auto-update during the
+  // ticks anymore — #tableSpacer's height (set only inside renderTable())
+  // still reflects whatever the entry count was at the last real render
+  // (right after B's node was created, i.e. still ~0), not the genuinely
+  // much larger live entries.length the data itself has already reached —
+  // proof that no render happened, even though the underlying data (a live
+  // query, not a cached render) has clearly grown. See Group 49 for
+  // confirming an explicit render() DOES pick up the live mid-parse state.
+  assert(nodeB.entries.length > 0, "sanity: the underlying data itself has genuinely grown");
+  const spacerHeight = parseInt(d.querySelector("#tableSpacer").style.height, 10) || 0;
+  const expectedIfLive = nodeB.entries.length * T.ROW_HEIGHT;
+  assert(spacerHeight < expectedIfLive,
+    "the table spacer's height was NOT updated to reflect B's live entry count — still stale from the last real render, not auto-refreshed by the ticks (spacer=" + spacerHeight + ", would be >= " + expectedIfLive + " if live)");
 
-  // File B's own row still carries a live progress fill, updated directly
-  // (updateLoadRowProgress) rather than via render() — "nur noch den
-  // Fortschrittsbalken am Dateinamen", exactly as requested.
-  const labelB = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "huge-bg.log");
-  assert(labelB !== undefined, "file B's row still exists in the tree while loading in the background");
-  const fillB = labelB.closest(".tree-row").querySelector(".tree-load-fill");
-  assert(fillB !== null, "file B's row still carries a progress fill while it loads in the background");
-  assert(parseInt(fillB.style.width, 10) > 0, "file B's progress fill width reflects its background progress via the cheap direct-DOM path — got " + fillB.style.width);
+  // File B's own row still carries a live progress fill and count, updated
+  // directly (updateLoadRowLiveData) rather than via render() — "nur noch
+  // den Fortschrittsbalken am Dateinamen", exactly as requested.
+  const labelB = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "huge.log");
+  assert(labelB !== undefined, "file B's row still exists in the tree while it loads");
+  const rowB = labelB.closest(".tree-row");
+  const fillB = rowB.querySelector(".tree-load-fill");
+  assert(fillB !== null, "file B's row still carries a progress fill while it loads");
+  assert(parseInt(fillB.style.width, 10) > 0, "file B's progress fill width reflects its progress via the cheap direct-DOM path — got " + fillB.style.width);
+  const countB = parseInt(rowB.querySelector(".tree-count").textContent.replace(/\./g, ""), 10);
+  assert(countB === nodeB.entries.length, "file B's row count also updates live via the same cheap path — got " + countB);
 
+  // The person switches to a different, already-loaded file mid-load — B
+  // keeps streaming in the background exactly the same way it did as the
+  // active view, since scheduleLoadRender no longer distinguishes the two.
+  // Run it the rest of the way rather than sampling mid-flight again (the
+  // exact number of event-loop turns a background parse needs to advance is
+  // not something worth pinning down precisely — the invariant this checks
+  // is simply that background progress reaches full completion untouched).
+  T.state.activeId = fa.id;
+  w.render();
+  w.__renderCalls = 0;
   await donePromise;
+  assert(w.__renderCalls === 1, "none of B's remaining background ticks called render() — only the load's own natural-completion render did — got " + w.__renderCalls);
+  assert(w.getVisibleEntries().length === fa.entries.length, "the Filtered view still shows file A's own entries, unaffected by B loading (and finishing) in the background");
   assert(nodeB.entries.length === 60000, "file B finished loading with the full entry count despite the detour through the background");
-  assert(typeof nodeB.loadFraction !== "number", "loadFraction is cleared once B finishes loading, active or not");
-  assert(w.__renderCalls === 1, "finishing the background load runs exactly one final full render (flushLoadRender always renders unconditionally, to remove the progress fill and settle the final count) — got " + w.__renderCalls);
+  assert(typeof nodeB.loadFraction !== "number", "loadFraction is cleared once B finishes loading");
+  // Re-queried fresh, not via the earlier rowB reference: flushLoadRender's
+  // natural-completion render is a real, full render() (renderTree()
+  // included), which tears down and rebuilds every tree row — rowB is
+  // stale past this point, same "capture after the structural moment"
+  // lesson Group 51 documents.
+  const labelB2 = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "huge.log");
+  const countB2 = parseInt(labelB2.closest(".tree-row").querySelector(".tree-count").textContent.replace(/\./g, ""), 10);
+  assert(countB2 === 60000 && countB2 > countB, "file B's row count reflects the full final total once its natural-completion render runs — got " + countB2 + " (was " + countB + " mid-load)");
 });
 
 /* ============================================================
@@ -5590,7 +5584,12 @@ await withApp(async (w, d, T) => {
    needs — table/minimap/level bar/status — also without renderTree().
    Structural tree changes (a row appearing at createFileNode, disappearing
    via flushLoadRender's cleanup) still go through a real render(), just
-   never per-tick. See philogg.html's updated scheduleLoadRender comment.
+   never per-tick. Superseded later the same session (see Group 50's own
+   header) by scheduleLoadRender dropping the per-tick full render
+   ENTIRELY, active view or not — the tree-identity guarantee this group
+   checks still holds (even more trivially now, since renderTree() is never
+   called by a load tick at all), just no longer for the "was the active
+   view's own content live too" reason originally documented here.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("51. A different, already-loaded row's DOM identity (and click-ability) survives parse ticks while the newly-loading file is the active view");
@@ -5640,8 +5639,7 @@ await withApp(async (w, d, T) => {
   assert(nodeB.entries.length > 0 && nodeB.entries.length < 60000,
     "file B is genuinely still mid-parse, actively being watched fill in — got " + nodeB.entries.length + "/60000");
   assert(w.__renderTreeCalls === 0, "none of B's parse ticks rebuilt the tree while B is the active view — got " + w.__renderTreeCalls + " renderTree() calls");
-  assert(w.getVisibleEntries().length === nodeB.entries.length,
-    "sanity: B's own active view (Filtered view content) DID keep updating live via renderLoadTickMainView during the ticks, despite skipping renderTree()");
+  assert(w.__renderCalls === 0, "none of B's parse ticks called render() at all anymore (not just renderTree()) — got " + w.__renderCalls);
 
   // File A's row is still the EXACT SAME DOM element as right after B was
   // created — the direct proof renderTree() genuinely left #tree alone for
@@ -5690,6 +5688,11 @@ await withApp(async (w, d, T) => {
    independent of the per-tick render path — so this group's job is mainly
    proving the level bar fix and the live-count generalization, plus a
    sanity check that creating a filter mid-load has always worked.
+   STILL ACCURATE after this session's later change (see Group 50's own
+   header) that made scheduleLoadRender skip the full render entirely: this
+   group never depended on renderLoadTickMainView specifically, only on
+   updateLevelBarCounts/updateLoadRowLiveData, both of which are still
+   called on every tick exactly as before.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("52. Level-filter buttons stay clickable, and a newly created filter's own row keeps a live count, while the loading file is the active view");
@@ -13470,179 +13473,6 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 127 — Load-tick full renders are time-throttled, not just
-   rAF-coalesced: renderLoadTickMainView() fires at most once per
-   LOAD_RENDER_MIN_INTERVAL_MS even when progress ticks land faster than
-   that, so a fast/huge load doesn't pay an O(entries-so-far) renderTable()
-   pass on every single animation frame.
-   Origin: this session, person-reported (German): "Die Visualisierung des
-   Ladevorgangs (Darstellung als würde man das Log Tailen) scheint das
-   Laden deutlich zu verlangsamen. Wenn ich eine andere als die gerade
-   ladende Datei auswähle, läuft der Ladevorgang viel schneller." —
-   confirmed root cause: renderTable() rebuilds the minimap's bucket
-   counts and rescans every entry for the widest message line on every
-   call, both O(entries-so-far); scheduleLoadRender's existing
-   rAF-coalescing still ran that full pass up to once per animation frame,
-   turning a load into O(n²) total work. Fixed by adding a real-time
-   minimum gap (LOAD_RENDER_MIN_INTERVAL_MS, 150ms) between actual full
-   renders, checked inside the rAF callback itself — a tick landing before
-   the gap elapses skips renderLoadTickMainView() for that frame (the row
-   itself stays current via the always-synchronous updateLoadRowLiveData
-   call) and the next tick tries again. flushLoadRender (true start/end of
-   a load) is untouched and always renders immediately.
-   performance.now is mocked to advance in controlled, tiny steps per rAF
-   flush — same "mock the thing being raced against" idea Group 50 uses
-   for requestAnimationFrame itself, so the throttle window is exercised
-   deterministically instead of racing real wall-clock time.
-   ============================================================ */
-await withApp(async (w, d, T) => {
-  section("127. Load-tick full renders are throttled to at most once per LOAD_RENDER_MIN_INTERVAL_MS");
-
-  const s = d.createElement("script");
-  s.textContent = `
-    const __origRender2 = renderLoadTickMainView;
-    window.__loadTickCalls = 0;
-    renderLoadTickMainView = function() { window.__loadTickCalls++; return __origRender2(); };
-    window.__rafCallbacks2 = {};
-    window.__rafNextId2 = 1;
-    window.requestAnimationFrame = function(cb) { const id = window.__rafNextId2++; window.__rafCallbacks2[id] = cb; return id; };
-    window.cancelAnimationFrame = function(id) { delete window.__rafCallbacks2[id]; };
-    window.__flushRaf2 = function() {
-      const cbs = window.__rafCallbacks2; window.__rafCallbacks2 = {};
-      Object.keys(cbs).forEach(id => cbs[id]());
-    };
-    window.__fakeNow = 0;
-    window.performance.now = function() { return window.__fakeNow; };
-    lastLoadRenderTs = -1e9; // reset the module-level throttle timestamp — earlier groups already advanced it past any small fake value the mock above will use
-  `;
-  d.body.appendChild(s);
-
-  // Large enough (several PARSE_CHUNK_LINES chunks) to produce multiple
-  // progress ticks while still genuinely mid-parse.
-  const text = makeLog(0, 60000);
-  const donePromise = w.addFile("huge.log", text);
-  const newId = T.state.rootIds[T.state.rootIds.length - 1];
-  const node = T.state.nodes[newId];
-  assert(T.state.activeId === newId, "sanity: the new file is the active view (loading-file-tick throttle only applies to the active case)");
-
-  // Fire two rAF ticks back-to-back with the fake clock barely advancing
-  // between them (well under the 150ms throttle window) — the second must
-  // NOT run a full render.
-  w.__fakeNow = 10;
-  await new Promise(r => setTimeout(r, 0));
-  w.__flushRaf2();
-  const afterFirst = w.__loadTickCalls;
-  assert(afterFirst === 1, "the first tick within the throttle window runs a full render — got " + afterFirst);
-
-  w.__fakeNow = 20; // +10ms, still well under LOAD_RENDER_MIN_INTERVAL_MS
-  await new Promise(r => setTimeout(r, 0));
-  w.__flushRaf2();
-  assert(w.__loadTickCalls === afterFirst, "a second tick landing before the throttle window elapses is skipped — got " + w.__loadTickCalls + " (expected " + afterFirst + ")");
-
-  // Advance the fake clock past the throttle window — the next tick must
-  // run a full render again.
-  w.__fakeNow = 300;
-  await new Promise(r => setTimeout(r, 0));
-  w.__flushRaf2();
-  assert(w.__loadTickCalls === afterFirst + 1, "a tick landing after the throttle window elapses runs a full render again — got " + w.__loadTickCalls);
-
-  // The loading row's own live data (count/progress fill) is NEVER
-  // throttled — only the full main-view render is — so it must have kept
-  // advancing across the skipped tick too.
-  await new Promise(r => setTimeout(r, 0));
-  w.__flushRaf2();
-  assert(node.entries.length > 0 && node.entries.length < 60000, "the file keeps genuinely streaming in across the throttled ticks — got " + node.entries.length + "/60000");
-
-  await donePromise;
-  assert(node.entries.length === 60000, "the file finishes loading with the full entry count despite the throttle");
-  assert(typeof node.loadFraction !== "number", "loadFraction is cleared once loading finishes (flushLoadRender is never throttled)");
-});
-
-/* ============================================================
-   GROUP 128 — Load ticks skip the two remaining O(entries-so-far) full-file
-   scans (renderTimelineMinimap's bucket rebuild, computeMaxMessageWidth's
-   longest-line scan); a real (non-load-tick) render still runs both.
-   Origin: this session, same-day person-reported follow-up to Group 127:
-   *"Das ist noch immer merkbar langsamer. Siehst du noch eine Möglichkeit
-   hier stark zu optimieren? Lässt es sich hier was entkoppeln..."* — the
-   150ms throttle alone (Group 127) wasn't enough, because renderTable()'s
-   own per-call work is itself O(entries-so-far) regardless of how often
-   it's invoked. True decoupling (parsing off the main thread in a Web
-   Worker) isn't realistic for this single-file/no-build-tooling codebase,
-   so instead renderMainView/renderTable take an isLoadTick flag (see their
-   own comments) and skip renderTimelineMinimap/computeMaxMessageWidth
-   entirely while it's true — the tree row's own live count/progress fill
-   and the (already virtualized, cheap) visible table rows are unaffected.
-   Both catch up at the load's natural completion, via flushLoadRender's
-   real (isLoadTick-less) render.
-   ============================================================ */
-await withApp(async (w, d, T) => {
-  section("128. Load ticks skip renderTimelineMinimap/computeMaxMessageWidth; a real render still runs both");
-
-  const f = await w.addFile("a.log", makeLog(0, 5));
-  T.state.activeId = f.id;
-  w.render();
-
-  const s = d.createElement("script");
-  s.textContent = `
-    const __origRTM3 = renderTimelineMinimap;
-    window.__rtmCalls3 = 0;
-    renderTimelineMinimap = function(...a) { window.__rtmCalls3++; return __origRTM3(...a); };
-    const __origCMW = computeMaxMessageWidth;
-    window.__cmwCalls = 0;
-    computeMaxMessageWidth = function(...a) { window.__cmwCalls++; return __origCMW(...a); };
-  `;
-  d.body.appendChild(s);
-
-  // A direct isLoadTick=true call (same shape renderLoadTickMainView uses)
-  // must skip both.
-  w.__rtmCalls3 = 0; w.__cmwCalls = 0;
-  w.renderMainView(true);
-  assert(w.__rtmCalls3 === 0, "renderTimelineMinimap is not called during a load-tick render — got " + w.__rtmCalls3 + " calls");
-  assert(w.__cmwCalls === 0, "computeMaxMessageWidth is not called during a load-tick render — got " + w.__cmwCalls + " calls");
-
-  // A normal render (no argument, or explicitly falsy) still runs both,
-  // exactly as before this session's change — this isn't a general perf
-  // regression, only load ticks are affected.
-  w.__rtmCalls3 = 0; w.__cmwCalls = 0;
-  w.render();
-  assert(w.__rtmCalls3 === 1, "a real render still runs renderTimelineMinimap exactly once — got " + w.__rtmCalls3);
-  assert(w.__cmwCalls === 1, "a real render still runs computeMaxMessageWidth exactly once — got " + w.__cmwCalls);
-
-  // End-to-end: a genuinely mid-parse load tick (via the real
-  // scheduleLoadRender path, rAF flushed) skips both, and the load's own
-  // final flushLoadRender render (isLoadTick-less) runs them again.
-  const s2 = d.createElement("script");
-  s2.textContent = `
-    window.__rafCallbacks3 = {};
-    window.__rafNextId3 = 1;
-    window.requestAnimationFrame = function(cb) { const id = window.__rafNextId3++; window.__rafCallbacks3[id] = cb; return id; };
-    window.cancelAnimationFrame = function(id) { delete window.__rafCallbacks3[id]; };
-    window.__flushRaf3 = function() {
-      const cbs = window.__rafCallbacks3; window.__rafCallbacks3 = {};
-      Object.keys(cbs).forEach(id => cbs[id]());
-    };
-  `;
-  d.body.appendChild(s2);
-
-  const text = makeLog(0, 60000);
-  const donePromise2 = w.addFile("huge2.log", text);
-  // createFileNode's own synchronous flushLoadRender (a real, isLoadTick-less
-  // render for the row's initial appearance) already ran by this point —
-  // reset AFTER it, so the counts below reflect only the load TICK that
-  // follows, not that one-off structural render.
-  w.__rtmCalls3 = 0; w.__cmwCalls = 0;
-  await new Promise(r => setTimeout(r, 0));
-  w.__flushRaf3();
-  assert(w.__rtmCalls3 === 0, "a genuine mid-parse load tick skips renderTimelineMinimap — got " + w.__rtmCalls3);
-  assert(w.__cmwCalls === 0, "a genuine mid-parse load tick skips computeMaxMessageWidth — got " + w.__cmwCalls);
-
-  await donePromise2;
-  assert(w.__rtmCalls3 >= 1, "the load's natural completion (flushLoadRender) runs a real render that includes renderTimelineMinimap — got " + w.__rtmCalls3);
-  assert(w.__cmwCalls >= 1, "the load's natural completion (flushLoadRender) runs a real render that includes computeMaxMessageWidth — got " + w.__cmwCalls);
-});
-
-/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -15493,18 +15323,24 @@ process.exit(failed ? 1 : 0);
    - #dropHint, the tree sidebar's own "Drag & drop log files..." hint
      (pre-2026-08-18) — removed outright (Group 56) in favor of #emptyState
      being the single "no file loaded" hint; no code or markup remains.
-
-   Group 127 — this session (2026-08-28), person-reported: the load-tick
-              tailing visualization was measurably slowing down loading of
-              the active file, vs. switching to a different already-loaded
-              file mid-load. Root cause: renderTable()'s own per-frame work
-              (minimap bucket rebuild, computeMaxMessageWidth) is
-              O(entries-so-far), and scheduleLoadRender's existing
-              rAF-coalescing still let that full pass run up to once per
-              animation frame, turning a load into O(n²) total work.
-              scheduleLoadRender now also enforces a real-time minimum gap
-              (LOAD_RENDER_MIN_INTERVAL_MS, 150ms) between actual full
-              renders; performance.now mocked to test the throttle window
-              deterministically.
+   - The live, tailing-style Filtered/Full/minimap view update DURING a
+     load's own parse ticks (originally Group 49, 2026-08-18; rAF-coalesced
+     by Group 50/51/52 the same day; later, same session on 2026-08-28,
+     first time-throttled then had its two heaviest per-tick scans skipped
+     entirely — those two intermediate optimizations had their own test
+     coverage, originally Groups 127/128, now also gone) — removed outright
+     this session (2026-08-28, person-reported: even fully optimized, a
+     large/fast load still felt measurably slower with the live view on
+     than off; the person's own preferred fallback was simpler — "Der
+     Ladebalken genügt mir beim Laden"). scheduleLoadRender now only ever
+     does two direct DOM writes per tick (the loading file's own tree-row
+     progress/count via updateLoadRowLiveData, the level bar's counts via
+     updateLevelBarCounts) and never a render() of any kind, active view or
+     not; the Filtered/Full/minimap view only reflects a loading file again
+     once it's done (flushLoadRender's real render) or an unrelated action
+     calls render() anyway. Groups 50/51/52 were rewritten in place to
+     match (see their own headers); Group 49 (explicit render() calls, not
+     load ticks) is unaffected and still accurately covers what an
+     EXPLICIT render shows mid-parse.
 
    ============================================================ */

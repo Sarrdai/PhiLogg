@@ -4942,14 +4942,6 @@ function getCompiledFormat(formatId) {
   return c;
 }
 
-// True while rootId is (or is an ancestor of) the currently active/viewed
-// node — i.e. a load happening on rootId is actually what's on screen right
-// now, as opposed to a file loading in the background while some OTHER
-// already-loaded file is what the person is actually looking at.
-function loadRenderRootIsActive(rootId) {
-  return !!(rootId && state.activeId && getRootFileId(state.activeId) === rootId);
-}
-
 // Cheap, targeted update for a loading file's own tree row AND every
 // currently-rendered filter row already created under it (own count; a
 // file row's progress-fill width; a filter row's percentage-of-parent bar)
@@ -4998,88 +4990,47 @@ function updateLoadRowLiveData(rootId) {
   })(rootId);
 }
 
-// The rest of what a load tick needs while its file IS the active view —
-// table/minimap/status, so the view keeps filling in live exactly like
-// Group 49 established — deliberately WITHOUT renderTree() (see
-// updateLoadRowLiveData) or the other render() steps that can't change from
-// a parse tick alone (breadcrumb, detail panel, tail-jump button all depend
-// on activeId/selection, untouched here; a real render() from an actual
-// click already refreshes those the moment activeId genuinely changes).
-// The level bar specifically uses updateLevelBarCounts (a targeted count
-// write), not renderLevelBar (which, like renderTree, tears down and
-// rebuilds every button — including whichever one a person is trying to
-// toggle to filter by level while the file is still loading).
-function renderLoadTickMainView() {
-  updateLevelBarCounts();
-  renderMainView(true);
-  renderStatus();
-}
-
-// Throttles renderLoadTickMainView (used for every progress tick —
-// parseLogTextAsync's onProgress, and loadOneFileIntoTree's own read-phase
-// progress) to at most one per animation frame while the loading file IS
-// the active view — a large file can yield many chunks between two frames,
-// so firing it on every single chunk would be wasteful even then. Same
-// rAF-coalescing shape as the scroll/resize handlers elsewhere (see
-// scrollTicking). updateLoadRowLiveData itself is NOT throttled — it's called
-// synchronously on every tick regardless of active state, since it's cheap
-// and never touches #tree's structure (see its own comment for why that
-// distinction is the whole point). flushLoadRender cancels any still-
-// pending tick and always runs a full render() immediately instead — used
-// only at the true start/end of a load (a row appearing/disappearing IS a
-// structural tree change), never per-tick.
+// scheduleLoadRender is called on EVERY load-progress tick (parseLogTextAsync's
+// onProgress, and loadOneFileIntoTree's own read-phase progress) and is
+// deliberately cheap ONLY — it never triggers a live Filtered/Full/minimap
+// view update or even a level-bar/tree-row rebuild beyond the two targeted
+// writes above, regardless of whether the loading file is the active view.
+// Earlier this session it DID drive a live, tailing-style view during the
+// load (auto-coalesced onto requestAnimationFrame, later also time-throttled
+// and stripped of its own O(entries-so-far) minimap/column-width work) — but
+// even with all of that, a large/fast load still felt measurably slower with
+// it on than with it off (person-reported, this session: "Das ist noch immer
+// merkbar langsamer... Lässt es sich hier was entkoppeln?"), and the person's
+// own preferred fallback, once real decoupling turned out not to be
+// realistic for this codebase, was simpler: turn the live visualization off
+// during loading entirely and keep just the progress bar ("Der Ladebalken
+// genügt mir beim Laden."). So a load tick now does exactly two things — the
+// loading file's own row (progress fill/count, this file's whole filter
+// subtree's counts too) via updateLoadRowLiveData, and the level bar's counts
+// via updateLevelBarCounts — both direct DOM writes, no render() at all. The
+// Filtered/Full/minimap views for the loading file (if it's the active view)
+// simply don't update again until the load's natural completion
+// (flushLoadRender's real, full render()) — switching to a DIFFERENT,
+// already-loaded file mid-load, or an explicit action that calls render()
+// anyway, both still show whatever's genuinely current at that moment, same
+// as before.
 //
-// Both take the loading file's own node id and invalidate its (and its
-// dependents') cached getEntries()/getLevelCounts() results right away,
-// active view or not — same reasoning as onTailChange's
-// invalidateCachesForRoots: a file node's entries growing mid-parse is
-// exactly the kind of content change those caches don't otherwise know to
-// distrust, so without this the level bar would cache whatever (possibly
-// still-empty) counts happened to be current at the first render after the
-// node was created, and never update again — including once the person
-// switches TO the file after it's done loading in the background.
-let loadRenderRafId = null;
-// rAF-coalescing alone (one renderLoadTickMainView per animation frame) still
-// isn't enough on a fast/huge load: renderTable's per-frame work (minimap
-// bucket rebuild over ALL of the root file's entries, computeMaxMessageWidth
-// scanning every entry) is O(entries-so-far), and entries-so-far grows every
-// tick — running that every ~16ms turns the whole load into O(n²) and was
-// person-reported as tailing-visualisation-on made an otherwise-fast load
-// visibly slower than switching away to a different (non-active) file mid-
-// load, which skips renderLoadTickMainView entirely (see the
-// loadRenderRootIsActive check above). Capping actual full renders to at
-// most one per LOAD_RENDER_MIN_INTERVAL_MS keeps the live-tail look (still
-// several updates a second) while cutting the number of O(n) passes by an
-// order of magnitude on a file that parses faster than that. Only throttles
-// these mid-load ticks — flushLoadRender (real start/end of a load) always
-// renders immediately regardless, so the final state is never stale, and
-// onTailChange's own post-load polling is already naturally rate-limited by
-// TAIL_POLL_MS and untouched by this.
-const LOAD_RENDER_MIN_INTERVAL_MS = 150;
-let lastLoadRenderTs = 0;
+// Also invalidates the loading file's (and its dependents') cached
+// getEntries()/getLevelCounts() results right away — same reasoning as
+// onTailChange's own invalidateCachesForRoots: a file node's entries growing
+// mid-parse is exactly the kind of content change those caches don't
+// otherwise know to distrust, so without this the level bar would cache
+// whatever (possibly still-empty) counts happened to be current at the first
+// render after the node was created, and never update again — including once
+// the person switches TO the file after it's done loading in the background.
 function scheduleLoadRender(rootId) {
-  if (rootId) invalidateCachesForRoots([rootId]);
-  if (rootId) updateLoadRowLiveData(rootId);
-  if (!rootId || !loadRenderRootIsActive(rootId)) return; // background: the row update above is all there is to do
-  if (loadRenderRafId != null) return;
-  // Re-checks active state again at fire time, not just at schedule time —
-  // the person can switch away between this tick being scheduled and the
-  // next actual animation frame, and the pending main-view render must not
-  // fire anyway once that's happened (the row itself is already current,
-  // via the synchronous updateLoadRowLiveData call above), or a switch-away
-  // would still cost one unwanted extra render.
-  loadRenderRafId = requestAnimationFrame(() => {
-    loadRenderRafId = null;
-    if (rootId && !loadRenderRootIsActive(rootId)) return;
-    const now = performance.now();
-    if (now - lastLoadRenderTs < LOAD_RENDER_MIN_INTERVAL_MS) return; // too soon — the next progress tick will retry and either succeed or get caught by flushLoadRender at load end
-    lastLoadRenderTs = now;
-    renderLoadTickMainView();
-  });
+  if (!rootId) return;
+  invalidateCachesForRoots([rootId]);
+  updateLoadRowLiveData(rootId);
+  updateLevelBarCounts();
 }
 function flushLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
-  if (loadRenderRafId != null) { cancelAnimationFrame(loadRenderRafId); loadRenderRafId = null; }
   render();
 }
 
@@ -7435,23 +7386,7 @@ function render() {
 // "Filter view" flavors now, each paired with the Highlight view via
 // #fhSplit/#fhTabs. The extract view is unaffected — no Highlight
 // companion, full content area to itself, exactly as before.
-// isLoadTick: true only when called from renderLoadTickMainView (a load
-// tick's throttled-but-still-per-frame-ish full render, see
-// scheduleLoadRender/LOAD_RENDER_MIN_INTERVAL_MS). Threaded down into
-// renderTable, which skips its two remaining O(entries-so-far) full-file
-// scans in that case (renderTimelineMinimap's bucket rebuild,
-// computeMaxMessageWidth's longest-line scan) — the 150ms throttle alone
-// still wasn't fast enough on a fast/huge load (person-reported follow-up,
-// this session, same day: "Das ist noch immer merkbar langsamer... Lässt
-// es sich hier was entkoppeln?"). True decoupling (parsing in a Web Worker)
-// isn't realistic for this codebase's single-file/no-build-tooling shape —
-// see this function's own call sites for why "skip the expensive per-tick
-// work, keep the cheap live growth" was chosen instead of a bigger rewrite
-// or turning tailing-visualization off outright (the person's own stated
-// fallback). Everywhere else (a real click, node switch, filter edit, tail
-// tick, …) calls this with no argument, so isLoadTick defaults to false and
-// every render stays exactly as before.
-function renderMainView(isLoadTick) {
+function renderMainView() {
   const hasFiles = state.rootIds.length > 0;
   emptyState.style.display = hasFiles ? "none" : "flex";
   // #viewBar (Full/Filtered/Stacked tabs, pin-bookmarks/multiline toggles,
@@ -7565,7 +7500,7 @@ function renderMainView(isLoadTick) {
     tableWrap.style.display = "flex";
     statusStrip.classList.remove("hidden");
     timelineMinimapEl.classList.remove("hidden");
-    renderTable(isLoadTick);
+    renderTable();
   }
   renderHighlightView(true); // highlightColorMap was computed fresh above
 }
@@ -13348,21 +13283,7 @@ window.addEventListener("mouseup", () => {
   schedulePersistMeta();
 });
 
-// isLoadTick: passed through from renderMainView (see its own comment) —
-// true only for a load tick's throttled full render. computeMaxMessageWidth
-// (a full scan of every visible entry's longest line) and
-// renderTimelineMinimap (a full rebuild of the root file's bucket counts)
-// are the two remaining O(entries-so-far) full-file passes this function
-// runs on every call; skipped here and left at their last real value while
-// isLoadTick, so a load tick's cost stays close to just the (already cheap,
-// virtualized) visible-row paint. Both catch up to the true final state at
-// the load's natural completion, via flushLoadRender's real (isLoadTick
-// false) render — a stale message-column width or a minimap that doesn't
-// visibly grow during the load itself is the accepted tradeoff for not
-// paying this scan dozens of times a second on a fast/huge load
-// (person-reported follow-up, this session: "Das ist noch immer merkbar
-// langsamer... Lässt es sich hier was entkoppeln?").
-function renderTable(isLoadTick) {
+function renderTable() {
   const hasFiles = state.rootIds.length > 0;
   tableWrap.style.display = hasFiles ? "flex" : "none";
   emptyState.style.display = hasFiles ? "none" : "flex";
@@ -13392,10 +13313,10 @@ function renderTable(isLoadTick) {
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
-  if (!isLoadTick) cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
   syncTableRowsWidth();
   renderStatusStrip();
-  if (!isLoadTick) renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
+  renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
   // Table-view-specific ("what's actually got a DOM row right now") — see
   // updateMinimapRenderedRange's own comment for why this isn't folded into
   // renderTimelineMinimap itself.
