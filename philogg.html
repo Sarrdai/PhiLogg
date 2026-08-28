@@ -6077,6 +6077,7 @@ function cloneSubtree(nodeId, newParentId) {
   }
   if (orig.filterType === "extract" && orig.assertions) clone.assertions = JSON.parse(JSON.stringify(orig.assertions));
   if (orig.filterType === "extract" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
+  if (orig.filterType === "extract" && orig.plotConfig) clone.plotConfig = JSON.parse(JSON.stringify(orig.plotConfig));
   if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
   if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
   if (orig.filterType === "text" && orig.isRegex) clone.isRegex = true;
@@ -6767,6 +6768,7 @@ function snapshotSubtree(nodeId) {
   else if (node.filterType === "countContext") { copy.countBefore = node.countBefore; copy.countAfter = node.countAfter; }
   if (node.assertions) copy.assertions = JSON.parse(JSON.stringify(node.assertions));
   if (node.ignoredColumns) copy.ignoredColumns = node.ignoredColumns.slice();
+  if (node.plotConfig) copy.plotConfig = JSON.parse(JSON.stringify(node.plotConfig));
   if (node.caseSensitive) copy.caseSensitive = true;
   if (node.columns) copy.columns = node.columns.slice();
   if (node.isRegex) copy.isRegex = true;
@@ -6805,6 +6807,7 @@ function restoreSubtree(snap) {
   else if (snap.filterType === "countContext") { node.countBefore = snap.countBefore; node.countAfter = snap.countAfter; }
   if (snap.assertions) node.assertions = snap.assertions;
   if (snap.ignoredColumns) node.ignoredColumns = snap.ignoredColumns;
+  if (snap.plotConfig) node.plotConfig = snap.plotConfig;
   if (snap.caseSensitive) node.caseSensitive = true;
   if (snap.columns) node.columns = snap.columns;
   if (snap.isRegex) node.isRegex = true;
@@ -8894,20 +8897,62 @@ function buildPairRow(entry) {
 /* ===================== Extraction table: plotting ===================== */
 
 let extractView = "table"; // 'table' | 'plot'
-let plotNodeId = null;
 // zCol / axisEqual3d: 3D scatter's own axis config. axisEqual3d is one of
 // "off" | "all" | "xy" | "xz" | "yz" — "all"/a pair keeps those axes at the
 // same world-units-per-data-unit scale (so real physical proportions between
 // them are preserved, same reasoning as 2D's axisEqual); any axis outside
 // the chosen group stays independently auto-scaled to fill the view.
-let plotConfig = { type: "line", xCol: null, yCols: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
+function defaultPlotConfig() {
+  return { type: "line", xCol: null, yCols: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
+}
+const PLOT_CHART_TYPES = new Set(["line", "bar", "scatter", "3d"]);
+const PLOT_AXIS_EQUAL_3D_MODES = new Set(["off", "all", "xy", "xz", "yz"]);
+// Rebuilds a safe plotConfig from an untrusted source (an imported filter
+// file someone hand-edited, or a stale/foreign session-cache entry) — same
+// "filter to known-good values, default the rest" stance ignoredColumns'
+// own import path already takes, so a corrupt/malicious value can't feed
+// straight into the render/arithmetic code below. Returns null if `raw`
+// isn't even an object worth trying to salvage.
+function sanitizePlotConfig(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const cfg = defaultPlotConfig();
+  if (PLOT_CHART_TYPES.has(raw.type)) cfg.type = raw.type;
+  if (raw.xCol === null || Number.isInteger(raw.xCol)) cfg.xCol = raw.xCol;
+  if (Array.isArray(raw.yCols)) cfg.yCols = raw.yCols.filter(Number.isInteger);
+  if (raw.zCol === null || Number.isInteger(raw.zCol)) cfg.zCol = raw.zCol;
+  if (raw.colorCol === null || Number.isInteger(raw.colorCol)) cfg.colorCol = raw.colorCol;
+  ["xMin", "xMax", "yMin", "yMax", "zMin", "zMax"].forEach(k => { if (typeof raw[k] === "string") cfg[k] = raw[k]; });
+  if (typeof raw.normalize === "boolean") cfg.normalize = raw.normalize;
+  if (typeof raw.axisEqual === "boolean") cfg.axisEqual = raw.axisEqual;
+  if (PLOT_AXIS_EQUAL_3D_MODES.has(raw.axisEqual3d)) cfg.axisEqual3d = raw.axisEqual3d;
+  if (typeof raw.yColsInit === "boolean") cfg.yColsInit = raw.yColsInit;
+  return cfg;
+}
+// The full plot definition (chart type, axes, color-by, axis-equal,
+// manual ranges) is a genuinely per-extraction-node setting (person-
+// requested, 2026-08-28: "die Plots sollen ihren Zustand behalten" — leaving
+// a plot and coming back, or copying an extract node, should reproduce the
+// SAME plot) — it lives on the node itself (`node.plotConfig`, an extract-
+// only field, lazily created) and this global is just a working reference to
+// whichever node's plotConfig is currently active, swapped by
+// loadPlotConfigForNode() on every genuine node switch. Since objects are
+// references, in-place edits (`plotConfig.xCol = ...` etc., all over the
+// controls' change handlers below) automatically stay in sync with
+// node.plotConfig — no separate "save" step needed. Threaded through the
+// same four persistence carriers CLAUDE.md's gotcha requires for any new
+// filter-node field: cloneSubtree, snapshotSubtree/restoreSubtree,
+// serializeFilterBranch/importFilterJson, serializeFilterTreeForCache/
+// materializeCachedFilters.
+let plotConfig = defaultPlotConfig();
 // The exact HTML string #plotControls last had — see renderPlotControls's
 // own comment for why this matters (a rebuild while tailing was silently
 // closing a native <select> the person had open).
 let lastPlotControlsHtml = null;
 
-// --- Plot zoom/pan (ephemeral view state, like plotConfig.xMin/xMax — never
-// persisted through cloneSubtree/serializeFilterBranch/session cache) ---
+// --- Plot zoom/pan (ephemeral VIEWPORT state, unlike plotConfig above —
+// deliberately still never persisted through any carrier: resets on every
+// node switch just like before, only the plot's actual definition is now
+// remembered) ---
 // plotZoom is {x0,x1,y0,y1} in the same domain units renderPlotChart already
 // computes for the unzoomed ("home") view, or null for "no zoom, show home".
 // plotLastRender is a snapshot of the most recent render's pixel<->data
@@ -8938,9 +8983,16 @@ function resetPlot3dView() { plot3dView = { rotX: -0.5, rotY: 0.7, zoom: 1, panX
 // pattern as plotHoverPoints/plotLastRender for the 2D charts.
 let plot3dLastRender = null;
 
-function resetPlotConfig() {
-  plotNodeId = null;
-  plotConfig = { type: "line", xCol: null, yCols: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
+// Switches the global `plotConfig` reference to the given extract node's own
+// plot definition (creating one, lazily, the first time this node's Plot tab
+// is ever opened) — called from renderExtractTable on every genuine node
+// switch. The viewport-only state (zoom/pan/rotation) still resets: it's a
+// property of "what you're looking at right now," not of the plot's
+// definition, so a fresh look at a (possibly different) node's data
+// reasonably starts from its home view every time.
+function loadPlotConfigForNode(node) {
+  if (!node.plotConfig) node.plotConfig = defaultPlotConfig();
+  plotConfig = node.plotConfig;
   plotZoom = null;
   resetPlot3dView();
   lastPlotControlsHtml = null; // force a real rebuild next render, regardless of whether the new node's generated HTML happens to coincide with the old one
@@ -9359,7 +9411,10 @@ function positionPlotTooltip(areaPt) {
 }
 
 function renderPlotControls() {
-  if (plotNodeId !== extractNodeId) { plotNodeId = extractNodeId; } // config persists across re-renders of the SAME extraction
+  // plotConfig itself is now loaded per-node by loadPlotConfigForNode
+  // (called from renderExtractTable on every genuine node switch) — nothing
+  // to resync here, this just builds the controls for whichever node's
+  // config is currently active.
   const plottable = extractColumns.map(c => ({ ...c, index: c.colIndex })).filter(c => isPlottableType(c.type));
 
   if (plottable.length === 0) {
@@ -10319,10 +10374,16 @@ function renderStatsBar(node) {
 }
 
 function renderExtractTable(node) {
-  if (extractNodeId !== node.id) {
+  // The `plotConfig !== node.plotConfig` half covers undo/redo restoring a
+  // fresh node OBJECT under the same id (restoreSubtree/materializeCached
+  // Filters both build a brand-new object) — without it, the global
+  // `plotConfig` reference would keep pointing at the orphaned pre-undo
+  // object since `extractNodeId !== node.id` alone wouldn't catch a same-id
+  // swap.
+  if (extractNodeId !== node.id || plotConfig !== node.plotConfig) {
     state.tableSelection = null;
     selectionAnchor = null;
-    resetPlotConfig();
+    loadPlotConfigForNode(node);
     extractSortCol = null;
     extractSortDir = "asc";
     // The row window below is computed from extractScroll.scrollTop — reset
@@ -15895,6 +15956,7 @@ function serializeFilterBranch(nodeId) {
     if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
     if (node.filterType === "extract" && node.assertions) out.assertions = node.assertions;
     if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
+    if (node.filterType === "extract" && node.plotConfig) out.plotConfig = node.plotConfig;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
@@ -16047,6 +16109,10 @@ function importFilterJson(text) {
     }
     if (sn.filterType === "extract" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
       node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
+    }
+    if (sn.filterType === "extract" && sn.plotConfig) {
+      const pc = sanitizePlotConfig(sn.plotConfig);
+      if (pc) node.plotConfig = pc;
     }
     if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
     if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
@@ -17721,6 +17787,7 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
     if (node.filterType === "extract" && node.assertions) out.assertions = node.assertions;
     if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
+    if (node.filterType === "extract" && node.plotConfig) out.plotConfig = node.plotConfig;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
@@ -17868,6 +17935,10 @@ function materializeCachedFilters(fileNode, roots) {
     }
     if (sn.filterType === "extract" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
       node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
+    }
+    if (sn.filterType === "extract" && sn.plotConfig) {
+      const pc = sanitizePlotConfig(sn.plotConfig);
+      if (pc) node.plotConfig = pc;
     }
     if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
     if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
