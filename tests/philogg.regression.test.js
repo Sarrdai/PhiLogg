@@ -13134,13 +13134,15 @@ await withApp(async (w, d, T) => {
    GROUP 125 — 3D scatter plot (FEATURE_BACKLOG.md's deferred "3D scatter",
    person-requested this session): X/Y/Z + optional color-by column
    selection, an "Equal axis scale" mode (off / all / any pair of two axes),
-   and rotate/zoom/pan mouse interaction on a <canvas> (no 3D library in
-   this codebase — hand-rolled orthographic projection, see philogg.html's
-   "3D scatter" comment block). Point -> log-entry click reuses the same
-   jumpToFullLog the 2D scatter's marks already use.
+   manual per-axis ranges (person-requested same-session follow-up,
+   analogous to 2D's X/Y range inputs), and rotate/zoom/pan mouse
+   interaction on a <canvas> (no 3D library in this codebase — hand-rolled
+   orthographic projection, see philogg.html's "3D scatter" comment block).
+   Point -> log-entry click reuses the same jumpToFullLog the 2D scatter's
+   marks already use.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("125. Plot: 3D scatter — axis selection, axis-equal modes, rotate/zoom/pan, point click");
+  section("125. Plot: 3D scatter — axis selection, axis-equal modes, manual axis ranges, rotate/zoom/pan, point click");
 
   // Three rows with symmetric 0/50/100 ranges on all three axes, so the
   // default (axisEqual3d "off") per-axis scale is identical (1/100) on
@@ -13167,7 +13169,8 @@ await withApp(async (w, d, T) => {
     zSel = d.querySelector("#plotZSelect"), colorSel = d.querySelector("#plotColorSelect"), eqSel = d.querySelector("#plotAxisEqual3d");
   assert(xSel && ySel && zSel && colorSel && eqSel, "3D controls (X/Y/Z/color-by/axis-equal-mode selects) are all present");
   assert(d.querySelector("#plotAxisEqual") === null, "the 2D single axisEqual checkbox is NOT shown for 3D (it has its own axis-equal-mode select instead)");
-  assert(d.querySelector("#plotXMin") === null && d.querySelector("#plotYMin") === null, "manual X/Y range inputs (2D-only) aren't shown for 3D");
+  assert(d.querySelector("#plotXMin") && d.querySelector("#plotYMin") && d.querySelector("#plotZMin") && d.querySelector("#plotZMax"),
+    "manual X/Y/Z range inputs are offered for 3D too, analogous to 2D's X/Y range inputs");
   assert(d.querySelector("#plotYList") === null, "the multi-select Y checkbox list (line/bar-only) isn't shown for 3D");
   assert(d.querySelector("#plot3dResetBtn"), "a 'Reset view' button is offered for 3D");
 
@@ -13221,6 +13224,28 @@ await withApp(async (w, d, T) => {
   const yzScale = T.plot3dLastRender;
   assert(nearlyEq(yzScale.sy, 0.02) && nearlyEq(yzScale.sz, 0.02) && nearlyEq(yzScale.sx, 0.01),
     "'Y=Z equal, X auto': Y and Z share Y's tighter scale (0.02), X stays independently auto-scaled (0.01)");
+  eqModeSel.value = "off"; eqModeSel.dispatchEvent(new w.Event("change", { bubbles: true })); // back to independent-per-axis for the range tests below
+
+  /* ---------- Manual axis ranges, analogous to 2D's X/Y range inputs ---------- */
+  // Person-requested follow-up: an explicit min/max per axis (X/Y/Z), same
+  // "auto unless overridden" shape as the 2D charts' own X/Y range inputs.
+  // The auto X range here is 0..100 (sx=1/100=0.01, asserted above) —
+  // overriding it to 0..50 should double the scale to 1/50=0.02.
+  const xMinInput = d.querySelector("#plotXMin"), xMaxInput = d.querySelector("#plotXMax");
+  xMaxInput.value = "50"; xMaxInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.plotConfig.xMax === "50", "typing a manual X max writes plotConfig.xMax (shared field with 2D's own X range input)");
+  assert(nearlyEq(T.plot3dLastRender.sx, 0.02), "a manual X range (0..50 instead of the auto 0..100) doubles X's world scale to 1/50, got " + T.plot3dLastRender.sx);
+  assert(nearlyEq(T.plot3dLastRender.sy, 0.02) && nearlyEq(T.plot3dLastRender.sz, 0.1), "Y/Z scales are unaffected by the X-only override");
+
+  const zMinInput = d.querySelector("#plotZMin"), zMaxInput = d.querySelector("#plotZMax");
+  zMinInput.value = "0"; zMinInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  zMaxInput.value = "5"; zMaxInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(nearlyEq(T.plot3dLastRender.sz, 0.2), "a manual Z range (0..5 instead of the auto 0..10) doubles Z's world scale to 1/5, got " + T.plot3dLastRender.sz);
+
+  xMaxInput.value = ""; xMaxInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  zMinInput.value = ""; zMinInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  zMaxInput.value = ""; zMaxInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(nearlyEq(T.plot3dLastRender.sx, 0.01) && nearlyEq(T.plot3dLastRender.sz, 0.1), "clearing the manual overrides back to \"\" reverts to the auto data range");
 
   /* ---------- Rotate / zoom / pan / hover / click, back on the symmetric extraction ---------- */
   // Switching to a genuinely DIFFERENT extraction node resets plotConfig
