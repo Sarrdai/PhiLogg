@@ -13559,6 +13559,90 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 128 — Load ticks skip the two remaining O(entries-so-far) full-file
+   scans (renderTimelineMinimap's bucket rebuild, computeMaxMessageWidth's
+   longest-line scan); a real (non-load-tick) render still runs both.
+   Origin: this session, same-day person-reported follow-up to Group 127:
+   *"Das ist noch immer merkbar langsamer. Siehst du noch eine Möglichkeit
+   hier stark zu optimieren? Lässt es sich hier was entkoppeln..."* — the
+   150ms throttle alone (Group 127) wasn't enough, because renderTable()'s
+   own per-call work is itself O(entries-so-far) regardless of how often
+   it's invoked. True decoupling (parsing off the main thread in a Web
+   Worker) isn't realistic for this single-file/no-build-tooling codebase,
+   so instead renderMainView/renderTable take an isLoadTick flag (see their
+   own comments) and skip renderTimelineMinimap/computeMaxMessageWidth
+   entirely while it's true — the tree row's own live count/progress fill
+   and the (already virtualized, cheap) visible table rows are unaffected.
+   Both catch up at the load's natural completion, via flushLoadRender's
+   real (isLoadTick-less) render.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("128. Load ticks skip renderTimelineMinimap/computeMaxMessageWidth; a real render still runs both");
+
+  const f = await w.addFile("a.log", makeLog(0, 5));
+  T.state.activeId = f.id;
+  w.render();
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRTM3 = renderTimelineMinimap;
+    window.__rtmCalls3 = 0;
+    renderTimelineMinimap = function(...a) { window.__rtmCalls3++; return __origRTM3(...a); };
+    const __origCMW = computeMaxMessageWidth;
+    window.__cmwCalls = 0;
+    computeMaxMessageWidth = function(...a) { window.__cmwCalls++; return __origCMW(...a); };
+  `;
+  d.body.appendChild(s);
+
+  // A direct isLoadTick=true call (same shape renderLoadTickMainView uses)
+  // must skip both.
+  w.__rtmCalls3 = 0; w.__cmwCalls = 0;
+  w.renderMainView(true);
+  assert(w.__rtmCalls3 === 0, "renderTimelineMinimap is not called during a load-tick render — got " + w.__rtmCalls3 + " calls");
+  assert(w.__cmwCalls === 0, "computeMaxMessageWidth is not called during a load-tick render — got " + w.__cmwCalls + " calls");
+
+  // A normal render (no argument, or explicitly falsy) still runs both,
+  // exactly as before this session's change — this isn't a general perf
+  // regression, only load ticks are affected.
+  w.__rtmCalls3 = 0; w.__cmwCalls = 0;
+  w.render();
+  assert(w.__rtmCalls3 === 1, "a real render still runs renderTimelineMinimap exactly once — got " + w.__rtmCalls3);
+  assert(w.__cmwCalls === 1, "a real render still runs computeMaxMessageWidth exactly once — got " + w.__cmwCalls);
+
+  // End-to-end: a genuinely mid-parse load tick (via the real
+  // scheduleLoadRender path, rAF flushed) skips both, and the load's own
+  // final flushLoadRender render (isLoadTick-less) runs them again.
+  const s2 = d.createElement("script");
+  s2.textContent = `
+    window.__rafCallbacks3 = {};
+    window.__rafNextId3 = 1;
+    window.requestAnimationFrame = function(cb) { const id = window.__rafNextId3++; window.__rafCallbacks3[id] = cb; return id; };
+    window.cancelAnimationFrame = function(id) { delete window.__rafCallbacks3[id]; };
+    window.__flushRaf3 = function() {
+      const cbs = window.__rafCallbacks3; window.__rafCallbacks3 = {};
+      Object.keys(cbs).forEach(id => cbs[id]());
+    };
+  `;
+  d.body.appendChild(s2);
+
+  const text = makeLog(0, 60000);
+  const donePromise2 = w.addFile("huge2.log", text);
+  // createFileNode's own synchronous flushLoadRender (a real, isLoadTick-less
+  // render for the row's initial appearance) already ran by this point —
+  // reset AFTER it, so the counts below reflect only the load TICK that
+  // follows, not that one-off structural render.
+  w.__rtmCalls3 = 0; w.__cmwCalls = 0;
+  await new Promise(r => setTimeout(r, 0));
+  w.__flushRaf3();
+  assert(w.__rtmCalls3 === 0, "a genuine mid-parse load tick skips renderTimelineMinimap — got " + w.__rtmCalls3);
+  assert(w.__cmwCalls === 0, "a genuine mid-parse load tick skips computeMaxMessageWidth — got " + w.__cmwCalls);
+
+  await donePromise2;
+  assert(w.__rtmCalls3 >= 1, "the load's natural completion (flushLoadRender) runs a real render that includes renderTimelineMinimap — got " + w.__rtmCalls3);
+  assert(w.__cmwCalls >= 1, "the load's natural completion (flushLoadRender) runs a real render that includes computeMaxMessageWidth — got " + w.__cmwCalls);
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));

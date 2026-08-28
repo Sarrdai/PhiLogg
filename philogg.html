@@ -5011,7 +5011,7 @@ function updateLoadRowLiveData(rootId) {
 // toggle to filter by level while the file is still loading).
 function renderLoadTickMainView() {
   updateLevelBarCounts();
-  renderMainView();
+  renderMainView(true);
   renderStatus();
 }
 
@@ -7435,7 +7435,23 @@ function render() {
 // "Filter view" flavors now, each paired with the Highlight view via
 // #fhSplit/#fhTabs. The extract view is unaffected — no Highlight
 // companion, full content area to itself, exactly as before.
-function renderMainView() {
+// isLoadTick: true only when called from renderLoadTickMainView (a load
+// tick's throttled-but-still-per-frame-ish full render, see
+// scheduleLoadRender/LOAD_RENDER_MIN_INTERVAL_MS). Threaded down into
+// renderTable, which skips its two remaining O(entries-so-far) full-file
+// scans in that case (renderTimelineMinimap's bucket rebuild,
+// computeMaxMessageWidth's longest-line scan) — the 150ms throttle alone
+// still wasn't fast enough on a fast/huge load (person-reported follow-up,
+// this session, same day: "Das ist noch immer merkbar langsamer... Lässt
+// es sich hier was entkoppeln?"). True decoupling (parsing in a Web Worker)
+// isn't realistic for this codebase's single-file/no-build-tooling shape —
+// see this function's own call sites for why "skip the expensive per-tick
+// work, keep the cheap live growth" was chosen instead of a bigger rewrite
+// or turning tailing-visualization off outright (the person's own stated
+// fallback). Everywhere else (a real click, node switch, filter edit, tail
+// tick, …) calls this with no argument, so isLoadTick defaults to false and
+// every render stays exactly as before.
+function renderMainView(isLoadTick) {
   const hasFiles = state.rootIds.length > 0;
   emptyState.style.display = hasFiles ? "none" : "flex";
   // #viewBar (Full/Filtered/Stacked tabs, pin-bookmarks/multiline toggles,
@@ -7549,7 +7565,7 @@ function renderMainView() {
     tableWrap.style.display = "flex";
     statusStrip.classList.remove("hidden");
     timelineMinimapEl.classList.remove("hidden");
-    renderTable();
+    renderTable(isLoadTick);
   }
   renderHighlightView(true); // highlightColorMap was computed fresh above
 }
@@ -13332,7 +13348,21 @@ window.addEventListener("mouseup", () => {
   schedulePersistMeta();
 });
 
-function renderTable() {
+// isLoadTick: passed through from renderMainView (see its own comment) —
+// true only for a load tick's throttled full render. computeMaxMessageWidth
+// (a full scan of every visible entry's longest line) and
+// renderTimelineMinimap (a full rebuild of the root file's bucket counts)
+// are the two remaining O(entries-so-far) full-file passes this function
+// runs on every call; skipped here and left at their last real value while
+// isLoadTick, so a load tick's cost stays close to just the (already cheap,
+// virtualized) visible-row paint. Both catch up to the true final state at
+// the load's natural completion, via flushLoadRender's real (isLoadTick
+// false) render — a stale message-column width or a minimap that doesn't
+// visibly grow during the load itself is the accepted tradeoff for not
+// paying this scan dozens of times a second on a fast/huge load
+// (person-reported follow-up, this session: "Das ist noch immer merkbar
+// langsamer... Lässt es sich hier was entkoppeln?").
+function renderTable(isLoadTick) {
   const hasFiles = state.rootIds.length > 0;
   tableWrap.style.display = hasFiles ? "flex" : "none";
   emptyState.style.display = hasFiles ? "none" : "flex";
@@ -13362,10 +13392,10 @@ function renderTable() {
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
-  cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  if (!isLoadTick) cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
   syncTableRowsWidth();
   renderStatusStrip();
-  renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
+  if (!isLoadTick) renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
   // Table-view-specific ("what's actually got a DOM row right now") — see
   // updateMinimapRenderedRange's own comment for why this isn't folded into
   // renderTimelineMinimap itself.
