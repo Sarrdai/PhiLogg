@@ -9113,17 +9113,28 @@ plotZoomLevelInput.addEventListener("keydown", ev => { if (ev.key === "Enter") p
 // derives each row's X position, so this can never disagree with what's
 // actually drawn.
 function getPlotViewportEntries() {
-  if (!plotLastRender || !extractRowsData.length || plotConfig.xCol == null) return [];
-  const { xDomainMin, xDomainMax, isBarChart } = plotLastRender;
+  if (!plotLastRender || !extractRowsData.length || plotConfig.xCol == null || !plotConfig.yCols.length) return [];
+  const { xDomainMin, xDomainMax, yDomainMin, yDomainMax, isBarChart } = plotLastRender;
   const xCol = findExtractColumn(plotConfig.xCol);
   const xType = xCol ? xCol.type : null;
+  // A row also needs a Y check, not just X — a point can have an in-range X
+  // but sit above/below the current Y zoom/pan (clipped away by the chart's
+  // own clip-path), or have no finite Y at all for any plotted column (the
+  // same NaN-drop renderPlotChart's own `series` construction applies).
+  // Checking X alone previously counted such off-screen points as "visible."
+  const yTypes = plotConfig.yCols.map(yCol => findExtractColumn(yCol).type);
   const out = [];
   extractRowsData.forEach((row, r) => {
     // Bar's X is categorical row-index space (see renderPlotChart) — each
     // row occupies the pixel slot [r, r+1), so its center is what a visible
     // domain range actually needs to cover.
     const x = isBarChart ? r + 0.5 : parseValueForPlot(row.values[plotConfig.xCol], xType);
-    if (Number.isFinite(x) && x >= xDomainMin - 1e-9 && x <= xDomainMax + 1e-9 && row.entry) out.push(row.entry);
+    if (!Number.isFinite(x) || x < xDomainMin - 1e-9 || x > xDomainMax + 1e-9 || !row.entry) return;
+    const yVisible = plotConfig.yCols.some((yCol, i) => {
+      const y = parseValueForPlot(row.values[yCol], yTypes[i]);
+      return Number.isFinite(y) && y >= yDomainMin - 1e-9 && y <= yDomainMax + 1e-9;
+    });
+    if (yVisible) out.push(row.entry);
   });
   return out;
 }
@@ -11863,7 +11874,17 @@ timelineMinimapSvg.addEventListener("mouseleave", () => { if (!minimapDragging) 
    updateMinimapRenderedRange) are completely untouched by any of this. */
 const MINIMAP_DRAG_THRESHOLD_PX = 3; // below this, treat it as the existing click-to-jump instead
 let minimapDragging = false;
-let minimapDragStartX = 0; // in minimapWidth units, captured at mousedown
+// Anchored as a real timestamp, NOT a minimapWidth-unit x position — a mid-
+// drag renderTimelineMinimap() (tail tick, level toggle, window resize) can
+// change minimapWidth/minimapTMin/minimapTMax out from under an in-progress
+// gesture; a pixel-unit anchor captured at mousedown would then silently
+// desync from those live globals for the rest of the drag (wrong overlay,
+// wrong resulting range, or a reversed from/to that made mouseup's
+// `toTs > fromTs` guard fail — the drag not visibly working at all). A
+// timestamp anchor stays correct regardless: every pixel position needed
+// (overlay, threshold check, final range) is re-derived from it via
+// minimapTsToX/minimapXToTs against whatever is currently live.
+let minimapDragStartTs = 0;
 let minimapDragMoved = false;
 let minimapDragSvgRect = null; // cached at mousedown so a drag past the element's edge still resolves consistently
 let minimapDragSuppressClick = false;
@@ -11906,7 +11927,7 @@ function createTimeRangeFilterFromDrag(fromTs, toTs) {
 timelineMinimapSvg.addEventListener("mousedown", ev => {
   if (!minimapInteractive || ev.button !== 0) return;
   minimapDragSvgRect = timelineMinimapSvg.getBoundingClientRect();
-  minimapDragStartX = minimapEventUnitX(ev, minimapDragSvgRect);
+  minimapDragStartTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   minimapDragging = true;
   minimapDragMoved = false;
   document.body.style.userSelect = "none";
@@ -11915,10 +11936,11 @@ timelineMinimapSvg.addEventListener("mousedown", ev => {
 
 window.addEventListener("mousemove", ev => {
   if (!minimapDragging) return;
-  const x = minimapEventUnitX(ev, minimapDragSvgRect);
-  if (!minimapDragMoved && Math.abs(x - minimapDragStartX) < MINIMAP_DRAG_THRESHOLD_PX) return;
+  const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
+  const xStart = minimapTsToX(minimapDragStartTs), xNow = minimapTsToX(curTs);
+  if (!minimapDragMoved && Math.abs(xNow - xStart) < MINIMAP_DRAG_THRESHOLD_PX) return;
   minimapDragMoved = true;
-  showMinimapDragOverlay(minimapDragStartX, x);
+  showMinimapDragOverlay(xStart, xNow);
 });
 
 window.addEventListener("mouseup", ev => {
@@ -11928,9 +11950,8 @@ window.addEventListener("mouseup", ev => {
   hideMinimapDragOverlay();
   if (!minimapDragMoved) return; // a plain click — the svg's own "click" listener handles jump-to
   minimapDragSuppressClick = true;
-  const x = minimapEventUnitX(ev, minimapDragSvgRect);
-  const lo = Math.min(minimapDragStartX, x), hi = Math.max(minimapDragStartX, x);
-  const fromTs = Math.round(minimapXToTs(lo)), toTs = Math.round(minimapXToTs(hi));
+  const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
+  const fromTs = Math.round(Math.min(minimapDragStartTs, curTs)), toTs = Math.round(Math.max(minimapDragStartTs, curTs));
   if (toTs > fromTs) createTimeRangeFilterFromDrag(fromTs, toTs);
 });
 
@@ -14589,18 +14610,31 @@ function selectionFilterNodesForRoot(rootId) {
   return root.children.map(id => state.nodes[id]).filter(n => n && n.filterType === "idset" && n.selectionFilter);
 }
 
+// Next auto-generated selection filter name — "Selection 1", "Selection 2",
+// ... — a plain ordinal, not the initial entry count (person-reported: the
+// count-based name, e.g. "3 entries (selection)", went stale the moment
+// "Add to selection" grew the set afterward — see addRowsToSelectionFilter's
+// own comment for why it deliberately never rewrites node.name). Counts
+// every selectionFilter node that already exists across the whole tree
+// (not just under this root), so numbering stays a simple, ever-increasing
+// sequence rather than resetting per file.
+function nextSelectionFilterName() {
+  const n = Object.values(state.nodes).filter(node => node.selectionFilter).length;
+  return "Selection " + (n + 1);
+}
+
 // Creates a brand-new top-level selection filter under `rootId` — same
 // "top-level, alongside Bookmarks" placement syncBookmarksFilterNode uses
 // (root.children.unshift), NOT a child of state.activeId like every other
-// context-menu filter action. Named the same auto-generated way idset nodes
-// already are (idSetFilterName) — no dedicated naming prompt exists anywhere
-// else in the filter tree either; renaming afterward goes through the
+// context-menu filter action. Named as an ordinal ("Selection 1", "Selection
+// 2", ...) via nextSelectionFilterName(), not the entry count idSetFilterName
+// gives plot-created idset filters — renaming afterward goes through the
 // standard "Rename…" tree action like any other filter node.
 function createSelectionFilterNode(rootId, ids) {
   const root = state.nodes[rootId];
   if (!root || !ids || !ids.length) return null;
   const node = {
-    id: uid("n"), type: "filter", name: idSetFilterName(ids, "selection"), parentId: rootId,
+    id: uid("n"), type: "filter", name: nextSelectionFilterName(), parentId: rootId,
     children: [], filterType: "idset", value: ids.slice(), inverted: false, selectionFilter: true,
   };
   state.nodes[node.id] = node;
