@@ -13470,6 +13470,95 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 127 — Load-tick full renders are time-throttled, not just
+   rAF-coalesced: renderLoadTickMainView() fires at most once per
+   LOAD_RENDER_MIN_INTERVAL_MS even when progress ticks land faster than
+   that, so a fast/huge load doesn't pay an O(entries-so-far) renderTable()
+   pass on every single animation frame.
+   Origin: this session, person-reported (German): "Die Visualisierung des
+   Ladevorgangs (Darstellung als würde man das Log Tailen) scheint das
+   Laden deutlich zu verlangsamen. Wenn ich eine andere als die gerade
+   ladende Datei auswähle, läuft der Ladevorgang viel schneller." —
+   confirmed root cause: renderTable() rebuilds the minimap's bucket
+   counts and rescans every entry for the widest message line on every
+   call, both O(entries-so-far); scheduleLoadRender's existing
+   rAF-coalescing still ran that full pass up to once per animation frame,
+   turning a load into O(n²) total work. Fixed by adding a real-time
+   minimum gap (LOAD_RENDER_MIN_INTERVAL_MS, 150ms) between actual full
+   renders, checked inside the rAF callback itself — a tick landing before
+   the gap elapses skips renderLoadTickMainView() for that frame (the row
+   itself stays current via the always-synchronous updateLoadRowLiveData
+   call) and the next tick tries again. flushLoadRender (true start/end of
+   a load) is untouched and always renders immediately.
+   performance.now is mocked to advance in controlled, tiny steps per rAF
+   flush — same "mock the thing being raced against" idea Group 50 uses
+   for requestAnimationFrame itself, so the throttle window is exercised
+   deterministically instead of racing real wall-clock time.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("127. Load-tick full renders are throttled to at most once per LOAD_RENDER_MIN_INTERVAL_MS");
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRender2 = renderLoadTickMainView;
+    window.__loadTickCalls = 0;
+    renderLoadTickMainView = function() { window.__loadTickCalls++; return __origRender2(); };
+    window.__rafCallbacks2 = {};
+    window.__rafNextId2 = 1;
+    window.requestAnimationFrame = function(cb) { const id = window.__rafNextId2++; window.__rafCallbacks2[id] = cb; return id; };
+    window.cancelAnimationFrame = function(id) { delete window.__rafCallbacks2[id]; };
+    window.__flushRaf2 = function() {
+      const cbs = window.__rafCallbacks2; window.__rafCallbacks2 = {};
+      Object.keys(cbs).forEach(id => cbs[id]());
+    };
+    window.__fakeNow = 0;
+    window.performance.now = function() { return window.__fakeNow; };
+    lastLoadRenderTs = -1e9; // reset the module-level throttle timestamp — earlier groups already advanced it past any small fake value the mock above will use
+  `;
+  d.body.appendChild(s);
+
+  // Large enough (several PARSE_CHUNK_LINES chunks) to produce multiple
+  // progress ticks while still genuinely mid-parse.
+  const text = makeLog(0, 60000);
+  const donePromise = w.addFile("huge.log", text);
+  const newId = T.state.rootIds[T.state.rootIds.length - 1];
+  const node = T.state.nodes[newId];
+  assert(T.state.activeId === newId, "sanity: the new file is the active view (loading-file-tick throttle only applies to the active case)");
+
+  // Fire two rAF ticks back-to-back with the fake clock barely advancing
+  // between them (well under the 150ms throttle window) — the second must
+  // NOT run a full render.
+  w.__fakeNow = 10;
+  await new Promise(r => setTimeout(r, 0));
+  w.__flushRaf2();
+  const afterFirst = w.__loadTickCalls;
+  assert(afterFirst === 1, "the first tick within the throttle window runs a full render — got " + afterFirst);
+
+  w.__fakeNow = 20; // +10ms, still well under LOAD_RENDER_MIN_INTERVAL_MS
+  await new Promise(r => setTimeout(r, 0));
+  w.__flushRaf2();
+  assert(w.__loadTickCalls === afterFirst, "a second tick landing before the throttle window elapses is skipped — got " + w.__loadTickCalls + " (expected " + afterFirst + ")");
+
+  // Advance the fake clock past the throttle window — the next tick must
+  // run a full render again.
+  w.__fakeNow = 300;
+  await new Promise(r => setTimeout(r, 0));
+  w.__flushRaf2();
+  assert(w.__loadTickCalls === afterFirst + 1, "a tick landing after the throttle window elapses runs a full render again — got " + w.__loadTickCalls);
+
+  // The loading row's own live data (count/progress fill) is NEVER
+  // throttled — only the full main-view render is — so it must have kept
+  // advancing across the skipped tick too.
+  await new Promise(r => setTimeout(r, 0));
+  w.__flushRaf2();
+  assert(node.entries.length > 0 && node.entries.length < 60000, "the file keeps genuinely streaming in across the throttled ticks — got " + node.entries.length + "/60000");
+
+  await donePromise;
+  assert(node.entries.length === 60000, "the file finishes loading with the full entry count despite the throttle");
+  assert(typeof node.loadFraction !== "number", "loadFraction is cleared once loading finishes (flushLoadRender is never throttled)");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -15320,5 +15409,18 @@ process.exit(failed ? 1 : 0);
    - #dropHint, the tree sidebar's own "Drag & drop log files..." hint
      (pre-2026-08-18) — removed outright (Group 56) in favor of #emptyState
      being the single "no file loaded" hint; no code or markup remains.
+
+   Group 127 — this session (2026-08-28), person-reported: the load-tick
+              tailing visualization was measurably slowing down loading of
+              the active file, vs. switching to a different already-loaded
+              file mid-load. Root cause: renderTable()'s own per-frame work
+              (minimap bucket rebuild, computeMaxMessageWidth) is
+              O(entries-so-far), and scheduleLoadRender's existing
+              rAF-coalescing still let that full pass run up to once per
+              animation frame, turning a load into O(n²) total work.
+              scheduleLoadRender now also enforces a real-time minimum gap
+              (LOAD_RENDER_MIN_INTERVAL_MS, 150ms) between actual full
+              renders; performance.now mocked to test the throttle window
+              deterministically.
 
    ============================================================ */

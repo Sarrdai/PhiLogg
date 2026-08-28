@@ -5039,6 +5039,24 @@ function renderLoadTickMainView() {
 // node was created, and never update again — including once the person
 // switches TO the file after it's done loading in the background.
 let loadRenderRafId = null;
+// rAF-coalescing alone (one renderLoadTickMainView per animation frame) still
+// isn't enough on a fast/huge load: renderTable's per-frame work (minimap
+// bucket rebuild over ALL of the root file's entries, computeMaxMessageWidth
+// scanning every entry) is O(entries-so-far), and entries-so-far grows every
+// tick — running that every ~16ms turns the whole load into O(n²) and was
+// person-reported as tailing-visualisation-on made an otherwise-fast load
+// visibly slower than switching away to a different (non-active) file mid-
+// load, which skips renderLoadTickMainView entirely (see the
+// loadRenderRootIsActive check above). Capping actual full renders to at
+// most one per LOAD_RENDER_MIN_INTERVAL_MS keeps the live-tail look (still
+// several updates a second) while cutting the number of O(n) passes by an
+// order of magnitude on a file that parses faster than that. Only throttles
+// these mid-load ticks — flushLoadRender (real start/end of a load) always
+// renders immediately regardless, so the final state is never stale, and
+// onTailChange's own post-load polling is already naturally rate-limited by
+// TAIL_POLL_MS and untouched by this.
+const LOAD_RENDER_MIN_INTERVAL_MS = 150;
+let lastLoadRenderTs = 0;
 function scheduleLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
   if (rootId) updateLoadRowLiveData(rootId);
@@ -5053,6 +5071,9 @@ function scheduleLoadRender(rootId) {
   loadRenderRafId = requestAnimationFrame(() => {
     loadRenderRafId = null;
     if (rootId && !loadRenderRootIsActive(rootId)) return;
+    const now = performance.now();
+    if (now - lastLoadRenderTs < LOAD_RENDER_MIN_INTERVAL_MS) return; // too soon — the next progress tick will retry and either succeed or get caught by flushLoadRender at load end
+    lastLoadRenderTs = now;
     renderLoadTickMainView();
   });
 }
