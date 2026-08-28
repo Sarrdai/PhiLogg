@@ -76,8 +76,8 @@ open it in a browser to view it.
   it's shown at all when the new filter belongs to a different file.
 - **Value extraction** — turn a pattern like `x=[value:float] y=[value:float]`
   into a spreadsheet-style table with per-column stats, value assertions, and
-  a Plot tab (line/bar/scatter, zoom/pan, click a point to jump to its log
-  entry). `float`/`int` placeholders can also carry an inline condition —
+  a Plot tab (line/bar/scatter/3D scatter, zoom/pan/rotate, click a point to
+  jump to its log entry). `float`/`int` placeholders can also carry an inline condition —
   `[value:float>=10]`, `[value:int<20,>10]` for a range, or `[value:float|>=10]`
   to compare against the absolute value — so a pattern matches/extracts only
   the entries whose value actually satisfies it.
