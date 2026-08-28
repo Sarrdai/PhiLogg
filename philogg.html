@@ -1489,6 +1489,9 @@
     font-size:9px; font-weight:800; flex:0 0 auto;
   }
   .extract-toolbar-row2{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .extract-toolbar-row2-right{display:flex; align-items:center; gap:10px;}
+  .extract-toolbar-row2-sep{width:1px; height:20px; background:var(--border);}
+  #plotZoomBar.hidden + .extract-toolbar-row2-sep{display:none;}
   #extractInfo{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;}
   .btn-mini-outline{
     background:transparent; color:var(--text-secondary); border:1px solid var(--border);
@@ -2004,10 +2007,11 @@
 
   /* ---------- Plot zoom/pan ---------- */
   #plotZoomBar{
-    position:absolute; top:22px; right:22px; z-index:5; display:flex; align-items:center; gap:2px;
+    display:flex; align-items:center; gap:6px;
     background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:7px; padding:3px;
-    box-shadow:0 4px 14px rgba(0,0,0,.18);
   }
+  #plotZoomBar.hidden{display:none;}
+  .plot-zoom-bar-group{display:flex; align-items:center; gap:2px;}
   #plotZoomBar button{
     background:transparent; border:none; color:var(--text-secondary); cursor:pointer; border-radius:5px;
     font-family:var(--font-mono); font-size:12px; font-weight:650; line-height:1; padding:5px 7px;
@@ -2646,9 +2650,25 @@
           <div id="extractStatsBar"></div>
           <div class="extract-toolbar-row2">
             <span id="extractInfo"></span>
-            <div class="view-tabs" id="extractViewTabs">
-              <button type="button" class="view-tab active" data-view="table">Table</button>
-              <button type="button" class="view-tab" data-view="plot">Plot</button>
+            <div class="extract-toolbar-row2-right">
+              <div id="plotZoomBar" class="hidden">
+                <div class="plot-zoom-bar-group">
+                  <button type="button" id="plotZoomOutBtn" title="Zoom out">−</button>
+                  <input type="text" id="plotZoomLevelInput" inputmode="numeric" title="Zoom level — click to edit">
+                  <button type="button" id="plotZoomInBtn" title="Zoom in">+</button>
+                  <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
+                </div>
+                <span class="plot-zoom-bar-sep"></span>
+                <div class="plot-zoom-bar-group">
+                  <button type="button" id="plotFilterTimeRangeBtn" title="Create a time-range filter spanning what's currently visible in the plot">Filter: time range</button>
+                  <button type="button" id="plotFilterEntriesBtn" title="Create a filter matching exactly the log entries currently visible in the plot">Filter: these entries</button>
+                </div>
+              </div>
+              <span class="extract-toolbar-row2-sep"></span>
+              <div class="view-tabs" id="extractViewTabs">
+                <button type="button" class="view-tab active" data-view="table">Table</button>
+                <button type="button" class="view-tab" data-view="plot">Plot</button>
+              </div>
             </div>
           </div>
         </div>
@@ -2659,15 +2679,6 @@
           <div id="plotControls"></div>
           <div id="plotChartArea">
             <svg id="plotSvg" xmlns="http://www.w3.org/2000/svg"></svg>
-            <div id="plotZoomBar" class="hidden">
-              <button type="button" id="plotZoomOutBtn" title="Zoom out">−</button>
-              <input type="text" id="plotZoomLevelInput" inputmode="numeric" title="Zoom level — click to edit">
-              <button type="button" id="plotZoomInBtn" title="Zoom in">+</button>
-              <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
-              <span class="plot-zoom-bar-sep"></span>
-              <button type="button" id="plotFilterTimeRangeBtn" title="Create a time-range filter spanning what's currently visible in the plot">Filter: time range</button>
-              <button type="button" id="plotFilterEntriesBtn" title="Create a filter matching exactly the log entries currently visible in the plot">Filter: these entries</button>
-            </div>
             <div id="plotDragRect" class="hidden"></div>
             <div id="plotTooltip" class="hidden"></div>
           </div>
