@@ -14640,6 +14640,8 @@ function openAddToSelectionMenu(ev) {
   addToSelectionMenu.classList.remove("hidden");
 }
 
+ctxAddToSelection.addEventListener("mouseenter", ev => openAddToSelectionMenu(ev));
+
 ctxAddToSelection.addEventListener("click", ev => {
   ev.stopPropagation();
   openAddToSelectionMenu(ev);
