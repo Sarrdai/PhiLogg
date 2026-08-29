@@ -13875,8 +13875,9 @@ await withApp(async (w, d, T) => {
   const loadedLink = T.state.nodes[loadedDisplay.parentId];
   assert(loadedLink && loadedLink.hiddenInTree && loadedLink.squashGroup === loadedDisplay.squashGroup,
     "its private link-node ancestor was reconstructed hiddenInTree, same squashGroup tag");
-  assert(d.querySelectorAll('.tree-row[data-node-id="' + loadedDisplayId + '"]').length === 1, "renders as exactly one row");
-  assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') === null, "the private link clone still gets no row of its own — stayed collapsed, was NOT unpacked");
+  assert(d.querySelectorAll('.tree-row[data-node-id="' + loadedDisplayId + '"]').length === 1, "renders as exactly one row (the box's own header) while collapsed");
+  assert(d.querySelector(".tree-squash-box"), "the box background is visible even while collapsed");
+  assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') === null, "the private link clone still gets no row of its own while collapsed");
 
   // --- Manual expand/collapse chevron ---
   const chevronBefore = d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron');
@@ -13885,13 +13886,13 @@ await withApp(async (w, d, T) => {
   w.render();
   assert(T.state.nodes[loadedLink.id].squashExpanded === true, "toggling sets squashExpanded on every group member");
   assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') !== null, "expanding reveals the private link clone as a real row");
-  // Collapsing now happens from a read-only HEADER row at the group's
-  // original position (see renderSquashGroupExpanded) — the display node's
-  // own row (now inside the box) no longer carries the toggle chevron.
-  const headerChevron = d.querySelector('.tree-squash-header[data-squash-header-for="' + loadedDisplayId + '"] .tree-chevron');
-  assert(headerChevron && headerChevron.classList.contains("expanded"), "the header row's chevron reflects the expanded state");
-  assert(d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron') === null,
-    "the display node's own row (now inside the box) no longer has a chevron of its own");
+  // The display node's own row now renders TWICE while expanded — once as
+  // the box's own top row (always there), once again at the bottom of the
+  // revealed chain (person's own explicit preference: both are the exact
+  // same node id, so both light up together when selected).
+  const chevrons = [...d.querySelectorAll('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron')];
+  assert(chevrons.length === 2 && chevrons.every(c => c.classList.contains("expanded")),
+    "the display node's row appears twice while expanded, both chevrons showing expanded");
 
   // Collapse again via the OTHER member's own chevron (any member's row can
   // toggle the whole group, not just the original display's).
@@ -14000,40 +14001,36 @@ await withApp(async (w, d, T) => {
 
   const displayChevron = () => d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron');
   assert(displayChevron() && !displayChevron().classList.contains("expanded"), "the squash display shows a collapsed chevron");
-  assert(d.querySelector(".tree-squash-box") === null, "no box exists yet while collapsed");
+  const boxCollapsed = d.querySelector(".tree-squash-box");
+  assert(boxCollapsed, "the box background is visible even while collapsed (person-reported: should look like a detached copy with logic inside from the start)");
+  assert(boxCollapsed.querySelector('.tree-row[data-node-id="' + displayId + '"]'), "...and contains the display node's own row as its only content while collapsed");
+  assert(boxCollapsed.querySelector(".tree-squash-divider") === null, "no divider/revealed chain yet while collapsed");
+
   fireClick(displayChevron(), w);
   assert(T.state.nodes[displayId].squashExpanded === true, "clicking it expands the group");
   const box = d.querySelector(".tree-squash-box");
-  assert(box, "an inline .tree-squash-box now exists");
+  assert(box, "the box is still there, now expanded");
   const cloneLinkId = T.state.nodes[displayId].parentId;
   assert(box.querySelector('.tree-row[data-node-id="' + cloneLinkId + '"]') !== null,
     "the private link clone renders INSIDE the box, not as a flat top-level sibling");
-  // The box REPLACES the whole entry — the display node now renders once,
-  // INSIDE the box (as the last real row in its own private chain), not a
-  // second time floating above it as a separate top-level row.
-  assert(d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 1,
-    "the display node renders exactly once while expanded");
-  assert(box.querySelector('.tree-row[data-node-id="' + displayId + '"]') !== null,
-    "...and that one row is INSIDE the box, not a separate row above it");
-  assert(box.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron') === null,
-    "the display's own row (now inside the box) has no chevron of its own");
+  // The display node's own row now renders TWICE while expanded — once as
+  // the box's top row (always there, collapsed or not), once again at the
+  // bottom of the revealed chain — same real node id both times, so both
+  // light up together when selected (person's own explicit preference:
+  // "doppelte Selektion", over an earlier read-only-header design).
+  const displayRows = [...box.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]')];
+  assert(displayRows.length === 2, "the display node's row appears exactly twice inside the box while expanded, got " + displayRows.length);
+  assert(displayRows.every(r => r.querySelector(".tree-chevron").classList.contains("expanded")),
+    "both instances carry a working, expanded-state chevron");
+  const divider = box.querySelector(".tree-squash-divider");
+  assert(divider, "a divider separates the (always-present) top row from the revealed chain below it");
+  assert(displayRows[0].compareDocumentPosition(divider) & w.Node.DOCUMENT_POSITION_FOLLOWING,
+    "the divider sits AFTER the box's first (always-present) display row");
 
-  // --- A read-only HEADER row now sits above the box, at the group's
-  // original position — showing the display node's swatch/icon/label/
-  // count, separated by a divider, with the collapse-back chevron (person-
-  // reported: collapsing used to require reaching the target node at the
-  // BOTTOM of the box, far deeper than where it was expanded from). Not
-  // itself selectable. ---
-  const header = d.querySelector('.tree-squash-header[data-squash-header-for="' + displayId + '"]');
-  assert(header, "a read-only header row exists for the group, tagged with the display node's id");
-  assert(!header.classList.contains("active") && !header.dataset.nodeId, "the header carries no data-node-id and is never itself the active/selected node");
-  assert(header.querySelector(".tree-label").textContent === "[value:float]", "header shows the display node's own label");
-  assert(header.querySelector(".tree-count").textContent === w.getEntries(displayId).length.toLocaleString("de-DE"), "header shows the display node's own count");
-  assert(header.querySelector(".tree-swatch"), "header shows a (functional) highlight-colour swatch for the display node");
-  const headerChevron = header.querySelector(".tree-chevron");
-  assert(headerChevron && headerChevron.classList.contains("expanded"), "the header's own chevron reflects expanded");
-  const divider = header.nextElementSibling;
-  assert(divider && divider.classList.contains("tree-squash-divider"), "a divider separates the header from the box below it");
+  T.state.activeId = displayId;
+  w.render();
+  assert([...d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]')].every(r => r.classList.contains("active")),
+    "selecting the display node marks BOTH its rendered rows .active together — literally the same node id, not a synthetic mirror");
 
   // --- A hidden member's row, now real INSIDE the box, must stay
   // non-draggable, and moving it (any entry point) still moves the WHOLE
@@ -14047,13 +14044,13 @@ await withApp(async (w, d, T) => {
   assert(T.state.nodes[clonePosId].parentId === otherSpot.id, "...and moves the group's own top-level root, not the hidden member itself in place");
   w.undo();
 
-  fireClick(headerChevron, w);
-  assert(d.querySelector(".tree-squash-box") === null, "collapsing (via the header's chevron) removes the box again");
-  assert(d.querySelector(".tree-squash-header") === null, "...and the header, back to a single top-level row");
+  fireClick(d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron'), w);
+  assert(T.state.nodes[displayId].squashExpanded === false, "collapsing (via either instance's chevron) flips squashExpanded back off");
+  const boxAfterCollapse = d.querySelector(".tree-squash-box");
+  assert(boxAfterCollapse, "the box is still there after collapsing — it never fully disappears any more");
+  assert(boxAfterCollapse.querySelector(".tree-squash-divider") === null, "...but the divider/revealed chain are gone again");
   assert(d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 1,
-    "the display node is back to a single top-level row after collapsing");
-  assert(d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron') !== null,
-    "...which has its own collapse/expand chevron back");
+    "the display node's row is back to appearing exactly once");
 
   // --- The row-count percentage bar is gone outright (person-reported,
   // twice: unreadable even after a non-linear scale attempt — every row
@@ -14129,6 +14126,49 @@ await withApp(async (w, d, T) => {
   const renameItem = d.querySelector('#treeContextMenu [data-action="rename"]');
   fireClick(renameItem, w);
   assert(isVisible(d.getElementById("treeContextMenu"), w) === false, "clicking a real action still closes the whole context menu");
+});
+
+/* ============================================================
+   GROUP 134 — "Save" (text, wildcard-as-shape) vs "Extract" match-count
+   consistency for link-derived pair entries (person-reported: switching a
+   node repeatedly between filterType "extract" and "text" with the SAME
+   wildcard pattern on a detached link+extract chain showed Extract's value
+   table populated but Save showing zero log entries). Root cause: a link
+   node's synthetic pair entry has e.raw as a non-contiguous concatenation
+   of both source lines' full raw text (with metadata in between), which
+   breaks a wildcard pattern spanning the " ⟶ " pair separator, while
+   e.message is the clean "firstMsg ⟶ secondMsg" join. getEntries()'s
+   "extract" branch already matched against e.message; textFilterMatches()'s
+   wildcard-as-text branch (used by filterType "text" whose value contains
+   extract tokens) incorrectly defaulted to e.raw. Fixed to use e.message,
+   matching the extract branch.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("134. Save (text, wildcard pattern) vs Extract match-count consistency on link pairs");
+
+  const log = [
+    `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"Value 42"`,
+    `2024-01-15 10:00:05,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"Position hit"`,
+  ].join("\n") + "\n";
+  const f = await w.addFile("134.log", log, () => {});
+  const valF = w.createFilterNode(f.id, "text", "Value");
+  const posF = w.createFilterNode(f.id, "text", "Position");
+  const link = w.createLinkNode(valF.id, posF.id, "after", 1);
+
+  const pairs = w.getEntries(link.id);
+  assert(pairs.length === 1, "sanity: the link produces exactly one pair entry");
+  assert(pairs[0].message.includes(" ⟶ "), "sanity: the pair's message is the clean firstMsg ⟶ secondMsg join");
+
+  const pattern = "Value [value:int] ⟶ Position [*]";
+  const extractNode = w.createFilterNode(link.id, "extract", pattern);
+  const textNode = w.createFilterNode(link.id, "text", pattern);
+
+  const extractCount = w.getEntries(extractNode.id).length;
+  const textCount = w.getEntries(textNode.id).length;
+  assert(extractCount === 1, "Extract mode matches the link-derived pair entry (value table populated)");
+  assert(textCount === extractCount,
+    "Save (text) mode with the SAME wildcard pattern matches the SAME entries as Extract — " +
+    "person-reported inconsistency (Extract worked, Save showed no entries) is fixed, got textCount=" + textCount);
 });
 
 /* ============================================================
@@ -16047,5 +16087,44 @@ process.exit(failed ? 1 : 0);
               session-cache round trip (serializeFilterTreeForCache /
               materializeCachedFilters) carrying both fields through
               unchanged.
+
+   Group 129 — same session as Group 128, follow-up: cross-file paste/move
+              now reconstructs via the same import mechanism (serializeFilterBranch
+              + materializeSerializedRoots) instead of a cross-file linkedId,
+              and a squashed/detached filter imports/moves as one group.
+
+   Group 130 — same session, follow-up: a detached (squash) node stays
+              collapsed through Save/Load JSON round-trip, plus the manual
+              expand/collapse toggle revealing its private chain inside an
+              always-visible box.
+
+   Group 131 — same session, follow-up: linkedId dependency highlighting
+              (computeLinkedDependencyHighlight) on tree selection.
+
+   Group 132 — same session, follow-up: tree row layout rework (generic
+              collapse/expand, extract swatch, icon/type indicator setting)
+              and the squash box's final design — REWRITTEN once in this
+              same session after user feedback: the box background stays
+              visible even while collapsed (containing the display node's
+              own real row, not a read-only mirror), and expanding reveals
+              a divider plus the private chain below it, with the display
+              node's row rendered a second time at the chain's end —
+              intentional double-selection (both instances get marked
+              .active together, since they're the same node id rendered
+              twice, not two synthetic copies).
+
+   Group 133 — same session, follow-up: tree context menu "Info" submenu,
+              replacing the old always-inline long-pattern metadata block
+              that could blow up the whole menu's size.
+
+   Group 134 — same session, person-reported bugfix: filterType "text"
+              (Save) with a wildcard/extract-token pattern showed 0 matches
+              on a link-derived pair entry while filterType "extract" with
+              the identical pattern matched fine. Root-caused to
+              textFilterMatches()'s wildcard-as-text branch defaulting to
+              e.raw (a non-contiguous concatenation of both source lines'
+              raw text) instead of e.message (the clean "first ⟶ second"
+              join already used by the "extract" branch). Fixed to match
+              e.message, same as extract.
 
    ============================================================ */

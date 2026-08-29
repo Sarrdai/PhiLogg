@@ -664,26 +664,20 @@
   }
   .tree-row.active .tree-icon-type{color:var(--accent-strong); border-color:var(--accent);}
   .tree-row.inverted .tree-icon-type{color:var(--level-error); border-color:var(--level-error);}
-  /* Inline box a squash group opens below its display row when expanded
-     (see renderSquashGroupBox) — same "dashed outline, set apart with its
-     own background" visual language as .tree-ghost (the filter-history
+  /* Box a squash group's slot renders as (see renderNodeOrGroup/
+     renderSquashGroupBox) — REPLACES the group's entry in the tree
+     entirely, background always visible whether collapsed or expanded
+     (person-reported: it should read as "a detached copy with logic
+     inside" even before opening it), same "set apart with its own
+     background" visual language as .tree-ghost (the filter-history
      preview) and a watched folder's file list, but solid (real, clickable
-     content) rather than dashed (a ghost/preview). */
+     content) rather than dashed (a ghost/preview). Always contains the
+     display node's own real row; the divider + revealed chain only appear
+     once expanded. */
   .tree-squash-box{
     margin:2px 8px 4px; padding:2px;
     background:var(--bg-elevated-2); border:1px solid var(--border-soft); border-radius:8px;
   }
-  /* Read-only header row (buildSquashGroupHeaderRow) + divider shown above
-     an expanded squash group's box — person-reported follow-up: collapsing
-     used to require reaching the target node at the bottom of the box,
-     far deeper than where the person expanded from. The header stays at
-     that original position/depth, showing the target's swatch/icon/label/
-     count, with the collapse-back chevron — but isn't itself selectable,
-     draggable, or otherwise a real interactive node (cursor:default
-     overrides .tree-row's own pointer; no hover background, unlike a real
-     row's :hover). */
-  .tree-squash-header{cursor:default;}
-  .tree-squash-header:hover{background:none;}
   .tree-squash-divider{height:1px; margin:2px 12px 2px 8px; background:var(--border-soft);}
   .tree-label{
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
@@ -6331,7 +6325,22 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
     if (columns && columns.length) {
       return columns.some(key => !!wildcardMatch(wildcardRegex, wildcardColumns, textColumnValue(e, key)));
     }
-    return !!wildcardMatch(wildcardRegex, wildcardColumns, e.raw);
+    // Person-reported bug: a "text" filter carrying [value:...]/[*] tokens
+    // (see "A text filter's value can itself contain wildcard tokens"
+    // above) used to test e.raw here — the WHOLE tab-separated line — while
+    // getEntries()'s real "extract" branch always tests e.message. For a
+    // plain entry that rarely showed, since message is a substring of raw;
+    // for a link filter's synthetic pair entry it broke completely: pair.raw
+    // is the two entries' raw lines concatenated with everything ELSE (time-
+    // stamp/level/thread/...) still in between, so a pattern spanning the
+    // PAIR_SEPARATOR (e.g. "... ⟶ Offset computed: ...") can never match it
+    // contiguously, even though pair.message — built specifically as a
+    // clean "firstMessage ⟶ secondMessage" join — matches fine. Concretely:
+    // editing a link-derived extraction down to a plain "text" filter (the
+    // "Save" button) silently lost every match extraction itself still
+    // found. e.message is what the extraction path already commits to, so
+    // this now matches it exactly instead.
+    return !!wildcardMatch(wildcardRegex, wildcardColumns, e.message);
   }
   const q = caseSensitive ? value : value.toLowerCase();
   if (columns && columns.length) {
@@ -7931,10 +7940,10 @@ function renderTree() {
 function flattenTreeIds() {
   const ids = [];
   // forceVisible mirrors renderNode/renderNodeOrGroup's own parameter —
-  // true only while walking INSIDE an expanded squash group's box, so a
-  // hidden member's real children (including the group's own display node,
-  // now nested inside the box rather than floating above it) get visited
-  // like any other real row instead of triggering the box logic again.
+  // true only while walking INSIDE an expanded squash group's revealed
+  // chain, so a hidden member's real children (including the group's own
+  // display node, reached a second time there) get visited like any other
+  // real row instead of re-triggering the box logic.
   (function walk(list, forceVisible) {
     list.forEach(id => {
       const node = state.nodes[id];
@@ -7945,15 +7954,24 @@ function flattenTreeIds() {
       if (node && node.queued) return;
       // hiddenInTree nodes (a "Detach copy" node's private ancestor chain —
       // see detachFilterChain) have no row of their own in the MAIN tree —
-      // same passthrough renderNode itself uses — UNLESS their group is
-      // expanded, in which case the whole group (every member, arrow-key
-      // reachable now that they're all real rows inside the box) is walked
-      // once, the same de-dup renderNodeOrGroup uses (only the group's
-      // first top-level member triggers it).
+      // same passthrough renderNode itself uses. Their group's slot renders
+      // as a box instead (renderSquashGroupBox), whose own first stop is
+      // always the display node's row (regardless of squashExpanded now —
+      // the box background shows even collapsed) — same de-dup
+      // renderNodeOrGroup uses (only the group's first top-level member
+      // triggers it). If expanded, the revealed chain follows, reaching the
+      // display node a second time at its bottom.
       if (node && node.hiddenInTree && !forceVisible) {
-        if (node.squashExpanded && node.squashGroup) {
+        if (node.squashGroup) {
           const members = squashGroupTopLevelMembers(node.squashGroup);
-          if (members[0] === id) walk(members, true);
+          if (members[0] !== id) return;
+          const displayId = squashGroupDisplayId(node.squashGroup);
+          const display = state.nodes[displayId];
+          if (display) {
+            ids.push(displayId);
+            if (!display.collapsed) walk(display.children, false);
+            if (display.squashExpanded) walk(members, true);
+          }
           return;
         }
         walk(node.children, forceVisible);
@@ -8304,13 +8322,16 @@ function renderRenameInput(id, node) {
 // members it has (see detachFilterChain — usually one, occasionally two:
 // the private ancestor chain plus a separately pulled-in linkedId target).
 // forceVisible is passed straight through to renderNode when no box is
-// involved — never true from a normal (non-box) call site.
+// involved — never true from a normal (non-box) call site. The box itself
+// (see renderSquashGroupBox) is shown REGARDLESS of squashExpanded now —
+// person-reported: they wanted the "this is a detached copy with logic
+// inside" background visible even collapsed, not just once expanded.
 function renderNodeOrGroup(id, depth, forceVisible) {
   const node = state.nodes[id];
-  if (!forceVisible && node.hiddenInTree && node.squashExpanded && node.squashGroup) {
+  if (!forceVisible && node.hiddenInTree && node.squashGroup) {
     const members = squashGroupTopLevelMembers(node.squashGroup);
     if (members[0] !== id) return document.createDocumentFragment(); // an earlier sibling member already built the (single, shared) box
-    return renderSquashGroupExpanded(node.squashGroup, depth);
+    return renderSquashGroupBox(node.squashGroup, depth);
   }
   return renderNode(id, depth, forceVisible);
 }
@@ -8371,36 +8392,36 @@ function renderNode(id, depth, forceVisible) {
   // reported: it used to only exist for squash groups, visibly shifting
   // the icon whenever it appeared/disappeared). Two different things it
   // can toggle, depending on the node:
-  //  - A COLLAPSED squash group's display node (node.squashGroup,
-  //    !node.squashExpanded — hiddenInTree members never reach this point,
-  //    see the passthrough check above) toggles the group open via
-  //    node.squashExpanded. Real children the person built UNDER a
-  //    detached filter (if any) are unaffected by this and always show.
-  //    Once EXPANDED, this row is no longer reachable here at all — it
-  //    only ever renders now INSIDE the group's box (see
-  //    renderSquashGroupExpanded), where a separate, read-only HEADER row
-  //    owns the collapse-back chevron instead (person-reported follow-up:
-  //    collapsing used to require reaching the target node at the BOTTOM
-  //    of the box, far deeper than where you expanded from) — so a
-  //    squash-expanded display node's own chevron reverts to the plain
-  //    real-children rule below, same as any ordinary node.
+  //  - A squash group's display node (node.squashGroup — hiddenInTree
+  //    members never reach this point, see the passthrough check above)
+  //    toggles node.squashExpanded. This row is rendered TWICE while
+  //    expanded — once as the box's own header (renderSquashGroupBox,
+  //    always at the group's original position/depth, box background
+  //    visible whether collapsed or expanded — person-reported: it should
+  //    look like a detached copy with logic inside even before opening it)
+  //    and once again as the real last row inside the revealed chain —
+  //    both are the SAME node id rendered independently by this same
+  //    function, so both light up together when selected and both carry a
+  //    working chevron (deliberate: "doppelte Selektion", the person's own
+  //    preference, over a synthetic read-only mirror).
   //  - Any node with real children toggles node.collapsed the usual way
-  //    (hides/shows them, nothing fancier).
+  //    (hides/shows them, nothing fancier) — independent of the above.
   const chevronSlot = document.createElement("span");
   chevronSlot.className = "tree-chevron-slot";
-  const isCollapsedSquashDisplay = !node.hiddenInTree && !!node.squashGroup && !node.squashExpanded;
+  const isSquashDisplay = !node.hiddenInTree && !!node.squashGroup;
   const hasRealChildren = node.children.length > 0;
-  if (isCollapsedSquashDisplay || hasRealChildren) {
+  if (isSquashDisplay || hasRealChildren) {
     const chevron = document.createElement("button");
     chevron.type = "button";
-    chevron.className = "tree-chevron" + (isCollapsedSquashDisplay ? "" : (!node.collapsed ? " expanded" : ""));
-    chevron.title = isCollapsedSquashDisplay
-      ? "Expand this detached filter's private chain (see what it depends on)"
+    const expanded = isSquashDisplay ? !!node.squashExpanded : !node.collapsed;
+    chevron.className = "tree-chevron" + (expanded ? " expanded" : "");
+    chevron.title = isSquashDisplay
+      ? (node.squashExpanded ? "Collapse this detached filter's private chain back into one row" : "Expand this detached filter's private chain (see what it depends on)")
       : (node.collapsed ? "Expand" : "Collapse");
     chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
     chevron.addEventListener("click", ev => {
       ev.stopPropagation();
-      if (isCollapsedSquashDisplay) toggleSquashGroupExpanded(id);
+      if (isSquashDisplay) toggleSquashGroupExpanded(id);
       else { node.collapsed = !node.collapsed; render(); }
     });
     chevronSlot.appendChild(chevron);
@@ -8616,106 +8637,38 @@ function renderNode(id, depth, forceVisible) {
   return wrap;
 }
 
-// The inline box holding a squash group's private chain, rendered as its
-// own small nested tree — the private chain isn't a normal subtree (it
-// sits ABOVE the display node via parentId, not below it as real
-// children), so it can't just be un-hidden in the main tree's usual flow.
-// Starts from the group's own top-level member(s) (usually the private
-// ancestor chain's root; occasionally a SECOND, unrelated top-level member
-// too — e.g. a link's pulled-in linkedId target, see
-// detachFilterChain/serializeFilterBranch's attach:"file" case). Every
-// member renders with forceVisible — including the display node itself,
-// now the last real row INSIDE the box rather than a separate row above
-// it, so the box is the group's complete, non-duplicated picture. Called
-// from renderSquashGroupExpanded, which wraps this with the read-only
-// header row above it.
-function renderSquashGroupBox(groupId) {
+// The inline box a squash group's slot renders as (see renderNodeOrGroup) —
+// REPLACES the group's entry in the main tree entirely, background always
+// visible whether collapsed or expanded (person-reported: it should look
+// like a detached copy with logic inside even before opening it). Always
+// contains the display node's own row FIRST — a completely normal,
+// real renderNode() call (not a read-only mirror): same id, same click-to-
+// select/drag/context-menu/chevron behavior as if it sat anywhere else in
+// the tree. While collapsed, that's the box's only content. Once expanded
+// (node.squashExpanded), a divider plus the group's full private chain
+// follows, rendered via forceVisible starting from its own top-level
+// member(s) (usually the private ancestor chain's root; occasionally a
+// SECOND, unrelated top-level member too — e.g. a link's pulled-in
+// linkedId target, see detachFilterChain/serializeFilterBranch's
+// attach:"file" case) — which reaches the display node's row a SECOND time
+// at the bottom of its own chain. Both instances are literally the same
+// renderNode(displayId, ...) call, so both light up together when selected
+// and both carry a working chevron (the person's own explicit preference:
+// "doppelte Selektion", over an earlier read-only-header design).
+function renderSquashGroupBox(groupId, depth) {
+  const displayId = squashGroupDisplayId(groupId);
   const box = document.createElement("div");
   box.className = "tree-squash-box";
-  squashGroupTopLevelMembers(groupId).forEach(mid => box.appendChild(renderNode(mid, 0, true)));
-  return box;
-}
-
-// What actually REPLACES a squash group's slot in the main tree once
-// expanded (called from renderNodeOrGroup). Person-reported follow-up: the
-// display node's own row, now the deepest entry inside the box (see
-// renderSquashGroupBox above), sat far below where the person actually
-// clicked to expand — collapsing meant hunting down into the box to find
-// it again. This wraps the box with a read-only HEADER row instead,
-// showing the display node's own swatch/icon/label/count at the SAME
-// position the group used to occupy while collapsed, separated from the
-// box by a thin divider — the collapse-back chevron lives here, not on the
-// (now unreachable-by-chevron — see renderNode's own chevron comment) real
-// row at the bottom. The header is deliberately NOT a real interactive
-// node: no click-to-select, no drag, no context menu, no active/multi-
-// select styling — only its swatch (still edits the display node's actual
-// highlightColor) and its chevron do anything.
-function renderSquashGroupExpanded(groupId, depth) {
-  const displayId = squashGroupDisplayId(groupId);
+  if (!displayId) return box;
+  box.appendChild(renderNode(displayId, depth, false));
   const display = state.nodes[displayId];
-  const wrap = document.createElement("div");
-  wrap.dataset.type = "filter";
-  if (display) wrap.appendChild(buildSquashGroupHeaderRow(display, depth));
-  const divider = document.createElement("div");
-  divider.className = "tree-squash-divider";
-  wrap.appendChild(divider);
-  wrap.appendChild(renderSquashGroupBox(groupId));
-  return wrap;
-}
-
-function buildSquashGroupHeaderRow(display, depth) {
-  const row = document.createElement("div");
-  row.className = "tree-row tree-squash-header";
-  row.style.paddingLeft = (8 + depth * 18) + "px";
-  // Deliberately NOT row.dataset.nodeId = display.id — the real, unique
-  // owner of that id is the interactive row inside the box; a second
-  // element carrying the same data-node-id would make any
-  // `[data-node-id="…"]` lookup ambiguous (e.g. a load-tick row update).
-  row.dataset.squashHeaderFor = display.id;
-
-  const chevronSlot = document.createElement("span");
-  chevronSlot.className = "tree-chevron-slot";
-  const chevron = document.createElement("button");
-  chevron.type = "button";
-  chevron.className = "tree-chevron expanded";
-  chevron.title = "Collapse this detached filter's private chain back into one row";
-  chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
-  chevron.addEventListener("click", ev => { ev.stopPropagation(); toggleSquashGroupExpanded(display.id); });
-  chevronSlot.appendChild(chevron);
-  row.appendChild(chevronSlot);
-
-  if (display.type === "filter") {
-    const swatch = document.createElement("button");
-    swatch.type = "button";
-    swatch.className = "tree-swatch" + (display.highlightColor ? "" : " empty");
-    if (display.highlightColor) swatch.style.background = display.highlightColor;
-    swatch.title = display.highlightColor
-      ? "Highlight colour — click to change, right-click to clear"
-      : "Set a highlight colour for the Highlight view";
-    swatch.addEventListener("click", ev => { ev.stopPropagation(); openColorPicker(display.id, swatch); });
-    swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); setHighlightColor(display.id, null); });
-    row.appendChild(swatch);
+  if (display && display.squashExpanded) {
+    const divider = document.createElement("div");
+    divider.className = "tree-squash-divider";
+    box.appendChild(divider);
+    squashGroupTopLevelMembers(groupId).forEach(mid => box.appendChild(renderNode(mid, 0, true)));
   }
-
-  const icon = document.createElement("span");
-  icon.className = "tree-icon" + (treeIndicatorMode === "type" ? " tree-icon-type" : "");
-  if (treeIndicatorMode === "type") icon.textContent = typeTagFor(display);
-  else icon.innerHTML = nodeIconHTML(display);
-  row.appendChild(icon);
-
-  const label = document.createElement("span");
-  label.className = "tree-label";
-  const displayName = nodeDisplayName(display);
-  label.textContent = display.inverted ? "¬ " + displayName : displayName;
-  label.title = displayName;
-  row.appendChild(label);
-
-  const count = document.createElement("span");
-  count.className = "tree-count";
-  count.textContent = getEntries(display.id).length.toLocaleString("de-DE");
-  row.appendChild(count);
-
-  return row;
+  return box;
 }
 
 function renderBreadcrumb() {
