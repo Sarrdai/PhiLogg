@@ -13885,7 +13885,13 @@ await withApp(async (w, d, T) => {
   w.render();
   assert(T.state.nodes[loadedLink.id].squashExpanded === true, "toggling sets squashExpanded on every group member");
   assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') !== null, "expanding reveals the private link clone as a real row");
-  assert(d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron').classList.contains("expanded"), "the chevron reflects the expanded state");
+  // Collapsing now happens from a read-only HEADER row at the group's
+  // original position (see renderSquashGroupExpanded) — the display node's
+  // own row (now inside the box) no longer carries the toggle chevron.
+  const headerChevron = d.querySelector('.tree-squash-header[data-squash-header-for="' + loadedDisplayId + '"] .tree-chevron');
+  assert(headerChevron && headerChevron.classList.contains("expanded"), "the header row's chevron reflects the expanded state");
+  assert(d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron') === null,
+    "the display node's own row (now inside the box) no longer has a chevron of its own");
 
   // Collapse again via the OTHER member's own chevron (any member's row can
   // toggle the whole group, not just the original display's).
@@ -14009,8 +14015,26 @@ await withApp(async (w, d, T) => {
     "the display node renders exactly once while expanded");
   assert(box.querySelector('.tree-row[data-node-id="' + displayId + '"]') !== null,
     "...and that one row is INSIDE the box, not a separate row above it");
-  assert(box.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron').classList.contains("expanded"),
-    "the display's own chevron (now inside the box) reflects expanded");
+  assert(box.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron') === null,
+    "the display's own row (now inside the box) has no chevron of its own");
+
+  // --- A read-only HEADER row now sits above the box, at the group's
+  // original position — showing the display node's swatch/icon/label/
+  // count, separated by a divider, with the collapse-back chevron (person-
+  // reported: collapsing used to require reaching the target node at the
+  // BOTTOM of the box, far deeper than where it was expanded from). Not
+  // itself selectable. ---
+  const header = d.querySelector('.tree-squash-header[data-squash-header-for="' + displayId + '"]');
+  assert(header, "a read-only header row exists for the group, tagged with the display node's id");
+  assert(!header.classList.contains("active") && !header.dataset.nodeId, "the header carries no data-node-id and is never itself the active/selected node");
+  assert(header.querySelector(".tree-label").textContent === "[value:float]", "header shows the display node's own label");
+  assert(header.querySelector(".tree-count").textContent === w.getEntries(displayId).length.toLocaleString("de-DE"), "header shows the display node's own count");
+  assert(header.querySelector(".tree-swatch"), "header shows a (functional) highlight-colour swatch for the display node");
+  const headerChevron = header.querySelector(".tree-chevron");
+  assert(headerChevron && headerChevron.classList.contains("expanded"), "the header's own chevron reflects expanded");
+  const divider = header.nextElementSibling;
+  assert(divider && divider.classList.contains("tree-squash-divider"), "a divider separates the header from the box below it");
+
   // --- A hidden member's row, now real INSIDE the box, must stay
   // non-draggable, and moving it (any entry point) still moves the WHOLE
   // group rather than corrupting it via a plain in-place reparent. ---
@@ -14023,25 +14047,23 @@ await withApp(async (w, d, T) => {
   assert(T.state.nodes[clonePosId].parentId === otherSpot.id, "...and moves the group's own top-level root, not the hidden member itself in place");
   w.undo();
 
-  fireClick(box.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron'), w);
-  assert(d.querySelector(".tree-squash-box") === null, "collapsing removes the box again");
+  fireClick(headerChevron, w);
+  assert(d.querySelector(".tree-squash-box") === null, "collapsing (via the header's chevron) removes the box again");
+  assert(d.querySelector(".tree-squash-header") === null, "...and the header, back to a single top-level row");
   assert(d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 1,
     "the display node is back to a single top-level row after collapsing");
+  assert(d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron') !== null,
+    "...which has its own collapse/expand chevron back");
 
-  // --- Row-count percentage bar uses a non-linear scale so small-but-
-  // different fractions actually read apart (person-reported: every row
-  // looked like an identical, empty-looking line) ---
-  const bigFile = await w.addFile("big.log", makeLog(0, 1000), () => {});
-  const tinyFilter = w.createFilterNode(bigFile.id, "text", "message 1"); // ~1/1000 of parent
-  const bigFilter = w.createFilterNode(bigFile.id, "text", "message"); // matches ~all of parent
+  // --- The row-count percentage bar is gone outright (person-reported,
+  // twice: unreadable even after a non-linear scale attempt — every row
+  // still looked like an identical grey line) — the absolute count already
+  // shown says what mattered. ---
+  const noPctFile = await w.addFile("nopct.log", makeLog(0, 10), () => {});
+  const noPctFilter = w.createFilterNode(noPctFile.id, "text", "message 1");
   w.render();
-  const fillWidth = nodeId => {
-    const el = d.querySelector('.tree-row[data-node-id="' + nodeId + '"] .tree-pct-fill');
-    return el ? parseFloat(el.style.width) : null;
-  };
-  const tinyWidth = fillWidth(tinyFilter.id), bigWidth = fillWidth(bigFilter.id);
-  assert(tinyWidth !== null && bigWidth !== null && tinyWidth > 0 && bigWidth > tinyWidth,
-    "a small-but-real fraction still gets a nonzero, visibly smaller bar than a much larger one, got tiny=" + tinyWidth + " big=" + bigWidth);
+  assert(d.querySelector('.tree-row[data-node-id="' + noPctFilter.id + '"] .tree-pct') === null,
+    "no .tree-pct element (the percentage bar) is rendered at all any more");
 
   // --- Extract nodes get a highlight-color swatch too ---
   const extractRow = d.querySelector('.tree-row[data-node-id="' + extract.id + '"]');
@@ -14066,6 +14088,47 @@ await withApp(async (w, d, T) => {
   // Setting persists (same localStorage-preference tier every other
   // Settings -> Behavior toggle in this app uses).
   assert(w.localStorage.getItem("philogg-tree-indicator-mode") === "type", "the mode is persisted to localStorage");
+});
+
+/* ============================================================
+   GROUP 133 — Tree context menu "Info" submenu (person-reported: the
+   node's full name/pattern used to sit inline at the top of the menu,
+   unbounded — a long extraction pattern or a link's own concatenated name
+   could make the whole menu, and the page along with it, far taller/wider
+   than the viewport). Now a hover/click submenu trigger instead
+   (openTreeCtxInfoMenu), same shape as the log-row context menu's own
+   "Add to selection" submenu.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("133. Tree context menu \"Info\" submenu");
+
+  const f = await w.addFile("133.log", makeLog(0, 10), () => {});
+  const longValue = "a".repeat(300); // long enough that the old inline .ctx-meta would have blown up the menu
+  const filter = w.createFilterNode(f.id, "text", longValue);
+  T.state.activeId = filter.id;
+  w.render();
+  const row = d.querySelector('.tree-row[data-node-id="' + filter.id + '"]');
+  fireContextMenu(row, w);
+
+  const infoTrigger = d.querySelector('#treeContextMenu [data-action="info"]');
+  assert(infoTrigger, "the context menu shows an \"Info\" trigger item");
+  assert(!d.querySelector("#treeContextMenu .ctx-meta"), "the long name is NOT shown inline in the menu itself any more");
+  assert(isVisible(d.getElementById("treeCtxInfoMenu"), w) === false, "the info submenu is closed until hovered/clicked");
+
+  // Hover opens it.
+  infoTrigger.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true, cancelable: true }));
+  assert(isVisible(d.getElementById("treeCtxInfoMenu"), w) === true, "hovering the Info item opens the submenu");
+  assert(d.getElementById("treeCtxInfoMenu").textContent.includes(longValue), "the submenu shows the node's full display name");
+
+  // Clicking the trigger does the same (keeps both menus open), not closing everything.
+  fireClick(infoTrigger, w);
+  assert(isVisible(d.getElementById("treeContextMenu"), w) === true, "clicking \"Info\" itself does NOT close the whole context menu");
+  assert(isVisible(d.getElementById("treeCtxInfoMenu"), w) === true, "...the info submenu stays open too");
+
+  // A real action still closes everything as before.
+  const renameItem = d.querySelector('#treeContextMenu [data-action="rename"]');
+  fireClick(renameItem, w);
+  assert(isVisible(d.getElementById("treeContextMenu"), w) === false, "clicking a real action still closes the whole context menu");
 });
 
 /* ============================================================
