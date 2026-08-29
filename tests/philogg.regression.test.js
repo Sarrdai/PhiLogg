@@ -404,12 +404,14 @@ await withApp(async (w, d, T) => {
   assert(map.size > 0, "computeHighlightMap walks the tree and finds the coloured node's matches");
   assert([...map.values()][0].includes(node.highlightColor), "matched entries are tagged with the node's highlight colour");
 
-  // Extract nodes never get a swatch (no Highlight-view companion)
+  // Extract nodes DO get a swatch too (person-requested, later session —
+  // purely for tree-indentation clarity; the Highlight view itself still
+  // has no dedicated panel that reads an extract node's color).
   const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   const extractRow = [...d.querySelectorAll(".tree-row")].find(r => r.classList.contains("active"));
-  assert(!extractRow.querySelector(".tree-swatch"), "extract-type tree rows get no highlight swatch");
+  assert(extractRow.querySelector(".tree-swatch"), "extract-type tree rows DO get a highlight swatch (see Group 132)");
 
   // Selection sync between Filter view and Full view
   T.state.activeId = node.id;
@@ -13877,13 +13879,13 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') === null, "the private link clone still gets no row of its own — stayed collapsed, was NOT unpacked");
 
   // --- Manual expand/collapse chevron ---
-  const chevronBefore = d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-squash-toggle');
+  const chevronBefore = d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron');
   assert(chevronBefore && !chevronBefore.classList.contains("expanded"), "the display row shows a collapsed expand/collapse chevron");
   w.toggleSquashGroupExpanded(loadedDisplayId);
   w.render();
   assert(T.state.nodes[loadedLink.id].squashExpanded === true, "toggling sets squashExpanded on every group member");
   assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') !== null, "expanding reveals the private link clone as a real row");
-  assert(d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-squash-toggle').classList.contains("expanded"), "the chevron reflects the expanded state");
+  assert(d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron').classList.contains("expanded"), "the chevron reflects the expanded state");
 
   // Collapse again via the OTHER member's own chevron (any member's row can
   // toggle the whole group, not just the original display's).
@@ -13942,6 +13944,94 @@ await withApp(async (w, d, T) => {
   assert(!andRow().classList.contains("dep-target") && !andRow().classList.contains("dep-user") &&
     !targetRow().classList.contains("dep-target") && !targetRow().classList.contains("dep-user"),
     "selecting a node with no linkedId relationship at all highlights nothing");
+});
+
+/* ============================================================
+   GROUP 132 — Tree row UI follow-ups (person-reported, screenshot-driven):
+   generic collapse/expand for ANY node with children (not just squash
+   groups), a squash group's expand now opens a set-apart inline box
+   (.tree-squash-box) instead of unpacking flat rows, extract nodes get a
+   highlight-color swatch too, and a new Settings -> Behavior "Tree row
+   type indicator" (icon vs. TXT/LNK/... abbreviation, fixed-width either
+   way) replaces the old always-both display.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("132. Tree row UI follow-ups: generic collapse, squash box, extract swatch, indicator setting");
+
+  const f = await w.addFile("132.log", makeLog(0, 10), () => {});
+  const parent = w.createFilterNode(f.id, "text", "message");
+  const child = w.createFilterNode(parent.id, "text", "message 1");
+  w.render();
+
+  // --- Generic collapse/expand for an ordinary node with real children ---
+  const parentChevron = () => d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-chevron');
+  assert(parentChevron(), "a node with real children shows a chevron");
+  assert(d.querySelector('.tree-row[data-node-id="' + child.id + '"]') !== null, "child is visible before collapsing");
+  fireClick(parentChevron(), w);
+  assert(T.state.nodes[parent.id].collapsed === true, "clicking the chevron sets node.collapsed");
+  assert(d.querySelector('.tree-row[data-node-id="' + child.id + '"]') === null, "collapsing hides the child row");
+  assert(d.querySelector('.tree-row[data-node-id="' + parent.id + '"]') !== null, "the parent's own row stays visible");
+  assert(!w.flattenTreeIds().includes(child.id) && w.flattenTreeIds().includes(parent.id),
+    "flattenTreeIds (arrow-key nav) skips a collapsed node's children but keeps the node itself");
+  fireClick(parentChevron(), w);
+  assert(T.state.nodes[parent.id].collapsed === false, "clicking again expands it back");
+  assert(d.querySelector('.tree-row[data-node-id="' + child.id + '"]') !== null, "child reappears");
+
+  // A leaf node (no children, not a squash group) gets an empty chevron
+  // slot — reserved space, no button — so the icon never shifts.
+  const leafSlot = d.querySelector('.tree-row[data-node-id="' + child.id + '"] .tree-chevron-slot');
+  assert(leafSlot && !leafSlot.querySelector(".tree-chevron"), "a leaf row reserves the chevron slot but shows no button in it");
+
+  // --- Squash group: expanding opens a set-apart inline box, doesn't
+  // unpack into flat sibling rows any more ---
+  const posF = w.createFilterNode(f.id, "text", "pos");
+  const valF = w.createFilterNode(f.id, "text", "val");
+  const link = w.createLinkNode(posF.id, valF.id, "before", 1, {});
+  const extract = w.createFilterNode(link.id, "extract", "[value:float]");
+  T.state.activeId = extract.id;
+  const displayId = w.detachFilterChain(extract.id);
+  w.render();
+
+  const displayChevron = () => d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron');
+  assert(displayChevron() && !displayChevron().classList.contains("expanded"), "the squash display shows a collapsed chevron");
+  assert(d.querySelector(".tree-squash-box") === null, "no box exists yet while collapsed");
+  fireClick(displayChevron(), w);
+  assert(T.state.nodes[displayId].squashExpanded === true, "clicking it expands the group");
+  const box = d.querySelector(".tree-squash-box");
+  assert(box, "an inline .tree-squash-box now exists");
+  const cloneLinkId = T.state.nodes[displayId].parentId;
+  assert(box.querySelector('.tree-row[data-node-id="' + cloneLinkId + '"]') !== null,
+    "the private link clone renders INSIDE the box, not as a flat top-level sibling");
+  assert(d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron').classList.contains("expanded"), "the display's own chevron reflects expanded");
+  // The display node itself is never shown a second time inside its own box.
+  assert(box.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 0,
+    "the display node is not duplicated inside its own private-chain box");
+  fireClick(displayChevron(), w);
+  assert(d.querySelector(".tree-squash-box") === null, "collapsing removes the box again");
+
+  // --- Extract nodes get a highlight-color swatch too ---
+  const extractRow = d.querySelector('.tree-row[data-node-id="' + extract.id + '"]');
+  assert(extractRow.querySelector(".tree-swatch"), "a plain (non-detached) extract node also gets a highlight-color swatch now");
+
+  // --- Settings -> Behavior "Tree row type indicator" ---
+  assert(d.getElementById("settingsTreeIndicatorMode").value === "icon", "defaults to icon mode");
+  const parentRowIconMode = d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-icon');
+  assert(!parentRowIconMode.classList.contains("tree-icon-type") && parentRowIconMode.textContent === "",
+    "icon mode (default): the icon slot shows a glyph, not text");
+  assert(d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-type-tag') !== null,
+    "...and the separate TXT/LNK/... badge is still shown too, exactly like before this setting existed");
+
+  d.getElementById("settingsTreeIndicatorMode").value = "type";
+  d.getElementById("settingsTreeIndicatorMode").dispatchEvent(new w.Event("change", { bubbles: true }));
+  const parentRowTypeMode = d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-icon');
+  assert(parentRowTypeMode.classList.contains("tree-icon-type") && parentRowTypeMode.textContent === w.typeTagFor(T.state.nodes[parent.id]),
+    "type mode: the icon slot shows the TXT/LNK/... abbreviation instead");
+  assert(d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-type-tag') === null,
+    "...and the separate badge is skipped entirely (no duplicated info)");
+
+  // Setting persists (same localStorage-preference tier every other
+  // Settings -> Behavior toggle in this app uses).
+  assert(w.localStorage.getItem("philogg-tree-indicator-mode") === "type", "the mode is persisted to localStorage");
 });
 
 /* ============================================================
