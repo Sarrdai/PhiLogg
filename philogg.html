@@ -617,9 +617,6 @@
   }
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
-  /* and/or/link node whose input never resolved on import (see
-     materializeSerializedRoots) — surfaced visibly, see renderNode. */
-  .tree-row.input-broken{background:color-mix(in srgb, var(--level-error) 12%, transparent); border-left-color:var(--level-error);}
   .tree-row[draggable="true"]{cursor:grab;}
   .tree-row.dragging{opacity:.4;}
   .tree-row.drag-over{background:var(--accent-soft); box-shadow:inset 0 0 0 1.5px var(--accent);}
@@ -2882,15 +2879,15 @@
     </div>
   </div>
 
-  <div id="includeInputsDialog" class="hidden">
+  <div id="exportScopeDialog" class="hidden">
     <div class="link-dialog-card">
-      <div class="link-dialog-title">Include source filters?</div>
+      <div class="link-dialog-title">Save filter</div>
       <div class="link-field">
-        <label>Include source filters used by combined nodes?</label>
+        <label>Save just this filter, or include its ancestor chain?</label>
       </div>
       <div class="link-dialog-actions">
-        <button type="button" id="includeInputsDialogNo" class="btn-mini-outline">No</button>
-        <button type="button" id="includeInputsDialogYes" class="btn-mini">Yes</button>
+        <button type="button" id="exportScopeJustThis" class="btn-mini-outline">Just this filter</button>
+        <button type="button" id="exportScopeWithChain" class="btn-mini">Include ancestor chain</button>
       </div>
     </div>
   </div>
@@ -5665,25 +5662,70 @@ function getRootFileId(nodeId) {
   return node ? node.id : null;
 }
 
-// and/or/link nodes carry two fixed, explicit input references (node.inputA/
-// node.inputB, ids of other filter nodes) that their result is computed from
-// (see getEntries's "and"/"or"/"link" handling) — node.parentId is purely
-// where the node sits in the tree, with no bearing on its logic. Moving such
-// a node anywhere in the tree only ever changes parentId, never inputA/
-// inputB, so there is no ancestor-cycle risk to guard against on an ordinary
-// move/reparent (unlike the old linkedId model, where parentId and the
-// second reference could end up pointing at each other). getEntries() still
-// guards against a genuine inputA/inputB cycle (a corrupt or hand-edited
-// file could reference a node's own descendant-of-itself chain of inputs) —
-// see its "currently resolving" set.
+// and/or/link nodes carry two BAKED condition snapshots (node.bakedA/
+// node.bakedB — see bakeNodeCondition below and getEntries's "and"/"or"/
+// "link" handling) instead of a reference to another node. A baked
+// condition is a flat, self-contained copy of exactly the fields that
+// define ONE filter step (filterType/value/caseSensitive/etc — never id/
+// parentId/children/ancestors), so once created, node.bakedA/bakedB never
+// look at state.nodes[...] again: deleting, renaming, moving, or replacing
+// the original source node(s) has zero effect on this node's result. This
+// is the corrected model — see CLAUDE.md/CHANGELOG.md for why the earlier
+// inputA/inputB id-reference version (still a live lookup, just renamed)
+// was wrong. node.parentId is the ONLY thing that determines this node's
+// input entries (getEntries(node.parentId), exactly like every other
+// filter type) — moving such a node just re-chains it onto a different
+// parent's output, same as any plain filter; it never touches bakedA/bakedB.
+// No cycle guard is needed: bakedA/bakedB hold plain data, not node-id
+// references, so there is nothing to cycle through except normal recursion
+// into a nested baked link (bounded by ordinary data-structure depth).
+
+// Copies exactly the fields that define one filter node's OWN single
+// condition — not its ancestors, not id/parentId/children/highlightColor/
+// label/anything structural. Used to build node.bakedA/bakedB for and/or/
+// link nodes (see the "Core data model" note above). For a source node
+// that is itself and/or/link, its own bakedA/bakedB are copied in as a
+// nested predicate-pair (see getEntriesFromBaked's recursive handling) —
+// so a link-of-link (multi-hop) chain keeps working through this model.
+function bakeNodeCondition(node) {
+  const baked = {
+    filterType: node.filterType,
+    value: node.value != null && typeof node.value === "object" ? JSON.parse(JSON.stringify(node.value)) : node.value,
+    inverted: !!node.inverted,
+  };
+  if (node.filterType === "text") {
+    if (node.caseSensitive) baked.caseSensitive = true;
+    if (node.columns && node.columns.length) baked.columns = node.columns.slice();
+    if (node.isRegex) baked.isRegex = true;
+  } else if (node.filterType === "context") {
+    baked.contextBefore = node.contextBefore || 0;
+    baked.contextAfter = node.contextAfter || 0;
+  } else if (node.filterType === "countContext") {
+    baked.countBefore = node.countBefore || 0;
+    baked.countAfter = node.countAfter || 0;
+  } else if (node.filterType === "and" || node.filterType === "or") {
+    baked.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+    baked.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+  } else if (node.filterType === "link") {
+    baked.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+    baked.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+    baked.linkDirection = node.linkDirection;
+    baked.linkN = node.linkN;
+    baked.linkOrderEnforced = !!node.linkOrderEnforced;
+    baked.linkExclusive = !!node.linkExclusive;
+  }
+  return baked;
+}
 
 // Combines two existing filters with AND (intersection) or OR (union, sorted
-// by time) into a new, self-contained node referencing both by id
-// (node.inputA/node.inputB — see getEntries's "and"/"or" handling). Always
-// placed as a new top-level child of the two sources' shared root file (same
-// "independent, near the top" placement syncBookmarksFilterNode/
-// createSelectionFilterNode already use) — from there it can be moved
-// anywhere like any other node without affecting its inputs or result.
+// by time) into a new, self-contained node holding a BAKED copy of each
+// source's own single condition (node.bakedA/node.bakedB — see
+// bakeNodeCondition/getEntries's "and"/"or" handling), not a reference to
+// the source nodes. Always placed as a new top-level child of the two
+// sources' shared root file (same "independent, near the top" placement
+// syncBookmarksFilterNode/createSelectionFilterNode already use) — from
+// there it can be moved anywhere like any other node, which only changes
+// what entries it receives via getEntries(node.parentId), never bakedA/bakedB.
 function createAndOrNode(idA, idB, mode) {
   const a = state.nodes[idA];
   const b = state.nodes[idB];
@@ -5695,7 +5737,7 @@ function createAndOrNode(idA, idB, mode) {
   const node = {
     id: uid("n"), type: "filter", name: nodeDisplayName(a) + symbol + nodeDisplayName(b),
     parentId: rootId, children: [], filterType: mode, value: null,
-    inputA: idA, inputB: idB, inverted: false,
+    bakedA: bakeNodeCondition(a), bakedB: bakeNodeCondition(b), inverted: false,
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
@@ -5765,18 +5807,21 @@ async function mergeFiles(fileIds) {
 
 // Creates a link filter: for every entry in the reference filter, finds the
 // Nth entry of the target filter before/after it in time and pairs them up
-// (references with no match are dropped). Self-contained like AND/OR — the
-// reference is node.inputA, the target node.inputB — and placed the same way
-// as createAndOrNode, as a new top-level child under the shared root file.
+// (references with no match are dropped). Self-contained like AND/OR — a
+// BAKED copy of the reference's own condition is node.bakedA, the target's
+// node.bakedB (see bakeNodeCondition) — and placed the same way as
+// createAndOrNode, as a new top-level child under the shared root file.
 //
 // `opts.orderEnforced`/`opts.exclusive` back the two opt-in options from
 // REQUIREMENTS-link-chaining-and-multiway.md (see getEntries()'s "link"
 // branch for the actual semantics); both default to false, matching
-// today's behavior when off. Passing a `link` node itself as `refId` (its
-// own id as the next hop's inputA) is exactly how a multi-hop tuple is built
-// today — see openLinkDialog's Create handler — each hop chained onto the
-// previous one's result node; Bug 1's fix (buildPairEntry's matchTs) is what
-// makes that chaining anchor correctly.
+// today's behavior when off. Passing a `link` node itself as `refId` is how
+// a multi-hop tuple is built — see openLinkDialog's Create handler — each
+// hop chained onto the previous one's result node: bakeNodeCondition, when
+// given a `link` node, bakes its own bakedA/bakedB/linkDirection/etc as a
+// nested predicate-pair, so the outer link's evaluator can recursively
+// evaluate it (see getEntriesFromBaked). Bug 1's fix (buildPairEntry's
+// matchTs) is what makes that chaining anchor correctly.
 function createLinkNode(refId, targetId, direction, n, opts) {
   const ref = state.nodes[refId];
   const target = state.nodes[targetId];
@@ -5789,7 +5834,8 @@ function createLinkNode(refId, targetId, direction, n, opts) {
   const node = {
     id: uid("n"), type: "filter", name: ref.name + arrow + nSuffix + " " + target.name,
     parentId: rootId, children: [], filterType: "link", value: null,
-    inputA: refId, inputB: targetId, linkDirection: direction, linkN: n,
+    bakedA: bakeNodeCondition(ref), bakedB: bakeNodeCondition(target),
+    linkDirection: direction, linkN: n,
     linkOrderEnforced: !!(opts && opts.orderEnforced),
     linkExclusive: !!(opts && opts.exclusive),
   };
@@ -6090,13 +6136,10 @@ function formatDuration(ms) {
 
 // Deep-clones a filter node and all its descendant filters under a new parent,
 // assigning fresh ids throughout. The original subtree is left untouched.
-// and/or/link nodes keep inputA/inputB pointing at the *same* original ids —
-// the clone stays combined with whatever it was combined with, same as a
-// copy of a formula keeps pointing at the same other cell unless that cell
-// is copied too. This works the same whether newParentId is in the same
-// file as the original inputs or a different one: inputA/inputB are plain
-// node-id references, resolved by getEntries() regardless of where in the
-// tree they (or this clone) currently live.
+// and/or/link nodes keep bakedA/bakedB as-is (a plain deep copy, like every
+// other field) — they're flat data with no node-id inside, so there is
+// nothing to remap and no dependency on where the clone (or anything else)
+// lives in the tree.
 function cloneSubtree(nodeId, newParentId) {
   const orig = state.nodes[nodeId];
   const clone = {
@@ -6109,8 +6152,8 @@ function cloneSubtree(nodeId, newParentId) {
     value: orig.value,
     inverted: !!orig.inverted,
   };
-  if (orig.inputA) clone.inputA = orig.inputA;
-  if (orig.inputB) clone.inputB = orig.inputB;
+  if (orig.bakedA) clone.bakedA = JSON.parse(JSON.stringify(orig.bakedA));
+  if (orig.bakedB) clone.bakedB = JSON.parse(JSON.stringify(orig.bakedB));
   if (orig.filterType === "link") {
     clone.linkDirection = orig.linkDirection;
     clone.linkN = orig.linkN;
@@ -6166,10 +6209,10 @@ function pasteClipboard() {
   }
 
   // Copy (same-file or cross-file): cloneSubtree assigns the clone fresh
-  // ids but keeps any inputA/inputB pointing at the ORIGINAL nodes (see its
-  // own comment) — this works identically regardless of whether the paste
-  // target is in the same file as clip.id or a different one, so there is
-  // no cross-file special case here any more.
+  // ids and deep-copies bakedA/bakedB as plain data (see its own comment) —
+  // this works identically regardless of whether the paste target is in
+  // the same file as clip.id or a different one, so there is no cross-file
+  // special case here any more.
   const clone = cloneSubtree(clip.id, state.activeId);
   targetParent.children.push(clone.id);
   state.activeId = clone.id;
@@ -6187,7 +6230,7 @@ function moveNode(nodeId, newParentId) {
   if (oldParent) oldParent.children = oldParent.children.filter(id => id !== nodeId);
   newParent.children.push(nodeId);
   node.parentId = newParentId;
-  invalidateAllCaches(); // and/or/link nodes elsewhere can reference this one via inputA/inputB, not just parentId
+  invalidateAllCaches();
   return true;
 }
 
@@ -6492,14 +6535,11 @@ function markRangesHtml(text, ranges) {
 // re-parented — a filter's own type/value never change after creation. So we
 // can safely cache each node's computed entries and only clear the cache for
 // the moved subtree, instead of recomputing the whole chain on every render.
-// Guards getEntries() against a genuine inputA/inputB cycle (a corrupt or
-// hand-edited file could make an and/or/link node depend, transitively, on
-// itself) — not reachable through the normal UI (createAndOrNode/
-// createLinkNode/Unpack always reference already-existing nodes), but cheap
-// insurance against an infinite recursion rather than a crash. Ordinary
-// parentId-based nesting never needs this: a node's own parent chain can't
-// cycle back to itself (moveNode's isDescendantOrSelf guard already prevents
-// that).
+// Belt-and-braces guard against an infinite recursion on a corrupt/
+// hand-edited node's parentId chain (ordinary parentId-based nesting can't
+// normally cycle — moveNode's isDescendantOrSelf guard already prevents
+// that — and and/or/link's bakedA/bakedB are plain data, not node-id
+// references, so there is nothing to cycle through on that side either).
 const getEntriesInProgress = new Set();
 function getEntries(nodeId) {
   const node = state.nodes[nodeId];
@@ -6514,6 +6554,112 @@ function getEntries(nodeId) {
     getEntriesInProgress.delete(nodeId);
   }
 }
+// Evaluates a BAKED condition snapshot (see bakeNodeCondition) as a
+// standalone predicate over `poolEntries`, mirroring getEntriesUncached's
+// own per-filterType branches exactly (same matching functions:
+// textFilterMatches/wildcardMatch/compileRegexFilter/compileExtractPattern/
+// the time-range checks/findNthOccurrence(Excluding)/buildPairEntry) so
+// behavior for each filterType stays byte-identical to a real standalone
+// filter of that type — just parameterized from a flat data snapshot
+// instead of a live node. `fileId` is the root file of the AND/OR/LINK node
+// doing the evaluating (needed by "context"/"countContext", which look at
+// the whole file's entries, and by "link", whose order-index map is
+// per-file). and/or/link baked conditions nest (see bakeNodeCondition's
+// "and"/"or"/"link" branch), so this recurses into baked.bakedA/bakedB —
+// exactly how a multi-hop chained link keeps working through this model.
+function getEntriesFromBaked(baked, poolEntries, fileId) {
+  if (!baked) return [];
+  const parentEntries = poolEntries;
+  let result;
+  if (baked.filterType === "text") {
+    const value = String(baked.value);
+    if (baked.isRegex) {
+      const re = compileRegexFilter(value, !!baked.caseSensitive);
+      result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, re)) : [];
+    } else if (isExtractPattern(value)) {
+      const spec = compileExtractPattern(value);
+      const wildcardRegex = spec && new RegExp(spec.regexStr, baked.caseSensitive ? "" : "i");
+      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, wildcardRegex, spec.columns)) : [];
+    } else {
+      result = parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns));
+    }
+  } else if (baked.filterType === "after") {
+    result = parentEntries.filter(e => e.ts >= baked.value);
+  } else if (baked.filterType === "before") {
+    result = parentEntries.filter(e => e.ts <= baked.value);
+  } else if (baked.filterType === "timerange") {
+    const from = baked.value && baked.value.from, to = baked.value && baked.value.to;
+    result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
+  } else if (baked.filterType === "extract") {
+    const spec = compileExtractPattern(baked.value);
+    result = spec ? parentEntries.filter(e => !!wildcardMatch(spec.regex, spec.columns, e.message)) : [];
+  } else if (baked.filterType === "idset") {
+    const idSet = new Set(Array.isArray(baked.value) ? baked.value : []);
+    result = parentEntries.filter(e => idSet.has(e.id));
+  } else if (baked.filterType === "bookmarks") {
+    result = parentEntries.filter(e => state.bookmarks.has(e.id));
+  } else if (baked.filterType === "level") {
+    result = parentEntries.filter(e => baked.value.includes(levelBucket(e.level, e.formatId)));
+  } else if (baked.filterType === "and" || baked.filterType === "or") {
+    const aEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
+    const bEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
+    if (baked.filterType === "and") {
+      const bIds = new Set(bEntries.map(e => e.id));
+      result = aEntries.filter(e => bIds.has(e.id));
+    } else {
+      const seen = new Set(aEntries.map(e => e.id));
+      result = aEntries.concat(bEntries.filter(e => !seen.has(e.id)));
+      result.sort((a, b) => a.ts - b.ts);
+    }
+  } else if (baked.filterType === "link") {
+    const refEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
+    const targetEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
+    result = [];
+    const usedIds = baked.linkExclusive ? new Set() : null;
+    const orderIndexMap = buildOrderIndexMap(fileId);
+    for (const refEntry of refEntries) {
+      const anchorTs = refEntry.matchTs !== undefined ? refEntry.matchTs : refEntry.ts;
+      const anchorEntry = refEntry.matchEntry || refEntry;
+      const match = usedIds
+        ? findNthOccurrenceExcluding(targetEntries, anchorEntry, baked.linkDirection, baked.linkN, usedIds, orderIndexMap)
+        : findNthOccurrence(targetEntries, anchorEntry, baked.linkDirection, baked.linkN, orderIndexMap);
+      if (!match) continue;
+      if (baked.linkOrderEnforced && match.ts < anchorTs) continue;
+      if (usedIds) usedIds.add(match.id);
+      result.push(buildPairEntry(refEntry, match, orderIndexMap));
+    }
+  } else if (baked.filterType === "context" || baked.filterType === "countContext") {
+    const file = fileId && state.nodes[fileId];
+    if (!file || parentEntries.length === 0) {
+      result = [];
+    } else if (baked.filterType === "context") {
+      const ranges = mergeContextRanges(parentEntries, baked.contextBefore || 0, baked.contextAfter || 0);
+      const pool = file.entries;
+      const keepIds = new Set();
+      for (const r of ranges) {
+        const lo = lowerBoundByTs(pool, r.start);
+        const hi = upperBoundByTs(pool, r.end);
+        for (let i = lo; i < hi; i++) keepIds.add(pool[i].id);
+      }
+      result = pool.filter(e => keepIds.has(e.id));
+    } else {
+      const pool = file.entries;
+      const orderIndexMap = buildOrderIndexMap(fileId);
+      const idxRanges = mergeCountContextRanges(parentEntries, orderIndexMap, pool.length, baked.countBefore || 0, baked.countAfter || 0);
+      const keepIds = new Set();
+      for (const r of idxRanges) { for (let i = r.start; i <= r.end; i++) keepIds.add(pool[i].id); }
+      result = pool.filter(e => keepIds.has(e.id));
+    }
+  } else {
+    result = parentEntries;
+  }
+  if (baked.inverted && baked.filterType !== "link" && baked.filterType !== "context" && baked.filterType !== "countContext") {
+    const keptIds = new Set(result.map(e => e.id));
+    result = parentEntries.filter(e => !keptIds.has(e.id));
+  }
+  return result;
+}
+
 function getEntriesUncached(node) {
   const nodeId = node.id;
   const parentEntries = getEntries(node.parentId);
@@ -6585,14 +6731,14 @@ function getEntriesUncached(node) {
     // instead), but is treated as "match nothing" here for safety.
     result = parentEntries.filter(e => node.value.includes(levelBucket(e.level, e.formatId)));
   } else if (node.filterType === "and" || node.filterType === "or") {
-    // Self-contained: reads its two explicit inputs directly, independent of
-    // parentId/tree position (see the "Core data model" note above
-    // createAndOrNode). getEntries() already degrades a missing/deleted
-    // input to [] (state.nodes[undefined] is undefined -> the `if (!node)`
-    // guard at the top returns []), so no separate dangling-input check is
-    // needed here.
-    const inputAEntries = getEntries(node.inputA);
-    const inputBEntries = getEntries(node.inputB);
+    // Self-contained: bakedA/bakedB are flat condition snapshots (see
+    // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
+    // over THIS node's own ordinary input entries (parentEntries, exactly
+    // like every other filter type) — no second entry stream, no reference
+    // to another node anywhere.
+    const fileId = getRootFileId(nodeId);
+    const inputAEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
+    const inputBEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
     if (node.filterType === "and") {
       const bIds = new Set(inputBEntries.map(e => e.id));
       result = inputAEntries.filter(e => bIds.has(e.id));
@@ -6602,10 +6748,15 @@ function getEntriesUncached(node) {
       result.sort((a, b) => a.ts - b.ts);
     }
   } else if (node.filterType === "link") {
-    // Self-contained, same as and/or: inputA is the reference, inputB the
-    // target — both read directly, independent of parentId/tree position.
-    const refEntries = getEntries(node.inputA);
-    const targetEntries = getEntries(node.inputB);
+    // Self-contained, same as and/or: bakedA is the reference's own baked
+    // condition, bakedB the target's — both evaluated as predicates over
+    // this node's own ordinary parentEntries pool (reference-side =
+    // entries matching bakedA, target-side = entries matching bakedB), then
+    // the usual nearest-occurrence pairing machinery runs over those two
+    // entry sets exactly as before.
+    const fileId = getRootFileId(nodeId);
+    const refEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
+    const targetEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
     result = [];
     // usedIds backs the opt-in "exclusive matches" option: once a target
     // entry has been matched for one reference entry, later reference
@@ -6617,7 +6768,7 @@ function getEntriesUncached(node) {
     // Backs the same-timestamp tie-break in findNthOccurrence — see
     // buildOrderIndexMap. Built once per recompute of this node, not per
     // reference entry.
-    const orderIndexMap = buildOrderIndexMap(getRootFileId(node.inputA));
+    const orderIndexMap = buildOrderIndexMap(fileId);
     for (const refEntry of refEntries) {
       // Anchor on the previous hop's matched entry (refEntry.matchTs /
       // .matchEntry) when refEntry is itself a chained link's pair
@@ -6707,13 +6858,12 @@ function getEntriesUncached(node) {
   // filter types, but this guard keeps getEntries() correct even if
   // inverted were ever set on one of these nodes some other way.
   if (node.inverted && node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
-    // and/or's "universe" to invert against is its own inputA (the node's
-    // logical primary side), not its tree parent — parentId no longer has
-    // any bearing on these two types' result (see the "Core data model"
-    // note above createAndOrNode).
-    const universe = (node.filterType === "and" || node.filterType === "or") ? getEntries(node.inputA) : parentEntries;
+    // and/or is no longer a special case here: its input entries ARE
+    // parentEntries (the node's own ordinary parentId chain, see above), so
+    // the universe to invert against is just parentEntries like every other
+    // filter type.
     const keptIds = new Set(result.map(e => e.id));
-    result = universe.filter(e => !keptIds.has(e.id));
+    result = parentEntries.filter(e => !keptIds.has(e.id));
   }
 
   node._cache = result;
@@ -6721,21 +6871,17 @@ function getEntriesUncached(node) {
 }
 
 // Clears every node's cached entries. Used after structural changes (move,
-// delete) since and/or/link nodes can reference another node via
-// inputA/inputB from anywhere in the tree, not just through parentId — a
-// targeted subtree walk can't reliably find every node that depends on the
-// thing that changed, so we just recompute lazily on next access instead.
+// delete) — simplest-correct sweep after any tree mutation.
 function invalidateAllCaches() {
   Object.values(state.nodes).forEach(n => { n._cache = null; n._levelCounts = null; });
 }
 
 // Scoped variant used by onTailChange only: a tail tick knows exactly which
-// root files grew/rotated, and a node's result can only depend on (a) its
-// parent chain — for an ordinary filter — or (b) its inputA/inputB (and,
-// transitively, THOSE nodes' own dependencies) for and/or/link, whose
-// parentId no longer has any bearing on the result at all (see the "Core
-// data model" note above createAndOrNode). This keeps filters under
-// untouched files fully cached across tail ticks — previously every 1.5s
+// root files grew/rotated, and a node's result only ever depends on its own
+// parentId chain (and/or/link included — see the "Core data model" note
+// above createAndOrNode: bakedA/bakedB are flat data, not another
+// dependency to walk). This keeps filters under untouched files fully
+// cached across tail ticks — previously every 1.5s
 // poll cleared EVERY node's cache, and the next render recomputed every
 // filter chain in the tree (renderTree reads every node's count), which is
 // what made tailing feel sluggish with several large files loaded.
@@ -6752,9 +6898,12 @@ function invalidateCachesForRoots(changedRootIds) {
     let d;
     if (n.type === "file") {
       d = changed.has(id);
-    } else if (n.filterType === "and" || n.filterType === "or" || n.filterType === "link") {
-      d = (n.inputA ? isDirty(n.inputA) : false) || (n.inputB ? isDirty(n.inputB) : false);
     } else {
+      // and/or/link nodes are no longer special here either: bakedA/bakedB
+      // are flat data, not a reference to another tree node, so their
+      // result only ever depends on their own parentId chain like any
+      // other filter type (see the "Core data model" note above
+      // createAndOrNode).
       d = isDirty(n.parentId);
     }
     memo.set(id, d);
@@ -6824,12 +6973,10 @@ let undoStack = [];
 let redoStack = [];
 
 // Deep-clones a filter node's whole subtree while KEEPING every original id
-// (unlike cloneSubtree, which assigns fresh ids for copy/paste). Keeping the
-// id means restoring it after a delete transparently heals any OTHER node's
-// inputA/inputB that happened to point into the deleted subtree —
-// getEntries() already treats a missing input as "fail gracefully, empty
-// result" (see above), so a node that briefly pointed at nothing during the
-// undo window just starts resolving again once the id reappears.
+// (unlike cloneSubtree, which assigns fresh ids for copy/paste) — id
+// stability here matters for the tree UI (selection/scroll position across
+// an undo), not for and/or/link correctness: bakedA/bakedB are plain data,
+// so nothing else in the tree depends on this node's id at all.
 function snapshotSubtree(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return null;
@@ -6850,8 +6997,8 @@ function snapshotSubtree(nodeId) {
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
-  if (node.inputA) copy.inputA = node.inputA;
-  if (node.inputB) copy.inputB = node.inputB;
+  if (node.bakedA) copy.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+  if (node.bakedB) copy.bakedB = JSON.parse(JSON.stringify(node.bakedB));
   if (node.filterType === "link") {
     copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
     copy.linkOrderEnforced = !!node.linkOrderEnforced; copy.linkExclusive = !!node.linkExclusive;
@@ -6890,8 +7037,8 @@ function restoreSubtree(snap) {
     filterType: snap.filterType, value: snap.value, inverted: !!snap.inverted,
     children: [],
   };
-  if (snap.inputA) node.inputA = snap.inputA;
-  if (snap.inputB) node.inputB = snap.inputB;
+  if (snap.bakedA) node.bakedA = snap.bakedA;
+  if (snap.bakedB) node.bakedB = snap.bakedB;
   if (snap.filterType === "link") {
     node.linkDirection = snap.linkDirection; node.linkN = snap.linkN;
     node.linkOrderEnforced = !!snap.linkOrderEnforced; node.linkExclusive = !!snap.linkExclusive;
@@ -6949,12 +7096,10 @@ function deleteFilterNodeWithUndo(nodeId) {
   }
   // Deleting an and/or/link node only ever removes that one node (plus its
   // own real subtree, via snapshotSubtree/deleteNode as usual) — its
-  // inputA/inputB targets are ordinary nodes living wherever they already
-  // are in the tree, not a private hidden chain that has to be taken along.
-  // Any OTHER node still referencing this one via inputA/inputB just sees it
-  // vanish (getEntries() already treats a missing input as "empty result",
-  // not a crash); restoring this node via undo (below) transparently heals
-  // that reference again, same as before.
+  // bakedA/bakedB sources (if the original nodes they were baked from still
+  // exist elsewhere) are completely unaffected either way: baking already
+  // copied their condition, so this delete has zero effect on any other
+  // node's result (the exact bug this data model fixes — see CLAUDE.md).
   const parent = state.nodes[node.parentId];
   const index = parent ? parent.children.indexOf(nodeId) : -1;
   const snapshot = snapshotSubtree(nodeId);
@@ -7035,10 +7180,10 @@ function renameFilterNodeWithUndo(nodeId, rawLabel) {
 }
 
 // Returns the id the node ends up living under on success (always nodeId
-// itself — moving a node is pure display repositioning now, see the "Core
-// data model" note above createAndOrNode: an and/or/link node's inputA/
-// inputB are untouched by a move, same as a plain filter's own value is),
-// or false on failure.
+// itself — moving a node just re-chains its input entries via
+// getEntries(node.parentId), same as any other filter; an and/or/link
+// node's bakedA/bakedB are untouched by a move, see the "Core data model"
+// note above createAndOrNode), or false on failure.
 function moveFilterNodeWithUndo(nodeId, newParentId) {
   const node = state.nodes[nodeId];
   if (!node || node.locked) return false; // restricted node — see deleteFilterNodeWithUndo's comment
@@ -8111,12 +8256,7 @@ function renderNode(id, depth) {
   const clipClass = clip && clip.id === id ? (clip.mode === "cut" ? " cut" : " copied") : "";
   const multiClass = state.multiSelect.has(id) ? " multi-selected" : "";
   const invertClass = node.inverted ? " inverted" : "";
-  // and/or/link node whose inputA/inputB never resolved on import (see
-  // materializeSerializedRoots/importFilterJson) — surfaced visibly rather
-  // than silently dropped or crashing (getEntries already returns [] for it).
-  const brokenClass = node.inputBroken ? " input-broken" : "";
-  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass + brokenClass;
-  if (node.inputBroken) row.title = "One of this filter's combined inputs is missing or unavailable";
+  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
   // to the RIGHT of its file's icon column instead of visually overlapping
@@ -8310,7 +8450,7 @@ function renderNode(id, depth) {
 
   // Drag-and-drop reparenting: any filter node can be dragged — moving a
   // node only ever changes its parentId (pure display repositioning), never
-  // an and/or/link node's inputA/inputB, so there is no structural cycle to
+  // an and/or/link node's bakedA/bakedB, so there is no structural cycle to
   // guard against beyond the ordinary isDescendantOrSelf check (see
   // moveNode). Every node (file or filter) is a valid drop target to become
   // the new parent, exactly matching what Ctrl+V already allows.
@@ -14018,9 +14158,9 @@ window.addEventListener("drop", ev => {
    TAIL_POLL_MS: handle.getFile() returns a fresh snapshot, and if it grew,
    only the new byte range (file.slice(offset)) is read and parsed
    incrementally into the existing entries array. Filter caches are then
-   invalidated globally (same reasoning as invalidateAllCaches for moves:
-   inputA/inputB cross-references make targeted invalidation unreliable), so
-   every filtered view updates live too.
+   invalidated for every node whose parentId chain reaches a grown/rotated
+   file (see invalidateCachesForRoots), so every filtered view updates live
+   too.
 
    Display behavior: while state.tailFollow is true and the active node
    belongs to a tailed file, BOTH the Filtered view and the Highlight/Full
@@ -16084,29 +16224,22 @@ noteDialogInput.addEventListener("keydown", ev => {
 });
 
 /* ===================== Filter save / load (JSON files) =====================
-   "Save filter…" writes the *branch* a filter belongs to: the ancestor
-   chain from just below the root file down to the clicked node, plus the
-   node's complete subtree. The chain is what makes the overall result
-   reproducible when loaded onto a fresh file; the subtree keeps any
-   refinements below the node.
-
-   and/or/link nodes hold two fixed, explicit input references (inputA/
-   inputB — see "Core data model" above createAndOrNode) that can point
-   anywhere else in the tree, not just within this branch. By default
-   (includeInputChains false) an input outside the branch is exported as a
-   plain reference that has to resolve within the exported branch itself —
-   if it doesn't, the serialized node carries inputAMissing/inputBMissing
-   instead of a ref, and materializeSerializedRoots keeps the node on
-   import with that side left unset and node.inputBroken set, rather than
-   silently dropping it (see its own comment). Passing includeInputChains
-   true (the "Include source filters used by combined nodes?" prompt, see
-   openIncludeInputsPrompt) additionally pulls in inputA's and inputB's own
-   ancestor chains (not their subtrees) as extra root trees, transitively,
-   so the combiner survives the export fully intact; each pulled-in chain
-   is tagged attach:"file" so it lands directly under the destination file
-   on import instead of nested under the primary node, which is tagged
-   attach:"target". Internal references are serialized via per-file "ref"
-   numbers and remapped to fresh uids on load.
+   Every save/export/library-save action for a single filter node asks the
+   person to pick one of two scopes (see openExportScopePrompt) — a general
+   choice for ANY filter type, not just and/or/link:
+     - "Just this filter": exports exactly the one clicked node, with no
+       ancestors and no subtree (for and/or/link this trivially includes its
+       own bakedA/bakedB, already self-contained — see the "Core data
+       model" note above createAndOrNode).
+     - "Include ancestor chain": exports the ancestor chain from just below
+       the root file down to the clicked node, plus the node's complete
+       subtree (today's original default behavior).
+   Either way, the exported branch is tagged attach:"target" and lands, on
+   import/apply, as a child of whatever node is currently active at the
+   import site (see importFilterJson/applyFilterFromLibrary) — never
+   hardcoded to FILE. and/or/link's bakedA/bakedB are flat data with no
+   node-id inside, so they travel as a plain generic field copy — no ref/
+   remapping machinery is needed for them at all.
 
    Runtime ids are never written to the file — every load creates new nodes
    with fresh uids, so the same file can be loaded repeatedly. */
@@ -16116,43 +16249,21 @@ const FILTER_FILE_VERSION = 2;
 const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context", "countContext", "level", "bookmarks", "idset"]);
 const filterFileInput = el("#filterFileInput");
 
-function serializeFilterBranch(nodeId, includeInputChains) {
-  const chain = getChain(nodeId).filter(n => n.type === "filter");
-  if (!chain.length) return null;
-  const primaryRootId = chain[0].id;
+function serializeFilterBranch(nodeId, includeAncestors) {
+  const clicked = state.nodes[nodeId];
+  if (!clicked || clicked.type !== "filter") return null;
 
-  // Start with the chain plus the clicked node's full subtree.
   const needed = new Set();
-  chain.forEach(n => needed.add(n.id));
-  (function collect(id) {
-    needed.add(id);
-    state.nodes[id].children.forEach(collect);
-  })(nodeId);
-
-  // Opt-in (includeInputChains): pull in the ancestor chain (not the
-  // subtree) of every inputA/inputB target that isn't already included,
-  // and repeat for chains just added — an added ancestor can itself be an
-  // and/or/link node with its own external inputs. Finite and monotonic,
-  // so this always terminates.
-  function addChainOnly(id, newlyAdded) {
-    let cur = state.nodes[id];
-    while (cur && cur.type === "filter" && !needed.has(cur.id)) {
-      needed.add(cur.id);
-      newlyAdded.push(cur.id);
-      cur = state.nodes[cur.parentId];
-    }
-  }
-  if (includeInputChains) {
-    let frontier = [...needed];
-    while (frontier.length) {
-      const newlyAdded = [];
-      for (const id of frontier) {
-        const n = state.nodes[id];
-        if (n.inputA && !needed.has(n.inputA)) addChainOnly(n.inputA, newlyAdded);
-        if (n.inputB && !needed.has(n.inputB)) addChainOnly(n.inputB, newlyAdded);
-      }
-      frontier = newlyAdded;
-    }
+  if (includeAncestors) {
+    const chain = getChain(nodeId).filter(n => n.type === "filter");
+    if (!chain.length) return null;
+    chain.forEach(n => needed.add(n.id));
+    (function collect(id) {
+      needed.add(id);
+      state.nodes[id].children.forEach(collect);
+    })(nodeId);
+  } else {
+    needed.add(nodeId); // "just this filter" — no ancestors, no subtree
   }
 
   let refCounter = 0;
@@ -16170,18 +16281,10 @@ function serializeFilterBranch(nodeId, includeInputChains) {
       children: kids,
     };
     if (node.value !== null && node.value !== undefined) out.value = node.value;
-    // and/or/link's two explicit inputs. An input that resolved within this
-    // export travels as a ref; one that didn't (not pulled in, or genuinely
-    // missing) is marked *Missing instead of silently dropped — see the
-    // module comment above and materializeSerializedRoots below.
-    if (node.inputA) {
-      if (refs[node.inputA] != null) out.inputARef = refs[node.inputA];
-      else out.inputAMissing = true;
-    }
-    if (node.inputB) {
-      if (refs[node.inputB] != null) out.inputBRef = refs[node.inputB];
-      else out.inputBMissing = true;
-    }
+    // and/or/link's baked condition snapshots — plain data, copied as-is,
+    // no ref/remapping needed (see the module comment above).
+    if (node.bakedA) out.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+    if (node.bakedB) out.bakedB = JSON.parse(JSON.stringify(node.bakedB));
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
@@ -16200,34 +16303,92 @@ function serializeFilterBranch(nodeId, includeInputChains) {
     return out;
   }
 
-  // Every node in `needed` has its whole ancestor chain in `needed` too
-  // (both collection steps above always walk back to the file), so the
-  // top-level entries — parent is the file, not another needed node — are
-  // exactly the independent trees that make up the file.
+  if (!includeAncestors) {
+    const out = serializeSubtree(nodeId);
+    out.attach = "target";
+    return { roots: [out], activeRef: refs[nodeId] };
+  }
+
+  // Every node in `needed` has its whole ancestor chain in `needed` too, so
+  // there is exactly one top-level entry — the chain's own root (parent is
+  // the file, not another needed node).
   const topLevelIds = [...needed].filter(id => {
     const p = state.nodes[state.nodes[id].parentId];
     return !p || p.type === "file";
   });
   const roots = topLevelIds.map(id => {
     const out = serializeSubtree(id);
-    out.attach = id === primaryRootId ? "target" : "file";
+    out.attach = "target";
     return out;
   });
 
   return { roots, activeRef: refs[nodeId] || null };
 }
 
-// Replaces an and/or/link node in place with its two inputs (cloned into
-// the tree as real, visible sibling nodes if they aren't already reachable
-// there — same-file inputs are cloned via cloneSubtree, so this never
-// crosses a file boundary in a way that would leave a dangling reference)
-// plus a fresh and/or/link node wired to reference them explicitly, at the
-// SAME tree position the unpacked node occupied. Functionally a no-op on
-// the filter's own result — it exists to turn an already-referenced-
-// elsewhere input into a locally visible, editable structure a person can
-// rebuild/re-link differently later (there's no dedicated "edit AND/OR/
-// LINK inputs" UI — see FEATURE_BACKLOG.md). Returns the new combiner
-// node's id (to make active), or null if nodeId isn't an and/or/link node.
+// Materializes ONE baked condition snapshot (see bakeNodeCondition) as a
+// real, ordinary, visible filter node — used by Unpack (below) to turn an
+// and/or/link node's bakedA/bakedB back into editable sibling filters.
+// Nested and/or/link baked conditions materialize their own bakedA/bakedB
+// as a plain deep copy (the resulting node works exactly like any other
+// and/or/link node — its own bakedA/bakedB never look at another node).
+function materializeBakedAsNode(baked, parentId) {
+  const node = {
+    id: uid("n"), type: "filter", name: bakedConditionName(baked),
+    parentId, children: [],
+    filterType: baked.filterType,
+    value: baked.value !== undefined ? baked.value : null,
+    inverted: !!baked.inverted,
+  };
+  if (baked.filterType === "text") {
+    if (baked.caseSensitive) node.caseSensitive = true;
+    if (baked.columns && baked.columns.length) node.columns = baked.columns.slice();
+    if (baked.isRegex) node.isRegex = true;
+  } else if (baked.filterType === "context") {
+    node.contextBefore = baked.contextBefore || 0;
+    node.contextAfter = baked.contextAfter || 0;
+  } else if (baked.filterType === "countContext") {
+    node.countBefore = baked.countBefore || 0;
+    node.countAfter = baked.countAfter || 0;
+  } else if (baked.filterType === "and" || baked.filterType === "or") {
+    node.bakedA = JSON.parse(JSON.stringify(baked.bakedA));
+    node.bakedB = JSON.parse(JSON.stringify(baked.bakedB));
+  } else if (baked.filterType === "link") {
+    node.bakedA = JSON.parse(JSON.stringify(baked.bakedA));
+    node.bakedB = JSON.parse(JSON.stringify(baked.bakedB));
+    node.linkDirection = baked.linkDirection;
+    node.linkN = baked.linkN;
+    node.linkOrderEnforced = !!baked.linkOrderEnforced;
+    node.linkExclusive = !!baked.linkExclusive;
+  }
+  state.nodes[node.id] = node;
+  return node;
+}
+
+// Display name for a baked condition — mirrors updateFilterNode's own
+// name-derivation rules for each filterType, recursing for a nested and/
+// or/link condition.
+function bakedConditionName(baked) {
+  if (baked.filterType === "text") return baked.isRegex ? "/" + baked.value + "/" : "“" + baked.value + "”";
+  if (baked.filterType === "level") return (baked.value || []).join(", ");
+  if (baked.filterType === "idset") return idSetFilterName(baked.value);
+  if (baked.filterType === "timerange") return timeRangeFilterName(baked.value);
+  if (baked.filterType === "and" || baked.filterType === "or") {
+    return bakedConditionName(baked.bakedA) + (baked.filterType === "and" ? " ∧ " : " ∨ ") + bakedConditionName(baked.bakedB);
+  }
+  if (baked.filterType === "link") return bakedConditionName(baked.bakedA) + " ⟶ " + bakedConditionName(baked.bakedB);
+  if (baked.value && typeof baked.value === "object") return JSON.stringify(baked.value);
+  return String(baked.value);
+}
+
+// Materializes an and/or/link node's own bakedA/bakedB back into two real,
+// visible sibling filter nodes (same filterType/fields), wired together via
+// a fresh and/or/link node baked from THEIR condition, inserted right next
+// to the original node. Purely additive: the original and/or/link node is
+// left completely untouched and keeps working exactly as before, using its
+// own original bakedA/bakedB — Unpack just makes the two building blocks
+// visible/editable again (there's no dedicated "edit and/or/link inputs"
+// UI — see FEATURE_BACKLOG.md). Returns the new combiner node's id (to make
+// active), or null if nodeId isn't an and/or/link node.
 function unpackAndOrLinkNode(nodeId) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return null;
@@ -16235,81 +16396,53 @@ function unpackAndOrLinkNode(nodeId) {
   const parent = state.nodes[node.parentId];
   if (!parent) return null;
 
-  const inputA = state.nodes[node.inputA];
-  const inputB = state.nodes[node.inputB];
-  // Clone each input as a plain sibling next to the unpacked node's own new
-  // position — cloneSubtree keeps referencing whatever ITS inputs already
-  // were (see its own comment), so a chained link's earlier hop still
-  // resolves correctly through the clone.
-  const cloneA = inputA ? cloneSubtree(node.inputA, node.parentId) : null;
-  const cloneB = inputB ? cloneSubtree(node.inputB, node.parentId) : null;
-  if (cloneA) parent.children.push(cloneA.id);
-  if (cloneB) parent.children.push(cloneB.id);
+  const cloneA = materializeBakedAsNode(node.bakedA, node.parentId);
+  const cloneB = materializeBakedAsNode(node.bakedB, node.parentId);
+  parent.children.push(cloneA.id);
+  parent.children.push(cloneB.id);
 
-  const index = parent.children.indexOf(nodeId);
-  let combiner;
-  if (node.filterType === "link") {
-    combiner = cloneA && cloneB
-      ? createLinkNode(cloneA.id, cloneB.id, node.linkDirection, node.linkN, { orderEnforced: node.linkOrderEnforced, exclusive: node.linkExclusive })
-      : null;
-  } else {
-    combiner = cloneA && cloneB ? createAndOrNode(cloneA.id, cloneB.id, node.filterType) : null;
-  }
+  const combiner = node.filterType === "link"
+    ? createLinkNode(cloneA.id, cloneB.id, node.linkDirection, node.linkN, { orderEnforced: node.linkOrderEnforced, exclusive: node.linkExclusive })
+    : createAndOrNode(cloneA.id, cloneB.id, node.filterType);
   if (!combiner) return null;
   // createAndOrNode/createLinkNode always place their result under FILE
-  // (root.children.unshift) — move it to the unpacked node's own former
-  // position instead, right after its two freshly-cloned inputs.
+  // (root.children.unshift) — move it to sit right after the original
+  // node instead, next to its two freshly-materialized building blocks.
   const root = state.nodes[getRootFileId(combiner.id)];
   if (root) root.children = root.children.filter(id => id !== combiner.id);
   combiner.parentId = node.parentId;
-  parent.children.splice(Math.max(0, index), 0, combiner.id);
+  const insertIndex = parent.children.indexOf(nodeId) + 1;
+  parent.children.splice(Math.max(0, insertIndex), 0, combiner.id);
 
-  deleteNode(nodeId);
+  state.activeId = combiner.id;
   invalidateAllCaches();
   return combiner.id;
 }
 
-// True if nodeId's own save/export branch (its ancestor chain + subtree —
-// same "needed" set serializeFilterBranch(nodeId, false) would compute,
-// before any input-chain pulling) contains an and/or/link node at all —
-// the include-inputs prompt is only worth showing when there's actually
-// something it could apply to.
-function branchHasCombinerNode(nodeId) {
-  const chain = getChain(nodeId).filter(n => n.type === "filter");
-  if (!chain.length) return false;
-  const ids = new Set(chain.map(n => n.id));
-  (function collect(id) { ids.add(id); state.nodes[id].children.forEach(collect); })(nodeId);
-  return [...ids].some(id => {
-    const t = state.nodes[id].filterType;
-    return t === "and" || t === "or" || t === "link";
-  });
+let exportScopeResolve = null;
+function closeExportScopePrompt() {
+  el("#exportScopeDialog").classList.add("hidden");
+  exportScopeResolve = null;
 }
-
-let includeInputsResolve = null;
-function closeIncludeInputsPrompt() {
-  el("#includeInputsDialog").classList.add("hidden");
-  includeInputsResolve = null;
-}
-el("#includeInputsDialogNo").addEventListener("click", () => {
-  const resolve = includeInputsResolve;
-  closeIncludeInputsPrompt();
+el("#exportScopeJustThis").addEventListener("click", () => {
+  const resolve = exportScopeResolve;
+  closeExportScopePrompt();
   if (resolve) resolve(false);
 });
-el("#includeInputsDialogYes").addEventListener("click", () => {
-  const resolve = includeInputsResolve;
-  closeIncludeInputsPrompt();
+el("#exportScopeWithChain").addEventListener("click", () => {
+  const resolve = exportScopeResolve;
+  closeExportScopePrompt();
   if (resolve) resolve(true);
 });
 
-// Asks "Include source filters used by combined nodes?" (see the "Filter
-// save / load" module comment above serializeFilterBranch) before an
-// export/library-save — skipped (resolves straight to false, the default)
-// when the branch has no and/or/link node to ask about at all.
-function openIncludeInputsPrompt(nodeId) {
-  if (!branchHasCombinerNode(nodeId)) return Promise.resolve(false);
+// General "Just this filter" vs "Include ancestor chain" prompt (see the
+// module comment above serializeFilterBranch) — asked for ANY filter node,
+// only ever as part of an actual save/export/library-save action
+// (saveFilterToFile/saveFilterToLibrary below), never at app startup.
+function openExportScopePrompt(nodeId) {
   return new Promise(resolve => {
-    includeInputsResolve = resolve;
-    el("#includeInputsDialog").classList.remove("hidden");
+    exportScopeResolve = resolve;
+    el("#exportScopeDialog").classList.remove("hidden");
   });
 }
 
@@ -16325,8 +16458,8 @@ function downloadJsonFallback(json, filename) {
 async function saveFilterToFile(nodeId) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return;
-  const includeInputChains = await openIncludeInputsPrompt(nodeId);
-  const branch = serializeFilterBranch(nodeId, includeInputChains);
+  const includeAncestors = await openExportScopePrompt(nodeId);
+  const branch = serializeFilterBranch(nodeId, includeAncestors);
   if (!branch || !branch.roots.length) { showCopyToast("Nothing to save"); return; }
 
   const json = JSON.stringify({
@@ -16387,20 +16520,16 @@ filterFileInput.addEventListener("change", ev => {
 // Shared rebuild step behind serializeFilterBranch()'s roots — used by
 // importFilterJson (Save/Load filter JSON) and the reusable filter
 // library's apply step (same JSON shape, see below). Materializes every
-// serialized node with a FRESH id, wires and/or/link's inputARef/inputBRef
-// back to the matching fresh id, and attaches each top-level root via
-// resolveParentId(root.attach) — the one thing that differs per caller
-// (cross-file: "target" = wherever the person invoked Load on, "file" =
-// that file's root). A ref that never resolves (inputAMissing/inputBMissing
-// from the export, or a dangling ref in a hand-edited file) leaves that
-// side unset and marks node.inputBroken — surfaced, not silently dropped
-// (see the "Filter save / load" module comment above serializeFilterBranch).
-// Returns { created, refMap } — created is the top-level roots in
-// data.roots' own order, refMap resolves a serialized `ref` to its fresh id
-// (activeRef included).
+// serialized node with a FRESH id (bakedA/bakedB, if present, copied
+// straight across as plain data — nothing to remap) and attaches each
+// top-level root via resolveParentId(root.attach) — every root is tagged
+// attach:"target" (see serializeFilterBranch), so this always lands under
+// wherever the import/apply was invoked, never hardcoded to FILE. Returns
+// { created, refMap } — created is the top-level roots in data.roots' own
+// order, refMap resolves a serialized `ref` to its fresh id (activeRef
+// included).
 function materializeSerializedRoots(roots, resolveParentId) {
-  const refMap = {};      // serialized ref -> new uid
-  const pendingInput = []; // inputARef/inputBRef assignments resolved after all nodes exist
+  const refMap = {}; // serialized ref -> new uid
 
   function materialize(sn, parentId) {
     const node = {
@@ -16443,12 +16572,10 @@ function materializeSerializedRoots(roots, resolveParentId) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.bakedA) node.bakedA = sn.bakedA;
+    if (sn.bakedB) node.bakedB = sn.bakedB;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
-    if (sn.inputARef != null) pendingInput.push({ node, side: "inputA", ref: sn.inputARef });
-    else if (sn.inputAMissing) node.inputBroken = true;
-    if (sn.inputBRef != null) pendingInput.push({ node, side: "inputB", ref: sn.inputBRef });
-    else if (sn.inputBMissing) node.inputBroken = true;
     (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
     return node;
   }
@@ -16459,17 +16586,6 @@ function materializeSerializedRoots(roots, resolveParentId) {
     const node = materialize(r, parentId);
     if (parent) parent.children.push(node.id);
     return node;
-  });
-
-  // Wire up and/or/link's two explicit inputs. A ref that doesn't resolve
-  // (dangling — a hand-edited file might have one; a real
-  // serializeFilterBranch() output never does) leaves that side unset and
-  // marks the node broken instead of dropping it — same surfaced-not-
-  // silently-dropped behavior as inputAMissing/inputBMissing above.
-  pendingInput.forEach(p => {
-    const resolvedId = refMap[p.ref];
-    if (resolvedId) p.node[p.side] = resolvedId;
-    else p.node.inputBroken = true;
   });
 
   return { created, refMap };
@@ -16500,26 +16616,16 @@ function importFilterJson(text) {
   }
   if (!data.roots.every(validate)) { showCopyToast("Filter file contains unknown filter types"); return; }
 
-  const fileId = getRootFileId(target.id);
-  const { created, refMap } = materializeSerializedRoots(data.roots,
-    attach => attach === "file" && fileId ? fileId : target.id);
+  // Every root is tagged attach:"target" (see serializeFilterBranch) —
+  // always attaches under wherever the import was invoked, never FILE.
+  const { created, refMap } = materializeSerializedRoots(data.roots, () => target.id);
 
   const activeId = data.activeRef != null ? refMap[data.activeRef] : null;
   if (activeId && state.nodes[activeId]) state.activeId = activeId;
   else if (created[0] && state.nodes[created[0].id]) state.activeId = created[0].id;
   revealFilteredView(); // loaded filters are new filters — same visibility rule
   render();
-  showCopyToast(anyInputBroken(created) ? "Filter loaded — some combined filters are missing their source" : "Filter loaded");
-}
-
-// True if any node in the given top-level roots (or their descendants) came
-// out of materializeSerializedRoots with a broken and/or/link input — see
-// its own comment. Used to warn after Load/Apply-from-library instead of
-// leaving a silently degraded combiner (empty result) unexplained.
-function anyInputBroken(created) {
-  return created.some(function walk(n) {
-    return !!n.inputBroken || n.children.some(cid => walk(state.nodes[cid]));
-  });
+  showCopyToast("Filter loaded");
 }
 
 /* ===================== Reusable filter library (FEATURE_BACKLOG.md
@@ -16548,8 +16654,8 @@ function newFilterLibraryKey() {
 async function saveFilterToLibrary(nodeId, name) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return;
-  const includeInputChains = await openIncludeInputsPrompt(nodeId);
-  const branch = serializeFilterBranch(nodeId, includeInputChains);
+  const includeAncestors = await openExportScopePrompt(nodeId);
+  const branch = serializeFilterBranch(nodeId, includeAncestors);
   if (!branch || !branch.roots.length) { showCopyToast("Nothing to save"); return; }
   await cacheStoreOp("filterLibrary", "readwrite", store => store.put({
     key: newFilterLibraryKey(),
@@ -17945,8 +18051,8 @@ document.addEventListener("keydown", ev => {
        entry sequence, so a restored merged file works standalone but no
        longer shares entry objects with its sources (accepted trade-off).
      - "meta": a single "session" record with file order, serialized filter
-       trees (same field set + ref/inputARef/inputBRef scheme as the filter
-       save/load JSON), bookmarks (as root-file + entry ordinal, since entry ids don't
+       trees (same field set + ref scheme as the filter save/load JSON),
+       bookmarks (as root-file + entry ordinal, since entry ids don't
        survive a reload), and settings.
      - "fileHistory": a THIRD, deliberately separate concern — a per-file
        filter-tree memory that outlives any single session (see "File
@@ -18114,11 +18220,9 @@ async function cacheDeleteFolder(folderId) {
 }
 
 // Serializes a file's COMPLETE filter tree with the same per-node field set
-// and ref indirection as the filter save/load JSON (see serializeFilterBranch)
-// — but without that function's chain-pulling logic, because here every node
-// under the file is included anyway, so every inputA/inputB target is
-// trivially present (bulk-combine only ever pairs same-file filters, and
-// nothing here can introduce a cross-file reference).
+// as the filter save/load JSON (see serializeFilterBranch) — bakedA/bakedB
+// (for and/or/link nodes) travel as a plain deep copy, same as every other
+// field; there's no ref/remapping to do for them since they hold no node id.
 function serializeFilterTreeForCache(fileNode) {
   let refCounter = 0;
   const refs = {}; // runtime id -> serialized ref number
@@ -18147,8 +18251,8 @@ function serializeFilterTreeForCache(fileNode) {
       children: persistableChildren(node.children).map(ser),
     };
     if (node.value !== null && node.value !== undefined) out.value = node.value;
-    if (node.inputA && refs[node.inputA] != null) out.inputARef = refs[node.inputA];
-    if (node.inputB && refs[node.inputB] != null) out.inputBRef = refs[node.inputB];
+    if (node.bakedA) out.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+    if (node.bakedB) out.bakedB = JSON.parse(JSON.stringify(node.bakedB));
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
@@ -18265,14 +18369,13 @@ function schedulePersistMeta() {
   metaPersistTimer = setTimeout(() => { metaPersistTimer = null; persistMetaNow(); }, CACHE_META_DEBOUNCE_MS);
 }
 
-// Mirror of importFilterJson's materialize/pending-input pass, without the
-// file-format envelope handling (the cache trusts its own writer more than
-// a hand-editable JSON file, but still validates types and marks a node
-// broken the same way on a dangling inputARef/inputBRef). Returns ref ->
-// new runtime id.
+// Mirror of importFilterJson's materialize pass, without the file-format
+// envelope handling (the cache trusts its own writer more than a
+// hand-editable JSON file, but still validates types). bakedA/bakedB (for
+// and/or/link nodes) copy straight across as plain data — nothing to
+// remap. Returns ref -> new runtime id.
 function materializeCachedFilters(fileNode, roots) {
   const refMap = {};
-  const pendingInput = [];
 
   function valid(sn) {
     // Same "bookmarks" exclusion as importFilterJson's validate() — the
@@ -18319,10 +18422,10 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.bakedA) node.bakedA = sn.bakedA;
+    if (sn.bakedB) node.bakedB = sn.bakedB;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
-    if (sn.inputARef != null) pendingInput.push({ node, side: "inputA", ref: sn.inputARef });
-    if (sn.inputBRef != null) pendingInput.push({ node, side: "inputB", ref: sn.inputBRef });
     (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
     return node;
   }
@@ -18331,11 +18434,6 @@ function materializeCachedFilters(fileNode, roots) {
     if (!valid(r)) return; // drop a corrupt subtree, keep the rest
     const node = materialize(r, fileNode.id);
     fileNode.children.push(node.id);
-  });
-  pendingInput.forEach(p => {
-    const resolvedId = refMap[p.ref];
-    if (resolvedId) p.node[p.side] = resolvedId;
-    else p.node.inputBroken = true;
   });
   return refMap;
 }
