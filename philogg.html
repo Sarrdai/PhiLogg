@@ -673,6 +673,18 @@
     margin:2px 8px 4px; padding:2px;
     background:var(--bg-elevated-2); border:1px solid var(--border-soft); border-radius:8px;
   }
+  /* Read-only header row (buildSquashGroupHeaderRow) + divider shown above
+     an expanded squash group's box — person-reported follow-up: collapsing
+     used to require reaching the target node at the bottom of the box,
+     far deeper than where the person expanded from. The header stays at
+     that original position/depth, showing the target's swatch/icon/label/
+     count, with the collapse-back chevron — but isn't itself selectable,
+     draggable, or otherwise a real interactive node (cursor:default
+     overrides .tree-row's own pointer; no hover background, unlike a real
+     row's :hover). */
+  .tree-squash-header{cursor:default;}
+  .tree-squash-header:hover{background:none;}
+  .tree-squash-divider{height:1px; margin:2px 12px 2px 8px; background:var(--border-soft);}
   .tree-label{
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:12.3px;
@@ -693,11 +705,6 @@
      their label (added in renderNode) so the negation is visible at a glance
      without having to open the node. */
   .tree-row.inverted .tree-type-tag{color:var(--level-error); border-color:var(--level-error);}
-  .tree-pct{
-    flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:2px; width:26px;
-  }
-  .tree-pct-track{width:26px; height:3px; border-radius:2px; background:var(--bg-elevated-2); overflow:hidden;}
-  .tree-pct-fill{height:100%; background:var(--accent); border-radius:2px;}
   .tree-count{
     flex:0 0 auto; font-size:10.5px; color:var(--text-tertiary);
     font-variant-numeric:tabular-nums; padding:1px 5px;
@@ -2272,6 +2279,19 @@
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
   }
   #addToSelectionMenu.hidden{display:none;}
+  /* "Info" submenu trigger on the tree's filter/file context menu
+     (openTreeContextMenu) — person-reported: the node's full name/pattern
+     used to sit inline at the top of the menu, unbounded, so a long
+     extraction pattern or a link's concatenated name could make the whole
+     menu (and the page along with it) far taller/wider than the viewport.
+     Hidden behind this hover/click submenu instead, same shape as
+     #addToSelectionMenu just above. */
+  #treeCtxInfoMenu{
+    position:fixed; z-index:51; background:var(--bg-elevated);
+    border:1px solid var(--border); border-radius:8px; padding:5px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
+  }
+  #treeCtxInfoMenu.hidden{display:none;}
 
   /* ---------- Highlight-colour picker (tree swatch) ---------- */
   #colorPickerPopup{
@@ -2811,6 +2831,7 @@
   </div>
 
   <div id="addToSelectionMenu" class="hidden"></div>
+  <div id="treeCtxInfoMenu" class="hidden"></div>
 
   <div id="treeContextMenu" class="hidden"></div>
 
@@ -3545,6 +3566,7 @@ const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="1
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
+const ICON_INFO = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.3v4"/><circle cx="8" cy="5" r="0.15" fill="currentColor" stroke-width="1"/></svg>';
 // Price-tag glyph for the tree context menu's "Rename…" action (FEATURE_BACKLOG.md
 // #12 — F2 or right-click any filter node, see startRenameNode). Distinct from
 // ICON_EDIT: this sets a display label, not the filter's actual value.
@@ -8288,7 +8310,7 @@ function renderNodeOrGroup(id, depth, forceVisible) {
   if (!forceVisible && node.hiddenInTree && node.squashExpanded && node.squashGroup) {
     const members = squashGroupTopLevelMembers(node.squashGroup);
     if (members[0] !== id) return document.createDocumentFragment(); // an earlier sibling member already built the (single, shared) box
-    return renderSquashGroupBox(node.squashGroup);
+    return renderSquashGroupExpanded(node.squashGroup, depth);
   }
   return renderNode(id, depth, forceVisible);
 }
@@ -8349,35 +8371,36 @@ function renderNode(id, depth, forceVisible) {
   // reported: it used to only exist for squash groups, visibly shifting
   // the icon whenever it appeared/disappeared). Two different things it
   // can toggle, depending on the node:
-  //  - A squash group's display node (node.squashGroup — hiddenInTree
-  //    members never reach this point, see the passthrough check above)
-  //    toggles the private-chain BOX below the row (renderSquashGroupBox)
-  //    via node.squashExpanded. Real children the person built UNDER a
-  //    detached filter (if any) are unaffected by this and always show —
-  //    this chevron's only job on such a node is the private-chain box.
-  //  - Any other node with real children toggles node.collapsed the usual
-  //    way (hides/shows them, nothing fancier).
+  //  - A COLLAPSED squash group's display node (node.squashGroup,
+  //    !node.squashExpanded — hiddenInTree members never reach this point,
+  //    see the passthrough check above) toggles the group open via
+  //    node.squashExpanded. Real children the person built UNDER a
+  //    detached filter (if any) are unaffected by this and always show.
+  //    Once EXPANDED, this row is no longer reachable here at all — it
+  //    only ever renders now INSIDE the group's box (see
+  //    renderSquashGroupExpanded), where a separate, read-only HEADER row
+  //    owns the collapse-back chevron instead (person-reported follow-up:
+  //    collapsing used to require reaching the target node at the BOTTOM
+  //    of the box, far deeper than where you expanded from) — so a
+  //    squash-expanded display node's own chevron reverts to the plain
+  //    real-children rule below, same as any ordinary node.
+  //  - Any node with real children toggles node.collapsed the usual way
+  //    (hides/shows them, nothing fancier).
   const chevronSlot = document.createElement("span");
   chevronSlot.className = "tree-chevron-slot";
-  // Every member of a group shares squashGroup, but only the TRUE display
-  // (hiddenInTree false) should offer the toggle here — a hidden member
-  // only ever gets a real row INSIDE the box (forceVisible), where showing
-  // another redundant "collapse the whole group" chevron on every single
-  // internal row would just be noise.
-  const isSquashDisplay = !node.hiddenInTree && !!node.squashGroup;
+  const isCollapsedSquashDisplay = !node.hiddenInTree && !!node.squashGroup && !node.squashExpanded;
   const hasRealChildren = node.children.length > 0;
-  if (isSquashDisplay || hasRealChildren) {
+  if (isCollapsedSquashDisplay || hasRealChildren) {
     const chevron = document.createElement("button");
     chevron.type = "button";
-    const expanded = isSquashDisplay ? !!node.squashExpanded : !node.collapsed;
-    chevron.className = "tree-chevron" + (expanded ? " expanded" : "");
-    chevron.title = isSquashDisplay
-      ? (node.squashExpanded ? "Collapse this detached filter's private chain back into one row" : "Expand this detached filter's private chain (see what it depends on)")
+    chevron.className = "tree-chevron" + (isCollapsedSquashDisplay ? "" : (!node.collapsed ? " expanded" : ""));
+    chevron.title = isCollapsedSquashDisplay
+      ? "Expand this detached filter's private chain (see what it depends on)"
       : (node.collapsed ? "Expand" : "Collapse");
     chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
     chevron.addEventListener("click", ev => {
       ev.stopPropagation();
-      if (isSquashDisplay) toggleSquashGroupExpanded(id);
+      if (isCollapsedSquashDisplay) toggleSquashGroupExpanded(id);
       else { node.collapsed = !node.collapsed; render(); }
     });
     chevronSlot.appendChild(chevron);
@@ -8456,27 +8479,12 @@ function renderNode(id, depth, forceVisible) {
   count.textContent = ownCount.toLocaleString("de-DE");
   row.appendChild(count);
 
-  // Row-count fraction vs. the parent node, so it's visible at a glance how
-  // much a given filter narrowed the data. Root file nodes have no parent
-  // to compare against, so they get an empty placeholder instead.
-  const pct = document.createElement("span");
-  pct.className = "tree-pct";
-  if (node.parentId) {
-    const parentCount = getEntries(node.parentId).length;
-    const fraction = parentCount > 0 ? Math.min(1, ownCount / parentCount) : 0;
-    const pctLabel = Math.round(fraction * 100) + "%";
-    pct.title = pctLabel + " of parent (" + parentCount.toLocaleString("de-DE") + ")";
-    // person-reported: the bar looked identical everywhere, because a
-    // filter typically keeps a small SLICE of its parent (well under 10%)
-    // — a linear 0-100% fill puts every realistic value within a pixel or
-    // two of "empty," at this track's width. sqrt() exaggerates the low
-    // end so everyday differences (0.4% vs. 13% vs. 100%) actually read
-    // apart at a glance, and a nonzero fraction gets a small minimum width
-    // so it's never truly invisible even at a fraction of a percent.
-    const barWidth = fraction <= 0 ? 0 : Math.max(6, Math.sqrt(fraction) * 100);
-    pct.innerHTML = '<span class="tree-pct-track"><span class="tree-pct-fill" style="width:' + barWidth + '%"></span></span>';
-  }
-  row.appendChild(pct);
+  // The row-count percentage BAR (a little track+fill line) was removed
+  // outright (person-reported, twice: it read as a flat, identical-looking
+  // line on every row regardless of the actual fraction — even after a
+  // non-linear sqrt scale, still not legible) — the absolute count (above)
+  // already says what mattered, a second, harder-to-read visual encoding
+  // of the same information wasn't earning its space. No replacement.
 
   // Restricted node (see syncBookmarksFilterNode/deleteFilterNodeWithUndo):
   // no ✕ button at all — it's only ever added/removed automatically.
@@ -8608,28 +8616,106 @@ function renderNode(id, depth, forceVisible) {
   return wrap;
 }
 
-// The inline box that REPLACES a squash group's display row when expanded
-// (built by renderNodeOrGroup, the one caller-side decision point every
-// "render this child" call site goes through — see there). The private
-// chain isn't a normal subtree — it sits ABOVE the display node via
-// parentId, not below it as real children — so it can't just be un-hidden
-// in the main tree's usual flow; this renders it as its own small nested
-// tree instead, starting from the group's own top-level member(s) (usually
-// the private ancestor chain's root; occasionally a SECOND, unrelated
-// top-level member too — e.g. a link's pulled-in linkedId target, see
-// detachFilterChain/serializeFilterBranch's attach:"file" case), visually
-// set apart with a background (same idea as a folder section or the
-// filter-history ghost preview). Every member renders with forceVisible —
-// including the display node itself, now the last real row INSIDE the box
-// rather than a separate row above it, so the box is the group's complete,
-// non-duplicated picture (person-reported: it originally showed only the
-// ancestors, with the display row left floating above, unexpanded, on its
-// own).
+// The inline box holding a squash group's private chain, rendered as its
+// own small nested tree — the private chain isn't a normal subtree (it
+// sits ABOVE the display node via parentId, not below it as real
+// children), so it can't just be un-hidden in the main tree's usual flow.
+// Starts from the group's own top-level member(s) (usually the private
+// ancestor chain's root; occasionally a SECOND, unrelated top-level member
+// too — e.g. a link's pulled-in linkedId target, see
+// detachFilterChain/serializeFilterBranch's attach:"file" case). Every
+// member renders with forceVisible — including the display node itself,
+// now the last real row INSIDE the box rather than a separate row above
+// it, so the box is the group's complete, non-duplicated picture. Called
+// from renderSquashGroupExpanded, which wraps this with the read-only
+// header row above it.
 function renderSquashGroupBox(groupId) {
   const box = document.createElement("div");
   box.className = "tree-squash-box";
   squashGroupTopLevelMembers(groupId).forEach(mid => box.appendChild(renderNode(mid, 0, true)));
   return box;
+}
+
+// What actually REPLACES a squash group's slot in the main tree once
+// expanded (called from renderNodeOrGroup). Person-reported follow-up: the
+// display node's own row, now the deepest entry inside the box (see
+// renderSquashGroupBox above), sat far below where the person actually
+// clicked to expand — collapsing meant hunting down into the box to find
+// it again. This wraps the box with a read-only HEADER row instead,
+// showing the display node's own swatch/icon/label/count at the SAME
+// position the group used to occupy while collapsed, separated from the
+// box by a thin divider — the collapse-back chevron lives here, not on the
+// (now unreachable-by-chevron — see renderNode's own chevron comment) real
+// row at the bottom. The header is deliberately NOT a real interactive
+// node: no click-to-select, no drag, no context menu, no active/multi-
+// select styling — only its swatch (still edits the display node's actual
+// highlightColor) and its chevron do anything.
+function renderSquashGroupExpanded(groupId, depth) {
+  const displayId = squashGroupDisplayId(groupId);
+  const display = state.nodes[displayId];
+  const wrap = document.createElement("div");
+  wrap.dataset.type = "filter";
+  if (display) wrap.appendChild(buildSquashGroupHeaderRow(display, depth));
+  const divider = document.createElement("div");
+  divider.className = "tree-squash-divider";
+  wrap.appendChild(divider);
+  wrap.appendChild(renderSquashGroupBox(groupId));
+  return wrap;
+}
+
+function buildSquashGroupHeaderRow(display, depth) {
+  const row = document.createElement("div");
+  row.className = "tree-row tree-squash-header";
+  row.style.paddingLeft = (8 + depth * 18) + "px";
+  // Deliberately NOT row.dataset.nodeId = display.id — the real, unique
+  // owner of that id is the interactive row inside the box; a second
+  // element carrying the same data-node-id would make any
+  // `[data-node-id="…"]` lookup ambiguous (e.g. a load-tick row update).
+  row.dataset.squashHeaderFor = display.id;
+
+  const chevronSlot = document.createElement("span");
+  chevronSlot.className = "tree-chevron-slot";
+  const chevron = document.createElement("button");
+  chevron.type = "button";
+  chevron.className = "tree-chevron expanded";
+  chevron.title = "Collapse this detached filter's private chain back into one row";
+  chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+  chevron.addEventListener("click", ev => { ev.stopPropagation(); toggleSquashGroupExpanded(display.id); });
+  chevronSlot.appendChild(chevron);
+  row.appendChild(chevronSlot);
+
+  if (display.type === "filter") {
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "tree-swatch" + (display.highlightColor ? "" : " empty");
+    if (display.highlightColor) swatch.style.background = display.highlightColor;
+    swatch.title = display.highlightColor
+      ? "Highlight colour — click to change, right-click to clear"
+      : "Set a highlight colour for the Highlight view";
+    swatch.addEventListener("click", ev => { ev.stopPropagation(); openColorPicker(display.id, swatch); });
+    swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); setHighlightColor(display.id, null); });
+    row.appendChild(swatch);
+  }
+
+  const icon = document.createElement("span");
+  icon.className = "tree-icon" + (treeIndicatorMode === "type" ? " tree-icon-type" : "");
+  if (treeIndicatorMode === "type") icon.textContent = typeTagFor(display);
+  else icon.innerHTML = nodeIconHTML(display);
+  row.appendChild(icon);
+
+  const label = document.createElement("span");
+  label.className = "tree-label";
+  const displayName = nodeDisplayName(display);
+  label.textContent = display.inverted ? "¬ " + displayName : displayName;
+  label.title = displayName;
+  row.appendChild(label);
+
+  const count = document.createElement("span");
+  count.className = "tree-count";
+  count.textContent = getEntries(display.id).length.toLocaleString("de-DE");
+  row.appendChild(count);
+
+  return row;
 }
 
 function renderBreadcrumb() {
@@ -15693,8 +15779,35 @@ function setHighlightColor(nodeId, color) {
 /* ===================== Tree context menu (Ctrl+click multi-select -> right-click) ===================== */
 
 const treeContextMenu = el("#treeContextMenu");
+const treeCtxInfoMenu = el("#treeCtxInfoMenu");
 
-function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); }
+function closeTreeCtxInfoMenu() { treeCtxInfoMenu.classList.add("hidden"); }
+
+function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); closeTreeCtxInfoMenu(); }
+
+// Hover/click submenu for the tree context menu's "Info" trigger (see
+// openTreeContextMenu) — same #addToSelectionMenu shape (position next to
+// the trigger, .ctx-meta styling), except the content here is plain text
+// (the node's full display name) rather than a list of actions.
+function openTreeCtxInfoMenu(anchorEl, text) {
+  treeCtxInfoMenu.innerHTML = '<div class="ctx-meta">' + escapeHtml(text) + "</div>";
+  const anchorRect = anchorEl.getBoundingClientRect();
+  treeCtxInfoMenu.style.left = Math.min(anchorRect.right, window.innerWidth - 260) + "px";
+  treeCtxInfoMenu.style.top = Math.min(anchorRect.top, window.innerHeight - 200) + "px";
+  treeCtxInfoMenu.classList.remove("hidden");
+}
+// treeContextMenu's own content is rebuilt fresh on every open (innerHTML =
+// html in openTreeContextMenu below), so the "Info" trigger's hover/click
+// handling is delegated here once rather than re-attached per rebuild.
+treeContextMenu.addEventListener("mouseover", ev => {
+  const item = ev.target.closest('[data-action="info"]');
+  if (item) openTreeCtxInfoMenu(item, item.dataset.infoText || "");
+});
+// Stops a click inside the info bubble (e.g. selecting/copying the shown
+// text) from reaching the document-level "click outside closes the popup"
+// listener — same reasoning #addToSelectionMenu's own click handler
+// already relies on (see CLAUDE.md's stopPropagation gotcha).
+treeCtxInfoMenu.addEventListener("click", ev => ev.stopPropagation());
 
 // Figures out which bulk actions the current multi-selection supports.
 // Shared by the right-click context menu and the always-visible action bar
@@ -15886,7 +15999,17 @@ function openTreeContextMenu(ev, clickedId) {
       .map(section => section.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join(""))
       .join('<div class="ctx-sep"></div>');
 
-    html = '<div class="ctx-meta">' + escapeHtml(nodeDisplayName(node)) + "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
+    // "Info" (person-reported): the node's full display name used to sit
+    // inline here, unbounded — a long extraction pattern or a link's own
+    // concatenated name could make the whole menu (and the page along with
+    // it) far taller/wider than the viewport. Now a hover/click submenu
+    // trigger instead (see openTreeCtxInfoMenu), same shape as "Add to
+    // selection" on the log-row context menu. data-info-text carries the
+    // text for the delegated mouseover/click handlers below to show.
+    html = '<div class="ctx-item ctx-submenu-trigger" data-action="info" data-info-text="' + escapeHtml(nodeDisplayName(node)) + '">' +
+      ICON_INFO + " Info" +
+      '<svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>' +
+      "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
   }
 
   treeContextMenu.innerHTML = html;
@@ -15900,6 +16023,11 @@ treeContextMenu.addEventListener("click", ev => {
   if (!item) return;
   ev.stopPropagation();
   const action = item.dataset.action;
+  // "Info" is a submenu trigger, not an action — mouseover already opens
+  // it (see the delegated listener above); a click (touch/no-hover) does
+  // the same instead of closing the whole context menu like every other
+  // item here does.
+  if (action === "info") { openTreeCtxInfoMenu(item, item.dataset.infoText || ""); return; }
   closeTreeContextMenu();
 
   if (action === "loadFolderFile") {
