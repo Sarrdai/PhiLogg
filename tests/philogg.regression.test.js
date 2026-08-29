@@ -332,7 +332,7 @@ await withApp(async (w, d, T) => {
   assert(filterA1._cache === null, "tail change invalidates filters under the CHANGED file");
   assert(filterB1._cache !== null, "filters under an UNTOUCHED file keep their cache across a tail tick");
   assert(filterB1._levelCounts !== null, "untouched file keeps its level-count cache too");
-  assert(andB._cache === null, "a linkedId dependency on the changed file is invalidated even though its OWN parent is on the untouched file");
+  assert(andB._cache === null, "an inputB dependency on the changed file is invalidated even though its OWN parentId sits under the untouched file");
   assert(andChild._cache === null, "descendants of an invalidated node are invalidated transitively");
 
   // Minimap background-bucket memoization
@@ -666,12 +666,12 @@ await withApp(async (w, d, T) => {
   assert(!T.state.nodes[toDelete.id], "deleted node is gone from state.nodes");
   w.undo();
   assert(T.state.nodes[toDelete.id], "undo restores the deleted node");
-  assert(T.state.nodes[toDelete.id].id === toDelete.id, "restored node keeps its ORIGINAL id (so external linkedId refs self-heal)");
+  assert(T.state.nodes[toDelete.id].id === toDelete.id, "restored node keeps its ORIGINAL id (so external inputA/inputB refs self-heal)");
   w.redo();
   assert(!T.state.nodes[toDelete.id], "redo re-applies the delete");
 
-  // linkedId self-healing: an AND node elsewhere pointing at a deleted node
-  // should transparently start resolving again once undo restores it.
+  // inputA/inputB self-healing: an AND node elsewhere referencing a deleted
+  // node should transparently start resolving again once undo restores it.
   // AND/OR combine two filters from the SAME file by design (cross-file
   // combination is unsupported — see PROJECT.md); using two different-file
   // filters here would make the intersection trivially empty regardless of
@@ -681,12 +681,12 @@ await withApp(async (w, d, T) => {
   const andNode = w.createAndOrNode(refA.id, refA2.id, "and");
   w.render();
   assert(w.getEntries(andNode.id).length > 0, "sanity: AND of two same-file filters has a non-empty intersection before any delete");
-  w.deleteFilterNodeWithUndo(refA2.id); // deletes the AND's linkedId target
+  w.deleteFilterNodeWithUndo(refA2.id); // deletes the AND's inputB target
   w.invalidateAllCaches();
-  assert(w.getEntries(andNode.id).length === 0, "AND node fails gracefully (empty result) while its linkedId target is deleted");
+  assert(w.getEntries(andNode.id).length === 0, "AND node fails gracefully (empty result) while its inputB target is deleted");
   w.undo();
   w.invalidateAllCaches();
-  assert(w.getEntries(andNode.id).length > 0, "AND node's linkedId self-heals once the deleted target is restored by undo, same id");
+  assert(w.getEntries(andNode.id).length > 0, "AND node's inputB self-heals once the deleted target is restored by undo, same id");
 
   // Move + undo
   const moveTarget = w.createFilterNode(fa.id, "text", "x");
@@ -838,13 +838,15 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 11 — Filter save/load JSON round trip
-   Origin: 6233b6f7. NOTE: that session's own test used an older, cruder
-   eval-based harness (predates the T-bridge convention) and only checked
-   the initial single-file JSON shape — it predates the mid-session redesign
-   in the SAME conversation that pulls in and/or/link dependency chains via
-   attach:"file"/attach:"target" tags. Rewritten here against the CURRENT
-   format (FILTER_FILE_VERSION = 2) to actually exercise that redesign,
-   which had no lasting test coverage until now.
+   Origin: 6233b6f7. REWRITTEN for the linkedId -> inputA/inputB redesign
+   (this session): serializeFilterBranch(nodeId, includeInputChains) now
+   takes an explicit opt-in for whether an and/or/link node's inputA/inputB
+   ancestor chains get pulled in as extra attach:"file" roots (the "Include
+   source filters used by combined nodes?" prompt) — off by default, in
+   which case an input outside the primary branch is exported as
+   inputAMissing/inputBMissing and materializeSerializedRoots keeps the
+   node with that side unset and node.inputBroken set, rather than
+   silently dropping it.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("11. Filter save/load JSON round trip");
@@ -852,60 +854,75 @@ await withApp(async (w, d, T) => {
   const fb = await w.addFile("b.log", makeLog(0, 20, { msgPrefix: "other" }), () => {});
   w.render();
 
-  // Branch: chain fa -> chainNode -> extractNode (with an assertion, to also
+  // Chain fa -> chainNode -> extractNode (with an assertion, to also
   // confirm assertions round-trip through save/load, not just copy/paste).
   const chainNode = w.createFilterNode(fa.id, "text", "message");
   const extractNode = w.createFilterNode(chainNode.id, "extract", "message [value:int]");
   extractNode.assertions = { 0: { mode: "range", min: 0, max: 100 } };
-  // AND node combining a sibling-branch filter with a filter from file B —
-  // the dependency (fFilterB) sits OUTSIDE the branch being saved.
+  // AND node combining extractNode with a filter from file B — always
+  // placed directly under extractNode's own root file (fa), not nested
+  // under extractNode.
   const fFilterB = w.createFilterNode(fb.id, "text", "other");
   const andNode = w.createAndOrNode(extractNode.id, fFilterB.id, "and");
   w.render();
+  assert(andNode.parentId === fa.id, "sanity: AND node sits directly under file A, not under extractNode");
 
-  const branch = w.serializeFilterBranch(andNode.id);
-  assert(branch && branch.roots.length === 2, "serializeFilterBranch produces two independent trees: the target chain + the pulled-in linkedId dependency chain, got " + (branch && branch.roots.length));
+  // --- includeInputChains = false (default): inputs outside the primary
+  // branch are NOT pulled in — the AND node is the only root, and its
+  // inputs are marked missing rather than silently dropped. ---
+  const branchNoInputs = w.serializeFilterBranch(andNode.id, false);
+  assert(branchNoInputs && branchNoInputs.roots.length === 1, "without includeInputChains, only the AND node's own chain is exported, got " + (branchNoInputs && branchNoInputs.roots.length));
+  const bareRoot = branchNoInputs.roots[0];
+  assert(bareRoot.attach === "target" && bareRoot.inputAMissing && bareRoot.inputBMissing,
+    "both inputs are outside the exported branch, so they're marked *Missing instead of silently dropped");
+
+  // --- includeInputChains = true: inputA's chain (extractNode + chainNode)
+  // and inputB's chain (fFilterB) are pulled in as extra attach:"file" roots. ---
+  const branch = w.serializeFilterBranch(andNode.id, true);
+  assert(branch && branch.roots.length === 3, "with includeInputChains, 3 independent trees are exported: the AND node + inputA's chain + inputB's chain, got " + (branch && branch.roots.length));
   const targetRoot = branch.roots.find(r => r.attach === "target");
-  const fileRoot = branch.roots.find(r => r.attach === "file");
-  assert(targetRoot, "primary chain tagged attach:target");
-  assert(fileRoot, "pulled-in and/or dependency chain tagged attach:file");
+  const fileRoots = branch.roots.filter(r => r.attach === "file");
+  assert(targetRoot && targetRoot.inputARef != null && targetRoot.inputBRef != null, "primary AND node tagged attach:target, both inputs now resolve to refs");
+  assert(fileRoots.length === 2, "both pulled-in input chains tagged attach:file");
 
   const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
 
   // Load onto a THIRD, fresh file — re-evaluates against new data, doesn't replay a stored result.
-  // Loaded onto a CHILD FILTER (not the file itself) so attach:"target" (goes
-  // to the clicked node) and attach:"file" (always goes to the root file,
-  // even when loading deep in the tree) land on visibly different parents.
   const fc = await w.addFile("c.log", makeLog(0, 20, { msgPrefix: "message" }), () => {});
   const fcAnchor = w.createFilterNode(fc.id, "text", "message");
   w.render();
-  // importFilterJson reads the module-level loadFilterTargetId, the same way
-  // loadFilterFromFile() sets it before calling importFilterJson — reach it
-  // via the shared lexical scope (see W_setLoadTarget below).
   const before = fcAnchor.children.length;
+  const fcChildrenBefore = fc.children.length;
   W_setLoadTarget(w, fcAnchor.id);
   w.importFilterJson(json);
-  assert(fcAnchor.children.length === before + 1, "load creates a fresh 'target' subtree directly under the CLICKED node");
-  assert(fc.children.length === 2, "the pulled-in 'file' dependency chain is created directly under the FILE, not nested under the clicked node — got " + fc.children.length);
-  const loadedTargetRootId = fcAnchor.children[fcAnchor.children.length - 1];
-  // getChain() walks UPWARD to the root — the loaded "message" text node is
-  // the subtree ROOT, and the extract node sits as its CHILD, so find it by
-  // walking the freshly-loaded subtree downward instead.
-  function findInSubtree(id, pred) {
-    const n = T.state.nodes[id];
-    if (!n) return null;
-    if (pred(n)) return n;
-    for (const c of n.children) { const r = findInSubtree(c, pred); if (r) return r; }
-    return null;
-  }
-  const loadedExtract = findInSubtree(loadedTargetRootId, n => n.filterType === "extract");
-  assert(loadedExtract && loadedExtract.assertions && loadedExtract.assertions[0].max === 100, "assertion travels through save/load JSON");
-  const loadedAnd = Object.values(T.state.nodes).find(n => n.filterType === "and" && n.parentId === loadedExtract.id);
-  assert(loadedAnd, "AND node recreated under the loaded extract node");
-  assert(loadedAnd.linkedId && loadedAnd.linkedId !== fFilterB.id, "AND node's linkedId was remapped to a FRESH node id, not the original");
-  const dependencyNode = T.state.nodes[loadedAnd.linkedId];
-  assert(dependencyNode && dependencyNode.parentId === fc.id, "pulled-in and/or dependency (attach:file) is recreated directly under the destination FILE, not nested under the target chain");
+  assert(fcAnchor.children.length === before + 1, "load creates the AND node ('target') directly under the CLICKED node");
+  assert(fc.children.length === fcChildrenBefore + 2, "both pulled-in input chains ('file') are created directly under the FILE, not nested under the clicked node — got " + (fc.children.length - fcChildrenBefore));
+  const loadedAnd = T.state.nodes[fcAnchor.children[fcAnchor.children.length - 1]];
+  assert(loadedAnd && loadedAnd.filterType === "and", "the loaded node is the AND combiner itself");
+  assert(loadedAnd.inputA && loadedAnd.inputA !== extractNode.id, "inputA was remapped to a FRESH node id, not the original extractNode");
+  assert(loadedAnd.inputB && loadedAnd.inputB !== fFilterB.id, "inputB was remapped to a FRESH node id, not the original fFilterB");
+  const loadedInputA = T.state.nodes[loadedAnd.inputA];
+  assert(loadedInputA && loadedInputA.filterType === "extract" && loadedInputA.assertions && loadedInputA.assertions[0].max === 100,
+    "inputA's own reconstructed clone is the extract node, assertion intact");
+  assert(T.state.nodes[loadedInputA.parentId] && T.state.nodes[loadedInputA.parentId].parentId === fc.id,
+    "inputA's pulled-in ancestor chain (chainNode) is recreated directly under the destination FILE, not nested under the target");
+  const loadedInputB = T.state.nodes[loadedAnd.inputB];
+  assert(loadedInputB && loadedInputB.parentId === fc.id, "inputB's own reconstructed clone also lives directly under the destination FILE");
   assert(w.getEntries(loadedAnd.id).length >= 0, "reloaded AND node's getEntries() resolves without throwing (re-evaluated against the new file's own data)");
+  assert(!loadedAnd.inputBroken, "a fully-resolved combiner is not marked broken");
+
+  // --- Loading the includeInputChains=false export instead: the AND node
+  // survives with its inputs left unresolved and node.inputBroken set —
+  // surfaced, not silently dropped. ---
+  const jsonNoInputs = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branchNoInputs.activeRef, roots: branchNoInputs.roots });
+  const fd = await w.addFile("d.log", makeLog(0, 5), () => {});
+  W_setLoadTarget(w, fd.id);
+  w.importFilterJson(jsonNoInputs);
+  const loadedBareAnd = T.state.nodes[fd.children[fd.children.length - 1]];
+  assert(loadedBareAnd && loadedBareAnd.filterType === "and", "the AND node itself still gets created even with unresolved inputs");
+  assert(!loadedBareAnd.inputA && !loadedBareAnd.inputB, "both inputs are left unset rather than pointing at something wrong");
+  assert(loadedBareAnd.inputBroken === true, "the node is marked broken so the person can see something's missing");
+  assert(w.getEntries(loadedBareAnd.id).length === 0, "getEntries degrades gracefully to an empty result instead of throwing");
 
   function W_setLoadTarget(w, targetId) {
     // loadFilterTargetId is a top-level `let` — reach it via the shared
@@ -1193,16 +1210,19 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 7 — Copy/Cut/Paste, drag-and-drop, AND/OR/LINK cycle guard
-   Origin: 3f879dbe. This session established that and/or/link nodes CAN be
-   copy/cut/paste/dragged (the earlier blanket exclusion was too broad — see
-   PROJECT.md "Core data model") as long as the one genuine risk (a node's
-   own linkedId target becoming its ancestor) is blocked by
-   wouldCreateLinkedCycle/subtreeHasLinkedCycle. Also covers the file-drop
-   overlay isFileDrag() gate from the same session.
+   GROUP 7 — Copy/Cut/Paste, drag-and-drop, self-contained AND/OR/LINK inputs
+   Origin: 3f879dbe; REWRITTEN for the linkedId -> inputA/inputB redesign
+   (this session — see PROJECT.md "Core data model"). and/or/link nodes now
+   carry two fixed, explicit input references that have no bearing on tree
+   position at all — moving/copying/dragging one anywhere (even across
+   files) only ever changes parentId (display), never inputA/inputB, so
+   there is no ancestor-cycle risk to guard against for an ordinary
+   move/reparent any more (moveNode's only remaining guard is the plain
+   isDescendantOrSelf structural check every node needs). Also covers the
+   file-drop overlay isFileDrag() gate from the origin session.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("7. Copy/Cut/Paste + drag-and-drop + and/or/link cycle guard");
+  section("7. Copy/Cut/Paste + drag-and-drop + self-contained and/or/link inputs");
   const fa = await w.addFile("a.log", makeLog(0, 20), () => {});
   const fb = await w.addFile("b.log", makeLog(0, 20, { msgPrefix: "other" }), () => {});
   w.render();
@@ -1216,78 +1236,59 @@ await withApp(async (w, d, T) => {
   assert(T.state.activeId !== plain.id && T.state.nodes[T.state.activeId].filterType === "text",
     "plain filter copy/paste creates a new node");
 
-  // AND node combining a filter from A with one from B, then copy/cut/drag it
+  // AND node combining a filter from A with one from B — createAndOrNode
+  // always places its result under the FIRST input's root file, regardless
+  // of where the second input lives.
   const fFilterA = w.createFilterNode(fa.id, "text", "message");
   const fFilterB = w.createFilterNode(fb.id, "text", "other");
   const andNode = w.createAndOrNode(fFilterA.id, fFilterB.id, "and");
   w.render();
-  assert(andNode.linkedId === fFilterB.id, "AND node stores the second reference as linkedId");
+  assert(andNode.inputA === fFilterA.id && andNode.inputB === fFilterB.id, "AND node stores both explicit input references");
+  assert(andNode.parentId === fa.id, "AND node is placed directly under file A (inputA's root), not nested under fFilterA");
 
   T.state.activeId = andNode.id;
   T.state.clipboard = { id: andNode.id, mode: "copy" };
   T.state.activeId = fFilterA.id;
   const beforePaste = fFilterA.children.length;
   w.pasteClipboard();
-  assert(fFilterA.children.length === beforePaste + 1, "AND node can be copy/pasted (was blanket-blocked before 3f879dbe)");
+  assert(fFilterA.children.length === beforePaste + 1, "AND node can be copy/pasted");
   const pastedAndId = fFilterA.children[fFilterA.children.length - 1];
-  assert(T.state.nodes[pastedAndId].linkedId === fFilterB.id, "pasted AND node's linkedId still points at the original target (cloneSubtree carries it)");
+  assert(T.state.nodes[pastedAndId].inputA === fFilterA.id && T.state.nodes[pastedAndId].inputB === fFilterB.id,
+    "pasted AND node's inputA/inputB still point at the original nodes (cloneSubtree carries them)");
 
-  // Cycle guard: moving/pasting the AND node into its own linkedId target's
-  // subtree must be rejected (would make getEntries() recurse forever).
+  // Moving the AND node into what would have been a cyclic position under
+  // the old linkedId model is now a completely ordinary move — inputA/
+  // inputB never change, and parentId has no bearing on the node's own
+  // logic any more (see the "Core data model" note above createAndOrNode
+  // in philogg.html).
   const childOfB = w.createFilterNode(fFilterB.id, "text", "x");
-  const movedBad = w.moveNode(andNode.id, childOfB.id);
-  assert(movedBad === false, "moveNode rejects placing a node as descendant of its own linkedId target (cycle guard)");
-  assert(andNode.parentId === fFilterA.id, "AND node's parentId is unchanged after a blocked move");
+  const movedOk1 = w.moveNode(andNode.id, childOfB.id);
+  assert(movedOk1 === true, "moving the AND node under its own inputB's subtree now succeeds (no cycle risk any more)");
+  assert(andNode.parentId === childOfB.id, "AND node's parentId updated to the new position");
+  assert(andNode.inputA === fFilterA.id && andNode.inputB === fFilterB.id, "...but inputA/inputB are completely untouched by the move");
+  assert(w.getEntries(andNode.id), "getEntries still resolves correctly (no infinite recursion) after the move");
 
-  // childOfB lives under fFilterB, which is in file B — cutting andNode
-  // (file A) onto it is therefore a CROSS-FILE paste, not the same-file
-  // in-place reparent moveNode's own cycle guard exists for. Since this
-  // session, pasteClipboard/moveFilterNodeWithUndo route a cross-file
-  // cut/copy through import-style reconstruction instead (see Group 129,
-  // and docs/filters.md's "Squash / Detach copy" / "Core data model" in
-  // PROJECT.md) — a fresh, independent copy can never actually cycle back
-  // into its own ancestry, so this now SUCCEEDS, unlike the in-place
-  // same-file case. Sanity-checked here; the real cross-file coverage
-  // lives in Group 129.
+  // Cross-file cut/paste is now an ordinary paste too — no reconstruction,
+  // no cross-file special-casing (see docs/filters.md).
   T.state.activeId = andNode.id;
   T.state.clipboard = { id: andNode.id, mode: "cut" };
-  T.state.activeId = childOfB.id;
+  T.state.activeId = fb.id;
   w.pasteClipboard();
-  assert(T.state.clipboard === null, "cross-file cut succeeds via reconstruction (no real cycle risk once independent) — see Group 129");
-  assert(!T.state.nodes[andNode.id], "the original andNode was deleted as part of the cross-file move");
-  const movedAndCopy = T.state.nodes[T.state.activeId];
-  assert(movedAndCopy && movedAndCopy.filterType === "and", "a fresh, reconstructed AND copy is now the active node");
-  // Its own ancestor chain is rebuilt too (fFilterA's own clone), nested
-  // under childOfB — same "chain, not just the clicked node" shape
-  // serializeFilterBranch already uses for Save/Load.
-  const rebuiltParent = T.state.nodes[movedAndCopy.parentId];
-  assert(rebuiltParent && rebuiltParent.filterType === "text" && rebuiltParent.parentId === childOfB.id,
-    "the AND copy's own rebuilt ancestor (a fresh fFilterA clone) lives directly under childOfB");
-  assert(movedAndCopy.linkedId && movedAndCopy.linkedId !== fFilterB.id,
-    "the copy's linkedId points at a FRESH clone of fFilterB, never the original (which is now in a different file's tree than the copy's own chain)");
+  assert(T.state.clipboard === null, "cross-file cut succeeds as a plain move");
+  assert(T.state.nodes[andNode.id], "the SAME node id survives a cross-file cut/paste — no reconstruction any more");
+  assert(andNode.parentId === fb.id, "the AND node now sits under file B");
+  assert(andNode.inputA === fFilterA.id && andNode.inputB === fFilterB.id, "inputA/inputB are unaffected by crossing a file boundary");
 
-  // The actual "blocked cut keeps the clipboard active" case needs a
-  // genuinely SAME-FILE cyclic target — a fresh and/or pair entirely
-  // within file A, so pasteClipboard's cut branch takes the same-file
-  // (moveNode + cycle guard) path instead of the cross-file one above.
+  // Legit same-file move still works
   const gA = w.createFilterNode(fa.id, "text", "g");
   const gB = w.createFilterNode(fa.id, "text", "h");
   const gAnd = w.createAndOrNode(gA.id, gB.id, "and");
-  const gChildOfB = w.createFilterNode(gB.id, "text", "i");
-  T.state.activeId = gAnd.id;
-  T.state.clipboard = { id: gAnd.id, mode: "cut" };
-  T.state.activeId = gChildOfB.id;
-  w.pasteClipboard();
-  assert(T.state.clipboard !== null, "a same-file blocked cut-paste keeps the clipboard active instead of clearing it");
-  assert(gAnd.parentId === gA.id, "gAnd's parentId is unchanged after the blocked same-file move");
-
-  // Legit same-file move still works
   const otherFilterA = w.createFilterNode(fa.id, "text", "y");
   T.state.activeId = otherFilterA.id;
   const movedOk = w.moveNode(gAnd.id, otherFilterA.id);
   assert(movedOk === true, "moveNode allows a non-cyclic reparent");
   assert(gAnd.parentId === otherFilterA.id, "AND node's parentId updated after a legit move");
-  assert(gAnd.linkedId === gB.id, "linkedId survives a legit move untouched");
+  assert(gAnd.inputA === gA.id && gAnd.inputB === gB.id, "inputA/inputB survive a legit move untouched");
 
   // Real drag-and-drop DOM path + isFileDrag() overlay gate
   w.render();
@@ -1592,9 +1593,11 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(meta.notes.length === 1 && meta.notes[0].ordinal === 5 && meta.notes[0].text === "check this",
       "cache: note persisted as ordinal + text, separately from the bookmark");
     // The auto "Bookmarks" filter node is deliberately NOT part of the
-    // persisted filter tree (see syncBookmarksFilterNode) — only the two
-    // manually-created filters below are.
-    assert(meta.filters[f.cacheKey].length === 2, "cache: the auto 'Bookmarks' node is excluded from the persisted filter tree");
+    // persisted filter tree (see syncBookmarksFilterNode) — only the three
+    // manually-created top-level filters below are (t1, t2, and the AND
+    // combiner — createAndOrNode always places its result directly under
+    // the file, not nested under t1, see "Core data model" in PROJECT.md).
+    assert(meta.filters[f.cacheKey].length === 3, "cache: the auto 'Bookmarks' node is excluded from the persisted filter tree");
     assert(meta.settings.active && meta.settings.active.ref != null, "cache: active filter persisted as ref");
     const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
     assert(rec && rec.text.includes("at Baz.Qux()"), "cache: file text persisted incl. continuation lines");
@@ -1610,21 +1613,24 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(f.entries[3].message === savedMsg3, "restore: multi-line message round-tripped");
     assert(f.entries[5].raw === savedEntryRaw, "restore: entry raw identical after re-parse");
 
-    // 3 children, not 2: the two restored filters PLUS the auto "Bookmarks"
-    // node re-derived from the restored state.bookmarks (see
-    // syncBookmarksFilterNode, called at the end of restoreSessionFromCache)
-    // — unshifted to the front, so the two real filters are children[1]/[2].
-    assert(f.children.length === 3, "restore: both top-level filters back, plus the re-derived auto 'Bookmarks' node");
-    const autoNode = T.state.nodes[f.children[0]];
-    assert(autoNode.filterType === "bookmarks" && autoNode.locked === true, "restore: the auto 'Bookmarks' node is re-created, not persisted-and-reloaded verbatim");
-    const r1 = T.state.nodes[f.children[1]];
-    const r2 = T.state.nodes[f.children[2]];
-    assert(r1.filterType === "text" && r1.value === "message 1", "restore: first filter type/value");
-    assert(r2.highlightColor === "#ff0000", "restore: highlight colour preserved");
-    assert(r1.children.length === 1, "restore: nested AND node present");
-    const combo = T.state.nodes[r1.children[0]];
-    assert(combo.filterType === "and" && combo.linkedId === r2.id,
-      "restore: AND node's linkedRef remapped to the restored sibling's new id");
+    // 4 children, not 3: the three restored top-level filters (t1, t2, the
+    // AND combiner — always placed directly under the file, see "Core data
+    // model" in PROJECT.md; createAndOrNode unshifts, same convention as
+    // syncBookmarksFilterNode, so exact order isn't guaranteed) PLUS the
+    // auto "Bookmarks" node re-derived from the restored state.bookmarks
+    // (see syncBookmarksFilterNode, called at the end of
+    // restoreSessionFromCache).
+    assert(f.children.length === 4, "restore: all three top-level filters back, plus the re-derived auto 'Bookmarks' node");
+    const childNodes = f.children.map(id => T.state.nodes[id]);
+    const autoNode = childNodes.find(n => n.filterType === "bookmarks");
+    assert(autoNode && autoNode.locked === true, "restore: the auto 'Bookmarks' node is re-created, not persisted-and-reloaded verbatim");
+    const r1 = childNodes.find(n => n.filterType === "text" && n.value === "message 1");
+    const r2 = childNodes.find(n => n.filterType === "text" && n.value === "ERROR");
+    assert(r1, "restore: first filter type/value");
+    assert(r2 && r2.highlightColor === "#ff0000", "restore: highlight colour preserved");
+    const combo = childNodes.find(n => n.filterType === "and");
+    assert(combo && combo.inputA === r1.id && combo.inputB === r2.id,
+      "restore: AND node's inputARef/inputBRef remapped to the restored siblings' new ids");
     // "message 1" matches entries 1, 10..19; ERROR matches 0,5,10,15,20,25 —
     // intersection is exactly {10, 15}, so a correct linkedId remap yields 2.
     assert(w.getEntries(combo.id).length === 2, "restore: AND node re-evaluates to the correct result");
@@ -1793,18 +1799,23 @@ section("20. Session cache: persist in one window, restore in the next");
     await sleep(80);
     assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"),
       "tier1: identical content auto-matches with no dialog (name is display-only)");
-    // 3, not 2: the two imported filters plus the auto "Bookmarks" node
-    // re-derived from the imported bookmarks (see syncBookmarksFilterNode,
-    // called at the end of applySessionEntryByOrdinal/ByContent) — unshifted
-    // to the front, so the two real filters are children[1]/[2].
-    assert(f.children.length === 3, "tier1: both top-level filters applied, plus the re-derived auto 'Bookmarks' node");
-    assert(T.state.nodes[f.children[0]].filterType === "bookmarks", "tier1: auto 'Bookmarks' node re-created from the imported bookmarks");
-    const r1 = T.state.nodes[f.children[1]], r2 = T.state.nodes[f.children[2]];
-    assert(r1.filterType === "text" && r1.value === "message 1" && r2.highlightColor === "#ff0000",
+    // 4, not 3: the three imported top-level filters (t1, t2, the AND
+    // combiner — always placed directly under the file, see "Core data
+    // model" in PROJECT.md) plus the auto "Bookmarks" node re-derived from
+    // the imported bookmarks (see syncBookmarksFilterNode, called at the
+    // end of applySessionEntryByOrdinal/ByContent). createAndOrNode/
+    // syncBookmarksFilterNode both unshift, so exact order isn't guaranteed
+    // — find nodes by value/filterType instead.
+    assert(f.children.length === 4, "tier1: all three top-level filters applied, plus the re-derived auto 'Bookmarks' node");
+    const childNodes = f.children.map(id => T.state.nodes[id]);
+    assert(childNodes.some(n => n.filterType === "bookmarks"), "tier1: auto 'Bookmarks' node re-created from the imported bookmarks");
+    const r1 = childNodes.find(n => n.filterType === "text" && n.value === "message 1");
+    const r2 = childNodes.find(n => n.filterType === "text" && n.value === "ERROR");
+    assert(r1 && r2 && r2.highlightColor === "#ff0000",
       "tier1: filter values + highlight colour round-trip");
-    const combo = T.state.nodes[r1.children[0]];
-    assert(combo && combo.filterType === "and" && combo.linkedId === r2.id,
-      "tier1: AND node's linkedRef remapped to the imported sibling");
+    const combo = childNodes.find(n => n.filterType === "and");
+    assert(combo && combo.inputA === r1.id && combo.inputB === r2.id,
+      "tier1: AND node's inputARef/inputBRef remapped to the imported siblings");
     assert(w.getEntries(combo.id).length === 2, "tier1: AND node re-evaluates correctly (msgs 10,15)");
     assert(T.state.bookmarks.size === 2 && T.state.bookmarks.has(f.entries[5].id),
       "tier1: bookmarks attach by ordinal");
@@ -1831,7 +1842,7 @@ section("20. Session cache: persist in one window, restore in the next");
     await sleep(80);
     assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"),
       "tier2: grown file auto-matches via the overlapping time window");
-    assert(f.children.length === 3, "tier2: filters applied to the grown file, plus the auto 'Bookmarks' node");
+    assert(f.children.length === 4, "tier2: filters applied to the grown file, plus the auto 'Bookmarks' node");
     assert(T.state.bookmarks.has(f.entries[5].id) && f.entries[5].raw === savedRaw5,
       "tier2: ordinal-based bookmark lands on the identical in-window entry");
   });
@@ -1857,7 +1868,7 @@ section("20. Session cache: persist in one window, restore in the next");
     radio.checked = true;
     fireClick(d.querySelector("#sessionMatchApply"), w);
     await sleep(80);
-    assert(f.children.length === 3, "tier3: filters applied to the manually picked file, plus the auto 'Bookmarks' node");
+    assert(f.children.length === 4, "tier3: filters applied to the manually picked file, plus the auto 'Bookmarks' node");
     assert(T.state.bookmarks.size === 1, "tier3: only the still-present bookmarked line resolves");
     const [bid] = [...T.state.bookmarks.keys()];
     assert(T.entryIndex[bid].raw === savedRaw5,
@@ -1899,10 +1910,10 @@ section("20. Session cache: persist in one window, restore in the next");
     const f = T.state.nodes[T.state.rootIds[0]];
     assert(f.name === "worker-3.log" && f.entries.length === 30,
       "embedded: name + entry count round-trip through the embedded text");
-    assert(f.children.length === 3 && T.state.bookmarks.has(f.entries[5].id),
+    assert(f.children.length === 4 && T.state.bookmarks.has(f.entries[5].id),
       "embedded: filters + ordinal bookmarks applied to the materialized file, plus the auto 'Bookmarks' node");
-    const combo = T.state.nodes[T.state.nodes[f.children[1]].children[0]];
-    assert(T.state.activeId === combo.id, "embedded: active filter restored");
+    const combo = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "and");
+    assert(combo && T.state.activeId === combo.id, "embedded: active filter (the AND combiner) restored");
   });
 
   // --- Plain export sanity: a non-session JSON is rejected ---
@@ -2125,9 +2136,10 @@ section("20. Session cache: persist in one window, restore in the next");
 
     const linkNodes = Object.values(T.state.nodes).filter(n => n.filterType === "link");
     assert(linkNodes.length === 2, "multi-hop dialog: chain of 2 link nodes created under the hood");
-    const hop1 = linkNodes.find(n => n.parentId === first.id);
-    const hop2 = linkNodes.find(n => hop1 && n.parentId === hop1.id);
-    assert(!!hop1 && !!hop2, "multi-hop dialog: hop2 is chained under hop1, not both under the reference directly");
+    const hop1 = linkNodes.find(n => n.inputA === first.id);
+    const hop2 = linkNodes.find(n => hop1 && n.inputA === hop1.id);
+    assert(!!hop1 && !!hop2, "multi-hop dialog: hop2's inputA explicitly references hop1's own node id (not parentId nesting)");
+    assert(hop1.parentId === f.id && hop2.parentId === f.id, "both hops are placed directly under FILE, per the new placement rule — not nested under each other");
     const tupleRes = w.getEntries(hop2.id);
     assert(tupleRes.length === 1 && tupleRes[0].second.message === "Third A",
       "multi-hop dialog: resulting 3-way tuple resolves First -> Second -> Third correctly");
@@ -2164,22 +2176,22 @@ section("20. Session cache: persist in one window, restore in the next");
       "undo/redo: snapshotSubtree/restoreSubtree carry both new flags");
   });
 
-  // --- Backward compatibility: an old-format link JSON (no
-  // linkOrderEnforced/linkExclusive fields, as saved before this feature)
-  // still materializes cleanly, both new fields defaulting false. ---
+  // --- A serialized link node with no linkOrderEnforced/linkExclusive
+  // fields at all (e.g. hand-edited) still materializes cleanly, both
+  // fields defaulting false. ---
   await withApp(async (w, d, T) => {
     const log = makeLogAt([{ sec: 0, msg: "First A" }, { sec: 5, msg: "Second A" }]);
     const f = await w.addFile("a.log", log, () => {});
-    const oldRoots = [
-      { ref: 1, filterType: "text", name: "First", inverted: false, value: "First", children: [
-        { ref: 3, filterType: "link", name: "First -> Second", inverted: false, linkedRef: 2, linkDirection: "after", linkN: 1, children: [] },
-      ] },
+    const roots = [
+      { ref: 1, filterType: "text", name: "First", inverted: false, value: "First", children: [] },
       { ref: 2, filterType: "text", name: "Second", inverted: false, value: "Second", children: [] },
+      { ref: 3, filterType: "link", name: "First -> Second", inverted: false, inputARef: 1, inputBRef: 2, linkDirection: "after", linkN: 1, children: [] },
     ];
-    w.materializeCachedFilters(f, oldRoots);
+    w.materializeCachedFilters(f, roots);
     const linkNode = Object.values(T.state.nodes).find(n => n.filterType === "link");
     assert(!!linkNode && linkNode.linkOrderEnforced === false && linkNode.linkExclusive === false,
-      "backward compat: pre-feature link JSON materializes with both new flags defaulting to false");
+      "a link node with no order/exclusive fields materializes with both defaulting to false");
+    assert(linkNode.inputA && linkNode.inputB && !linkNode.inputBroken, "inputARef/inputBRef resolve correctly via materializeCachedFilters");
   });
 }
 
@@ -11123,10 +11135,14 @@ await withApp(async (w, d, T) => {
   const keep0Id = T.state.selectedId;
   assert(!!keep0Id, "sanity: clicking a Filtered-view row selects it");
 
-  // Alt+Arrow onto the Link filter, same mechanism as GROUP 99's tree nav —
-  // deliberately doesn't touch focusRegion/entriesView/selectedId.
-  fireKeydown(d, w, "ArrowDown", { altKey: true }); // keepFilter -> linkFilter (flattened tree order)
-  assert(T.state.activeId === linkFilter.id, "sanity: Alt+ArrowDown switched onto the Link filter");
+  // Switch the active node onto the Link filter (same net effect as an
+  // Alt+Arrow tree-nav step — see GROUP 99 — deliberately not touching
+  // focusRegion/entriesView/selectedId); linkFilter's own position in the
+  // tree (always directly under FILE now, see GROUP 128) isn't what this
+  // group is testing, just the stale-currentViewEntries guard once it's active.
+  T.state.activeId = linkFilter.id;
+  w.render();
+  assert(T.state.activeId === linkFilter.id, "sanity: active node switched onto the Link filter");
   assert(d.querySelector("#linkWrap").style.display !== "none", "the Link view is now showing in the Filtered pane");
 
   fireKeydown(d, w, "ArrowDown"); // plain arrow key nav, no Alt
@@ -11135,8 +11151,9 @@ await withApp(async (w, d, T) => {
 
   // Switching back to a plain text filter (renderTable() runs again)
   // refreshes currentViewEntries and arrow-key nav works normally again.
-  fireKeydown(d, w, "ArrowUp", { altKey: true }); // linkFilter -> keepFilter
-  assert(T.state.activeId === keepFilter.id, "sanity: Alt+ArrowUp switched back onto keepFilter");
+  T.state.activeId = keepFilter.id;
+  w.render();
+  assert(T.state.activeId === keepFilter.id, "sanity: switched back onto keepFilter");
   fireKeydown(d, w, "ArrowDown");
   const keep2Id = d.querySelectorAll("#tableRows .log-row")[1].dataset.entryId;
   assert(T.state.selectedId === keep2Id, "arrow-key nav works normally again once back on a plain (table) filter");
@@ -13605,365 +13622,120 @@ await withApp(async (w, d, T) => {
 }
 
 /* ============================================================
-   GROUP 128 — "Detach copy" (person-requested "squash"): collapses a
-   filter node's whole dependency chain (its ancestor chain plus any
-   linkedId targets' ancestor chains — the same "needed" set
-   serializeFilterBranch already computes for Save/Load) into a brand-new,
-   self-contained set of nodes, independent of everything else in the tree.
-   Reuses materializeSerializedRoots (refactored out of importFilterJson,
-   now shared) instead of cloneSubtree, specifically because cloneSubtree
-   keeps linkedId pointing at the ORIGINAL target — exactly the cross-tree
-   reference this action exists to break. Every node the detached copy
-   needs except the originally-clicked one gets hiddenInTree — renderNode
-   treats that as transparent (no row of its own, but its children still
-   render at the same depth) — so the whole private chain shows up in the
-   tree as exactly one row. All cloned nodes share one fresh squashGroup id
-   so deleteFilterNodeWithUndo can clean up the whole private chain
-   together instead of leaving hidden orphans behind, and moving/dragging
-   the visible row is blocked (its own parentId is required by its hidden
-   ancestor chain).
+   GROUP 128 — Self-contained and/or/link inputs (this session's linkedId ->
+   inputA/inputB redesign; supersedes/removes the previous, never-merged
+   squash-box/"Detach copy"/linkedId-dependency-highlight session — see
+   CHANGELOG.md). and/or/link nodes now carry two fixed, explicit input
+   references (node.inputA/node.inputB) that getEntries() reads directly,
+   completely independent of parentId/tree position; createAndOrNode/
+   createLinkNode always place their result as a new top-level child of the
+   shared root file; moving a node anywhere afterward only ever changes
+   parentId; and Unpack replaces a combiner in place with its two inputs
+   plus a fresh, explicitly-wired combiner at the same position.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("128. \"Detach copy\": collapses a link-based chain into one self-contained row");
+  section("128. Self-contained and/or/link inputs: placement, move, Unpack");
 
-  const f = await w.addFile("detach.log", makeLog(0, 10), () => {});
-  T.state.activeId = f.id;
-
+  const f = await w.addFile("128.log", makeLog(0, 10), () => {});
   const posFilter = w.createFilterNode(f.id, "text", "pos");
   const valFilter = w.createFilterNode(f.id, "text", "val");
+  w.render();
+
+  // --- Placement: AND/OR/LINK always land as a new top-level child of the
+  // shared root file, regardless of where the two inputs sit in the tree. ---
+  const nested = w.createFilterNode(posFilter.id, "text", "pos 1"); // a filter NESTED under posFilter
+  const andNode = w.createAndOrNode(nested.id, valFilter.id, "and");
+  assert(andNode.parentId === f.id, "AND node is placed directly under the FILE, not nested under either input");
+  assert(f.children.includes(andNode.id), "...and is a real top-level child of the file");
+  assert(andNode.inputA === nested.id && andNode.inputB === valFilter.id, "inputA/inputB reference the two selected filters explicitly");
+
+  // --- getEntries() reads inputA/inputB directly, independent of parentId:
+  // moving the AND node deep into an unrelated subtree changes nothing
+  // about its result. ---
+  const before = w.getEntries(andNode.id).map(e => e.id);
+  const unrelatedParent = w.createFilterNode(f.id, "text", "message");
+  const movedOk = w.moveNode(andNode.id, unrelatedParent.id);
+  assert(movedOk === true, "moving an and/or/link node is always a plain, unguarded reparent now");
+  assert(andNode.parentId === unrelatedParent.id, "parentId updated by the move");
+  assert(andNode.inputA === nested.id && andNode.inputB === valFilter.id, "inputA/inputB are untouched by the move");
+  const after = w.getEntries(andNode.id).map(e => e.id);
+  assert(JSON.stringify(before) === JSON.stringify(after), "the filtered RESULT is identical before/after the move — parentId has no bearing on it");
+
+  // --- Link node: same placement + input-based logic, verified against
+  // nearest-match pairing rather than set intersection. ---
   const link = w.createLinkNode(posFilter.id, valFilter.id, "before", 1, {});
-  const extract = w.createFilterNode(link.id, "extract", "[value:float]");
-  T.state.activeId = extract.id;
-  w.render();
+  assert(link.parentId === f.id, "LINK node is also placed directly under the FILE");
+  assert(link.inputA === posFilter.id && link.inputB === valFilter.id, "LINK node's inputA/inputB are the reference/target respectively");
+  const pairs = w.getEntries(link.id);
+  assert(Array.isArray(pairs), "LINK's getEntries resolves via inputA/inputB without throwing");
 
-  const beforeNodeCount = Object.keys(T.state.nodes).length;
-  const newId = w.detachFilterChain(extract.id);
-  assert(newId && T.state.nodes[newId], "detachFilterChain returns the fresh id of the clicked node's own clone");
-  const clone = T.state.nodes[newId];
-  assert(clone.filterType === "extract" && clone.value === "[value:float]", "the clone keeps the original's filterType/value — still editable as a normal extraction");
-  assert(newId !== extract.id, "it's a genuinely new node, not the original");
-  assert(T.state.nodes[extract.id], "the original chain is left completely untouched");
+  // --- getEntries() cycle guard: a corrupt/hand-edited inputA/inputB cycle
+  // must degrade gracefully (empty result), not recurse forever. ---
+  const cyc1 = w.createFilterNode(f.id, "text", "x");
+  const cyc2 = w.createFilterNode(f.id, "text", "y");
+  const cycAnd = w.createAndOrNode(cyc1.id, cyc2.id, "and");
+  cyc1.filterType = "and"; cyc1.inputA = cycAnd.id; cyc1.inputB = cyc2.id; // hand-corrupt a cycle: cycAnd -> cyc1 -> cycAnd
+  let threw = false;
+  let cyclicResult = null;
+  try { cyclicResult = w.getEntries(cycAnd.id); } catch { threw = true; }
+  assert(!threw, "a genuine inputA/inputB cycle does not crash getEntries()");
+  assert(Array.isArray(cyclicResult), "...it resolves to an array (degrades gracefully) instead");
 
-  // --- Structurally independent: its private chain uses FRESH ids, and its
-  // linkedId (inside the private link clone) points at the fresh value-
-  // filter clone, never at the original valFilter. ---
-  const cloneLink = T.state.nodes[clone.parentId];
-  assert(cloneLink.filterType === "link", "the clone's own parent is a private link-node clone");
-  assert(cloneLink.id !== link.id, "...a fresh clone, not the original link node");
-  assert(cloneLink.linkedId && cloneLink.linkedId !== valFilter.id, "the private link's linkedId points at a fresh clone of the value filter, not the original");
-  const clonePos = T.state.nodes[cloneLink.parentId];
-  assert(clonePos.id !== posFilter.id && clonePos.filterType === "text" && clonePos.value === "pos", "the private position-filter clone is a fresh node with the same value");
-  const cloneVal = T.state.nodes[cloneLink.linkedId];
-  assert(cloneVal.filterType === "text" && cloneVal.value === "val", "the private value-filter clone carries the same value too");
+  // --- Unpack: replaces an and/or/link node in place with its two inputs
+  // (cloned in as visible siblings) plus a fresh combiner referencing them,
+  // at the same tree position — a no-op on the actual filtering result. ---
+  const unpackA = w.createFilterNode(f.id, "text", "pos");
+  const unpackB = w.createFilterNode(f.id, "text", "val");
+  const toUnpack = w.createAndOrNode(unpackA.id, unpackB.id, "and");
+  const resultBefore = w.getEntries(toUnpack.id).map(e => e.id);
+  const parentBefore = toUnpack.parentId;
+  const newComboId = w.unpackAndOrLinkNode(toUnpack.id);
+  assert(newComboId && T.state.nodes[newComboId], "unpackAndOrLinkNode returns the id of the fresh combiner node");
+  assert(!T.state.nodes[toUnpack.id], "the original combiner node is gone, replaced by the fresh one");
+  const newCombo = T.state.nodes[newComboId];
+  assert(newCombo.filterType === "and", "the fresh combiner is the same filter type as the unpacked node");
+  assert(newCombo.parentId === parentBefore, "the fresh combiner sits at the SAME tree position the unpacked node occupied");
+  assert(T.state.nodes[newCombo.inputA] && T.state.nodes[newCombo.inputA].value === "pos",
+    "the fresh combiner's inputA is a real, visible clone of the original inputA");
+  assert(T.state.nodes[newCombo.inputB] && T.state.nodes[newCombo.inputB].value === "val",
+    "the fresh combiner's inputB is a real, visible clone of the original inputB");
+  assert(newCombo.inputA !== unpackA.id && newCombo.inputB !== unpackB.id,
+    "the clones are FRESH nodes, not the original unpackA/unpackB (which stay wherever they already were)");
+  const resultAfter = w.getEntries(newComboId).map(e => e.id);
+  assert(JSON.stringify(resultBefore) === JSON.stringify(resultAfter), "Unpack is a no-op on the actual filtering result");
 
-  // --- squashGroup/hiddenInTree tagging ---
-  const groupId = clone.squashGroup;
-  assert(groupId && cloneLink.squashGroup === groupId && clonePos.squashGroup === groupId && cloneVal.squashGroup === groupId,
-    "every node in the private chain (display included) shares one squashGroup id");
-  assert(!clone.hiddenInTree, "the clicked node's own clone is NOT hidden — it's the one visible row");
-  assert(cloneLink.hiddenInTree && clonePos.hiddenInTree && cloneVal.hiddenInTree, "every OTHER node in the private chain is hiddenInTree");
-  assert(Object.keys(T.state.nodes).length === beforeNodeCount + 4, "created exactly 4 new nodes: position/value/link/extract clones");
+  // --- Persistence carriers thread inputA/inputB through unchanged ---
+  const clone = w.cloneSubtree(andNode.id, f.id);
+  assert(clone.inputA === andNode.inputA && clone.inputB === andNode.inputB,
+    "cloneSubtree keeps the clone referencing the SAME original inputA/inputB ids");
 
-  // --- Bugfix (this session, person-reported): materializeSerializedRoots
-  // already attaches each top-level root to file.children itself (a plain
-  // push) — detachFilterChain used to ALSO unshift them afterward, so every
-  // root ended up listed twice in file.children and rendered as two rows
-  // for the same node id, both showing ".active" together. ---
-  assert(new Set(f.children).size === f.children.length, "no id appears twice in the file's own children array after detach");
-  assert(f.children.filter(id => id === clonePos.id).length === 1 && f.children.filter(id => id === cloneVal.id).length === 1,
-    "each top-level clone (position, value) is listed exactly once");
+  const snap = w.snapshotSubtree(andNode.id);
+  delete T.state.nodes[andNode.id];
+  const restored = w.restoreSubtree(snap);
+  assert(restored.id === andNode.id && restored.inputA === nested.id && restored.inputB === valFilter.id,
+    "snapshotSubtree/restoreSubtree preserve the ORIGINAL id and inputA/inputB (undo/redo)");
 
-  // --- Tree rendering: exactly one row for the whole group, at the top level ---
-  w.render();
-  assert(d.querySelector('.tree-row[data-node-id="' + newId + '"]') !== null, "the clone's own row IS rendered");
-  assert(d.querySelectorAll('.tree-row[data-node-id="' + newId + '"]').length === 1,
-    "...and exactly ONCE, not twice (the duplicate-row bug above)");
-  [cloneLink.id, clonePos.id, cloneVal.id].forEach(id => {
-    assert(d.querySelector('.tree-row[data-node-id="' + id + '"]') === null, "a hiddenInTree member (" + id + ") gets no row of its own");
-  });
-  assert(w.flattenTreeIds().includes(newId) && !w.flattenTreeIds().includes(cloneLink.id),
-    "arrow-key tree nav (flattenTreeIds) sees the visible clone but skips past the hidden chain, same passthrough as rendering");
-
-  // --- Still behaves exactly like a normal extraction node ---
-  let threwOnGetEntries = false;
-  try { w.getEntries(newId); } catch { threwOnGetEntries = true; }
-  assert(!threwOnGetEntries, "getEntries computes normally through the private chain without throwing");
-
-  // --- Dragging/moving the visible row moves the WHOLE group's top-level
-  // members together (person-reported: it used to be flatly blocked) — the
-  // display node's own parentId (still the private link clone) never
-  // changes, only where the group's top-level roots are filed. ---
-  const otherTarget = w.createFilterNode(f.id, "text", "other");
-  const movedId = w.moveFilterNodeWithUndo(newId, otherTarget.id);
-  assert(movedId === newId, "moveFilterNodeWithUndo succeeds and returns the SAME id (the display node itself never gets a new id)");
-  assert(clonePos.parentId === otherTarget.id, "the group's top-level position-filter clone was reparented to the drop target");
-  assert(T.state.nodes[newId].parentId === cloneLink.id, "the display node's OWN parentId is untouched — still the private link clone");
-  assert(d.querySelectorAll('.tree-row[data-node-id="' + newId + '"]').length === 1, "still renders as exactly one row after the move");
-  w.undo();
-  assert(clonePos.parentId === f.id, "undo restores the group's top-level position to directly under the file");
-  assert(T.state.nodes[newId].parentId === cloneLink.id, "the display node's parentId was never touched by the move OR its undo");
-  T.state.activeId = newId;
-
-  // --- Deleting the visible row cascades to the whole private group — no
-  // orphans left behind — and undo restores every member with its
-  // original id and flags. ---
-  w.deleteFilterNodeWithUndo(newId);
-  assert(!T.state.nodes[newId] && !T.state.nodes[cloneLink.id] && !T.state.nodes[clonePos.id] && !T.state.nodes[cloneVal.id],
-    "deleting the visible node removes the ENTIRE private group, not just itself");
-  assert(Object.keys(T.state.nodes).length === beforeNodeCount + 1, "no orphaned hidden nodes remain in state.nodes (+1 for otherTarget, created above and untouched by the delete)");
-  assert(T.state.nodes[extract.id] && T.state.nodes[link.id] && T.state.nodes[posFilter.id] && T.state.nodes[valFilter.id],
-    "the ORIGINAL (non-detached) chain is untouched by deleting its detached copy");
-
-  w.undo();
-  assert(T.state.nodes[newId] && T.state.nodes[cloneLink.id] && T.state.nodes[clonePos.id] && T.state.nodes[cloneVal.id],
-    "undo restores every group member, with their original (post-detach) ids");
-  assert(T.state.nodes[newId].squashGroup === groupId && T.state.nodes[cloneLink.id].hiddenInTree === true,
-    "restored members keep their squashGroup/hiddenInTree flags");
-  w.render();
-  assert(d.querySelector('.tree-row[data-node-id="' + newId + '"]') !== null, "the group renders back to its single-row form after undo");
-
-  // --- Session cache round trip: squashGroup/hiddenInTree survive a
-  // serialize/materialize cycle verbatim (opaque tag, same file both
-  // times, no remapping needed). ---
-  const { roots } = w.serializeFilterTreeForCache(f);
-  // Disambiguate from the ORIGINAL (non-detached) extract node, which has
-  // the identical name/filterType — squashGroup is exactly the thing
-  // proving it's the clone, so filter on that rather than name/type.
-  const serializedClone = (function find(list) {
-    for (const n of list) { if (n.squashGroup === groupId && n.filterType === "extract") return n; const r = find(n.children); if (r) return r; }
-    return null;
-  })(roots);
-  assert(serializedClone && serializedClone.squashGroup === groupId, "serializeFilterTreeForCache carries squashGroup through");
-  const f2 = await w.addFile("detach2.log", makeLog(0, 10), () => {});
-  const refMap2 = w.materializeCachedFilters(f2, roots);
-  const restoredCloneId = Object.values(refMap2).find(id => T.state.nodes[id].squashGroup === groupId && T.state.nodes[id].filterType === "extract");
-  assert(restoredCloneId, "sanity: the re-materialized clone exists in the fresh file");
-  assert(T.state.nodes[restoredCloneId].squashGroup === groupId, "materializeCachedFilters carries squashGroup through unchanged (opaque, same-file tag)");
-  const restoredLinkId = T.state.nodes[restoredCloneId].parentId;
-  assert(T.state.nodes[restoredLinkId].hiddenInTree === true, "hiddenInTree round-trips through the session cache too");
-});
-
-/* ============================================================
-   GROUP 129 — Cross-file paste/move now reconstructs instead of keeping
-   linkedId pointing at the original file (person-requested design
-   follow-up to Group 128's "Detach copy"). pasteClipboard's Copy path and
-   moveFilterNodeWithUndo (Cut+Paste AND real drag-and-drop both route
-   through it) now detect a cross-file target via getRootFileId and, when
-   the source/destination differ, use importBranchAt — the same
-   serializeFilterBranch + materializeSerializedRoots rebuild Save/Load
-   uses — instead of cloneSubtree (Copy) or a plain reparent (Cut/drag).
-   Same-file behavior is unchanged (see Group 7 for that coverage).
-   ============================================================ */
-await withApp(async (w, d, T) => {
-  section("129. Cross-file paste/move reconstructs instead of cross-file linkedId");
-
-  const fa = await w.addFile("129a.log", makeLog(0, 10), () => {});
-  const fb = await w.addFile("129b.log", makeLog(0, 10, { msgPrefix: "other" }), () => {});
-  w.render();
-
-  // --- Cross-file COPY: an AND node (linkedId into file A itself) copied
-  // into file B must not leave its linkedId pointing back into file A. ---
-  const refA = w.createFilterNode(fa.id, "text", "message");
-  const targetA = w.createFilterNode(fa.id, "text", "message");
-  const andA = w.createAndOrNode(refA.id, targetA.id, "and");
-  const destInB = w.createFilterNode(fb.id, "text", "other");
-  w.render();
-
-  T.state.activeId = andA.id;
-  T.state.clipboard = { id: andA.id, mode: "copy" };
-  T.state.activeId = destInB.id;
-  const beforeChildren = destInB.children.length;
-  w.pasteClipboard();
-  assert(destInB.children.length === beforeChildren + 1, "cross-file copy inserts a new node under the destination");
-  const copiedAnd = T.state.nodes[T.state.activeId];
-  assert(copiedAnd && copiedAnd.filterType === "and", "the copy is placed active");
-  assert(T.state.nodes[andA.id], "the ORIGINAL and node is untouched by a Copy");
-  assert(copiedAnd.linkedId && copiedAnd.linkedId !== targetA.id, "the copy's linkedId points at a FRESH clone, never the original file-A node");
-  assert(w.getRootFileId(copiedAnd.linkedId) === fb.id, "...and that fresh clone lives in file B, the copy's own file, not file A");
-  assert(T.state.clipboard !== null, "clipboard stays active after a Copy, same as the same-file convention");
-
-  // --- Cross-file CUT: the original is deleted, a fresh reconstruction
-  // takes its place at the destination. ---
-  const refA2 = w.createFilterNode(fa.id, "text", "message");
-  const targetA2 = w.createFilterNode(fa.id, "text", "message");
-  const andA2 = w.createAndOrNode(refA2.id, targetA2.id, "and");
-  const destInB2 = w.createFilterNode(fb.id, "text", "other");
-  w.render();
-
-  T.state.activeId = andA2.id;
-  T.state.clipboard = { id: andA2.id, mode: "cut" };
-  T.state.activeId = destInB2.id;
-  w.pasteClipboard();
-  assert(!T.state.nodes[andA2.id], "cross-file cut deletes the original node");
-  assert(T.state.clipboard === null, "clipboard clears after a successful Cut, same as the same-file convention");
-  const cutAndCopy = T.state.nodes[T.state.activeId];
-  assert(cutAndCopy && cutAndCopy.filterType === "and" && w.getRootFileId(cutAndCopy.linkedId) === fb.id,
-    "the moved copy's linkedId also points into file B, not the deleted original's file A");
-
-  // --- Same shared function via a real drag-and-drop drop (not just
-  // pasteClipboard) — moveFilterNodeWithUndo is the one choke point both
-  // go through, so this proves drag-and-drop gets the same fix for free. ---
-  const refA3 = w.createFilterNode(fa.id, "text", "message");
-  const targetA3 = w.createFilterNode(fa.id, "text", "message");
-  const andA3 = w.createAndOrNode(refA3.id, targetA3.id, "and");
-  const destInB3 = w.createFilterNode(fb.id, "text", "other");
-  const movedId = w.moveFilterNodeWithUndo(andA3.id, destInB3.id);
-  assert(typeof movedId === "string" && movedId !== andA3.id, "moveFilterNodeWithUndo returns a FRESH id for a cross-file move, not the original nodeId");
-  assert(!T.state.nodes[andA3.id], "the original is deleted");
-  assert(T.state.nodes[movedId] && w.getRootFileId(T.state.nodes[movedId].linkedId) === fb.id,
-    "the reconstructed node's linkedId points into the destination file");
-
-  // --- Same-file behavior is completely unaffected: a plain reparent,
-  // same nodeId, linkedId untouched (Group 7 covers this in depth; this is
-  // just a sanity check that the new cross-file branch doesn't fire here). ---
-  const refA4 = w.createFilterNode(fa.id, "text", "message");
-  const targetA4 = w.createFilterNode(fa.id, "text", "message");
-  const andA4 = w.createAndOrNode(refA4.id, targetA4.id, "and");
-  const otherInA = w.createFilterNode(fa.id, "text", "message");
-  const sameFileMoved = w.moveFilterNodeWithUndo(andA4.id, otherInA.id);
-  assert(sameFileMoved === andA4.id, "a same-file move returns the SAME nodeId (nothing reconstructed)");
-  assert(andA4.linkedId === targetA4.id, "same-file move leaves linkedId completely untouched");
-});
-
-/* ============================================================
-   GROUP 130 — A "Detach copy" group now stays collapsed through Save/Load
-   JSON (person-requested: it was unpacking back to plain visible nodes on
-   import) + a new manual expand/collapse chevron
-   (toggleSquashGroupExpanded). serializeFilterBranch now emits
-   `squashGroupRef` (the REF NUMBER of the group's one visible member —
-   squashGroup itself is an opaque per-node tag, not a node, so it can't
-   ride the existing ref/linkedRef scheme directly) alongside
-   `hiddenInTree`/`squashExpanded`; materializeSerializedRoots resolves
-   `squashGroupRef` back into a real (freshly-generated-equivalent)
-   squashGroup tag shared by the whole reconstructed group, reusing the
-   display member's own new id as that tag.
-   ============================================================ */
-await withApp(async (w, d, T) => {
-  section("130. Detach copy stays collapsed through Save/Load, plus manual expand/collapse");
-
-  const f = await w.addFile("130.log", makeLog(0, 10), () => {});
-  const posFilter = w.createFilterNode(f.id, "text", "pos");
-  const valFilter = w.createFilterNode(f.id, "text", "val");
-  const link = w.createLinkNode(posFilter.id, valFilter.id, "before", 1, {});
-  const extract = w.createFilterNode(link.id, "extract", "[value:float]");
-  T.state.activeId = extract.id;
-  const displayId = w.detachFilterChain(extract.id);
-  w.render();
-  assert(d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 1, "sanity: the detached group renders as one row before export");
-
-  // --- Save/Load JSON round trip onto a FRESH file keeps it collapsed ---
-  const branch = w.serializeFilterBranch(displayId);
-  assert(branch, "sanity: serializeFilterBranch succeeds on a squashed node");
-  const squashedRoot = branch.roots.find(r => r.attach === "target");
-  assert(squashedRoot && squashedRoot.squashGroupRef != null, "the exported branch carries squashGroupRef");
-
-  const f2 = await w.addFile("130b.log", makeLog(0, 10), () => {});
-  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
-  const setLoadTarget = targetId => {
-    const s = d.createElement("script");
-    s.textContent = `loadFilterTargetId = ${JSON.stringify(targetId)};`;
-    d.body.appendChild(s);
-  };
-  setLoadTarget(f2.id);
-  w.importFilterJson(json);
-  w.render();
-
-  const loadedDisplayId = T.state.activeId;
-  const loadedDisplay = T.state.nodes[loadedDisplayId];
-  assert(loadedDisplay && loadedDisplay.filterType === "extract" && loadedDisplay.squashGroup, "the loaded node is the display member of a freshly-tagged squashGroup");
-  assert(!loadedDisplay.hiddenInTree, "...and is itself NOT hidden — it's the one visible row");
-  const loadedLink = T.state.nodes[loadedDisplay.parentId];
-  assert(loadedLink && loadedLink.hiddenInTree && loadedLink.squashGroup === loadedDisplay.squashGroup,
-    "its private link-node ancestor was reconstructed hiddenInTree, same squashGroup tag");
-  assert(d.querySelectorAll('.tree-row[data-node-id="' + loadedDisplayId + '"]').length === 1, "renders as exactly one row (the box's own header) while collapsed");
-  assert(d.querySelector(".tree-squash-box"), "the box background is visible even while collapsed");
-  assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') === null, "the private link clone still gets no row of its own while collapsed");
-
-  // --- Manual expand/collapse chevron ---
-  const chevronBefore = d.querySelector('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron');
-  assert(chevronBefore && !chevronBefore.classList.contains("expanded"), "the display row shows a collapsed expand/collapse chevron");
-  w.toggleSquashGroupExpanded(loadedDisplayId);
-  w.render();
-  assert(T.state.nodes[loadedLink.id].squashExpanded === true, "toggling sets squashExpanded on every group member");
-  assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') !== null, "expanding reveals the private link clone as a real row");
-  // The display node's own row now renders TWICE while expanded — once as
-  // the box's own top row (always there), once again at the bottom of the
-  // revealed chain (person's own explicit preference: both are the exact
-  // same node id, so both light up together when selected).
-  const chevrons = [...d.querySelectorAll('.tree-row[data-node-id="' + loadedDisplayId + '"] .tree-chevron')];
-  assert(chevrons.length === 2 && chevrons.every(c => c.classList.contains("expanded")),
-    "the display node's row appears twice while expanded, both chevrons showing expanded");
-
-  // Collapse again via the OTHER member's own chevron (any member's row can
-  // toggle the whole group, not just the original display's).
-  w.toggleSquashGroupExpanded(loadedLink.id);
-  w.render();
-  assert(T.state.nodes[loadedDisplayId].squashExpanded === false, "re-collapsing from a different group member's row flips the WHOLE group back");
-  assert(d.querySelector('.tree-row[data-node-id="' + loadedLink.id + '"]') === null, "the group is one row again");
-
-  // --- squashExpanded also round-trips through the session cache ---
-  w.toggleSquashGroupExpanded(loadedDisplayId); // leave it expanded for this check
-  const { roots: cacheRoots } = w.serializeFilterTreeForCache(f2);
-  const findExpanded = list => {
-    for (const n of list) { if (n.squashExpanded) return n; const r = findExpanded(n.children); if (r) return r; }
-    return null;
-  };
-  assert(findExpanded(cacheRoots), "serializeFilterTreeForCache carries squashExpanded through");
-});
-
-/* ============================================================
-   GROUP 131 — linkedId dependency highlight (person-requested design
-   follow-up): selecting an and/or/link node highlights its linkedId
-   target elsewhere in the tree (.dep-target); selecting a node that's
-   POINTED AT by another node's linkedId highlights that other node
-   (.dep-user) — computeLinkedDependencyHighlight, called once per
-   renderTree(), read by renderNode via the module-level
-   depTargetId/depUserIds.
-   ============================================================ */
-await withApp(async (w, d, T) => {
-  section("131. linkedId dependency highlight on selection");
-
-  const f = await w.addFile("131.log", makeLog(0, 10), () => {});
-  const refFilter = w.createFilterNode(f.id, "text", "message");
-  const targetFilter = w.createFilterNode(f.id, "text", "message");
-  const andNode = w.createAndOrNode(refFilter.id, targetFilter.id, "and");
-  const unrelated = w.createFilterNode(f.id, "text", "message");
-
-  // Selecting the AND node highlights its linkedId TARGET.
-  T.state.activeId = andNode.id;
-  w.render();
-  const targetRow = () => d.querySelector('.tree-row[data-node-id="' + targetFilter.id + '"]');
-  const andRow = () => d.querySelector('.tree-row[data-node-id="' + andNode.id + '"]');
-  const unrelatedRow = () => d.querySelector('.tree-row[data-node-id="' + unrelated.id + '"]');
-  assert(targetRow().classList.contains("dep-target"), "the AND node's linkedId target is marked .dep-target while the AND node is selected");
-  assert(!andRow().classList.contains("dep-target") && !andRow().classList.contains("dep-user"), "the selected node itself never highlights its own row (that's .active's job)");
-  assert(!unrelatedRow().classList.contains("dep-target") && !unrelatedRow().classList.contains("dep-user"), "an unrelated node gets no highlight class");
-
-  // Selecting the TARGET highlights the AND node back (.dep-user).
-  T.state.activeId = targetFilter.id;
-  w.render();
-  assert(andRow().classList.contains("dep-user"), "selecting the linkedId TARGET highlights the node that points at it (.dep-user)");
-  assert(!targetRow().classList.contains("dep-target") && !targetRow().classList.contains("dep-user"), "the newly-selected node itself is unmarked");
-
-  // Selecting an unrelated node highlights nothing.
-  T.state.activeId = unrelated.id;
-  w.render();
-  assert(!andRow().classList.contains("dep-target") && !andRow().classList.contains("dep-user") &&
-    !targetRow().classList.contains("dep-target") && !targetRow().classList.contains("dep-user"),
-    "selecting a node with no linkedId relationship at all highlights nothing");
+  const { roots: cacheRoots } = w.serializeFilterTreeForCache(f);
+  const findAnd = list => { for (const n of list) { if (n.filterType === "and" && n.inputARef != null) return n; const r = findAnd(n.children); if (r) return r; } return null; };
+  const serializedAnd = findAnd(cacheRoots);
+  assert(serializedAnd, "serializeFilterTreeForCache emits inputARef/inputBRef for an and/or node");
+  const f2 = await w.addFile("128b.log", makeLog(0, 10), () => {});
+  const refMap2 = w.materializeCachedFilters(f2, cacheRoots);
+  const restoredAndId = Object.values(refMap2).find(id => T.state.nodes[id].filterType === "and" && T.state.nodes[id].inputA);
+  assert(restoredAndId, "materializeCachedFilters resolves inputARef/inputBRef back into real inputA/inputB ids");
+  assert(!T.state.nodes[restoredAndId].inputBroken, "a fully-resolved and/or node round-trips through the session cache without being marked broken");
 });
 
 /* ============================================================
    GROUP 132 — Tree row UI follow-ups (person-reported, screenshot-driven):
-   generic collapse/expand for ANY node with children (not just squash
-   groups), a squash group's expand now opens a set-apart inline box
-   (.tree-squash-box) instead of unpacking flat rows, extract nodes get a
-   highlight-color swatch too, and a new Settings -> Behavior "Tree row
-   type indicator" (icon vs. TXT/LNK/... abbreviation, fixed-width either
-   way) replaces the old always-both display.
+   generic collapse/expand for ANY node with children, extract nodes get a
+   highlight-color swatch too, the row-count percentage bar is gone
+   outright, and a new Settings -> Behavior "Tree row type indicator" (icon
+   vs. TXT/LNK/... abbreviation, fixed-width either way) replaces the old
+   always-both display.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("132. Tree row UI follow-ups: generic collapse, squash box, extract swatch, indicator setting");
+  section("132. Tree row UI follow-ups: generic collapse, extract swatch, indicator setting");
 
   const f = await w.addFile("132.log", makeLog(0, 10), () => {});
   const parent = w.createFilterNode(f.id, "text", "message");
@@ -13984,73 +13756,13 @@ await withApp(async (w, d, T) => {
   assert(T.state.nodes[parent.id].collapsed === false, "clicking again expands it back");
   assert(d.querySelector('.tree-row[data-node-id="' + child.id + '"]') !== null, "child reappears");
 
-  // A leaf node (no children, not a squash group) gets an empty chevron
-  // slot — reserved space, no button — so the icon never shifts.
+  // A leaf node gets an empty chevron slot — reserved space, no button —
+  // so the icon never shifts.
   const leafSlot = d.querySelector('.tree-row[data-node-id="' + child.id + '"] .tree-chevron-slot');
   assert(leafSlot && !leafSlot.querySelector(".tree-chevron"), "a leaf row reserves the chevron slot but shows no button in it");
 
-  // --- Squash group: expanding opens a set-apart inline box, doesn't
-  // unpack into flat sibling rows any more ---
-  const posF = w.createFilterNode(f.id, "text", "pos");
-  const valF = w.createFilterNode(f.id, "text", "val");
-  const link = w.createLinkNode(posF.id, valF.id, "before", 1, {});
-  const extract = w.createFilterNode(link.id, "extract", "[value:float]");
-  T.state.activeId = extract.id;
-  const displayId = w.detachFilterChain(extract.id);
+  const extract = w.createFilterNode(f.id, "extract", "[value:float]");
   w.render();
-
-  const displayChevron = () => d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron');
-  assert(displayChevron() && !displayChevron().classList.contains("expanded"), "the squash display shows a collapsed chevron");
-  const boxCollapsed = d.querySelector(".tree-squash-box");
-  assert(boxCollapsed, "the box background is visible even while collapsed (person-reported: should look like a detached copy with logic inside from the start)");
-  assert(boxCollapsed.querySelector('.tree-row[data-node-id="' + displayId + '"]'), "...and contains the display node's own row as its only content while collapsed");
-  assert(boxCollapsed.querySelector(".tree-squash-divider") === null, "no divider/revealed chain yet while collapsed");
-
-  fireClick(displayChevron(), w);
-  assert(T.state.nodes[displayId].squashExpanded === true, "clicking it expands the group");
-  const box = d.querySelector(".tree-squash-box");
-  assert(box, "the box is still there, now expanded");
-  const cloneLinkId = T.state.nodes[displayId].parentId;
-  assert(box.querySelector('.tree-row[data-node-id="' + cloneLinkId + '"]') !== null,
-    "the private link clone renders INSIDE the box, not as a flat top-level sibling");
-  // The display node's own row now renders TWICE while expanded — once as
-  // the box's top row (always there, collapsed or not), once again at the
-  // bottom of the revealed chain — same real node id both times, so both
-  // light up together when selected (person's own explicit preference:
-  // "doppelte Selektion", over an earlier read-only-header design).
-  const displayRows = [...box.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]')];
-  assert(displayRows.length === 2, "the display node's row appears exactly twice inside the box while expanded, got " + displayRows.length);
-  assert(displayRows.every(r => r.querySelector(".tree-chevron").classList.contains("expanded")),
-    "both instances carry a working, expanded-state chevron");
-  const divider = box.querySelector(".tree-squash-divider");
-  assert(divider, "a divider separates the (always-present) top row from the revealed chain below it");
-  assert(displayRows[0].compareDocumentPosition(divider) & w.Node.DOCUMENT_POSITION_FOLLOWING,
-    "the divider sits AFTER the box's first (always-present) display row");
-
-  T.state.activeId = displayId;
-  w.render();
-  assert([...d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]')].every(r => r.classList.contains("active")),
-    "selecting the display node marks BOTH its rendered rows .active together — literally the same node id, not a synthetic mirror");
-
-  // --- A hidden member's row, now real INSIDE the box, must stay
-  // non-draggable, and moving it (any entry point) still moves the WHOLE
-  // group rather than corrupting it via a plain in-place reparent. ---
-  const cloneLinkRow = box.querySelector('.tree-row[data-node-id="' + cloneLinkId + '"]');
-  assert(cloneLinkRow.getAttribute("draggable") !== "true", "a hiddenInTree member's row (even shown inside the box) is not draggable");
-  const otherSpot = w.createFilterNode(f.id, "text", "elsewhere");
-  const clonePosId = T.state.nodes[cloneLinkId].parentId;
-  const movedViaHiddenMember = w.moveFilterNodeWithUndo(cloneLinkId, otherSpot.id);
-  assert(movedViaHiddenMember === cloneLinkId, "moveFilterNodeWithUndo still succeeds when called on a hidden member directly");
-  assert(T.state.nodes[clonePosId].parentId === otherSpot.id, "...and moves the group's own top-level root, not the hidden member itself in place");
-  w.undo();
-
-  fireClick(d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron'), w);
-  assert(T.state.nodes[displayId].squashExpanded === false, "collapsing (via either instance's chevron) flips squashExpanded back off");
-  const boxAfterCollapse = d.querySelector(".tree-squash-box");
-  assert(boxAfterCollapse, "the box is still there after collapsing — it never fully disappears any more");
-  assert(boxAfterCollapse.querySelector(".tree-squash-divider") === null, "...but the divider/revealed chain are gone again");
-  assert(d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 1,
-    "the display node's row is back to appearing exactly once");
 
   // --- The row-count percentage bar is gone outright (person-reported,
   // twice: unreadable even after a non-linear scale attempt — every row
@@ -14196,21 +13908,25 @@ process.exit(failed ? 1 : 0);
               + 32e282b4 follow-up (level filter now updates BOTH views)
    Group  5  — 765d68a9 (extraction column sort + cell-selection regression)
    Group  6  — 3f879dbe (the double-click DOM-identity root-cause bug)
-   Group  7  — 3f879dbe (copy/cut/paste, drag-and-drop, and/or/link cycle
-              guard, isFileDrag() overlay gate)
+   Group  7  — 3f879dbe (copy/cut/paste, drag-and-drop, isFileDrag() overlay
+              gate). REWRITTEN this session for the linkedId -> inputA/
+              inputB redesign: and/or/link nodes are now self-contained
+              (see Group 128), so the old ancestor-cycle guard this group
+              tested no longer exists — moving/copying/dragging one is a
+              plain reparent everywhere, cross-file included.
    Group  8  — 62262740 (filter inversion/NOT) — that session shipped
               WITHOUT any jsdom test; this is its first real coverage.
               Also folds in the THIRD exclusion (context), added later in
               1dd227c6 and, likewise, never previously tested.
    Group  9  — 1dd227c6 (time context filter)
    Group 10  — 94d8ec50 (Escape-handler crash, releaseEntriesFromIndex)
-   Group 11  — 6233b6f7 (filter save/load). REWRITTEN, not reused: that
-              session's own test used an older eval-based harness that
-              predates the T-bridge convention, and only covered the
-              file's initial single-branch shape — it predates the
-              mid-session redesign (same conversation) that pulls in
-              and/or/link dependency chains via attach:"file"/attach:
-              "target". That redesign had no lasting test until now.
+   Group 11  — 6233b6f7 (filter save/load). REWRITTEN again this session for
+              the linkedId -> inputA/inputB redesign: serializeFilterBranch
+              now takes an explicit includeInputChains opt-in (the "Include
+              source filters used by combined nodes?" prompt) instead of
+              always pulling in a linkedId target's ancestors; covers both
+              the with/without-parent-chains export paths and the "missing
+              input surfaced, not silently dropped" (node.inputBroken) case.
    Group 12  — 727a344e (tailing: growth, split-line buffering, rotation)
    Group 13  — b647f247 (Δt column, timeline minimap)
    Group 14  — 7ef2c2a6 (value assertions, column statistics)
@@ -16060,58 +15776,53 @@ process.exit(failed ? 1 : 0);
      Group 49 (explicit render() calls, not load ticks) is unaffected and
      still accurately covers what an EXPLICIT render shows mid-parse.
 
-   Group 128 — this session, person-requested "squash": "Detach copy" (see
-              detachFilterChain in philogg.html) clones a filter node's
-              whole dependency chain (ancestors + any linkedId targets'
-              ancestors — the same "needed" set serializeFilterBranch
-              already computes for Save/Load) into a fresh, self-contained
-              copy, independent of the rest of the tree. Reuses
-              materializeSerializedRoots, newly factored out of
-              importFilterJson so Save/Load and this same-file action share
-              one rebuild step instead of two copies of it. Every cloned
-              node except the originally-clicked one is tagged
-              hiddenInTree, which renderNode/flattenTreeIds now treat as
-              transparent (no row of its own, children render through at
-              the same depth) — so the whole private chain reads as one
-              tree row. All cloned nodes share one fresh squashGroup id, so
-              deleteFilterNodeWithUndo can find and delete the whole
-              private chain together (new "deleteGroup" undo/redo kind)
-              instead of leaving hidden orphans behind, and
-              moveFilterNodeWithUndo refuses to reparent the visible node
-              (its own parentId is required by the hidden chain). Covers:
-              the clone's independence from the original (fresh ids,
-              linkedId repointed at a fresh clone, original untouched),
-              squashGroup/hiddenInTree tagging, single-row tree rendering
-              and tree-nav passthrough, move refusal, group delete + undo
-              restoring every member with its flags intact, and the
-              session-cache round trip (serializeFilterTreeForCache /
-              materializeCachedFilters) carrying both fields through
-              unchanged.
+   Group 128 — this session's linkedId -> inputA/inputB redesign (see
+              PROJECT.md "Core data model"). REWRITTEN — supersedes/removes
+              the previous, never-merged squash-box/"Detach copy"/linkedId-
+              dependency-highlight session (formerly Groups 128-131:
+              detachFilterChain, computeLinkedDependencyHighlight, cross-
+              file reconstruction via importBranchAt — none of it shipped
+              to main). and/or/link nodes now carry two fixed, explicit
+              input references (node.inputA/node.inputB) read directly by
+              getEntries(), completely independent of parentId; parentId
+              is purely tree display position. createAndOrNode/
+              createLinkNode always place their result as a new top-level
+              child of the shared root file; moving a node anywhere
+              afterward is a plain, unguarded reparent (no ancestor-cycle
+              risk any more — the old wouldCreateLinkedCycle/
+              subtreeHasLinkedCycle guards and the cross-file
+              importBranchAt reconstruction are gone, since ordinary
+              cloneSubtree/reparent already works correctly regardless of
+              file boundaries once inputs are self-contained); a new
+              "currently resolving" set in getEntries() guards against a
+              genuine inputA/inputB cycle instead. Also covers the new
+              Unpack context-menu action (replaces a combiner in place with
+              its two inputs, cloned in as visible siblings, plus a fresh
+              combiner wired to reference them explicitly, at the same
+              position) and all four persistence carriers
+              (cloneSubtree/snapshotSubtree+restoreSubtree/
+              serializeFilterTreeForCache+materializeCachedFilters)
+              threading inputA/inputB through.
 
-   Group 129 — same session as Group 128, follow-up: cross-file paste/move
-              now reconstructs via the same import mechanism (serializeFilterBranch
-              + materializeSerializedRoots) instead of a cross-file linkedId,
-              and a squashed/detached filter imports/moves as one group.
+   Group 129 — (removed) formerly cross-file paste/move reconstruction via
+              importBranchAt — that whole mechanism no longer exists once
+              inputA/inputB are self-contained; ordinary cloneSubtree/
+              moveNode already work correctly across files with no special
+              casing, covered by Group 7's own cross-file assertions now.
 
-   Group 130 — same session, follow-up: a detached (squash) node stays
-              collapsed through Save/Load JSON round-trip, plus the manual
-              expand/collapse toggle revealing its private chain inside an
-              always-visible box.
+   Group 130 — (removed) formerly "a detached (squash) node stays collapsed
+              through Save/Load" — the squash-box mechanism it tested is
+              gone (see Group 128).
 
-   Group 131 — same session, follow-up: linkedId dependency highlighting
-              (computeLinkedDependencyHighlight) on tree selection.
+   Group 131 — (removed) formerly linkedId dependency highlighting
+              (computeLinkedDependencyHighlight/.dep-target/.dep-user) —
+              removed along with the linkedId model itself (see Group 128).
 
    Group 132 — same session, follow-up: tree row layout rework (generic
-              collapse/expand, extract swatch, icon/type indicator setting)
-              and the squash box's final design — REWRITTEN once in this
-              same session after user feedback: the box background stays
-              visible even while collapsed (containing the display node's
-              own real row, not a read-only mirror), and expanding reveals
-              a divider plus the private chain below it, with the display
-              node's row rendered a second time at the chain's end —
-              intentional double-selection (both instances get marked
-              .active together, since they're the same node id rendered
-              twice, not two synthetic copies).
+              collapse/expand, extract swatch, icon/type indicator setting,
+              row-count percentage bar removed outright). Squash-box-
+              specific assertions (formerly part of this group) were
+              dropped along with the mechanism — see Group 128.
 
    Group 133 — same session, follow-up: tree context menu "Info" submenu,
               replacing the old always-inline long-pattern metadata block
