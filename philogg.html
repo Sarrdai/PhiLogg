@@ -633,20 +633,46 @@
   }
   .tree-swatch:hover{border-color:var(--accent);}
   .tree-swatch.empty{background:var(--bg-app); border-style:dashed;}
-  .tree-swatch-spacer{flex:0 0 auto; width:13px;}
-  /* Expand/collapse chevron for a "Detach copy" group — see
-     detachFilterChain/toggleSquashGroupExpanded. Rotates via a transform,
-     not a different glyph, so collapse/expand reads as one smooth flip. */
-  .tree-squash-toggle{
-    flex:0 0 auto; width:14px; height:14px; margin:0 2px 0 0; padding:0;
+  /* Expand/collapse chevron — ALWAYS a fixed-width slot (person-reported:
+     it used to only exist for squash groups, shifting the icon whenever it
+     appeared/disappeared) whether or not this particular row has a button
+     in it. Toggles either a squash group's private-chain box, or a plain
+     node's real children — see renderNode. Rotates via a transform, not a
+     different glyph, so collapse/expand reads as one smooth flip. */
+  .tree-chevron-slot{flex:0 0 auto; width:16px; height:16px; display:flex; align-items:center; justify-content:center;}
+  .tree-chevron{
+    width:16px; height:16px; margin:0; padding:0;
     border:none; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
     color:var(--text-tertiary); border-radius:4px; transition:transform .12s ease;
     transform:rotate(-90deg);
   }
-  .tree-squash-toggle.expanded{transform:rotate(0deg);}
-  .tree-squash-toggle:hover{color:var(--accent-strong); background:var(--accent-soft);}
+  .tree-chevron.expanded{transform:rotate(0deg);}
+  .tree-chevron:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
   .tree-row.active .tree-icon{color:var(--accent);}
+  /* Settings -> Behavior "Tree row type indicator" = "Type abbreviation":
+     the icon slot shows TXT/LNK/... text instead of a glyph. Fixed width
+     sized to the longest tag typeTagFor() can ever produce ("FILE"/"TIME",
+     4 chars) so every row's label starts at the same x regardless of which
+     type happens to be shown, the same alignment guarantee a real icon
+     glyph gets "for free" from always being the same visual size. */
+  .tree-icon-type{
+    width:26px; justify-content:center; font-family:var(--font-mono); font-size:8.5px;
+    font-weight:700; letter-spacing:.3px; color:var(--text-tertiary);
+    background:var(--bg-elevated-2); border:1px solid var(--border-soft); border-radius:4px;
+    padding:1px 0; box-sizing:border-box;
+  }
+  .tree-row.active .tree-icon-type{color:var(--accent-strong); border-color:var(--accent);}
+  .tree-row.inverted .tree-icon-type{color:var(--level-error); border-color:var(--level-error);}
+  /* Inline box a squash group opens below its display row when expanded
+     (see renderSquashGroupBox) — same "dashed outline, set apart with its
+     own background" visual language as .tree-ghost (the filter-history
+     preview) and a watched folder's file list, but solid (real, clickable
+     content) rather than dashed (a ghost/preview). */
+  .tree-squash-box{
+    margin:2px 8px 4px; padding:2px;
+    background:var(--bg-elevated-2); border:1px solid var(--border-soft); border-radius:8px;
+  }
   .tree-label{
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:12.3px;
@@ -3307,6 +3333,18 @@
                 </label>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsTreeIndicatorMode">Tree row type indicator</label>
+                <div class="settings-row-hint">The icon and the TXT/LNK/... abbreviation both say the same thing about a filter's type — pick which one shows, at the icon's own position, instead of both.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsTreeIndicatorMode">
+                  <option value="icon">Icon</option>
+                  <option value="type">Type abbreviation</option>
+                </select>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -4278,6 +4316,27 @@ document.getElementById("settingsTextMatchHighlightDetail").addEventListener("ch
   textMatchHighlightInDetail = ev.target.checked;
   localStorage.setItem(TEXT_MATCH_HIGHLIGHT_DETAIL_KEY, textMatchHighlightInDetail ? "1" : "0");
   updateDetailPanel();
+});
+
+// Settings -> Behavior: "Tree row type indicator" (person-reported: the
+// icon and the TXT/LNK/... tag both said the same thing). "icon" (default,
+// unchanged look) shows the glyph in the icon slot and the abbreviation in
+// its own badge further along the row, exactly like before this setting
+// existed; "type" shows the abbreviation IN the icon slot instead (fixed-
+// width — see CSS .tree-icon-type) and hides the separate badge, so the
+// type is stated exactly once either way. See renderNode.
+const TREE_INDICATOR_MODE_KEY = "philogg-tree-indicator-mode";
+let treeIndicatorMode = "icon";
+function initTreeIndicatorModeSetting() {
+  const stored = localStorage.getItem(TREE_INDICATOR_MODE_KEY);
+  treeIndicatorMode = stored === "type" ? "type" : "icon";
+  const select = document.getElementById("settingsTreeIndicatorMode");
+  if (select) select.value = treeIndicatorMode;
+}
+document.getElementById("settingsTreeIndicatorMode").addEventListener("change", ev => {
+  treeIndicatorMode = ev.target.value === "type" ? "type" : "icon";
+  localStorage.setItem(TREE_INDICATOR_MODE_KEY, treeIndicatorMode);
+  render();
 });
 
 /* ===================== Level bar / filter-tree mode settings (Settings ->
@@ -7857,9 +7916,15 @@ function flattenTreeIds() {
       // see detachFilterChain) have no row to land on either, but arrow-key
       // nav must still reach whatever they lead to, same passthrough
       // renderNode itself uses.
-      if (node && node.hiddenInTree && !node.squashExpanded) { walk(node.children); return; }
+      if (node && node.hiddenInTree) { walk(node.children); return; }
       ids.push(id);
-      if (node) walk(node.children);
+      // node.collapsed hides real children the normal way — same rule
+      // renderNode's own row-recursion follows (see the chevron comment
+      // there); a squash group's own private-chain box is intentionally
+      // NOT walked here regardless of squashExpanded — its private members
+      // have no meaningful "next" arrow-key stop of their own once
+      // rendered inside the box, only the display row does.
+      if (node && !node.collapsed) walk(node.children);
     });
   })(state.rootIds);
   return ids;
@@ -8132,7 +8197,7 @@ function renderQueuedFileRow(node, depth) {
   wrap.dataset.type = "file";
   const row = document.createElement("div");
   row.className = "tree-row-queued";
-  row.style.paddingLeft = (12 + depth * 16) + "px";
+  row.style.paddingLeft = (8 + depth * 18) + "px"; // matches renderNode's own real-row indentation
   const icon = document.createElement("span");
   icon.className = "tree-icon";
   icon.innerHTML = ICON_FILE;
@@ -8192,23 +8257,33 @@ function renderRenameInput(id, node) {
   return input;
 }
 
-function renderNode(id, depth) {
+// forceVisible: true only when rendering INSIDE a squash group's own
+// expanded box (see renderSquashGroupBox) — everywhere else it's the
+// normal main tree, where a hiddenInTree node stays transparent.
+function renderNode(id, depth, forceVisible) {
   const node = state.nodes[id];
   if (node.type === "file" && node.queued) return renderQueuedFileRow(node, depth);
+  if (forceVisible && node.squashGroup && !node.hiddenInTree) {
+    // We're rendering the group's own private-chain box, and this IS the
+    // group's display node — it already has its own, always-visible row
+    // above the box; the box's whole point is showing what it privately
+    // depends ON, so it stops here rather than showing the display node a
+    // second time as the last link in its own chain (it has no further
+    // hiddenInTree descendants below it anyway).
+    return document.createDocumentFragment();
+  }
   // A "Detach copy" node's private ancestor chain (see detachFilterChain)
   // is marked hiddenInTree so the group reads as one tree row instead of
-  // the whole chain it privately depends on — treated as transparent here:
-  // no row of its own, but its children still render at THIS depth (not
-  // depth+1), so the chain "passes through" straight to whichever
-  // descendant is the group's actual visible node. Returns a
+  // the whole chain it privately depends on — treated as transparent here
+  // in the MAIN tree: no row of its own, but its children still render at
+  // THIS depth (not depth+1), so the chain "passes through" straight to
+  // whichever descendant is the group's actual visible node. Returns a
   // DocumentFragment instead of a wrap element — appendChild accepts both.
-  // node.squashExpanded (toggled via the expand/collapse chevron every
-  // squashGroup member shows — see below) opts back into normal rendering:
-  // every member gets its own real row again, each still tagged with the
-  // chevron so the group can be re-collapsed from any of them.
-  if (node.hiddenInTree && !node.squashExpanded) {
+  // Inside the box (forceVisible), this is skipped entirely — every
+  // private member gets a real row there, which is the whole point.
+  if (node.hiddenInTree && !forceVisible) {
     const frag = document.createDocumentFragment();
-    node.children.forEach(cid => frag.appendChild(renderNode(cid, depth)));
+    node.children.forEach(cid => frag.appendChild(renderNode(cid, depth, forceVisible)));
     return frag;
   }
   const wrap = document.createElement("div");
@@ -8227,20 +8302,70 @@ function renderNode(id, depth) {
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass + depClass;
   if (depClass === " dep-target") row.title = "This is what “" + nodeDisplayName(state.nodes[state.activeId]) + "” is combined/linked with";
   else if (depClass === " dep-user") row.title = "This is combined/linked with the currently selected filter";
-  row.style.paddingLeft = (12 + depth * 16) + "px";
+  // Base/step tuned (person-reported) so a file's own icon doesn't waste
+  // left-edge space, and a child filter's swatch/chevron/icon clearly sit
+  // to the RIGHT of its file's icon column instead of visually overlapping
+  // it — see the chevron-slot/swatch comments below for why file rows now
+  // reserve less prefix space than filter rows.
+  row.style.paddingLeft = (8 + depth * 18) + "px";
   // Lets a load tick (see updateLoadRowProgress) find and update this exact
   // row's count/progress-fill/percentage-of-parent directly, without a full
   // render() — every row, not just file rows, since a filter created under
   // a still-loading file needs its own count to keep updating live too.
   row.dataset.nodeId = id;
 
+  // Expand/collapse chevron — ALWAYS in the same fixed-width slot, whether
+  // or not this particular row actually has anything to collapse (person-
+  // reported: it used to only exist for squash groups, visibly shifting
+  // the icon whenever it appeared/disappeared). Two different things it
+  // can toggle, depending on the node:
+  //  - A squash group's display node (node.squashGroup — hiddenInTree
+  //    members never reach this point, see the passthrough check above)
+  //    toggles the private-chain BOX below the row (renderSquashGroupBox)
+  //    via node.squashExpanded. Real children the person built UNDER a
+  //    detached filter (if any) are unaffected by this and always show —
+  //    this chevron's only job on such a node is the private-chain box.
+  //  - Any other node with real children toggles node.collapsed the usual
+  //    way (hides/shows them, nothing fancier).
+  const chevronSlot = document.createElement("span");
+  chevronSlot.className = "tree-chevron-slot";
+  // Every member of a group shares squashGroup, but only the TRUE display
+  // (hiddenInTree false) should offer the toggle here — a hidden member
+  // only ever gets a real row INSIDE the box (forceVisible), where showing
+  // another redundant "collapse the whole group" chevron on every single
+  // internal row would just be noise.
+  const isSquashDisplay = !node.hiddenInTree && !!node.squashGroup;
+  const hasRealChildren = node.children.length > 0;
+  if (isSquashDisplay || hasRealChildren) {
+    const chevron = document.createElement("button");
+    chevron.type = "button";
+    const expanded = isSquashDisplay ? !!node.squashExpanded : !node.collapsed;
+    chevron.className = "tree-chevron" + (expanded ? " expanded" : "");
+    chevron.title = isSquashDisplay
+      ? (node.squashExpanded ? "Collapse this detached filter's private chain back into one row" : "Expand this detached filter's private chain (see what it depends on)")
+      : (node.collapsed ? "Expand" : "Collapse");
+    chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+    chevron.addEventListener("click", ev => {
+      ev.stopPropagation();
+      if (isSquashDisplay) toggleSquashGroupExpanded(id);
+      else { node.collapsed = !node.collapsed; render(); }
+    });
+    chevronSlot.appendChild(chevron);
+  }
+  row.appendChild(chevronSlot);
+
   // Highlight-colour swatch — replaces the old multi-select checkbox (that
   // affordance is Ctrl+click-only now, see the row click handler below;
-  // nothing else needed there, it already worked). Only meaningful on
-  // filter-type nodes; not on file nodes, and not on extract nodes (which
-  // have no Highlight panel at all — see renderMainView). Non-filter/extract
-  // rows get an empty spacer instead, to keep every row's columns aligned.
-  if (node.type === "filter" && node.filterType !== "extract") {
+  // nothing else needed there, it already worked). Shown for every FILTER
+  // node regardless of filterType, extract included (person-requested:
+  // it's also the clearest way to tell an extract row's indentation apart
+  // at a glance, even though the Highlight view itself has no dedicated
+  // panel that reads an extract node's own color — the swatch still just
+  // sets/persists node.highlightColor like any other filter's). FILE nodes
+  // get no slot here at all, not even a spacer — they never had a color to
+  // show, and reserving that space anyway just pushed every file needlessly
+  // far right for no reason (person-reported).
+  if (node.type === "filter") {
     const swatch = document.createElement("button");
     swatch.type = "button";
     swatch.className = "tree-swatch" + (node.highlightColor ? "" : " empty");
@@ -8251,32 +8376,18 @@ function renderNode(id, depth) {
     swatch.addEventListener("click", ev => { ev.stopPropagation(); openColorPicker(id, swatch); });
     swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); setHighlightColor(id, null); });
     row.appendChild(swatch);
-  } else {
-    const spacer = document.createElement("span");
-    spacer.className = "tree-swatch-spacer";
-    row.appendChild(spacer);
   }
 
-  // Expand/collapse chevron for a "Detach copy" group (node.squashGroup —
-  // see detachFilterChain/toggleSquashGroupExpanded): shown on whichever
-  // row(s) of the group are currently visible — just the display node
-  // while collapsed, every member once expanded — so the group can be
-  // toggled from any of its rows.
-  if (node.squashGroup) {
-    const chevron = document.createElement("button");
-    chevron.type = "button";
-    chevron.className = "tree-squash-toggle" + (node.squashExpanded ? " expanded" : "");
-    chevron.title = node.squashExpanded
-      ? "Collapse this detached filter's private chain back into one row"
-      : "Expand this detached filter's private chain (see what it depends on)";
-    chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
-    chevron.addEventListener("click", ev => { ev.stopPropagation(); toggleSquashGroupExpanded(id); });
-    row.appendChild(chevron);
-  }
-
+  // Settings -> Behavior "Tree row type indicator" (person-reported: the
+  // icon and the TXT/LNK/... badge further along the row said the same
+  // thing). Default "icon" mode is pixel-identical to before this setting
+  // existed; "type" mode puts the abbreviation HERE instead (fixed-width,
+  // see .tree-icon-type in CSS) and the separate badge below is skipped
+  // entirely, so the type is stated exactly once either way.
   const icon = document.createElement("span");
-  icon.className = "tree-icon";
-  icon.innerHTML = nodeIconHTML(node);
+  icon.className = "tree-icon" + (treeIndicatorMode === "type" ? " tree-icon-type" : "");
+  if (treeIndicatorMode === "type") icon.textContent = typeTagFor(node);
+  else icon.innerHTML = nodeIconHTML(node);
   row.appendChild(icon);
 
   // Pulsing dot on file nodes actively receiving new entries right now (see
@@ -8303,10 +8414,12 @@ function renderNode(id, depth) {
     (node.label ? "  [" + node.name + "]" : "");
   row.appendChild(label);
 
-  const typeTag = document.createElement("span");
-  typeTag.className = "tree-type-tag";
-  typeTag.textContent = typeTagFor(node);
-  row.appendChild(typeTag);
+  if (treeIndicatorMode !== "type") { // see the tree-icon block above — skipped when the abbreviation already shows there
+    const typeTag = document.createElement("span");
+    typeTag.className = "tree-type-tag";
+    typeTag.textContent = typeTagFor(node);
+    row.appendChild(typeTag);
+  }
 
   const count = document.createElement("span");
   count.className = "tree-count";
@@ -8446,8 +8559,51 @@ function renderNode(id, depth) {
   if (node.type === "file" && node.children.length === 0 && node.filterHistoryMatch) {
     wrap.appendChild(renderFilterHistoryPreview(node));
   }
-  node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1)));
+  // node.collapsed hides real children the normal way (chevron above).
+  // Never gates a squash group's own private-chain box below — that has
+  // its own, separate node.squashExpanded state (see the chevron comment
+  // above for why the two are deliberately independent).
+  if (!node.collapsed) {
+    node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1, forceVisible)));
+  }
+  // Only the group's TRUE display node (hiddenInTree false — every other
+  // member also carries the same squashGroup/squashExpanded, since
+  // toggleSquashGroupExpanded sets them on the whole group at once) opens
+  // the box. Without this check, a hidden member rendered forceVisible
+  // INSIDE the box would append its own copy of the same box again —
+  // infinite recursion, since it's still a topLevelMember of its own group.
+  if (!node.hiddenInTree && node.squashGroup && node.squashExpanded) {
+    wrap.appendChild(renderSquashGroupBox(node.squashGroup));
+  }
   return wrap;
+}
+
+// The inline box a squash group's display row opens below itself when
+// expanded (see the chevron in renderNode, and toggleSquashGroupExpanded).
+// The private chain isn't a normal subtree — it sits ABOVE the display
+// node via parentId, not below it as real children — so it can't just be
+// un-hidden in the main tree's usual flow; this renders it as its own
+// small nested tree instead, starting from the group's own top-level
+// member(s) (usually the private ancestor chain's root; occasionally a
+// SECOND, unrelated top-level member too — e.g. a link's pulled-in
+// linkedId target, see detachFilterChain/serializeFilterBranch's
+// attach:"file" case), visually set apart with a background (same idea as
+// a folder section or the filter-history ghost preview). Passes
+// forceVisible so renderNode renders every private member as a real row
+// instead of staying transparent, and stops automatically at the group's
+// own display node (renderNode's own guard at the top) so it isn't shown
+// a second time as the last link in its own chain.
+function renderSquashGroupBox(groupId) {
+  const box = document.createElement("div");
+  box.className = "tree-squash-box";
+  const topLevelMembers = Object.keys(state.nodes).filter(mid => {
+    const n = state.nodes[mid];
+    if (n.squashGroup !== groupId) return false;
+    const p = state.nodes[n.parentId];
+    return !p || p.squashGroup !== groupId;
+  });
+  topLevelMembers.forEach(mid => box.appendChild(renderNode(mid, 0, true)));
+  return box;
 }
 
 function renderBreadcrumb() {
@@ -8457,7 +8613,10 @@ function renderBreadcrumb() {
   // is hiddenInTree in the tree itself — filtered out here too, or the
   // breadcrumb would give away exactly the internal structure the tree
   // view hides (and offer a "jump to" chip for a row that doesn't exist).
-  const chain = getChain(state.activeId).filter(n => !n.hiddenInTree || n.squashExpanded);
+  // hiddenInTree nodes never get a row in the MAIN tree regardless of
+  // squashExpanded now (that only controls the separate inline box — see
+  // renderSquashGroupBox), so the breadcrumb drops them unconditionally too.
+  const chain = getChain(state.activeId).filter(n => !n.hiddenInTree);
   chain.forEach((node, i) => {
     if (i > 0) {
       const sep = document.createElement("span");
@@ -14751,7 +14910,7 @@ filterColumnChips.addEventListener("click", ev => {
 function renderFilterTargetChain() {
   filterTargetChainEl.innerHTML = "";
   if (!filterPopupBaseId || !state.nodes[filterPopupBaseId]) return;
-  const chain = getChain(filterPopupBaseId).filter(n => !n.hiddenInTree || n.squashExpanded); // see renderBreadcrumb
+  const chain = getChain(filterPopupBaseId).filter(n => !n.hiddenInTree); // see renderBreadcrumb
   chain.forEach((node, i) => {
     if (i > 0) {
       const sep = document.createElement("span");
@@ -19411,6 +19570,7 @@ initHoverExpandSettings();
 initMinimapFullRangeSetting();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();
+initTreeIndicatorModeSetting();
 initOpenScrollPositionSetting();
 initTempAnchorSettings();
 initCollapsePanels();
