@@ -332,8 +332,13 @@ await withApp(async (w, d, T) => {
   assert(filterA1._cache === null, "tail change invalidates filters under the CHANGED file");
   assert(filterB1._cache !== null, "filters under an UNTOUCHED file keep their cache across a tail tick");
   assert(filterB1._levelCounts !== null, "untouched file keeps its level-count cache too");
-  assert(andB._cache === null, "an inputB dependency on the changed file is invalidated even though its OWN parentId sits under the untouched file");
-  assert(andChild._cache === null, "descendants of an invalidated node are invalidated transitively");
+  // andB's parentId chain is fb (createAndOrNode places it under its first
+  // input's root file), and its bakedA/bakedB are flat condition snapshots
+  // baked once at creation — it has no live dependency on fa at all any
+  // more (see the "Core data model" note above createAndOrNode in
+  // philogg.html), so a tail tick on fa alone must NOT invalidate it.
+  assert(andB._cache !== null, "and/or node's cache only depends on its OWN parentId chain (fb), not on where its baked conditions came from");
+  assert(andChild._cache !== null, "descendants of an untouched node keep their cache across a tail tick too");
 
   // Minimap background-bucket memoization
   T.state.activeId = fa.id; w.render();
@@ -666,27 +671,28 @@ await withApp(async (w, d, T) => {
   assert(!T.state.nodes[toDelete.id], "deleted node is gone from state.nodes");
   w.undo();
   assert(T.state.nodes[toDelete.id], "undo restores the deleted node");
-  assert(T.state.nodes[toDelete.id].id === toDelete.id, "restored node keeps its ORIGINAL id (so external inputA/inputB refs self-heal)");
+  assert(T.state.nodes[toDelete.id].id === toDelete.id, "restored node keeps its ORIGINAL id");
   w.redo();
   assert(!T.state.nodes[toDelete.id], "redo re-applies the delete");
 
-  // inputA/inputB self-healing: an AND node elsewhere referencing a deleted
-  // node should transparently start resolving again once undo restores it.
-  // AND/OR combine two filters from the SAME file by design (cross-file
-  // combination is unsupported — see PROJECT.md); using two different-file
-  // filters here would make the intersection trivially empty regardless of
-  // whether the target exists, since entry ids never overlap across files.
+  // bakedA/bakedB carry a flat condition snapshot, not a live reference —
+  // deleting one of the two source nodes an AND was built from must have
+  // ZERO effect on the AND's own result, before or after undo (the exact
+  // bug this data model fixes — see CLAUDE.md/CHANGELOG.md). AND/OR combine
+  // two filters from the SAME file by design (cross-file combination is
+  // unsupported — see PROJECT.md).
   const refA = w.createFilterNode(fa.id, "text", "message");
   const refA2 = w.createFilterNode(fa.id, "text", "message 1"); // subset of refA's own file
   const andNode = w.createAndOrNode(refA.id, refA2.id, "and");
   w.render();
-  assert(w.getEntries(andNode.id).length > 0, "sanity: AND of two same-file filters has a non-empty intersection before any delete");
-  w.deleteFilterNodeWithUndo(refA2.id); // deletes the AND's inputB target
+  const andCountBefore = w.getEntries(andNode.id).length;
+  assert(andCountBefore > 0, "sanity: AND of two same-file filters has a non-empty intersection before any delete");
+  w.deleteFilterNodeWithUndo(refA2.id); // deletes one of the AND's baked-from sources
   w.invalidateAllCaches();
-  assert(w.getEntries(andNode.id).length === 0, "AND node fails gracefully (empty result) while its inputB target is deleted");
+  assert(w.getEntries(andNode.id).length === andCountBefore, "AND node's result is completely unaffected by deleting the node its bakedB was baked from");
   w.undo();
   w.invalidateAllCaches();
-  assert(w.getEntries(andNode.id).length > 0, "AND node's inputB self-heals once the deleted target is restored by undo, same id");
+  assert(w.getEntries(andNode.id).length === andCountBefore, "AND node's result is still unaffected after undo restores the deleted node");
 
   // Move + undo
   const moveTarget = w.createFilterNode(fa.id, "text", "x");
@@ -838,15 +844,16 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 11 — Filter save/load JSON round trip
-   Origin: 6233b6f7. REWRITTEN for the linkedId -> inputA/inputB redesign
-   (this session): serializeFilterBranch(nodeId, includeInputChains) now
-   takes an explicit opt-in for whether an and/or/link node's inputA/inputB
-   ancestor chains get pulled in as extra attach:"file" roots (the "Include
-   source filters used by combined nodes?" prompt) — off by default, in
-   which case an input outside the primary branch is exported as
-   inputAMissing/inputBMissing and materializeSerializedRoots keeps the
-   node with that side unset and node.inputBroken set, rather than
-   silently dropping it.
+   Origin: 6233b6f7. REWRITTEN for the bakedA/bakedB correction (this
+   session, see CLAUDE.md/CHANGELOG.md): serializeFilterBranch(nodeId,
+   includeAncestors) is now a GENERAL "just this filter" (false, exactly one
+   node, no ancestors/subtree) vs. "include ancestor chain" (true, today's
+   original chain+subtree default) choice for ANY filter node, not an
+   and/or/link-specific "include source filters" prompt — and/or/link's
+   bakedA/bakedB are flat data (no node-id inside), so they travel as a
+   plain field copy with no ref/remapping machinery. Every exported root is
+   tagged attach:"target" and lands under whatever node import is invoked
+   on — never hardcoded to FILE.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("11. Filter save/load JSON round trip");
@@ -866,28 +873,30 @@ await withApp(async (w, d, T) => {
   const andNode = w.createAndOrNode(extractNode.id, fFilterB.id, "and");
   w.render();
   assert(andNode.parentId === fa.id, "sanity: AND node sits directly under file A, not under extractNode");
+  const andCountBefore = w.getEntries(andNode.id).length;
 
-  // --- includeInputChains = false (default): inputs outside the primary
-  // branch are NOT pulled in — the AND node is the only root, and its
-  // inputs are marked missing rather than silently dropped. ---
-  const branchNoInputs = w.serializeFilterBranch(andNode.id, false);
-  assert(branchNoInputs && branchNoInputs.roots.length === 1, "without includeInputChains, only the AND node's own chain is exported, got " + (branchNoInputs && branchNoInputs.roots.length));
-  const bareRoot = branchNoInputs.roots[0];
-  assert(bareRoot.attach === "target" && bareRoot.inputAMissing && bareRoot.inputBMissing,
-    "both inputs are outside the exported branch, so they're marked *Missing instead of silently dropped");
+  // --- "Just this filter" (includeAncestors=false): exactly one node, its
+  // own bakedA/bakedB carried along as self-contained plain data. ---
+  const branchJustThis = w.serializeFilterBranch(andNode.id, false);
+  assert(branchJustThis && branchJustThis.roots.length === 1, "just this filter: exactly one exported root, got " + (branchJustThis && branchJustThis.roots.length));
+  const bareRoot = branchJustThis.roots[0];
+  assert(bareRoot.attach === "target" && bareRoot.children.length === 0, "the single exported node is tagged attach:target with no children");
+  assert(bareRoot.bakedA && bareRoot.bakedA.filterType === "extract" && bareRoot.bakedB && bareRoot.bakedB.filterType === "text",
+    "bakedA/bakedB (each side's own flat condition) travel with the export even for 'just this filter'");
 
-  // --- includeInputChains = true: inputA's chain (extractNode + chainNode)
-  // and inputB's chain (fFilterB) are pulled in as extra attach:"file" roots. ---
+  // --- "Include ancestor chain" (includeAncestors=true): today's original
+  // chain+subtree default — still just ONE root (bakedA/bakedB hold no
+  // node-id, so there is nothing external left to pull in any more). ---
   const branch = w.serializeFilterBranch(andNode.id, true);
-  assert(branch && branch.roots.length === 3, "with includeInputChains, 3 independent trees are exported: the AND node + inputA's chain + inputB's chain, got " + (branch && branch.roots.length));
-  const targetRoot = branch.roots.find(r => r.attach === "target");
-  const fileRoots = branch.roots.filter(r => r.attach === "file");
-  assert(targetRoot && targetRoot.inputARef != null && targetRoot.inputBRef != null, "primary AND node tagged attach:target, both inputs now resolve to refs");
-  assert(fileRoots.length === 2, "both pulled-in input chains tagged attach:file");
+  assert(branch && branch.roots.length === 1, "with ancestors, still exactly one independent tree (no more separate input chains to pull in), got " + (branch && branch.roots.length));
+  const targetRoot = branch.roots[0];
+  assert(targetRoot.attach === "target", "the chain's own root is tagged attach:target");
 
   const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
 
-  // Load onto a THIRD, fresh file — re-evaluates against new data, doesn't replay a stored result.
+  // Load onto a THIRD, fresh file, at a NON-FILE target node — re-evaluates
+  // against new data, doesn't replay a stored result, and lands under the
+  // clicked node, not hardcoded to FILE.
   const fc = await w.addFile("c.log", makeLog(0, 20, { msgPrefix: "message" }), () => {});
   const fcAnchor = w.createFilterNode(fc.id, "text", "message");
   w.render();
@@ -895,34 +904,32 @@ await withApp(async (w, d, T) => {
   const fcChildrenBefore = fc.children.length;
   W_setLoadTarget(w, fcAnchor.id);
   w.importFilterJson(json);
-  assert(fcAnchor.children.length === before + 1, "load creates the AND node ('target') directly under the CLICKED node");
-  assert(fc.children.length === fcChildrenBefore + 2, "both pulled-in input chains ('file') are created directly under the FILE, not nested under the clicked node — got " + (fc.children.length - fcChildrenBefore));
+  assert(fcAnchor.children.length === before + 1, "load creates the AND node directly under the CLICKED (non-FILE) node");
+  assert(fc.children.length === fcChildrenBefore, "nothing is created directly under FILE — the whole chain attaches at the clicked target");
   const loadedAnd = T.state.nodes[fcAnchor.children[fcAnchor.children.length - 1]];
   assert(loadedAnd && loadedAnd.filterType === "and", "the loaded node is the AND combiner itself");
-  assert(loadedAnd.inputA && loadedAnd.inputA !== extractNode.id, "inputA was remapped to a FRESH node id, not the original extractNode");
-  assert(loadedAnd.inputB && loadedAnd.inputB !== fFilterB.id, "inputB was remapped to a FRESH node id, not the original fFilterB");
-  const loadedInputA = T.state.nodes[loadedAnd.inputA];
-  assert(loadedInputA && loadedInputA.filterType === "extract" && loadedInputA.assertions && loadedInputA.assertions[0].max === 100,
-    "inputA's own reconstructed clone is the extract node, assertion intact");
-  assert(T.state.nodes[loadedInputA.parentId] && T.state.nodes[loadedInputA.parentId].parentId === fc.id,
-    "inputA's pulled-in ancestor chain (chainNode) is recreated directly under the destination FILE, not nested under the target");
-  const loadedInputB = T.state.nodes[loadedAnd.inputB];
-  assert(loadedInputB && loadedInputB.parentId === fc.id, "inputB's own reconstructed clone also lives directly under the destination FILE");
-  assert(w.getEntries(loadedAnd.id).length >= 0, "reloaded AND node's getEntries() resolves without throwing (re-evaluated against the new file's own data)");
-  assert(!loadedAnd.inputBroken, "a fully-resolved combiner is not marked broken");
+  // Assertions are a column-stat/highlight annotation, not part of what
+  // determines matching (getEntries' "extract" branch never reads them) —
+  // bakeNodeCondition intentionally only copies fields that define the
+  // match itself, so they don't travel into bakedA.
+  assert(loadedAnd.bakedA && loadedAnd.bakedA.filterType === "extract" && loadedAnd.bakedA.value === "message [value:int]",
+    "bakedA (extractNode's own matching condition) round-trips intact");
+  assert(loadedAnd.bakedB && loadedAnd.bakedB.filterType === "text" && loadedAnd.bakedB.value === "other",
+    "bakedB (fFilterB's own condition) round-trips intact");
+  assert(w.getEntries(loadedAnd.id).length >= 0, "reloaded AND node's getEntries() resolves without throwing (re-evaluated fresh against the new file's own data)");
 
-  // --- Loading the includeInputChains=false export instead: the AND node
-  // survives with its inputs left unresolved and node.inputBroken set —
-  // surfaced, not silently dropped. ---
-  const jsonNoInputs = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branchNoInputs.activeRef, roots: branchNoInputs.roots });
-  const fd = await w.addFile("d.log", makeLog(0, 5), () => {});
-  W_setLoadTarget(w, fd.id);
-  w.importFilterJson(jsonNoInputs);
-  const loadedBareAnd = T.state.nodes[fd.children[fd.children.length - 1]];
-  assert(loadedBareAnd && loadedBareAnd.filterType === "and", "the AND node itself still gets created even with unresolved inputs");
-  assert(!loadedBareAnd.inputA && !loadedBareAnd.inputB, "both inputs are left unset rather than pointing at something wrong");
-  assert(loadedBareAnd.inputBroken === true, "the node is marked broken so the person can see something's missing");
-  assert(w.getEntries(loadedBareAnd.id).length === 0, "getEntries degrades gracefully to an empty result instead of throwing");
+  // --- Loading the "just this filter" export instead: the AND node alone
+  // is created, still fully self-contained via its own bakedA/bakedB. ---
+  const jsonJustThis = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branchJustThis.activeRef, roots: branchJustThis.roots });
+  const fd = await w.addFile("d.log", makeLog(0, 20, { msgPrefix: "message" }), () => {});
+  const fdAnchor = w.createFilterNode(fd.id, "text", "message");
+  w.render();
+  W_setLoadTarget(w, fdAnchor.id);
+  w.importFilterJson(jsonJustThis);
+  const loadedBareAnd = T.state.nodes[fdAnchor.children[fdAnchor.children.length - 1]];
+  assert(loadedBareAnd && loadedBareAnd.filterType === "and", "the AND node is created directly under the clicked target, no ancestor chain brought along");
+  assert(loadedBareAnd.bakedA && loadedBareAnd.bakedB, "its bakedA/bakedB are still intact — 'just this filter' never depended on the ancestor chain to begin with");
+  assert(w.getEntries(loadedBareAnd.id).length >= 0, "getEntries() resolves without throwing, fully self-contained");
 
   function W_setLoadTarget(w, targetId) {
     // loadFilterTargetId is a top-level `let` — reach it via the shared
@@ -1211,12 +1218,12 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 7 — Copy/Cut/Paste, drag-and-drop, self-contained AND/OR/LINK inputs
-   Origin: 3f879dbe; REWRITTEN for the linkedId -> inputA/inputB redesign
-   (this session — see PROJECT.md "Core data model"). and/or/link nodes now
-   carry two fixed, explicit input references that have no bearing on tree
-   position at all — moving/copying/dragging one anywhere (even across
-   files) only ever changes parentId (display), never inputA/inputB, so
-   there is no ancestor-cycle risk to guard against for an ordinary
+   Origin: 3f879dbe; REWRITTEN for the bakedA/bakedB correction (this
+   session — see PROJECT.md "Core data model"). and/or/link nodes now carry
+   two flat, self-contained BAKED condition snapshots that have no bearing
+   on tree position at all — moving/copying/dragging one anywhere (even
+   across files) only ever changes parentId (display), never bakedA/bakedB,
+   so there is no ancestor-cycle risk to guard against for an ordinary
    move/reparent any more (moveNode's only remaining guard is the plain
    isDescendantOrSelf structural check every node needs). Also covers the
    file-drop overlay isFileDrag() gate from the origin session.
@@ -1243,8 +1250,9 @@ await withApp(async (w, d, T) => {
   const fFilterB = w.createFilterNode(fb.id, "text", "other");
   const andNode = w.createAndOrNode(fFilterA.id, fFilterB.id, "and");
   w.render();
-  assert(andNode.inputA === fFilterA.id && andNode.inputB === fFilterB.id, "AND node stores both explicit input references");
-  assert(andNode.parentId === fa.id, "AND node is placed directly under file A (inputA's root), not nested under fFilterA");
+  assert(andNode.bakedA.filterType === "text" && andNode.bakedA.value === "message" && andNode.bakedB.value === "other",
+    "AND node stores a flat baked condition snapshot of each side's own condition");
+  assert(andNode.parentId === fa.id, "AND node is placed directly under file A (fFilterA's root), not nested under fFilterA");
 
   T.state.activeId = andNode.id;
   T.state.clipboard = { id: andNode.id, mode: "copy" };
@@ -1253,19 +1261,19 @@ await withApp(async (w, d, T) => {
   w.pasteClipboard();
   assert(fFilterA.children.length === beforePaste + 1, "AND node can be copy/pasted");
   const pastedAndId = fFilterA.children[fFilterA.children.length - 1];
-  assert(T.state.nodes[pastedAndId].inputA === fFilterA.id && T.state.nodes[pastedAndId].inputB === fFilterB.id,
-    "pasted AND node's inputA/inputB still point at the original nodes (cloneSubtree carries them)");
+  assert(T.state.nodes[pastedAndId].bakedA.value === "message" && T.state.nodes[pastedAndId].bakedB.value === "other",
+    "pasted AND node's bakedA/bakedB carry the same flat condition data (cloneSubtree deep-copies them)");
 
   // Moving the AND node into what would have been a cyclic position under
-  // the old linkedId model is now a completely ordinary move — inputA/
-  // inputB never change, and parentId has no bearing on the node's own
+  // the old linkedId model is now a completely ordinary move — bakedA/
+  // bakedB never change, and parentId has no bearing on the node's own
   // logic any more (see the "Core data model" note above createAndOrNode
   // in philogg.html).
   const childOfB = w.createFilterNode(fFilterB.id, "text", "x");
   const movedOk1 = w.moveNode(andNode.id, childOfB.id);
-  assert(movedOk1 === true, "moving the AND node under its own inputB's subtree now succeeds (no cycle risk any more)");
+  assert(movedOk1 === true, "moving the AND node under fFilterB's subtree now succeeds (no cycle risk any more)");
   assert(andNode.parentId === childOfB.id, "AND node's parentId updated to the new position");
-  assert(andNode.inputA === fFilterA.id && andNode.inputB === fFilterB.id, "...but inputA/inputB are completely untouched by the move");
+  assert(andNode.bakedA.value === "message" && andNode.bakedB.value === "other", "...but bakedA/bakedB are completely untouched by the move");
   assert(w.getEntries(andNode.id), "getEntries still resolves correctly (no infinite recursion) after the move");
 
   // Cross-file cut/paste is now an ordinary paste too — no reconstruction,
@@ -1277,7 +1285,7 @@ await withApp(async (w, d, T) => {
   assert(T.state.clipboard === null, "cross-file cut succeeds as a plain move");
   assert(T.state.nodes[andNode.id], "the SAME node id survives a cross-file cut/paste — no reconstruction any more");
   assert(andNode.parentId === fb.id, "the AND node now sits under file B");
-  assert(andNode.inputA === fFilterA.id && andNode.inputB === fFilterB.id, "inputA/inputB are unaffected by crossing a file boundary");
+  assert(andNode.bakedA.value === "message" && andNode.bakedB.value === "other", "bakedA/bakedB are unaffected by crossing a file boundary");
 
   // Legit same-file move still works
   const gA = w.createFilterNode(fa.id, "text", "g");
@@ -1288,7 +1296,7 @@ await withApp(async (w, d, T) => {
   const movedOk = w.moveNode(gAnd.id, otherFilterA.id);
   assert(movedOk === true, "moveNode allows a non-cyclic reparent");
   assert(gAnd.parentId === otherFilterA.id, "AND node's parentId updated after a legit move");
-  assert(gAnd.inputA === gA.id && gAnd.inputB === gB.id, "inputA/inputB survive a legit move untouched");
+  assert(gAnd.bakedA.value === "g" && gAnd.bakedB.value === "h", "bakedA/bakedB survive a legit move untouched");
 
   // Real drag-and-drop DOM path + isFileDrag() overlay gate
   w.render();
@@ -1629,10 +1637,10 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(r1, "restore: first filter type/value");
     assert(r2 && r2.highlightColor === "#ff0000", "restore: highlight colour preserved");
     const combo = childNodes.find(n => n.filterType === "and");
-    assert(combo && combo.inputA === r1.id && combo.inputB === r2.id,
-      "restore: AND node's inputARef/inputBRef remapped to the restored siblings' new ids");
+    assert(combo && combo.bakedA && combo.bakedA.value === "message 1" && combo.bakedB && combo.bakedB.value === "ERROR",
+      "restore: AND node's bakedA/bakedB round-tripped as plain data, no ref-remapping needed");
     // "message 1" matches entries 1, 10..19; ERROR matches 0,5,10,15,20,25 —
-    // intersection is exactly {10, 15}, so a correct linkedId remap yields 2.
+    // intersection is exactly {10, 15}.
     assert(w.getEntries(combo.id).length === 2, "restore: AND node re-evaluates to the correct result");
 
     assert(T.state.bookmarks.size === 1, "restore: bookmark came back");
@@ -1814,8 +1822,8 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(r1 && r2 && r2.highlightColor === "#ff0000",
       "tier1: filter values + highlight colour round-trip");
     const combo = childNodes.find(n => n.filterType === "and");
-    assert(combo && combo.inputA === r1.id && combo.inputB === r2.id,
-      "tier1: AND node's inputARef/inputBRef remapped to the imported siblings");
+    assert(combo && combo.bakedA && combo.bakedA.value === "message 1" && combo.bakedB && combo.bakedB.value === "ERROR",
+      "tier1: AND node's bakedA/bakedB round-tripped as plain data");
     assert(w.getEntries(combo.id).length === 2, "tier1: AND node re-evaluates correctly (msgs 10,15)");
     assert(T.state.bookmarks.size === 2 && T.state.bookmarks.has(f.entries[5].id),
       "tier1: bookmarks attach by ordinal");
@@ -2136,9 +2144,12 @@ section("20. Session cache: persist in one window, restore in the next");
 
     const linkNodes = Object.values(T.state.nodes).filter(n => n.filterType === "link");
     assert(linkNodes.length === 2, "multi-hop dialog: chain of 2 link nodes created under the hood");
-    const hop1 = linkNodes.find(n => n.inputA === first.id);
-    const hop2 = linkNodes.find(n => hop1 && n.inputA === hop1.id);
-    assert(!!hop1 && !!hop2, "multi-hop dialog: hop2's inputA explicitly references hop1's own node id (not parentId nesting)");
+    const hop1 = linkNodes.find(n => n.bakedA && n.bakedA.filterType === "text" && n.bakedA.value === "First");
+    // hop2's bakedA is a NESTED baked link condition — hop1's own bakeNodeCondition
+    // (filterType/bakedA/bakedB/linkDirection/etc), a flat data snapshot, not a
+    // reference to hop1's node id (see bakeNodeCondition's "link" branch).
+    const hop2 = linkNodes.find(n => hop1 && n.bakedA && n.bakedA.filterType === "link" && n.bakedA.bakedA && n.bakedA.bakedA.value === "First");
+    assert(!!hop1 && !!hop2, "multi-hop dialog: hop2's bakedA is hop1's own baked condition (nested), not a reference to hop1's node id");
     assert(hop1.parentId === f.id && hop2.parentId === f.id, "both hops are placed directly under FILE, per the new placement rule — not nested under each other");
     const tupleRes = w.getEntries(hop2.id);
     assert(tupleRes.length === 1 && tupleRes[0].second.message === "Third A",
@@ -2178,20 +2189,25 @@ section("20. Session cache: persist in one window, restore in the next");
 
   // --- A serialized link node with no linkOrderEnforced/linkExclusive
   // fields at all (e.g. hand-edited) still materializes cleanly, both
-  // fields defaulting false. ---
+  // fields defaulting false. bakedA/bakedB travel as plain data — no
+  // ref/remapping step needed any more. ---
   await withApp(async (w, d, T) => {
     const log = makeLogAt([{ sec: 0, msg: "First A" }, { sec: 5, msg: "Second A" }]);
     const f = await w.addFile("a.log", log, () => {});
     const roots = [
-      { ref: 1, filterType: "text", name: "First", inverted: false, value: "First", children: [] },
-      { ref: 2, filterType: "text", name: "Second", inverted: false, value: "Second", children: [] },
-      { ref: 3, filterType: "link", name: "First -> Second", inverted: false, inputARef: 1, inputBRef: 2, linkDirection: "after", linkN: 1, children: [] },
+      {
+        ref: 3, filterType: "link", name: "First -> Second", inverted: false,
+        bakedA: { filterType: "text", value: "First", inverted: false },
+        bakedB: { filterType: "text", value: "Second", inverted: false },
+        linkDirection: "after", linkN: 1, children: [],
+      },
     ];
     w.materializeCachedFilters(f, roots);
     const linkNode = Object.values(T.state.nodes).find(n => n.filterType === "link");
     assert(!!linkNode && linkNode.linkOrderEnforced === false && linkNode.linkExclusive === false,
       "a link node with no order/exclusive fields materializes with both defaulting to false");
-    assert(linkNode.inputA && linkNode.inputB && !linkNode.inputBroken, "inputARef/inputBRef resolve correctly via materializeCachedFilters");
+    assert(linkNode.bakedA.value === "First" && linkNode.bakedB.value === "Second", "bakedA/bakedB materialize as plain data, no ref-remapping step needed");
+    assert(w.getEntries(linkNode.id).length === 1, "the materialized link node evaluates correctly via its baked conditions");
   });
 }
 
@@ -6775,6 +6791,14 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
   assert(saveDialog.classList.contains("hidden"), "confirming closes the dialog");
 
+  // General "Just this filter" vs "Include ancestor chain" prompt (see
+  // GROUP 129) now appears for EVERY save-to-library action, not just
+  // and/or/link nodes — pick "Just this filter" to proceed.
+  await new Promise(r => setTimeout(r, 0));
+  const scopeDialog = d.querySelector("#exportScopeDialog");
+  assert(!scopeDialog.classList.contains("hidden"), "the general export-scope prompt opens as part of the actual save-to-library action");
+  fireClick(d.querySelector("#exportScopeJustThis"), w);
+
   await new Promise(r => setTimeout(r, 20)); // saveFilterToLibrary's IndexedDB write is async
   const records = await w.listFilterLibrary();
   assert(records.length === 1 && records[0].name === "My saved filter", "one record saved under the entered name");
@@ -6796,7 +6820,12 @@ await withApp(async (w, d, T) => {
   w.render();
   const textNode = w.createFilterNode(fa.id, "text", "message 1");
   w.render();
-  await w.saveFilterToLibrary(textNode.id, "reusable text filter");
+  // saveFilterToLibrary now always awaits the general export-scope prompt
+  // first — click "Just this filter" once it's up.
+  const savePromise59b = w.saveFilterToLibrary(textNode.id, "reusable text filter");
+  await new Promise(r => setTimeout(r, 0));
+  fireClick(d.querySelector("#exportScopeJustThis"), w);
+  await savePromise59b;
 
   const fb = await w.addFile("b.log", makeLog(0, 20, { msgPrefix: "message" }), () => {});
   w.render();
@@ -6846,7 +6875,10 @@ section("59c. Filter library persists across a simulated reload (separate Indexe
     w.render();
     const node = w.createFilterNode(f.id, "extract", "message [value:int]");
     w.render();
-    await w.saveFilterToLibrary(node.id, "extract preset");
+    const savePromise59c = w.saveFilterToLibrary(node.id, "extract preset");
+    await new Promise(r => setTimeout(r, 0));
+    fireClick(d.querySelector("#exportScopeJustThis"), w);
+    await savePromise59c;
     const records = await w.listFilterLibrary();
     assert(records.length === 1 && records[0].roots[0].filterType === "extract", "sanity: saved before the simulated reload");
   }, { indexedDB: factory });
@@ -13622,16 +13654,19 @@ await withApp(async (w, d, T) => {
 }
 
 /* ============================================================
-   GROUP 128 — Self-contained and/or/link inputs (this session's linkedId ->
-   inputA/inputB redesign; supersedes/removes the previous, never-merged
-   squash-box/"Detach copy"/linkedId-dependency-highlight session — see
-   CHANGELOG.md). and/or/link nodes now carry two fixed, explicit input
-   references (node.inputA/node.inputB) that getEntries() reads directly,
-   completely independent of parentId/tree position; createAndOrNode/
-   createLinkNode always place their result as a new top-level child of the
-   shared root file; moving a node anywhere afterward only ever changes
-   parentId; and Unpack replaces a combiner in place with its two inputs
-   plus a fresh, explicitly-wired combiner at the same position.
+   GROUP 128 — Self-contained and/or/link inputs via BAKED conditions
+   (this session's correction of the 9fd140e inputA/inputB redesign — see
+   CLAUDE.md/CHANGELOG.md: 9fd140e still did a LIVE node-id lookup, just
+   renamed from linkedId; this session replaces that with node.bakedA/
+   node.bakedB — a flat, self-contained copy of each side's OWN single
+   condition, never an ancestor chain, never a node-id reference at all).
+   createAndOrNode/createLinkNode still always place their result as a new
+   top-level child of the shared root file; moving a node anywhere
+   afterward only ever changes parentId, re-chaining its INPUT entries
+   (getEntries(node.parentId), same as any other filter type) but never
+   touching bakedA/bakedB; and Unpack materializes bakedA/bakedB back into
+   visible sibling filters, purely additively (the original node is left
+   untouched).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("128. Self-contained and/or/link inputs: placement, move, Unpack");
@@ -13647,43 +13682,70 @@ await withApp(async (w, d, T) => {
   const andNode = w.createAndOrNode(nested.id, valFilter.id, "and");
   assert(andNode.parentId === f.id, "AND node is placed directly under the FILE, not nested under either input");
   assert(f.children.includes(andNode.id), "...and is a real top-level child of the file");
-  assert(andNode.inputA === nested.id && andNode.inputB === valFilter.id, "inputA/inputB reference the two selected filters explicitly");
+  assert(andNode.bakedA.filterType === "text" && andNode.bakedA.value === "pos 1" && andNode.bakedB.value === "val",
+    "bakedA/bakedB are flat copies of each side's OWN single condition");
 
-  // --- getEntries() reads inputA/inputB directly, independent of parentId:
-  // moving the AND node deep into an unrelated subtree changes nothing
-  // about its result. ---
+  // --- getEntries() evaluates bakedA/bakedB as predicates over its own
+  // ordinary parentId chain: moving the AND node deep into an unrelated
+  // subtree changes ITS INPUT ENTRIES (parentEntries), same as any plain
+  // filter — bakedA/bakedB themselves never change. ---
   const before = w.getEntries(andNode.id).map(e => e.id);
   const unrelatedParent = w.createFilterNode(f.id, "text", "message");
   const movedOk = w.moveNode(andNode.id, unrelatedParent.id);
   assert(movedOk === true, "moving an and/or/link node is always a plain, unguarded reparent now");
   assert(andNode.parentId === unrelatedParent.id, "parentId updated by the move");
-  assert(andNode.inputA === nested.id && andNode.inputB === valFilter.id, "inputA/inputB are untouched by the move");
+  assert(andNode.bakedA.value === "pos 1" && andNode.bakedB.value === "val", "bakedA/bakedB are untouched by the move");
   const after = w.getEntries(andNode.id).map(e => e.id);
-  assert(JSON.stringify(before) === JSON.stringify(after), "the filtered RESULT is identical before/after the move — parentId has no bearing on it");
+  // unrelatedParent ("message") still matches every entry in this log, so
+  // the AND's own input pool is unchanged in practice — the move is a
+  // pure re-chain, same mechanism as any other filter, not a special case.
+  assert(JSON.stringify(before) === JSON.stringify(after), "the filtered RESULT is unchanged when the new parent's own pool still contains the same matching entries");
 
-  // --- Link node: same placement + input-based logic, verified against
+  // --- Link node: same placement + baked-condition logic, verified against
   // nearest-match pairing rather than set intersection. ---
   const link = w.createLinkNode(posFilter.id, valFilter.id, "before", 1, {});
   assert(link.parentId === f.id, "LINK node is also placed directly under the FILE");
-  assert(link.inputA === posFilter.id && link.inputB === valFilter.id, "LINK node's inputA/inputB are the reference/target respectively");
+  assert(link.bakedA.value === "pos" && link.bakedB.value === "val", "LINK node's bakedA/bakedB are the reference/target's own conditions");
   const pairs = w.getEntries(link.id);
-  assert(Array.isArray(pairs), "LINK's getEntries resolves via inputA/inputB without throwing");
+  assert(Array.isArray(pairs), "LINK's getEntries resolves via bakedA/bakedB without throwing");
 
-  // --- getEntries() cycle guard: a corrupt/hand-edited inputA/inputB cycle
-  // must degrade gracefully (empty result), not recurse forever. ---
-  const cyc1 = w.createFilterNode(f.id, "text", "x");
-  const cyc2 = w.createFilterNode(f.id, "text", "y");
-  const cycAnd = w.createAndOrNode(cyc1.id, cyc2.id, "and");
-  cyc1.filterType = "and"; cyc1.inputA = cycAnd.id; cyc1.inputB = cyc2.id; // hand-corrupt a cycle: cycAnd -> cyc1 -> cycAnd
-  let threw = false;
-  let cyclicResult = null;
-  try { cyclicResult = w.getEntries(cycAnd.id); } catch { threw = true; }
-  assert(!threw, "a genuine inputA/inputB cycle does not crash getEntries()");
-  assert(Array.isArray(cyclicResult), "...it resolves to an array (degrades gracefully) instead");
+  // No cycle-guard test needed any more: bakedA/bakedB hold plain data, not
+  // node-id references, so there is nothing left to hand-corrupt into a
+  // cycle through them (a parentId self/mutual cycle is a pre-existing,
+  // separate footgun outside this session's scope — moveNode's
+  // isDescendantOrSelf guard already prevents it through the normal UI, see
+  // the "Core data model" note above createAndOrNode in philogg.html).
 
-  // --- Unpack: replaces an and/or/link node in place with its two inputs
-  // (cloned in as visible siblings) plus a fresh combiner referencing them,
-  // at the same tree position — a no-op on the actual filtering result. ---
+  // --- CORE REPRO (the user-reported bug this session fixes): combine
+  // "Some" (A) AND "Entry" (B), verify the result, delete A, verify the
+  // AND's result is UNCHANGED, delete B, verify it's STILL unchanged. ---
+  const some = w.createFilterNode(f.id, "text", "message 5"); // "Some"
+  const entry = w.createFilterNode(f.id, "text", "message");  // "Entry" (matches every entry)
+  const someAndEntry = w.createAndOrNode(some.id, entry.id, "and");
+  const reproCountBefore = w.getEntries(someAndEntry.id).length;
+  assert(reproCountBefore === 1, "sanity: 'Some' AND 'Entry' matches exactly the one entry containing 'message 5'");
+  w.deleteFilterNodeWithUndo(some.id);
+  w.invalidateAllCaches();
+  assert(w.getEntries(someAndEntry.id).length === reproCountBefore, "REPRO: deleting 'Some' (A) leaves the AND filter's result completely unchanged");
+  w.deleteFilterNodeWithUndo(entry.id);
+  w.invalidateAllCaches();
+  assert(w.getEntries(someAndEntry.id).length === reproCountBefore, "REPRO: deleting 'Entry' (B) too still leaves the AND filter's result completely unchanged");
+
+  // --- Ancestor-independence: A nested under an unrelated ancestor C's
+  // restriction must NOT leak into the combined result — only A's own
+  // single condition (and B's) matter, never A's parent chain. ---
+  const afterTen = w.createFilterNode(f.id, "timerange", { from: f.entries[8].ts, to: null }); // C: "only entries after index 8"
+  const aUnderC = w.createFilterNode(afterTen.id, "text", "message 5"); // A, NESTED under C
+  const bPlain = w.createFilterNode(f.id, "text", "message");           // B, matches everything
+  const combinedUnderC = w.createAndOrNode(aUnderC.id, bPlain.id, "and");
+  // A's own condition ("message 5") matches ONE entry file-wide (index 5),
+  // which sits BEFORE C's "after index 8" restriction — if C's restriction
+  // leaked in, the combined result would wrongly be empty.
+  assert(w.getEntries(combinedUnderC.id).length === 1, "combining a nested filter A ignores A's ancestor C's restriction — only A's own condition applies");
+
+  // --- Unpack: materializes bakedA/bakedB back into two real, visible
+  // sibling filter nodes, wired via a FRESH combiner near the original —
+  // purely additive: the original combiner is left completely untouched. ---
   const unpackA = w.createFilterNode(f.id, "text", "pos");
   const unpackB = w.createFilterNode(f.id, "text", "val");
   const toUnpack = w.createAndOrNode(unpackA.id, unpackB.id, "and");
@@ -13691,39 +13753,37 @@ await withApp(async (w, d, T) => {
   const parentBefore = toUnpack.parentId;
   const newComboId = w.unpackAndOrLinkNode(toUnpack.id);
   assert(newComboId && T.state.nodes[newComboId], "unpackAndOrLinkNode returns the id of the fresh combiner node");
-  assert(!T.state.nodes[toUnpack.id], "the original combiner node is gone, replaced by the fresh one");
+  assert(T.state.nodes[toUnpack.id], "the ORIGINAL combiner node is left untouched (purely additive), not deleted");
+  assert(JSON.stringify(w.getEntries(toUnpack.id).map(e => e.id)) === JSON.stringify(resultBefore), "the original combiner still produces the exact same result after Unpack");
   const newCombo = T.state.nodes[newComboId];
   assert(newCombo.filterType === "and", "the fresh combiner is the same filter type as the unpacked node");
-  assert(newCombo.parentId === parentBefore, "the fresh combiner sits at the SAME tree position the unpacked node occupied");
-  assert(T.state.nodes[newCombo.inputA] && T.state.nodes[newCombo.inputA].value === "pos",
-    "the fresh combiner's inputA is a real, visible clone of the original inputA");
-  assert(T.state.nodes[newCombo.inputB] && T.state.nodes[newCombo.inputB].value === "val",
-    "the fresh combiner's inputB is a real, visible clone of the original inputB");
-  assert(newCombo.inputA !== unpackA.id && newCombo.inputB !== unpackB.id,
-    "the clones are FRESH nodes, not the original unpackA/unpackB (which stay wherever they already were)");
+  assert(newCombo.parentId === parentBefore, "the fresh combiner sits next to the unpacked node's own position");
+  assert(newCombo.id !== toUnpack.id, "the fresh combiner is a DIFFERENT node from the original");
+  const materializedA = f.children.map(id => T.state.nodes[id]).find(n => n.value === "pos" && n.id !== unpackA.id && n.id !== posFilter.id);
+  const materializedB = f.children.map(id => T.state.nodes[id]).find(n => n.value === "val" && n.id !== unpackB.id && n.id !== valFilter.id);
+  assert(materializedA && materializedB, "Unpack materializes bakedA/bakedB into two NEW, real, visible sibling filter nodes");
   const resultAfter = w.getEntries(newComboId).map(e => e.id);
-  assert(JSON.stringify(resultBefore) === JSON.stringify(resultAfter), "Unpack is a no-op on the actual filtering result");
+  assert(JSON.stringify(resultBefore) === JSON.stringify(resultAfter), "Unpack's fresh combiner produces the identical result to the original");
 
-  // --- Persistence carriers thread inputA/inputB through unchanged ---
+  // --- Persistence carriers thread bakedA/bakedB through as plain data ---
   const clone = w.cloneSubtree(andNode.id, f.id);
-  assert(clone.inputA === andNode.inputA && clone.inputB === andNode.inputB,
-    "cloneSubtree keeps the clone referencing the SAME original inputA/inputB ids");
+  assert(clone.bakedA.value === andNode.bakedA.value && clone.bakedB.value === andNode.bakedB.value,
+    "cloneSubtree deep-copies bakedA/bakedB as plain data");
 
   const snap = w.snapshotSubtree(andNode.id);
   delete T.state.nodes[andNode.id];
   const restored = w.restoreSubtree(snap);
-  assert(restored.id === andNode.id && restored.inputA === nested.id && restored.inputB === valFilter.id,
-    "snapshotSubtree/restoreSubtree preserve the ORIGINAL id and inputA/inputB (undo/redo)");
+  assert(restored.id === andNode.id && restored.bakedA.value === "pos 1" && restored.bakedB.value === "val",
+    "snapshotSubtree/restoreSubtree preserve the ORIGINAL id and bakedA/bakedB (undo/redo)");
 
   const { roots: cacheRoots } = w.serializeFilterTreeForCache(f);
-  const findAnd = list => { for (const n of list) { if (n.filterType === "and" && n.inputARef != null) return n; const r = findAnd(n.children); if (r) return r; } return null; };
+  const findAnd = list => { for (const n of list) { if (n.filterType === "and" && n.bakedA) return n; const r = findAnd(n.children); if (r) return r; } return null; };
   const serializedAnd = findAnd(cacheRoots);
-  assert(serializedAnd, "serializeFilterTreeForCache emits inputARef/inputBRef for an and/or node");
+  assert(serializedAnd, "serializeFilterTreeForCache emits bakedA/bakedB for an and/or node");
   const f2 = await w.addFile("128b.log", makeLog(0, 10), () => {});
   const refMap2 = w.materializeCachedFilters(f2, cacheRoots);
-  const restoredAndId = Object.values(refMap2).find(id => T.state.nodes[id].filterType === "and" && T.state.nodes[id].inputA);
-  assert(restoredAndId, "materializeCachedFilters resolves inputARef/inputBRef back into real inputA/inputB ids");
-  assert(!T.state.nodes[restoredAndId].inputBroken, "a fully-resolved and/or node round-trips through the session cache without being marked broken");
+  const restoredAndId = Object.values(refMap2).find(id => T.state.nodes[id].filterType === "and" && T.state.nodes[id].bakedA);
+  assert(restoredAndId, "materializeCachedFilters carries bakedA/bakedB through as plain data, no ref-resolution needed");
 });
 
 /* ============================================================
@@ -13884,6 +13944,93 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 135 — General "Just this filter" vs "Include ancestor chain"
+   export/import scope (this session, see CLAUDE.md/CHANGELOG.md). Replaces
+   the removed and/or/link-specific "Include source filters used by
+   combined nodes?" dialog — the choice is now offered for ANY filter node
+   in the actual Save/Export JSON and Save-to-library flows, and the
+   imported branch always attaches under whatever node is currently
+   active/selected at import time (never hardcoded to FILE). Also a
+   regression guard for the reported bug: the dialog must never appear
+   unconditionally at app startup.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("135. General export-scope option (just this filter / with ancestor chain) + no startup dialog");
+
+  // --- Regression guard: the export-scope dialog is never shown at boot,
+  // only as part of an actual save/export action. ---
+  assert(d.querySelector("#exportScopeDialog").classList.contains("hidden"), "the export-scope dialog is hidden at app startup, before any save/export action");
+
+  const f = await w.addFile("135.log", makeLog(0, 20), () => {});
+  const chainNode = w.createFilterNode(f.id, "text", "message");
+  const plainFilter = w.createFilterNode(chainNode.id, "text", "message 1"); // an ORDINARY filter, nested under chainNode
+  w.render();
+
+  // --- "Just this filter" for an ORDINARY (non-and/or/link) filter node:
+  // exactly one node, no ancestor chain. ---
+  const justThisBranch = w.serializeFilterBranch(plainFilter.id, false);
+  assert(justThisBranch.roots.length === 1 && justThisBranch.roots[0].filterType === "text" && justThisBranch.roots[0].children.length === 0,
+    "'just this filter' exports exactly one node for a plain filter type too, no ancestors");
+
+  // --- "Include ancestor chain" for the same ordinary filter: the chain
+  // (chainNode -> plainFilter) comes along. ---
+  const chainBranch = w.serializeFilterBranch(plainFilter.id, true);
+  const chainRoot = chainBranch.roots[0];
+  assert(chainRoot.filterType === "text" && chainRoot.value === "message" && chainRoot.children.length === 1 && chainRoot.children[0].value === "message 1",
+    "'include ancestor chain' brings chainNode along as the root, plainFilter nested under it — same relative structure as the tree");
+
+  // --- Import placement lands under the CURRENT ACTIVE/TARGET node, not
+  // FILE, for BOTH a plain filter and an and/or/link node, at a non-FILE target. ---
+  const fb = await w.addFile("135b.log", makeLog(0, 20, { msgPrefix: "message" }), () => {});
+  const nonFileTarget = w.createFilterNode(fb.id, "text", "message");
+  w.render();
+
+  function setLoadTarget(targetId) {
+    const s = d.createElement("script");
+    s.textContent = `loadFilterTargetId = ${JSON.stringify(targetId)};`;
+    d.body.appendChild(s);
+  }
+
+  const beforeChildren = nonFileTarget.children.length;
+  const fbChildrenBefore = fb.children.length;
+  setLoadTarget(nonFileTarget.id);
+  w.importFilterJson(JSON.stringify({ format: "philogg-filters", version: 2, activeRef: justThisBranch.activeRef, roots: justThisBranch.roots }));
+  assert(nonFileTarget.children.length === beforeChildren + 1, "'just this filter' import lands directly under the current non-FILE target");
+  assert(fb.children.length === fbChildrenBefore, "nothing was created directly under FILE");
+
+  const beforeChildren2 = nonFileTarget.children.length;
+  setLoadTarget(nonFileTarget.id);
+  w.importFilterJson(JSON.stringify({ format: "philogg-filters", version: 2, activeRef: chainBranch.activeRef, roots: chainBranch.roots }));
+  assert(nonFileTarget.children.length === beforeChildren2 + 1, "'include ancestor chain' import also lands directly under the current non-FILE target (the whole chain's root attaches there)");
+
+  // --- Same placement rule for an and/or/link node, at a non-FILE target ---
+  const andA = w.createFilterNode(fb.id, "text", "message 1");
+  const andB = w.createFilterNode(fb.id, "text", "message");
+  const andNode = w.createAndOrNode(andA.id, andB.id, "and");
+  const andCount = w.getEntries(andNode.id).length;
+  const andBranch = w.serializeFilterBranch(andNode.id, false);
+  const beforeChildren3 = nonFileTarget.children.length;
+  setLoadTarget(nonFileTarget.id);
+  w.importFilterJson(JSON.stringify({ format: "philogg-filters", version: 2, activeRef: andBranch.activeRef, roots: andBranch.roots }));
+  assert(nonFileTarget.children.length === beforeChildren3 + 1, "an and/or/link node's export also lands under the current non-FILE target, not FILE");
+  const loadedAnd = T.state.nodes[nonFileTarget.children[nonFileTarget.children.length - 1]];
+  assert(loadedAnd.filterType === "and" && loadedAnd.bakedA && loadedAnd.bakedB, "the imported and/or/link node is fully self-contained via its own bakedA/bakedB");
+  assert(w.getEntries(loadedAnd.id).length >= 0, "it re-evaluates without throwing");
+
+  // --- The export-scope prompt is asked as part of the actual Save filter…
+  // flow too (not just Save to library), and never at startup. jsdom has no
+  // showSaveFilePicker/URL.createObjectURL, so stub the download fallback
+  // (same technique GROUP 21 uses). ---
+  w.downloadJsonFallback = () => {};
+  const savePromise = w.saveFilterToFile(plainFilter.id);
+  await new Promise(r => setTimeout(r, 0));
+  assert(!d.querySelector("#exportScopeDialog").classList.contains("hidden"), "saveFilterToFile also asks the general export-scope question");
+  fireClick(d.querySelector("#exportScopeJustThis"), w);
+  await savePromise;
+  assert(d.querySelector("#exportScopeDialog").classList.contains("hidden"), "the dialog closes again once answered, back to hidden");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -13909,11 +14056,13 @@ process.exit(failed ? 1 : 0);
    Group  5  — 765d68a9 (extraction column sort + cell-selection regression)
    Group  6  — 3f879dbe (the double-click DOM-identity root-cause bug)
    Group  7  — 3f879dbe (copy/cut/paste, drag-and-drop, isFileDrag() overlay
-              gate). REWRITTEN this session for the linkedId -> inputA/
-              inputB redesign: and/or/link nodes are now self-contained
-              (see Group 128), so the old ancestor-cycle guard this group
-              tested no longer exists — moving/copying/dragging one is a
-              plain reparent everywhere, cross-file included.
+              gate). REWRITTEN this session for the bakedA/bakedB correction
+              (see Group 128): and/or/link nodes are now self-contained via
+              a flat baked condition snapshot, not a node-id reference, so
+              the old ancestor-cycle guard this group tested no longer
+              exists — moving/copying/dragging one is a plain reparent
+              everywhere, cross-file included, and bakedA/bakedB (not
+              inputA/inputB) is what every assertion here now checks.
    Group  8  — 62262740 (filter inversion/NOT) — that session shipped
               WITHOUT any jsdom test; this is its first real coverage.
               Also folds in the THIRD exclusion (context), added later in
@@ -13921,12 +14070,13 @@ process.exit(failed ? 1 : 0);
    Group  9  — 1dd227c6 (time context filter)
    Group 10  — 94d8ec50 (Escape-handler crash, releaseEntriesFromIndex)
    Group 11  — 6233b6f7 (filter save/load). REWRITTEN again this session for
-              the linkedId -> inputA/inputB redesign: serializeFilterBranch
-              now takes an explicit includeInputChains opt-in (the "Include
-              source filters used by combined nodes?" prompt) instead of
-              always pulling in a linkedId target's ancestors; covers both
-              the with/without-parent-chains export paths and the "missing
-              input surfaced, not silently dropped" (node.inputBroken) case.
+              the bakedA/bakedB correction: serializeFilterBranch(nodeId,
+              includeAncestors) is now the GENERAL "just this filter" vs
+              "include ancestor chain" choice (see Group 135), not an
+              and/or/link-specific "include source filters" opt-in — and/
+              or/link's bakedA/bakedB are flat data with no node-id inside,
+              so there is no more "missing input"/node.inputBroken case to
+              test at all (removed).
    Group 12  — 727a344e (tailing: growth, split-line buffering, rotation)
    Group 13  — b647f247 (Δt column, timeline minimap)
    Group 14  — 7ef2c2a6 (value assertions, column statistics)
@@ -13949,7 +14099,13 @@ process.exit(failed ? 1 : 0);
               recovered from before it was removed in the same rework) as
               this node's tree icon; verified a time-range filter node
               still shows the clock icon unaffected.
-   Group 16  — 7ef2c2a6 (undo/redo)
+   Group 16  — 7ef2c2a6 (undo/redo). AMENDED this session (bakedA/bakedB
+              correction): the old "AND node fails gracefully while its
+              inputB target is deleted, then self-heals via undo" case
+              tested exactly the bug this session fixes (a live id lookup
+              surviving under a new name) — replaced with the actual
+              requirement: deleting the node bakedB was baked from has ZERO
+              effect on the AND's result, before or after undo.
    Group 17  — 38c96f1d (Highlight/Full view, colour picker,
               computeHighlightMap, revealInHighlightView). The CSS
               flex-direction regression from that same session is NOT
@@ -13975,11 +14131,13 @@ process.exit(failed ? 1 : 0);
               reload). Uses fake-indexeddb (new devDependency): one shared
               IDBFactory across two jsdom windows simulates a reload;
               covers persist round-trip incl. multi-line raw text,
-              linkedRef remap on an AND node, bookmark-by-ordinal,
-              settings, file-deletion cache cleanup, and the
-              "philogg-cache-enabled"="0" escape hatch. Every OTHER group
-              still runs without any IndexedDB, which implicitly covers
-              the feature's graceful-degradation path.
+              bookmark-by-ordinal, settings, file-deletion cache cleanup,
+              and the "philogg-cache-enabled"="0" escape hatch. AMENDED
+              this session (bakedA/bakedB correction): the AND node's
+              round-trip assertion now checks bakedA/bakedB survive as
+              plain data, not a ref-remap. Every OTHER group still runs
+              without any IndexedDB, which implicitly covers the feature's
+              graceful-degradation path.
    Group 21  — this session (2026-08-12): session export/import. Covers
               the design spec's full testing plan: export dialog with
               per-file include/embed checkboxes (captured by stubbing
@@ -15776,33 +15934,31 @@ process.exit(failed ? 1 : 0);
      Group 49 (explicit render() calls, not load ticks) is unaffected and
      still accurately covers what an EXPLICIT render shows mid-parse.
 
-   Group 128 — this session's linkedId -> inputA/inputB redesign (see
-              PROJECT.md "Core data model"). REWRITTEN — supersedes/removes
-              the previous, never-merged squash-box/"Detach copy"/linkedId-
-              dependency-highlight session (formerly Groups 128-131:
-              detachFilterChain, computeLinkedDependencyHighlight, cross-
-              file reconstruction via importBranchAt — none of it shipped
-              to main). and/or/link nodes now carry two fixed, explicit
-              input references (node.inputA/node.inputB) read directly by
-              getEntries(), completely independent of parentId; parentId
-              is purely tree display position. createAndOrNode/
-              createLinkNode always place their result as a new top-level
-              child of the shared root file; moving a node anywhere
-              afterward is a plain, unguarded reparent (no ancestor-cycle
-              risk any more — the old wouldCreateLinkedCycle/
-              subtreeHasLinkedCycle guards and the cross-file
-              importBranchAt reconstruction are gone, since ordinary
-              cloneSubtree/reparent already works correctly regardless of
-              file boundaries once inputs are self-contained); a new
-              "currently resolving" set in getEntries() guards against a
-              genuine inputA/inputB cycle instead. Also covers the new
-              Unpack context-menu action (replaces a combiner in place with
-              its two inputs, cloned in as visible siblings, plus a fresh
-              combiner wired to reference them explicitly, at the same
-              position) and all four persistence carriers
-              (cloneSubtree/snapshotSubtree+restoreSubtree/
-              serializeFilterTreeForCache+materializeCachedFilters)
-              threading inputA/inputB through.
+   Group 128 — this session's CORRECTION of commit 9fd140e's linkedId ->
+              inputA/inputB redesign (see CLAUDE.md/CHANGELOG.md and
+              PROJECT.md "Core data model"). 9fd140e still did a LIVE
+              node-id lookup (getEntries(node.inputA)/getEntries(node.
+              inputB)) just renamed from linkedId — user-reported repro:
+              combine filter A ("Some") and B ("Entry") with AND, delete A,
+              the AND's results vanish along with it. REWRITTEN again this
+              session: and/or/link nodes now carry node.bakedA/node.bakedB
+              — a flat, self-contained COPY of each side's own single
+              condition (filterType/value/caseSensitive/etc, never id/
+              parentId/ancestors) — baked once at creation time and never
+              looking at state.nodes[...] again. getEntries() evaluates
+              bakedA/bakedB as predicates over the node's own ORDINARY
+              input entries (getEntries(node.parentId), exactly like every
+              other filter type — no more special "second entry stream").
+              Covers the exact user repro (delete A, then B, result
+              unchanged both times), ancestor-independence (a filter nested
+              under an unrelated ancestor C combines using only its own
+              condition, never C's restriction), the now-purely-additive
+              Unpack action (materializes bakedA/bakedB into new visible
+              siblings, original node untouched), and all four persistence
+              carriers threading bakedA/bakedB through as plain data (no
+              ref-remapping needed at all, since there's no id inside).
+              No cycle-guard test remains — bakedA/bakedB hold no node-id
+              reference, so there's nothing left to hand-corrupt into one.
 
    Group 129 — (removed) formerly cross-file paste/move reconstruction via
               importBranchAt — that whole mechanism no longer exists once
@@ -15837,5 +15993,19 @@ process.exit(failed ? 1 : 0);
               raw text) instead of e.message (the clean "first ⟶ second"
               join already used by the "extract" branch). Fixed to match
               e.message, same as extract.
+
+   Group 135 — this session, alongside Group 128's bakedA/bakedB
+              correction: generalizes the "just this filter" vs "include
+              ancestor chain" export/import scope to EVERY filter type, not
+              just and/or/link — replacing the removed, buggy AND/OR/LINK-
+              specific "Include source filters used by combined nodes?"
+              dialog (#includeInputsDialog), which the person reported
+              opening incorrectly at app startup. Covers both scopes for a
+              plain filter node, import placement landing under the
+              current active/target node (not FILE) for both a plain
+              filter and an and/or/link node at a non-FILE target, the
+              prompt appearing as part of saveFilterToFile too (not just
+              save-to-library), and a regression guard that the dialog
+              never shows unconditionally at startup.
 
    ============================================================ */
