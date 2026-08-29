@@ -6924,6 +6924,19 @@ function pushUndo(action) {
 // Wrapped mutators — see the module comment above for why these (not
 // deleteNode/moveNode directly) are the call sites every user-facing delete
 // and move should go through.
+// A squash group's own TOP-LEVEL members (see detachFilterChain) — nodes
+// sharing groupId whose parentId is NOT itself a group member. Shared by
+// deleteFilterNodeWithUndo's cascade, moveSquashGroupWithUndo, and the tree
+// renderer's box-building (renderNodeOrGroup/renderSquashGroupBox).
+function squashGroupTopLevelMembers(groupId) {
+  return Object.keys(state.nodes).filter(id => {
+    const n = state.nodes[id];
+    if (n.squashGroup !== groupId) return false;
+    const p = state.nodes[n.parentId];
+    return !p || p.squashGroup !== groupId;
+  });
+}
+
 function deleteFilterNodeWithUndo(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return;
@@ -6961,12 +6974,7 @@ function deleteFilterNodeWithUndo(nodeId) {
   // duplicate it on restore.
   if (node.squashGroup) {
     const groupId = node.squashGroup;
-    const topLevelMembers = Object.keys(state.nodes).filter(id => {
-      const n = state.nodes[id];
-      if (n.squashGroup !== groupId) return false;
-      const p = state.nodes[n.parentId];
-      return !p || p.squashGroup !== groupId;
-    });
+    const topLevelMembers = squashGroupTopLevelMembers(groupId);
     const items = topLevelMembers.map(id => {
       const n = state.nodes[id];
       const parent = state.nodes[n.parentId];
@@ -7089,19 +7097,20 @@ function moveFilterNodeWithUndo(nodeId, newParentId) {
     return newId;
   }
 
-  // A visible "Detach copy" node (see detachFilterChain) — node.squashGroup
-  // set, node.hiddenInTree NOT set — has its OWN parentId pointing at a
-  // private hidden ancestor (e.g. a link node) the group needs for its own
-  // computation. Reparenting the DISPLAY node itself in place would
-  // silently detach it from that chain — so instead, move the group's own
-  // TOP-LEVEL members (the ones sitting directly under the file, same set
-  // deleteFilterNodeWithUndo's cascade already identifies) to newParentId
-  // as one compound action; the display node's own parentId never changes,
-  // only where the group as a whole is filed. This is what actually lets a
-  // detached filter be dragged/cut-pasted anywhere a normal filter can be
-  // (person-reported: it was flatly blocked before, not just "moved
-  // differently").
-  if (node.squashGroup && !node.hiddenInTree) {
+  // Any member of a "Detach copy" group (see detachFilterChain) — not just
+  // the visible display node, since a hiddenInTree member can now also get
+  // a real, actionable row too, inside an expanded group's box (see
+  // renderSquashGroupBox) — has its OWN parentId pointing at another
+  // private group member the group needs for its own computation.
+  // Reparenting ANY single member in place would silently break that
+  // chain — so instead, move the group's own TOP-LEVEL members (the ones
+  // sitting directly under the file, same set deleteFilterNodeWithUndo's
+  // cascade already identifies) to newParentId as one compound action,
+  // regardless of which member was actually dragged/cut. This is what
+  // actually lets a detached filter be dragged/cut-pasted anywhere a
+  // normal filter can be (person-reported: it was flatly blocked before,
+  // not just "moved differently").
+  if (node.squashGroup) {
     return moveSquashGroupWithUndo(node.squashGroup, newParentId) ? nodeId : false;
   }
   const oldParentId = node.parentId;
@@ -7122,12 +7131,7 @@ function moveFilterNodeWithUndo(nodeId, newParentId) {
 function moveSquashGroupWithUndo(groupId, newParentId) {
   const newParent = state.nodes[newParentId];
   if (!newParent) return false;
-  const topLevelMembers = Object.keys(state.nodes).filter(id => {
-    const n = state.nodes[id];
-    if (n.squashGroup !== groupId) return false;
-    const p = state.nodes[n.parentId];
-    return !p || p.squashGroup !== groupId;
-  });
+  const topLevelMembers = squashGroupTopLevelMembers(groupId);
   if (!topLevelMembers.length) return false;
   if (topLevelMembers.some(id => id === newParentId || isDescendantOrSelf(id, newParentId))) return false;
 
@@ -7904,7 +7908,12 @@ function renderTree() {
 // through.
 function flattenTreeIds() {
   const ids = [];
-  (function walk(list) {
+  // forceVisible mirrors renderNode/renderNodeOrGroup's own parameter —
+  // true only while walking INSIDE an expanded squash group's box, so a
+  // hidden member's real children (including the group's own display node,
+  // now nested inside the box rather than floating above it) get visited
+  // like any other real row instead of triggering the box logic again.
+  (function walk(list, forceVisible) {
     list.forEach(id => {
       const node = state.nodes[id];
       // A queued placeholder (see createQueuedFileNode) has nothing to
@@ -7913,20 +7922,27 @@ function flattenTreeIds() {
       // land on a row with no visible "active" state and no real content.
       if (node && node.queued) return;
       // hiddenInTree nodes (a "Detach copy" node's private ancestor chain —
-      // see detachFilterChain) have no row to land on either, but arrow-key
-      // nav must still reach whatever they lead to, same passthrough
-      // renderNode itself uses.
-      if (node && node.hiddenInTree) { walk(node.children); return; }
+      // see detachFilterChain) have no row of their own in the MAIN tree —
+      // same passthrough renderNode itself uses — UNLESS their group is
+      // expanded, in which case the whole group (every member, arrow-key
+      // reachable now that they're all real rows inside the box) is walked
+      // once, the same de-dup renderNodeOrGroup uses (only the group's
+      // first top-level member triggers it).
+      if (node && node.hiddenInTree && !forceVisible) {
+        if (node.squashExpanded && node.squashGroup) {
+          const members = squashGroupTopLevelMembers(node.squashGroup);
+          if (members[0] === id) walk(members, true);
+          return;
+        }
+        walk(node.children, forceVisible);
+        return;
+      }
       ids.push(id);
       // node.collapsed hides real children the normal way — same rule
-      // renderNode's own row-recursion follows (see the chevron comment
-      // there); a squash group's own private-chain box is intentionally
-      // NOT walked here regardless of squashExpanded — its private members
-      // have no meaningful "next" arrow-key stop of their own once
-      // rendered inside the box, only the display row does.
-      if (node && !node.collapsed) walk(node.children);
+      // renderNode's own row-recursion follows.
+      if (node && !node.collapsed) walk(node.children, forceVisible);
     });
-  })(state.rootIds);
+  })(state.rootIds, false);
   return ids;
 }
 
@@ -8257,33 +8273,47 @@ function renderRenameInput(id, node) {
   return input;
 }
 
+// Renders a child that MIGHT be the entry point into an expanded squash
+// group's private-chain box (see renderSquashGroupBox) — the one caller-
+// side decision point every "render this child id" call site (renderNode's
+// own children loop, and its hiddenInTree passthrough recursion) goes
+// through instead of calling renderNode(id, depth) directly, so the box
+// gets built exactly once per group regardless of how many top-level
+// members it has (see detachFilterChain — usually one, occasionally two:
+// the private ancestor chain plus a separately pulled-in linkedId target).
+// forceVisible is passed straight through to renderNode when no box is
+// involved — never true from a normal (non-box) call site.
+function renderNodeOrGroup(id, depth, forceVisible) {
+  const node = state.nodes[id];
+  if (!forceVisible && node.hiddenInTree && node.squashExpanded && node.squashGroup) {
+    const members = squashGroupTopLevelMembers(node.squashGroup);
+    if (members[0] !== id) return document.createDocumentFragment(); // an earlier sibling member already built the (single, shared) box
+    return renderSquashGroupBox(node.squashGroup);
+  }
+  return renderNode(id, depth, forceVisible);
+}
+
 // forceVisible: true only when rendering INSIDE a squash group's own
-// expanded box (see renderSquashGroupBox) — everywhere else it's the
-// normal main tree, where a hiddenInTree node stays transparent.
+// expanded box (see renderSquashGroupBox/renderNodeOrGroup) — everywhere
+// else it's the normal main tree, where a hiddenInTree node stays
+// transparent (below) until the group's own box decides otherwise.
 function renderNode(id, depth, forceVisible) {
   const node = state.nodes[id];
   if (node.type === "file" && node.queued) return renderQueuedFileRow(node, depth);
-  if (forceVisible && node.squashGroup && !node.hiddenInTree) {
-    // We're rendering the group's own private-chain box, and this IS the
-    // group's display node — it already has its own, always-visible row
-    // above the box; the box's whole point is showing what it privately
-    // depends ON, so it stops here rather than showing the display node a
-    // second time as the last link in its own chain (it has no further
-    // hiddenInTree descendants below it anyway).
-    return document.createDocumentFragment();
-  }
   // A "Detach copy" node's private ancestor chain (see detachFilterChain)
   // is marked hiddenInTree so the group reads as one tree row instead of
-  // the whole chain it privately depends on — treated as transparent here
-  // in the MAIN tree: no row of its own, but its children still render at
-  // THIS depth (not depth+1), so the chain "passes through" straight to
-  // whichever descendant is the group's actual visible node. Returns a
-  // DocumentFragment instead of a wrap element — appendChild accepts both.
-  // Inside the box (forceVisible), this is skipped entirely — every
-  // private member gets a real row there, which is the whole point.
+  // the whole chain it privately depends on — transparent here in the MAIN
+  // tree (no row of its own, children render at THIS depth, not depth+1,
+  // so the chain "passes through" to the group's real, always-visible
+  // display node) UNLESS the group is expanded, in which case
+  // renderNodeOrGroup (the caller) already redirected to the box before
+  // ever reaching here — forceVisible is how the box's OWN internal
+  // rendering tells every member (hidden or not, display included) to
+  // render as a real row instead. Returns a DocumentFragment instead of a
+  // wrap element when transparent — appendChild accepts both.
   if (node.hiddenInTree && !forceVisible) {
     const frag = document.createDocumentFragment();
-    node.children.forEach(cid => frag.appendChild(renderNode(cid, depth, forceVisible)));
+    node.children.forEach(cid => frag.appendChild(renderNodeOrGroup(cid, depth, forceVisible)));
     return frag;
   }
   const wrap = document.createElement("div");
@@ -8414,12 +8444,11 @@ function renderNode(id, depth, forceVisible) {
     (node.label ? "  [" + node.name + "]" : "");
   row.appendChild(label);
 
-  if (treeIndicatorMode !== "type") { // see the tree-icon block above — skipped when the abbreviation already shows there
-    const typeTag = document.createElement("span");
-    typeTag.className = "tree-type-tag";
-    typeTag.textContent = typeTagFor(node);
-    row.appendChild(typeTag);
-  }
+  // The separate TXT/LNK/... badge is gone (person-reported: with "Icon"
+  // selected it still showed up here, duplicating the same info the icon
+  // slot already states) — the type is shown exactly once, at the icon's
+  // own position, in whichever form Settings -> Behavior picks; see the
+  // tree-icon block above.
 
   const count = document.createElement("span");
   count.className = "tree-count";
@@ -8437,7 +8466,15 @@ function renderNode(id, depth, forceVisible) {
     const fraction = parentCount > 0 ? Math.min(1, ownCount / parentCount) : 0;
     const pctLabel = Math.round(fraction * 100) + "%";
     pct.title = pctLabel + " of parent (" + parentCount.toLocaleString("de-DE") + ")";
-    pct.innerHTML = '<span class="tree-pct-track"><span class="tree-pct-fill" style="width:' + (fraction * 100) + '%"></span></span>';
+    // person-reported: the bar looked identical everywhere, because a
+    // filter typically keeps a small SLICE of its parent (well under 10%)
+    // — a linear 0-100% fill puts every realistic value within a pixel or
+    // two of "empty," at this track's width. sqrt() exaggerates the low
+    // end so everyday differences (0.4% vs. 13% vs. 100%) actually read
+    // apart at a glance, and a nonzero fraction gets a small minimum width
+    // so it's never truly invisible even at a fraction of a percent.
+    const barWidth = fraction <= 0 ? 0 : Math.max(6, Math.sqrt(fraction) * 100);
+    pct.innerHTML = '<span class="tree-pct-track"><span class="tree-pct-fill" style="width:' + barWidth + '%"></span></span>';
   }
   row.appendChild(pct);
 
@@ -8521,8 +8558,13 @@ function renderNode(id, depth, forceVisible) {
   // itself guards against the one genuinely unsafe case — being dropped onto
   // its own linkedId target's subtree, for and/or/link nodes); every node
   // (file or filter) is a valid drop target to become the new parent, exactly
-  // matching what Ctrl+V already allows.
-  if (node.type === "filter" && !node.locked) {
+  // matching what Ctrl+V already allows. hiddenInTree members now DO get a
+  // real row (forceVisible, inside an expanded squash group's box — see
+  // renderSquashGroupBox) but must stay non-draggable: moveFilterNodeWithUndo
+  // only special-cases the group's own TRUE display node (squashGroup set,
+  // hiddenInTree false); dragging a private ancestor's row here would fall
+  // through to a plain in-place reparent and corrupt the group's own chain.
+  if (node.type === "filter" && !node.locked && !node.hiddenInTree) {
     row.draggable = true;
     row.addEventListener("dragstart", ev => {
       draggedNodeId = id;
@@ -8560,49 +8602,33 @@ function renderNode(id, depth, forceVisible) {
     wrap.appendChild(renderFilterHistoryPreview(node));
   }
   // node.collapsed hides real children the normal way (chevron above).
-  // Never gates a squash group's own private-chain box below — that has
-  // its own, separate node.squashExpanded state (see the chevron comment
-  // above for why the two are deliberately independent).
   if (!node.collapsed) {
-    node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1, forceVisible)));
-  }
-  // Only the group's TRUE display node (hiddenInTree false — every other
-  // member also carries the same squashGroup/squashExpanded, since
-  // toggleSquashGroupExpanded sets them on the whole group at once) opens
-  // the box. Without this check, a hidden member rendered forceVisible
-  // INSIDE the box would append its own copy of the same box again —
-  // infinite recursion, since it's still a topLevelMember of its own group.
-  if (!node.hiddenInTree && node.squashGroup && node.squashExpanded) {
-    wrap.appendChild(renderSquashGroupBox(node.squashGroup));
+    node.children.forEach(cid => wrap.appendChild(renderNodeOrGroup(cid, depth + 1, forceVisible)));
   }
   return wrap;
 }
 
-// The inline box a squash group's display row opens below itself when
-// expanded (see the chevron in renderNode, and toggleSquashGroupExpanded).
-// The private chain isn't a normal subtree — it sits ABOVE the display
-// node via parentId, not below it as real children — so it can't just be
-// un-hidden in the main tree's usual flow; this renders it as its own
-// small nested tree instead, starting from the group's own top-level
-// member(s) (usually the private ancestor chain's root; occasionally a
-// SECOND, unrelated top-level member too — e.g. a link's pulled-in
-// linkedId target, see detachFilterChain/serializeFilterBranch's
-// attach:"file" case), visually set apart with a background (same idea as
-// a folder section or the filter-history ghost preview). Passes
-// forceVisible so renderNode renders every private member as a real row
-// instead of staying transparent, and stops automatically at the group's
-// own display node (renderNode's own guard at the top) so it isn't shown
-// a second time as the last link in its own chain.
+// The inline box that REPLACES a squash group's display row when expanded
+// (built by renderNodeOrGroup, the one caller-side decision point every
+// "render this child" call site goes through — see there). The private
+// chain isn't a normal subtree — it sits ABOVE the display node via
+// parentId, not below it as real children — so it can't just be un-hidden
+// in the main tree's usual flow; this renders it as its own small nested
+// tree instead, starting from the group's own top-level member(s) (usually
+// the private ancestor chain's root; occasionally a SECOND, unrelated
+// top-level member too — e.g. a link's pulled-in linkedId target, see
+// detachFilterChain/serializeFilterBranch's attach:"file" case), visually
+// set apart with a background (same idea as a folder section or the
+// filter-history ghost preview). Every member renders with forceVisible —
+// including the display node itself, now the last real row INSIDE the box
+// rather than a separate row above it, so the box is the group's complete,
+// non-duplicated picture (person-reported: it originally showed only the
+// ancestors, with the display row left floating above, unexpanded, on its
+// own).
 function renderSquashGroupBox(groupId) {
   const box = document.createElement("div");
   box.className = "tree-squash-box";
-  const topLevelMembers = Object.keys(state.nodes).filter(mid => {
-    const n = state.nodes[mid];
-    if (n.squashGroup !== groupId) return false;
-    const p = state.nodes[n.parentId];
-    return !p || p.squashGroup !== groupId;
-  });
-  topLevelMembers.forEach(mid => box.appendChild(renderNode(mid, 0, true)));
+  squashGroupTopLevelMembers(groupId).forEach(mid => box.appendChild(renderNode(mid, 0, true)));
   return box;
 }
 

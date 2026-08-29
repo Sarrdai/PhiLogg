@@ -9849,7 +9849,7 @@ await withApp(async (w, d, T) => {
   assert(T.state.activeId === levelNode.id, "the new level node becomes the active node");
   assert(levelNode.name === "ERROR", "node name is the joined level list");
   const row = d.querySelector('.tree-row[data-node-id="' + levelNode.id + '"]');
-  assert(row.querySelector(".tree-type-tag").textContent === "LVL", "tree row shows the LVL type tag");
+  assert(w.typeTagFor(levelNode) === "LVL", "typeTagFor still reports LVL for a level node (the separate .tree-type-tag badge itself is gone — see Group 132, the type shows once, at the icon's own position, per the Settings -> Behavior indicator mode)");
   assert(row.querySelector(".tree-label").textContent === "ERROR", "tree row label shows the level list");
   assert(w.getEntries(levelNode.id).length === 4, "getEntries' new \"level\" dispatch branch filters correctly, got " + w.getEntries(levelNode.id).length);
   assert(T.currentViewEntries.length === 4, "Filtered view narrows to the 4 ERROR entries");
@@ -14002,12 +14002,46 @@ await withApp(async (w, d, T) => {
   const cloneLinkId = T.state.nodes[displayId].parentId;
   assert(box.querySelector('.tree-row[data-node-id="' + cloneLinkId + '"]') !== null,
     "the private link clone renders INSIDE the box, not as a flat top-level sibling");
-  assert(d.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron').classList.contains("expanded"), "the display's own chevron reflects expanded");
-  // The display node itself is never shown a second time inside its own box.
-  assert(box.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 0,
-    "the display node is not duplicated inside its own private-chain box");
-  fireClick(displayChevron(), w);
+  // The box REPLACES the whole entry — the display node now renders once,
+  // INSIDE the box (as the last real row in its own private chain), not a
+  // second time floating above it as a separate top-level row.
+  assert(d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 1,
+    "the display node renders exactly once while expanded");
+  assert(box.querySelector('.tree-row[data-node-id="' + displayId + '"]') !== null,
+    "...and that one row is INSIDE the box, not a separate row above it");
+  assert(box.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron').classList.contains("expanded"),
+    "the display's own chevron (now inside the box) reflects expanded");
+  // --- A hidden member's row, now real INSIDE the box, must stay
+  // non-draggable, and moving it (any entry point) still moves the WHOLE
+  // group rather than corrupting it via a plain in-place reparent. ---
+  const cloneLinkRow = box.querySelector('.tree-row[data-node-id="' + cloneLinkId + '"]');
+  assert(cloneLinkRow.getAttribute("draggable") !== "true", "a hiddenInTree member's row (even shown inside the box) is not draggable");
+  const otherSpot = w.createFilterNode(f.id, "text", "elsewhere");
+  const clonePosId = T.state.nodes[cloneLinkId].parentId;
+  const movedViaHiddenMember = w.moveFilterNodeWithUndo(cloneLinkId, otherSpot.id);
+  assert(movedViaHiddenMember === cloneLinkId, "moveFilterNodeWithUndo still succeeds when called on a hidden member directly");
+  assert(T.state.nodes[clonePosId].parentId === otherSpot.id, "...and moves the group's own top-level root, not the hidden member itself in place");
+  w.undo();
+
+  fireClick(box.querySelector('.tree-row[data-node-id="' + displayId + '"] .tree-chevron'), w);
   assert(d.querySelector(".tree-squash-box") === null, "collapsing removes the box again");
+  assert(d.querySelectorAll('.tree-row[data-node-id="' + displayId + '"]').length === 1,
+    "the display node is back to a single top-level row after collapsing");
+
+  // --- Row-count percentage bar uses a non-linear scale so small-but-
+  // different fractions actually read apart (person-reported: every row
+  // looked like an identical, empty-looking line) ---
+  const bigFile = await w.addFile("big.log", makeLog(0, 1000), () => {});
+  const tinyFilter = w.createFilterNode(bigFile.id, "text", "message 1"); // ~1/1000 of parent
+  const bigFilter = w.createFilterNode(bigFile.id, "text", "message"); // matches ~all of parent
+  w.render();
+  const fillWidth = nodeId => {
+    const el = d.querySelector('.tree-row[data-node-id="' + nodeId + '"] .tree-pct-fill');
+    return el ? parseFloat(el.style.width) : null;
+  };
+  const tinyWidth = fillWidth(tinyFilter.id), bigWidth = fillWidth(bigFilter.id);
+  assert(tinyWidth !== null && bigWidth !== null && tinyWidth > 0 && bigWidth > tinyWidth,
+    "a small-but-real fraction still gets a nonzero, visibly smaller bar than a much larger one, got tiny=" + tinyWidth + " big=" + bigWidth);
 
   // --- Extract nodes get a highlight-color swatch too ---
   const extractRow = d.querySelector('.tree-row[data-node-id="' + extract.id + '"]');
@@ -14018,8 +14052,8 @@ await withApp(async (w, d, T) => {
   const parentRowIconMode = d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-icon');
   assert(!parentRowIconMode.classList.contains("tree-icon-type") && parentRowIconMode.textContent === "",
     "icon mode (default): the icon slot shows a glyph, not text");
-  assert(d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-type-tag') !== null,
-    "...and the separate TXT/LNK/... badge is still shown too, exactly like before this setting existed");
+  assert(d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-type-tag') === null,
+    "...and the separate TXT/LNK/... badge is never shown at all (person-reported: it used to duplicate icon mode's own info) — the type is only ever stated once, at the icon's own position");
 
   d.getElementById("settingsTreeIndicatorMode").value = "type";
   d.getElementById("settingsTreeIndicatorMode").dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -14027,7 +14061,7 @@ await withApp(async (w, d, T) => {
   assert(parentRowTypeMode.classList.contains("tree-icon-type") && parentRowTypeMode.textContent === w.typeTagFor(T.state.nodes[parent.id]),
     "type mode: the icon slot shows the TXT/LNK/... abbreviation instead");
   assert(d.querySelector('.tree-row[data-node-id="' + parent.id + '"] .tree-type-tag') === null,
-    "...and the separate badge is skipped entirely (no duplicated info)");
+    "...and the separate badge stays absent here too");
 
   // Setting persists (same localStorage-preference tier every other
   // Settings -> Behavior toggle in this app uses).
