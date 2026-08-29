@@ -1697,6 +1697,18 @@
   }
   #timeRangeDialog.hidden{display:none;}
   #timeRangeDialog input[type="datetime-local"]{flex:1 1 auto; min-width:0;}
+
+  /* ---------- Export scope dialog ("Just this filter" vs "Include ancestor
+     chain" — see openExportScopePrompt) — was missing its overlay CSS
+     entirely, which left it sitting inline in the document flow (always
+     visible, wherever its markup happens to fall in the body) instead of as
+     a proper fixed modal like the dialogs above/below it. ---------- */
+  #exportScopeDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
+  }
+  #exportScopeDialog.hidden{display:none;}
   .time-range-hint{font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-tertiary);}
   .time-range-clear{
     flex:0 0 auto; width:24px; height:24px; display:flex; align-items:center; justify-content:center;
@@ -16383,12 +16395,11 @@ function bakedConditionName(baked) {
 // Materializes an and/or/link node's own bakedA/bakedB back into two real,
 // visible sibling filter nodes (same filterType/fields), wired together via
 // a fresh and/or/link node baked from THEIR condition, inserted right next
-// to the original node. Purely additive: the original and/or/link node is
-// left completely untouched and keeps working exactly as before, using its
-// own original bakedA/bakedB — Unpack just makes the two building blocks
-// visible/editable again (there's no dedicated "edit and/or/link inputs"
-// UI — see FEATURE_BACKLOG.md). Returns the new combiner node's id (to make
-// active), or null if nodeId isn't an and/or/link node.
+// to the original node's former position — replacing it there (the original
+// is deleted; there's no dedicated "edit and/or/link inputs" UI — see
+// FEATURE_BACKLOG.md), so Unpack doesn't leave a duplicate of the combiner
+// behind. Returns the new combiner node's id (to make active), or null if
+// nodeId isn't an and/or/link node.
 function unpackAndOrLinkNode(nodeId) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return null;
@@ -16414,6 +16425,7 @@ function unpackAndOrLinkNode(nodeId) {
   const insertIndex = parent.children.indexOf(nodeId) + 1;
   parent.children.splice(Math.max(0, insertIndex), 0, combiner.id);
 
+  deleteNode(nodeId);
   state.activeId = combiner.id;
   invalidateAllCaches();
   return combiner.id;

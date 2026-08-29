@@ -13665,8 +13665,10 @@ await withApp(async (w, d, T) => {
    afterward only ever changes parentId, re-chaining its INPUT entries
    (getEntries(node.parentId), same as any other filter type) but never
    touching bakedA/bakedB; and Unpack materializes bakedA/bakedB back into
-   visible sibling filters, purely additively (the original node is left
-   untouched).
+   visible sibling filters wired via a fresh combiner that REPLACES the
+   original node at its own position (the original is deleted — a session
+   fix: an earlier pass here had made Unpack "purely additive", leaving the
+   original node behind as a duplicate of the fresh combiner it created).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("128. Self-contained and/or/link inputs: placement, move, Unpack");
@@ -13744,8 +13746,9 @@ await withApp(async (w, d, T) => {
   assert(w.getEntries(combinedUnderC.id).length === 1, "combining a nested filter A ignores A's ancestor C's restriction — only A's own condition applies");
 
   // --- Unpack: materializes bakedA/bakedB back into two real, visible
-  // sibling filter nodes, wired via a FRESH combiner near the original —
-  // purely additive: the original combiner is left completely untouched. ---
+  // sibling filter nodes, wired via a FRESH combiner that replaces the
+  // original at its own position — the original is deleted, so Unpack
+  // never leaves a duplicate of itself behind. ---
   const unpackA = w.createFilterNode(f.id, "text", "pos");
   const unpackB = w.createFilterNode(f.id, "text", "val");
   const toUnpack = w.createAndOrNode(unpackA.id, unpackB.id, "and");
@@ -13753,11 +13756,10 @@ await withApp(async (w, d, T) => {
   const parentBefore = toUnpack.parentId;
   const newComboId = w.unpackAndOrLinkNode(toUnpack.id);
   assert(newComboId && T.state.nodes[newComboId], "unpackAndOrLinkNode returns the id of the fresh combiner node");
-  assert(T.state.nodes[toUnpack.id], "the ORIGINAL combiner node is left untouched (purely additive), not deleted");
-  assert(JSON.stringify(w.getEntries(toUnpack.id).map(e => e.id)) === JSON.stringify(resultBefore), "the original combiner still produces the exact same result after Unpack");
+  assert(!T.state.nodes[toUnpack.id], "the ORIGINAL combiner node is deleted — Unpack replaces it, it doesn't duplicate it");
   const newCombo = T.state.nodes[newComboId];
   assert(newCombo.filterType === "and", "the fresh combiner is the same filter type as the unpacked node");
-  assert(newCombo.parentId === parentBefore, "the fresh combiner sits next to the unpacked node's own position");
+  assert(newCombo.parentId === parentBefore, "the fresh combiner sits at the unpacked node's own former position");
   assert(newCombo.id !== toUnpack.id, "the fresh combiner is a DIFFERENT node from the original");
   const materializedA = f.children.map(id => T.state.nodes[id]).find(n => n.value === "pos" && n.id !== unpackA.id && n.id !== posFilter.id);
   const materializedB = f.children.map(id => T.state.nodes[id]).find(n => n.value === "val" && n.id !== unpackB.id && n.id !== valFilter.id);
@@ -13959,7 +13961,19 @@ await withApp(async (w, d, T) => {
 
   // --- Regression guard: the export-scope dialog is never shown at boot,
   // only as part of an actual save/export action. ---
-  assert(d.querySelector("#exportScopeDialog").classList.contains("hidden"), "the export-scope dialog is hidden at app startup, before any save/export action");
+  const exportScopeDialogEl = d.querySelector("#exportScopeDialog");
+  assert(exportScopeDialogEl.classList.contains("hidden"), "the export-scope dialog is hidden at app startup, before any save/export action");
+  // --- Regression guard: #exportScopeDialog previously had NO CSS at all
+  // (no .hidden{display:none} rule, no modal-overlay positioning), so it
+  // rendered inline in the document flow instead of a proper fixed overlay
+  // dialog — permanently visible, stuck wherever it happened to fall in the
+  // body, and unclickable/invisible in practice, which also silently hung
+  // saveFilterToLibrary forever (its resolve() never fires, so the write to
+  // the "filterLibrary" store never happens). ---
+  assert(w.getComputedStyle(exportScopeDialogEl).display === "none", "hidden #exportScopeDialog actually resolves to display:none (was previously un-styled and always visible)");
+  exportScopeDialogEl.classList.remove("hidden");
+  assert(w.getComputedStyle(exportScopeDialogEl).position === "fixed", "shown #exportScopeDialog is a fixed-position modal overlay like the app's other dialogs, not an inline block");
+  exportScopeDialogEl.classList.add("hidden");
 
   const f = await w.addFile("135.log", makeLog(0, 20), () => {});
   const chainNode = w.createFilterNode(f.id, "text", "message");
