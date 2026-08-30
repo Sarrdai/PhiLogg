@@ -73,7 +73,7 @@ this point.
 
 ### Filter tree workflow
 
-58. **Inline editing of an AND/OR/LINK node's `inputA`/`inputB`** — today the only way to change what a combiner references is Unpack (replace it with its two inputs plus a fresh combiner, then re-link by hand) or delete-and-recreate; a dedicated small dialog/picker to re-point `inputA`/`inputB` directly, without unpacking, would be more direct for a person who just wants to swap one side.
+58. **Inline editing of an AND/OR/LINK node's `bakedA`/`bakedB`** — today the only way to change what a combiner matches is Unpack (which materializes its two baked sides as visible sibling filters, leaving the combiner itself unchanged — so a real edit still means delete-and-recreate) or delete-and-recreate outright; a dedicated small dialog to re-bake `bakedA`/`bakedB` directly would be more direct for a person who just wants to swap one side.
 19. **File-independent (universal) cache for the `.html` build** — today the cache appears to be keyed per filename; a shared/universal cache would keep working across renamed or re-opened files. Open question: how to handle a cached payload left over from an incompatible older/newer app version (versioning or invalidation needed).
 
 ### Value extraction & aggregation
