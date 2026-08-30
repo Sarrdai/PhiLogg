@@ -10,7 +10,7 @@ chronological, dated history — read it for "why/when did X change", not for
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (~15,000 lines, inline CSS,
+PhiLogg: a single self-contained `philogg.html` (~19,500 lines, inline CSS,
 vanilla JS — no framework, no build tooling). Personal tool for browser-based
 log analysis. Companion: `tests/philogg.regression.test.js` (jsdom
 regression suite, see `tests/README.md` for conventions). Optional
@@ -61,6 +61,9 @@ across clicks (`renderVisibleRows()` rebuilds nodes, breaking native
 `dblclick`; `renderTree()` does too, breaking native `click` on another row
 during a hot loop — see "load ticks never rebuild `#tree`" in PROJECT.md);
 no `crypto.subtle` (sync FNV-1a fingerprint is intentional).
+`node.value` is immutable by convention (clone/snapshot/capture copy it by
+reference — replace it wholesale, never mutate the object/array in place);
+`restoreSubtree` rebuilds nodes as new objects under the original ids.
 Any new filter-node field must be threaded through all persistence carriers:
 `cloneSubtree`, `snapshotSubtree`/`restoreSubtree`,
 `serializeFilterBranch`/`importFilterJson`,
