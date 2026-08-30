@@ -1245,6 +1245,76 @@
     position:absolute; left:-12px; top:50%; transform:translateY(-50%);
     width:5px; height:5px; border-radius:50%; background:var(--accent); pointer-events:none;
   }
+
+  /* ---------- Context view (#highlightRows) — see buildContextView ----------
+     The active node's matches carry the SAME .ctx-bracket the context/
+     countContext filter already draws in the Filtered view: people read that
+     bracket as "this is what the filter produced", which is exactly the
+     statement this view needed to make. It gets its OWN gutter lane here
+     though, left of the bookmark icon, rather than sharing .hl-markers' slot —
+     in the Filtered view a bracket/colour-marker overlap is a rare, documented
+     edge case, but here EVERY match is bracketed, so sharing would collide
+     constantly. The extra 12px of lane is added to #highlightRows' own left
+     padding by the same rule, so the bracket never clips into col-bar. */
+  #highlightRows.ctx-active{ padding-left: calc(38px + (var(--color-mark-w) - 3px)); }
+  #highlightRows.ctx-active .ctx-bracket{ left: calc(-9px - (var(--color-mark-w) - 3px) - 26px); }
+  /* Revealed context rows recede. Opacity ONLY — a colour change would flatten
+     the .lvl-error/.lvl-warn row tinting, which is the most important colour
+     information in a log view; hovering or selecting one brings it back to
+     full strength so it stays properly readable, which is the whole point of
+     having the context there. */
+  .log-row.ctx-context{ opacity:.5; }
+  .log-row.ctx-context:hover,
+  .log-row.ctx-context.selected,
+  .log-row.ctx-context.row-multi-selected{ opacity:1; }
+
+  /* Gap strip: one per hidden run between two matches, rendered as a plain
+     block sibling after its preceding row — the same shape .note-row already
+     uses (see appendNoteRow), with its height folded into the virtualization
+     math by buildContextRowOffsets. Negative left margin lets it reach back
+     across the gutter lanes so it reads as a full-width divider rather than as
+     an indented row. */
+  .ctx-gap{
+    box-sizing:border-box; display:flex; align-items:center; gap:4px;
+    margin-left: calc(-1 * (38px + (var(--color-mark-w) - 3px)) + 8px); padding:0 4px;
+    font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);
+    background:var(--bg-elevated);
+    border-top:1px dashed var(--border-soft); border-bottom:1px dashed var(--border-soft);
+  }
+  .ctx-gap.ctx-gap-open{ border-style:solid; background:transparent; }
+  .ctx-gap-btn{
+    background:none; border:none; color:inherit; cursor:pointer; font:inherit;
+    padding:1px 6px; border-radius:3px; line-height:1.4;
+  }
+  .ctx-gap-btn:hover{ background:var(--bg-elevated-2); color:var(--text-secondary); }
+  .ctx-gap-step{ padding:1px 4px; }
+
+  /* Context view's nav chip — replaces the plain "Full" .fh-panel-badge in
+     #highlightWrap and, unlike that badge, is shown in BOTH layouts: it is the
+     view's own answer to "which node am I on", so hiding it in tabs layout
+     (where the badge was redundant with the active tab button) would remove
+     the very signal this view was reworked to provide. pointer-events are on
+     here, which is safe because #highlightHeader has no sortable columns
+     underneath it, unlike #tableHeader. */
+  #contextNav{
+    position:absolute; top:4px; right:14px; z-index:6;
+    display:flex; align-items:center; gap:2px;
+    font-family:var(--font-mono); font-size:9px; letter-spacing:.3px;
+    color:var(--text-tertiary); background:var(--bg-elevated-2);
+    border:1px solid var(--border-soft); border-radius:4px; padding:1px 3px;
+    max-width:60%;
+  }
+  #contextNav.hidden{ display:none; }
+  #contextNav .ctx-nav-label{
+    padding:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  #contextNav .ctx-nav-node{ color:var(--accent); font-weight:700; }
+  #contextNav button{
+    background:none; border:none; color:inherit; cursor:pointer; font:inherit;
+    padding:1px 4px; border-radius:3px; line-height:1.4;
+  }
+  #contextNav button:hover:not(:disabled){ background:var(--bg-elevated); color:var(--text-secondary); }
+  #contextNav button:disabled{ opacity:.35; cursor:default; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
      it, a grid track collapsed to 0px (hidden column, or just dragged very
@@ -2616,9 +2686,9 @@
            "Pin bookmarks into the Filtered View"). -->
       <div id="viewBar">
         <div class="view-tabs" id="fhTabs">
-          <button type="button" class="view-tab" data-fh-tab="highlight" title="Whole file, highlight-rule matches coloured">Full</button>
+          <button type="button" class="view-tab" data-fh-tab="highlight" title="Your filter result with the log around it — expand the gaps between matches to reveal the hidden lines">Context</button>
           <button type="button" class="view-tab active" data-fh-tab="filter" title="Narrowed by the active filter tree node">Filtered</button>
-          <button type="button" class="view-tab" data-fh-tab="stacked" title="Show Full and Filtered at once, split top/bottom">Stacked</button>
+          <button type="button" class="view-tab" data-fh-tab="stacked" title="Show Context and Filtered at once, split top/bottom">Stacked</button>
         </div>
         <button id="btnPinBookmarks" class="toolbar-icon-btn" title="Pin bookmarks into Filtered View"></button>
         <button id="btnNotes" class="toolbar-icon-btn" title="Show/hide notes"></button>
@@ -2632,7 +2702,10 @@
 
       <div id="fhSplit">
         <div id="highlightWrap" class="fh-panel">
-          <div class="fh-panel-badge">Full</div>
+          <!-- Replaces the old "Full" .fh-panel-badge: the Context view's own
+               statement of which node it is showing, plus match-to-match
+               navigation. Populated by updateContextNav(). -->
+          <div id="contextNav" class="hidden"></div>
           <div id="highlightHeader">
             <div class="row-grid">
               <span></span>
@@ -3242,12 +3315,29 @@
             </div>
           </div>
 
+          <div class="settings-subsection-title">Context view</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsContextInitialExpansion">Context view starts out</label>
+                <div class="settings-row-hint">The Context view shows the active filter's matches with everything it rejected collapsed into expandable gaps. "Collapsed" opens every gap shut, so the view starts out as the filter result itself. "Expanded" opens every gap, i.e. the whole file, with each gap still collapsible. "Collapsed, opened around a jump" stays shut, but double-clicking or pressing Enter on a row from the Filtered view also opens the gaps on either side of it. A jump to a row that isn't a match always opens the gap it sits in, whichever option is picked — otherwise it would have nowhere to be shown.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsContextInitialExpansion">
+                  <option value="collapsed">Collapsed</option>
+                  <option value="expanded">Expanded</option>
+                  <option value="aroundJump">Collapsed, opened around a jump</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div class="settings-subsection-title">Timeline minimap</div>
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsHideMinimapFullRangeInFullView">Hide minimap's covered-timespan box in Full view</label>
-                <div class="settings-row-hint">The minimap's outer "covered timespan" box is meaningless in the Full view, which always covers the entire log. Turn this on to hide it there — the inner "currently rendered" box stays visible and tracks the Full view's own scroll position instead. Both boxes keep their normal behavior in the Filtered and Stacked views.</div>
+                <label class="settings-row-label" for="settingsHideMinimapFullRangeInFullView">Hide minimap's covered-timespan box in Context view</label>
+                <div class="settings-row-hint">Turn this on to hide the minimap's outer "covered timespan" box while the Context view is the one showing — the inner "currently rendered" box stays visible and tracks that view's own scroll position instead. Both boxes keep their normal behavior in the Filtered and Stacked views. (Off by default. This dates from when that view always showed the whole file, which made the outer box meaningless there; now that it shows the active filter's own result, the box is informative again — kept as an opt-out for anyone who prefers the quieter minimap.)</div>
               </div>
               <div class="settings-row-control">
                 <label class="settings-switch">
@@ -3328,8 +3418,8 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsTextMatchHighlightRows">Show matches in filtered rows</label>
-                <div class="settings-row-hint">Marks matches inline in the Filter view's own rows.</div>
+                <label class="settings-row-label" for="settingsTextMatchHighlightRows">Show matches in log rows</label>
+                <div class="settings-row-hint">Marks matches inline in the log rows themselves, in both the Filtered and the Context view — in Stacked layout the same entry is on screen in both panes at once, so marking it in only one of them read as two different rows.</div>
               </div>
               <div class="settings-row-control">
                 <label class="settings-switch">
@@ -4252,11 +4342,36 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
 const HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY = "philogg-hide-minimap-full-range-in-full-view";
 let hideMinimapFullRangeInFullView = false;
 
+/* Context view initial state (see buildContextView / contextInitialExpansion).
+   Plain localStorage preference, same tier as the level-bar mode and the
+   minimap opt-out — a display habit, not session or filter data. Default
+   "collapsed": the view then opens as the filter result itself, which is the
+   whole point of the rework (people could not tell they were still standing on
+   a filter node). */
+function initContextInitialExpansionSetting() {
+  const stored = localStorage.getItem(CONTEXT_INITIAL_EXPANSION_KEY);
+  contextInitialExpansion =
+    (stored === "expanded" || stored === "aroundJump") ? stored : "collapsed";
+  const select = document.getElementById("settingsContextInitialExpansion");
+  if (select) select.value = contextInitialExpansion;
+}
+
 function initMinimapFullRangeSetting() {
   hideMinimapFullRangeInFullView = localStorage.getItem(HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY) === "1";
   const cb = document.getElementById("settingsHideMinimapFullRangeInFullView");
   if (cb) cb.checked = hideMinimapFullRangeInFullView;
 }
+
+document.getElementById("settingsContextInitialExpansion").addEventListener("change", ev => {
+  const v = ev.target.value;
+  contextInitialExpansion = (v === "expanded" || v === "aroundJump") ? v : "collapsed";
+  localStorage.setItem(CONTEXT_INITIAL_EXPANSION_KEY, contextInitialExpansion);
+  // Apply it to the view that's on screen right now instead of waiting for the
+  // next node switch to seed it: forcing the seed by clearing the node key is
+  // enough, buildContextView does the rest on the render below.
+  contextExpansionsKey = null;
+  render();
+});
 
 document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListener("change", ev => {
   hideMinimapFullRangeInFullView = ev.target.checked;
@@ -6437,9 +6552,10 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
        node's own ancestor chain (getChain), root to active.
      - Two independent "where" toggles, always visible/editable in Settings
        regardless of the master button's state (a standing preference, not
-       gated by it): textMatchHighlightInRows (the Filter view's own rows,
-       #tableBody) and textMatchHighlightInDetail (the bottom entry-detail
-       panel).
+       gated by it): textMatchHighlightInRows (the log rows themselves, in
+       BOTH #tableBody and #highlightBody — see renderHighlightVisibleRows for
+       why the Context view marks them too) and textMatchHighlightInDetail
+       (the bottom entry-detail panel).
 
    Every node's own match test is re-run per entry (not "trust the chain
    already filtered this in") specifically so "or"/"link" nodes elsewhere in
@@ -7452,6 +7568,7 @@ const highlightWrap = el("#highlightWrap");
 const highlightBody = el("#highlightBody");
 const highlightSpacer = el("#highlightSpacer");
 const highlightRows = el("#highlightRows");
+const contextNav = el("#contextNav");
 
 /* ===================== Filter/Highlight layout =====================
    One tri-state UI preference, not part of `state` (same reasoning as the
@@ -7524,6 +7641,9 @@ function showFhTab(tab) {
   // shown/hidden immediately on the switch itself, same reasoning as the two
   // range boxes above.
   updateMinimapSelectionMarkers();
+  // The chip is only shown while the Context panel is actually on screen, and
+  // that's exactly what just changed.
+  updateContextNav();
 }
 
 // The single entry point for the three-way toggle: view is "highlight"
@@ -7556,6 +7676,7 @@ function applyFhView(view) {
     updateMinimapFullRange();
     updateMinimapRenderedRange();
     updateMinimapSelectionMarkers(); // see showFhTab's own call for why
+    updateContextNav();               // ditto — this branch doesn't go through showFhTab
   } else {
     fhLayout = "tabs";
     fhSplit.classList.add("fh-layout-tabs");
@@ -7774,6 +7895,13 @@ function renderMainView() {
     highlightRows.innerHTML = "";
     highlightSpacer.style.height = "0px";
     lastHighlightRootId = null;
+    contextActive = false;
+    contextGaps = [];
+    contextStrips = new Map();
+    contextMatchRows = [];
+    contextMatchPos = new Map();
+    contextExpansionsKey = null;
+    updateContextNav();
     return;
   }
 
@@ -11605,6 +11733,385 @@ function computeHighlightMap(fileId) {
   return map;
 }
 
+/* ---------- Context view: the active node's result + collapsible gaps ----------
+   The Context view (UI label "Context"; internally still the "Highlight" view,
+   same naming compromise the earlier "Full" rename made — see
+   docs/ui-and-views.md) renders the ACTIVE NODE'S OWN RESULT, with everything
+   the filter rejected collapsed into expandable gap strips between the
+   matches. Before this it rendered the root file's raw `entries` array
+   regardless of state.activeId, which made it pixel-identical on a filter node
+   and on a file node: the reported "I thought Full had switched me to the file
+   node" confusion had no visual signal anywhere to contradict it.
+
+   What counts as a MATCH: getEntries(state.activeId) — the active node's own
+   result set. Deliberately NOT applyLevelFilter()'d, and not unioned with
+   pinned bookmarks (person-stated: "egal was fuer eine Art Filter vorausging:
+   der Output sind die Ergebnisse, alles andere ist Kontext" — the level
+   quick-filter only hides result rows from the FILTERED view's display; they
+   stay part of the result set and therefore stay matches here). That also
+   keeps the older "the level filter must not narrow the whole-file view"
+   requirement intact — see renderHighlightView's own comment.
+
+   On a FILE node (or with no node at all) there is no filter to be outside of,
+   so nothing is marked and nothing is collapsed: contextActive stays false and
+   the view renders the plain whole file exactly as it did before this feature.
+   That's what keeps the view's other, older purpose available — tracking
+   several coloured highlight rules across a whole file at once.
+
+   All of this state is module-level and session-only, deliberately NOT stored
+   on the node: that keeps it out of cloneSubtree/snapshotSubtree/
+   serializeFilterBranch/serializeFilterTreeForCache, which every persisted
+   node field has to be threaded through (see CLAUDE.md).
+*/
+const CONTEXT_STRIP_HEIGHT = 22; // must match .ctx-gap's own CSS height
+const CONTEXT_EXPAND_STEP = 25;  // rows one up/down chevron click reveals
+
+// False on a file node / with nothing active: no match marking, no gaps, no
+// dimming — the view is just the whole file, as before this feature.
+let contextActive = false;
+// Entry ids of the active node's own result (link nodes contribute their real
+// underlying entries, not the synthetic pair ids — same treatment
+// computeHighlightMap gives them).
+let contextMatchIds = new Set();
+// gap = { start, end, before, after }: the root-file index range [start, end)
+// hidden between two consecutive matches — plus the leading range before the
+// first match and the trailing one after the last. `before`/`after` count how
+// many of those rows are currently revealed from the top / from the bottom, so
+// the still-hidden remainder always stays ONE contiguous run. That invariant
+// is what keeps a gap to a single strip no matter how it was expanded.
+let contextGaps = [];
+// gap.start -> {before, after}. Survives re-renders of the same node (so a
+// tail tick or a colour edit doesn't collapse what you just opened) and is
+// dropped wholesale on any active-node/root-file change.
+let contextExpansions = new Map();
+// Which active node contextExpansions currently belongs to.
+let contextExpansionsKey = null;
+// Index into currentHighlightViewEntries -> the gap whose strip is rendered
+// directly AFTER that row. -1 keys a strip rendered ABOVE row 0 (the leading
+// gap, or the single gap of a result with no matches at all).
+let contextStrips = new Map();
+// Indices into currentHighlightViewEntries of the rows that are real matches,
+// ascending, plus each match's 1-based ordinal by entry id. Both are built
+// during buildContextView's own single walk rather than rescanned later: the
+// nav chip refreshes on every selection change, and an O(rows) scan per arrow
+// keypress would be felt on a large fully-expanded view.
+let contextMatchRows = [];
+let contextMatchPos = new Map();
+
+// Settings -> Behavior: what a freshly-entered Context view starts out as.
+// "collapsed" (default) — every gap shut; "expanded" — every gap open (the
+// pre-feature whole-file view, still collapsible per gap); "aroundJump" —
+// collapsed, but jumping into an entry also opens the gaps on either side of
+// it (see applyContextJumpExpansion).
+const CONTEXT_INITIAL_EXPANSION_KEY = "philogg-context-initial-expansion";
+let contextInitialExpansion = "collapsed";
+
+function gapHiddenCount(g) { return (g.end - g.start) - g.before - g.after; }
+
+// Rebuilds contextActive/contextMatchIds/contextGaps for the active node and
+// returns the entry list the Context view should render (matches + whatever
+// context rows are currently revealed, in root-file order), filling
+// contextStrips along the way. Walks the gap list rather than the whole file,
+// so the cost scales with the number of matches, not the file size.
+function buildContextView(rootId) {
+  contextActive = false;
+  contextMatchIds = new Set();
+  contextGaps = [];
+  contextStrips = new Map();
+  contextMatchRows = [];
+  contextMatchPos = new Map();
+  const root = rootId && state.nodes[rootId];
+  if (!root || !root.entries) return [];
+  const all = root.entries;
+  const node = state.nodes[state.activeId];
+  // A file node's getEntries() IS the whole entries array — no filter to be
+  // outside of, so skip the whole gap machinery instead of building a match
+  // set the size of the file on every render.
+  if (!node || node.type !== "filter") return all;
+  contextActive = true;
+
+  const result = getEntries(node.id);
+  if (node.filterType === "link") {
+    // Synthetic pair entries: colour/mark the real entries underneath, via the
+    // same recursive getTupleEntries() walk computeHighlightMap uses (a
+    // chained link's pair is itself a pair on one or both sides).
+    result.forEach(pair => getTupleEntries(pair).forEach(e => contextMatchIds.add(e.id)));
+  } else {
+    result.forEach(e => contextMatchIds.add(e.id));
+  }
+
+  // Root-file indices of the matches, ascending. Non-link filters preserve the
+  // parent's order, so their result is already sorted and the sort below is a
+  // no-op scan; a link node's flattened underlying entries genuinely can land
+  // out of order (a "before" hop's match precedes its own reference — see
+  // "Link filter" in docs/filters.md), hence sorting rather than trusting it.
+  const orderIndexMap = buildOrderIndexMap(rootId);
+  const idxs = [];
+  contextMatchIds.forEach(id => {
+    const i = orderIndexMap.get(id);
+    if (i !== undefined) idxs.push(i);
+  });
+  idxs.sort((a, b) => a - b);
+
+  let prev = -1;
+  for (let k = 0; k < idxs.length; k++) {
+    if (idxs[k] > prev + 1) contextGaps.push({ start: prev + 1, end: idxs[k], before: 0, after: 0 });
+    prev = idxs[k];
+  }
+  if (prev + 1 < all.length) contextGaps.push({ start: prev + 1, end: all.length, before: 0, after: 0 });
+
+  // A different active node means a different result set, so the previous
+  // node's expansions (plain root-file index ranges) mean nothing here — drop
+  // them and seed the configured initial state instead. Re-entering the same
+  // node keeps whatever was open, so a tail tick or a colour edit never shuts
+  // a gap the person just opened.
+  if (contextExpansionsKey !== state.activeId) {
+    contextExpansionsKey = state.activeId;
+    contextExpansions = new Map();
+    if (contextInitialExpansion === "expanded") {
+      contextGaps.forEach(g => contextExpansions.set(g.start, { before: g.end - g.start, after: 0 }));
+    }
+  }
+
+  // Re-apply whatever was expanded before, clamped to this gap's actual length
+  // (the underlying file can have grown since, via tailing).
+  contextGaps.forEach(g => {
+    const ex = contextExpansions.get(g.start);
+    if (!ex) return;
+    const len = g.end - g.start;
+    g.before = Math.min(ex.before, len);
+    g.after = Math.min(ex.after, len - g.before);
+  });
+
+  const out = [];
+  let gi = 0;
+  let i = 0;
+  while (i < all.length) {
+    const g = contextGaps[gi];
+    if (g && i === g.start) {
+      const len = g.end - g.start;
+      if (gapHiddenCount(g) <= 0) {
+        // Fully open: the strip becomes a "collapse" control and sits at the
+        // TOP of the revealed block, where it reads as belonging to it —
+        // rather than trailing at the bottom against the next match.
+        contextStrips.set(out.length - 1, g);
+        for (let k = 0; k < len; k++) out.push(all[g.start + k]);
+      } else {
+        for (let k = 0; k < g.before; k++) out.push(all[g.start + k]);
+        contextStrips.set(out.length - 1, g); // exactly where the hidden remainder sits
+        for (let k = 0; k < g.after; k++) out.push(all[g.end - g.after + k]);
+      }
+      i = g.end;
+      gi++;
+      continue;
+    }
+    // Not inside any gap, so this row is a match by construction.
+    out.push(all[i]);
+    contextMatchRows.push(out.length - 1);
+    contextMatchPos.set(all[i].id, contextMatchRows.length);
+    i++;
+  }
+  return out;
+}
+
+// Prefix-sum row tops for the Context view. Same contract as buildRowOffsets
+// (offsets[i] = pixel top of row i, one extra trailing slot for the total),
+// with each gap strip's height folded into the row it follows — and the
+// leading strip, which has no row to follow, folded into offsets[0]. Keeping
+// the contract intact is what lets findOffsetIndex/topVisibleEntryId/
+// captureViewAnchor/restoreViewAnchor/minimapRenderedSpan keep working on this
+// array unchanged.
+function buildContextRowOffsets(entries, strips) {
+  const offsets = new Float64Array(entries.length + 1);
+  offsets[0] = strips.has(-1) ? CONTEXT_STRIP_HEIGHT : 0;
+  for (let i = 0; i < entries.length; i++) {
+    offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i]) + (strips.has(i) ? CONTEXT_STRIP_HEIGHT : 0);
+  }
+  return offsets;
+}
+
+// The Context view ALWAYS uses the offsets path (gap strips make row tops
+// variable regardless of state.multilineMessages/state.showNotes), so unlike
+// the Filtered view's own rebuilds there's no needsRowOffsets() gate here.
+// Cheaper than the pre-feature version in the common case all the same: the
+// array is sized by the number of VISIBLE rows, which while collapsed is the
+// match count rather than the whole file.
+function rebuildHighlightOffsets() {
+  highlightRowOffsets = buildContextRowOffsets(currentHighlightViewEntries, contextStrips);
+  highlightSpacer.style.height = (highlightRowOffsets[currentHighlightViewEntries.length] + 22) + "px";
+}
+
+// Opens/closes one gap and repaints the Context view without moving the
+// reading position: captureViewAnchor/restoreViewAnchor (the same pair every
+// other list-changing action in this file uses) pin whichever row is at the
+// top of the viewport, so rows appearing above the strip push the content down
+// visually instead of yanking the scroll.
+function setGapExpansion(gapStart, before, after) {
+  const g = contextGaps.find(x => x.start === gapStart);
+  if (!g) return;
+  const len = g.end - g.start;
+  const b = Math.max(0, Math.min(before, len));
+  const a = Math.max(0, Math.min(after, len - b));
+  if (b === 0 && a === 0) contextExpansions.delete(gapStart);
+  else contextExpansions.set(gapStart, { before: b, after: a });
+  const anchor = captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody);
+  currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
+  rebuildHighlightOffsets();
+  restoreViewAnchor(anchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll);
+  renderHighlightVisibleRows();
+  updateContextNav();
+  updateMinimapRenderedRange();
+}
+
+// Every gap open / every gap shut, from the nav chip's own button.
+function setAllGapsExpanded(expanded) {
+  const anchor = captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody);
+  if (!expanded) {
+    contextExpansions = new Map();
+  } else {
+    contextGaps.forEach(g => contextExpansions.set(g.start, { before: g.end - g.start, after: 0 }));
+  }
+  currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
+  rebuildHighlightOffsets();
+  restoreViewAnchor(anchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll);
+  renderHighlightVisibleRows();
+  updateContextNav();
+  updateMinimapRenderedRange();
+}
+
+// Makes `entryId` reachable in the Context view. Opening the gap it sits in is
+// a CORRECTNESS requirement, not a preference — a jump target hidden inside a
+// collapsed gap would have nowhere to be scrolled to — so it happens for every
+// initial-expansion setting. "aroundJump" additionally opens the gaps on
+// either side of the target, which is the "peek at this spot" reading of the
+// setting. Returns true when anything actually changed.
+function applyContextJumpExpansion(entryId) {
+  if (!contextActive || !contextGaps.length) return false;
+  const idx = buildOrderIndexMap(getRootFileId(state.activeId)).get(entryId);
+  if (idx === undefined) return false;
+  let changed = false;
+  const open = g => {
+    if (!g || gapHiddenCount(g) <= 0) return;
+    contextExpansions.set(g.start, { before: g.end - g.start, after: 0 });
+    changed = true;
+  };
+  // The gap the target itself is hidden inside, if any.
+  const ci = contextGaps.findIndex(g => idx >= g.start && idx < g.end);
+  if (ci !== -1) open(contextGaps[ci]);
+  if (contextInitialExpansion === "aroundJump") {
+    if (ci !== -1) {
+      open(contextGaps[ci - 1]);
+      open(contextGaps[ci + 1]);
+    } else {
+      // The target is a match itself: open the gaps directly above and below it.
+      contextGaps.forEach(g => { if (g.end === idx || g.start === idx + 1) open(g); });
+    }
+  }
+  return changed;
+}
+
+// Moves the selection to the previous/next real match, skipping over whatever
+// context rows are revealed in between — the point being that you can walk the
+// result without leaving the Context view (and without going back to the tree,
+// which is what this view existed to avoid in the first place). Starts from the
+// selection when it's in this view, otherwise from whatever is at the top of
+// the viewport, so it also works straight after scrolling somewhere by hand.
+function moveContextMatchSelection(delta) {
+  const entries = currentHighlightViewEntries;
+  if (!entries.length) return;
+  // No filter active (file node): every row is a match, so this is just plain
+  // row-to-row navigation — reuse it rather than materialising an index list
+  // the size of the file.
+  if (!contextActive) { moveHighlightSelection(delta); return; }
+  const matchIdxs = contextMatchRows;
+  if (!matchIdxs.length) return;
+  let from = state.selectedId ? entries.findIndex(e => e.id === state.selectedId) : -1;
+  if (from === -1) {
+    const topId = topVisibleEntryId(entries, highlightRowOffsets, highlightBody.scrollTop);
+    from = topId ? entries.findIndex(e => e.id === topId) : -1;
+    if (from !== -1 && delta < 0) from += 1; // so "previous" from the top row lands on the match above it
+  }
+  let target;
+  if (from === -1) {
+    target = delta > 0 ? matchIdxs[0] : matchIdxs[matchIdxs.length - 1];
+  } else if (delta > 0) {
+    target = matchIdxs.find(i => i > from);
+  } else {
+    for (let k = matchIdxs.length - 1; k >= 0; k--) { if (matchIdxs[k] < from) { target = matchIdxs[k]; break; } }
+  }
+  if (target === undefined) return;
+  selectHighlightEntry(entries[target].id, { scroll: true, center: true, index: target });
+}
+
+// Where an entry that has no row in the Context view WOULD sit if it had one:
+// the index of the first rendered row at or after its position in the root
+// file. Binary search, valid because the view is always in root-file order.
+// Returns entries.length for an entry past the last rendered row, -1 when the
+// entry isn't part of this root file at all.
+function contextWouldBeIndex(entryId) {
+  const entries = currentHighlightViewEntries;
+  const orderIndexMap = buildOrderIndexMap(getRootFileId(state.activeId));
+  const target = orderIndexMap.get(entryId);
+  if (target === undefined) return -1;
+  let lo = 0, hi = entries.length - 1, res = entries.length;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (orderIndexMap.get(entries[mid].id) >= target) { res = mid; hi = mid - 1; }
+    else lo = mid + 1;
+  }
+  return res;
+}
+
+// The Context view's own header chip: which node it is showing, how many
+// matches that node has (and which one is selected), match-to-match navigation,
+// and one expand-all/collapse-all control. Replaces the old "Full" panel badge,
+// and unlike that badge it is shown in tabs layout too — it IS the answer to
+// "am I still on a filter?", which is exactly the question this view kept
+// failing to answer.
+function updateContextNav() {
+  highlightRows.classList.toggle("ctx-active", contextActive);
+  const onScreen = fhSplit.style.display !== "none" &&
+    (fhLayout === "stacked" || fhActiveTab === "highlight");
+  if (!onScreen) { contextNav.classList.add("hidden"); return; }
+  contextNav.classList.remove("hidden");
+  contextNav.innerHTML = "";
+
+  const node = state.nodes[state.activeId];
+  const mkBtn = (text, title, onClick, disabled) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = text;
+    b.title = title;
+    if (disabled) b.disabled = true; else b.addEventListener("click", onClick);
+    return b;
+  };
+  const matchCount = contextActive ? contextMatchRows.length : currentHighlightViewEntries.length;
+  contextNav.appendChild(mkBtn("‹", "Previous match", () => moveContextMatchSelection(-1), matchCount < 2));
+  contextNav.appendChild(mkBtn("›", "Next match", () => moveContextMatchSelection(1), matchCount < 2));
+
+  const label = document.createElement("span");
+  label.className = "ctx-nav-label";
+  if (contextActive) {
+    const name = node ? nodeDisplayName(node) : "";
+    const pos = state.selectedId ? contextMatchPos.get(state.selectedId) : undefined;
+    label.innerHTML = '<span class="ctx-nav-node">' + escapeHtml(name) + "</span> · " +
+      (pos ? pos.toLocaleString("de-DE") + " / " : "") +
+      matchCount.toLocaleString("de-DE") + (matchCount === 1 ? " match" : " matches");
+    label.title = "Showing the result of “" + name + "” with the surrounding log around it";
+  } else {
+    label.textContent = "Whole file · " +
+      currentHighlightViewEntries.length.toLocaleString("de-DE") + " lines";
+    label.title = "No filter active — this is the whole file";
+  }
+  contextNav.appendChild(label);
+
+  if (contextActive && contextGaps.length) {
+    contextNav.appendChild(contextGaps.some(g => gapHiddenCount(g) > 0)
+      ? mkBtn("⌄", "Reveal every hidden line", () => setAllGapsExpanded(true))
+      : mkBtn("⌃", "Collapse every gap again", () => setAllGapsExpanded(false)));
+  }
+}
+
 function setHighlightScroll(value) {
   lastProgrammaticScrollTs = performance.now();
   highlightBody.scrollTop = Math.max(0, value);
@@ -11629,17 +12136,18 @@ function renderHighlightView(colorMapIsFresh) {
   // overwrites the OLD (pre-change) list. See captureViewAnchor/
   // restoreViewAnchor above for the general mechanism this feeds.
   const scrollAnchor = sameRoot ? captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody) : null;
-  // Deliberately NOT applyLevelFilter()'d — the Full view always shows the
-  // whole root file regardless of the level quick-filter (person-requested:
-  // level filtering should read as narrowing the Filtered view specifically,
-  // not silently also thinning out the "whole file" reference view). See
-  // renderLevelBar()'s click handler, which reveals the Filtered view on
-  // every level-filter change so the effect is actually visible somewhere.
-  currentHighlightViewEntries = rootId ? state.nodes[rootId].entries : [];
-  highlightRowOffsets = needsRowOffsets() ? buildRowOffsets(currentHighlightViewEntries) : null;
-  highlightSpacer.style.height =
-    ((needsRowOffsets() ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  // The active node's own result, with everything it rejected collapsed into
+  // expandable gap strips — see buildContextView for the model and for why
+  // matches are deliberately NOT applyLevelFilter()'d (the level quick-filter
+  // narrows the Filtered view's DISPLAY, it doesn't leave the result set).
+  // That keeps the older person-stated requirement — level filtering must not
+  // silently thin out this view — true as it was before; renderLevelBar()'s
+  // click handler still reveals the Filtered view on every level-filter change
+  // so the effect is visible where it actually applies.
+  currentHighlightViewEntries = buildContextView(rootId);
+  rebuildHighlightOffsets();
   if (!colorMapIsFresh) { highlightColorMap = computeHighlightMap(rootId); updateColorMarkGutter(); }
+  updateContextNav();
 
   if (state.highlightScrollTargetId) {
     const targetId = state.highlightScrollTargetId;
@@ -11694,55 +12202,149 @@ function renderHighlightVisibleRows() {
   const total = currentHighlightViewEntries.length;
   const viewportH = highlightBody.clientHeight || 400;
   const scrollTop = highlightBody.scrollTop;
-  let start, end;
-  if (needsRowOffsets() && highlightRowOffsets) {
-    const centerIdx = findOffsetIndex(highlightRowOffsets, scrollTop);
-    start = Math.max(0, centerIdx - BUFFER_ROWS);
-    end = Math.min(total, findOffsetIndex(highlightRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
-    highlightRows.style.top = highlightRowOffsets[start] + "px";
-  } else {
-    const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
-    start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
-    end = Math.min(total, start + maxVisible);
-    highlightRows.style.top = (start * ROW_HEIGHT) + "px";
-  }
+  // No needsRowOffsets() branch here, unlike renderVisibleRows: gap strips make
+  // row tops variable in this view regardless of the multiline/notes toggles,
+  // so rebuildHighlightOffsets always produces an offsets array.
+  const offsets = highlightRowOffsets || buildContextRowOffsets(currentHighlightViewEntries, contextStrips);
+  const centerIdx = findOffsetIndex(offsets, scrollTop);
+  const start = Math.max(0, centerIdx - BUFFER_ROWS);
+  const end = Math.min(total, findOffsetIndex(offsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
+  // offsets[0] carries the LEADING strip's height (it has no row to hang off),
+  // so row 0's window must still start at 0 — the strip is rendered inside this
+  // same container, above row 0.
+  highlightRows.style.top = (start === 0 ? 0 : offsets[start]) + "px";
+
+  // Text-filter match marking, exactly as renderVisibleRows computes it (once
+  // per render, not per row). Applied here too now: in Stacked layout the same
+  // entry is on screen in both panes at once, and a match row that marked its
+  // matched substring in one pane but not the other read as two different rows.
+  const matchNodes = textMatchHighlightInRows ? getTextMatchHighlightNodes() : [];
+  const matchSpecs = matchNodes.map(textFilterMatchSpec);
 
   const frag = document.createDocumentFragment();
+  // The leading gap's strip has no row to hang off — it belongs above row 0,
+  // and its height is already folded into offsets[0].
+  if (start === 0 && contextStrips.has(-1)) appendContextGapStrip(frag, contextStrips.get(-1));
   for (let i = start; i < end; i++) {
     const e = currentHighlightViewEntries[i];
     const row = document.createElement("div");
-    const cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
+    let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
       (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "");
 
     const colors = highlightColorMap.get(e.id);
     let markerHtml = colors && colors.length
       ? '<span class="hl-markers">' + colors.map(c => '<span class="hl-marker" style="background:' + c + '"></span>').join("") + '</span>'
       : "";
+    // Match rows carry the SAME bracket the context/countContext filter draws
+    // in the Filtered view (.ctx-bracket/.ctx-start/.ctx-end) — reusing that
+    // established "this is what the filter produced" visual is what makes the
+    // view read as a filter result without any explanation. Revealed context
+    // rows recede instead (.ctx-context, opacity only, never a colour change:
+    // the level tints are the most important colour information in a log view
+    // and must survive the dimming). A row carrying a highlight-rule colour is
+    // never dimmed — "bright" then means "relevant right now" consistently,
+    // whether that's because of the active filter or because of a colour rule,
+    // which is what keeps the view's colour-rule purpose usable here.
+    if (contextActive) {
+      if (contextMatchIds.has(e.id)) {
+        const prevIsMatch = i > 0 && !contextStrips.has(i - 1) &&
+          contextMatchIds.has(currentHighlightViewEntries[i - 1].id);
+        const nextIsMatch = i < total - 1 && !contextStrips.has(i) &&
+          contextMatchIds.has(currentHighlightViewEntries[i + 1].id);
+        cls += " ctx-row ctx-match" + (prevIsMatch ? "" : " ctx-start") + (nextIsMatch ? "" : " ctx-end");
+        markerHtml += '<span class="ctx-bracket"></span>';
+      } else if (!(colors && colors.length)) {
+        cls += " ctx-context";
+      }
+    }
     const prevE = i > 0 ? currentHighlightViewEntries[i - 1] : null;
     const deltaMs = prevE ? (e.ts - prevE.ts) : null;
 
     row.className = cls;
     row.style.height = baseRowHeightForEntry(e) + "px";
     row.dataset.entryId = e.id;
+    // matchNodes.length short-circuits before any range search when the
+    // feature/row-toggle is off, so this stays a plain escapeHtml call in the
+    // common case — same shape as renderVisibleRows.
+    const timeText = formatTime(e.ts);
     row.innerHTML =
       markerHtml +
       (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
       '<span class="col-bar"></span>' +
-      '<span class="col-time">' + escapeHtml(formatTime(e.ts)) + '</span>' +
+      '<span class="col-time">' + (matchNodes.length ? markRangesHtml(timeText, matchRangesFor(timeText, "time", matchNodes, matchSpecs)) : escapeHtml(timeText)) + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      '<span class="col-level"><span class="level-badge">' + escapeHtml(e.level) + '</span></span>' +
-      '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + escapeHtml(e.thread) + '</span>' +
-      '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + escapeHtml(e.locationShort) + '</span>' +
-      '<span class="col-method" title="' + escapeHtml(e.method) + '">' + escapeHtml(e.method) + '</span>' +
-      '<span class="col-msg">' + escapeHtml(e.message) + '</span>';
+      '<span class="col-level"><span class="level-badge">' + (matchNodes.length ? markRangesHtml(e.level, matchRangesFor(e.level, "level", matchNodes, matchSpecs)) : escapeHtml(e.level)) + '</span></span>' +
+      '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + (matchNodes.length ? markRangesHtml(e.thread, matchRangesFor(e.thread, "thread", matchNodes, matchSpecs)) : escapeHtml(e.thread)) + '</span>' +
+      '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + (matchNodes.length ? markRangesHtml(e.locationShort, matchRangesFor(e.locationShort, "location", matchNodes, matchSpecs)) : escapeHtml(e.locationShort)) + '</span>' +
+      '<span class="col-method" title="' + escapeHtml(e.method) + '">' + (matchNodes.length ? markRangesHtml(e.method, matchRangesFor(e.method, "method", matchNodes, matchSpecs)) : escapeHtml(e.method)) + '</span>' +
+      '<span class="col-msg">' + (matchNodes.length ? markRangesHtml(e.message, matchRangesFor(e.message, "message", matchNodes, matchSpecs)) : escapeHtml(e.message)) + '</span>';
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries, selectHighlightEntry));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
     frag.appendChild(row);
     appendNoteRow(frag, e);
+    if (contextStrips.has(i)) appendContextGapStrip(frag, contextStrips.get(i));
   }
   highlightRows.innerHTML = "";
   highlightRows.appendChild(frag);
+}
+
+// One gap strip: either the collapsed/partially-open expander (chevron up,
+// hidden-line count, chevron down — the GitHub diff expander people already
+// know) or, once the gap is fully open, the control that shuts it again.
+// Listeners are attached fresh on every render, same as every other per-row
+// listener in this file — DOM identity across renders is never assumed (see
+// CLAUDE.md's "renderVisibleRows() rebuilds nodes" gotcha).
+function appendContextGapStrip(frag, gap) {
+  const hidden = gapHiddenCount(gap);
+  const strip = document.createElement("div");
+  strip.className = "ctx-gap" + (hidden <= 0 ? " ctx-gap-open" : "");
+  strip.style.height = CONTEXT_STRIP_HEIGHT + "px";
+  strip.dataset.gapStart = gap.start;
+  const lines = n => n.toLocaleString("de-DE") + (n === 1 ? " line" : " lines");
+
+  if (hidden <= 0) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ctx-gap-btn ctx-gap-collapse";
+    btn.textContent = "\u2303 Collapse " + lines(gap.end - gap.start);
+    btn.title = "Hide these lines again";
+    btn.addEventListener("click", () => setGapExpansion(gap.start, 0, 0));
+    strip.appendChild(btn);
+    frag.appendChild(strip);
+    return;
+  }
+
+  // The chevrons open the curtain from whichever end you click: up reveals the
+  // top of the hidden run (those rows appear ABOVE the strip), down reveals its
+  // bottom (BELOW the strip). Only offered when there's more hidden than one
+  // step — otherwise the single "open it all" button is the whole interaction.
+  if (hidden > CONTEXT_EXPAND_STEP) {
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "ctx-gap-btn ctx-gap-step";
+    up.textContent = "\u2303";
+    up.title = "Reveal " + CONTEXT_EXPAND_STEP + " more lines above";
+    up.addEventListener("click", () => setGapExpansion(gap.start, gap.before + CONTEXT_EXPAND_STEP, gap.after));
+    strip.appendChild(up);
+  }
+  const all = document.createElement("button");
+  all.type = "button";
+  all.className = "ctx-gap-btn ctx-gap-all";
+  all.textContent = "\u22ef " + lines(hidden);
+  all.title = "Reveal all " + hidden + " hidden lines";
+  all.addEventListener("click", () => setGapExpansion(gap.start, gap.end - gap.start, 0));
+  strip.appendChild(all);
+  if (hidden > CONTEXT_EXPAND_STEP) {
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "ctx-gap-btn ctx-gap-step";
+    down.textContent = "\u2304";
+    down.title = "Reveal " + CONTEXT_EXPAND_STEP + " more lines below";
+    down.addEventListener("click", () => setGapExpansion(gap.start, gap.before, gap.after + CONTEXT_EXPAND_STEP));
+    strip.appendChild(down);
+  }
+  frag.appendChild(strip);
 }
 
 let highlightScrollTicking = false;
@@ -12491,7 +13093,11 @@ function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
   const viewportH = scrollEl.clientHeight || 400;
   const maxIdx = entries.length - 1;
   let startIdx, endIdx;
-  if (needsRowOffsets() && rowOffsets) {
+  // Keyed on the offsets array's presence, not on needsRowOffsets(): the
+  // Context view always has one (its gap strips make row tops variable
+  // regardless of the multiline/notes toggles), while the Filtered view still
+  // passes null whenever its rows are a flat ROW_HEIGHT each.
+  if (rowOffsets) {
     startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(rowOffsets, scrollEl.scrollTop)));
     endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(rowOffsets, scrollEl.scrollTop + viewportH)));
   } else {
@@ -12837,14 +13443,11 @@ function scrollToIndex(index, opts) {
 function scrollToHighlightIndex(index, opts) {
   opts = opts || {};
   const viewportH = highlightBody.clientHeight || 400;
-  let rowTop, rowH;
-  if (needsRowOffsets() && highlightRowOffsets) {
-    rowTop = highlightRowOffsets[index] || 0;
-    rowH = highlightRowOffsets[index + 1] - rowTop || ROW_HEIGHT;
-  } else {
-    rowTop = index * ROW_HEIGHT;
-    rowH = ROW_HEIGHT;
-  }
+  // Always the offsets path — see renderHighlightVisibleRows for why this view
+  // has no fixed-height fallback.
+  const offsets = highlightRowOffsets;
+  const rowTop = offsets ? (offsets[index] || 0) : index * ROW_HEIGHT;
+  const rowH = offsets ? (offsets[index + 1] - rowTop || ROW_HEIGHT) : ROW_HEIGHT;
   let target;
   if (opts.offset != null) {
     // Same "preserve pixel position, clamp to as-high-as-possible" logic as
@@ -12902,6 +13505,10 @@ function updateSelectedRowClass(previousId) {
       if (curEl) curEl.classList.add("selected");
     }
   });
+  // The Context chip shows which match of how many is selected, so it has to
+  // follow the selection too — cheap, since contextMatchPos makes the lookup a
+  // single Map read rather than a scan (see buildContextView).
+  updateContextNav();
 }
 
 // Same in-place-toggle technique as updateSelectedRowClass (see its comment
@@ -13079,6 +13686,13 @@ function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
   // (Filter table, Link view, …), before showFhTab below can change layout.
   state.highlightScrollTargetOffset = sourceRowEl && sourceScrollEl
     ? captureRowScreenOffset(sourceRowEl, sourceScrollEl) : null;
+  // An entry that isn't a match of the active node lives inside a collapsed
+  // gap and has no row to scroll to — opening that gap is a correctness
+  // requirement here, not a preference, so it happens whatever
+  // contextInitialExpansion is set to (that setting only adds the neighbouring
+  // gaps on top). renderHighlightView below rebuilds the list from the
+  // expansions this records.
+  applyContextJumpExpansion(entry.id);
   showFhTab("highlight");
   updateSelectedRowClass(previousId);
   renderHighlightView();
@@ -13190,6 +13804,15 @@ function moveHighlightSelection(delta) {
   const entries = currentHighlightViewEntries;
   if (entries.length === 0) return;
   let idx = state.selectedId ? entries.findIndex(e => e.id === state.selectedId) : -1;
+  if (idx === -1 && state.selectedId) {
+    // The selected entry has no row here — it's inside a collapsed gap, or it
+    // belongs to a different node's result and the active node changed under
+    // it. Continue from its WOULD-BE position rather than snapping back to the
+    // top of the list, the same courtesy the Filtered view's temp anchor
+    // already extends (see spliceTempAnchor).
+    const pos = contextWouldBeIndex(state.selectedId);
+    if (pos !== -1) idx = delta > 0 ? pos - 1 : Math.min(pos, entries.length - 1);
+  }
   idx = idx === -1 ? (delta > 0 ? 0 : entries.length - 1) : Math.min(entries.length - 1, Math.max(0, idx + delta));
   selectHighlightEntry(entries[idx].id, { scroll: true, index: idx });
 }
@@ -13303,8 +13926,9 @@ function syncBookmarksFilterNode(rootId) {
     // showing, deleting it would leave the tabs-layout Filtered view pointing
     // at a node that no longer exists (deleteNode falls back state.activeId
     // to the parent file, but the Filtered tab would then be showing the
-    // file's own — nonsensical — "filter" result). Switch back to Full.
-    // Stacked layout shows Full alongside Filtered already, nothing to fix.
+    // file's own — nonsensical — "filter" result). Switch to the Context tab,
+    // which on the resulting file node shows the plain whole file. Stacked
+    // layout shows both panes already, nothing to fix.
     const wasActiveAndShowing = state.activeId === existing.id
       && fhLayout === "tabs" && fhActiveTab === "filter";
     deleteNode(existing.id);
@@ -13337,9 +13961,22 @@ function toggleBookmark(entryId) {
   // (e.g. switching Full <-> Filtered). Only recompute when the toggled
   // entry's file is the one actually on screen — cheap, and the map is
   // meaningless for any other root anyway.
+  // Same reasoning for the Context view, which since the Context rework shows
+  // the ACTIVE node's own result rather than the raw file (see
+  // buildContextView): a bookmark toggle while standing ON the auto
+  // "Bookmarks" node — or on anything filtering off it — changes which rows
+  // are matches and therefore where the gaps fall, so its entry list has to be
+  // rebuilt here too instead of waiting for an unrelated full render. Routed
+  // through captureViewAnchor/restoreViewAnchor for the same reason
+  // setGapExpansion is: a bookmark toggle must never yank the reading position.
   if (rootId && rootId === getRootFileId(state.activeId)) {
     highlightColorMap = computeHighlightMap(rootId);
     updateColorMarkGutter();
+    const anchor = captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody);
+    currentHighlightViewEntries = buildContextView(rootId);
+    rebuildHighlightOffsets();
+    restoreViewAnchor(anchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll);
+    updateContextNav();
   }
   // While pin mode is on, a bookmark change can change WHICH rows belong in
   // the Filtered view (a newly bookmarked entry outside the filter needs to
@@ -16275,8 +16912,7 @@ function setNoteAndRepaint(entryId, text) {
   if (trimmed) state.notes.set(entryId, trimmed); else state.notes.delete(entryId);
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
-  highlightRowOffsets = needsRowOffsets() ? buildRowOffsets(currentHighlightViewEntries) : null;
-  highlightSpacer.style.height = ((needsRowOffsets() ? highlightRowOffsets[currentHighlightViewEntries.length] : currentHighlightViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  rebuildHighlightOffsets();
   renderVisibleRows();
   renderHighlightVisibleRows();
   updateDetailPanel();
@@ -16974,7 +17610,9 @@ const SHORTCUT_ACTIONS = [
   { id: "bookmark",      label: "Bookmark the selected row",           default: { key: "b" } },
   { id: "addNote",       label: "Add/edit a note on the selected row", default: { alt: true, key: "n" } },
   { id: "focusTree",     label: "Focus the filter tree",               default: { ctrl: true, key: "0" } },
-  { id: "viewFull",      label: "Switch to Full view",                 default: { ctrl: true, key: "1" } },
+  { id: "viewFull",      label: "Switch to Context view",              default: { ctrl: true, key: "1" } },
+  { id: "nextMatch",     label: "Context view: next filter match",     default: { ctrl: true, key: "arrowdown" } },
+  { id: "prevMatch",     label: "Context view: previous filter match", default: { ctrl: true, key: "arrowup" } },
   { id: "viewFiltered",  label: "Switch to Filtered view",             default: { ctrl: true, key: "2" } },
   { id: "viewStacked",   label: "Switch to Stacked view",              default: { ctrl: true, key: "3" } },
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
@@ -16995,7 +17633,7 @@ const FIXED_SHORTCUTS = [
   { label: "Right-click a filter — save to library…; right-click any node — apply from library…", display: null },
   { label: "Drag a filter onto another node to move it there", display: null },
   { label: "Double-click a filter — edit it",         display: null },
-  { label: "Drag the divider beside the tree/detail panel, or between Full and Filtered in Stacked view, to resize", display: null },
+  { label: "Drag the divider beside the tree/detail panel, or between Context and Filtered in Stacked view, to resize", display: null },
   { label: "Click a row — select it",                 display: null },
   { label: "Multi-select rows",                       display: ["Ctrl", "click"] },
   { label: "Move selection up/down",                  display: ["↑", "↓"] },
@@ -17029,12 +17667,16 @@ function comboEquals(a, b) {
 function matchesShortcut(ev, actionId) {
   return comboEquals(comboFromEvent(ev), getShortcutBinding(actionId));
 }
+// Keys whose ev.key value doesn't read well verbatim in the Shortcut Manager.
+const SHORTCUT_KEY_LABELS = {
+  f2: "F2", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
+};
 function comboLabelParts(combo) {
   const parts = [];
   if (combo.ctrl) parts.push("Ctrl");
   if (combo.alt) parts.push("Alt");
   if (combo.shift) parts.push("Shift");
-  parts.push(combo.key === "f2" ? "F2" : combo.key.length === 1 ? combo.key.toUpperCase() : combo.key);
+  parts.push(SHORTCUT_KEY_LABELS[combo.key] || (combo.key.length === 1 ? combo.key.toUpperCase() : combo.key));
   return parts;
 }
 // A combo already in use by another rebindable action, so assigning it here
@@ -17844,6 +18486,22 @@ document.addEventListener("keydown", ev => {
     ev.preventDefault();
     moveTreeSelection(ev.key);
     return;
+  }
+
+  // Context view: walk match to match, skipping whatever context rows are
+  // revealed in between. Placed here, right after the Alt+Arrow tree-nav block
+  // and ahead of BOTH the focusRegion === "tree" arrow block and the plain-row
+  // arrow block, for the same reason Alt+Arrow sits where it does: an explicit
+  // modifier chord should do its one thing regardless of which region happens
+  // to hold focus. It also has to beat the plain-row block specifically, which
+  // matches on ev.key alone with no modifier check and would otherwise swallow
+  // Ctrl+Arrow outright.
+  if (matchesShortcut(ev, "nextMatch") || matchesShortcut(ev, "prevMatch")) {
+    if (extractWrap.style.display === "none" && fhSplit.style.display !== "none") {
+      ev.preventDefault();
+      moveContextMatchSelection(matchesShortcut(ev, "nextMatch") ? 1 : -1);
+      return;
+    }
   }
 
   // FEATURE_BACKLOG.md "Bookmarks rework" — Alt+N on the selected row opens
@@ -19536,6 +20194,7 @@ initFontScale();
 initQuitOnLastClose();
 initCloseToTray();
 initHoverExpandSettings();
+initContextInitialExpansionSetting();
 initMinimapFullRangeSetting();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();
