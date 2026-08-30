@@ -13665,10 +13665,12 @@ await withApp(async (w, d, T) => {
    afterward only ever changes parentId, re-chaining its INPUT entries
    (getEntries(node.parentId), same as any other filter type) but never
    touching bakedA/bakedB; and Unpack materializes bakedA/bakedB back into
-   visible sibling filters wired via a fresh combiner that REPLACES the
-   original node at its own position (the original is deleted — a session
-   fix: an earlier pass here had made Unpack "purely additive", leaving the
-   original node behind as a duplicate of the fresh combiner it created).
+   visible sibling filters next to the original node, which is otherwise
+   left completely untouched — no fresh combiner is created (a session fix:
+   an earlier pass here had Unpack create a fresh combiner AND delete the
+   original to "replace" it, which is unnecessary churn — the original
+   node's own bakedA/bakedB already work fine once its inputs are visible
+   again, so there is nothing to replace).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("128. Self-contained and/or/link inputs: placement, move, Unpack");
@@ -13746,26 +13748,23 @@ await withApp(async (w, d, T) => {
   assert(w.getEntries(combinedUnderC.id).length === 1, "combining a nested filter A ignores A's ancestor C's restriction — only A's own condition applies");
 
   // --- Unpack: materializes bakedA/bakedB back into two real, visible
-  // sibling filter nodes, wired via a FRESH combiner that replaces the
-  // original at its own position — the original is deleted, so Unpack
-  // never leaves a duplicate of itself behind. ---
+  // sibling filter nodes next to the original's own position — the original
+  // combiner node itself is left completely untouched, no fresh combiner is
+  // created, so Unpack never leaves a duplicate of itself behind. ---
   const unpackA = w.createFilterNode(f.id, "text", "pos");
   const unpackB = w.createFilterNode(f.id, "text", "val");
   const toUnpack = w.createAndOrNode(unpackA.id, unpackB.id, "and");
   const resultBefore = w.getEntries(toUnpack.id).map(e => e.id);
   const parentBefore = toUnpack.parentId;
-  const newComboId = w.unpackAndOrLinkNode(toUnpack.id);
-  assert(newComboId && T.state.nodes[newComboId], "unpackAndOrLinkNode returns the id of the fresh combiner node");
-  assert(!T.state.nodes[toUnpack.id], "the ORIGINAL combiner node is deleted — Unpack replaces it, it doesn't duplicate it");
-  const newCombo = T.state.nodes[newComboId];
-  assert(newCombo.filterType === "and", "the fresh combiner is the same filter type as the unpacked node");
-  assert(newCombo.parentId === parentBefore, "the fresh combiner sits at the unpacked node's own former position");
-  assert(newCombo.id !== toUnpack.id, "the fresh combiner is a DIFFERENT node from the original");
+  const returnedId = w.unpackAndOrLinkNode(toUnpack.id);
+  assert(returnedId === toUnpack.id, "unpackAndOrLinkNode returns the ORIGINAL node's own id — no fresh combiner is created");
+  assert(T.state.nodes[toUnpack.id], "the original combiner node still exists after Unpack");
+  assert(toUnpack.filterType === "and" && toUnpack.parentId === parentBefore, "the original combiner is completely untouched — same type, same position");
   const materializedA = f.children.map(id => T.state.nodes[id]).find(n => n.value === "pos" && n.id !== unpackA.id && n.id !== posFilter.id);
   const materializedB = f.children.map(id => T.state.nodes[id]).find(n => n.value === "val" && n.id !== unpackB.id && n.id !== valFilter.id);
   assert(materializedA && materializedB, "Unpack materializes bakedA/bakedB into two NEW, real, visible sibling filter nodes");
-  const resultAfter = w.getEntries(newComboId).map(e => e.id);
-  assert(JSON.stringify(resultBefore) === JSON.stringify(resultAfter), "Unpack's fresh combiner produces the identical result to the original");
+  const resultAfter = w.getEntries(toUnpack.id).map(e => e.id);
+  assert(JSON.stringify(resultBefore) === JSON.stringify(resultAfter), "the original combiner still produces the exact same result after Unpack");
 
   // --- Persistence carriers thread bakedA/bakedB through as plain data ---
   const clone = w.cloneSubtree(andNode.id, f.id);
