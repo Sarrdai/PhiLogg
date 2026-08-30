@@ -626,12 +626,11 @@
   }
   .tree-swatch:hover{border-color:var(--accent);}
   .tree-swatch.empty{background:var(--bg-app); border-style:dashed;}
-  /* Expand/collapse chevron — ALWAYS a fixed-width slot (person-reported:
-     it used to only exist for squash groups, shifting the icon whenever it
-     appeared/disappeared) whether or not this particular row has a button
-     in it. Toggles either a squash group's private-chain box, or a plain
-     node's real children — see renderNode. Rotates via a transform, not a
-     different glyph, so collapse/expand reads as one smooth flip. */
+  /* Expand/collapse chevron — ALWAYS a fixed-width slot, whether or not this
+     particular row has a button in it, so the icon never shifts sideways
+     between rows. Toggles the node's real children — see renderNode. Rotates
+     via a transform, not a different glyph, so collapse/expand reads as one
+     smooth flip. */
   .tree-chevron-slot{flex:0 0 auto; width:16px; height:16px; display:flex; align-items:center; justify-content:center;}
   .tree-chevron{
     width:16px; height:16px; margin:0; padding:0;
@@ -5681,10 +5680,9 @@ function getRootFileId(nodeId) {
 // define ONE filter step (filterType/value/caseSensitive/etc — never id/
 // parentId/children/ancestors), so once created, node.bakedA/bakedB never
 // look at state.nodes[...] again: deleting, renaming, moving, or replacing
-// the original source node(s) has zero effect on this node's result. This
-// is the corrected model — see CLAUDE.md/CHANGELOG.md for why the earlier
-// inputA/inputB id-reference version (still a live lookup, just renamed)
-// was wrong. node.parentId is the ONLY thing that determines this node's
+// the original source node(s) has zero effect on this node's result — which
+// is the whole point of baking rather than referencing.
+// node.parentId is the ONLY thing that determines this node's
 // input entries (getEntries(node.parentId), exactly like every other
 // filter type) — moving such a node just re-chains it onto a different
 // parent's output, same as any plain filter; it never touches bakedA/bakedB.
@@ -5699,6 +5697,20 @@ function getRootFileId(nodeId) {
 // that is itself and/or/link, its own bakedA/bakedB are copied in as a
 // nested predicate-pair (see getEntriesFromBaked's recursive handling) —
 // so a link-of-link (multi-hop) chain keeps working through this model.
+// Deep-copies one baked condition, tolerating a missing side (see
+// hasBakedSides): returns null rather than throwing on undefined.
+function cloneBaked(baked) {
+  return baked ? JSON.parse(JSON.stringify(baked)) : null;
+}
+
+// True only for an and/or/link node that actually carries both baked sides.
+// A combiner materialized from a pre-baking filter file / library preset has
+// neither (its old inputA/inputB node-id references are dropped on import),
+// and every action that reads bakedA/bakedB has to check first.
+function hasBakedSides(node) {
+  return !!(node && node.bakedA && node.bakedB);
+}
+
 function bakeNodeCondition(node) {
   const baked = {
     filterType: node.filterType,
@@ -5716,11 +5728,15 @@ function bakeNodeCondition(node) {
     baked.countBefore = node.countBefore || 0;
     baked.countAfter = node.countAfter || 0;
   } else if (node.filterType === "and" || node.filterType === "or") {
-    baked.bakedA = JSON.parse(JSON.stringify(node.bakedA));
-    baked.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+    // cloneBaked, not a bare JSON round-trip: a combiner can legitimately
+    // reach here with no baked sides at all (a filter file or library preset
+    // written before this model existed carries the old node-id references
+    // instead), and JSON.parse(JSON.stringify(undefined)) throws.
+    baked.bakedA = cloneBaked(node.bakedA);
+    baked.bakedB = cloneBaked(node.bakedB);
   } else if (node.filterType === "link") {
-    baked.bakedA = JSON.parse(JSON.stringify(node.bakedA));
-    baked.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+    baked.bakedA = cloneBaked(node.bakedA);
+    baked.bakedB = cloneBaked(node.bakedB);
     baked.linkDirection = node.linkDirection;
     baked.linkN = node.linkN;
     baked.linkOrderEnforced = !!node.linkOrderEnforced;
@@ -5738,10 +5754,28 @@ function bakeNodeCondition(node) {
 // syncBookmarksFilterNode/createSelectionFilterNode already use) — from
 // there it can be moved anywhere like any other node, which only changes
 // what entries it receives via getEntries(node.parentId), never bakedA/bakedB.
+// Which nodes AND/OR accept as a side. Two exclusions, both because the
+// baked copy would evaluate to something meaningless rather than to that
+// filter's own condition:
+//   - "link": its result is synthetic PAIR entries (buildPairEntry) whose ids
+//     never appear in a plain entry pool, so intersecting/uniting them with
+//     ordinary entries yields an always-empty (AND) or type-mixed (OR) result.
+//     Chaining a link onto another link is still supported — that goes through
+//     createLinkNode, whose evaluator understands pair entries.
+//   - a combiner with no baked sides (see hasBakedSides): there is no
+//     condition left to copy.
+function canBeCombined(node) {
+  if (!node) return false;
+  if (node.filterType === "link") return false;
+  if (node.filterType === "and" || node.filterType === "or") return hasBakedSides(node);
+  return true;
+}
+
 function createAndOrNode(idA, idB, mode) {
   const a = state.nodes[idA];
   const b = state.nodes[idB];
   if (!a || !b) return null;
+  if (!canBeCombined(a) || !canBeCombined(b)) return null;
   const rootId = getRootFileId(idA);
   const root = state.nodes[rootId];
   if (!root) return null;
@@ -5809,6 +5843,7 @@ async function mergeFiles(fileIds) {
   if (state.nodes[node.id] !== node) return node; // removed mid-merge (by the person, or a race)
 
   node.entries.sort((a, b) => a.ts - b.ts);
+  invalidateOrderIndexMap(node.id); // in-place reorder: same array, same length
   delete node.loadFraction;
   flushLoadRender(node.id);
   persistFileNode(node); // fire-and-forget; cached as its own text snapshot (see "Session cache")
@@ -5838,6 +5873,11 @@ function createLinkNode(refId, targetId, direction, n, opts) {
   const ref = state.nodes[refId];
   const target = state.nodes[targetId];
   if (!ref || !target) return null;
+  // Unlike AND/OR, a `link` side IS allowed here (that's how a multi-hop
+  // tuple is chained) — only a combiner with nothing baked to copy is not.
+  const bakeable = n =>
+    (n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n);
+  if (!bakeable(ref) || !bakeable(target)) return null;
   const rootId = getRootFileId(refId);
   const root = state.nodes[rootId];
   if (!root) return null;
@@ -5893,16 +5933,33 @@ function upperBoundByTs(entries, ts) {
 // share one exact timestamp — without this, "before"/"after" (which compare
 // strictly) would silently skip past the whole tied cluster instead of
 // picking the log-adjacent entry a person reading the file would expect.
-// Returns an empty Map if the root file can't be resolved (e.g. a dangling
-// inputA/inputB) — every lookup then resolves `undefined`, and the tie-break
-// comparisons below degrade gracefully back to "exclude all ties", exactly
-// the pre-fix behavior, rather than crashing or guessing.
+// Returns an empty Map if the root file can't be resolved — every lookup
+// then resolves `undefined`, and the tie-break comparisons below degrade
+// gracefully back to "exclude all ties" rather than crashing or guessing.
+// Memoized per file node, because this is an O(file size) Map build on a hot
+// path: getVisibleEntries() calls it on EVERY render while "pin bookmarks
+// into the Filtered view" is on, and each link recompute calls it again per
+// nested baked hop. The memo is self-validating rather than invalidated from
+// call sites — it re-derives whenever the entries array is a different object
+// (rotation replaces it wholesale) or a different length (tail append, merge
+// copy). mergeFiles' final in-place sort reorders without changing either, so
+// that one case drops the memo explicitly (see invalidateOrderIndexMap).
 function buildOrderIndexMap(fileId) {
-  const map = new Map();
   const file = fileId && state.nodes[fileId];
-  if (!file) return map;
+  if (!file || !file.entries) return new Map();
+  const memo = file._orderIndexMap;
+  if (memo && memo.entries === file.entries && memo.length === file.entries.length) return memo.map;
+  const map = new Map();
   file.entries.forEach((e, i) => map.set(e.id, i));
+  file._orderIndexMap = { entries: file.entries, length: file.entries.length, map };
   return map;
+}
+
+// Drops a file's memoized order map for the one mutation the self-validating
+// key above can't see: a reorder that keeps the same array and length.
+function invalidateOrderIndexMap(fileId) {
+  const file = fileId && state.nodes[fileId];
+  if (file) file._orderIndexMap = null;
 }
 
 /* ===================== Time context filter: window around reference entries ===================== */
@@ -7006,6 +7063,15 @@ function snapshotSubtree(nodeId) {
     copy.entries = node.entries; copy.cacheKey = node.cacheKey;
     if (node.merged) copy.merged = true;
     if (node.tail) copy.tail = node.tail;
+    // formatId decides how the level bar is built (formatLevels), how tailed
+    // text is parsed (appendTailText) and how the session cache reparses the
+    // file on restore — losing it across an undo silently reverted a
+    // custom-format file to the builtin default. folderId rides along for the
+    // same reason (a folder-owned file never reaches this branch today, since
+    // deleteFilterNodeWithUndo routes it to closeFolderFile, but the snapshot
+    // shouldn't be the thing that makes that true).
+    if (node.formatId) copy.formatId = node.formatId;
+    if (node.folderId) copy.folderId = node.folderId;
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
@@ -7039,6 +7105,8 @@ function restoreSubtree(snap) {
     };
     if (snap.merged) node.merged = true;
     if (snap.tail) node.tail = snap.tail;
+    if (snap.formatId) node.formatId = snap.formatId;
+    if (snap.folderId) node.folderId = snap.folderId;
     state.nodes[node.id] = node;
     node.entries.forEach(e => { entryIndex[e.id] = e; });
     node.children = snap.children.map(c => restoreSubtree(c).id);
@@ -15403,9 +15471,15 @@ function addRowsToSelectionFilter(nodeId, ids) {
   const node = state.nodes[nodeId];
   if (!node || node.filterType !== "idset" || !node.selectionFilter || !Array.isArray(node.value)) return;
   const have = new Set(node.value);
-  let changed = false;
-  (ids || []).forEach(id => { if (!have.has(id)) { node.value.push(id); have.add(id); changed = true; } });
-  if (changed) invalidateAllCaches();
+  const added = [];
+  (ids || []).forEach(id => { if (!have.has(id)) { added.push(id); have.add(id); } });
+  // Replaces node.value wholesale instead of pushing into it: cloneSubtree
+  // and snapshotSubtree copy `value` BY REFERENCE (fine for the primitive
+  // shapes, aliasing for the array/object ones), so an in-place push here
+  // also grew every copy/paste duplicate of this node and retroactively
+  // rewrote the undo stack's "before" snapshot. Same immutable-value
+  // convention "timerange" already follows — see docs/filters.md.
+  if (added.length) { node.value = node.value.concat(added); invalidateAllCaches(); }
   state.activeId = node.id;
 }
 
@@ -15616,8 +15690,14 @@ function describeBulkActions(nodes) {
     }
     const actions = [];
     if (nodes.length === 2) {
-      actions.push({ action: "and", label: "Combine (AND)", icon: ICON_COMBINE });
-      actions.push({ action: "or", label: "OR", icon: ICON_COMBINE });
+      // AND/OR are withheld for sides canBeCombined() rejects (a link node's
+      // synthetic pair entries, a pre-baking imported combiner) — the node
+      // they'd produce could only ever be empty or type-mixed. Link… stays
+      // offered either way: that's the supported way to chain onto a link.
+      if (nodes.every(canBeCombined)) {
+        actions.push({ action: "and", label: "Combine (AND)", icon: ICON_COMBINE });
+        actions.push({ action: "or", label: "OR", icon: ICON_COMBINE });
+      }
       actions.push({ action: "link", label: "Link…", icon: ICON_LINK });
     } else {
       actions.push({ action: "link", label: "Link… (" + nodes.length + "-way)", icon: ICON_LINK });
@@ -15746,7 +15826,7 @@ function openTreeContextMenu(ev, clickedId) {
       // "Unpack" (and/or/link only): materializes the node's two baked
       // inputs as real, visible sibling filters next to it — the node
       // itself is untouched — see unpackAndOrLinkNode.
-      if (node.filterType === "and" || node.filterType === "or" || node.filterType === "link") {
+      if ((node.filterType === "and" || node.filterType === "or" || node.filterType === "link") && hasBakedSides(node)) {
         buckets.edit.push({ action: "unpack", label: "Unpack…", icon: ICON_COMBINE });
       }
     }
@@ -16392,17 +16472,18 @@ function bakedConditionName(baked) {
 
 // Materializes an and/or/link node's own bakedA/bakedB back into two real,
 // visible sibling filter nodes (same filterType/fields), inserted right
-// after the original node's own position. The original node itself is left
-// completely untouched — no fresh combiner is created and nothing is
-// deleted, so Unpack never leaves a duplicate of the node behind; it just
-// makes the two building blocks visible/editable again as ordinary siblings
-// (there's no dedicated "edit and/or/link inputs" UI — see
-// FEATURE_BACKLOG.md). Returns the original node's own id (still active),
-// or null if nodeId isn't an and/or/link node.
+// after the original node's own position. Purely ADDITIVE: the original node
+// keeps its id, its bakedA/bakedB and its result — its condition already
+// works, so there is nothing to replace. Unpack exists only to make the two
+// building blocks visible and editable again as ordinary siblings, since
+// there's no dedicated "edit a combiner's two sides" UI (see
+// FEATURE_BACKLOG.md #58). Returns the original node's own id (still
+// active), or null if nodeId isn't an and/or/link node with baked sides.
 function unpackAndOrLinkNode(nodeId) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return null;
   if (node.filterType !== "and" && node.filterType !== "or" && node.filterType !== "link") return null;
+  if (!hasBakedSides(node)) return null; // pre-baking import — no conditions to materialize
   const parent = state.nodes[node.parentId];
   if (!parent) return null;
 
@@ -16609,9 +16690,14 @@ function importFilterJson(text) {
     // (hand-edited file, or an old export from before this restriction
     // existed) would just be an unlocked look-alike with a stale match set.
     if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
+    // and/or/link carry their two sides as baked condition snapshots. A file
+    // or library preset written before that model carries node-id references
+    // instead, which mean nothing here — importing it would produce a filter
+    // that silently matches nothing, so reject it with a message instead.
+    if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !(sn.bakedA && sn.bakedB)) return false;
     return (sn.children || []).every(validate);
   }
-  if (!data.roots.every(validate)) { showCopyToast("Filter file contains unknown filter types"); return; }
+  if (!data.roots.every(validate)) { showCopyToast("Filter file contains filters this version can't load"); return; }
 
   // Every root is tagged attach:"target" (see serializeFilterBranch) —
   // always attaches under wherever the import was invoked, never FILE.
