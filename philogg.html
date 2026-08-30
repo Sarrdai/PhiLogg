@@ -798,11 +798,12 @@
      rule overrides display at rest. float:left is harmless while hidden —
      it only takes effect once JS sets display back to "flex". */
   #fhTabs{display:none; float:left; margin:0 14px 6px 0;}
-  /* #btnPinBookmarks/#btnMultilineMsg/#btnColumns/#btnTextMatchHighlight:
+  /* #btnPinBookmarks/#btnMultilineMsg/#btnColumns/#btnTextMatchHighlight/
+     #btnHighlightMatchText:
      persistent view-content toggles that live in this row (between the
      Full/Filtered/Stacked tabs and the level filter pills) rather than the
      header's popup-trigger buttons — this row is where view content gets
-     controlled, which is what these four do. Deliberately keep
+     controlled, which is what these do. Deliberately keep
      `.toolbar-icon-btn`'s look (icon buttons, not `.level-btn` pills): each
      is an additive/persistent toggle, not a subtractive level filter, and
      looking identical to the pills here would be confusing about what they
@@ -811,8 +812,11 @@
      PROJECT.md). #btnTextMatchHighlight joined this group this session,
      person-requested move out of Settings (the master on/off for text-filter
      match highlighting used to be a Settings dropdown option; now it's this
-     button, same "reach for it while looking at the view" tier as the other
-     three — see "Text-filter match highlighting" in PROJECT.md).
+     button, same "reach for it while looking at the view" tier as the
+     others — see "Text-filter match highlighting" in PROJECT.md).
+     #btnHighlightMatchText joined it later still (FEATURE_BACKLOG.md #20,
+     person-chosen control surface): the same tier again, underlining each
+     highlight rule's own matches in its own colour.
      float:left + the same right/bottom margin as #fhTabs/#levelBar keeps
      them pinned to the top-left line alongside those, participating in the
      same float flow described in the #viewBar comment above. No size
@@ -828,6 +832,7 @@
   #btnMultilineMsg{float:left; margin:0 14px 6px 0;}
   #btnColumns{float:left; margin:0 14px 6px 0;}
   #btnTextMatchHighlight{float:left; margin:0 14px 6px 0;}
+  #btnHighlightMatchText{float:left; margin:0 14px 6px 0;}
   /* #btnApplyLevelToTree ("Add to tree", Settings → Behavior: Manual mode
      only) sits after #levelBar in the same float flow. It's toggled via
      display:none/"" by JS (see updateLevelBarVisibility/similar), not
@@ -1205,6 +1210,17 @@
   mark.text-match-mark{
     background:color-mix(in srgb, var(--warn) 55%, transparent); color:inherit;
     border-radius:2px; padding:0 1px;
+  }
+  /* Highlight-RULE match text (FEATURE_BACKLOG.md #20, see markCombinedHtml):
+     the rule's own colour is drawn as a stacked 2px underline stripe via an
+     inline inset box-shadow, never as a background — that's what lets a
+     character carry the filter mark above AND any number of rule colours at
+     once without one having to win. This class is only the "rule colours,
+     no filter match" case; a segment that's both keeps .text-match-mark's
+     background and just gains the same inline stripes. No colour of its own
+     here: every stripe is inline, since it comes from the node. */
+  mark.hl-match-mark{
+    background:none; color:inherit; border-radius:2px; padding:0 1px;
   }
 
   .log-row{
@@ -2625,6 +2641,7 @@
         <button id="btnMultilineMsg" class="toolbar-icon-btn" title="Multi-line message display (line breaks in the message)"></button>
         <button id="btnColumns" class="toolbar-icon-btn" title="Show/hide log view columns"></button>
         <button id="btnTextMatchHighlight" class="toolbar-icon-btn" title="Highlight text-filter matches (Settings → Behavior configures what gets marked and where)"></button>
+        <button id="btnHighlightMatchText" class="toolbar-icon-btn" title="Underline highlight-rule matches in the rule's own colour (both views and the entry detail)"></button>
         <div id="levelBar"></div>
         <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add the current level selection to the filter tree as a node (Settings → Behavior: only shown in Manual mode)"></button>
         <div id="breadcrumb"></div>
@@ -3559,6 +3576,12 @@ const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none
 // underline stroke, standing in for "mark/highlight" the same way
 // ICON_MULTILINE's stacked lines stand in for "multi-line text".
 const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 2.6 13.4 6.4 7.2 12.6 3 13.4l0.8-4.2z"/><path d="M2 14.5h5"/></svg>';
+// #btnHighlightMatchText (FEATURE_BACKLOG.md #20) — a word over two stacked
+// underline strokes, standing in for exactly what the feature draws: several
+// highlight rules underlining the same text, one stripe each (see
+// markCombinedHtml). Deliberately NOT another pen glyph — it has to read as
+// a different thing from ICON_TEXT_MATCH_HIGHLIGHT sitting right next to it.
+const ICON_HIGHLIGHT_MATCH_TEXT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3.2h8"/><path d="M8 3.2v6.4"/><path d="M2.5 12h11"/><path d="M2.5 14.3h11"/></svg>';
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
@@ -4315,6 +4338,22 @@ function initTextMatchHighlightSettings() {
 // updateMultilineMsgButton.
 function updateTextMatchHighlightButton() {
   btnTextMatchHighlight.classList.toggle("active", textMatchHighlightEnabled);
+}
+
+/* Highlight-rule match text (FEATURE_BACKLOG.md #20) — read/reflect twins of
+   the two functions above. Settings has no rows of its own for this one: the
+   button IS the whole control surface (which nodes contribute is already
+   answered by which filters carry a colour, and "where" is all three places
+   unconditionally, since a highlight rule is file-wide by definition — see
+   getHighlightMatchNodes). */
+function initHighlightMatchTextSetting() {
+  const stored = localStorage.getItem(HIGHLIGHT_MATCH_TEXT_KEY);
+  highlightMatchTextEnabled = stored === null ? true : stored === "1";
+  updateHighlightMatchTextButton();
+}
+
+function updateHighlightMatchTextButton() {
+  btnHighlightMatchText.classList.toggle("active", highlightMatchTextEnabled);
 }
 
 document.getElementById("settingsTextMatchHighlightScope").addEventListener("change", ev => {
@@ -6455,8 +6494,27 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
    marking those two columns relative to the literal underlying match, an
    accepted cosmetic-only trade-off.
 
+   A SECOND, independent marker rides the same machinery: highlight-RULE
+   match text (FEATURE_BACKLOG.md #20, highlightMatchTextEnabled /
+   #btnHighlightMatchText). Same range-finding, different node set and
+   different paint:
+     - Nodes: every COLOURED "text" filter under the active root file,
+       wherever it sits (getHighlightMatchNodes) — the computeHighlightMap
+       node set narrowed to the one filter type with a substring to mark,
+       NOT scoped to the active filter path the way the above is.
+     - Paint: the rule's own colour as a 2px underline stripe, stacked when
+       several rules cover the same characters (markCombinedHtml), so it
+       never has to compete with the background <mark> above — a character
+       can carry both.
+     - Where: all three surfaces including the Full view, which the
+       filter-path marking deliberately skips (it is filter-path-independent
+       by design; a file-wide highlight rule is not).
+   No Settings rows of its own: which nodes contribute is already answered by
+   which filters carry a colour, so the button is the whole control surface.
+
    Purely derived, runtime-only feature (no new filter-node field, nothing
-   persisted on the node itself), so none of CLAUDE.md's "Known gotchas"
+   persisted on the node itself — highlightColor already existed and already
+   travels through every carrier), so none of CLAUDE.md's "Known gotchas"
    persistence carriers need touching. */
 const TEXT_MATCH_HIGHLIGHT_ENABLED_KEY = "philogg-text-match-highlight-enabled";
 const TEXT_MATCH_HIGHLIGHT_SCOPE_KEY = "philogg-text-match-highlight-scope"; // "last" | "any"
@@ -6466,6 +6524,21 @@ let textMatchHighlightEnabled = true;
 let textMatchHighlightScope = "last";
 let textMatchHighlightInRows = true;
 let textMatchHighlightInDetail = true;
+
+/* Highlight-rule match text (FEATURE_BACKLOG.md #20) — the same inline
+   substring marking, driven by COLOURED filter nodes (highlight rules)
+   instead of the active filter path, and painted in each rule's own colour
+   as a stacked underline stripe rather than a background. Its own view-bar
+   toggle button, #btnHighlightMatchText (person-chosen over a per-node
+   toggle in the colour picker or a Settings checkbox), default ON, same
+   plain-persistent-toggle tier as #btnTextMatchHighlight next to it.
+   Deliberately a SEPARATE flag, not a mode of textMatchHighlightEnabled:
+   the two answer different questions ("why is this row in my filtered
+   view" vs. "where does each of my tracked patterns sit"), and the second
+   one is the whole point of the Full view, where the first one doesn't
+   apply at all. */
+const HIGHLIGHT_MATCH_TEXT_KEY = "philogg-highlight-match-text";
+let highlightMatchTextEnabled = true;
 
 /* Level bar / filter-tree mode (Settings -> Behavior, FEATURE_BACKLOG.md
    #10) — "auto" (default): clicking a level button upserts a real
@@ -6510,12 +6583,23 @@ function getTextMatchHighlightNodes() {
 function textFilterMatchSpec(node) {
   const value = String(node.value);
   const caseSensitive = !!node.caseSensitive;
+  // isRegex wins over isExtractPattern, exactly as getEntriesUncached's own
+  // "text" branch orders the two — without this branch a regex filter's
+  // source was searched as a LITERAL substring here, so a node that matched
+  // rows perfectly well marked nothing at all in them (the pattern text
+  // itself is almost never present in the log). Fixed while extending this
+  // machinery to highlight rules (FEATURE_BACKLOG.md #20), since a coloured
+  // regex filter would otherwise have inherited the same silent no-op.
+  if (node.isRegex) {
+    const re = compileRegexFilter(value, caseSensitive);
+    return re ? { regex: re, wildcardRegex: null, wildcardColumns: null, value, caseSensitive } : null;
+  }
   if (isExtractPattern(value)) {
     const compiled = compileExtractPattern(value);
     if (!compiled) return null;
-    return { wildcardRegex: new RegExp(compiled.regexStr, caseSensitive ? "" : "i"), wildcardColumns: compiled.columns, value, caseSensitive };
+    return { regex: null, wildcardRegex: new RegExp(compiled.regexStr, caseSensitive ? "" : "i"), wildcardColumns: compiled.columns, value, caseSensitive };
   }
-  return { wildcardRegex: null, wildcardColumns: null, value, caseSensitive };
+  return { regex: null, wildcardRegex: null, wildcardColumns: null, value, caseSensitive };
 }
 
 // The columns a "text" filter node's match applies to: its own target-column
@@ -6535,6 +6619,19 @@ function textMatchTargetColumns(node) {
 function findMatchRanges(text, spec) {
   const ranges = [];
   if (!text || !spec) return ranges;
+  if (spec.regex) {
+    const flags = spec.regex.flags.includes("g") ? spec.regex.flags : spec.regex.flags + "g";
+    const re = new RegExp(spec.regex.source, flags);
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      // Zero-width matches are skipped rather than marked: a pattern like
+      // `a*` matches the empty string at every position, which would pepper
+      // the field with empty <mark> elements instead of showing anything.
+      if (m[0].length) ranges.push([m.index, m.index + m[0].length]);
+      else re.lastIndex++;
+    }
+    return ranges;
+  }
   if (spec.wildcardRegex) {
     const flags = spec.wildcardRegex.flags.includes("g") ? spec.wildcardRegex.flags : spec.wildcardRegex.flags + "g";
     const re = new RegExp(spec.wildcardRegex.source, flags);
@@ -6598,6 +6695,122 @@ function markRangesHtml(text, ranges) {
     pos = e;
   }
   return out + escapeHtml(text.slice(pos));
+}
+
+/* ---------- Highlight-rule match text (FEATURE_BACKLOG.md #20) ----------
+   Every COLOURED "text" filter node under the active root file, wherever it
+   sits in the tree — the same node set computeHighlightMap() walks for the
+   gutter markers, narrowed to the one filter type that actually has a
+   substring to mark (a level/time/idset/and/or/link rule matches whole
+   entries, not a span of characters, so there is nothing to underline).
+   Unlike getTextMatchHighlightNodes() above this is NOT scoped to the active
+   filter path: a highlight rule is a standing "track this pattern across the
+   whole file" marker, which is exactly why its gutter marks already show in
+   both views. */
+function getHighlightMatchNodes() {
+  if (!highlightMatchTextEnabled) return [];
+  const fileId = getRootFileId(state.activeId);
+  const file = fileId && state.nodes[fileId];
+  if (!file) return [];
+  const out = [];
+  const stack = [...file.children];
+  while (stack.length) {
+    const node = state.nodes[stack.pop()];
+    if (!node) continue;
+    stack.push(...node.children);
+    if (node.type === "filter" && node.filterType === "text" && node.highlightColor) out.push(node);
+  }
+  return out;
+}
+
+// Twin of matchRangesFor() for highlight rules — same per-node column
+// restriction, but each range carries the rule's own colour and the list is
+// deliberately NOT merged: two rules matching the same characters must both
+// keep their colour (see markCombinedHtml, which stacks them).
+function highlightMatchRangesFor(text, columnKey, nodes, specs) {
+  if (!text || !nodes.length) return [];
+  const out = [];
+  for (let i = 0; i < nodes.length; i++) {
+    if (!specs[i] || !textMatchTargetColumns(nodes[i]).includes(columnKey)) continue;
+    const color = nodes[i].highlightColor;
+    for (const [s, e] of findMatchRanges(text, specs[i])) out.push({ start: s, end: e, color });
+  }
+  return out;
+}
+
+/* Renders `text` with both kinds of mark at once. The active filter's
+   matches stay a background <mark> (unchanged); each highlight rule's
+   matches become a 2px underline stripe in the rule's own colour, stacked
+   upward when several rules cover the same characters (inset box-shadows,
+   first listed painted on top = bottom-most stripe). Stripes rather than a
+   second background colour is the whole reason no priority rule is needed:
+   a character can carry the filter mark AND any number of rule colours
+   simultaneously, so neither has to win — the same reasoning that already
+   gives a multi-rule row several thin gutter markers instead of one blended
+   colour (see computeHighlightMap).
+
+   The two range lists therefore can't be merged into one: the text is cut at
+   every boundary either list contributes, and each resulting segment asks
+   both lists what applies to it. Delegates straight to markRangesHtml when
+   there are no rule ranges at all, keeping the pre-existing hot path (the
+   common case: no coloured filters, or none matching this field) byte-for-
+   byte what it was. */
+function markCombinedHtml(text, ranges, hlRanges) {
+  if (!hlRanges || !hlRanges.length) return markRangesHtml(text, ranges);
+  const len = text.length;
+  const bounds = new Set([0, len]);
+  const addBound = v => { if (v > 0 && v < len) bounds.add(v); };
+  for (const [rs, re] of ranges) { addBound(rs); addBound(re); }
+  for (const r of hlRanges) { addBound(r.start); addBound(r.end); }
+  const pts = [...bounds].sort((a, b) => a - b);
+  let out = "";
+  for (let i = 0; i < pts.length - 1; i++) {
+    const s = pts[i], e = pts[i + 1];
+    const slice = escapeHtml(text.slice(s, e));
+    const marked = ranges.some(r => r[0] <= s && r[1] >= e);
+    const colors = [];
+    for (const r of hlRanges) {
+      if (r.start <= s && r.end >= e && !colors.includes(r.color)) colors.push(r.color);
+    }
+    if (!marked && !colors.length) { out += slice; continue; }
+    // A rule colour reaches this attribute from node.highlightColor, which a
+    // hand-edited/imported filter file can carry arbitrary text in — escaped
+    // like every other slice rather than trusted as CSS.
+    const style = colors.length
+      ? ' style="padding-bottom:' + (colors.length * 2) + 'px;box-shadow:' +
+        colors.map((c, ci) => "inset 0 -" + ((ci + 1) * 2) + "px 0 " + escapeHtml(String(c))).join(",") + '"'
+      : "";
+    out += '<mark class="' + (marked ? "text-match-mark" : "hl-match-mark") + '"' + style + '>' + slice + '</mark>';
+  }
+  return out;
+}
+
+/* The per-render-call bundle both row renderers and the detail panel build
+   once and reuse across every row/field — walking the chain and compiling a
+   spec per node is cheap, but not cheap enough to redo per row (same
+   reasoning renderVisibleRows already applied to matchNodes/matchSpecs).
+   `includeFilterMatches` is the caller's own "where" toggle: the Full view
+   passes false — it is deliberately filter-path-independent (see
+   renderHighlightView), so the active filter's matches have no meaning
+   there, while highlight rules do. */
+function buildMatchMarkContext(includeFilterMatches) {
+  const nodes = includeFilterMatches ? getTextMatchHighlightNodes() : [];
+  const hlNodes = getHighlightMatchNodes();
+  return {
+    nodes, specs: nodes.map(textFilterMatchSpec),
+    hlNodes, hlSpecs: hlNodes.map(textFilterMatchSpec),
+    active: !!(nodes.length || hlNodes.length),
+  };
+}
+
+// One displayed field, marked per the given context — a plain escapeHtml
+// (exactly what this code did before any of this existed) whenever nothing
+// can contribute a mark, so the common case costs no range search at all.
+function markFieldHtml(mm, text, columnKey) {
+  if (!mm.active) return escapeHtml(text);
+  return markCombinedHtml(text,
+    matchRangesFor(text, columnKey, mm.nodes, mm.specs),
+    highlightMatchRangesFor(text, columnKey, mm.hlNodes, mm.hlSpecs));
 }
 
 // Filter results only ever change for a node when it (or an ancestor) gets
@@ -7425,6 +7638,7 @@ const statusStrip = el("#statusStrip");
 const tableHeaderEl = el("#tableHeader");
 const btnColumns = el("#btnColumns");
 const btnTextMatchHighlight = el("#btnTextMatchHighlight");
+const btnHighlightMatchText = el("#btnHighlightMatchText");
 const columnsPanel = el("#columnsPanel");
 const btnResetColumns = el("#btnResetColumns");
 const columnToggleInputs = {
@@ -7784,9 +7998,10 @@ function renderMainView() {
   if (isExtract) {
     // Person-requested (this session): extract mode's #viewBar now shows
     // ONLY the filter path (#breadcrumb) — #fhTabs (no Highlight companion
-    // to switch to), #levelBar, and the four Filtered/Highlight-view-only
+    // to switch to), #levelBar, and the Filtered/Highlight-view-only
     // toggles (#btnPinBookmarks/#btnMultilineMsg/#btnColumns/
-    // #btnTextMatchHighlight) all hide, since none of them apply to what's
+    // #btnTextMatchHighlight/#btnHighlightMatchText) all hide, since none of
+    // them apply to what's
     // actually on screen here (the extraction table has its own columns,
     // and applyLevelFilter() inside renderExtractTable still runs on
     // whatever the level quick-filter was last set to — just without a
@@ -7802,6 +8017,7 @@ function renderMainView() {
     btnMultilineMsg.style.display = "none";
     btnColumns.style.display = "none";
     btnTextMatchHighlight.style.display = "none";
+    btnHighlightMatchText.style.display = "none";
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
@@ -7822,6 +8038,7 @@ function renderMainView() {
   btnMultilineMsg.style.display = "";
   btnColumns.style.display = "";
   btnTextMatchHighlight.style.display = "";
+  btnHighlightMatchText.style.display = "";
   fhSplit.style.display = "flex";
   // Highlight-rule matches are shown in both the Filtered view (renderTable/
   // renderVisibleRows) and the Full view (renderHighlightView) — computed
@@ -11416,12 +11633,12 @@ function renderVisibleRows() {
     (activeNode.filterType === "context" || activeNode.filterType === "countContext") && activeNode._contextRanges)
     ? activeNode : null;
 
-  // Text-filter match highlighting (see the section above textFilterMatches)
-  // — computed once per render call, not per row: the chain is a handful of
-  // nodes at most, cheap to walk/compile up front and reuse for every
-  // visible row below.
-  const matchNodes = textMatchHighlightInRows ? getTextMatchHighlightNodes() : [];
-  const matchSpecs = matchNodes.map(textFilterMatchSpec);
+  // Match marking (see the section above textFilterMatches) — computed once
+  // per render call, not per row: the chain is a handful of nodes at most,
+  // cheap to walk/compile up front and reuse for every visible row below.
+  // Carries both kinds at once here: the active filter path's matches (gated
+  // by the "show in rows" toggle) and every coloured highlight rule's.
+  const mm = buildMatchMarkContext(textMatchHighlightInRows);
 
   const frag = document.createDocumentFragment();
   for (let i = start; i < end; i++) {
@@ -11465,16 +11682,17 @@ function renderVisibleRows() {
     const prevE = i > 0 ? currentViewEntries[i - 1] : null;
     const deltaMs = (!state.sortColumn && prevE) ? (e.ts - prevE.ts) : null;
 
-    // matchNodes.length short-circuits before any range search when the
-    // feature/row-toggle is off, so this stays a plain escapeHtml call (same
-    // cost as before this feature existed) in the common case.
+    // markFieldHtml short-circuits to a plain escapeHtml before any range
+    // search when nothing can contribute a mark (feature/row-toggle off and
+    // no coloured filters), so this costs what it did before any of this
+    // existed in the common case.
     const timeText = formatTime(e.ts);
-    const timeHtml = matchNodes.length ? markRangesHtml(timeText, matchRangesFor(timeText, "time", matchNodes, matchSpecs)) : escapeHtml(timeText);
-    const levelHtml = matchNodes.length ? markRangesHtml(e.level, matchRangesFor(e.level, "level", matchNodes, matchSpecs)) : escapeHtml(e.level);
-    const threadHtml = matchNodes.length ? markRangesHtml(e.thread, matchRangesFor(e.thread, "thread", matchNodes, matchSpecs)) : escapeHtml(e.thread);
-    const locHtml = matchNodes.length ? markRangesHtml(e.locationShort, matchRangesFor(e.locationShort, "location", matchNodes, matchSpecs)) : escapeHtml(e.locationShort);
-    const methodHtml = matchNodes.length ? markRangesHtml(e.method, matchRangesFor(e.method, "method", matchNodes, matchSpecs)) : escapeHtml(e.method);
-    const msgHtml = matchNodes.length ? markRangesHtml(e.message, matchRangesFor(e.message, "message", matchNodes, matchSpecs)) : escapeHtml(e.message);
+    const timeHtml = markFieldHtml(mm, timeText, "time");
+    const levelHtml = markFieldHtml(mm, e.level, "level");
+    const threadHtml = markFieldHtml(mm, e.thread, "thread");
+    const locHtml = markFieldHtml(mm, e.locationShort, "location");
+    const methodHtml = markFieldHtml(mm, e.method, "method");
+    const msgHtml = markFieldHtml(mm, e.message, "message");
 
     row.className = cls;
     row.style.height = baseRowHeightForEntry(e) + "px";
@@ -11707,6 +11925,14 @@ function renderHighlightVisibleRows() {
     highlightRows.style.top = (start * ROW_HEIGHT) + "px";
   }
 
+  // Highlight-rule match text (FEATURE_BACKLOG.md #20) — the Full view marks
+  // ONLY those, never the active filter path's matches (false): this view is
+  // deliberately filter-path-independent (see renderHighlightView), so the
+  // active filter's matches would be marking text in rows that view makes no
+  // claim about. A highlight rule is file-wide by definition, which is why
+  // its gutter markers already show here.
+  const mm = buildMatchMarkContext(false);
+
   const frag = document.createDocumentFragment();
   for (let i = start; i < end; i++) {
     const e = currentHighlightViewEntries[i];
@@ -11728,13 +11954,13 @@ function renderHighlightVisibleRows() {
       markerHtml +
       (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
       '<span class="col-bar"></span>' +
-      '<span class="col-time">' + escapeHtml(formatTime(e.ts)) + '</span>' +
+      '<span class="col-time">' + markFieldHtml(mm, formatTime(e.ts), "time") + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      '<span class="col-level"><span class="level-badge">' + escapeHtml(e.level) + '</span></span>' +
-      '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + escapeHtml(e.thread) + '</span>' +
-      '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + escapeHtml(e.locationShort) + '</span>' +
-      '<span class="col-method" title="' + escapeHtml(e.method) + '">' + escapeHtml(e.method) + '</span>' +
-      '<span class="col-msg">' + escapeHtml(e.message) + '</span>';
+      '<span class="col-level"><span class="level-badge">' + markFieldHtml(mm, e.level, "level") + '</span></span>' +
+      '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + markFieldHtml(mm, e.thread, "thread") + '</span>' +
+      '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + markFieldHtml(mm, e.locationShort, "location") + '</span>' +
+      '<span class="col-method" title="' + escapeHtml(e.method) + '">' + markFieldHtml(mm, e.method, "method") + '</span>' +
+      '<span class="col-msg">' + markFieldHtml(mm, e.message, "message") + '</span>';
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries, selectHighlightEntry));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
@@ -13105,12 +13331,13 @@ function updateDetailPanel() {
   detailPanel.classList.remove("empty");
   detailMeta.className = levelClass(entry.level, entry.formatId);
 
-  // Text-filter match highlighting (see the section above textFilterMatches)
-  // — same computation as renderVisibleRows, gated by the independent
-  // "entry detail" toggle instead of the "rows" one.
-  const matchNodes = textMatchHighlightInDetail ? getTextMatchHighlightNodes() : [];
-  const matchSpecs = matchNodes.map(textFilterMatchSpec);
-  const markField = (text, columnKey) => matchNodes.length ? markRangesHtml(text, matchRangesFor(text, columnKey, matchNodes, matchSpecs)) : escapeHtml(text);
+  // Match marking (see the section above textFilterMatches) — same
+  // computation as renderVisibleRows, with the filter-path half gated by the
+  // independent "entry detail" toggle instead of the "rows" one. Highlight
+  // rules are not gated by either: they have one control, their own view-bar
+  // button (see getHighlightMatchNodes).
+  const mm = buildMatchMarkContext(textMatchHighlightInDetail);
+  const markField = (text, columnKey) => markFieldHtml(mm, text, columnKey);
 
   if (isDetailCollapsed() && !isDetailPeeking()) {
     // Collapsed and not peeking: no room for the full field set, so the
@@ -13138,11 +13365,11 @@ function updateDetailPanel() {
       '<span class="detail-method">' + markField(entry.method, "method") + '</span>';
   }
   // Plain textContent (message can never be interpreted as markup) unless
-  // there's actually something to mark, in which case markRangesHtml itself
+  // there's actually something to mark, in which case markFieldHtml itself
   // escapes every non-matched slice the same way — the CSS white-space:
   // pre-wrap on #detailMessage preserves line breaks in either case.
-  if (matchNodes.length) {
-    detailMessageEl.innerHTML = markRangesHtml(entry.message, matchRangesFor(entry.message, "message", matchNodes, matchSpecs));
+  if (mm.active) {
+    detailMessageEl.innerHTML = markFieldHtml(mm, entry.message, "message");
   } else {
     detailMessageEl.textContent = entry.message;
   }
@@ -13448,6 +13675,19 @@ btnTextMatchHighlight.addEventListener("click", () => {
   localStorage.setItem(TEXT_MATCH_HIGHLIGHT_ENABLED_KEY, textMatchHighlightEnabled ? "1" : "0");
   updateTextMatchHighlightButton();
   renderVisibleRows();
+  updateDetailPanel();
+});
+
+// Twin of the handler above for highlight-rule match text (FEATURE_BACKLOG.md
+// #20) — same "no full render()" reasoning (nothing about row heights or
+// which entries are shown changes), plus renderHighlightVisibleRows(): unlike
+// the filter-path marking, this one also paints the Full view.
+btnHighlightMatchText.addEventListener("click", () => {
+  highlightMatchTextEnabled = !highlightMatchTextEnabled;
+  localStorage.setItem(HIGHLIGHT_MATCH_TEXT_KEY, highlightMatchTextEnabled ? "1" : "0");
+  updateHighlightMatchTextButton();
+  renderVisibleRows();
+  renderHighlightVisibleRows();
   updateDetailPanel();
 });
 
@@ -19515,6 +19755,7 @@ btnNotes.innerHTML = ICON_NOTE;
 btnMultilineMsg.innerHTML = ICON_MULTILINE;
 btnColumns.innerHTML = ICON_COLUMNS;
 btnTextMatchHighlight.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT;
+btnHighlightMatchText.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT;
 btnApplyLevelToTree.innerHTML = ICON_LEVEL;
 btnApplyLevelToTree.addEventListener("click", () => {
   const levels = canonicalLevelOrder([...state.levelFilter]);
@@ -19538,6 +19779,7 @@ initCloseToTray();
 initHoverExpandSettings();
 initMinimapFullRangeSetting();
 initTextMatchHighlightSettings();
+initHighlightMatchTextSetting();
 initLevelFilterTreeModeSettings();
 initTreeIndicatorModeSetting();
 initOpenScrollPositionSetting();
