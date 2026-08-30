@@ -14238,35 +14238,59 @@ await withApp(async (w, d, T) => {
     "...both of them, even though neither is in the active node's ancestor chain");
   assert(!hlNodes.some(n => n.id === uncolored.id), "...and never an uncoloured filter node");
 
-  // --- Filtered view: the rule's colour rides an underline stripe ---
-  assert(/<mark class="hl-match-mark"[^>]*box-shadow:inset 0 -2px 0 #ff0000[^>]*>beta<\/mark>/.test(filteredMsg()),
+  // --- Filtered view: the rule's colour rides an underline stripe, drawn as
+  //     a background-image INSIDE the mark's own box. Never a box-shadow
+  //     below it: .row-grid is align-items:center and the log-row cells are
+  //     overflow:hidden, so anything under the text line box is clipped away
+  //     and never appears in the log views at all (person-reported) ---
+  const betaMark = filteredMsg().match(/<mark class="hl-match-mark mark-seg"[^>]*>beta<\/mark>/);
+  assert(betaMark && betaMark[0].includes("linear-gradient(#ff0000,#ff0000)"),
     "a rule's match is underlined in the rule's own colour, with no background mark of its own");
+  assert(betaMark && /background-size:100% 2px/.test(betaMark[0]) && /background-position:left bottom/.test(betaMark[0]),
+    "...as a 2px lane pinned to the bottom of the mark's own box");
+  assert(!/box-shadow|padding-bottom/.test(filteredMsg()),
+    "...and never as a box-shadow/padding below it, which the overflow:hidden cells would clip");
 
   // --- Overlap: "alpha" is both the active filter's match AND ruleAlpha's.
   //     One <mark>, keeping the filter's background class and gaining the
   //     rule's stripe — neither wins, both apply ---
-  const overlap = filteredMsg().match(/<mark class="text-match-mark"[^>]*>alpha<\/mark>/);
-  assert(overlap && overlap[0].includes("box-shadow:inset 0 -2px 0 #00ff00"),
+  const overlap = filteredMsg().match(/<mark class="text-match-mark mark-seg"[^>]*>alpha<\/mark>/);
+  assert(overlap && overlap[0].includes("linear-gradient(#00ff00,#00ff00)"),
     "a span matched by BOTH the active filter and a rule keeps the filter background and gains the rule stripe");
 
+  // --- Segmented marks drop the rounding/side padding a standalone filter
+  //     mark carries, so pieces of one rule's underline join seamlessly ---
+  assert(/mark-seg/.test(filteredMsg()), "marks from the segmenting path carry .mark-seg");
+  assert(/mark\.mark-seg\{padding:0; border-radius:0;\}/.test(w.document.documentElement.innerHTML),
+    "...and .mark-seg really zeroes the padding and rounding that would notch the join");
+
   // --- Full view marks rules but NOT the active filter path ---
-  assert(/<mark class="hl-match-mark"[^>]*#ff0000[^>]*>beta<\/mark>/.test(fullMsg()),
+  assert(/<mark class="hl-match-mark mark-seg"[^>]*#ff0000[^>]*>beta<\/mark>/.test(fullMsg()),
     "the Full view paints rule matches too (unlike the filter-path marking, which never applied there)");
-  assert(/<mark class="hl-match-mark"[^>]*#00ff00[^>]*>alpha<\/mark>/.test(fullMsg()),
+  assert(/<mark class="hl-match-mark mark-seg"[^>]*#00ff00[^>]*>alpha<\/mark>/.test(fullMsg()),
     "...and 'alpha' is a plain rule stripe there, not the active filter's background mark");
   assert(!/text-match-mark/.test(fullMsg()), "the Full view never marks the active filter path's own matches");
 
-  // --- Two rules over the same characters stack their stripes ---
+  // --- Two rules over the same characters share ONE lane, alternating
+  //     colours horizontally. The lane depth must not depend on how many
+  //     rules happen to cover a segment: an earlier version stacked a stripe
+  //     per rule and took each one's depth from the segment's own rule count,
+  //     so the SAME rule sat at 2px beside a word and at 4px under it and
+  //     the line visibly stepped down mid-sentence (person-reported) ---
   const ruleAlph = w.createFilterNode(f.id, "text", "alph", false, null, false, ["message"]);
   w.setHighlightColor(ruleAlph.id, "#0000ff");
   T.state.activeId = active.id;
   w.render();
-  const stacked = fullMsg().match(/<mark[^>]*>alph<\/mark>/);
-  assert(stacked && /#00ff00/.test(stacked[0]) && /#0000ff/.test(stacked[0]),
+  const both = fullMsg().match(/<mark[^>]*>alph<\/mark>/);        // ruleAlpha + ruleAlph
+  const alphaOnly = fullMsg().match(/<mark[^>]*>a<\/mark>/);      // ruleAlpha alone, right after it
+  assert(both && /#00ff00/.test(both[0]) && /#0000ff/.test(both[0]),
     "characters covered by two rules carry both colours in one mark");
-  assert(stacked && /inset 0 -2px 0 [^,]+,inset 0 -4px 0 /.test(stacked[0]),
-    "...as two stacked stripes at 2px and 4px, not one colour replacing the other");
-  assert(stacked && /padding-bottom:4px/.test(stacked[0]), "...with room reserved under the text for both");
+  assert(both && /repeating-linear-gradient\(90deg,#[0-9a-f]{6} 0px 5px,#[0-9a-f]{6} 5px 10px\)/.test(both[0]),
+    "...as one lane alternating the two colours in 5px slices, not two stacked stripes");
+  assert(both && alphaOnly, "the overlapped run and the run right after it are separate marks");
+  assert(/background-size:100% 2px/.test(both[0]) && /background-size:100% 2px/.test(alphaOnly[0]),
+    "both keep the SAME 2px lane — a rule's line runs straight through an overlap instead of stepping down");
+  assert(!/padding-bottom|box-shadow/.test(both[0]), "...and the overlap costs no vertical room at all");
   w.setHighlightColor(ruleAlph.id, null);
   T.state.activeId = active.id;
   w.render();
@@ -14278,7 +14302,7 @@ await withApp(async (w, d, T) => {
   detailCb.checked = false;
   detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
   const detailHtml = () => d.querySelector("#detailMessage").innerHTML;
-  assert(/<mark class="hl-match-mark"[^>]*#ff0000[^>]*>beta<\/mark>/.test(detailHtml()),
+  assert(/<mark class="hl-match-mark mark-seg"[^>]*#ff0000[^>]*>beta<\/mark>/.test(detailHtml()),
     "entry detail shows rule stripes even with the filter-path 'show in entry detail' toggle off");
   assert(!/text-match-mark/.test(detailHtml()), "...and that toggle still suppresses the filter-path mark itself");
   detailCb.checked = true;
@@ -14296,7 +14320,7 @@ await withApp(async (w, d, T) => {
   fireClick(btn, w);
   assert(!T.highlightMatchTextEnabled && !btn.classList.contains("active"), "clicking the button turns rule marking off");
   assert(w.localStorage.getItem("philogg-highlight-match-text") === "0", "state persisted as off");
-  assert(!/hl-match-mark/.test(filteredMsg()) && !/box-shadow/.test(filteredMsg()), "no rule stripes anywhere in the Filtered view while off");
+  assert(!/hl-match-mark/.test(filteredMsg()) && !/background-image/.test(filteredMsg()), "no rule stripes anywhere in the Filtered view while off");
   assert(!/<mark/.test(fullMsg()), "...nor in the Full view");
   assert(/<mark class="text-match-mark">alpha<\/mark>/.test(filteredMsg()),
     "...while the active filter's own mark keeps working, unchanged and independent");
@@ -14335,7 +14359,7 @@ await withApp(async (w, d, T) => {
   w.setHighlightColor(rx.id, "#abcdef");
   T.state.activeId = f.id;
   w.render();
-  assert(/<mark class="hl-match-mark"[^>]*#abcdef[^>]*>beta 0<\/mark>/.test(fullMsg()),
+  assert(/<mark class="hl-match-mark mark-seg"[^>]*#abcdef[^>]*>beta 0<\/mark>/.test(fullMsg()),
     "a coloured regex rule underlines its real match in the Full view too");
 });
 
