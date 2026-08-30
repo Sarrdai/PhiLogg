@@ -1206,10 +1206,21 @@
      matched substring inline in a row/detail field, see markRangesHtml(). A
      plain <mark>, restyled to use the theme's --warn token (tinted via
      color-mix so it reads consistently across every theme without a
-     hardcoded color) instead of the browser default yellow. */
+     hardcoded color) instead of the browser default yellow.
+     padding:0, deliberately (person-reported 2026-08-30): this used to carry
+     `padding:0 1px` for a little visual breathing room, which is layout-
+     affecting on an inline element — unlike background/box-shadow, side
+     padding on <mark> actually widens the line, shifting every character
+     after it by 2px. That widening used to appear/disappear depending on
+     whether a coloured highlight rule ALSO happened to match the same field
+     (see markCombinedHtml: the mark-seg path zeroed padding, the plain
+     markRangesHtml fallback didn't), which is why toggling the unrelated
+     highlight-rule feature visibly reflowed text nowhere near a highlight
+     rule. Marking text must never change its layout — only what's painted
+     on top of it — so padding is 0 unconditionally now, on every path. */
   mark.text-match-mark{
     background:color-mix(in srgb, var(--warn) 55%, transparent); color:inherit;
-    border-radius:2px; padding:0 1px;
+    border-radius:2px; padding:0;
   }
   /* Highlight-RULE match text (FEATURE_BACKLOG.md #20, see markCombinedHtml):
      the rule's own colour is drawn as a 2px underline stripe, never as a
@@ -1235,10 +1246,12 @@
   /* Every mark markCombinedHtml's segmenting path emits (see there): one
      rule's underline can be cut into several marks by another rule's
      boundary, and those pieces have to read as ONE continuous line — so the
-     rounded corners and side padding a standalone .text-match-mark carries
-     are dropped for the whole segmented field, otherwise each piece would
-     round its own ends and notch the join. Must stay AFTER
-     mark.text-match-mark: same specificity, later wins. */
+     rounded corners a standalone .text-match-mark carries are dropped for
+     the whole segmented field, otherwise each piece would round its own
+     ends and notch the join. (Padding is already 0 on every mark
+     unconditionally, see .text-match-mark's own comment — repeated here
+     too, harmlessly, so this rule doesn't silently depend on that.) Must
+     stay AFTER mark.text-match-mark: same specificity, later wins. */
   mark.mark-seg{padding:0; border-radius:0;}
 
   .log-row{

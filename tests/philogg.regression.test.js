@@ -14325,6 +14325,30 @@ await withApp(async (w, d, T) => {
   assert(/<mark class="text-match-mark">alpha<\/mark>/.test(filteredMsg()),
     "...while the active filter's own mark keeps working, unchanged and independent");
   assert(textMatchBtn.classList.contains("active"), "the two toggles are genuinely independent buttons");
+
+  // --- Regression (person-reported, screenshot-driven): toggling this
+  //     button used to shift TEXT LAYOUT of the unrelated active-filter
+  //     marking, because the filter-path match rendered through two
+  //     different code paths depending on whether a coloured rule ALSO
+  //     matched the same field — markCombinedHtml's mark-seg path zeroed
+  //     mark.text-match-mark's padding, the plain markRangesHtml fallback
+  //     (taken whenever no highlight rule contributes ranges, which is
+  //     exactly the case right now, button off) didn't, so the same
+  //     "alpha" match was 2px wider with the button off than on. Marking
+  //     must never change layout, only what's painted on top — pin the fix
+  //     at its source: mark.text-match-mark carries no horizontal padding
+  //     at all, unconditionally, regardless of which path renders it. ---
+  // Isolate the actual RULE (not the surrounding explanatory comment, which
+  // deliberately quotes the old "padding:0 1px" value in prose) — a comment
+  // has no trailing "{...}" block, so anchoring on `mark.text-match-mark{`
+  // through its own closing brace only ever captures the declaration.
+  const styleText = d.querySelector("style").textContent;
+  const ruleMatch = styleText.match(/mark\.text-match-mark\{([^}]*)\}/);
+  assert(ruleMatch, "mark.text-match-mark's rule is present in the stylesheet");
+  assert(/padding:0;/.test(ruleMatch[1]),
+    "mark.text-match-mark declares padding:0 in the stylesheet, on every path (not just the mark-seg one)");
+  assert(!/padding:\s*0\s+1px/.test(ruleMatch[1]),
+    "the old layout-shifting `padding:0 1px` is gone from the rule itself");
   fireClick(btn, w);
   assert(T.highlightMatchTextEnabled && w.localStorage.getItem("philogg-highlight-match-text") === "1", "clicking again turns it back on");
   w.initHighlightMatchTextSetting();
