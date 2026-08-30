@@ -15743,11 +15743,9 @@ function openTreeContextMenu(ev, clickedId) {
       buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
       buckets.library.push({ action: "saveToLibrary", label: "Save to library…", icon: ICON_SAVE });
-      // "Unpack" (and/or/link only): replaces the node in place with its two
-      // inputs plus a fresh and/or/link node wired to reference them
-      // explicitly, at the same position — a no-op on the filter's own
-      // result, but turns an already-referenced-elsewhere input into a
-      // locally visible node — see unpackAndOrLinkNode.
+      // "Unpack" (and/or/link only): materializes the node's two baked
+      // inputs as real, visible sibling filters next to it — the node
+      // itself is untouched — see unpackAndOrLinkNode.
       if (node.filterType === "and" || node.filterType === "or" || node.filterType === "link") {
         buckets.edit.push({ action: "unpack", label: "Unpack…", icon: ICON_COMBINE });
       }
@@ -16393,13 +16391,14 @@ function bakedConditionName(baked) {
 }
 
 // Materializes an and/or/link node's own bakedA/bakedB back into two real,
-// visible sibling filter nodes (same filterType/fields), wired together via
-// a fresh and/or/link node baked from THEIR condition, inserted right next
-// to the original node's former position — replacing it there (the original
-// is deleted; there's no dedicated "edit and/or/link inputs" UI — see
-// FEATURE_BACKLOG.md), so Unpack doesn't leave a duplicate of the combiner
-// behind. Returns the new combiner node's id (to make active), or null if
-// nodeId isn't an and/or/link node.
+// visible sibling filter nodes (same filterType/fields), inserted right
+// after the original node's own position. The original node itself is left
+// completely untouched — no fresh combiner is created and nothing is
+// deleted, so Unpack never leaves a duplicate of the node behind; it just
+// makes the two building blocks visible/editable again as ordinary siblings
+// (there's no dedicated "edit and/or/link inputs" UI — see
+// FEATURE_BACKLOG.md). Returns the original node's own id (still active),
+// or null if nodeId isn't an and/or/link node.
 function unpackAndOrLinkNode(nodeId) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return null;
@@ -16409,26 +16408,12 @@ function unpackAndOrLinkNode(nodeId) {
 
   const cloneA = materializeBakedAsNode(node.bakedA, node.parentId);
   const cloneB = materializeBakedAsNode(node.bakedB, node.parentId);
-  parent.children.push(cloneA.id);
-  parent.children.push(cloneB.id);
-
-  const combiner = node.filterType === "link"
-    ? createLinkNode(cloneA.id, cloneB.id, node.linkDirection, node.linkN, { orderEnforced: node.linkOrderEnforced, exclusive: node.linkExclusive })
-    : createAndOrNode(cloneA.id, cloneB.id, node.filterType);
-  if (!combiner) return null;
-  // createAndOrNode/createLinkNode always place their result under FILE
-  // (root.children.unshift) — move it to sit right after the original
-  // node instead, next to its two freshly-materialized building blocks.
-  const root = state.nodes[getRootFileId(combiner.id)];
-  if (root) root.children = root.children.filter(id => id !== combiner.id);
-  combiner.parentId = node.parentId;
   const insertIndex = parent.children.indexOf(nodeId) + 1;
-  parent.children.splice(Math.max(0, insertIndex), 0, combiner.id);
+  parent.children.splice(Math.max(0, insertIndex), 0, cloneA.id, cloneB.id);
 
-  deleteNode(nodeId);
-  state.activeId = combiner.id;
+  state.activeId = nodeId;
   invalidateAllCaches();
-  return combiner.id;
+  return nodeId;
 }
 
 let exportScopeResolve = null;
