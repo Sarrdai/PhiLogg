@@ -626,9 +626,37 @@
   }
   .tree-swatch:hover{border-color:var(--accent);}
   .tree-swatch.empty{background:var(--bg-app); border-style:dashed;}
-  .tree-swatch-spacer{flex:0 0 auto; width:13px;}
+  /* Expand/collapse chevron — ALWAYS a fixed-width slot (person-reported:
+     it used to only exist for squash groups, shifting the icon whenever it
+     appeared/disappeared) whether or not this particular row has a button
+     in it. Toggles either a squash group's private-chain box, or a plain
+     node's real children — see renderNode. Rotates via a transform, not a
+     different glyph, so collapse/expand reads as one smooth flip. */
+  .tree-chevron-slot{flex:0 0 auto; width:16px; height:16px; display:flex; align-items:center; justify-content:center;}
+  .tree-chevron{
+    width:16px; height:16px; margin:0; padding:0;
+    border:none; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    color:var(--text-tertiary); border-radius:4px; transition:transform .12s ease;
+    transform:rotate(-90deg);
+  }
+  .tree-chevron.expanded{transform:rotate(0deg);}
+  .tree-chevron:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
   .tree-row.active .tree-icon{color:var(--accent);}
+  /* Settings -> Behavior "Tree row type indicator" = "Type abbreviation":
+     the icon slot shows TXT/LNK/... text instead of a glyph. Fixed width
+     sized to the longest tag typeTagFor() can ever produce ("FILE"/"TIME",
+     4 chars) so every row's label starts at the same x regardless of which
+     type happens to be shown, the same alignment guarantee a real icon
+     glyph gets "for free" from always being the same visual size. */
+  .tree-icon-type{
+    width:26px; justify-content:center; font-family:var(--font-mono); font-size:8.5px;
+    font-weight:700; letter-spacing:.3px; color:var(--text-tertiary);
+    background:var(--bg-elevated-2); border:1px solid var(--border-soft); border-radius:4px;
+    padding:1px 0; box-sizing:border-box;
+  }
+  .tree-row.active .tree-icon-type{color:var(--accent-strong); border-color:var(--accent);}
+  .tree-row.inverted .tree-icon-type{color:var(--level-error); border-color:var(--level-error);}
   .tree-label{
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:12.3px;
@@ -649,11 +677,6 @@
      their label (added in renderNode) so the negation is visible at a glance
      without having to open the node. */
   .tree-row.inverted .tree-type-tag{color:var(--level-error); border-color:var(--level-error);}
-  .tree-pct{
-    flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:2px; width:26px;
-  }
-  .tree-pct-track{width:26px; height:3px; border-radius:2px; background:var(--bg-elevated-2); overflow:hidden;}
-  .tree-pct-fill{height:100%; background:var(--accent); border-radius:2px;}
   .tree-count{
     flex:0 0 auto; font-size:10.5px; color:var(--text-tertiary);
     font-variant-numeric:tabular-nums; padding:1px 5px;
@@ -1674,6 +1697,18 @@
   }
   #timeRangeDialog.hidden{display:none;}
   #timeRangeDialog input[type="datetime-local"]{flex:1 1 auto; min-width:0;}
+
+  /* ---------- Export scope dialog ("Just this filter" vs "Include ancestor
+     chain" — see openExportScopePrompt) — was missing its overlay CSS
+     entirely, which left it sitting inline in the document flow (always
+     visible, wherever its markup happens to fall in the body) instead of as
+     a proper fixed modal like the dialogs above/below it. ---------- */
+  #exportScopeDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
+  }
+  #exportScopeDialog.hidden{display:none;}
   .time-range-hint{font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-tertiary);}
   .time-range-clear{
     flex:0 0 auto; width:24px; height:24px; display:flex; align-items:center; justify-content:center;
@@ -2196,7 +2231,7 @@
   #contextMenu, #treeContextMenu, #openMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
-    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
   }
   #openMenu{min-width:180px;}
   #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden{display:none;}
@@ -2208,7 +2243,15 @@
   .ctx-item svg{flex:0 0 auto; color:var(--text-tertiary);}
   .ctx-item:hover svg{color:var(--accent-strong);}
   .ctx-sep{height:1px; background:var(--border-soft); margin:5px 4px;}
-  .ctx-meta{padding:6px 10px 4px; font-size:10.3px; color:var(--text-tertiary); font-family:var(--font-mono);}
+  /* white-space/word-break/overflow-wrap: a long filter name (a text/extract
+     value, or a link/detach-copy node whose name concatenates its two
+     source names) used to have nothing stopping it from forcing the whole
+     #treeContextMenu wider than the viewport — person-reported. Wraps
+     inside the menu's own max-width instead. */
+  .ctx-meta{
+    padding:6px 10px 4px; font-size:10.3px; color:var(--text-tertiary); font-family:var(--font-mono);
+    white-space:normal; word-break:break-word; overflow-wrap:anywhere;
+  }
   .ctx-note{padding:8px 10px; font-size:11.5px; color:var(--text-tertiary); max-width:220px; line-height:1.5;}
   /* "Add to selection" submenu trigger (#ctxAddToSelection) — the arrow just
      signals "this opens another menu", #addToSelectionMenu itself reuses the
@@ -2220,6 +2263,19 @@
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
   }
   #addToSelectionMenu.hidden{display:none;}
+  /* "Info" submenu trigger on the tree's filter/file context menu
+     (openTreeContextMenu) — person-reported: the node's full name/pattern
+     used to sit inline at the top of the menu, unbounded, so a long
+     extraction pattern or a link's concatenated name could make the whole
+     menu (and the page along with it) far taller/wider than the viewport.
+     Hidden behind this hover/click submenu instead, same shape as
+     #addToSelectionMenu just above. */
+  #treeCtxInfoMenu{
+    position:fixed; z-index:51; background:var(--bg-elevated);
+    border:1px solid var(--border); border-radius:8px; padding:5px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
+  }
+  #treeCtxInfoMenu.hidden{display:none;}
 
   /* ---------- Highlight-colour picker (tree swatch) ---------- */
   #colorPickerPopup{
@@ -2759,6 +2815,7 @@
   </div>
 
   <div id="addToSelectionMenu" class="hidden"></div>
+  <div id="treeCtxInfoMenu" class="hidden"></div>
 
   <div id="treeContextMenu" class="hidden"></div>
 
@@ -2830,6 +2887,19 @@
       <div class="link-dialog-actions">
         <button type="button" id="contextDialogCancel" class="btn-mini-outline">Cancel</button>
         <button type="button" id="contextDialogCreate" class="btn-mini">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="exportScopeDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Save filter</div>
+      <div class="link-field">
+        <label>Save just this filter, or include its ancestor chain?</label>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="exportScopeJustThis" class="btn-mini-outline">Just this filter</button>
+        <button type="button" id="exportScopeWithChain" class="btn-mini">Include ancestor chain</button>
       </div>
     </div>
   </div>
@@ -3281,6 +3351,18 @@
                 </label>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsTreeIndicatorMode">Tree row type indicator</label>
+                <div class="settings-row-hint">The icon and the TXT/LNK/... abbreviation both say the same thing about a filter's type — pick which one shows, at the icon's own position, instead of both.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsTreeIndicatorMode">
+                  <option value="icon">Icon</option>
+                  <option value="type">Type abbreviation</option>
+                </select>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -3481,6 +3563,7 @@ const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="1
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
+const ICON_INFO = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.3v4"/><circle cx="8" cy="5" r="0.15" fill="currentColor" stroke-width="1"/></svg>';
 // Price-tag glyph for the tree context menu's "Rename…" action (FEATURE_BACKLOG.md
 // #12 — F2 or right-click any filter node, see startRenameNode). Distinct from
 // ICON_EDIT: this sets a display label, not the filter's actual value.
@@ -4252,6 +4335,27 @@ document.getElementById("settingsTextMatchHighlightDetail").addEventListener("ch
   textMatchHighlightInDetail = ev.target.checked;
   localStorage.setItem(TEXT_MATCH_HIGHLIGHT_DETAIL_KEY, textMatchHighlightInDetail ? "1" : "0");
   updateDetailPanel();
+});
+
+// Settings -> Behavior: "Tree row type indicator" (person-reported: the
+// icon and the TXT/LNK/... tag both said the same thing). "icon" (default,
+// unchanged look) shows the glyph in the icon slot and the abbreviation in
+// its own badge further along the row, exactly like before this setting
+// existed; "type" shows the abbreviation IN the icon slot instead (fixed-
+// width — see CSS .tree-icon-type) and hides the separate badge, so the
+// type is stated exactly once either way. See renderNode.
+const TREE_INDICATOR_MODE_KEY = "philogg-tree-indicator-mode";
+let treeIndicatorMode = "icon";
+function initTreeIndicatorModeSetting() {
+  const stored = localStorage.getItem(TREE_INDICATOR_MODE_KEY);
+  treeIndicatorMode = stored === "type" ? "type" : "icon";
+  const select = document.getElementById("settingsTreeIndicatorMode");
+  if (select) select.value = treeIndicatorMode;
+}
+document.getElementById("settingsTreeIndicatorMode").addEventListener("change", ev => {
+  treeIndicatorMode = ev.target.value === "type" ? "type" : "icon";
+  localStorage.setItem(TREE_INDICATOR_MODE_KEY, treeIndicatorMode);
+  render();
 });
 
 /* ===================== Level bar / filter-tree mode settings (Settings ->
@@ -5570,45 +5674,85 @@ function getRootFileId(nodeId) {
   return node ? node.id : null;
 }
 
-// and/or/link filters hold a second, non-hierarchical reference (linkedId) to
-// the other filter they're combined with. Moving such a node only changes its
-// parentId, which doesn't touch linkedId at all — that's already safe. The one
-// real danger: if the node's *own* linkedId target ends up as its ancestor
-// (i.e. the node gets moved to be a descendant of the very node it's linked
-// to), getEntries() would recurse into itself forever (parentId chain leads
-// back to linkedId, which pulls this node back in). This checks for exactly
-// that; ordinary filters have no linkedId, so it's always a no-op for them.
-function wouldCreateLinkedCycle(linkedId, newParentId) {
-  return !!linkedId && isDescendantOrSelf(linkedId, newParentId);
-}
+// and/or/link nodes carry two BAKED condition snapshots (node.bakedA/
+// node.bakedB — see bakeNodeCondition below and getEntries's "and"/"or"/
+// "link" handling) instead of a reference to another node. A baked
+// condition is a flat, self-contained copy of exactly the fields that
+// define ONE filter step (filterType/value/caseSensitive/etc — never id/
+// parentId/children/ancestors), so once created, node.bakedA/bakedB never
+// look at state.nodes[...] again: deleting, renaming, moving, or replacing
+// the original source node(s) has zero effect on this node's result. This
+// is the corrected model — see CLAUDE.md/CHANGELOG.md for why the earlier
+// inputA/inputB id-reference version (still a live lookup, just renamed)
+// was wrong. node.parentId is the ONLY thing that determines this node's
+// input entries (getEntries(node.parentId), exactly like every other
+// filter type) — moving such a node just re-chains it onto a different
+// parent's output, same as any plain filter; it never touches bakedA/bakedB.
+// No cycle guard is needed: bakedA/bakedB hold plain data, not node-id
+// references, so there is nothing to cycle through except normal recursion
+// into a nested baked link (bounded by ordinary data-structure depth).
 
-// Same check, applied to every and/or/link node in a subtree that's about to
-// be cloned (see cloneSubtree) — a clone keeps the original's linkedId as-is
-// (see below), so the same ancestor-cycle risk applies at paste time too.
-function subtreeHasLinkedCycle(nodeId, newParentId) {
-  const node = state.nodes[nodeId];
-  if (!node) return false;
-  if (wouldCreateLinkedCycle(node.linkedId, newParentId)) return true;
-  return node.children.some(childId => subtreeHasLinkedCycle(childId, newParentId));
+// Copies exactly the fields that define one filter node's OWN single
+// condition — not its ancestors, not id/parentId/children/highlightColor/
+// label/anything structural. Used to build node.bakedA/bakedB for and/or/
+// link nodes (see the "Core data model" note above). For a source node
+// that is itself and/or/link, its own bakedA/bakedB are copied in as a
+// nested predicate-pair (see getEntriesFromBaked's recursive handling) —
+// so a link-of-link (multi-hop) chain keeps working through this model.
+function bakeNodeCondition(node) {
+  const baked = {
+    filterType: node.filterType,
+    value: node.value != null && typeof node.value === "object" ? JSON.parse(JSON.stringify(node.value)) : node.value,
+    inverted: !!node.inverted,
+  };
+  if (node.filterType === "text") {
+    if (node.caseSensitive) baked.caseSensitive = true;
+    if (node.columns && node.columns.length) baked.columns = node.columns.slice();
+    if (node.isRegex) baked.isRegex = true;
+  } else if (node.filterType === "context") {
+    baked.contextBefore = node.contextBefore || 0;
+    baked.contextAfter = node.contextAfter || 0;
+  } else if (node.filterType === "countContext") {
+    baked.countBefore = node.countBefore || 0;
+    baked.countAfter = node.countAfter || 0;
+  } else if (node.filterType === "and" || node.filterType === "or") {
+    baked.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+    baked.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+  } else if (node.filterType === "link") {
+    baked.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+    baked.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+    baked.linkDirection = node.linkDirection;
+    baked.linkN = node.linkN;
+    baked.linkOrderEnforced = !!node.linkOrderEnforced;
+    baked.linkExclusive = !!node.linkExclusive;
+  }
+  return baked;
 }
 
 // Combines two existing filters with AND (intersection) or OR (union, sorted
-// by time). The new node is placed in the tree under `parentId` (one of the
-// two sources) but also keeps a second, non-hierarchical reference
-// (`linkedId`) to the other one — see getEntries's "and"/"or" handling.
-// AND/OR nodes are intentionally not movable/copyable (see the Ctrl+C/X
-// guards) so this second reference can never become stale through a move.
-function createAndOrNode(parentId, linkedId, mode) {
-  const parent = state.nodes[parentId];
-  const linked = state.nodes[linkedId];
-  if (!parent || !linked) return null;
+// by time) into a new, self-contained node holding a BAKED copy of each
+// source's own single condition (node.bakedA/node.bakedB — see
+// bakeNodeCondition/getEntries's "and"/"or" handling), not a reference to
+// the source nodes. Always placed as a new top-level child of the two
+// sources' shared root file (same "independent, near the top" placement
+// syncBookmarksFilterNode/createSelectionFilterNode already use) — from
+// there it can be moved anywhere like any other node, which only changes
+// what entries it receives via getEntries(node.parentId), never bakedA/bakedB.
+function createAndOrNode(idA, idB, mode) {
+  const a = state.nodes[idA];
+  const b = state.nodes[idB];
+  if (!a || !b) return null;
+  const rootId = getRootFileId(idA);
+  const root = state.nodes[rootId];
+  if (!root) return null;
   const symbol = mode === "and" ? " ∧ " : " ∨ ";
   const node = {
-    id: uid("n"), type: "filter", name: nodeDisplayName(parent) + symbol + nodeDisplayName(linked),
-    parentId, children: [], filterType: mode, value: null, linkedId, inverted: false,
+    id: uid("n"), type: "filter", name: nodeDisplayName(a) + symbol + nodeDisplayName(b),
+    parentId: rootId, children: [], filterType: mode, value: null,
+    bakedA: bakeNodeCondition(a), bakedB: bakeNodeCondition(b), inverted: false,
   };
   state.nodes[node.id] = node;
-  parent.children.push(node.id);
+  root.children.unshift(node.id);
   state.activeId = node.id;
   return node;
 }
@@ -5675,33 +5819,40 @@ async function mergeFiles(fileIds) {
 
 // Creates a link filter: for every entry in the reference filter, finds the
 // Nth entry of the target filter before/after it in time and pairs them up
-// (references with no match are dropped). Placed in the tree under the
-// reference (parentId), with the target kept as a second, non-hierarchical
-// reference (linkedId) — same mechanism as AND/OR, same move/copy restriction.
+// (references with no match are dropped). Self-contained like AND/OR — a
+// BAKED copy of the reference's own condition is node.bakedA, the target's
+// node.bakedB (see bakeNodeCondition) — and placed the same way as
+// createAndOrNode, as a new top-level child under the shared root file.
 //
 // `opts.orderEnforced`/`opts.exclusive` back the two opt-in options from
 // REQUIREMENTS-link-chaining-and-multiway.md (see getEntries()'s "link"
 // branch for the actual semantics); both default to false, matching
-// today's behavior when off. Passing a `link` node itself as `refId` (its
-// own reference/tree placement) is exactly how a multi-hop tuple is built
-// today — see openLinkDialog's Create handler — each hop chained under the
-// previous one; Bug 1's fix (buildPairEntry's matchTs) is what makes that
-// chaining anchor correctly.
+// today's behavior when off. Passing a `link` node itself as `refId` is how
+// a multi-hop tuple is built — see openLinkDialog's Create handler — each
+// hop chained onto the previous one's result node: bakeNodeCondition, when
+// given a `link` node, bakes its own bakedA/bakedB/linkDirection/etc as a
+// nested predicate-pair, so the outer link's evaluator can recursively
+// evaluate it (see getEntriesFromBaked). Bug 1's fix (buildPairEntry's
+// matchTs) is what makes that chaining anchor correctly.
 function createLinkNode(refId, targetId, direction, n, opts) {
   const ref = state.nodes[refId];
   const target = state.nodes[targetId];
   if (!ref || !target) return null;
+  const rootId = getRootFileId(refId);
+  const root = state.nodes[rootId];
+  if (!root) return null;
   const arrow = direction === "before" ? " ←" : " →";
   const nSuffix = n > 1 ? n : "";
   const node = {
     id: uid("n"), type: "filter", name: ref.name + arrow + nSuffix + " " + target.name,
-    parentId: refId, children: [], filterType: "link", value: null,
-    linkedId: targetId, linkDirection: direction, linkN: n,
+    parentId: rootId, children: [], filterType: "link", value: null,
+    bakedA: bakeNodeCondition(ref), bakedB: bakeNodeCondition(target),
+    linkDirection: direction, linkN: n,
     linkOrderEnforced: !!(opts && opts.orderEnforced),
     linkExclusive: !!(opts && opts.exclusive),
   };
   state.nodes[node.id] = node;
-  ref.children.push(node.id);
+  root.children.unshift(node.id);
   state.activeId = node.id;
   return node;
 }
@@ -5743,7 +5894,7 @@ function upperBoundByTs(entries, ts) {
 // strictly) would silently skip past the whole tied cluster instead of
 // picking the log-adjacent entry a person reading the file would expect.
 // Returns an empty Map if the root file can't be resolved (e.g. a dangling
-// linkedId) — every lookup then resolves `undefined`, and the tie-break
+// inputA/inputB) — every lookup then resolves `undefined`, and the tie-break
 // comparisons below degrade gracefully back to "exclude all ties", exactly
 // the pre-fix behavior, rather than crashing or guessing.
 function buildOrderIndexMap(fileId) {
@@ -5759,9 +5910,9 @@ function buildOrderIndexMap(fileId) {
 // Creates a time-context filter: for every entry of the parent (reference)
 // filter, pulls in every entry from the *whole root file* within `beforeMs`
 // before / `afterMs` after it (see getEntries's "context" branch). Unlike
-// and/or/link this needs no second linkedId reference — the "other side" is
-// always the node's own root file — so none of link's move/clone cycle
-// guards apply here; it behaves like a plain single-parent filter.
+// and/or/link this needs no second explicit input reference — the "other
+// side" is always the node's own root file — so it behaves like a plain
+// single-parent filter.
 function createContextNode(parentId, beforeMs, afterMs) {
   const parent = state.nodes[parentId];
   if (!parent) return null;
@@ -5997,11 +6148,10 @@ function formatDuration(ms) {
 
 // Deep-clones a filter node and all its descendant filters under a new parent,
 // assigning fresh ids throughout. The original subtree is left untouched.
-// and/or/link nodes keep their linkedId pointing at the *same* original
-// target — the clone stays combined with whatever it was combined with, same
-// as a copy of a formula keeps pointing at the same other cell unless that
-// cell is copied too. Caller is expected to have ruled out a linkedId
-// ancestor-cycle first (see subtreeHasLinkedCycle).
+// and/or/link nodes keep bakedA/bakedB as-is (a plain deep copy, like every
+// other field) — they're flat data with no node-id inside, so there is
+// nothing to remap and no dependency on where the clone (or anything else)
+// lives in the tree.
 function cloneSubtree(nodeId, newParentId) {
   const orig = state.nodes[nodeId];
   const clone = {
@@ -6014,7 +6164,8 @@ function cloneSubtree(nodeId, newParentId) {
     value: orig.value,
     inverted: !!orig.inverted,
   };
-  if (orig.linkedId) clone.linkedId = orig.linkedId;
+  if (orig.bakedA) clone.bakedA = JSON.parse(JSON.stringify(orig.bakedA));
+  if (orig.bakedB) clone.bakedB = JSON.parse(JSON.stringify(orig.bakedB));
   if (orig.filterType === "link") {
     clone.linkDirection = orig.linkDirection;
     clone.linkN = orig.linkN;
@@ -6059,37 +6210,39 @@ function pasteClipboard() {
   if (!clip || !targetParent || !state.nodes[clip.id]) { state.clipboard = null; return; }
 
   if (clip.mode === "cut") {
-    const moved = moveFilterNodeWithUndo(clip.id, state.activeId);
-    if (moved) {
-      state.activeId = clip.id;
+    const movedId = moveFilterNodeWithUndo(clip.id, state.activeId);
+    if (movedId) {
+      state.activeId = movedId; // cross-file: a fresh id, reconstructed — see moveFilterNodeWithUndo
       state.clipboard = null;
     } else {
       showCopyToast("Can't move here — would create a circular reference");
     }
-  } else {
-    if (subtreeHasLinkedCycle(clip.id, state.activeId)) {
-      showCopyToast("Can't paste here — would create a circular reference");
-      return;
-    }
-    const clone = cloneSubtree(clip.id, state.activeId);
-    targetParent.children.push(clone.id);
-    state.activeId = clone.id;
-    // clipboard stays active: the same filter can be pasted again elsewhere
+    return;
   }
+
+  // Copy (same-file or cross-file): cloneSubtree assigns the clone fresh
+  // ids and deep-copies bakedA/bakedB as plain data (see its own comment) —
+  // this works identically regardless of whether the paste target is in
+  // the same file as clip.id or a different one, so there is no cross-file
+  // special case here any more.
+  const clone = cloneSubtree(clip.id, state.activeId);
+  targetParent.children.push(clone.id);
+  state.activeId = clone.id;
+  // clipboard stays active: the same filter can be pasted again elsewhere
 }
+
 function moveNode(nodeId, newParentId) {
   const node = state.nodes[nodeId];
   const newParent = state.nodes[newParentId];
   if (!node || !newParent || node.type !== "filter") return false;
   if (node.parentId === newParentId) return false;
   if (isDescendantOrSelf(nodeId, newParentId)) return false; // avoid cycles
-  if (wouldCreateLinkedCycle(node.linkedId, newParentId)) return false; // avoid parentId <-> linkedId loops for and/or/link nodes
 
   const oldParent = state.nodes[node.parentId];
   if (oldParent) oldParent.children = oldParent.children.filter(id => id !== nodeId);
   newParent.children.push(nodeId);
   node.parentId = newParentId;
-  invalidateAllCaches(); // and/or nodes elsewhere can reference this one via linkedId, not just parentId
+  invalidateAllCaches();
   return true;
 }
 
@@ -6177,7 +6330,22 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
     if (columns && columns.length) {
       return columns.some(key => !!wildcardMatch(wildcardRegex, wildcardColumns, textColumnValue(e, key)));
     }
-    return !!wildcardMatch(wildcardRegex, wildcardColumns, e.raw);
+    // Person-reported bug: a "text" filter carrying [value:...]/[*] tokens
+    // (see "A text filter's value can itself contain wildcard tokens"
+    // above) used to test e.raw here — the WHOLE tab-separated line — while
+    // getEntries()'s real "extract" branch always tests e.message. For a
+    // plain entry that rarely showed, since message is a substring of raw;
+    // for a link filter's synthetic pair entry it broke completely: pair.raw
+    // is the two entries' raw lines concatenated with everything ELSE (time-
+    // stamp/level/thread/...) still in between, so a pattern spanning the
+    // PAIR_SEPARATOR (e.g. "... ⟶ Offset computed: ...") can never match it
+    // contiguously, even though pair.message — built specifically as a
+    // clean "firstMessage ⟶ secondMessage" join — matches fine. Concretely:
+    // editing a link-derived extraction down to a plain "text" filter (the
+    // "Save" button) silently lost every match extraction itself still
+    // found. e.message is what the extraction path already commits to, so
+    // this now matches it exactly instead.
+    return !!wildcardMatch(wildcardRegex, wildcardColumns, e.message);
   }
   const q = caseSensitive ? value : value.toLowerCase();
   if (columns && columns.length) {
@@ -6379,12 +6547,133 @@ function markRangesHtml(text, ranges) {
 // re-parented — a filter's own type/value never change after creation. So we
 // can safely cache each node's computed entries and only clear the cache for
 // the moved subtree, instead of recomputing the whole chain on every render.
+// Belt-and-braces guard against an infinite recursion on a corrupt/
+// hand-edited node's parentId chain (ordinary parentId-based nesting can't
+// normally cycle — moveNode's isDescendantOrSelf guard already prevents
+// that — and and/or/link's bakedA/bakedB are plain data, not node-id
+// references, so there is nothing to cycle through on that side either).
+const getEntriesInProgress = new Set();
 function getEntries(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return [];
   if (node.type === "file") return node.entries;
   if (node._cache) return node._cache;
+  if (getEntriesInProgress.has(nodeId)) return [];
+  getEntriesInProgress.add(nodeId);
+  try {
+    return getEntriesUncached(node);
+  } finally {
+    getEntriesInProgress.delete(nodeId);
+  }
+}
+// Evaluates a BAKED condition snapshot (see bakeNodeCondition) as a
+// standalone predicate over `poolEntries`, mirroring getEntriesUncached's
+// own per-filterType branches exactly (same matching functions:
+// textFilterMatches/wildcardMatch/compileRegexFilter/compileExtractPattern/
+// the time-range checks/findNthOccurrence(Excluding)/buildPairEntry) so
+// behavior for each filterType stays byte-identical to a real standalone
+// filter of that type — just parameterized from a flat data snapshot
+// instead of a live node. `fileId` is the root file of the AND/OR/LINK node
+// doing the evaluating (needed by "context"/"countContext", which look at
+// the whole file's entries, and by "link", whose order-index map is
+// per-file). and/or/link baked conditions nest (see bakeNodeCondition's
+// "and"/"or"/"link" branch), so this recurses into baked.bakedA/bakedB —
+// exactly how a multi-hop chained link keeps working through this model.
+function getEntriesFromBaked(baked, poolEntries, fileId) {
+  if (!baked) return [];
+  const parentEntries = poolEntries;
+  let result;
+  if (baked.filterType === "text") {
+    const value = String(baked.value);
+    if (baked.isRegex) {
+      const re = compileRegexFilter(value, !!baked.caseSensitive);
+      result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, re)) : [];
+    } else if (isExtractPattern(value)) {
+      const spec = compileExtractPattern(value);
+      const wildcardRegex = spec && new RegExp(spec.regexStr, baked.caseSensitive ? "" : "i");
+      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, wildcardRegex, spec.columns)) : [];
+    } else {
+      result = parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns));
+    }
+  } else if (baked.filterType === "after") {
+    result = parentEntries.filter(e => e.ts >= baked.value);
+  } else if (baked.filterType === "before") {
+    result = parentEntries.filter(e => e.ts <= baked.value);
+  } else if (baked.filterType === "timerange") {
+    const from = baked.value && baked.value.from, to = baked.value && baked.value.to;
+    result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
+  } else if (baked.filterType === "extract") {
+    const spec = compileExtractPattern(baked.value);
+    result = spec ? parentEntries.filter(e => !!wildcardMatch(spec.regex, spec.columns, e.message)) : [];
+  } else if (baked.filterType === "idset") {
+    const idSet = new Set(Array.isArray(baked.value) ? baked.value : []);
+    result = parentEntries.filter(e => idSet.has(e.id));
+  } else if (baked.filterType === "bookmarks") {
+    result = parentEntries.filter(e => state.bookmarks.has(e.id));
+  } else if (baked.filterType === "level") {
+    result = parentEntries.filter(e => baked.value.includes(levelBucket(e.level, e.formatId)));
+  } else if (baked.filterType === "and" || baked.filterType === "or") {
+    const aEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
+    const bEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
+    if (baked.filterType === "and") {
+      const bIds = new Set(bEntries.map(e => e.id));
+      result = aEntries.filter(e => bIds.has(e.id));
+    } else {
+      const seen = new Set(aEntries.map(e => e.id));
+      result = aEntries.concat(bEntries.filter(e => !seen.has(e.id)));
+      result.sort((a, b) => a.ts - b.ts);
+    }
+  } else if (baked.filterType === "link") {
+    const refEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
+    const targetEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
+    result = [];
+    const usedIds = baked.linkExclusive ? new Set() : null;
+    const orderIndexMap = buildOrderIndexMap(fileId);
+    for (const refEntry of refEntries) {
+      const anchorTs = refEntry.matchTs !== undefined ? refEntry.matchTs : refEntry.ts;
+      const anchorEntry = refEntry.matchEntry || refEntry;
+      const match = usedIds
+        ? findNthOccurrenceExcluding(targetEntries, anchorEntry, baked.linkDirection, baked.linkN, usedIds, orderIndexMap)
+        : findNthOccurrence(targetEntries, anchorEntry, baked.linkDirection, baked.linkN, orderIndexMap);
+      if (!match) continue;
+      if (baked.linkOrderEnforced && match.ts < anchorTs) continue;
+      if (usedIds) usedIds.add(match.id);
+      result.push(buildPairEntry(refEntry, match, orderIndexMap));
+    }
+  } else if (baked.filterType === "context" || baked.filterType === "countContext") {
+    const file = fileId && state.nodes[fileId];
+    if (!file || parentEntries.length === 0) {
+      result = [];
+    } else if (baked.filterType === "context") {
+      const ranges = mergeContextRanges(parentEntries, baked.contextBefore || 0, baked.contextAfter || 0);
+      const pool = file.entries;
+      const keepIds = new Set();
+      for (const r of ranges) {
+        const lo = lowerBoundByTs(pool, r.start);
+        const hi = upperBoundByTs(pool, r.end);
+        for (let i = lo; i < hi; i++) keepIds.add(pool[i].id);
+      }
+      result = pool.filter(e => keepIds.has(e.id));
+    } else {
+      const pool = file.entries;
+      const orderIndexMap = buildOrderIndexMap(fileId);
+      const idxRanges = mergeCountContextRanges(parentEntries, orderIndexMap, pool.length, baked.countBefore || 0, baked.countAfter || 0);
+      const keepIds = new Set();
+      for (const r of idxRanges) { for (let i = r.start; i <= r.end; i++) keepIds.add(pool[i].id); }
+      result = pool.filter(e => keepIds.has(e.id));
+    }
+  } else {
+    result = parentEntries;
+  }
+  if (baked.inverted && baked.filterType !== "link" && baked.filterType !== "context" && baked.filterType !== "countContext") {
+    const keptIds = new Set(result.map(e => e.id));
+    result = parentEntries.filter(e => !keptIds.has(e.id));
+  }
+  return result;
+}
 
+function getEntriesUncached(node) {
+  const nodeId = node.id;
   const parentEntries = getEntries(node.parentId);
   let result;
   if (node.filterType === "text") {
@@ -6454,61 +6743,66 @@ function getEntries(nodeId) {
     // instead), but is treated as "match nothing" here for safety.
     result = parentEntries.filter(e => node.value.includes(levelBucket(e.level, e.formatId)));
   } else if (node.filterType === "and" || node.filterType === "or") {
-    const linked = state.nodes[node.linkedId];
-    if (!linked) {
-      result = []; // the other combined filter was deleted — fail gracefully rather than crash
+    // Self-contained: bakedA/bakedB are flat condition snapshots (see
+    // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
+    // over THIS node's own ordinary input entries (parentEntries, exactly
+    // like every other filter type) — no second entry stream, no reference
+    // to another node anywhere.
+    const fileId = getRootFileId(nodeId);
+    const inputAEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
+    const inputBEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
+    if (node.filterType === "and") {
+      const bIds = new Set(inputBEntries.map(e => e.id));
+      result = inputAEntries.filter(e => bIds.has(e.id));
     } else {
-      const linkedEntries = getEntries(node.linkedId);
-      if (node.filterType === "and") {
-        const linkedIds = new Set(linkedEntries.map(e => e.id));
-        result = parentEntries.filter(e => linkedIds.has(e.id));
-      } else {
-        const seen = new Set(parentEntries.map(e => e.id));
-        result = parentEntries.concat(linkedEntries.filter(e => !seen.has(e.id)));
-        result.sort((a, b) => a.ts - b.ts);
-      }
+      const seen = new Set(inputAEntries.map(e => e.id));
+      result = inputAEntries.concat(inputBEntries.filter(e => !seen.has(e.id)));
+      result.sort((a, b) => a.ts - b.ts);
     }
   } else if (node.filterType === "link") {
-    const target = state.nodes[node.linkedId];
-    if (!target) {
-      result = []; // the other linked filter was deleted — fail gracefully rather than crash
-    } else {
-      const targetEntries = getEntries(node.linkedId);
-      result = [];
-      // usedIds backs the opt-in "exclusive matches" option: once a target
-      // entry has been matched for one reference entry, later reference
-      // entries in this SAME node can't reuse it. Scoped globally across
-      // every tuple this node produces (across the whole loop below), not
-      // per-hop — see PROJECT.md "Link filter" for why that scope was
-      // chosen. Off by default, so behavior is unchanged unless opted in.
-      const usedIds = node.linkExclusive ? new Set() : null;
-      // Backs the same-timestamp tie-break in findNthOccurrence — see
-      // buildOrderIndexMap. Built once per recompute of this node, not per
-      // reference entry.
-      const orderIndexMap = buildOrderIndexMap(getRootFileId(node.parentId));
-      for (const refEntry of parentEntries) {
-        // Anchor on the previous hop's matched entry (refEntry.matchTs /
-        // .matchEntry) when refEntry is itself a chained link's pair
-        // result, not its stale outer .ts — see buildPairEntry/
-        // getTupleEntries above (Bug 1 fix). A plain, non-pair refEntry has
-        // neither, so both fall back to refEntry itself exactly as before.
-        const anchorTs = refEntry.matchTs !== undefined ? refEntry.matchTs : refEntry.ts;
-        const anchorEntry = refEntry.matchEntry || refEntry;
-        const match = usedIds
-          ? findNthOccurrenceExcluding(targetEntries, anchorEntry, node.linkDirection, node.linkN, usedIds, orderIndexMap)
-          : findNthOccurrence(targetEntries, anchorEntry, node.linkDirection, node.linkN, orderIndexMap);
-        if (!match) continue;
-        // Opt-in "enforce order": reject (drop, same as "no match") a hop
-        // whose match lands strictly before the anchor it was searched
-        // from — i.e. require the chain's timestamps to be non-decreasing
-        // hop over hop, regardless of which individual hop searched
-        // "before" vs "after". See PROJECT.md for why this definition was
-        // chosen over the other candidate ("each hop internally
-        // consistent") and how it maps onto the REPRO case.
-        if (node.linkOrderEnforced && match.ts < anchorTs) continue;
-        if (usedIds) usedIds.add(match.id);
-        result.push(buildPairEntry(refEntry, match, orderIndexMap));
-      }
+    // Self-contained, same as and/or: bakedA is the reference's own baked
+    // condition, bakedB the target's — both evaluated as predicates over
+    // this node's own ordinary parentEntries pool (reference-side =
+    // entries matching bakedA, target-side = entries matching bakedB), then
+    // the usual nearest-occurrence pairing machinery runs over those two
+    // entry sets exactly as before.
+    const fileId = getRootFileId(nodeId);
+    const refEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
+    const targetEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
+    result = [];
+    // usedIds backs the opt-in "exclusive matches" option: once a target
+    // entry has been matched for one reference entry, later reference
+    // entries in this SAME node can't reuse it. Scoped globally across
+    // every tuple this node produces (across the whole loop below), not
+    // per-hop — see PROJECT.md "Link filter" for why that scope was
+    // chosen. Off by default, so behavior is unchanged unless opted in.
+    const usedIds = node.linkExclusive ? new Set() : null;
+    // Backs the same-timestamp tie-break in findNthOccurrence — see
+    // buildOrderIndexMap. Built once per recompute of this node, not per
+    // reference entry.
+    const orderIndexMap = buildOrderIndexMap(fileId);
+    for (const refEntry of refEntries) {
+      // Anchor on the previous hop's matched entry (refEntry.matchTs /
+      // .matchEntry) when refEntry is itself a chained link's pair
+      // result, not its stale outer .ts — see buildPairEntry/
+      // getTupleEntries above (Bug 1 fix). A plain, non-pair refEntry has
+      // neither, so both fall back to refEntry itself exactly as before.
+      const anchorTs = refEntry.matchTs !== undefined ? refEntry.matchTs : refEntry.ts;
+      const anchorEntry = refEntry.matchEntry || refEntry;
+      const match = usedIds
+        ? findNthOccurrenceExcluding(targetEntries, anchorEntry, node.linkDirection, node.linkN, usedIds, orderIndexMap)
+        : findNthOccurrence(targetEntries, anchorEntry, node.linkDirection, node.linkN, orderIndexMap);
+      if (!match) continue;
+      // Opt-in "enforce order": reject (drop, same as "no match") a hop
+      // whose match lands strictly before the anchor it was searched
+      // from — i.e. require the chain's timestamps to be non-decreasing
+      // hop over hop, regardless of which individual hop searched
+      // "before" vs "after". See PROJECT.md for why this definition was
+      // chosen over the other candidate ("each hop internally
+      // consistent") and how it maps onto the REPRO case.
+      if (node.linkOrderEnforced && match.ts < anchorTs) continue;
+      if (usedIds) usedIds.add(match.id);
+      result.push(buildPairEntry(refEntry, match, orderIndexMap));
     }
   } else if (node.filterType === "context") {
     const fileId = getRootFileId(node.parentId);
@@ -6576,6 +6870,10 @@ function getEntries(nodeId) {
   // filter types, but this guard keeps getEntries() correct even if
   // inverted were ever set on one of these nodes some other way.
   if (node.inverted && node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
+    // and/or is no longer a special case here: its input entries ARE
+    // parentEntries (the node's own ordinary parentId chain, see above), so
+    // the universe to invert against is just parentEntries like every other
+    // filter type.
     const keptIds = new Set(result.map(e => e.id));
     result = parentEntries.filter(e => !keptIds.has(e.id));
   }
@@ -6585,27 +6883,22 @@ function getEntries(nodeId) {
 }
 
 // Clears every node's cached entries. Used after structural changes (move,
-// delete) since and/or (and future link) nodes can reference another node
-// via linkedId from anywhere in the tree, not just through parentId — a
-// targeted subtree walk can't reliably find every node that depends on the
-// thing that changed, so we just recompute lazily on next access instead.
+// delete) — simplest-correct sweep after any tree mutation.
 function invalidateAllCaches() {
   Object.values(state.nodes).forEach(n => { n._cache = null; n._levelCounts = null; });
 }
 
 // Scoped variant used by onTailChange only: a tail tick knows exactly which
-// root files grew/rotated, and a node's result can only depend on (a) its
-// parent chain — always within its own root file — and (b) its linkedId
-// target (and, transitively, THAT node's dependencies). Cross-file linkedId
-// references are unsupported by design (bulk combine pairs same-file filters
-// only), but drag-and-drop reparenting can't structurally rule them out, so
-// linkedId is followed explicitly instead of assuming "same root file". This
-// keeps filters under untouched files fully cached across tail ticks —
-// previously every 1.5s poll cleared EVERY node's cache, and the next render
-// recomputed every filter chain in the tree (renderTree reads every node's
-// count), which is what made tailing feel sluggish with several large files
-// loaded. Structural changes (move/delete/invert/edit) still use the global
-// sweep above — they're rare user actions and the sweep is trivially correct.
+// root files grew/rotated, and a node's result only ever depends on its own
+// parentId chain (and/or/link included — see the "Core data model" note
+// above createAndOrNode: bakedA/bakedB are flat data, not another
+// dependency to walk). This keeps filters under untouched files fully
+// cached across tail ticks — previously every 1.5s
+// poll cleared EVERY node's cache, and the next render recomputed every
+// filter chain in the tree (renderTree reads every node's count), which is
+// what made tailing feel sluggish with several large files loaded.
+// Structural changes (move/delete/invert/edit) still use the global sweep
+// above — they're rare user actions and the sweep is trivially correct.
 function invalidateCachesForRoots(changedRootIds) {
   const changed = new Set(changedRootIds);
   const memo = new Map(); // node id -> is (transitively) affected
@@ -6613,10 +6906,18 @@ function invalidateCachesForRoots(changedRootIds) {
     if (memo.has(id)) return memo.get(id) !== false; // "pending" counts as dirty (conservative)
     const n = state.nodes[id];
     if (!n) { memo.set(id, false); return false; }
-    memo.set(id, "pending"); // linkedId graph is acyclic by construction; this guard is belt-and-braces
-    const d = n.type === "file"
-      ? changed.has(id)
-      : (isDirty(n.parentId) || (n.linkedId ? isDirty(n.linkedId) : false));
+    memo.set(id, "pending"); // guard against a corrupt/hand-edited input cycle; belt-and-braces
+    let d;
+    if (n.type === "file") {
+      d = changed.has(id);
+    } else {
+      // and/or/link nodes are no longer special here either: bakedA/bakedB
+      // are flat data, not a reference to another tree node, so their
+      // result only ever depends on their own parentId chain like any
+      // other filter type (see the "Core data model" note above
+      // createAndOrNode).
+      d = isDirty(n.parentId);
+    }
     memo.set(id, d);
     return d;
   }
@@ -6671,9 +6972,7 @@ function getLevelCounts(nodeId) {
    deleteFilterNodeWithUndo/moveFilterNodeWithUndo are the ONLY call sites
    that should invoke deleteNode/moveNode when the mutation originates from
    the user (Delete key, per-row ✕, tree context menu, drag/drop, Ctrl+X
-   paste) — anything that bypasses them silently isn't undoable. Import-time
-   cleanup of a dangling linkedRef (importFilterJson) is the one intentional
-   exception: it's not a user-initiated delete of an existing node.
+   paste) — anything that bypasses them silently isn't undoable.
    updateFilterNodeWithUndo/updateTimeRangeFilterNodeWithUndo/
    toggleInvertWithUndo, and the assertion dialog's Save/Clear handlers, are
    the equivalent call sites for the "edit" action kind below — they all
@@ -6686,12 +6985,10 @@ let undoStack = [];
 let redoStack = [];
 
 // Deep-clones a filter node's whole subtree while KEEPING every original id
-// (unlike cloneSubtree, which assigns fresh ids for copy/paste). Keeping the
-// id means restoring it after a delete transparently heals any OTHER node's
-// linkedId that happened to point into the deleted subtree — getEntries()
-// already treats a missing linkedId target as "fail gracefully, empty
-// result" (see above), so a node that briefly pointed at nothing during the
-// undo window just starts resolving again once the id reappears.
+// (unlike cloneSubtree, which assigns fresh ids for copy/paste) — id
+// stability here matters for the tree UI (selection/scroll position across
+// an undo), not for and/or/link correctness: bakedA/bakedB are plain data,
+// so nothing else in the tree depends on this node's id at all.
 function snapshotSubtree(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return null;
@@ -6712,7 +7009,8 @@ function snapshotSubtree(nodeId) {
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
-  if (node.linkedId) copy.linkedId = node.linkedId;
+  if (node.bakedA) copy.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+  if (node.bakedB) copy.bakedB = JSON.parse(JSON.stringify(node.bakedB));
   if (node.filterType === "link") {
     copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
     copy.linkOrderEnforced = !!node.linkOrderEnforced; copy.linkExclusive = !!node.linkExclusive;
@@ -6751,7 +7049,8 @@ function restoreSubtree(snap) {
     filterType: snap.filterType, value: snap.value, inverted: !!snap.inverted,
     children: [],
   };
-  if (snap.linkedId) node.linkedId = snap.linkedId;
+  if (snap.bakedA) node.bakedA = snap.bakedA;
+  if (snap.bakedB) node.bakedB = snap.bakedB;
   if (snap.filterType === "link") {
     node.linkDirection = snap.linkDirection; node.linkN = snap.linkN;
     node.linkOrderEnforced = !!snap.linkOrderEnforced; node.linkExclusive = !!snap.linkExclusive;
@@ -6807,6 +7106,12 @@ function deleteFilterNodeWithUndo(nodeId) {
     maybeQuitOnLastFileClosed();
     return;
   }
+  // Deleting an and/or/link node only ever removes that one node (plus its
+  // own real subtree, via snapshotSubtree/deleteNode as usual) — its
+  // bakedA/bakedB sources (if the original nodes they were baked from still
+  // exist elsewhere) are completely unaffected either way: baking already
+  // copied their condition, so this delete has zero effect on any other
+  // node's result (the exact bug this data model fixes — see CLAUDE.md).
   const parent = state.nodes[node.parentId];
   const index = parent ? parent.children.indexOf(nodeId) : -1;
   const snapshot = snapshotSubtree(nodeId);
@@ -6886,15 +7191,23 @@ function renameFilterNodeWithUndo(nodeId, rawLabel) {
   withFieldEditUndo(nodeId, n => { if (next) n.label = next; else delete n.label; });
 }
 
+// Returns the id the node ends up living under on success (always nodeId
+// itself — moving a node just re-chains its input entries via
+// getEntries(node.parentId), same as any other filter; an and/or/link
+// node's bakedA/bakedB are untouched by a move, see the "Core data model"
+// note above createAndOrNode), or false on failure.
 function moveFilterNodeWithUndo(nodeId, newParentId) {
   const node = state.nodes[nodeId];
   if (!node || node.locked) return false; // restricted node — see deleteFilterNodeWithUndo's comment
+  const newParent = state.nodes[newParentId];
+  if (!newParent) return false;
+
   const oldParentId = node.parentId;
   const oldParent = state.nodes[oldParentId];
   const oldIndex = oldParent ? oldParent.children.indexOf(nodeId) : -1;
   const moved = moveNode(nodeId, newParentId);
   if (moved) pushUndo({ kind: "move", nodeId, oldParentId, oldIndex, newParentId });
-  return moved;
+  return moved ? nodeId : false;
 }
 
 function insertAt(parent, nodeId, index) {
@@ -7609,7 +7922,9 @@ function flattenTreeIds() {
       // land on a row with no visible "active" state and no real content.
       if (node && node.queued) return;
       ids.push(id);
-      if (node) walk(node.children);
+      // node.collapsed hides real children the normal way — same rule
+      // renderNode's own row-recursion follows.
+      if (node && !node.collapsed) walk(node.children);
     });
   })(state.rootIds);
   return ids;
@@ -7882,7 +8197,7 @@ function renderQueuedFileRow(node, depth) {
   wrap.dataset.type = "file";
   const row = document.createElement("div");
   row.className = "tree-row-queued";
-  row.style.paddingLeft = (12 + depth * 16) + "px";
+  row.style.paddingLeft = (8 + depth * 18) + "px"; // matches renderNode's own real-row indentation
   const icon = document.createElement("span");
   icon.className = "tree-icon";
   icon.innerHTML = ICON_FILE;
@@ -7954,20 +8269,54 @@ function renderNode(id, depth) {
   const multiClass = state.multiSelect.has(id) ? " multi-selected" : "";
   const invertClass = node.inverted ? " inverted" : "";
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
-  row.style.paddingLeft = (12 + depth * 16) + "px";
+  // Base/step tuned (person-reported) so a file's own icon doesn't waste
+  // left-edge space, and a child filter's swatch/chevron/icon clearly sit
+  // to the RIGHT of its file's icon column instead of visually overlapping
+  // it — see the chevron-slot/swatch comments below for why file rows now
+  // reserve less prefix space than filter rows.
+  row.style.paddingLeft = (8 + depth * 18) + "px";
   // Lets a load tick (see updateLoadRowProgress) find and update this exact
   // row's count/progress-fill/percentage-of-parent directly, without a full
   // render() — every row, not just file rows, since a filter created under
   // a still-loading file needs its own count to keep updating live too.
   row.dataset.nodeId = id;
 
+  // Expand/collapse chevron — ALWAYS in the same fixed-width slot, whether
+  // or not this particular row actually has anything to collapse (person-
+  // reported: it used to shift the icon whenever it appeared/disappeared).
+  // Toggles node.collapsed (display-only, not persisted) for any node with
+  // real children.
+  const chevronSlot = document.createElement("span");
+  chevronSlot.className = "tree-chevron-slot";
+  const hasRealChildren = node.children.length > 0;
+  if (hasRealChildren) {
+    const chevron = document.createElement("button");
+    chevron.type = "button";
+    const expanded = !node.collapsed;
+    chevron.className = "tree-chevron" + (expanded ? " expanded" : "");
+    chevron.title = node.collapsed ? "Expand" : "Collapse";
+    chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+    chevron.addEventListener("click", ev => {
+      ev.stopPropagation();
+      node.collapsed = !node.collapsed;
+      render();
+    });
+    chevronSlot.appendChild(chevron);
+  }
+  row.appendChild(chevronSlot);
+
   // Highlight-colour swatch — replaces the old multi-select checkbox (that
   // affordance is Ctrl+click-only now, see the row click handler below;
-  // nothing else needed there, it already worked). Only meaningful on
-  // filter-type nodes; not on file nodes, and not on extract nodes (which
-  // have no Highlight panel at all — see renderMainView). Non-filter/extract
-  // rows get an empty spacer instead, to keep every row's columns aligned.
-  if (node.type === "filter" && node.filterType !== "extract") {
+  // nothing else needed there, it already worked). Shown for every FILTER
+  // node regardless of filterType, extract included (person-requested:
+  // it's also the clearest way to tell an extract row's indentation apart
+  // at a glance, even though the Highlight view itself has no dedicated
+  // panel that reads an extract node's own color — the swatch still just
+  // sets/persists node.highlightColor like any other filter's). FILE nodes
+  // get no slot here at all, not even a spacer — they never had a color to
+  // show, and reserving that space anyway just pushed every file needlessly
+  // far right for no reason (person-reported).
+  if (node.type === "filter") {
     const swatch = document.createElement("button");
     swatch.type = "button";
     swatch.className = "tree-swatch" + (node.highlightColor ? "" : " empty");
@@ -7978,15 +8327,18 @@ function renderNode(id, depth) {
     swatch.addEventListener("click", ev => { ev.stopPropagation(); openColorPicker(id, swatch); });
     swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); setHighlightColor(id, null); });
     row.appendChild(swatch);
-  } else {
-    const spacer = document.createElement("span");
-    spacer.className = "tree-swatch-spacer";
-    row.appendChild(spacer);
   }
 
+  // Settings -> Behavior "Tree row type indicator" (person-reported: the
+  // icon and the TXT/LNK/... badge further along the row said the same
+  // thing). Default "icon" mode is pixel-identical to before this setting
+  // existed; "type" mode puts the abbreviation HERE instead (fixed-width,
+  // see .tree-icon-type in CSS) and the separate badge below is skipped
+  // entirely, so the type is stated exactly once either way.
   const icon = document.createElement("span");
-  icon.className = "tree-icon";
-  icon.innerHTML = nodeIconHTML(node);
+  icon.className = "tree-icon" + (treeIndicatorMode === "type" ? " tree-icon-type" : "");
+  if (treeIndicatorMode === "type") icon.textContent = typeTagFor(node);
+  else icon.innerHTML = nodeIconHTML(node);
   row.appendChild(icon);
 
   // Pulsing dot on file nodes actively receiving new entries right now (see
@@ -8013,10 +8365,11 @@ function renderNode(id, depth) {
     (node.label ? "  [" + node.name + "]" : "");
   row.appendChild(label);
 
-  const typeTag = document.createElement("span");
-  typeTag.className = "tree-type-tag";
-  typeTag.textContent = typeTagFor(node);
-  row.appendChild(typeTag);
+  // The separate TXT/LNK/... badge is gone (person-reported: with "Icon"
+  // selected it still showed up here, duplicating the same info the icon
+  // slot already states) — the type is shown exactly once, at the icon's
+  // own position, in whichever form Settings -> Behavior picks; see the
+  // tree-icon block above.
 
   const count = document.createElement("span");
   count.className = "tree-count";
@@ -8024,19 +8377,12 @@ function renderNode(id, depth) {
   count.textContent = ownCount.toLocaleString("de-DE");
   row.appendChild(count);
 
-  // Row-count fraction vs. the parent node, so it's visible at a glance how
-  // much a given filter narrowed the data. Root file nodes have no parent
-  // to compare against, so they get an empty placeholder instead.
-  const pct = document.createElement("span");
-  pct.className = "tree-pct";
-  if (node.parentId) {
-    const parentCount = getEntries(node.parentId).length;
-    const fraction = parentCount > 0 ? Math.min(1, ownCount / parentCount) : 0;
-    const pctLabel = Math.round(fraction * 100) + "%";
-    pct.title = pctLabel + " of parent (" + parentCount.toLocaleString("de-DE") + ")";
-    pct.innerHTML = '<span class="tree-pct-track"><span class="tree-pct-fill" style="width:' + (fraction * 100) + '%"></span></span>';
-  }
-  row.appendChild(pct);
+  // The row-count percentage BAR (a little track+fill line) was removed
+  // outright (person-reported, twice: it read as a flat, identical-looking
+  // line on every row regardless of the actual fraction — even after a
+  // non-linear sqrt scale, still not legible) — the absolute count (above)
+  // already says what mattered, a second, harder-to-read visual encoding
+  // of the same information wasn't earning its space. No replacement.
 
   // Restricted node (see syncBookmarksFilterNode/deleteFilterNodeWithUndo):
   // no ✕ button at all — it's only ever added/removed automatically.
@@ -8114,11 +8460,12 @@ function renderNode(id, depth) {
     render();
   });
 
-  // Drag-and-drop reparenting: any filter node can be dragged (moveNode()
-  // itself guards against the one genuinely unsafe case — being dropped onto
-  // its own linkedId target's subtree, for and/or/link nodes); every node
-  // (file or filter) is a valid drop target to become the new parent, exactly
-  // matching what Ctrl+V already allows.
+  // Drag-and-drop reparenting: any filter node can be dragged — moving a
+  // node only ever changes its parentId (pure display repositioning), never
+  // an and/or/link node's bakedA/bakedB, so there is no structural cycle to
+  // guard against beyond the ordinary isDescendantOrSelf check (see
+  // moveNode). Every node (file or filter) is a valid drop target to become
+  // the new parent, exactly matching what Ctrl+V already allows.
   if (node.type === "filter" && !node.locked) {
     row.draggable = true;
     row.addEventListener("dragstart", ev => {
@@ -8135,7 +8482,6 @@ function renderNode(id, depth) {
   }
   row.addEventListener("dragover", ev => {
     if (!draggedNodeId || draggedNodeId === id || isDescendantOrSelf(draggedNodeId, id)) return;
-    if (wouldCreateLinkedCycle(state.nodes[draggedNodeId] && state.nodes[draggedNodeId].linkedId, id)) return;
     ev.preventDefault();
     ev.dataTransfer.dropEffect = "move";
     row.classList.add("drag-over");
@@ -8145,8 +8491,8 @@ function renderNode(id, depth) {
     ev.preventDefault();
     row.classList.remove("drag-over");
     if (!draggedNodeId) return;
-    const moved = moveFilterNodeWithUndo(draggedNodeId, id);
-    if (moved) { state.activeId = draggedNodeId; state.focusRegion = "tree"; }
+    const movedId = moveFilterNodeWithUndo(draggedNodeId, id);
+    if (movedId) { state.activeId = movedId; state.focusRegion = "tree"; }
     else showCopyToast("Can't move here — would create a circular reference");
     draggedNodeId = null;
     render();
@@ -8156,7 +8502,10 @@ function renderNode(id, depth) {
   if (node.type === "file" && node.children.length === 0 && node.filterHistoryMatch) {
     wrap.appendChild(renderFilterHistoryPreview(node));
   }
-  node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1)));
+  // node.collapsed hides real children the normal way (chevron above).
+  if (!node.collapsed) {
+    node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1)));
+  }
   return wrap;
 }
 
@@ -13821,9 +14170,9 @@ window.addEventListener("drop", ev => {
    TAIL_POLL_MS: handle.getFile() returns a fresh snapshot, and if it grew,
    only the new byte range (file.slice(offset)) is read and parsed
    incrementally into the existing entries array. Filter caches are then
-   invalidated globally (same reasoning as invalidateAllCaches for moves:
-   linkedId cross-references make targeted invalidation unreliable), so
-   every filtered view updates live too.
+   invalidated for every node whose parentId chain reaches a grown/rotated
+   file (see invalidateCachesForRoots), so every filtered view updates live
+   too.
 
    Display behavior: while state.tailFollow is true and the active node
    belongs to a tailed file, BOTH the Filtered view and the Highlight/Full
@@ -15214,8 +15563,35 @@ function setHighlightColor(nodeId, color) {
 /* ===================== Tree context menu (Ctrl+click multi-select -> right-click) ===================== */
 
 const treeContextMenu = el("#treeContextMenu");
+const treeCtxInfoMenu = el("#treeCtxInfoMenu");
 
-function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); }
+function closeTreeCtxInfoMenu() { treeCtxInfoMenu.classList.add("hidden"); }
+
+function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); closeTreeCtxInfoMenu(); }
+
+// Hover/click submenu for the tree context menu's "Info" trigger (see
+// openTreeContextMenu) — same #addToSelectionMenu shape (position next to
+// the trigger, .ctx-meta styling), except the content here is plain text
+// (the node's full display name) rather than a list of actions.
+function openTreeCtxInfoMenu(anchorEl, text) {
+  treeCtxInfoMenu.innerHTML = '<div class="ctx-meta">' + escapeHtml(text) + "</div>";
+  const anchorRect = anchorEl.getBoundingClientRect();
+  treeCtxInfoMenu.style.left = Math.min(anchorRect.right, window.innerWidth - 260) + "px";
+  treeCtxInfoMenu.style.top = Math.min(anchorRect.top, window.innerHeight - 200) + "px";
+  treeCtxInfoMenu.classList.remove("hidden");
+}
+// treeContextMenu's own content is rebuilt fresh on every open (innerHTML =
+// html in openTreeContextMenu below), so the "Info" trigger's hover/click
+// handling is delegated here once rather than re-attached per rebuild.
+treeContextMenu.addEventListener("mouseover", ev => {
+  const item = ev.target.closest('[data-action="info"]');
+  if (item) openTreeCtxInfoMenu(item, item.dataset.infoText || "");
+});
+// Stops a click inside the info bubble (e.g. selecting/copying the shown
+// text) from reaching the document-level "click outside closes the popup"
+// listener — same reasoning #addToSelectionMenu's own click handler
+// already relies on (see CLAUDE.md's stopPropagation gotcha).
+treeCtxInfoMenu.addEventListener("click", ev => ev.stopPropagation());
 
 // Figures out which bulk actions the current multi-selection supports.
 // Shared by the right-click context menu and the always-visible action bar
@@ -15367,6 +15743,12 @@ function openTreeContextMenu(ev, clickedId) {
       buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
       buckets.library.push({ action: "saveToLibrary", label: "Save to library…", icon: ICON_SAVE });
+      // "Unpack" (and/or/link only): materializes the node's two baked
+      // inputs as real, visible sibling filters next to it — the node
+      // itself is untouched — see unpackAndOrLinkNode.
+      if (node.filterType === "and" || node.filterType === "or" || node.filterType === "link") {
+        buckets.edit.push({ action: "unpack", label: "Unpack…", icon: ICON_COMBINE });
+      }
     }
     // Loading is offered on file nodes too: the saved branch is then applied
     // to the whole file, reproducing the original overall result. Same for
@@ -15400,7 +15782,17 @@ function openTreeContextMenu(ev, clickedId) {
       .map(section => section.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join(""))
       .join('<div class="ctx-sep"></div>');
 
-    html = '<div class="ctx-meta">' + escapeHtml(nodeDisplayName(node)) + "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
+    // "Info" (person-reported): the node's full display name used to sit
+    // inline here, unbounded — a long extraction pattern or a link's own
+    // concatenated name could make the whole menu (and the page along with
+    // it) far taller/wider than the viewport. Now a hover/click submenu
+    // trigger instead (see openTreeCtxInfoMenu), same shape as "Add to
+    // selection" on the log-row context menu. data-info-text carries the
+    // text for the delegated mouseover/click handlers below to show.
+    html = '<div class="ctx-item ctx-submenu-trigger" data-action="info" data-info-text="' + escapeHtml(nodeDisplayName(node)) + '">' +
+      ICON_INFO + " Info" +
+      '<svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>' +
+      "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
   }
 
   treeContextMenu.innerHTML = html;
@@ -15414,6 +15806,11 @@ treeContextMenu.addEventListener("click", ev => {
   if (!item) return;
   ev.stopPropagation();
   const action = item.dataset.action;
+  // "Info" is a submenu trigger, not an action — mouseover already opens
+  // it (see the delegated listener above); a click (touch/no-hover) does
+  // the same instead of closing the whole context menu like every other
+  // item here does.
+  if (action === "info") { openTreeCtxInfoMenu(item, item.dataset.infoText || ""); return; }
   closeTreeContextMenu();
 
   if (action === "loadFolderFile") {
@@ -15490,6 +15887,13 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "saveFilter") {
     if (treeCtxId && state.nodes[treeCtxId]) saveFilterToFile(treeCtxId);
+    return;
+  }
+  if (action === "unpack") {
+    if (treeCtxId && state.nodes[treeCtxId]) {
+      const newId = unpackAndOrLinkNode(treeCtxId);
+      if (newId) { state.activeId = newId; render(); showCopyToast("Unpacked into its two inputs"); }
+    }
     return;
   }
   if (action === "saveToLibrary") {
@@ -15830,25 +16234,22 @@ noteDialogInput.addEventListener("keydown", ev => {
 });
 
 /* ===================== Filter save / load (JSON files) =====================
-   "Save filter…" writes the *branch* a filter belongs to: the ancestor
-   chain from just below the root file down to the clicked node, plus the
-   node's complete subtree. The chain is what makes the overall result
-   reproducible when loaded onto a fresh file; the subtree keeps any
-   refinements below the node.
-
-   and/or/link nodes hold a second, non-hierarchical reference (linkedId) to
-   another filter that can sit anywhere else in the same file's tree (bulk
-   actions only ever combine two filters from the same file — see
-   describeBulkActions — so a linkedId target is always reachable within the
-   saved file, never across files). Rather than dropping such references
-   when the target lies outside the primary branch, its own ancestor chain
-   (not its subtree — only enough to recompute its result) is pulled in too,
-   transitively, so and/or/link filters always survive a save intact. Each
-   pulled-in chain becomes its own tree in "roots", tagged attach:"file" so
-   it's re-created directly under the target file on load instead of nested
-   under the clicked node; the one tree that IS the clicked node's own chain
-   is tagged attach:"target". Internal references are serialized via
-   per-file "ref" numbers and remapped to fresh uids on load.
+   Every save/export/library-save action for a single filter node asks the
+   person to pick one of two scopes (see openExportScopePrompt) — a general
+   choice for ANY filter type, not just and/or/link:
+     - "Just this filter": exports exactly the one clicked node, with no
+       ancestors and no subtree (for and/or/link this trivially includes its
+       own bakedA/bakedB, already self-contained — see the "Core data
+       model" note above createAndOrNode).
+     - "Include ancestor chain": exports the ancestor chain from just below
+       the root file down to the clicked node, plus the node's complete
+       subtree (today's original default behavior).
+   Either way, the exported branch is tagged attach:"target" and lands, on
+   import/apply, as a child of whatever node is currently active at the
+   import site (see importFilterJson/applyFilterFromLibrary) — never
+   hardcoded to FILE. and/or/link's bakedA/bakedB are flat data with no
+   node-id inside, so they travel as a plain generic field copy — no ref/
+   remapping machinery is needed for them at all.
 
    Runtime ids are never written to the file — every load creates new nodes
    with fresh uids, so the same file can be loaded repeatedly. */
@@ -15858,39 +16259,21 @@ const FILTER_FILE_VERSION = 2;
 const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context", "countContext", "level", "bookmarks", "idset"]);
 const filterFileInput = el("#filterFileInput");
 
-function serializeFilterBranch(nodeId) {
-  const chain = getChain(nodeId).filter(n => n.type === "filter");
-  if (!chain.length) return null;
-  const primaryRootId = chain[0].id;
+function serializeFilterBranch(nodeId, includeAncestors) {
+  const clicked = state.nodes[nodeId];
+  if (!clicked || clicked.type !== "filter") return null;
 
-  // Start with the chain plus the clicked node's full subtree.
   const needed = new Set();
-  chain.forEach(n => needed.add(n.id));
-  (function collect(id) {
-    needed.add(id);
-    state.nodes[id].children.forEach(collect);
-  })(nodeId);
-
-  // Pull in the ancestor chain (not the subtree) of every linkedId target
-  // that isn't already included, and repeat for chains just added — an
-  // added ancestor can itself be an and/or/link node with its own external
-  // target. Finite and monotonic, so this always terminates.
-  function addChainOnly(id, newlyAdded) {
-    let cur = state.nodes[id];
-    while (cur && cur.type === "filter" && !needed.has(cur.id)) {
-      needed.add(cur.id);
-      newlyAdded.push(cur.id);
-      cur = state.nodes[cur.parentId];
-    }
-  }
-  let frontier = [...needed];
-  while (frontier.length) {
-    const newlyAdded = [];
-    for (const id of frontier) {
-      const n = state.nodes[id];
-      if (n.linkedId && !needed.has(n.linkedId)) addChainOnly(n.linkedId, newlyAdded);
-    }
-    frontier = newlyAdded;
+  if (includeAncestors) {
+    const chain = getChain(nodeId).filter(n => n.type === "filter");
+    if (!chain.length) return null;
+    chain.forEach(n => needed.add(n.id));
+    (function collect(id) {
+      needed.add(id);
+      state.nodes[id].children.forEach(collect);
+    })(nodeId);
+  } else {
+    needed.add(nodeId); // "just this filter" — no ancestors, no subtree
   }
 
   let refCounter = 0;
@@ -15908,7 +16291,10 @@ function serializeFilterBranch(nodeId) {
       children: kids,
     };
     if (node.value !== null && node.value !== undefined) out.value = node.value;
-    if (node.linkedId) out.linkedRef = refs[node.linkedId];
+    // and/or/link's baked condition snapshots — plain data, copied as-is,
+    // no ref/remapping needed (see the module comment above).
+    if (node.bakedA) out.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+    if (node.bakedB) out.bakedB = JSON.parse(JSON.stringify(node.bakedB));
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
@@ -15927,21 +16313,134 @@ function serializeFilterBranch(nodeId) {
     return out;
   }
 
-  // Every node in `needed` has its whole ancestor chain in `needed` too
-  // (both collection steps above always walk back to the file), so the
-  // top-level entries — parent is the file, not another needed node — are
-  // exactly the independent trees that make up the file.
+  if (!includeAncestors) {
+    const out = serializeSubtree(nodeId);
+    out.attach = "target";
+    return { roots: [out], activeRef: refs[nodeId] };
+  }
+
+  // Every node in `needed` has its whole ancestor chain in `needed` too, so
+  // there is exactly one top-level entry — the chain's own root (parent is
+  // the file, not another needed node).
   const topLevelIds = [...needed].filter(id => {
     const p = state.nodes[state.nodes[id].parentId];
     return !p || p.type === "file";
   });
   const roots = topLevelIds.map(id => {
     const out = serializeSubtree(id);
-    out.attach = id === primaryRootId ? "target" : "file";
+    out.attach = "target";
     return out;
   });
 
   return { roots, activeRef: refs[nodeId] || null };
+}
+
+// Materializes ONE baked condition snapshot (see bakeNodeCondition) as a
+// real, ordinary, visible filter node — used by Unpack (below) to turn an
+// and/or/link node's bakedA/bakedB back into editable sibling filters.
+// Nested and/or/link baked conditions materialize their own bakedA/bakedB
+// as a plain deep copy (the resulting node works exactly like any other
+// and/or/link node — its own bakedA/bakedB never look at another node).
+function materializeBakedAsNode(baked, parentId) {
+  const node = {
+    id: uid("n"), type: "filter", name: bakedConditionName(baked),
+    parentId, children: [],
+    filterType: baked.filterType,
+    value: baked.value !== undefined ? baked.value : null,
+    inverted: !!baked.inverted,
+  };
+  if (baked.filterType === "text") {
+    if (baked.caseSensitive) node.caseSensitive = true;
+    if (baked.columns && baked.columns.length) node.columns = baked.columns.slice();
+    if (baked.isRegex) node.isRegex = true;
+  } else if (baked.filterType === "context") {
+    node.contextBefore = baked.contextBefore || 0;
+    node.contextAfter = baked.contextAfter || 0;
+  } else if (baked.filterType === "countContext") {
+    node.countBefore = baked.countBefore || 0;
+    node.countAfter = baked.countAfter || 0;
+  } else if (baked.filterType === "and" || baked.filterType === "or") {
+    node.bakedA = JSON.parse(JSON.stringify(baked.bakedA));
+    node.bakedB = JSON.parse(JSON.stringify(baked.bakedB));
+  } else if (baked.filterType === "link") {
+    node.bakedA = JSON.parse(JSON.stringify(baked.bakedA));
+    node.bakedB = JSON.parse(JSON.stringify(baked.bakedB));
+    node.linkDirection = baked.linkDirection;
+    node.linkN = baked.linkN;
+    node.linkOrderEnforced = !!baked.linkOrderEnforced;
+    node.linkExclusive = !!baked.linkExclusive;
+  }
+  state.nodes[node.id] = node;
+  return node;
+}
+
+// Display name for a baked condition — mirrors updateFilterNode's own
+// name-derivation rules for each filterType, recursing for a nested and/
+// or/link condition.
+function bakedConditionName(baked) {
+  if (baked.filterType === "text") return baked.isRegex ? "/" + baked.value + "/" : "“" + baked.value + "”";
+  if (baked.filterType === "level") return (baked.value || []).join(", ");
+  if (baked.filterType === "idset") return idSetFilterName(baked.value);
+  if (baked.filterType === "timerange") return timeRangeFilterName(baked.value);
+  if (baked.filterType === "and" || baked.filterType === "or") {
+    return bakedConditionName(baked.bakedA) + (baked.filterType === "and" ? " ∧ " : " ∨ ") + bakedConditionName(baked.bakedB);
+  }
+  if (baked.filterType === "link") return bakedConditionName(baked.bakedA) + " ⟶ " + bakedConditionName(baked.bakedB);
+  if (baked.value && typeof baked.value === "object") return JSON.stringify(baked.value);
+  return String(baked.value);
+}
+
+// Materializes an and/or/link node's own bakedA/bakedB back into two real,
+// visible sibling filter nodes (same filterType/fields), inserted right
+// after the original node's own position. The original node itself is left
+// completely untouched — no fresh combiner is created and nothing is
+// deleted, so Unpack never leaves a duplicate of the node behind; it just
+// makes the two building blocks visible/editable again as ordinary siblings
+// (there's no dedicated "edit and/or/link inputs" UI — see
+// FEATURE_BACKLOG.md). Returns the original node's own id (still active),
+// or null if nodeId isn't an and/or/link node.
+function unpackAndOrLinkNode(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter") return null;
+  if (node.filterType !== "and" && node.filterType !== "or" && node.filterType !== "link") return null;
+  const parent = state.nodes[node.parentId];
+  if (!parent) return null;
+
+  const cloneA = materializeBakedAsNode(node.bakedA, node.parentId);
+  const cloneB = materializeBakedAsNode(node.bakedB, node.parentId);
+  const insertIndex = parent.children.indexOf(nodeId) + 1;
+  parent.children.splice(Math.max(0, insertIndex), 0, cloneA.id, cloneB.id);
+
+  state.activeId = nodeId;
+  invalidateAllCaches();
+  return nodeId;
+}
+
+let exportScopeResolve = null;
+function closeExportScopePrompt() {
+  el("#exportScopeDialog").classList.add("hidden");
+  exportScopeResolve = null;
+}
+el("#exportScopeJustThis").addEventListener("click", () => {
+  const resolve = exportScopeResolve;
+  closeExportScopePrompt();
+  if (resolve) resolve(false);
+});
+el("#exportScopeWithChain").addEventListener("click", () => {
+  const resolve = exportScopeResolve;
+  closeExportScopePrompt();
+  if (resolve) resolve(true);
+});
+
+// General "Just this filter" vs "Include ancestor chain" prompt (see the
+// module comment above serializeFilterBranch) — asked for ANY filter node,
+// only ever as part of an actual save/export/library-save action
+// (saveFilterToFile/saveFilterToLibrary below), never at app startup.
+function openExportScopePrompt(nodeId) {
+  return new Promise(resolve => {
+    exportScopeResolve = resolve;
+    el("#exportScopeDialog").classList.remove("hidden");
+  });
 }
 
 function downloadJsonFallback(json, filename) {
@@ -15956,7 +16455,8 @@ function downloadJsonFallback(json, filename) {
 async function saveFilterToFile(nodeId) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return;
-  const branch = serializeFilterBranch(nodeId);
+  const includeAncestors = await openExportScopePrompt(nodeId);
+  const branch = serializeFilterBranch(nodeId, includeAncestors);
   if (!branch || !branch.roots.length) { showCopyToast("Nothing to save"); return; }
 
   const json = JSON.stringify({
@@ -16014,33 +16514,19 @@ filterFileInput.addEventListener("change", ev => {
   filterFileInput.value = "";
 });
 
-function importFilterJson(text) {
-  const target = state.nodes[loadFilterTargetId];
-  if (!target) return;
-
-  let data;
-  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
-  if (!data || data.format !== FILTER_FILE_FORMAT || !Array.isArray(data.roots)) {
-    showCopyToast("Not a PhiLogg filter file");
-    return;
-  }
-  if (data.version > FILTER_FILE_VERSION) { showCopyToast("Filter file was saved by a newer version"); return; }
-
-  // Validate the whole tree before creating anything, so a corrupt file
-  // never leaves half-built nodes behind.
-  function validate(sn) {
-    // filterType "bookmarks" is deliberately rejected here: it's the
-    // auto-managed per-file node (see syncBookmarksFilterNode) and is never
-    // written to a saved filter file in the first place — an imported one
-    // (hand-edited file, or an old export from before this restriction
-    // existed) would just be an unlocked look-alike with a stale match set.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
-    return (sn.children || []).every(validate);
-  }
-  if (!data.roots.every(validate)) { showCopyToast("Filter file contains unknown filter types"); return; }
-
-  const refMap = {};   // serialized ref -> new uid
-  const pending = [];  // linkedRef assignments resolved after all nodes exist
+// Shared rebuild step behind serializeFilterBranch()'s roots — used by
+// importFilterJson (Save/Load filter JSON) and the reusable filter
+// library's apply step (same JSON shape, see below). Materializes every
+// serialized node with a FRESH id (bakedA/bakedB, if present, copied
+// straight across as plain data — nothing to remap) and attaches each
+// top-level root via resolveParentId(root.attach) — every root is tagged
+// attach:"target" (see serializeFilterBranch), so this always lands under
+// wherever the import/apply was invoked, never hardcoded to FILE. Returns
+// { created, refMap } — created is the top-level roots in data.roots' own
+// order, refMap resolves a serialized `ref` to its fresh id (activeRef
+// included).
+function materializeSerializedRoots(roots, resolveParentId) {
+  const refMap = {}; // serialized ref -> new uid
 
   function materialize(sn, parentId) {
     const node = {
@@ -16083,30 +16569,53 @@ function importFilterJson(text) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.bakedA) node.bakedA = sn.bakedA;
+    if (sn.bakedB) node.bakedB = sn.bakedB;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
-    if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });
     (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
     return node;
   }
 
-  const fileId = getRootFileId(target.id);
-  const created = data.roots.map(r => {
-    const parentId = r.attach === "file" && fileId ? fileId : target.id;
+  const created = roots.map(r => {
+    const parentId = resolveParentId(r.attach);
     const parent = state.nodes[parentId];
     const node = materialize(r, parentId);
     if (parent) parent.children.push(node.id);
     return node;
   });
 
-  // Wire up internal and/or/link references. Files written by saveFilterToFile
-  // never contain dangling refs, but a hand-edited one might — drop those
-  // nodes (with subtree) instead of leaving broken combiners around.
-  pending.forEach(p => {
-    const linkedId = refMap[p.linkedRef];
-    if (linkedId) p.node.linkedId = linkedId;
-    else deleteNode(p.node.id);
-  });
+  return { created, refMap };
+}
+
+function importFilterJson(text) {
+  const target = state.nodes[loadFilterTargetId];
+  if (!target) return;
+
+  let data;
+  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
+  if (!data || data.format !== FILTER_FILE_FORMAT || !Array.isArray(data.roots)) {
+    showCopyToast("Not a PhiLogg filter file");
+    return;
+  }
+  if (data.version > FILTER_FILE_VERSION) { showCopyToast("Filter file was saved by a newer version"); return; }
+
+  // Validate the whole tree before creating anything, so a corrupt file
+  // never leaves half-built nodes behind.
+  function validate(sn) {
+    // filterType "bookmarks" is deliberately rejected here: it's the
+    // auto-managed per-file node (see syncBookmarksFilterNode) and is never
+    // written to a saved filter file in the first place — an imported one
+    // (hand-edited file, or an old export from before this restriction
+    // existed) would just be an unlocked look-alike with a stale match set.
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
+    return (sn.children || []).every(validate);
+  }
+  if (!data.roots.every(validate)) { showCopyToast("Filter file contains unknown filter types"); return; }
+
+  // Every root is tagged attach:"target" (see serializeFilterBranch) —
+  // always attaches under wherever the import was invoked, never FILE.
+  const { created, refMap } = materializeSerializedRoots(data.roots, () => target.id);
 
   const activeId = data.activeRef != null ? refMap[data.activeRef] : null;
   if (activeId && state.nodes[activeId]) state.activeId = activeId;
@@ -16142,7 +16651,8 @@ function newFilterLibraryKey() {
 async function saveFilterToLibrary(nodeId, name) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return;
-  const branch = serializeFilterBranch(nodeId);
+  const includeAncestors = await openExportScopePrompt(nodeId);
+  const branch = serializeFilterBranch(nodeId, includeAncestors);
   if (!branch || !branch.roots.length) { showCopyToast("Nothing to save"); return; }
   await cacheStoreOp("filterLibrary", "readwrite", store => store.put({
     key: newFilterLibraryKey(),
@@ -17538,8 +18048,8 @@ document.addEventListener("keydown", ev => {
        entry sequence, so a restored merged file works standalone but no
        longer shares entry objects with its sources (accepted trade-off).
      - "meta": a single "session" record with file order, serialized filter
-       trees (same field set + ref/linkedRef scheme as the filter save/load
-       JSON), bookmarks (as root-file + entry ordinal, since entry ids don't
+       trees (same field set + ref scheme as the filter save/load JSON),
+       bookmarks (as root-file + entry ordinal, since entry ids don't
        survive a reload), and settings.
      - "fileHistory": a THIRD, deliberately separate concern — a per-file
        filter-tree memory that outlives any single session (see "File
@@ -17707,10 +18217,9 @@ async function cacheDeleteFolder(folderId) {
 }
 
 // Serializes a file's COMPLETE filter tree with the same per-node field set
-// and ref/linkedRef indirection as the filter save/load JSON (see
-// serializeFilterBranch) — but without that function's branch/chain-pulling
-// logic, because here every node under the file is included anyway, so
-// every linkedId target is trivially present.
+// as the filter save/load JSON (see serializeFilterBranch) — bakedA/bakedB
+// (for and/or/link nodes) travel as a plain deep copy, same as every other
+// field; there's no ref/remapping to do for them since they hold no node id.
 function serializeFilterTreeForCache(fileNode) {
   let refCounter = 0;
   const refs = {}; // runtime id -> serialized ref number
@@ -17739,7 +18248,8 @@ function serializeFilterTreeForCache(fileNode) {
       children: persistableChildren(node.children).map(ser),
     };
     if (node.value !== null && node.value !== undefined) out.value = node.value;
-    if (node.linkedId && refs[node.linkedId]) out.linkedRef = refs[node.linkedId];
+    if (node.bakedA) out.bakedA = JSON.parse(JSON.stringify(node.bakedA));
+    if (node.bakedB) out.bakedB = JSON.parse(JSON.stringify(node.bakedB));
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
@@ -17856,13 +18366,13 @@ function schedulePersistMeta() {
   metaPersistTimer = setTimeout(() => { metaPersistTimer = null; persistMetaNow(); }, CACHE_META_DEBOUNCE_MS);
 }
 
-// Mirror of importFilterJson's materialize/pending-linkedRef pass, without
-// the file-format envelope handling (the cache trusts its own writer more
-// than a hand-editable JSON file, but still validates types and drops
-// dangling linkedRefs the same way). Returns ref -> new runtime id.
+// Mirror of importFilterJson's materialize pass, without the file-format
+// envelope handling (the cache trusts its own writer more than a
+// hand-editable JSON file, but still validates types). bakedA/bakedB (for
+// and/or/link nodes) copy straight across as plain data — nothing to
+// remap. Returns ref -> new runtime id.
 function materializeCachedFilters(fileNode, roots) {
   const refMap = {};
-  const pending = [];
 
   function valid(sn) {
     // Same "bookmarks" exclusion as importFilterJson's validate() — the
@@ -17909,9 +18419,10 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.bakedA) node.bakedA = sn.bakedA;
+    if (sn.bakedB) node.bakedB = sn.bakedB;
     state.nodes[node.id] = node;
     if (sn.ref != null) refMap[sn.ref] = node.id;
-    if (sn.linkedRef != null) pending.push({ node, linkedRef: sn.linkedRef });
     (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
     return node;
   }
@@ -17920,11 +18431,6 @@ function materializeCachedFilters(fileNode, roots) {
     if (!valid(r)) return; // drop a corrupt subtree, keep the rest
     const node = materialize(r, fileNode.id);
     fileNode.children.push(node.id);
-  });
-  pending.forEach(p => {
-    const linkedId = refMap[p.linkedRef];
-    if (linkedId) p.node.linkedId = linkedId;
-    else deleteNode(p.node.id);
   });
   return refMap;
 }
@@ -18947,6 +19453,7 @@ initHoverExpandSettings();
 initMinimapFullRangeSetting();
 initTextMatchHighlightSettings();
 initLevelFilterTreeModeSettings();
+initTreeIndicatorModeSetting();
 initOpenScrollPositionSetting();
 initTempAnchorSettings();
 initCollapsePanels();

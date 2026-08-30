@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 57
+LAST_ID: 58
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation. Numbers are unique, permanent IDs, not a sort order —
@@ -73,6 +73,7 @@ this point.
 
 ### Filter tree workflow
 
+58. **Inline editing of an AND/OR/LINK node's `inputA`/`inputB`** — today the only way to change what a combiner references is Unpack (replace it with its two inputs plus a fresh combiner, then re-link by hand) or delete-and-recreate; a dedicated small dialog/picker to re-point `inputA`/`inputB` directly, without unpacking, would be more direct for a person who just wants to swap one side.
 19. **File-independent (universal) cache for the `.html` build** — today the cache appears to be keyed per filename; a shared/universal cache would keep working across renamed or re-opened files. Open question: how to handle a cached payload left over from an incompatible older/newer app version (versioning or invalidation needed).
 
 ### Value extraction & aggregation
