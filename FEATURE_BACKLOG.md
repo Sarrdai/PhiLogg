@@ -49,7 +49,7 @@ this point.
 ### Filter tree workflow
 
 20. **Extend match-text highlighting to Highlights, not just Filters** — text filters already support marking the matched substring itself in color (not just the left-edge color bar), scoped to either the active filter or the whole filter path (configurable). Apply the same match-text coloring to Highlights, using the highlight's own color. Open question: whether this needs a separate button, a global setting, or a toggle in the color-picker menu (would then be per-filter configurable, default on).
-54. **"Prune" action when a filter and a file are both selected** — discards everything from memory/view that isn't part of the filter's result set, not just hides it. Especially useful for time filters (throw away everything outside the range) but not restricted to that case. Where content was pruned, insert a placeholder in its place (at least in the Full view) so the cut is visible rather than silently making rows disappear.
+54. **"Prune" action when a filter and a file are both selected** — discards everything from memory/view that isn't part of the filter's result set, not just hides it. Especially useful for time filters (throw away everything outside the range) but not restricted to that case. Where content was pruned, insert a placeholder in its place (at least in the Context view, whose gap strips are the natural home for it) so the cut is visible rather than silently making rows disappear.
 
 ### Desktop wrapper (Electron)
 
@@ -120,7 +120,7 @@ this point.
 12. **Dedup check on "Load filter…" / session import** — prevents duplicate branches when the same filter (tree) is loaded/imported again.
 13. **Autocomplete suggestions from recently used filter values/search terms** in the filter popup.
 14. **Mute (disable) a filter node instead of deleting it** — a muted node is skipped in the chain (its children evaluate against its parent) but stays in the tree with its colour, assertions, and children intact. Faster than delete+undo for "does this step matter?". Needs the flag threaded through every persistence carrier (see `CLAUDE.md`'s gotcha list).
-15. **"Why is this row here?" explain popup** — for the selected entry, show which node of the active chain matched it; for an entry visible only in the Full view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the existing "view sometimes doesn't refresh" class of confusion (see Known issues above).
+15. **"Why is this row here?" explain popup** — for the selected entry, show which node of the active chain matched it; for a context row in the Context view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the existing "view sometimes doesn't refresh" class of confusion (see Known issues above).
 
 ### Value extraction & aggregation
 
