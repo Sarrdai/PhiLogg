@@ -63,6 +63,11 @@ open it in a browser to view it.
   multi-line/pin-bookmarks buttons); Settings → Behavior controls whether it
   shows only the filter you're currently drilled into or every text filter
   in the chain, and where the marks appear.
+- **Highlight rules underline their own matches** — a colored text filter
+  doesn't just tint the row's left edge: the matched substring itself is
+  underlined in that rule's color, in both views and the entry detail. Two
+  rules over the same text stack their stripes instead of one overwriting
+  the other. Its own view-bar toggle, on by default.
 - **Filter navigation without losing your place** — switching the active
   filter, whether with `Alt+Arrow` or a plain mouse click in "Files &
   Filters", never takes keyboard focus off the log view you're reading, so

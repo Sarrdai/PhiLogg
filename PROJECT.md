@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~19,570 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~19,810 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -121,7 +121,7 @@ Two companions ride along with `_cache` (cleared in the exact same places, nowhe
 The sections below used to live directly in this file. They've moved to `docs/*.md` (grouped by topic, current-state description only — no session dates, no "pass 1 then pass 2" narrative) and to `CHANGELOG.md` (the full chronological history, newest-first). This section is the index: enough orientation per topic to know where to look, not the material itself.
 
 ### `docs/filters.md`
-Filter types, the value-extraction pattern language (placeholders, value conditions like `[value:float>=10]`), the filter popup (Extract vs. Add-filter buttons, target chain, column chips), text-filter case/column restriction and match highlighting, the link filter (nearest-neighbor pairing, chained/multi-hop tuples, same-timestamp tie-break), the self-contained `and`/`or`/`link` input model and Unpack, time filters (`"timerange"`, minimap drag-select), the timeline minimap, and time/count context filters. Start here for anything about `getEntries()`'s per-`filterType` branches or `#filterPopup`.
+Filter types, the value-extraction pattern language (placeholders, value conditions like `[value:float>=10]`), the filter popup (Extract vs. Add-filter buttons, target chain, column chips), text-filter case/column restriction and match highlighting (both kinds: the active filter path's, and each highlight rule's own colour underlining what it matched), the link filter (nearest-neighbor pairing, chained/multi-hop tuples, same-timestamp tie-break), the self-contained `and`/`or`/`link` input model and Unpack, time filters (`"timerange"`, minimap drag-select), the timeline minimap, and time/count context filters. Start here for anything about `getEntries()`'s per-`filterType` branches or `#filterPopup`.
 
 ### `docs/ui-and-views.md`
 Header/toolbar layout (`#viewBar`, breadcrumb, Shortcut Manager, License section), the three "active node" views (Log/Extraction/Link), the Highlight view (Filter/Highlight split, `renderHighlightView`), level-bar filter-tree mode, the general scroll-anchoring mechanism (`captureViewAnchor`/`restoreViewAnchor`), the multiline-message toggle, column visibility/width, row multi-select+copy, tree interactions (rename, edit, drag-drop, Alt+Arrow navigation, the temporary anchor), theming, and the app's visual language. Start here for anything about `renderMainView()`, `renderNode()`, or CSS/theme vars.

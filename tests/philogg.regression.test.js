@@ -139,6 +139,7 @@ async function withApp(run, opts = {}) {
       get textMatchHighlightScope() { return textMatchHighlightScope; },
       get textMatchHighlightInRows() { return textMatchHighlightInRows; },
       get textMatchHighlightInDetail() { return textMatchHighlightInDetail; },
+      get highlightMatchTextEnabled() { return highlightMatchTextEnabled; },
       get levelFilterTreeMode() { return levelFilterTreeMode; },
       set levelFilterTreeMode(v) { levelFilterTreeMode = v; },
       get tempAnchorMode() { return tempAnchorMode; },
@@ -14180,6 +14181,164 @@ await withApp(async (w, d, T) => {
     "invalidateOrderIndexMap drops it explicitly, for the in-place reorder (mergeFiles' sort) the key can't see");
 });
 
+
+/* ============================================================
+   GROUP 137 — Highlight-rule match text (FEATURE_BACKLOG.md #20)
+   Extends the inline substring marking of GROUP 93 from the active filter
+   path to HIGHLIGHT RULES (any coloured "text" filter node under the file,
+   wherever it sits in the tree), painted in each rule's own colour as a
+   stacked underline stripe instead of a background — so the filter mark and
+   any number of rule colours can share the same characters without one
+   having to win. Own view-bar toggle, #btnHighlightMatchText (person-chosen
+   over a colour-picker toggle or a Settings checkbox), default ON, and
+   unlike GROUP 93's marking it also paints the Full view.
+   Also covers the isRegex fix this needed: textFilterMatchSpec used to
+   ignore node.isRegex and search the regex SOURCE as a literal substring,
+   so a regex filter marked nothing at all.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("137. Highlight-rule match text + regex match-spec fix");
+
+  const btn = d.querySelector("#btnHighlightMatchText");
+  const textMatchBtn = d.querySelector("#btnTextMatchHighlight");
+
+  // --- Defaults ---
+  assert(btn && isVisible(btn, w), "#btnHighlightMatchText exists and is visible in the view bar");
+  assert(btn.classList.contains("active") && T.highlightMatchTextEnabled === true, "highlight-rule match text defaults ON");
+  assert(btn.innerHTML.includes("<svg"), "the button carries an icon of its own");
+
+  // messages read "alpha beta N" — "alpha" is what the ACTIVE filter matches,
+  // "beta" what a rule matches, and "alph" gives a second rule that overlaps
+  // the first rule's own span (for the stacking assertion below).
+  const f = await w.addFile("app.log", makeLog(0, 12, { msgPrefix: "alpha beta" }), () => {});
+
+  // Two rules, both TOP-LEVEL under the file — deliberately NOT in the
+  // active filter's ancestor chain, which is the whole difference from
+  // GROUP 93's node set.
+  const ruleBeta = w.createFilterNode(f.id, "text", "beta", false, null, false, ["message"]);
+  w.setHighlightColor(ruleBeta.id, "#ff0000");
+  const ruleAlpha = w.createFilterNode(f.id, "text", "alpha", false, null, false, ["message"]);
+  w.setHighlightColor(ruleAlpha.id, "#00ff00");
+  const uncolored = w.createFilterNode(f.id, "text", "Foo", false, null, false, ["location"]);
+
+  // The active node: a text filter matching "alpha", i.e. exactly the span
+  // ruleAlpha also covers — the overlap case.
+  const active = w.createFilterNode(f.id, "text", "alpha", false, null, false, ["message"]);
+  T.state.activeId = active.id;
+  w.render();
+
+  const filteredMsg = () => d.querySelector("#tableRows .log-row .col-msg").innerHTML;
+  const fullMsg = () => d.querySelector("#highlightRows .log-row .col-msg").innerHTML;
+
+  // --- Node set: coloured text filters anywhere under the file, not the
+  //     active chain; an uncoloured filter never contributes ---
+  const hlNodes = w.getHighlightMatchNodes();
+  assert(hlNodes.length === 2, "getHighlightMatchNodes() returns exactly the two coloured text filters");
+  assert(hlNodes.some(n => n.id === ruleBeta.id) && hlNodes.some(n => n.id === ruleAlpha.id),
+    "...both of them, even though neither is in the active node's ancestor chain");
+  assert(!hlNodes.some(n => n.id === uncolored.id), "...and never an uncoloured filter node");
+
+  // --- Filtered view: the rule's colour rides an underline stripe ---
+  assert(/<mark class="hl-match-mark"[^>]*box-shadow:inset 0 -2px 0 #ff0000[^>]*>beta<\/mark>/.test(filteredMsg()),
+    "a rule's match is underlined in the rule's own colour, with no background mark of its own");
+
+  // --- Overlap: "alpha" is both the active filter's match AND ruleAlpha's.
+  //     One <mark>, keeping the filter's background class and gaining the
+  //     rule's stripe — neither wins, both apply ---
+  const overlap = filteredMsg().match(/<mark class="text-match-mark"[^>]*>alpha<\/mark>/);
+  assert(overlap && overlap[0].includes("box-shadow:inset 0 -2px 0 #00ff00"),
+    "a span matched by BOTH the active filter and a rule keeps the filter background and gains the rule stripe");
+
+  // --- Full view marks rules but NOT the active filter path ---
+  assert(/<mark class="hl-match-mark"[^>]*#ff0000[^>]*>beta<\/mark>/.test(fullMsg()),
+    "the Full view paints rule matches too (unlike the filter-path marking, which never applied there)");
+  assert(/<mark class="hl-match-mark"[^>]*#00ff00[^>]*>alpha<\/mark>/.test(fullMsg()),
+    "...and 'alpha' is a plain rule stripe there, not the active filter's background mark");
+  assert(!/text-match-mark/.test(fullMsg()), "the Full view never marks the active filter path's own matches");
+
+  // --- Two rules over the same characters stack their stripes ---
+  const ruleAlph = w.createFilterNode(f.id, "text", "alph", false, null, false, ["message"]);
+  w.setHighlightColor(ruleAlph.id, "#0000ff");
+  T.state.activeId = active.id;
+  w.render();
+  const stacked = fullMsg().match(/<mark[^>]*>alph<\/mark>/);
+  assert(stacked && /#00ff00/.test(stacked[0]) && /#0000ff/.test(stacked[0]),
+    "characters covered by two rules carry both colours in one mark");
+  assert(stacked && /inset 0 -2px 0 [^,]+,inset 0 -4px 0 /.test(stacked[0]),
+    "...as two stacked stripes at 2px and 4px, not one colour replacing the other");
+  assert(stacked && /padding-bottom:4px/.test(stacked[0]), "...with room reserved under the text for both");
+  w.setHighlightColor(ruleAlph.id, null);
+  T.state.activeId = active.id;
+  w.render();
+
+  // --- Entry detail: rules paint there too, and are NOT gated by the
+  //     filter-path marking's own "show in entry detail" toggle ---
+  T.state.selectedId = f.entries[1].id;
+  const detailCb = d.querySelector("#settingsTextMatchHighlightDetail");
+  detailCb.checked = false;
+  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const detailHtml = () => d.querySelector("#detailMessage").innerHTML;
+  assert(/<mark class="hl-match-mark"[^>]*#ff0000[^>]*>beta<\/mark>/.test(detailHtml()),
+    "entry detail shows rule stripes even with the filter-path 'show in entry detail' toggle off");
+  assert(!/text-match-mark/.test(detailHtml()), "...and that toggle still suppresses the filter-path mark itself");
+  detailCb.checked = true;
+  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  // --- A coloured NON-text node contributes nothing (nothing to underline) ---
+  const levelRule = w.createFilterNode(f.id, "level", ["ERROR"]);
+  w.setHighlightColor(levelRule.id, "#123456");
+  T.state.activeId = active.id;
+  w.render();
+  assert(!w.getHighlightMatchNodes().some(n => n.id === levelRule.id), "a coloured 'level' rule is not a match-text node");
+  assert(!/#123456/.test(fullMsg()), "...and never contributes a stripe");
+
+  // --- The button gates rules only; the filter-path marking is untouched ---
+  fireClick(btn, w);
+  assert(!T.highlightMatchTextEnabled && !btn.classList.contains("active"), "clicking the button turns rule marking off");
+  assert(w.localStorage.getItem("philogg-highlight-match-text") === "0", "state persisted as off");
+  assert(!/hl-match-mark/.test(filteredMsg()) && !/box-shadow/.test(filteredMsg()), "no rule stripes anywhere in the Filtered view while off");
+  assert(!/<mark/.test(fullMsg()), "...nor in the Full view");
+  assert(/<mark class="text-match-mark">alpha<\/mark>/.test(filteredMsg()),
+    "...while the active filter's own mark keeps working, unchanged and independent");
+  assert(textMatchBtn.classList.contains("active"), "the two toggles are genuinely independent buttons");
+  fireClick(btn, w);
+  assert(T.highlightMatchTextEnabled && w.localStorage.getItem("philogg-highlight-match-text") === "1", "clicking again turns it back on");
+  w.initHighlightMatchTextSetting();
+  assert(btn.classList.contains("active"), "initHighlightMatchTextSetting re-applies the persisted state to the button");
+
+  // --- isRegex fix: a regex filter's spec used to fall through to a literal
+  //     substring search of its own SOURCE, which marked nothing. Rule
+  //     colours are cleared first so the assertions below read one whole
+  //     mark rather than a span cut up by an overlapping rule's boundary.
+  w.setHighlightColor(ruleBeta.id, null);
+  w.setHighlightColor(ruleAlpha.id, null);
+  const rx = w.createFilterNode(f.id, "text", "beta\\s+\\d+", false, null, false, ["message"], true);
+  assert(rx.isRegex === true, "the regex node really carries isRegex");
+  const rxSpec = w.textFilterMatchSpec(rx);
+  assert(rxSpec && rxSpec.regex instanceof w.RegExp, "textFilterMatchSpec compiles a real RegExp for an isRegex node");
+  assert(w.findMatchRanges("alpha beta 7", rxSpec).length === 1, "...and findMatchRanges finds its actual match");
+  T.state.activeId = rx.id;
+  w.render();
+  assert(/<mark class="text-match-mark">beta 0<\/mark>/.test(filteredMsg()),
+    "a regex filter now marks what it actually matched, not the literal pattern text");
+  assert(!/beta\\s/.test(filteredMsg()), "...and the literal pattern source is nowhere in the row");
+
+  // An invalid regex fails to a null spec (no throw), same graceful failure
+  // getEntries already had for it.
+  const bad = w.createFilterNode(f.id, "text", "([unclosed", false, null, false, ["message"], true);
+  assert(w.textFilterMatchSpec(bad) === null, "an invalid regex yields a null spec instead of throwing");
+  T.state.activeId = bad.id;
+  w.render();
+  assert(d.querySelectorAll("#tableRows .log-row").length === 0, "...and the view just comes up empty");
+
+  // --- Rules on the regex path get the same treatment ---
+  w.setHighlightColor(rx.id, "#abcdef");
+  T.state.activeId = f.id;
+  w.render();
+  assert(/<mark class="hl-match-mark"[^>]*#abcdef[^>]*>beta 0<\/mark>/.test(fullMsg()),
+    "a coloured regex rule underlines its real match in the Full view too");
+});
+
 /* ============================================================
    Summary
    ============================================================ */
@@ -16178,5 +16337,17 @@ process.exit(failed ? 1 : 0);
               object, and those assertions only passed because the `value`
               aliasing fixed here made the stale husk observe the live
               node's mutations.
+
+   Group 137 — this session (2026-08-30), FEATURE_BACKLOG.md #20: the inline
+              match-text marking of Group 93 extended from the active filter
+              path to highlight RULES (any coloured "text" filter node under
+              the file), painted as stacked per-rule underline stripes so the
+              filter mark and any number of rule colours share the same
+              characters without a priority rule. Own view-bar toggle
+              (#btnHighlightMatchText, default ON), and unlike Group 93's
+              marking it paints the Full view as well. Also covers the
+              isRegex fix the feature needed: textFilterMatchSpec used to
+              ignore node.isRegex and search the regex source as a literal,
+              so a regex filter silently marked nothing.
 
    ============================================================ */
