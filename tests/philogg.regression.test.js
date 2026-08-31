@@ -112,6 +112,20 @@ async function withApp(run, opts = {}) {
       get highlightColorMap() { return highlightColorMap; },
       get currentViewEntries() { return currentViewEntries; },
       get currentHighlightViewEntries() { return currentHighlightViewEntries; },
+      get contextActive() { return contextActive; },
+      get contextGaps() { return contextGaps; },
+      get contextMatchIds() { return contextMatchIds; },
+      get contextStrips() { return contextStrips; },
+      get contextFoldMarks() { return contextFoldMarks; },
+      get contextExpansions() { return contextExpansions; },
+      get contextMatchRows() { return contextMatchRows; },
+      get highlightRowOffsets() { return highlightRowOffsets; },
+      get contextInitialExpansion() { return contextInitialExpansion; },
+      set contextInitialExpansion(v) { contextInitialExpansion = v; },
+      get contextNavCorner() { return contextNavCorner; },
+      set contextNavCorner(v) { contextNavCorner = v; },
+      get CONTEXT_NAV_CORNERS() { return CONTEXT_NAV_CORNERS; },
+      get CONTEXT_STRIP_HEIGHT() { return CONTEXT_STRIP_HEIGHT; },
       get extractRowsData() { return extractRowsData; },
       get extractColumns() { return extractColumns; },
       get plotConfig() { return plotConfig; },
@@ -1442,10 +1456,10 @@ await withApp(async (w, d, T) => {
    "die Log Level Filter sollen sich nicht mehr auf das full Log auswirken.
    stattdessen soll ein andern der Log Level Filter auch zu einem
    automatischen Sprung von Full nach Filtered führen"): the level
-   quick-filter no longer narrows the Full view's own entry list AT ALL
+   quick-filter no longer narrows the Context view's own entry list AT ALL
    (only the Filtered view) — Full stays a stable "whole file" reference
    regardless of the level filter. In exchange, changing the level filter
-   while on the Full tab now auto-reveals Filtered, same as switching to
+   while on the Context tab now auto-reveals Filtered, same as switching to
    another filter already does (revealFilteredView).
    ============================================================ */
 await withApp(async (w, d, T) => {
@@ -1479,9 +1493,14 @@ await withApp(async (w, d, T) => {
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
   fireClick(errBtn, w);
   const filteredLevels = [...d.querySelectorAll("#tableRows .level-badge")].map(b => b.textContent);
-  const fullLevels = [...d.querySelectorAll("#highlightRows .level-badge")].map(b => b.textContent);
   assert(filteredLevels.length > 0 && filteredLevels.every(l => l === "ERROR"), "Filtered view narrows to ERROR immediately");
-  assert(fullLevels.length === 30 && fullLevels.some(l => l === "INFO"), "Full view stays showing the whole file, unaffected by the level quick-filter");
+  // Asserted on the entry LIST, not on the rendered rows: the Context view is
+  // row-virtualized off an offsets array now (gap strips make row heights
+  // variable), so how many rows happen to be in the DOM depends on the stubbed
+  // viewport height rather than on what the view actually holds.
+  assert(T.currentHighlightViewEntries.length === 30 &&
+    T.currentHighlightViewEntries.some(e => e.level === "INFO"),
+    "Context view is unaffected by the level quick-filter — a file node is active, so it holds the whole file");
   fireClick(errBtn, w); // reset
 });
 
@@ -7120,28 +7139,38 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("61e. Level-filter changes no longer narrow the Full view; auto-reveal Filtered from Full instead (no-op when Stacked is active, or already on Filtered)");
+  section("61e. Level-filter changes do not narrow the Context view; auto-reveal Filtered from Context instead (no-op when Stacked is active, or already on Filtered)");
 
   // 20 entries, ERROR at every 5th index (4 ERROR / 16 INFO).
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
-  T.state.activeId = f.id;
+  // Asserted while standing on a FILTER node, not on the file node: a file node
+  // filters nothing at all, so "the level filter didn't narrow it" would be
+  // vacuous there. This filter admits all 20 entries, so with no gaps to
+  // collapse the Context view's own list is the full 20 either way — what the
+  // level toggle must not change (see buildContextView: the quick-filter hides
+  // result rows from the FILTERED view's display, they never leave the result
+  // set, so they stay matches here).
+  const allFilter = w.createFilterNode(f.id, "text", "message");
+  T.state.activeId = allFilter.id;
   T.levelFilterTreeMode = "explicit"; // pin the classic Set-based quick-filter — see GROUP 94 for the new default "auto" tree-node behavior
   w.render();
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
 
-  /* ---------- Full view's own entry list ignores the level filter entirely ---------- */
+  /* ---------- the Context view's entry list ignores the level filter entirely ---------- */
   w.applyFhView("stacked"); // both panels rendered so we can inspect both
   fireClick(errBtn, w);
   assert(T.currentViewEntries.length === 4, "sanity: Filtered view narrowed to the 4 ERROR-level entries");
-  assert(T.currentHighlightViewEntries.length === 20, "Full view keeps showing every entry, unaffected by the level filter");
+  assert(T.contextActive === true, "sanity: a filter node is active, so this is a real Context-view case");
+  assert(T.currentHighlightViewEntries.length === 20 && T.contextMatchIds.size === 20,
+    "the Context view keeps every match, unaffected by the level filter");
   fireClick(errBtn, w); // reset
   assert(T.currentHighlightViewEntries.length === 20, "sanity: still all 20 after clearing the level filter again");
 
-  /* ---------- tabs layout: changing the level filter while on Full reveals Filtered ---------- */
+  /* ---------- tabs layout: changing the level filter while on Context reveals Filtered ---------- */
   w.applyFhView("highlight");
-  assert(T.fhActiveTab === "highlight", "sanity: on the Full tab");
+  assert(T.fhActiveTab === "highlight", "sanity: on the Context tab");
   fireClick(errBtn, w);
-  assert(T.fhActiveTab === "filter", "changing the level filter while on Full auto-reveals the Filtered view");
+  assert(T.fhActiveTab === "filter", "changing the level filter while on Context auto-reveals the Filtered view");
 
   /* ---------- already on Filtered: changing the level filter is a no-op for the tab ---------- */
   fireClick(errBtn, w); // clears the filter again
@@ -7155,7 +7184,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("61c. Switching to another filter auto-reveals the Filtered view from Full (no-op when Stacked is active, or when switching to a plain FILE node)");
+  section("61c. Switching to another filter auto-reveals the Filtered view from Context (no-op when Stacked is active, or when switching to a plain FILE node)");
 
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const nodeA = w.createFilterNode(f.id, "text", "message 1");
@@ -7167,10 +7196,10 @@ await withApp(async (w, d, T) => {
 
   /* ---------- tabs layout: switching filters reveals Filtered from Full ---------- */
   w.applyFhView("highlight");
-  assert(T.fhActiveTab === "highlight", "sanity: on the Full tab");
+  assert(T.fhActiveTab === "highlight", "sanity: on the Context tab");
   fireClick(rowFor(nodeB.id), w);
   assert(T.state.activeId === nodeB.id, "sanity: switched active filter to node B");
-  assert(T.fhActiveTab === "filter", "switching to another filter while on Full auto-reveals the Filtered view");
+  assert(T.fhActiveTab === "filter", "switching to another filter while on Context auto-reveals the Filtered view");
 
   /* ---------- already on Filtered: switching filters is a no-op for the tab ---------- */
   fireClick(rowFor(nodeA.id), w);
@@ -7181,7 +7210,7 @@ await withApp(async (w, d, T) => {
   fireClick(rowFor(nodeB.id), w);
   assert(T.fhLayout === "stacked", "Stacked stays unchanged when switching between filters (both panels already visible)");
 
-  /* ---------- switching to a plain FILE node does NOT auto-reveal (Full already shows the whole file) ---------- */
+  /* ---------- switching to a plain FILE node does NOT auto-reveal (no filter result to reveal) ---------- */
   // Settle activeId on nodeA BEFORE switching to the Full tab (still in
   // Stacked layout here, so this render()'s own reveal-check is a guaranteed
   // no-op) — otherwise switching tabs first and changing activeId after
@@ -7191,10 +7220,10 @@ await withApp(async (w, d, T) => {
   T.state.activeId = nodeA.id;
   w.render();
   w.applyFhView("highlight");
-  assert(T.fhActiveTab === "highlight", "sanity: back on the Full tab");
+  assert(T.fhActiveTab === "highlight", "sanity: back on the Context tab");
   fireClick(rowFor(f.id), w);
   assert(T.state.activeId === f.id, "sanity: switched active node to the plain file");
-  assert(T.fhActiveTab === "highlight", "switching to a FILE node (not a filter) does not auto-reveal Filtered — Full view content already reflects it");
+  assert(T.fhActiveTab === "highlight", "switching to a FILE node (not a filter) does not auto-reveal Filtered — there is no filter result to reveal");
 });
 
 /* ============================================================
@@ -10306,7 +10335,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("103. Re-clicking the already-active filter in the tree (after a dblclick jumped to Full) still reveals the Filtered view");
+  section("103. Re-clicking the already-active filter in the tree (after a dblclick jumped to Context) still reveals the Filtered view");
 
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const nodeA = w.createFilterNode(f.id, "text", "message 1");
@@ -10360,24 +10389,26 @@ await withApp(async (w, d, T) => {
   assert(behaviorSection, "the Behavior section exists");
 
   const subsectionTitles = [...behaviorSection.querySelectorAll(".settings-subsection-title")].map(el => el.textContent);
-  assert(subsectionTitles.length === 4,
-    "Behavior now has 4 subsection titles (general row stays un-headed, like Appearance's own first card), got " + JSON.stringify(subsectionTitles));
+  assert(subsectionTitles.length === 5,
+    "Behavior now has 5 subsection titles (general row stays un-headed, like Appearance's own first card), got " + JSON.stringify(subsectionTitles));
   assert(subsectionTitles[0].startsWith("Hover-to-expand panels"), "first subsection is the hover-to-expand group, got " + subsectionTitles[0]);
-  assert(subsectionTitles[1].startsWith("Timeline minimap"), "second subsection is the timeline-minimap group, got " + subsectionTitles[1]);
-  assert(subsectionTitles[2].startsWith("Filter tree"), "third subsection is the filter-tree group, got " + subsectionTitles[2]);
-  assert(subsectionTitles[3].startsWith("Text-match highlighting"), "fourth subsection is the text-match-highlighting group, got " + subsectionTitles[3]);
+  assert(subsectionTitles[1].startsWith("Context view"), "second subsection is the context-view group, got " + subsectionTitles[1]);
+  assert(subsectionTitles[2].startsWith("Timeline minimap"), "third subsection is the timeline-minimap group, got " + subsectionTitles[2]);
+  assert(subsectionTitles[3].startsWith("Filter tree"), "fourth subsection is the filter-tree group, got " + subsectionTitles[3]);
+  assert(subsectionTitles[4].startsWith("Text-match highlighting"), "fifth subsection is the text-match-highlighting group, got " + subsectionTitles[4]);
 
   const cards = [...behaviorSection.querySelectorAll(".settings-card")];
-  assert(cards.length === 5, "Behavior is split into 5 cards (general + 4 subsections), got " + cards.length);
+  assert(cards.length === 6, "Behavior is split into 6 cards (general + 5 subsections), got " + cards.length);
 
   const cardOf = id => d.getElementById(id).closest(".settings-card");
   assert(cardOf("settingsQuitOnLastClose") === cards[0], "the quit-on-close row sits alone in the first, un-headed card");
   [ "settingsHoverExpandSidebar", "settingsHoverExpandDetail" ]
     .forEach(id => assert(cardOf(id) === cards[1], "#" + id + " sits in the hover-to-expand card"));
-  assert(cardOf("settingsHideMinimapFullRangeInFullView") === cards[2], "the minimap-full-range-toggle row sits in its own timeline-minimap card");
-  assert(cardOf("settingsLevelFilterTreeMode") === cards[3], "the level-bar-tree-mode row sits in its own filter-tree card");
+  assert(cardOf("settingsContextInitialExpansion") === cards[2], "the context-view initial-expansion row sits in its own context-view card");
+  assert(cardOf("settingsHideMinimapFullRangeInFullView") === cards[3], "the minimap-full-range-toggle row sits in its own timeline-minimap card");
+  assert(cardOf("settingsLevelFilterTreeMode") === cards[4], "the level-bar-tree-mode row sits in its own filter-tree card");
   [ "settingsTextMatchHighlightScope", "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail" ]
-    .forEach(id => assert(cardOf(id) === cards[4], "#" + id + " sits in the text-match-highlighting card"));
+    .forEach(id => assert(cardOf(id) === cards[5], "#" + id + " sits in the text-match-highlighting card"));
 
   // Every row's control is still reachable/functional after the regrouping
   // (behavior itself is covered by GROUPs 91/92/93/94 — this just confirms
@@ -10557,6 +10588,12 @@ await withApp(async (w, d, T) => {
   // --- Temporary anchor: switching the active filter — via a tree row
   //     click OR Alt+Arrow tree nav — while the selected row doesn't
   //     match the new filter ---
+  // The Context view shows the ACTIVE node's own result with everything else
+  // collapsed into gaps (see buildContextView), so "message 1 skip" only has a
+  // row of its own while a node that admits it is active — stand on the file
+  // node, where nothing is filtered out at all, to pick it.
+  T.state.activeId = f.id;
+  w.render();
   w.applyFhView("highlight");
   T.state.entriesView = "highlight";
   fireClick(highlightRow(1), w); // "message 1 skip" — not a member of keepFilter
@@ -11337,7 +11374,10 @@ await withApp(async (w, d, T) => {
   w.applyFhView("highlight");
   T.state.entriesView = "highlight";
   w.render();
-  fireClick([...d.querySelectorAll("#highlightRows .log-row")][1], w); // "message 1 skip"
+  // skipFilter is active, so the Context view holds ITS result — "message 1
+  // skip" is the first of those rows (before this feature the view listed every
+  // row of the file, which is why this used to be index 1).
+  fireClick([...d.querySelectorAll("#highlightRows .log-row")][0], w); // "message 1 skip"
   const skip1Id = T.state.selectedId;
   assert(!!skip1Id, "sanity: clicking a Full-view row selects it");
 
@@ -11833,7 +11873,7 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
   assert(!d.querySelector("#settingsSectionShortcuts .settings-section-desc"), "the usage-instruction prose under the section title is gone");
   const rebindableRows = d.querySelectorAll("#shortcutBindingsList > div[data-action-id]");
-  assert(rebindableRows.length === 16, "the rebindable-actions rows render one per registered action");
+  assert(rebindableRows.length === 18, "the rebindable-actions rows render one per registered action");
   const fixedRows = d.querySelectorAll("#shortcutBindingsList > div.shortcut-row-fixed");
   assert(fixedRows.length > 0, "fixed (non-rebindable) shortcuts are listed too, so the list stays complete");
   fixedRows.forEach(row => {
@@ -14388,6 +14428,291 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 138 — Context view (person-reported: the Full view was confusing
+   because nothing in it showed that you were still standing on a filter
+   node — it rendered the root file's raw entries array regardless of
+   state.activeId, so a filter node and a file node looked pixel-identical).
+   Reworked into the Context view: the ACTIVE NODE'S own result, with
+   everything it rejected collapsed into a placeholder row per hidden run,
+   matches carrying the same .ctx-bracket the context filter already draws
+   in the Filtered view, and a nav chip for match-to-match navigation.
+   Round 2 (same session, sketch-driven follow-up): matches stay full width,
+   but revealed context rows are now INDENTED rather than dimmed, a gap is
+   binary (shut or fully open, the previous partial/step-reveal UI removed),
+   an open run's first/last row carries a small fold-back icon instead of a
+   strip, the nav chip lost its filter-name label and got properly sized
+   icon buttons, its corner is configurable, and Stacked always seeds fully
+   expanded.
+     a) collapsed, the view holds exactly the active node's matches; the gaps
+        account for every other row; a file node collapses nothing.
+     b) match rows are bracketed and NOT indented; closed gaps render as one
+        placeholder row each (leading gap included).
+     c) the nav chip: icon-button navigation, no filter name, hidden on a
+        file node.
+     d) the offsets array and the spacer agree with the rendered heights.
+     e) opening a gap via its placeholder indents the revealed rows (not
+        dimmed) and grows the list by exactly the hidden count, chronological
+        order preserved; the open run carries top/bottom fold icons; closing
+        via the top one restores the previous list exactly.
+     f) the BOTTOM fold icon collapses the same gap, and clicking a fold icon
+        doesn't also select the row underneath it (stopPropagation).
+     g) expand-all/collapse-all from the chip.
+     h) the level quick-filter does not leave the result set, so it never
+        changes what the Context view treats as a match.
+     i) jumping to a row that isn't a match opens the gap it is hidden in —
+        a correctness requirement, since it would otherwise have no row.
+     j) Ctrl+Arrow walks match to match, skipping revealed context rows.
+     k) switching the active node drops the previous node's expansions.
+     l) a bookmark toggle rebuilds the view it now depends on.
+     m) a single-row revealed run shows exactly one fold icon, not two
+        overlapping ones.
+     n) Stacked layout seeds every gap open the first time a node becomes
+        active there, regardless of contextInitialExpansion — a one-time
+        seed, not a standing override (manually closing a gap there survives
+        a flip to tabs and back).
+     o) the nav chip's corner is configurable and re-applied immediately.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("138. Context view: the active node's result with collapsible gaps");
+
+  // "hit" lands on entries 0 and 30 -> two 29-line gaps.
+  const f = await w.addFile("ctx.log", makeLog(0, 60, { suffix: i => (i % 30 === 0 ? "hit" : "other") }), () => {});
+  const hitFilter = w.createFilterNode(f.id, "text", "hit");     // entries 0, 30
+  const otherFilter = w.createFilterNode(f.id, "text", "other"); // everything else
+  // render() auto-reveals the Filtered tab on every activeId change (see
+  // revealFilteredView), so every node switch below has to re-show the Context
+  // panel afterwards — otherwise its nav chip stays hidden and stale.
+  const showContext = () => { w.render(); w.applyFhView("highlight"); };
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  const placeholders = () => [...d.querySelectorAll("#highlightRows .ctx-gap-placeholder")];
+  const foldBtns = () => [...d.querySelectorAll("#highlightRows .ctx-fold-btn")];
+
+  // --- (a) the view holds the ACTIVE NODE's result, not the whole file ----
+  assert(T.contextActive === true, "a filter node is active, so the Context view is in filtered mode");
+  assert(T.currentHighlightViewEntries.length === 2,
+    "collapsed, the view holds exactly the node's 2 matches, got " + T.currentHighlightViewEntries.length);
+  assert(T.contextGaps.length === 2 &&
+    T.contextGaps.reduce((n, g) => n + (g.end - g.start), 0) === 58,
+    "the gaps account for every one of the 58 non-matching rows");
+
+  T.state.activeId = f.id;
+  showContext();
+  assert(T.contextActive === false && T.currentHighlightViewEntries.length === 60 && T.contextGaps.length === 0,
+    "on a file node there is no filter to be outside of: nothing is marked, nothing is collapsed");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (b) row/placeholder rendering -------------------------------------
+  const matchRows = [...d.querySelectorAll("#highlightRows .log-row.ctx-match")];
+  assert(matchRows.length === 2, "both matches render as match rows, got " + matchRows.length);
+  assert(matchRows.every(r => r.querySelector(".ctx-bracket")),
+    "match rows carry the context filter's own bracket, the visual people already read as 'the filter produced this'");
+  assert(matchRows.every(r => w.getComputedStyle(r).paddingLeft !== "24px"),
+    "match rows are NOT indented, unlike a revealed context row (see below)");
+  assert(d.querySelector("#highlightRows").classList.contains("ctx-active"),
+    "#highlightRows gets its bracket lane while a filter is active");
+  assert(placeholders().length === 2 && T.contextStrips.size === 2, "one placeholder row per closed gap");
+  assert(placeholders().every(el => el.querySelector(".ctx-gap-icon")),
+    "each placeholder shows the ellipsis affordance");
+  assert(placeholders().every(el => el.textContent.includes("29")),
+    "...and how many lines it stands for, got " + JSON.stringify(placeholders().map(el => el.textContent)));
+  assert(foldBtns().length === 0, "no fold icons exist while every gap is shut");
+
+  // A leading gap (the file starting before the first match) has no row to
+  // hang off and is rendered above row 0 instead, with its height in offsets[0].
+  T.state.activeId = otherFilter.id;
+  showContext();
+  assert(T.contextStrips.has(-1), "a leading gap is keyed to -1, i.e. rendered above the first row");
+  assert(T.highlightRowOffsets[0] === T.CONTEXT_STRIP_HEIGHT,
+    "...and its height is folded into offsets[0], so row 0's top stays correct");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (c) the nav chip: icon buttons, no filter name, hidden on a file node ---
+  const nav = d.querySelector("#contextNav");
+  assert(nav && !nav.classList.contains("hidden"), "the nav chip is shown while the Context view is on screen");
+  assert(!nav.textContent.includes("hit"),
+    "the filter's name is no longer repeated here (person-requested — it already sits in the breadcrumb next to it)");
+  const navButtons = () => [...nav.querySelectorAll("button")];
+  assert(navButtons().length >= 2 && navButtons().every(b => b.classList.contains("panel-toggle-btn")),
+    "the prev/next (and expand-all) buttons are sized like every other small panel-corner icon button (.panel-toggle-btn)");
+  assert(nav.querySelector(".ctx-nav-label").textContent.trim() === "2",
+    "just the bare match count remains — no selection yet, so no position prefix, got " +
+    JSON.stringify(nav.querySelector(".ctx-nav-label").textContent));
+  T.state.activeId = f.id; // file node: nothing to navigate or fold
+  showContext();
+  assert(d.querySelector("#contextNav").classList.contains("hidden"),
+    "the chip hides entirely on a file node instead of standing in as an unrelated 'whole file' readout");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (d) virtualization math ---------------------------------------------
+  // Unchanged formula from before this session's rework: contextStrips now
+  // holds ONLY closed gaps (an open gap costs no extra row any more — its fold
+  // icons overlay existing rows instead), so the total is still rows *
+  // ROW_HEIGHT + one CONTEXT_STRIP_HEIGHT per entry still in contextStrips.
+  const heightsAgree = () => {
+    const n = T.currentHighlightViewEntries.length;
+    const expected = n * T.ROW_HEIGHT + T.contextStrips.size * T.CONTEXT_STRIP_HEIGHT;
+    return T.highlightRowOffsets[n] === expected &&
+      d.querySelector("#highlightSpacer").style.height === (expected + 22) + "px";
+  };
+  assert(heightsAgree(), "offsets total and spacer height account for both rows and placeholders");
+
+  // --- (e) open one gap via its placeholder row ----------------------------
+  // #highlightBody's clientHeight is stubbed to 400 (see withApp) regardless of
+  // how many rows the model actually holds, so the virtualized window only ever
+  // materializes ~25 rows near wherever scrollTop points — model-level
+  // assertions (currentHighlightViewEntries, contextFoldMarks, contextStrips)
+  // are what's exhaustive here; DOM queries below only check whatever subset
+  // is actually rendered, never a hardcoded total row count.
+  const collapsedCount = T.currentHighlightViewEntries.length;
+  fireClick(placeholders()[0], w); // the WHOLE row is the click target, not just its icon
+  assert(T.currentHighlightViewEntries.length === collapsedCount + 29,
+    "opening a gap grows the list by exactly its hidden count, got " + T.currentHighlightViewEntries.length);
+  const ts = T.currentHighlightViewEntries.map(e => e.ts);
+  assert(ts.every((v, i) => i === 0 || v >= ts[i - 1]), "the revealed rows are spliced in chronologically");
+  const ctxRows = [...d.querySelectorAll("#highlightRows .log-row.ctx-context")];
+  assert(ctxRows.length > 0 && ctxRows.every(r => w.getComputedStyle(r).paddingLeft === "24px"),
+    "the revealed rows render as context rows, indented rather than dimmed (opacity is no longer touched at all, see the CSS), got " + ctxRows.length);
+  assert(heightsAgree(), "...and the offsets/spacer still agree afterwards");
+  assert(T.contextStrips.size === 1,
+    "the now-open gap no longer occupies a placeholder slot — only the still-shut one does");
+  assert(T.contextFoldMarks.size === 2, "the open run's first and last row each carry a fold mark in the model");
+  const topFold = foldBtns().find(b => b.classList.contains("ctx-fold-top"));
+  assert(topFold, "the top fold icon (near the top of the viewport) is within the rendered window");
+  fireClick(topFold, w); // collapse back via the TOP icon
+  assert(T.currentHighlightViewEntries.length === collapsedCount, "collapsing via the fold button restores the previous list exactly");
+
+  // --- (f) the BOTTOM fold icon also collapses, without also selecting -----
+  fireClick(placeholders()[0], w); // reopen
+  // Scroll to the tail of the revealed run so its LAST row (carrying the
+  // bottom fold icon) actually falls inside the virtualized render window.
+  const openedGap = T.contextGaps[0];
+  w.scrollToHighlightIndex(openedGap.start + (openedGap.end - openedGap.start) - 1, {});
+  T.state.selectedId = null;
+  const bottomFold = foldBtns().find(b => b.classList.contains("ctx-fold-bottom"));
+  assert(bottomFold, "the bottom fold icon is reachable by scrolling to the end of the revealed run");
+  fireClick(bottomFold, w); // the bottom icon this time
+  assert(T.currentHighlightViewEntries.length === collapsedCount, "the bottom fold icon collapses the same gap as the top one");
+  assert(T.state.selectedId === null,
+    "clicking a fold icon doesn't also select the row underneath it (stopPropagation)");
+
+  // --- (g) expand-all / collapse-all from the chip -------------------------
+  const navToggleBtn = () => navButtons()[navButtons().length - 1];
+  fireClick(navToggleBtn(), w); // "reveal every hidden line"
+  assert(T.currentHighlightViewEntries.length === 60, "the chip's expand-all reveals the whole file");
+  assert(T.contextGaps.every(g => T.contextExpansions.has(g.start)), "...every gap is open");
+  fireClick(navToggleBtn(), w); // now "collapse every gap again"
+  assert(T.currentHighlightViewEntries.length === 2 && T.contextExpansions.size === 0,
+    "...and the same button shuts them all again");
+
+  // --- (h) the level quick-filter doesn't change what counts as a match ---
+  T.levelFilterTreeMode = "explicit"; // the classic Set-based quick-filter (see GROUP 94)
+  const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
+  fireClick(errBtn, w);
+  assert(T.currentHighlightViewEntries.length === 2 && T.contextMatchIds.size === 2,
+    "the level quick-filter narrows the Filtered view's display only — those rows never leave the result set, so the Context view is untouched");
+  fireClick(errBtn, w); // reset
+  w.applyFhView("highlight");
+
+  // --- (i) jumping to a non-match opens the gap it is hidden in -----------
+  const buried = f.entries[7]; // "message 7 other" — not a match of hitFilter
+  assert(!T.currentHighlightViewEntries.some(e => e.id === buried.id), "sanity: it has no row while its gap is shut");
+  w.revealInHighlightView(buried, null, null);
+  assert(T.currentHighlightViewEntries.some(e => e.id === buried.id),
+    "revealing an entry that isn't a match opens the gap it sits in — it would otherwise have nowhere to be scrolled to");
+  assert(T.state.selectedId === buried.id, "...and it ends up selected, as before");
+
+  // --- (j) Ctrl+Arrow walks match to match -------------------------------
+  w.setAllGapsExpanded(true); // context rows everywhere, so "skipping" is meaningful
+  T.state.selectedId = f.entries[0].id;
+  T.state.focusRegion = "entries";
+  fireKeydown(d, w, "ArrowDown", { ctrlKey: true });
+  assert(T.state.selectedId === f.entries[30].id,
+    "Ctrl+ArrowDown jumps to the next MATCH, skipping the 29 revealed context rows in between");
+  fireKeydown(d, w, "ArrowUp", { ctrlKey: true });
+  assert(T.state.selectedId === f.entries[0].id, "...and Ctrl+ArrowUp walks back the same way");
+  fireKeydown(d, w, "ArrowDown");
+  assert(T.state.selectedId === f.entries[1].id,
+    "a PLAIN ArrowDown still steps one row, context rows included — the modifier is what makes it match-to-match");
+
+  // --- (k) switching nodes drops the previous node's expansions -----------
+  assert(T.contextExpansions.size > 0, "sanity: gaps are open right now");
+  T.state.activeId = otherFilter.id;
+  showContext();
+  T.state.activeId = hitFilter.id;
+  showContext();
+  assert(T.contextExpansions.size === 0 && T.currentHighlightViewEntries.length === 2,
+    "a different active node means different index ranges, so its expansions are dropped rather than misapplied");
+
+  // --- (l) a bookmark toggle rebuilds the view it now depends on -----------
+  // toggleBookmark deliberately repaints instead of calling render() (it must
+  // not yank the reading position), so the Context view — which since the
+  // rework holds the ACTIVE node's result — has to be rebuilt there too, or a
+  // toggle while standing on the auto "Bookmarks" node leaves it stale.
+  const bm1 = f.entries[5];
+  w.toggleBookmark(bm1.id);
+  const bmNode = Object.values(T.state.nodes).find(n => n.filterType === "bookmarks");
+  assert(!!bmNode, "sanity: bookmarking creates the auto Bookmarks node");
+  T.state.activeId = bmNode.id;
+  showContext();
+  assert(T.contextMatchIds.size === 1 && T.currentHighlightViewEntries.some(e => e.id === bm1.id),
+    "the Bookmarks node's own single match is what the Context view shows");
+  w.toggleBookmark(f.entries[9].id); // targeted repaint, no full render()
+  assert(T.contextMatchIds.size === 2 && T.currentHighlightViewEntries.some(e => e.id === f.entries[9].id),
+    "a bookmark toggle rebuilds the Context view immediately, instead of leaving it stale until some unrelated render");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (m) a single-row revealed run shows exactly one fold icon -----------
+  // A purpose-made tiny file so the single hidden line is unambiguous: "keep"
+  // matches every entry except index 2, leaving one lone gap of length 1.
+  const f2 = await w.addFile("ctx2.log", makeLog(0, 5, { suffix: i => (i === 2 ? "skip" : "keep") }), () => {});
+  const keepFilter = w.createFilterNode(f2.id, "text", "keep"); // matches 0,1,3,4 -> one gap of length 1 at index 2
+  T.state.activeId = keepFilter.id;
+  showContext();
+  assert(T.contextGaps.length === 1 && (T.contextGaps[0].end - T.contextGaps[0].start) === 1,
+    "sanity: exactly one single-row gap");
+  fireClick(d.querySelector("#highlightRows .ctx-gap-placeholder"), w);
+  const soloFold = [...d.querySelectorAll("#highlightRows .ctx-fold-btn")];
+  assert(soloFold.length === 1, "a single-row run shows exactly one fold icon, not two overlapping ones, got " + soloFold.length);
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (n) Stacked layout seeds fully expanded, once per node -------------
+  const stackedFilter = w.createFilterNode(f.id, "text", "hit"); // fresh node, never activated before
+  w.applyFhView("stacked");
+  T.state.activeId = stackedFilter.id;
+  w.render();
+  assert(T.contextGaps.length === 2 && T.contextGaps.every(g => T.contextExpansions.has(g.start)),
+    "Stacked seeds every gap open the first time a node becomes active there, regardless of contextInitialExpansion");
+  w.setGapOpen(T.contextGaps[0].start, false); // manually re-collapse one
+  w.applyFhView("highlight"); // flip to tabs...
+  w.applyFhView("stacked");   // ...and back
+  assert(!T.contextExpansions.has(T.contextGaps[0].start),
+    "manually collapsing a gap in Stacked survives a layout flip — the expanded default is a one-time SEED, not a standing override");
+  w.applyFhView("highlight");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (o) the nav chip's corner is configurable and applied immediately --
+  assert(d.querySelector("#contextNav").classList.contains("corner-top-right"), "default corner is top-right");
+  const cornerSelect = d.querySelector("#settingsContextNavCorner");
+  cornerSelect.value = "bottom-left";
+  cornerSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#contextNav").classList.contains("corner-bottom-left") &&
+    !d.querySelector("#contextNav").classList.contains("corner-top-right"),
+    "changing the setting re-applies the corner class immediately");
+  assert(T.contextNavCorner === "bottom-left" && w.localStorage.getItem("philogg-context-nav-corner") === "bottom-left",
+    "...and persists the choice");
+  cornerSelect.value = "top-right"; // reset
+  cornerSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -16387,15 +16712,31 @@ process.exit(failed ? 1 : 0);
               node's mutations.
 
    Group 137 — this session (2026-08-30), FEATURE_BACKLOG.md #20: the inline
-              match-text marking of Group 93 extended from the active filter
-              path to highlight RULES (any coloured "text" filter node under
-              the file), painted as stacked per-rule underline stripes so the
-              filter mark and any number of rule colours share the same
-              characters without a priority rule. Own view-bar toggle
-              (#btnHighlightMatchText, default ON), and unlike Group 93's
-              marking it paints the Full view as well. Also covers the
-              isRegex fix the feature needed: textFilterMatchSpec used to
-              ignore node.isRegex and search the regex source as a literal,
-              so a regex filter silently marked nothing.
+               match-text marking of Group 93 extended from the active filter
+               path to highlight RULES (any coloured "text" filter node under
+               the file), painted as stacked per-rule underline stripes so the
+               filter mark and any number of rule colours share the same
+               characters without a priority rule. Own view-bar toggle
+               (#btnHighlightMatchText, default ON), and unlike Group 93's
+               marking it paints the Full view as well. Also covers the
+               isRegex fix the feature needed: textFilterMatchSpec used to
+               ignore node.isRegex and search the regex source as a literal,
+               so a regex filter silently marked nothing.
 
+   GROUP 138 — the Context view rework (person-reported: "der Full View ist
+              insofern verwirrend, das Nutzern nicht klar ist, dass sie sich
+              noch immer auf einem Filter Node befinden und eben nicht ueber
+              Full auf den File Node wechseln"). The view rendered the root
+              file's raw entries array regardless of state.activeId, so it
+              was pixel-identical on a filter node and on a file node and had
+              no signal at all to contradict that reading. It now renders the
+              active node's OWN result with everything it rejected collapsed
+              into expandable gap strips, reusing the context filter's
+              existing .ctx-bracket for the matches, plus a nav chip naming
+              the node and Ctrl+Arrow match-to-match navigation. GROUP 4's
+              and 61a/61e's "Full stays the whole file" assertions were
+              rewritten in place for the new semantics rather than kept
+              alongside it; GROUP 99/110a picked their non-matching row out
+              of the Full view by index, which only worked while that view
+               listed every row of the file.
    ============================================================ */
