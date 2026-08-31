@@ -33,7 +33,7 @@ deployments possible:
 |---|---|
 | ![Log view](homepage/screenshots/01-log-view.png) Log view with filter tree | ![Extraction table](homepage/screenshots/02-extraction-table.png) Extraction table |
 | ![Plot](homepage/screenshots/03-plot.png) Plotting extracted values | ![Link view](homepage/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view |
-| ![Full/Filtered split](homepage/screenshots/05-highlight-split.png) Full/Filtered split with highlight colors | ![Bookmarks](homepage/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel |
+| ![Context/Filtered split](homepage/screenshots/05-highlight-split.png) Context/Filtered split — matches plus expandable gaps | ![Bookmarks](homepage/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel |
 | ![Dark theme](homepage/screenshots/07-dark-theme.png) Dark theme (default) | |
 
 A guided feature tour with more screenshots lives in [`homepage/index.html`](homepage/index.html) —
@@ -90,11 +90,13 @@ open it in a browser to view it.
 - **Link filter** — pair up nearest-preceding/following entries across two
   filters (e.g. "the last position reading before each error"), chainable
   into multi-hop tuples via a guided dialog.
-- **Full/Filtered split** — one narrowed "Filtered" view plus a
-  color-highlightable "Full" view of the whole file, side by side or
-  stacked.
+- **Context/Filtered split** — the narrowed "Filtered" view plus a
+  "Context" view showing the same result *with the log around it*: the
+  matches, and everything the filter rejected collapsed into expandable
+  gaps you open line by line, GitHub-diff style. Jump match to match with
+  Ctrl+↑/↓ without going back to the tree. Side by side or stacked.
 - **Live tailing & folder watch** (Chromium, File System Access API) — an
-  actively-written log file updates in place, with both the Full and
+  actively-written log file updates in place, with both the Context and
   Filtered views auto-following the newest entry; a watched folder picks up
   new files automatically.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
