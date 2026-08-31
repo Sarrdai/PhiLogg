@@ -116,13 +116,16 @@ async function withApp(run, opts = {}) {
       get contextGaps() { return contextGaps; },
       get contextMatchIds() { return contextMatchIds; },
       get contextStrips() { return contextStrips; },
+      get contextFoldMarks() { return contextFoldMarks; },
       get contextExpansions() { return contextExpansions; },
       get contextMatchRows() { return contextMatchRows; },
       get highlightRowOffsets() { return highlightRowOffsets; },
       get contextInitialExpansion() { return contextInitialExpansion; },
       set contextInitialExpansion(v) { contextInitialExpansion = v; },
+      get contextNavCorner() { return contextNavCorner; },
+      set contextNavCorner(v) { contextNavCorner = v; },
+      get CONTEXT_NAV_CORNERS() { return CONTEXT_NAV_CORNERS; },
       get CONTEXT_STRIP_HEIGHT() { return CONTEXT_STRIP_HEIGHT; },
-      get CONTEXT_EXPAND_STEP() { return CONTEXT_EXPAND_STEP; },
       get extractRowsData() { return extractRowsData; },
       get extractColumns() { return extractColumns; },
       get plotConfig() { return plotConfig; },
@@ -14223,20 +14226,29 @@ await withApp(async (w, d, T) => {
    node — it rendered the root file's raw entries array regardless of
    state.activeId, so a filter node and a file node looked pixel-identical).
    Reworked into the Context view: the ACTIVE NODE'S own result, with
-   everything it rejected collapsed into expandable gap strips between the
-   matches, matches carrying the same .ctx-bracket the context filter already
-   draws in the Filtered view, and a nav chip naming the node.
+   everything it rejected collapsed into a placeholder row per hidden run,
+   matches carrying the same .ctx-bracket the context filter already draws
+   in the Filtered view, and a nav chip for match-to-match navigation.
+   Round 2 (same session, sketch-driven follow-up): matches stay full width,
+   but revealed context rows are now INDENTED rather than dimmed, a gap is
+   binary (shut or fully open, the previous partial/step-reveal UI removed),
+   an open run's first/last row carries a small fold-back icon instead of a
+   strip, the nav chip lost its filter-name label and got properly sized
+   icon buttons, its corner is configurable, and Stacked always seeds fully
+   expanded.
      a) collapsed, the view holds exactly the active node's matches; the gaps
         account for every other row; a file node collapses nothing.
-     b) match rows are bracketed, revealed rows read as context, one strip
-        per hidden run (leading gap included).
-     c) the nav chip names the node and counts its matches.
+     b) match rows are bracketed and NOT indented; closed gaps render as one
+        placeholder row each (leading gap included).
+     c) the nav chip: icon-button navigation, no filter name, hidden on a
+        file node.
      d) the offsets array and the spacer agree with the rendered heights.
-     e) expanding/collapsing a gap changes the list by exactly the hidden
-        count and keeps it chronological; the strip becomes the collapse
-        control once the gap is fully open.
-     f) a step expansion keeps the still-hidden remainder contiguous — one
-        strip per gap however it was opened.
+     e) opening a gap via its placeholder indents the revealed rows (not
+        dimmed) and grows the list by exactly the hidden count, chronological
+        order preserved; the open run carries top/bottom fold icons; closing
+        via the top one restores the previous list exactly.
+     f) the BOTTOM fold icon collapses the same gap, and clicking a fold icon
+        doesn't also select the row underneath it (stopPropagation).
      g) expand-all/collapse-all from the chip.
      h) the level quick-filter does not leave the result set, so it never
         changes what the Context view treats as a match.
@@ -14244,12 +14256,19 @@ await withApp(async (w, d, T) => {
         a correctness requirement, since it would otherwise have no row.
      j) Ctrl+Arrow walks match to match, skipping revealed context rows.
      k) switching the active node drops the previous node's expansions.
+     l) a bookmark toggle rebuilds the view it now depends on.
+     m) a single-row revealed run shows exactly one fold icon, not two
+        overlapping ones.
+     n) Stacked layout seeds every gap open the first time a node becomes
+        active there, regardless of contextInitialExpansion — a one-time
+        seed, not a standing override (manually closing a gap there survives
+        a flip to tabs and back).
+     o) the nav chip's corner is configurable and re-applied immediately.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("137. Context view: the active node's result with collapsible gaps");
 
-  // "hit" lands on entries 0 and 30 -> two 29-line gaps, both wider than one
-  // expansion step (CONTEXT_EXPAND_STEP), so the step chevrons are offered.
+  // "hit" lands on entries 0 and 30 -> two 29-line gaps.
   const f = await w.addFile("ctx.log", makeLog(0, 60, { suffix: i => (i % 30 === 0 ? "hit" : "other") }), () => {});
   const hitFilter = w.createFilterNode(f.id, "text", "hit");     // entries 0, 30
   const otherFilter = w.createFilterNode(f.id, "text", "other"); // everything else
@@ -14260,7 +14279,8 @@ await withApp(async (w, d, T) => {
   T.state.activeId = hitFilter.id;
   showContext();
 
-  const strips = () => [...d.querySelectorAll("#highlightRows .ctx-gap")];
+  const placeholders = () => [...d.querySelectorAll("#highlightRows .ctx-gap-placeholder")];
+  const foldBtns = () => [...d.querySelectorAll("#highlightRows .ctx-fold-btn")];
 
   // --- (a) the view holds the ACTIVE NODE's result, not the whole file ----
   assert(T.contextActive === true, "a filter node is active, so the Context view is in filtered mode");
@@ -14277,17 +14297,21 @@ await withApp(async (w, d, T) => {
   T.state.activeId = hitFilter.id;
   showContext();
 
-  // --- (b) row/strip rendering ------------------------------------------
+  // --- (b) row/placeholder rendering -------------------------------------
   const matchRows = [...d.querySelectorAll("#highlightRows .log-row.ctx-match")];
   assert(matchRows.length === 2, "both matches render as match rows, got " + matchRows.length);
   assert(matchRows.every(r => r.querySelector(".ctx-bracket")),
     "match rows carry the context filter's own bracket, the visual people already read as 'the filter produced this'");
+  assert(matchRows.every(r => w.getComputedStyle(r).paddingLeft !== "24px"),
+    "match rows are NOT indented, unlike a revealed context row (see below)");
   assert(d.querySelector("#highlightRows").classList.contains("ctx-active"),
     "#highlightRows gets its bracket lane while a filter is active");
-  assert(strips().length === 2 && T.contextStrips.size === 2, "one gap strip per hidden run");
-  assert(strips().every(el => el.querySelector(".ctx-gap-all")), "every collapsed strip offers 'reveal all'");
-  assert(strips().every(el => el.querySelectorAll(".ctx-gap-step").length === 2),
-    "a run wider than one step also offers the up/down chevrons");
+  assert(placeholders().length === 2 && T.contextStrips.size === 2, "one placeholder row per closed gap");
+  assert(placeholders().every(el => el.querySelector(".ctx-gap-icon")),
+    "each placeholder shows the ellipsis affordance");
+  assert(placeholders().every(el => el.textContent.includes("29")),
+    "...and how many lines it stands for, got " + JSON.stringify(placeholders().map(el => el.textContent)));
+  assert(foldBtns().length === 0, "no fold icons exist while every gap is shut");
 
   // A leading gap (the file starting before the first match) has no row to
   // hang off and is rendered above row 0 instead, with its height in offsets[0].
@@ -14299,52 +14323,82 @@ await withApp(async (w, d, T) => {
   T.state.activeId = hitFilter.id;
   showContext();
 
-  // --- (c) the nav chip -------------------------------------------------
+  // --- (c) the nav chip: icon buttons, no filter name, hidden on a file node ---
   const nav = d.querySelector("#contextNav");
   assert(nav && !nav.classList.contains("hidden"), "the nav chip is shown while the Context view is on screen");
-  assert(nav.textContent.includes("hit"), "the chip names the active node, got " + JSON.stringify(nav.textContent));
-  assert(nav.textContent.includes("2 matches"), "...and how many matches it has, got " + JSON.stringify(nav.textContent));
+  assert(!nav.textContent.includes("hit"),
+    "the filter's name is no longer repeated here (person-requested — it already sits in the breadcrumb next to it)");
+  const navButtons = () => [...nav.querySelectorAll("button")];
+  assert(navButtons().length >= 2 && navButtons().every(b => b.classList.contains("panel-toggle-btn")),
+    "the prev/next (and expand-all) buttons are sized like every other small panel-corner icon button (.panel-toggle-btn)");
+  assert(nav.querySelector(".ctx-nav-label").textContent.trim() === "2",
+    "just the bare match count remains — no selection yet, so no position prefix, got " +
+    JSON.stringify(nav.querySelector(".ctx-nav-label").textContent));
+  T.state.activeId = f.id; // file node: nothing to navigate or fold
+  showContext();
+  assert(d.querySelector("#contextNav").classList.contains("hidden"),
+    "the chip hides entirely on a file node instead of standing in as an unrelated 'whole file' readout");
+  T.state.activeId = hitFilter.id;
+  showContext();
 
-  // --- (d) virtualization math ------------------------------------------
+  // --- (d) virtualization math ---------------------------------------------
+  // Unchanged formula from before this session's rework: contextStrips now
+  // holds ONLY closed gaps (an open gap costs no extra row any more — its fold
+  // icons overlay existing rows instead), so the total is still rows *
+  // ROW_HEIGHT + one CONTEXT_STRIP_HEIGHT per entry still in contextStrips.
   const heightsAgree = () => {
     const n = T.currentHighlightViewEntries.length;
     const expected = n * T.ROW_HEIGHT + T.contextStrips.size * T.CONTEXT_STRIP_HEIGHT;
     return T.highlightRowOffsets[n] === expected &&
       d.querySelector("#highlightSpacer").style.height === (expected + 22) + "px";
   };
-  assert(heightsAgree(), "offsets total and spacer height account for both rows and strips");
+  assert(heightsAgree(), "offsets total and spacer height account for both rows and placeholders");
 
-  // --- (e) open one gap, then shut it again ------------------------------
+  // --- (e) open one gap via its placeholder row ----------------------------
+  // #highlightBody's clientHeight is stubbed to 400 (see withApp) regardless of
+  // how many rows the model actually holds, so the virtualized window only ever
+  // materializes ~25 rows near wherever scrollTop points — model-level
+  // assertions (currentHighlightViewEntries, contextFoldMarks, contextStrips)
+  // are what's exhaustive here; DOM queries below only check whatever subset
+  // is actually rendered, never a hardcoded total row count.
   const collapsedCount = T.currentHighlightViewEntries.length;
-  fireClick(strips()[0].querySelector(".ctx-gap-all"), w);
+  fireClick(placeholders()[0], w); // the WHOLE row is the click target, not just its icon
   assert(T.currentHighlightViewEntries.length === collapsedCount + 29,
-    "revealing a gap grows the list by exactly its hidden count, got " + T.currentHighlightViewEntries.length);
+    "opening a gap grows the list by exactly its hidden count, got " + T.currentHighlightViewEntries.length);
   const ts = T.currentHighlightViewEntries.map(e => e.ts);
   assert(ts.every((v, i) => i === 0 || v >= ts[i - 1]), "the revealed rows are spliced in chronologically");
-  assert(d.querySelectorAll("#highlightRows .log-row.ctx-context").length > 0,
-    "revealed rows render as (dimmed) context rows, not as matches");
+  const ctxRows = [...d.querySelectorAll("#highlightRows .log-row.ctx-context")];
+  assert(ctxRows.length > 0 && ctxRows.every(r => w.getComputedStyle(r).paddingLeft === "24px"),
+    "the revealed rows render as context rows, indented rather than dimmed (opacity is no longer touched at all, see the CSS), got " + ctxRows.length);
   assert(heightsAgree(), "...and the offsets/spacer still agree afterwards");
-  assert(strips()[0].classList.contains("ctx-gap-open"),
-    "a fully open gap's strip becomes the collapse control, at the top of the revealed block");
-  fireClick(strips()[0].querySelector(".ctx-gap-collapse"), w);
-  assert(T.currentHighlightViewEntries.length === collapsedCount, "collapsing it again restores the previous list exactly");
+  assert(T.contextStrips.size === 1,
+    "the now-open gap no longer occupies a placeholder slot — only the still-shut one does");
+  assert(T.contextFoldMarks.size === 2, "the open run's first and last row each carry a fold mark in the model");
+  const topFold = foldBtns().find(b => b.classList.contains("ctx-fold-top"));
+  assert(topFold, "the top fold icon (near the top of the viewport) is within the rendered window");
+  fireClick(topFold, w); // collapse back via the TOP icon
+  assert(T.currentHighlightViewEntries.length === collapsedCount, "collapsing via the fold button restores the previous list exactly");
 
-  // --- (f) a partial (step) expansion keeps the remainder contiguous ------
-  fireClick(strips()[0].querySelectorAll(".ctx-gap-step")[0], w); // the up chevron
-  const g0 = T.contextGaps[0];
-  assert(g0.before === T.CONTEXT_EXPAND_STEP && g0.after === 0, "the up chevron reveals one step's worth from the top of the run");
-  assert((g0.end - g0.start) - g0.before - g0.after === 29 - T.CONTEXT_EXPAND_STEP,
-    "the still-hidden remainder shrinks by exactly one step");
-  assert(T.contextStrips.size === 2,
-    "...and it stays one strip per gap — a partially opened run never splits into two");
-  assert(heightsAgree(), "...offsets/spacer still agree after a partial expansion");
+  // --- (f) the BOTTOM fold icon also collapses, without also selecting -----
+  fireClick(placeholders()[0], w); // reopen
+  // Scroll to the tail of the revealed run so its LAST row (carrying the
+  // bottom fold icon) actually falls inside the virtualized render window.
+  const openedGap = T.contextGaps[0];
+  w.scrollToHighlightIndex(openedGap.start + (openedGap.end - openedGap.start) - 1, {});
+  T.state.selectedId = null;
+  const bottomFold = foldBtns().find(b => b.classList.contains("ctx-fold-bottom"));
+  assert(bottomFold, "the bottom fold icon is reachable by scrolling to the end of the revealed run");
+  fireClick(bottomFold, w); // the bottom icon this time
+  assert(T.currentHighlightViewEntries.length === collapsedCount, "the bottom fold icon collapses the same gap as the top one");
+  assert(T.state.selectedId === null,
+    "clicking a fold icon doesn't also select the row underneath it (stopPropagation)");
 
-  // --- (g) expand-all / collapse-all from the chip ------------------------
-  const navBtn = () => [...d.querySelectorAll("#contextNav button")].pop();
-  fireClick(navBtn(), w); // "reveal every hidden line"
+  // --- (g) expand-all / collapse-all from the chip -------------------------
+  const navToggleBtn = () => navButtons()[navButtons().length - 1];
+  fireClick(navToggleBtn(), w); // "reveal every hidden line"
   assert(T.currentHighlightViewEntries.length === 60, "the chip's expand-all reveals the whole file");
-  assert(T.contextGaps.every(g => (g.end - g.start) - g.before - g.after === 0), "...every gap is open");
-  fireClick(navBtn(), w); // now "collapse every gap again"
+  assert(T.contextGaps.every(g => T.contextExpansions.has(g.start)), "...every gap is open");
+  fireClick(navToggleBtn(), w); // now "collapse every gap again"
   assert(T.currentHighlightViewEntries.length === 2 && T.contextExpansions.size === 0,
     "...and the same button shuts them all again");
 
@@ -14403,6 +14457,52 @@ await withApp(async (w, d, T) => {
   w.toggleBookmark(f.entries[9].id); // targeted repaint, no full render()
   assert(T.contextMatchIds.size === 2 && T.currentHighlightViewEntries.some(e => e.id === f.entries[9].id),
     "a bookmark toggle rebuilds the Context view immediately, instead of leaving it stale until some unrelated render");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (m) a single-row revealed run shows exactly one fold icon -----------
+  // A purpose-made tiny file so the single hidden line is unambiguous: "keep"
+  // matches every entry except index 2, leaving one lone gap of length 1.
+  const f2 = await w.addFile("ctx2.log", makeLog(0, 5, { suffix: i => (i === 2 ? "skip" : "keep") }), () => {});
+  const keepFilter = w.createFilterNode(f2.id, "text", "keep"); // matches 0,1,3,4 -> one gap of length 1 at index 2
+  T.state.activeId = keepFilter.id;
+  showContext();
+  assert(T.contextGaps.length === 1 && (T.contextGaps[0].end - T.contextGaps[0].start) === 1,
+    "sanity: exactly one single-row gap");
+  fireClick(d.querySelector("#highlightRows .ctx-gap-placeholder"), w);
+  const soloFold = [...d.querySelectorAll("#highlightRows .ctx-fold-btn")];
+  assert(soloFold.length === 1, "a single-row run shows exactly one fold icon, not two overlapping ones, got " + soloFold.length);
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (n) Stacked layout seeds fully expanded, once per node -------------
+  const stackedFilter = w.createFilterNode(f.id, "text", "hit"); // fresh node, never activated before
+  w.applyFhView("stacked");
+  T.state.activeId = stackedFilter.id;
+  w.render();
+  assert(T.contextGaps.length === 2 && T.contextGaps.every(g => T.contextExpansions.has(g.start)),
+    "Stacked seeds every gap open the first time a node becomes active there, regardless of contextInitialExpansion");
+  w.setGapOpen(T.contextGaps[0].start, false); // manually re-collapse one
+  w.applyFhView("highlight"); // flip to tabs...
+  w.applyFhView("stacked");   // ...and back
+  assert(!T.contextExpansions.has(T.contextGaps[0].start),
+    "manually collapsing a gap in Stacked survives a layout flip — the expanded default is a one-time SEED, not a standing override");
+  w.applyFhView("highlight");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (o) the nav chip's corner is configurable and applied immediately --
+  assert(d.querySelector("#contextNav").classList.contains("corner-top-right"), "default corner is top-right");
+  const cornerSelect = d.querySelector("#settingsContextNavCorner");
+  cornerSelect.value = "bottom-left";
+  cornerSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#contextNav").classList.contains("corner-bottom-left") &&
+    !d.querySelector("#contextNav").classList.contains("corner-top-right"),
+    "changing the setting re-applies the corner class immediately");
+  assert(T.contextNavCorner === "bottom-left" && w.localStorage.getItem("philogg-context-nav-corner") === "bottom-left",
+    "...and persists the choice");
+  cornerSelect.value = "top-right"; // reset
+  cornerSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
 });
 
 /* ============================================================
