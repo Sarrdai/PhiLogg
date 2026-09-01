@@ -3387,7 +3387,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsContextInitialExpansion">Context view starts out</label>
-                <div class="settings-row-hint">The Context view shows the active filter's matches with everything it rejected collapsed into expandable gaps. "Collapsed" opens every gap shut, so the view starts out as the filter result itself. "Expanded" opens every gap, i.e. the whole file, with each gap still individually collapsible. "Collapsed, opened around a jump" stays shut, but jumping to a row — double-clicking or pressing Enter on it in the Filtered view, or walking match to match with the Context view's own ‹ / › arrows — also opens the gaps on either side of it, and closes the ones the previous jump opened, so the revealed context follows you instead of piling up. Gaps you open or collapse by hand are left alone by that and keep the state you gave them. A jump to a row that isn't a match always opens the gap it sits in, whichever option is picked — otherwise it would have nowhere to be shown. The Stacked layout always starts fully expanded regardless of this setting (its Context pane sits right next to the plain Filtered result, so there's less need to hide anything there) — this only governs the Context tab in Tabs layout.</div>
+                <div class="settings-row-hint">The Context view shows the active filter's matches with everything it rejected collapsed into expandable gaps. "Collapsed" opens every gap shut, so the view starts out as the filter result itself. "Expanded" opens every gap, i.e. the whole file, with each gap still individually collapsible. "Collapsed, opened around a jump" stays shut, but jumping to a row — double-clicking or pressing Enter on it in the Filtered view, or walking match to match with the Context view's own ‹ / › arrows, or simply clicking another match there — also opens the gaps on either side of it, and closes the ones the previous jump opened, so the revealed context follows you instead of piling up. Gaps you open or collapse by hand are left alone by that and keep the state you gave them. A jump to a row that isn't a match always opens the gap it sits in, whichever option is picked — otherwise it would have nowhere to be shown. The Stacked layout always starts fully expanded regardless of this setting (its Context pane sits right next to the plain Filtered result, so there's less need to hide anything there) — this only governs the Context tab in Tabs layout.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsContextInitialExpansion">
@@ -12407,6 +12407,40 @@ function moveContextMatchSelection(delta) {
   selectHighlightEntry(targetId, { scroll: true, center: true, index: target });
 }
 
+// A plain click on a Context row IS a jump to that entry (person-requested:
+// picking another result with the mouse should read exactly like walking there
+// with the nav arrows), so under "aroundJump" it opens the gaps around it and
+// shuts the previous jump's — the nav chip's "n / m" then follows on its own,
+// because it follows the selection. Only a real MATCH counts: clicking one of
+// the revealed context rows isn't a move to another result, and the chip has no
+// position to show for it.
+//
+// Unlike the arrows this must NOT re-position the view — the row that was just
+// clicked has to stay exactly where it is on screen. What opens above it is not
+// the same height as what shuts above it, so scrollTop alone no longer means
+// the same thing after the rebuild: the row's on-screen offset is captured
+// BEFORE it (captureRowScreenOffset, the same pair revealInHighlightView uses)
+// and restored against the NEW offsets array afterwards.
+//
+// Accepted consequence, and the reason this is deliberately confined to the
+// jump-expanding case: a rebuild replaces the row's DOM node, so while
+// "aroundJump" is on, a native dblclick on a match row no longer fires (see
+// updateSelectedRowClass for that whole DOM-identity trap). That handler only
+// scrolls the row into view, and the offset restore here has just put it back
+// exactly where it already was.
+function selectContextRowByClick(entryId, rowEl) {
+  if (!contextMatchIds.has(entryId)) { selectHighlightEntry(entryId); return; }
+  const offset = captureRowScreenOffset(rowEl, highlightBody);
+  if (!applyContextJumpExpansion(entryId)) { selectHighlightEntry(entryId); return; }
+  currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
+  rebuildHighlightOffsets();
+  // offset === null only if the clicked row wasn't on screen at all, which a
+  // click can't produce — centering is captureRowScreenOffset's own documented
+  // fallback for that case.
+  selectHighlightEntry(entryId, { scroll: true, offset, center: offset == null });
+  updateMinimapRenderedRange();
+}
+
 // Where an entry that has no row in the Context view WOULD sit if it had one:
 // the index of the first rendered row at or after its position in the root
 // file. Binary search, valid because the view is always in root-file order.
@@ -12661,7 +12695,12 @@ function renderHighlightVisibleRows() {
       '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + markFieldHtml(mm, e.locationShort, "location") + '</span>' +
       '<span class="col-method" title="' + escapeHtml(e.method) + '">' + markFieldHtml(mm, e.method, "method") + '</span>' +
       '<span class="col-msg">' + markFieldHtml(mm, e.message, "message") + '</span>';
-    row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries, selectHighlightEntry));
+    // A PLAIN click is a jump to that match and gets the expansion treatment
+    // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
+    // gesture and must leave the row list alone, or the range the person is
+    // building moves under them mid-gesture.
+    row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
+      (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
     // An open gap's first/last revealed row gets a small fold-back icon
@@ -14041,7 +14080,10 @@ function selectHighlightEntry(entryId, opts) {
   const previousId = applySelection(entryId);
   if (opts.scroll) {
     const idx = opts.index != null ? opts.index : currentHighlightViewEntries.findIndex(e => e.id === entryId);
-    if (idx !== -1) scrollToHighlightIndex(idx, { center: opts.center });
+    // opts.offset: "keep this row at exactly this on-screen pixel offset"
+    // (see scrollToHighlightIndex) — what a click that changes the row list
+    // underneath the clicked row needs, instead of centering it.
+    if (idx !== -1) scrollToHighlightIndex(idx, { center: opts.center, offset: opts.offset });
   }
   updateSelectedRowClass(previousId);
   updateDetailPanel();
