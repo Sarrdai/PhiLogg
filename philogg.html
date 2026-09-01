@@ -14780,7 +14780,21 @@ const fileInput = el("#fileInput");
 // it (or dropped as handles) can be tailed for live updates. Falls back to
 // the hidden <input> where the API is missing (Firefox) or blocked (some
 // file:// setups) — those files load fine, just without tailing.
+//
+// A desktop wrapper that exposes philogg.pickFiles gets first refusal: a
+// webview never tells the page a File's real OS path, so a wrapper that
+// wants "Open File Location"/"Copy Path" to work for picked files has to
+// run the OS dialog on its own side and hand back paths instead of File
+// objects (see loadDesktopLocalFiles). Electron doesn't need this — it
+// resolves paths from a File directly via getPathForFile — so it doesn't
+// expose pickFiles and keeps the branches below.
 async function openFilesPicker() {
+  if (window.philogg && typeof window.philogg.pickFiles === "function") {
+    let picked;
+    try { picked = await window.philogg.pickFiles(); } catch (err) { return; }
+    if (Array.isArray(picked) && picked.length) await loadDesktopLocalFiles({ files: picked });
+    return;
+  }
   if (!window.showOpenFilePicker) { fileInput.click(); return; }
   let handles;
   try {
@@ -15001,7 +15015,7 @@ el("#mergeLoadDialogNo").addEventListener("click", () => closeMergeLoadDialog(fa
 async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
 
-  const queuedNodes = descs.map(d => createQueuedFileNode(d.file.name));
+  const queuedNodes = descs.map(d => createQueuedFileNode(d.file ? d.file.name : d.name));
   render();
 
   const mergeAfter = descs.length > 1 ? await confirmMergeOnLoad(queuedNodes.map(n => n.name)) : false;
@@ -15009,16 +15023,33 @@ async function loadFileDescriptors(descs) {
   const loadedIds = [];
   try {
     for (let i = 0; i < descs.length; i++) {
-      const { file, handle } = descs[i];
+      const desc = descs[i];
+      const { handle } = desc;
       try {
+        // localPath/sourceUrl are set on the queued placeholder rather than
+        // passed down, because loadOneFileIntoTree reuses that very object
+        // (activateQueuedFileNode only clears .queued) — so they're already
+        // in place by the time it persists the node, with no extra
+        // parameter threaded through. Only a desktop wrapper that opened
+        // the file itself supplies them; see loadDesktopLocalFiles.
+        if (desc.localPath) queuedNodes[i].localPath = desc.localPath;
+        if (desc.sourceUrl) queuedNodes[i].sourceUrl = desc.sourceUrl;
+        // A lazy descriptor (name + openFile) lets every queued placeholder
+        // be rendered before the first byte is read — used by the desktop
+        // route, where "reading" is a fetch of the wrapper's philogg://local
+        // URL rather than an already-open File object.
+        const file = desc.file || await desc.openFile();
         const node = await loadOneFileIntoTree(file.name, file, handle, null, queuedNodes[i]);
         loadedIds.push(node.id);
       } catch (err) {
         // One file's read/parse failure (loadOneFileIntoTree already removed
         // its own node) must not abort the rest of the batch — every other
         // queued placeholder still needs its turn, or it would stay grayed
-        // and stuck forever.
-        showCopyToast(`Couldn't load "${file.name}"`);
+        // and stuck forever. A lazy descriptor can also fail BEFORE
+        // loadOneFileIntoTree ever runs (openFile's fetch), and then nobody
+        // has removed the placeholder yet — so do it here.
+        if (state.nodes[queuedNodes[i].id] === queuedNodes[i]) deleteNode(queuedNodes[i].id);
+        showCopyToast(`Couldn't load "${queuedNodes[i].name}"`);
       }
     }
   } finally {
@@ -15065,14 +15096,24 @@ function isDesktopLocalUrl(url) {
     return false;
   }
 }
+// Duck-typed stand-in for a FileSystemFileHandle, backed by a re-fetch of
+// `url`. The marker property is what persistFileNode checks: unlike a real
+// handle, this object holds a closure and so cannot be structured-cloned
+// into IndexedDB at all — it is rebuilt from the persisted sourceUrl on
+// restore instead (see restoreSessionFromCache).
+const URL_TAIL_HANDLE = "__philoggUrlTail";
 function urlTailHandle(url) {
   return {
+    [URL_TAIL_HANDLE]: url,
     async getFile() {
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       return new Blob([await res.arrayBuffer()]);
     },
   };
+}
+function isUrlTailHandle(handle) {
+  return !!(handle && handle[URL_TAIL_HANDLE]);
 }
 async function loadUrlIntoTree(url) {
   if (location.protocol === "file:") {
@@ -15131,6 +15172,45 @@ async function loadFromUrlParam() {
 // window for it. Not used by the web build.
 window.philoggLoadUrl = loadUrlIntoTree;
 
+// The desktop route for files the WRAPPER opened, not the page: its native
+// file dialog (philogg.pickFiles) and, where the wrapper handles drops
+// itself, its native drag-drop. Both hand over real OS paths plus the
+// philogg://local/<id>/… URL the wrapper serves each one under.
+//
+// Why it exists at all: a webview never resolves a File back to a
+// filesystem path (Electron's webUtils is a non-standard extra, and no
+// system webview has an equivalent), so a wrapper that wants "Open File
+// Location"/"Copy Path" to work for picked or dropped files has to be the
+// one doing the opening. Unlike loadUrlIntoTree — the single-file boot/
+// file-association route, which goes straight through addFile — this one
+// feeds ordinary descriptors to loadFileDescriptors, so a multi-file batch
+// keeps the queued placeholders, the merge prompt and the progress fill.
+// The URL doubles as the tail handle (urlTailHandle), exactly as it does
+// for a file-association open.
+//
+// folders: paths the wrapper recognized as directories. Watching one needs
+// a live FileSystemDirectoryHandle to list and rescan it (see "Folder
+// watch"), which a path alone can't produce — so they're reported rather
+// than silently ignored.
+async function loadDesktopLocalFiles({ files, folders } = {}) {
+  if (Array.isArray(folders) && folders.length) {
+    showCopyToast("Dropping a folder can't start a folder watch here — use Open… → Folder…");
+  }
+  const descs = (files || []).map(f => ({
+    name: f.name,
+    openFile: async () => {
+      const res = await fetch(f.url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return new File([await res.blob()], f.name);
+    },
+    handle: urlTailHandle(f.url),
+    localPath: f.path,
+    sourceUrl: f.url,
+  }));
+  if (descs.length) await loadFileDescriptors(descs);
+}
+window.philoggLoadLocalFiles = loadDesktopLocalFiles;
+
 let dragCounter = 0;
 const dropOverlay = el("#dropOverlay");
 // Distinguishes an OS file drag (dataTransfer.types includes "Files") from an
@@ -15149,6 +15229,15 @@ window.addEventListener("dragenter", ev => {
   dropOverlay.classList.remove("hidden");
 });
 window.addEventListener("dragover", ev => { if (isFileDrag(ev)) ev.preventDefault(); });
+// A desktop wrapper that handles OS drags natively (Tauri: its own drag-drop
+// handler replaces the HTML events below entirely, which is the price of
+// getting real paths out of a drop) still needs the same visual feedback.
+// Exposed as an explicit hook so the wrapper drives philogg.html's overlay
+// through a named contract instead of reaching into #dropOverlay itself.
+window.philoggDropOverlay = function (show) {
+  dragCounter = show ? 1 : 0;
+  dropOverlay.classList.toggle("hidden", !show);
+};
 window.addEventListener("dragleave", ev => {
   if (!isFileDrag(ev)) return;
   ev.preventDefault();
@@ -16741,9 +16830,11 @@ function openTreeContextMenu(ev, clickedId) {
     // FEATURE_BACKLOG.md #52 ("Open File Location") — deliberately generic,
     // not Electron-only in spirit: offered on any file node whose actual
     // location is known and directly openable. "Known" means one of:
-    //  - node.localPath: a real OS path, resolved via webUtils.getPathForFile
-    //    at load time (Electron only — see loadOneFileIntoTree). Covers
-    //    files opened through the in-app picker/drag-drop/folder watch.
+    //  - node.localPath: a real OS path. Electron resolves one for any File
+    //    at load time (webUtils.getPathForFile — see loadOneFileIntoTree),
+    //    covering its picker/drag-drop/folder-watch files; the Tauri
+    //    wrapper can't do that at all and instead supplies the path
+    //    alongside the file it opened itself (loadDesktopLocalFiles).
     //  - node.sourceUrl pointing at philogg://local/…: the desktop wrapper's
     //    own scheme for a file opened via launch arg / file-association
     //    (see desktop/main.js) — main.js already holds the real path for it.
@@ -16754,9 +16845,14 @@ function openTreeContextMenu(ev, clickedId) {
     // that would always fail. A plain http(s) node.sourceUrl (no OS folder
     // to reveal) instead gets "Copy URL" — the useful analogue for a
     // remotely-loaded log (works in every build, no Electron needed).
+    // "Copy Path" rides along on exactly the same condition: wherever the
+    // location is known well enough to open it, it's known well enough to
+    // put on the clipboard, and pasting it into a terminal/ticket is the
+    // other half of what people want a known path for.
     if (node.type === "file" && window.philogg) {
       if (node.localPath || (node.sourceUrl && isDesktopLocalUrl(node.sourceUrl))) {
         buckets.edit.push({ action: "revealLocation", label: "Open File Location", icon: ICON_FOLDER });
+        buckets.edit.push({ action: "copyPath", label: "Copy Path", icon: ICON_COPY });
       }
     }
     if (node.type === "file" && node.sourceUrl && !isDesktopLocalUrl(node.sourceUrl)) {
@@ -16886,6 +16982,22 @@ treeContextMenu.addEventListener("click", ev => {
     if (n && window.philogg) {
       if (n.localPath) window.philogg.revealPath(n.localPath);
       else if (n.sourceUrl && isDesktopLocalUrl(n.sourceUrl)) window.philogg.revealLocalUrl(n.sourceUrl);
+    }
+    return;
+  }
+  if (action === "copyPath") {
+    const n = treeCtxId && state.nodes[treeCtxId];
+    if (n && n.localPath) { copyTextToClipboard(n.localPath); showCopyToast("Path copied"); return; }
+    // A philogg://local/… file is known to the page ONLY by that URL — the
+    // id -> path mapping lives in the wrapper (see desktop/main.js's
+    // localFiles), same reason revealLocalUrl exists at all — so the path
+    // has to be asked for. Not awaited inline above: a wrapper too old to
+    // expose pathForLocalUrl simply copies nothing rather than throwing.
+    if (n && n.sourceUrl && isDesktopLocalUrl(n.sourceUrl) &&
+        window.philogg && typeof window.philogg.pathForLocalUrl === "function") {
+      Promise.resolve(window.philogg.pathForLocalUrl(n.sourceUrl)).then(p => {
+        if (p) { copyTextToClipboard(p); showCopyToast("Path copied"); }
+      }).catch(() => {});
     }
     return;
   }
@@ -19239,7 +19351,16 @@ async function persistFileNode(node) {
     // those already reattach via restoreWatchedFolders/mergeScannedFiles, and
     // that path's own per-file handle isn't guaranteed cloneable independent
     // of its owning directory handle.
-    handle: (node.tail && !node.folderId) ? node.tail.handle : null,
+    // Bugfix: ALSO skipped for a urlTailHandle (see loadUrlIntoTree /
+    // loadDesktopLocalFiles) — that stand-in is a plain object holding a
+    // closure, which structured clone rejects outright with a DataCloneError.
+    // cacheStoreOp swallows the synchronous throw, so the effect was that
+    // every file opened by URL / file-association was silently never cached
+    // at ALL (the whole record, not just the handle) and vanished from
+    // "restore last session". Nothing is lost by dropping it: sourceUrl is
+    // persisted right below, and restoreSessionFromCache rebuilds an
+    // equivalent handle from it.
+    handle: (node.tail && !node.folderId && !isUrlTailHandle(node.tail.handle)) ? node.tail.handle : null,
     text: rebuildFileText(node),
     formatId: node.formatId || null,
     // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (Electron
@@ -19530,7 +19651,10 @@ function materializeCachedFilters(fileNode, roots) {
 // reconnectFolder's own test does for folders.
 async function tryReattachFileTail(node, handle) {
   try {
-    const perm = await handle.queryPermission({ mode: "read" });
+    // A urlTailHandle has no permission model to query — the wrapper's own
+    // philogg://local/… scheme is either still serving that id or the fetch
+    // fails later, which tailTick already degrades gracefully on.
+    const perm = isUrlTailHandle(handle) ? "granted" : await handle.queryPermission({ mode: "read" });
     if (perm === "granted") {
       node.tail = {
         handle,
@@ -19605,6 +19729,15 @@ async function restoreSessionFromCache() {
       // Plain (non-folder) file that was being tailed before the reload:
       // try to resume silently — see tryReattachFileTail.
       if (rec.handle && !rec.folderId) await tryReattachFileTail(node, rec.handle);
+      // A desktop-local file (file association, or the wrapper's own
+      // picker/drop — see loadDesktopLocalFiles) was tailed through a
+      // urlTailHandle, which persistFileNode deliberately doesn't store.
+      // The URL is all that handle ever was, so rebuilding it from the
+      // persisted sourceUrl resumes tailing exactly where it left off —
+      // no permission round-trip needed, unlike a real handle.
+      else if (!rec.folderId && rec.sourceUrl && isDesktopLocalUrl(rec.sourceUrl)) {
+        await tryReattachFileTail(node, urlTailHandle(rec.sourceUrl));
+      }
       byKey[key] = node;
     }
     if (!state.rootIds.length) return false;

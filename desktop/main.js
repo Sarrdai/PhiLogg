@@ -232,17 +232,26 @@ async function clearCache(win) {
   if (!win.isDestroyed()) win.webContents.reload();
 }
 
+function localPathForUrl(url) {
+  if (typeof url !== "string") return null;
+  let id;
+  try { id = new URL(url).pathname.split("/").filter(Boolean)[0]; } catch { return null; }
+  return localFiles.get(id) || null;
+}
+
 function registerRevealHandlers() {
   ipcMain.handle("philogg:reveal-path", (_event, filePath) => {
     if (typeof filePath === "string" && filePath) shell.showItemInFolder(filePath);
   });
   ipcMain.handle("philogg:reveal-local-url", (_event, url) => {
-    if (typeof url !== "string") return;
-    let id;
-    try { id = new URL(url).pathname.split("/").filter(Boolean)[0]; } catch { return; }
-    const filePath = localFiles.get(id);
+    const filePath = localPathForUrl(url);
     if (filePath) shell.showItemInFolder(filePath);
   });
+  // "Copy Path" for a launch-arg/file-association file: the renderer knows
+  // it only by its philogg://local/… URL (same reason reveal-local-url
+  // exists), so the id -> path lookup has to happen here too — this one just
+  // hands the answer back instead of acting on it.
+  ipcMain.handle("philogg:path-for-local-url", (_event, url) => localPathForUrl(url));
 }
 
 // FEATURE_BACKLOG.md (font selection): philogg.html's own UI-font picker is

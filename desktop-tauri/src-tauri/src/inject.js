@@ -90,18 +90,25 @@
   // feature detection (`window.philogg` exists -> desktop build) and its
   // three context-menu outcomes work identically.
   //
-  // getPathForFile is the one genuine gap: Electron resolves a File object
-  // back to its OS path via webUtils, and no system webview offers an
-  // equivalent. Tauri's own drag-drop event *does* carry real paths, but
-  // enabling it suppresses the HTML drag-drop events philogg.html needs to
-  // get File objects at all — so the page keeps HTML drag-drop and this
-  // returns null. philogg.html already treats a null result as "no path
-  // known" and simply doesn't offer "Open File Location" for that node (it
-  // still does for file-association opens, which go through revealLocalUrl).
-  // See desktop-tauri/README.md -> "Differences from the Electron wrapper".
+  // getPathForFile stays permanently null here: Electron resolves a File
+  // object back to its OS path via webUtils, and no system webview offers
+  // an equivalent. Rather than leave picked/dropped files locationless, the
+  // wrapper opens them itself — pickFiles runs the OS dialog, and the
+  // native drag-drop handler (windows.rs) catches drops — so the path is
+  // known before philogg.html ever sees the file, and travels with the
+  // philogg://local/… URL it is served under. philogg.html still treats a
+  // null getPathForFile as "no path known", which is now only reached by
+  // its folder watch. See desktop-tauri/README.md -> "Differences from the
+  // Electron wrapper".
   window.philogg = {
     getPathForFile: function () {
       return null;
+    },
+    pickFiles: function () {
+      return invoke("pick_files");
+    },
+    pathForLocalUrl: function (url) {
+      return invoke("path_for_local_url", { url: url });
     },
     revealPath: function (path) {
       return invoke("reveal_path", { path: path });

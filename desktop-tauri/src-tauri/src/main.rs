@@ -60,11 +60,14 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .register_asynchronous_uri_scheme_protocol(protocol::SCHEME, protocol::handle)
         .invoke_handler(tauri::generate_handler![
             commands::save_settings,
             commands::reveal_path,
             commands::reveal_local_url,
+            commands::pick_files,
+            commands::path_for_local_url,
             commands::list_system_fonts,
             commands::toggle_fullscreen,
             commands::window_minimize,

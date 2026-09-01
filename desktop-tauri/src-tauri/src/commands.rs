@@ -3,6 +3,8 @@
 //! A wrapper's own `#[tauri::command]`s need no ACL entry — only core and
 //! plugin commands do — so `capabilities/default.json` stays down to
 //! `core:default`, and the page gets exactly this surface and nothing else.
+//! That still holds for the `dialog` plugin added here: it is driven from
+//! Rust (`pick_files`), never invoked from the page, exactly like `opener`.
 //! That is the same deliberately narrow bridge `desktop/preload.js` is, plus
 //! the few window actions Tauri needs a round-trip for that Electron got
 //! natively (fullscreen, and the injected window controls).
@@ -10,6 +12,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Manager, State, Window};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::state::{AppState, CLOSE_TO_TRAY_KEY};
@@ -46,6 +49,68 @@ pub fn reveal_path(app: AppHandle, path: String) {
         return;
     }
     let _ = app.opener().reveal_item_in_dir(path);
+}
+
+/// One file the wrapper opened on the page's behalf: the URL it is served
+/// under, plus the real path that URL stands for. Both halves matter —
+/// `philogg.html` loads (and tails) the URL, and needs the path for
+/// "Open File Location"/"Copy Path".
+#[derive(serde::Serialize)]
+pub struct LocalFile {
+    url: String,
+    path: String,
+    name: String,
+}
+
+impl LocalFile {
+    pub(crate) fn register(state: &AppState, path: &std::path::Path) -> Self {
+        LocalFile {
+            url: state.register_local_file(path),
+            path: path.to_string_lossy().to_string(),
+            name: path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string_lossy().to_string()),
+        }
+    }
+}
+
+/// "Open… → File(s)…" under this wrapper. Electron can let `philogg.html`
+/// run its own in-page picker and still resolve each `File` back to a path
+/// afterwards (`webUtils`); no system webview can, so the OS dialog has to
+/// run out here — that is the only way a picked file arrives with its
+/// location still attached. `philogg.html`'s own picker stays in place for
+/// every other build; see its `openFilesPicker`.
+///
+/// Async on purpose: `blocking_pick_files` parks the calling thread until
+/// the dialog closes, which would deadlock the main thread. Async commands
+/// run on Tauri's worker pool instead.
+#[tauri::command]
+pub async fn pick_files(app: AppHandle) -> Vec<LocalFile> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Open log files")
+        .add_filter("Log files", &["log", "txt"])
+        .add_filter("All files", &["*"])
+        .blocking_pick_files();
+    let state = app.state::<AppState>();
+    picked
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|p| p.into_path().ok())
+        .map(|p| LocalFile::register(&state, &p))
+        .collect()
+}
+
+/// "Copy Path" for a file the page knows only by its `philogg://local/…`
+/// URL (a file-association open) — same id -> path lookup `reveal_local_url`
+/// does, but handing the answer back instead of acting on it.
+#[tauri::command]
+pub fn path_for_local_url(app: AppHandle, url: String) -> Option<String> {
+    app.state::<AppState>()
+        .local_file_for_url(&url)
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 /// #52's other half: a `philogg://local/<id>/…` file is known to the page
