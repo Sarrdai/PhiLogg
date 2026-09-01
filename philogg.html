@@ -20933,7 +20933,11 @@ loadFromUrlParam();
 // restoreSessionFromCache's node.folderId links already in place) —
 // regardless of whether restoreSessionFromCache itself found anything, a
 // folder can be watched with zero currently-open files from it.
-restoreSessionFromCache().then(restored => {
+// Named rather than left floating: it is the one exact "boot restore has
+// settled" signal, which the regression suite awaits instead of polling
+// state.rootIds (that fills with grayed placeholders in restore's FIRST pass,
+// long before entries/localPath/filters/settings land — see tests/README.md).
+const bootRestore = restoreSessionFromCache().then(restored => {
   if (restored) showCopyToast("Session restored");
   return restoreWatchedFolders();
 });
