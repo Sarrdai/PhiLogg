@@ -10,7 +10,7 @@ chronological, dated history — read it for "why/when did X change", not for
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (~20,800 lines, inline CSS,
+PhiLogg: a single self-contained `philogg.html` (~20,950 lines, inline CSS,
 vanilla JS — no framework, no build tooling; the only tooling is
 `scripts/strip-comments.js`, which release builds run over a throwaway copy
 — see `PROJECT.md` → "Release builds"). Personal tool for browser-based
@@ -26,14 +26,22 @@ and a frameless window around the unmodified `philogg.html` — see
   find the root cause first, then fix — not a speculative patch.
 - **Every feature/fix ships with regression tests.** Extend
   `tests/philogg.regression.test.js` per `tests/README.md`'s conventions
-  (new `GROUP N`, one line in TEST PROVENANCE, update/remove superseded
-  groups instead of leaving a green check on dead code).
-- **Run the full suite (`cd tests && npm test`) only when code changed** —
-  i.e. `philogg.html`, `tests/philogg.regression.test.js`, `scripts/`, or
-  anything under `desktop/`. Report the pass count when you do. A session that only touched
-  Markdown (`PROJECT.md`, `docs/*.md`, `CHANGELOG.md`, `README.md`,
-  `FEATURE_BACKLOG.md`, `CLAUDE.md`) does not need a test run "to be safe" —
-  don't run it out of habit.
+  (new `GROUP N` **plus its `group(N);` marker line** — the shard runner
+  needs it, see `tests/README.md` — one line in TEST PROVENANCE,
+  update/remove superseded groups instead of leaving a green check on dead
+  code).
+- **Run the full suite (`cd tests && npm test`, ~30s) only when code
+  changed** — i.e. `philogg.html`, `tests/philogg.regression.test.js`,
+  `scripts/`, or a change to the `window.philogg` / `nativeDirHandle`
+  contract that `philogg.html` consumes. Report the pass count when you do.
+  While iterating, `GROUP=58 npm test` re-runs a single group in ~2s; the
+  full suite is what settles the session.
+  Two things the suite does **not** cover, so don't run it for them: a change
+  confined to the Rust side or the Tauri config (`desktop/src-tauri/**`,
+  `desktop/frontend/`) — nothing there is loaded, parsed or executed by the
+  suite, it needs `cd desktop && npm run build` instead — and a session that
+  only touched Markdown (`PROJECT.md`, `docs/*.md`, `CHANGELOG.md`,
+  `README.md`, `FEATURE_BACKLOG.md`, `CLAUDE.md`). Don't run it out of habit.
 - **Update the docs every session that changes behavior**: a dated,
   newest-first entry in `CHANGELOG.md`; the relevant `docs/*.md` file (or
   `PROJECT.md` itself for core architecture) updated to describe the
