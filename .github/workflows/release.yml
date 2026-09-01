@@ -2,11 +2,12 @@ name: Build tester release
 
 # Manual only — run this from the Actions tab whenever a build should go out
 # to external testers. Stamps PHILOGG_VERSION (in philogg.html) with the
-# short commit hash of the checked-out commit and publishes the stamped file
-# as a GitHub Release asset, named philogg-<commit-date>-<short-sha>.html so
-# the version and its age are visible from the filename alone. Never commits
-# the stamped file back to the repo — the tracked philogg.html always keeps
-# PHILOGG_VERSION = "dev".
+# short commit hash of the checked-out commit, strips every source comment
+# out of it, and publishes the result as a GitHub Release asset, named
+# philogg-<commit-date>-<short-sha>.html so the version and its age are
+# visible from the filename alone. Never commits either change back — the
+# tracked philogg.html always keeps PHILOGG_VERSION = "dev" and all of its
+# comments.
 on:
   workflow_dispatch: {}
 
@@ -19,6 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
       - name: Stamp version
         id: stamp
         run: |
@@ -30,6 +35,17 @@ jobs:
           cp philogg.html "${ASSET_NAME}"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "asset_name=${ASSET_NAME}" >> "$GITHUB_OUTPUT"
+
+      # Release-only: the repo copy keeps every comment, the published asset
+      # carries none. Runs on the already-stamped copy, after `cp`, so the
+      # stripper never has to preserve the version line as a special case.
+      # Dependency-free by design — no npm install in this job.
+      - name: Strip comments
+        env:
+          ASSET_NAME: ${{ steps.stamp.outputs.asset_name }}
+        run: |
+          node scripts/strip-comments.js "${ASSET_NAME}"
+          grep -q "const PHILOGG_VERSION = \"${{ steps.stamp.outputs.short_sha }}\";" "${ASSET_NAME}"
 
       - name: Create release
         env:

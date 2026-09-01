@@ -2,17 +2,13 @@
   "name": "philogg-desktop",
   "version": "1.0.0",
   "private": true,
-  "description": "Desktop wrapper for philogg.html: file associations + CLI-argument file opening, no changes to philogg.html itself. Loads it unmodified through a custom philogg:// scheme and reuses its ?url= deep-link mechanism (see PROJECT.md 'Deep-link loading') to hand it a local file instead of building a second, native-only content-injection path.",
-  "main": "main.js",
+  "description": "Tauri v2 desktop wrapper for philogg.html: frameless window, .log file associations, tray, settings mirroring and a native folder watch, built on the OS webview. philogg.html itself is loaded unmodified through a custom philogg:// scheme.",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder"
-  },
-  "dependencies": {
-    "font-list": "^1.5.1"
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
   },
   "devDependencies": {
-    "electron": "^43.0.0",
-    "electron-builder": "^26.0.0"
+    "@tauri-apps/cli": "^2.0.0"
   }
 }

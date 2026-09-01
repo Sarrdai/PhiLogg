@@ -4044,7 +4044,7 @@ function populateUiFontSelect() {
   select.innerHTML = UI_FONT_OPTIONS.map(f => '<option value="' + f.id + '">' + escapeHtml(f.label) + '</option>').join("");
 }
 
-/* Desktop wrapper only (window.philogg.listSystemFonts, see desktop/preload.js):
+/* Desktop wrapper only (window.philogg.listSystemFonts, see docs/desktop.md):
    appends every font name the OS reports to the picker, so e.g. "Fira Code"
    or "Iosevka" show up if installed. The plain HTML version has no
    permission-prompt UI to gate the browser's Local Font Access API, so it
@@ -4322,14 +4322,15 @@ document.getElementById("logTextScaleReset").addEventListener("click", () => app
 // Off by default, as requested. Purely a local app-behavior preference, same
 // tier/reasoning as the theme toggle and font size above — not session/
 // filter data, so a plain localStorage flag rather than something threaded
-// through the session cache. Meaningful mainly under the Electron desktop
-// wrapper (see PROJECT.md "Desktop wrapper"): the renderer stays plain-web
-// (no preload/IPC bridge, per that section's own design), and a bare
-// window.close() is enough there since Electron intercepts a renderer's own
-// window.close() and closes that BrowserWindow. In an ordinary browser tab
-// window.close() is a no-op on a tab the page itself didn't open, so the
-// setting simply has no effect outside the desktop wrapper — matching what
-// it's actually for, with no Electron-specific code needed here.
+// through the session cache. Meaningful mainly under the desktop wrapper
+// (see PROJECT.md "Desktop wrapper"): the page stays plain-web here and just
+// calls the standard window.close(), leaving it to the host to turn that
+// into a real window close (the wrapper routes it through its own close
+// path, which is also what makes "close to tray" apply to it). In an
+// ordinary browser tab window.close() is a no-op on a tab the page itself
+// didn't open, so the setting simply has no effect outside the desktop
+// wrapper — matching what it's actually for, with no wrapper-specific code
+// needed here.
 const QUIT_ON_LAST_CLOSE_KEY = "philogg-quit-on-last-close";
 let quitOnLastFileClose = false;
 
@@ -4348,12 +4349,11 @@ document.getElementById("settingsQuitOnLastClose").addEventListener("change", ev
 // On by default, unlike quitOnLastFileClose above — this is the requested
 // default behavior for the desktop build, not an opt-in change to existing
 // behavior. Same mechanism/tier as the settings above: a plain localStorage
-// flag, no preload/IPC bridge. main.js reads it directly out of the
-// renderer's localStorage (via executeJavaScript, same trick watchTheme
-// already uses for --accent) whenever its own BrowserWindow "close" event
-// fires, so this file only needs to persist the flag — it never has to know
-// whether it's running under Electron or a plain browser tab, where the
-// value is simply never read.
+// flag, no IPC bridge. The desktop wrapper mirrors every philogg-* key out
+// of localStorage (see docs/desktop.md -> "Settings") and consults its
+// own copy whenever a window close is requested, so this file only needs to
+// persist the flag — it never has to know whether it's running under the
+// wrapper or in a plain browser tab, where the value is simply never read.
 const CLOSE_TO_TRAY_KEY = "philogg-close-to-tray";
 
 function initCloseToTray() {
@@ -14786,9 +14786,9 @@ const fileInput = el("#fileInput");
 // webview never tells the page a File's real OS path, so a wrapper that
 // wants "Open File Location"/"Copy Path" to work for picked files has to
 // run the OS dialog on its own side and hand back paths instead of File
-// objects (see loadDesktopLocalFiles). Electron doesn't need this — it
-// resolves paths from a File directly via getPathForFile — so it doesn't
-// expose pickFiles and keeps the branches below.
+// objects (see loadDesktopLocalFiles). A wrapper that can resolve a path
+// from a File directly (getPathForFile) doesn't need to, and simply doesn't
+// expose pickFiles — the branches below then apply unchanged.
 async function openFilesPicker() {
   if (window.philogg && typeof window.philogg.pickFiles === "function") {
     let picked;
@@ -14939,12 +14939,12 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   if (existingNode) activateQueuedFileNode(node);
   node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
   // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
-  // when running under the Electron wrapper (window.philogg, exposed by
-  // desktop/preload.js) — a plain browser never exposes a File's real OS
-  // path (that's the whole point of the File System Access sandbox), so
-  // outside Electron this just stays unset and the context-menu item below
-  // never offers itself. Works for both a plain File (input/drop) and a
-  // FileSystemFileHandle-backed one (folder watch) — webUtils resolves either.
+  // when a desktop wrapper exposes getPathForFile (window.philogg) — a
+  // plain browser never exposes a File's real OS path (that's the whole
+  // point of the File System Access sandbox), and no system webview can
+  // either, so in practice this stays unset and the path arrives via
+  // loadDesktopLocalFiles instead. Kept because it costs nothing and is the
+  // only route that would work for a File the page opened itself.
   if (window.philogg && typeof window.philogg.getPathForFile === "function") {
     const resolvedPath = window.philogg.getPathForFile(file);
     if (resolvedPath) node.localPath = resolvedPath;
@@ -15096,9 +15096,9 @@ async function loadFileDescriptors(descs) {
 // ever fail; that case gets a specific message instead of a raw fetch error.
 //
 // Bugfix (feature backlog #11): a `philogg://local/<id>/…` url is the
-// desktop wrapper's own scheme for a real file on disk (see desktop/main.js
-// "registerProtocol") — every fetch to it re-reads the file fresh via
-// fs.promises.readFile, unlike an arbitrary http(s) report link. That makes
+// desktop wrapper's own scheme for a real file on disk (see
+// docs/desktop.md) — every fetch to it re-reads the file fresh off
+// disk, unlike an arbitrary http(s) report link. That makes
 // it a perfectly good stand-in for a FileSystemHandle: wiring up node.tail
 // with a handle that just re-fetches this same url lets the existing
 // tailTick poll loop (see "Tailing" below) treat a file opened via launch
@@ -15253,8 +15253,8 @@ async function loadFromUrlParam() {
   await loadUrlIntoTree(url);
 }
 
-// Called by the desktop wrapper (see desktop/main.js "second-instance"/
-// "open-file") to hand an already-running window a file opened after boot —
+// Called by the desktop wrapper (its single-instance / file-association
+// route) to hand an already-running window a file opened after boot —
 // e.g. a second file-association double-click — instead of spawning a new
 // window for it. Not used by the web build.
 window.philoggLoadUrl = loadUrlIntoTree;
@@ -15265,10 +15265,8 @@ window.philoggLoadUrl = loadUrlIntoTree;
 // philogg://local/<id>/… URL the wrapper serves each one under.
 //
 // Why it exists at all: a webview never resolves a File back to a
-// filesystem path (Electron's webUtils is a non-standard extra, and no
-// system webview has an equivalent), so a wrapper that wants "Open File
-// Location"/"Copy Path" to work for picked or dropped files has to be the
-// one doing the opening. Unlike loadUrlIntoTree — the single-file boot/
+// filesystem path, so a wrapper that wants "Open File Location"/"Copy Path"
+// to work for picked or dropped files has to be the one doing the opening. Unlike loadUrlIntoTree — the single-file boot/
 // file-association route, which goes straight through addFile — this one
 // feeds ordinary descriptors to loadFileDescriptors, so a multi-file batch
 // keeps the queued placeholders, the merge prompt and the progress fill.
@@ -16947,23 +16945,21 @@ function openTreeContextMenu(ev, clickedId) {
     // added/removed automatically, not edited or moved by hand. Recolor/
     // restyle still work (the swatch above is unconditional).
     // FEATURE_BACKLOG.md #52 ("Open File Location") — deliberately generic,
-    // not Electron-only in spirit: offered on any file node whose actual
+    // not tied to one wrapper: offered on any file node whose actual
     // location is known and directly openable. "Known" means one of:
-    //  - node.localPath: a real OS path. Electron resolves one for any File
-    //    at load time (webUtils.getPathForFile — see loadOneFileIntoTree),
-    //    covering its picker/drag-drop/folder-watch files; the Tauri
-    //    wrapper can't do that at all and instead supplies the path
-    //    alongside the file it opened itself (loadDesktopLocalFiles).
+    //  - node.localPath: a real OS path, supplied by the wrapper alongside
+    //    the file it opened itself (loadDesktopLocalFiles), or resolved from
+    //    a File where a wrapper can do that (see loadOneFileIntoTree).
     //  - node.sourceUrl pointing at philogg://local/…: the desktop wrapper's
-    //    own scheme for a file opened via launch arg / file-association
-    //    (see desktop/main.js) — main.js already holds the real path for it.
-    // Both need window.philogg (desktop/preload.js) to actually reveal
-    // anything; in a plain browser build neither the OS folder picker nor
-    // any web API can resolve a File back to a filesystem path at all — so
-    // the item simply never appears there, rather than a fake affordance
-    // that would always fail. A plain http(s) node.sourceUrl (no OS folder
-    // to reveal) instead gets "Copy URL" — the useful analogue for a
-    // remotely-loaded log (works in every build, no Electron needed).
+    //    own scheme for a file opened via launch arg / file-association —
+    //    the wrapper already holds the real path behind that id.
+    // Both need window.philogg to actually reveal anything; in a plain
+    // browser build neither the OS folder picker nor any web API can
+    // resolve a File back to a filesystem path at all — so the item simply
+    // never appears there, rather than a fake affordance that would always
+    // fail. A plain http(s) node.sourceUrl (no OS folder to reveal) instead
+    // gets "Copy URL" — the useful analogue for a remotely-loaded log
+    // (works in every build, no wrapper needed).
     // "Copy Path" rides along on exactly the same condition: wherever the
     // location is known well enough to open it, it's known well enough to
     // put on the clipboard, and pasting it into a terminal/ticket is the
@@ -17108,8 +17104,8 @@ treeContextMenu.addEventListener("click", ev => {
     const n = treeCtxId && state.nodes[treeCtxId];
     if (n && n.localPath) { copyTextToClipboard(n.localPath); showCopyToast("Path copied"); return; }
     // A philogg://local/… file is known to the page ONLY by that URL — the
-    // id -> path mapping lives in the wrapper (see desktop/main.js's
-    // localFiles), same reason revealLocalUrl exists at all — so the path
+    // id -> path mapping lives in the wrapper (its localFiles map), same
+    // reason revealLocalUrl exists at all — so the path
     // has to be asked for. Not awaited inline above: a wrapper too old to
     // expose pathForLocalUrl simply copies nothing rather than throwing.
     if (n && n.sourceUrl && isDesktopLocalUrl(n.sourceUrl) &&
@@ -19482,9 +19478,9 @@ async function persistFileNode(node) {
     handle: (node.tail && !node.folderId && !isUrlTailHandle(node.tail.handle)) ? node.tail.handle : null,
     text: rebuildFileText(node),
     formatId: node.formatId || null,
-    // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (Electron
-    // only, resolved via webUtils.getPathForFile at load time) and
-    // sourceUrl (any ?url=/philoggLoadUrl deep-link) both need to survive a
+    // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (desktop
+    // wrapper only) and sourceUrl (any ?url=/philoggLoadUrl deep-link) both
+    // need to survive a
     // reload same as everything else about the file, or the context menu
     // item would silently vanish after a refresh even though the file is
     // still the same one on disk / at that URL.

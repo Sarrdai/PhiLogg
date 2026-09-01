@@ -22,14 +22,12 @@ deployments possible:
   (`philogg.html?url=<encoded-url>`), so a CI job or report page can link
   straight into a pre-loaded log for a teammate — not possible from a local
   `file://` open.
-- **Desktop app** — the optional Electron wrapper in `desktop/` packages
+- **Desktop app** — the optional wrapper in `desktop/` packages
   `philogg.html` unmodified into a native-feeling app with `.log` file
   associations and a frameless window, so double-clicking a log file opens
-  it straight into PhiLogg like any other document. See `desktop/README.md`.
-  An experimental second wrapper with the same feature set, built on Tauri
-  and the OS's own webview (much smaller installers), lives in
-  `desktop-tauri/` and installs alongside it — see
-  `desktop-tauri/README.md`.
+  it straight into PhiLogg like any other document. Built on Tauri and the
+  OS's own webview, so the installer stays small. See
+  `desktop/README.md`.
 
 ## Screenshots
 
@@ -100,7 +98,7 @@ open it in a browser to view it.
   gaps you open line by line, GitHub-diff style. Jump match to match with
   Ctrl+↑/↓ without going back to the tree. Side by side or stacked.
 - **Live tailing & folder watch** (Chromium, File System Access API — or
-  any platform in the Tauri desktop build, which lists folders natively) —
+  any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and
   Filtered views auto-following the newest entry; a watched folder picks up
   new files automatically.
@@ -115,11 +113,10 @@ open it in a browser to view it.
   menu jumps straight to its containing folder in the OS file manager, or
   puts the path on the clipboard, whenever a real path is known. That's the
   desktop app only — no web API lets a browser resolve a dropped file back
-  to a filesystem path. The Electron build knows the path for files opened
-  via the picker, drag-drop, folder watch or a `.log` file association; the
-  Tauri build for all of those except a watched folder's contents. A plain
-  `http(s)` deep-linked file offers "Copy URL" instead, since there's no
-  local folder to reveal.
+  to a filesystem path. The desktop build knows the path for files opened
+  via the picker, drag-drop, folder watch or a `.log` file association,
+  because it is the thing that opens them. A plain `http(s)` deep-linked
+  file offers "Copy URL" instead, since there's no local folder to reveal.
 - **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with drag-to-select.**
 - **Session cache** — reload the browser tab and get your files, filters,
   and settings back.
@@ -171,8 +168,8 @@ folder watch require the File System Access API**, currently
 Chromium-based browsers only (Chrome, Edge, …) — Firefox and others still
 open and analyze files, just as static snapshots. In the browser, folders
 the engine considers sensitive (Desktop, Downloads) can't be watched at all;
-the Tauri desktop build has no such restriction, since it lists folders
-itself rather than through that API.
+the desktop build has no such restriction, since it lists folders itself
+rather than through that API.
 
 ## The log format it reads
 
@@ -204,34 +201,31 @@ in a different shape to try the Format Manager against.
 ## Repository layout
 
 ```
-philogg.html                          the application — everything lives here
+philogg.html                            the application — everything lives here
 tests/
-  philogg.regression.test.js          jsdom regression suite (drives the real file via DOM events)
-  README.md                           testing conventions
+  philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events)
+  README.md                             testing conventions
 tools/
-  log-simulator.html                  standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
+  log-simulator.html                    standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
 desktop/
-  README.md                           Electron wrapper: build/run steps, current status
-  main.js, package.json, electron-builder.yml   file associations + CLI file opening (loads philogg.html unmodified)
-desktop-tauri/
-  README.md                           Tauri wrapper (experimental, parallel to desktop/): prerequisites, build/run steps, known gaps
-  src-tauri/                          Rust backend + tauri.conf.json (same feature set, OS webview instead of bundled Chromium)
+  README.md                             desktop wrapper (Tauri): prerequisites, build/run steps, known limitations
+  src-tauri/                            Rust backend + tauri.conf.json (file associations + native file/folder opening, loads philogg.html unmodified)
 homepage/
-  index.html                          static feature-tour / marketing page
-  screenshots/                        screenshots used by the homepage and this README
+  index.html                            static feature-tour / marketing page
+  screenshots/                          screenshots used by the homepage and this README
 examples/
-  general.log                         a sample log file in the default format
-  bracket-format.log                  a sample log file in a different format, for trying the Format Manager
+  general.log                           a sample log file in the default format
+  bracket-format.log                    a sample log file in a different format, for trying the Format Manager
 scripts/
-  install_pkgs.sh                     helper for installing test dependencies
-.github/workflows/release.yml         manual workflow: stamps a version and publishes a tester build
-.github/workflows/desktop-release.yml manual workflow: builds the desktop/ Electron wrapper per OS (untested, see desktop/README.md)
-.github/workflows/tauri-release.yml   manual workflow: builds the desktop-tauri/ Tauri wrapper per OS
-PROJECT.md                            architecture entry point + index into docs/ (start here to work on the code)
-docs/                                 per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
-CHANGELOG.md                          full chronological, dated changelog
-FEATURE_BACKLOG.md                    unelaborated feature ideas
-CLAUDE.md                             instructions for AI coding sessions on this repo
+  install_pkgs.sh                       helper for installing test dependencies
+  strip-comments.js                     release-only: strips every comment out of a copy of philogg.html (both release workflows run it)
+.github/workflows/release.yml           manual workflow: stamps a version, strips comments and publishes a tester build
+.github/workflows/desktop-release.yml   manual workflow: builds the desktop/ wrapper per OS
+PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
+docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
+CHANGELOG.md                            full chronological, dated changelog
+FEATURE_BACKLOG.md                      unelaborated feature ideas
+CLAUDE.md                               instructions for AI coding sessions on this repo
 ```
 
 ## Development
