@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PhiLogg Tauri",
+  "productName": "PhiLogg",
   "version": "1.0.0",
-  "identifier": "com.kleinphilipp.philogg-tauri",
+  "identifier": "com.kleinphilipp.philogg",
   "build": {
     "frontendDist": "../frontend"
   },

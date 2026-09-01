@@ -1,17 +1,15 @@
-// PhiLogg desktop wrapper — Tauri edition.
+// PhiLogg desktop wrapper (Tauri v2).
 //
-// An experiment running *parallel* to the Electron wrapper in `desktop/`,
-// not a replacement for it (yet): same feature surface, same visuals, built
-// on the OS webview instead of a bundled Chromium so the two can be compared
-// on real machines. Everything it does deliberately mirrors
-// `desktop/main.js`, and the per-module comments call out each place the two
-// platforms genuinely differ. It installs under its own identifier and its
-// own config directory so both can be installed and run side by side.
+// The optional desktop shell around `philogg.html`: `.log` file
+// associations, CLI-argument opening, a frameless window, a tray and a
+// splash screen, built on the OS webview (WebView2 / WKWebView / WebKitGTK)
+// plus this Rust backend. The per-module comments call out each place the
+// platforms genuinely differ.
 //
-// The one rule it inherits unchanged: `philogg.html` is never modified. It
+// The one rule everything here obeys: `philogg.html` is never modified. It
 // is loaded, unmodified, through a custom `philogg://` scheme and handed a
 // local file through its own `?url=` deep-link mechanism (see PROJECT.md
-// "Deep-link loading"), exactly as the Electron wrapper does.
+// "Deep-link loading").
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;

@@ -1,9 +1,11 @@
 name: Build desktop release
 
-# Manual only, and entirely separate from "Build tester release"
-# (release.yml) — philogg.html itself is untouched by this. Builds the
-# Electron wrapper in desktop/ per platform via electron-builder and
-# publishes the installers as GitHub Release assets.
+# Manual only, and deliberately separate from release.yml, which keeps
+# publishing the plain philogg.html tester build and is untouched by
+# anything here. See docs/desktop.md → "Release".
+#
+# Artifacts are named PhiLogg-<sha>.<ext>. Tauri's bundler has no
+# `artifactName` template, so the rename happens in the upload step below.
 on:
   workflow_dispatch:
     inputs:
@@ -24,9 +26,9 @@ permissions:
   contents: write
 
 jobs:
-  # Creates the release once, up front, so the three per-OS build jobs below
-  # can each just upload into it — avoids three parallel jobs racing to
-  # create (or half-create) the same release tag.
+  # Creates the release once, up front, so the per-OS build jobs below can
+  # each just upload into it — avoids parallel jobs racing to create (or
+  # half-create) the same release tag.
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -40,18 +42,17 @@ jobs:
         run: echo "tag=desktop-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       # The `matrix` context isn't available in a job-level `if:` (only in
-      # `runs-on`/`env` and inside steps — an earlier version of this
-      # workflow tried `if: matrix.os == ... && inputs.build_windows` on the
-      # `build` job below and GitHub rejected the whole file at parse time,
-      # 0 jobs created). So the checkboxes are turned into the `build`
-      # job's actual matrix list here instead of filtering a fixed one.
+      # `runs-on`/`env` and inside steps) — trying to filter a fixed matrix
+      # that way makes GitHub reject the whole file at parse time, 0 jobs
+      # created. So the checkboxes are turned into the `build` job's actual
+      # matrix list here instead.
       - name: Compute selected OS matrix
         id: os_list
         run: |
           list="[]"
           [ "${{ inputs.build_windows }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["windows-latest"]')
           [ "${{ inputs.build_mac }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["macos-latest"]')
-          [ "${{ inputs.build_linux }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["ubuntu-latest"]')
+          [ "${{ inputs.build_linux }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["ubuntu-22.04"]')
           echo "list=$list" >> "$GITHUB_OUTPUT"
 
       - name: Create release
@@ -60,7 +61,7 @@ jobs:
         run: |
           gh release create "${{ steps.tag.outputs.tag }}" \
             --title "PhiLogg desktop build ${{ steps.tag.outputs.tag }}" \
-            --notes "Automated desktop (Electron) tester build. Proprietary — see the in-app License panel. Not for redistribution."
+            --notes "Automated desktop tester build — see desktop/README.md. Proprietary — see the in-app License panel. Not for redistribution."
 
   build:
     needs: prepare
@@ -72,6 +73,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # ubuntu-22.04 rather than -latest on purpose: an AppImage links
+      # against the glibc of the machine that built it, so building on the
+      # oldest still-supported runner is what makes it run on anything
+      # newer too.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -80,11 +102,13 @@ jobs:
         working-directory: desktop
         run: npm install
 
-      # Same short-SHA stamp release.yml uses for the plain philogg.html
-      # tester build (see that workflow's own "Stamp version" step) — never
-      # committed back, just the checked-out copy electron-builder's
-      # extraResources packages a moment later in "Build installer".
-      - name: Stamp version
+      # Same short-SHA stamp release.yml uses, plus the same release-only
+      # comment strip — neither committed back, both applied to the
+      # checked-out copy the Tauri bundler embeds as a resource a moment
+      # later, so the packaged philogg.html matches what release.yml
+      # publishes standalone. `sed -i.bak` because BSD sed (macOS runner)
+      # requires an argument to -i.
+      - name: Stamp version and strip comments
         id: stamp
         shell: bash
         run: |
@@ -93,24 +117,24 @@ jobs:
           sed -i.bak "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
           rm -f philogg.html.bak
           grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          node scripts/strip-comments.js philogg.html
+          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build installer
         working-directory: desktop
-        env:
-          PHILOGG_SHA: ${{ steps.stamp.outputs.short_sha }}
         run: npm run build
 
       - name: Upload installer(s)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        # windows-latest/macos-latest have both failed here before with no
-        # error output at all (build succeeded, `gh release upload` just
-        # exited 1) — matches a transient upload hiccup, not a script bug,
-        # so retry with backoff instead of failing the whole job on the
-        # first blip. `-e` won't abort the loop early: the failing `gh`
-        # call sits inside an `if`, which is exempt from errexit.
+        # windows/macos have both failed a `gh release upload` before with a
+        # clean build and no error output, which matches a transient upload
+        # hiccup rather than a script bug — so retry with backoff instead of
+        # failing the whole job on the first blip. `-e` won't abort the loop
+        # early: the failing `gh` call sits inside an `if`, which is exempt
+        # from errexit.
         run: |
           upload_with_retry() {
             local f="$1" attempt
@@ -124,8 +148,11 @@ jobs:
             echo "::error::giving up uploading $f after 5 attempts"
             return 1
           }
-          for f in desktop/dist/*.exe desktop/dist/*.dmg desktop/dist/*.AppImage; do
-            if [ -f "$f" ]; then
-              upload_with_retry "$f"
-            fi
+          BUNDLE=desktop/src-tauri/target/release/bundle
+          SHA="${{ steps.stamp.outputs.short_sha }}"
+          shopt -s nullglob
+          for f in "$BUNDLE"/nsis/*.exe "$BUNDLE"/dmg/*.dmg "$BUNDLE"/appimage/*.AppImage; do
+            renamed="$(dirname "$f")/PhiLogg-${SHA}.${f##*.}"
+            mv "$f" "$renamed"
+            upload_with_retry "$renamed"
           done

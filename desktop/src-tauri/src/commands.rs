@@ -5,9 +5,9 @@
 //! `core:default`, and the page gets exactly this surface and nothing else.
 //! That still holds for the `dialog` plugin added here: it is driven from
 //! Rust (`pick_files`), never invoked from the page, exactly like `opener`.
-//! That is the same deliberately narrow bridge `desktop/preload.js` is, plus
-//! the few window actions Tauri needs a round-trip for that Electron got
-//! natively (fullscreen, and the injected window controls).
+//! Deliberately narrow: the file/folder routes the page cannot take itself,
+//! plus the few window actions a webview has no native say over (fullscreen,
+//! close, and the injected window controls).
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 
@@ -75,10 +75,10 @@ impl LocalFile {
     }
 }
 
-/// "Open… → File(s)…" under this wrapper. Electron can let `philogg.html`
-/// run its own in-page picker and still resolve each `File` back to a path
-/// afterwards (`webUtils`); no system webview can, so the OS dialog has to
-/// run out here — that is the only way a picked file arrives with its
+/// "Open… → File(s)…" under this wrapper. No system webview resolves a
+/// `File` object back to its OS path, so the page's own in-page picker can
+/// only ever produce pathless files; the OS dialog has to run out here
+/// instead — that is the only way a picked file arrives with its
 /// location still attached. `philogg.html`'s own picker stays in place for
 /// every other build; see its `openFilesPicker`.
 ///
@@ -223,8 +223,7 @@ pub fn list_system_fonts(state: State<'_, AppState>) -> Vec<String> {
 
 /// `FEATURE_BACKLOG.md` #31/#36: F11 flips the same native fullscreen state
 /// the window's own maximize control uses, so either one can exit what the
-/// other entered. Electron catches the key in the main process via
-/// `before-input-event`; a Tauri webview has no equivalent hook, so the key
+/// other entered. A Tauri webview has no backend-side input hook, so the key
 /// is caught in the page (see `inject.rs`) and routed here.
 #[tauri::command]
 pub fn toggle_fullscreen(window: Window) {
@@ -255,8 +254,8 @@ pub fn window_close(window: Window) {
 }
 
 /// Called by the injected script once `philogg.html` has actually painted,
-/// which is the point the splash can be dismissed — the equivalent of
-/// Electron's `"ready-to-show"`, which Tauri has no counterpart for.
+/// which is the point the splash can be dismissed. Tauri has no
+/// "first paint" event of its own, so the page reports it (see `inject.js`).
 #[tauri::command]
 pub fn app_ready(app: AppHandle) {
     windows::dismiss_splash(&app);
