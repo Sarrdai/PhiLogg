@@ -93,19 +93,31 @@
   // getPathForFile stays permanently null here: Electron resolves a File
   // object back to its OS path via webUtils, and no system webview offers
   // an equivalent. Rather than leave picked/dropped files locationless, the
-  // wrapper opens them itself — pickFiles runs the OS dialog, and the
-  // native drag-drop handler (windows.rs) catches drops — so the path is
-  // known before philogg.html ever sees the file, and travels with the
-  // philogg://local/… URL it is served under. philogg.html still treats a
-  // null getPathForFile as "no path known", which is now only reached by
-  // its folder watch. See desktop-tauri/README.md -> "Differences from the
-  // Electron wrapper".
+  // wrapper opens them itself — pickFiles runs the OS dialog, the native
+  // drag-drop handler (windows.rs) catches drops, and listFolder lists a
+  // watched folder — so the path is known before philogg.html ever sees the
+  // file, and travels with the philogg://local/… URL it is served under.
+  // philogg.html still treats a null getPathForFile as "no path known";
+  // under this wrapper no route reaches that case any more. See
+  // desktop-tauri/README.md -> "Differences from the Electron wrapper".
   window.philogg = {
     getPathForFile: function () {
       return null;
     },
     pickFiles: function () {
       return invoke("pick_files");
+    },
+    // Folder watch, the two halves philogg.html's own showDirectoryPicker
+    // route can't provide here: the OS folder dialog, and the directory
+    // listing. Chromium's sensitive-directory blocklist (Desktop, Downloads,
+    // …) applies to showDirectoryPicker and cannot be switched off by an
+    // embedder, and WKWebView/WebKitGTK don't implement it at all — so the
+    // page uses these instead wherever they exist. See commands.rs.
+    pickFolder: function () {
+      return invoke("pick_folder");
+    },
+    listFolder: function (path, extensions) {
+      return invoke("list_folder", { path: path, extensions: extensions || [] });
     },
     pathForLocalUrl: function (url) {
       return invoke("path_for_local_url", { url: url });

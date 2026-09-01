@@ -67,6 +67,8 @@ fn main() {
             commands::reveal_path,
             commands::reveal_local_url,
             commands::pick_files,
+            commands::pick_folder,
+            commands::list_folder,
             commands::path_for_local_url,
             commands::list_system_fonts,
             commands::toggle_fullscreen,
