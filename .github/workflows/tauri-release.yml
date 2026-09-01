@@ -1,16 +1,11 @@
-name: Build desktop release (Tauri)
+name: Build desktop release
 
-# Manual only, and deliberately a separate file from desktop-release.yml
-# rather than an extra matrix dimension inside it: the Electron wrapper is
-# still the one that has to keep working, and its release path stays
-# untouched by anything here. Same structure as that workflow otherwise, so
-# the two stay easy to compare — see docs/desktop-tauri.md.
+# Manual only, and deliberately separate from release.yml, which keeps
+# publishing the plain philogg.html tester build and is untouched by
+# anything here. See docs/desktop-tauri.md → "Release".
 #
-# Artifacts are named PhiLogg-tauri-<sha>.<ext> so they can sit next to the
-# Electron installers in a release listing without either being mistaken for
-# the other. (Electron's electron-builder does this via an `artifactName`
-# template; Tauri's bundler has no equivalent, so the rename happens in the
-# upload step below.)
+# Artifacts are named PhiLogg-tauri-<sha>.<ext>. Tauri's bundler has no
+# `artifactName` template, so the rename happens in the upload step below.
 on:
   workflow_dispatch:
     inputs:
@@ -49,8 +44,8 @@ jobs:
       # The `matrix` context isn't available in a job-level `if:` (only in
       # `runs-on`/`env` and inside steps) — trying to filter a fixed matrix
       # that way makes GitHub reject the whole file at parse time, 0 jobs
-      # created. See desktop-release.yml's own note; the checkboxes are
-      # turned into the `build` job's actual matrix list here instead.
+      # created. So the checkboxes are turned into the `build` job's actual
+      # matrix list here instead.
       - name: Compute selected OS matrix
         id: os_list
         run: |
@@ -65,8 +60,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.tag.outputs.tag }}" \
-            --title "PhiLogg desktop build (Tauri) ${{ steps.tag.outputs.tag }}" \
-            --notes "Automated desktop (Tauri) tester build, running in parallel with the Electron wrapper — see desktop-tauri/README.md. Proprietary — see the in-app License panel. Not for redistribution."
+            --title "PhiLogg desktop build ${{ steps.tag.outputs.tag }}" \
+            --notes "Automated desktop tester build — see desktop-tauri/README.md. Proprietary — see the in-app License panel. Not for redistribution."
 
   build:
     needs: prepare
@@ -107,10 +102,13 @@ jobs:
         working-directory: desktop-tauri
         run: npm install
 
-      # Same short-SHA stamp release.yml and desktop-release.yml use — never
-      # committed back, just the checked-out copy the Tauri bundler embeds as
-      # a resource a moment later.
-      - name: Stamp version
+      # Same short-SHA stamp release.yml uses, plus the same release-only
+      # comment strip — neither committed back, both applied to the
+      # checked-out copy the Tauri bundler embeds as a resource a moment
+      # later, so the packaged philogg.html matches what release.yml
+      # publishes standalone. `sed -i.bak` because BSD sed (macOS runner)
+      # requires an argument to -i.
+      - name: Stamp version and strip comments
         id: stamp
         shell: bash
         run: |
@@ -118,6 +116,8 @@ jobs:
           SHORT_SHA="${SHORT_SHA#tauri-}"
           sed -i.bak "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
           rm -f philogg.html.bak
+          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          node scripts/strip-comments.js philogg.html
           grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
@@ -129,11 +129,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        # Same retry-with-backoff as desktop-release.yml: windows/macos have
-        # both failed a `gh release upload` there before with a clean build
-        # and no error output, which matches a transient upload hiccup rather
-        # than a script bug. `-e` won't abort the loop early — the failing
-        # `gh` call sits inside an `if`, which is exempt from errexit.
+        # windows/macos have both failed a `gh release upload` before with a
+        # clean build and no error output, which matches a transient upload
+        # hiccup rather than a script bug — so retry with backoff instead of
+        # failing the whole job on the first blip. `-e` won't abort the loop
+        # early: the failing `gh` call sits inside an `if`, which is exempt
+        # from errexit.
         run: |
           upload_with_retry() {
             local f="$1" attempt

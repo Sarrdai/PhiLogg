@@ -1,7 +1,7 @@
 // Injected into every webview before philogg.html's own scripts run, and
 // again after every navigation/reload. Built by inject.rs, which substitutes
-// the __PHILOGG_*__ placeholders below. See that file for why this is one
-// script rather than Electron's preload + dom-ready split.
+// the __PHILOGG_*__ placeholders below. See that file for why the
+// before-script and needs-the-DOM halves are one script here.
 (function () {
   "use strict";
 
@@ -68,9 +68,9 @@
   // -------------------------------------------------------------- close()
   // FEATURE_BACKLOG.md's quitOnLastFileClose calls the plain, standard
   // `window.close()` when the last open file is closed (see philogg.html's
-  // own comment on that call: it relies on the *host* intercepting a
-  // renderer's own window.close() and turning it into a real window close —
-  // true for Electron's BrowserWindow, but not for a Tauri webview. Here
+  // own comment on that call: it relies on the *host* intercepting the
+  // page's own window.close() and turning it into a real window close, which
+  // a Tauri webview does not do. Here
   // `window.close()` is a bare DOM/webview API with no Tauri involvement at
   // all: the webview engine tears down the *page* (which is why the person
   // who found this bug saw the app "close" — the content actually vanished)
@@ -86,20 +86,19 @@
   };
 
   // ---------------------------------------------------------------- bridge
-  // The same narrow surface desktop/preload.js exposes, so philogg.html's
-  // feature detection (`window.philogg` exists -> desktop build) and its
-  // three context-menu outcomes work identically.
+  // The narrow surface philogg.html feature-detects on, so its
+  // `window.philogg` check (-> desktop build) and its three context-menu
+  // outcomes all work.
   //
-  // getPathForFile stays permanently null here: Electron resolves a File
-  // object back to its OS path via webUtils, and no system webview offers
-  // an equivalent. Rather than leave picked/dropped files locationless, the
-  // wrapper opens them itself — pickFiles runs the OS dialog, the native
-  // drag-drop handler (windows.rs) catches drops, and listFolder lists a
-  // watched folder — so the path is known before philogg.html ever sees the
-  // file, and travels with the philogg://local/… URL it is served under.
-  // philogg.html still treats a null getPathForFile as "no path known";
-  // under this wrapper no route reaches that case any more. See
-  // desktop-tauri/README.md -> "Differences from the Electron wrapper".
+  // getPathForFile stays permanently null: no system webview resolves a
+  // File object back to its OS path. Rather than leave picked/dropped files
+  // locationless, the wrapper opens them itself — pickFiles runs the OS
+  // dialog, the native drag-drop handler (windows.rs) catches drops, and
+  // listFolder lists a watched folder — so the path is known before
+  // philogg.html ever sees the file, and travels with the philogg://local/…
+  // URL it is served under. philogg.html still treats a null
+  // getPathForFile as "no path known"; under this wrapper no route reaches
+  // that case any more. See desktop-tauri/README.md -> "Known limitations".
   window.philogg = {
     getPathForFile: function () {
       return null;
@@ -138,16 +137,15 @@
   // ------------------------------------------------------------ frameless
   // philogg.html's own #toolbar is the only header a frameless window has
   // left, so it doubles as the drag handle and (off macOS) as the place the
-  // window controls live. Electron gets both for free from
-  // `-webkit-app-region: drag` plus a native Window Controls Overlay; Tauri
-  // has neither, so the drag region is an attribute walk and the controls
-  // are real DOM styled from philogg.html's own theme variables — which is
-  // also why they follow a theme/accent change with no polling at all,
-  // unlike Electron's watchTheme().
+  // window controls live. Tauri offers neither an inherited drag region nor
+  // a native window-controls overlay, so the drag region is an attribute
+  // walk and the controls are real DOM styled from philogg.html's own theme
+  // variables — which is also why they follow a theme/accent change with no
+  // polling or backend involvement at all.
   var CSS = [
     IS_MAC
-      ? /* native traffic lights sit top-left; matching desktop/main.js, they
-           are left there rather than moved to the right */
+      ? /* native traffic lights sit top-left; left there rather than moved
+           to the right, which is where a Mac user expects them */
         ".brand { padding-left: 72px; }"
       : "",
     "#tauri-wc { display: flex; align-items: center; gap: 2px; margin-left: 4px; margin-right: -8px; }",
@@ -173,8 +171,8 @@
     "</button>";
 
   // Tauri's drag handling fires only when the clicked element *itself*
-  // carries the attribute (Electron's app-region, by contrast, is inherited
-  // by every child), so it has to be stamped on each non-interactive
+  // carries the attribute — it is not inherited by children — so it has to
+  // be stamped on each non-interactive
   // descendant of #toolbar. Anything inside a control — the control, its
   // label, the <svg>/<path> that is the real event target on an icon button
   // — is skipped, or clicking a toolbar button would drag the window
@@ -222,9 +220,8 @@
   }
 
   // FEATURE_BACKLOG.md #31: F11 toggles the same native fullscreen state the
-  // maximize control uses. Electron catches this in the main process
-  // (`before-input-event`); a Tauri webview has no such hook, so it is a
-  // capture-phase listener here, routed to the toggle_fullscreen command.
+  // maximize control uses. A Tauri webview has no backend-side input hook,
+  // so it is a capture-phase listener here, routed to toggle_fullscreen.
   function setUpShortcuts() {
     window.addEventListener(
       "keydown",
@@ -280,8 +277,8 @@
     setUpSettingsMirror();
     // FEATURE_BACKLOG.md #51: dismisses the splash. Deliberately two nested
     // frames after DOMContentLoaded rather than on the event itself — the
-    // point is that something has actually been painted, which is what
-    // Electron's "ready-to-show" guarantees and DOMContentLoaded does not.
+    // point is that something has actually been painted, which
+    // DOMContentLoaded alone does not guarantee.
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         invoke("app_ready").catch(function () {});

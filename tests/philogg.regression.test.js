@@ -7499,25 +7499,25 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 67 — window.philoggLoadUrl: desktop wrapper hands a
    later-opened file into the already-running window
-   Origin: this session (2026-08-20), person-reported (Windows Electron
+   Origin: this session (2026-08-20), person-reported (Windows desktop
    build): a second file opened via file-association double-click spawned
    a whole new app window instead of landing in the one already open, and
    the first file loaded showed up in the tree named "1" instead of its
-   real file name. Root causes: (1) desktop/main.js's "second-instance"
-   handler unconditionally called createWindow() instead of reusing an
-   existing window, and (2) the philogg://local/<id> URL it built carried
+   real file name. Root causes: (1) the wrapper's single-instance handler
+   unconditionally created a new window instead of reusing an existing
+   one, and (2) the philogg://local/<id> URL it built carried
    only the opaque numeric id as its last path segment, which is exactly
    what loadFromUrlParam's name-from-URL logic (GROUP 66) picks up. Fixed
    by (1) refactoring loadFromUrlParam's fetch-and-add body out into
    loadUrlIntoTree(url), exposed as window.philoggLoadUrl for the main
-   process to call via executeJavaScript on an existing window, and (2)
-   having main.js embed the real basename as a second path segment
+   wrapper to call on an existing window, and (2) having the wrapper embed
+   the real basename as a second path segment
    (philogg://local/<id>/<name>) so the existing last-segment naming logic
-   picks up the true file name for free. Covered here: the renderer-side
+   picks up the true file name for free. Covered here: the page-side
    half (loadUrlIntoTree/philoggLoadUrl itself, and that repeated calls
-   accumulate files rather than replace them) — desktop/main.js's Electron
-   APIs (BrowserWindow, single-instance lock) aren't reachable from this
-   jsdom suite, see tests/README.md.
+   accumulate files rather than replace them) — the wrapper's own window
+   and single-instance handling isn't reachable from this jsdom suite,
+   see tests/README.md.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("67a. window.philoggLoadUrl is exposed as the same logic loadFromUrlParam uses");
@@ -7547,16 +7547,16 @@ await withApp(async (w, d, T) => {
    launch argument / file-association now gets tailed
    Origin: this session (2026-08-22). Root cause: loadUrlIntoTree (used for
    EVERY desktop-wrapper-opened file, including the very first one passed as
-   a command-line argument — see desktop/main.js fileArgFromArgv/createWindow
-   — and any later "open-file"/second-instance one via philoggLoadUrl, GROUP
+   a command-line argument — see desktop-tauri/'s windows.rs
+   — and any later file-association/second-instance one via philoggLoadUrl, GROUP
    67 above) built the node purely from already-fetched text via addFile(),
    the exact same path used for a one-shot http(s) CI report link, so it
    never got a node.tail — the file just sat as a static snapshot even
    though the desktop wrapper serves it from a real file on disk that CAN
    grow. Fixed by recognizing the desktop wrapper's own
-   `philogg://local/<id>/…` url scheme (which the main process re-reads
-   fresh via fs.promises.readFile on every request — see registerProtocol in
-   desktop/main.js) and wiring node.tail with a handle that just re-fetches
+   `philogg://local/<id>/…` url scheme (which the wrapper re-reads fresh off
+   disk on every request — see desktop-tauri/'s protocol.rs) and wiring
+   node.tail with a handle that just re-fetches
    that same url, reusing the existing tailTick poll loop (GROUP 12)
    unchanged — which incidentally also covers the backlog item's second,
    softer ask ("periodically re-check static files for changes"): a file
@@ -8570,10 +8570,10 @@ await withApp(async (w, d, T) => {
    GROUP 76 — Settings: "Closing the last log file quits the app"
    Origin: this session (2026-08-21), FEATURE_BACKLOG.md item, default off.
    Purely a local app-behavior preference (localStorage, like the theme
-   toggle), meaningful mainly under the Electron desktop wrapper — a bare
-   window.close() is enough there since Electron intercepts a renderer's
-   own window.close() and closes that BrowserWindow (see PROJECT.md
-   "Desktop wrapper"); in an ordinary browser tab it's a no-op. window.close
+   toggle), meaningful mainly under the desktop wrapper — a bare
+   window.close() is enough there since the wrapper routes the page's own
+   window.close() into a real window close (see docs/desktop-tauri.md);
+   in an ordinary browser tab it's a no-op. window.close
    is stubbed here (and restored afterwards) rather than actually invoked,
    since a real jsdom window.close() would tear the test window down mid-run.
    ============================================================ */
@@ -11149,9 +11149,9 @@ await withApp(async (w, d, T) => {
    Origin: this session (2026-08-25). Purely a local app-behavior
    preference (localStorage, like GROUP 76's quit-on-last-close), default
    ON this time (unlike GROUP 76's default off) since that's the requested
-   desktop-build default. main.js (Electron, untestable under jsdom) reads
-   this same key back via executeJavaScript when its own BrowserWindow
-   "close" fires; this file only owns persisting the checkbox state.
+   desktop-build default. The wrapper (untestable under jsdom) mirrors this
+   same key out of localStorage and consults it when a window close is
+   requested; this file only owns persisting the checkbox state.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("107. Settings: \"Close to system tray\" (default on)");
@@ -11232,23 +11232,22 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 109 — "Open File Location" (FEATURE_BACKLOG.md #52)
    Origin: this session (person-requested, generalized beyond the backlog
-   entry's Electron-only wording): a file node's context menu offers
+   entry's one-wrapper wording): a file node's context menu offers
    "Open File Location" whenever a real OS path is actually known
-   (node.localPath, resolved at load time via desktop/preload.js's
-   webUtils bridge — simulated here via a stub window.philogg, since jsdom
-   can't run real Electron/webUtils) AND window.philogg exists (i.e. the
-   Electron build) — never in a plain browser build, where no web API can
-   resolve a File back to a filesystem path at all. A node loaded via a
-   philogg://local/… deep link (desktop launch-arg/file-association) gets
-   the same item routed through revealLocalUrl instead, since only main.js
-   holds that path. Any ?url= node (local or plain http(s)) instead offers
+   (node.localPath, supplied by the desktop wrapper — simulated here via a
+   stub window.philogg, since jsdom can't run a real webview host) AND
+   window.philogg exists (i.e. the desktop build) — never in a plain
+   browser build, where no web API can resolve a File back to a filesystem
+   path at all. A node loaded via a philogg://local/… deep link (desktop
+   launch-arg/file-association) gets the same item routed through
+   revealLocalUrl instead, since only the wrapper holds that path. Any ?url= node (local or plain http(s)) instead offers
    "Copy URL" for the URL itself, but ONLY for a genuine http(s) link —
    not for the desktop-local scheme, which has no meaningful "URL" to a
    person. Both items are also round-tripped through the session cache
    (persistFileNode/restoreSessionFromCache) so they survive a reload.
    ============================================================ */
 await withApp(async (w, d, T) => {
-  section("109a. \"Open File Location\" / \"Copy URL\": absent outside Electron (no window.philogg)");
+  section("109a. \"Open File Location\" / \"Copy URL\": absent outside the desktop build (no window.philogg)");
 
   const f = await w.addFile("plain.log", makeLog(0, 5), () => {});
   f.localPath = "/home/user/logs/plain.log"; // simulate a resolved path even though nothing can act on it
@@ -11808,13 +11807,13 @@ await withApp(async (w, d, T) => {
    Origin: this session (person-requested follow-up to GROUP 111f). The
    plain HTML build can't enumerate installed fonts (no permission-prompt
    UI for the Local Font Access API), but the desktop wrapper can shell out
-   to the OS via preload.js's listSystemFonts bridge (font-list package in
-   main.js) with no permission dialog needed, since it's a Node process. On
+   to the OS via the wrapper's listSystemFonts bridge with no permission
+   dialog needed, since it's a native process. On
    the desktop build the picker appends every reported name as an extra
    <option> (deduped against the curated list); selecting one stores a
    "sys:<name>" id and applies '"<name>",<default fallback stack>' as
-   --font-ui. Outside Electron (no window.philogg) nothing changes from
-   GROUP 111f's plain curated-list behavior.
+   --font-ui. Outside the desktop build (no window.philogg) nothing changes
+   from GROUP 111f's plain curated-list behavior.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("113a. No window.philogg (plain HTML build): font list stays curated-only");
@@ -14715,10 +14714,9 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 139 — Desktop bridge contract when getPathForFile can't resolve
-   anything (the Tauri wrapper, desktop-tauri/)
-   Origin: the session adding a second desktop wrapper (Tauri) alongside
-   the Electron one. Electron resolves a File object back to its real OS
-   path via webUtils; no system webview offers an equivalent, so that
+   anything (the wrapper in desktop-tauri/)
+   Origin: the session adding the Tauri desktop wrapper. No system webview
+   resolves a File object back to its real OS path, so that
    wrapper's window.philogg.getPathForFile always returns null. GROUP 109
    already covers the *menu* gating with a stub that returns null, but
    never exercises the load path that calls it — this group does, so a
@@ -14770,21 +14768,19 @@ await withApp(async (w, d, T) => {
   assert(revealItem, "\"Open File Location\" still offered for a philogg://local/… sourceUrl");
   fireClick(revealItem, w);
   assert(revealed === "philogg://local/1/launched.log",
-    "it routes through revealLocalUrl, which both wrappers implement, got " + revealed);
+    "it routes through revealLocalUrl, which the desktop wrapper implements, got " + revealed);
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
 /* ============================================================
-   GROUP 140 — Toolbar chrome contract both desktop wrappers inject against
-   Origin: this session (Tauri wrapper). Neither wrapper edits
-   philogg.html; both instead inject CSS/DOM keyed off #toolbar's own
-   structure — desktop/main.js's FRAMELESS_CSS (-webkit-app-region on
-   #toolbar and its button/input/.ctx-item children, plus the 49px
-   titleBarOverlay height derived from #toolbar's 50px) and
-   desktop-tauri's inject.js (the same drag region as a
-   data-tauri-drag-region walk, and the window-control buttons appended
-   into .toolbar-right). None of that is reachable from jsdom, but the
+   GROUP 140 — Toolbar chrome contract the desktop wrapper injects against
+   Origin: this session (Tauri wrapper). The wrapper never edits
+   philogg.html; it injects CSS/DOM keyed off #toolbar's own
+   structure instead — desktop-tauri's inject.js stamps the drag region as a
+   data-tauri-drag-region walk over #toolbar and its non-control
+   descendants, and appends the window-control buttons
+   into .toolbar-right. None of that is reachable from jsdom, but the
    selectors and the height it is all derived from are — and silently
-   renaming or restyling them would break both wrappers' window chrome
+   renaming or restyling them would break the wrapper's window chrome
    with nothing failing here. This group is that tripwire.
    ============================================================ */
 await withApp(async (w, d, T) => {
@@ -14793,7 +14789,7 @@ await withApp(async (w, d, T) => {
   const toolbar = d.querySelector("#toolbar");
   assert(toolbar && toolbar.tagName === "HEADER", "#toolbar exists and is the page header");
   assert(toolbar.querySelector(".toolbar-right"),
-    ".toolbar-right exists — where the Tauri wrapper appends its window-control buttons");
+    ".toolbar-right exists — where the desktop wrapper appends its window-control buttons");
   assert(toolbar.querySelector(".brand"),
     ".brand exists — where the macOS traffic-light inset padding is applied");
 
@@ -14801,24 +14797,23 @@ await withApp(async (w, d, T) => {
   const toolbarRule = css.match(/#toolbar\s*\{[^}]*\}/);
   assert(toolbarRule, "#toolbar has its own style rule");
   assert(/height\s*:\s*50px/.test(toolbarRule[0]),
-    "#toolbar is 50px tall — desktop/main.js's TITLEBAR_HEIGHT (49) is derived from this");
+    "#toolbar is 50px tall — the wrapper's injected window chrome is sized against this");
 
   // Everything interactive inside the toolbar has to keep matching the
-  // wrappers' own no-drag selector list ("button, input, select, textarea,
+  // wrapper's own no-drag selector list ("button, input, select, textarea,
   // a, label, .ctx-item"), or clicking it would drag the window instead.
   const interactive = [...toolbar.querySelectorAll("*")].filter(el => typeof el.onclick === "function" || el.tabIndex >= 0);
   const stray = interactive.filter(el => !el.closest("button, input, select, textarea, a, label, .ctx-item"));
   assert(stray.length === 0,
-    "every focusable/clickable toolbar element is covered by the wrappers' no-drag selectors, stray: " +
+    "every focusable/clickable toolbar element is covered by the wrapper's no-drag selectors, stray: " +
     stray.map(el => el.tagName + (el.id ? "#" + el.id : "")).join(", "));
 });
 
 /* ============================================================
    GROUP 141 — The desktop "wrapper opened it, so the path is known" route
    (philogg.pickFiles + window.philoggLoadLocalFiles)
-   Origin: this session. A webview never resolves a File back to an OS path
-   (Electron's webUtils is a non-standard extra no system webview has), so
-   the Tauri wrapper was left unable to offer "Open File Location" for
+   Origin: this session. A webview never resolves a File back to an OS path,
+   so the desktop wrapper was left unable to offer "Open File Location" for
    anything opened through the in-page picker or dropped onto the window.
    The fix routes around the limitation instead of trying to beat it: the
    wrapper runs the OS dialog / catches the native drop itself and hands
@@ -15315,6 +15310,107 @@ await withApp(async (w, d, T) => {
     assert(node.tail && typeof node.tail.handle.getFile === "function", "...tailing resumes off the fresh URL");
   }, { indexedDB: factory, philogg: second });
 });
+
+/* ============================================================
+   GROUP 146 — Release-only comment stripping (scripts/strip-comments.js)
+   Origin: this session (2026-09-01, person-requested). Both release
+   workflows now run the stripper over their throwaway copy of
+   philogg.html, so a published build carries no source comments while the
+   tracked file keeps every one of them. The risk this group exists for is
+   a scanner bug that removes something that only LOOKS like a comment: a
+   "//" inside a string (the philogg:// scheme and every URL in the file),
+   a "/*" inside a CSS string, a slash inside a regex literal or character
+   class, or a comment inside a template-literal ${} interpolation. Those
+   corrupt the released file silently — it still parses, it just behaves
+   differently — so the unit-level cases below are pinned first, then the
+   real philogg.html is run through end to end.
+   Unlike every other group here this one needs no jsdom window: the
+   stripper is a plain Node module, exercised directly.
+   ============================================================ */
+{
+  section("146a. Comments go, code stays");
+  const strip = require("../scripts/strip-comments.js");
+
+  assert(strip.stripJs("var a = 1; // trailing\nvar b = 2;\n") === "var a = 1; \nvar b = 2;\n",
+    "a trailing line comment is removed, the code and the newline before it are not");
+  assert(strip.stripJs("  // whole line\nvar a = 1;\n") === "var a = 1;\n",
+    "a comment that is the only thing on its line takes the line (and its indent) with it");
+  assert(strip.stripJs("var a = 1;\n/* multi\n   line */\nvar b = 2;\n") === "var a = 1;\nvar b = 2;\n",
+    "a whole-line block comment takes its lines too");
+  assert(strip.stripJs("var a = 1 /* mid */ + 2;") === "var a = 1  + 2;",
+    "an inline block comment leaves a separator behind rather than joining two tokens");
+  assert(strip.stripJs("var a = 1 /* mid\nline */ + 2;").includes("\n"),
+    "a block comment spanning lines leaves a NEWLINE behind — it is a line terminator for ASI");
+
+  section("146b. Things that only look like comments are left alone");
+  assert(strip.stripJs('var u = "philogg://local/1/x.log";') === 'var u = "philogg://local/1/x.log";',
+    "// inside a double-quoted string survives");
+  assert(strip.stripJs("var u = 'http://a/*b*/c';") === "var u = 'http://a/*b*/c';",
+    "both comment shapes inside a single-quoted string survive");
+  assert(strip.stripJs('var s = "a\\\\" + "//not a comment";') === 'var s = "a\\\\" + "//not a comment";',
+    "an escaped backslash does not swallow the closing quote");
+  assert(strip.stripJs("var r = /a\\/\\/b/g;") === "var r = /a\\/\\/b/g;",
+    "escaped slashes inside a regex literal survive");
+  assert(strip.stripJs("var r = /[/*]/;") === "var r = /[/*]/;",
+    "a slash inside a regex character class does not end the regex");
+  assert(strip.stripJs("var r = s.replace(/[.*+?^${}()|[\\]\\\\]/g, x);") === "var r = s.replace(/[.*+?^${}()|[\\]\\\\]/g, x);",
+    "the escapeRegex-shaped literal (a ${ and a } inside a class) is not read as a template");
+  assert(strip.stripJs("var q = `a ${ b /* c */ } d`;") === "var q = `a ${ b  } d`;",
+    "a comment inside a ${} interpolation IS stripped, the template text around it is not");
+  assert(strip.stripJs("var q = `keep // this`;") === "var q = `keep // this`;",
+    "template-literal text is never treated as code");
+  assert(strip.stripJs("var q = `${ `${ x }` }//t`;") === "var q = `${ `${ x }` }//t`;",
+    "a nested template closes the right interpolation — the trailing // stays template text");
+  assert(strip.stripJs("var d = (a + b) / 2; // c\n") === "var d = (a + b) / 2; \n",
+    "division after ) is not read as a regex opener");
+  assert(strip.stripJs("var d = arr[0] / n;") === "var d = arr[0] / n;",
+    "division after ] is not read as a regex opener either");
+
+  section("146c. CSS and HTML halves");
+  assert(strip.stripCss("a{color:red} /* x */\nb{color:blue}\n") === "a{color:red} \nb{color:blue}\n",
+    "a CSS block comment is removed");
+  assert(strip.stripCss('a{content:"/* not a comment */"}') === 'a{content:"/* not a comment */"}',
+    "a comment shape inside a CSS string survives");
+  assert(strip.stripHtml("<p>a</p>\n<!-- gone -->\n<p>b</p>\n") === "<p>a</p>\n<p>b</p>\n",
+    "a whole-line HTML comment takes its line with it");
+  assert(strip.stripHtml("<p>a</p><!-- x --><p>b</p>") === "<p>a</p> <p>b</p>",
+    "an inline HTML comment leaves a separator");
+
+  section("146d. The real philogg.html round-trips");
+  const stripped = strip.stripDocument(html);
+  // Guarded, because this same suite is also run against an ALREADY-stripped
+  // copy as the stripper's own end-to-end check (PHILOGG_HTML=…, see
+  // PROJECT.md -> "Release builds"). There, correctly, there is nothing left
+  // to remove — everything else below still has to hold.
+  const alreadyStripped = stripped.length === html.length;
+  assert(stripped.length <= html.length, "stripping never grows the file");
+  assert(alreadyStripped || stripped.length / html.length < 0.9,
+    "...and removes a meaningful amount of a commented file, got " + ((1 - stripped.length / html.length) * 100).toFixed(1) + "%");
+  assert(!stripped.includes("<!--"), "no HTML comment marker survives outside script/style");
+  assert(strip.stripDocument(stripped) === stripped,
+    "stripping is idempotent — a second pass changes nothing");
+  assert(/const PHILOGG_VERSION = "[^"]*";/.test(stripped),
+    "the version line both release workflows grep for after stripping is still there");
+
+  // Every character of the output must appear in the input in the same
+  // order, minus the separators the stripper is allowed to insert. Cheap,
+  // but it is what rules out the scanner reordering or inventing content
+  // rather than only deleting it.
+  let i = 0, j = 0, invented = 0;
+  while (i < html.length && j < stripped.length) {
+    if (html[i] === stripped[j]) j++;
+    i++;
+  }
+  invented = stripped.length - j;
+  assert(invented === 0, "the stripped file is a subsequence of the original (nothing invented), leftover: " + invented);
+
+  // The load-bearing check: the same file, minus comments, still parses.
+  // A mis-read regex literal almost always breaks this outright.
+  const scriptBody = stripped.slice(stripped.indexOf("<script>") + "<script>".length, stripped.lastIndexOf("</script>"));
+  let parsed = true;
+  try { new Function(scriptBody); } catch (err) { parsed = false; }
+  assert(parsed, "the stripped script still parses as JavaScript");
+}
 
 /* ============================================================
    Summary
@@ -16340,19 +16436,19 @@ process.exit(failed ? 1 : 0);
               (network/CORS). The file:// guard (skips the fetch attempt
               entirely with a dedicated message) is NOT covered here — see
               the comment right after 66c and tests/README.md "Known gaps".
-   Group 67  — this session (2026-08-20), person-reported (Windows Electron
+   Group 67  — this session (2026-08-20), person-reported (Windows
               desktop build): a file opened after the first one spawned a
               whole new app window instead of loading into the one already
               open, and the first file's tree entry showed the opaque
               numeric id ("1") instead of its real name. Fixed by exposing
               loadFromUrlParam's fetch-and-add body as window.philoggLoadUrl
-              (so desktop/main.js can call it on an existing window via
-              executeJavaScript instead of always creating a new one) and by
-              having main.js's philogg://local/ URL carry the real basename
-              as its last path segment. Covers the renderer-side half:
+              (so the wrapper can call it on an existing window instead of
+              always creating a new one) and by
+              having the wrapper's philogg://local/ URL carry the real
+              basename as its last path segment. Covers the page-side half:
               philoggLoadUrl is exposed and repeated calls accumulate files
-              in the same tree rather than replacing them. desktop/main.js's
-              own Electron-API changes (window reuse, URL construction)
+              in the same tree rather than replacing them. The wrapper's
+              own window reuse and URL construction
               aren't reachable from this jsdom suite.
 
    Group 68  — this session (2026-08-20), person-requested (German): a
@@ -16816,12 +16912,12 @@ process.exit(failed ? 1 : 0);
               bugfix: a temp-anchor row's note-row is removed together with
               it when its fade-out completes, not left orphaned.
    Group 107 — this session (2026-08-25), FEATURE_BACKLOG.md #51 ("Improve
-              Electron startup time perception"): the localStorage half of
+              desktop startup time perception"): the localStorage half of
               the new "Close to system tray" setting (default on). The
-              splash-screen and Tray/BrowserWindow-close-interception halves
-              live entirely in desktop/main.js, outside jsdom's reach —
+              splash-screen and tray/close-interception halves
+              live entirely in the wrapper, outside jsdom's reach —
               not covered here, same standing limitation as the rest of
-              desktop/ (see desktop/README.md's own "Status" section).
+              desktop-tauri/ (see its README's own "Status" section).
    Group 108 — this session (2026-08-25), person-reported bugfix: arrow-key
               navigation used a stale currentViewEntries (still the
               previously active filter's list) after switching onto a Link
@@ -16829,10 +16925,10 @@ process.exit(failed ? 1 : 0);
               renderMainView() never calls renderTable() (the only place
               that repopulates it) while a Link filter is active.
    Group 109 — this session (2026-08-26), FEATURE_BACKLOG.md #52 ("Open
-              File Location"), generalized beyond its Electron-only backlog
+              File Location"), generalized beyond its one-wrapper backlog
               wording: a file node's context menu offers "Open File
               Location" whenever a real OS path is known AND window.philogg
-              (the desktop/preload.js bridge) exists — never in a plain
+              (the desktop wrapper's bridge) exists — never in a plain
               browser build, which cannot resolve a File back to a
               filesystem path at all. A plain http(s) ?url= node instead
               gets "Copy URL". Both node.localPath/node.sourceUrl round-trip
@@ -16892,9 +16988,9 @@ process.exit(failed ? 1 : 0);
    Group 113 — this session (2026-08-26), person-requested follow-up to
               Group 111's UI font family setting: the desktop wrapper (only)
               now appends every OS-installed font name (via a new
-              window.philogg.listSystemFonts bridge — preload.js/main.js,
-              backed by the font-list npm package, Node-side so no browser
-              permission prompt is needed) to the picker, deduped against
+              window.philogg.listSystemFonts bridge, backed by the
+              platform's own font-enumeration command, native-side so no
+              browser permission prompt is needed) to the picker, deduped against
               the curated list; selecting one persists a "sys:<name>" id
               and applies '"<name>",<default fallback stack>'. The plain
               HTML build (no window.philogg) is unaffected.
@@ -17344,8 +17440,8 @@ process.exit(failed ? 1 : 0);
               of the Full view by index, which only worked while that view
                listed every row of the file.
 
-   Group 139 — this session (2026-09-01), second desktop wrapper (Tauri,
-              desktop-tauri/) alongside the Electron one: its
+   Group 139 — this session (2026-09-01), the Tauri desktop wrapper
+              (desktop-tauri/): its
               window.philogg.getPathForFile can only ever return null (no
               system webview resolves a File to an OS path, and Tauri's own
               path-carrying drag-drop event would suppress the HTML drop
@@ -17354,9 +17450,8 @@ process.exit(failed ? 1 : 0);
               function for the menu-gating assertions and never ran a load
               through it.
    Group 140 — same session: the #toolbar structure/height contract that
-              both wrappers' injected window chrome is keyed off
-              (desktop/main.js's FRAMELESS_CSS and TITLEBAR_HEIGHT,
-              desktop-tauri's inject.js drag region + window-control
+              the wrapper's injected window chrome is keyed off
+              (desktop-tauri's inject.js drag region + window-control
               buttons). None of that injection is reachable from jsdom;
               the selectors and the 50px it is derived from are.
 
@@ -17397,6 +17492,19 @@ process.exit(failed ? 1 : 0);
               persistence half: a stand-in holds a closure, so its folder
               PATH is stored and rebuilt on restore — with the per-process
               philogg://local ids refreshed on the first rescan.
+
+   Group 146 — this session (2026-09-01), person-requested: release builds
+              now ship philogg.html with every comment stripped
+              (scripts/strip-comments.js, run by both release workflows;
+              the tracked file keeps them all). Covers the stripper
+              directly rather than through jsdom — it is a plain Node
+              module: comment removal and whole-line collapsing, then the
+              cases a naive regex gets wrong (// in a string, /* in a CSS
+              string, slashes in a regex literal and its character class,
+              a comment inside a ${} interpolation, division after ) or ]),
+              then the real philogg.html end to end — idempotent, a
+              subsequence of the original, version line intact, and still
+              parseable as JavaScript.
 
    Deliberately DROPPED this session:
      - Group 139a's "no reveal item for a picker/drop-loaded file" framing.

@@ -1,19 +1,12 @@
-# PhiLogg desktop wrapper — Tauri (experimental)
+# PhiLogg desktop wrapper
 
-A **second** desktop wrapper around the unmodified `philogg.html`, running in
-parallel with the Electron one in `desktop/`. Same feature surface, same
-visuals; the difference is what's underneath — the OS's own webview
-(WebView2 / WKWebView / WebKitGTK) and a Rust backend, instead of a bundled
-Chromium and a Node main process.
+The optional desktop wrapper around the unmodified `philogg.html`: the OS's
+own webview (WebView2 / WKWebView / WebKitGTK) and a Rust backend, built
+with Tauri v2.
 
-It exists to be **tested against** the Electron build on real machines, not
-to replace it yet. Both install side by side: different bundle identifier
-(`com.kleinphilipp.philogg-tauri`), different product name (`PhiLogg
-Tauri`), different config directory. The Electron wrapper stays the
-supported one until this one has been used enough to say otherwise.
-
-`philogg.html` itself is never modified — same rule as `desktop/`. See
-`docs/desktop-tauri.md` for how that's done.
+`philogg.html` itself is never modified — it is served through a custom
+`philogg://` scheme and handed local files through its own `?url=`
+deep-link mechanism. See `docs/desktop-tauri.md` for how that's done.
 
 ## Prerequisites
 
@@ -45,50 +38,50 @@ npm run dev -- -- path/to/file.log
 
 Releases are built by `.github/workflows/tauri-release.yml`
 (`workflow_dispatch`, per-OS checkboxes, tag `tauri-<short-sha>`, artifacts
-named `PhiLogg-tauri-<sha>.<ext>`). It is a separate workflow from
-`desktop-release.yml`, which keeps building the Electron installers exactly
-as before.
+named `PhiLogg-tauri-<sha>.<ext>`).
 
-## Version stamp
+## Version stamp and release-only comment stripping
 
-Same scheme as the other two workflows: the release job rewrites
-`PHILOGG_VERSION` in the checked-out `philogg.html` to the commit short-SHA
-before bundling (never committed back), and the installer filename carries
-the same SHA. A local `npm run build` leaves it at `dev`.
+Same scheme as `release.yml`: the release job rewrites `PHILOGG_VERSION` in
+the checked-out `philogg.html` to the commit short-SHA before bundling
+(never committed back), and the installer filename carries the same SHA.
+
+The same job also runs `node scripts/strip-comments.js philogg.html`,
+so the copy packaged into the installer carries no source comments — the
+tracked `philogg.html` in the repo keeps every one of them. A local
+`npm run build` does neither: it leaves the version at `dev` and the
+comments in place, which is what you want while developing.
 
 ## What it does
 
-Everything `desktop/` does — `.log` file associations and CLI-argument
-opening, a frameless window with rounded corners, window controls in the
-app's own theme, F11 fullscreen, a splash screen, a tray icon with
-Open / Open Config Folder / Clear Cache / Quit, "close to system tray",
-`settings.json` mirroring of the `philogg-*` settings, "Open File Location",
-and the system font list for the UI font picker — plus a folder watch that
-does not go through the browser's File System Access API (see below).
+`.log` file associations and CLI-argument opening, a frameless window with
+rounded corners, window controls in the app's own theme, F11 fullscreen, a
+splash screen, a tray icon with Open / Open Config Folder / Clear Cache /
+Quit, "close to system tray", `settings.json` mirroring of the `philogg-*`
+settings, "Open File Location" / "Copy Path", the system font list for the
+UI font picker, and a folder watch that does not go through the browser's
+File System Access API (see below).
 
 ## Persistent data
 
 `settings.json` lives in `PhiLogg-Tauri/` in the OS config directory
 (`~/.config/PhiLogg-Tauri`, `~/Library/Application Support/PhiLogg-Tauri`,
-`%APPDATA%\PhiLogg-Tauri`) — a deliberate sibling of the Electron wrapper's
-own `PhiLogg/`, so running both to compare them can't have one clobber the
-other's settings. The tray's "Open Config Folder" opens it.
+`%APPDATA%\PhiLogg-Tauri`). The tray's "Open Config Folder" opens it.
 
 The session cache (IndexedDB) lives in the webview's own storage for this
 app, wherever the platform puts it; the tray's "Clear Cache" wipes it and
 reloads.
 
-## Differences from the Electron wrapper
+## Folder watch
 
-These are the known, deliberate gaps — everything else is meant to behave
-identically, and anything that doesn't is a bug worth reporting. One item
-runs the *other* way: **folder watch is better here.** It is listed natively
-(Rust `read_dir`) instead of through the File System Access API, so it works
-on all three platforms and on folders a Chromium-based build refuses to hand
-out — Desktop and Downloads, which fail in the Electron wrapper and in the
-browser with "this folder contains system files". Files opened from a
-watched folder carry their real path too, so they reveal and copy like any
-other.
+Folders are listed natively (Rust `read_dir`) instead of through the File
+System Access API, so the watch works on all three platforms and on folders
+a Chromium-based build refuses to hand out — Desktop and Downloads, which
+fail in the browser with "this folder contains system files". Files opened
+from a watched folder carry their real path too, so they reveal and copy
+like any other.
+
+## Known limitations
 
 - **The system font list on macOS is approximate.** Linux uses `fc-list` and
   Windows uses PowerShell's font enumeration, both exact; macOS has neither
@@ -97,8 +90,12 @@ other.
 - **The maximize/restore button doesn't swap its glyph** the way a native
   window control does — it's one button that toggles, with one icon.
 - **Rounded corners are the platform's own behaviour for an undecorated
-  window** (macOS always, Windows 11 via DWM, Linux compositor-dependent),
-  the same situation `desktop/` documents for Electron's `roundedCorners`.
+  window** (macOS always, Windows 11 via DWM, Linux compositor-dependent).
+- **`getPathForFile` can never work.** No system webview resolves a `File`
+  object back to its OS path, so the wrapper opens files itself (OS dialog,
+  native drag-drop, native folder listing) and the path is known before the
+  page ever sees them. Nothing user-visible is missing; it is only why the
+  file-opening routes look the way they do.
 
 ## Status
 
@@ -114,10 +111,9 @@ though the page itself runs (it writes `settings.json`). The main window is
 created `visible(false)` and shown only once the page reports a first paint
 via `app_ready` — which is fired from a `requestAnimationFrame` callback,
 and WebKitGTK doesn't tick those for a window that was never mapped. So the
-two wait on each other. Reproduced identically on the pre-2026-09-01 build,
-i.e. it predates the file-location work and is not a regression; it does
-not occur on a real desktop session, where the splash is a visible window.
-Anything needing the actual UI has to be checked on a real machine.
+two wait on each other. It does not occur on a real desktop session, where
+the splash is a visible window. Anything needing the actual UI has to be
+checked on a real machine.
 
 Real Windows run (2026-09-01, person-tested) surfaced and fixed two bugs:
 the window couldn't be moved at all (clicking empty toolbar space did
@@ -136,13 +132,11 @@ The native folder watch (2026-09-01) is verified by `cargo check` plus the
 jsdom suite's Group 145 only — the picker, the listing and a real Desktop
 folder still need a person on a real desktop session.
 
-**Not yet run on Windows or macOS.** The window chrome specifically (the
-injected title-bar buttons, the drag region, rounded corners, the macOS
-traffic-light inset) is the part most likely to need adjustment there —
-that is what this wrapper is for. The macOS-only code paths aren't even
-compile-checked from this environment.
+**Not yet run on macOS.** The window chrome specifically (the injected
+title-bar buttons, the drag region, rounded corners, the traffic-light
+inset) is the part most likely to need adjustment there. The macOS-only
+code paths aren't compile-checked from this environment.
 
 The app icons in `src-tauri/icons/` are placeholders (a teal dot), generated
-by `icons/generate.js` — the Tauri bundler requires an icon set, unlike
-electron-builder. Replace that script's `draw()` and re-run it once real
-artwork exists.
+by `icons/generate.js` — the Tauri bundler requires an icon set. Replace
+that script's `draw()` and re-run it once real artwork exists.
