@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The wrapper's own #[tauri::command]s need no ACL entry (only plugin/core commands do), and every plugin it uses (opener, single-instance) is driven from Rust, never from the page. So this grants nothing but the core IPC the injected script needs to reach those commands at all.",
+  "windows": ["main", "splash"],
+  "permissions": ["core:default"]
+}
