@@ -21,6 +21,7 @@
 const { JSDOM } = require("jsdom");
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 // In-memory IndexedDB for the session-cache group (Group 20): jsdom ships no
 // IndexedDB at all, so the cache feature silently disables itself in every
 // other group (openCacheDb resolves null) — exactly the graceful-degradation
@@ -40,13 +41,58 @@ const { IDBFactory, IDBKeyRange } = require("fake-indexeddb");
 const HTML_PATH = process.env.PHILOGG_HTML || path.join(__dirname, "..", "philogg.html");
 const html = fs.readFileSync(HTML_PATH, "utf8");
 
+// philogg.html's inline <script> is ~870 KB and identical in every window, so
+// compile it ONCE and run that same vm.Script into each new window's context.
+// Left inline, jsdom re-parses and re-compiles it for all ~290 windows this
+// suite builds — which measured as ~75% of the whole suite's runtime.
+// Equivalent to running it inline: the file has exactly one <script>, it is
+// the last element in <body>, and the app hooks neither DOMContentLoaded/load
+// nor readyState/document.currentScript, so nothing depends on it executing
+// mid-parse. runScripts stays "dangerously" so that the <script> elements the
+// tests themselves inject (the window.__t bridge below, and the ~30 per-group
+// helper bridges) still execute as before.
+const PAGE_SCRIPT_MATCH = html.match(/<script>([\s\S]*)<\/script>/);
+const PAGE_SHELL = html.replace(PAGE_SCRIPT_MATCH[0], "<script></script>");
+const PAGE_SCRIPT = new vm.Script(PAGE_SCRIPT_MATCH[1], { filename: "philogg-inline.js" });
+
 let passed = 0, failed = 0;
 const failures = [];
 function assert(cond, label) {
   if (cond) { passed++; }
   else { failed++; failures.push(label); console.log("FAIL  " + label); }
 }
-function section(title) { console.log("\n== " + title + " =="); }
+
+// --- Group selection (sharding / single-group runs) -------------------------
+// Every GROUP banner below is followed by a `group(N)` marker, so the runner
+// knows which group the withApp calls after it belong to. Two env knobs act on
+// that, both handled here rather than in run.js so a bare
+// `node philogg.regression.test.js` keeps working unchanged:
+//
+//   SHARD=<index>/<total>  run only the groups whose number ≡ index (mod
+//                          total). run.js spawns one child per shard.
+//   GROUP=58,127           run only those groups — the dev loop's "re-run just
+//                          the thing I broke", ~1-2s instead of the full suite.
+//
+// The unit is the GROUP, never the individual withApp: multi-window groups
+// (GROUP 20 and every other "reload" group) hand one IDBFactory and closure
+// state from one window to the next, so their windows must stay together.
+// Sub-lettered banners (30a-e, 55a-d, 73a-c, ...) all carry their shared
+// number and therefore land in the same shard for the same reason.
+// Top-level code BETWEEN groups still runs in every shard — it defines the
+// helpers and fixtures (nativeFolderBridge/dirsA/bridgeA, ...) that later
+// groups close over.
+const SHARD = process.env.SHARD ? process.env.SHARD.split("/").map(Number) : null;
+const ONLY = process.env.GROUP ? new Set(process.env.GROUP.split(",").map(g => g.trim())) : null;
+let currentGroup = null;
+function group(n) { currentGroup = String(n); }
+function groupSelected() {
+  if (currentGroup === null) return true; // not inside any group yet
+  if (ONLY) return ONLY.has(currentGroup);
+  if (SHARD) return Number(currentGroup) % SHARD[1] === SHARD[0];
+  return true;
+}
+
+function section(title) { if (groupSelected()) console.log("\n== " + title + " =="); }
 
 // Builds a synthetic log4net-pattern log: `%d\t%p\t"%t"\t%l\t[%method]\t%m%n`.
 // baseSec: offset in seconds from a fixed 10:00:00 anchor (wraps at 24h,
@@ -67,8 +113,25 @@ function makeLog(baseSec, n, opts = {}) {
   return lines.join("\n") + "\n";
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Poll until `pred` holds, then continue immediately. Replaces the fixed-count
+// `for (let i = 0; i < 40 && <cond>; i++) await sleep(50)` loops this suite
+// used to spin. Those had two problems: they burned wall-clock in 50ms steps,
+// and — the real one — they mostly exited on a PROXY condition ("the file node
+// is back") while the assertions right after them needed a LATER stage of the
+// same async restore to have run. That was green only for as long as window
+// construction stayed slow enough to hide the gap; speeding the suite up made
+// two of them flake. So: always poll the thing you are about to assert on.
+async function waitFor(pred, { timeout = 3000, step = 5 } = {}) {
+  const deadline = Date.now() + timeout;
+  while (!pred() && Date.now() < deadline) await sleep(step);
+  return pred();
+}
+
 async function withApp(run, opts = {}) {
-  const dom = new JSDOM(html, {
+  if (!groupSelected()) return; // this group belongs to another shard
+  const dom = new JSDOM(PAGE_SHELL, {
     runScripts: "dangerously",
     pretendToBeVisual: true,
     url: opts.url || "http://localhost/philogg.html",
@@ -94,6 +157,10 @@ async function withApp(run, opts = {}) {
       window.matchMedia = window.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
     },
   });
+  // The page's own script, pre-compiled once (see PAGE_SCRIPT above). It runs
+  // in the same VM context the injected bridge <script>s below land in, so
+  // their shared lexical scope works exactly as two inline <script>s would.
+  PAGE_SCRIPT.runInContext(dom.getInternalVMContext());
   const { window } = dom;
   const { document } = window;
 
@@ -165,6 +232,9 @@ async function withApp(run, opts = {}) {
       get ROW_HEIGHT() { return ROW_HEIGHT; },
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
+      // The boot restore promise (restoreSessionFromCache + restoreWatchedFolders),
+      // awaited by every "reload" group instead of polling state.rootIds.
+      get bootRestore() { return bootRestore; },
       get navHistory() { return navHistory; },
       get navHistoryIndex() { return navHistoryIndex; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
@@ -212,6 +282,7 @@ function fireDrag(el, w, type, dt) { el.dispatchEvent(Object.assign(new w.Event(
    Origin: initial build (pre-dates the earliest session in project memory);
    re-verified here since every other group depends on it.
    ============================================================ */
+group(1);
 await withApp(async (w, d, T) => {
   section("1. Parsing & basic load");
   const multiline =
@@ -234,6 +305,7 @@ await withApp(async (w, d, T) => {
    GROUP 2 — Filter creation basics (text/after/before/extract) + live match
    Origin: initial build + extraction-workflow session (765d68a9).
    ============================================================ */
+group(2);
 await withApp(async (w, d, T) => {
   section("2. Filter creation basics + live match + token chips");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
@@ -283,6 +355,7 @@ await withApp(async (w, d, T) => {
    tail-cache invalidation, per-node level-count cache, computeHighlightMap
    running once per renderMainView, and the arrow-key index-hint.
    ============================================================ */
+group(19);
 await withApp(async (w, d, T) => {
   section("19. Review-session fixes: reveal-on-create, bookmark repaint, caches");
   const fa = await w.addFile("a.log", makeLog(0, 60, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
@@ -403,6 +476,7 @@ await withApp(async (w, d, T) => {
    it's called out here rather than re-tested; see PROJECT.md "Testing
    approach" for why jsdom can't catch that class of bug directly.
    ============================================================ */
+group(17);
 await withApp(async (w, d, T) => {
   section("17. Highlight view (Full/Filtered split)");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
@@ -480,6 +554,7 @@ await withApp(async (w, d, T) => {
    updated in place here rather than left testing a dead shortcut, see
    GROUP 96 for Rename's own coverage.
    ============================================================ */
+group(18);
 await withApp(async (w, d, T) => {
   section("18. UI adjustments (Ctrl+E edit, resizers, view toggle, badges)");
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
@@ -554,6 +629,7 @@ await withApp(async (w, d, T) => {
    root-file resolution (works from anywhere, unlike the old jumpToFullLog
    which assumed the current chain) is unaffected.
    ============================================================ */
+group(15);
 await withApp(async (w, d, T) => {
   section("15. Bookmarks rework");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
@@ -673,6 +749,7 @@ await withApp(async (w, d, T) => {
    undo/redo") — see Group 46, which also replaces this group's old
    "files are out of scope" assertion (now false).
    ============================================================ */
+group(16);
 await withApp(async (w, d, T) => {
   section("16. Undo / Redo");
   const fa = await w.addFile("a.log", makeLog(0, 10), () => {});
@@ -742,6 +819,7 @@ await withApp(async (w, d, T) => {
    Origin: b647f247 (27-check jsdom suite, incl. a scenario with burst
    traffic, a 6-second stall, and an isolated error — re-created here).
    ============================================================ */
+group(13);
 await withApp(async (w, d, T) => {
   section("13. Δt column + Timeline minimap");
   // Build: 5 rapid entries (burst), then a 6s stall, then 1 more entry.
@@ -800,6 +878,7 @@ await withApp(async (w, d, T) => {
    cloneSubtree (copy/paste) — save/load persistence for assertions is
    already covered in Group 11 — and the two-pass column-stats computation.
    ============================================================ */
+group(14);
 await withApp(async (w, d, T) => {
   section("14. Value assertions + Column statistics");
   const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + i }), () => {});
@@ -871,6 +950,7 @@ await withApp(async (w, d, T) => {
    tagged attach:"target" and lands under whatever node import is invoked
    on — never hardcoded to FILE.
    ============================================================ */
+group(11);
 await withApp(async (w, d, T) => {
   section("11. Filter save/load JSON round trip");
   const fa = await w.addFile("a.log", makeLog(0, 20), () => {});
@@ -964,6 +1044,7 @@ await withApp(async (w, d, T) => {
    truncation/rotation handling — using a fake FileSystemFileHandle since
    jsdom has no File System Access API.
    ============================================================ */
+group(12);
 await withApp(async (w, d, T) => {
   section("12. Tailing (growth, split lines, rotation)");
 
@@ -1033,6 +1114,7 @@ await withApp(async (w, d, T) => {
    structurally in Group 8; here we verify getEntries() itself, not just the
    menu omission).
    ============================================================ */
+group(9);
 await withApp(async (w, d, T) => {
   section("9. Time context filter");
   // Two reference entries close enough together that their +/-500ms windows
@@ -1089,6 +1171,7 @@ await withApp(async (w, d, T) => {
    entry-count dialog (no unit conversion, unlike ms — verified round-trip).
    NOT-exclusion is covered in Group 8, not repeated here.
    ============================================================ */
+group(64);
 await withApp(async (w, d, T) => {
   section("64. Count context filter");
   // makeLog puts each entry exactly 1s apart in strict index order, so
@@ -1174,6 +1257,7 @@ await withApp(async (w, d, T) => {
    a build artifact that's never committed back. This suite runs against
    the literal source file, so it always sees "dev".
    ============================================================ */
+group(65);
 await withApp(async (w, d, T) => {
   section("65. License section (Settings) + version display");
 
@@ -1204,6 +1288,7 @@ await withApp(async (w, d, T) => {
    leak in entryIndex for the session lifetime (re-verified here structurally;
    the live poll itself is exercised in Group 12).
    ============================================================ */
+group(10);
 await withApp(async (w, d, T) => {
   section("10. Bugfix regressions (Escape handler, releaseEntriesFromIndex)");
 
@@ -1244,6 +1329,7 @@ await withApp(async (w, d, T) => {
    isDescendantOrSelf structural check every node needs). Also covers the
    file-drop overlay isFileDrag() gate from the origin session.
    ============================================================ */
+group(7);
 await withApp(async (w, d, T) => {
   section("7. Copy/Cut/Paste + drag-and-drop + self-contained and/or/link inputs");
   const fa = await w.addFile("a.log", makeLog(0, 20), () => {});
@@ -1343,6 +1429,7 @@ await withApp(async (w, d, T) => {
    (countContext) added in the Count context session (see Group 64) — none
    were tested until now.
    ============================================================ */
+group(8);
 await withApp(async (w, d, T) => {
   section("8. Filter inversion (NOT)");
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
@@ -1434,6 +1521,7 @@ await withApp(async (w, d, T) => {
    dropdown (built-in themes now include the four Catppuccin flavors, plus
    any user-imported custom ones) — see GROUP 85.
    ============================================================ */
+group(3);
 await withApp(async (w, d, T) => {
   section("3. Theme select (now in Settings -> Appearance)");
   const html = d.documentElement;
@@ -1463,6 +1551,7 @@ await withApp(async (w, d, T) => {
    while on the Context tab now auto-reveals Filtered, same as switching to
    another filter already does (revealFilteredView).
    ============================================================ */
+group(4);
 await withApp(async (w, d, T) => {
   section("4. Tree / status strip / severity bar / dual-view level filter");
   const f = await w.addFile("a.log", makeLog(0, 30, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
@@ -1511,6 +1600,7 @@ await withApp(async (w, d, T) => {
    the sort-button stopPropagation regression (must not also trigger the
    header's column cell-selection drag) is explicitly re-checked here.
    ============================================================ */
+group(5);
 await withApp(async (w, d, T) => {
   section("5. Extraction table: sort buttons + cell selection regression");
   const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + (10 - i) }), () => {});
@@ -1548,6 +1638,7 @@ await withApp(async (w, d, T) => {
    here because it's exactly the kind of regression a later refactor of
    renderVisibleRows()/selectEntry() could silently reintroduce.
    ============================================================ */
+group(6);
 await withApp(async (w, d, T) => {
   section("6. Double-click DOM-identity regression (renderVisibleRows must not tear down rows on plain click)");
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
@@ -1579,9 +1670,9 @@ await withApp(async (w, d, T) => {
    node) and persists it; window B's normal boot-time restore must bring
    everything back with fresh runtime ids but identical structure.
    ============================================================ */
+group(20);
 section("20. Session cache: persist in one window, restore in the next");
 {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
   const factory = new IDBFactory();
 
   // Log with one multi-line entry (continuation lines after entry 3) to
@@ -1634,7 +1725,7 @@ section("20. Session cache: persist in one window, restore in the next");
 
   // --- Window B: boot-time restore (same factory = same "disk") ---
   await withApp(async (w, d, T) => {
-    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    await T.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     assert(T.state.rootIds.length === 1, "restore: file came back via boot-time restore");
     const f = T.state.nodes[T.state.rootIds[0]];
     assert(f.name === "cache.log", "restore: file name preserved");
@@ -1714,8 +1805,8 @@ section("20. Session cache: persist in one window, restore in the next");
    stubbing downloadJsonFallback (jsdom has no showSaveFilePicker, so the
    export path deterministically takes the download fallback).
    ============================================================ */
+group(21);
 {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
   const baseText = makeLog(0, 30);
   let exportedJson = null;        // captured plain export (no embedded text)
   let exportedEmbeddedJson = null; // captured export WITH embedded log text
@@ -1974,6 +2065,7 @@ section("20. Session cache: persist in one window, restore in the next");
    "decoy" match at one timestamp, the "correct" one at another) can be
    laid out exactly, the same helper shape link-chaining.spec.js used.
    ============================================================ */
+group(22);
 {
   function makeLogAt(entries) {
     const lines = entries.map((e, i) =>
@@ -2245,6 +2337,7 @@ section("20. Session cache: persist in one window, restore in the next");
    findNthOccurrence/findNthOccurrenceExcluding/buildPairEntry). See
    PROJECT.md "Link filter" → "Same-timestamp tie-break".
    ============================================================ */
+group(23);
 {
   // Mirrors the reported scenario: an earlier burst 11s before containing a
   // "Target Vir" decoy, then a later burst where several lines share ONE
@@ -2355,6 +2448,7 @@ section("20. Session cache: persist in one window, restore in the next");
    coverage, same "fold into the one suite" convention as Groups 22/23
    (see README.md "Extending this suite").
    ============================================================ */
+group(24);
 await withApp(async (w, d, T) => {
   section("24. Extraction: live pattern preview + ignored columns");
   const log = [0, 1, 2]
@@ -2516,6 +2610,7 @@ await withApp(async (w, d, T) => {
    event, never reaches that handler), which is why only the right-click
    path was reported broken.
    ============================================================ */
+group(25);
 await withApp(async (w, d, T) => {
   section("25. Bugfixes: extract-numbers live preview + right-click edit popup");
   const log = `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"id=1 name=n1 score=1.5"\n`;
@@ -2590,6 +2685,7 @@ await withApp(async (w, d, T) => {
    pins .crumb's own top edge to the same y-position #fhTabs/#levelBar's
    floats start at (structurally, not by font-metric coincidence).
    ============================================================ */
+group(26);
 await withApp(async (w, d, T) => {
   section("26. Header reshuffle: merged view bar + shortcuts popup");
 
@@ -2744,6 +2840,7 @@ await withApp(async (w, d, T) => {
    bookmarks into the Filtered View" for the full design writeup and the
    decisions this session made on the backlog doc's open questions.
    ============================================================ */
+group(27);
 await withApp(async (w, d, T) => {
   section("27. Pin bookmarks into the Filtered View");
   const fa = await w.addFile("a.log", makeLog(0, 20, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
@@ -2848,6 +2945,7 @@ await withApp(async (w, d, T) => {
    scroll to the top on every single bookmark toggle — see the fix's own
    comment in philogg.html).
    ============================================================ */
+group(28);
 await withApp(async (w, d, T) => {
   section("28. Bugfix: pinned Filtered view now updates on bookmark add/remove, not just on the pin toggle");
   const fa = await w.addFile("a.log", makeLog(0, 20, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
@@ -2900,6 +2998,7 @@ await withApp(async (w, d, T) => {
    bypass, persistence, etc.) is already covered by Group 27/28 above and
    is deliberately not re-tested here.
    ============================================================ */
+group(29);
 await withApp(async (w, d, T) => {
   section("29. Pin-bookmarks button moved into #viewBar");
 
@@ -2956,6 +3055,7 @@ await withApp(async (w, d, T) => {
    no layout engine (see "Testing approach"), so this asserts the cascaded
    width/height rather than a rendered pixel size.
    ============================================================ */
+group(29);
 await withApp(async (w, d) => {
   section("29b. #btnPinBookmarks/#btnMultilineMsg/#btnColumns share .toolbar-icon-btn's 28x28 shape with the header's icon buttons");
   const cs = w.getComputedStyle;
@@ -2976,6 +3076,7 @@ await withApp(async (w, d) => {
    matching content is loaded — even in a brand new session. See PROJECT.md
    "File filter history" for the full design writeup.
    ============================================================ */
+group(30);
 await withApp(async (w, d, T) => {
   section("30a. File filter history: tier-1 match across a simulated new session");
   const idb = new IDBFactory();
@@ -3138,6 +3239,7 @@ await withApp(async (w, d, T) => {
    one now overwrite whatever restore memory came before, exactly as
    requested. See "File filter history" bugfix in PROJECT.md.
    ============================================================ */
+group(30);
 await withApp(async (w, d, T) => {
   section("30e. File filter history bugfix: emptying a tree overwrites (deletes) the old restore state, both in-session and across a reload");
   const idb = new IDBFactory();
@@ -3210,6 +3312,7 @@ await withApp(async (w, d, T) => {
    to. File/FileReader themselves need no stubbing — jsdom implements both
    natively.
    ============================================================ */
+group(30);
 await withApp(async (w, d, T) => {
   section("30d. File filter history: through the real loadFileDescriptors/FileReader entry point");
   const idb = new IDBFactory();
@@ -3275,6 +3378,7 @@ await withApp(async (w, d, T) => {
    caution in FEATURE_BACKLOG.md), and that a plain (non-dragged) click
    still falls through to the existing click-to-jump behavior.
    ============================================================ */
+group(31);
 await withApp(async (w, d, T) => {
   section("31. Drag-select time range in minimap");
   const lines = [];
@@ -3402,6 +3506,7 @@ await withApp(async (w, d, T) => {
    carrier-specific code was needed beyond adding it to FILTER_TYPES — see
    CLAUDE.md's "Known gotchas" note on filter-node fields).
    ============================================================ */
+group(32);
 await withApp(async (w, d, T) => {
   section("32. Unified time filter: single \"timerange\" node, editable dialog, migration, minimap right-click");
   const f = await w.addFile("range2.log", makeLog(0, 30), () => {});
@@ -3546,6 +3651,7 @@ await withApp(async (w, d, T) => {
    formula) giving the bucket's full [left, right) span; the indicator now
    uses .left for the first shown entry and .right for the last.
    ============================================================ */
+group(33);
 await withApp(async (w, d, T) => {
   section("33. Minimap viewport indicator covers the last shown entry's full bar (bugfix)");
   // Craft exact ts offsets so, with the suite's stubbed 800px container
@@ -3610,6 +3716,7 @@ await withApp(async (w, d, T) => {
    updateMinimapFullRange/updateMinimapRenderedRange/
    updateMinimapSelectionMarkers/minimapMarkedEntries in philogg.html.
    ============================================================ */
+group(34);
 await withApp(async (w, d, T) => {
   section("34. Minimap: full-range vs rendered-subset rects, selection markers, Link view");
 
@@ -3713,6 +3820,7 @@ await withApp(async (w, d, T) => {
    cloneSubtree, snapshotSubtree/restoreSubtree, serializeFilterBranch/
    importFilterJson, serializeFilterTreeForCache/materializeCachedFilters.
    ============================================================ */
+group(35);
 await withApp(async (w, d, T) => {
   section("35. Text filter: case-sensitive option + per-filter target column");
 
@@ -3893,6 +4001,7 @@ await withApp(async (w, d, T) => {
    depth-first order renderNode renders in), Left jumps to the parent,
    Right to the first child.
    ============================================================ */
+group(36);
 await withApp(async (w, d, T) => {
   section("36. Arrow-key navigation in the filter tree");
 
@@ -3981,6 +4090,7 @@ await withApp(async (w, d, T) => {
    instead of removing it outright. folderScanTick (same polling shape as
    tailTick) picks up files that appear in the folder later.
    ============================================================ */
+group(37);
 await withApp(async (w, d, T) => {
   section("37. Folder watch + lazy loading");
 
@@ -4139,6 +4249,7 @@ await withApp(async (w, d, T) => {
    unified "Open…" menu, browser-capability gate + popup notice, and
    session-cache persistence of watched folders.
    ============================================================ */
+group(38);
 
 // --- 38a: single "Open…" button + dropdown menu replaces the two
 // separate "Open files…"/"Open folder…" buttons. ---
@@ -4206,7 +4317,6 @@ await withApp(async (w, d, T) => {
 // re-grant read access. ---
 {
   section("38c. Session persistence: watched folders survive a reload");
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
   const factory = new IDBFactory();
 
   function fakeFileHandle(w, name, text) {
@@ -4283,12 +4393,11 @@ await withApp(async (w, d, T) => {
 
   // --- Window B: boot-time restore (same factory = same "disk"). ---
   await withApp(async (w, d, T) => {
-    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    await T.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     assert(T.state.rootIds.length === 1, "the previously-open file came back via the normal session restore");
     const node = T.state.nodes[T.state.rootIds[0]];
     assert(node.name === "a.log" && node.folderId === folderId, "restored node's folderId round-tripped through real IndexedDB");
 
-    for (let i = 0; i < 40 && T.state.folders.length === 0; i++) await sleep(50); // restoreWatchedFolders runs right after
     assert(T.state.folders.length === 1, "the watched folder itself came back too");
     const folder = T.state.folders[0];
     assert(folder.id === folderId, "restored folder keeps its original id (the same value the file's folderId points at)");
@@ -4355,6 +4464,7 @@ await withApp(async (w, d, T) => {
    and the "Werte extrahieren: [value:float] ..." #filterHint row was
    removed (the token chips already insert those same wildcards directly).
    ============================================================ */
+group(39);
 await withApp(async (w, d, T) => {
   section("39. Filter popup: target chain + wildcard-as-filter matching semantics");
 
@@ -4448,6 +4558,7 @@ await withApp(async (w, d, T) => {
    so the Extract button/checkbox could get stuck disabled after a
    wildcard was inserted any way other than typing it.
    ============================================================ */
+group(40);
 await withApp(async (w, d, T) => {
   section("40. Filter popup section reorg + 'Filter for this ___' context menu");
 
@@ -4568,6 +4679,7 @@ await withApp(async (w, d, T) => {
    whichever type the clicked button dictates, there is no "preserve the
    old type" step anywhere.
    ============================================================ */
+group(41);
 await withApp(async (w, d, T) => {
   section("41. Filter popup: Extract vs. Add filter as two separate buttons, no checkbox");
 
@@ -4647,6 +4759,7 @@ await withApp(async (w, d, T) => {
    renderPlotControls) and t (ms), cumulative elapsed time since the first
    entry's real timestamp.
    ============================================================ */
+group(42);
 await withApp(async (w, d, T) => {
   section("42. Extraction table: synthetic Index + t(ms) columns");
   // Hand-built (not makeLog) for exact, easy-to-check elapsed values: 0ms, then 1500ms, then 3500ms since the first entry.
@@ -4737,10 +4850,9 @@ await withApp(async (w, d, T) => {
    the same graceful-degradation shape restoreWatchedFolders already uses
    for directory handles.
    ============================================================ */
+group(43);
 section("43. Bugfix: tail handles persist across a reload");
 {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-
   // A REAL FileSystemFileHandle survives IndexedDB's structured clone with
   // its methods intact — the same fact persistFolder/restoreWatchedFolders
   // already rely on for directory handles (see Group 38's own comment).
@@ -4787,7 +4899,7 @@ section("43. Bugfix: tail handles persist across a reload");
   // whenever it doesn't silently re-grant the permission (e.g. after an
   // actual browser restart, not just a tab reload). ---
   await withApp(async (w, d, T) => {
-    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    await T.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     assert(T.state.rootIds.length === 1, "restore: the file came back via the normal session restore");
     const node = T.state.nodes[T.state.rootIds[0]];
     assert(!node.tail, "restore: a handle that can't survive structured clone leaves the file a static snapshot instead of throwing");
@@ -4850,6 +4962,7 @@ section("43. Bugfix: tail handles persist across a reload");
    failure (moved/deleted/permission revoked) still fails every single poll
    and reaches the threshold in ~7.5s, same as it effectively did before.
    ============================================================ */
+group(44);
 await withApp(async (w, d, T) => {
   section("44. Bugfix: transient tail-poll failures don't permanently kill tailing");
 
@@ -4939,6 +5052,7 @@ await withApp(async (w, d, T) => {
        (linkSelectedPairIndex) precisely because a virtualized block can be
        torn down and rebuilt between the click and any later read.
    ============================================================ */
+group(45);
 await withApp(async (w, d, T) => {
   section("45. Virtualize extraction table / link pair view");
 
@@ -5075,6 +5189,7 @@ await withApp(async (w, d, T) => {
    stay deliberately out of scope — see the undo/redo module comment in
    philogg.html.
    ============================================================ */
+group(46);
 await withApp(async (w, d, T) => {
   section("46. Extend undo/redo: file delete, edits, invert, assertions");
 
@@ -5218,6 +5333,7 @@ await withApp(async (w, d, T) => {
    panel still visibly tracks the cursor with no added latency, only the
    expensive re-render is deferred and collapsed.
    ============================================================ */
+group(47);
 await withApp(async (w, d, T) => {
   section("47. Panel resizers batch their re-render onto requestAnimationFrame");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
@@ -5321,6 +5437,7 @@ await withApp(async (w, d, T) => {
       not just showing a progress bar — since that's new behavior 48b/48c
       never claimed to cover.
    ============================================================ */
+group(48);
 await withApp(async (w, d, T) => {
   section("48a. Open menu reachable with zero files loaded (old empty-tree context menu superseded)");
   assert(T.state.rootIds.length === 0, "sanity: no files loaded yet");
@@ -5463,6 +5580,7 @@ await withApp(async (w, d, T) => {
    new list" default applies unchanged, so the Filtered view just stays
    where it is while the file streams in.
    ============================================================ */
+group(49);
 await withApp(async (w, d, T) => {
   section("49. A large file streams into the tree/table/level-bar/minimap live while it's still parsing, without auto-scrolling");
   // Force multiple PARSE_CHUNK_LINES (4000) chunks so the parse actually
@@ -5571,6 +5689,7 @@ await withApp(async (w, d, T) => {
    doing its (now much cheaper, thanks to the third step) per-tick work on
    every single tick, unthrottled.
    ============================================================ */
+group(50);
 await withApp(async (w, d, T) => {
   section("50. Load ticks never call render(); only the loading file's own row updates, every tick");
 
@@ -5700,6 +5819,7 @@ await withApp(async (w, d, T) => {
    called by a load tick at all), just no longer for the "was the active
    view's own content live too" reason originally documented here.
    ============================================================ */
+group(51);
 await withApp(async (w, d, T) => {
   section("51. A different, already-loaded row's DOM identity (and click-ability) survives parse ticks while the newly-loading file is the active view");
 
@@ -5792,6 +5912,7 @@ await withApp(async (w, d, T) => {
    are flipped to "...does NOT update automatically, only via a real
    render()", the new accurate behavior.
    ============================================================ */
+group(52);
 await withApp(async (w, d, T) => {
   section("52. Level-filter buttons stay clickable, and filter creation stays usable, while the loading file is the active view (neither auto-updates live anymore)");
   // Pinned to "explicit" mode: this group is about DOM-identity survival
@@ -5883,6 +6004,7 @@ await withApp(async (w, d, T) => {
    gains `axisEqual`, ephemeral like `normalize`/xMin/etc. — not threaded
    through any persistence carrier, so none is tested here).
    ============================================================ */
+group(53);
 await withApp(async (w, d, T) => {
   section("53. Plot: point -> log entry, axis-equal");
   // Three entries with x/y values on the SAME 0..20 scale on both axes —
@@ -5983,6 +6105,7 @@ await withApp(async (w, d, T) => {
    fuzzy ranges. Chart-area geometry (722x346 plot rect from the stubbed
    800x400 clientWidth/Height minus PLOT_MARGIN) matches Group 53.
    ============================================================ */
+group(54);
 await withApp(async (w, d, T) => {
   section("54. Plot: zoom / pan / drag-zoom / tooltip");
   const rows = Array.from({ length: 11 }, (_, i) => i * 10); // 0,10,...,100
@@ -6255,6 +6378,7 @@ await withApp(async (w, d, T) => {
    cache settings mechanism as state.pinBookmarksInFilteredView (buildCacheMeta/
    restoreSessionFromCache) — global across the whole app, not per-file.
    ============================================================ */
+group(55);
 await withApp(async (w, d, T) => {
   section("55a. Multiline toggle: default view, row heights, spacer, both Log views");
 
@@ -6383,6 +6507,7 @@ await withApp(async (w, d, T) => {
    top on any other change" default is exactly what this session's request
    replaced everywhere, not just here.
    ============================================================ */
+group(55);
 await withApp(async (w, d, T) => {
   section("55d. Multiline toggle: the top-visible entry stays anchored (no scroll jump/reset) when row heights change above it");
 
@@ -6490,8 +6615,7 @@ section("55c. Multiline toggle persists through the session cache (global settin
   }, { indexedDB: factory });
 
   await withApp(async (w, d, T) => {
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    await T.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     assert(T.state.rootIds.length === 1, "sanity: file came back via boot-time restore");
     assert(T.state.multilineMessages === true, "restore: multiline toggle state restored from the cache");
     assert(d.querySelector("#btnMultilineMsg").classList.contains("active"), "restore: button reflects the restored state");
@@ -6507,6 +6631,7 @@ section("55c. Multiline toggle persists through the session cache (global settin
    (#dropHint) and the toolbar status text (#statusText showing "No files
    loaded") — #emptyState's centered message is now the ONLY such hint.
    ============================================================ */
+group(56);
 await withApp(async (w, d, T) => {
   section("56. No-file-loaded state: single centered hint, no toolbar/sidebar duplicates");
 
@@ -6537,6 +6662,7 @@ await withApp(async (w, d, T) => {
    own filter-node clipboard (state.clipboard) whenever focusRegion is
    "entries" (i.e. the log view, not the tree, was last interacted with).
    ============================================================ */
+group(57);
 await withApp(async (w, d, T) => {
   section("57. Multi-select log rows + Ctrl+C raw-line copy");
 
@@ -6650,6 +6776,7 @@ await withApp(async (w, d, T) => {
    property (applyRowGrid) — no per-row DOM changes — and persist through
    the session cache like state.multilineMessages (global, not per-file).
    ============================================================ */
+group(58);
 await withApp(async (w, d, T) => {
   section("58a. Column visibility toggle + reset widths");
 
@@ -6760,8 +6887,7 @@ section("58c. Column visibility/width persist through the session cache (global 
   }, { indexedDB: factory });
 
   await withApp(async (w, d, T) => {
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50);
+    await T.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     assert(T.state.rootIds.length === 1, "sanity: file came back via boot-time restore");
     assert(T.state.columnVisible.method === false, "restore: columnVisible.method restored");
     assert(T.state.columnWidths.time === 220, "restore: columnWidths.time restored");
@@ -6783,6 +6909,7 @@ section("58c. Column visibility/width persist through the session cache (global 
    Applying reuses importFilterJson() unchanged, so it re-evaluates the
    filter LOGIC against whatever file it lands on, never a stale result.
    ============================================================ */
+group(59);
 await withApp(async (w, d, T) => {
   section("59a. Save to library (context menu) + name dialog");
   // Needs a real (fake-indexeddb) IndexedDB — unlike state.multilineMessages
@@ -6931,6 +7058,7 @@ section("59c. Filter library persists across a simulated reload (separate Indexe
    (edit/clipboard/library/danger) joined by .ctx-sep, the same grouping
    convention #contextMenu (the log-row menu) already established.
    ============================================================ */
+group(60);
 await withApp(async (w, d, T) => {
   section("60a. col-delta/col-time declare overflow:hidden (bugfix: hidden/narrow column content no longer bleeds into the next column)");
 
@@ -7038,6 +7166,7 @@ await withApp(async (w, d, T) => {
    selection-priority path (the actual point of this session's request) and
    the separate revealFilteredView()-on-node-switch behavior.
    ============================================================ */
+group(61);
 await withApp(async (w, d, T) => {
   section("61a. Level-filter toggle: the selected/active row stays on screen at the SAME pixel position — the log collapses/expands around it, not a jump");
 
@@ -7252,6 +7381,7 @@ await withApp(async (w, d, T) => {
    whatever was open stays open) — same fix shape as every other "known
    gotcha" DOM-identity bug in this codebase (see CLAUDE.md).
    ============================================================ */
+group(62);
 await withApp(async (w, d, T) => {
   section("62. Bugfix: a tail-triggered re-render while the Plot tab is open no longer tears down (and closes) the axis dropdowns");
 
@@ -7344,6 +7474,7 @@ await withApp(async (w, d, T) => {
    from time passing, with no bytes read that tick — otherwise the dot
    would only clear itself on the NEXT unrelated change.
    ============================================================ */
+group(63);
 await withApp(async (w, d, T) => {
   section("63a. Bugfix: the live tail dot expires once a file stops growing");
 
@@ -7453,6 +7584,7 @@ await withApp(async (w, d, T) => {
    installation and is a no-op anyway against the default test URL, which
    carries no ?url=).
    ============================================================ */
+group(66);
 await withApp(async (w, d, T) => {
   section("66a. ?url= fetch success adds the file");
   const logText = makeLog(0, 3);
@@ -7520,6 +7652,7 @@ await withApp(async (w, d, T) => {
    and single-instance handling isn't reachable from this jsdom suite,
    see tests/README.md.
    ============================================================ */
+group(67);
 await withApp(async (w, d, T) => {
   section("67a. window.philoggLoadUrl is exposed as the same logic loadFromUrlParam uses");
   assert(typeof w.philoggLoadUrl === "function", "window.philoggLoadUrl is a function");
@@ -7566,6 +7699,7 @@ await withApp(async (w, d, T) => {
    http(s) ?url= (CI report link, GROUP 66) deliberately does NOT get this —
    only the desktop-local scheme is recognized (isDesktopLocalUrl).
    ============================================================ */
+group(89);
 await withApp(async (w, d, T) => {
   section("89a. a philogg://local/… url gets tailed");
   const initial = makeLog(0, 3);
@@ -7614,6 +7748,7 @@ await withApp(async (w, d, T) => {
    try/caught) — otherwise every queued placeholder after the failed one
    would stay grayed forever.
    ============================================================ */
+group(68);
 await withApp(async (w, d, T) => {
   section("68a. Multi-file load: every file gets a grayed placeholder row immediately, in order, before any reading starts");
   const fa = new w.File([makeLog(0, 3)], "a.log", { type: "text/plain" });
@@ -7713,6 +7848,7 @@ await withApp(async (w, d, T) => {
    already covers the merge-on-load dialog's own path through the new async
    mergeFiles indirectly (loadFileDescriptors awaits it internally).
    ============================================================ */
+group(69);
 await withApp(async (w, d, T) => {
   section("69. mergeFiles: the merged row exists (grayed-progress, not grayed-placeholder) the instant merging starts, and stays correct once it finishes");
   // fb's timestamps (baseSec 0) are earlier than fa's (baseSec 100) — proves
@@ -7762,6 +7898,7 @@ await withApp(async (w, d, T) => {
    still produces the fixed entry schema; the builtin default is a
    pass-through to the untouched HEADER_RE/parseHeaderLine until edited.
    ============================================================ */
+group(70);
 
 // state.logFormats/state.formatRules are populated once, asynchronously,
 // by the boot-time loadFormatConfig() call this feature added ahead of
@@ -7772,7 +7909,7 @@ await withApp(async (w, d, T) => {
 // its own fixture waits for this first so it never races the one-time
 // boot assignment (state.logFormats = formats inside loadFormatConfig).
 async function waitForFormatConfig(T) {
-  for (let i = 0; i < 40 && T.state.logFormats.length === 0; i++) await new Promise(r => setTimeout(r, 10));
+  await waitFor(() => T.state.logFormats.length > 0);
 }
 
 await withApp(async (w, d, T) => {
@@ -8033,8 +8170,7 @@ section("70g. Session-cache restore keeps a file's format pinned even after its 
   }, { indexedDB: factory });
 
   await withApp(async (w, d, T) => {
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    for (let i = 0; i < 40 && T.state.rootIds.length === 0; i++) await sleep(50); // boot restore is async
+    await T.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     assert(T.state.rootIds.length === 1, "restore: file came back via boot-time restore");
     const f = T.state.nodes[T.state.rootIds[0]];
     assert(f.formatId === "fmt-bracket", "restore: file's original formatId is pinned, ignoring the now-deleted rule");
@@ -8175,6 +8311,7 @@ await withApp(async (w, d, T) => {
    and Ctrl+Plus/Ctrl+Minus both funnel into the same function, persisted to
    localStorage like the theme toggle.
    ============================================================ */
+group(71);
 await withApp(async (w, d, T) => {
   section("71. Configurable font size");
 
@@ -8221,6 +8358,7 @@ await withApp(async (w, d, T) => {
    ArrowUp/Down handler calls, also updated by a plain click/dblclick in
    either Log view.
    ============================================================ */
+group(72);
 await withApp(async (w, d, T) => {
   section("72. Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter");
 
@@ -8296,6 +8434,7 @@ await withApp(async (w, d, T) => {
    logic. GROUP 73b covers the follow-up bugfix's own JS logic
    (computeMaxMessageWidth/syncTableRowsWidth) directly.
    ============================================================ */
+group(73);
 await withApp(async (w, d, T) => {
   section("73. Horizontal scrollbar in the Filter view");
 
@@ -8348,6 +8487,7 @@ await withApp(async (w, d, T) => {
    browser's font-metric precision is what ultimately matters, verified
    separately with Playwright per the changelog entry).
    ============================================================ */
+group(73);
 await withApp(async (w, d, T) => {
   section("73b. Row background/scroll-width bugfix (Filter view)");
 
@@ -8444,6 +8584,7 @@ await withApp(async (w, d, T) => {
    highlight-marker tooltip positioning already works around — exercising
    measureMsgWidth's own MONO_CHAR_WIDTH_FALLBACK path exactly, deterministically.
    ============================================================ */
+group(73);
 await withApp(async (w, d, T) => {
   section("73c. measureMsgWidth rewrite: real DOM measurement, not canvas");
 
@@ -8490,6 +8631,7 @@ await withApp(async (w, d, T) => {
    entirely. Shares the same editFilterNode helper F2 and the context
    menu's "Edit filter…" action already use.
    ============================================================ */
+group(74);
 await withApp(async (w, d, T) => {
   section("74. Double-click a filter row opens its edit dialog");
 
@@ -8541,6 +8683,7 @@ await withApp(async (w, d, T) => {
    (deleteFilterNodeWithUndo via getRootFileId), so it's undo-able and works
    regardless of which node in the file's chain happens to be active.
    ============================================================ */
+group(75);
 await withApp(async (w, d, T) => {
   section("75. Ctrl+W closes the currently open file");
 
@@ -8578,6 +8721,7 @@ await withApp(async (w, d, T) => {
    is stubbed here (and restored afterwards) rather than actually invoked,
    since a real jsdom window.close() would tear the test window down mid-run.
    ============================================================ */
+group(76);
 await withApp(async (w, d, T) => {
   section("76. Settings: \"Closing the last log file quits the app\" (default off)");
 
@@ -8649,6 +8793,7 @@ await withApp(async (w, d, T) => {
       immediate "[" on the other) rather than a blind "next word is the
       thread" guess that would misfire on ordinary free-form messages.
    ============================================================ */
+group(77);
 await withApp(async (w, d, T) => {
   section("77. Pattern suggestion: non-comma ms separators AND a bare thread field both round-trip instead of becoming literal text");
 
@@ -8699,6 +8844,7 @@ await withApp(async (w, d, T) => {
    single obvious target row; also left alone with focus on the tree or the
    Full/Highlight pane itself (unrelated to this request).
    ============================================================ */
+group(78);
 await withApp(async (w, d, T) => {
   section("78. Enter on a selected Filtered/Stacked row mirrors dblclick (revealInHighlightView)");
 
@@ -8753,6 +8899,7 @@ await withApp(async (w, d, T) => {
    on scroll isn't exercised here (jsdom has no IntersectionObserver — see
    the guard in the app itself); only the click-wiring + default state.
    ============================================================ */
+group(79);
 await withApp(async (w, d, T) => {
   section("79. Settings dialog redesign: section nav + unified rows + switch + button hierarchy");
   await waitForFormatConfig(T);
@@ -8832,6 +8979,7 @@ await withApp(async (w, d, T) => {
    selector keyed off #detailPanel.collapsed could ever reach it (a stale
    CSS rule tried exactly that and silently never matched — removed).
    ============================================================ */
+group(80);
 await withApp(async (w, d, T) => {
   section("80. Collapsible sidebar / detail panel");
 
@@ -8956,6 +9104,7 @@ await withApp(async (w, d, T) => {
    (dark, light, four Catppuccin flavors — https://catppuccin.com/palette/)
    plus any user-imported custom ones (localStorage philogg-custom-themes).
    ============================================================ */
+group(85);
 await withApp(async (w, d, T) => {
   section("85a. Built-in theme dropdown includes the four Catppuccin flavors, and picking one applies its CSS vars");
   fireClick(d.querySelector("#btnSettings"), w);
@@ -9097,6 +9246,7 @@ await withApp(async (w, d, T) => {
    generic HIGHLIGHT_PRESETS, so a chosen highlight color is guaranteed to
    belong to the current theme when that mode is on.
    ============================================================ */
+group(86);
 await withApp(async (w, d, T) => {
   section("86a. Stylesheet audit: the specific hardcoded hex values found in the audit are gone from the button/badge/row rules that used to hardcode them");
   const css = d.querySelector("style").textContent;
@@ -9192,6 +9342,7 @@ await withApp(async (w, d, T) => {
    Minimap für die Zeitabschnitte"), not the per-filter-node highlight
    color Group 86 covers (a different, unrelated feature that stays as-is).
    ============================================================ */
+group(87);
 await withApp(async (w, d, T) => {
   section("87a. Accent-color row: hidden for a theme with no highlightPalette, shown with swatches for one that has it");
   fireClick(d.querySelector("#btnSettings"), w);
@@ -9289,6 +9440,7 @@ await withApp(async (w, d, T) => {
    including Latte, where Base happens to be the brightest token instead
    of a dark-flavor middle tone).
    ============================================================ */
+group(88);
 await withApp(async (w, d, T) => {
   section("88. Background/border hierarchy: --bg-app (main pane) resolves to Base, brighter than --bg-panel (Mantle) — same role mapping across all four flavors, including inverted-brightness Latte");
   const mochaExpected = { "bg-app": "#1e1e2e", "bg-panel": "#181825", "bg-elevated": "#313244", "bg-elevated-2": "#45475a", "border-soft": "#585b70", "border": "#6c7086" };
@@ -9345,6 +9497,7 @@ await withApp(async (w, d, T) => {
    persistence carrier already threads it through untouched (CLAUDE.md's
    "Known gotchas" note doesn't apply here).
    ============================================================ */
+group(81);
 await withApp(async (w, d, T) => {
   section("81. Wildcard placeholder value conditions ([value:float>=10] etc.)");
   // message 0 score=0 .. message 19 score=19
@@ -9492,6 +9645,7 @@ await withApp(async (w, d, T) => {
    cascaded CSS text instead of computed pixels, same blind spot documented
    in "Testing approach".
    ============================================================ */
+group(90);
 await withApp(async (w, d) => {
   section("90. Main window visual consistency fix: resizer grip affordance, sidebar/minimap border token");
   const css = d.querySelector("style").textContent;
@@ -9557,6 +9711,7 @@ await withApp(async (w, d) => {
    stylesheet text, same reasoning as Group 90 (jsdom has no real layout
    engine to measure resolved pixel sizes against).
    ============================================================ */
+group(91);
 await withApp(async (w, d, T) => {
   section("91. Entry Detail hover-peek (matching the sidebar's expanded look) + content-sized/50%-capped peek + per-panel hover settings");
 
@@ -9735,6 +9890,7 @@ await withApp(async (w, d, T) => {
    regardless of the master button's state (a standing preference the button
    just flips, not a gate on configuring it).
    ============================================================ */
+group(93);
 await withApp(async (w, d, T) => {
   section("93. Text-filter match highlighting");
 
@@ -9897,6 +10053,7 @@ await withApp(async (w, d, T) => {
    new #btnApplyLevelToTree ("Add to tree") button, shown only in that mode,
    that pushes the current selection into the tree on demand.
    ============================================================ */
+group(94);
 await withApp(async (w, d, T) => {
   section("94. Level bar writes into the filter tree");
 
@@ -10024,6 +10181,7 @@ await withApp(async (w, d, T) => {
    level's own solid theme color, comma-separated exactly like the node's
    plain-text name.
    ============================================================ */
+group(95);
 await withApp(async (w, d, T) => {
   section("95. \"level\" filter node tree-row label: each level word its own solid color");
 
@@ -10086,6 +10244,7 @@ await withApp(async (w, d, T) => {
    serializeFilterBranch/importFilterJson,
    serializeFilterTreeForCache/materializeCachedFilters).
    ============================================================ */
+group(96);
 await withApp(async (w, d, T) => {
   section("96. Rename / label filter nodes");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
@@ -10250,6 +10409,7 @@ await withApp(async (w, d, T) => {
    #tableRows.scrollWidth) so "distance from bottom" math has something real
    to compare against.
    ============================================================ */
+group(97);
 await withApp(async (w, d, T) => {
   section("97a. Tail growth auto-follows the Highlight/Full view too, not just Filtered");
 
@@ -10381,6 +10541,7 @@ await withApp(async (w, d, T) => {
    between "Hover-to-expand panels" and "Filter tree" — same markup pattern,
    pushing every subsequent subsection/card index down by one.
    ============================================================ */
+group(98);
 await withApp(async (w, d, T) => {
   section("98. Settings Behavior section: subsection split");
   await waitForFormatConfig(T);
@@ -10461,6 +10622,7 @@ await withApp(async (w, d, T) => {
      #settingsTempAnchorMode (Off/Persistent/Fade, its fade-duration row
      only shown for Fade).
    ============================================================ */
+group(99);
 await withApp(async (w, d, T) => {
   section("99. Ctrl+0/Alt+Arrow tree peek+nav, Alt+Enter, temporary anchor");
 
@@ -10682,7 +10844,7 @@ await withApp(async (w, d, T) => {
   const fadeTableBody = d.querySelector("#tableBody");
   fadeTableBody.scrollTop = 5; // arbitrary non-zero value
   const entriesLengthBeforeFade = T.currentViewEntries.length;
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await waitFor(() => d.querySelector("#tableRows .log-row.temp-anchor-row") === null);
   assert(d.querySelector("#tableRows .log-row.temp-anchor-row") === null, "...and removes it once the fade duration elapses");
   assert(T.state.tempAnchor && T.state.tempAnchor.faded === true, "the position stays remembered (faded flag) after the fade completes");
   assert(T.currentViewEntries.length === entriesLengthBeforeFade - 1,
@@ -10697,6 +10859,7 @@ await withApp(async (w, d, T) => {
    tree row or a breadcrumb chip deletes that node the same way its ✕
    button / context-menu "Remove" would, undoably (deleteFilterNodeWithUndo).
    ============================================================ */
+group(100);
 await withApp(async (w, d, T) => {
   section("100. Middle-click a filter node (tree row / breadcrumb chip) deletes it");
 
@@ -10748,6 +10911,7 @@ await withApp(async (w, d, T) => {
    the button would only catch up to a staleness flip on some unrelated
    next render.
    ============================================================ */
+group(101);
 await withApp(async (w, d, T) => {
   section("101. \"Newest\" jump buttons hide once a tailed file goes stale, and stay hidden for a handle that never grew");
 
@@ -10836,6 +11000,7 @@ await withApp(async (w, d, T) => {
    end up on it — scales to future buttons in that row without further
    layout work.
    ============================================================ */
+group(102);
 await withApp(async (w, d, T) => {
   section("102. #btnApplyLevelToTree joins the pinned top-left float flow");
 
@@ -10864,6 +11029,7 @@ await withApp(async (w, d, T) => {
    toggle; state.notes persists through buildCacheMeta (same ordinal-anchor
    scheme as bookmarks, but a fully separate array/store).
    ============================================================ */
+group(104);
 await withApp(async (w, d, T) => {
   section("104. Notes: add/edit via Alt+N and context menu, rendering, toggle, persistence");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
@@ -10949,6 +11115,7 @@ await withApp(async (w, d, T) => {
    newline (left to native textarea behavior), Delete with an empty textarea
    deletes the note, Escape cancels without saving.
    ============================================================ */
+group(105);
 await withApp(async (w, d, T) => {
   section("105. Note dialog: Enter saves, Shift+Enter newlines, Delete-when-empty deletes, Escape cancels");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
@@ -11017,6 +11184,7 @@ await withApp(async (w, d, T) => {
    temp-anchor row that fades out (scheduleTempAnchorFade) is now removed in
    the same step as the fading row itself, instead of being left orphaned.
    ============================================================ */
+group(106);
 await withApp(async (w, d, T) => {
   section("106a. New bookmark-icon column (left gutter, full height, accent-colored, both row renderers)");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
@@ -11139,7 +11307,7 @@ await withApp(async (w, d, T) => {
   assert(noteRowBefore && noteRowBefore.classList.contains("note-row") && noteRowBefore.dataset.entryId === skip1Id,
     "sanity: the anchor row's note renders as its sibling note-row while the row is still shown");
 
-  await new Promise(resolve => setTimeout(resolve, 1000)); // past the 0.5s fade duration
+  await waitFor(() => d.querySelector("#tableRows .log-row.temp-anchor-row") === null); // past the 0.5s fade duration
   assert(d.querySelector("#tableRows .log-row.temp-anchor-row") === null, "the fading anchor row is removed once its fade completes");
   assert(d.querySelector('#tableRows .note-row[data-entry-id="' + skip1Id + '"]') === null,
     "BUGFIX: its note-row is removed in the same step, not left behind orphaned under nothing");
@@ -11154,6 +11322,7 @@ await withApp(async (w, d, T) => {
    same key out of localStorage and consults it when a window close is
    requested; this file only owns persisting the checkbox state.
    ============================================================ */
+group(107);
 await withApp(async (w, d, T) => {
   section("107. Settings: \"Close to system tray\" (default on)");
 
@@ -11189,6 +11358,7 @@ await withApp(async (w, d, T) => {
    instead of running against stale data (the Link view has its own
    click-driven pair selection, no Up/Down of its own to route into).
    ============================================================ */
+group(108);
 await withApp(async (w, d, T) => {
   section("108. Bugfix: arrow-key nav doesn't use a stale currentViewEntries after switching onto a Link filter");
 
@@ -11247,6 +11417,7 @@ await withApp(async (w, d, T) => {
    person. Both items are also round-tripped through the session cache
    (persistFileNode/restoreSessionFromCache) so they survive a reload.
    ============================================================ */
+group(109);
 await withApp(async (w, d, T) => {
   section("109a. \"Open File Location\" / \"Copy URL\": absent outside the desktop build (no window.philogg)");
 
@@ -11333,9 +11504,8 @@ await withApp(async (w, d, T) => {
       "persistFileNode writes both fields to the cache record");
   }, { indexedDB: factory });
 
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
   await withApp(async (w2, d2, T2) => {
-    for (let i = 0; i < 40 && T2.state.rootIds.length === 0; i++) await sleep(50);
+    await T2.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     const f = T2.state.nodes[T2.state.rootIds[0]];
     assert(f.localPath === "/srv/logs/cached.log", "restore: localPath preserved, got " + f.localPath);
     assert(f.sourceUrl === "https://ci.example.com/cached.log", "restore: sourceUrl preserved, got " + f.sourceUrl);
@@ -11362,6 +11532,7 @@ await withApp(async (w, d, T) => {
        from "persistent" to "fade" — GROUP 99's own assertions were updated
        in place to set "persistent" explicitly where they rely on it.
    ============================================================ */
+group(110);
 await withApp(async (w, d, T) => {
   section("110a. A tree-row click leaves focusRegion as \"entries\" — plain arrow keys keep navigating the log, anchor included");
 
@@ -11476,6 +11647,7 @@ await withApp(async (w, d, T) => {
    selection thrash bugfix on session restore, "On open, scroll log to"
    setting, UI scale / Log text size split, UI font family setting.
    ============================================================ */
+group(111);
 await withApp(async (w, d, T) => {
   section("111a. Settings icon + pin icon identity, Escape closes the Settings dialog");
 
@@ -11528,8 +11700,7 @@ await withApp(async (w, d, T) => {
     const activeIdsSeenDuringRestore = [];
     const origRender = w2.render;
     w2.render = function () { activeIdsSeenDuringRestore.push(T2.state.activeId); return origRender.apply(this, arguments); };
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    for (let i = 0; i < 60 && T2.state.rootIds.length < 3; i++) await sleep(50);
+    await T2.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     await sleep(150);
 
     assert(T2.state.rootIds.length === 3, "sanity: all three files came back via boot-time restore");
@@ -11570,8 +11741,7 @@ await withApp(async (w, d, T) => {
   }, { indexedDB: factory });
 
   await withApp(async (w2, d2, T2) => {
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    for (let i = 0; i < 40 && T2.state.rootIds.length === 0; i++) await sleep(50);
+    await T2.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     await sleep(100);
     assert(T2.state.rootIds.length === 1, "sanity: the one file restored");
     assert(T2.state.activeId === T2.state.rootIds[0], "no persisted active node: falls back to the first (only) restored file instead of staying null");
@@ -11694,6 +11864,7 @@ await withApp(async (w, d, T) => {
    state.multiSelect entry leaving a second file's sidebar row showing
    the SAME highlight as the newly active file's row.
    ============================================================ */
+group(112);
 await withApp(async (w, d, T) => {
   section("112a. Bugfix: Log text size rescales ROW_HEIGHT (and EXTRACT_ROW_HEIGHT/LINK_PAIR_ROW_HEIGHT), not just font-size");
 
@@ -11816,6 +11987,7 @@ await withApp(async (w, d, T) => {
    --font-ui. Outside the desktop build (no window.philogg) nothing changes
    from GROUP 111f's plain curated-list behavior.
    ============================================================ */
+group(113);
 await withApp(async (w, d, T) => {
   section("113a. No window.philogg (plain HTML build): font list stays curated-only");
 
@@ -11864,6 +12036,7 @@ await withApp(async (w, d, T) => {
    greyed-out rows (.shortcut-row-fixed, no rebind/reset controls) inside
    the SAME #shortcutBindingsList, so the list still reads as complete.
    ============================================================ */
+group(114);
 await withApp(async (w, d, T) => {
   section("114a. Settings' Shortcuts section: rebindable rows + greyed-out fixed rows, no prose");
 
@@ -11964,6 +12137,7 @@ await withApp(async (w, d, T) => {
    closer to the wordmark than the other toolbar-right buttons, which stay
    flush right exactly as before.
    ============================================================ */
+group(115);
 await withApp(async (w, d, T) => {
   section("115a. Toolbar regroup: nav buttons live in #toolbar near the wordmark, open/save in #sidebarHeader, #btnSession is gone, version tag under the wordmark");
   assert(!!d.querySelector("#toolbar #btnNavBack"), "back button lives in #toolbar");
@@ -12101,6 +12275,7 @@ await withApp(async (w, d, T) => {
    fall back to the old fixed ERROR/WARN/INFO/DEBUG list, so single-format
    usage is unchanged. levelBucket's own prefix cascade is untouched.
    ============================================================ */
+group(116);
 await withApp(async (w, d, T) => {
   section("116a. Default format: unchanged level set/order; entries stamped with their format");
   await waitForFormatConfig(T);
@@ -12254,6 +12429,7 @@ await withApp(async (w, d, T) => {
    -> lvl-custom-N). The Format Manager editor grows a text input + Add
    button and a delete control on custom rows.
    ============================================================ */
+group(117);
 await withApp(async (w, d, T) => {
   section("117a. levelBucket is format-aware: exact match wins, cascade then OTHER");
   await waitForFormatConfig(T);
@@ -12483,6 +12659,7 @@ await withApp(async (w, d, T) => {
    (revealInHighlightView/scrollTargetId's opts.offset, see
    captureRowScreenOffset).
    ============================================================ */
+group(118);
 await withApp(async (w, d, T) => {
   section("118a. Double-click reveal-in-Highlight keeps the entry at the SAME on-screen pixel offset instead of centering it");
 
@@ -12578,6 +12755,7 @@ await withApp(async (w, d, T) => {
         for the Full tab, currentViewEntries/selectEntry otherwise) instead
         of always jumping the Filtered view in the background.
    ============================================================ */
+group(119);
 await withApp(async (w, d, T) => {
   section("119a. Settings: \"Hide minimap's covered-timespan box in Full view\" toggle (default OFF) — Box #1 hides in the Full tab only, tab switches re-evaluate immediately");
 
@@ -12741,6 +12919,7 @@ await withApp(async (w, d, T) => {
         (box hidden) in the folded-corner case where only the anchor row is
         actually in view.
    ============================================================ */
+group(120);
 await withApp(async (w, d, T) => {
   section("120a. Temp anchor is excluded from the minimap's time-range bucketing (#minimapFullRangeRect)");
 
@@ -12808,6 +12987,7 @@ await withApp(async (w, d, T) => {
         their existing updateMinimapFullRange/updateMinimapRenderedRange
         calls.
    ============================================================ */
+group(121);
 await withApp(async (w, d, T) => {
   section("121a. The minimap's selection pin disappears when a fading temp anchor's row is actually removed");
 
@@ -12829,7 +13009,7 @@ await withApp(async (w, d, T) => {
   const markersEl = d.querySelector("#minimapSelectionMarkers");
   assert(markersEl.innerHTML.length > 0, "sanity: the pin is drawn right after the switch, while the anchor row is still shown");
 
-  await new Promise(resolve => setTimeout(resolve, 1000)); // past the 0.5s fade duration + its own 300ms removal step
+  await waitFor(() => T.state.tempAnchor.faded === true && d.querySelector("#tableRows .log-row.temp-anchor-row") === null); // past the 0.5s fade + its 300ms removal step
   assert(T.state.tempAnchor.faded === true, "sanity: the anchor has faded");
   assert(markersEl.innerHTML === "",
     "BUGFIX: the pin is cleared the moment the faded anchor row is actually removed, not left pointing at its old position");
@@ -12884,6 +13064,7 @@ await withApp(async (w, d, T) => {
    serializeFilterBranch/importFilterJson, serializeFilterTreeForCache/
    materializeCachedFilters.
    ============================================================ */
+group(122);
 await withApp(async (w, d, T) => {
   section("122. Regex filter type: \"Interpret input as regex\" toggle");
 
@@ -13032,6 +13213,7 @@ await withApp(async (w, d, T) => {
    the same "small buttons in the plot's own toolbar" convention as the
    zoom controls already there.
    ============================================================ */
+group(123);
 await withApp(async (w, d, T) => {
   section("123. \"Create filter from plot view\": timerange + idset from the Plot tab's visible viewport");
 
@@ -13145,6 +13327,7 @@ await withApp(async (w, d, T) => {
    selection filter". Unlike Bookmarks: deletable (no `locked`), no
    "always show"/pin toggle, and membership never touches state.bookmarks.
    ============================================================ */
+group(124);
 await withApp(async (w, d, T) => {
   section("124. \"Add to selection\": top-level, named, deletable idset filters from log rows");
 
@@ -13299,6 +13482,7 @@ await withApp(async (w, d, T) => {
    Point -> log-entry click reuses the same jumpToFullLog the 2D scatter's
    marks already use.
    ============================================================ */
+group(125);
 await withApp(async (w, d, T) => {
   section("125. Plot: 3D scatter — axis selection, axis-equal modes, manual axis ranges, rotate/zoom/pan, point click");
 
@@ -13500,6 +13684,7 @@ await withApp(async (w, d, T) => {
    Zoom/pan/rotation stay ephemeral view state, unaffected by this — only the
    plot's actual definition is now remembered.
    ============================================================ */
+group(126);
 await withApp(async (w, d, T) => {
   section("126. Plot config persists per extraction node (leave/return, copy, undo, save/load, session cache)");
 
@@ -13651,8 +13836,8 @@ await withApp(async (w, d, T) => {
    prevent (see PROJECT.md/`createFileNode`'s comment), just via a new call
    path; `activateQueuedFileNode` now carries the same guard.
    ============================================================ */
+group(127);
 {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
   const factory127 = new IDBFactory();
 
   // Two large-ish files (several PARSE_CHUNK_LINES chunks each) so the
@@ -13674,7 +13859,10 @@ await withApp(async (w, d, T) => {
     // Both placeholder rows appear together, in order, well before either
     // file's parse is done — poll for the STRUCTURAL moment (two root
     // nodes existing) rather than any specific entry count.
-    for (let i = 0; i < 40 && T.state.rootIds.length < 2; i++) await sleep(20);
+    // Deliberately NOT `await T.bootRestore` here, unlike every other reload
+    // group: this one asserts on the INTERMEDIATE state, which the settled
+    // barrier would have already run past.
+    await waitFor(() => T.state.rootIds.length >= 2);
     assert(T.state.rootIds.length === 2, "both restored files are real root nodes together, not one at a time — got " + T.state.rootIds.length);
 
     const nodeA = T.state.nodes[T.state.rootIds[0]];
@@ -13695,7 +13883,7 @@ await withApp(async (w, d, T) => {
     }
 
     // Eventually both finish loading with their full, correct content.
-    for (let i = 0; i < 200 && (nodeA.entries.length < 20000 || nodeB.entries.length < 20000); i++) await sleep(20);
+    await waitFor(() => nodeA.entries.length >= 20000 && nodeB.entries.length >= 20000, { timeout: 10000 });
     assert(nodeA.entries.length === 20000 && nodeB.entries.length === 20000,
       "both restored files finish loading with their full entry counts — got " + nodeA.entries.length + "/" + nodeB.entries.length);
     assert(!nodeA.queued && !nodeB.queued && typeof nodeA.loadFraction !== "number" && typeof nodeB.loadFraction !== "number",
@@ -13722,6 +13910,7 @@ await withApp(async (w, d, T) => {
    node's own bakedA/bakedB already work fine once its inputs are visible
    again, so there is nothing to replace).
    ============================================================ */
+group(128);
 await withApp(async (w, d, T) => {
   section("128. Self-contained and/or/link inputs: placement, move, Unpack");
 
@@ -13845,6 +14034,7 @@ await withApp(async (w, d, T) => {
    vs. TXT/LNK/... abbreviation, fixed-width either way) replaces the old
    always-both display.
    ============================================================ */
+group(132);
 await withApp(async (w, d, T) => {
   section("132. Tree row UI follow-ups: generic collapse, extract swatch, indicator setting");
 
@@ -13919,6 +14109,7 @@ await withApp(async (w, d, T) => {
    (openTreeCtxInfoMenu), same shape as the log-row context menu's own
    "Add to selection" submenu.
    ============================================================ */
+group(133);
 await withApp(async (w, d, T) => {
   section("133. Tree context menu \"Info\" submenu");
 
@@ -13966,6 +14157,7 @@ await withApp(async (w, d, T) => {
    extract tokens) incorrectly defaulted to e.raw. Fixed to use e.message,
    matching the extract branch.
    ============================================================ */
+group(134);
 await withApp(async (w, d, T) => {
   section("134. Save (text, wildcard pattern) vs Extract match-count consistency on link pairs");
 
@@ -14005,6 +14197,7 @@ await withApp(async (w, d, T) => {
    regression guard for the reported bug: the dialog must never appear
    unconditionally at app startup.
    ============================================================ */
+group(135);
 await withApp(async (w, d, T) => {
   section("135. General export-scope option (just this filter / with ancestor chain) + no startup dialog");
 
@@ -14107,6 +14300,7 @@ await withApp(async (w, d, T) => {
         entries can only produce an empty or type-mixed result.
      e) buildOrderIndexMap is memoized per file and self-invalidates.
    ============================================================ */
+group(136);
 await withApp(async (w, d, T) => {
   section("136. Code-review fixes: baked model, persistence carriers, hot paths");
 
@@ -14236,6 +14430,7 @@ await withApp(async (w, d, T) => {
    ignore node.isRegex and search the regex SOURCE as a literal substring,
    so a regex filter marked nothing at all.
    ============================================================ */
+group(137);
 await withApp(async (w, d, T) => {
   section("137. Highlight-rule match text + regex match-spec fix");
 
@@ -14472,6 +14667,7 @@ await withApp(async (w, d, T) => {
         a flip to tabs and back).
      o) the nav chip's corner is configurable and re-applied immediately.
    ============================================================ */
+group(138);
 await withApp(async (w, d, T) => {
   section("138. Context view: the active node's result with collapsible gaps");
 
@@ -14734,6 +14930,7 @@ await withApp(async (w, d, T) => {
    (philogg://local/… sourceUrl) must still offer "Open File Location"
    via revealLocalUrl.
    ============================================================ */
+group(139);
 await withApp(async (w, d, T) => {
   section("139a. getPathForFile returning null: files still load, no localPath, no reveal item");
 
@@ -14784,6 +14981,7 @@ await withApp(async (w, d, T) => {
    renaming or restyling them would break the wrapper's window chrome
    with nothing failing here. This group is that tripwire.
    ============================================================ */
+group(140);
 await withApp(async (w, d, T) => {
   section("140. #toolbar's structure/height, which both desktop wrappers' injected chrome depends on");
 
@@ -14822,6 +15020,7 @@ await withApp(async (w, d, T) => {
    under. This group pins that contract from the page's side — the half a
    jsdom run can actually exercise.
    ============================================================ */
+group(141);
 await withApp(async (w, d, T) => {
   section("141a. openFilesPicker delegates to philogg.pickFiles when the wrapper offers one");
 
@@ -14927,6 +15126,7 @@ await withApp(async (w, d, T) => {
    known to the page ONLY by that URL, so its path has to be asked back
    from the wrapper (philogg.pathForLocalUrl).
    ============================================================ */
+group(142);
 await withApp(async (w, d, T) => {
   section("142a. Copy Path with a known localPath copies it directly");
 
@@ -15004,6 +15204,7 @@ await withApp(async (w, d, T) => {
    folders now watches a dropped one, so 143b is specifically the fallback
    for one that can't (an older build, or a wrapper without listFolder).
    ============================================================ */
+group(143);
 await withApp(async (w, d, T) => {
   section("143a. philoggDropOverlay toggles the same overlay an HTML drag would");
 
@@ -15049,6 +15250,7 @@ await withApp(async (w, d, T) => {
    the URL is all it ever was, and sourceUrl is persisted anyway, so it is
    rebuilt on restore.
    ============================================================ */
+group(144);
 await withApp(async (w, d, T) => {
   section("144a. A URL-tailed file is actually written to the session cache");
 
@@ -15088,8 +15290,7 @@ await withApp(async (w, d, T) => {
   }, { indexedDB: factory });
 
   await withApp(async (w2, d2, T2) => {
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    for (let i = 0; i < 40 && T2.state.rootIds.length === 0; i++) await sleep(50);
+    await T2.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     await sleep(100);
     assert(T2.state.rootIds.length === 1, "the URL-opened file survives the reload at all, got " + T2.state.rootIds.length);
     const n = T2.state.nodes[T2.state.rootIds[0]];
@@ -15118,6 +15319,7 @@ await withApp(async (w, d, T) => {
    arrives with its real path, closing the last route in that wrapper whose
    files had no "Open File Location"/"Copy Path" (FEATURE_BACKLOG.md #61).
    ============================================================ */
+group(145);
 
 // A wrapper bridge over an in-memory set of folders. Mirrors the Rust side
 // closely enough to matter: ids are minted per path and REUSED for a path
@@ -15180,7 +15382,7 @@ await withApp(async (w, d, T) => {
 
   fireClick(d.querySelector("#btnOpen"), w);
   fireClick(d.querySelector('#openMenu [data-action="folder"]'), w);
-  for (let i = 0; i < 40 && T.state.folders.length === 0; i++) await new Promise(r => setTimeout(r, 25));
+  await waitFor(() => T.state.folders.length > 0 && T.state.folders[0].files);
 
   assert(T.state.folders.length === 1, "the folder is watched even with no showDirectoryPicker anywhere");
   assert(d.querySelector("#copyToast").textContent.indexOf("Chromium-based browser") === -1,
@@ -15290,8 +15492,7 @@ await withApp(async (w, d, T) => {
   second.picked = first.picked;
   await withApp(async (w2, d2, T2) => {
     second.installFetch(w2);
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    for (let i = 0; i < 40 && T2.state.folders.length === 0; i++) await sleep(50);
+    await T2.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     await sleep(100);
 
     assert(T2.state.folders.length === 1, "the watched folder came back from its path");
@@ -15328,7 +15529,8 @@ await withApp(async (w, d, T) => {
    Unlike every other group here this one needs no jsdom window: the
    stripper is a plain Node module, exercised directly.
    ============================================================ */
-{
+group(146);
+if (groupSelected()) { // the one group with no withApp of its own to gate it
   section("146a. Comments go, code stays");
   const strip = require("../scripts/strip-comments.js");
 
@@ -15449,6 +15651,7 @@ await withApp(async (w, d, T) => {
         and neither is a Ctrl+click, which is a multi-selection gesture and
         must not move the rows out from under the gesture.
    ============================================================ */
+group(147);
 await withApp(async (w, d, T) => {
   section("147. Context view: the aroundJump expansion follows the nav arrows");
 
@@ -15625,6 +15828,7 @@ await withApp(async (w, d, T) => {
      d) a genuine Ctrl+click multi-selection is still untouched by
         everything else; only creating a node collapses it.
    ============================================================ */
+group(148);
 await withApp(async (w, d, T) => {
   section("148. A newly created filter is the only selected node");
 
@@ -15700,6 +15904,8 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
+// run.js parses this to sum the shards up into one total.
+if (SHARD) console.log("##SHARD " + JSON.stringify({ shard: SHARD[0], passed, failed, failures }));
 process.exit(failed ? 1 : 0);
 })().catch(err => { console.error(err); process.exit(1); });
 
@@ -17808,6 +18014,23 @@ process.exit(failed ? 1 : 0);
               bug — a plain tree-row click leaves its id in
               state.multiSelect, and node CREATION never dropped it — now
               fixed for every creator at once via activateNewNode(node).
+
+   Harness change this session (2026-09-01, person-requested performance
+              review) — no group added or removed, the same 2833 assertions:
+              the page's inline <script> is now compiled ONCE into a
+              vm.Script and run per window context instead of being
+              re-compiled out of the HTML for each of the ~290 windows
+              (176s -> 78s); every GROUP banner gained a `group(N);` marker
+              so run.js can shard the groups across cores (-> ~30s, and
+              `GROUP=58 npm test` runs one group in ~2s); and the 13
+              "reload" groups now await T.bootRestore — philogg.html names
+              its boot promise for exactly this — instead of polling
+              state.rootIds, which restore fills with queued placeholders
+              in its first pass, long before the fields those groups assert
+              on. That made them latently flaky, and the speed-up exposed
+              it. GROUP 127 keeps polling on purpose (it asserts on the
+              INTERMEDIATE restore state) and uses the new waitFor helper.
+              See tests/README.md for the conventions all three imply.
 
    Deliberately DROPPED this session:
      - Group 139a's "no reveal item for a picker/drop-loaded file" framing.
