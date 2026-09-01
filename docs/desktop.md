@@ -1,14 +1,14 @@
 # Desktop Wrapper
 
 The optional desktop wrapper around the **unmodified** `philogg.html`, in
-`desktop-tauri/`: the OS's own webview (WebView2 / WKWebView / WebKitGTK) plus a
+`desktop/`: the OS's own webview (WebView2 / WKWebView / WebKitGTK) plus a
 Rust backend (Tauri v2). It adds `.log` file associations, CLI-argument/double-click
 file opening, a frameless window with integrated window controls, a tray, a splash
 screen, `settings.json` mirroring, "Open File Location"/"Copy Path", a system font
 list for the UI font picker, and a folder watch that does not go through the
 browser's File System Access API.
 
-`desktop-tauri/README.md` has the build/run steps, the prerequisites, and the
+`desktop/README.md` has the build/run steps, the prerequisites, and the
 current run status — this file covers the internal mechanism only.
 
 **The rule everything here obeys**: `philogg.html` is never edited. It is served
@@ -18,7 +18,7 @@ wrapper-specific is injected at runtime.
 
 ## Layout
 
-`desktop-tauri/package.json` exists only to pull in the Tauri CLI. Everything else is
+`desktop/package.json` exists only to pull in the Tauri CLI. Everything else is
 `src-tauri/`: `tauri.conf.json` (bundle config, `.log` file association,
 `philogg.html` as a packaged resource), `Cargo.toml`, `capabilities/default.json`,
 the placeholder icon set under `icons/` (plus the dependency-free `icons/generate.js`
@@ -302,7 +302,7 @@ which calls the real `Window::close()` on the Rust side — that one **does** ra
 `CloseRequested`, landing on the exact same close-to-tray decision the injected
 title-bar close button uses.
 
-`settings.json` lives in `<os-config-dir>/PhiLogg-Tauri/`, deliberately *not* the
+`settings.json` lives in `<os-config-dir>/PhiLogg/`, deliberately *not* the
 identifier-derived directory Tauri would pick by default. The session cache (IndexedDB)
 lives in the webview's own storage for this app, wherever the platform puts it.
 
@@ -344,7 +344,7 @@ lives in the webview's own storage for this app, wherever the platform puts it.
 
 ## Release
 
-`.github/workflows/tauri-release.yml`, manual-only (`workflow_dispatch`), entirely
+`.github/workflows/desktop-release.yml`, manual-only (`workflow_dispatch`), entirely
 separate from `release.yml` (which keeps publishing only `philogg.html`, unaffected by
 any of this). A `prepare` job creates one release tag (`tauri-<short-sha>`) up front so
 the per-OS `build` matrix jobs can each just build and upload their own installer into
@@ -364,7 +364,7 @@ those failures — see changelog).
 Linux builds on `ubuntu-22.04` rather than `-latest` because an AppImage links against
 its build machine's glibc, and the job installs the WebKitGTK/GTK/appindicator dev
 packages first. Tauri's bundler has no `artifactName` template, so the upload step
-renames the bundles to `PhiLogg-tauri-<sha>.<ext>`.
+renames the bundles to `PhiLogg-<sha>.<ext>`.
 
 Each `build` job stamps `PHILOGG_VERSION` to the commit short-SHA and strips
 `philogg.html`'s comments (`scripts/strip-comments.js`, see PROJECT.md → "Release
@@ -382,6 +382,6 @@ commands in `commands.rs` plus that one core command.
 
 ## Known gaps
 
-See `desktop-tauri/README.md` → "Known limitations" for the user-facing list
+See `desktop/README.md` → "Known limitations" for the user-facing list
 (`getPathForFile`, macOS font names, the single maximize glyph, platform-dependent
 rounded corners) and "Status" for what has and hasn't been run live.

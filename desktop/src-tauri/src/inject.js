@@ -27,8 +27,8 @@
   // session — so the first load of each run hydrates and every reload after
   // it leaves the page's own (newer) values alone.
   try {
-    if (sessionStorage.getItem("philogg-tauri-hydrated") !== NONCE) {
-      sessionStorage.setItem("philogg-tauri-hydrated", NONCE);
+    if (sessionStorage.getItem("philogg-desktop-hydrated") !== NONCE) {
+      sessionStorage.setItem("philogg-desktop-hydrated", NONCE);
       for (var key in SETTINGS) {
         if (Object.prototype.hasOwnProperty.call(SETTINGS, key)) {
           localStorage.setItem(key, SETTINGS[key]);
@@ -98,7 +98,7 @@
   // philogg.html ever sees the file, and travels with the philogg://local/…
   // URL it is served under. philogg.html still treats a null
   // getPathForFile as "no path known"; under this wrapper no route reaches
-  // that case any more. See desktop-tauri/README.md -> "Known limitations".
+  // that case any more. See desktop/README.md -> "Known limitations".
   window.philogg = {
     getPathForFile: function () {
       return null;

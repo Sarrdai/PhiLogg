@@ -16,9 +16,9 @@ vanilla JS — no framework, no build tooling; the only tooling is
 — see `PROJECT.md` → "Release builds"). Personal tool for browser-based
 log analysis. Companion: `tests/philogg.regression.test.js` (jsdom
 regression suite, see `tests/README.md` for conventions). Optional
-`desktop-tauri/` wrapper (Tauri v2 + the OS webview) adds file associations
+`desktop/` wrapper (Tauri v2 + the OS webview) adds file associations
 and a frameless window around the unmodified `philogg.html` — see
-`desktop-tauri/README.md`.
+`desktop/README.md`.
 
 ## Non-negotiables
 
@@ -30,7 +30,7 @@ and a frameless window around the unmodified `philogg.html` — see
   groups instead of leaving a green check on dead code).
 - **Run the full suite (`cd tests && npm test`) only when code changed** —
   i.e. `philogg.html`, `tests/philogg.regression.test.js`, `scripts/`, or
-  anything under `desktop-tauri/`. Report the pass count when you do. A session that only touched
+  anything under `desktop/`. Report the pass count when you do. A session that only touched
   Markdown (`PROJECT.md`, `docs/*.md`, `CHANGELOG.md`, `README.md`,
   `FEATURE_BACKLOG.md`, `CLAUDE.md`) does not need a test run "to be safe" —
   don't run it out of habit.

@@ -4,14 +4,14 @@
 // The tracked philogg.html keeps every comment — they are most of what makes
 // a 20k-line single file navigable. The copies that leave the repo as a
 // release asset (release.yml) or packaged into the desktop installer
-// (tauri-release.yml) do not need them, so both workflows run this over their
+// (desktop-release.yml) do not need them, so both workflows run this over their
 // checked-out copy right after the PHILOGG_VERSION stamp and before
 // publishing. Nothing is ever committed back.
 //
 //   node scripts/strip-comments.js <input.html> [output.html]
 //
 // With no output path the file is rewritten in place. Deliberately
-// dependency-free (same reasoning as desktop-tauri/src-tauri/icons/generate.js):
+// dependency-free (same reasoning as desktop/src-tauri/icons/generate.js):
 // a release job must not need an npm install to run it.
 //
 // This is a comment stripper, not a minifier: whitespace, names and line

@@ -6,7 +6,7 @@ with Tauri v2.
 
 `philogg.html` itself is never modified — it is served through a custom
 `philogg://` scheme and handed local files through its own `?url=`
-deep-link mechanism. See `docs/desktop-tauri.md` for how that's done.
+deep-link mechanism. See `docs/desktop.md` for how that's done.
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ deep-link mechanism. See `docs/desktop-tauri.md` for how that's done.
 ## Run / build
 
 ```
-cd desktop-tauri
+cd desktop
 npm install
 npm run dev     # runs against ../philogg.html directly — edit and restart
 npm run build   # installer in src-tauri/target/release/bundle/
@@ -36,9 +36,9 @@ packaged as a bundle resource. Opening a file directly:
 npm run dev -- -- path/to/file.log
 ```
 
-Releases are built by `.github/workflows/tauri-release.yml`
+Releases are built by `.github/workflows/desktop-release.yml`
 (`workflow_dispatch`, per-OS checkboxes, tag `tauri-<short-sha>`, artifacts
-named `PhiLogg-tauri-<sha>.<ext>`).
+named `PhiLogg-<sha>.<ext>`).
 
 ## Version stamp and release-only comment stripping
 
@@ -64,9 +64,9 @@ File System Access API (see below).
 
 ## Persistent data
 
-`settings.json` lives in `PhiLogg-Tauri/` in the OS config directory
-(`~/.config/PhiLogg-Tauri`, `~/Library/Application Support/PhiLogg-Tauri`,
-`%APPDATA%\PhiLogg-Tauri`). The tray's "Open Config Folder" opens it.
+`settings.json` lives in `PhiLogg/` in the OS config directory
+(`~/.config/PhiLogg`, `~/Library/Application Support/PhiLogg`,
+`%APPDATA%\PhiLogg`). The tray's "Open Config Folder" opens it.
 
 The session cache (IndexedDB) lives in the webview's own storage for this
 app, wherever the platform puts it; the tray's "Clear Cache" wipes it and
@@ -126,7 +126,7 @@ instead of hiding to tray — `window.close()` is a plain webview API with no
 Tauri involvement, so it tore down the page without ever telling the Rust
 side a close was requested. `inject.js` now overrides `window.close` to
 route through the same Rust-side close path the title-bar close button
-uses. See `docs/desktop-tauri.md` for both.
+uses. See `docs/desktop.md` for both.
 
 The native folder watch (2026-09-01) is verified by `cargo check` plus the
 jsdom suite's Group 145 only — the picker, the listing and a real Desktop

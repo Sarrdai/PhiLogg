@@ -17,7 +17,7 @@ Nothing is built to *run* PhiLogg — the tracked `philogg.html` is the app, and
 - **Version stamp** — `PHILOGG_VERSION` (`"dev"` in the repo) is rewritten to the commit's short SHA, which is what `.brand-version` shows in the toolbar.
 - **Comment strip** — `scripts/strip-comments.js` removes every HTML, CSS and JS comment. The repo copy keeps all of them (they're most of what makes a 20k-line single file navigable); a published build carries none, which is roughly 40% of the file. It is a comment stripper, not a minifier: whitespace, names and line structure are untouched, so a stack trace from a release build still lands on a recognizable line. Dependency-free and hand-written rather than a regex, because the file is full of strings containing `//` (the `philogg://` scheme, URLs) and of regex literals containing quotes and slashes — see the file's own header comment. Its correctness check is the regression suite: `PHILOGG_HTML=<stripped copy> npm test` from `tests/` must produce the same pass count as an ordinary run, and GROUP 146 pins the scanner's own edge cases.
 
-`.github/workflows/release.yml` publishes the stamped+stripped `philogg.html` as a release asset; `.github/workflows/tauri-release.yml` applies the same two steps before the desktop bundler packages the file as a resource, so both artifacts carry the same content. A local `npm run build` in `desktop-tauri/` does neither.
+`.github/workflows/release.yml` publishes the stamped+stripped `philogg.html` as a release asset; `.github/workflows/desktop-release.yml` applies the same two steps before the desktop bundler packages the file as a resource, so both artifacts carry the same content. A local `npm run build` in `desktop/` does neither.
 
 ## The log formats it parses
 
@@ -141,8 +141,8 @@ The extraction table's synthetic Index/t(ms) columns, virtualized rendering (ext
 ### `docs/persistence-and-sync.md`
 Undo/redo, bookmarks (the auto-managed "Bookmarks" filter node), notes, pin-bookmarks-into-filtered-view, tailing (live file updates), file loading (progress-on-the-real-row, multi-file load, merge), deep-link loading (`?url=`), folder watch + lazy loading, filter save/load JSON, the reusable filter library, the session cache (IndexedDB, survives a reload), per-file filter history, and session export/import. Start here for anything about `state.bookmarks`/`state.notes`, `node.tail`, or the `philogg-session-cache` IndexedDB database.
 
-### `docs/desktop-tauri.md`
-The desktop wrapper's internal mechanism (`desktop-tauri/`, Tauri v2 + the OS webview): custom `philogg://` scheme, the injected script and the `window.philogg` bridge, native file/folder opening, frameless window and drag region, settings mirroring, tray/splash/close-to-tray, and the release workflow. `desktop-tauri/README.md` has the build/run steps, prerequisites, current run status, and the known limitations.
+### `docs/desktop.md`
+The desktop wrapper's internal mechanism (`desktop/`, Tauri v2 + the OS webview): custom `philogg://` scheme, the injected script and the `window.philogg` bridge, native file/folder opening, frameless window and drag region, settings mirroring, tray/splash/close-to-tray, and the release workflow. `desktop/README.md` has the build/run steps, prerequisites, current run status, and the known limitations.
 
 ### `docs/testing-and-limitations.md`
 The jsdom-based testing approach (and its known blind spots — no real layout/paint engine), plus the running list of known limitations and intentionally-deferred items (assertions/ignored-columns keyed by index not name, no cross-file filter combination, no AND/OR over a `link` node, etc.).
