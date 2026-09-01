@@ -33,7 +33,7 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       os_list: ${{ steps.os_list.outputs.list }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Compute release tag
         id: tag
@@ -70,11 +70,11 @@ jobs:
         os: ${{ fromJSON(needs.prepare.outputs.os_list) }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         working-directory: desktop
