@@ -65,6 +65,26 @@
     return nativeFetch(input, init);
   };
 
+  // -------------------------------------------------------------- close()
+  // FEATURE_BACKLOG.md's quitOnLastFileClose calls the plain, standard
+  // `window.close()` when the last open file is closed (see philogg.html's
+  // own comment on that call: it relies on the *host* intercepting a
+  // renderer's own window.close() and turning it into a real window close —
+  // true for Electron's BrowserWindow, but not for a Tauri webview. Here
+  // `window.close()` is a bare DOM/webview API with no Tauri involvement at
+  // all: the webview engine tears down the *page* (which is why the person
+  // who found this bug saw the app "close" — the content actually vanished)
+  // without ever telling the Rust side a close was requested, so
+  // WindowEvent::CloseRequested never fires and windows.rs's close-to-tray
+  // decision never runs — leaving an empty window with nothing left to
+  // close it but the tray. Routing the call through the window_close command
+  // instead makes it go through window.close() on the Rust side, which DOES
+  // raise CloseRequested and reaches the exact same close-to-tray decision
+  // the injected title-bar close button uses.
+  window.close = function () {
+    invoke("window_close");
+  };
+
   // ---------------------------------------------------------------- bridge
   // The same narrow surface desktop/preload.js exposes, so philogg.html's
   // feature detection (`window.philogg` exists -> desktop build) and its
