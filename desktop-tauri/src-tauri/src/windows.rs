@@ -83,11 +83,12 @@ pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
         // URLs, exactly like a file-association open, which also buys those
         // files tailing for free.
         //
-        // Cost, accepted: a dropped FOLDER no longer starts a folder watch.
-        // That needs a live FileSystemDirectoryHandle to list and rescan
-        // (see philogg.html's "Folder watch"), which a path can't produce —
-        // so folders are reported to the page, which points at
-        // "Open… → Folder…" instead. See desktop-tauri/README.md.
+        // A dropped FOLDER travels in the same call, as a path. It used to
+        // be a dead end — a folder watch needed a live
+        // FileSystemDirectoryHandle to list and rescan, which a path can't
+        // produce — but the watch is now listed from Rust (commands.rs's
+        // list_folder), so a path is exactly what it wants and a dropped
+        // folder starts watching like a picked one.
         //
         // The events themselves arrive as WindowEvent::DragDrop — there is
         // no builder-level hook for them — so they are picked up in
@@ -158,12 +159,11 @@ fn show_drop_overlay(window: &WebviewWindow, show: bool) {
 }
 
 /// A native drop is the only kind that carries real OS paths, which is the
-/// whole reason the native handler is on (see `create_main`). Dropped files
-/// are registered exactly like a file-association open and handed to the
-/// page as paths + `philogg://local/…` URLs; dropped folders can't be
-/// watched from a path alone and are reported so the page can say so.
-/// Splits a drop's paths into files this wrapper can serve (registered the
-/// same way a file-association open is) and folders it can't watch.
+/// whole reason the native handler is on (see `create_main`). Splits a
+/// drop's paths into files this wrapper serves (registered exactly like a
+/// file-association open, so they arrive with a path *and* a
+/// `philogg://local/…` URL) and folders, whose paths the page turns into
+/// watched folders through `list_folder`.
 fn register_dropped(state: &AppState, paths: &[PathBuf]) -> (Vec<commands::LocalFile>, Vec<String>) {
     let mut files = Vec::new();
     let mut folders = Vec::new();

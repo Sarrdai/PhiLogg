@@ -99,8 +99,9 @@ open it in a browser to view it.
   matches, and everything the filter rejected collapsed into expandable
   gaps you open line by line, GitHub-diff style. Jump match to match with
   Ctrl+↑/↓ without going back to the tree. Side by side or stacked.
-- **Live tailing & folder watch** (Chromium, File System Access API) — an
-  actively-written log file updates in place, with both the Context and
+- **Live tailing & folder watch** (Chromium, File System Access API — or
+  any platform in the Tauri desktop build, which lists folders natively) —
+  an actively-written log file updates in place, with both the Context and
   Filtered views auto-following the newest entry; a watched folder picks up
   new files automatically.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
@@ -168,7 +169,10 @@ internally.
 Works in any modern browser for one-shot file loading. **Live tailing and
 folder watch require the File System Access API**, currently
 Chromium-based browsers only (Chrome, Edge, …) — Firefox and others still
-open and analyze files, just as static snapshots.
+open and analyze files, just as static snapshots. In the browser, folders
+the engine considers sensitive (Desktop, Downloads) can't be watched at all;
+the Tauri desktop build has no such restriction, since it lists folders
+itself rather than through that API.
 
 ## The log format it reads
 
