@@ -118,6 +118,7 @@ async function withApp(run, opts = {}) {
       get contextStrips() { return contextStrips; },
       get contextFoldMarks() { return contextFoldMarks; },
       get contextExpansions() { return contextExpansions; },
+      get contextAutoExpansions() { return contextAutoExpansions; },
       get contextMatchRows() { return contextMatchRows; },
       get highlightRowOffsets() { return highlightRowOffsets; },
       get contextInitialExpansion() { return contextInitialExpansion; },
@@ -15317,6 +15318,110 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 146 — "Collapsed, opened around a jump" travels with the match
+   navigation (person-requested follow-up to GROUP 138: the setting only
+   ever reacted to a jump coming FROM the Filtered view — double-click or
+   Enter — while the Context view's own ‹ / › arrows, added in the same
+   rework, moved the selection without touching a single gap. Asked for:
+   walking match to match should reveal the surroundings of the match you
+   land on and put back the ones the previous jump opened, so the revealed
+   context follows the selection instead of piling up behind it — except
+   where a gap was opened or collapsed BY HAND, which keeps the state the
+   person gave it.)
+     a) an arrow jump opens the gaps above and below the match it lands on.
+     b) the next jump shuts the previous one's again — one window travels
+        with the selection — and the newly selected row is centred on the
+        REBUILT list, not on its stale pre-expansion index.
+     c) walking backwards moves the same window back.
+     d) a gap opened by hand is never shut by a later jump, however far
+        away it is and however many jumps happen.
+     e) ...including one that was auto-opened and then re-opened by hand:
+        the hand toggle is what transfers ownership, not the gap's state.
+     f) with "Collapsed" (or "Expanded") picked instead, the arrows leave
+        the gaps exactly as they are — this is the aroundJump setting's
+        behaviour, not the nav arrows'.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("146. Context view: the aroundJump expansion follows the nav arrows");
+
+  // "hit" every 10th line -> matches 0,10,20,30,40,50 and one gap between
+  // each pair (plus the trailing one), i.e. gap.start 1,11,21,31,41,51.
+  const f = await w.addFile("ctxjump.log", makeLog(0, 60, { suffix: i => (i % 10 === 0 ? "hit" : "other") }), () => {});
+  const hitFilter = w.createFilterNode(f.id, "text", "hit");
+  // render() auto-reveals the Filtered tab on every activeId change, so the
+  // Context panel has to be re-shown after each node switch (see GROUP 138).
+  const showContext = () => { w.render(); w.applyFhView("highlight"); };
+  T.contextInitialExpansion = "aroundJump";
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  const openStarts = () => [...T.contextExpansions].sort((a, b) => a - b).join(",");
+  const rowFor = id => d.querySelector('#highlightRows [data-entry-id="' + id + '"]');
+  assert(T.contextGaps.map(g => g.start).join(",") === "1,11,21,31,41,51",
+    "fixture sanity: six matches, six gaps, got " + T.contextGaps.map(g => g.start).join(","));
+  assert(T.contextExpansions.size === 0,
+    "aroundJump still SEEDS collapsed — it is a reaction to jumps, not an initial state of its own");
+
+  // --- (a) an arrow jump opens the gaps around the match it lands on ------
+  T.state.selectedId = f.entries[0].id;
+  T.state.focusRegion = "entries";
+  fireKeydown(d, w, "ArrowDown", { ctrlKey: true }); // the real shortcut, not just the chip's handler
+  assert(T.state.selectedId === f.entries[10].id, "sanity: Ctrl+ArrowDown moved to the next match");
+  assert(openStarts() === "1,11",
+    "landing on a match opens the gap above and the gap below it, got " + openStarts());
+  assert(T.currentHighlightViewEntries.some(e => e.id === f.entries[5].id),
+    "...so the lines around the new match really are in the view now");
+
+  // --- (b) the next jump moves that window along instead of piling up -----
+  fireKeydown(d, w, "ArrowDown", { ctrlKey: true });
+  assert(T.state.selectedId === f.entries[20].id, "sanity: on to the match after that");
+  assert(openStarts() === "11,21",
+    "the previous jump's leading gap is shut again — one window travels with the selection, got " + openStarts());
+  assert(!T.currentHighlightViewEntries.some(e => e.id === f.entries[5].id),
+    "...and the rows it had revealed are gone from the view again");
+  const selEl = rowFor(f.entries[20].id);
+  assert(selEl && selEl.classList.contains("selected"),
+    "the newly selected match is inside the rendered window — i.e. the view was centred on its index in the REBUILT list, not on the stale pre-expansion one");
+
+  // --- (c) walking backwards moves the same window back -------------------
+  w.moveContextMatchSelection(-1);
+  assert(T.state.selectedId === f.entries[10].id, "sanity: back one match");
+  assert(openStarts() === "1,11", "walking back re-opens the gap above and shuts the one below, got " + openStarts());
+
+  // --- (d) a hand-opened gap is never the jump's to shut ------------------
+  w.setGapOpen(51, true); // far away from anything the jumps below touch
+  w.moveContextMatchSelection(1); // -> 20
+  w.moveContextMatchSelection(1); // -> 30
+  assert(T.state.selectedId === f.entries[30].id, "sanity: two matches further on");
+  assert(T.contextExpansions.has(51),
+    "a gap opened by hand survives every later jump — the jump machinery only undoes what it opened itself");
+  assert(openStarts() === "21,31,51", "...alongside the current jump's own window, got " + openStarts());
+
+  // --- (e) collapsing and re-opening an AUTO gap by hand claims it --------
+  w.setGapOpen(21, false); // 21 is the current jump's own gap
+  w.setGapOpen(21, true);  // ...re-opened by hand, which is what transfers ownership
+  w.moveContextMatchSelection(1); // -> 40, whose own window is 31 + 41
+  assert(T.state.selectedId === f.entries[40].id, "sanity: on to the next match");
+  assert(T.contextExpansions.has(21),
+    "a gap re-opened by hand keeps that state even though the jump that opened it is long past");
+  assert(openStarts() === "21,31,41,51", "...and the jump's own window moved on regardless, got " + openStarts());
+
+  // --- (f) with the setting off, the arrows leave every gap alone ---------
+  T.contextInitialExpansion = "collapsed";
+  // A change of FILTER node is what re-seeds the expansions (a file node
+  // leaves buildContextView before the seeding step — see GROUP 138k).
+  T.state.activeId = w.createFilterNode(f.id, "text", "other").id;
+  showContext();
+  T.state.activeId = hitFilter.id;
+  showContext();
+  assert(T.contextExpansions.size === 0, "sanity: re-seeded collapsed");
+  T.state.selectedId = f.entries[0].id;
+  w.moveContextMatchSelection(1);
+  assert(T.state.selectedId === f.entries[10].id && T.contextExpansions.size === 0,
+    "with \"Collapsed\" picked, walking to the next match neither opens nor closes anything");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -17397,6 +17502,16 @@ process.exit(failed ? 1 : 0);
               persistence half: a stand-in holds a closure, so its folder
               PATH is stored and rebuilt on restore — with the per-process
               philogg://local ids refreshed on the first rescan.
+
+   Group 146 — this session (2026-09-01), person-requested follow-up to
+              Group 138: the "Collapsed, opened around a jump" setting only
+              reacted to a jump arriving from the Filtered view, so the
+              Context view's own match arrows (added by the same rework)
+              moved the selection without revealing anything. They now go
+              through applyContextJumpExpansion too, which additionally
+              shuts the PREVIOUS jump's gaps — one open window travelling
+              with the selection — while a new contextAutoExpansions set
+              keeps hand-opened/hand-collapsed gaps out of that.
 
    Deliberately DROPPED this session:
      - Group 139a's "no reveal item for a picker/drop-loaded file" framing.
