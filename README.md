@@ -110,11 +110,15 @@ open it in a browser to view it.
   a log at boot, for linking straight to a log from CI/a report (requires
   PhiLogg itself served over `http(s)`, not opened as a local file, and CORS
   on the remote log server).
-- **"Open File Location" / "Copy URL"** — a file's tree context menu jumps
-  straight to its containing folder in the OS file manager whenever a real
-  path is known (desktop app: files opened via the picker, drag-drop, folder
-  watch, or a `.log` file association); a plain `http(s)` deep-linked file
-  offers "Copy URL" instead, since there's no local folder to reveal.
+- **"Open File Location" / "Copy Path" / "Copy URL"** — a file's tree context
+  menu jumps straight to its containing folder in the OS file manager, or
+  puts the path on the clipboard, whenever a real path is known. That's the
+  desktop app only — no web API lets a browser resolve a dropped file back
+  to a filesystem path. The Electron build knows the path for files opened
+  via the picker, drag-drop, folder watch or a `.log` file association; the
+  Tauri build for all of those except a watched folder's contents. A plain
+  `http(s)` deep-linked file offers "Copy URL" instead, since there's no
+  local folder to reveal.
 - **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with drag-to-select.**
 - **Session cache** — reload the browser tab and get your files, filters,
   and settings back.
