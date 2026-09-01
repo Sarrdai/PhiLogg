@@ -135,6 +135,9 @@ Undo/redo, bookmarks (the auto-managed "Bookmarks" filter node), notes, pin-book
 ### `docs/desktop.md`
 The Electron wrapper's internal mechanism (frameless window, custom `philogg://` scheme, settings/cache mirroring, tray). `desktop/README.md` has the build/run steps and current run status — this file cross-references it rather than duplicating it.
 
+### `docs/desktop-tauri.md`
+The second, experimental desktop wrapper (`desktop-tauri/`, Tauri v2 + the OS webview), running in parallel with the Electron one and meant to be compared against it. Written as a delta against `docs/desktop.md` — read that first. `desktop-tauri/README.md` has the build/run steps, prerequisites, current run status, and the known gaps.
+
 ### `docs/testing-and-limitations.md`
 The jsdom-based testing approach (and its known blind spots — no real layout/paint engine), plus the running list of known limitations and intentionally-deferred items (assertions/ignored-columns keyed by index not name, no cross-file filter combination, no AND/OR over a `link` node, etc.).
 

@@ -14712,6 +14712,98 @@ await withApp(async (w, d, T) => {
   cornerSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
 });
 
+
+/* ============================================================
+   GROUP 139 — Desktop bridge contract when getPathForFile can't resolve
+   anything (the Tauri wrapper, desktop-tauri/)
+   Origin: this session, adding a second desktop wrapper (Tauri) alongside
+   the Electron one. Electron resolves a File object back to its real OS
+   path via webUtils; no system webview offers an equivalent, and Tauri's
+   own native drag-drop event (which does carry paths) can only be enabled
+   by suppressing the HTML drop events philogg.html needs to get File
+   objects at all. So that wrapper's window.philogg.getPathForFile always
+   returns null. GROUP 109 already covers the *menu* gating with a stub
+   that returns null, but never exercises the load path that calls it —
+   this group does, so a future change to loadOneFileIntoTree can't start
+   assuming a truthy return. The other three bridge functions stay fully
+   functional there, so a file-association open (philogg://local/…
+   sourceUrl) must still offer "Open File Location" via revealLocalUrl.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("139a. getPathForFile returning null: files still load, no localPath, no reveal item");
+
+  const file = new w.File([makeLog(0, 5)], "dropped.log", { type: "text/plain" });
+  await w.loadFileDescriptors([{ file, handle: null }]);
+  const node = T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
+  assert(node && node.name === "dropped.log", "the file loads normally under a wrapper that can't resolve paths");
+  assert(node.localPath === undefined, "no localPath is invented from a null result, got " + node.localPath);
+
+  T.state.activeId = node.id;
+  w.render();
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + node.id + '"]'), w);
+  assert(!d.querySelector('#treeContextMenu [data-action="revealLocation"]'),
+    "no \"Open File Location\" for a picker/drop-loaded file when no path could be resolved");
+  w.closeTreeContextMenu();
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("139b. ...while a file-association open still reveals, through revealLocalUrl");
+
+  let revealed = null;
+  w.philogg.revealLocalUrl = u => { revealed = u; };
+
+  const f = await w.addFile("launched.log", makeLog(0, 5), () => {});
+  f.sourceUrl = "philogg://local/1/launched.log";
+  T.state.activeId = f.id;
+  w.render();
+
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
+  const revealItem = d.querySelector('#treeContextMenu [data-action="revealLocation"]');
+  assert(revealItem, "\"Open File Location\" still offered for a philogg://local/… sourceUrl");
+  fireClick(revealItem, w);
+  assert(revealed === "philogg://local/1/launched.log",
+    "it routes through revealLocalUrl, which both wrappers implement, got " + revealed);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+/* ============================================================
+   GROUP 140 — Toolbar chrome contract both desktop wrappers inject against
+   Origin: this session (Tauri wrapper). Neither wrapper edits
+   philogg.html; both instead inject CSS/DOM keyed off #toolbar's own
+   structure — desktop/main.js's FRAMELESS_CSS (-webkit-app-region on
+   #toolbar and its button/input/.ctx-item children, plus the 49px
+   titleBarOverlay height derived from #toolbar's 50px) and
+   desktop-tauri's inject.js (the same drag region as a
+   data-tauri-drag-region walk, and the window-control buttons appended
+   into .toolbar-right). None of that is reachable from jsdom, but the
+   selectors and the height it is all derived from are — and silently
+   renaming or restyling them would break both wrappers' window chrome
+   with nothing failing here. This group is that tripwire.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("140. #toolbar's structure/height, which both desktop wrappers' injected chrome depends on");
+
+  const toolbar = d.querySelector("#toolbar");
+  assert(toolbar && toolbar.tagName === "HEADER", "#toolbar exists and is the page header");
+  assert(toolbar.querySelector(".toolbar-right"),
+    ".toolbar-right exists — where the Tauri wrapper appends its window-control buttons");
+  assert(toolbar.querySelector(".brand"),
+    ".brand exists — where the macOS traffic-light inset padding is applied");
+
+  const css = [...d.querySelectorAll("style")].map(s => s.textContent).join("\n");
+  const toolbarRule = css.match(/#toolbar\s*\{[^}]*\}/);
+  assert(toolbarRule, "#toolbar has its own style rule");
+  assert(/height\s*:\s*50px/.test(toolbarRule[0]),
+    "#toolbar is 50px tall — desktop/main.js's TITLEBAR_HEIGHT (49) is derived from this");
+
+  // Everything interactive inside the toolbar has to keep matching the
+  // wrappers' own no-drag selector list ("button, input, select, textarea,
+  // a, label, .ctx-item"), or clicking it would drag the window instead.
+  const interactive = [...toolbar.querySelectorAll("*")].filter(el => typeof el.onclick === "function" || el.tabIndex >= 0);
+  const stray = interactive.filter(el => !el.closest("button, input, select, textarea, a, label, .ctx-item"));
+  assert(stray.length === 0,
+    "every focusable/clickable toolbar element is covered by the wrappers' no-drag selectors, stray: " +
+    stray.map(el => el.tagName + (el.id ? "#" + el.id : "")).join(", "));
+});
 /* ============================================================
    Summary
    ============================================================ */
@@ -16739,4 +16831,20 @@ process.exit(failed ? 1 : 0);
               alongside it; GROUP 99/110a picked their non-matching row out
               of the Full view by index, which only worked while that view
                listed every row of the file.
+
+   Group 139 — this session (2026-09-01), second desktop wrapper (Tauri,
+              desktop-tauri/) alongside the Electron one: its
+              window.philogg.getPathForFile can only ever return null (no
+              system webview resolves a File to an OS path, and Tauri's own
+              path-carrying drag-drop event would suppress the HTML drop
+              events philogg.html needs), so the load path that calls it is
+              exercised directly here — GROUP 109 only ever stubbed the
+              function for the menu-gating assertions and never ran a load
+              through it.
+   Group 140 — same session: the #toolbar structure/height contract that
+              both wrappers' injected window chrome is keyed off
+              (desktop/main.js's FRAMELESS_CSS and TITLEBAR_HEIGHT,
+              desktop-tauri's inject.js drag region + window-control
+              buttons). None of that injection is reachable from jsdom;
+              the selectors and the 50px it is derived from are.
    ============================================================ */

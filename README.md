@@ -26,6 +26,10 @@ deployments possible:
   `philogg.html` unmodified into a native-feeling app with `.log` file
   associations and a frameless window, so double-clicking a log file opens
   it straight into PhiLogg like any other document. See `desktop/README.md`.
+  An experimental second wrapper with the same feature set, built on Tauri
+  and the OS's own webview (much smaller installers), lives in
+  `desktop-tauri/` and installs alongside it — see
+  `desktop-tauri/README.md`.
 
 ## Screenshots
 
@@ -201,6 +205,9 @@ tools/
 desktop/
   README.md                           Electron wrapper: build/run steps, current status
   main.js, package.json, electron-builder.yml   file associations + CLI file opening (loads philogg.html unmodified)
+desktop-tauri/
+  README.md                           Tauri wrapper (experimental, parallel to desktop/): prerequisites, build/run steps, known gaps
+  src-tauri/                          Rust backend + tauri.conf.json (same feature set, OS webview instead of bundled Chromium)
 homepage/
   index.html                          static feature-tour / marketing page
   screenshots/                        screenshots used by the homepage and this README
@@ -211,6 +218,7 @@ scripts/
   install_pkgs.sh                     helper for installing test dependencies
 .github/workflows/release.yml         manual workflow: stamps a version and publishes a tester build
 .github/workflows/desktop-release.yml manual workflow: builds the desktop/ Electron wrapper per OS (untested, see desktop/README.md)
+.github/workflows/tauri-release.yml   manual workflow: builds the desktop-tauri/ Tauri wrapper per OS
 PROJECT.md                            architecture entry point + index into docs/ (start here to work on the code)
 docs/                                 per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
 CHANGELOG.md                          full chronological, dated changelog

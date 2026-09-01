@@ -1,0 +1,14 @@
+{
+  "name": "philogg-tauri",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Experimental Tauri v2 desktop wrapper for philogg.html, parallel to the Electron wrapper in desktop/. Same feature surface (frameless window, .log file associations, tray, settings mirroring), built on the OS webview instead of a bundled Chromium. philogg.html itself is loaded unmodified through a custom philogg:// scheme, exactly like the Electron wrapper does.",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
