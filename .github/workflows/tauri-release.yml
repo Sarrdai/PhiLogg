@@ -1,0 +1,157 @@
+name: Build desktop release (Tauri)
+
+# Manual only, and deliberately a separate file from desktop-release.yml
+# rather than an extra matrix dimension inside it: the Electron wrapper is
+# still the one that has to keep working, and its release path stays
+# untouched by anything here. Same structure as that workflow otherwise, so
+# the two stay easy to compare — see docs/desktop-tauri.md.
+#
+# Artifacts are named PhiLogg-tauri-<sha>.<ext> so they can sit next to the
+# Electron installers in a release listing without either being mistaken for
+# the other. (Electron's electron-builder does this via an `artifactName`
+# template; Tauri's bundler has no equivalent, so the rename happens in the
+# upload step below.)
+on:
+  workflow_dispatch:
+    inputs:
+      build_windows:
+        description: Build Windows (.exe)
+        type: boolean
+        default: true
+      build_mac:
+        description: Build macOS (.dmg)
+        type: boolean
+        default: false
+      build_linux:
+        description: Build Linux (.AppImage)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  # Creates the release once, up front, so the per-OS build jobs below can
+  # each just upload into it — avoids parallel jobs racing to create (or
+  # half-create) the same release tag.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      os_list: ${{ steps.os_list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute release tag
+        id: tag
+        run: echo "tag=tauri-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      # The `matrix` context isn't available in a job-level `if:` (only in
+      # `runs-on`/`env` and inside steps) — trying to filter a fixed matrix
+      # that way makes GitHub reject the whole file at parse time, 0 jobs
+      # created. See desktop-release.yml's own note; the checkboxes are
+      # turned into the `build` job's actual matrix list here instead.
+      - name: Compute selected OS matrix
+        id: os_list
+        run: |
+          list="[]"
+          [ "${{ inputs.build_windows }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["windows-latest"]')
+          [ "${{ inputs.build_mac }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["macos-latest"]')
+          [ "${{ inputs.build_linux }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["ubuntu-22.04"]')
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --title "PhiLogg desktop build (Tauri) ${{ steps.tag.outputs.tag }}" \
+            --notes "Automated desktop (Tauri) tester build, running in parallel with the Electron wrapper — see desktop-tauri/README.md. Proprietary — see the in-app License panel. Not for redistribution."
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.prepare.outputs.os_list) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ubuntu-22.04 rather than -latest on purpose: an AppImage links
+      # against the glibc of the machine that built it, so building on the
+      # oldest still-supported runner is what makes it run on anything
+      # newer too.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-tauri/src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: desktop-tauri
+        run: npm install
+
+      # Same short-SHA stamp release.yml and desktop-release.yml use — never
+      # committed back, just the checked-out copy the Tauri bundler embeds as
+      # a resource a moment later.
+      - name: Stamp version
+        id: stamp
+        shell: bash
+        run: |
+          SHORT_SHA="${{ needs.prepare.outputs.tag }}"
+          SHORT_SHA="${SHORT_SHA#tauri-}"
+          sed -i.bak "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
+          rm -f philogg.html.bak
+          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build installer
+        working-directory: desktop-tauri
+        run: npm run build
+
+      - name: Upload installer(s)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        # Same retry-with-backoff as desktop-release.yml: windows/macos have
+        # both failed a `gh release upload` there before with a clean build
+        # and no error output, which matches a transient upload hiccup rather
+        # than a script bug. `-e` won't abort the loop early — the failing
+        # `gh` call sits inside an `if`, which is exempt from errexit.
+        run: |
+          upload_with_retry() {
+            local f="$1" attempt
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "${{ needs.prepare.outputs.tag }}" "$f" --clobber; then
+                return 0
+              fi
+              echo "::warning::upload of $f failed (attempt $attempt/5), retrying in $((attempt * 5))s"
+              sleep $((attempt * 5))
+            done
+            echo "::error::giving up uploading $f after 5 attempts"
+            return 1
+          }
+          BUNDLE=desktop-tauri/src-tauri/target/release/bundle
+          SHA="${{ steps.stamp.outputs.short_sha }}"
+          shopt -s nullglob
+          for f in "$BUNDLE"/nsis/*.exe "$BUNDLE"/dmg/*.dmg "$BUNDLE"/appimage/*.AppImage; do
+            renamed="$(dirname "$f")/PhiLogg-tauri-${SHA}.${f##*.}"
+            mv "$f" "$renamed"
+            upload_with_retry "$renamed"
+          done

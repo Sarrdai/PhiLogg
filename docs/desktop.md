@@ -2,6 +2,8 @@
 
 The optional Electron shell in `desktop/` around the unmodified `philogg.html`. For build/run instructions and current run status, see `desktop/README.md` — this file covers the internal mechanism only, not duplicated there.
 
+Since 2026-09-01 there is a **second, parallel** wrapper: `desktop-tauri/`, built on Tauri v2 and the OS webview, with the same feature surface and visuals. It exists to be tested against this one, not to replace it — everything below is unchanged and still the supported build. See `docs/desktop-tauri.md`, which is written as a delta against this file.
+
 ## Desktop wrapper (`desktop/`)
 
 A separate, optional Electron shell around the **unmodified** `philogg.html` — adds `.log` file associations, CLI-argument/double-click file opening, and a frameless window with integrated close/minimize/maximize controls on Windows/Linux/macOS, without touching `philogg.html` itself or its own release path (`.github/workflows/release.yml`). Lives entirely in `desktop/` (own `package.json`, `main.js`, `electron-builder.yml`) — see `desktop/README.md` for build/run steps and current status.

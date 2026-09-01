@@ -1,0 +1,37 @@
+[package]
+name = "philogg-tauri"
+version = "1.0.0"
+description = "PhiLogg desktop wrapper (Tauri)"
+authors = ["Philipp Klein"]
+edition = "2021"
+# Tauri 2 needs a reasonably recent toolchain; pinned so a CI runner with an
+# older stable fails loudly here instead of deep inside a dependency.
+rust-version = "1.77"
+
+# The binary is named after productName's slug in the bundle, but the crate's
+# own bin name is what `cargo run`/`tauri dev` uses.
+[[bin]]
+name = "philogg-tauri"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+urlencoding = "2"
+
+# Release builds of a desktop app care about size far more than about compile
+# time — this is roughly the profile the Tauri template ships, kept explicit
+# so the installer stays comparable in size to what the Electron build
+# produces (which is the whole point of trying Tauri in the first place).
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
