@@ -96,7 +96,10 @@ open it in a browser to view it.
   "Context" view showing the same result *with the log around it*: the
   matches, and everything the filter rejected collapsed into expandable
   gaps you open line by line, GitHub-diff style. Jump match to match with
-  Ctrl+↑/↓ without going back to the tree. Side by side or stacked.
+  Ctrl+↑/↓, the view's own ‹ / › buttons or just a click, without going
+  back to the tree — optionally with the surrounding lines opening around
+  each match you land on and closing again behind you, the clicked line
+  staying put on screen. Side by side or stacked.
 - **Live tailing & folder watch** (Chromium, File System Access API — or
   any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and
