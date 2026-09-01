@@ -15340,6 +15340,18 @@ await withApp(async (w, d, T) => {
      f) with "Collapsed" (or "Expanded") picked instead, the arrows leave
         the gaps exactly as they are — this is the aroundJump setting's
         behaviour, not the nav arrows'.
+   Second section (same group): picking another result with the MOUSE reads
+   the same way — a plain click on a match row is a jump too — but it must
+   not re-position the view the way the arrows do.
+     g) a plain click on another match moves the window and the chip's
+        "n / m" with it.
+     h) the clicked row keeps its exact on-screen offset, even though the
+        gap that shuts above it is a completely different size from the one
+        that opens there — i.e. the scroll is recomputed against the NEW
+        offsets, not left where it was.
+     i) a click on a revealed CONTEXT row is not a jump (no result changed),
+        and neither is a Ctrl+click, which is a multi-selection gesture and
+        must not move the rows out from under the gesture.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("146. Context view: the aroundJump expansion follows the nav arrows");
@@ -15419,6 +15431,80 @@ await withApp(async (w, d, T) => {
   w.moveContextMatchSelection(1);
   assert(T.state.selectedId === f.entries[10].id && T.contextExpansions.size === 0,
     "with \"Collapsed\" picked, walking to the next match neither opens nor closes anything");
+});
+
+await withApp(async (w, d, T) => {
+  section("146. ...and so is picking another result with the mouse, without moving it on screen");
+
+  // Deliberately UNEVEN gaps: matches at 0, 5, 40, 45 leave gaps of 4, 34, 4
+  // and 14 lines. What shuts above the clicked row is then nowhere near the
+  // height of what opens there, which is exactly the case a "keep scrollTop"
+  // implementation gets wrong.
+  const hits = new Set([0, 5, 40, 45]);
+  const f = await w.addFile("ctxclick.log", makeLog(0, 60, { suffix: i => (hits.has(i) ? "hit" : "other") }), () => {});
+  const hitFilter = w.createFilterNode(f.id, "text", "hit");
+  const highlightBody = d.querySelector("#highlightBody");
+  T.contextInitialExpansion = "aroundJump";
+  T.state.activeId = hitFilter.id;
+  w.render();
+  w.applyFhView("highlight");
+
+  const openStarts = () => [...T.contextExpansions].sort((a, b) => a - b).join(",");
+  const idxOf = id => T.currentHighlightViewEntries.findIndex(e => e.id === id);
+  const navLabel = () => d.querySelector("#contextNav .ctx-nav-label").textContent;
+  assert(T.contextGaps.map(g => g.start + "-" + g.end).join(",") === "1-5,6-40,41-45,46-60",
+    "fixture sanity: four matches, four gaps of very different sizes, got " + T.contextGaps.map(g => g.start + "-" + g.end).join(","));
+
+  // Stand on match 5 first, so there is a previous jump to undo.
+  T.state.selectedId = f.entries[0].id;
+  w.moveContextMatchSelection(1);
+  assert(T.state.selectedId === f.entries[5].id && openStarts() === "1,6",
+    "sanity: arrow-jumped to match 5, its own two gaps open, got " + openStarts());
+
+  // Put match 45's row 140px below the top of the viewport — both in the
+  // model (scrollTop) and in the geometry stub the capture reads, so the two
+  // agree the way they do in a real browser.
+  const targetId = f.entries[45].id;
+  const oldIdx = idxOf(targetId);
+  const scrollBefore = T.highlightRowOffsets[oldIdx] - 140;
+  w.setHighlightScroll(scrollBefore);
+  w.renderHighlightVisibleRows();
+  const rowEl = d.querySelector('#highlightRows [data-entry-id="' + targetId + '"]');
+  assert(rowEl, "sanity: match 45's row is inside the virtualized window");
+  rowEl.getBoundingClientRect = () => ({ top: 140, left: 0, right: 800, bottom: 168, width: 800, height: 28, x: 0, y: 140 });
+
+  // --- (g) a plain click on it is a jump, same as an arrow would have been -
+  fireClick(rowEl, w);
+  assert(T.state.selectedId === targetId, "the clicked match is selected");
+  assert(openStarts() === "41,46",
+    "clicking another result opens ITS gaps and shuts the previous jump's, exactly like the arrows, got " + openStarts());
+  assert(navLabel().replace(/\s/g, "") === "4/4",
+    "...and the chip's position readout jumps to the clicked result, got " + JSON.stringify(navLabel()));
+
+  // --- (h) ...and the clicked row does not move on screen ------------------
+  const newIdx = idxOf(targetId);
+  assert(newIdx !== oldIdx, "sanity: the rebuild really did change the row's index (" + oldIdx + " -> " + newIdx + ")");
+  assert(T.highlightRowOffsets[newIdx] - highlightBody.scrollTop === 140,
+    "the clicked row stays at the same 140px on-screen offset, got " +
+    (T.highlightRowOffsets[newIdx] - highlightBody.scrollTop));
+  assert(T.highlightRowOffsets[newIdx] - scrollBefore !== 140,
+    "...which took real work: 34 revealed lines shut above it and only 4 opened, so leaving scrollTop alone would have moved it");
+
+  // --- (i) a context row and a Ctrl+click are not jumps --------------------
+  const beforeCtx = openStarts();
+  const ctxRow = [...d.querySelectorAll("#highlightRows .log-row.ctx-context")][0];
+  assert(ctxRow, "sanity: revealed context rows are on screen");
+  fireClick(ctxRow, w);
+  assert(T.state.selectedId === ctxRow.dataset.entryId, "a revealed context row still selects normally");
+  assert(openStarts() === beforeCtx,
+    "...but it is not a move to another result, so nothing expands or collapses, got " + openStarts());
+
+  const otherMatchRow = d.querySelector('#highlightRows [data-entry-id="' + f.entries[40].id + '"]');
+  assert(otherMatchRow, "sanity: match 40's row is on screen too");
+  otherMatchRow.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+  assert(T.state.logMultiSelect.has(f.entries[40].id), "sanity: Ctrl+click multi-selected it");
+  assert(openStarts() === beforeCtx,
+    "a Ctrl+click is a multi-selection gesture — the rows must not move out from under it, got " + openStarts());
 });
 
 /* ============================================================
@@ -17508,10 +17594,13 @@ process.exit(failed ? 1 : 0);
               reacted to a jump arriving from the Filtered view, so the
               Context view's own match arrows (added by the same rework)
               moved the selection without revealing anything. They now go
-              through applyContextJumpExpansion too, which additionally
-              shuts the PREVIOUS jump's gaps — one open window travelling
-              with the selection — while a new contextAutoExpansions set
-              keeps hand-opened/hand-collapsed gaps out of that.
+              through applyContextJumpExpansion too — as does a plain click
+              on a match row, the second section here — which additionally
+              shuts the PREVIOUS jump's gaps: one open window travelling
+              with the selection, while a new contextAutoExpansions set
+              keeps hand-opened/hand-collapsed gaps out of that. The click
+              half additionally has to leave the clicked row where it is on
+              screen, across a rebuild that changes the height above it.
 
    Deliberately DROPPED this session:
      - Group 139a's "no reveal item for a picker/drop-loaded file" framing.
