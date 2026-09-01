@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 59
+LAST_ID: 60
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation. Numbers are unique, permanent IDs, not a sort order —
@@ -92,6 +92,8 @@ this point.
 32. **Findings report export** — a standalone HTML/Markdown report carrying the filter chain, bookmark notes, and the matching entries, readable by someone who has neither PhiLogg nor the log file. Different audience than session export (which assumes both).
 
 ### Desktop wrapper (Electron)
+
+60. **Decide whether Tauri replaces Electron as *the* desktop wrapper** — `desktop-tauri/` (added 2026-09-01) intentionally ships *alongside* `desktop/` with the same feature set, so both can be installed and used on real machines and compared. This entry is the decision that follows: keep both, or retire one. Needs real Windows (and ideally macOS) usage first — see `desktop-tauri/README.md` → "Status" for what is and isn't verified, and its "Differences from the Electron wrapper" for the gaps that would have to be accepted or closed before Electron could go away. Whichever way it lands, retiring the loser means deleting its directory, its release workflow, and its `docs/` file.
 
 34. **Electron scrollbar corner artifact** — Electron renders scrollbars differently from the browser build (preferred look), but where a horizontal and vertical scrollbar meet there's a white square that doesn't fit the theme. Needs screenshots to nail down the exact styling target.
 
