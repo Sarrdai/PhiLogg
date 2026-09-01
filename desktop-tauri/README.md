@@ -63,7 +63,8 @@ opening, a frameless window with rounded corners, window controls in the
 app's own theme, F11 fullscreen, a splash screen, a tray icon with
 Open / Open Config Folder / Clear Cache / Quit, "close to system tray",
 `settings.json` mirroring of the `philogg-*` settings, "Open File Location",
-and the system font list for the UI font picker.
+and the system font list for the UI font picker — plus a folder watch that
+does not go through the browser's File System Access API (see below).
 
 ## Persistent data
 
@@ -80,27 +81,15 @@ reloads.
 ## Differences from the Electron wrapper
 
 These are the known, deliberate gaps — everything else is meant to behave
-identically, and anything that doesn't is a bug worth reporting.
+identically, and anything that doesn't is a bug worth reporting. One item
+runs the *other* way: **folder watch is better here.** It is listed natively
+(Rust `read_dir`) instead of through the File System Access API, so it works
+on all three platforms and on folders a Chromium-based build refuses to hand
+out — Desktop and Downloads, which fail in the Electron wrapper and in the
+browser with "this folder contains system files". Files opened from a
+watched folder carry their real path too, so they reveal and copy like any
+other.
 
-- **Dropping a folder doesn't start a folder watch here** — use
-  "Open… → Folder…" instead, and you'll get a toast saying so. This is the
-  price of "Open File Location"/"Copy Path" working for dropped files at
-  all: no system webview can resolve a `File` back to its OS path
-  (Electron's `webUtils.getPathForFile` has no equivalent), so this wrapper
-  uses Tauri's *native* drag-drop handler, which is the only one carrying
-  real paths — and that handler replaces the HTML drop events. A watched
-  folder needs a live directory handle to list and rescan, which a path
-  alone can't produce. Files (picked, dropped, or opened by double-click)
-  all reveal correctly.
-- **"Open File Location"/"Copy Path" are still not offered for files inside
-  a *watched folder*.** Those arrive as `File` objects from the webview's
-  own directory handle, never through the wrapper, so their path stays
-  unknown. `philogg.html` treats "no path known" as "don't offer the menu
-  item", so nothing breaks. See `FEATURE_BACKLOG.md` #61.
-- **Folder watch needs a Chromium-based webview**, i.e. Windows (WebView2).
-  It relies on the File System Access API's `showDirectoryPicker`, which
-  WebKitGTK (Linux) and WKWebView (macOS) don't implement — the menu item
-  reports this rather than failing silently.
 - **The system font list on macOS is approximate.** Linux uses `fc-list` and
   Windows uses PowerShell's font enumeration, both exact; macOS has neither
   out of the box, so family names are derived from the font files' own
@@ -142,6 +131,10 @@ Tauri involvement, so it tore down the page without ever telling the Rust
 side a close was requested. `inject.js` now overrides `window.close` to
 route through the same Rust-side close path the title-bar close button
 uses. See `docs/desktop-tauri.md` for both.
+
+The native folder watch (2026-09-01) is verified by `cargo check` plus the
+jsdom suite's Group 145 only — the picker, the listing and a real Desktop
+folder still need a person on a real desktop session.
 
 **Not yet run on Windows or macOS.** The window chrome specifically (the
 injected title-bar buttons, the drag region, rounded corners, the macOS

@@ -4755,8 +4755,9 @@ const state = {
 
   // Watched folders (FEATURE_BACKLOG.md "Folder watch + lazy loading"), see
   // "Folder watch (lazy loading)" section near the Tailing code. Each entry:
-  // { id, name, handle: FileSystemDirectoryHandle, files: [{ name,
-  //   handle: FileSystemFileHandle, nodeId: string|null }], busy: boolean,
+  // { id, name, handle: FileSystemDirectoryHandle | nativeDirHandle, files:
+  //   [{ name, handle: FileSystemFileHandle | urlTailHandle,
+  //   nodeId: string|null }], busy: boolean,
   //   failed: boolean, needsPermission: boolean }. `id` is also the
   //   persistent IndexedDB key for this folder (see persistFolder) — reused
   //   directly as `node.folderId` on any file opened from it, so restoring
@@ -14810,18 +14811,35 @@ async function openFilesPicker() {
 }
 fileInput.addEventListener("change", ev => { loadFiles(ev.target.files); fileInput.value = ""; });
 
-// Folder watch needs showDirectoryPicker (Chromium-only today — no
-// meaningful fallback exists: without a live directory handle there's no
-// way to list/rescan a folder's contents at all, unlike single-file loading
-// which degrades gracefully to a plain <input>). Checked once upfront so
-// every entry point (this menu item, drag&drop below) can gate on the same
-// flag instead of each separately trying-and-falling-back — see "Folder
-// watch (lazy loading)" near the Tailing section.
-const FOLDER_WATCH_SUPPORTED = !!window.showDirectoryPicker;
+// Folder watch needs a way to list and rescan a directory: showDirectoryPicker
+// in the browser (Chromium-only today — no meaningful fallback exists there,
+// unlike single-file loading, which degrades gracefully to a plain <input>),
+// or a desktop wrapper's own native listing (philogg.listFolder, see
+// nativeDirHandle). Checked once upfront so every entry point (this menu
+// item, drag&drop below) can gate on the same flag instead of each
+// separately trying-and-falling-back — see "Folder watch (lazy loading)"
+// near the Tailing section.
+const FOLDER_WATCH_NATIVE = !!(window.philogg && typeof window.philogg.listFolder === "function");
+const FOLDER_WATCH_SUPPORTED = !!window.showDirectoryPicker || FOLDER_WATCH_NATIVE;
 const FOLDER_WATCH_UNSUPPORTED_MSG =
   "Folder watch needs a Chromium-based browser (File System Access API) — not supported in this one.";
 
+// A desktop wrapper that lists folders itself gets first refusal, exactly as
+// openFilesPicker defers to philogg.pickFiles — and for a second reason on
+// top of that one: showDirectoryPicker is a webview API subject to the
+// engine's own sensitive-directory blocklist, which refuses whole folders a
+// person legitimately keeps logs in (Desktop, Downloads) with a "contains
+// system files" error no embedder can turn off. The wrapper's OS dialog has
+// no such list. See nativeDirHandle.
 async function openFolderPickerFlow() {
+  if (window.philogg && typeof window.philogg.pickFolder === "function") {
+    let picked;
+    try { picked = await window.philogg.pickFolder(); } catch (err) { return; }
+    // A cancelled dialog comes back as null — nothing to do, and no toast:
+    // cancelling is not a failure.
+    if (picked && picked.path) await addWatchedFolder(nativeDirHandle(picked.path, picked.name));
+    return;
+  }
   if (!FOLDER_WATCH_SUPPORTED) { showCopyToast(FOLDER_WATCH_UNSUPPORTED_MSG); return; }
   let handle;
   try {
@@ -15102,9 +15120,15 @@ function isDesktopLocalUrl(url) {
 // into IndexedDB at all — it is rebuilt from the persisted sourceUrl on
 // restore instead (see restoreSessionFromCache).
 const URL_TAIL_HANDLE = "__philoggUrlTail";
-function urlTailHandle(url) {
+// `path` is optional and only ever supplied by a desktop wrapper that knows
+// the file's real OS location (all of its routes do — picker, drop, folder
+// listing). It rides along on the handle so whoever ends up loading the file
+// can put it on the node as node.localPath, which is what "Open File
+// Location"/"Copy Path" gate on.
+function urlTailHandle(url, path) {
   return {
     [URL_TAIL_HANDLE]: url,
+    localPath: path || null,
     async getFile() {
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -15114,6 +15138,69 @@ function urlTailHandle(url) {
 }
 function isUrlTailHandle(handle) {
   return !!(handle && handle[URL_TAIL_HANDLE]);
+}
+
+// Duck-typed stand-in for a FileSystemDirectoryHandle, backed by a desktop
+// wrapper's own directory listing (window.philogg.listFolder) instead of the
+// File System Access API — the folder-watch counterpart of urlTailHandle.
+//
+// Why it exists: showDirectoryPicker() is a *webview* API and plays by the
+// engine's rules. Chromium refuses a handle for any directory on its
+// hardcoded sensitive list ("this folder contains system files" — Desktop
+// and Downloads among them), which no embedder can switch off, and
+// WebKit-based webviews (macOS/Linux) don't implement the API at all. A
+// wrapper listing the folder natively has neither problem, so where one
+// offers that, it is used in preference to the browser API.
+//
+// Implements exactly the four members the folder watch touches — name,
+// values(), queryPermission(), requestPermission() — so scanFolderHandle,
+// rescanFolder, folderScanTick and tryReconnectFolder run against it
+// unmodified. A native listing has no permission model to ask about (the
+// person picked the folder in the OS's own dialog), hence the constant
+// "granted" — same reasoning as isUrlTailHandle's in tryReattachFileTail.
+// Each entry is itself a urlTailHandle, so a file opened from such a folder
+// tails, reveals and copies its path exactly like a dropped one.
+const NATIVE_DIR_HANDLE = "__philoggNativeDir";
+function nativeDirHandle(path, name) {
+  return {
+    [NATIVE_DIR_HANDLE]: path,
+    name: name || folderNameFromPath(path),
+    async *values() {
+      const listed = await window.philogg.listFolder(path, FOLDER_WATCH_EXTENSIONS);
+      for (const f of listed || []) {
+        const handle = urlTailHandle(f.url, f.path);
+        handle.kind = "file";  // scanFolderHandle filters on these two,
+        handle.name = f.name;  // and keeps the entry itself as the handle
+        yield handle;
+      }
+    },
+    async queryPermission() { return "granted"; },
+    async requestPermission() { return "granted"; },
+  };
+}
+function isNativeDirHandle(handle) {
+  return !!(handle && handle[NATIVE_DIR_HANDLE]);
+}
+// Last segment of an OS path, in the role a real directory handle's .name
+// fills — used for a dropped folder, which arrives as a bare path string.
+function folderNameFromPath(path) {
+  const parts = String(path).split(/[\\/]/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : String(path);
+}
+// A folder file listed natively carries both halves of its location; a File
+// System Access handle carries neither. Applied on load AND on every rescan
+// merge, because the ids behind philogg://local/… URLs are per-process: an
+// already-open file restored from the session cache holds the *previous*
+// run's URL until a scan re-registers it. Returns whether anything changed,
+// so the caller can skip a pointless re-persist.
+function applyFolderFileLocation(node, handle) {
+  const url = handle && handle[URL_TAIL_HANDLE];
+  if (!node || !url) return false;
+  const path = handle.localPath || null;
+  const changed = node.sourceUrl !== url || (!!path && node.localPath !== path);
+  node.sourceUrl = url;
+  if (path) node.localPath = path;
+  return changed;
 }
 async function loadUrlIntoTree(url) {
   if (location.protocol === "file:") {
@@ -15188,13 +15275,19 @@ window.philoggLoadUrl = loadUrlIntoTree;
 // The URL doubles as the tail handle (urlTailHandle), exactly as it does
 // for a file-association open.
 //
-// folders: paths the wrapper recognized as directories. Watching one needs
-// a live FileSystemDirectoryHandle to list and rescan it (see "Folder
-// watch"), which a path alone can't produce — so they're reported rather
-// than silently ignored.
+// folders: paths the wrapper recognized as directories. A wrapper that can
+// list a folder natively (philogg.listFolder) starts a watch on each one,
+// the same as "Open… → Folder…" would; one that can't says so rather than
+// silently ignoring the drop, because watching from a path alone is
+// impossible with only the File System Access API (it needs a live
+// FileSystemDirectoryHandle, which a path can't produce).
 async function loadDesktopLocalFiles({ files, folders } = {}) {
   if (Array.isArray(folders) && folders.length) {
-    showCopyToast("Dropping a folder can't start a folder watch here — use Open… → Folder…");
+    if (FOLDER_WATCH_NATIVE) {
+      for (const path of folders) await addWatchedFolder(nativeDirHandle(path));
+    } else {
+      showCopyToast("Dropping a folder can't start a folder watch here — use Open… → Folder…");
+    }
   }
   const descs = (files || []).map(f => ({
     name: f.name,
@@ -15548,21 +15641,35 @@ setInterval(tailTick, TAIL_POLL_MS);
    grayed, unopened listing entry instead, reusing the same handle it was
    first listed with, in the same position in the folder's file order.
 
-   PERSISTENCE: a folder's directory handle is stored as-is in a dedicated
-   IndexedDB store (persistFolder/cacheDeleteFolder, "Session cache" below)
-   — real FileSystemHandle objects are specced to survive structured clone,
-   so this is the same trick browsers use to make a handle outlive a reload
-   at all. On boot, restoreWatchedFolders() re-registers each stored folder
-   and calls queryPermission() (no user gesture needed) — if the browser
-   still considers it granted, watching resumes immediately, already-open
-   files from it (restored the normal way, by the session cache's own
-   files/meta restore, keyed via each file's persisted folderId) get their
-   node.tail reattached via the fresh scan's handle (mergeScannedFiles), and
-   nothing is visibly different from before the reload. If NOT granted
-   (typically: a real browser restart, not just this page reloading), the
-   section shows a lock icon and a "Reconnect" button instead of scanning —
-   requestPermission() needs an actual click (reconnectFolder), which
-   queryPermission() alone can't satisfy. */
+   TWO KINDS OF HANDLE. In a browser this is a real
+   FileSystemDirectoryHandle from showDirectoryPicker(). Under a desktop
+   wrapper that can list a directory itself it is nativeDirHandle() — a
+   stand-in over window.philogg.listFolder, defined next to urlTailHandle in
+   the Tailing section, which is what makes folder watch work at all on a
+   non-Chromium webview AND on directories Chromium's own sensitive-folder
+   blocklist refuses to hand out (Desktop, Downloads). Everything below is
+   written against the handle's four members (name, values(),
+   queryPermission(), requestPermission()) and needs to know nothing about
+   which kind it has; only persistence does (see below).
+
+   PERSISTENCE: a folder is stored in a dedicated IndexedDB store
+   (persistFolder/cacheDeleteFolder, "Session cache" below). A real
+   FileSystemHandle goes in as-is — such objects are specced to survive
+   structured clone, which is the same trick browsers use to make a handle
+   outlive a reload at all; a nativeDirHandle can't (it holds a closure) and
+   its folder path is stored instead, the stand-in being rebuilt on restore.
+   On boot, restoreWatchedFolders() re-registers each stored folder and
+   calls queryPermission() (no user gesture needed) — if it is still granted
+   (always, for a rebuilt native stand-in: a path needs no permission),
+   watching resumes immediately, already-open files from it (restored the
+   normal way, by the session cache's own files/meta restore, keyed via each
+   file's persisted folderId) get their node.tail reattached via the fresh
+   scan's handle (mergeScannedFiles), and nothing is visibly different from
+   before the reload. If NOT granted (typically: a real browser restart, not
+   just this page reloading), the section shows a lock icon and a
+   "Reconnect" button instead of scanning — requestPermission() needs an
+   actual click (reconnectFolder), which queryPermission() alone can't
+   satisfy. */
 const FOLDER_SCAN_MS = 3000;
 
 // Currently only *.log (CLAUDE.md/PROJECT.md's one supported log format) —
@@ -15599,6 +15706,12 @@ function mergeScannedFiles(folder, scanned) {
     const existing = known.get(s.name);
     if (existing) {
       existing.handle = s.handle;
+      // A natively listed folder re-registers its files on every scan, and
+      // the URL/path that yields are the only location an open file from it
+      // has — refreshed here so a session restored from cache picks up this
+      // run's URLs instead of the dead ones the previous process handed out.
+      const open = existing.nodeId && state.nodes[existing.nodeId];
+      if (open && applyFolderFileLocation(open, s.handle)) persistFileNode(open);
       // A file restored from the session cache (see restoreWatchedFolders)
       // has no live handle yet — reattach one now that a scan found it
       // again, so tailing resumes. Never touches a node that's already
@@ -15699,6 +15812,12 @@ async function loadFolderFile(folder, rec) {
   try {
     const node = await loadOneFileIntoTree(rec.name, file, rec.handle, folder.id);
     rec.nodeId = node.id;
+    // Under a wrapper that listed the folder natively the file's real path
+    // and its philogg://local/… URL are both known, so a folder file gets
+    // "Open File Location"/"Copy Path" like every other route there. Set
+    // after the load rather than threaded through loadOneFileIntoTree,
+    // which already has enough parameters and no other caller needing them.
+    if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
   } finally {
     render();
   }
@@ -19399,18 +19518,25 @@ async function cacheDeleteFile(cacheKey) {
 }
 
 // Watched folders (see "Folder watch (lazy loading)" near the Tailing
-// section): the directory handle itself is stored as-is — real
-// FileSystemHandle objects are specced to survive IndexedDB's structured
-// clone, which is what lets restoreWatchedFolders() get a live, working
-// handle back after a reload (not just its name). folder.id doubles as
-// both the live in-memory id and this store's key (see state.folders'
-// comment), so no separate mapping is needed on either side.
+// section): a real FileSystemDirectoryHandle is stored as-is — such objects
+// are specced to survive IndexedDB's structured clone, which is what lets
+// restoreWatchedFolders() get a live, working handle back after a reload
+// (not just its name). A nativeDirHandle can't be: it holds a closure, and
+// structured clone rejects the whole record — exactly the trap the
+// urlTailHandle bug fell into (see persistFileNode). Its folder path is
+// stored instead and the stand-in rebuilt on restore, which loses nothing:
+// unlike a handle, a path stays valid across a restart with no permission
+// to re-grant. folder.id doubles as both the live in-memory id and this
+// store's key (see state.folders' comment), so no separate mapping is
+// needed on either side.
 async function persistFolder(folder) {
   if (!cacheEnabled() || sessionRestoreInProgress) return;
+  const native = isNativeDirHandle(folder.handle);
   await cacheStoreOp("folders", "readwrite", store => store.put({
     key: folder.id,
     name: folder.name,
-    handle: folder.handle,
+    handle: native ? null : folder.handle,
+    path: native ? folder.handle[NATIVE_DIR_HANDLE] : null,
     savedAt: Date.now(),
   }));
 }
@@ -19825,8 +19951,15 @@ async function restoreWatchedFolders() {
   const records = await cacheStoreOp("folders", "readonly", store => store.getAll());
   if (!Array.isArray(records) || !records.length) return;
   for (const rec of records) {
-    if (!rec || !rec.handle) continue;
-    const folder = { id: rec.key, name: rec.name, handle: rec.handle, files: [], busy: false, failed: false, needsPermission: true };
+    if (!rec) continue;
+    // Either a real handle that survived the structured clone, or the path
+    // of a natively listed folder, whose stand-in is rebuilt here (see
+    // persistFolder). A rebuilt one answers queryPermission() with
+    // "granted", so tryReconnectFolder resumes it immediately and it never
+    // shows the Reconnect button.
+    const handle = rec.handle || (rec.path ? nativeDirHandle(rec.path, rec.name) : null);
+    if (!handle) continue;
+    const folder = { id: rec.key, name: rec.name, handle, files: [], busy: false, failed: false, needsPermission: true };
     state.rootIds.forEach(rid => {
       const n = state.nodes[rid];
       if (n && n.folderId === folder.id) folder.files.push({ name: n.name, handle: null, nodeId: n.id });

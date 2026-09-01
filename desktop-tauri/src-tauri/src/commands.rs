@@ -103,6 +103,98 @@ pub async fn pick_files(app: AppHandle) -> Vec<LocalFile> {
         .collect()
 }
 
+/// One watched folder, as `philogg.html`'s folder watch needs it: the path
+/// it will list through `list_folder`, and the display name its section
+/// header shows (a real `FileSystemDirectoryHandle`'s `name`).
+#[derive(serde::Serialize)]
+pub struct PickedFolder {
+    path: String,
+    name: String,
+}
+
+impl PickedFolder {
+    pub(crate) fn new(path: &std::path::Path) -> Self {
+        PickedFolder {
+            name: path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string_lossy().to_string()),
+            path: path.to_string_lossy().to_string(),
+        }
+    }
+}
+
+/// "Open… → Folder…" under this wrapper — the folder-watch counterpart of
+/// `pick_files`, and the reason the feature works here at all.
+///
+/// `philogg.html`'s own route is `showDirectoryPicker()`, which is a webview
+/// API and therefore subject to the *engine's* rules: Chromium refuses a
+/// directory handle for anything on its hardcoded sensitive-directory list
+/// (Desktop, Downloads, …) with a "contains system files" error, and no
+/// embedder switch turns that off — not in Tauri, not in WebView2. WKWebView
+/// and WebKitGTK don't implement the API at all, so off Windows there was no
+/// folder watch here in the first place. Listing the folder from Rust
+/// sidesteps both: the OS dialog has no blocklist, and neither does
+/// `read_dir`. Async for the same reason `pick_files` is.
+#[tauri::command]
+pub async fn pick_folder(app: AppHandle) -> Option<PickedFolder> {
+    app.dialog()
+        .file()
+        .set_title("Watch folder for log files")
+        .blocking_pick_folder()
+        .and_then(|p| p.into_path().ok())
+        .map(|p| PickedFolder::new(&p))
+}
+
+/// The listing half of the folder watch: the folder's own immediate entries
+/// (non-recursive, matching `philogg.html`'s `scanFolderHandle`), filtered
+/// by the extensions the *page* considers loadable — that list is the page's
+/// knowledge (`FOLDER_WATCH_EXTENSIONS`), so it travels in rather than being
+/// duplicated here. Each match is registered like any other file this
+/// wrapper opens, so it arrives with both its `philogg://local/…` URL (which
+/// doubles as its tail handle) and its real path.
+///
+/// Called on every scan tick, hence `register_local_file`'s path dedupe.
+/// An IO error (folder deleted, renamed, or unreadable) comes back as `Err`,
+/// which the page already handles: `rescanFolder`'s catch marks the folder
+/// failed.
+///
+/// The path comes from the page rather than from the OS, unlike every other
+/// route here. That is unavoidable — a watched folder has to survive a
+/// restart, and after one the only place its path still exists is the page's
+/// own IndexedDB record — and it is no widening of what the page can already
+/// reach: `reveal_path` takes a page-supplied path too, and the page is this
+/// wrapper's own content served from its own scheme, never remote.
+#[tauri::command]
+pub fn list_folder(
+    app: AppHandle,
+    path: String,
+    extensions: Vec<String>,
+) -> Result<Vec<LocalFile>, String> {
+    let exts: Vec<String> = extensions.iter().map(|e| e.to_lowercase()).collect();
+    let mut paths = Vec::new();
+    for entry in std::fs::read_dir(&path).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let entry_path = entry.path();
+        // `entry.path().is_file()` and not `entry.file_type()`: the latter
+        // describes the symlink itself, and a symlinked log file is a real
+        // one as far as reading it goes.
+        if !entry_path.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if !exts.is_empty() && !exts.iter().any(|e| name.ends_with(e)) {
+            continue;
+        }
+        paths.push(entry_path);
+    }
+    // The page sorts the listing itself; sorted here too so a scan tick
+    // yields a stable order regardless of what the filesystem hands back.
+    paths.sort();
+    let state = app.state::<AppState>();
+    Ok(paths.iter().map(|p| LocalFile::register(&state, p)).collect())
+}
+
 /// "Copy Path" for a file the page knows only by its `philogg://local/…`
 /// URL (a file-association open) — same id -> path lookup `reveal_local_url`
 /// does, but handing the answer back instead of acting on it.

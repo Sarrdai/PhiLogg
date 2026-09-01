@@ -16,12 +16,24 @@ use std::sync::Mutex;
 /// of the renderer at close time.
 pub const CLOSE_TO_TRAY_KEY: &str = "philogg-close-to-tray";
 
+/// The two halves of the id <-> path mapping, behind one lock so they can
+/// never disagree. `by_path` exists so a path registered twice keeps the
+/// same id: the folder watch re-lists its folder every few seconds, and a
+/// fresh id per file per tick would both grow `by_id` without bound and
+/// change the URL every open file is tailed from.
+#[derive(Default)]
+struct LocalFiles {
+    by_id: HashMap<String, PathBuf>,
+    by_path: HashMap<PathBuf, String>,
+}
+
 pub struct AppState {
     /// id -> absolute local path, served at `philogg://local/<id>/<basename>`.
-    /// Populated only from paths the OS itself handed us (argv /
-    /// file-association / macOS open-file), same trust level as a native
-    /// file-open dialog — mirrors `localFiles` in `desktop/main.js`.
-    local_files: Mutex<HashMap<String, PathBuf>>,
+    /// Populated from paths the OS handed us (argv / file-association /
+    /// macOS open-file / the native dialog and drop handlers) and from the
+    /// entries of a folder the person chose to watch — mirrors `localFiles`
+    /// in `desktop/main.js`.
+    local_files: Mutex<LocalFiles>,
     next_local_id: AtomicU64,
     /// Absolute path to the `philogg.html` this build serves.
     pub html_path: PathBuf,
@@ -47,7 +59,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(html_path: PathBuf, settings_path: PathBuf) -> Self {
         Self {
-            local_files: Mutex::new(HashMap::new()),
+            local_files: Mutex::new(LocalFiles::default()),
             next_local_id: AtomicU64::new(1),
             html_path,
             settings_path,
@@ -69,16 +81,27 @@ impl AppState {
     /// after the URL's last path segment, same as any other `?url=` deep
     /// link) shows the real file name instead of the bare id — the lookup
     /// below still keys off the id alone.
+    ///
+    /// A path already registered keeps its id, so the URL a file is served
+    /// under is stable for the whole run — the folder watch's rescan
+    /// (every `FOLDER_SCAN_MS`) re-registers every listed file on every
+    /// tick, and a new id each time would leak entries and hand the page a
+    /// different URL for a file it is already tailing.
     pub fn register_local_file(&self, path: &Path) -> String {
-        let id = self.next_local_id.fetch_add(1, Ordering::Relaxed).to_string();
+        let mut files = self.local_files.lock().expect("local_files poisoned");
+        let id = match files.by_path.get(path) {
+            Some(known) => known.clone(),
+            None => {
+                let id = self.next_local_id.fetch_add(1, Ordering::Relaxed).to_string();
+                files.by_id.insert(id.clone(), path.to_path_buf());
+                files.by_path.insert(path.to_path_buf(), id.clone());
+                id
+            }
+        };
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| id.clone());
-        self.local_files
-            .lock()
-            .expect("local_files poisoned")
-            .insert(id.clone(), path.to_path_buf());
         format!("philogg://local/{}/{}", id, urlencoding::encode(&name))
     }
 
@@ -86,6 +109,7 @@ impl AppState {
         self.local_files
             .lock()
             .expect("local_files poisoned")
+            .by_id
             .get(id)
             .cloned()
     }

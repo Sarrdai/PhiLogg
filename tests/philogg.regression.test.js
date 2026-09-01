@@ -14726,9 +14726,11 @@ await withApp(async (w, d, T) => {
    return.
    Updated by the session that closed the gap (GROUP 141+): that wrapper
    now opens picked and dropped files ITSELF and supplies their paths, so
-   the "no path at all" case below is no longer what its picker/drop does
-   — it is what its folder watch still does, and what any File arriving
-   without a supplied path must keep doing. The other bridge functions
+   the "no path at all" case below is no longer what its picker/drop does.
+   Re-pointed once more by GROUP 145: its folder watch supplies paths too
+   now, so no route under that wrapper reaches this case at all — what is
+   pinned here is the contract itself, which any File arriving without a
+   supplied path must keep honouring. The other bridge functions
    stay fully functional there, so a file-association open
    (philogg://local/… sourceUrl) must still offer "Open File Location"
    via revealLocalUrl.
@@ -15001,7 +15003,10 @@ await withApp(async (w, d, T) => {
    dragenter/dragover/drop events philogg.html drives its own #dropOverlay
    from. So the wrapper drives the overlay through a named hook instead of
    reaching into #dropOverlay itself — this group is that contract, plus
-   the folder case the native route cannot serve.
+   the dropped-folder case for a wrapper that can't list folders itself.
+   Re-pointed by the session that added GROUP 145: a wrapper that CAN list
+   folders now watches a dropped one, so 143b is specifically the fallback
+   for one that can't (an older build, or a wrapper without listFolder).
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("143a. philoggDropOverlay toggles the same overlay an HTML drag would");
@@ -15024,8 +15029,10 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("143b. A dropped folder is reported, not silently ignored");
+  section("143b. A dropped folder is reported, not silently ignored (wrapper without listFolder)");
 
+  assert(typeof w.philogg.listFolder === "undefined",
+    "fixture sanity: this bridge cannot list folders — the case GROUP 145d is the counterpart to");
   await w.philoggLoadLocalFiles({ files: [], folders: ["/home/user/logs"] });
   assert(T.state.rootIds.length === 0, "a folder path alone loads nothing");
   const toast = d.querySelector("#copyToast").textContent;
@@ -15096,6 +15103,217 @@ await withApp(async (w, d, T) => {
     assert(n.tail && typeof n.tail.handle.getFile === "function",
       "...and tailing resumes, rebuilt from sourceUrl with no permission round-trip");
   }, { indexedDB: factory });
+});
+
+/* ============================================================
+   GROUP 145 — Folder watch without the File System Access API
+   (the Tauri wrapper's native listing: philogg.pickFolder + listFolder)
+   Origin: this session. showDirectoryPicker() is a *webview* API and obeys
+   the engine's rules, not the app's: Chromium refuses a directory handle
+   for anything on its hardcoded sensitive-folder list ("this folder
+   contains system files" — Desktop and Downloads among them), and no
+   embedder switch turns that off, while WKWebView/WebKitGTK don't
+   implement the API at all. So a wrapper that lists directories itself
+   (Rust read_dir, files served under philogg://local/…) is the only way
+   folder watch works on Desktop, or on macOS/Linux at all. philogg.html
+   drives that through nativeDirHandle, a stand-in with the same four
+   members the folder-watch code uses, so scanFolderHandle/rescanFolder/
+   folderScanTick/tryReconnectFolder are untouched — and every listed file
+   arrives with its real path, closing the last route in that wrapper whose
+   files had no "Open File Location"/"Copy Path" (FEATURE_BACKLOG.md #61).
+   ============================================================ */
+
+// A wrapper bridge over an in-memory set of folders. Mirrors the Rust side
+// closely enough to matter: ids are minted per path and REUSED for a path
+// already listed (commands.rs's register_local_file dedupe), because the
+// scan tick re-lists everything every few seconds. `idBase` lets a second
+// "process" hand out different ids for the same paths — which is exactly
+// what a restart does, and what the restore case below leans on.
+function nativeFolderBridge(dirs, idBase = 1) {
+  const ids = new Map();
+  const urls = new Map();
+  let next = idBase;
+  const bridge = {
+    getPathForFile: () => null,
+    revealPath: () => {},
+    revealLocalUrl: () => {},
+    listSystemFonts: () => Promise.resolve([]),
+    pickFolder: () => Promise.resolve(bridge.picked),
+    picked: null,
+    listFolder: async (dirPath, extensions) => {
+      const map = dirs[dirPath];
+      if (!map) throw new Error("No such file or directory (os error 2)");
+      return Object.keys(map).sort()
+        .filter(name => extensions.some(ext => name.toLowerCase().endsWith(ext)))
+        .map(name => {
+          const full = dirPath + "/" + name;
+          if (!ids.has(full)) ids.set(full, String(next++));
+          const url = "philogg://local/" + ids.get(full) + "/" + name;
+          urls.set(url, () => dirs[dirPath][name]);
+          return { url, path: full, name };
+        });
+    },
+  };
+  // The fetch every philogg://local/… read goes through (the wrapper serves
+  // these; jsdom has to be told how).
+  bridge.installFetch = w => {
+    w.fetch = async url => {
+      const body = urls.get(String(url));
+      if (!body) return { ok: false, status: 404 };
+      const text = body();
+      return {
+        ok: true, status: 200,
+        arrayBuffer: async () => new w.TextEncoder().encode(text).buffer,
+        blob: async () => new w.Blob([text]),
+      };
+    };
+  };
+  return bridge;
+}
+
+const dirsA = { "/home/user/Desktop": { "a.log": makeLog(0, 5), "b.log": makeLog(100, 3), "notes.txt": "not compatible" } };
+const bridgeA = nativeFolderBridge(dirsA);
+bridgeA.picked = { path: "/home/user/Desktop", name: "Desktop" };
+
+await withApp(async (w, d, T) => {
+  section("145a. \"Open… → Folder…\" uses the wrapper's own picker, not showDirectoryPicker");
+  bridgeA.installFetch(w);
+
+  assert(typeof w.showDirectoryPicker === "undefined",
+    "fixture sanity: no File System Access API here — the macOS/Linux webview case, and the one Group 38b calls unsupported");
+
+  fireClick(d.querySelector("#btnOpen"), w);
+  fireClick(d.querySelector('#openMenu [data-action="folder"]'), w);
+  for (let i = 0; i < 40 && T.state.folders.length === 0; i++) await new Promise(r => setTimeout(r, 25));
+
+  assert(T.state.folders.length === 1, "the folder is watched even with no showDirectoryPicker anywhere");
+  assert(d.querySelector("#copyToast").textContent.indexOf("Chromium-based browser") === -1,
+    "...and no \"unsupported browser\" notice is shown, unlike Group 38b's plain-browser case");
+  const folder = T.state.folders[0];
+  assert(folder.name === "Desktop", "the section is named after the picked folder, got " + folder.name);
+  assert(folder.files.map(f => f.name).join(",") === "a.log,b.log",
+    "only the compatible extensions are listed, in name order, got " + folder.files.map(f => f.name).join(","));
+  assert(d.querySelectorAll(".folder-watch-file").length === 2, "both are rendered as grayed, unread listing rows");
+}, { philogg: bridgeA });
+
+await withApp(async (w, d, T) => {
+  section("145b. A file opened from such a folder knows its path (FEATURE_BACKLOG #61)");
+  bridgeA.installFetch(w);
+
+  await w.openFolderPickerFlow();
+  const folder = T.state.folders[0];
+  const rec = folder.files.find(f => f.name === "a.log");
+  await w.loadFolderFile(folder, rec);
+
+  const node = T.state.nodes[rec.nodeId];
+  assert(node && node.name === "a.log", "the listed file loads on demand, same as a handle-backed one");
+  assert(node.folderId === folder.id, "...still tagged with its folder, so closing returns it to the listing");
+  assert(node.localPath === "/home/user/Desktop/a.log", "...carrying the real OS path, got " + node.localPath);
+  assert(node.sourceUrl === rec.handle.__philoggUrlTail,
+    "...and the philogg://local URL it was read from, got " + node.sourceUrl);
+  assert(node.tail && typeof node.tail.handle.getFile === "function", "...and it tails, through that same URL");
+
+  T.state.activeId = node.id;
+  w.render();
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + node.id + '"]'), w);
+  assert(d.querySelector('#treeContextMenu [data-action="revealLocation"]'),
+    "\"Open File Location\" is offered for a folder-watched file — the gap #61 describes");
+  assert(d.querySelector('#treeContextMenu [data-action="copyPath"]'), "...and \"Copy Path\" with it");
+  w.closeTreeContextMenu();
+}, { philogg: bridgeA });
+
+await withApp(async (w, d, T) => {
+  section("145c. Rescans pick up new files; an unreadable folder fails the same way a revoked handle does");
+  const dirs = { "/logs": { "one.log": makeLog(0, 3) } };
+  const bridge = w.philogg;
+  bridge.installFetch(w);
+  bridge.picked = { path: "/logs", name: "logs" };
+  bridge.dirs = dirs;
+
+  await w.openFolderPickerFlow();
+  const folder = T.state.folders[0];
+  assert(folder.files.length === 1, "sanity: one file listed to start with");
+
+  dirs["/logs"]["two.log"] = makeLog(500, 2);
+  await w.folderScanTick();
+  assert(folder.files.map(f => f.name).join(",") === "one.log,two.log",
+    "a file that appeared after the watch started is merged in, got " + folder.files.map(f => f.name).join(","));
+
+  delete dirs["/logs"];
+  await w.folderScanTick();
+  assert(folder.failed === true, "a folder that can no longer be listed is marked failed, not left silently scanning");
+  assert(d.querySelector(".folder-watch-icon.scanning") === null, "...and stops showing the scanning ring");
+}, { philogg: (() => { const b = nativeFolderBridge({}); b.listFolder = async (p, exts) => {
+      const map = b.dirs && b.dirs[p];
+      if (!map) throw new Error("No such file or directory (os error 2)");
+      return Object.keys(map).sort().filter(n => exts.some(e => n.toLowerCase().endsWith(e)))
+        .map((n, i) => ({ url: "philogg://local/" + (i + 1) + "/" + n, path: p + "/" + n, name: n }));
+    }; return b; })() });
+
+await withApp(async (w, d, T) => {
+  section("145d. A dropped folder now starts a watch instead of only explaining itself");
+  bridgeA.installFetch(w);
+
+  await w.philoggLoadLocalFiles({ files: [], folders: ["/home/user/Desktop"] });
+  assert(T.state.folders.length === 1, "the native drop's folder path is enough to watch it");
+  assert(T.state.folders[0].name === "Desktop", "the section is named after the dropped folder's last path segment");
+  assert(T.state.folders[0].files.length === 2, "...and it is listed immediately, like a picked one");
+  assert(d.querySelector("#copyToast").textContent.indexOf("Open… → Folder…") === -1,
+    "the \"use Open… → Folder…\" notice is gone for a wrapper that can list folders");
+}, { philogg: bridgeA });
+
+await withApp(async (w, d, T) => {
+  section("145e. Persistence: the path is stored, not the (uncloneable) stand-in, and restore resumes silently");
+  const factory = new IDBFactory();
+  const dirs = { "/srv/logs": { "kept.log": makeLog(0, 4), "other.log": makeLog(60, 2) } };
+  let folderId = null, firstUrl = null;
+
+  // --- Window A: watch, open one file, persist. ---
+  const first = nativeFolderBridge(dirs, 1);
+  first.picked = { path: "/srv/logs", name: "logs" };
+  await withApp(async (w2, d2, T2) => {
+    first.installFetch(w2);
+    await w2.openFolderPickerFlow();
+    const folder = T2.state.folders[0];
+    folderId = folder.id;
+    const rec = folder.files.find(f => f.name === "kept.log");
+    await w2.loadFolderFile(folder, rec);
+    const node = T2.state.nodes[rec.nodeId];
+    firstUrl = node.sourceUrl;
+    await w2.persistFileNode(node);
+    await w2.persistMetaNow();
+
+    const folderRec = await w2.cacheStoreOp("folders", "readonly", store => store.get(folderId));
+    assert(folderRec, "the folder record exists at all — a stand-in stored as-is would DataCloneError the whole write (Group 144)");
+    assert(folderRec.handle === null, "the closure-holding stand-in is deliberately not persisted");
+    assert(folderRec.path === "/srv/logs", "...its folder path is, which is all a rebuild needs, got " + folderRec.path);
+  }, { indexedDB: factory, philogg: first });
+
+  // --- Window B: a fresh "process" — same disk, new philogg://local ids. ---
+  const second = nativeFolderBridge(dirs, 100);
+  second.picked = first.picked;
+  await withApp(async (w2, d2, T2) => {
+    second.installFetch(w2);
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 40 && T2.state.folders.length === 0; i++) await sleep(50);
+    await sleep(100);
+
+    assert(T2.state.folders.length === 1, "the watched folder came back from its path");
+    const folder = T2.state.folders[0];
+    assert(folder.id === folderId, "...keeping its id, so restored files stay linked to it");
+    assert(folder.needsPermission === false,
+      "...and resumes watching with no Reconnect button: a path needs no permission re-grant, unlike a real handle");
+    assert(folder.files.length === 2, "...with the folder re-listed, got " + folder.files.length);
+
+    const node = T2.state.nodes[T2.state.rootIds[0]];
+    assert(node && node.name === "kept.log" && node.folderId === folderId, "the open file came back as part of that folder");
+    assert(node.sourceUrl !== firstUrl,
+      "its previous-process URL is not kept — that id died with the old process");
+    assert(node.sourceUrl === "philogg://local/100/kept.log",
+      "...it is refreshed from the rescan, got " + node.sourceUrl);
+    assert(node.localPath === "/srv/logs/kept.log", "...and its path is back too, got " + node.localPath);
+    assert(node.tail && typeof node.tail.handle.getFile === "function", "...tailing resumes off the fresh URL");
+  }, { indexedDB: factory, philogg: second });
 });
 
 /* ============================================================
@@ -17162,6 +17380,23 @@ process.exit(failed ? 1 : 0);
               URL/file-association was silently absent from "restore last
               session". The handle is no longer persisted and is rebuilt
               from sourceUrl on restore.
+
+   Group 145 — this session (2026-09-01, second Tauri round), folder watch
+              without the File System Access API. showDirectoryPicker() is
+              a webview API that obeys the ENGINE's rules: Chromium refuses
+              a handle for any directory on its hardcoded sensitive list
+              ("contains system files" — Desktop, Downloads), which no
+              embedder can switch off, and WebKit-based webviews have no
+              such API at all. So the Tauri wrapper now lists folders
+              itself (Rust read_dir, files served as philogg://local/…)
+              and philogg.html drives that through nativeDirHandle, a
+              stand-in with the four members the folder-watch code uses.
+              The group covers the picker delegation, a dropped folder now
+              starting a watch, rescan/failure, the real path each listed
+              file now carries (the FEATURE_BACKLOG #61 gap), and the
+              persistence half: a stand-in holds a closure, so its folder
+              PATH is stored and rebuilt on restore — with the per-process
+              philogg://local ids refreshed on the first rescan.
 
    Deliberately DROPPED this session:
      - Group 139a's "no reveal item for a picker/drop-loaded file" framing.
