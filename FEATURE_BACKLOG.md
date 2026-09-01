@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 61
+LAST_ID: 62
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation. Numbers are unique, permanent IDs, not a sort order —
@@ -95,7 +95,7 @@ this point.
 
 60. **Decide whether Tauri replaces Electron as *the* desktop wrapper** — `desktop-tauri/` (added 2026-09-01) intentionally ships *alongside* `desktop/` with the same feature set, so both can be installed and used on real machines and compared. This entry is the decision that follows: keep both, or retire one. Needs real Windows (and ideally macOS) usage first — see `desktop-tauri/README.md` → "Status" for what is and isn't verified, and its "Differences from the Electron wrapper" for the gaps that would have to be accepted or closed before Electron could go away. Whichever way it lands, retiring the loser means deleting its directory, its release workflow, and its `docs/` file.
 
-61. **Folder watch under Tauri: no path, and Windows-only** — a watched folder's files are the last route in `desktop-tauri/` whose OS path stays unknown, so they're the only ones with no "Open File Location"/"Copy Path" (the picker and drag-drop were closed on 2026-09-01 by having the wrapper open the files itself; a folder can't be done the same way). It also only works on Windows at all, since it needs the File System Access API's `showDirectoryPicker`, which WebKitGTK and WKWebView don't implement. Closing both at once means a Rust-side folder watch: list/rescan in Rust and hand `philogg.html` files the same way a drop now does. Bigger than it sounds — the folder's handle is also persisted into IndexedDB for session restore (`persistFolder`), which a Rust-backed stand-in can't be. Worth doing only if #60 lands on "Tauri replaces Electron".
+62. **Electron: let a watched folder be Desktop/Downloads** — the Electron wrapper still reaches its folder watch through `philogg.html`'s `showDirectoryPicker()`, so its bundled Chromium applies the same hardcoded sensitive-directory blocklist a browser does: picking Desktop or Downloads aborts with "this folder contains system files". Electron has an escape hatch a Tauri webview doesn't — `session.on("file-system-access-restricted", (e, details, callback) => callback("allow"))` — so this is a small handler in `desktop/main.js`, not a redesign. The Tauri wrapper solved the same problem differently on 2026-09-01 (it lists folders natively, see `docs/desktop-tauri.md`), which is also the reason this is now an Electron-only gap. Consider whether "allow" should be unconditional or only for paths the person just picked.
 
 34. **Electron scrollbar corner artifact** — Electron renders scrollbars differently from the browser build (preferred look), but where a horizontal and vertical scrollbar meet there's a white square that doesn't fit the theme. Needs screenshots to nail down the exact styling target.
 
