@@ -28,8 +28,7 @@ urlencoding = "2"
 
 # Release builds of a desktop app care about size far more than about compile
 # time — this is roughly the profile the Tauri template ships, kept explicit
-# so the installer stays comparable in size to what the Electron build
-# produces (which is the whole point of trying Tauri in the first place).
+# so the installer stays as small as a webview-based build can be.
 [profile.release]
 codegen-units = 1
 lto = true

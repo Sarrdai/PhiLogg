@@ -61,7 +61,10 @@ throwaway test from scratch. When a session adds a feature:
    `section(...)` header, a fresh `withApp(async (w, d, T) => { ... })`).
    Number it one higher than the current max, but feel free to physically
    append it anywhere convenient — the groups don't depend on file order,
-   only on running inside their own `withApp`.
+   only on running inside their own `withApp`. A group testing something
+   that isn't the page itself may skip `withApp` entirely — GROUP 146
+   (`scripts/strip-comments.js`, a plain Node module) is the one such case
+   today, and uses a bare block instead.
 2. Run `npm test` and fix until green before delivering the feature.
 3. Add one line to the "TEST PROVENANCE" comment block at the end of the
    file, noting the originating session/date and a one-line summary.

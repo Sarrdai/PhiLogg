@@ -1,10 +1,10 @@
 //! Everything this wrapper adds to the **unmodified** `philogg.html`.
 //!
-//! The Electron wrapper splits the same job across `preload.js` (things that
-//! must exist before the page's own top-level script runs) and
-//! `webContents.insertCSS()`/`executeJavaScript()` on `dom-ready` (things
-//! that need the DOM). Tauri's `initialization_script` covers both cases in
-//! one place: it runs before any page script *and* re-runs on every
+//! Two kinds of injection are needed: things that must exist before the
+//! page's own top-level script runs (the settings snapshot, the `fetch`
+//! shim, the `window.philogg` bridge) and things that need the DOM (the
+//! window controls, the drag region). Tauri's `initialization_script` covers
+//! both cases in one place: it runs before any page script *and* re-runs on every
 //! navigation, so the DOM-dependent half just waits for `DOMContentLoaded`
 //! itself and survives a reload (which the "Clear Cache" tray action does)
 //! with no re-injection hook needed on the Rust side.

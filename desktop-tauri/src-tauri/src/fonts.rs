@@ -1,13 +1,11 @@
 //! System font enumeration for `philogg.html`'s UI-font picker.
 //!
-//! Same rationale as `desktop/main.js`'s `listSystemFonts()`: a plain HTML
-//! build is stuck with a curated stack list because the browser's Local Font
-//! Access API needs a permission-prompt UI it doesn't have; a desktop
-//! wrapper has no such restriction. Electron reaches for the `font-list` npm
-//! package, which is itself only a thin wrapper around the platform commands
-//! below — so this does the same thing directly rather than pulling in a
-//! font crate (and, on Linux, its fontconfig/freetype build dependencies)
-//! just to re-derive a list of names.
+//! A plain HTML build is stuck with a curated stack list because the
+//! browser's Local Font Access API needs a permission-prompt UI it doesn't
+//! have; a desktop wrapper has no such restriction. The platform commands
+//! below are called directly rather than pulling in a font crate (and, on
+//! Linux, its fontconfig/freetype build dependencies) just to re-derive a
+//! list of names.
 //!
 //! Any failure (missing binary, sandboxed OS, …) yields an empty list rather
 //! than an error: the curated list still works everywhere, so the only
@@ -58,8 +56,8 @@ fn platform_fonts() -> Vec<String> {
 /// SPFontsDataType` is both slow and awkward to parse, so the family names
 /// are approximated from the font files' own names in the three standard
 /// font directories. That is an approximation (a file's stem is not always
-/// exactly its family name) — see `desktop-tauri/README.md` → "Differences
-/// from the Electron wrapper".
+/// exactly its family name) — see `desktop-tauri/README.md` → "Known
+/// limitations".
 #[cfg(target_os = "macos")]
 fn platform_fonts() -> Vec<String> {
     let home = std::env::var("HOME").unwrap_or_default();

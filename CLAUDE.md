@@ -10,12 +10,15 @@ chronological, dated history — read it for "why/when did X change", not for
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (~20,700 lines, inline CSS,
-vanilla JS — no framework, no build tooling). Personal tool for browser-based
+PhiLogg: a single self-contained `philogg.html` (~20,800 lines, inline CSS,
+vanilla JS — no framework, no build tooling; the only tooling is
+`scripts/strip-comments.js`, which release builds run over a throwaway copy
+— see `PROJECT.md` → "Release builds"). Personal tool for browser-based
 log analysis. Companion: `tests/philogg.regression.test.js` (jsdom
 regression suite, see `tests/README.md` for conventions). Optional
-`desktop/` Electron wrapper adds file associations and a frameless window
-around the unmodified `philogg.html` — see `desktop/README.md`.
+`desktop-tauri/` wrapper (Tauri v2 + the OS webview) adds file associations
+and a frameless window around the unmodified `philogg.html` — see
+`desktop-tauri/README.md`.
 
 ## Non-negotiables
 
@@ -26,8 +29,8 @@ around the unmodified `philogg.html` — see `desktop/README.md`.
   (new `GROUP N`, one line in TEST PROVENANCE, update/remove superseded
   groups instead of leaving a green check on dead code).
 - **Run the full suite (`cd tests && npm test`) only when code changed** —
-  i.e. `philogg.html`, `tests/philogg.regression.test.js`, or anything under
-  `desktop/`. Report the pass count when you do. A session that only touched
+  i.e. `philogg.html`, `tests/philogg.regression.test.js`, `scripts/`, or
+  anything under `desktop-tauri/`. Report the pass count when you do. A session that only touched
   Markdown (`PROJECT.md`, `docs/*.md`, `CHANGELOG.md`, `README.md`,
   `FEATURE_BACKLOG.md`, `CLAUDE.md`) does not need a test run "to be safe" —
   don't run it out of habit.

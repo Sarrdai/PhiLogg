@@ -1,7 +1,6 @@
-// Generates the app icon set the Tauri bundler requires (unlike
-// electron-builder, which happily falls back to a default icon on win/mac —
-// see desktop/README.md "Adding an app icon" for why desktop/ still has
-// none). Deliberately dependency-free: a plain RGBA raster encoded to PNG
+// Generates the app icon set the Tauri bundler requires — it has no
+// default-icon fallback, so a bundle cannot be built without one.
+// Deliberately dependency-free: a plain RGBA raster encoded to PNG
 // with Node's own zlib, then wrapped into .ico/.icns containers (both accept
 // embedded PNG data), so generating the set needs nothing but `node
 // generate.js` from this directory. The artwork is the same teal dot the
