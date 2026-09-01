@@ -1,34 +1,387 @@
 # Desktop Wrapper
 
-The optional Electron shell in `desktop/` around the unmodified `philogg.html`. For build/run instructions and current run status, see `desktop/README.md` — this file covers the internal mechanism only, not duplicated there.
+The optional desktop wrapper around the **unmodified** `philogg.html`, in
+`desktop/`: the OS's own webview (WebView2 / WKWebView / WebKitGTK) plus a
+Rust backend (Tauri v2). It adds `.log` file associations, CLI-argument/double-click
+file opening, a frameless window with integrated window controls, a tray, a splash
+screen, `settings.json` mirroring, "Open File Location"/"Copy Path", a system font
+list for the UI font picker, and a folder watch that does not go through the
+browser's File System Access API.
 
-Since 2026-09-01 there is a **second, parallel** wrapper: `desktop-tauri/`, built on Tauri v2 and the OS webview, with the same feature surface and visuals. It exists to be tested against this one, not to replace it — everything below is unchanged and still the supported build. See `docs/desktop-tauri.md`, which is written as a delta against this file.
+`desktop/README.md` has the build/run steps, the prerequisites, and the
+current run status — this file covers the internal mechanism only.
 
-## Desktop wrapper (`desktop/`)
+**The rule everything here obeys**: `philogg.html` is never edited. It is served
+through a custom `philogg://` scheme and handed a local file through its own `?url=`
+deep-link mechanism (see PROJECT.md → "Deep-link loading"), and everything
+wrapper-specific is injected at runtime.
 
-A separate, optional Electron shell around the **unmodified** `philogg.html` — adds `.log` file associations, CLI-argument/double-click file opening, and a frameless window with integrated close/minimize/maximize controls on Windows/Linux/macOS, without touching `philogg.html` itself or its own release path (`.github/workflows/release.yml`). Lives entirely in `desktop/` (own `package.json`, `main.js`, `electron-builder.yml`) — see `desktop/README.md` for build/run steps and current status.
+## Layout
 
-**Frameless window**: `main.js` creates the `BrowserWindow` with no OS frame and `Menu.setApplicationMenu(null)` (no File/Edit/View/Window/Help bar). Windows/Linux get `titleBarStyle: "hidden"` + `titleBarOverlay` (Electron's Window Controls Overlay — native-drawn minimize/maximize/close top-right, no custom HTML needed); macOS gets `titleBarStyle: "hiddenInset"` (native traffic lights, left at their normal top-left position rather than moved to match Windows, since relocating a Mac app's own controls would be the actually-jarring choice). `philogg.html`'s own `#toolbar` becomes the only header and the only thing left to drag the window by — since that's not automatic on a frameless window, `main.js` injects a small stylesheet at runtime (`webContents.insertCSS()`, **not** editing `philogg.html` itself, same rule as everything else in this section) making `#toolbar` draggable and every button/input inside it `no-drag` again, plus (Windows/Linux only) right padding on `.toolbar-right` via the `titlebar-area-*` CSS environment variables Chromium exposes specifically for this. `TITLEBAR_HEIGHT` is 49 (1px shorter than `#toolbar`'s own 50px) so the overlay's native paint layer doesn't occlude `#toolbar`'s `border-bottom` under the buttons. Overlay background is fully transparent (`#00000000`, Electron's `#RRGGBBAA` mechanism for a transparent Window Controls Overlay) so it always shows whatever `#toolbar` itself paints underneath — no per-theme color table to keep in sync as themes are added. The buttons' symbol color follows the renderer's live `--accent` (not just its `data-theme` id, since the per-flavor accent picker can change `--accent` without changing the theme at all): `watchTheme()` polls `getComputedStyle(document.documentElement).getPropertyValue("--accent")` (~1x/second, no preload/IPC bridge — same "renderer never needs Node access" reasoning as the rest of this section) and calls `win.setTitleBarOverlay()` on change. An earlier version hardcoded two fixed `{color, symbolColor}` pairs keyed off "is `data-theme` light or not," which only ever matched the original Dark/Light built-ins and showed the wrong background for every Catppuccin flavor or custom theme (bugfixed 2026-08-23, see changelog).
+`desktop/package.json` exists only to pull in the Tauri CLI. Everything else is
+`src-tauri/`: `tauri.conf.json` (bundle config, `.log` file association,
+`philogg.html` as a packaged resource), `Cargo.toml`, `capabilities/default.json`,
+the placeholder icon set under `icons/` (plus the dependency-free `icons/generate.js`
+that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 
-**`F11` toggles fullscreen; the window has rounded corners except when fullscreen** (`FEATURE_BACKLOG.md` items 31/34). No application menu exists to hang a menu accelerator on, so F11 is caught per-window via `webContents.on("before-input-event", ...)` (focus-scoped, unlike `globalShortcut`) and flips `win.setFullScreen(!win.isFullScreen())`; "no window decorations" needs no extra code since the window is already frameless and `setFullScreen()` doesn't reinstate a native frame. Rounded corners are requested explicitly via `roundedCorners: true` in the `BrowserWindow` constructor (Electron's own default already, made explicit for intent) — rounds unconditionally on macOS, on Windows 11 Build 22000+ via DWM (no effect, i.e. stays square, on older Windows), and on Linux only where the desktop environment draws client-side decorations (compositor-dependent, outside this app's control). The "except when fullscreen" half needs no code either: a window that exactly fills the screen (maximized, or `setFullScreen(true)`) is squared off automatically by the OS compositor on both macOS and Windows — no floating edge left to round. Not verified live (no display server in this environment) — behavior confirmed against Electron's own `BrowserWindow` option docs, not guessed.
+| file | role |
+|---|---|
+| `main.rs` | builder wiring, `setup`, the macOS-only `RunEvent` arms |
+| `protocol.rs` | the `philogg://` scheme (app page, splash page, local files) |
+| `windows.rs` | main/splash window creation, close-to-tray, file routing |
+| `tray.rs` | tray icon + menu |
+| `settings.rs` | `settings.json` read/write and its directory |
+| `commands.rs` | everything the injected script may call |
+| `inject.rs` + `inject.js` | the injected script itself |
+| `state.rs` | the `localFiles` map, quit/close flags, caches |
+| `fonts.rs` | system font enumeration |
 
-First real Windows run (2026-08-20, see changelog) surfaced 4 bugs in an earlier version of this mechanism, all now fixed: overlay colors not following the theme toggle (fixed by the poll above — the earlier version had no theme tracking at all); the right-padding reservation going stale across maximize/restore/fullscreen, leaving `#toolbar`'s buttons hidden under or misaligned from the overlay buttons (root cause: it measured `navigator.windowControlsOverlay`'s rect via a `geometrychange` JS listener, which didn't fire reliably across those window-state transitions — replaced with the `env()` CSS approach above, a native continuously-live value with no JS/event timing involved, so the same staleness can't recur); and the toolbar's `border-bottom` invisible under the buttons (the `TITLEBAR_HEIGHT` 49px fix above). None of the four re-verified live — reasoning checked against Electron/Chromium's WCO docs, not guessed, but this dev environment still has no display server.
+## The `philogg://` scheme, and why there is a `fetch` shim
 
-**Reuses the `?url=` mechanism above instead of a second loading path.** `main.js` registers a privileged custom `philogg://` scheme (`protocol.handle`, Electron ≥25) serving two things: `philogg://app/philogg.html` (the packaged `philogg.html`, read via `fs`) and `philogg://local/<id>/<basename>` (a local file's content, `id` mapped to an absolute path chosen only from OS-supplied input — argv on Windows/Linux, the `open-file` event on macOS — same trust level as a native file-open dialog; the URL's `<basename>` segment is only read by `philogg.html`'s own last-path-segment naming logic, the protocol handler itself still looks the file up by `id` alone). A file-association launch opens a `BrowserWindow` at `philogg://app/philogg.html?url=philogg://local/<id>/<basename>`; `philogg.html`'s own `loadFromUrlParam()` then just `fetch()`s it, completely unmodified, exactly like it would fetch a remote CI log URL. No `preload.js`/IPC bridge needed for loading itself — the renderer stays fully sandboxed and never gets Node access; only the main process touches `fs`. (`desktop/preload.js` was added later, see "Open File Location" below — it's the one narrow exception, for a feature that genuinely needs main-process APIs.)
+The wrapper registers a custom URI scheme rather than loading the page off `file:`,
+because `philogg.html`'s own `loadFromUrlParam()` guard deliberately refuses a `?url=`
+fetch when `location.protocol === "file:"` (that guard exists because a real `file://`
+page genuinely can't `fetch()` anything — see PROJECT.md → "Deep-link loading").
+Serving the page from its own scheme keeps that guard intact instead of needing a
+special case carved out of it.
 
-**Why a custom scheme instead of `loadFile()`/`file://`**: `loadFromUrlParam()` deliberately refuses to attempt a fetch when `location.protocol === "file:"` (that guard exists because a real `file://` page genuinely can't `fetch()` anything at all — see "Deep-link loading" above). Loading `philogg.html` itself through `philogg://app/...` instead of a real `file://` URL keeps that guard intact rather than needing a special case carved out of it.
+The scheme serves three things — `app/philogg.html` (the packaged copy, or the working
+copy in a `tauri dev` run), `app/splash.html` (generated in Rust, see below), and
+`local/<id>/<basename>` (a local file, `id` mapped to a path chosen only from
+OS-supplied input: argv, the OS file dialog, a native drop, or macOS's `Opened`
+event — the same trust level as a native file-open dialog; the URL's `<basename>`
+segment is only read by `philogg.html`'s own last-path-segment naming logic, the
+protocol handler still looks the file up by `id` alone). A file-association launch
+opens a window at `philogg://app/philogg.html?url=philogg://local/<id>/<basename>`
+and `philogg.html`'s `loadFromUrlParam()` just `fetch()`es it, completely unmodified,
+exactly like it would fetch a remote CI log URL.
 
-**A file opened after the first one lands in the already-running window, not a new one.** `app.requestSingleInstanceLock()` already ensured a second file-association launch never becomes a second OS process — but the `"second-instance"` handler used to unconditionally call `createWindow()` anyway, which just moved the "new instance" symptom from "new process" to "new, separate app window" instead of actually fixing it. `openFile(filePath)` now reuses the existing `BrowserWindow` when one exists: it registers the new file and calls `window.philoggLoadUrl(url)` in the renderer via `webContents.executeJavaScript()` — `loadFromUrlParam`'s fetch-and-`addFile` body, refactored out as `loadUrlIntoTree(url)` and exposed on `window` for exactly this — then focuses/restores that window, so the file simply joins the existing tree the same way a manual "Open…" would. `createWindow()` (a genuinely new window) is now reached only for the very first file of a run, or if `openFile` is somehow called before any window exists yet. Applies to both the Windows/Linux `"second-instance"` path and macOS `"open-file"`.
+It is registered as an *asynchronous* URI-scheme protocol, because a log served this
+way can be hundreds of megabytes and is re-read on every tail tick — the synchronous
+variant would block the webview's own thread for each read.
 
-**Status**: real Windows run, 2026-08-20 (see changelog) — surfaced and fixed two bugs: opened files were named after their opaque `philogg://local/` id ("1", "2", …) instead of their real filename (fixed by the `<basename>` URL segment above), and every file-association double-click after the first spawned a whole new app window (fixed by the window-reuse `openFile()` above). Not independently re-verified live from this session (no display server here) — reasoning matches the person's exact reported symptoms and Electron's own `executeJavaScript`/`requestSingleInstanceLock` docs, not guessed. **No app icons yet, and deliberately no `build/icons/` directory either** — see the "icon directory doesn't contain icons" CI failure below and `desktop/README.md` → "Adding an app icon": on Linux, electron-builder hard-fails if that directory exists but is empty, it does not silently fall back the way win/mac do.
+One platform wrinkle: **Tauri does not give the webview a real custom scheme on every
+platform.** What it registers as `philogg` is served as `philogg://localhost/…` on
+macOS/Linux and as `http://philogg.localhost/…` on Windows. Neither is
+`philogg://local/…`, which is the exact shape `philogg.html`'s `isDesktopLocalUrl()`
+matches to decide a loaded URL is a *tail-able local file* (and, downstream, that
+"Open File Location" should route through `revealLocalUrl`). Changing that check in
+`philogg.html` was not an option, so the page is handed the canonical
+`philogg://local/<id>/<basename>` URL — keeping tail-follow, the filename derivation
+and the context menu all working unmodified — and `inject.js` wraps `window.fetch` to
+rewrite exactly that prefix to whatever the platform actually serves. The protocol
+handler accepts both shapes, so nothing depends on the rewrite having happened.
 
-**Startup perception (`FEATURE_BACKLOG.md` #51)**: two independent fixes for "startup takes several seconds with no feedback". (1) **Splash screen** — `createSplash()` opens a tiny frameless, always-on-top `BrowserWindow` loading a self-contained `data:` URL (inline HTML/CSS spinner, no new asset file) the instant `createWindow()` is called; the real main `BrowserWindow` is built with `show: false` and only shown (destroying the splash at the same moment) on its own `"ready-to-show"` event — the point Electron guarantees a first real paint exists, not `"dom-ready"` which would just swap one blank window for another. (2) **"Close to system tray"** setting (`philogg.html` → Settings → Behavior, `settingsCloseToTray`, default **on** — the one behavior toggle in that section that defaults on rather than off, since it's the requested default rather than an opt-in change to existing behavior). Same "no preload/IPC bridge" tier as `quitOnLastFileClose` right above it: the flag is plain `localStorage` (`philogg-close-to-tray`), read back by `main.js` via `executeJavaScript()` — not proactively pushed from the renderer — whenever the `BrowserWindow`'s own `"close"` fires (`watchCloseToTray()`). When on, `event.preventDefault()` + `win.hide()` instead of actually closing. `createTray()` builds a `Tray` (16px inline SVG data URL — kept out of `electron-builder`'s icon pipeline entirely, same reasoning as "no app icon yet" below) with an "Open PhiLogg" / "Quit" context menu — called unconditionally once per window now (`FEATURE_BACKLOG.md` #33, see "Persistent settings + cache location" below), not just lazily on the first tray-hide, since the tray is also the one reachable place for the config-folder/cache-clear actions that don't depend on this setting at all. A module-level `isQuitting` flag (set in `app.on("before-quit", ...)`, which fires before any window's own `"close"`) distinguishes a real quit (tray's Quit, Cmd+Q, OS shutdown) from the hide-to-tray path, so the interception doesn't loop. `focusWindow()` now also `win.show()`s a hidden (not just a minimized) window, so reopening a file or clicking the tray icon while parked in the tray jumps straight back into the running session instead of feeling like a fresh launch. Because `quitOnLastFileClose`'s "closing the last file" path is itself just a renderer-side `window.close()` (see that setting's own section above), it funnels through this exact same `"close"` interception with no extra plumbing — "closing the last open file" respects the tray setting for free.
+## One injected script
 
-**Release**: `.github/workflows/desktop-release.yml`, manual-only (`workflow_dispatch`), entirely separate from `release.yml` (which keeps publishing only `philogg.html`, unaffected by any of this). A `prepare` job creates one release tag (`desktop-<short-sha>`) up front so the three per-OS `build` matrix jobs (windows-latest/macos-latest/ubuntu-latest) can each just `npm install && npm run build` and upload their own installer into it, without racing each other to create the same release. `strategy.fail-fast: false` (added after the first real run, see changelog) so one platform's failure doesn't cancel the still-running others. `Upload installer(s)` retries `gh release upload` up to 5x with backoff (added after a second real run saw win/mac both fail there silently with a clean build — see changelog). Three `workflow_dispatch` boolean inputs (`build_windows` default on, `build_mac`/`build_linux` default off, matching the common case of only wanting the Windows installer) pick which platforms actually get a `build` job: `prepare` computes a JSON OS list from the checkboxes (`Compute selected OS matrix` step, plain bash + `jq`) and outputs it, `build`'s `strategy.matrix.os` is `fromJSON(needs.prepare.outputs.os_list)` rather than a fixed 3-OS list. **Not** a job-level `if:` comparing `inputs.*` against `matrix.os` — that was the first attempt and GitHub rejects the whole workflow file at parse time for it (`0` jobs, `startup_failure`): the `matrix` context isn't available in `jobs.<job_id>.if`, only in `runs-on`/`env` and inside steps (see changelog). An unchecked-everything dispatch just produces an empty matrix (0 `build` jobs), no separate guard needed. `philogg.html`'s own tester release (the "html" case) already has its own independent manual workflow (`release.yml`) — deliberately not folded into this one. Each `build` job also stamps `PHILOGG_VERSION` to the commit short-SHA before packaging (`Stamp version` step, same `sed` idiom `release.yml` uses) and passes that SHA to `electron-builder` as `PHILOGG_SHA` so the installer filename carries it too (`electron-builder.yml`'s `artifactName`) — see "Desktop wrapper" → intro and `desktop/README.md` → "Version stamp".
+Tauri's `initialization_script` runs before any page script *and* re-runs on every
+navigation, so `inject.js` is a single file that covers both halves — what must exist
+before `philogg.html`'s top-level script runs, and what needs the DOM (behind
+`DOMContentLoaded`) — and survives a reload (which the tray's "Clear Cache" performs)
+with no re-injection hook on the Rust side at all. It is built by `inject.rs`, which
+substitutes four values into it: the settings snapshot, a per-process nonce, the
+platform's real scheme base, and whether this is macOS. The splash window deliberately
+gets no script (it ends by reporting "painted", which would dismiss the splash itself).
 
-**"Open File Location" (`FEATURE_BACKLOG.md` #52, generalized beyond its Electron-only wording)**: a file node's tree context menu offers "Open File Location" whenever a real OS path is actually known and `window.philogg` exists (i.e. the Electron build) — never in the plain `philogg.html` build, since no web API lets a browser resolve a `File` back to a filesystem path at all (that's the whole point of the File System Access sandbox), so the item simply never renders there rather than offering a fake affordance that would always fail. `desktop/preload.js` is a new, deliberately narrow `contextBridge` exposing exactly two functions on `window.philogg` — the *only* preload/IPC bridge this app has, everywhere else in `desktop/` still relies on `executeJavaScript()`/the `philogg://` scheme specifically to avoid needing one (see this section's intro): `getPathForFile(file)` (wraps Electron's `webUtils.getPathForFile` — the documented replacement for the `File.path` property Electron itself removed for security — resolving the real OS path behind a `File` object the renderer already holds, from its own picker/drag-drop/folder-watch handle) and `revealPath(path)`/`revealLocalUrl(url)` (both `ipcRenderer.invoke` round-trips, since `shell.showItemInFolder` only exists in the main process). `philogg.html`'s `loadOneFileIntoTree` calls `getPathForFile` once per load and stashes the result as `node.localPath`; `loadUrlIntoTree` stashes the loaded `?url=` itself as `node.sourceUrl` for every deep-linked file, not just desktop-local ones. The context menu then picks one of three outcomes per file node: `node.localPath` set → "Open File Location" calls `revealPath`; no `localPath` but `node.sourceUrl` is a `philogg://local/…` one (a launch-arg/file-association open, which never went through a `File` object at all) → same label, routed through `revealLocalUrl` instead, since only `main.js`'s `localFiles` map (see the `?url=`-mechanism paragraph above) can resolve that id back to a path; `node.sourceUrl` is a genuine `http(s)` link → "Copy URL" instead (works in every build, no Electron needed — there's no OS folder to reveal for a remote log). **"Copy Path"** rides along on exactly the first two cases (the same gate as "Open File Location"): a known `node.localPath` goes straight to the clipboard, while a `philogg://local/…` file — which the page knows *only* by that URL — has its path fetched back through a fourth bridge function, `pathForLocalUrl(url)` (`philogg:path-for-local-url`, the same `localFiles` lookup `revealLocalUrl` does, handing the answer back instead of acting on it). Pasting a path into a terminal or a ticket is the other half of what people want a known location for; it is also the only one of the two that a wrapper *without* a working file manager can still deliver. `main.js` gained matching `ipcMain.handle` registrations (`registerRevealHandlers()`, called once in `whenReady()`) and passes `preload: PRELOAD_PATH` in the main `BrowserWindow`'s `webPreferences` (the splash window doesn't need it). Both `node.localPath`/`node.sourceUrl` are threaded through `persistFileNode`/`restoreSessionFromCache` so the menu item survives a reload. `electron-builder.yml`'s `files` list gained `preload.js`. `tests/philogg.regression.test.js` Group 109 covers the menu-item gating (all three outcomes, plus "absent without `window.philogg`") and the cache round-trip — the real `webUtils`/`shell` calls themselves are simulated via a stub `window.philogg` (jsdom can't run real Electron), not verified live (no display server in this environment, same standing limitation as the rest of `desktop/`).
+**Bridge.** `window.philogg` is the narrow surface `philogg.html` feature-detects on
+(`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`,
+`pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, and
+`getPathForFile`. That last one returns `null` permanently — no system webview can
+resolve a `File` object back to its OS path — which is why the wrapper opens files
+itself instead (next paragraph). `philogg.html` treats a null `getPathForFile` as "no
+path known", so nothing breaks; under this wrapper no route reaches that case any more.
 
-**System font list for the UI font picker (desktop only)**: `window.philogg` gained a third function, `listSystemFonts()`, purely additive to the `getPathForFile`/`revealPath`/`revealLocalUrl` bridge above — a Node process has no browser-style permission gate to enumerate installed fonts, so `main.js`'s `philogg:list-system-fonts` handler shells out via the `font-list` npm package (`getFonts()`, wraps `fc-list`/PowerShell/`system_profiler` depending on platform) and caches the result for the process's lifetime; any failure resolves to `[]` rather than throwing, so a headless/sandboxed OS just means no extra options appear. `philogg.html`'s `initUiFont()` calls this once (after applying the curated default from `UI_FONT_OPTIONS`) and appends every name it gets back to `#settingsUiFontSelect` as an `<optgroup>`, skipping any name that duplicates a curated stack's own leading font (`appendSystemFontOptions`'s dedup check). Each system-font option's value is `"sys:" + name`; `fontStackForId()` computes its actual `--font-ui` stack on the fly (`"<name>",<default fallback stack>`) instead of requiring a hardcoded `UI_FONT_OPTIONS` entry per font — the plain HTML build (no `window.philogg`) is completely unaffected, same curated-list-only behavior as before. See "UI font family setting" in the changelog for the original curated-list feature this extends.
+**Knowing a file's path anyway.** Because the webview will never hand the page a real
+path, this wrapper *is* the thing that opens files, so the path is known before the
+page ever sees them — the route a file-association open already took, generalized to
+the others:
 
-**Persistent settings + cache location (`FEATURE_BACKLOG.md` #33)**: `app.setName("PhiLogg")` at the top of `main.js`, called before anything else touches `app.getPath("userData")` (including `app.requestSingleInstanceLock()`), makes that path resolve to the OS's well-known per-app config directory consistently in both `npm start` (dev, where it would otherwise fall back to `package.json`'s `"name"`, `"philogg-desktop"`) and a packaged build (`~/.config/PhiLogg` on Linux, `~/Library/Application Support/PhiLogg` on macOS, `%APPDATA%\PhiLogg` on Windows). The IndexedDB cache already lives there automatically once `userData` resolves correctly — nothing else needed for that half. Settings are a different problem: `philogg.html`'s `philogg-*` `localStorage` keys aren't reachable from outside the renderer at all by default, so `main.js`/`preload.js` mirror them into a plain `settings.json` in the same directory, still without touching `philogg.html` itself. Two separate mechanisms, not one, because they run at different times relative to the page's own script: `preload.js` reads `settings.json` via a synchronous `ipcMain.on("philogg:settings-read", ...)` round-trip and calls the real, unmodified `localStorage.setItem()` for each key *before* `philogg.html`'s own script executes — the only point Electron guarantees runs that early, since many of those keys are read once, synchronously, at top-level script parse, well before any `dom-ready`/`did-finish-load` hook in the main process could act. Writing changes back the other way doesn't need that same guarantee (they only ever happen later, after a user interaction), so `watchSettings()` reuses `watchTheme()`'s existing polling shape instead of adding a second IPC channel: ~1x/second, `executeJavaScript()` dumps every `philogg-*` key/value pair, diffed against the last dump before touching disk, plus a best-effort final flush on the window's own `"close"` event so a change made right before quitting isn't lost. Deliberately *not* implemented as a `localStorage.setItem` override from `preload.js` — Electron's `contextIsolation` gives the preload script and the page separate JS contexts, so a method patched from one side isn't guaranteed visible from the other (unlike calling the built-in `setItem`/`getItem` themselves, which read/write the real per-origin storage backend regardless of which context calls them). The cache stays binary/LevelDB and isn't meant to be hand-edited; `createTray()`'s context menu gained "Open Config Folder" (`shell.openPath(app.getPath("userData"))`) and "Clear Cache" (`session.clearStorageData({storages: ["indexdb"]})` + a reload) as the reachable UI for both files, which is also why the tray is now always created (see "Startup perception" above) instead of only once "close to tray" fires for the first time. See `desktop/README.md` → "Persistent data (settings + cache)" for the user-facing version.
+| Route | How the path is known |
+|---|---|
+| File association / launch arg | `windows.rs`'s `open_file` → `register_local_file` |
+| "Open… → File(s)…" | `philogg.html`'s `openFilesPicker` defers to `philogg.pickFiles`, which runs the OS dialog in Rust (`tauri-plugin-dialog`, driven from Rust — so still no ACL entry) |
+| Drag-and-drop | Tauri's *native* drag-drop handler (`WindowEvent::DragDrop`, see `windows.rs`) |
+| "Open… → Folder…" / a dropped folder | `pick_folder` runs the OS folder dialog; `list_folder` lists it (see "Folder watch without the File System Access API" below) |
 
+All of them end at `state.register_local_file(path)`, which yields the
+`philogg://local/<id>/…` URL the file is served under, and hand the page both halves —
+path and URL — through `window.philoggLoadLocalFiles({ files, folders })`.
+`philogg.html` turns each into an ordinary load descriptor, so the queued
+placeholders, the multi-file merge prompt and tailing all work exactly as they do for
+a dropped `File`; `node.localPath` and `node.sourceUrl` are both set, so "Open File
+Location" and "Copy Path" are offered. Covered by tests **Groups 141-143**.
+
+**The drag-drop trade.** The native handler is the only one carrying OS paths, and
+turning it on suppresses the HTML drop events. This wrapper takes that trade — an
+earlier version did the opposite (`disable_drag_drop_handler()`) and accepted pathless
+drops instead. One consequence: `philogg.html` never sees a `dragenter`, so the
+wrapper drives its `#dropOverlay` through the page's own `window.philoggDropOverlay(show)`
+hook. A dropped **folder** travels in the same call as a path, which is exactly what
+the watch wants — see the next section. `Group 139` still pins the underlying
+contract: a `File` arriving with no path supplied must never have a path invented for
+it, even though no route here reaches that case any more.
+
+**Frameless window and window controls.** Off macOS the window is `decorations(false)`
+and the controls are *real DOM*: `inject.js` appends a three-button `#tauri-wc` block
+into `philogg.html`'s own `.toolbar-right`, styled purely from the page's existing
+theme variables (`--text-secondary`, `--bg-elevated-2`, `--accent`, `--level-error`).
+Because the buttons *are* themed elements, a theme or accent change repaints them with
+no backend involvement and nothing to go stale, and because they occupy real layout
+space in the toolbar, nothing sits underneath them and no padding has to be reserved.
+On macOS the window keeps its decorations with `TitleBarStyle::Overlay` +
+`hidden_title(true)` and only `.brand { padding-left: 72px }` is injected, leaving the
+traffic lights where a Mac user expects them rather than relocating a Mac app's own
+controls. Rounded corners are the platform's own behaviour for an undecorated window
+(macOS always, Windows 11 via DWM, Linux compositor-dependent), and a window that
+exactly fills the screen is squared off by the OS compositor automatically — so
+"rounded except when fullscreen" needs no code.
+
+**Drag region.** `philogg.html`'s own `#toolbar` is the only header a frameless window
+has left, so it doubles as the drag handle. Tauri's `data-tauri-drag-region` only fires
+when the clicked element *itself* carries the attribute, so `inject.js` stamps it on
+`#toolbar` and every descendant that isn't inside a control (`button, input, select,
+textarea, a, label, .ctx-item, #tauri-wc`) — the `<svg>`/`<path>` inside an icon button
+is the real event target on a click, so skipping the whole control subtree is what keeps
+toolbar buttons clickable. A `MutationObserver` re-stamps as the toolbar's contents
+change (status text, controls enabling/disabling). Test **Group 140** is the tripwire
+for the selectors and the 50px toolbar height the chrome is keyed off. The actual
+mousedown → move-the-window handling is Tauri's own, not `inject.js`'s:
+`data-tauri-drag-region` is read by a small script Tauri auto-injects into every window
+(`tauri::window::plugin`'s `drag.js`), which calls the `start_dragging` core command on
+a plain click and `internal_toggle_maximize` on a double-click. That command is
+deliberately **not** part of `core:window`'s default permission set (unlike
+`internal_toggle_maximize`, which is) — `capabilities/default.json` grants
+`core:window:allow-start-dragging` explicitly for this reason. Person-tested bug
+(2026-09-01): without that grant, marking the region does nothing detectable at all —
+no console error, no invoke failure visible from the page — clicking empty toolbar
+space is silently a no-op and the window cannot be moved.
+
+**F11** (`FEATURE_BACKLOG.md` #31). A Tauri webview has no main-process input hook, so
+the key is caught in the page (capture phase) and routed to a `toggle_fullscreen`
+command that flips the same native fullscreen state the maximize control uses.
+
+## Folder watch without the File System Access API
+
+`philogg.html` watches a folder through `window.showDirectoryPicker()`. That is a
+**webview engine** API, and it plays by the engine's rules, not the app's:
+
+- Chromium refuses a directory handle for anything on its hardcoded sensitive-directory
+  list (`ChromeFileSystemAccessPermissionContext`) — Desktop and Downloads among them —
+  with the "this folder contains system files" error. The check runs *inside* the
+  engine, after the call; there is no Tauri setting for it and no WebView2 browser
+  flag, so an embedder cannot relax it.
+- WKWebView (macOS) and WebKitGTK (Linux) don't implement the API at all, so folder
+  watch simply didn't exist there.
+
+So this wrapper doesn't ask the webview. `commands.rs` has two commands — `pick_folder`
+(the OS folder dialog, Rust-driven like `pick_files`, so still no ACL entry) and
+`list_folder(path, extensions)` (a non-recursive `read_dir`, filtered by the extensions
+the *page* considers loadable, each match registered through the same
+`LocalFile::register` every other route uses) — and `inject.js` exposes both as
+`philogg.pickFolder` / `philogg.listFolder`. Rust's filesystem access has no blocklist,
+so Desktop is just a directory.
+
+On the page side this is one duck-typed stand-in, `nativeDirHandle(path, name)`, sitting
+next to `urlTailHandle` in the Tailing section. It implements exactly the four members
+the folder-watch code touches — `name`, `values()`, `queryPermission()`,
+`requestPermission()` — so `scanFolderHandle`, `mergeScannedFiles`, `rescanFolder`,
+`folderScanTick` and `tryReconnectFolder` run against it unmodified; there is no
+"native or browser" branch anywhere in that section. `queryPermission()` is a constant
+`"granted"`: a native listing has no permission model, the person picked the folder in
+the OS's own dialog. Each yielded entry *is* a `urlTailHandle` (which carries the file's
+path alongside its URL), so a file opened from a watched folder tails, reveals and
+copies its path exactly like a dropped one.
+
+Two details that are easy to get wrong:
+
+- **`register_local_file` dedupes by path.** The scan tick re-lists every watched file
+  every `FOLDER_SCAN_MS` (3 s). Minting a fresh id per call — what it did — would grow
+  the id → path map without bound *and* hand the page a different URL for a file it is
+  already tailing. `state.rs` keeps a reverse `path -> id` map so a path always maps to
+  the same id for the life of the process.
+- **The stand-in is not persistable, its path is.** `philogg.html` stores a watched
+  folder in IndexedDB so a reload resumes it; a real `FileSystemDirectoryHandle`
+  survives structured clone by spec, a stand-in holding a closure does not (the same
+  `DataCloneError` trap the `urlTailHandle` cache bug fell into). `persistFolder` stores
+  the **path** instead and `restoreWatchedFolders` rebuilds the stand-in, which loses
+  nothing: unlike a handle, a path stays valid across a restart with no permission to
+  re-grant, so a restored native folder resumes silently instead of showing the
+  "Reconnect" button. What *is* per-process is the id in each file's
+  `philogg://local/<id>/…` URL, so `mergeScannedFiles` refreshes the
+  `sourceUrl`/`localPath` of any already-open file on every scan.
+
+Covered by test **Group 145**.
+
+## "Open File Location" and "Copy Path"
+
+`FEATURE_BACKLOG.md` #52, implemented deliberately generic rather than tied to any one
+wrapper: a file node's tree context menu offers **"Open File Location"** whenever a real
+OS location is known *and* `window.philogg` exists — never in the plain `philogg.html`
+build, since no web API lets a browser resolve a `File` back to a filesystem path at all
+(that's the whole point of the File System Access sandbox), so the item simply never
+renders there rather than offering a fake affordance that would always fail.
+
+"Known" means one of two things, and each has its own route:
+
+- `node.localPath` — a real OS path, supplied by the wrapper alongside the file it
+  opened itself (see the route table above). Reveals via `philogg.revealPath`.
+- `node.sourceUrl` pointing at `philogg://local/…` — a file the page knows *only* by
+  that URL. Reveals via `philogg.revealLocalUrl`, since only `state.rs`'s `localFiles`
+  map can resolve that id back to a path.
+
+A genuine `http(s)` `node.sourceUrl` (no OS folder to reveal) gets **"Copy URL"**
+instead — the useful analogue for a remotely-loaded log, and one that works in every
+build with no wrapper at all.
+
+**"Copy Path"** rides along on exactly the same gate as "Open File Location": wherever
+the location is known well enough to open it, it is known well enough to put on the
+clipboard, and pasting it into a terminal or a ticket is the other half of what people
+want a known path for. A known `node.localPath` goes straight to the clipboard; a
+`philogg://local/…` file has its path fetched back through `philogg.pathForLocalUrl`
+(the same `localFiles` lookup `revealLocalUrl` does, handing the answer back instead of
+acting on it).
+
+Both `node.localPath` and `node.sourceUrl` are threaded through
+`persistFileNode`/`restoreSessionFromCache`, so the menu item survives a reload instead
+of silently vanishing after a refresh even though the file is still the same one on disk.
+`tests/philogg.regression.test.js` Group 109 covers the menu-item gating (all three
+outcomes, plus "absent without `window.philogg`") and the cache round-trip, via a stub
+`window.philogg` — jsdom can't run a real webview host.
+
+## System font list for the UI font picker
+
+A native process has no browser-style permission gate on enumerating installed fonts, so
+`philogg.listSystemFonts()` exists in the desktop build only. `fonts.rs` calls the
+platform commands directly rather than pulling in a font crate (and, on Linux, its
+fontconfig/freetype build dependencies) to re-derive a list of names: `fc-list` on Linux,
+PowerShell's `SystemFontFamilies` on Windows. macOS has neither out of the box, so names
+there are approximated from the font files in the three standard font directories — the
+one place the list is less than exact. Any failure yields an empty list rather than
+throwing, so a headless or sandboxed OS just means no extra options appear.
+
+`philogg.html`'s `initUiFont()` calls this once (after applying the curated default from
+`UI_FONT_OPTIONS`) and appends every name it gets back to `#settingsUiFontSelect` as an
+`<optgroup>`, skipping any name that duplicates a curated stack's own leading font
+(`appendSystemFontOptions`'s dedup check). Each system-font option's value is
+`"sys:" + name`; `fontStackForId()` computes its actual `--font-ui` stack on the fly
+(`"<name>",<default fallback stack>`) instead of requiring a hardcoded `UI_FONT_OPTIONS`
+entry per font — the plain HTML build (no `window.philogg`) is completely unaffected,
+same curated-list-only behavior as before.
+
+## Settings: mirrored into a human-editable `settings.json`
+
+`FEATURE_BACKLOG.md` #33. `philogg.html`'s `philogg-*` `localStorage` keys aren't
+reachable from outside the webview at all by default, so the wrapper mirrors them into a
+plain `settings.json`, still without touching `philogg.html` itself.
+
+The **read** half must land before `philogg.html`'s own top-level script runs — many of
+those keys are read once, synchronously, at top-level script parse. The values are
+already known on the Rust side at window-creation time, so `inject.rs` bakes them
+straight into the initialization script as a JSON literal: no IPC, no preload, nothing
+that can race the page. It hydrates once per *process*, not once per load — the baked
+values are a startup snapshot, so re-applying them after a later reload would revert
+anything changed since. A nonce that changes every process start, kept in
+`sessionStorage` (which survives reloads within one webview session), is what
+distinguishes the two.
+
+The **write** half only ever happens after a user interaction, so it needs no such
+guarantee: a ~1x/second poll in the page dumps every `philogg-*` key/value pair, diffed
+against the last dump before crossing the process boundary, plus a best-effort flush on
+`beforeunload`/`pagehide` so a change made right before quitting isn't lost. The Rust
+side diffs again before touching disk.
+
+**`window.close()` has to be routed through Rust.** `philogg.html`'s
+`quitOnLastFileClose` calls the plain DOM `window.close()`, which relies on the *host*
+intercepting a webview's own close and turning it into a real window close. A Tauri
+webview does not. Person-tested bug (2026-09-01): calling it left an empty, dark,
+permanently-open window — the webview engine tore down the *page* (so the app visibly
+"closed") without ever notifying the Rust side, so `WindowEvent::CloseRequested` never
+fired and the close-to-tray decision in `windows.rs` never ran; only the tray's Quit
+could get rid of it. `inject.js` overrides `window.close` to `invoke("window_close")`,
+which calls the real `Window::close()` on the Rust side — that one **does** raise
+`CloseRequested`, landing on the exact same close-to-tray decision the injected
+title-bar close button uses.
+
+`settings.json` lives in `<os-config-dir>/PhiLogg/`, deliberately *not* the
+identifier-derived directory Tauri would pick by default. The session cache (IndexedDB)
+lives in the webview's own storage for this app, wherever the platform puts it.
+
+## Tray, splash, close-to-tray, single instance
+
+- **Splash** (`FEATURE_BACKLOG.md` #51, the "startup takes several seconds with no
+  feedback" half): a small always-on-top undecorated window on `philogg://app/splash.html`,
+  generated as a string in `protocol.rs` so nothing extra needs packaging. It opens the
+  instant the main window is created; the main window is built `visible(false)` and shown
+  only once the page reports a first paint — two nested `requestAnimationFrame`s after
+  `DOMContentLoaded`, deliberately not the event itself, which would just swap one blank
+  window for another — via the `app_ready` command, which closes the splash at the same
+  moment.
+- **Tray**: always created, not lazily on the first hide — with no application menu
+  anywhere it is the only reachable place for "Open Config Folder" (opens the
+  `settings.json` directory) and "Clear Cache" (wipes the IndexedDB session cache and
+  reloads), neither of which depends on the close-to-tray setting. Four items: Open
+  PhiLogg / Open Config Folder / Clear Cache / Quit. The icon is a teal dot, rasterized
+  in Rust because Tauri's tray takes pixels rather than markup.
+- **Close to tray** (`philogg.html` → Settings → Behavior, `philogg-close-to-tray`,
+  default **on** — the one behavior toggle in that section that defaults on rather than
+  off, since it's the requested default rather than an opt-in change to existing
+  behavior): `WindowEvent::CloseRequested` → `prevent_close()` + `hide()`. The value is
+  already mirrored into the Rust-side state by the settings poll (and seeded from
+  `settings.json` at startup, so the very first close honours it too), so the decision is
+  synchronous. An `is_quitting` flag distinguishes a real quit (tray's Quit, Cmd+Q, OS
+  shutdown) from the hide-to-tray path, so the interception doesn't loop. Reopening a
+  file or clicking the tray icon while parked in the tray shows the hidden window again
+  rather than feeling like a fresh launch. Because `quitOnLastFileClose`'s path is itself
+  just a `window.close()` (routed through Rust, above), "closing the last open file"
+  respects this setting for free.
+- **Single instance**: `tauri-plugin-single-instance`, whose callback registers the new
+  file and calls `window.philoggLoadUrl(url)` in the running window — so a second
+  file-association double-click joins the existing tree instead of opening a second app
+  window. (`loadUrlIntoTree(url)` is `loadFromUrlParam`'s fetch-and-`addFile` body,
+  refactored out and exposed on `window` for exactly this.) Windows/Linux receive the
+  path as argv; macOS delivers it through `RunEvent::Opened` instead, including on a cold
+  launch.
+
+## Release
+
+`.github/workflows/desktop-release.yml`, manual-only (`workflow_dispatch`), entirely
+separate from `release.yml` (which keeps publishing only `philogg.html`, unaffected by
+any of this). A `prepare` job creates one release tag (`tauri-<short-sha>`) up front so
+the per-OS `build` matrix jobs can each just build and upload their own installer into
+it, without racing each other to create the same release. Three `workflow_dispatch`
+boolean inputs (`build_windows` default on, `build_mac`/`build_linux` default off) pick
+which platforms actually get a `build` job: `prepare` computes a JSON OS list from the
+checkboxes (plain bash + `jq`) and `build`'s `strategy.matrix.os` is
+`fromJSON(needs.prepare.outputs.os_list)`. **Not** a job-level `if:` comparing `inputs.*`
+against `matrix.os` — GitHub rejects the whole workflow file at parse time for that
+(`0` jobs, `startup_failure`): the `matrix` context isn't available in
+`jobs.<job_id>.if`, only in `runs-on`/`env` and inside steps. An unchecked-everything
+dispatch just produces an empty matrix, no separate guard needed. `fail-fast: false` so
+one platform's failure doesn't cancel the still-running others, and `Upload installer(s)`
+retries `gh release upload` up to 5x with backoff (both added after real runs saw exactly
+those failures — see changelog).
+
+Linux builds on `ubuntu-22.04` rather than `-latest` because an AppImage links against
+its build machine's glibc, and the job installs the WebKitGTK/GTK/appindicator dev
+packages first. Tauri's bundler has no `artifactName` template, so the upload step
+renames the bundles to `PhiLogg-<sha>.<ext>`.
+
+Each `build` job stamps `PHILOGG_VERSION` to the commit short-SHA and strips
+`philogg.html`'s comments (`scripts/strip-comments.js`, see PROJECT.md → "Release
+builds") before bundling — never committed back, just the checked-out copy the Tauri
+bundler embeds as a resource a moment later.
+
+## Capabilities
+
+`capabilities/default.json` grants `core:default` plus one explicit addition,
+`core:window:allow-start-dragging` (see "Drag region" above — not part of `core:window`'s
+own default set). A wrapper's own `#[tauri::command]`s need no ACL entry (only core and
+plugin commands do), and every plugin in use (`single-instance`, `opener`, `dialog`) is
+driven from Rust, never from the page — so the page's reachable surface is exactly the
+commands in `commands.rs` plus that one core command.
+
+## Known gaps
+
+See `desktop/README.md` → "Known limitations" for the user-facing list
+(`getPathForFile`, macOS font names, the single maximize glyph, platform-dependent
+rounded corners) and "Status" for what has and hasn't been run live.

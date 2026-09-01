@@ -1,9 +1,9 @@
 //! Shared, process-wide state for the Tauri wrapper.
 //!
-//! The Electron wrapper keeps all of this in module-level `let`s in
-//! `desktop/main.js` (`localFiles`, `nextLocalId`, `isQuitting`, the font
-//! cache, …). Rust has no equivalent ambient mutable module scope, so the
-//! same values live here and are reached through Tauri's managed state.
+//! `localFiles`, `nextLocalId`, `isQuitting`, the font cache and the
+//! mirrored settings all need to outlive any one window. Rust has no
+//! ambient mutable module scope, so they live here and are reached through
+//! Tauri's managed state.
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

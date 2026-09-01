@@ -7,14 +7,14 @@
 //! restriction that guard exists for). Serving the page from a custom scheme
 //! sidesteps that without weakening the guard.
 //!
-//! One difference from Electron, and the reason `inject.rs` ships a `fetch`
+//! One platform wrinkle, and the reason `inject.rs` ships a `fetch`
 //! shim: Tauri does not expose a real custom scheme to the webview on
 //! Windows. There, a scheme registered as `philogg` is served as
 //! `http://philogg.localhost/…` instead, and on macOS/Linux as
 //! `philogg://localhost/…` — in neither case as `philogg://local/…`, which
 //! is the exact shape `philogg.html`'s `isDesktopLocalUrl()` looks for to
 //! decide a loaded URL is a tail-able local file. Rather than change
-//! `philogg.html` (this wrapper's core rule, same as Electron's), the page
+//! `philogg.html` (this wrapper's core rule), the page
 //! is handed the canonical `philogg://local/<id>/<name>` URL and a tiny
 //! injected `fetch` wrapper rewrites it to whatever this platform actually
 //! serves. So both URL shapes reach the handler below and both are accepted.
