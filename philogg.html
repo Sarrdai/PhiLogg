@@ -4044,7 +4044,7 @@ function populateUiFontSelect() {
   select.innerHTML = UI_FONT_OPTIONS.map(f => '<option value="' + f.id + '">' + escapeHtml(f.label) + '</option>').join("");
 }
 
-/* Desktop wrapper only (window.philogg.listSystemFonts, see docs/desktop-tauri.md):
+/* Desktop wrapper only (window.philogg.listSystemFonts, see docs/desktop.md):
    appends every font name the OS reports to the picker, so e.g. "Fira Code"
    or "Iosevka" show up if installed. The plain HTML version has no
    permission-prompt UI to gate the browser's Local Font Access API, so it
@@ -4350,7 +4350,7 @@ document.getElementById("settingsQuitOnLastClose").addEventListener("change", ev
 // default behavior for the desktop build, not an opt-in change to existing
 // behavior. Same mechanism/tier as the settings above: a plain localStorage
 // flag, no IPC bridge. The desktop wrapper mirrors every philogg-* key out
-// of localStorage (see docs/desktop-tauri.md -> "Settings") and consults its
+// of localStorage (see docs/desktop.md -> "Settings") and consults its
 // own copy whenever a window close is requested, so this file only needs to
 // persist the flag — it never has to know whether it's running under the
 // wrapper or in a plain browser tab, where the value is simply never read.
@@ -15084,7 +15084,7 @@ async function loadFileDescriptors(descs) {
 // addFile (text already fully in memory, same as a session-cache restore).
 // loadFromUrlParam (below) drives this from philogg.html?url=<encoded-url>
 // at boot — a CI/report link to a log artifact on a webserver, or the
-// desktop wrapper's first file (see desktop-tauri/), which serves a local file
+// desktop wrapper's first file (see desktop/), which serves a local file
 // through a loopback URL so it can reuse this same path instead of a
 // separate content-injection mechanism. The desktop wrapper also calls
 // this directly (as window.philoggLoadUrl, below) for any file opened
@@ -15097,7 +15097,7 @@ async function loadFileDescriptors(descs) {
 //
 // Bugfix (feature backlog #11): a `philogg://local/<id>/…` url is the
 // desktop wrapper's own scheme for a real file on disk (see
-// docs/desktop-tauri.md) — every fetch to it re-reads the file fresh off
+// docs/desktop.md) — every fetch to it re-reads the file fresh off
 // disk, unlike an arbitrary http(s) report link. That makes
 // it a perfectly good stand-in for a FileSystemHandle: wiring up node.tail
 // with a handle that just re-fetches this same url lets the existing

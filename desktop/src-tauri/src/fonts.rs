@@ -56,7 +56,7 @@ fn platform_fonts() -> Vec<String> {
 /// SPFontsDataType` is both slow and awkward to parse, so the family names
 /// are approximated from the font files' own names in the three standard
 /// font directories. That is an approximation (a file's stem is not always
-/// exactly its family name) — see `desktop-tauri/README.md` → "Known
+/// exactly its family name) — see `desktop/README.md` → "Known
 /// limitations".
 #[cfg(target_os = "macos")]
 fn platform_fonts() -> Vec<String> {

@@ -14,16 +14,16 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The config directory this wrapper owns. Deliberately **not** the
-/// identifier-derived `app_config_dir()` (`com.kleinphilipp.philogg-tauri`)
+/// identifier-derived `app_config_dir()` (`com.kleinphilipp.philogg`)
 /// but a plain, readable name, so `settings.json` is findable by hand.
-/// See `desktop-tauri/README.md`.
+/// See `desktop/README.md`.
 pub fn config_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> PathBuf {
     use tauri::Manager;
     let base = app
         .path()
         .config_dir()
         .unwrap_or_else(|_| std::env::temp_dir());
-    base.join("PhiLogg-Tauri")
+    base.join("PhiLogg")
 }
 
 /// Missing file (first run) or corrupt/hand-edited JSON both start clean

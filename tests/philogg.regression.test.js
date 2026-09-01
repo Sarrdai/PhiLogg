@@ -7547,7 +7547,7 @@ await withApp(async (w, d, T) => {
    launch argument / file-association now gets tailed
    Origin: this session (2026-08-22). Root cause: loadUrlIntoTree (used for
    EVERY desktop-wrapper-opened file, including the very first one passed as
-   a command-line argument — see desktop-tauri/'s windows.rs
+   a command-line argument — see the wrapper's windows.rs
    — and any later file-association/second-instance one via philoggLoadUrl, GROUP
    67 above) built the node purely from already-fetched text via addFile(),
    the exact same path used for a one-shot http(s) CI report link, so it
@@ -7555,7 +7555,7 @@ await withApp(async (w, d, T) => {
    though the desktop wrapper serves it from a real file on disk that CAN
    grow. Fixed by recognizing the desktop wrapper's own
    `philogg://local/<id>/…` url scheme (which the wrapper re-reads fresh off
-   disk on every request — see desktop-tauri/'s protocol.rs) and wiring
+   disk on every request — see the wrapper's protocol.rs) and wiring
    node.tail with a handle that just re-fetches
    that same url, reusing the existing tailTick poll loop (GROUP 12)
    unchanged — which incidentally also covers the backlog item's second,
@@ -8572,7 +8572,7 @@ await withApp(async (w, d, T) => {
    Purely a local app-behavior preference (localStorage, like the theme
    toggle), meaningful mainly under the desktop wrapper — a bare
    window.close() is enough there since the wrapper routes the page's own
-   window.close() into a real window close (see docs/desktop-tauri.md);
+   window.close() into a real window close (see docs/desktop.md);
    in an ordinary browser tab it's a no-op. window.close
    is stubbed here (and restored afterwards) rather than actually invoked,
    since a real jsdom window.close() would tear the test window down mid-run.
@@ -14714,7 +14714,7 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 139 — Desktop bridge contract when getPathForFile can't resolve
-   anything (the wrapper in desktop-tauri/)
+   anything (the wrapper in desktop/)
    Origin: the session adding the Tauri desktop wrapper. No system webview
    resolves a File object back to its real OS path, so that
    wrapper's window.philogg.getPathForFile always returns null. GROUP 109
@@ -14775,7 +14775,7 @@ await withApp(async (w, d, T) => {
    GROUP 140 — Toolbar chrome contract the desktop wrapper injects against
    Origin: this session (Tauri wrapper). The wrapper never edits
    philogg.html; it injects CSS/DOM keyed off #toolbar's own
-   structure instead — desktop-tauri's inject.js stamps the drag region as a
+   structure instead — the wrapper's inject.js stamps the drag region as a
    data-tauri-drag-region walk over #toolbar and its non-control
    descendants, and appends the window-control buttons
    into .toolbar-right. None of that is reachable from jsdom, but the
@@ -16917,7 +16917,7 @@ process.exit(failed ? 1 : 0);
               splash-screen and tray/close-interception halves
               live entirely in the wrapper, outside jsdom's reach —
               not covered here, same standing limitation as the rest of
-              desktop-tauri/ (see its README's own "Status" section).
+              desktop/ (see its README's own "Status" section).
    Group 108 — this session (2026-08-25), person-reported bugfix: arrow-key
               navigation used a stale currentViewEntries (still the
               previously active filter's list) after switching onto a Link
@@ -17441,7 +17441,7 @@ process.exit(failed ? 1 : 0);
                listed every row of the file.
 
    Group 139 — this session (2026-09-01), the Tauri desktop wrapper
-              (desktop-tauri/): its
+              (desktop/): its
               window.philogg.getPathForFile can only ever return null (no
               system webview resolves a File to an OS path, and Tauri's own
               path-carrying drag-drop event would suppress the HTML drop
@@ -17451,7 +17451,7 @@ process.exit(failed ? 1 : 0);
               through it.
    Group 140 — same session: the #toolbar structure/height contract that
               the wrapper's injected window chrome is keyed off
-              (desktop-tauri's inject.js drag region + window-control
+              (the wrapper's inject.js drag region + window-control
               buttons). None of that injection is reachable from jsdom;
               the selectors and the 50px it is derived from are.
 

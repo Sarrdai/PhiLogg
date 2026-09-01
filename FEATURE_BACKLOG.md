@@ -91,10 +91,6 @@ this point.
 31. **Export the current view** — the filtered result as `.log`/`.csv`/`.tsv`. Only the extraction table can leave the app as text today; session export is JSON for PhiLogg users, not data for Excel or a ticket. Copying selected log rows as raw text via Ctrl+C (Ctrl/Shift-click multi-select + `copyLogSelectionToClipboard`) already exists — column-wise copy and whole-view file export are still open.
 32. **Findings report export** — a standalone HTML/Markdown report carrying the filter chain, bookmark notes, and the matching entries, readable by someone who has neither PhiLogg nor the log file. Different audience than session export (which assumes both).
 
-### Desktop wrapper
-
-63. **Normalize the wrapper's own naming now that it is the only one** — the directory (`desktop-tauri/`), the bundle identifier (`com.kleinphilipp.philogg-tauri`), the product name (`PhiLogg Tauri`) and the config directory (`PhiLogg-Tauri/`) all carry a `-tauri` suffix that only existed so the wrapper could be installed next to the previous, now-removed one. Dropping it is cosmetic for the first three but moves the config directory, so an existing install would lose its `settings.json` unless the change carries a one-time migration. Decide whether that is worth doing at all.
-
 ### Settings & UI polish
 
 41. **Syntax highlighting for structured messages, behind a toggle** — when an entry's message body is itself structured (JSON, XML, ...), colorize it instead of showing it as flat text. Open question: where this renders (Entry Detail only, or also inline in the log rows), and how detection works (sniff the message content vs. a per-format setting).

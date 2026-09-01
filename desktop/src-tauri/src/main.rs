@@ -1,4 +1,4 @@
-// PhiLogg desktop wrapper — Tauri edition.
+// PhiLogg desktop wrapper (Tauri v2).
 //
 // The optional desktop shell around `philogg.html`: `.log` file
 // associations, CLI-argument opening, a frameless window, a tray and a

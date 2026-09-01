@@ -22,12 +22,12 @@ deployments possible:
   (`philogg.html?url=<encoded-url>`), so a CI job or report page can link
   straight into a pre-loaded log for a teammate — not possible from a local
   `file://` open.
-- **Desktop app** — the optional wrapper in `desktop-tauri/` packages
+- **Desktop app** — the optional wrapper in `desktop/` packages
   `philogg.html` unmodified into a native-feeling app with `.log` file
   associations and a frameless window, so double-clicking a log file opens
   it straight into PhiLogg like any other document. Built on Tauri and the
   OS's own webview, so the installer stays small. See
-  `desktop-tauri/README.md`.
+  `desktop/README.md`.
 
 ## Screenshots
 
@@ -201,31 +201,31 @@ in a different shape to try the Format Manager against.
 ## Repository layout
 
 ```
-philogg.html                          the application — everything lives here
+philogg.html                            the application — everything lives here
 tests/
-  philogg.regression.test.js          jsdom regression suite (drives the real file via DOM events)
-  README.md                           testing conventions
+  philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events)
+  README.md                             testing conventions
 tools/
-  log-simulator.html                  standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
-desktop-tauri/
-  README.md                           desktop wrapper (Tauri): prerequisites, build/run steps, known limitations
-  src-tauri/                          Rust backend + tauri.conf.json (file associations + native file/folder opening, loads philogg.html unmodified)
+  log-simulator.html                    standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
+desktop/
+  README.md                             desktop wrapper (Tauri): prerequisites, build/run steps, known limitations
+  src-tauri/                            Rust backend + tauri.conf.json (file associations + native file/folder opening, loads philogg.html unmodified)
 homepage/
-  index.html                          static feature-tour / marketing page
-  screenshots/                        screenshots used by the homepage and this README
+  index.html                            static feature-tour / marketing page
+  screenshots/                          screenshots used by the homepage and this README
 examples/
-  general.log                         a sample log file in the default format
-  bracket-format.log                  a sample log file in a different format, for trying the Format Manager
+  general.log                           a sample log file in the default format
+  bracket-format.log                    a sample log file in a different format, for trying the Format Manager
 scripts/
-  install_pkgs.sh                     helper for installing test dependencies
-  strip-comments.js                   release-only: strips every comment out of a copy of philogg.html (both release workflows run it)
-.github/workflows/release.yml         manual workflow: stamps a version, strips comments and publishes a tester build
-.github/workflows/tauri-release.yml   manual workflow: builds the desktop-tauri/ wrapper per OS
-PROJECT.md                            architecture entry point + index into docs/ (start here to work on the code)
-docs/                                 per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
-CHANGELOG.md                          full chronological, dated changelog
-FEATURE_BACKLOG.md                    unelaborated feature ideas
-CLAUDE.md                             instructions for AI coding sessions on this repo
+  install_pkgs.sh                       helper for installing test dependencies
+  strip-comments.js                     release-only: strips every comment out of a copy of philogg.html (both release workflows run it)
+.github/workflows/release.yml           manual workflow: stamps a version, strips comments and publishes a tester build
+.github/workflows/desktop-release.yml   manual workflow: builds the desktop/ wrapper per OS
+PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
+docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
+CHANGELOG.md                            full chronological, dated changelog
+FEATURE_BACKLOG.md                      unelaborated feature ideas
+CLAUDE.md                               instructions for AI coding sessions on this repo
 ```
 
 ## Development
