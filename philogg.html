@@ -5779,6 +5779,22 @@ function timeRangeFilterName(value) {
   return "any time";
 }
 
+// Activates a node that was just created, EXCLUSIVELY — person-reported: a
+// new filter appeared as the active node while the file/filter you made it
+// from stayed highlighted next to it, so it read as two selected nodes. A
+// plain (non-Ctrl) tree-row click leaves the clicked id in state.multiSelect
+// — it is not a Ctrl-only gesture, see renderNode's click handler — and
+// nothing dropped it when the selection moved on to a brand-new node, so its
+// .multi-selected accent tint (the same --accent-soft background .active
+// uses) simply stayed put. Same pairing createFileNode already does for a
+// freshly loaded file, factored out here because every node-creating action
+// needs it. Returns the node, so creators can `return activateNewNode(node)`.
+function activateNewNode(node) {
+  state.activeId = node.id;
+  state.multiSelect = new Set();
+  return node;
+}
+
 function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null, isRegex = false) {
   const parent = state.nodes[parentId];
   if (!parent) return null;
@@ -5799,8 +5815,7 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
   if (filterType === "text" && isRegex) node.isRegex = true;
   state.nodes[node.id] = node;
   parent.children.push(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Display name for an "idset" filter node — value is a plain array of entry
@@ -6012,8 +6027,7 @@ function createAndOrNode(idA, idB, mode) {
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Merges multiple files into one new, chronologically sorted file node.
@@ -6051,7 +6065,7 @@ async function mergeFiles(fileIds) {
   };
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
-  state.activeId = node.id;
+  activateNewNode(node);
   flushLoadRender();
 
   const total = files.reduce((sum, f) => sum + f.entries.length, 0);
@@ -6118,8 +6132,7 @@ function createLinkNode(refId, targetId, direction, n, opts) {
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 const PAIR_SEPARATOR = " ⟶ ";
@@ -6208,8 +6221,7 @@ function createContextNode(parentId, beforeMs, afterMs) {
   };
   state.nodes[node.id] = node;
   parent.children.push(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Merges each reference entry's [ts-beforeMs, ts+afterMs] window into a
@@ -6252,8 +6264,7 @@ function createCountContextNode(parentId, beforeCount, afterCount) {
   };
   state.nodes[node.id] = node;
   parent.children.push(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Merges each reference entry's [idx-beforeCount, idx+afterCount] index
@@ -6509,7 +6520,7 @@ function pasteClipboard() {
   // special case here any more.
   const clone = cloneSubtree(clip.id, state.activeId);
   targetParent.children.push(clone.id);
-  state.activeId = clone.id;
+  activateNewNode(clone);
   // clipboard stays active: the same filter can be pasted again elsewhere
 }
 
@@ -16741,8 +16752,7 @@ function createSelectionFilterNode(rootId, ids) {
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Adds `ids` to an existing selection filter's value array, deduped. Never
