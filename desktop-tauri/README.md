@@ -109,6 +109,19 @@ is fetched and tail-polled, `settings.json` is written, and a second launch
 with another `.log` is routed into the running window instead of starting a
 new instance.
 
+Real Windows run (2026-09-01, person-tested) surfaced and fixed two bugs:
+the window couldn't be moved at all (clicking empty toolbar space did
+nothing) — `core:window:allow-start-dragging` wasn't granted, and unlike
+`internal_toggle_maximize` it is not part of Tauri's default window
+permission set, so the drag-region attribute `inject.js` marks the toolbar
+with had nothing behind it; and closing the last open file (the
+`quitOnLastFileClose` setting) left an empty, permanently-open dark window
+instead of hiding to tray — `window.close()` is a plain webview API with no
+Tauri involvement, so it tore down the page without ever telling the Rust
+side a close was requested. `inject.js` now overrides `window.close` to
+route through the same Rust-side close path the title-bar close button
+uses. See `docs/desktop-tauri.md` for both.
+
 **Not yet run on Windows or macOS.** The window chrome specifically (the
 injected title-bar buttons, the drag region, rounded corners, the macOS
 traffic-light inset) is the part most likely to need adjustment there —
