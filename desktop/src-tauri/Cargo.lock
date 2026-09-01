@@ -2531,7 +2531,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "philogg-tauri"
+name = "philogg-desktop"
 version = "1.0.0"
 dependencies = [
  "serde",

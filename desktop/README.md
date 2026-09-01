@@ -1,185 +1,142 @@
 # PhiLogg desktop wrapper
 
-A thin Electron shell around the unmodified `../philogg.html` — adds `.log`
-file associations, CLI-argument file opening, a frameless window with
-integrated close/minimize/maximize controls (see "Frameless window" below),
-a startup splash screen, an always-present system tray (both "close to
-tray", see "Startup perception (splash + tray)" below, and config/cache
-management, see "Persistent data (settings + cache)" below) on
-Windows/Linux/macOS. Separate, optional deliverable: doesn't touch
-`philogg.html` or its own release path (`.github/workflows/release.yml`)
-at all. See `PROJECT.md` → "Deep-link loading (`?url=`)" and the plan this
-was built from for the full design rationale.
+The optional desktop wrapper around the unmodified `philogg.html`: the OS's
+own webview (WebView2 / WKWebView / WebKitGTK) and a Rust backend, built
+with Tauri v2.
+
+`philogg.html` itself is never modified — it is served through a custom
+`philogg://` scheme and handed local files through its own `?url=`
+deep-link mechanism. See `docs/desktop.md` for how that's done.
+
+## Prerequisites
+
+- **Rust** (stable) — https://rustup.rs
+- **Node 20+** (only for the Tauri CLI)
+- Windows: nothing else (WebView2 ships with Windows 11 / current Windows 10)
+- macOS: Xcode command line tools
+- Linux:
+  ```
+  sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev \
+    libayatana-appindicator3-dev librsvg2-dev patchelf
+  ```
+
+## Run / build
+
+```
+cd desktop
+npm install
+npm run dev     # runs against ../philogg.html directly — edit and restart
+npm run build   # installer in src-tauri/target/release/bundle/
+```
+
+`npm run dev` reads `../philogg.html` off disk; a built app carries a copy
+packaged as a bundle resource. Opening a file directly:
+
+```
+npm run dev -- -- path/to/file.log
+```
+
+Releases are built by `.github/workflows/desktop-release.yml`
+(`workflow_dispatch`, per-OS checkboxes, tag `tauri-<short-sha>`, artifacts
+named `PhiLogg-<sha>.<ext>`).
+
+## Version stamp and release-only comment stripping
+
+Same scheme as `release.yml`: the release job rewrites `PHILOGG_VERSION` in
+the checked-out `philogg.html` to the commit short-SHA before bundling
+(never committed back), and the installer filename carries the same SHA.
+
+The same job also runs `node scripts/strip-comments.js philogg.html`,
+so the copy packaged into the installer carries no source comments — the
+tracked `philogg.html` in the repo keeps every one of them. A local
+`npm run build` does neither: it leaves the version at `dev` and the
+comments in place, which is what you want while developing.
+
+## What it does
+
+`.log` file associations and CLI-argument opening, a frameless window with
+rounded corners, window controls in the app's own theme, F11 fullscreen, a
+splash screen, a tray icon with Open / Open Config Folder / Clear Cache /
+Quit, "close to system tray", `settings.json` mirroring of the `philogg-*`
+settings, "Open File Location" / "Copy Path", the system font list for the
+UI font picker, and a folder watch that does not go through the browser's
+File System Access API (see below).
+
+## Persistent data
+
+`settings.json` lives in `PhiLogg/` in the OS config directory
+(`~/.config/PhiLogg`, `~/Library/Application Support/PhiLogg`,
+`%APPDATA%\PhiLogg`). The tray's "Open Config Folder" opens it.
+
+The session cache (IndexedDB) lives in the webview's own storage for this
+app, wherever the platform puts it; the tray's "Clear Cache" wipes it and
+reloads.
+
+## Folder watch
+
+Folders are listed natively (Rust `read_dir`) instead of through the File
+System Access API, so the watch works on all three platforms and on folders
+a Chromium-based build refuses to hand out — Desktop and Downloads, which
+fail in the browser with "this folder contains system files". Files opened
+from a watched folder carry their real path too, so they reveal and copy
+like any other.
+
+## Known limitations
+
+- **The system font list on macOS is approximate.** Linux uses `fc-list` and
+  Windows uses PowerShell's font enumeration, both exact; macOS has neither
+  out of the box, so family names are derived from the font files' own
+  names in the three standard font directories.
+- **The maximize/restore button doesn't swap its glyph** the way a native
+  window control does — it's one button that toggles, with one icon.
+- **Rounded corners are the platform's own behaviour for an undecorated
+  window** (macOS always, Windows 11 via DWM, Linux compositor-dependent).
+- **`getPathForFile` can never work.** No system webview resolves a `File`
+  object back to its OS path, so the wrapper opens files itself (OS dialog,
+  native drag-drop, native folder listing) and the path is known before the
+  page ever sees them. Nothing user-visible is missing; it is only why the
+  file-opening routes look the way they do.
 
 ## Status
 
-**Run interactively on real Windows (2026-08-20)** — file associations and
-double-click file opening both work; that run also surfaced and fixed three
-bugs (opened files named after their internal id instead of their real
-filename; a second file opening a whole new window instead of joining the
-existing one — see `PROJECT.md` → "Desktop wrapper" changelog for both) plus
-four earlier frameless-window bugs (also fixed, same section). Not yet run
-interactively on macOS/Linux — this dev environment still has no display
-server for a real `BrowserWindow` there. Before relying on this on a new
-platform:
+Verified end to end on Linux (WebKitGTK, headless X server, 2026-09-01):
+the page loads through the custom scheme, a file passed on the command line
+is fetched and tail-polled, `settings.json` is written, and a second launch
+with another `.log` is routed into the running window instead of starting a
+new instance.
 
-1. `cd desktop && npm install` on a real machine.
-2. `npm start` — confirms the window opens and loads `philogg.html`
-   (via the `philogg://app/philogg.html` URL, not `file://` — see
-   `main.js`'s top comment for why).
-3. Open a `.log` file via a command-line argument
-   (`electron . /path/to/some.log` in dev, or the packaged binary once
-   built) and confirm it loads through the `philogg://local/<id>/<name>`
-   route, named after its real filename.
-4. `npm run build` (electron-builder) — produces an installer for
-   whatever platform you're building on. Cross-compiling a signed
-   Windows/macOS installer from Linux CI needs extra setup (signing
-   certs, `electron-builder`'s own cross-build docs) not covered here.
-   Set `PHILOGG_SHA` first (e.g. `PHILOGG_SHA=$(git rev-parse --short
-   HEAD) npm run build`) or the installer filename is left with a blank
-   where the version normally goes — see "Version stamp" below.
-5. Add real icons before a release build — see "Adding an app icon" below.
-6. Confirm the frameless window (see "Frameless window" below) actually
-   works: the window is draggable by its header's empty space, every
-   header button (Session…, Open…, theme toggle, …) is still clickable,
-   and the close/minimize/maximize controls in the top-right are present
-   and functional — none of this has run on a real display yet.
+Known **headless-only** artifact, unrelated to any real run: under a bare
+Xvfb the splash never dismisses and the main window never appears, even
+though the page itself runs (it writes `settings.json`). The main window is
+created `visible(false)` and shown only once the page reports a first paint
+via `app_ready` — which is fired from a `requestAnimationFrame` callback,
+and WebKitGTK doesn't tick those for a window that was never mapped. So the
+two wait on each other. It does not occur on a real desktop session, where
+the splash is a visible window. Anything needing the actual UI has to be
+checked on a real machine.
 
-## Frameless window
+Real Windows run (2026-09-01, person-tested) surfaced and fixed two bugs:
+the window couldn't be moved at all (clicking empty toolbar space did
+nothing) — `core:window:allow-start-dragging` wasn't granted, and unlike
+`internal_toggle_maximize` it is not part of Tauri's default window
+permission set, so the drag-region attribute `inject.js` marks the toolbar
+with had nothing behind it; and closing the last open file (the
+`quitOnLastFileClose` setting) left an empty, permanently-open dark window
+instead of hiding to tray — `window.close()` is a plain webview API with no
+Tauri involvement, so it tore down the page without ever telling the Rust
+side a close was requested. `inject.js` now overrides `window.close` to
+route through the same Rust-side close path the title-bar close button
+uses. See `docs/desktop.md` for both.
 
-`main.js` creates the `BrowserWindow` without the native OS frame or the
-default File/Edit/View/Window/Help menu — `philogg.html`'s own `#toolbar`
-is the only header. Windows/Linux use `titleBarStyle: "hidden"` +
-`titleBarOverlay` (Electron's Window Controls Overlay), which draws
-native-looking minimize/maximize/close buttons top-right without any
-custom HTML; macOS uses `titleBarStyle: "hiddenInset"`, which keeps the
-native traffic-light buttons at their normal top-left position rather than
-moving them to match Windows — relocating a Mac app's own window controls
-would be the actually-jarring choice there.
+The native folder watch (2026-09-01) is verified by `cargo check` plus the
+jsdom suite's Group 145 only — the picker, the listing and a real Desktop
+folder still need a person on a real desktop session.
 
-A frameless window has no title bar left to drag by default, so `main.js`
-injects a small stylesheet at runtime (`insertCSS`, never touching
-`philogg.html` on disk) making `#toolbar` draggable and all of its
-buttons/inputs `no-drag` again, plus — Windows/Linux only — right padding
-via the `titlebar-area-*` CSS environment variables Chromium exposes for
-exactly this, so `#toolbar`'s own rightmost button doesn't sit under the
-native overlay buttons. The overlay's colors follow `#btnTheme`'s
-light/dark toggle live too — `main.js` polls the renderer's own
-`data-theme` attribute (~1x/second, no preload/IPC bridge needed — see
-"Why no preload.js" below) and calls `win.setTitleBarOverlay()` on change.
-`TITLEBAR_HEIGHT` in `main.js` is 1px shorter than `#toolbar`'s own 50px so
-its `border-bottom` isn't occluded by the overlay buttons. See the comment
-above `FRAMELESS_CSS` in `main.js` for the full mechanism, including why
-an earlier version's JS-computed padding (measuring
-`navigator.windowControlsOverlay`'s rect instead of using `env()`) went
-stale across maximize/restore/fullscreen — reported after the first real
-Windows run, fixed the same session, not yet re-verified live.
+**Not yet run on macOS.** The window chrome specifically (the injected
+title-bar buttons, the drag region, rounded corners, the traffic-light
+inset) is the part most likely to need adjustment there. The macOS-only
+code paths aren't compile-checked from this environment.
 
-`F11` toggles native OS fullscreen (`win.setFullScreen()`, caught via a
-per-window `before-input-event` listener, since there's no app menu to hang
-an accelerator on) — the same state the native window controls (the
-Windows/Linux overlay's maximize/restore button, macOS's green
-traffic-light button) toggle, so F11 and the window control are fully
-equivalent: either can enter or exit what the other started. The window
-also requests rounded corners (`roundedCorners: true`) that the OS
-compositor automatically squares off once the window fills the screen —
-maximized or fullscreen alike — with no extra code needed for that case.
-See the `ROUNDED_CORNERS`/`watchFullscreenToggle` comments in `main.js` for
-the per-platform caveats (Windows pre-11-Build-22000 stays square either
-way; Linux rounding depends on the desktop environment's own compositor).
-
-## Startup perception (splash + tray)
-
-Launch shows a small always-on-top splash window immediately (an inline
-`data:` URL, no asset file) while `philogg.html` loads underneath; the main
-window stays hidden until it fires `"ready-to-show"`, at which point it's
-shown and the splash is destroyed. Separately, Settings → Behavior's "Close
-to system tray" toggle (on by default) makes the window's close button —
-and `"Closing the last log file quits the app"`'s own close path — hide the
-window to a tray icon instead of quitting; right-click the tray icon for a
-real Quit, left-click/"Open PhiLogg" to jump straight back in. See
-`PROJECT.md` → "Desktop wrapper" → "Startup perception" for the full
-mechanism (`createSplash`/`watchCloseToTray`/`createTray` in `main.js`).
-
-## Persistent data (settings + cache)
-
-Both live in the OS "well-known" per-app config directory — `app.setName("PhiLogg")`
-in `main.js` makes `app.getPath("userData")` resolve there consistently in
-both `npm start` (dev) and a packaged build:
-
-- Linux: `~/.config/PhiLogg`
-- macOS: `~/Library/Application Support/PhiLogg`
-- Windows: `%APPDATA%\PhiLogg`
-
-**Settings** — every `philogg-*` `localStorage` key (theme, layout, toggles,
-…) is mirrored into a plain `settings.json` there: read once by
-`preload.js` before `philogg.html`'s own script runs (so its keys are
-already populated when the page reads them), written back by `main.js`
-polling `localStorage` (~1x/second, same pattern as the theme-overlay
-watcher above) whenever it changes. `philogg.html` itself is untouched —
-it never knows this file exists, and hand-editing `settings.json` while
-the app is closed just changes what gets hydrated on the next launch.
-
-**Cache** — the IndexedDB cache (parsed files, session/file history,
-saved filters, format definitions) already lives under the same directory
-automatically, since that's just where Chromium keeps IndexedDB for any
-app's `userData` path — nothing extra needed for that half. It's binary
-(LevelDB), so it's not meant to be hand-edited; **Open Config Folder** /
-**Clear Cache** in the tray icon's right-click menu (always present, not
-just while "close to tray" is active) reveal the directory and wipe the
-cache respectively.
-
-## Version stamp
-
-Matches `release.yml`'s scheme for the plain `philogg.html` tester build:
-`desktop-release.yml`'s `Stamp version` step rewrites the checked-out
-copy's `PHILOGG_VERSION` (`"dev"` in source, never committed back) to the
-commit's short SHA before `npm run build` packages it, so the in-app
-corner text/License panel show the real build instead of "dev". The same
-SHA becomes the installer's own filename via `electron-builder.yml`'s
-`artifactName` (`PhiLogg-<sha>.exe`/`.dmg`/`.AppImage`, replacing
-`package.json`'s placeholder `"1.0.0"` there — `package.json`'s own
-`version` field is left alone since electron-builder expects real semver
-there, which a git SHA isn't).
-
-## Adding an app icon
-
-No app icon exists yet — `electron-builder.yml` has no `icon:` lines and
-`build/` currently has no `icons/` subdirectory. **Keep it that way until
-real artwork exists**: an earlier version of this scaffold shipped an empty
-placeholder `build/icons/` directory, and electron-builder's Linux target
-(`app-builder`) hard-failed the CI build with `icon directory ... doesn't
-contain icons` / `ERR_ELECTRON_BUILDER_CANNOT_EXECUTE` — the directory's
-mere presence is taken as "icons belong here", unlike Windows/macOS which
-silently fall back to Electron's default icon when nothing is configured.
-
-To add a real icon later: drop a single square `build/icon.png` (1024×1024
-recommended; electron-builder derives `.ico`/`.icns` from it), or a
-multi-resolution `build/icons/16x16.png`, `32x32.png`, ... set, then add an
-`icon:` line under the matching platform block in `electron-builder.yml`.
-
-## Why (almost) no `preload.js` / IPC bridge
-
-The renderer never needs Node access for *loading*. `main.js` reads a local
-file via Node `fs` (bypassing the browser's gesture requirement) and serves
-it back over a custom `philogg://` scheme instead — `philogg.html`'s
-existing `?url=` deep-link loader (`loadFromUrlParam()`) just `fetch()`es
-it, the exact same code path a remote CI log link uses. One loading
-mechanism, not two.
-
-One feature does need a narrow bridge: "Open File Location"
-(`FEATURE_BACKLOG.md` #52) has to resolve a `File`'s real OS path
-(`webUtils.getPathForFile`, main-process-only) and reveal it in the file
-manager (`shell.showItemInFolder`, same). `preload.js` exposes exactly
-those two capabilities on `window.philogg` via `contextBridge` — the
-renderer still gets no other Node access, `sandbox: true` stays on. See
-`PROJECT.md` → "Desktop wrapper" → "Open File Location" for the full design.
-
-## Why a custom scheme instead of `file://`
-
-`loadFromUrlParam()` deliberately refuses to even attempt a fetch when
-`location.protocol === "file:"` (that guard exists because a real
-`file://` page genuinely cannot `fetch()` anything in a browser). Loading
-`philogg.html` itself through the privileged custom `philogg://` scheme
-instead of `loadFile()` keeps that guard intact — this wrapper isn't a
-special case carved out of it, it just isn't a `file://` page.
+The app icons in `src-tauri/icons/` are placeholders (a teal dot), generated
+by `icons/generate.js` — the Tauri bundler requires an icon set. Replace
+that script's `draw()` and re-run it once real artwork exists.
