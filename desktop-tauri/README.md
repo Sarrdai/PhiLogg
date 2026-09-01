@@ -82,15 +82,25 @@ reloads.
 These are the known, deliberate gaps — everything else is meant to behave
 identically, and anything that doesn't is a bug worth reporting.
 
-- **"Open File Location" doesn't work for files opened through the picker,
-  drag-drop, or a watched folder.** Electron can resolve a `File` object
-  back to its real OS path (`webUtils.getPathForFile`); no system webview
-  can. Tauri's own drag-drop event *does* carry real paths, but enabling it
-  suppresses the HTML drop events `philogg.html` needs to receive files at
-  all — so dropping files keeps working and this stays unresolved.
-  `philogg.html` already treats "no path known" as "don't offer the menu
-  item", so nothing breaks. Files opened by double-click/file association
-  still reveal correctly (they go through a different path entirely).
+- **Dropping a folder doesn't start a folder watch here** — use
+  "Open… → Folder…" instead, and you'll get a toast saying so. This is the
+  price of "Open File Location"/"Copy Path" working for dropped files at
+  all: no system webview can resolve a `File` back to its OS path
+  (Electron's `webUtils.getPathForFile` has no equivalent), so this wrapper
+  uses Tauri's *native* drag-drop handler, which is the only one carrying
+  real paths — and that handler replaces the HTML drop events. A watched
+  folder needs a live directory handle to list and rescan, which a path
+  alone can't produce. Files (picked, dropped, or opened by double-click)
+  all reveal correctly.
+- **"Open File Location"/"Copy Path" are still not offered for files inside
+  a *watched folder*.** Those arrive as `File` objects from the webview's
+  own directory handle, never through the wrapper, so their path stays
+  unknown. `philogg.html` treats "no path known" as "don't offer the menu
+  item", so nothing breaks. See `FEATURE_BACKLOG.md` #61.
+- **Folder watch needs a Chromium-based webview**, i.e. Windows (WebView2).
+  It relies on the File System Access API's `showDirectoryPicker`, which
+  WebKitGTK (Linux) and WKWebView (macOS) don't implement — the menu item
+  reports this rather than failing silently.
 - **The system font list on macOS is approximate.** Linux uses `fc-list` and
   Windows uses PowerShell's font enumeration, both exact; macOS has neither
   out of the box, so family names are derived from the font files' own
@@ -108,6 +118,17 @@ the page loads through the custom scheme, a file passed on the command line
 is fetched and tail-polled, `settings.json` is written, and a second launch
 with another `.log` is routed into the running window instead of starting a
 new instance.
+
+Known **headless-only** artifact, unrelated to any real run: under a bare
+Xvfb the splash never dismisses and the main window never appears, even
+though the page itself runs (it writes `settings.json`). The main window is
+created `visible(false)` and shown only once the page reports a first paint
+via `app_ready` — which is fired from a `requestAnimationFrame` callback,
+and WebKitGTK doesn't tick those for a window that was never mapped. So the
+two wait on each other. Reproduced identically on the pre-2026-09-01 build,
+i.e. it predates the file-location work and is not a regression; it does
+not occur on a real desktop session, where the splash is a visible window.
+Anything needing the actual UI has to be checked on a real machine.
 
 Real Windows run (2026-09-01, person-tested) surfaced and fixed two bugs:
 the window couldn't be moved at all (clicking empty toolbar space did

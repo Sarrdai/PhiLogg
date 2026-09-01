@@ -14716,33 +14716,39 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 139 — Desktop bridge contract when getPathForFile can't resolve
    anything (the Tauri wrapper, desktop-tauri/)
-   Origin: this session, adding a second desktop wrapper (Tauri) alongside
+   Origin: the session adding a second desktop wrapper (Tauri) alongside
    the Electron one. Electron resolves a File object back to its real OS
-   path via webUtils; no system webview offers an equivalent, and Tauri's
-   own native drag-drop event (which does carry paths) can only be enabled
-   by suppressing the HTML drop events philogg.html needs to get File
-   objects at all. So that wrapper's window.philogg.getPathForFile always
-   returns null. GROUP 109 already covers the *menu* gating with a stub
-   that returns null, but never exercises the load path that calls it —
-   this group does, so a future change to loadOneFileIntoTree can't start
-   assuming a truthy return. The other three bridge functions stay fully
-   functional there, so a file-association open (philogg://local/…
-   sourceUrl) must still offer "Open File Location" via revealLocalUrl.
+   path via webUtils; no system webview offers an equivalent, so that
+   wrapper's window.philogg.getPathForFile always returns null. GROUP 109
+   already covers the *menu* gating with a stub that returns null, but
+   never exercises the load path that calls it — this group does, so a
+   future change to loadOneFileIntoTree can't start assuming a truthy
+   return.
+   Updated by the session that closed the gap (GROUP 141+): that wrapper
+   now opens picked and dropped files ITSELF and supplies their paths, so
+   the "no path at all" case below is no longer what its picker/drop does
+   — it is what its folder watch still does, and what any File arriving
+   without a supplied path must keep doing. The other bridge functions
+   stay fully functional there, so a file-association open
+   (philogg://local/… sourceUrl) must still offer "Open File Location"
+   via revealLocalUrl.
    ============================================================ */
 await withApp(async (w, d, T) => {
   section("139a. getPathForFile returning null: files still load, no localPath, no reveal item");
 
-  const file = new w.File([makeLog(0, 5)], "dropped.log", { type: "text/plain" });
+  const file = new w.File([makeLog(0, 5)], "folder-watched.log", { type: "text/plain" });
   await w.loadFileDescriptors([{ file, handle: null }]);
   const node = T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
-  assert(node && node.name === "dropped.log", "the file loads normally under a wrapper that can't resolve paths");
+  assert(node && node.name === "folder-watched.log", "the file loads normally under a wrapper that can't resolve paths");
   assert(node.localPath === undefined, "no localPath is invented from a null result, got " + node.localPath);
 
   T.state.activeId = node.id;
   w.render();
   fireContextMenu(d.querySelector('.tree-row[data-node-id="' + node.id + '"]'), w);
   assert(!d.querySelector('#treeContextMenu [data-action="revealLocation"]'),
-    "no \"Open File Location\" for a picker/drop-loaded file when no path could be resolved");
+    "no \"Open File Location\" for a file that arrived with no path and none resolvable");
+  assert(!d.querySelector('#treeContextMenu [data-action="copyPath"]'),
+    "...and no \"Copy Path\" either — same gate");
   w.closeTreeContextMenu();
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
@@ -14804,6 +14810,294 @@ await withApp(async (w, d, T) => {
     "every focusable/clickable toolbar element is covered by the wrappers' no-drag selectors, stray: " +
     stray.map(el => el.tagName + (el.id ? "#" + el.id : "")).join(", "));
 });
+
+/* ============================================================
+   GROUP 141 — The desktop "wrapper opened it, so the path is known" route
+   (philogg.pickFiles + window.philoggLoadLocalFiles)
+   Origin: this session. A webview never resolves a File back to an OS path
+   (Electron's webUtils is a non-standard extra no system webview has), so
+   the Tauri wrapper was left unable to offer "Open File Location" for
+   anything opened through the in-page picker or dropped onto the window.
+   The fix routes around the limitation instead of trying to beat it: the
+   wrapper runs the OS dialog / catches the native drop itself and hands
+   philogg.html real paths plus the philogg://local/… URLs it serves them
+   under. This group pins that contract from the page's side — the half a
+   jsdom run can actually exercise.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("141a. openFilesPicker delegates to philogg.pickFiles when the wrapper offers one");
+
+  let inPagePickerCalls = 0;
+  w.showOpenFilePicker = () => { inPagePickerCalls++; return Promise.reject(new w.Error("should not be reached")); };
+  w.fetch = async (u) => ({ ok: true, status: 200, blob: async () => new w.Blob([makeLog(0, 6)]) });
+  w.philogg.pickFiles = () => Promise.resolve([
+    { url: "philogg://local/7/picked.log", path: "/home/user/logs/picked.log", name: "picked.log" },
+  ]);
+
+  await w.openFilesPicker();
+  assert(inPagePickerCalls === 0, "the page's own File System Access picker is never opened under such a wrapper");
+
+  const node = T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
+  assert(node && node.name === "picked.log", "the picked file lands in the tree, got " + (node && node.name));
+  assert(node.localPath === "/home/user/logs/picked.log",
+    "...carrying the real OS path the wrapper supplied, got " + node.localPath);
+  assert(node.sourceUrl === "philogg://local/7/picked.log",
+    "...and the philogg://local URL it is served under, got " + node.sourceUrl);
+  assert(node.entries.length === 6, "...fully parsed, got " + node.entries.length + " entries");
+
+  // The whole point: both location actions are now offered for a PICKED file.
+  T.state.activeId = node.id;
+  w.render();
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + node.id + '"]'), w);
+  assert(d.querySelector('#treeContextMenu [data-action="revealLocation"]'),
+    "\"Open File Location\" is offered for a wrapper-picked file");
+  assert(d.querySelector('#treeContextMenu [data-action="copyPath"]'),
+    "\"Copy Path\" is offered alongside it");
+  w.closeTreeContextMenu();
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("141b. A wrapper-supplied file is tailed through its URL, like a file-association open");
+
+  const initial = makeLog(0, 4);
+  const appended = "\n" + makeLog(10, 2);
+  w.fetch = async () => ({
+    ok: true, status: 200,
+    blob: async () => new w.Blob([initial]),
+    arrayBuffer: async () => new w.TextEncoder().encode(initial).buffer,
+  });
+  await w.philoggLoadLocalFiles({ files: [{ url: "philogg://local/1/live.log", path: "/var/log/live.log", name: "live.log" }] });
+
+  const node = T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
+  assert(node.tail && typeof node.tail.handle.getFile === "function",
+    "the URL doubles as a tail handle — the file is live, not a dead snapshot");
+  assert(T.state.tailFollow === true, "...and a freshly opened live file starts in follow mode");
+
+  // Growth on the next poll arrives through the same re-fetch.
+  w.fetch = async () => ({
+    ok: true, status: 200,
+    arrayBuffer: async () => new w.TextEncoder().encode(initial + appended).buffer,
+  });
+  await w.tailTick();
+  assert(node.entries.length === 6, "appended lines are picked up by the poll, got " + node.entries.length);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("141c. A multi-file batch keeps the queued placeholders and the merge prompt");
+
+  w.fetch = async () => ({ ok: true, status: 200, blob: async () => new w.Blob([makeLog(0, 3)]) });
+  const loading = w.philoggLoadLocalFiles({ files: [
+    { url: "philogg://local/1/a.log", path: "/logs/a.log", name: "a.log" },
+    { url: "philogg://local/2/b.log", path: "/logs/b.log", name: "b.log" },
+  ] });
+
+  // The lazy descriptor exists so every placeholder is in the tree BEFORE
+  // the first byte is fetched — the merge dialog is proof the loop got
+  // that far without awaiting any read.
+  await new Promise(r => setTimeout(r, 0));
+  assert(!d.querySelector("#mergeLoadDialog").classList.contains("hidden"),
+    "the 2+ files merge prompt still fires for a wrapper-supplied batch");
+  assert(T.state.rootIds.length === 2, "both queued placeholders are already in the tree, got " + T.state.rootIds.length);
+  fireClick(d.querySelector("#mergeLoadDialogNo"), w);
+  await loading;
+
+  const nodes = T.state.rootIds.map(id => T.state.nodes[id]);
+  assert(nodes.every(n => n.entries.length === 3 && !n.queued),
+    "both files finish loading and no placeholder is left stuck");
+  assert(nodes.map(n => n.localPath).join(",") === "/logs/a.log,/logs/b.log",
+    "each node keeps its OWN path, in order, got " + nodes.map(n => n.localPath).join(","));
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("141d. A failed fetch removes its placeholder instead of leaving it stuck");
+
+  w.fetch = async () => ({ ok: false, status: 404 });
+  await w.philoggLoadLocalFiles({ files: [{ url: "philogg://local/9/gone.log", path: "/logs/gone.log", name: "gone.log" }] });
+  assert(T.state.rootIds.length === 0,
+    "the grayed placeholder is cleaned up when the read fails before loadOneFileIntoTree runs, left " + T.state.rootIds.length);
+  assert(d.querySelector("#copyToast").textContent.includes("gone.log"),
+    "...and the failure is reported by name, got " + d.querySelector("#copyToast").textContent);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+/* ============================================================
+   GROUP 142 — "Copy Path" (the other half of a known location)
+   Origin: this session. Wherever the location is known well enough to open
+   it in the file manager, it is known well enough to put on the clipboard
+   — person-requested as the fallback that works even when revealing
+   doesn't. Two routes, mirroring "Open File Location"'s own two: a
+   node.localPath is copied directly, while a philogg://local/… file is
+   known to the page ONLY by that URL, so its path has to be asked back
+   from the wrapper (philogg.pathForLocalUrl).
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("142a. Copy Path with a known localPath copies it directly");
+
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+
+  const f = await w.addFile("app.log", makeLog(0, 5), () => {});
+  f.localPath = "/home/user/logs/app.log";
+  T.state.activeId = f.id;
+  w.render();
+
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
+  const item = d.querySelector('#treeContextMenu [data-action="copyPath"]');
+  assert(item, "\"Copy Path\" offered once window.philogg + node.localPath are both present");
+  fireClick(item, w);
+  assert(copied === "/home/user/logs/app.log", "it copies the node's localPath, got " + copied);
+  assert(d.querySelector("#copyToast").textContent.includes("Path copied"), "...and confirms with a toast");
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, pathForLocalUrl: () => Promise.resolve(null), listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("142b. Copy Path for a philogg://local/… file asks the wrapper for the path");
+
+  let copied = null, asked = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+  w.philogg.pathForLocalUrl = u => { asked = u; return Promise.resolve("/srv/logs/launched.log"); };
+
+  const f = await w.addFile("launched.log", makeLog(0, 5), () => {});
+  f.sourceUrl = "philogg://local/3/launched.log"; // no localPath — a file-association open
+  T.state.activeId = f.id;
+  w.render();
+
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
+  fireClick(d.querySelector('#treeContextMenu [data-action="copyPath"]'), w);
+  await new Promise(r => setTimeout(r, 0));
+  assert(asked === "philogg://local/3/launched.log", "the URL is handed to pathForLocalUrl, got " + asked);
+  assert(copied === "/srv/logs/launched.log", "the resolved path is what lands on the clipboard, got " + copied);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("142c. No Copy Path in a plain browser build, and none for a remote http(s) log");
+
+  const f = await w.addFile("plain.log", makeLog(0, 5), () => {});
+  f.localPath = "/home/user/logs/plain.log";
+  T.state.activeId = f.id;
+  w.render();
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
+  assert(!d.querySelector('#treeContextMenu [data-action="copyPath"]'),
+    "no \"Copy Path\" without window.philogg, even with a localPath set — nothing could act on it");
+  w.closeTreeContextMenu();
+});
+
+await withApp(async (w, d, T) => {
+  section("142d. A remote http(s) log gets Copy URL, never Copy Path");
+
+  const f = await w.addFile("remote.log", makeLog(0, 5), () => {});
+  f.sourceUrl = "https://ci.example.com/artifacts/remote.log";
+  T.state.activeId = f.id;
+  w.render();
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
+  assert(d.querySelector('#treeContextMenu [data-action="copyUrl"]'), "\"Copy URL\" is the analogue for a remote log");
+  assert(!d.querySelector('#treeContextMenu [data-action="copyPath"]'),
+    "no \"Copy Path\" — there is no local folder behind an http(s) URL");
+  w.closeTreeContextMenu();
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+/* ============================================================
+   GROUP 143 — The drop-overlay hook a natively-handled drag needs
+   Origin: this session. Tauri's native drag-drop handler is the only one
+   that carries real OS paths, and turning it on suppresses the HTML
+   dragenter/dragover/drop events philogg.html drives its own #dropOverlay
+   from. So the wrapper drives the overlay through a named hook instead of
+   reaching into #dropOverlay itself — this group is that contract, plus
+   the folder case the native route cannot serve.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("143a. philoggDropOverlay toggles the same overlay an HTML drag would");
+
+  const overlay = d.querySelector("#dropOverlay");
+  assert(overlay.classList.contains("hidden"), "sanity: the overlay starts hidden");
+  w.philoggDropOverlay(true);
+  assert(!overlay.classList.contains("hidden"), "the wrapper can show the drop overlay");
+  w.philoggDropOverlay(false);
+  assert(overlay.classList.contains("hidden"), "...and hide it again");
+
+  // A native drop replaces the HTML sequence wholesale, so the hook must
+  // also leave the page's own dragenter/dragleave counter balanced — a
+  // stale count would strand the overlay open on the next real HTML drag.
+  w.philoggDropOverlay(true);
+  w.philoggDropOverlay(false);
+  w.dispatchEvent(Object.assign(new w.Event("dragleave", { bubbles: true, cancelable: true }),
+    { dataTransfer: { types: ["Files"] } }));
+  assert(overlay.classList.contains("hidden"), "the counter is left balanced, not negative or stuck");
+});
+
+await withApp(async (w, d, T) => {
+  section("143b. A dropped folder is reported, not silently ignored");
+
+  await w.philoggLoadLocalFiles({ files: [], folders: ["/home/user/logs"] });
+  assert(T.state.rootIds.length === 0, "a folder path alone loads nothing");
+  const toast = d.querySelector("#copyToast").textContent;
+  assert(/folder/i.test(toast) && /Open/.test(toast),
+    "the person is told why, and pointed at Open… → Folder… instead, got " + toast);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+/* ============================================================
+   GROUP 144 — Bugfix: a URL-backed tail handle broke the session cache
+   Origin: this session (found while adding GROUP 141's route). A file
+   opened by URL — ?url= deep-link, file association, or now the wrapper's
+   own picker/drop — is tailed through urlTailHandle, a plain object
+   holding a closure. persistFileNode stashed that in the record it puts
+   into IndexedDB, where structured clone rejects it outright with a
+   DataCloneError; cacheStoreOp swallows the synchronous throw, so the
+   effect was that the ENTIRE record was silently never written and the
+   file vanished from "restore last session". Nothing replaces the handle:
+   the URL is all it ever was, and sourceUrl is persisted anyway, so it is
+   rebuilt on restore.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("144a. A URL-tailed file is actually written to the session cache");
+
+  w.fetch = async () => ({
+    ok: true, status: 200,
+    arrayBuffer: async () => new w.TextEncoder().encode(makeLog(0, 4)).buffer,
+  });
+  await w.philoggLoadUrl("philogg://local/2/cached.log");
+  const node = T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
+  assert(node.tail, "sanity: the file is tailed through its URL");
+
+  await w.persistFileNode(node);
+  const rec = await w.cacheStoreOp("files", "readonly", store => store.get(node.cacheKey));
+  assert(rec, "the record exists at all — before this fix the DataCloneError dropped it whole");
+  assert(rec.handle === null, "the non-cloneable urlTailHandle is deliberately not persisted");
+  assert(rec.sourceUrl === "philogg://local/2/cached.log",
+    "...because sourceUrl is what the handle is rebuilt from, got " + rec.sourceUrl);
+}, {
+  indexedDB: new IDBFactory(),
+  philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) },
+});
+
+await withApp(async (w, d, T) => {
+  section("144b. ...and comes back tailing after a reload");
+
+  const factory = new (require("fake-indexeddb").IDBFactory)();
+  await withApp(async (w2, d2, T2) => {
+    w2.fetch = async () => ({
+      ok: true, status: 200,
+      arrayBuffer: async () => new w2.TextEncoder().encode(makeLog(0, 4)).buffer,
+    });
+    await w2.philoggLoadUrl("philogg://local/2/reloaded.log");
+    const n = T2.state.nodes[T2.state.rootIds[T2.state.rootIds.length - 1]];
+    n.localPath = "/srv/logs/reloaded.log";
+    await w2.persistFileNode(n);
+    await w2.persistMetaNow();
+  }, { indexedDB: factory });
+
+  await withApp(async (w2, d2, T2) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 40 && T2.state.rootIds.length === 0; i++) await sleep(50);
+    await sleep(100);
+    assert(T2.state.rootIds.length === 1, "the URL-opened file survives the reload at all, got " + T2.state.rootIds.length);
+    const n = T2.state.nodes[T2.state.rootIds[0]];
+    assert(n.name === "reloaded.log", "...as the same file, got " + n.name);
+    assert(n.localPath === "/srv/logs/reloaded.log" && n.sourceUrl === "philogg://local/2/reloaded.log",
+      "...keeping both location fields, so its context menu is unchanged after a refresh");
+    assert(n.tail && typeof n.tail.handle.getFile === "function",
+      "...and tailing resumes, rebuilt from sourceUrl with no permission round-trip");
+  }, { indexedDB: factory });
+});
+
 /* ============================================================
    Summary
    ============================================================ */
@@ -16847,4 +17141,32 @@ process.exit(failed ? 1 : 0);
               desktop-tauri's inject.js drag region + window-control
               buttons). None of that injection is reachable from jsdom;
               the selectors and the 50px it is derived from are.
+
+   Groups 141-144 — this session (2026-09-01), closing the Tauri wrapper's
+              "Open File Location" gap. No webview resolves a File back to
+              an OS path, so instead of trying to, that wrapper now opens
+              picked and dropped files itself (its OS dialog via
+              philogg.pickFiles, its native drag-drop handler via
+              window.philoggLoadLocalFiles) and supplies the real path
+              alongside the philogg://local/… URL it serves each file
+              under — reusing the route a file-association open already
+              took, so tailing comes along for free. 141 covers that
+              route, 142 the new "Copy Path" action (both its localPath
+              and its pathForLocalUrl variants), 143 the drop-overlay hook
+              a natively-handled drag needs plus the dropped-folder case
+              the native route cannot serve.
+              144 is a bug the work uncovered: persistFileNode stashed the
+              urlTailHandle — a plain object holding a closure — in the
+              IndexedDB record, where structured clone rejects it, and
+              cacheStoreOp swallowed the throw, so EVERY file opened by
+              URL/file-association was silently absent from "restore last
+              session". The handle is no longer persisted and is rebuilt
+              from sourceUrl on restore.
+
+   Deliberately DROPPED this session:
+     - Group 139a's "no reveal item for a picker/drop-loaded file" framing.
+       That was the Tauri wrapper's picker/drop route, which no longer
+       exists (see 141). The assertion itself is kept, re-pointed at the
+       case that IS still pathless there — a File arriving with no path
+       supplied, i.e. its folder watch.
    ============================================================ */

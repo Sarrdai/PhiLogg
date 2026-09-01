@@ -2,10 +2,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, DragDropEvent, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 use crate::state::AppState;
-use crate::{inject, protocol, settings};
+use crate::{commands, inject, protocol, settings};
 
 pub const MAIN: &str = "main";
 pub const SPLASH: &str = "splash";
@@ -73,13 +73,25 @@ pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
         // Matches #toolbar/--bg-panel's dark-theme default, so there is no
         // white flash before the page's own background paints.
         .background_color(tauri::window::Color(0x15, 0x19, 0x24, 0xff))
-        // philogg.html handles drag-and-drop itself, through ordinary HTML
-        // drop events and the File objects they carry. Tauri's own drag-drop
-        // handler would swallow those in favour of a native event carrying
-        // OS paths — which is exactly the trade-off behind the
-        // getPathForFile gap documented in inject.js: dropping files has to
-        // keep working, so the native handler stays off.
-        .disable_drag_drop_handler()
+        // Tauri's native drag-drop handler is left ON, which suppresses the
+        // HTML drop events philogg.html would otherwise use. That is the
+        // deliberate trade: the native event is the only one carrying real
+        // OS paths, and without a path a dropped file can never offer
+        // "Open File Location"/"Copy Path" (no webview resolves a File back
+        // to a path — see inject.js's getPathForFile). So the drop is
+        // handled here and handed to the page as paths + philogg://local
+        // URLs, exactly like a file-association open, which also buys those
+        // files tailing for free.
+        //
+        // Cost, accepted: a dropped FOLDER no longer starts a folder watch.
+        // That needs a live FileSystemDirectoryHandle to list and rescan
+        // (see philogg.html's "Folder watch"), which a path can't produce —
+        // so folders are reported to the page, which points at
+        // "Open… → Folder…" instead. See desktop-tauri/README.md.
+        //
+        // The events themselves arrive as WindowEvent::DragDrop — there is
+        // no builder-level hook for them — so they are picked up in
+        // watch_window_events below, alongside the close handling.
         .initialization_script(&script);
 
     // FEATURE_BACKLOG.md #31/#34: no OS frame, and rounded corners where the
@@ -99,18 +111,21 @@ pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
     }
 
     let Ok(window) = builder.build() else { return };
-    watch_close(&window);
+    watch_window_events(&window);
 }
 
-/// `FEATURE_BACKLOG.md` #51's "close to system tray" half. The setting lives
-/// in `philogg.html`'s own `localStorage`; unlike `desktop/main.js` — which
-/// has to `executeJavaScript()` it back out of the renderer at close time —
-/// the value is already mirrored into `AppState` by the settings poll, so
-/// this can decide synchronously.
-fn watch_close(window: &WebviewWindow) {
+/// The two OS-level events this window has to answer for itself: the close
+/// request (`FEATURE_BACKLOG.md` #51's "close to system tray" half) and the
+/// native drag-drop.
+///
+/// Close: the setting lives in `philogg.html`'s own `localStorage`; unlike
+/// `desktop/main.js` — which has to `executeJavaScript()` it back out of the
+/// renderer at close time — the value is already mirrored into `AppState` by
+/// the settings poll, so this can decide synchronously.
+fn watch_window_events(window: &WebviewWindow) {
     let window_ref = window.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
+    window.on_window_event(move |event| match event {
+        WindowEvent::CloseRequested { api, .. } => {
             let app = window_ref.app_handle();
             let state = app.state::<AppState>();
             if state.is_quitting.load(Ordering::Relaxed) {
@@ -124,7 +139,64 @@ fn watch_close(window: &WebviewWindow) {
                 app.exit(0);
             }
         }
+        WindowEvent::DragDrop(drag) => handle_drag_drop(&window_ref, drag),
+        _ => {}
     });
+}
+
+/// Drives `philogg.html`'s own drop overlay, which the page can no longer
+/// show for itself: with the native handler on, it never sees a dragenter.
+/// Goes through the page's named `philoggDropOverlay` hook rather than
+/// touching `#dropOverlay` directly, so this stays a contract instead of a
+/// dependency on the page's internals.
+fn show_drop_overlay(window: &WebviewWindow, show: bool) {
+    let _ = window.eval(if show {
+        "window.philoggDropOverlay && window.philoggDropOverlay(true)"
+    } else {
+        "window.philoggDropOverlay && window.philoggDropOverlay(false)"
+    });
+}
+
+/// A native drop is the only kind that carries real OS paths, which is the
+/// whole reason the native handler is on (see `create_main`). Dropped files
+/// are registered exactly like a file-association open and handed to the
+/// page as paths + `philogg://local/…` URLs; dropped folders can't be
+/// watched from a path alone and are reported so the page can say so.
+/// Splits a drop's paths into files this wrapper can serve (registered the
+/// same way a file-association open is) and folders it can't watch.
+fn register_dropped(state: &AppState, paths: &[PathBuf]) -> (Vec<commands::LocalFile>, Vec<String>) {
+    let mut files = Vec::new();
+    let mut folders = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            folders.push(path.to_string_lossy().to_string());
+        } else {
+            files.push(commands::LocalFile::register(state, path));
+        }
+    }
+    (files, folders)
+}
+
+fn handle_drag_drop(window: &WebviewWindow, event: &DragDropEvent) {
+    match event {
+        DragDropEvent::Enter { .. } | DragDropEvent::Over { .. } => show_drop_overlay(window, true),
+        DragDropEvent::Leave => show_drop_overlay(window, false),
+        DragDropEvent::Drop { paths, .. } => {
+            show_drop_overlay(window, false);
+            let app = window.app_handle();
+            let (files, folders) = register_dropped(&app.state::<AppState>(), paths);
+            if files.is_empty() && folders.is_empty() {
+                return;
+            }
+            let payload = serde_json::json!({ "files": files, "folders": folders });
+            let js = format!(
+                "window.philoggLoadLocalFiles && window.philoggLoadLocalFiles({})",
+                serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string())
+            );
+            let _ = window.eval(&js);
+        }
+        _ => {}
+    }
 }
 
 pub fn focus_main(app: &AppHandle) {

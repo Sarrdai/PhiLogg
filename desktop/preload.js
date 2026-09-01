@@ -50,5 +50,6 @@ contextBridge.exposeInMainWorld("philogg", {
   },
   revealPath: filePath => ipcRenderer.invoke("philogg:reveal-path", filePath),
   revealLocalUrl: url => ipcRenderer.invoke("philogg:reveal-local-url", url),
+  pathForLocalUrl: url => ipcRenderer.invoke("philogg:path-for-local-url", url),
   listSystemFonts: () => ipcRenderer.invoke("philogg:list-system-fonts"),
 });
