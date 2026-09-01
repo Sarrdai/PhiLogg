@@ -118,6 +118,7 @@ async function withApp(run, opts = {}) {
       get contextStrips() { return contextStrips; },
       get contextFoldMarks() { return contextFoldMarks; },
       get contextExpansions() { return contextExpansions; },
+      get contextAutoExpansions() { return contextAutoExpansions; },
       get contextMatchRows() { return contextMatchRows; },
       get highlightRowOffsets() { return highlightRowOffsets; },
       get contextInitialExpansion() { return contextInitialExpansion; },
@@ -15413,6 +15414,288 @@ await withApp(async (w, d, T) => {
 }
 
 /* ============================================================
+   GROUP 147 — "Collapsed, opened around a jump" travels with the match
+   navigation (person-requested follow-up to GROUP 138: the setting only
+   ever reacted to a jump coming FROM the Filtered view — double-click or
+   Enter — while the Context view's own ‹ / › arrows, added in the same
+   rework, moved the selection without touching a single gap. Asked for:
+   walking match to match should reveal the surroundings of the match you
+   land on and put back the ones the previous jump opened, so the revealed
+   context follows the selection instead of piling up behind it — except
+   where a gap was opened or collapsed BY HAND, which keeps the state the
+   person gave it.)
+     a) an arrow jump opens the gaps above and below the match it lands on.
+     b) the next jump shuts the previous one's again — one window travels
+        with the selection — and the newly selected row is centred on the
+        REBUILT list, not on its stale pre-expansion index.
+     c) walking backwards moves the same window back.
+     d) a gap opened by hand is never shut by a later jump, however far
+        away it is and however many jumps happen.
+     e) ...including one that was auto-opened and then re-opened by hand:
+        the hand toggle is what transfers ownership, not the gap's state.
+     f) with "Collapsed" (or "Expanded") picked instead, the arrows leave
+        the gaps exactly as they are — this is the aroundJump setting's
+        behaviour, not the nav arrows'.
+   Second section (same group): picking another result with the MOUSE reads
+   the same way — a plain click on a match row is a jump too — but it must
+   not re-position the view the way the arrows do.
+     g) a plain click on another match moves the window and the chip's
+        "n / m" with it.
+     h) the clicked row keeps its exact on-screen offset, even though the
+        gap that shuts above it is a completely different size from the one
+        that opens there — i.e. the scroll is recomputed against the NEW
+        offsets, not left where it was.
+     i) a click on a revealed CONTEXT row is not a jump (no result changed),
+        and neither is a Ctrl+click, which is a multi-selection gesture and
+        must not move the rows out from under the gesture.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("147. Context view: the aroundJump expansion follows the nav arrows");
+
+  // "hit" every 10th line -> matches 0,10,20,30,40,50 and one gap between
+  // each pair (plus the trailing one), i.e. gap.start 1,11,21,31,41,51.
+  const f = await w.addFile("ctxjump.log", makeLog(0, 60, { suffix: i => (i % 10 === 0 ? "hit" : "other") }), () => {});
+  const hitFilter = w.createFilterNode(f.id, "text", "hit");
+  // render() auto-reveals the Filtered tab on every activeId change, so the
+  // Context panel has to be re-shown after each node switch (see GROUP 138).
+  const showContext = () => { w.render(); w.applyFhView("highlight"); };
+  T.contextInitialExpansion = "aroundJump";
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  const openStarts = () => [...T.contextExpansions].sort((a, b) => a - b).join(",");
+  const rowFor = id => d.querySelector('#highlightRows [data-entry-id="' + id + '"]');
+  assert(T.contextGaps.map(g => g.start).join(",") === "1,11,21,31,41,51",
+    "fixture sanity: six matches, six gaps, got " + T.contextGaps.map(g => g.start).join(","));
+  assert(T.contextExpansions.size === 0,
+    "aroundJump still SEEDS collapsed — it is a reaction to jumps, not an initial state of its own");
+
+  // --- (a) an arrow jump opens the gaps around the match it lands on ------
+  T.state.selectedId = f.entries[0].id;
+  T.state.focusRegion = "entries";
+  fireKeydown(d, w, "ArrowDown", { ctrlKey: true }); // the real shortcut, not just the chip's handler
+  assert(T.state.selectedId === f.entries[10].id, "sanity: Ctrl+ArrowDown moved to the next match");
+  assert(openStarts() === "1,11",
+    "landing on a match opens the gap above and the gap below it, got " + openStarts());
+  assert(T.currentHighlightViewEntries.some(e => e.id === f.entries[5].id),
+    "...so the lines around the new match really are in the view now");
+
+  // --- (b) the next jump moves that window along instead of piling up -----
+  fireKeydown(d, w, "ArrowDown", { ctrlKey: true });
+  assert(T.state.selectedId === f.entries[20].id, "sanity: on to the match after that");
+  assert(openStarts() === "11,21",
+    "the previous jump's leading gap is shut again — one window travels with the selection, got " + openStarts());
+  assert(!T.currentHighlightViewEntries.some(e => e.id === f.entries[5].id),
+    "...and the rows it had revealed are gone from the view again");
+  const selEl = rowFor(f.entries[20].id);
+  assert(selEl && selEl.classList.contains("selected"),
+    "the newly selected match is inside the rendered window — i.e. the view was centred on its index in the REBUILT list, not on the stale pre-expansion one");
+
+  // --- (c) walking backwards moves the same window back -------------------
+  w.moveContextMatchSelection(-1);
+  assert(T.state.selectedId === f.entries[10].id, "sanity: back one match");
+  assert(openStarts() === "1,11", "walking back re-opens the gap above and shuts the one below, got " + openStarts());
+
+  // --- (d) a hand-opened gap is never the jump's to shut ------------------
+  w.setGapOpen(51, true); // far away from anything the jumps below touch
+  w.moveContextMatchSelection(1); // -> 20
+  w.moveContextMatchSelection(1); // -> 30
+  assert(T.state.selectedId === f.entries[30].id, "sanity: two matches further on");
+  assert(T.contextExpansions.has(51),
+    "a gap opened by hand survives every later jump — the jump machinery only undoes what it opened itself");
+  assert(openStarts() === "21,31,51", "...alongside the current jump's own window, got " + openStarts());
+
+  // --- (e) collapsing and re-opening an AUTO gap by hand claims it --------
+  w.setGapOpen(21, false); // 21 is the current jump's own gap
+  w.setGapOpen(21, true);  // ...re-opened by hand, which is what transfers ownership
+  w.moveContextMatchSelection(1); // -> 40, whose own window is 31 + 41
+  assert(T.state.selectedId === f.entries[40].id, "sanity: on to the next match");
+  assert(T.contextExpansions.has(21),
+    "a gap re-opened by hand keeps that state even though the jump that opened it is long past");
+  assert(openStarts() === "21,31,41,51", "...and the jump's own window moved on regardless, got " + openStarts());
+
+  // --- (f) with the setting off, the arrows leave every gap alone ---------
+  T.contextInitialExpansion = "collapsed";
+  // A change of FILTER node is what re-seeds the expansions (a file node
+  // leaves buildContextView before the seeding step — see GROUP 138k).
+  T.state.activeId = w.createFilterNode(f.id, "text", "other").id;
+  showContext();
+  T.state.activeId = hitFilter.id;
+  showContext();
+  assert(T.contextExpansions.size === 0, "sanity: re-seeded collapsed");
+  T.state.selectedId = f.entries[0].id;
+  w.moveContextMatchSelection(1);
+  assert(T.state.selectedId === f.entries[10].id && T.contextExpansions.size === 0,
+    "with \"Collapsed\" picked, walking to the next match neither opens nor closes anything");
+});
+
+await withApp(async (w, d, T) => {
+  section("147. ...and so is picking another result with the mouse, without moving it on screen");
+
+  // Deliberately UNEVEN gaps: matches at 0, 5, 40, 45 leave gaps of 4, 34, 4
+  // and 14 lines. What shuts above the clicked row is then nowhere near the
+  // height of what opens there, which is exactly the case a "keep scrollTop"
+  // implementation gets wrong.
+  const hits = new Set([0, 5, 40, 45]);
+  const f = await w.addFile("ctxclick.log", makeLog(0, 60, { suffix: i => (hits.has(i) ? "hit" : "other") }), () => {});
+  const hitFilter = w.createFilterNode(f.id, "text", "hit");
+  const highlightBody = d.querySelector("#highlightBody");
+  T.contextInitialExpansion = "aroundJump";
+  T.state.activeId = hitFilter.id;
+  w.render();
+  w.applyFhView("highlight");
+
+  const openStarts = () => [...T.contextExpansions].sort((a, b) => a - b).join(",");
+  const idxOf = id => T.currentHighlightViewEntries.findIndex(e => e.id === id);
+  const navLabel = () => d.querySelector("#contextNav .ctx-nav-label").textContent;
+  assert(T.contextGaps.map(g => g.start + "-" + g.end).join(",") === "1-5,6-40,41-45,46-60",
+    "fixture sanity: four matches, four gaps of very different sizes, got " + T.contextGaps.map(g => g.start + "-" + g.end).join(","));
+
+  // Stand on match 5 first, so there is a previous jump to undo.
+  T.state.selectedId = f.entries[0].id;
+  w.moveContextMatchSelection(1);
+  assert(T.state.selectedId === f.entries[5].id && openStarts() === "1,6",
+    "sanity: arrow-jumped to match 5, its own two gaps open, got " + openStarts());
+
+  // Put match 45's row 140px below the top of the viewport — both in the
+  // model (scrollTop) and in the geometry stub the capture reads, so the two
+  // agree the way they do in a real browser.
+  const targetId = f.entries[45].id;
+  const oldIdx = idxOf(targetId);
+  const scrollBefore = T.highlightRowOffsets[oldIdx] - 140;
+  w.setHighlightScroll(scrollBefore);
+  w.renderHighlightVisibleRows();
+  const rowEl = d.querySelector('#highlightRows [data-entry-id="' + targetId + '"]');
+  assert(rowEl, "sanity: match 45's row is inside the virtualized window");
+  rowEl.getBoundingClientRect = () => ({ top: 140, left: 0, right: 800, bottom: 168, width: 800, height: 28, x: 0, y: 140 });
+
+  // --- (g) a plain click on it is a jump, same as an arrow would have been -
+  fireClick(rowEl, w);
+  assert(T.state.selectedId === targetId, "the clicked match is selected");
+  assert(openStarts() === "41,46",
+    "clicking another result opens ITS gaps and shuts the previous jump's, exactly like the arrows, got " + openStarts());
+  assert(navLabel().replace(/\s/g, "") === "4/4",
+    "...and the chip's position readout jumps to the clicked result, got " + JSON.stringify(navLabel()));
+
+  // --- (h) ...and the clicked row does not move on screen ------------------
+  const newIdx = idxOf(targetId);
+  assert(newIdx !== oldIdx, "sanity: the rebuild really did change the row's index (" + oldIdx + " -> " + newIdx + ")");
+  assert(T.highlightRowOffsets[newIdx] - highlightBody.scrollTop === 140,
+    "the clicked row stays at the same 140px on-screen offset, got " +
+    (T.highlightRowOffsets[newIdx] - highlightBody.scrollTop));
+  assert(T.highlightRowOffsets[newIdx] - scrollBefore !== 140,
+    "...which took real work: 34 revealed lines shut above it and only 4 opened, so leaving scrollTop alone would have moved it");
+
+  // --- (i) a context row and a Ctrl+click are not jumps --------------------
+  const beforeCtx = openStarts();
+  const ctxRow = [...d.querySelectorAll("#highlightRows .log-row.ctx-context")][0];
+  assert(ctxRow, "sanity: revealed context rows are on screen");
+  fireClick(ctxRow, w);
+  assert(T.state.selectedId === ctxRow.dataset.entryId, "a revealed context row still selects normally");
+  assert(openStarts() === beforeCtx,
+    "...but it is not a move to another result, so nothing expands or collapses, got " + openStarts());
+
+  const otherMatchRow = d.querySelector('#highlightRows [data-entry-id="' + f.entries[40].id + '"]');
+  assert(otherMatchRow, "sanity: match 40's row is on screen too");
+  otherMatchRow.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+  assert(T.state.logMultiSelect.has(f.entries[40].id), "sanity: Ctrl+click multi-selected it");
+  assert(openStarts() === beforeCtx,
+    "a Ctrl+click is a multi-selection gesture — the rows must not move out from under it, got " + openStarts());
+});
+
+/* ============================================================
+   GROUP 148 — A newly created node is selected EXCLUSIVELY (person-reported:
+   "wenn ich einen neuen Filter anlege, ist dieser selektiert, der zuvor
+   selektierte Filter/File aber auch noch"). Same root cause GROUP 112c
+   fixed for a freshly LOADED file, on the other half of the problem: a
+   plain (non-Ctrl) tree-row click puts the clicked id into
+   state.multiSelect — it is not a Ctrl-only gesture — and node CREATION
+   set state.activeId to the new node without dropping it, so the row you
+   built the filter from kept its ".multi-selected" accent tint (the same
+   --accent-soft background ".active" uses) right next to the new node's
+   genuine ".active" row. Fixed by routing every creator through one
+   activateNewNode(node) helper.
+     a) creating a filter through the real UI route (the filter popup)
+        leaves exactly one highlighted tree row: the new node's.
+     b) the same holds for a filter built on top of another FILTER row,
+        not just on a file row.
+     c) the other creators go through the same helper — context node,
+        selection filter, and a paste — so none of them can regress
+        separately.
+     d) a genuine Ctrl+click multi-selection is still untouched by
+        everything else; only creating a node collapses it.
+   ============================================================ */
+await withApp(async (w, d, T) => {
+  section("148. A newly created filter is the only selected node");
+
+  const f = await w.addFile("app.log", makeLog(0, 20), () => {});
+  w.render();
+
+  const treeRows = () => [...d.querySelectorAll(".tree-row")];
+  const highlighted = () => treeRows().filter(r => r.classList.contains("active") || r.classList.contains("multi-selected"));
+
+  // --- (a) the real UI route: click a file row, then add a filter ---------
+  const fileRow = d.querySelector('.tree-row[data-node-id="' + f.id + '"]');
+  fireClick(fileRow, w);
+  assert(T.state.multiSelect.has(f.id) && T.state.multiSelect.size === 1,
+    "sanity: a plain click on the file's tree row puts it in multiSelect (that is what later leaks)");
+
+  w.openFilterPopup();
+  d.querySelector("#filterInput").value = "message 1";
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const filterA = T.state.nodes[T.state.activeId];
+  assert(filterA && filterA.type === "filter", "sanity: the popup created a filter and made it active");
+  assert(T.state.multiSelect.size === 0,
+    "creating a filter drops the stale multiSelect entry pointing at the row it was built from");
+  assert(highlighted().length === 1 && highlighted()[0].dataset.nodeId === filterA.id,
+    "exactly one tree row is highlighted, and it is the new filter's, got " +
+    JSON.stringify(highlighted().map(r => r.dataset.nodeId)));
+
+  // --- (b) same when the previous selection is a FILTER row --------------
+  const filterRow = d.querySelector('.tree-row[data-node-id="' + filterA.id + '"]');
+  fireClick(filterRow, w);
+  assert(T.state.multiSelect.has(filterA.id), "sanity: clicking the filter's own row selects it the same way");
+  const filterB = w.createFilterNode(filterA.id, "text", "message 1");
+  w.render();
+  assert(T.state.multiSelect.size === 0 && highlighted().length === 1 &&
+    highlighted()[0].dataset.nodeId === filterB.id,
+    "a filter created under another filter leaves only itself highlighted");
+
+  // --- (c) every other creator goes through the same helper ---------------
+  const creators = [
+    ["context node", () => w.createContextNode(filterB.id, 1000, 1000)],
+    ["selection filter", () => w.createSelectionFilterNode(f.id, [f.entries[0].id, f.entries[1].id])],
+  ];
+  creators.forEach(([label, make]) => {
+    T.state.multiSelect = new Set([f.id]); // as a plain click would have left it
+    const node = make();
+    assert(node && T.state.activeId === node.id, "sanity: the " + label + " was created and activated");
+    assert(T.state.multiSelect.size === 0, "a new " + label + " is selected exclusively too");
+  });
+
+  // Paste (cloneSubtree) creates a node the same way — same requirement.
+  T.state.clipboard = { id: filterB.id, mode: "copy" };
+  T.state.activeId = f.id;
+  T.state.multiSelect = new Set([f.id]); // as a plain click on the paste target would have left it
+  w.pasteClipboard();
+  assert(T.state.activeId !== f.id && T.state.nodes[T.state.activeId].parentId === f.id,
+    "sanity: the paste created a clone under the file and activated it");
+  assert(T.state.multiSelect.size === 0,
+    "a pasted filter is the only selected node too, got multiSelect size " + T.state.multiSelect.size);
+
+  // --- (d) a real multi-selection is still a multi-selection -------------
+  w.render();
+  const rowF = d.querySelector('.tree-row[data-node-id="' + f.id + '"]');
+  const rowA = d.querySelector('.tree-row[data-node-id="' + filterA.id + '"]');
+  fireClick(rowF, w);
+  rowA.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+  assert(T.state.multiSelect.size === 2,
+    "sanity: Ctrl+click still builds a two-node multi-selection, got " + T.state.multiSelect.size);
+  w.render();
+  assert(highlighted().length === 2, "...and both rows are highlighted, as they should be");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -17505,6 +17788,26 @@ process.exit(failed ? 1 : 0);
               then the real philogg.html end to end — idempotent, a
               subsequence of the original, version line intact, and still
               parseable as JavaScript.
+
+   Group 147 — this session (2026-09-01), person-requested follow-up to
+              Group 138: the "Collapsed, opened around a jump" setting only
+              reacted to a jump arriving from the Filtered view, so the
+              Context view's own match arrows (added by the same rework)
+              moved the selection without revealing anything. They now go
+              through applyContextJumpExpansion too — as does a plain click
+              on a match row, the second section here — which additionally
+              shuts the PREVIOUS jump's gaps: one open window travelling
+              with the selection, while a new contextAutoExpansions set
+              keeps hand-opened/hand-collapsed gaps out of that. The click
+              half additionally has to leave the clicked row where it is on
+              screen, across a rebuild that changes the height above it.
+
+   Group 148 — this session (2026-09-01), person-reported: a newly created
+              filter was active while the file/filter it was built from
+              stayed highlighted beside it. The other half of Group 112c's
+              bug — a plain tree-row click leaves its id in
+              state.multiSelect, and node CREATION never dropped it — now
+              fixed for every creator at once via activateNewNode(node).
 
    Deliberately DROPPED this session:
      - Group 139a's "no reveal item for a picker/drop-loaded file" framing.

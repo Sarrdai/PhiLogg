@@ -3387,7 +3387,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsContextInitialExpansion">Context view starts out</label>
-                <div class="settings-row-hint">The Context view shows the active filter's matches with everything it rejected collapsed into expandable gaps. "Collapsed" opens every gap shut, so the view starts out as the filter result itself. "Expanded" opens every gap, i.e. the whole file, with each gap still individually collapsible. "Collapsed, opened around a jump" stays shut, but double-clicking or pressing Enter on a row from the Filtered view also opens the gaps on either side of it. A jump to a row that isn't a match always opens the gap it sits in, whichever option is picked — otherwise it would have nowhere to be shown. The Stacked layout always starts fully expanded regardless of this setting (its Context pane sits right next to the plain Filtered result, so there's less need to hide anything there) — this only governs the Context tab in Tabs layout.</div>
+                <div class="settings-row-hint">The Context view shows the active filter's matches with everything it rejected collapsed into expandable gaps. "Collapsed" opens every gap shut, so the view starts out as the filter result itself. "Expanded" opens every gap, i.e. the whole file, with each gap still individually collapsible. "Collapsed, opened around a jump" stays shut, but jumping to a row — double-clicking or pressing Enter on it in the Filtered view, or walking match to match with the Context view's own ‹ / › arrows, or simply clicking another match there — also opens the gaps on either side of it, and closes the ones the previous jump opened, so the revealed context follows you instead of piling up. Gaps you open or collapse by hand are left alone by that and keep the state you gave them. A jump to a row that isn't a match always opens the gap it sits in, whichever option is picked — otherwise it would have nowhere to be shown. The Stacked layout always starts fully expanded regardless of this setting (its Context pane sits right next to the plain Filtered result, so there's less need to hide anything there) — this only governs the Context tab in Tabs layout.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsContextInitialExpansion">
@@ -5779,6 +5779,22 @@ function timeRangeFilterName(value) {
   return "any time";
 }
 
+// Activates a node that was just created, EXCLUSIVELY — person-reported: a
+// new filter appeared as the active node while the file/filter you made it
+// from stayed highlighted next to it, so it read as two selected nodes. A
+// plain (non-Ctrl) tree-row click leaves the clicked id in state.multiSelect
+// — it is not a Ctrl-only gesture, see renderNode's click handler — and
+// nothing dropped it when the selection moved on to a brand-new node, so its
+// .multi-selected accent tint (the same --accent-soft background .active
+// uses) simply stayed put. Same pairing createFileNode already does for a
+// freshly loaded file, factored out here because every node-creating action
+// needs it. Returns the node, so creators can `return activateNewNode(node)`.
+function activateNewNode(node) {
+  state.activeId = node.id;
+  state.multiSelect = new Set();
+  return node;
+}
+
 function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null, isRegex = false) {
   const parent = state.nodes[parentId];
   if (!parent) return null;
@@ -5799,8 +5815,7 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
   if (filterType === "text" && isRegex) node.isRegex = true;
   state.nodes[node.id] = node;
   parent.children.push(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Display name for an "idset" filter node — value is a plain array of entry
@@ -6012,8 +6027,7 @@ function createAndOrNode(idA, idB, mode) {
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Merges multiple files into one new, chronologically sorted file node.
@@ -6051,7 +6065,7 @@ async function mergeFiles(fileIds) {
   };
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
-  state.activeId = node.id;
+  activateNewNode(node);
   flushLoadRender();
 
   const total = files.reduce((sum, f) => sum + f.entries.length, 0);
@@ -6118,8 +6132,7 @@ function createLinkNode(refId, targetId, direction, n, opts) {
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 const PAIR_SEPARATOR = " ⟶ ";
@@ -6208,8 +6221,7 @@ function createContextNode(parentId, beforeMs, afterMs) {
   };
   state.nodes[node.id] = node;
   parent.children.push(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Merges each reference entry's [ts-beforeMs, ts+afterMs] window into a
@@ -6252,8 +6264,7 @@ function createCountContextNode(parentId, beforeCount, afterCount) {
   };
   state.nodes[node.id] = node;
   parent.children.push(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Merges each reference entry's [idx-beforeCount, idx+afterCount] index
@@ -6509,7 +6520,7 @@ function pasteClipboard() {
   // special case here any more.
   const clone = cloneSubtree(clip.id, state.activeId);
   targetParent.children.push(clone.id);
-  state.activeId = clone.id;
+  activateNewNode(clone);
   // clipboard stays active: the same filter can be pasted again elsewhere
 }
 
@@ -12100,6 +12111,14 @@ let contextGaps = [];
 // node (so a tail tick or a colour edit doesn't collapse what you just
 // opened) and is dropped wholesale on any active-node/root-file change.
 let contextExpansions = new Set();
+// The subset of contextExpansions that applyContextJumpExpansion opened by
+// itself under the "aroundJump" setting and that nobody has touched by hand
+// since — i.e. exactly the gaps the NEXT jump is allowed to shut again, so
+// walking match to match moves one open window along the file instead of
+// leaving a trail of opened gaps behind it. setGapOpen/setAllGapsExpanded
+// drop their gaps out of this set, which is what makes a manual open/collapse
+// stick for good (person-requested). Lives and dies with contextExpansions.
+let contextAutoExpansions = new Set();
 // Which active node contextExpansions currently belongs to.
 let contextExpansionsKey = null;
 // Index into currentHighlightViewEntries -> the gap whose PLACEHOLDER row
@@ -12199,6 +12218,7 @@ function buildContextView(rootId) {
   if (contextExpansionsKey !== state.activeId) {
     contextExpansionsKey = state.activeId;
     contextExpansions = new Set();
+    contextAutoExpansions = new Set();
     const seedExpanded = fhLayout === "stacked" || contextInitialExpansion === "expanded";
     if (seedExpanded) contextGaps.forEach(g => contextExpansions.add(g.start));
   }
@@ -12265,6 +12285,10 @@ function rebuildHighlightOffsets() {
 // visually instead of yanking the scroll.
 function setGapOpen(gapStart, open) {
   if (open) contextExpansions.add(gapStart); else contextExpansions.delete(gapStart);
+  // Hand-set, so it stops being the jump machinery's to undo (see
+  // contextAutoExpansions) — whichever state it is in now survives every
+  // later jump.
+  contextAutoExpansions.delete(gapStart);
   const anchor = captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody);
   currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
   rebuildHighlightOffsets();
@@ -12278,6 +12302,7 @@ function setGapOpen(gapStart, open) {
 function setAllGapsExpanded(expanded) {
   const anchor = captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody);
   contextExpansions = expanded ? new Set(contextGaps.map(g => g.start)) : new Set();
+  contextAutoExpansions = new Set(); // all of it is hand-set now — see setGapOpen
   currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
   rebuildHighlightOffsets();
   restoreViewAnchor(anchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll);
@@ -12291,29 +12316,56 @@ function setAllGapsExpanded(expanded) {
 // collapsed gap would have nowhere to be scrolled to — so it happens for every
 // initial-expansion setting. "aroundJump" additionally opens the gaps on
 // either side of the target, which is the "peek at this spot" reading of the
-// setting. Returns true when anything actually changed.
+// setting — and, since that reading is about the spot you are looking at RIGHT
+// NOW, it also shuts the previous jump's own gaps again (person-requested:
+// walking match to match with the nav arrows should carry one open window
+// along the file, not accumulate every place you have been). Only gaps this
+// function opened and nobody has touched by hand since are shut that way —
+// see contextAutoExpansions. Returns true when anything actually changed.
 function applyContextJumpExpansion(entryId) {
   if (!contextActive || !contextGaps.length) return false;
   const idx = buildOrderIndexMap(getRootFileId(state.activeId)).get(entryId);
   if (idx === undefined) return false;
-  let changed = false;
-  const open = g => {
-    if (!g || contextExpansions.has(g.start)) return;
-    contextExpansions.add(g.start);
-    changed = true;
-  };
+  const aroundJump = contextInitialExpansion === "aroundJump";
+  // The gap.start values THIS jump wants open, before anything is touched.
+  const wanted = new Set();
+  const want = g => { if (g) wanted.add(g.start); };
   // The gap the target itself is hidden inside, if any.
   const ci = contextGaps.findIndex(g => idx >= g.start && idx < g.end);
-  if (ci !== -1) open(contextGaps[ci]);
-  if (contextInitialExpansion === "aroundJump") {
+  if (ci !== -1) want(contextGaps[ci]);
+  if (aroundJump) {
     if (ci !== -1) {
-      open(contextGaps[ci - 1]);
-      open(contextGaps[ci + 1]);
+      want(contextGaps[ci - 1]);
+      want(contextGaps[ci + 1]);
     } else {
-      // The target is a match itself: open the gaps directly above and below it.
-      contextGaps.forEach(g => { if (g.end === idx || g.start === idx + 1) open(g); });
+      // The target is a match itself: the gaps directly above and below it.
+      contextGaps.forEach(g => { if (g.end === idx || g.start === idx + 1) want(g); });
     }
   }
+
+  let changed = false;
+  if (aroundJump) {
+    // Undo the previous jump's expansion first, so what is left open around
+    // the target is only what this jump asked for.
+    contextAutoExpansions.forEach(start => {
+      if (!wanted.has(start) && contextExpansions.delete(start)) changed = true;
+    });
+  }
+  const nextAuto = new Set();
+  wanted.forEach(start => {
+    if (!contextExpansions.has(start)) {
+      contextExpansions.add(start);
+      changed = true;
+      nextAuto.add(start);
+    } else if (contextAutoExpansions.has(start)) {
+      // Still ours from the previous jump — stays ours, so the jump after this
+      // one may shut it again.
+      nextAuto.add(start);
+    }
+    // Anything else here was opened by hand and merely happens to overlap this
+    // jump: it keeps its hand-set state and no later jump shuts it.
+  });
+  if (aroundJump) contextAutoExpansions = nextAuto;
   return changed;
 }
 
@@ -12347,7 +12399,57 @@ function moveContextMatchSelection(delta) {
     for (let k = matchIdxs.length - 1; k >= 0; k--) { if (matchIdxs[k] < from) { target = matchIdxs[k]; break; } }
   }
   if (target === undefined) return;
-  selectHighlightEntry(entries[target].id, { scroll: true, center: true, index: target });
+  const targetId = entries[target].id;
+  // Landing on a match is a jump like any other, so it gets the same treatment
+  // the "aroundJump" setting gives a double-click jump: the gaps around the new
+  // match open and the previous jump's shut again (applyContextJumpExpansion).
+  // That changes the row list underneath `target`, so rebuild before selecting
+  // and let selectHighlightEntry look the row up in the NEW list rather than
+  // passing a now-stale index. No captureViewAnchor/restoreViewAnchor pair here
+  // (unlike setGapOpen): centering the target is what positions this view, so
+  // there is no reading position to preserve.
+  if (applyContextJumpExpansion(targetId)) {
+    currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
+    rebuildHighlightOffsets();
+    selectHighlightEntry(targetId, { scroll: true, center: true });
+    updateMinimapRenderedRange();
+    return;
+  }
+  selectHighlightEntry(targetId, { scroll: true, center: true, index: target });
+}
+
+// A plain click on a Context row IS a jump to that entry (person-requested:
+// picking another result with the mouse should read exactly like walking there
+// with the nav arrows), so under "aroundJump" it opens the gaps around it and
+// shuts the previous jump's — the nav chip's "n / m" then follows on its own,
+// because it follows the selection. Only a real MATCH counts: clicking one of
+// the revealed context rows isn't a move to another result, and the chip has no
+// position to show for it.
+//
+// Unlike the arrows this must NOT re-position the view — the row that was just
+// clicked has to stay exactly where it is on screen. What opens above it is not
+// the same height as what shuts above it, so scrollTop alone no longer means
+// the same thing after the rebuild: the row's on-screen offset is captured
+// BEFORE it (captureRowScreenOffset, the same pair revealInHighlightView uses)
+// and restored against the NEW offsets array afterwards.
+//
+// Accepted consequence, and the reason this is deliberately confined to the
+// jump-expanding case: a rebuild replaces the row's DOM node, so while
+// "aroundJump" is on, a native dblclick on a match row no longer fires (see
+// updateSelectedRowClass for that whole DOM-identity trap). That handler only
+// scrolls the row into view, and the offset restore here has just put it back
+// exactly where it already was.
+function selectContextRowByClick(entryId, rowEl) {
+  if (!contextMatchIds.has(entryId)) { selectHighlightEntry(entryId); return; }
+  const offset = captureRowScreenOffset(rowEl, highlightBody);
+  if (!applyContextJumpExpansion(entryId)) { selectHighlightEntry(entryId); return; }
+  currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
+  rebuildHighlightOffsets();
+  // offset === null only if the clicked row wasn't on screen at all, which a
+  // click can't produce — centering is captureRowScreenOffset's own documented
+  // fallback for that case.
+  selectHighlightEntry(entryId, { scroll: true, offset, center: offset == null });
+  updateMinimapRenderedRange();
 }
 
 // Where an entry that has no row in the Context view WOULD sit if it had one:
@@ -12604,7 +12706,12 @@ function renderHighlightVisibleRows() {
       '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + markFieldHtml(mm, e.locationShort, "location") + '</span>' +
       '<span class="col-method" title="' + escapeHtml(e.method) + '">' + markFieldHtml(mm, e.method, "method") + '</span>' +
       '<span class="col-msg">' + markFieldHtml(mm, e.message, "message") + '</span>';
-    row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries, selectHighlightEntry));
+    // A PLAIN click is a jump to that match and gets the expansion treatment
+    // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
+    // gesture and must leave the row list alone, or the range the person is
+    // building moves under them mid-gesture.
+    row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
+      (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
     // An open gap's first/last revealed row gets a small fold-back icon
@@ -13984,7 +14091,10 @@ function selectHighlightEntry(entryId, opts) {
   const previousId = applySelection(entryId);
   if (opts.scroll) {
     const idx = opts.index != null ? opts.index : currentHighlightViewEntries.findIndex(e => e.id === entryId);
-    if (idx !== -1) scrollToHighlightIndex(idx, { center: opts.center });
+    // opts.offset: "keep this row at exactly this on-screen pixel offset"
+    // (see scrollToHighlightIndex) — what a click that changes the row list
+    // underneath the clicked row needs, instead of centering it.
+    if (idx !== -1) scrollToHighlightIndex(idx, { center: opts.center, offset: opts.offset });
   }
   updateSelectedRowClass(previousId);
   updateDetailPanel();
@@ -16640,8 +16750,7 @@ function createSelectionFilterNode(rootId, ids) {
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
-  state.activeId = node.id;
-  return node;
+  return activateNewNode(node);
 }
 
 // Adds `ids` to an existing selection filter's value array, deduped. Never
