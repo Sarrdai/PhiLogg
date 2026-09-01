@@ -10,7 +10,7 @@ chronological, dated history — read it for "why/when did X change", not for
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (~20,570 lines, inline CSS,
+PhiLogg: a single self-contained `philogg.html` (~20,700 lines, inline CSS,
 vanilla JS — no framework, no build tooling). Personal tool for browser-based
 log analysis. Companion: `tests/philogg.regression.test.js` (jsdom
 regression suite, see `tests/README.md` for conventions). Optional
