@@ -15382,18 +15382,24 @@ await withApp(async (w, d, T) => {
    overflowing (person-reported, screenshot: a long auto-generated filter
    name wrapped its own text onto a second line inside the pill's fixed
    28px height, spilling above/below it, with the arrow-only line that
-   followed pushed onto its own row). .crumb now caps at max-width:220px
-   with overflow:hidden/text-overflow:ellipsis/white-space:nowrap, same
-   idea as .tree-label's existing truncation; the untruncated name is
-   still reachable as a tooltip (chip.title).
-   Follow-up in the same session (person-reported): the chip's
+   followed pushed onto its own row). .crumb now caps at max-width:220px;
+   the untruncated name is still reachable as a tooltip (chip.title).
+   Follow-up 1, same session (person-reported): the chip's
    justify-content:center meant an overflowing chip clipped BOTH ends
    equally, leaving an unmarked cut mid-text on the left with the
    ellipsis only visible on the right — so the truncated pill showed a
    slice from the MIDDLE of the name instead of its start. Switched to
    justify-content:flex-start so the start of the name is what stays
-   visible, with the ellipsis correctly marking the (now single) clipped
-   tail.
+   visible.
+   Follow-up 2, same session (person-reported, after a real-browser
+   screenshot showed NO clipping/ellipsis at all despite follow-up 1):
+   overflow/text-overflow/white-space had been set directly on .crumb,
+   but its text became an anonymous flex item once the chip turned into
+   inline-flex — a flex container's text-overflow only elides its own
+   principal box's overflow, not a child flex item's, so nothing ever
+   clipped. Moved the text into a real child element, .crumb-label
+   (flex:1 1 auto; min-width:0 plus the ellipsis trio), which is where
+   the assertions below now check.
    ============================================================ */
 group(152);
 await withApp(async (w, d, T) => {
@@ -15411,11 +15417,15 @@ await withApp(async (w, d, T) => {
   const crumbs = [...d.querySelectorAll("#breadcrumb .crumb")];
   const longCrumb = crumbs.find(c => c.textContent === longName);
   assert(longCrumb, "the long-named filter still renders its full text as the chip's own content (truncation is CSS-only, not JS-shortened text)");
+  const longLabel = longCrumb.querySelector(".crumb-label");
+  assert(longLabel && longLabel.textContent === longName,
+    "the actual text lives in a child .crumb-label span, not directly in .crumb — a flex container's own text-overflow doesn't clip a child flex item's box, only its own principal box's content, so the truncation properties have to live on that child instead");
 
-  assert(cs(longCrumb).whiteSpace === "nowrap", "a pill never wraps its own text onto a second line");
-  assert(cs(longCrumb).overflow === "hidden" && cs(longCrumb).textOverflow === "ellipsis",
+  assert(cs(longLabel).whiteSpace === "nowrap", "a pill never wraps its own text onto a second line");
+  assert(cs(longLabel).overflow === "hidden" && cs(longLabel).textOverflow === "ellipsis",
     "overflowing text is clipped with an ellipsis, same mechanism as .tree-label");
-  assert(cs(longCrumb).maxWidth === "220px", "a pill is capped to a bounded width, got " + cs(longCrumb).maxWidth);
+  assert(cs(longLabel).minWidth === "0px", "the label can actually shrink below its own text's natural width (default flex-item min-width:auto is exactly what let it overflow un-clipped before this fix)");
+  assert(cs(longCrumb).maxWidth === "220px", "the pill itself is capped to a bounded width, got " + cs(longCrumb).maxWidth);
   assert(longCrumb.title.includes(longName), "the full untruncated name is still reachable via the chip's tooltip, got " + longCrumb.title);
   assert(cs(longCrumb).justifyContent === "flex-start",
     "the chip left-aligns its text (not centered) so the START of a truncated name stays visible instead of a clipped mid-text slice, got " + cs(longCrumb).justifyContent);
@@ -15433,8 +15443,9 @@ await withApp(async (w, d, T) => {
   w.openFilterPopup();
   const chainChip = [...d.querySelectorAll("#filterTargetChain .crumb")].find(c => c.textContent === "a.log");
   assert(chainChip, "the filter-target chain renders its chip(s)");
-  assert(cs(chainChip).maxWidth === "220px" && cs(chainChip).textOverflow === "ellipsis",
-    "the filter-target chain's pills are capped/truncated the same way #breadcrumb's are (shared .crumb rule)");
+  const chainLabel = chainChip.querySelector(".crumb-label");
+  assert(chainLabel && cs(chainChip).maxWidth === "220px" && cs(chainLabel).textOverflow === "ellipsis",
+    "the filter-target chain's pills are capped/truncated the same way #breadcrumb's are (shared .crumb/.crumb-label rule)");
   assert(chainChip.title === "a.log", "the filter-target chain's chip now also carries the full name as a tooltip, got " + JSON.stringify(chainChip.title));
 });
 
@@ -18936,18 +18947,35 @@ process.exitCode = failed ? 1 : 0;
               text wrapped onto a second line inside the pill's fixed 28px
               height and spilled above/below it, pushing the next arrow-only
               separator onto its own line. .crumb (shared by #breadcrumb and
-              #filterTargetChain) now caps at max-width:220px with
-              overflow:hidden/text-overflow:ellipsis/white-space:nowrap, the
-              same truncation idea as .tree-label's; the untruncated name
-              stays reachable via chip.title, which #filterTargetChain's
-              chips didn't carry at all before this session. Follow-up,
-              same session (person-reported): .crumb's own
-              justify-content:center clipped an overflowing chip on BOTH
-              ends, so the ellipsis (which only ever marks the inline-end)
-              left an unmarked cut into the MIDDLE of the name on the
-              left — switched to justify-content:flex-start so a
-              truncated chip shows the name's own start with the ellipsis
-              correctly marking the single clipped tail.
+              #filterTargetChain) now caps at max-width:220px; the
+              untruncated name stays reachable via chip.title, which
+              #filterTargetChain's chips didn't carry at all before this
+              session. Two follow-ups in the same session, both
+              person-reported after a real-browser look (a pure CSS/paint
+              bug jsdom's computed-style checks can't catch, since it has
+              no real layout engine — see tests/README.md "Known gaps"):
+              (1) .crumb's own justify-content:center clipped an
+              overflowing chip on BOTH ends, so the ellipsis (which only
+              ever marks the inline-end) left an unmarked cut into the
+              MIDDLE of the name on the left — switched to
+              justify-content:flex-start. (2) Even left-aligned, nothing
+              actually clipped in a real browser: overflow/text-overflow/
+              white-space had been set directly on .crumb, but its text
+              was an anonymous flex item once the chip turned into
+              inline-flex, and a flex container's text-overflow only elides
+              its OWN principal box's overflow, not a child flex item's —
+              so the pill just grew unclipped past its visual max-width.
+              Fixed by moving the text into a real child element,
+              .crumb-label (flex:1 1 auto; min-width:0 plus the ellipsis
+              trio) that renderBreadcrumb()/renderFilterTargetChain() now
+              create instead of setting chip.textContent directly — the
+              same min-width:0-on-a-flex-child mechanism .tree-label
+              already relies on inside .tree-row. Verified with a real
+              headless-Chromium screenshot (Playwright, driven directly
+              against the served philogg.html rather than jsdom) showing
+              the pill capped, left-aligned, and ending in "…". Test
+              assertions moved from .crumb onto .crumb-label, since that's
+              where the truncation properties actually live now.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:
