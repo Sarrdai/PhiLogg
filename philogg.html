@@ -2062,6 +2062,13 @@
   }
   .settings-switch input:checked + .settings-switch-track{background:var(--accent-soft);}
   .settings-switch input:checked + .settings-switch-track::after{left:18px; background:var(--accent);}
+  /* Compact variant of the exact same switch, for the dense option rows of
+     the filter popup (see .filter-toggle) — a full-size 38x22 switch would
+     dominate a row that also holds "Aa"/"NOT" next to it. */
+  .settings-switch.settings-switch-sm{width:30px; height:18px;}
+  .settings-switch.settings-switch-sm .settings-switch-track{border-radius:9px;}
+  .settings-switch.settings-switch-sm .settings-switch-track::after{width:14px; height:14px; border-radius:7px;}
+  .settings-switch.settings-switch-sm input:checked + .settings-switch-track::after{left:14px;}
   .settings-inline-panel{
     margin-top:10px; padding:16px 16px 14px; border-radius:10px;
     background:var(--accent-soft); border:1px solid var(--accent);
@@ -2278,31 +2285,37 @@
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
   }
-  .filter-invert-toggle{
-    display:flex; align-items:center; gap:4px; flex:0 0 auto;
-    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
-    cursor:pointer; user-select:none; white-space:nowrap;
-  }
-  .filter-invert-toggle input{accent-color:var(--level-error); cursor:pointer;}
-  .filter-invert-toggle:has(input:checked){color:var(--level-error);}
-  .filter-case-toggle{
-    display:flex; align-items:center; gap:4px; flex:0 0 auto;
-    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
-    cursor:pointer; user-select:none; white-space:nowrap;
-  }
-  .filter-case-toggle input{accent-color:var(--accent); cursor:pointer;}
-  .filter-case-toggle:has(input:checked){color:var(--accent-strong);}
-  /* Regex toggle — sits above everything else in the popup (FEATURE_BACKLOG.md
-     #16): a real RegExp alternative to the wildcard-token language, kept as a
-     per-filter checkbox rather than a second dialog so switching back and
-     forth costs one click. */
-  .filter-regex-toggle{
+  /* One shared shape for every boolean option in this popup — regex mode
+     (which sits above everything else, FEATURE_BACKLOG.md #16: a real
+     RegExp alternative to the wildcard-token language, kept as a per-filter
+     toggle rather than a second dialog so switching back and forth costs
+     one click), case-sensitivity, whole-word and NOT. Person-requested
+     (this session): they render as the SAME on/off switch the Settings rows
+     use (.settings-switch, in its compact .settings-switch-sm size) instead
+     of native accent-coloured checkboxes, so "boolean option" looks the
+     same everywhere in the app. The real <input> is still a plain checkbox
+     underneath — only its default appearance is replaced — so every
+     .checked/change-event code path (and every test driving them) is
+     unaffected. The switch and its caption are two separate <label>s
+     (nested labels are invalid HTML): the caption carries `for=` so
+     clicking the text still toggles the switch. */
+  .filter-toggle{
     display:flex; align-items:center; gap:6px; flex:0 0 auto;
     font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
-    cursor:pointer; user-select:none; white-space:nowrap;
+    user-select:none; white-space:nowrap;
   }
-  .filter-regex-toggle input{accent-color:var(--accent); cursor:pointer;}
-  .filter-regex-toggle:has(input:checked){color:var(--accent-strong);}
+  .filter-toggle-label{cursor:pointer;}
+  .filter-toggle:has(input:checked){color:var(--accent-strong);}
+  /* NOT keeps its own red accent — the one option in the popup that removes
+     rows rather than narrowing them. */
+  .filter-toggle-danger:has(input:checked){color:var(--level-error);}
+  .filter-toggle-danger input:checked + .settings-switch-track{background:color-mix(in srgb, var(--level-error) 30%, transparent);}
+  .filter-toggle-danger input:checked + .settings-switch-track::after{background:var(--level-error);}
+  /* "Match whole word" is only meaningful for a plain literal search — see
+     updateWholeWordAvailability(); greyed out rather than hidden so it
+     doesn't shift the row's layout as the input is typed into. */
+  .filter-toggle.disabled{opacity:.4;}
+  .filter-toggle.disabled .filter-toggle-label, .filter-toggle.disabled .settings-switch, .filter-toggle.disabled .settings-switch input{cursor:not-allowed;}
   #filterInput.input-regex-error{border-color:var(--level-error);}
   .filter-column-chips{
     display:flex; align-items:center; gap:5px; flex-wrap:wrap;
@@ -2674,9 +2687,13 @@
           </button>
         </div>
         <form id="filterForm">
-          <label class="filter-regex-toggle" id="filterRegexRow" title="Compile the input as a real JavaScript RegExp instead of the wildcard-token language">
-            <input type="checkbox" id="filterRegexCheckbox"> Interpret input as regex
-          </label>
+          <div class="filter-toggle" id="filterRegexRow" title="Compile the input as a real JavaScript RegExp instead of the wildcard-token language">
+            <label class="settings-switch settings-switch-sm">
+              <input type="checkbox" id="filterRegexCheckbox">
+              <span class="settings-switch-track"></span>
+            </label>
+            <label class="filter-toggle-label" for="filterRegexCheckbox">Interpret input as regex</label>
+          </div>
           <div class="filter-input-section">
             <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [value:float]" autocomplete="off">
             <div id="filterTokenChips" class="filter-token-chips">
@@ -2690,12 +2707,27 @@
             </div>
           </div>
           <div class="filter-settings-row">
-            <label class="filter-case-toggle" title="Match exact upper/lower case">
-              <input type="checkbox" id="filterCaseCheckbox"> Aa
-            </label>
-            <label class="filter-invert-toggle" title="Keep entries that do NOT match instead">
-              <input type="checkbox" id="filterInvertCheckbox"> NOT
-            </label>
+            <div class="filter-toggle" title="Match exact upper/lower case">
+              <label class="settings-switch settings-switch-sm">
+                <input type="checkbox" id="filterCaseCheckbox">
+                <span class="settings-switch-track"></span>
+              </label>
+              <label class="filter-toggle-label" for="filterCaseCheckbox">Aa</label>
+            </div>
+            <div class="filter-toggle" id="filterWholeWordRow">
+              <label class="settings-switch settings-switch-sm">
+                <input type="checkbox" id="filterWholeWordCheckbox">
+                <span class="settings-switch-track"></span>
+              </label>
+              <label class="filter-toggle-label" for="filterWholeWordCheckbox">Match whole word</label>
+            </div>
+            <div class="filter-toggle filter-toggle-danger" title="Keep entries that do NOT match instead">
+              <label class="settings-switch settings-switch-sm">
+                <input type="checkbox" id="filterInvertCheckbox">
+                <span class="settings-switch-track"></span>
+              </label>
+              <label class="filter-toggle-label" for="filterInvertCheckbox">NOT</label>
+            </div>
           </div>
           <div id="filterPatternPreview" class="hidden"></div>
           <div id="filterColumnChips" class="filter-column-chips" title="Restrict search to specific columns — none selected searches all columns">
@@ -5795,7 +5827,7 @@ function activateNewNode(node) {
   return node;
 }
 
-function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null, isRegex = false) {
+function createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null, isRegex = false, wholeWord = false) {
   const parent = state.nodes[parentId];
   if (!parent) return null;
   let name;
@@ -5813,6 +5845,7 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
   if (filterType === "text" && caseSensitive) node.caseSensitive = true;
   if (filterType === "text" && columns && columns.length) node.columns = columns.slice();
   if (filterType === "text" && isRegex) node.isRegex = true;
+  if (filterType === "text" && wholeWord) node.wholeWord = true;
   state.nodes[node.id] = node;
   parent.children.push(node.id);
   return activateNewNode(node);
@@ -5837,7 +5870,7 @@ function idSetFilterName(ids, origin = "plot view") {
 // same global invalidation used for move/delete/invert is needed here too.
 // The plain mutator — callers that should be undoable go through
 // updateFilterNodeWithUndo (see the undo/redo section) instead.
-function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex) {
+function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord) {
   const node = state.nodes[nodeId];
   if (!node) return;
   node.filterType = filterType;
@@ -5855,10 +5888,12 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, c
     if (caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
     if (columns && columns.length) node.columns = columns.slice(); else delete node.columns;
     if (isRegex) node.isRegex = true; else delete node.isRegex;
+    if (wholeWord) node.wholeWord = true; else delete node.wholeWord;
   } else {
     delete node.caseSensitive;
     delete node.columns;
     delete node.isRegex;
+    delete node.wholeWord;
   }
   invalidateAllCaches();
 }
@@ -5961,6 +5996,7 @@ function bakeNodeCondition(node) {
     if (node.caseSensitive) baked.caseSensitive = true;
     if (node.columns && node.columns.length) baked.columns = node.columns.slice();
     if (node.isRegex) baked.isRegex = true;
+    if (node.wholeWord) baked.wholeWord = true;
   } else if (node.filterType === "context") {
     baked.contextBefore = node.contextBefore || 0;
     baked.contextAfter = node.contextAfter || 0;
@@ -6477,6 +6513,7 @@ function cloneSubtree(nodeId, newParentId) {
   if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
   if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
   if (orig.filterType === "text" && orig.isRegex) clone.isRegex = true;
+  if (orig.filterType === "text" && orig.wholeWord) clone.wholeWord = true;
   if (orig.highlightColor) clone.highlightColor = orig.highlightColor;
   if (orig.label) clone.label = orig.label;
   if (orig.selectionFilter) clone.selectionFilter = true;
@@ -6614,7 +6651,36 @@ function compileRegexFilter(source, caseSensitive) {
   try { return new RegExp(source, caseSensitive ? "" : "i"); } catch (err) { return null; }
 }
 
-function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wildcardColumns, regexObj) {
+/* "Match whole word" (node.wholeWord, the filter popup's own toggle) — a
+   literal match only counts when it isn't glued to a word character on
+   either side: "Test" matches "Test is active" but not "Testing activated".
+
+   Deliberately its OWN scan rather than a \b-wrapped RegExp: \b is defined
+   over ASCII [A-Za-z0-9_] only, so it would let "Wert" match inside
+   "Werte" the moment a boundary character is non-ASCII — and German log
+   text is full of those. WORD_CHAR_RE is Unicode-aware instead
+   (\p{L}/\p{N} + "_"), and a plain indexOf scan also keeps the hot filter
+   path allocation-free.
+
+   Only the LITERAL branch honours it: a regex pattern (\b, lookarounds)
+   and the wildcard-token language ([value:word], [*]) both express boundaries
+   themselves, so the popup greys the toggle out for those and never stores
+   the flag on such a node (see updateWholeWordAvailability/commitFilter). */
+const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
+function isWordChar(ch) { return ch !== undefined && WORD_CHAR_RE.test(ch); }
+
+// True iff `hay` contains `needle` at least once with word boundaries on
+// both sides. Indices past either end read as `undefined`, which isWordChar
+// treats as "not a word character" — i.e. the string edges are boundaries.
+function includesWholeWord(hay, needle) {
+  if (!needle) return false;
+  for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + 1)) {
+    if (!isWordChar(hay[i - 1]) && !isWordChar(hay[i + needle.length])) return true;
+  }
+  return false;
+}
+
+function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wildcardColumns, regexObj, wholeWord) {
   if (regexObj) {
     if (columns && columns.length) return columns.some(key => regexObj.test(textColumnValue(e, key)));
     return regexObj.test(e.raw);
@@ -6644,11 +6710,12 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
   if (columns && columns.length) {
     return columns.some(key => {
       const text = textColumnValue(e, key);
-      return (caseSensitive ? text : text.toLowerCase()).includes(q);
+      const hay = caseSensitive ? text : text.toLowerCase();
+      return wholeWord ? includesWholeWord(hay, q) : hay.includes(q);
     });
   }
   const text = caseSensitive ? e.raw : e.raw.toLowerCase();
-  return text.includes(q);
+  return wholeWord ? includesWholeWord(text, q) : text.includes(q);
 }
 
 /* ===================== Text-filter match highlighting =====================
@@ -6794,14 +6861,17 @@ function textFilterMatchSpec(node) {
   // regex filter would otherwise have inherited the same silent no-op.
   if (node.isRegex) {
     const re = compileRegexFilter(value, caseSensitive);
-    return re ? { regex: re, wildcardRegex: null, wildcardColumns: null, value, caseSensitive } : null;
+    return re ? { regex: re, wildcardRegex: null, wildcardColumns: null, value, caseSensitive, wholeWord: false } : null;
   }
   if (isExtractPattern(value)) {
     const compiled = compileExtractPattern(value);
     if (!compiled) return null;
-    return { regex: null, wildcardRegex: new RegExp(compiled.regexStr, caseSensitive ? "" : "i"), wildcardColumns: compiled.columns, value, caseSensitive };
+    return { regex: null, wildcardRegex: new RegExp(compiled.regexStr, caseSensitive ? "" : "i"), wildcardColumns: compiled.columns, value, caseSensitive, wholeWord: false };
   }
-  return { regex: null, wildcardRegex: null, wildcardColumns: null, value, caseSensitive };
+  // Only the literal branch carries wholeWord — same rule getEntries applies
+  // (see includesWholeWord), so a marked span is always a span the filter
+  // itself would have accepted.
+  return { regex: null, wildcardRegex: null, wildcardColumns: null, value, caseSensitive, wholeWord: !!node.wholeWord };
 }
 
 // The columns a "text" filter node's match applies to: its own target-column
@@ -6853,6 +6923,7 @@ function findMatchRanges(text, spec) {
   const hay = spec.caseSensitive ? text : text.toLowerCase();
   let from = 0;
   for (let idx; (idx = hay.indexOf(q, from)) !== -1; from = idx + q.length) {
+    if (spec.wholeWord && (isWordChar(hay[idx - 1]) || isWordChar(hay[idx + q.length]))) continue;
     ranges.push([idx, idx + q.length]);
   }
   return ranges;
@@ -7089,7 +7160,7 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
       const wildcardRegex = spec && new RegExp(spec.regexStr, baked.caseSensitive ? "" : "i");
       result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, wildcardRegex, spec.columns)) : [];
     } else {
-      result = parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns));
+      result = parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, null, !!baked.wholeWord));
     }
   } else if (baked.filterType === "after") {
     result = parentEntries.filter(e => e.ts >= baked.value);
@@ -7193,7 +7264,7 @@ function getEntriesUncached(node) {
       const wildcardRegex = spec && new RegExp(spec.regexStr, node.caseSensitive ? "" : "i");
       result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, wildcardRegex, spec.columns)) : [];
     } else {
-      result = parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns));
+      result = parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, null, !!node.wholeWord));
     }
   } else if (node.filterType === "after") {
     result = parentEntries.filter(e => e.ts >= node.value);
@@ -7527,6 +7598,7 @@ function snapshotSubtree(nodeId) {
   if (node.caseSensitive) copy.caseSensitive = true;
   if (node.columns) copy.columns = node.columns.slice();
   if (node.isRegex) copy.isRegex = true;
+  if (node.wholeWord) copy.wholeWord = true;
   if (node.highlightColor) copy.highlightColor = node.highlightColor;
   if (node.label) copy.label = node.label;
   if (node.selectionFilter) copy.selectionFilter = true;
@@ -7569,6 +7641,7 @@ function restoreSubtree(snap) {
   if (snap.caseSensitive) node.caseSensitive = true;
   if (snap.columns) node.columns = snap.columns;
   if (snap.isRegex) node.isRegex = true;
+  if (snap.wholeWord) node.wholeWord = true;
   if (snap.highlightColor) node.highlightColor = snap.highlightColor;
   if (snap.label) node.label = snap.label;
   if (snap.selectionFilter) node.selectionFilter = true;
@@ -7639,6 +7712,7 @@ function captureNodeFields(node) {
     caseSensitive: !!node.caseSensitive,
     columns: node.columns ? node.columns.slice() : undefined,
     isRegex: !!node.isRegex,
+    wholeWord: !!node.wholeWord,
     assertions: node.assertions ? JSON.parse(JSON.stringify(node.assertions)) : undefined,
   };
 }
@@ -7650,6 +7724,7 @@ function applyNodeFields(node, fields) {
   if (fields.caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
   if (fields.columns) node.columns = fields.columns.slice(); else delete node.columns;
   if (fields.isRegex) node.isRegex = true; else delete node.isRegex;
+  if (fields.wholeWord) node.wholeWord = true; else delete node.wholeWord;
   if (fields.assertions) node.assertions = JSON.parse(JSON.stringify(fields.assertions)); else delete node.assertions;
 }
 function withFieldEditUndo(nodeId, mutateFn) {
@@ -7665,8 +7740,8 @@ function withFieldEditUndo(nodeId, mutateFn) {
 // assertion dialog's Save/Clear handlers instead call withFieldEditUndo
 // directly, since their mutation is a one-liner) — see the module comment
 // above for the full list of "edit" call sites.
-function updateFilterNodeWithUndo(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex) {
-  withFieldEditUndo(nodeId, () => updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex));
+function updateFilterNodeWithUndo(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord) {
+  withFieldEditUndo(nodeId, () => updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord));
 }
 function updateTimeRangeFilterNodeWithUndo(nodeId, from, to) {
   withFieldEditUndo(nodeId, () => updateTimeRangeFilterNode(nodeId, from, to));
@@ -16113,6 +16188,8 @@ const filterPatternPreview = el("#filterPatternPreview");
 const filterInvertCheckbox = el("#filterInvertCheckbox");
 const filterCaseCheckbox = el("#filterCaseCheckbox");
 const filterRegexCheckbox = el("#filterRegexCheckbox");
+const filterWholeWordCheckbox = el("#filterWholeWordCheckbox");
+const filterWholeWordRow = el("#filterWholeWordRow");
 const filterExtractBtn = el("#filterExtractBtn");
 const filterColumnChips = el("#filterColumnChips");
 const filterTargetChainEl = el("#filterTargetChain");
@@ -16194,9 +16271,10 @@ function openFilterPopup() {
   filterInvertCheckbox.checked = false;
   filterCaseCheckbox.checked = false;
   filterRegexCheckbox.checked = false;
+  filterWholeWordCheckbox.checked = false; // person-specified default: off
   updateRegexModeUI();
   renderFilterColumnChips();
-  updateExtractAvailability();
+  updateFilterAvailability();
   filterLiveMatch.textContent = "";
   filterLiveMatch.className = "";
   filterPatternPreview.classList.add("hidden");
@@ -16227,9 +16305,10 @@ function openEditFilterPopup(nodeId) {
   filterInvertCheckbox.checked = !!node.inverted;
   filterCaseCheckbox.checked = node.filterType === "text" && !!node.caseSensitive;
   filterRegexCheckbox.checked = node.filterType === "text" && !!node.isRegex;
+  filterWholeWordCheckbox.checked = node.filterType === "text" && !!node.wholeWord;
   updateRegexModeUI();
   renderFilterColumnChips();
-  updateExtractAvailability();
+  updateFilterAvailability();
   filterLiveMatch.textContent = "";
   filterLiveMatch.className = "";
   filterPopup.classList.remove("hidden");
@@ -16258,9 +16337,10 @@ function closeFilterPopup() {
 // Sets .value directly rather than via a keystroke, so — same as every
 // other direct .value write in this popup (openEditFilterPopup, the
 // context-menu prefill below) — it must also re-run
-// updateExtractAvailability() itself: a plain "input" event listener alone
+// updateFilterAvailability() itself: a plain "input" event listener alone
 // wouldn't see this, and without it the Extract button could stay stuck
-// disabled after a token turns plain text into a wildcard pattern.
+// disabled (and "Match whole word" stuck enabled) after a token turns
+// plain text into a wildcard pattern.
 function insertTokenAtCursor(token) {
   const start = filterInput.selectionStart ?? filterInput.value.length;
   const end = filterInput.selectionEnd ?? filterInput.value.length;
@@ -16269,7 +16349,7 @@ function insertTokenAtCursor(token) {
   const cursor = start + token.length;
   filterInput.focus();
   filterInput.setSelectionRange(cursor, cursor);
-  updateExtractAvailability();
+  updateFilterAvailability();
   evaluateLiveMatch();
 }
 filterTokenChips.addEventListener("click", ev => {
@@ -16295,7 +16375,7 @@ function updateRegexModeUI() {
 }
 filterRegexCheckbox.addEventListener("change", () => {
   updateRegexModeUI();
-  updateExtractAvailability();
+  updateFilterAvailability();
   evaluateLiveMatch();
 });
 
@@ -16356,7 +16436,10 @@ function evaluateLiveMatch() {
       wildcardRegex = new RegExp(spec.regexStr, caseSensitive ? "" : "i");
       wildcardColumns = spec.columns;
     }
-    let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, wildcardRegex, wildcardColumns) ? 1 : 0), 0);
+    // wholeWord only reaches the literal branch of textFilterMatches — a
+    // wildcard pattern disables the toggle anyway (updateWholeWordAvailability).
+    const wholeWord = filterWholeWordCheckbox.checked && !filterWholeWordCheckbox.disabled;
+    let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, wildcardRegex, wildcardColumns, null, wholeWord) ? 1 : 0), 0);
     if (inverted) matches = baseEntries.length - matches;
     const label = inverted ? "Kept (NOT): " : "Matches: ";
     filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
@@ -16469,9 +16552,33 @@ function updateExtractAvailability() {
   // on, regardless of what's typed.
   filterExtractBtn.disabled = filterRegexCheckbox.checked || !isExtractPattern(filterInput.value);
 }
-filterInput.addEventListener("input", () => { updateExtractAvailability(); evaluateLiveMatch(); });
+
+// "Match whole word" only governs a plain LITERAL search (see
+// includesWholeWord): a real regex and the wildcard-token language both
+// carry their own boundary vocabulary (\b / lookarounds, [value:word]/[*]), and
+// getEntries ignores the flag for those two. So instead of letting it sit
+// there as a silent no-op, the toggle greys itself out the moment either
+// applies — driven by the same "input" listener and regex-mode change that
+// already drive the Extract button, so it tracks what is typed live.
+const WHOLE_WORD_TITLE = "Only match the input as a whole word — \u201cTest\u201d matches \u201cTest is active\u201d but not \u201cTesting activated\u201d";
+const WHOLE_WORD_TITLE_NA = "Not applicable to a regex or a wildcard-token pattern — those express their own boundaries (\\b, [value:word], \u2026)";
+function updateWholeWordAvailability() {
+  const inapplicable = filterRegexCheckbox.checked || isExtractPattern(filterInput.value);
+  filterWholeWordCheckbox.disabled = inapplicable;
+  filterWholeWordRow.classList.toggle("disabled", inapplicable);
+  filterWholeWordRow.title = inapplicable ? WHOLE_WORD_TITLE_NA : WHOLE_WORD_TITLE;
+}
+
+// Both content-driven availability states in one call, so every place that
+// can change the input text or the regex toggle refreshes them together.
+function updateFilterAvailability() {
+  updateExtractAvailability();
+  updateWholeWordAvailability();
+}
+filterInput.addEventListener("input", () => { updateFilterAvailability(); evaluateLiveMatch(); });
 filterInvertCheckbox.addEventListener("change", evaluateLiveMatch);
 filterCaseCheckbox.addEventListener("change", evaluateLiveMatch);
+filterWholeWordCheckbox.addEventListener("change", evaluateLiveMatch);
 
 // Shared by both "Add filter"/"Save" (asExtract=false) and "Extract"
 // (asExtract=true) — the ONLY place that decides "text" vs. "extract",
@@ -16508,8 +16615,13 @@ function commitFilter(asExtract) {
   } else {
     const caseSensitive = filterCaseCheckbox.checked;
     const columns = [...filterPopupColumns];
-    if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, filterInvertCheckbox.checked, undefined, caseSensitive, columns, isRegex);
-    else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, null, caseSensitive, columns, isRegex);
+    // Never stored on a node whose value the flag couldn't affect (a regex
+    // or a wildcard pattern) — the toggle is greyed out for those, and a
+    // node carrying a flag that does nothing would be a lie in every
+    // persistence carrier it travels through.
+    const wholeWord = filterWholeWordCheckbox.checked && !isRegex && !isExtractPattern(val);
+    if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, filterInvertCheckbox.checked, undefined, caseSensitive, columns, isRegex, wholeWord);
+    else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, null, caseSensitive, columns, isRegex, wholeWord);
   }
   closeFilterPopup();
   revealFilteredView(); // a new/edited filter's result lives in the Filtered view
@@ -16670,7 +16782,7 @@ function openFilterForEntryColumn(entry, column) {
   filterInput.value = pattern;
   filterPopupColumns = new Set([column.key]);
   renderFilterColumnChips();
-  updateExtractAvailability();
+  updateFilterAvailability();
   evaluateLiveMatch();
 }
 
@@ -17697,6 +17809,7 @@ function serializeFilterBranch(nodeId, includeAncestors) {
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
+    if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
     if (node.selectionFilter) out.selectionFilter = true;
@@ -17743,6 +17856,7 @@ function materializeBakedAsNode(baked, parentId) {
     if (baked.caseSensitive) node.caseSensitive = true;
     if (baked.columns && baked.columns.length) node.columns = baked.columns.slice();
     if (baked.isRegex) node.isRegex = true;
+    if (baked.wholeWord) node.wholeWord = true;
   } else if (baked.filterType === "context") {
     node.contextBefore = baked.contextBefore || 0;
     node.contextAfter = baked.contextAfter || 0;
@@ -17957,6 +18071,7 @@ function materializeSerializedRoots(roots, resolveParentId) {
       node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
     }
     if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
+    if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
@@ -19696,6 +19811,7 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
+    if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
     if (node.selectionFilter) out.selectionFilter = true;
@@ -19850,6 +19966,7 @@ function materializeCachedFilters(fileNode, roots) {
       node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
     }
     if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
+    if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;

@@ -49,7 +49,10 @@ open it in a browser to view it.
   **renamed** (`F2` or right-click → "Rename…") with a human-readable label
   shown in the tree/breadcrumb instead of the raw pattern — handy for turning
   a chain into a readable narrative ("Step 3: calibration errors"). Editing a
-  filter's actual value moved to `Ctrl+E`.
+  filter's actual value moved to `Ctrl+E`. A text filter can be
+  case-sensitive, restricted to specific columns, inverted (NOT),
+  interpreted as a real regular expression, or limited to **whole-word
+  matches** ("Test" matches "Test is active", not "Testing activated").
 - **Level bar can write into the filter tree** — by default, clicking
   ERROR/WARN/INFO/DEBUG on the level bar creates/edits a real, undoable
   filter-tree node at your current position, instead of a separate global
