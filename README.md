@@ -85,6 +85,16 @@ open it in a browser to view it.
   Behavior controls how it's drawn (shown briefly then removed by default,
   always shown, or never drawn but still remembered for Up/Down) and whether
   it's shown at all when the new filter belongs to a different file.
+- **Back / forward through where you looked** — the two arrows next to the
+  wordmark (and your mouse's back/forward buttons) retrace your steps the way
+  Visual Studio or Rider do, which is a different thing from Undo: a step is
+  a place you actually looked at, not an edit you made. Switching filters
+  counts, so does jumping into the Context view or onto a bookmark, and so
+  does scrolling somewhere and staying there for a moment — a fast flick to
+  the end of a file leaves one step at the destination, not fifty on the way,
+  and just walking rows with the arrow keys leaves none. Going back restores
+  the whole view: the filter, the Context/Filtered/Stacked mode, the selected
+  row, and the line you were reading.
 - **Value extraction** — turn a pattern like `x=[value:float] y=[value:float]`
   into a spreadsheet-style table with per-column stats, value assertions, and
   a Plot tab (line/bar/scatter/3D scatter, zoom/pan/rotate, click a point to
