@@ -6144,7 +6144,7 @@ await withApp(async (w, d, T) => {
   assert(Math.abs(home.xDomainMin) < 1e-6 && Math.abs(home.xDomainMax - 100) < 1e-6,
     "home X domain is exactly the data range 0..100 (niceTicks lands on round numbers here), got " + home.xDomainMin + ".." + home.xDomainMax);
   assert(Math.abs(home.yDomainMin) < 1e-6 && Math.abs(home.yDomainMax - 100) < 1e-6, "home Y domain likewise 0..100");
-  assert(!d.querySelector("#plotZoomBar").classList.contains("hidden"), "the zoom toolbar is visible once the plot has data");
+  assert(!d.querySelector("#plot2dToolsGroup").classList.contains("hidden"), "the zoom toolbar is visible once the plot has data");
 
   /* ---------- Zoom-out clamp (home span + a small buffer) / unlimited zoom-in ---------- */
   // PLOT_ZOOM_OUT_BUFFER = 0.08 (8% of the home span on EACH side) — zooming
@@ -13409,9 +13409,9 @@ await withApp(async (w, d, T) => {
    viewport's timestamps (reusing the existing generic time-filter node),
    and (b) a new "idset" filter (an explicit array of entry ids) matching
    exactly the entries currently plotted in view. Two toolbar buttons in
-   #plotZoomBar (#plotFilterTimeRangeBtn/#plotFilterEntriesBtn), following
-   the same "small buttons in the plot's own toolbar" convention as the
-   zoom controls already there.
+   #plotToolbar's #plot2dToolsGroup (#plotFilterTimeRangeBtn/#plotFilterEntriesBtn),
+   following the same "small buttons in the plot's own toolbar" convention as
+   the zoom controls already there.
    ============================================================ */
 group(123);
 await withApp(async (w, d, T) => {
@@ -13724,7 +13724,7 @@ await withApp(async (w, d, T) => {
   /* ---------- Canvas/SVG visibility, zoom bar hidden for 3D ---------- */
   assert(!d.querySelector("#plot3dCanvas").classList.contains("hidden"), "the 3D canvas is shown once type is 3d");
   assert(d.querySelector("#plotSvg").classList.contains("hidden"), "the 2D SVG chart is hidden while showing a 3D plot");
-  assert(d.querySelector("#plotZoomBar").classList.contains("hidden"), "the 2D zoom bar is hidden for 3D (rotate/zoom/pan happens directly on the canvas instead)");
+  assert(d.querySelector("#plot2dToolsGroup").classList.contains("hidden"), "the 2D zoom bar is hidden for 3D (rotate/zoom/pan happens directly on the canvas instead)");
   assert(T.plot3dLastRender, "plot3dLastRender is populated after a 3D render");
   assert(T.plotHoverPoints.length === 3, "one hover/click hit-test entry per plotted row");
 
@@ -17206,6 +17206,60 @@ await withApp(async (w, d, T) => {
   written = null;
   w.copyTableSelection();
   assert(written === null && plainCopied && plainCopied.includes("27,7120"), "without ClipboardItem, copy falls back cleanly to the plain writeText path");
+});
+
+/* ============================================================
+   GROUP 156 — Person-requested (2026-09-02): the Plot view's zoom/filter
+   controls moved out of the shared extraction toolbar into a dedicated
+   #plotToolbar row inside #plotWrap itself (same "real row, not an
+   overlay" pattern as #contextToolbar in the Context view), plus a new
+   Fullscreen button (plot + legend only, exit via X or Esc) and a Save
+   button (exports the plot exactly as currently zoomed/panned).
+   ============================================================ */
+group(156);
+await withApp(async (w, d, T) => {
+  section("156. Plot view's own toolbar: fullscreen (open/close/Esc) and legend");
+
+  const log = Array.from({ length: 5 }, (_, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${i} y=${i * 2}"`).join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.switchExtractView("plot");
+
+  const plotWrap = d.querySelector("#plotWrap");
+  const plotToolbar = d.querySelector("#plotToolbar");
+  const plotBody = d.querySelector("#plotBody");
+  const chartArea = d.querySelector("#plotChartArea");
+  const overlay = d.querySelector("#plotFullscreenOverlay");
+  assert(plotWrap.contains(plotToolbar), "the plot toolbar is a real row inside #plotWrap, not the shared extraction toolbar");
+  assert(!d.querySelector("#extractToolbar").contains(plotToolbar), "the old shared-toolbar #plotZoomBar location no longer holds the plot toolbar");
+  assert(plotBody.contains(chartArea), "the chart area starts out inside #plotBody, next to #plotControls");
+  assert(overlay.classList.contains("hidden"), "the fullscreen overlay starts hidden");
+
+  fireClick(d.querySelector("#plotFullscreenBtn"), w);
+  assert(!overlay.classList.contains("hidden"), "clicking Fullscreen reveals the overlay");
+  assert(d.querySelector("#plotFullscreenChartHost").contains(chartArea), "the SAME #plotChartArea node (not a copy) is moved into the fullscreen host, keeping its zoom/pan/hover listeners");
+  assert(!plotBody.contains(chartArea), "the chart area is no longer under #plotBody while fullscreen");
+  const legendItems = d.querySelectorAll("#plotFullscreenLegend .plot-legend-item");
+  assert(legendItems.length === 1 && legendItems[0].textContent.trim().length > 0, "the fullscreen legend lists one entry per plotted Y series, got " + Array.from(legendItems).map(x => x.textContent).join(","));
+
+  fireKeydown(d, w, "Escape");
+  assert(overlay.classList.contains("hidden"), "Escape exits fullscreen");
+  assert(plotBody.contains(chartArea), "the chart area moves back under #plotBody after exiting fullscreen");
+
+  fireClick(d.querySelector("#plotFullscreenBtn"), w);
+  assert(!overlay.classList.contains("hidden"), "Fullscreen can be re-opened after closing");
+  fireClick(d.querySelector("#plotFullscreenCloseBtn"), w);
+  assert(overlay.classList.contains("hidden"), "the X button exits fullscreen too");
+  assert(plotBody.contains(chartArea), "the chart area is back under #plotBody after the X button");
+
+  // Save button: exercised for a synchronous crash only (jsdom's Image never
+  // fires load/error for a blob: URL, so the async rasterization itself
+  // can't be observed here — see docs/extraction-and-plotting.md).
+  fireClick(d.querySelector("#plotSaveImageBtn"), w);
 });
 
 /* ============================================================
