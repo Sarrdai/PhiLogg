@@ -10,7 +10,7 @@ chronological, dated history — read it for "why/when did X change", not for
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (~20,950 lines, inline CSS,
+PhiLogg: a single self-contained `philogg.html` (~21,050 lines, inline CSS,
 vanilla JS — no framework, no build tooling; the only tooling is
 `scripts/strip-comments.js`, which release builds run over a throwaway copy
 — see `PROJECT.md` → "Release builds"). Personal tool for browser-based
