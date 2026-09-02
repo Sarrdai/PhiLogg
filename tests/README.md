@@ -45,9 +45,17 @@ PHILOGG_HTML=/path/to/philogg.html node philogg.regression.test.js
 
 `npm test` goes through `run.js`, which spawns one child per shard and sums
 their results back into the single `N passed, M failed` line the suite has
-always reported. **Always check that number** (2897 at the time of writing):
+always reported. **Always check that number** (2915 at the time of writing):
 a group that silently stopped running shows up as a lower count, not as a
 failure.
+
+Both the shard children and `run.js` itself end on `process.exitCode`, never
+`process.exit()`. Under the runner a child's stdout is a **pipe**, where
+writes are asynchronous, and `process.exit()` discards whatever is still
+buffered — which intermittently swallowed a child's own `##SHARD` result line
+and made the total come out short by one whole shard, with nothing reported as
+failing. Setting the code and letting the event loop drain cannot truncate.
+Keep it that way when touching either file.
 
 ## How it works
 
