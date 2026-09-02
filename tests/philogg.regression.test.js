@@ -114,6 +114,12 @@ function makeLog(baseSec, n, opts = {}) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Comfortably past philogg.html's NAV_DWELL_MS (700) — a genuine app
+// timer, not a proxy condition that could be polled instead.
+const NAV_DWELL_WAIT = 850;
+// Past the 150ms "that was the code, not the person" window shared by the
+// nav history and the tail-follow scroll listeners.
+const PROGRAMMATIC_SCROLL_SETTLE = 200;
 
 // Poll until `pred` holds, then continue immediately. Replaces the fixed-count
 // `for (let i = 0; i < 40 && <cond>; i++) await sleep(50)` loops this suite
@@ -12214,14 +12220,29 @@ await withApp(async (w, d, T) => {
   assert(T.state.activeId === n1.id, "back from n3 goes to n1, not the discarded n2");
 });
 
+// Rewritten in place this session: scrolling used to overwrite the current
+// waypoint's raw scrollTop on EVERY scroll event, which both destroyed the
+// place being left and made a scroll unable to be a waypoint of its own.
+// It is now B1 (scroll + dwell + one viewport of travel) plus an anchor row
+// instead of a raw pixel offset — see the nav-history comment in
+// philogg.html for the full tier list.
 await withApp(async (w, d, T) => {
-  section("115d. Scroll position round-trips through back/forward");
-  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  section("115d. A scroll the person dwells on becomes its own waypoint, restored via its anchor row");
+  const f = await w.addFile("a.log", makeLog(0, 200), () => {});
   const n1 = w.createFilterNode(f.id, "text", "message");
   w.render();
   const tableBody = d.querySelector("#tableBody");
-  tableBody.scrollTop = 240;
+  const rowH = T.ROW_HEIGHT;
+  // renderTable's own reset-to-top is a programmatic scroll; a person's
+  // scroll landing inside its 150ms window is deliberately ignored (same
+  // guard the tail-follow listeners use), so step outside it first.
+  await sleep(PROGRAMMATIC_SCROLL_SETTLE);
+  // Well past one viewport (clientHeight is stubbed at 400 in this suite),
+  // then held still — that is what makes it a place worth returning to.
+  tableBody.scrollTop = rowH * 50 + 10;
   tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  await sleep(NAV_DWELL_WAIT);
+  assert(T.navHistory.length === 3, "scroll + dwell appended a waypoint after the file + filter visits, got " + T.navHistory.length);
 
   const n2 = w.createFilterNode(f.id, "text", "ERROR");
   w.render();
@@ -12229,7 +12250,11 @@ await withApp(async (w, d, T) => {
 
   fireClick(d.querySelector("#btnNavBack"), w);
   assert(T.state.activeId === n1.id, "sanity: back landed on n1");
-  assert(tableBody.scrollTop === 240, "going back restores the scroll position last seen on n1, got " + tableBody.scrollTop);
+  // Row-granular by design: the waypoint remembers the ENTRY that was at the
+  // top of the viewport (robust against a tail tick, a level-filter change or
+  // a re-sort shifting every pixel offset underneath it), and puts that row
+  // back at the top.
+  assert(tableBody.scrollTop === rowH * 50, "going back lands the anchor row back at the top of the viewport, got " + tableBody.scrollTop);
 });
 
 await withApp(async (w, d, T) => {
@@ -12264,6 +12289,128 @@ await withApp(async (w, d, T) => {
 
   d.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 4 }));
   assert(T.state.activeId !== n1.id, "mouse forward-button (button 4) navigates forward");
+});
+
+await withApp(async (w, d, T) => {
+  section("115g. A scroll burst is ONE waypoint at the destination; a short scroll is none");
+  const f = await w.addFile("a.log", makeLog(0, 300), () => {});
+  w.createFilterNode(f.id, "text", "message");
+  w.render();
+  const tableBody = d.querySelector("#tableBody");
+  const before = T.navHistory.length;
+  await sleep(PROGRAMMATIC_SCROLL_SETTLE); // see 115d — step clear of renderTable's own reset-to-top
+
+  // Three rapid scroll events with no dwell between them: the timer restarts
+  // each time, so only the resting position counts.
+  for (const top of [300, 900, 1800]) {
+    tableBody.scrollTop = top;
+    tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+    await sleep(40);
+  }
+  await sleep(NAV_DWELL_WAIT);
+  assert(T.navHistory.length === before + 1, "a scroll burst produces exactly one waypoint, got " + (T.navHistory.length - before));
+
+  // Under one viewport of travel from the waypoint just made: refreshed in
+  // place, not appended.
+  const afterBurst = T.navHistory.length;
+  tableBody.scrollTop = 1900;
+  tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  await sleep(NAV_DWELL_WAIT);
+  assert(T.navHistory.length === afterBurst, "a scroll shorter than one viewport adds no waypoint, got " + (T.navHistory.length - afterBurst));
+});
+
+await withApp(async (w, d, T) => {
+  section("115h. A programmatic scroll (tail-follow, a jump, a history restore) is never a waypoint");
+  const f = await w.addFile("a.log", makeLog(0, 300), () => {});
+  w.createFilterNode(f.id, "text", "message");
+  w.render();
+  const tableBody = d.querySelector("#tableBody");
+  const before = T.navHistory.length;
+  w.setTableScroll(3000); // stamps lastProgrammaticScrollTs, same as follow/jump/restore do
+  tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  await sleep(NAV_DWELL_WAIT);
+  assert(T.navHistory.length === before, "a code-driven scroll adds no waypoint, got " + (T.navHistory.length - before));
+});
+
+await withApp(async (w, d, T) => {
+  section("115i. A double-click reveal into the Context view is its own waypoint; Back returns to the Filtered pane");
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {});
+  w.render();
+  w.applyFhView("filter");
+  const before = T.navHistory.length;
+
+  w.revealInHighlightView(f.entries[30]);
+  assert(T.fhActiveTab === "highlight", "sanity: the reveal switched to the Context pane");
+  assert(T.navHistory.length === before + 1, "the reveal appended one waypoint, got " + (T.navHistory.length - before));
+
+  fireClick(d.querySelector("#btnNavBack"), w);
+  assert(T.fhActiveTab === "filter", "back returns to the Filtered pane the jump started from");
+  fireClick(d.querySelector("#btnNavForward"), w);
+  assert(T.fhActiveTab === "highlight", "forward returns to the Context pane");
+  assert(T.state.selectedId === f.entries[30].id, "forward restores the entry the reveal had selected");
+});
+
+await withApp(async (w, d, T) => {
+  section("115j. Back/forward restores the selected row and the Context/Filtered/Stacked mode");
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {});
+  const n1 = w.createFilterNode(f.id, "text", "message");
+  w.render();
+  w.selectEntry(f.entries[10].id);
+  w.applyFhView("stacked");
+
+  w.createFilterNode(f.id, "text", "ERROR");
+  w.render();
+  w.applyFhView("filter");
+  w.selectEntry(f.entries[0].id);
+
+  fireClick(d.querySelector("#btnNavBack"), w);
+  assert(T.state.activeId === n1.id, "sanity: back landed on n1");
+  assert(T.fhLayout === "stacked", "back restores the layout the waypoint was recorded in, got " + T.fhLayout);
+  assert(T.state.selectedId === f.entries[10].id, "back restores the row that was selected there");
+});
+
+await withApp(async (w, d, T) => {
+  section("115k. A jump that also switches the active node produces exactly one waypoint (same-place merge)");
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {});
+  w.createFilterNode(f.id, "text", "ERROR");
+  w.render();
+  const before = T.navHistory.length;
+  w.jumpToEntry(f.entries[7].id);
+  assert(T.state.activeId === f.id, "sanity: the jump activated the entry's own root file");
+  assert(T.navHistory.length === before + 1, "the jump adds one waypoint, not one per mechanism, got " + (T.navHistory.length - before));
+  assert(T.state.selectedId === f.entries[7].id, "sanity: the jump selected the target entry");
+});
+
+await withApp(async (w, d, T) => {
+  section("115l. Arrow-key row navigation on its own is not a waypoint");
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {});
+  w.createFilterNode(f.id, "text", "message");
+  w.render();
+  const before = T.navHistory.length;
+  for (let i = 0; i < 6; i++) fireKeydown(d, w, "ArrowDown");
+  await sleep(NAV_DWELL_WAIT);
+  assert(T.state.selectedId !== null, "sanity: the arrow keys did move the selection");
+  assert(T.navHistory.length === before, "walking rows adds no waypoint, got " + (T.navHistory.length - before));
+});
+
+await withApp(async (w, d, T) => {
+  section("115m. A waypoint whose anchor row is gone still navigates; the buttons name their destination");
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {});
+  const n1 = w.createFilterNode(f.id, "text", "message");
+  w.render();
+  w.selectEntry(f.entries[1].id); // an INFO row — makeLog makes every 5th entry ERROR
+  w.createFilterNode(f.id, "text", "ERROR");
+  w.render();
+
+  const backTitle = d.querySelector("#btnNavBack").title;
+  assert(backTitle.startsWith("Back to: "), "the back button's tooltip names its destination, got " + JSON.stringify(backTitle));
+  assert(backTitle.includes(T.state.nodes[n1.id].name), "the tooltip names the node it would return to, got " + JSON.stringify(backTitle));
+
+  // Narrow the view so the anchored INFO row no longer exists in it at all.
+  T.state.levelFilter.add("ERROR");
+  w.render();
+  fireClick(d.querySelector("#btnNavBack"), w);
+  assert(T.state.activeId === n1.id, "back still navigates when the anchored row is no longer in the target view");
 });
 
 /* ============================================================
@@ -17741,6 +17888,18 @@ process.exit(failed ? 1 : 0);
               controls, so the list still reads as complete but nothing in
               it looks editable. Group 114a rewritten for the merged list
               and the absence of the prose; #shortcuts no longer exists.
+
+   Group 115 — FEATURE_BACKLOG.md #53 + #56 (back/forward "where I looked"
+              navigation, and the toolbar regroup). Extended this session
+              (2026-09-02, person-requested) with a real "meaningful
+              interaction" heuristic: a waypoint now carries the whole
+              visible state (node, Context/Filtered/Stacked mode, selection,
+              an anchor ROW + offset per pane instead of a raw scrollTop),
+              scroll+dwell past one viewport is its own waypoint (B1), and
+              the five entry jumps (reveal/jumpToFullLog/jumpToEntry/minimap/
+              tail) record origin and destination (A2-A6). 115d rewritten in
+              place — the old continuous scrollTop tracking it asserted is
+              exactly what the heuristic replaces; 115g-115m added.
 
    Group 116 — this session (2026-08-26), FEATURE_BACKLOG.md #47
               "Format-specific log levels": each LogFormat carries its own
