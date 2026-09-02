@@ -204,6 +204,7 @@ async function withApp(run, opts = {}) {
       get CONTEXT_TOOLBAR_HEIGHT() { return CONTEXT_TOOLBAR_HEIGHT; },
       get extractRowsData() { return extractRowsData; },
       get extractColumns() { return extractColumns; },
+      get renamingNodeId() { return renamingNodeId; },
       get plotConfig() { return plotConfig; },
       get plotZoom() { return plotZoom; },
       set plotZoom(v) { plotZoom = v; },
@@ -6021,7 +6022,7 @@ await withApp(async (w, d, T) => {
   section("53. Plot: point -> log entry, axis-equal");
   // Three entries with x/y values on the SAME 0..20 scale on both axes —
   // deliberately, so any leftover pixel-distortion between the two axes
-  // below can only come from the chart area's own aspect ratio (722x346
+  // below can only come from the chart area's own aspect ratio (708x332
   // per the stubbed 800x400 clientWidth/Height minus PLOT_MARGIN), not from
   // the data itself.
   const rows = [[0, 0], [10, 10], [20, 20]];
@@ -6054,7 +6055,7 @@ await withApp(async (w, d, T) => {
   };
   assert(T.plotConfig.axisEqual === false, "axis-equal defaults off, matching every other plotConfig flag");
   const before = pxPerUnit();
-  assert(Math.abs(before.x - before.y) > 1, "sanity: without axis-equal, X and Y pixels-per-unit differ substantially (722x346 chart area, same 0..20 data range on both axes), got x=" + before.x.toFixed(3) + " y=" + before.y.toFixed(3));
+  assert(Math.abs(before.x - before.y) > 1, "sanity: without axis-equal, X and Y pixels-per-unit differ substantially (708x332 chart area, same 0..20 data range on both axes), got x=" + before.x.toFixed(3) + " y=" + before.y.toFixed(3));
 
   const axisCb = d.querySelector("#plotAxisEqual");
   assert(axisCb !== null, "'Equal axis scale' checkbox is offered for a non-bar chart type (scatter)");
@@ -6114,7 +6115,7 @@ await withApp(async (w, d, T) => {
    Uses a home domain that lands on exact round numbers (0..100 on both
    axes, verified below) specifically so the geometry assertions throughout
    this group can compare against hand-computed expected values instead of
-   fuzzy ranges. Chart-area geometry (722x346 plot rect from the stubbed
+   fuzzy ranges. Chart-area geometry (708x332 plot rect from the stubbed
    800x400 clientWidth/Height minus PLOT_MARGIN) matches Group 53.
    ============================================================ */
 group(54);
@@ -6171,7 +6172,7 @@ await withApp(async (w, d, T) => {
 
   /* ---------- Wheel zoom, anchored at the cursor ---------- */
   // Data point (50,50) sits at pixel (58+50*7.22, 362-50*3.46) = (419, 189)
-  // given the home domain/722x346 plot rect established above.
+  // given the home domain/708x332 plot rect established above.
   const anchorX = 419, anchorY = 189;
   svgEl.dispatchEvent(new w.WheelEvent("wheel", { bubbles: true, cancelable: true, clientX: anchorX, clientY: anchorY, deltaY: -100 }));
   const afterWheelIn = T.plotLastRender;
@@ -6233,7 +6234,7 @@ await withApp(async (w, d, T) => {
   w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 371, clientY: 200, button: 1 })); // ~4-unit shift, under the 8-unit buffer
   await new Promise(resolve => setTimeout(resolve, 50));
   const smallHomePan = T.plotLastRender;
-  const expectedSmallShift = 29 / 722 * 100; // (400-371)px / plotW * homeSpan ≈ 4.02
+  const expectedSmallShift = 29 / 708 * 100; // (400-371)px / plotW * homeSpan ≈ 4.10
   assert(Math.abs(smallHomePan.xDomainMin - expectedSmallShift) < 0.1,
     "a pan request within the buffer applies in full (unclamped), got xDomainMin=" + smallHomePan.xDomainMin.toFixed(3) + " expected ~" + expectedSmallShift.toFixed(3));
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, button: 1 }));
@@ -6271,8 +6272,8 @@ await withApp(async (w, d, T) => {
   assert(dragRectEl.classList.contains("hidden"), "overlay hides again once the drag ends");
 
   const zoomedRect = T.plotLastRender;
-  const expX0 = (200 - 58) / 722 * 100, expX1 = (500 - 58) / 722 * 100;
-  const expY1 = 100 - (100 - 16) / 346 * 100, expY0 = 100 - (300 - 16) / 346 * 100; // screen Y is inverted vs. data Y
+  const expX0 = (200 - 72) / 708 * 100, expX1 = (500 - 72) / 708 * 100;
+  const expY1 = 100 - (100 - 16) / 332 * 100, expY0 = 100 - (300 - 16) / 332 * 100; // screen Y is inverted vs. data Y
   assert(Math.abs(zoomedRect.xDomainMin - expX0) < 1 && Math.abs(zoomedRect.xDomainMax - expX1) < 1,
     "left-click-drag zooms to the dragged rectangle's exact data-space X range, got " + zoomedRect.xDomainMin.toFixed(2) + ".." + zoomedRect.xDomainMax.toFixed(2) + " expected ~" + expX0.toFixed(2) + ".." + expX1.toFixed(2));
   assert(Math.abs(zoomedRect.yDomainMin - expY0) < 1 && Math.abs(zoomedRect.yDomainMax - expY1) < 1,
@@ -17213,18 +17214,28 @@ await withApp(async (w, d, T) => {
    controls moved out of the shared extraction toolbar into a dedicated
    #plotToolbar row inside #plotWrap itself (same "real row, not an
    overlay" pattern as #contextToolbar in the Context view), plus a new
-   Fullscreen button (plot + legend only, exit via X or Esc) and a Save
-   button (exports the plot exactly as currently zoomed/panned).
+   Fullscreen button (plot only, exit via X or Esc) and a Save button
+   (exports the plot exactly as currently zoomed/panned). Updated same
+   session, same-day follow-up: the fullscreen close button didn't work for
+   a 3D chart (its position:absolute button lost the stacking race to
+   #plotChartArea specifically when #plot3dCanvas — hit-tested everywhere
+   in its box, unlike mostly-transparent #plotSvg — was the visible child),
+   fixed by giving the button a real header row instead of overlaying it;
+   and the chart itself now always carries axis titles (column names) and,
+   for multi-series line/bar, an in-SVG legend, so the separate DOM-only
+   fullscreen legend was removed as redundant (the real one is included in
+   fullscreen AND in the exported/saved image, since it's drawn as part of
+   #plotSvg itself, unlike the old DOM sidecar).
    ============================================================ */
 group(156);
 await withApp(async (w, d, T) => {
-  section("156. Plot view's own toolbar: fullscreen (open/close/Esc) and legend");
+  section("156a. Plot view's own toolbar lives inside #plotWrap; fullscreen open/close (button + Escape) for 2D and 3D");
 
-  const log = Array.from({ length: 5 }, (_, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${i} y=${i * 2}"`).join("\n") + "\n";
+  const log = Array.from({ length: 5 }, (_, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${i} y=${i * 2} z=${i * 3}"`).join("\n") + "\n";
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node.id;
   w.render();
   w.switchExtractView("plot");
@@ -17238,13 +17249,17 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#extractToolbar").contains(plotToolbar), "the old shared-toolbar #plotZoomBar location no longer holds the plot toolbar");
   assert(plotBody.contains(chartArea), "the chart area starts out inside #plotBody, next to #plotControls");
   assert(overlay.classList.contains("hidden"), "the fullscreen overlay starts hidden");
+  // The close button now lives in its own #plotFullscreenHeader flex row,
+  // not position:absolute over the chart — that's the actual fix for the
+  // 3D case (jsdom has no real layout engine to catch the old stacking bug
+  // itself, see docs/extraction-and-plotting.md, but the structural fix is
+  // asserted directly here).
+  assert(d.querySelector("#plotFullscreenHeader").contains(d.querySelector("#plotFullscreenCloseBtn")), "the close button lives in its own header row, not overlaid on the chart");
 
   fireClick(d.querySelector("#plotFullscreenBtn"), w);
   assert(!overlay.classList.contains("hidden"), "clicking Fullscreen reveals the overlay");
   assert(d.querySelector("#plotFullscreenChartHost").contains(chartArea), "the SAME #plotChartArea node (not a copy) is moved into the fullscreen host, keeping its zoom/pan/hover listeners");
   assert(!plotBody.contains(chartArea), "the chart area is no longer under #plotBody while fullscreen");
-  const legendItems = d.querySelectorAll("#plotFullscreenLegend .plot-legend-item");
-  assert(legendItems.length === 1 && legendItems[0].textContent.trim().length > 0, "the fullscreen legend lists one entry per plotted Y series, got " + Array.from(legendItems).map(x => x.textContent).join(","));
 
   fireKeydown(d, w, "Escape");
   assert(overlay.classList.contains("hidden"), "Escape exits fullscreen");
@@ -17253,13 +17268,211 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#plotFullscreenBtn"), w);
   assert(!overlay.classList.contains("hidden"), "Fullscreen can be re-opened after closing");
   fireClick(d.querySelector("#plotFullscreenCloseBtn"), w);
-  assert(overlay.classList.contains("hidden"), "the X button exits fullscreen too");
+  assert(overlay.classList.contains("hidden"), "the X button exits fullscreen too (2D chart)");
   assert(plotBody.contains(chartArea), "the chart area is back under #plotBody after the X button");
+
+  // Switch to 3D and repeat the X-button close — this is the actual
+  // person-reported bug (worked for 2D, not for 3D).
+  fireClick(d.querySelector('.plot-type-btn[data-type="3d"]'), w);
+  fireClick(d.querySelector("#plotFullscreenBtn"), w);
+  assert(!overlay.classList.contains("hidden"), "Fullscreen opens for a 3D chart too");
+  fireClick(d.querySelector("#plotFullscreenCloseBtn"), w);
+  assert(overlay.classList.contains("hidden"), "the X button exits fullscreen for a 3D chart too");
 
   // Save button: exercised for a synchronous crash only (jsdom's Image never
   // fires load/error for a blob: URL, so the async rasterization itself
   // can't be observed here — see docs/extraction-and-plotting.md).
   fireClick(d.querySelector("#plotSaveImageBtn"), w);
+});
+
+await withApp(async (w, d, T) => {
+  section("156b. 2D plot axis titles (column names) and the in-SVG multi-series legend");
+
+  const log = Array.from({ length: 5 }, (_, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${i} y=${i * 2} z=${i * 3}"`).join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int] z=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.switchExtractView("plot");
+
+  // Single Y series (the default): both an X and a Y axis title, named
+  // after their respective columns.
+  let titles = Array.from(d.querySelectorAll("#plotSvg .plot-axis-title")).map(t => t.textContent);
+  assert(titles.length === 2, "a single-series chart gets both an X and a Y axis title, got " + JSON.stringify(titles));
+  assert(titles[0] === "Index", "the X title is the X column's own name (the synthetic Index column by default), got " + titles[0]);
+  const yColName = w.findExtractColumn(T.plotConfig.yCols[0]).name;
+  assert(titles[1] === yColName, "the Y title is the single plotted Y column's own name, got " + titles[1] + " expected " + yColName);
+  assert(d.querySelectorAll("#plotSvg text").length > titles.length, "sanity: real tick-number labels are drawn too, not just the two titles");
+
+  // Two Y series: the X title stays, but the Y title drops (ambiguous which
+  // of two differently-named series it would describe) in favor of the
+  // existing in-SVG per-series legend (swatch + name, drawn at the top of
+  // the chart) — the same one that now ends up inside a fullscreen view and
+  // an exported/saved image too, since it's part of #plotSvg itself.
+  T.plotConfig.yCols = [1, 2];
+  w.renderPlotChart();
+  titles = Array.from(d.querySelectorAll("#plotSvg .plot-axis-title")).map(t => t.textContent);
+  assert(titles.length === 1 && titles[0] === "Index", "with 2 Y series, only the X title remains, got " + JSON.stringify(titles));
+  const name1 = w.findExtractColumn(1).name, name2 = w.findExtractColumn(2).name;
+  const svgText = d.querySelector("#plotSvg").textContent;
+  assert(svgText.includes(name1) && svgText.includes(name2), "both Y series' names appear somewhere in the chart (the in-SVG legend), got column names " + name1 + "/" + name2);
+});
+
+/* ============================================================
+   GROUP 157 — Person-requested (2026-09-02): extraction table columns can
+   be renamed — right-click a header -> "Rename column…", or F2 while
+   exactly one column is selected (a plain header click). The renamed name
+   is a display-only override (node.columnRenames, keyed by the column's
+   stable colIndex — the compiled pattern's own token name is untouched)
+   applied wherever a column's name is shown: the table header, the
+   Extraction Pattern view's chip tooltip, and the Plot view's axis titles/
+   legend (all three read names off extractColumns/findExtractColumn,
+   which the rename overlay feeds). Threaded through every persistence
+   carrier node.assertions already established (cloneSubtree, snapshot/
+   restoreSubtree, save/load JSON, session cache).
+   ============================================================ */
+group(157);
+await withApp(async (w, d, T) => {
+  section("157a. F2 / right-click renames a column; the new name shows in the header, pattern chip tooltip, and Plot axis title");
+
+  const log = Array.from({ length: 3 }, (_, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${i} y=${i * 2}"`).join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  const compiledName0 = w.findExtractColumn(0).name; // whatever the pattern compiler names it — not asserted on its own, just remembered
+
+  // F2 with no column selected falls through to the tree-node rename (the
+  // existing FEATURE_BACKLOG.md #12 behavior) — not the column path.
+  T.state.tableSelection = null;
+  fireKeydown(d, w, "F2");
+  assert(T.renamingNodeId === node.id, "F2 with no column selected still starts the ordinary tree-node rename");
+  fireKeydown(d.querySelector(".tree-rename-input"), w, "Escape");
+
+  // A plain click on column 0's ("x") header selects the whole column —
+  // the trigger getSingleSelectedColumn() looks for.
+  d.querySelector('th[data-col="0"]').dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  fireKeydown(d, w, "F2");
+  let input = d.querySelector(".extract-col-rename-input");
+  assert(input && input.dataset.col === "0", "F2 with column 0 selected opens its rename input, got " + (input && input.dataset.col));
+  input.value = "MyX";
+  fireKeydown(input, w, "Enter");
+  assert(node.columnRenames && node.columnRenames[0] === "MyX", "committing the rename writes node.columnRenames keyed by the column's stable colIndex");
+  assert(d.querySelector('th[data-col="0"]').textContent.includes("MyX"), "the table header now shows the renamed name");
+  assert(w.findExtractColumn(0).name === "MyX", "findExtractColumn (read by everything else — stats, plot, ...) resolves the renamed name too");
+
+  const chip = d.querySelector('#extractPatternView .pattern-chip[data-col="0"]');
+  assert(chip.title.startsWith("MyX"), "the Extraction Pattern view's chip tooltip reflects the renamed name, got " + chip.title);
+
+  w.switchExtractView("plot");
+  let titles = Array.from(d.querySelectorAll("#plotSvg .plot-axis-title")).map(t => t.textContent);
+  assert(titles.includes("MyX"), "the Plot view's X axis title uses the renamed name, got " + JSON.stringify(titles));
+  w.switchExtractView("table");
+
+  // Right-click -> "Rename column…" on column 1 ("y"), then Escape cancels
+  // without committing.
+  const th1 = d.querySelector('th[data-col="1"]');
+  th1.dispatchEvent(new w.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  assert(!d.querySelector("#ctxRenameColumn").classList.contains("hidden"), "right-clicking a column header shows 'Rename column…' (hidden for a plain-body right-click)");
+  fireClick(d.querySelector("#ctxRenameColumn"), w);
+  input = d.querySelector('.extract-col-rename-input[data-col="1"]');
+  assert(input, "the context menu opens the same rename input, for column 1 this time");
+  input.value = "should not stick";
+  fireKeydown(input, w, "Escape");
+  assert(!(node.columnRenames && node.columnRenames[1]), "Escape cancels the rename without writing anything");
+  assert(d.querySelector('th[data-col="1"]').textContent.includes(w.findExtractColumn(1).name) && !d.querySelector('th[data-col="1"]').textContent.includes("should not stick"),
+    "column 1's header is back to its compiled name after Escape");
+
+  // Renaming back to blank clears the override (reverts to the compiled name).
+  d.querySelector('th[data-col="0"]').dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  fireKeydown(d, w, "F2");
+  input = d.querySelector(".extract-col-rename-input");
+  input.value = "  ";
+  fireKeydown(input, w, "Enter");
+  assert(!node.columnRenames, "renaming to blank/whitespace clears node.columnRenames entirely (only one column was ever renamed)");
+  assert(w.findExtractColumn(0).name === compiledName0, "the column is back to its compiled pattern name, got " + w.findExtractColumn(0).name + " expected " + compiledName0);
+});
+
+await withApp(async (w, d, T) => {
+  section("157b. Column renames persist: copy/paste, undo, save/load JSON, session cache");
+
+  const log = Array.from({ length: 3 }, (_, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${i} y=${i * 2}"`).join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.renameColumn(node, 0, "MyX");
+  w.renameColumn(node, 1, "MyY");
+  assert(node.columnRenames[0] === "MyX" && node.columnRenames[1] === "MyY", "sanity: both columns renamed directly via renameColumn");
+
+  /* ---------- Copy/paste (cloneSubtree) ---------- */
+  T.state.clipboard = { id: node.id, mode: "copy" };
+  T.state.activeId = f.id;
+  w.pasteClipboard();
+  const pastedId = f.children[f.children.length - 1];
+  const pasted = T.state.nodes[pastedId];
+  assert(pasted.columnRenames && pasted.columnRenames[0] === "MyX" && pasted.columnRenames[1] === "MyY",
+    "the pasted copy's columnRenames matches the original's");
+  assert(pasted.columnRenames !== node.columnRenames, "...as an independent deep copy, not a shared reference");
+  w.renameColumn(pasted, 0, "EditedOnCopy");
+  assert(node.columnRenames[0] === "MyX", "editing the copy's rename afterward leaves the original untouched");
+
+  /* ---------- Undo/redo (snapshotSubtree/restoreSubtree) ---------- */
+  T.resetUndoRedo();
+  w.deleteFilterNodeWithUndo(node.id);
+  assert(!T.state.nodes[node.id], "sanity: node gone after delete");
+  w.undo();
+  const restored = T.state.nodes[node.id];
+  assert(restored && restored.columnRenames && restored.columnRenames[0] === "MyX" && restored.columnRenames[1] === "MyY",
+    "undo restores the deleted node's columnRenames alongside the rest of it");
+
+  /* ---------- Filter save/load JSON round trip ---------- */
+  const branch = w.serializeFilterBranch(node.id);
+  const savedRoot = branch.roots.find(r => r.attach === "target");
+  assert(savedRoot && savedRoot.columnRenames && savedRoot.columnRenames[0] === "MyX", "serializeFilterBranch writes columnRenames into the saved JSON");
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const anchor = w.createFilterNode(f.id, "text", "id=");
+  w.render();
+  const loadScript = d.createElement("script");
+  loadScript.textContent = `loadFilterTargetId = ${JSON.stringify(anchor.id)};`;
+  d.body.appendChild(loadScript);
+  const beforeChildren = anchor.children.length;
+  w.importFilterJson(json);
+  assert(anchor.children.length === beforeChildren + 1, "load creates the extract node under the target anchor");
+  const loaded = T.state.nodes[anchor.children[anchor.children.length - 1]];
+  assert(loaded.columnRenames && loaded.columnRenames[0] === "MyX" && loaded.columnRenames[1] === "MyY",
+    "columnRenames travels through filter save/load JSON (sanitized via sanitizeColumnRenames on the way in)");
+
+  // A hand-edited/foreign file can't smuggle in a garbage rename map — a
+  // non-string value, a non-integer key, or an all-whitespace name are all
+  // dropped, same "filter to known-good values" stance sanitizePlotConfig
+  // already takes for plotConfig.
+  const dirtyBranch = JSON.parse(JSON.stringify(branch));
+  dirtyBranch.roots.find(r => r.attach === "target").columnRenames = { 0: "  ", 1: 42, notanumber: "Bad", 2: "GoodOne" };
+  const dirtyJson = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: dirtyBranch.activeRef, roots: dirtyBranch.roots });
+  const beforeChildren2 = anchor.children.length;
+  w.importFilterJson(dirtyJson);
+  const loadedDirty = T.state.nodes[anchor.children[anchor.children.length - 1]];
+  assert(anchor.children.length === beforeChildren2 + 1 && loadedDirty, "sanity: the dirty import still created a node");
+  assert((!loadedDirty.columnRenames || !loadedDirty.columnRenames[0]) && (!loadedDirty.columnRenames || !loadedDirty.columnRenames[1]),
+    "a blank name and a non-string name are both dropped by the import sanitizer");
+  assert(loadedDirty.columnRenames && loadedDirty.columnRenames[2] === "GoodOne", "a genuinely valid entry in the same map still survives");
+
+  /* ---------- Session cache serialization ---------- */
+  const { roots } = w.serializeFilterTreeForCache(f);
+  const serializedNode = roots.find(r => r.filterType === "extract" && r.columnRenames && r.columnRenames[0] === "MyX");
+  assert(serializedNode, "serializeFilterTreeForCache writes columnRenames for an extract node");
+  const cacheFile = { id: w.uid("n"), type: "file", name: "cachefile", children: [], entries: f.entries, cacheKey: "ck1" };
+  T.state.nodes[cacheFile.id] = cacheFile;
+  w.materializeCachedFilters(cacheFile, roots);
+  const restoredFromCache = cacheFile.children.map(id => T.state.nodes[id]).find(n => n.filterType === "extract" && n.columnRenames && n.columnRenames[0] === "MyX");
+  assert(restoredFromCache && restoredFromCache.columnRenames[1] === "MyY", "materializeCachedFilters restores columnRenames from the session-cache round trip");
 });
 
 /* ============================================================
@@ -18067,7 +18280,7 @@ process.exitCode = failed ? 1 : 0;
               plotConfig.axisEqual (default false, checkbox hidden for bar
               — categorical X has no meaningful pixel-per-unit ratio):
               verified geometrically via rendered cx/cy — before enabling,
-              a 722x346 chart area maps the same 0..20 data range on both
+              a 708x332 chart area maps the same 0..20 data range on both
               axes to different pixels-per-unit; after, they match, with
               only the axis that had the larger pixel-per-unit (X, in this
               layout) padded to meet the tighter one (Y) — the tighter axis
