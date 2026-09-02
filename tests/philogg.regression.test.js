@@ -15377,6 +15377,59 @@ await withApp(async (w, d, T) => {
 
 
 /* ============================================================
+   GROUP 152 — Filter path pills (.crumb, shared by #breadcrumb and
+   #filterTargetChain) stay one line long and a bounded width instead of
+   overflowing (person-reported, screenshot: a long auto-generated filter
+   name wrapped its own text onto a second line inside the pill's fixed
+   28px height, spilling above/below it, with the arrow-only line that
+   followed pushed onto its own row). .crumb now caps at max-width:220px
+   with overflow:hidden/text-overflow:ellipsis/white-space:nowrap, same
+   idea as .tree-label's existing truncation; the untruncated name is
+   still reachable as a tooltip (chip.title).
+   ============================================================ */
+group(152);
+await withApp(async (w, d, T) => {
+  section("152. Filter path pills cap width and expose the full name as a tooltip");
+
+  const cs = w.getComputedStyle;
+  const longPattern = "message ".repeat(20) + "[value:float] this is a very long auto-generated filter name indeed";
+  const longName = "“" + longPattern + "”"; // createFilterNode's own "text" display name, wrapped in curly quotes
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const longFilter = w.createFilterNode(f.id, "text", longPattern);
+  T.state.activeId = longFilter.id;
+  w.render();
+
+  const crumbs = [...d.querySelectorAll("#breadcrumb .crumb")];
+  const longCrumb = crumbs.find(c => c.textContent === longName);
+  assert(longCrumb, "the long-named filter still renders its full text as the chip's own content (truncation is CSS-only, not JS-shortened text)");
+
+  assert(cs(longCrumb).whiteSpace === "nowrap", "a pill never wraps its own text onto a second line");
+  assert(cs(longCrumb).overflow === "hidden" && cs(longCrumb).textOverflow === "ellipsis",
+    "overflowing text is clipped with an ellipsis, same mechanism as .tree-label");
+  assert(cs(longCrumb).maxWidth === "220px", "a pill is capped to a bounded width, got " + cs(longCrumb).maxWidth);
+  assert(longCrumb.title.includes(longName), "the full untruncated name is still reachable via the chip's tooltip, got " + longCrumb.title);
+
+  // Sanity: a short chip is unaffected — still shows its plain text, no
+  // clipping actually kicks in below the cap.
+  const shortCrumb = crumbs.find(c => c.textContent === "a.log");
+  assert(shortCrumb && cs(shortCrumb).maxWidth === "220px", "the same rule applies uniformly (the cap is a ceiling, not a fixed size) — short names just never hit it");
+
+  // --- Same pill, same rule, in the filter-target chain the "add filter"
+  // popup shows (#filterTargetChain reuses .crumb) — it didn't set a
+  // tooltip at all before this session.
+  T.state.activeId = f.id;
+  w.render();
+  w.openFilterPopup();
+  const chainChip = [...d.querySelectorAll("#filterTargetChain .crumb")].find(c => c.textContent === "a.log");
+  assert(chainChip, "the filter-target chain renders its chip(s)");
+  assert(cs(chainChip).maxWidth === "220px" && cs(chainChip).textOverflow === "ellipsis",
+    "the filter-target chain's pills are capped/truncated the same way #breadcrumb's are (shared .crumb rule)");
+  assert(chainChip.title === "a.log", "the filter-target chain's chip now also carries the full name as a tooltip, got " + JSON.stringify(chainChip.title));
+});
+
+
+/* ============================================================
    GROUP 139 — Desktop bridge contract when getPathForFile can't resolve
    anything (the wrapper in desktop/)
    Origin: the session adding the Tauri desktop wrapper. No system webview
@@ -18867,6 +18920,17 @@ process.exitCode = failed ? 1 : 0;
               rows lost their indent for a clickable line connecting the
               two carets that cap their run, and auto-expand-around-the-jump
               became the default.
+
+   Group 152 — this session (2026-09-02), person-reported: a long
+              auto-generated filter name had no width cap of its own, so its
+              text wrapped onto a second line inside the pill's fixed 28px
+              height and spilled above/below it, pushing the next arrow-only
+              separator onto its own line. .crumb (shared by #breadcrumb and
+              #filterTargetChain) now caps at max-width:220px with
+              overflow:hidden/text-overflow:ellipsis/white-space:nowrap, the
+              same truncation idea as .tree-label's; the untruncated name
+              stays reachable via chip.title, which #filterTargetChain's
+              chips didn't carry at all before this session.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:
