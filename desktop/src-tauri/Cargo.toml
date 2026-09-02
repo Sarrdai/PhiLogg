@@ -26,6 +26,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 urlencoding = "2"
 
+# Windows-only: reaches into the WebView2 controller to turn off its
+# Alt-as-accelerator-key handling (see windows.rs's disable_alt_accelerator_keys).
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_Foundation"] }
+
 # Release builds of a desktop app care about size far more than about compile
 # time — this is roughly the profile the Tauri template ships, kept explicit
 # so the installer stays as small as a webview-based build can be.
