@@ -3531,6 +3531,19 @@
                 </label>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsClipboardDecimalSelect">Decimal separator for copy/export</label>
+                <div class="settings-row-hint">Used when copying extraction table cells (Ctrl+C) or exporting as CSV. "Auto" guesses from the browser's language, which doesn't always match what your spreadsheet app expects — pick one explicitly if pasted numbers come out wrong.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsClipboardDecimalSelect">
+                  <option value="auto">Auto (detect from browser)</option>
+                  <option value=".">Point (.)</option>
+                  <option value=",">Comma (,)</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <div class="settings-subsection-title">Hover-to-expand panels</div>
@@ -4584,6 +4597,21 @@ function initCloseToTray() {
 
 document.getElementById("settingsCloseToTray").addEventListener("change", ev => {
   localStorage.setItem(CLOSE_TO_TRAY_KEY, ev.target.checked ? "1" : "0");
+});
+
+/* ===================== "Decimal separator for copy/export" ===================== */
+// See CLIPBOARD_DECIMAL_STORAGE_KEY/resolveClipboardDecimalSeparator above —
+// "auto" (default) is simply "no override stored", so init just reflects
+// whatever's already there rather than writing a value on first load.
+function initClipboardDecimalSetting() {
+  const select = document.getElementById("settingsClipboardDecimalSelect");
+  const stored = localStorage.getItem(CLIPBOARD_DECIMAL_STORAGE_KEY);
+  select.value = (stored === "." || stored === ",") ? stored : "auto";
+}
+document.getElementById("settingsClipboardDecimalSelect").addEventListener("change", ev => {
+  if (ev.target.value === ".") localStorage.setItem(CLIPBOARD_DECIMAL_STORAGE_KEY, ".");
+  else if (ev.target.value === ",") localStorage.setItem(CLIPBOARD_DECIMAL_STORAGE_KEY, ",");
+  else localStorage.removeItem(CLIPBOARD_DECIMAL_STORAGE_KEY);
 });
 
 /* ===================== "Open Files & Filters/Entry Detail on hover"
@@ -9971,6 +9999,18 @@ function systemDecimalSeparator() {
     return part ? part.value : ".";
   } catch (e) { return "."; }
 }
+// navigator.language (browser UI language) is the best signal available to
+// page JS, but it isn't always the same locale the person's spreadsheet app
+// actually parses numbers with (person-reported: auto-detect picked "," on
+// a system where Excel itself expected "."-decimal input, silently
+// mangling every pasted float by an order of magnitude). Settings ->
+// Behavior -> "Decimal separator for copy/export" lets that be pinned
+// explicitly; "auto" (the default) falls back to the guess above.
+const CLIPBOARD_DECIMAL_STORAGE_KEY = "philogg-clipboard-decimal-sep";
+function resolveClipboardDecimalSeparator() {
+  const override = localStorage.getItem(CLIPBOARD_DECIMAL_STORAGE_KEY);
+  return (override === "." || override === ",") ? override : systemDecimalSeparator();
+}
 // Extracted values are plain regex captures, never thousands-grouped, so a
 // simple "digits.digits" pattern is enough to recognize a copyable float —
 // anything else (text, already-comma values, mixed content) passes through.
@@ -9996,7 +10036,7 @@ function extractSelectionToTSV(decimalSep) {
 function copyTableSelection() {
   const s = state.tableSelection;
   if (!s || s.size === 0) return;
-  copyTextToClipboard(extractSelectionToTSV(systemDecimalSeparator()));
+  copyTextToClipboard(extractSelectionToTSV(resolveClipboardDecimalSeparator()));
   showCopyToast("Copied " + s.size.toLocaleString("de-DE") + " cell" + (s.size === 1 ? "" : "s"));
 }
 
@@ -10008,7 +10048,7 @@ function copyTableSelection() {
 // a cell range, with no header row).
 function copyWholeExtractTable() {
   if (!extractRowsData.length) { showCopyToast("Nothing to copy"); return; }
-  const decimalSep = systemDecimalSeparator();
+  const decimalSep = resolveClipboardDecimalSeparator();
   const header = extractColumns.map(c => c.name).join("\t");
   // row.values always holds every compiled column (matching stays untouched
   // by the ignore feature, see isColumnIgnored) — export only the visible
@@ -18492,7 +18532,7 @@ const csvExportHeadersInput = el("#csvExportHeadersInput");
 
 el("#ctxExportCsv").addEventListener("click", () => {
   closeExtractContextMenu();
-  const decimalSep = systemDecimalSeparator();
+  const decimalSep = resolveClipboardDecimalSeparator();
   csvExportDecimalSelect.value = decimalSep === "," ? "," : ".";
   // Comma-decimal locales conventionally use semicolon as the CSV field
   // delimiter (so Excel doesn't mistake a decimal comma for a new column).
@@ -21989,6 +22029,7 @@ applyRowGrid();
 initTheme();
 initUiFont();
 initLogFont();
+initClipboardDecimalSetting();
 initFontScale();
 initQuitOnLastClose();
 initCloseToTray();
