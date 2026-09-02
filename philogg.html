@@ -12903,17 +12903,33 @@ function commitContextExpansionChange(mutate, pinIdx) {
 //     → hold the row after the group (rowKey + 1), so the block's bottom
 //     stays and it unfolds upwards.
 //   • "… N lines" has no side of its own — it is the stretch BETWEEN two
-//     blocks and reveals all of it — so it holds the row above it and grows
-//     downwards, except for a leading group (rowKey -1), which has no row
-//     above and grows upwards instead, holding row 0.
+//     blocks (in the normal shape it has a revealed run on BOTH sides) and
+//     reveals all of it, so there is no "own run" to hold. It holds whichever
+//     side the SELECTION is on instead (person-requested), which is the same
+//     thing said differently: keep the row the person is actually working on
+//     where it is. Under the auto-expand default that selection is always the
+//     match whose context this stretch borders, so it reads as "the block I
+//     am reading stays put and the lines appear on the far side of it".
 function revealContextLines(filler, rowKey) {
   const pinIdx = filler.kind === "more"
     ? (filler.side === "top" ? rowKey : rowKey + 1)
-    : (rowKey >= 0 ? rowKey : 0);
+    : (contextSelectionAtOrBelow(filler.to) ? rowKey + 1 : Math.max(rowKey, 0));
   commitContextExpansionChange(() => {
     revealContextRange(filler.gapStart, filler.from, filler.to);
     forgetAutoRangesForGap(filler.gapStart);
   }, pinIdx);
+}
+
+// Whether the selected entry sits at or after root index `idx` in this file,
+// i.e. BELOW a hidden stretch that ends there — which is what decides the
+// side a "… N lines" row holds (see revealContextLines). False with nothing
+// selected, with a selection belonging to another file, and for a selection
+// INSIDE the stretch, which has no row to be held still yet; all three fall
+// back to holding the row above, the behaviour this replaced.
+function contextSelectionAtOrBelow(idx) {
+  if (!state.selectedId) return false;
+  const sel = buildOrderIndexMap(getRootFileId(state.activeId)).get(state.selectedId);
+  return sel !== undefined && sel >= idx;
 }
 
 // Collapses one whole revealed run — the click target being its connecting

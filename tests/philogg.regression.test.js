@@ -14871,6 +14871,9 @@ await withApp(async (w, d, T) => {
      q) a "Show more" click unfolds its own block AWAY from the run it
         belongs to, holding that run exactly where it is on screen — never
         re-centring on a selected row that happens to be off screen.
+     r) a "… N lines" click has no run of its own to belong to, so it holds
+        whichever side the SELECTION is on — the same click grows downwards
+        or upwards depending on where the person is working.
    ============================================================ */
 group(138);
 await withApp(async (w, d, T) => {
@@ -15205,6 +15208,48 @@ await withApp(async (w, d, T) => {
       screenYOf(big.entries[90].id) + " instead of " + yRunBefore2);
   assert(body.scrollTop === 10 * T.ROW_HEIGHT,
     "…which takes scrollTop with it by exactly the ten revealed rows, got " + body.scrollTop);
+  // --- (r) "… N lines" holds the side the selection is on ----------------
+  // Person-requested after seeing (q) land: unlike a step row, this one is
+  // the stretch BETWEEN two blocks and reveals all of it, so it has no run of
+  // its own to belong to. It keeps the SELECTED row still instead — the same
+  // click therefore grows downwards when the person is reading above the
+  // stretch and upwards when they are reading below it.
+  // The "… 89 lines" row of the stretch below match 0's revealed run.
+  const revealAllRow = () =>
+    fillers().find(el => !el.classList.contains("ctx-show-more") && el.textContent.includes("89"));
+
+  // Selection ABOVE the stretch -> the rows above stay, it grows downwards.
+  enterBig();
+  fireClick(matchRow(big.entries[0].id), w);            // reveals 1-11; selection is match 0
+  assert(T.state.selectedId === big.entries[0].id, "sanity: the selection sits above the hidden stretch");
+  const lenBefore = T.currentHighlightViewEntries.length;
+  const yRunAbove = screenYOf(big.entries[10].id);
+  fireClick(revealAllRow(), w);
+  assert(T.currentHighlightViewEntries.length === lenBefore + 89,
+    "the row reveals the whole remaining stretch, got " + T.currentHighlightViewEntries.length);
+  assert(screenYOf(big.entries[10].id) === yRunAbove && body.scrollTop === 0,
+    "with the selection above it, the rows above stay put and it unfolds downwards, got scrollTop " + body.scrollTop);
+
+  // Selection BELOW the stretch -> the rows below stay, it grows upwards.
+  enterBig();
+  fireClick(matchRow(big.entries[0].id), w);            // same starting state…
+  T.state.selectedId = big.entries[100].id;             // …but reading the block on the far side now
+  const yBelow = screenYOf(big.entries[100].id);
+  fireClick(revealAllRow(), w);
+  assert(T.currentHighlightViewEntries.length === lenBefore + 89, "sanity: the same reveal");
+  assert(screenYOf(big.entries[100].id) === yBelow && body.scrollTop > 0,
+    "with the selection below it, THAT row keeps its place and the stretch unfolds upwards instead, got " +
+      screenYOf(big.entries[100].id) + " instead of " + yBelow + " (scrollTop " + body.scrollTop + ")");
+
+  // No selection at all falls back to holding the row above.
+  enterBig();
+  fireClick(matchRow(big.entries[0].id), w);
+  T.state.selectedId = null;
+  const yRunAbove2 = screenYOf(big.entries[10].id);
+  fireClick(revealAllRow(), w);
+  assert(screenYOf(big.entries[10].id) === yRunAbove2 && body.scrollTop === 0,
+    "nothing selected falls back to holding the row above — the behaviour this replaced");
+
   T.state.activeId = hitFilter.id;
   showContext();
 });

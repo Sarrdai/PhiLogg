@@ -82,11 +82,13 @@ A "Show more (+n)" row exists only on a side that already has revealed rows agai
 
 A step row **belongs to the revealed run it sits against**, and that run is what stays put while the block unfolds *away* from it — so the step at the bottom of a block unfolds downwards, the one at its top unfolds upwards. (The first cut had this the other way round, holding the far side, and a person reported that every block therefore grew in the direction opposite to the button they had just clicked.)
 
+A **"… N lines" row has no such run**: it is the stretch *between* two blocks — in the normal shape it has a revealed run on both sides — and it reveals all of it, so neither side is "its own". It holds whichever side the **selection** is on instead (person-requested, weighed against just always holding the row above: that is deterministic but got the "reading below the stretch" case backwards, and this is the only rule that gets both cases right). Same idea said differently: keep the row the person is actually working on where it is. Under the auto-expand default the selection is always the match whose context borders the stretch, so it reads as "the block I am reading stays put and the lines appear on its far side". A selection that is absent, in another file, or *inside* the stretch (no row to hold yet) falls back to holding the row above.
+
 | action | pinned row | effect |
 |---|---|---|
 | top step (`side: "top"`, sits at the **bottom** of its block) | the row *before* the filler group — i.e. its own run's last row | the block unfolds **downwards**, what follows the stretch is pushed down |
 | bottom step (`side: "bottom"`, sits at the **top** of its block) | the row *after* the group — i.e. its own run's first row | the block unfolds **upwards**, taking `scrollTop` with it |
-| "… N lines" | the row before the group (row 0 for a leading group, which has none) | reveals in place, growing downwards |
+| "… N lines" | the side the **selection** is on: the row *after* the group when the selected entry sits at or below the stretch's end, the row before it otherwise (`contextSelectionAtOrBelow`) | the block being read stays put and the lines appear on its far side |
 | collapsing a run | the row before the run | folds up from below, nothing above moves |
 
 This is deliberately **not** `captureViewAnchor`/`restoreViewAnchor`, which the whole-view actions (expand-all/collapse-all) and every other list-changing action in the file still use: that pair prefers `state.selectedId` and, when the selected row is off screen, reveals it *centred* — which is exactly the extra jump being reported here, since the selection at the time of a step click is usually somewhere else entirely. An index outside the list ("nothing on that side to hold") leaves `scrollTop` untouched, which produces the same effect.
