@@ -14851,6 +14851,9 @@ await withApp(async (w, d, T) => {
      p) Stacked layout seeds everything revealed the first time a node
         becomes active there, regardless of contextInitialExpansion — a
         one-time seed, not a standing override.
+     q) a "Show more" click grows the log on its own side and holds the other
+        side exactly where it is on screen — never re-centring on a selected
+        row that happens to be off screen.
    ============================================================ */
 group(138);
 await withApp(async (w, d, T) => {
@@ -15113,6 +15116,70 @@ await withApp(async (w, d, T) => {
   assert(revealed(T.contextGaps[0].start) === "",
     "manually hiding a stretch in Stacked survives a layout flip — the expanded default is a one-time SEED, not a standing override");
   w.applyFhView("highlight");
+
+  // --- (q) a step click grows its own side and holds the other one --------
+  // Person-reported: "Der visuelle Eindruck soll sein: 'Ich bin noch an der
+  // gleichen Stelle und sehe oben/unten jetzt mehr', also ohne einen
+  // zusätzlichen Sprung." The old commit path went through captureViewAnchor,
+  // which prefers state.selectedId and re-centres it when it is off screen —
+  // so every step click yanked the view back to the selection. Both cases
+  // below deliberately leave the selection off screen, which is exactly what
+  // used to trigger that.
+  //
+  // A 200-line file with matches only at 0 and 100 gives gaps long enough
+  // (99 and 99 lines) for a 10-line step to leave a real remainder on either
+  // side, and puts the rows this checks well outside the stubbed 400px
+  // viewport.
+  const big = await w.addFile("ctxbig.log", makeLog(0, 200, { suffix: i => (i % 100 === 0 ? "hit" : "other") }), () => {});
+  const bigFilter = w.createFilterNode(big.id, "text", "hit"); // entries 0 and 100
+  const body = d.querySelector("#highlightBody");
+  const idxOf = id => T.currentHighlightViewEntries.findIndex(e => e.id === id);
+  const screenYOf = id => T.highlightRowOffsets[idxOf(id)] - body.scrollTop;
+  const enterBig = () => {
+    T.state.activeId = otherFilter.id; showContext();   // force a re-seed
+    T.state.activeId = bigFilter.id; showContext();
+    showTop();
+  };
+
+  // TOP step: it grows the run ABOVE it downwards, so the log has to extend
+  // upwards — the rows below the step (here match 100) must not move a pixel.
+  enterBig();
+  fireClick(matchRow(big.entries[0].id), w);            // auto-reveals 1-11
+  assert(revealed(1) === "1-11", "sanity: a step revealed below match 0, got " + revealed(1));
+  w.setHighlightScroll(200);                            // match 0 (the selection) is now off screen above
+  w.renderHighlightVisibleRows();
+  assert(T.state.selectedId === big.entries[0].id && screenYOf(big.entries[0].id) < 0,
+    "sanity: the selected row sits above the viewport, which is what used to drag the view back");
+  const yBelowBefore = screenYOf(big.entries[100].id);
+  const stepTop = moreRows().find(el => el.textContent.includes("Show more"));
+  assert(stepTop, "sanity: the top step row is on screen");
+  fireClick(stepTop, w);
+  assert(revealed(1) === "1-21", "the top step grows the run above it by one more step, got " + revealed(1));
+  assert(screenYOf(big.entries[100].id) === yBelowBefore,
+    "the rows below it keep their exact on-screen position — the log grew upwards, nothing on the other side moved, got " +
+      screenYOf(big.entries[100].id) + " instead of " + yBelowBefore);
+  assert(body.scrollTop !== 200,
+    "sanity: holding the row below across an insertion above it genuinely had to move scrollTop");
+
+  // BOTTOM step: it grows the run BELOW it upwards, so the log extends
+  // downwards and everything above the step stays put — including the scroll
+  // position itself, since nothing above it changed.
+  enterBig();
+  fireClick(matchRow(big.entries[100].id), w);          // reveals 90-100 and 101-111
+  assert(revealed(1) === "90-100" && revealed(101) === "101-111",
+    "sanity: a step on either side of match 100, got " + revealed(1) + " / " + revealed(101));
+  showTop();
+  T.state.selectedId = big.entries[110].id;             // in the list, but far below the viewport
+  assert(screenYOf(big.entries[110].id) > 400, "sanity: the selected row sits below the viewport");
+  const yAboveBefore = screenYOf(big.entries[0].id);
+  const stepBottom = moreRows()[0];                     // DOM order: the bottom step of the first gap
+  assert(stepBottom, "sanity: the bottom step row is on screen");
+  fireClick(stepBottom, w);
+  assert(revealed(1) === "80-100", "the bottom step grows the run below it by one more step, got " + revealed(1));
+  assert(body.scrollTop === 0 && screenYOf(big.entries[0].id) === yAboveBefore,
+    "nothing above it moved at all — the log grew downwards from the step, got scrollTop " + body.scrollTop);
+  T.state.activeId = hitFilter.id;
+  showContext();
 });
 
 

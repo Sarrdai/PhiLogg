@@ -12711,9 +12711,9 @@ function buildContextView(rootId) {
   const addHidden = (g, hs, he) => {
     const step = contextExpandStep;
     const stepped = (he - hs) > step;
-    if (hs > g.start && stepped) addFiller({ kind: "more", gapStart: g.start, from: hs, to: hs + step });
+    if (hs > g.start && stepped) addFiller({ kind: "more", side: "top", gapStart: g.start, from: hs, to: hs + step });
     addFiller({ kind: "gap", gapStart: g.start, from: hs, to: he });
-    if (he < g.end && stepped) addFiller({ kind: "more", gapStart: g.start, from: he - step, to: he });
+    if (he < g.end && stepped) addFiller({ kind: "more", side: "bottom", gapStart: g.start, from: he - step, to: he });
   };
 
   let gi = 0;
@@ -12775,18 +12775,57 @@ function rebuildHighlightOffsets() {
   highlightSpacer.style.height = (highlightRowOffsets[currentHighlightViewEntries.length] + 22) + "px";
 }
 
+/* Pins ONE row of the current list to its exact on-screen position across a
+   rebuild, by index. Deliberately not captureViewAnchor/restoreViewAnchor:
+   that pair prefers state.selectedId and, when the selected row is off
+   screen, reveals it CENTRED — which is precisely the "und jetzt springt die
+   Anzeige wieder auf die selektierte Zeile" a person reported for the
+   expansion rows. A "Show more" click has to read as "I am still in the same
+   spot and there is now more above/below it", so what it preserves is a row's
+   position, never the selection's.
+
+   Which row: whichever one lies on the side that must NOT move. Revealing
+   below a run pins the row above it (the log grows downwards, everything
+   above stays); revealing above a run pins the row below it (the log grows
+   upwards, everything below stays, and the new lines fill in above). An index
+   outside the list means there is nothing on that side to hold — the scroll
+   position is then left exactly as it is, which produces the same effect. */
+function captureContextRowPin(idx) {
+  const entries = currentHighlightViewEntries;
+  if (idx < 0 || idx >= entries.length) return null;
+  return { id: entries[idx].id, screenY: highlightRowOffsets[idx] - highlightBody.scrollTop };
+}
+function restoreContextRowPin(pin) {
+  if (!pin) return;
+  // contextWouldBeIndex binary-searches the REBUILT list (memoized root order,
+  // see buildOrderIndexMap) — an O(log n) lookup rather than a findIndex over
+  // a list that can be the whole file when everything is revealed. The row is
+  // still there by construction (revealing/hiding context never drops a
+  // rendered row on the pinned side), and the id check keeps that assumption
+  // honest instead of scrolling to a stranger.
+  const idx = contextWouldBeIndex(pin.id);
+  const entries = currentHighlightViewEntries;
+  if (idx < 0 || idx >= entries.length || entries[idx].id !== pin.id) return;
+  setHighlightScroll(highlightRowOffsets[idx] - pin.screenY);
+}
+
 // The one commit path for every HAND change to what is revealed: run `mutate`,
-// then repaint the Context view without moving the reading position —
-// captureViewAnchor/restoreViewAnchor (the same pair every other
-// list-changing action in this file uses) pin whichever row is at the top of
-// the viewport, so rows appearing above/below the change push the content
-// visually instead of yanking the scroll.
-function commitContextExpansionChange(mutate) {
-  const anchor = captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody);
+// then repaint the Context view without moving the reading position. With a
+// `pinIdx` the row at that index keeps its exact on-screen position (see
+// above); without one it falls back to captureViewAnchor/restoreViewAnchor,
+// the same pair every other list-changing action in this file uses, which
+// pins whichever row is at the top of the viewport (or reveals the selection)
+// — the right default for a whole-view action like expand/collapse-all, where
+// there is no "side" that should stay put.
+function commitContextExpansionChange(mutate, pinIdx) {
+  const pinned = pinIdx !== undefined;
+  const pin = pinned ? captureContextRowPin(pinIdx) : null;
+  const anchor = pinned ? null : captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody);
   mutate();
   currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
   rebuildHighlightOffsets();
-  restoreViewAnchor(anchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll);
+  if (pinned) restoreContextRowPin(pin);
+  else restoreViewAnchor(anchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll);
   renderHighlightVisibleRows();
   updateContextToolbar();
   updateMinimapRenderedRange();
@@ -12794,21 +12833,35 @@ function commitContextExpansionChange(mutate) {
 
 // Reveals one root-file range inside a gap — what both filler rows do: the
 // "… N lines" row passes the whole hidden stretch, a "Show more (+n)" row
-// just its own step.
-function revealContextLines(gapStart, from, to) {
+// just its own step. `rowKey` is the filler group's own contextStrips key,
+// i.e. the index of the row it is rendered after (-1 = above row 0), which is
+// what turns the filler's own side into the row to pin:
+//   • a top step grows the run ABOVE it downwards, inserting rows between
+//     that run and this group → hold the row after the group (rowKey + 1).
+//   • a bottom step grows the run BELOW it upwards, inserting rows between
+//     this group and that run → hold the row before it (rowKey).
+//   • "… N lines" has no side of its own; it reveals in place, so hold the
+//     row above it and let the block grow downwards — except for a leading
+//     group (rowKey -1), which has no row above and grows upwards instead,
+//     holding row 0.
+function revealContextLines(filler, rowKey) {
+  const pinIdx = filler.kind === "more"
+    ? (filler.side === "top" ? rowKey + 1 : rowKey)
+    : (rowKey >= 0 ? rowKey : 0);
   commitContextExpansionChange(() => {
-    revealContextRange(gapStart, from, to);
-    forgetAutoRangesForGap(gapStart);
-  });
+    revealContextRange(filler.gapStart, filler.from, filler.to);
+    forgetAutoRangesForGap(filler.gapStart);
+  }, pinIdx);
 }
 
 // Collapses one whole revealed run — the click target being its connecting
-// line, anywhere along it (see makeContextRunHandle).
+// line, anywhere along it (see makeContextRunHandle). Holds the row above the
+// run, so the block folds up from below and nothing above it moves.
 function collapseContextRun(run) {
   commitContextExpansionChange(() => {
     hideContextRange(run.gapStart, run.from, run.to);
     forgetAutoRangesForGap(run.gapStart);
-  });
+  }, run.firstRow - 1);
 }
 
 // Whole-gap open/shut. Still the shape the jump-correctness path and the
@@ -13179,7 +13232,7 @@ function renderHighlightVisibleRows() {
   const frag = document.createDocumentFragment();
   // A leading gap's filler rows have no row to hang off — they belong above
   // row 0, and their height is already folded into offsets[0].
-  if (start === 0 && contextStrips.has(-1)) appendContextFillers(frag, contextStrips.get(-1));
+  if (start === 0 && contextStrips.has(-1)) appendContextFillers(frag, contextStrips.get(-1), -1);
   for (let i = start; i < end; i++) {
     const e = currentHighlightViewEntries[i];
     const row = document.createElement("div");
@@ -13249,7 +13302,7 @@ function renderHighlightVisibleRows() {
     if (run) row.appendChild(makeContextRunHandle(run, i === run.firstRow, i === run.lastRow));
     frag.appendChild(row);
     appendNoteRow(frag, e);
-    if (contextStrips.has(i)) appendContextFillers(frag, contextStrips.get(i));
+    if (contextStrips.has(i)) appendContextFillers(frag, contextStrips.get(i), i);
   }
   highlightRows.innerHTML = "";
   highlightRows.appendChild(frag);
@@ -13284,7 +13337,7 @@ function makeContextRunHandle(run, isTop, isBottom) {
 // fresh on every render, same as every other per-row listener here — DOM
 // identity across renders is never assumed (see CLAUDE.md's
 // "renderVisibleRows() rebuilds nodes" gotcha).
-function appendContextFillers(frag, fillers) {
+function appendContextFillers(frag, fillers, rowKey) {
   fillers.forEach(f => {
     const n = f.to - f.from;
     const row = document.createElement("div");
@@ -13297,7 +13350,7 @@ function appendContextFillers(frag, fillers) {
       (f.kind === "more"
         ? "Show more (+" + n.toLocaleString("de-DE") + ")"
         : n.toLocaleString("de-DE") + (n === 1 ? " line" : " lines")) + '</span>';
-    row.addEventListener("click", () => revealContextLines(f.gapStart, f.from, f.to));
+    row.addEventListener("click", () => revealContextLines(f, rowKey));
     frag.appendChild(row);
   });
 }
