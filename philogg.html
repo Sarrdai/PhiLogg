@@ -1018,7 +1018,7 @@
      #tableBody (they're flex siblings inside #tableWrap), so it gets its own
      hidden-scrollbar overflow and has its scrollLeft driven by #tableBody's
      scroll event instead. */
-  #tableHeader{overflow-x:hidden;}
+  #tableHeader, #highlightHeader{overflow-x:hidden;}
   .th{
     color:var(--text-tertiary); font-size:10.3px; font-weight:650;
     text-transform:uppercase; letter-spacing:.5px; align-self:center;
@@ -1150,10 +1150,12 @@
      a separate scroll container, so its position is independent of the
      Filter view's. */
   #tableBody, #highlightBody{flex:1 1 auto; overflow-y:auto; position:relative;}
-  /* Filter view only (see the #tableHeader rule above) — the Full/Highlight
-     view keeps the original clipped/ellipsis behavior. */
-  #tableBody{overflow-x:auto;}
-  #highlightBody{overflow-x:hidden;}
+  /* Both views scroll horizontally (person-requested for the Context view,
+     2026-09-02 — it used to clip/ellipsis instead). Each drives its own
+     header's scrollLeft from its scroll event, since neither header is a
+     descendant of the scrolling body — see syncTableHeaderWidth /
+     syncHighlightHeaderWidth. */
+  #tableBody, #highlightBody{overflow-x:auto;}
   #tableSpacer, #highlightSpacer{position:relative; width:100%;}
   /* Left padding is a fixed 14px base gutter (bookmark icon lane + at least
      one color mark) plus however much extra room --color-mark-w needs beyond
@@ -1162,7 +1164,8 @@
      count goes up, so N marks always fit instead of overlapping col-bar. */
   #tableRows, #highlightRows{
     position:absolute; top:0; left:0; right:0; box-sizing:border-box;
-    padding:2px 16px 20px calc(26px + (var(--color-mark-w) - 3px));
+    --rows-pad-left: calc(26px + (var(--color-mark-w) - 3px));
+    padding:2px 16px 20px var(--rows-pad-left);
   }
 
   /* Highlight-rule match markers: thin stripes in the row's left gutter, one
@@ -1309,7 +1312,7 @@
      left padding by the same rule, so nothing clips into col-bar. */
   #highlightRows.ctx-active{
     --ctx-lane-x: calc(-9px - (var(--color-mark-w) - 3px) - 26px);
-    padding-left: calc(38px + (var(--color-mark-w) - 3px));
+    --rows-pad-left: calc(38px + (var(--color-mark-w) - 3px));
   }
   /* -1.5px centres the 5px dot on the 2px line the runs draw at --ctx-lane-x. */
   #highlightRows.ctx-active .ctx-anchor-dot{ left: calc(var(--ctx-lane-x) - 1.5px); }
@@ -1332,14 +1335,24 @@
     color:var(--text-tertiary); cursor:pointer;
   }
   .ctx-run-line:hover{ border-left-color:var(--accent); color:var(--accent); }
-  .ctx-run-line.ctx-run-top{ top:13px; }
-  .ctx-run-line.ctx-run-bottom{ bottom:13px; }
+  /* The caret box is exactly the glyph's own 12x12, offset so the chevron's
+     apex sits on the line's axis. An absolutely positioned child is placed
+     against its parent's PADDING box, which here starts INSIDE the 2px
+     border-left — so the offset that centres a 12px box on that border's own
+     axis is -7px, not -5px (which is what left the arrows sitting 2px to the
+     right of the line, person-reported). The inset on a capped
+     end is 8px rather than the box's full height because the chevron's ink
+     only reaches ~8.25px down its own box — at 13px the line visibly stopped
+     short of the arrow (person-reported), at 8px the two just touch. */
+  .ctx-run-line.ctx-run-top{ top:8px; }
+  .ctx-run-line.ctx-run-bottom{ bottom:8px; }
   .ctx-run-cap{
-    position:absolute; left:-6px; width:14px; height:13px;
+    position:absolute; left:-7px; width:12px; height:12px;
     display:flex; align-items:center; justify-content:center;
   }
-  .ctx-run-line.ctx-run-top .ctx-run-cap{ top:-13px; }
-  .ctx-run-line.ctx-run-bottom .ctx-run-cap{ bottom:-13px; }
+  .ctx-run-cap svg{ display:block; }
+  .ctx-run-line.ctx-run-top .ctx-run-cap{ top:-8px; }
+  .ctx-run-line.ctx-run-bottom .ctx-run-cap{ bottom:-8px; }
 
   /* The two filler rows a partially/fully hidden run puts between the log
      rows (see appendContextFillers): the "... N lines" stand-in for everything
@@ -1351,14 +1364,26 @@
      virtualization math stays one number. The whole row is the click target,
      same as any other row-shaped control in this file (.tree-row, .crumb). */
   .ctx-gap-placeholder{
-    box-sizing:border-box; height:22px;
-    display:flex; align-items:center; gap:6px; cursor:pointer;
+    box-sizing:border-box; height:22px; cursor:pointer;
     font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);
     opacity:.6; transition:opacity .12s, background .12s;
   }
   .ctx-gap-placeholder:hover{ opacity:1; background:var(--bg-elevated); }
   .ctx-gap-placeholder.ctx-show-more{ color:var(--accent); opacity:.8; }
   .ctx-gap-icon{ display:flex; align-items:center; flex:0 0 auto; }
+  /* The label is centred in the VISIBLE area, not in the row
+     (person-requested) — and the row can now be much wider than the viewport,
+     since the Context view scrolls horizontally. position:sticky against
+     #highlightBody keeps this box pinned to the scrollport's left edge, the
+     negative margin undoes #highlightRows' own left padding so "pinned at 0"
+     really means the panel's left edge, and renderHighlightVisibleRows gives
+     it the viewport's own width — so justify-content:center lands on the
+     middle of what the person is actually looking at, at any scroll offset. */
+  .ctx-filler-inner{
+    position:sticky; left:0; height:100%;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    margin-left: calc(-1 * var(--rows-pad-left));
+  }
 
   /* Context view's own toolbar — a real row INSIDE the table, directly under
      its header (person-requested, replacing the floating corner chip this
@@ -1411,8 +1436,9 @@
   .col-loc{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-method{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-msg{font-family:var(--font-mono); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  /* Horizontal scrollbar in the Filter view, Filter
-     view only: .col-msg's `overflow:hidden` above resets its "automatic
+  /* Horizontal scrollbar, in BOTH log views (the Context view was added
+     2026-09-02, person-requested — it used to keep an ellipsis-only
+     truncation): .col-msg's `overflow:hidden` above resets its "automatic
      minimum size" to 0 per the CSS Sizing spec (a non-visible-overflow box's
      content-based minimum is 0 unless min-width says otherwise) — which is
      exactly why the message column's grid track (the shared --row-grid's
@@ -1420,11 +1446,9 @@
      of ever actually overflowing. Restoring an explicit min-width here (its
      own natural, un-wrapped text width, thanks to white-space:nowrap already
      above) makes that track — and so the whole row — refuse to shrink below
-     it, which is what makes #tableBody's horizontal scrollbar (see
-     syncTableHeaderWidth's own comment near renderVisibleRows) actually have
-     something to scroll to. Scoped to #tableRows so the Full/Highlight view
-     (#highlightRows) keeps its original ellipsis-only truncation. */
-  #tableRows .col-msg{min-width:max-content;}
+     it, which is what gives each body's horizontal scrollbar (see
+     syncTableHeaderWidth / syncHighlightHeaderWidth) something to scroll to. */
+  #tableRows .col-msg, #highlightRows .col-msg{min-width:max-content;}
   /* #tableRows itself is given an explicit, uniform width by JS
      (syncTableRowsWidth, near applyRowGrid in the script) whenever ANY
      entry in the current view needs more room than the viewport — computed
@@ -7973,6 +7997,7 @@ const linkSpacer = el("#linkSpacer");
 const linkBody = el("#linkBody");
 const statusStrip = el("#statusStrip");
 const tableHeaderEl = el("#tableHeader");
+const highlightHeaderEl = el("#highlightHeader");
 const btnColumns = el("#btnColumns");
 const btnTextMatchHighlight = el("#btnTextMatchHighlight");
 const btnHighlightMatchText = el("#btnHighlightMatchText");
@@ -12764,6 +12789,32 @@ function buildContextRowOffsets(entries, strips) {
   return offsets;
 }
 
+/* Horizontal scrolling for the Context view (person-requested), the exact
+   mirror of the Filter view's own pair: an explicit #highlightRows width
+   derived from the widest message in the list lets #highlightBody actually
+   overflow, and the header — a flex SIBLING of the scrolling body, not a
+   descendant — gets its own width and has its scrollLeft driven by the body's
+   scroll event. Padding is read off the element rather than hardcoded the way
+   TABLE_ROWS_H_PADDING is: this one changes with ctx-active (the marker lane)
+   as well as with --color-mark-w, and one style read per rebuild is cheaper
+   than a constant that silently drifts out of sync with the CSS. */
+let cachedMaxHighlightMsgPixelWidth = 0;
+function syncHighlightRowsWidth() {
+  const cs = getComputedStyle(highlightRows);
+  const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const contentW = cachedMaxHighlightMsgPixelWidth > 0
+    ? lastColumnEdgeX + COLUMN_GRID_GAP + cachedMaxHighlightMsgPixelWidth + pad
+    : 0;
+  // Only override when the content genuinely needs more than the viewport
+  // already gives it — otherwise clear it and let left:0;right:0 stretch-fill.
+  highlightRows.style.width = contentW > highlightSpacer.clientWidth ? Math.ceil(contentW) + "px" : "";
+}
+function syncHighlightHeaderWidth() {
+  const headerGrid = highlightHeaderEl.querySelector(".row-grid");
+  if (headerGrid) headerGrid.style.width = highlightRows.scrollWidth + "px";
+}
+highlightBody.addEventListener("scroll", () => { highlightHeaderEl.scrollLeft = highlightBody.scrollLeft; });
+
 // The Context view ALWAYS uses the offsets path (gap strips make row tops
 // variable regardless of state.multilineMessages/state.showNotes), so unlike
 // the Filtered view's own rebuilds there's no needsRowOffsets() gate here.
@@ -12773,6 +12824,10 @@ function buildContextRowOffsets(entries, strips) {
 function rebuildHighlightOffsets() {
   highlightRowOffsets = buildContextRowOffsets(currentHighlightViewEntries, contextStrips);
   highlightSpacer.style.height = (highlightRowOffsets[currentHighlightViewEntries.length] + 22) + "px";
+  // Same place the list's height is recomputed is where its width is: one
+  // character-count scan plus a single real measurement (computeMaxMessageWidth).
+  cachedMaxHighlightMsgPixelWidth = computeMaxMessageWidth(currentHighlightViewEntries);
+  syncHighlightRowsWidth();
 }
 
 /* Pins ONE row of the current list to its exact on-screen position across a
@@ -12835,18 +12890,25 @@ function commitContextExpansionChange(mutate, pinIdx) {
 // "… N lines" row passes the whole hidden stretch, a "Show more (+n)" row
 // just its own step. `rowKey` is the filler group's own contextStrips key,
 // i.e. the index of the row it is rendered after (-1 = above row 0), which is
-// what turns the filler's own side into the row to pin:
-//   • a top step grows the run ABOVE it downwards, inserting rows between
-//     that run and this group → hold the row after the group (rowKey + 1).
-//   • a bottom step grows the run BELOW it upwards, inserting rows between
-//     this group and that run → hold the row before it (rowKey).
-//   • "… N lines" has no side of its own; it reveals in place, so hold the
-//     row above it and let the block grow downwards — except for a leading
-//     group (rowKey -1), which has no row above and grows upwards instead,
-//     holding row 0.
+// what turns the filler's own side into the row to pin.
+//
+// A step row belongs to the revealed run it sits against, and that run is
+// what stays put while the block grows AWAY from it (person-reported: the
+// first cut held the far side instead, so the block you were reading jumped
+// off in the opposite direction every time):
+//   • a top step sits at the BOTTOM of its block, growing that run
+//     downwards → hold the row before the group (rowKey), so the block's top
+//     stays and it unfolds downwards.
+//   • a bottom step sits at the TOP of its block, growing that run upwards
+//     → hold the row after the group (rowKey + 1), so the block's bottom
+//     stays and it unfolds upwards.
+//   • "… N lines" has no side of its own — it is the stretch BETWEEN two
+//     blocks and reveals all of it — so it holds the row above it and grows
+//     downwards, except for a leading group (rowKey -1), which has no row
+//     above and grows upwards instead, holding row 0.
 function revealContextLines(filler, rowKey) {
   const pinIdx = filler.kind === "more"
-    ? (filler.side === "top" ? rowKey + 1 : rowKey)
+    ? (filler.side === "top" ? rowKey : rowKey + 1)
     : (rowKey >= 0 ? rowKey : 0);
   commitContextExpansionChange(() => {
     revealContextRange(filler.gapStart, filler.from, filler.to);
@@ -13208,6 +13270,10 @@ function renderHighlightView(colorMapIsFresh) {
 function renderHighlightVisibleRows() {
   const total = currentHighlightViewEntries.length;
   const viewportH = highlightBody.clientHeight || 400;
+  // The filler rows centre their label on the VISIBLE area, which is this
+  // wide regardless of how far the rows themselves overflow — see
+  // .ctx-filler-inner and appendContextFillers.
+  const viewportW = highlightBody.clientWidth || 0;
   const scrollTop = highlightBody.scrollTop;
   // No needsRowOffsets() branch here, unlike renderVisibleRows: gap strips make
   // row tops variable in this view regardless of the multiline/notes toggles,
@@ -13232,7 +13298,7 @@ function renderHighlightVisibleRows() {
   const frag = document.createDocumentFragment();
   // A leading gap's filler rows have no row to hang off — they belong above
   // row 0, and their height is already folded into offsets[0].
-  if (start === 0 && contextStrips.has(-1)) appendContextFillers(frag, contextStrips.get(-1), -1);
+  if (start === 0 && contextStrips.has(-1)) appendContextFillers(frag, contextStrips.get(-1), -1, viewportW);
   for (let i = start; i < end; i++) {
     const e = currentHighlightViewEntries[i];
     const row = document.createElement("div");
@@ -13302,10 +13368,11 @@ function renderHighlightVisibleRows() {
     if (run) row.appendChild(makeContextRunHandle(run, i === run.firstRow, i === run.lastRow));
     frag.appendChild(row);
     appendNoteRow(frag, e);
-    if (contextStrips.has(i)) appendContextFillers(frag, contextStrips.get(i), i);
+    if (contextStrips.has(i)) appendContextFillers(frag, contextStrips.get(i), i, viewportW);
   }
   highlightRows.innerHTML = "";
   highlightRows.appendChild(frag);
+  syncHighlightHeaderWidth();
 }
 
 // One revealed row's slice of its run's connecting line: a full-row-height
@@ -13337,7 +13404,7 @@ function makeContextRunHandle(run, isTop, isBottom) {
 // fresh on every render, same as every other per-row listener here — DOM
 // identity across renders is never assumed (see CLAUDE.md's
 // "renderVisibleRows() rebuilds nodes" gotcha).
-function appendContextFillers(frag, fillers, rowKey) {
+function appendContextFillers(frag, fillers, rowKey, viewportW) {
   fillers.forEach(f => {
     const n = f.to - f.from;
     const row = document.createElement("div");
@@ -13346,10 +13413,15 @@ function appendContextFillers(frag, fillers, rowKey) {
     row.title = f.kind === "more"
       ? "Click to reveal " + n.toLocaleString("de-DE") + " more " + (n === 1 ? "line" : "lines")
       : "Click to reveal these lines";
-    row.innerHTML = '<span class="ctx-gap-icon">' + (f.kind === "more" ? ICON_PLUS_SMALL : ICON_ELLIPSIS) + '</span><span>' +
+    // The label lives in its own sticky box (see .ctx-filler-inner) so it
+    // stays centred on what's visible however far the rows are scrolled
+    // sideways; the row itself still spans the full width and is still the
+    // whole click target.
+    row.innerHTML = '<span class="ctx-filler-inner"' + (viewportW ? ' style="width:' + viewportW + 'px"' : '') + '>' +
+      '<span class="ctx-gap-icon">' + (f.kind === "more" ? ICON_PLUS_SMALL : ICON_ELLIPSIS) + '</span><span>' +
       (f.kind === "more"
         ? "Show more (+" + n.toLocaleString("de-DE") + ")"
-        : n.toLocaleString("de-DE") + (n === 1 ? " line" : " lines")) + '</span>';
+        : n.toLocaleString("de-DE") + (n === 1 ? " line" : " lines")) + '</span></span>';
     row.addEventListener("click", () => revealContextLines(f, rowKey));
     frag.appendChild(row);
   });
