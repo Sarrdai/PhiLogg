@@ -8976,10 +8976,10 @@ await withApp(async (w, d, T) => {
   const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
   assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
   const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
-  // Theme + UI font (this session) + Accent color (hidden on Dark, no
-  // highlightPalette — see GROUP 87) + UI scale + Log text size (this
-  // session, split from the old single Font size row — see GROUP 111e).
-  assert(appearanceRows.length === 5, "Theme + UI font + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
+  // Theme + UI font (GROUP 111f) + Log font (this session) + Accent color
+  // (hidden on Dark, no highlightPalette — see GROUP 87) + UI scale +
+  // Log text size (split from the old single Font size row — see GROUP 111e).
+  assert(appearanceRows.length === 6, "Theme + UI font + Log font + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
   // Boolean row: rendered as a switch (input + adjacent track element),
@@ -16771,6 +16771,70 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 153 — Log font family, separate from UI font (person-requested,
+   this session): a second curated-stack picker, same mechanism as GROUP
+   111f/113's UI font, but drives --font-mono (log/text content) instead
+   of --font-ui (UI chrome), so the two can be set independently.
+   ============================================================ */
+group(153);
+await withApp(async (w, d, T) => {
+  section("153a. Settings: Log font family (system stacks only, no web fonts)");
+
+  const select = d.querySelector("#settingsLogFontSelect");
+  assert(select, "the Log font select exists in Settings -> Appearance");
+  assert(select.options.length >= 2, "offers a curated list of more than one font option");
+  assert(select.value === "default", "defaults to the system-default monospace stack");
+  assert(w.document.documentElement.style.getPropertyValue("--font-mono").includes("SF Mono"),
+    "default option reproduces the original --font-mono stack (no visual change until touched)");
+  [...select.options].forEach(opt => {
+    assert(!/http|@font-face|url\(/i.test(opt.value), "font option \"" + opt.value + "\" fetches nothing external");
+  });
+
+  select.value = "courier";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.document.documentElement.style.getPropertyValue("--font-mono").includes("Courier New"), "selecting \"Courier New\" applies its stack via --font-mono");
+  assert(w.localStorage.getItem("philogg-log-font") === "courier", "selection persists to localStorage");
+
+  // Choosing --font-ui does not touch the UI font's own selection/setting.
+  const uiSelect = d.querySelector("#settingsUiFontSelect");
+  const uiValueBefore = uiSelect.value;
+  const uiVarBefore = w.document.documentElement.style.getPropertyValue("--font-ui");
+  select.value = "ui";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.document.documentElement.style.getPropertyValue("--font-mono") === "var(--font-ui)", "\"Same as UI font\" points --font-mono at --font-ui");
+  assert(uiSelect.value === uiValueBefore && w.document.documentElement.style.getPropertyValue("--font-ui") === uiVarBefore,
+    "the UI font selection/value is untouched by changing the Log font");
+
+  select.value = "default";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+});
+
+await withApp(async (w, d, T) => {
+  section("153b. window.philogg.listSystemFonts (desktop build): extra fonts appended to the Log font select too, independent of the UI font select");
+
+  const uiSelect = d.querySelector("#settingsUiFontSelect");
+  const logSelect = d.querySelector("#settingsLogFontSelect");
+
+  await w.philogg.listSystemFonts().then(() => Promise.resolve());
+  await new Promise(r => setTimeout(r, 0));
+
+  const uiGroup = uiSelect.querySelector("optgroup");
+  const logGroup = logSelect.querySelector("optgroup");
+  assert(uiGroup && logGroup, "a system-fonts optgroup is appended to both selects once listSystemFonts resolves");
+
+  const firaOption = [...logSelect.options].find(o => o.textContent === "Fira Code");
+  assert(firaOption, "\"Fira Code\" (reported by the stub) is offered on the Log font select");
+  assert(firaOption.value === "sys:Fira Code", "its option value carries the sys: prefix + exact reported name");
+
+  logSelect.value = firaOption.value;
+  logSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.document.documentElement.style.getPropertyValue("--font-mono").startsWith('"Fira Code",'),
+    "selecting a system font sets --font-mono to the quoted name plus the default monospace fallback stack");
+  assert(w.localStorage.getItem("philogg-log-font") === "sys:Fira Code", "the sys:-prefixed id persists to localStorage under its own key");
+  assert(uiSelect.value !== "sys:Fira Code", "the UI font select's own value is untouched");
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve(["Fira Code", "Iosevka", "Arial"]) } });
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -18976,6 +19040,16 @@ process.exitCode = failed ? 1 : 0;
               the pill capped, left-aligned, and ending in "…". Test
               assertions moved from .crumb onto .crumb-label, since that's
               where the truncation properties actually live now.
+
+   Group 153 — this session (2026-09-02), person-requested: log entries
+              (table rows, extraction table, entry detail, link/pair rows)
+              already keyed off --font-mono, but nothing let a person pick
+              it — the "UI font" setting (GROUP 111f) only touched
+              --font-ui. Added a second "Log font" select in Settings ->
+              Appearance, same curated-stack + desktop listSystemFonts
+              mechanism as UI font, storing under its own
+              "philogg-log-font" localStorage key and driving --font-mono
+              independently.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:
