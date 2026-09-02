@@ -8011,6 +8011,26 @@ function showFhTab(tab) {
   fhActiveTab = tab;
   updateFhTabButtons();
   if (fhLayout === "tabs") {
+    // In tabs layout exactly ONE of the two Log views is on screen, so the
+    // pane the arrow keys drive (state.entriesView) can only sensibly be
+    // that one — it's an invariant of this layout, not a preference. Syncing
+    // it here, in the single funnel every tabs-layout pane switch goes
+    // through, fixes a real bug (person-reported: "navigating the selection
+    // upwards past the top edge sometimes doesn't scroll the table"):
+    // state.entriesView used to be updated only by row clicks, by Ctrl+1/2/3
+    // and by revealInHighlightView, while the #fhTabs buttons and
+    // revealFilteredView() (tree click on a filter node, every filter
+    // creation path, …) switched the visible pane WITHOUT touching it. Left
+    // out of sync, ArrowUp/Down ran moveSelection/moveHighlightSelection
+    // against the HIDDEN pane: updateSelectedRowClass syncs the .selected
+    // class into both views' rows, so the selection visibly walked row by
+    // row through the pane on screen while its scroll container was never
+    // the one scrollToIndex/scrollToHighlightIndex moved — and a
+    // display:none pane can't be scrolled at all, so the position was simply
+    // lost. Intermittent because clicking any row in the visible pane
+    // re-synced it again. Stacked layout is deliberately untouched: both
+    // panes are visible there, so "last pane clicked in" stays meaningful.
+    state.entriesView = tab === "highlight" ? "highlight" : "filter";
     filterSlot.classList.toggle("fh-active", tab === "filter");
     highlightWrap.classList.toggle("fh-active", tab === "highlight");
     // A panel hidden (display:none) while tailing grew couldn't actually
@@ -8352,7 +8372,6 @@ highlightBody.addEventListener("scroll", () => onNavScroll(highlightBody));
 function applyNavWaypoint(wp) {
   state.activeId = wp.nodeId;
   state.multiSelect = new Set();
-  state.entriesView = wp.entriesView;
   // A selection whose entry is gone (file closed, tail rotation) leaves the
   // current one alone rather than blanking the detail panel.
   if (wp.selectedId && entryIndex[wp.selectedId]) state.selectedId = wp.selectedId;
@@ -8362,6 +8381,12 @@ function applyNavWaypoint(wp) {
   // the pane this waypoint was recorded in.
   const wantView = wp.fhLayout === "stacked" ? "stacked" : wp.fhActiveTab;
   if (wp.fhLayout !== fhLayout || (wp.fhLayout === "tabs" && wp.fhActiveTab !== fhActiveTab)) applyFhView(wantView);
+  // Restored LAST, after both render() and applyFhView above: each of those
+  // can route through showFhTab, which now keeps state.entriesView pinned to
+  // whichever pane is on screen in tabs layout (see showFhTab). Assigning it
+  // up front the way this used to would just get overwritten in the stacked
+  // case, where nothing calls showFhTab afterwards to put it back.
+  state.entriesView = wp.entriesView;
   // Navigating to a remembered spot means wanting to look at it, so a live
   // tail must not yank the view back to the bottom on the next tick — the
   // same reason picking a row disengages follow (see applySelection).
