@@ -107,12 +107,15 @@ open it in a browser to view it.
   into multi-hop tuples via a guided dialog.
 - **Context/Filtered split** — the narrowed "Filtered" view plus a
   "Context" view showing the same result *with the log around it*: the
-  matches, and everything the filter rejected collapsed into expandable
-  gaps you open line by line, GitHub-diff style. Jump match to match with
-  Ctrl+↑/↓, the view's own ‹ / › buttons or just a click, without going
-  back to the tree — optionally with the surrounding lines opening around
-  each match you land on and closing again behind you, the clicked line
-  staying put on screen. Side by side or stacked.
+  matches, and everything the filter rejected hidden between them,
+  GitHub-diff style. By default a click on a result opens ten lines above
+  and below it (configurable), and a "Show more (+n)" row grows either end
+  a step at a time — the two directions independently. What is open is
+  drawn as a line down the gutter between two carets; click it anywhere to
+  fold the block back. Jump match to match with Ctrl+↑/↓ or the toolbar's
+  ‹ / › buttons without going back to the tree, with the opened lines
+  travelling along and the clicked line staying put on screen. Side by side
+  or stacked.
 - **Live tailing & folder watch** (Chromium, File System Access API — or
   any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and

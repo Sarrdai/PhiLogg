@@ -129,10 +129,12 @@ const PROGRAMMATIC_SCROLL_SETTLE = 200;
 // same async restore to have run. That was green only for as long as window
 // construction stayed slow enough to hide the gap; speeding the suite up made
 // two of them flake. So: always poll the thing you are about to assert on.
+// `pred` may be async (an IndexedDB read, say) — its result is awaited, so a
+// promise is never mistaken for a truthy answer.
 async function waitFor(pred, { timeout = 3000, step = 5 } = {}) {
   const deadline = Date.now() + timeout;
-  while (!pred() && Date.now() < deadline) await sleep(step);
-  return pred();
+  while (!(await pred()) && Date.now() < deadline) await sleep(step);
+  return await pred();
 }
 
 async function withApp(run, opts = {}) {
@@ -189,17 +191,17 @@ async function withApp(run, opts = {}) {
       get contextGaps() { return contextGaps; },
       get contextMatchIds() { return contextMatchIds; },
       get contextStrips() { return contextStrips; },
-      get contextFoldMarks() { return contextFoldMarks; },
+      get contextRuns() { return contextRuns; },
       get contextExpansions() { return contextExpansions; },
-      get contextAutoExpansions() { return contextAutoExpansions; },
+      get contextAutoRanges() { return contextAutoRanges; },
       get contextMatchRows() { return contextMatchRows; },
       get highlightRowOffsets() { return highlightRowOffsets; },
       get contextInitialExpansion() { return contextInitialExpansion; },
       set contextInitialExpansion(v) { contextInitialExpansion = v; },
-      get contextNavCorner() { return contextNavCorner; },
-      set contextNavCorner(v) { contextNavCorner = v; },
-      get CONTEXT_NAV_CORNERS() { return CONTEXT_NAV_CORNERS; },
+      get contextExpandStep() { return contextExpandStep; },
+      set contextExpandStep(v) { contextExpandStep = v; },
       get CONTEXT_STRIP_HEIGHT() { return CONTEXT_STRIP_HEIGHT; },
+      get CONTEXT_TOOLBAR_HEIGHT() { return CONTEXT_TOOLBAR_HEIGHT; },
       get extractRowsData() { return extractRowsData; },
       get extractColumns() { return extractColumns; },
       get plotConfig() { return plotConfig; },
@@ -6957,7 +6959,10 @@ await withApp(async (w, d, T) => {
   assert(!scopeDialog.classList.contains("hidden"), "the general export-scope prompt opens as part of the actual save-to-library action");
   fireClick(d.querySelector("#exportScopeJustThis"), w);
 
-  await new Promise(r => setTimeout(r, 20)); // saveFilterToLibrary's IndexedDB write is async
+  // saveFilterToLibrary's IndexedDB write is async — wait for the state this
+  // asserts on rather than for a fixed 20ms (tests/README.md's own rule; the
+  // same class of latent flake four other groups were converted for).
+  await waitFor(async () => (await w.listFilterLibrary()).length === 1);
   const records = await w.listFilterLibrary();
   assert(records.length === 1 && records[0].name === "My saved filter", "one record saved under the entered name");
   assert(Array.isArray(records[0].roots) && records[0].roots.length === 1 && records[0].roots[0].filterType === "text",
@@ -6997,7 +7002,9 @@ await withApp(async (w, d, T) => {
 
   const dialog = d.querySelector("#filterLibraryDialog");
   assert(!dialog.classList.contains("hidden"), "the apply dialog opens");
-  await new Promise(r => setTimeout(r, 20)); // renderFilterLibraryDialog's listFilterLibrary() read is async
+  // renderFilterLibraryDialog's listFilterLibrary() read is async — wait for
+  // the row it produces, not for a fixed 20ms (see 59a).
+  await waitFor(() => d.querySelectorAll("#filterLibraryList .filter-library-row").length === 1);
   const rows = [...d.querySelectorAll("#filterLibraryList .filter-library-row")];
   assert(rows.length === 1 && rows[0].querySelector(".filter-library-row-name").textContent === "reusable text filter",
     "the saved preset is listed");
@@ -7016,10 +7023,10 @@ await withApp(async (w, d, T) => {
   // --- Delete from the library ---
   fireContextMenu(fileRow, w);
   fireClick([...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "applyFromLibrary"), w);
-  await new Promise(r => setTimeout(r, 20));
+  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-row-del"));
   const delBtn = d.querySelector("#filterLibraryList .filter-library-row-del");
   fireClick(delBtn, w);
-  await new Promise(r => setTimeout(r, 20));
+  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-empty"));
   assert(d.querySelector("#filterLibraryList .filter-library-empty"), "list re-renders empty after deleting the only entry");
   const remaining = await w.listFilterLibrary();
   assert(remaining.length === 0, "record actually removed from IndexedDB");
@@ -8069,7 +8076,9 @@ await withApp(async (w, d, T) => {
 
   d.querySelector("#formatEditName").value = "Bracket format";
   fireClick(d.querySelector("#formatEditSave"), w);
-  await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async; UI updates only after it resolves
+  // saveFormatEdit's IndexedDB write is async and the UI only updates once it
+  // resolves — wait for that, not for a fixed 20ms (tests/README.md's rule).
+  await waitFor(() => !isVisible(formatEditPanel, w));
   assert(!isVisible(formatEditPanel, w), "saving closes/collapses the inline format panel");
   assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
   assert(formatRows().length === 2, "the new format is now listed alongside the default");
@@ -8088,7 +8097,7 @@ await withApp(async (w, d, T) => {
   d.querySelector("#formatRuleGlob").value = "bracket-*.log";
   d.querySelector("#formatRuleFormatSelect").value = newFormat.id;
   fireClick(d.querySelector("#formatRuleEditSave"), w);
-  await new Promise(r => setTimeout(r, 20)); // saveFormatRuleEdit's IndexedDB write is async
+  await waitFor(() => !isVisible(ruleEditPanel, w)); // saveFormatRuleEdit's IndexedDB write is async
   assert(!isVisible(ruleEditPanel, w), "saving closes/collapses the inline rule panel");
   assert(isVisible(btnAddFormatRule, w), "...and the Add-rule button reappears");
   assert(T.state.formatRules.length === 1 && T.state.formatRules[0].glob === "bracket-*.log", "rule saved with the entered glob");
@@ -8283,7 +8292,11 @@ await withApp(async (w, d, T) => {
   d.querySelector("#formatEditName").value = "Renamed default";
   d.querySelector("#formatEditPattern").value = "%p %m%n";
   fireClick(d.querySelector("#formatEditSave"), w);
-  await new Promise(r => setTimeout(r, 20)); // saveFormatEdit's IndexedDB write is async
+  // saveFormatEdit's IndexedDB write is async — wait for the state asserted on.
+  await waitFor(() => {
+    const fmt = T.state.logFormats.find(f => f.id === "fmt-default");
+    return !!fmt && fmt.name === "Renamed default";
+  });
 
   const editedFmt = T.state.logFormats.find(f => f.id === "fmt-default");
   assert(editedFmt.name === "Renamed default" && editedFmt.edited === true, "editing the builtin default updates it in place and flags it edited");
@@ -8297,7 +8310,11 @@ await withApp(async (w, d, T) => {
 
   // Reset: reverts the row AND restores the original untouched fast-path parsing.
   fireClick(resetBtn(), w);
-  await new Promise(r => setTimeout(r, 20)); // saveLogFormat's IndexedDB write is async
+  // saveLogFormat's IndexedDB write is async — wait for the reset to land.
+  await waitFor(() => {
+    const fmt = T.state.logFormats.find(f => f.id === "fmt-default");
+    return !!fmt && fmt.name !== "Renamed default";
+  });
 
   const resetFmt = T.state.logFormats.find(f => f.id === "fmt-default");
   assert(resetFmt.edited === false, "Reset clears the edited flag");
@@ -12568,7 +12585,8 @@ await withApp(async (w, d, T) => {
   // Reset restores the builtin default's original level list too.
   const resetBtn = [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
   fireClick(resetBtn, w);
-  await new Promise(r => setTimeout(r, 20));
+  // The reset's IndexedDB write is async — wait for the level list it restores.
+  await waitFor(() => T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,DEBUG");
   assert(T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,DEBUG",
     "Reset reverts the builtin default's levels to the original four");
 }, { indexedDB: new IDBFactory() });
@@ -12750,8 +12768,9 @@ await withApp(async (w, d, T) => {
   cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
 
   fireClick(d.querySelector("#formatEditSave"), w);
-  await new Promise(r => setTimeout(r, 20));
   const saved = () => T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",");
+  // saveFormatEdit's IndexedDB write is async — wait for the stored list.
+  await waitFor(() => saved() === "ERROR,WARN,INFO,NOTICE,AUDIT");
   assert(saved() === "ERROR,WARN,INFO,NOTICE,AUDIT",
     "the saved list is the checked rows (custom names included) in the arranged order, got " + saved());
   const stored = await w.listLogFormats();
@@ -12769,7 +12788,7 @@ await withApp(async (w, d, T) => {
   fireClick(noticeRow().querySelector(".filter-library-row-del"), w);
   assert(!d.querySelector('.format-level-row[data-level="NOTICE"]'), "the delete control removes the custom row");
   fireClick(d.querySelector("#formatEditSave"), w);
-  await new Promise(r => setTimeout(r, 20));
+  await waitFor(() => saved() === "ERROR,WARN,INFO,AUDIT"); // async IndexedDB write
   assert(saved() === "ERROR,WARN,INFO,AUDIT", "...and saving drops it from the stored list, got " + saved());
 }, { indexedDB: new IDBFactory() });
 
@@ -14785,48 +14804,50 @@ await withApp(async (w, d, T) => {
    node — it rendered the root file's raw entries array regardless of
    state.activeId, so a filter node and a file node looked pixel-identical).
    Reworked into the Context view: the ACTIVE NODE'S own result, with
-   everything it rejected collapsed into a placeholder row per hidden run,
-   matches carrying the same .ctx-bracket the context filter already draws
-   in the Filtered view, and a nav chip for match-to-match navigation.
-   Round 2 (same session, sketch-driven follow-up): matches stay full width,
-   but revealed context rows are now INDENTED rather than dimmed, a gap is
-   binary (shut or fully open, the previous partial/step-reveal UI removed),
-   an open run's first/last row carries a small fold-back icon instead of a
-   strip, the nav chip lost its filter-name label and got properly sized
-   icon buttons, its corner is configurable, and Stacked always seeds fully
-   expanded.
+   everything it rejected hidden between the matches.
+   REWRITTEN this session for the partial-expansion rework (person-requested,
+   "die visual cues sind noch zu unscheinbar"): a hidden stretch is no longer
+   binary. contextExpansions is a per-gap list of revealed root-index ranges,
+   so each end of a stretch opens a step at a time and independently of the
+   other; matches carry the context filter's .ctx-anchor-dot instead of its
+   .ctx-bracket; revealed rows lost their indent and gained a clickable
+   connecting line between the two carets that cap their run; and the nav
+   chip became a real toolbar row (GROUP 151).
      a) collapsed, the view holds exactly the active node's matches; the gaps
-        account for every other row; a file node collapses nothing.
-     b) match rows are bracketed and NOT indented; closed gaps render as one
-        placeholder row each (leading gap included).
-     c) the nav chip: icon-button navigation, no filter name, hidden on a
-        file node.
-     d) the offsets array and the spacer agree with the rendered heights.
-     e) opening a gap via its placeholder indents the revealed rows (not
-        dimmed) and grows the list by exactly the hidden count, chronological
-        order preserved; the open run carries top/bottom fold icons; closing
-        via the top one restores the previous list exactly.
-     f) the BOTTOM fold icon collapses the same gap, and clicking a fold icon
-        doesn't also select the row underneath it (stopPropagation).
-     g) expand-all/collapse-all from the chip.
-     h) the level quick-filter does not leave the result set, so it never
+        account for every other row; a file node hides nothing.
+     b) match rows carry the dot (no bracket) and are not indented; a fully
+        hidden stretch renders exactly one "… N lines" filler row and no
+        "Show more" (there is no open run to step from) — leading gap
+        included.
+     c) the offsets array and the spacer agree with the rendered heights.
+     d) the "… N lines" row reveals the whole stretch; the revealed rows are
+        spliced in chronologically, are NOT indented, and carry one run line
+        per row with a caret cap at either end.
+     e) clicking the run line collapses the whole run, from anywhere along
+        it, without also selecting the row underneath (stopPropagation).
+     f) an auto-expansion around a jump reveals contextExpandStep lines per
+        direction and puts a "Show more (+n)" row between the run and the
+        "… N lines" row it grew out of; the step row reveals exactly n more.
+     g) the two ends of one stretch are operated separately: growing the top
+        run leaves the bottom one alone.
+     h) "Show more" only exists while more than one step is still hidden.
+     i) expand-all / collapse-all from the toolbar.
+     j) the level quick-filter does not leave the result set, so it never
         changes what the Context view treats as a match.
-     i) jumping to a row that isn't a match opens the gap it is hidden in —
-        a correctness requirement, since it would otherwise have no row.
-     j) Ctrl+Arrow walks match to match, skipping revealed context rows.
-     k) switching the active node drops the previous node's expansions.
-     l) a bookmark toggle rebuilds the view it now depends on.
-     m) a single-row revealed run shows exactly one fold icon, not two
-        overlapping ones.
-     n) Stacked layout seeds every gap open the first time a node becomes
-        active there, regardless of contextInitialExpansion — a one-time
-        seed, not a standing override (manually closing a gap there survives
-        a flip to tabs and back).
-     o) the nav chip's corner is configurable and re-applied immediately.
+     k) jumping to a row that isn't a match reveals it — a correctness
+        requirement, since it would otherwise have no row.
+     l) Ctrl+Arrow walks match to match, skipping revealed context rows.
+     m) switching the active node drops the previous node's expansions.
+     n) a bookmark toggle rebuilds the view it now depends on.
+     o) the auto-expanded window travels with the jump instead of piling up,
+        and never takes back what was revealed by hand.
+     p) Stacked layout seeds everything revealed the first time a node
+        becomes active there, regardless of contextInitialExpansion — a
+        one-time seed, not a standing override.
    ============================================================ */
 group(138);
 await withApp(async (w, d, T) => {
-  section("138. Context view: the active node's result with collapsible gaps");
+  section("138. Context view: the active node's result with partially expandable gaps");
 
   // "hit" lands on entries 0 and 30 -> two 29-line gaps.
   const f = await w.addFile("ctx.log", makeLog(0, 60, { suffix: i => (i % 30 === 0 ? "hit" : "other") }), () => {});
@@ -14834,18 +14855,35 @@ await withApp(async (w, d, T) => {
   const otherFilter = w.createFilterNode(f.id, "text", "other"); // everything else
   // render() auto-reveals the Filtered tab on every activeId change (see
   // revealFilteredView), so every node switch below has to re-show the Context
-  // panel afterwards — otherwise its nav chip stays hidden and stale.
+  // panel afterwards — otherwise its toolbar stays hidden and stale.
   const showContext = () => { w.render(); w.applyFhView("highlight"); };
+  // A fresh, never-revealed state for the same node: switching away and back
+  // is what drops contextExpansions (see (m)).
+  // Only ~25 rows around scrollTop are ever real DOM nodes (see (d)), so any
+  // DOM lookup aimed at the START of the list has to re-window there first.
+  const showTop = () => { w.setHighlightScroll(0); w.renderHighlightVisibleRows(); };
+  const resetContext = () => {
+    T.state.activeId = otherFilter.id; showContext();
+    T.state.activeId = hitFilter.id; showContext();
+    showTop();
+  };
   T.state.activeId = hitFilter.id;
   showContext();
 
-  const placeholders = () => [...d.querySelectorAll("#highlightRows .ctx-gap-placeholder")];
-  const foldBtns = () => [...d.querySelectorAll("#highlightRows .ctx-fold-btn")];
+  const fillers = () => [...d.querySelectorAll("#highlightRows .ctx-gap-placeholder")];
+  const moreRows = () => [...d.querySelectorAll("#highlightRows .ctx-show-more")];
+  const runLines = () => [...d.querySelectorAll("#highlightRows .ctx-run-line")];
+  const matchRow = id => d.querySelector('#highlightRows [data-entry-id="' + id + '"]');
+  const revealed = gapStart => (T.contextExpansions.get(gapStart) || []).map(r => r.from + "-" + r.to).join(",");
+
+  assert(T.contextInitialExpansion === "aroundJump",
+    "auto-expand-around-the-jump is the default now (person-requested), got " + T.contextInitialExpansion);
+  assert(T.contextExpandStep === 10, "…with a default step of 10 lines per direction, got " + T.contextExpandStep);
 
   // --- (a) the view holds the ACTIVE NODE's result, not the whole file ----
   assert(T.contextActive === true, "a filter node is active, so the Context view is in filtered mode");
   assert(T.currentHighlightViewEntries.length === 2,
-    "collapsed, the view holds exactly the node's 2 matches, got " + T.currentHighlightViewEntries.length);
+    "nothing revealed yet, so the view holds exactly the node's 2 matches, got " + T.currentHighlightViewEntries.length);
   assert(T.contextGaps.length === 2 &&
     T.contextGaps.reduce((n, g) => n + (g.end - g.start), 0) === 58,
     "the gaps account for every one of the 58 non-matching rows");
@@ -14853,116 +14891,134 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   showContext();
   assert(T.contextActive === false && T.currentHighlightViewEntries.length === 60 && T.contextGaps.length === 0,
-    "on a file node there is no filter to be outside of: nothing is marked, nothing is collapsed");
+    "on a file node there is no filter to be outside of: nothing is marked, nothing is hidden");
   T.state.activeId = hitFilter.id;
   showContext();
 
-  // --- (b) row/placeholder rendering -------------------------------------
+  // --- (b) row/filler rendering -------------------------------------------
   const matchRows = [...d.querySelectorAll("#highlightRows .log-row.ctx-match")];
   assert(matchRows.length === 2, "both matches render as match rows, got " + matchRows.length);
-  assert(matchRows.every(r => r.querySelector(".ctx-bracket")),
-    "match rows carry the context filter's own bracket, the visual people already read as 'the filter produced this'");
-  assert(matchRows.every(r => w.getComputedStyle(r).paddingLeft !== "24px"),
-    "match rows are NOT indented, unlike a revealed context row (see below)");
+  assert(matchRows.every(r => r.querySelector(".ctx-anchor-dot")),
+    "match rows carry the context filter's own reference-entry DOT (person-requested — the bracket it used to reuse said 'these rows belong together', which a scattered filter result isn't)");
+  assert(matchRows.every(r => !r.querySelector(".ctx-bracket")), "…and no bracket any more");
+  assert(matchRows.every(r => w.getComputedStyle(r).paddingLeft !== "24px"), "match rows are not indented");
   assert(d.querySelector("#highlightRows").classList.contains("ctx-active"),
-    "#highlightRows gets its bracket lane while a filter is active");
-  assert(placeholders().length === 2 && T.contextStrips.size === 2, "one placeholder row per closed gap");
-  assert(placeholders().every(el => el.querySelector(".ctx-gap-icon")),
-    "each placeholder shows the ellipsis affordance");
-  assert(placeholders().every(el => el.textContent.includes("29")),
-    "...and how many lines it stands for, got " + JSON.stringify(placeholders().map(el => el.textContent)));
-  assert(foldBtns().length === 0, "no fold icons exist while every gap is shut");
+    "#highlightRows gets its marker lane while a filter is active");
+  assert(fillers().length === 2 && T.contextStrips.size === 2,
+    "one filler row per fully hidden stretch, got " + fillers().length);
+  assert(moreRows().length === 0,
+    "no 'Show more' row while nothing is revealed — there is no open run to step away from, and clicking a match reveals a step by itself (person-requested)");
+  assert(fillers().every(el => el.querySelector(".ctx-gap-icon")), "each filler shows its affordance icon");
+  assert(fillers().every(el => el.textContent.includes("29")),
+    "…and how many lines it stands for, got " + JSON.stringify(fillers().map(el => el.textContent)));
+  assert(runLines().length === 0, "no run lines exist while nothing is revealed");
 
   // A leading gap (the file starting before the first match) has no row to
   // hang off and is rendered above row 0 instead, with its height in offsets[0].
   T.state.activeId = otherFilter.id;
   showContext();
-  assert(T.contextStrips.has(-1), "a leading gap is keyed to -1, i.e. rendered above the first row");
+  assert(T.contextStrips.has(-1), "a leading gap's fillers are keyed to -1, i.e. rendered above the first row");
   assert(T.highlightRowOffsets[0] === T.CONTEXT_STRIP_HEIGHT,
-    "...and its height is folded into offsets[0], so row 0's top stays correct");
+    "…and their height is folded into offsets[0], so row 0's top stays correct");
   T.state.activeId = hitFilter.id;
   showContext();
 
-  // --- (c) the nav chip: icon buttons, no filter name, hidden on a file node ---
-  const nav = d.querySelector("#contextNav");
-  assert(nav && !nav.classList.contains("hidden"), "the nav chip is shown while the Context view is on screen");
-  assert(!nav.textContent.includes("hit"),
-    "the filter's name is no longer repeated here (person-requested — it already sits in the breadcrumb next to it)");
-  const navButtons = () => [...nav.querySelectorAll("button")];
-  assert(navButtons().length >= 2 && navButtons().every(b => b.classList.contains("panel-toggle-btn")),
-    "the prev/next (and expand-all) buttons are sized like every other small panel-corner icon button (.panel-toggle-btn)");
-  assert(nav.querySelector(".ctx-nav-label").textContent.trim() === "2",
-    "just the bare match count remains — no selection yet, so no position prefix, got " +
-    JSON.stringify(nav.querySelector(".ctx-nav-label").textContent));
-  T.state.activeId = f.id; // file node: nothing to navigate or fold
-  showContext();
-  assert(d.querySelector("#contextNav").classList.contains("hidden"),
-    "the chip hides entirely on a file node instead of standing in as an unrelated 'whole file' readout");
-  T.state.activeId = hitFilter.id;
-  showContext();
-
-  // --- (d) virtualization math ---------------------------------------------
-  // Unchanged formula from before this session's rework: contextStrips now
-  // holds ONLY closed gaps (an open gap costs no extra row any more — its fold
-  // icons overlay existing rows instead), so the total is still rows *
-  // ROW_HEIGHT + one CONTEXT_STRIP_HEIGHT per entry still in contextStrips.
+  // --- (c) virtualization math ---------------------------------------------
+  // Each filler row costs one CONTEXT_STRIP_HEIGHT, and a row can now carry
+  // several of them (a "Show more" step row beside its "… N lines" row), so
+  // the total counts FILLERS, not keys.
+  const fillerCount = () => [...T.contextStrips.values()].reduce((n, arr) => n + arr.length, 0);
   const heightsAgree = () => {
     const n = T.currentHighlightViewEntries.length;
-    const expected = n * T.ROW_HEIGHT + T.contextStrips.size * T.CONTEXT_STRIP_HEIGHT;
+    const expected = n * T.ROW_HEIGHT + fillerCount() * T.CONTEXT_STRIP_HEIGHT;
     return T.highlightRowOffsets[n] === expected &&
       d.querySelector("#highlightSpacer").style.height === (expected + 22) + "px";
   };
-  assert(heightsAgree(), "offsets total and spacer height account for both rows and placeholders");
+  assert(heightsAgree(), "offsets total and spacer height account for both rows and filler rows");
 
-  // --- (e) open one gap via its placeholder row ----------------------------
+  // --- (d) the "… N lines" row reveals the whole stretch -------------------
   // #highlightBody's clientHeight is stubbed to 400 (see withApp) regardless of
   // how many rows the model actually holds, so the virtualized window only ever
   // materializes ~25 rows near wherever scrollTop points — model-level
-  // assertions (currentHighlightViewEntries, contextFoldMarks, contextStrips)
+  // assertions (currentHighlightViewEntries, contextRuns, contextExpansions)
   // are what's exhaustive here; DOM queries below only check whatever subset
   // is actually rendered, never a hardcoded total row count.
-  const collapsedCount = T.currentHighlightViewEntries.length;
-  fireClick(placeholders()[0], w); // the WHOLE row is the click target, not just its icon
-  assert(T.currentHighlightViewEntries.length === collapsedCount + 29,
-    "opening a gap grows the list by exactly its hidden count, got " + T.currentHighlightViewEntries.length);
+  fireClick(fillers()[0], w); // the WHOLE row is the click target, not just its icon
+  assert(T.currentHighlightViewEntries.length === 31,
+    "the '… N lines' row reveals the whole stretch in one go, got " + T.currentHighlightViewEntries.length);
   const ts = T.currentHighlightViewEntries.map(e => e.ts);
   assert(ts.every((v, i) => i === 0 || v >= ts[i - 1]), "the revealed rows are spliced in chronologically");
   const ctxRows = [...d.querySelectorAll("#highlightRows .log-row.ctx-context")];
-  assert(ctxRows.length > 0 && ctxRows.every(r => w.getComputedStyle(r).paddingLeft === "24px"),
-    "the revealed rows render as context rows, indented rather than dimmed (opacity is no longer touched at all, see the CSS), got " + ctxRows.length);
-  assert(heightsAgree(), "...and the offsets/spacer still agree afterwards");
-  assert(T.contextStrips.size === 1,
-    "the now-open gap no longer occupies a placeholder slot — only the still-shut one does");
-  assert(T.contextFoldMarks.size === 2, "the open run's first and last row each carry a fold mark in the model");
-  const topFold = foldBtns().find(b => b.classList.contains("ctx-fold-top"));
-  assert(topFold, "the top fold icon (near the top of the viewport) is within the rendered window");
-  fireClick(topFold, w); // collapse back via the TOP icon
-  assert(T.currentHighlightViewEntries.length === collapsedCount, "collapsing via the fold button restores the previous list exactly");
+  assert(ctxRows.length > 0 && ctxRows.every(r => w.getComputedStyle(r).paddingLeft !== "24px"),
+    "revealed rows are no longer indented (person-requested — their run line lives in the marker lane instead, so no log text shifts sideways)");
+  assert(ctxRows.every(r => r.querySelector(".ctx-run-line")),
+    "…and every one of them carries its slice of the run's connecting line");
+  assert(T.contextRuns.length === 1 && T.contextRuns[0].from === 1 && T.contextRuns[0].to === 30,
+    "the model holds exactly one revealed run for that stretch");
+  assert(d.querySelector("#highlightRows .ctx-run-line.ctx-run-top .ctx-run-cap"),
+    "the run's first row caps the line with a caret");
+  assert(heightsAgree(), "…and the offsets/spacer still agree afterwards");
+  assert(fillerCount() === 1, "the revealed stretch costs no filler row any more — only the still-hidden one does");
 
-  // --- (f) the BOTTOM fold icon also collapses, without also selecting -----
-  fireClick(placeholders()[0], w); // reopen
-  // Scroll to the tail of the revealed run so its LAST row (carrying the
-  // bottom fold icon) actually falls inside the virtualized render window.
-  const openedGap = T.contextGaps[0];
-  w.scrollToHighlightIndex(openedGap.start + (openedGap.end - openedGap.start) - 1, {});
+  // --- (e) clicking the line collapses the whole run -----------------------
+  // A line slice on a row in the MIDDLE of the run: collapsing has to work
+  // from wherever you are reading, not only from the two capped ends.
+  const middleLine = runLines().find(l => !l.classList.contains("ctx-run-top") && !l.classList.contains("ctx-run-bottom"));
+  assert(middleLine, "a middle row's line slice is rendered too, not just the capped ends");
   T.state.selectedId = null;
-  const bottomFold = foldBtns().find(b => b.classList.contains("ctx-fold-bottom"));
-  assert(bottomFold, "the bottom fold icon is reachable by scrolling to the end of the revealed run");
-  fireClick(bottomFold, w); // the bottom icon this time
-  assert(T.currentHighlightViewEntries.length === collapsedCount, "the bottom fold icon collapses the same gap as the top one");
+  fireClick(middleLine, w);
+  assert(T.currentHighlightViewEntries.length === 2,
+    "clicking anywhere on the line collapses the entire run, got " + T.currentHighlightViewEntries.length);
   assert(T.state.selectedId === null,
-    "clicking a fold icon doesn't also select the row underneath it (stopPropagation)");
+    "…without also selecting the row underneath it (stopPropagation)");
 
-  // --- (g) expand-all / collapse-all from the chip -------------------------
-  const navToggleBtn = () => navButtons()[navButtons().length - 1];
-  fireClick(navToggleBtn(), w); // "reveal every hidden line"
-  assert(T.currentHighlightViewEntries.length === 60, "the chip's expand-all reveals the whole file");
-  assert(T.contextGaps.every(g => T.contextExpansions.has(g.start)), "...every gap is open");
-  fireClick(navToggleBtn(), w); // now "collapse every gap again"
+  // --- (f) an auto-expansion around a jump, and the step row it produces ---
+  fireClick(matchRow(f.entries[0].id), w); // a plain click on a match IS a jump
+  assert(T.currentHighlightViewEntries.length === 12,
+    "clicking a match auto-reveals contextExpandStep lines per direction (only one side exists at entry 0), got " +
+      T.currentHighlightViewEntries.length);
+  assert(revealed(1) === "1-11", "…as one revealed range in that gap, got " + revealed(1));
+  assert(moreRows().length === 1, "the still-hidden remainder gets one 'Show more' step row, got " + moreRows().length);
+  assert(moreRows()[0].textContent.includes("Show more (+10)"),
+    "…labelled with the configured step, got " + JSON.stringify(moreRows()[0].textContent));
+  const gapRowAfterStep = fillers().find(el => !el.classList.contains("ctx-show-more") && el.textContent.includes("19"));
+  assert(gapRowAfterStep, "…and the '… 19 lines' row for everything still hidden sits next to it");
+  fireClick(moreRows()[0], w);
+  assert(revealed(1) === "1-21", "'Show more' reveals exactly one more step, got " + revealed(1));
+
+  // --- (g) the two ends of a stretch are operated separately ---------------
+  resetContext();
+  fireClick(matchRow(f.entries[30].id), w); // a window that straddles two gaps
+  assert(revealed(1) === "20-30" && revealed(31) === "31-41",
+    "the jump reveals a step on each side of the row, in whichever gap it falls, got " + revealed(1) + " / " + revealed(31));
+  const stepFillers = () => [...T.contextStrips.values()].flat().filter(x => x.kind === "more");
+  assert(stepFillers().length === 2, "one step row per still-hidden stretch, got " + stepFillers().length);
+  showTop();
+  fireClick(moreRows()[0], w); // the FIRST one is the stretch above the run above the match
+  assert(revealed(1) === "10-30", "growing the run above adds a step at its top, got " + revealed(1));
+  assert(revealed(31) === "31-41",
+    "…and leaves the other direction exactly as it was — both ends are separately operable (person-requested), got " + revealed(31));
+
+  // --- (h) the step row disappears once one step covers the rest -----------
+  resetContext();
+  T.contextExpandStep = 25;
+  fireClick(matchRow(f.entries[0].id), w); // reveals 1-26, leaving 4 hidden
+  assert(revealed(1) === "1-26", "sanity: a 25-line step, got " + revealed(1));
+  showTop();
+  assert(moreRows().length === 0,
+    "with 4 lines left and a 25-line step, the step row would do the same as the '… N lines' row — so only the latter is shown");
+  T.contextExpandStep = 10;
+
+  // --- (i) expand-all / collapse-all from the toolbar ----------------------
+  resetContext();
+  fireClick(d.querySelector("#ctxExpandAll"), w);
+  assert(T.currentHighlightViewEntries.length === 60, "the toolbar's expand-all reveals the whole file");
+  assert(T.contextGaps.every(g => revealed(g.start) === g.start + "-" + g.end), "…every gap end to end");
+  fireClick(d.querySelector("#ctxCollapseAll"), w);
   assert(T.currentHighlightViewEntries.length === 2 && T.contextExpansions.size === 0,
-    "...and the same button shuts them all again");
+    "…and collapse-all hides all of it again");
 
-  // --- (h) the level quick-filter doesn't change what counts as a match ---
+  // --- (j) the level quick-filter doesn't change what counts as a match ---
   T.levelFilterTreeMode = "explicit"; // the classic Set-based quick-filter (see GROUP 94)
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
   fireClick(errBtn, w);
@@ -14971,15 +15027,15 @@ await withApp(async (w, d, T) => {
   fireClick(errBtn, w); // reset
   w.applyFhView("highlight");
 
-  // --- (i) jumping to a non-match opens the gap it is hidden in -----------
+  // --- (k) jumping to a non-match reveals it ------------------------------
   const buried = f.entries[7]; // "message 7 other" — not a match of hitFilter
-  assert(!T.currentHighlightViewEntries.some(e => e.id === buried.id), "sanity: it has no row while its gap is shut");
+  assert(!T.currentHighlightViewEntries.some(e => e.id === buried.id), "sanity: it has no row while its stretch is hidden");
   w.revealInHighlightView(buried, null, null);
   assert(T.currentHighlightViewEntries.some(e => e.id === buried.id),
-    "revealing an entry that isn't a match opens the gap it sits in — it would otherwise have nowhere to be scrolled to");
-  assert(T.state.selectedId === buried.id, "...and it ends up selected, as before");
+    "revealing an entry that isn't a match reveals the lines around it — it would otherwise have nowhere to be scrolled to");
+  assert(T.state.selectedId === buried.id, "…and it ends up selected, as before");
 
-  // --- (j) Ctrl+Arrow walks match to match -------------------------------
+  // --- (l) Ctrl+Arrow walks match to match -------------------------------
   w.setAllGapsExpanded(true); // context rows everywhere, so "skipping" is meaningful
   T.state.selectedId = f.entries[0].id;
   T.state.focusRegion = "entries";
@@ -14987,21 +15043,20 @@ await withApp(async (w, d, T) => {
   assert(T.state.selectedId === f.entries[30].id,
     "Ctrl+ArrowDown jumps to the next MATCH, skipping the 29 revealed context rows in between");
   fireKeydown(d, w, "ArrowUp", { ctrlKey: true });
-  assert(T.state.selectedId === f.entries[0].id, "...and Ctrl+ArrowUp walks back the same way");
+  assert(T.state.selectedId === f.entries[0].id, "…and Ctrl+ArrowUp walks back the same way");
+  assert(T.currentHighlightViewEntries.length === 60,
+    "walking over rows that were revealed BY HAND never takes them back — a jump only owns what it revealed itself");
   fireKeydown(d, w, "ArrowDown");
   assert(T.state.selectedId === f.entries[1].id,
     "a PLAIN ArrowDown still steps one row, context rows included — the modifier is what makes it match-to-match");
 
-  // --- (k) switching nodes drops the previous node's expansions -----------
-  assert(T.contextExpansions.size > 0, "sanity: gaps are open right now");
-  T.state.activeId = otherFilter.id;
-  showContext();
-  T.state.activeId = hitFilter.id;
-  showContext();
+  // --- (m) switching nodes drops the previous node's expansions -----------
+  assert(T.contextExpansions.size > 0, "sanity: something is revealed right now");
+  resetContext();
   assert(T.contextExpansions.size === 0 && T.currentHighlightViewEntries.length === 2,
     "a different active node means different index ranges, so its expansions are dropped rather than misapplied");
 
-  // --- (l) a bookmark toggle rebuilds the view it now depends on -----------
+  // --- (n) a bookmark toggle rebuilds the view it now depends on -----------
   // toggleBookmark deliberately repaints instead of calling render() (it must
   // not yank the reading position), so the Context view — which since the
   // rework holds the ACTIVE node's result — has to be rebuilt there too, or a
@@ -15020,49 +15075,158 @@ await withApp(async (w, d, T) => {
   T.state.activeId = hitFilter.id;
   showContext();
 
-  // --- (m) a single-row revealed run shows exactly one fold icon -----------
-  // A purpose-made tiny file so the single hidden line is unambiguous: "keep"
-  // matches every entry except index 2, leaving one lone gap of length 1.
-  const f2 = await w.addFile("ctx2.log", makeLog(0, 5, { suffix: i => (i === 2 ? "skip" : "keep") }), () => {});
-  const keepFilter = w.createFilterNode(f2.id, "text", "keep"); // matches 0,1,3,4 -> one gap of length 1 at index 2
-  T.state.activeId = keepFilter.id;
-  showContext();
-  assert(T.contextGaps.length === 1 && (T.contextGaps[0].end - T.contextGaps[0].start) === 1,
-    "sanity: exactly one single-row gap");
-  fireClick(d.querySelector("#highlightRows .ctx-gap-placeholder"), w);
-  const soloFold = [...d.querySelectorAll("#highlightRows .ctx-fold-btn")];
-  assert(soloFold.length === 1, "a single-row run shows exactly one fold icon, not two overlapping ones, got " + soloFold.length);
-  T.state.activeId = hitFilter.id;
-  showContext();
+  // --- (o) the auto window travels; hand-revealed rows are never taken back -
+  resetContext();
+  fireClick(matchRow(f.entries[0].id), w);
+  assert(revealed(1) === "1-11" && T.contextAutoRanges.length === 1, "sanity: one auto range from the first jump");
+  showTop();
+  fireClick(matchRow(f.entries[30].id), w);
+  assert(revealed(1) === "20-30" && revealed(31) === "31-41",
+    "the next jump takes its predecessor's window back and opens its own — one window travelling, not a trail, got " +
+      revealed(1) + " / " + revealed(31));
+  // Now reveal something by hand in the same gap and jump again: the hand-set
+  // part has to survive, which is what forgetAutoRangesForGap guarantees.
+  showTop();
+  fireClick(moreRows()[0], w); // hand-grow the run above the match -> 10-30
+  showTop();
+  fireClick(matchRow(f.entries[0].id), w);
+  assert(revealed(1).split(",").includes("10-30") || revealed(1) === "1-30",
+    "a stretch touched by hand keeps what the person gave it, however many jumps follow, got " + revealed(1));
 
-  // --- (n) Stacked layout seeds fully expanded, once per node -------------
+  // --- (p) Stacked layout seeds everything revealed, once per node --------
   const stackedFilter = w.createFilterNode(f.id, "text", "hit"); // fresh node, never activated before
   w.applyFhView("stacked");
   T.state.activeId = stackedFilter.id;
   w.render();
-  assert(T.contextGaps.length === 2 && T.contextGaps.every(g => T.contextExpansions.has(g.start)),
-    "Stacked seeds every gap open the first time a node becomes active there, regardless of contextInitialExpansion");
-  w.setGapOpen(T.contextGaps[0].start, false); // manually re-collapse one
+  assert(T.contextGaps.length === 2 && T.contextGaps.every(g => revealed(g.start) === g.start + "-" + g.end),
+    "Stacked seeds every gap fully revealed the first time a node becomes active there, regardless of contextInitialExpansion");
+  w.setGapOpen(T.contextGaps[0].start, false); // manually re-hide one
   w.applyFhView("highlight"); // flip to tabs...
   w.applyFhView("stacked");   // ...and back
-  assert(!T.contextExpansions.has(T.contextGaps[0].start),
-    "manually collapsing a gap in Stacked survives a layout flip — the expanded default is a one-time SEED, not a standing override");
+  assert(revealed(T.contextGaps[0].start) === "",
+    "manually hiding a stretch in Stacked survives a layout flip — the expanded default is a one-time SEED, not a standing override");
   w.applyFhView("highlight");
+});
+
+
+/* ============================================================
+   GROUP 151 — the Context view's toolbar (person-requested, same round as
+   the GROUP 138 rewrite): the match navigation used to float over the log
+   lines as a corner chip whose corner was itself a setting. It is now a real
+   toolbar row inside the table, directly under the header — in flow, so it
+   takes its height out of the scroll viewport instead of covering rows — and
+   it gained a separate "collapse all" button next to the expand-all one.
+     a) it sits between the header and the body, is not overlaid, and the old
+        floating chip (and its corner setting) are gone.
+     b) shown only while the Context panel is actually on screen with a
+        filter active; hidden on a file node.
+     c) the buttons are the app's own icon-button shape; prev/next disable
+        below two matches; the label follows the selection.
+     d) expand-all/collapse-all disable when they would do nothing.
+     e) showing the bar compensates the scroll position by exactly its own
+        height, so the log rows don't slide down under it.
+     f) the two settings: auto-expand is the stored default, and the step
+        size persists and is clamped.
+   ============================================================ */
+group(151);
+await withApp(async (w, d, T) => {
+  section("151. Context view toolbar");
+
+  const f = await w.addFile("bar.log", makeLog(0, 40, { suffix: i => (i % 20 === 0 ? "hit" : "other") }), () => {});
+  const hitFilter = w.createFilterNode(f.id, "text", "hit"); // entries 0, 20
+  const showContext = () => { w.render(); w.applyFhView("highlight"); };
   T.state.activeId = hitFilter.id;
   showContext();
 
-  // --- (o) the nav chip's corner is configurable and applied immediately --
-  assert(d.querySelector("#contextNav").classList.contains("corner-top-right"), "default corner is top-right");
-  const cornerSelect = d.querySelector("#settingsContextNavCorner");
-  cornerSelect.value = "bottom-left";
-  cornerSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(d.querySelector("#contextNav").classList.contains("corner-bottom-left") &&
-    !d.querySelector("#contextNav").classList.contains("corner-top-right"),
-    "changing the setting re-applies the corner class immediately");
-  assert(T.contextNavCorner === "bottom-left" && w.localStorage.getItem("philogg-context-nav-corner") === "bottom-left",
-    "...and persists the choice");
-  cornerSelect.value = "top-right"; // reset
-  cornerSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const bar = d.querySelector("#contextToolbar");
+
+  // --- (a) where it lives ------------------------------------------------
+  assert(bar, "the toolbar exists");
+  assert(!d.querySelector("#contextNav"), "the floating corner chip it replaces is gone");
+  assert(!d.querySelector("#settingsContextNavCorner"),
+    "…and so is the 'which corner' setting that only existed because it floated");
+  const kids = [...d.querySelector("#highlightWrap").children].map(el => el.id);
+  assert(kids.indexOf("contextToolbar") === kids.indexOf("highlightHeader") + 1 &&
+    kids.indexOf("highlightBody") === kids.indexOf("contextToolbar") + 1,
+    "it sits inside the table, between the header and the scrolling body, got " + JSON.stringify(kids));
+  assert(w.getComputedStyle(bar).position !== "absolute",
+    "it is in normal flow — it shrinks the viewport rather than covering log rows");
+
+  // --- (b) when it is shown ---------------------------------------------
+  assert(!bar.classList.contains("hidden"), "shown while the Context view is on screen with a filter active");
+  w.applyFhView("filter");
+  assert(bar.classList.contains("hidden"), "hidden while the Filtered tab is the one showing");
+  w.applyFhView("highlight");
+  T.state.activeId = f.id;
+  showContext();
+  assert(bar.classList.contains("hidden"),
+    "hidden on a file node — nothing there to navigate or fold, same rule the chip had");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (c) the navigation half ------------------------------------------
+  const prev = d.querySelector("#ctxPrevMatch"), next = d.querySelector("#ctxNextMatch");
+  assert([...bar.querySelectorAll("button")].every(b => b.classList.contains("toolbar-icon-btn")),
+    "every button uses the app's own icon-button shape (.toolbar-icon-btn), not a one-off style");
+  assert([...bar.querySelectorAll("button")].every(b => b.title && !b.textContent.trim()),
+    "…icon-only, each explained by a tooltip");
+  assert(!prev.disabled && !next.disabled, "two matches, so both arrows are live");
+  assert(d.querySelector("#contextNavLabel").textContent.trim() === "2",
+    "no selection yet, so the label is the bare match count, got " +
+      JSON.stringify(d.querySelector("#contextNavLabel").textContent));
+  w.selectHighlightEntry(f.entries[20].id, {});
+  assert(d.querySelector("#contextNavLabel").textContent.trim() === "2 / 2",
+    "…and it follows the selection, got " + JSON.stringify(d.querySelector("#contextNavLabel").textContent));
+  fireClick(prev, w);
+  assert(T.state.selectedId === f.entries[0].id, "the ‹ button walks to the previous match");
+
+  const single = w.createFilterNode(f.id, "text", "message 3 other"); // exactly one match
+  T.state.activeId = single.id;
+  showContext();
+  assert(d.querySelector("#ctxPrevMatch").disabled && d.querySelector("#ctxNextMatch").disabled,
+    "with a single match there is nowhere to walk, so both arrows are disabled");
+  T.state.activeId = hitFilter.id;
+  showContext();
+
+  // --- (d) the fold half -------------------------------------------------
+  const expandAll = () => d.querySelector("#ctxExpandAll"), collapseAll = () => d.querySelector("#ctxCollapseAll");
+  assert(!expandAll().disabled && collapseAll().disabled,
+    "nothing revealed yet: expand-all is live, collapse-all has nothing to do");
+  fireClick(expandAll(), w);
+  assert(T.currentHighlightViewEntries.length === 40 && expandAll().disabled && !collapseAll().disabled,
+    "everything revealed: the two swap roles");
+  fireClick(collapseAll(), w);
+  assert(T.currentHighlightViewEntries.length === 2, "…and collapse-all hides it all again");
+
+  // --- (e) showing the bar must not slide the rows --------------------------
+  // The bar takes CONTEXT_TOOLBAR_HEIGHT out of the viewport from the top, so
+  // without compensation every rendered row would move down by exactly that
+  // much. setContextToolbarVisible gives it back on the scroll position.
+  w.setAllGapsExpanded(true); // enough rows to actually be scrolled
+  w.setContextToolbarVisible(false);
+  w.setHighlightScroll(600);
+  const before = d.querySelector("#highlightBody").scrollTop;
+  w.setContextToolbarVisible(true);
+  assert(d.querySelector("#highlightBody").scrollTop === before + T.CONTEXT_TOOLBAR_HEIGHT,
+    "showing the bar scrolls by its own height, so each row keeps its place on screen, got " +
+      d.querySelector("#highlightBody").scrollTop + " from " + before);
+  w.setContextToolbarVisible(false);
+  assert(d.querySelector("#highlightBody").scrollTop === before, "…and hiding it gives the scroll back");
+  w.setContextToolbarVisible(true);
+
+  // --- (f) the two settings ---------------------------------------------
+  assert(d.querySelector("#settingsContextInitialExpansion").value === "aroundJump",
+    "auto-expand around the selected row is the shipped default (person-requested)");
+  const stepInput = d.querySelector("#settingsContextExpandStep");
+  assert(stepInput.value === "10", "the step defaults to 10 lines per direction, got " + stepInput.value);
+  stepInput.value = "4";
+  stepInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.contextExpandStep === 4 && w.localStorage.getItem("philogg-context-expand-step") === "4",
+    "a new step is applied and persisted");
+  stepInput.value = "0";
+  stepInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.contextExpandStep === 1 && stepInput.value === "1",
+    "…and clamped, with the clamp reflected back into the field, got " + T.contextExpandStep);
 });
 
 
@@ -15773,36 +15937,40 @@ if (groupSelected()) { // the one group with no withApp of its own to gate it
 }
 
 /* ============================================================
-   GROUP 147 — "Collapsed, opened around a jump" travels with the match
-   navigation (person-requested follow-up to GROUP 138: the setting only
-   ever reacted to a jump coming FROM the Filtered view — double-click or
-   Enter — while the Context view's own ‹ / › arrows, added in the same
-   rework, moved the selection without touching a single gap. Asked for:
-   walking match to match should reveal the surroundings of the match you
-   land on and put back the ones the previous jump opened, so the revealed
-   context follows the selection instead of piling up behind it — except
-   where a gap was opened or collapsed BY HAND, which keeps the state the
-   person gave it.)
-     a) an arrow jump opens the gaps above and below the match it lands on.
-     b) the next jump shuts the previous one's again — one window travels
-        with the selection — and the newly selected row is centred on the
-        REBUILT list, not on its stale pre-expansion index.
+   GROUP 147 — the auto-expansion travels with the match navigation
+   (person-requested follow-up to GROUP 138: the setting only ever reacted to
+   a jump coming FROM the Filtered view — double-click or Enter — while the
+   Context view's own ‹ / › arrows, added in the same rework, moved the
+   selection without revealing a thing. Asked for: walking match to match
+   should reveal the surroundings of the match you land on and put back what
+   the previous jump revealed, so the context follows the selection instead
+   of piling up behind it — except where lines were revealed or hidden BY
+   HAND, which keeps the state the person gave it.)
+   UPDATED this session (2026-09-02) for the partial-expansion rework: the
+   setting is now the DEFAULT ("Auto expand around the selected row"), and a
+   jump reveals a contextExpandStep-wide window per direction rather than
+   whole gaps, so the assertions read revealed RANGES instead of gap starts.
+     a) an arrow jump reveals a step's worth of lines above and below the
+        match it lands on, in whichever gaps that window falls.
+     b) the next jump takes the previous one's window back — one window
+        travels with the selection — and the newly selected row is centred on
+        the REBUILT list, not on its stale pre-expansion index.
      c) walking backwards moves the same window back.
-     d) a gap opened by hand is never shut by a later jump, however far
-        away it is and however many jumps happen.
-     e) ...including one that was auto-opened and then re-opened by hand:
-        the hand toggle is what transfers ownership, not the gap's state.
+     d) lines revealed by hand are never taken back by a later jump, however
+        far away they are and however many jumps happen.
+     e) ...including a stretch that was auto-revealed and then touched by
+        hand: the hand action is what transfers ownership, not its state.
      f) with "Collapsed" (or "Expanded") picked instead, the arrows leave
-        the gaps exactly as they are — this is the aroundJump setting's
-        behaviour, not the nav arrows'.
+        every stretch exactly as it is — this is the setting's behaviour,
+        not the nav arrows'.
    Second section (same group): picking another result with the MOUSE reads
    the same way — a plain click on a match row is a jump too — but it must
    not re-position the view the way the arrows do.
-     g) a plain click on another match moves the window and the chip's
+     g) a plain click on another match moves the window and the toolbar's
         "n / m" with it.
-     h) the clicked row keeps its exact on-screen offset, even though the
-        gap that shuts above it is a completely different size from the one
-        that opens there — i.e. the scroll is recomputed against the NEW
+     h) the clicked row keeps its exact on-screen offset, even though what
+        is taken back above it is a completely different size from what is
+        revealed there — i.e. the scroll is recomputed against the NEW
         offsets, not left where it was.
      i) a click on a revealed CONTEXT row is not a jump (no result changed),
         and neither is a Ctrl+click, which is a multi-selection gesture and
@@ -15810,43 +15978,46 @@ if (groupSelected()) { // the one group with no withApp of its own to gate it
    ============================================================ */
 group(147);
 await withApp(async (w, d, T) => {
-  section("147. Context view: the aroundJump expansion follows the nav arrows");
+  section("147. Context view: the auto-expansion follows the nav arrows");
 
   // "hit" every 10th line -> matches 0,10,20,30,40,50 and one gap between
-  // each pair (plus the trailing one), i.e. gap.start 1,11,21,31,41,51.
+  // each pair (plus the trailing one), i.e. gap.start 1,11,21,31,41,51 —
+  // every one of them 9 lines long, i.e. shorter than the 10-line step, so a
+  // window that reaches a gap at all reveals it end to end.
   const f = await w.addFile("ctxjump.log", makeLog(0, 60, { suffix: i => (i % 10 === 0 ? "hit" : "other") }), () => {});
   const hitFilter = w.createFilterNode(f.id, "text", "hit");
   // render() auto-reveals the Filtered tab on every activeId change, so the
   // Context panel has to be re-shown after each node switch (see GROUP 138).
   const showContext = () => { w.render(); w.applyFhView("highlight"); };
-  T.contextInitialExpansion = "aroundJump";
   T.state.activeId = hitFilter.id;
   showContext();
 
-  const openStarts = () => [...T.contextExpansions].sort((a, b) => a - b).join(",");
+  const openRanges = () => [...T.contextExpansions.keys()].sort((a, b) => a - b)
+    .map(k => T.contextExpansions.get(k).map(r => r.from + "-" + r.to).join(",")).join("|");
   const rowFor = id => d.querySelector('#highlightRows [data-entry-id="' + id + '"]');
+  assert(T.contextInitialExpansion === "aroundJump", "sanity: the auto-expand default is what this group is about");
   assert(T.contextGaps.map(g => g.start).join(",") === "1,11,21,31,41,51",
     "fixture sanity: six matches, six gaps, got " + T.contextGaps.map(g => g.start).join(","));
   assert(T.contextExpansions.size === 0,
-    "aroundJump still SEEDS collapsed — it is a reaction to jumps, not an initial state of its own");
+    "auto-expand still SEEDS with nothing revealed — it is a reaction to jumps, not an initial state of its own");
 
-  // --- (a) an arrow jump opens the gaps around the match it lands on ------
+  // --- (a) an arrow jump reveals a window around the match it lands on ----
   T.state.selectedId = f.entries[0].id;
   T.state.focusRegion = "entries";
-  fireKeydown(d, w, "ArrowDown", { ctrlKey: true }); // the real shortcut, not just the chip's handler
+  fireKeydown(d, w, "ArrowDown", { ctrlKey: true }); // the real shortcut, not just the toolbar's handler
   assert(T.state.selectedId === f.entries[10].id, "sanity: Ctrl+ArrowDown moved to the next match");
-  assert(openStarts() === "1,11",
-    "landing on a match opens the gap above and the gap below it, got " + openStarts());
+  assert(openRanges() === "1-10|11-20",
+    "landing on a match reveals a step above and a step below it, got " + openRanges());
   assert(T.currentHighlightViewEntries.some(e => e.id === f.entries[5].id),
-    "...so the lines around the new match really are in the view now");
+    "…so the lines around the new match really are in the view now");
 
   // --- (b) the next jump moves that window along instead of piling up -----
   fireKeydown(d, w, "ArrowDown", { ctrlKey: true });
   assert(T.state.selectedId === f.entries[20].id, "sanity: on to the match after that");
-  assert(openStarts() === "11,21",
-    "the previous jump's leading gap is shut again — one window travels with the selection, got " + openStarts());
+  assert(openRanges() === "11-20|21-30",
+    "the previous jump's leading window is taken back — one window travels with the selection, got " + openRanges());
   assert(!T.currentHighlightViewEntries.some(e => e.id === f.entries[5].id),
-    "...and the rows it had revealed are gone from the view again");
+    "…and the rows it had revealed are gone from the view again");
   const selEl = rowFor(f.entries[20].id);
   assert(selEl && selEl.classList.contains("selected"),
     "the newly selected match is inside the rendered window — i.e. the view was centred on its index in the REBUILT list, not on the stale pre-expansion one");
@@ -15854,68 +16025,68 @@ await withApp(async (w, d, T) => {
   // --- (c) walking backwards moves the same window back -------------------
   w.moveContextMatchSelection(-1);
   assert(T.state.selectedId === f.entries[10].id, "sanity: back one match");
-  assert(openStarts() === "1,11", "walking back re-opens the gap above and shuts the one below, got " + openStarts());
+  assert(openRanges() === "1-10|11-20", "walking back reveals above and takes back below, got " + openRanges());
 
-  // --- (d) a hand-opened gap is never the jump's to shut ------------------
+  // --- (d) a hand-revealed stretch is never the jump's to take back -------
   w.setGapOpen(51, true); // far away from anything the jumps below touch
   w.moveContextMatchSelection(1); // -> 20
   w.moveContextMatchSelection(1); // -> 30
   assert(T.state.selectedId === f.entries[30].id, "sanity: two matches further on");
   assert(T.contextExpansions.has(51),
-    "a gap opened by hand survives every later jump — the jump machinery only undoes what it opened itself");
-  assert(openStarts() === "21,31,51", "...alongside the current jump's own window, got " + openStarts());
+    "lines revealed by hand survive every later jump — the jump machinery only takes back what it revealed itself");
+  assert(openRanges() === "21-30|31-40|51-60", "…alongside the current jump's own window, got " + openRanges());
 
-  // --- (e) collapsing and re-opening an AUTO gap by hand claims it --------
+  // --- (e) hiding and re-revealing an AUTO stretch by hand claims it ------
   w.setGapOpen(21, false); // 21 is the current jump's own gap
-  w.setGapOpen(21, true);  // ...re-opened by hand, which is what transfers ownership
+  w.setGapOpen(21, true);  // …re-revealed by hand, which is what transfers ownership
   w.moveContextMatchSelection(1); // -> 40, whose own window is 31 + 41
   assert(T.state.selectedId === f.entries[40].id, "sanity: on to the next match");
   assert(T.contextExpansions.has(21),
-    "a gap re-opened by hand keeps that state even though the jump that opened it is long past");
-  assert(openStarts() === "21,31,41,51", "...and the jump's own window moved on regardless, got " + openStarts());
+    "a stretch re-revealed by hand keeps that state even though the jump that revealed it is long past");
+  assert(openRanges() === "21-30|31-40|41-50|51-60", "…and the jump's own window moved on regardless, got " + openRanges());
 
-  // --- (f) with the setting off, the arrows leave every gap alone ---------
+  // --- (f) with the setting off, the arrows leave everything alone --------
   T.contextInitialExpansion = "collapsed";
   // A change of FILTER node is what re-seeds the expansions (a file node
-  // leaves buildContextView before the seeding step — see GROUP 138k).
+  // leaves buildContextView before the seeding step — see GROUP 138m).
   T.state.activeId = w.createFilterNode(f.id, "text", "other").id;
   showContext();
   T.state.activeId = hitFilter.id;
   showContext();
-  assert(T.contextExpansions.size === 0, "sanity: re-seeded collapsed");
+  assert(T.contextExpansions.size === 0, "sanity: re-seeded with nothing revealed");
   T.state.selectedId = f.entries[0].id;
   w.moveContextMatchSelection(1);
   assert(T.state.selectedId === f.entries[10].id && T.contextExpansions.size === 0,
-    "with \"Collapsed\" picked, walking to the next match neither opens nor closes anything");
+    "with \"Collapsed\" picked, walking to the next match neither reveals nor hides anything");
 });
 
 await withApp(async (w, d, T) => {
-  section("147. ...and so is picking another result with the mouse, without moving it on screen");
+  section("147. …and so is picking another result with the mouse, without moving it on screen");
 
   // Deliberately UNEVEN gaps: matches at 0, 5, 40, 45 leave gaps of 4, 34, 4
-  // and 14 lines. What shuts above the clicked row is then nowhere near the
-  // height of what opens there, which is exactly the case a "keep scrollTop"
-  // implementation gets wrong.
+  // and 14 lines. What is taken back above the clicked row is then nowhere
+  // near the height of what is revealed there, which is exactly the case a
+  // "keep scrollTop" implementation gets wrong.
   const hits = new Set([0, 5, 40, 45]);
   const f = await w.addFile("ctxclick.log", makeLog(0, 60, { suffix: i => (hits.has(i) ? "hit" : "other") }), () => {});
   const hitFilter = w.createFilterNode(f.id, "text", "hit");
   const highlightBody = d.querySelector("#highlightBody");
-  T.contextInitialExpansion = "aroundJump";
   T.state.activeId = hitFilter.id;
   w.render();
   w.applyFhView("highlight");
 
-  const openStarts = () => [...T.contextExpansions].sort((a, b) => a - b).join(",");
+  const openRanges = () => [...T.contextExpansions.keys()].sort((a, b) => a - b)
+    .map(k => T.contextExpansions.get(k).map(r => r.from + "-" + r.to).join(",")).join("|");
   const idxOf = id => T.currentHighlightViewEntries.findIndex(e => e.id === id);
-  const navLabel = () => d.querySelector("#contextNav .ctx-nav-label").textContent;
+  const navLabel = () => d.querySelector("#contextNavLabel").textContent;
   assert(T.contextGaps.map(g => g.start + "-" + g.end).join(",") === "1-5,6-40,41-45,46-60",
     "fixture sanity: four matches, four gaps of very different sizes, got " + T.contextGaps.map(g => g.start + "-" + g.end).join(","));
 
   // Stand on match 5 first, so there is a previous jump to undo.
   T.state.selectedId = f.entries[0].id;
   w.moveContextMatchSelection(1);
-  assert(T.state.selectedId === f.entries[5].id && openStarts() === "1,6",
-    "sanity: arrow-jumped to match 5, its own two gaps open, got " + openStarts());
+  assert(T.state.selectedId === f.entries[5].id && openRanges() === "1-5|6-16",
+    "sanity: arrow-jumped to match 5, a step revealed on either side of it, got " + openRanges());
 
   // Put match 45's row 140px below the top of the viewport — both in the
   // model (scrollTop) and in the geometry stub the capture reads, so the two
@@ -15932,36 +16103,37 @@ await withApp(async (w, d, T) => {
   // --- (g) a plain click on it is a jump, same as an arrow would have been -
   fireClick(rowEl, w);
   assert(T.state.selectedId === targetId, "the clicked match is selected");
-  assert(openStarts() === "41,46",
-    "clicking another result opens ITS gaps and shuts the previous jump's, exactly like the arrows, got " + openStarts());
+  assert(openRanges() === "35-40|41-45|46-56",
+    "clicking another result reveals ITS window and takes the previous jump's back, exactly like the arrows, got " + openRanges());
   assert(navLabel().replace(/\s/g, "") === "4/4",
-    "...and the chip's position readout jumps to the clicked result, got " + JSON.stringify(navLabel()));
+    "…and the toolbar's position readout jumps to the clicked result, got " + JSON.stringify(navLabel()));
 
-  // --- (h) ...and the clicked row does not move on screen ------------------
+  // --- (h) …and the clicked row does not move on screen --------------------
   const newIdx = idxOf(targetId);
   assert(newIdx !== oldIdx, "sanity: the rebuild really did change the row's index (" + oldIdx + " -> " + newIdx + ")");
   assert(T.highlightRowOffsets[newIdx] - highlightBody.scrollTop === 140,
     "the clicked row stays at the same 140px on-screen offset, got " +
     (T.highlightRowOffsets[newIdx] - highlightBody.scrollTop));
   assert(T.highlightRowOffsets[newIdx] - scrollBefore !== 140,
-    "...which took real work: 34 revealed lines shut above it and only 4 opened, so leaving scrollTop alone would have moved it");
+    "…which took real work: 11 revealed lines were taken back above it and a different number opened, so leaving scrollTop alone would have moved it");
 
   // --- (i) a context row and a Ctrl+click are not jumps --------------------
-  const beforeCtx = openStarts();
+  const beforeCtx = openRanges();
   const ctxRow = [...d.querySelectorAll("#highlightRows .log-row.ctx-context")][0];
   assert(ctxRow, "sanity: revealed context rows are on screen");
   fireClick(ctxRow, w);
   assert(T.state.selectedId === ctxRow.dataset.entryId, "a revealed context row still selects normally");
-  assert(openStarts() === beforeCtx,
-    "...but it is not a move to another result, so nothing expands or collapses, got " + openStarts());
+  assert(openRanges() === beforeCtx,
+    "…but it is not a move to another result, so nothing is revealed or hidden, got " + openRanges());
 
   const otherMatchRow = d.querySelector('#highlightRows [data-entry-id="' + f.entries[40].id + '"]');
   assert(otherMatchRow, "sanity: match 40's row is on screen too");
   otherMatchRow.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
   assert(T.state.logMultiSelect.has(f.entries[40].id), "sanity: Ctrl+click multi-selected it");
-  assert(openStarts() === beforeCtx,
-    "a Ctrl+click is a multi-selection gesture — the rows must not move out from under it, got " + openStarts());
+  assert(openRanges() === beforeCtx,
+    "a Ctrl+click is a multi-selection gesture — the rows must not move out from under it, got " + openRanges());
 });
+
 
 /* ============================================================
    GROUP 148 — A newly created node is selected EXCLUSIVELY (person-reported:
@@ -18534,6 +18706,21 @@ process.exitCode = failed ? 1 : 0;
               pane. showFhTab now pins it to the visible tab; Stacked layout
               stays exempt. Covers both desync routes, the Stacked exemption,
               and the applyNavWaypoint restore ordering the fix implies.
+
+   Group 151 — this session (2026-09-02), person-requested: the Context
+              view's controls were "zu unscheinbar". The match navigation
+              left the floating corner chip (and the corner setting it
+              needed) for a toolbar row inside the table under its header,
+              in flow so it shrinks the viewport instead of covering rows —
+              with a scroll compensation of exactly its own height so the
+              rows don't slide when it appears — and gained a separate
+              collapse-all button. GROUP 138 was rewritten in the same
+              round for the model half: a hidden stretch is expandable a
+              step at a time from either end independently, matches carry
+              the context filter's dot instead of its bracket, revealed
+              rows lost their indent for a clickable line connecting the
+              two carets that cap their run, and auto-expand-around-the-jump
+              became the default.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:
