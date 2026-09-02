@@ -94,7 +94,7 @@ An explicit, pre-computed match set — `node.value: string[]`, an array of entr
 
 ## "Create a filter from the plot view" (FEATURE_BACKLOG.md #11)
 
-Resolves the backlog item's own stated open question — "which of the two (time-range vs. exact-entries), or both" — by implementing **both**, off the Plot tab's own zoomed/panned viewport (see "Plot zoom/pan" in `docs/extraction-and-plotting.md` for the zoom mechanism this reads from). Two buttons in `#plotZoomBar` (next to the existing zoom controls, following that same "small buttons in the plot's own toolbar" convention rather than a new context menu or dialog):
+Resolves the backlog item's own stated open question — "which of the two (time-range vs. exact-entries), or both" — by implementing **both**, off the Plot tab's own zoomed/panned viewport (see "Plot zoom/pan" in `docs/extraction-and-plotting.md` for the zoom mechanism this reads from). Two buttons in `#plotToolbar`'s `#plot2dToolsGroup` (next to the existing zoom controls, following that same "small buttons in the plot's own toolbar" convention rather than a new context menu or dialog):
 
 - **`#plotFilterTimeRangeBtn`** ("Filter: time range") creates a `"timerange"` filter (see "Time filters" above — the existing, generic time-range node, reused rather than inventing a new one) spanning the min/max timestamp of whatever's currently visible in the plot.
 - **`#plotFilterEntriesBtn`** ("Filter: these entries") creates an `"idset"` filter (above) matching exactly those entries — not just their time span, but the specific rows.
