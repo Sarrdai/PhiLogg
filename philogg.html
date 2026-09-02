@@ -883,6 +883,13 @@
     font-size:10.5px; color:var(--text-secondary); cursor:pointer;
     background:var(--bg-elevated); border:1px solid var(--border-soft);
     padding:0 9px; border-radius:20px; transition:background .12s, border-color .12s, filter .12s;
+    /* Person-reported: a long auto-generated filter name (no width cap of
+       its own) could outgrow one pill's whole line, wrapping its text onto
+       a second line inside the fixed 28px height and spilling above/below
+       it. max-width + the ellipsis trio caps every chip to one line and one
+       length, same idea as .tree-label's truncation; chip.title below still
+       carries the untruncated name as a tooltip. */
+    max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .crumb:hover{filter:brightness(1.25);}
   .crumb.current{color:var(--accent-strong); border-color:color-mix(in srgb, var(--accent) 35%, transparent); background:var(--accent-soft);}
@@ -16877,6 +16884,7 @@ function renderFilterTargetChain() {
     const chip = document.createElement("span");
     chip.className = "crumb" + (i === chain.length - 1 ? " current" : "");
     chip.textContent = nodeDisplayName(node);
+    chip.title = nodeDisplayName(node); // full name as a tooltip — the pill itself is truncated, see .crumb's max-width
     filterTargetChainEl.appendChild(chip);
   });
 }
