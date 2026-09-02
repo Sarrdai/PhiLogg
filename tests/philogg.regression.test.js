@@ -16995,6 +16995,125 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 155 — Person-reported (2026-09-02): pasting extracted floats into
+   Excel produced garbage because the clipboard TSV always used "." as the
+   decimal point regardless of the OS/browser locale. Two fixes:
+   1. Ctrl+C / copyTableSelection / copyWholeExtractTable now re-localize
+      numeric cells (via localizeNumericCell/systemDecimalSeparator) to
+      whatever Intl reports as the system decimal separator BEFORE writing
+      to the clipboard — the on-screen table itself is untouched.
+   2. A new right-click "Export as CSV…" menu on the extraction table opens
+      a small dialog (delimiter / decimal separator / include headers) and
+      saves a real .csv file via buildExtractCsv + saveCsvToFile.
+   ============================================================ */
+group(155);
+await withApp(async (w, d, T) => {
+  section("155a. localizeNumericCell / buildExtractCsv: pure formatting logic");
+
+  assert(w.localizeNumericCell("12.5", ",") === "12,5", "a plain float gets its decimal point swapped");
+  assert(w.localizeNumericCell("-3.14", ",") === "-3,14", "a negative float is handled too");
+  assert(w.localizeNumericCell("12.5", ".") === "12.5", "requesting '.' as separator is a no-op");
+  assert(w.localizeNumericCell("main", ",") === "main", "non-numeric text passes through untouched");
+  assert(w.localizeNumericCell("42", ",") === "42", "a bare integer (no decimal point) is left alone");
+  assert(w.localizeNumericCell("1.2.3", ",") === "1.2.3", "not a single float (e.g. a version string) is left alone");
+
+  assert(w.csvQuoteField("plain", ";") === "plain", "a field with no special characters is left unquoted");
+  assert(w.csvQuoteField("a;b", ";") === '"a;b"', "a field containing the delimiter gets quoted");
+  assert(w.csvQuoteField('say "hi"', ",") === '"say ""hi"""', "embedded quotes are doubled per RFC4180, and the field itself gets wrapped in quotes");
+});
+
+await withApp(async (w, d, T) => {
+  section("155b. Ctrl+C / copyTableSelection localizes numeric cells to the (stubbed) system decimal separator");
+
+  const log = [0, 1].map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"id=${i} score=${i}.5"`).join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.createFilterNode(f.id, "extract", "id=[value:int] score=[value:float]");
+  w.render();
+  assert(T.extractRowsData.length === 2, "sanity: extraction produced 2 rows");
+
+  w.systemDecimalSeparator = () => ",";
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+
+  w.selectCells(w.allCells());
+  w.copyTableSelection();
+  assert(copied.includes("0,5") && copied.includes("1,5"), "Ctrl+C path (copyTableSelection) re-localizes float cells to the stubbed comma separator, got " + JSON.stringify(copied));
+  assert(!copied.includes("0.5") && !copied.includes("1.5"), "no leftover dot-decimal floats in the copied TSV");
+
+  copied = null;
+  w.copyWholeExtractTable();
+  assert(copied.includes("0,5") && copied.includes("1,5"), "copyWholeExtractTable (header+body TSV) applies the same localization");
+
+  w.systemDecimalSeparator = () => ".";
+  copied = null;
+  w.copyTableSelection();
+  assert(copied.includes("0.5") && copied.includes("1.5"), "a '.' system separator leaves the TSV as originally captured");
+});
+
+await withApp(async (w, d, T) => {
+  section("155c. Right-click on the extraction table opens 'Export as CSV…', builds and saves the configured CSV");
+
+  const log = [0, 1].map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"id=${i} score=${i}.5"`).join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.createFilterNode(f.id, "extract", "id=[value:int] score=[value:float]");
+  w.render();
+
+  const menu = d.querySelector("#extractContextMenu");
+  const body = d.querySelector("#extractBody");
+  fireContextMenu(body, w, 100, 100);
+  assert(!menu.classList.contains("hidden"), "right-click on the extraction table body opens #extractContextMenu");
+  assert(menu.style.left === "100px" && menu.style.top === "100px", "menu is positioned at the click coordinates, got left=" + menu.style.left + " top=" + menu.style.top);
+
+  // Outside click closes it again, same as the other context menus.
+  fireClick(d.body, w);
+  assert(menu.classList.contains("hidden"), "clicking outside the menu closes it");
+
+  // Re-open, this time exercising the "Export as CSV…" item with a stubbed
+  // comma-decimal system locale, which should default delimiter to ";".
+  w.systemDecimalSeparator = () => ",";
+  fireContextMenu(body, w, 50, 50);
+  fireClick(d.querySelector("#ctxExportCsv"), w);
+  assert(menu.classList.contains("hidden"), "picking the menu item closes the context menu");
+  const dialog = d.querySelector("#csvExportDialog");
+  assert(!dialog.classList.contains("hidden"), "'Export as CSV…' opens #csvExportDialog");
+  assert(d.querySelector("#csvExportDecimalSelect").value === ",", "decimal separator select defaults to the (stubbed) system separator");
+  assert(d.querySelector("#csvExportDelimiterSelect").value === ";", "comma-decimal locale defaults the column delimiter to semicolon (Excel convention)");
+  assert(d.querySelector("#csvExportHeadersInput").checked === true, "include-headers defaults to checked");
+
+  let saved = null;
+  w.downloadCsvFallback = (text, name) => { saved = { text, name }; };
+  d.querySelector("#csvExportDelimiterSelect").value = ";";
+  d.querySelector("#csvExportDecimalSelect").value = ",";
+  fireClick(d.querySelector("#csvExportConfirm"), w);
+  assert(dialog.classList.contains("hidden"), "Export closes the dialog");
+  assert(saved !== null, "Export triggers a file save (fallback download, since jsdom has no showSaveFilePicker)");
+  const lines = saved.text.split("\r\n");
+  assert(lines[0].split(";").includes("value") && lines[0].split(";").includes("value 2"), "exported CSV includes the header row with the configured ';' delimiter, got " + JSON.stringify(lines[0]));
+  assert(lines.some(l => l.includes("0,5")) && lines.some(l => l.includes("1,5")), "exported CSV floats use the configured ',' decimal separator, got " + JSON.stringify(lines));
+  assert(saved.name.endsWith(".csv"), "suggested filename ends in .csv");
+
+  // Cancel must not export.
+  fireContextMenu(body, w, 50, 50);
+  fireClick(d.querySelector("#ctxExportCsv"), w);
+  saved = null;
+  fireClick(d.querySelector("#csvExportCancel"), w);
+  assert(dialog.classList.contains("hidden"), "Cancel closes the dialog");
+  assert(saved === null, "Cancel does not trigger a save");
+
+  // Unchecking "include headers" drops the header line.
+  fireContextMenu(body, w, 50, 50);
+  fireClick(d.querySelector("#ctxExportCsv"), w);
+  d.querySelector("#csvExportHeadersInput").checked = false;
+  fireClick(d.querySelector("#csvExportConfirm"), w);
+  const bodyOnlyLines = saved.text.split("\r\n");
+  assert(bodyOnlyLines.length === 2, "unchecking 'include header row' exports only the 2 data rows, got " + bodyOnlyLines.length);
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -19222,6 +19341,17 @@ process.exitCode = failed ? 1 : 0;
               still covering the UI chrome's own monospace bits. The two
               properties being independent means setting order genuinely
               cannot matter.
+
+   Group 155 — this session (2026-09-02), person-reported: pasting an
+              extracted data table into Excel mangled floats because the
+              clipboard TSV always used "." for the decimal point
+              regardless of the OS/browser locale. Ctrl+C/copyTableSelection
+              and copyWholeExtractTable now re-localize numeric cells to
+              Intl's reported system decimal separator before writing to
+              the clipboard (display itself is untouched); a new right-
+              click "Export as CSV..." menu on the extraction table opens a
+              dialog (delimiter/decimal separator/include headers) and
+              saves a real RFC4180-quoted .csv file.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:

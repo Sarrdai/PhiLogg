@@ -1883,6 +1883,13 @@
   }
   #contextDialog.hidden{display:none;}
 
+  /* ---------- CSV export dialog (extraction table right-click menu) ---------- */
+  #csvExportDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #csvExportDialog.hidden{display:none;}
+
   /* ---------- Count context dialog (analogous to Time context above, but
      windows by entry count instead of milliseconds — see #countContextDialog
      markup and createCountContextNode) ---------- */
@@ -2453,13 +2460,13 @@
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
   /* ---------- Context menu ---------- */
-  #contextMenu, #treeContextMenu, #openMenu{
+  #contextMenu, #treeContextMenu, #openMenu, #extractContextMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
   }
   #openMenu{min-width:180px;}
-  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden{display:none;}
+  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #extractContextMenu.hidden{display:none;}
   .ctx-item{
     display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px;
     font-size:12.3px; color:var(--text-primary); cursor:pointer;
@@ -3081,6 +3088,13 @@
 
   <div id="treeContextMenu" class="hidden"></div>
 
+  <div id="extractContextMenu" class="hidden">
+    <div class="ctx-item" id="ctxExportCsv">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h6.5L12 4.5V14H3z"/><path d="M5.5 8.5h5M5.5 11h5"/></svg>
+      Export as CSV…
+    </div>
+  </div>
+
   <!-- Custom highlight-colour picker (session 6:
        deliberately not the native <input type="color"> — Windows' native
        picker UX varies too much for predictable results here). A hue wheel
@@ -3162,6 +3176,39 @@
       <div class="link-dialog-actions">
         <button type="button" id="exportScopeJustThis" class="btn-mini-outline">Just this filter</button>
         <button type="button" id="exportScopeWithChain" class="btn-mini">Include ancestor chain</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="csvExportDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Export as CSV</div>
+      <div class="link-field">
+        <label for="csvExportDelimiterSelect">Column delimiter</label>
+        <div class="link-field-row">
+          <select id="csvExportDelimiterSelect">
+            <option value=",">Comma (,)</option>
+            <option value=";">Semicolon (;)</option>
+            <option value="\t">Tab</option>
+            <option value="|">Pipe (|)</option>
+          </select>
+        </div>
+      </div>
+      <div class="link-field">
+        <label for="csvExportDecimalSelect">Decimal separator</label>
+        <div class="link-field-row">
+          <select id="csvExportDecimalSelect">
+            <option value=".">Point (.)</option>
+            <option value=",">Comma (,)</option>
+          </select>
+        </div>
+      </div>
+      <div class="link-field">
+        <label class="plot-checkbox-row"><input type="checkbox" id="csvExportHeadersInput" checked> Include header row</label>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="csvExportCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="csvExportConfirm" class="btn-mini">Export</button>
       </div>
     </div>
   </div>
@@ -8069,6 +8116,7 @@ const extractPatternEl = el("#extractPatternView");
 const extractTable = el("#extractTable");
 const extractHead = el("#extractHead");
 const extractBody = el("#extractBody");
+const extractContextMenu = el("#extractContextMenu");
 const extractScroll = el("#extractScroll");
 const extractViewTabs = el("#extractViewTabs");
 const plotWrap = el("#plotWrap");
@@ -9914,23 +9962,41 @@ function applyExtractSelectionClasses() {
   });
 }
 
+// System decimal separator (e.g. "." for en-US, "," for de-DE), used to
+// re-localize numeric cells when copying to the clipboard — the on-screen
+// table itself is never reformatted, only what gets pasted into Excel/etc.
+function systemDecimalSeparator() {
+  try {
+    const part = new Intl.NumberFormat(navigator.language).formatToParts(1.1).find(p => p.type === "decimal");
+    return part ? part.value : ".";
+  } catch (e) { return "."; }
+}
+// Extracted values are plain regex captures, never thousands-grouped, so a
+// simple "digits.digits" pattern is enough to recognize a copyable float —
+// anything else (text, already-comma values, mixed content) passes through.
+const NUMERIC_CELL_RE = /^-?\d+\.\d+$/;
+function localizeNumericCell(value, decimalSep) {
+  if (decimalSep === "." || value == null) return value;
+  return NUMERIC_CELL_RE.test(value) ? value.replace(".", decimalSep) : value;
+}
+
 // TSV of the current selection. Only the rows/columns that actually appear in
 // the selection are included (so Ctrl+click-ing columns 1 and 3 copies just
 // those two, with column 2 skipped entirely rather than left blank).
-function extractSelectionToTSV() {
+function extractSelectionToTSV(decimalSep) {
   const s = state.tableSelection;
   if (!s || s.size === 0) return "";
   const rowsSet = new Set(), colsSet = new Set();
   s.forEach(k => { const [r, c] = k.split(",").map(Number); rowsSet.add(r); colsSet.add(c); });
   const rows = [...rowsSet].sort((a, b) => a - b);
   const cols = [...colsSet].sort((a, b) => a - b);
-  return rows.map(r => cols.map(c => (s.has(cellKey(r, c)) ? extractRowsData[r].values[c] : "")).join("\t")).join("\n");
+  return rows.map(r => cols.map(c => (s.has(cellKey(r, c)) ? localizeNumericCell(extractRowsData[r].values[c], decimalSep) : "")).join("\t")).join("\n");
 }
 
 function copyTableSelection() {
   const s = state.tableSelection;
   if (!s || s.size === 0) return;
-  copyTextToClipboard(extractSelectionToTSV());
+  copyTextToClipboard(extractSelectionToTSV(systemDecimalSeparator()));
   showCopyToast("Copied " + s.size.toLocaleString("de-DE") + " cell" + (s.size === 1 ? "" : "s"));
 }
 
@@ -9942,13 +10008,59 @@ function copyTableSelection() {
 // a cell range, with no header row).
 function copyWholeExtractTable() {
   if (!extractRowsData.length) { showCopyToast("Nothing to copy"); return; }
+  const decimalSep = systemDecimalSeparator();
   const header = extractColumns.map(c => c.name).join("\t");
   // row.values always holds every compiled column (matching stays untouched
   // by the ignore feature, see isColumnIgnored) — export only the visible
   // ones, same set the header line above already reflects.
-  const body = extractRowsData.map(r => extractColumns.map(c => r.values[c.colIndex]).join("\t")).join("\n");
+  const body = extractRowsData.map(r => extractColumns.map(c => localizeNumericCell(r.values[c.colIndex], decimalSep)).join("\t")).join("\n");
   copyTextToClipboard(header + "\n" + body);
   showCopyToast("Copied " + extractRowsData.length.toLocaleString("de-DE") + " rows");
+}
+
+/* ---------- CSV export dialog (right-click on the extraction table) ---------- */
+function csvQuoteField(value, delimiter) {
+  const str = value == null ? "" : String(value);
+  if (str.includes(delimiter) || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+function buildExtractCsv(delimiter, decimalSep, includeHeaders) {
+  const lines = [];
+  if (includeHeaders) lines.push(extractColumns.map(c => csvQuoteField(c.name, delimiter)).join(delimiter));
+  extractRowsData.forEach(r => {
+    lines.push(extractColumns.map(c => csvQuoteField(localizeNumericCell(r.values[c.colIndex], decimalSep), delimiter)).join(delimiter));
+  });
+  return lines.join("\r\n");
+}
+async function saveCsvToFile(csvText) {
+  const suggested = "philogg-export.csv";
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "CSV file", accept: { "text/csv": [".csv"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(csvText);
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err && err.name === "AbortError") return; // user cancelled the picker
+      downloadCsvFallback(csvText, suggested);
+      return;
+    }
+  }
+  downloadCsvFallback(csvText, suggested);
+}
+function downloadCsvFallback(csvText, filename) {
+  const url = URL.createObjectURL(new Blob([csvText], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 /* ---------- Pattern <-> table visualization ----------
@@ -11983,6 +12095,20 @@ extractBody.addEventListener("mouseover", ev => {
   selectCells(rangeCells(selectionAnchor.row, selectionAnchor.col, +td.dataset.row, +td.dataset.col));
 });
 window.addEventListener("mouseup", () => { isCellDragging = false; });
+
+// Right-click anywhere in the extraction table -> "Export as CSV…" menu.
+extractHead.addEventListener("contextmenu", openExtractContextMenu);
+extractBody.addEventListener("contextmenu", openExtractContextMenu);
+function openExtractContextMenu(ev) {
+  if (!extractRowsData.length) return;
+  ev.preventDefault();
+  closeContextMenu();
+  closeTreeContextMenu();
+  extractContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
+  extractContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 60) + "px";
+  extractContextMenu.classList.remove("hidden");
+}
+function closeExtractContextMenu() { extractContextMenu.classList.add("hidden"); }
 
 /* ---------- Virtualized row rendering ----------
    Only the rows that fall within (plus a small buffer around) the visible
@@ -18356,6 +18482,34 @@ function openContextDialog(refId) {
 }
 function closeContextDialog() { contextDialog.classList.add("hidden"); contextDialogRefId = null; }
 contextDialog.addEventListener("click", ev => { if (ev.target === contextDialog) closeContextDialog(); });
+
+/* ===================== CSV export dialog (extraction table) ===================== */
+
+const csvExportDialog = el("#csvExportDialog");
+const csvExportDelimiterSelect = el("#csvExportDelimiterSelect");
+const csvExportDecimalSelect = el("#csvExportDecimalSelect");
+const csvExportHeadersInput = el("#csvExportHeadersInput");
+
+el("#ctxExportCsv").addEventListener("click", () => {
+  closeExtractContextMenu();
+  const decimalSep = systemDecimalSeparator();
+  csvExportDecimalSelect.value = decimalSep === "," ? "," : ".";
+  // Comma-decimal locales conventionally use semicolon as the CSV field
+  // delimiter (so Excel doesn't mistake a decimal comma for a new column).
+  csvExportDelimiterSelect.value = decimalSep === "," ? ";" : ",";
+  csvExportHeadersInput.checked = true;
+  csvExportDialog.classList.remove("hidden");
+});
+function closeCsvExportDialog() { csvExportDialog.classList.add("hidden"); }
+csvExportDialog.addEventListener("click", ev => { if (ev.target === csvExportDialog) closeCsvExportDialog(); });
+el("#csvExportCancel").addEventListener("click", closeCsvExportDialog);
+el("#csvExportConfirm").addEventListener("click", async () => {
+  if (!extractRowsData.length) { closeCsvExportDialog(); return; }
+  const delimiter = csvExportDelimiterSelect.value === "\\t" ? "\t" : csvExportDelimiterSelect.value;
+  const csvText = buildExtractCsv(delimiter, csvExportDecimalSelect.value, csvExportHeadersInput.checked);
+  closeCsvExportDialog();
+  await saveCsvToFile(csvText);
+});
 el("#contextDialogCancel").addEventListener("click", closeContextDialog);
 el("#contextDialogCreate").addEventListener("click", () => {
   const before = Math.max(0, Math.round(parseFloat(contextBeforeInput.value) || 0));
@@ -20017,6 +20171,7 @@ el("#btnAddFormatRule").addEventListener("click", () => openFormatRuleEditDialog
 document.addEventListener("click", ev => {
   if (!contextMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
+  if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.contains(ev.target)) closeColumnsPanel();
@@ -20048,6 +20203,8 @@ document.addEventListener("keydown", ev => {
     closeFilterPopup();
     closeContextMenu();
     closeTreeContextMenu();
+    closeExtractContextMenu();
+    closeCsvExportDialog();
     closeLinkDialog();
     closeContextDialog();
     closeTimeRangeDialog();
