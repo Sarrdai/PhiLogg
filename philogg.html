@@ -86,7 +86,20 @@
        see those CSS blocks and PROJECT.md "Theming"). */
     --selection-bg:var(--accent-soft);
     --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    /* Fixed, not user-selectable — the monospace look used throughout the UI
+       chrome itself (badges, dialogs, plot labels, technical metadata bits)
+       wherever a design choice wants a monospace feel, independently of the
+       user's --font-ui pick. NOT the same thing as --font-log below: that
+       one is what actually displays log content and IS user-selectable
+       (Settings -> Appearance -> Log font). Keep the two separate — see
+       PROJECT.md "Theming" for why they used to be conflated. */
     --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    /* Font for actual log/text content — table rows, extraction table
+       cells, entry detail message, link-pair rows (exactly the elements
+       --log-text-scale below also scales) — independently of --font-ui
+       (UI chrome) and --font-mono (UI chrome's own monospace bits).
+       Driven by the "Log font" setting, see applyLogFont(). */
+    --font-log:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
     /* Multiplier applied (via calc()) to the font-size of actual log/text
        content — table rows, extraction table cells, entry detail message,
        link-pair rows — independently of --ui-scale's whole-interface zoom.
@@ -1448,21 +1461,21 @@
      rather than actually disappearing. col-thread/col-loc/col-method/col-msg
      already had this; col-time/col-delta didn't, since neither used to be
      resizable to zero before that feature existed. */
-  .col-time{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .col-time{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   /* Time since the previous row *in the order currently shown* — only computed
      in chronological order (see renderVisibleRows), dashed out otherwise. */
-  .col-delta{font-family:var(--font-mono); font-size:calc(11px * var(--log-text-scale)); color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .col-delta{font-family:var(--font-log); font-size:calc(11px * var(--log-text-scale)); color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .col-delta.delta-warn{color:var(--level-warn);}
   .col-delta.delta-error{color:var(--level-error); font-weight:650;}
   .col-level{align-self:center;}
   .level-badge{
-    font-family:var(--font-mono); font-size:calc(10px * var(--log-text-scale)); font-weight:700; letter-spacing:.3px;
+    font-family:var(--font-log); font-size:calc(10px * var(--log-text-scale)); font-weight:700; letter-spacing:.3px;
     padding:2px 6px; border-radius:4px; white-space:nowrap;
   }
-  .col-thread{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-loc{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-method{font-family:var(--font-mono); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-msg{font-family:var(--font-mono); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-thread{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-loc{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-method{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-msg{font-family:var(--font-log); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   /* Horizontal scrollbar, in BOTH log views (the Context view was added
      2026-09-02, person-requested — it used to keep an ellipsis-only
      truncation): .col-msg's `overflow:hidden` above resets its "automatic
@@ -1669,7 +1682,7 @@
     color:var(--text-tertiary); font-size:12px; text-align:center;
   }
   #detailMessage{
-    display:none; margin:0; font-family:var(--font-mono); font-size:calc(12px * var(--log-text-scale)); line-height:1.65;
+    display:none; margin:0; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); line-height:1.65;
     color:var(--text-primary); white-space:pre-wrap; word-break:break-word;
   }
   #detailPanel.empty #detailPlaceholder{display:flex;}
@@ -1726,7 +1739,7 @@
   .btn-mini-outline:hover{border-color:var(--accent); color:var(--accent-strong);}
 
   #extractScroll{flex:1 1 auto; overflow:auto; padding:0 16px 16px;}
-  #extractTable{border-collapse:collapse; font-family:var(--font-mono); font-size:calc(12px * var(--log-text-scale)); min-width:100%; user-select:none;}
+  #extractTable{border-collapse:collapse; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); min-width:100%; user-select:none;}
   #extractTable th, #extractTable td{
     padding:7px 12px; border-bottom:1px solid var(--border-soft); border-right:1px solid var(--border-soft);
     white-space:nowrap; text-align:left;
@@ -1820,8 +1833,8 @@
   .lvl-custom-5 .pair-row-bar{background:var(--level-custom-5);}
   .lvl-custom-6 .pair-row-bar{background:var(--level-custom-6);}
   .lvl-other .pair-row-bar{background:var(--text-tertiary);}
-  .pair-row-time{font-family:var(--font-mono); font-size:calc(10.8px * var(--log-text-scale)); color:var(--text-secondary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
-  .pair-row-msg{font-family:var(--font-mono); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0;}
+  .pair-row-time{font-family:var(--font-log); font-size:calc(10.8px * var(--log-text-scale)); color:var(--text-secondary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
+  .pair-row-msg{font-family:var(--font-log); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0;}
   .pair-delta{
     font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);
     padding:0 8px 0 15px; letter-spacing:.2px; display:flex; align-items:center;
@@ -4152,11 +4165,13 @@ const UI_FONT_STORAGE_KEY = "philogg-ui-font";
 const UI_FONT_DEFAULT = "default";
 
 /* Log font (FEATURE_BACKLOG.md follow-up to #46): same curated-stack
-   mechanism as the UI font above, but drives --font-mono (log/text
-   content — table rows, extraction table, entry detail, link/pair rows)
-   independently of --font-ui (UI chrome). First entry reproduces the
-   previous hardcoded default so existing users see no change until they
-   pick something else. */
+   mechanism as the UI font above, but drives --font-log (log/text
+   content — table rows, extraction table, entry detail, link/pair rows;
+   NOT --font-mono, which stays fixed and covers the UI chrome's own
+   unrelated monospace bits — badges, dialogs, plot labels) independently
+   of --font-ui (UI chrome's default font). First entry reproduces the
+   previous hardcoded --font-mono value so existing users see no change
+   until they pick something else. */
 const LOG_FONT_OPTIONS = [
   { id: "default", label: "System default (monospace)", stack: '"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace' },
   { id: "consolas", label: "Consolas", stack: 'Consolas,"Liberation Mono",monospace' },
@@ -4232,7 +4247,7 @@ function initUiFont() {
 document.getElementById("settingsUiFontSelect").addEventListener("change", ev => setUiFont(ev.target.value));
 
 function applyLogFont(fontId) {
-  document.documentElement.style.setProperty("--font-mono", fontStackForId(LOG_FONT_OPTIONS, fontId));
+  document.documentElement.style.setProperty("--font-log", fontStackForId(LOG_FONT_OPTIONS, fontId));
   const select = document.getElementById("settingsLogFontSelect");
   if (select && select.querySelector('option[value="' + CSS.escape(fontId) + '"]')) select.value = fontId;
 }

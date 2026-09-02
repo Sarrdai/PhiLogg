@@ -16773,8 +16773,21 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 153 — Log font family, separate from UI font (person-requested,
    this session): a second curated-stack picker, same mechanism as GROUP
-   111f/113's UI font, but drives --font-mono (log/text content) instead
-   of --font-ui (UI chrome), so the two can be set independently.
+   111f/113's UI font, but drives its OWN --font-log custom property
+   (log/text content only) instead of --font-ui (UI chrome).
+   Follow-up in the same session, person-reported: the Log font picker
+   originally drove --font-mono directly, which is ALSO the property a
+   bunch of unrelated UI chrome uses for its own monospace look (e.g.
+   .level-btn, the level-quick-filter pills) — so changing Log font
+   visibly reformatted UI elements that have nothing to do with log
+   content, and which one "won" looked order-dependent since both pickers
+   wrote to the same property. Introduced a dedicated --font-log var, used
+   ONLY by the exact selectors --log-text-scale already scopes to (table
+   rows, extraction table, entry detail message, link-pair rows — see
+   PROJECT.md); --font-mono reverted to fixed/non-configurable, still
+   covering the UI chrome's own monospace bits. Since the two properties
+   are now independent, setting order genuinely cannot matter — covered
+   below.
    ============================================================ */
 group(153);
 await withApp(async (w, d, T) => {
@@ -16784,15 +16797,15 @@ await withApp(async (w, d, T) => {
   assert(select, "the Log font select exists in Settings -> Appearance");
   assert(select.options.length >= 2, "offers a curated list of more than one font option");
   assert(select.value === "default", "defaults to the system-default monospace stack");
-  assert(w.document.documentElement.style.getPropertyValue("--font-mono").includes("SF Mono"),
-    "default option reproduces the original --font-mono stack (no visual change until touched)");
+  assert(w.document.documentElement.style.getPropertyValue("--font-log").includes("SF Mono"),
+    "default option reproduces the original --font-log stack (no visual change until touched)");
   [...select.options].forEach(opt => {
     assert(!/http|@font-face|url\(/i.test(opt.value), "font option \"" + opt.value + "\" fetches nothing external");
   });
 
   select.value = "courier";
   select.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.document.documentElement.style.getPropertyValue("--font-mono").includes("Courier New"), "selecting \"Courier New\" applies its stack via --font-mono");
+  assert(w.document.documentElement.style.getPropertyValue("--font-log").includes("Courier New"), "selecting \"Courier New\" applies its stack via --font-log");
   assert(w.localStorage.getItem("philogg-log-font") === "courier", "selection persists to localStorage");
 
   // Choosing --font-ui does not touch the UI font's own selection/setting.
@@ -16801,7 +16814,7 @@ await withApp(async (w, d, T) => {
   const uiVarBefore = w.document.documentElement.style.getPropertyValue("--font-ui");
   select.value = "ui";
   select.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.document.documentElement.style.getPropertyValue("--font-mono") === "var(--font-ui)", "\"Same as UI font\" points --font-mono at --font-ui");
+  assert(w.document.documentElement.style.getPropertyValue("--font-log") === "var(--font-ui)", "\"Same as UI font\" points --font-log at --font-ui");
   assert(uiSelect.value === uiValueBefore && w.document.documentElement.style.getPropertyValue("--font-ui") === uiVarBefore,
     "the UI font selection/value is untouched by changing the Log font");
 
@@ -16828,11 +16841,72 @@ await withApp(async (w, d, T) => {
 
   logSelect.value = firaOption.value;
   logSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.document.documentElement.style.getPropertyValue("--font-mono").startsWith('"Fira Code",'),
-    "selecting a system font sets --font-mono to the quoted name plus the default monospace fallback stack");
+  assert(w.document.documentElement.style.getPropertyValue("--font-log").startsWith('"Fira Code",'),
+    "selecting a system font sets --font-log to the quoted name plus the default monospace fallback stack");
   assert(w.localStorage.getItem("philogg-log-font") === "sys:Fira Code", "the sys:-prefixed id persists to localStorage under its own key");
   assert(uiSelect.value !== "sys:Fira Code", "the UI font select's own value is untouched");
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve(["Fira Code", "Iosevka", "Arial"]) } });
+
+await withApp(async (w, d, T) => {
+  section("153c. Log font is scoped to actual log content only — UI chrome's own monospace bits (e.g. .level-btn) are untouched");
+
+  const cs = w.getComputedStyle(w.document.documentElement);
+  const fontMonoBefore = cs.getPropertyValue("--font-mono");
+
+  const logSelect = d.querySelector("#settingsLogFontSelect");
+  logSelect.value = "courier";
+  logSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  assert(w.document.documentElement.style.getPropertyValue("--font-mono") === "", "--font-mono is never touched by the Log font setting (no inline override set)");
+  assert(cs.getPropertyValue("--font-mono") === fontMonoBefore, "--font-mono's actual value is unchanged, so UI chrome styled off it (e.g. .level-btn) keeps its own look");
+
+  // .col-msg (an actual log-row cell) uses --font-log; .level-btn (UI
+  // chrome styled with a monospace look, unrelated to log content) uses
+  // the untouched --font-mono — the two must resolve to different stacks
+  // once Log font diverges from the default.
+  const f = await w.addFile("a.log", makeLog(0, 3), () => {});
+  w.render();
+  const msgCell = d.querySelector(".col-msg");
+  const levelBtn = d.querySelector(".level-btn");
+  assert(msgCell && levelBtn, "sanity: both a log-row message cell and a level-quick-filter button are on screen");
+  assert(w.getComputedStyle(msgCell).fontFamily !== w.getComputedStyle(levelBtn).fontFamily,
+    "a log-row cell (--font-log, now Courier New) and a level-filter button (--font-mono, untouched) resolve to different font stacks");
+
+  logSelect.value = "default";
+  logSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+});
+
+await withApp(async (w, d, T) => {
+  section("153d. Setting order does not matter: UI font then Log font, or Log font then UI font, land on the same end state");
+
+  const uiSelect = d.querySelector("#settingsUiFontSelect");
+  const logSelect = d.querySelector("#settingsLogFontSelect");
+  const root = w.document.documentElement;
+
+  // Order A: UI font first, then Log font.
+  uiSelect.value = "georgia";
+  uiSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  logSelect.value = "menlo";
+  logSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const fontUiA = root.style.getPropertyValue("--font-ui");
+  const fontLogA = root.style.getPropertyValue("--font-log");
+
+  // Reset, then Order B: Log font first, then UI font — same two choices.
+  uiSelect.value = "default"; uiSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  logSelect.value = "default"; logSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  logSelect.value = "menlo";
+  logSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  uiSelect.value = "georgia";
+  uiSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const fontUiB = root.style.getPropertyValue("--font-ui");
+  const fontLogB = root.style.getPropertyValue("--font-log");
+
+  assert(fontUiA === fontUiB && fontLogA === fontLogB,
+    "the resulting --font-ui/--font-log values are identical regardless of which select was changed first");
+
+  uiSelect.value = "default"; uiSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  logSelect.value = "default"; logSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+});
 
 /* ============================================================
    Summary
@@ -19048,8 +19122,20 @@ process.exitCode = failed ? 1 : 0;
               --font-ui. Added a second "Log font" select in Settings ->
               Appearance, same curated-stack + desktop listSystemFonts
               mechanism as UI font, storing under its own
-              "philogg-log-font" localStorage key and driving --font-mono
-              independently.
+              "philogg-log-font" localStorage key. Follow-up in the same
+              session, person-reported: the Log font picker originally
+              drove --font-mono directly — but a bunch of unrelated UI
+              chrome (e.g. .level-btn, the level-quick-filter pills) ALSO
+              styles itself off --font-mono for its own monospace look, so
+              changing Log font visibly reformatted UI elements that have
+              nothing to do with log content, and which setting "won"
+              looked order-dependent since both pickers wrote to the same
+              property. Introduced a dedicated --font-log custom property,
+              used only by the exact selectors --log-text-scale already
+              scopes to; --font-mono reverted to fixed/non-configurable,
+              still covering the UI chrome's own monospace bits. The two
+              properties being independent means setting order genuinely
+              cannot matter.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:
