@@ -15616,10 +15616,19 @@ function measureColumnText(key, text) {
   return w > 0 ? w : text.length * MONO_CHAR_WIDTH_FALLBACK;
 }
 const COLUMN_AUTOFIT_PADDING = 8; // slack so the widest value isn't flush against the resize handle
+// Person-reported: auto-fit was slow on a large file. The original version
+// called measureColumnText() (a real offsetWidth read) once PER ENTRY —
+// each one a forced synchronous reflow, so a big file meant thousands of
+// layout thrashes. Fixed the same way computeMaxMessageWidth above already
+// avoids that for the message column: cheap O(n) character-length scan
+// (no layout involved) to find the single longest string, then ONE real
+// measurement of just that string. Monospace font (var(--font-log), same
+// as .col-msg), so the longest string in characters is also the widest in
+// pixels.
 function autofitColumnWidth(key) {
   const fileId = getRootFileId(state.activeId);
   const entries = fileId ? state.nodes[fileId].entries : [];
-  let maxW = 0;
+  let longest = "";
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     let text;
@@ -15634,10 +15643,10 @@ function autofitColumnWidth(key) {
     else if (key === "loc") text = e.locationShort;
     else if (key === "method") text = e.method;
     else text = "";
-    const w = measureColumnText(key, text || "");
-    if (w > maxW) maxW = w;
+    if (text && text.length > longest.length) longest = text;
   }
-  return Math.max(COLUMN_MIN_WIDTH, Math.ceil(maxW) + COLUMN_AUTOFIT_PADDING);
+  const w = longest ? measureColumnText(key, longest) : 0;
+  return Math.max(COLUMN_MIN_WIDTH, Math.ceil(w) + COLUMN_AUTOFIT_PADDING);
 }
 Object.keys(columnResizeHandleEls).forEach(key => {
   columnResizeHandleEls[key].addEventListener("dblclick", ev => {
