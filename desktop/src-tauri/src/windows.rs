@@ -112,7 +112,34 @@ pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
     }
 
     let Ok(window) = builder.build() else { return };
+    #[cfg(target_os = "windows")]
+    disable_alt_accelerator_keys(&window);
     watch_window_events(&window);
+}
+
+/// Windows only: WebView2 treats Alt as a browser "accelerator key" by
+/// default, the same way Chrome/Edge use it to focus the menu bar. This
+/// window has no menu bar (`decorations(false)` above), so releasing Alt
+/// instead pops the native window's system menu in the top-left corner —
+/// most visibly right after Alt+Enter's "Filter for this ___" extraction
+/// (philogg.html's own `preventDefault()` on that chord only stops the
+/// page from reacting, not WebView2's accelerator handling). Turning this
+/// setting off leaves Alt+Enter etc. to reach philogg.html as plain
+/// keyboard events, same as every other key.
+#[cfg(target_os = "windows")]
+fn disable_alt_accelerator_keys(window: &WebviewWindow) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+    use windows::core::Interface;
+
+    let _ = window.with_webview(|webview| {
+        let settings3 = (|| unsafe {
+            let core = webview.controller().CoreWebView2()?;
+            core.Settings()?.cast::<ICoreWebView2Settings3>()
+        })();
+        if let Ok(settings3) = settings3 {
+            let _ = unsafe { settings3.SetAreBrowserAcceleratorKeysEnabled(false) };
+        }
+    });
 }
 
 /// The two OS-level events this window has to answer for itself: the close
