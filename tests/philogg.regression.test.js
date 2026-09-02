@@ -17159,6 +17159,55 @@ await withApp(async (w, d, T) => {
   w.closeCsvExportDialog();
 });
 
+await withApp(async (w, d, T) => {
+  section("155e. Ctrl+C also writes an HTML clipboard flavor with Excel's x:num on numeric cells (Chromium ClipboardItem path)");
+
+  // Person-reported follow-up: even sending Excel's OWN confirmed decimal
+  // separator still pasted wrong, because Excel's plain-text paste applies
+  // its own unqueryable heuristics on top. x:num sidesteps that: Excel
+  // reads the literal (always period-decimal) value from the attribute,
+  // with no locale interpretation at all, then displays it in its own
+  // locale — so it must NOT go through localizeNumericCell.
+  const log = `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"score=27.7120"\n`;
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.createFilterNode(f.id, "extract", "score=[value:float]");
+  w.render();
+
+  let written = null;
+  w.ClipboardItem = function (items) { this.items = items; };
+  w.navigator.clipboard.write = items => { written = items[0].items; return Promise.resolve(); };
+  w.systemDecimalSeparator = () => ",";
+
+  w.selectCells(w.allCells());
+  w.copyTableSelection();
+  assert(written, "copyTableSelection uses the ClipboardItem/clipboard.write path when it's available, instead of writeText");
+
+  const html = await written["text/html"].text();
+  assert(html.includes('x:num="27.7120"'), "the numeric cell's x:num carries the RAW, invariant (period-decimal) value regardless of the chosen/detected decimal separator, got " + html);
+  assert(html.includes(">27,7120<"), "the visible <td> text still uses the localized (comma) value, for apps that read text/html but ignore x:num, got " + html);
+  assert(html.includes("urn:schemas-microsoft-com:office:excel"), "the Excel MSO namespace is present, required for x:num to be honored");
+
+  const text = await written["text/plain"].text();
+  assert(text.includes("27,7120"), "the text/plain flavor (fallback for anything ignoring text/html) still carries the localized TSV, got " + JSON.stringify(text));
+
+  // copyWholeExtractTable goes through the same path, header row included.
+  written = null;
+  w.copyWholeExtractTable();
+  const wholeHtml = await written["text/html"].text();
+  assert(wholeHtml.includes('x:num="27.7120"') && wholeHtml.includes("<td><b>value</b></td>"),
+    "copyWholeExtractTable's HTML flavor also carries x:num on the numeric cell and a header row, got " + wholeHtml);
+
+  // Falls back to the old writeText-only path when ClipboardItem is unavailable.
+  delete w.ClipboardItem;
+  let plainCopied = null;
+  w.navigator.clipboard.writeText = t => { plainCopied = t; return Promise.resolve(); };
+  written = null;
+  w.copyTableSelection();
+  assert(written === null && plainCopied && plainCopied.includes("27,7120"), "without ClipboardItem, copy falls back cleanly to the plain writeText path");
+});
+
 /* ============================================================
    Summary
    ============================================================ */
@@ -19405,7 +19454,18 @@ process.exitCode = failed ? 1 : 0;
               back as a thousands separator). Added 155d: an explicit
               Settings -> Behavior override (Auto/Point/Comma) that
               resolveClipboardDecimalSeparator() checks before falling back
-              to the same auto-guess.
+              to the same auto-guess. Second follow-up, same session,
+              person-reported: even the CONFIRMED-correct separator still
+              pasted wrong, since Excel's plain-text-paste number
+              recognition applies its own unqueryable heuristics on top of
+              whatever character arrives. 155e: copyTextToClipboard now
+              also writes a text/html clipboard flavor (ClipboardItem/
+              clipboard.write, Chromium-only, clean fallback otherwise)
+              whose numeric <td>s carry Excel's own x:num attribute (the
+              same mechanism Excel's own Ctrl+C emits) with the RAW,
+              never-localized value — Excel reads that with zero locale
+              interpretation and formats it in its own locale, sidestepping
+              decimal-separator guessing for Excel entirely.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:
