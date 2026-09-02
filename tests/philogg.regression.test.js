@@ -8444,36 +8444,43 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 73 — Horizontal scrollbar in the Filter view
+   GROUP 73 — Horizontal scrollbar in the log views
    Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Horizontal
    scrollbar in the Filter view — so long messages can be read in full".
-   #tableBody scrolls horizontally now (Filter view only — #highlightBody,
-   the Full view, is unaffected); #tableHeader keeps its own scrollbar
+   #tableBody scrolls horizontally; #tableHeader keeps its own scrollbar
    hidden and has its scrollLeft driven by #tableBody's scroll event, and
    its .row-grid's width kept in sync with the widest currently-rendered
    row (syncTableHeaderWidth, called from renderVisibleRows) since the
    header's own content (short column labels) would otherwise size much
    narrower than a long message. The actual visual overflow/scrollbar
-   behavior is CSS/layout-driven (`#tableRows .col-msg{min-width:
-   max-content}` forcing the message column's grid track to refuse to
-   shrink below its own content) and isn't independently verifiable here —
-   jsdom has no real layout engine (see tests/README's "Known gaps") — so
-   this covers the JS-observable parts: the overflow-x split itself (real
-   computed style, not just a class) and the header sync/scroll-lockstep
-   logic. GROUP 73b covers the follow-up bugfix's own JS logic
-   (computeMaxMessageWidth/syncTableRowsWidth) directly.
+   behavior is CSS/layout-driven (`.col-msg{min-width: max-content}` forcing
+   the message column's grid track to refuse to shrink below its own
+   content) and isn't independently verifiable here — jsdom has no real
+   layout engine (see tests/README's "Known gaps") — so this covers the
+   JS-observable parts: the overflow-x split itself (real computed style,
+   not just a class) and the header sync/scroll-lockstep logic. GROUP 73b
+   covers the follow-up bugfix's own JS logic (computeMaxMessageWidth/
+   syncTableRowsWidth) directly.
+   UPDATED 2026-09-02 (person-requested): the Context view scrolls
+   horizontally too now, through its own mirror of the same pair
+   (syncHighlightRowsWidth/syncHighlightHeaderWidth). This group used to
+   assert the opposite — that #highlightBody stays clipped — which is dead
+   code now, so it asserts the mirror instead.
    ============================================================ */
 group(73);
 await withApp(async (w, d, T) => {
-  section("73. Horizontal scrollbar in the Filter view");
+  section("73. Horizontal scrollbar in the log views");
 
   const tableBody = d.getElementById("tableBody");
   const tableHeader = d.getElementById("tableHeader");
   const highlightBody = d.getElementById("highlightBody");
+  const highlightHeader = d.getElementById("highlightHeader");
 
   assert(w.getComputedStyle(tableBody).overflowX === "auto", "Filter view's #tableBody scrolls horizontally");
   assert(w.getComputedStyle(tableHeader).overflowX === "hidden", "the header's own (synced, non-user-facing) scrollbar stays hidden");
-  assert(w.getComputedStyle(highlightBody).overflowX === "hidden", "the Full/Highlight view is unaffected — still clips long messages");
+  assert(w.getComputedStyle(highlightBody).overflowX === "auto",
+    "the Context view scrolls horizontally too (person-requested — it used to clip long messages instead)");
+  assert(w.getComputedStyle(highlightHeader).overflowX === "hidden", "…with its own header scrollbar hidden the same way");
 
   await w.addFile("a.log", makeLog(0, 5), () => {});
   w.render();
@@ -8487,6 +8494,16 @@ await withApp(async (w, d, T) => {
   tableBody.scrollLeft = 42;
   tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
   assert(tableHeader.scrollLeft === 42, "scrolling the Filter view's body drives the header's scrollLeft to match");
+
+  // The Context view's own copy of both halves.
+  const highlightRows = d.getElementById("highlightRows");
+  Object.defineProperty(highlightRows, "scrollWidth", { value: 987, configurable: true });
+  w.renderHighlightVisibleRows();
+  assert(highlightHeader.querySelector(".row-grid").style.width === "987px",
+    "the Context header's row-grid width tracks its own widest rendered row, got " + highlightHeader.querySelector(".row-grid").style.width);
+  highlightBody.scrollLeft = 17;
+  highlightBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  assert(highlightHeader.scrollLeft === 17, "scrolling the Context view's body drives its own header's scrollLeft to match");
 });
 
 /* ============================================================
@@ -14851,9 +14868,9 @@ await withApp(async (w, d, T) => {
      p) Stacked layout seeds everything revealed the first time a node
         becomes active there, regardless of contextInitialExpansion — a
         one-time seed, not a standing override.
-     q) a "Show more" click grows the log on its own side and holds the other
-        side exactly where it is on screen — never re-centring on a selected
-        row that happens to be off screen.
+     q) a "Show more" click unfolds its own block AWAY from the run it
+        belongs to, holding that run exactly where it is on screen — never
+        re-centring on a selected row that happens to be off screen.
    ============================================================ */
 group(138);
 await withApp(async (w, d, T) => {
@@ -15117,14 +15134,19 @@ await withApp(async (w, d, T) => {
     "manually hiding a stretch in Stacked survives a layout flip — the expanded default is a one-time SEED, not a standing override");
   w.applyFhView("highlight");
 
-  // --- (q) a step click grows its own side and holds the other one --------
-  // Person-reported: "Der visuelle Eindruck soll sein: 'Ich bin noch an der
-  // gleichen Stelle und sehe oben/unten jetzt mehr', also ohne einen
-  // zusätzlichen Sprung." The old commit path went through captureViewAnchor,
-  // which prefers state.selectedId and re-centres it when it is off screen —
-  // so every step click yanked the view back to the selection. Both cases
-  // below deliberately leave the selection off screen, which is exactly what
-  // used to trigger that.
+  // --- (q) a step click unfolds away from its own run --------------------
+  // Person-reported, twice. First: "Der visuelle Eindruck soll sein: 'Ich bin
+  // noch an der gleichen Stelle und sehe oben/unten jetzt mehr', also ohne
+  // einen zusätzlichen Sprung" — the commit path went through
+  // captureViewAnchor, which prefers state.selectedId and re-centres it when
+  // it is off screen, so every step click yanked the view back to the
+  // selection. Both cases below deliberately leave the selection off screen,
+  // which is exactly what used to trigger that.
+  // Then: the first fix held the FAR side, so a block unfolded in the
+  // direction opposite to the button that was clicked. A step row belongs to
+  // the run it sits against; that run is what stays put, and the block grows
+  // away from it — the step at the BOTTOM of a block unfolds downwards, the
+  // one at its TOP unfolds upwards.
   //
   // A 200-line file with matches only at 0 and 100 gives gaps long enough
   // (99 and 99 lines) for a 10-line step to leave a real remainder on either
@@ -15141,8 +15163,9 @@ await withApp(async (w, d, T) => {
     showTop();
   };
 
-  // TOP step: it grows the run ABOVE it downwards, so the log has to extend
-  // upwards — the rows below the step (here match 100) must not move a pixel.
+  // A step at the BOTTOM of a block (side "top": it grows the run above it):
+  // that run keeps its place and the block unfolds DOWNWARDS, pushing what
+  // follows further down.
   enterBig();
   fireClick(matchRow(big.entries[0].id), w);            // auto-reveals 1-11
   assert(revealed(1) === "1-11", "sanity: a step revealed below match 0, got " + revealed(1));
@@ -15150,20 +15173,21 @@ await withApp(async (w, d, T) => {
   w.renderHighlightVisibleRows();
   assert(T.state.selectedId === big.entries[0].id && screenYOf(big.entries[0].id) < 0,
     "sanity: the selected row sits above the viewport, which is what used to drag the view back");
-  const yBelowBefore = screenYOf(big.entries[100].id);
-  const stepTop = moreRows().find(el => el.textContent.includes("Show more"));
-  assert(stepTop, "sanity: the top step row is on screen");
-  fireClick(stepTop, w);
-  assert(revealed(1) === "1-21", "the top step grows the run above it by one more step, got " + revealed(1));
-  assert(screenYOf(big.entries[100].id) === yBelowBefore,
-    "the rows below it keep their exact on-screen position — the log grew upwards, nothing on the other side moved, got " +
-      screenYOf(big.entries[100].id) + " instead of " + yBelowBefore);
-  assert(body.scrollTop !== 200,
-    "sanity: holding the row below across an insertion above it genuinely had to move scrollTop");
+  const yRunBefore = screenYOf(big.entries[10].id);     // last row of the run the step belongs to
+  const yAfterBefore = screenYOf(big.entries[100].id);  // the match below the hidden stretch
+  const stepAtBottom = moreRows().find(el => el.textContent.includes("Show more"));
+  assert(stepAtBottom, "sanity: the step row at the bottom of the block is on screen");
+  fireClick(stepAtBottom, w);
+  assert(revealed(1) === "1-21", "it grows its own run by one more step, got " + revealed(1));
+  assert(screenYOf(big.entries[10].id) === yRunBefore && body.scrollTop === 200,
+    "the run it belongs to does not move — the block unfolds downwards from it, got " +
+      screenYOf(big.entries[10].id) + " instead of " + yRunBefore + " (scrollTop " + body.scrollTop + ")");
+  assert(screenYOf(big.entries[100].id) === yAfterBefore + 10 * T.ROW_HEIGHT,
+    "…and what follows the stretch is pushed down by exactly the ten revealed rows, got " +
+      screenYOf(big.entries[100].id) + " instead of " + (yAfterBefore + 10 * T.ROW_HEIGHT));
 
-  // BOTTOM step: it grows the run BELOW it upwards, so the log extends
-  // downwards and everything above the step stays put — including the scroll
-  // position itself, since nothing above it changed.
+  // A step at the TOP of a block (side "bottom": it grows the run below it):
+  // the mirror image — that run keeps its place and the block unfolds UPWARDS.
   enterBig();
   fireClick(matchRow(big.entries[100].id), w);          // reveals 90-100 and 101-111
   assert(revealed(1) === "90-100" && revealed(101) === "101-111",
@@ -15171,13 +15195,16 @@ await withApp(async (w, d, T) => {
   showTop();
   T.state.selectedId = big.entries[110].id;             // in the list, but far below the viewport
   assert(screenYOf(big.entries[110].id) > 400, "sanity: the selected row sits below the viewport");
-  const yAboveBefore = screenYOf(big.entries[0].id);
-  const stepBottom = moreRows()[0];                     // DOM order: the bottom step of the first gap
-  assert(stepBottom, "sanity: the bottom step row is on screen");
-  fireClick(stepBottom, w);
-  assert(revealed(1) === "80-100", "the bottom step grows the run below it by one more step, got " + revealed(1));
-  assert(body.scrollTop === 0 && screenYOf(big.entries[0].id) === yAboveBefore,
-    "nothing above it moved at all — the log grew downwards from the step, got scrollTop " + body.scrollTop);
+  const yRunBefore2 = screenYOf(big.entries[90].id);    // first row of the run the step belongs to
+  const stepAtTop = moreRows()[0];                      // DOM order: the step above the first gap's run
+  assert(stepAtTop, "sanity: the step row at the top of the block is on screen");
+  fireClick(stepAtTop, w);
+  assert(revealed(1) === "80-100", "it grows its own run by one more step, got " + revealed(1));
+  assert(screenYOf(big.entries[90].id) === yRunBefore2,
+    "the run it belongs to does not move — the block unfolds upwards from it, got " +
+      screenYOf(big.entries[90].id) + " instead of " + yRunBefore2);
+  assert(body.scrollTop === 10 * T.ROW_HEIGHT,
+    "…which takes scrollTop with it by exactly the ten revealed rows, got " + body.scrollTop);
   T.state.activeId = hitFilter.id;
   showContext();
 });
