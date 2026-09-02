@@ -877,14 +877,41 @@
        line down). vertical-align:middle instead aligns relative to the
        PARENT's font baseline/x-height, which doesn't reliably line up with
        where a float starts and can drift a few px depending on inherited
-       font metrics. */
-    display:inline-flex; align-items:center; justify-content:center;
+       font metrics.
+
+       justify-content:flex-start (not center): centering only shows once a
+       long chip actually hits max-width below — a centered overflowing text
+       node gets clipped equally on BOTH sides, so text-overflow's single
+       ellipsis marker (drawn at the inline-end only) leaves an unmarked cut
+       mid-word on the left with no visual cue anything is missing (person-
+       reported). Left-aligned, the clipped part is only ever the tail, so
+       the start of the name stays put and the ellipsis correctly marks
+       "there's more" at the end. */
+    display:inline-flex; align-items:center; justify-content:flex-start;
     vertical-align:top; height:28px; margin:0 4px 6px 0;
     font-size:10.5px; color:var(--text-secondary); cursor:pointer;
     background:var(--bg-elevated); border:1px solid var(--border-soft);
     padding:0 9px; border-radius:20px; transition:background .12s, border-color .12s, filter .12s;
+    /* Person-reported: a long auto-generated filter name (no width cap of
+       its own) could outgrow one pill's whole line, wrapping its text onto
+       a second line inside the fixed 28px height and spilling above/below
+       it. max-width caps every chip to one line and one length, same idea
+       as .tree-label's truncation; chip.title below still carries the
+       untruncated name as a tooltip. */
+    max-width:220px;
   }
   .crumb:hover{filter:brightness(1.25);}
+  /* The actual truncated text lives in a child span, not directly in .crumb
+     (person-reported follow-up: overflow/text-overflow/white-space set
+     directly on .crumb itself never clipped anything — its text is an
+     anonymous flex item, and a flex CONTAINER's text-overflow only elides
+     content that overflows its own principal box, not a child flex item's
+     box, which is what the raw text became once .crumb turned into a flex
+     formatting context). .crumb-label is that child: flex:1 1 auto with
+     min-width:0 lets it actually shrink below its own text's natural width
+     (the default min-width:auto on a flex item is exactly what was letting
+     it overflow un-clipped before), and carries the ellipsis trio itself. */
+  .crumb-label{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .crumb.current{color:var(--accent-strong); border-color:color-mix(in srgb, var(--accent) 35%, transparent); background:var(--accent-soft);}
   /* Separator glyph is plain inline text (no flex-centering box of its
      own), so it still needs a top margin to center its ~12px glyph line
@@ -9434,7 +9461,10 @@ function renderBreadcrumb() {
     const isCurrent = node.id === state.activeId;
     const chip = document.createElement("span");
     chip.className = "crumb" + (isCurrent ? " current" : "");
-    chip.textContent = nodeDisplayName(node);
+    const label = document.createElement("span");
+    label.className = "crumb-label";
+    label.textContent = nodeDisplayName(node);
+    chip.appendChild(label);
     chip.title = "Select in the filter tree: " + nodeDisplayName(node);
     // Same single-select behavior as a plain (non-Ctrl) tree-row click —
     // lets the breadcrumb double as a quick "jump to an ancestor filter"
@@ -16876,7 +16906,11 @@ function renderFilterTargetChain() {
     }
     const chip = document.createElement("span");
     chip.className = "crumb" + (i === chain.length - 1 ? " current" : "");
-    chip.textContent = nodeDisplayName(node);
+    const label = document.createElement("span");
+    label.className = "crumb-label";
+    label.textContent = nodeDisplayName(node);
+    chip.appendChild(label);
+    chip.title = nodeDisplayName(node); // full name as a tooltip — the pill itself is truncated, see .crumb-label's ellipsis
     filterTargetChainEl.appendChild(chip);
   });
 }
