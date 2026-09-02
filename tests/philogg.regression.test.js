@@ -17113,6 +17113,52 @@ await withApp(async (w, d, T) => {
   assert(bodyOnlyLines.length === 2, "unchecking 'include header row' exports only the 2 data rows, got " + bodyOnlyLines.length);
 });
 
+await withApp(async (w, d, T) => {
+  section("155d. Settings -> Behavior -> 'Decimal separator for copy/export' overrides the auto-detected separator");
+
+  const log = `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"score=1.5"\n`;
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.createFilterNode(f.id, "extract", "score=[value:float]");
+  w.render();
+
+  // Auto-detect (stubbed to comma) is used when nothing is stored.
+  w.systemDecimalSeparator = () => ",";
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+  w.selectCells(w.allCells());
+  w.copyTableSelection();
+  assert(copied.includes("1,5"), "with no override stored, copy falls back to the auto-detected (stubbed comma) separator");
+
+  // Explicitly pinning "." via the Settings select overrides the auto-guess.
+  const select = d.querySelector("#settingsClipboardDecimalSelect");
+  select.value = ".";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.localStorage.getItem("philogg-clipboard-decimal-sep") === ".", "picking 'Point (.)' persists the override to localStorage");
+  copied = null;
+  w.copyTableSelection();
+  assert(copied.includes("1.5") && !copied.includes("1,5"), "with '.' pinned, copy ignores the (stubbed comma) auto-detection, got " + JSON.stringify(copied));
+
+  // Switching back to "Auto" clears the override again.
+  select.value = "auto";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(w.localStorage.getItem("philogg-clipboard-decimal-sep") === null, "picking 'Auto' removes the stored override");
+  copied = null;
+  w.copyTableSelection();
+  assert(copied.includes("1,5"), "back to Auto, the stubbed system separator applies again");
+
+  // A stored override also seeds the CSV export dialog's default.
+  select.value = ",";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  w.systemDecimalSeparator = () => "."; // deliberately mismatched, to prove the override (not auto-detect) wins
+  const body = d.querySelector("#extractBody");
+  fireContextMenu(body, w, 50, 50);
+  fireClick(d.querySelector("#ctxExportCsv"), w);
+  assert(d.querySelector("#csvExportDecimalSelect").value === ",", "CSV export dialog defaults from the stored override, not the (mismatched) auto-detected separator");
+  w.closeCsvExportDialog();
+});
+
 /* ============================================================
    Summary
    ============================================================ */
@@ -19351,7 +19397,15 @@ process.exitCode = failed ? 1 : 0;
               the clipboard (display itself is untouched); a new right-
               click "Export as CSV..." menu on the extraction table opens a
               dialog (delimiter/decimal separator/include headers) and
-              saves a real RFC4180-quoted .csv file.
+              saves a real RFC4180-quoted .csv file. Follow-up in the same
+              session, person-reported with a screenshot: the auto-detected
+              separator (from navigator.language) didn't match what that
+              person's actual Excel install parsed, shifting pasted floats
+              by a factor of 10 (a "," meant as a decimal point got read
+              back as a thousands separator). Added 155d: an explicit
+              Settings -> Behavior override (Auto/Point/Comma) that
+              resolveClipboardDecimalSeparator() checks before falling back
+              to the same auto-guess.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:
