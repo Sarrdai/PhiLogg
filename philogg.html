@@ -877,8 +877,17 @@
        line down). vertical-align:middle instead aligns relative to the
        PARENT's font baseline/x-height, which doesn't reliably line up with
        where a float starts and can drift a few px depending on inherited
-       font metrics. */
-    display:inline-flex; align-items:center; justify-content:center;
+       font metrics.
+
+       justify-content:flex-start (not center): centering only shows once a
+       long chip actually hits max-width below — a centered overflowing text
+       node gets clipped equally on BOTH sides, so text-overflow's single
+       ellipsis marker (drawn at the inline-end only) leaves an unmarked cut
+       mid-word on the left with no visual cue anything is missing (person-
+       reported). Left-aligned, the clipped part is only ever the tail, so
+       the start of the name stays put and the ellipsis correctly marks
+       "there's more" at the end. */
+    display:inline-flex; align-items:center; justify-content:flex-start;
     vertical-align:top; height:28px; margin:0 4px 6px 0;
     font-size:10.5px; color:var(--text-secondary); cursor:pointer;
     background:var(--bg-elevated); border:1px solid var(--border-soft);
