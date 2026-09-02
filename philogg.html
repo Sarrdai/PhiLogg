@@ -8112,25 +8112,96 @@ function revealFilteredView() {
 // active or the Filtered tab is already showing.
 let lastActiveIdForReveal = null;
 
-// Back/forward "where I looked" navigation (FEATURE_BACKLOG.md #53) — a
-// browser/IDE-style history of visited nodes, distinct from Undo/Redo
-// (which tracks filter-tree *edits*, not view visits; see undo()/redo()
-// above — they never touch scroll position or navHistory). Piggybacks on
-// the same activeId-changed detection render() already does for
-// revealFilteredView() above, since that's the one place all ~30
-// state.activeId call sites funnel through.
-let navHistory = []; // [{nodeId, scrollTop}]
+/* ===================== Back/forward "where I looked" navigation ==========
+   FEATURE_BACKLOG.md #53, extended this session with a real
+   "meaningful interaction" heuristic (person-requested, modeled on Visual
+   Studio / JetBrains Rider: get back to what you were looking at after
+   losing yourself in the log).
+
+   Distinct from Undo/Redo, which tracks filter-tree *edits*, not view
+   visits — undo()/redo() above never touch navHistory or scroll position,
+   and that separation stays.
+
+   WHAT COUNTS AS A WAYPOINT — three tiers. Anything not listed in A or B
+   never produces one.
+
+   A. Always (an explicit relocation, no condition, no timer):
+      A1  state.activeId changes — tree click, breadcrumb chip, Alt+Arrow
+          tree nav, creating/editing a filter, drag-drop reparent, an
+          undo/redo that lands on another node. Detected in render() via
+          the same lastActiveIdForReveal check revealFilteredView() uses,
+          which is the one place all ~30 activeId call sites funnel through.
+      A2  revealInHighlightView() — double-click / Enter into the Context view.
+      A3  jumpToFullLog() — extraction table / plot mark into the log view.
+      A4  jumpToEntry() — jump to an entry from outside the log views.
+      A5  the timeline minimap's click-to-jump.
+      A6  jumpToTailedNewest() — "jump to newest" on a tailed file.
+      A2-A6 each freeze the CURRENT position first (commitCurrentNavPosition)
+      and push the destination after (pushNavWaypoint) — without the first
+      half the origin would be lost, which is exactly what the original
+      implementation got wrong.
+
+   B. Only when the test passes:
+      B1  Scroll + dwell. NAV_DWELL_MS after the last user scroll event, a
+          new waypoint is pushed iff the view has travelled at least one
+          viewport height from the current waypoint's own position;
+          otherwise the current waypoint is just refreshed in place. Every
+          further scroll restarts the timer, so a fast flick to the end of a
+          file yields ONE waypoint at the destination, not fifty on the way.
+          Measuring against the WAYPOINT (not against where this particular
+          scroll burst started) is what makes several short bursts in the
+          same direction accumulate into one eventual waypoint, and what
+          keeps the origin intact while you are far away from it.
+
+   C. Never: anything while navigatingHistory; programmatic scrolls
+      (tail-follow, jump-to-entry, a history restore — recognized through
+      lastProgrammaticScrollTs, the same 150ms window the tail-follow
+      listeners use); the Context/Filtered/Stacked toggle and the automatic
+      revealFilteredView() (the view mode is stored IN a waypoint and
+      restored, but switching it is not itself a step — same as a tool
+      window in an IDE); level quick-filter, sort, multiline/notes toggles,
+      column changes, gap expand/collapse; hover, popups, settings.
+      Selection is not a waypoint either: it rides along on whatever
+      waypoint is current (every capture reads state.selectedId), so an
+      arrow-key sweep through rows produces none — and once it has scrolled
+      far enough, B1 puts exactly one at the destination.
+
+   WHY AN ANCHOR ROW INSTEAD OF A RAW scrollTop: a raw pixel offset means
+   something different after a tail tick, a level-filter change, a multiline
+   toggle or a re-sort. captureViewAnchor/restoreViewAnchor already solve
+   this (entry id + on-screen pixel offset, selected row preferred over
+   topmost visible, graceful when the row is gone) and are reused verbatim.
+   contextExpansions is deliberately NOT part of a waypoint — a restore
+   calls applyContextJumpExpansion() on the anchor instead, the same way
+   revealInHighlightView does, which is all the correctness the restore
+   actually needs.
+
+   Session-only, like undoStack: entry ids (uid("e")) do not survive a
+   reload, and a "where was I" history is not worth the ordinal re-keying
+   buildCacheMeta does for bookmarks. */
+const NAV_HISTORY_LIMIT = 50;   // same cap, same reasoning as UNDO_STACK_LIMIT
+const NAV_DWELL_MS = 700;       // how long the view has to sit still before a scroll counts as "I stopped here"
+const NAV_MIN_SCROLL_PX = 400;  // fallback travel threshold when clientHeight is unavailable (jsdom, a hidden pane)
+
+// A waypoint: { nodeId, fhLayout, fhActiveTab, entriesView, selectedId,
+//               filterAnchor, contextAnchor, rawScrollTop, contextScrollTop }
+let navHistory = [];
 let navHistoryIndex = -1;
-let navigatingHistory = false; // true while goBack/goForward is applying an entry, so render() doesn't record it as a new visit
+let navigatingHistory = false; // true while goToNavHistoryIndex is applying a waypoint, so nothing records it as a new visit
+let navDwellTimer = null;
+// An A1 waypoint is pushed at the TOP of render(), before the view it
+// belongs to has been rebuilt — its positions are filled in at the end of
+// that same render() instead of being captured against the outgoing DOM.
+let navFillPending = false;
 const btnNavBack = el("#btnNavBack");
 const btnNavForward = el("#btnNavForward");
 
-// The scroll container backing whichever "view" is currently on screen for
-// the active node — the one thing that needs to be remembered per history
-// entry beyond the node id itself. Mirrors the isLink/isExtract branching
-// in renderMainView().
-function activeNavScroller() {
-  const node = state.nodes[state.activeId];
+// The scroll container backing the Filtered pane for a given node. Mirrors
+// the isLink/isExtract branching in renderMainView(). The Context pane's own
+// container (#highlightBody) is tracked separately — both are live at once
+// in the Stacked layout.
+function activeNavScroller(nodeId) {
+  const node = state.nodes[nodeId === undefined ? state.activeId : nodeId];
   if (node && node.type === "filter") {
     if (node.filterType === "extract") return extractScroll;
     if (node.filterType === "link") return linkScroll;
@@ -8138,61 +8209,207 @@ function activeNavScroller() {
   return tableBody;
 }
 
-function captureNavScroll(index) {
-  const entry = navHistory[index];
-  if (!entry) return;
-  entry.scrollTop = activeNavScroller().scrollTop;
+// Snapshots the full visible state. `nodeId` defaults to the active node but
+// is passed explicitly when refreshing a waypoint whose node we have already
+// left (see commitCurrentNavPosition) — the rendered DOM still belongs to
+// that older node, so the extract/link branch has to be resolved against it.
+function captureNavWaypoint(nodeId) {
+  if (nodeId === undefined) nodeId = state.activeId;
+  const scroller = activeNavScroller(nodeId);
+  return {
+    nodeId,
+    fhLayout, fhActiveTab,
+    entriesView: state.entriesView,
+    selectedId: state.selectedId,
+    // Only the plain log table has an entry-keyed row list to anchor in; the
+    // extraction table and the link pair view fall back to rawScrollTop.
+    filterAnchor: scroller === tableBody ? captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody) : null,
+    contextAnchor: captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody),
+    rawScrollTop: scroller.scrollTop,
+    contextScrollTop: highlightBody.scrollTop,
+  };
 }
 
-function updateNavHistoryButtons() {
-  btnNavBack.disabled = navHistoryIndex <= 0;
-  btnNavForward.disabled = navHistoryIndex < 0 || navHistoryIndex >= navHistory.length - 1;
+// The waypoint's own scroll position for a given container, for B1's travel
+// test. rawScrollTop covers whichever container activeNavScroller() picked.
+function navWaypointScrollTop(wp, scrollEl) {
+  return scrollEl === highlightBody ? wp.contextScrollTop : wp.rawScrollTop;
 }
 
-// Called from render() whenever state.activeId actually changed. `fromId`
-// is the node we're leaving (may be null/gone by now) so its dwell scroll
-// position gets frozen into its own history entry before we move on.
-function recordNavVisit(fromId) {
-  if (navigatingHistory) { navigatingHistory = false; return; }
-  if (navHistoryIndex >= 0) captureNavScroll(navHistoryIndex);
+// The anchor of whichever pane was actually on screen — what identifies the
+// waypoint's "place" for the same-place merge and the button tooltips.
+function navVisibleAnchor(wp) {
+  return (wp.fhLayout === "tabs" && wp.fhActiveTab === "highlight") ? wp.contextAnchor : wp.filterAnchor;
+}
+
+// C1 — same-place merge: two waypoints describing the same spot must not
+// both exist, or Back/Forward would need two presses to go anywhere. Also
+// the dedup for A3/A4, which change activeId and therefore trigger A1 as
+// well: the explicit push afterwards merges into the one A1 already made.
+function isSameNavPlace(a, b) {
+  if (a.nodeId !== b.nodeId) return false;
+  // A different pane is a different place even at the same anchor row —
+  // that is exactly what a double-click reveal (A2) does.
+  if (a.fhLayout !== b.fhLayout || a.fhActiveTab !== b.fhActiveTab) return false;
+  const ia = navVisibleAnchor(a), ib = navVisibleAnchor(b);
+  if (ia && ib) return ia.id === ib.id;
+  // One side has no position yet (a deferred A1 push) — same node and same
+  // pane is as much as can be compared.
+  if (a.rawScrollTop == null || b.rawScrollTop == null) return true;
+  return Math.abs(a.rawScrollTop - b.rawScrollTop) < NAV_MIN_SCROLL_PX;
+}
+
+// Refreshes the current waypoint in place, keeping the node it was recorded
+// for. Called before leaving a place (A1-A6) and whenever B1's dwell fires
+// without enough travel to count as a new place.
+function commitCurrentNavPosition() {
+  if (navigatingHistory || navHistoryIndex < 0) return;
+  navHistory[navHistoryIndex] = captureNavWaypoint(navHistory[navHistoryIndex].nodeId);
+}
+
+// opts.deferPosition: the destination view has not rendered yet (A1, pushed
+// at the top of render()) — record identity now, positions at the end of
+// that render().
+function pushNavWaypoint(opts) {
+  if (navigatingHistory) return;
+  let wp;
+  if (opts && opts.deferPosition) {
+    wp = {
+      nodeId: state.activeId, fhLayout, fhActiveTab, entriesView: state.entriesView,
+      selectedId: state.selectedId, filterAnchor: null, contextAnchor: null,
+      rawScrollTop: null, contextScrollTop: null,
+    };
+    navFillPending = true;
+  } else {
+    wp = captureNavWaypoint();
+  }
+  const cur = navHistoryIndex >= 0 ? navHistory[navHistoryIndex] : null;
+  if (cur && isSameNavPlace(cur, wp)) {
+    navHistory[navHistoryIndex] = wp;
+    updateNavHistoryButtons();
+    return;
+  }
   // A fresh visit always branches off the current point, discarding any
   // "forward" entries — same as browser history after navigating past a
   // back step.
   navHistory = navHistory.slice(0, navHistoryIndex + 1);
-  navHistory.push({ nodeId: state.activeId, scrollTop: 0 });
+  navHistory.push(wp);
+  if (navHistory.length > NAV_HISTORY_LIMIT) navHistory.shift();
   navHistoryIndex = navHistory.length - 1;
   updateNavHistoryButtons();
 }
 
-// Continuously updates the *current* entry's remembered scroll position
-// while the user dwells on it (not just once on the way out), so e.g.
-// Back then Forward lands back exactly where they'd scrolled to.
-function trackNavScroll() {
-  if (navigatingHistory || navHistoryIndex < 0) return;
-  captureNavScroll(navHistoryIndex);
+// Human-readable destination for the button tooltips — the same courtesy
+// updateUndoRedoButtons() already extends via UNDO_KIND_LABELS.
+function navWaypointLabel(wp) {
+  const node = state.nodes[wp.nodeId];
+  const name = node ? nodeDisplayName(node) : "a closed view";
+  const anchor = navVisibleAnchor(wp);
+  const entry = anchor ? entryIndex[anchor.id] : null;
+  return entry ? name + " · " + formatTime(entry.ts) : name;
 }
-tableBody.addEventListener("scroll", trackNavScroll);
-extractScroll.addEventListener("scroll", trackNavScroll);
-linkScroll.addEventListener("scroll", trackNavScroll);
+
+function updateNavHistoryButtons() {
+  const canBack = navHistoryIndex > 0;
+  const canForward = navHistoryIndex >= 0 && navHistoryIndex < navHistory.length - 1;
+  btnNavBack.disabled = !canBack;
+  btnNavForward.disabled = !canForward;
+  btnNavBack.title = canBack ? "Back to: " + navWaypointLabel(navHistory[navHistoryIndex - 1]) : "Back";
+  btnNavForward.title = canForward ? "Forward to: " + navWaypointLabel(navHistory[navHistoryIndex + 1]) : "Forward";
+}
+
+// A1 — called from render() whenever state.activeId actually changed.
+function recordNavVisit() {
+  if (navigatingHistory) return;
+  commitCurrentNavPosition(); // freeze the place we are leaving, against the still-outgoing DOM
+  pushNavWaypoint({ deferPosition: true });
+}
+
+// B1 — see the tier list above. One shared handler for all four scroll
+// containers; the dwell timer is global because only one of them can be
+// scrolled at a time.
+function onNavScroll(scrollEl) {
+  if (navigatingHistory || navHistoryIndex < 0) return;
+  // Not the person moving: tail-follow, a jump's own scroll, a restore.
+  if (performance.now() - lastProgrammaticScrollTs <= 150) return;
+  if (navDwellTimer) clearTimeout(navDwellTimer);
+  navDwellTimer = setTimeout(() => {
+    navDwellTimer = null;
+    if (navigatingHistory || navHistoryIndex < 0) return;
+    const from = navWaypointScrollTop(navHistory[navHistoryIndex], scrollEl);
+    const threshold = scrollEl.clientHeight || NAV_MIN_SCROLL_PX;
+    if (from != null && Math.abs(scrollEl.scrollTop - from) >= threshold) pushNavWaypoint();
+    else commitCurrentNavPosition();
+  }, NAV_DWELL_MS);
+}
+tableBody.addEventListener("scroll", () => onNavScroll(tableBody));
+extractScroll.addEventListener("scroll", () => onNavScroll(extractScroll));
+linkScroll.addEventListener("scroll", () => onNavScroll(linkScroll));
+highlightBody.addEventListener("scroll", () => onNavScroll(highlightBody));
+
+// Puts the whole visible state back: node, view mode, selection, and both
+// panes' scroll positions via their anchor rows.
+function applyNavWaypoint(wp) {
+  state.activeId = wp.nodeId;
+  state.multiSelect = new Set();
+  state.entriesView = wp.entriesView;
+  // A selection whose entry is gone (file closed, tail rotation) leaves the
+  // current one alone rather than blanking the detail panel.
+  if (wp.selectedId && entryIndex[wp.selectedId]) state.selectedId = wp.selectedId;
+  render();
+  // After render(), because render()'s own A1 branch calls
+  // revealFilteredView() for a filter node, which would otherwise override
+  // the pane this waypoint was recorded in.
+  const wantView = wp.fhLayout === "stacked" ? "stacked" : wp.fhActiveTab;
+  if (wp.fhLayout !== fhLayout || (wp.fhLayout === "tabs" && wp.fhActiveTab !== fhActiveTab)) applyFhView(wantView);
+  // Navigating to a remembered spot means wanting to look at it, so a live
+  // tail must not yank the view back to the bottom on the next tick — the
+  // same reason picking a row disengages follow (see applySelection).
+  if (state.tailFollow && (isTailedLogViewActive() || isTailedHighlightViewActive())) {
+    state.tailFollow = false;
+    updateTailJumpBtn();
+  }
+  // Same correctness requirement as revealInHighlightView's: a target inside
+  // a collapsed gap has no row to scroll to. contextGaps only exist once the
+  // Context view has been built for this node, hence after render().
+  if (wp.contextAnchor && applyContextJumpExpansion(wp.contextAnchor.id)) renderHighlightView();
+  const scroller = activeNavScroller();
+  if (scroller === tableBody) {
+    if (!restoreViewAnchor(wp.filterAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScroll) && wp.rawScrollTop != null) {
+      setTableScroll(wp.rawScrollTop);
+    }
+  } else if (wp.rawScrollTop != null) {
+    lastProgrammaticScrollTs = performance.now();
+    scroller.scrollTop = wp.rawScrollTop;
+  }
+  if (!restoreViewAnchor(wp.contextAnchor, currentHighlightViewEntries, highlightRowOffsets, highlightBody, setHighlightScroll) && wp.contextScrollTop != null) {
+    setHighlightScroll(wp.contextScrollTop);
+  }
+  // The scroll writes above don't re-window the virtualized rows by
+  // themselves (a programmatic scrollTop assignment fires no synchronous
+  // scroll event), so repaint both panes explicitly.
+  renderVisibleRows();
+  renderHighlightVisibleRows();
+}
 
 function goToNavHistoryIndex(newIndex) {
-  const entry = navHistory[newIndex];
-  if (!entry) return;
-  if (!state.nodes[entry.nodeId]) {
+  const wp = navHistory[newIndex];
+  if (!wp) return;
+  if (!state.nodes[wp.nodeId]) {
     // Node was deleted since — drop the stale entry and try the next one
-    // in the same direction instead of getting stuck.
+    // in the same direction instead of getting stuck. An entry whose ANCHOR
+    // ROW is gone is not stale: it still names a live node, and the anchor
+    // restore falls back to the view's own default (see restoreViewAnchor).
     navHistory.splice(newIndex, 1);
     if (newIndex > navHistoryIndex) goToNavHistoryIndex(newIndex);
     else { navHistoryIndex = Math.min(navHistoryIndex, navHistory.length - 1); goToNavHistoryIndex(navHistoryIndex); }
     return;
   }
-  if (navHistoryIndex >= 0) captureNavScroll(navHistoryIndex);
+  if (navDwellTimer) { clearTimeout(navDwellTimer); navDwellTimer = null; }
+  commitCurrentNavPosition();
   navigatingHistory = true;
   navHistoryIndex = newIndex;
-  state.activeId = entry.nodeId;
-  state.multiSelect = new Set();
-  render();
-  activeNavScroller().scrollTop = entry.scrollTop;
+  try { applyNavWaypoint(wp); } finally { navigatingHistory = false; }
   updateNavHistoryButtons();
 }
 function navigateBack() { if (navHistoryIndex > 0) goToNavHistoryIndex(navHistoryIndex - 1); }
@@ -8236,11 +8453,10 @@ function updateSortIndicators() {
 
 function render() {
   if (state.activeId !== lastActiveIdForReveal) {
-    const fromId = lastActiveIdForReveal;
     lastActiveIdForReveal = state.activeId;
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") revealFilteredView();
-    if (state.activeId) recordNavVisit(fromId);
+    if (state.activeId) recordNavVisit();
   }
   renderTree();
   renderBreadcrumb();
@@ -8256,6 +8472,11 @@ function render() {
   // Same debounce-from-render() reasoning, separate store — see "File
   // filter history" near the end of the script.
   schedulePersistFileHistory();
+  // A1's waypoint was pushed at the top of this render(), before the view it
+  // belongs to existed — fill in its anchors/scroll positions now that it
+  // does. Gated on the flag so this costs one capture per navigation, not
+  // one per render.
+  if (navFillPending) { navFillPending = false; commitCurrentNavPosition(); }
 }
 
 // Switches the main content area between the (virtualized) log view and the
@@ -13759,12 +13980,16 @@ timelineMinimapSvg.addEventListener("click", ev => {
     // branch below — this isn't gated on minimapInteractive.
     if (currentHighlightViewEntries.length === 0) return;
     const idx = Math.min(currentHighlightViewEntries.length - 1, lowerBoundByTs(currentHighlightViewEntries, ts));
+    commitCurrentNavPosition(); // A5, see the nav-history tier list
     selectHighlightEntry(currentHighlightViewEntries[idx].id, { scroll: true, center: true, index: idx });
+    pushNavWaypoint();
     return;
   }
   if (!minimapInteractive || currentViewEntries.length === 0) return;
   const idx = Math.min(currentViewEntries.length - 1, lowerBoundByTs(currentViewEntries, ts));
+  commitCurrentNavPosition(); // A5
   selectEntry(currentViewEntries[idx].id, { scroll: true, center: true, index: idx });
+  pushNavWaypoint();
 });
 
 // Hover tooltip: time + shown/total counts for the hovered bucket. Reads the
@@ -14188,6 +14413,7 @@ function selectHighlightEntry(entryId, opts) {
 // clientHeight is measurable before scrollToHighlightIndex's centering math
 // runs — a hidden (display:none) panel would measure 0.
 function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
+  commitCurrentNavPosition(); // A2: freeze the Filtered-pane spot we are jumping out of
   state.entriesView = "highlight";
   const previousId = applySelection(entry.id);
   state.highlightScrollTargetId = entry.id;
@@ -14207,6 +14433,7 @@ function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
   updateSelectedRowClass(previousId);
   renderHighlightView();
   updateDetailPanel();
+  pushNavWaypoint(); // A2: the Context-pane spot we landed on
 }
 
 // Renders the currently selected entry's full details (all fields + full,
@@ -14338,6 +14565,7 @@ function jumpToFullLog(entry, sourceRowEl, sourceScrollEl) {
   const chain = getChain(state.activeId);
   const fileNode = chain.find(n => n.type === "file");
   if (!fileNode) return;
+  commitCurrentNavPosition(); // A3, see the nav-history tier list
   state.activeId = fileNode.id;
   state.levelFilter.clear();
   state.selectedId = entry.id;
@@ -14351,6 +14579,9 @@ function jumpToFullLog(entry, sourceRowEl, sourceScrollEl) {
   // reveal the Filtered panel first.
   revealFilteredView();
   render();
+  // render()'s own A1 push already recorded this destination — the
+  // same-place merge (isSameNavPlace) keeps this from doubling it.
+  pushNavWaypoint();
 }
 
 /* ===================== Bookmarks =====================
@@ -14391,6 +14622,7 @@ function jumpToEntry(entryId) {
   const entry = entryIndex[entryId];
   const rootId = entry ? findRootIdForEntry(entryId) : null;
   if (!entry || !rootId) { showCopyToast("That entry is no longer available"); return; }
+  commitCurrentNavPosition(); // A4, see the nav-history tier list
   state.activeId = rootId;
   state.levelFilter.clear();
   state.selectedId = entry.id;
@@ -14400,6 +14632,7 @@ function jumpToEntry(entryId) {
   // view, which is hidden while the Full tab is active in tabs layout.
   revealFilteredView();
   render();
+  pushNavWaypoint(); // A4, merged into render()'s own A1 push when it landed in the same place
 }
 
 // Creates/removes the single, auto-managed "Bookmarks" filter node directly
@@ -15786,10 +16019,12 @@ function maybeReengageTailFollow() {
 }
 
 function jumpToTailedNewest() {
+  commitCurrentNavPosition(); // A6, see the nav-history tier list
   state.tailFollow = true;
   if (isTailedLogViewActive()) { setTableScroll(tableBody.scrollHeight); renderVisibleRows(); }
   if (isTailedHighlightViewActive()) { setHighlightScroll(highlightBody.scrollHeight); renderHighlightVisibleRows(); }
   updateTailJumpBtn();
+  pushNavWaypoint();
 }
 tailJumpBtn.addEventListener("click", jumpToTailedNewest);
 tailJumpBtnHighlight.addEventListener("click", jumpToTailedNewest);
