@@ -8310,11 +8310,13 @@ await withApp(async (w, d, T) => {
 
   // Reset: reverts the row AND restores the original untouched fast-path parsing.
   fireClick(resetBtn(), w);
-  // saveLogFormat's IndexedDB write is async — wait for the reset to land.
-  await waitFor(() => {
-    const fmt = T.state.logFormats.find(f => f.id === "fmt-default");
-    return !!fmt && fmt.name !== "Renamed default";
-  });
+  // resetDefaultFormat mutates the format object BEFORE awaiting its
+  // IndexedDB write and only re-renders AFTER it resolves — so the barrier
+  // has to be a POST-write effect (the row's own re-render), not the state,
+  // which is already correct while the write is still in flight. Waiting on
+  // the state would let the group finish and tear the window down mid-write,
+  // which crashes the shard in renderLevelBar.
+  await waitFor(() => !defaultRow().querySelector(".filter-library-row-name").textContent.includes("Renamed"));
 
   const resetFmt = T.state.logFormats.find(f => f.id === "fmt-default");
   assert(resetFmt.edited === false, "Reset clears the edited flag");
@@ -12583,10 +12585,15 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#formatEditCancel"), w);
 
   // Reset restores the builtin default's original level list too.
-  const resetBtn = [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
-  fireClick(resetBtn, w);
-  // The reset's IndexedDB write is async — wait for the level list it restores.
-  await waitFor(() => T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,DEBUG");
+  const findResetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
+  const staleResetBtn = findResetBtn();
+  fireClick(staleResetBtn, w);
+  // resetDefaultFormat's re-render is what happens AFTER its IndexedDB write
+  // resolves — and it only changes the level list here, so the row's text is
+  // no barrier. renderFormatList rebuilds the row's nodes, so a fresh button
+  // that isn't the one just clicked is the post-write signal (see 70f for why
+  // waiting on the state instead tears the window down mid-write).
+  await waitFor(() => { const b = findResetBtn(); return !!b && b !== staleResetBtn; });
   assert(T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,DEBUG",
     "Reset reverts the builtin default's levels to the original four");
 }, { indexedDB: new IDBFactory() });
