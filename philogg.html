@@ -3376,6 +3376,15 @@
                 <select id="settingsUiFontSelect"></select>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Log font</div>
+                <div class="settings-row-hint">Table rows, extraction table, entry detail and link/pair views — independent of the UI font above.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsLogFontSelect"></select>
+              </div>
+            </div>
             <div class="settings-row hidden" id="settingsAccentRow">
               <div class="settings-row-text">
                 <div class="settings-row-label">Accent color</div>
@@ -4142,11 +4151,27 @@ const UI_FONT_OPTIONS = [
 const UI_FONT_STORAGE_KEY = "philogg-ui-font";
 const UI_FONT_DEFAULT = "default";
 
+/* Log font (FEATURE_BACKLOG.md follow-up to #46): same curated-stack
+   mechanism as the UI font above, but drives --font-mono (log/text
+   content — table rows, extraction table, entry detail, link/pair rows)
+   independently of --font-ui (UI chrome). First entry reproduces the
+   previous hardcoded default so existing users see no change until they
+   pick something else. */
+const LOG_FONT_OPTIONS = [
+  { id: "default", label: "System default (monospace)", stack: '"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace' },
+  { id: "consolas", label: "Consolas", stack: 'Consolas,"Liberation Mono",monospace' },
+  { id: "courier", label: "Courier New", stack: '"Courier New",Courier,monospace' },
+  { id: "menlo", label: "Menlo", stack: 'Menlo,Monaco,monospace' },
+  { id: "ui", label: "Same as UI font", stack: 'var(--font-ui)' },
+];
+const LOG_FONT_STORAGE_KEY = "philogg-log-font";
+const LOG_FONT_DEFAULT = "default";
+
 const SYSTEM_FONT_ID_PREFIX = "sys:";
 
-function populateUiFontSelect() {
-  const select = document.getElementById("settingsUiFontSelect");
-  select.innerHTML = UI_FONT_OPTIONS.map(f => '<option value="' + f.id + '">' + escapeHtml(f.label) + '</option>').join("");
+function populateFontSelect(selectId, options) {
+  const select = document.getElementById(selectId);
+  select.innerHTML = options.map(f => '<option value="' + f.id + '">' + escapeHtml(f.label) + '</option>').join("");
 }
 
 /* Desktop wrapper only (window.philogg.listSystemFonts, see docs/desktop.md):
@@ -4154,10 +4179,10 @@ function populateUiFontSelect() {
    or "Iosevka" show up if installed. The plain HTML version has no
    permission-prompt UI to gate the browser's Local Font Access API, so it
    stays limited to the curated list above — see FEATURE_BACKLOG.md. */
-function appendSystemFontOptions(names) {
-  const select = document.getElementById("settingsUiFontSelect");
+function appendSystemFontOptions(selectId, options, names) {
+  const select = document.getElementById(selectId);
   if (!select || !names.length) return;
-  const curated = new Set(UI_FONT_OPTIONS.map(f => f.stack.split(",")[0].replace(/"/g, "").toLowerCase()));
+  const curated = new Set(options.map(f => f.stack.split(",")[0].replace(/"/g, "").toLowerCase()));
   const group = document.createElement("optgroup");
   group.label = "System fonts (this device)";
   names.forEach(name => {
@@ -4170,17 +4195,17 @@ function appendSystemFontOptions(names) {
   if (group.children.length) select.appendChild(group);
 }
 
-function fontStackForId(fontId) {
+function fontStackForId(options, fontId) {
   if (typeof fontId === "string" && fontId.indexOf(SYSTEM_FONT_ID_PREFIX) === 0) {
     const name = fontId.slice(SYSTEM_FONT_ID_PREFIX.length).replace(/"/g, "");
-    return '"' + name + '",' + UI_FONT_OPTIONS[0].stack;
+    return '"' + name + '",' + options[0].stack;
   }
-  const opt = UI_FONT_OPTIONS.find(f => f.id === fontId) || UI_FONT_OPTIONS[0];
+  const opt = options.find(f => f.id === fontId) || options[0];
   return opt.stack;
 }
 
 function applyUiFont(fontId) {
-  document.documentElement.style.setProperty("--font-ui", fontStackForId(fontId));
+  document.documentElement.style.setProperty("--font-ui", fontStackForId(UI_FONT_OPTIONS, fontId));
   const select = document.getElementById("settingsUiFontSelect");
   if (select && select.querySelector('option[value="' + CSS.escape(fontId) + '"]')) select.value = fontId;
 }
@@ -4191,13 +4216,13 @@ function setUiFont(fontId) {
 }
 
 function initUiFont() {
-  populateUiFontSelect();
+  populateFontSelect("settingsUiFontSelect", UI_FONT_OPTIONS);
   const storedFontId = localStorage.getItem(UI_FONT_STORAGE_KEY) || UI_FONT_DEFAULT;
   applyUiFont(storedFontId);
   if (window.philogg && typeof window.philogg.listSystemFonts === "function") {
     window.philogg.listSystemFonts().then(names => {
       if (Array.isArray(names) && names.length) {
-        appendSystemFontOptions(names);
+        appendSystemFontOptions("settingsUiFontSelect", UI_FONT_OPTIONS, names);
         const select = document.getElementById("settingsUiFontSelect");
         if (select && select.querySelector('option[value="' + CSS.escape(storedFontId) + '"]')) select.value = storedFontId;
       }
@@ -4205,6 +4230,33 @@ function initUiFont() {
   }
 }
 document.getElementById("settingsUiFontSelect").addEventListener("change", ev => setUiFont(ev.target.value));
+
+function applyLogFont(fontId) {
+  document.documentElement.style.setProperty("--font-mono", fontStackForId(LOG_FONT_OPTIONS, fontId));
+  const select = document.getElementById("settingsLogFontSelect");
+  if (select && select.querySelector('option[value="' + CSS.escape(fontId) + '"]')) select.value = fontId;
+}
+
+function setLogFont(fontId) {
+  applyLogFont(fontId);
+  localStorage.setItem(LOG_FONT_STORAGE_KEY, fontId);
+}
+
+function initLogFont() {
+  populateFontSelect("settingsLogFontSelect", LOG_FONT_OPTIONS);
+  const storedFontId = localStorage.getItem(LOG_FONT_STORAGE_KEY) || LOG_FONT_DEFAULT;
+  applyLogFont(storedFontId);
+  if (window.philogg && typeof window.philogg.listSystemFonts === "function") {
+    window.philogg.listSystemFonts().then(names => {
+      if (Array.isArray(names) && names.length) {
+        appendSystemFontOptions("settingsLogFontSelect", LOG_FONT_OPTIONS, names);
+        const select = document.getElementById("settingsLogFontSelect");
+        if (select && select.querySelector('option[value="' + CSS.escape(storedFontId) + '"]')) select.value = storedFontId;
+      }
+    }).catch(() => {});
+  }
+}
+document.getElementById("settingsLogFontSelect").addEventListener("change", ev => setLogFont(ev.target.value));
 
 function themeSwatchStyle(colors) {
   return "background:linear-gradient(90deg," + colors["bg-app"] + " 0 25%," + colors["accent"] + " 25% 50%," +
@@ -21675,6 +21727,7 @@ updateMultilineMsgButton();
 applyRowGrid();
 initTheme();
 initUiFont();
+initLogFont();
 initFontScale();
 initQuitOnLastClose();
 initCloseToTray();
