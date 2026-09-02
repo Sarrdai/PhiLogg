@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~20,950 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~21,050 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -85,7 +85,7 @@ Filters chain: a filter's result is always computed from its parent's result (`g
 
 | `filterType` | Needs | What `getEntries` does |
 |---|---|---|
-| `text` | `value: string`, optional `caseSensitive: boolean`, optional `columns: string[]`, optional `isRegex: boolean` | substring match against `entry.raw` (or, if `columns` is non-empty, against just those columns' text — see "Text filter: case-sensitive + target column"); case-insensitive unless `caseSensitive` is set. With `isRegex` set, `value` is compiled as a real `RegExp` instead (see `docs/filters.md` → "Regex filter type") — case-sensitivity/columns still apply, an invalid pattern matches nothing |
+| `text` | `value: string`, optional `caseSensitive: boolean`, optional `columns: string[]`, optional `isRegex: boolean`, optional `wholeWord: boolean` | substring match against `entry.raw` (or, if `columns` is non-empty, against just those columns' text — see "Text filter: case-sensitive + target column"); case-insensitive unless `caseSensitive` is set. With `wholeWord` set, an occurrence only counts when it isn't glued to a word character on either side (see `docs/filters.md` → "Text filter: match whole word") — literal matches only, which is why the popup greys that toggle out for regex/wildcard input. With `isRegex` set, `value` is compiled as a real `RegExp` instead (see `docs/filters.md` → "Regex filter type") — case-sensitivity/columns still apply, an invalid pattern matches nothing |
 | `after` / `before` | `value: number (ts)` | `entry.ts >= / <= value` |
 | `timerange` | `value: { from, to }` (either bound possibly `null`) | unified time-range filter — `(from == null \|\| ts >= from) && (to == null \|\| ts <= to)` |
 | `extract` | `value: pattern string` | compiles the pattern (see below) and keeps entries whose `message` matches; **also** drives the extraction table view when this node is active |
@@ -94,7 +94,7 @@ Filters chain: a filter's result is always computed from its parent's result (`g
 | `link` | `bakedA` (reference's baked condition), `bakedB` (target's baked condition), `linkDirection: "before"\|"after"`, `linkN: number`, `linkOrderEnforced: boolean`, `linkExclusive: boolean` | nearest-neighbor pairing (see below) over the two baked conditions' matches within `getEntries(node.parentId)`; result is an array of synthetic **pair entries**, not normal log entries |
 | `context` | `contextBefore: number (ms)`, `contextAfter: number (ms)` | windowing around reference entries (see below); result is real entries from the root file, not synthetic ones |
 
-`createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null)` builds `text`/`after`/`before`/`extract` nodes (the last two args are `text`-only, `ignoredColumns` is `extract`-only). `createAndOrNode` and `createLinkNode` build the two-reference types, `createContextNode` builds `context` nodes.
+`createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null, isRegex = false, wholeWord = false)` builds `text`/`after`/`before`/`extract` nodes (the last four args are `text`-only, `ignoredColumns` is `extract`-only). `createAndOrNode` and `createLinkNode` build the two-reference types, `createContextNode` builds `context` nodes.
 
 ### 2a. Inversion (NOT)
 
