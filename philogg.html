@@ -9877,7 +9877,24 @@ function hexToRgba(hex, alpha) {
   return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
 }
 
-function copyTextToClipboard(text) {
+// `html`, when given, is written ALONGSIDE the plain text as a second
+// clipboard flavor via the (Chromium-only) ClipboardItem API — see the big
+// comment on buildExtractClipboardHtml for why: Excel prefers an HTML
+// clipboard payload over plain text when both are present, and reading its
+// numbers from `x:num` there sidesteps locale/decimal-separator guessing
+// entirely (unlike the plain-text TSV path, which genuinely can't be made
+// reliable — see docs/extraction-and-plotting.md). Falls back to the old
+// writeText-only path wherever ClipboardItem/clipboard.write isn't
+// available (older/non-Chromium browsers, or html simply not given).
+function copyTextToClipboard(text, html) {
+  if (html && navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== "undefined") {
+    const item = new ClipboardItem({
+      "text/plain": new Blob([text], { type: "text/plain" }),
+      "text/html": new Blob([html], { type: "text/html" }),
+    });
+    navigator.clipboard.write([item]).catch(() => copyTextToClipboard(text));
+    return;
+  }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).catch(() => copyViaExecCommand(text));
   } else {
@@ -10019,24 +10036,64 @@ function localizeNumericCell(value, decimalSep) {
   if (decimalSep === "." || value == null) return value;
   return NUMERIC_CELL_RE.test(value) ? value.replace(".", decimalSep) : value;
 }
+// One cell for both clipboard flavors below: `value` (decimalSep-localized,
+// what plain-text TSV and the visible <td> use) and `raw` (untouched,
+// invariant "." decimal — what the HTML flavor's x:num carries, see
+// buildExtractClipboardHtml for why that one is never localized).
+function extractClipboardCell(rawValue, decimalSep) {
+  const numeric = NUMERIC_CELL_RE.test(rawValue);
+  return { value: numeric ? localizeNumericCell(rawValue, decimalSep) : rawValue, raw: rawValue, numeric };
+}
 
-// TSV of the current selection. Only the rows/columns that actually appear in
-// the selection are included (so Ctrl+click-ing columns 1 and 3 copies just
-// those two, with column 2 skipped entirely rather than left blank).
-function extractSelectionToTSV(decimalSep) {
+/* Person-reported follow-up (2026-09-02): even an explicitly-correct
+   decimal separator (confirmed to match what Excel itself both types and
+   calculates with) still pasted wrong — Excel's plain-text-paste number
+   recognition applies its own (unqueryable from a web page) heuristics on
+   TOP of the decimal character itself, independent of what we send, and
+   can misfire regardless. Real fix: Excel — like every major spreadsheet
+   app — reads a `text/html` clipboard flavor in preference to text/plain
+   when both are offered, and a `<td>`'s `x:num="…"` attribute (the exact
+   mechanism Excel's own Ctrl+C already emits for numeric cells) is taken
+   as the literal numeric value with NO locale interpretation at all —
+   always period-decimal, per the MS spec, regardless of any regional
+   setting on either end. So numeric cells now carry x:num=<raw, untouched
+   value> alongside a normal visible text content; Excel reads the exact
+   value from the attribute and formats it for display using ITS OWN
+   locale, sidestepping decimal-separator guessing entirely. The plain-text
+   TSV (still built alongside, from `value`/localizeNumericCell) remains
+   the fallback for anything that ignores text/html or lacks the
+   ClipboardItem API. */
+function buildExtractClipboardHtml(rows, header) {
+  const cellHtml = c => c.numeric
+    ? '<td x:num="' + escapeHtml(c.raw) + '">' + escapeHtml(c.value) + "</td>"
+    : "<td>" + escapeHtml(c.value) + "</td>";
+  const trs = [];
+  if (header) trs.push("<tr>" + header.map(h => "<td><b>" + escapeHtml(h) + "</b></td>").join("") + "</tr>");
+  rows.forEach(row => trs.push("<tr>" + row.map(cellHtml).join("") + "</tr>"));
+  return '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">'
+    + "<head><meta charset=\"utf-8\"></head><body><table>" + trs.join("") + "</table></body></html>";
+}
+
+// Grid (rows of cell objects) for the current selection. Only the
+// rows/columns that actually appear in the selection are included (so
+// Ctrl+click-ing columns 1 and 3 copies just those two, with column 2
+// skipped entirely rather than left blank).
+function extractSelectionGrid(decimalSep) {
   const s = state.tableSelection;
-  if (!s || s.size === 0) return "";
+  if (!s || s.size === 0) return null;
   const rowsSet = new Set(), colsSet = new Set();
   s.forEach(k => { const [r, c] = k.split(",").map(Number); rowsSet.add(r); colsSet.add(c); });
   const rows = [...rowsSet].sort((a, b) => a - b);
   const cols = [...colsSet].sort((a, b) => a - b);
-  return rows.map(r => cols.map(c => (s.has(cellKey(r, c)) ? localizeNumericCell(extractRowsData[r].values[c], decimalSep) : "")).join("\t")).join("\n");
+  return rows.map(r => cols.map(c => (s.has(cellKey(r, c)) ? extractClipboardCell(extractRowsData[r].values[c], decimalSep) : { value: "", raw: "", numeric: false })));
 }
 
 function copyTableSelection() {
   const s = state.tableSelection;
   if (!s || s.size === 0) return;
-  copyTextToClipboard(extractSelectionToTSV(resolveClipboardDecimalSeparator()));
+  const grid = extractSelectionGrid(resolveClipboardDecimalSeparator());
+  const text = grid.map(row => row.map(c => c.value).join("\t")).join("\n");
+  copyTextToClipboard(text, buildExtractClipboardHtml(grid));
   showCopyToast("Copied " + s.size.toLocaleString("de-DE") + " cell" + (s.size === 1 ? "" : "s"));
 }
 
@@ -10049,12 +10106,13 @@ function copyTableSelection() {
 function copyWholeExtractTable() {
   if (!extractRowsData.length) { showCopyToast("Nothing to copy"); return; }
   const decimalSep = resolveClipboardDecimalSeparator();
-  const header = extractColumns.map(c => c.name).join("\t");
+  const headerLabels = extractColumns.map(c => c.name);
   // row.values always holds every compiled column (matching stays untouched
   // by the ignore feature, see isColumnIgnored) — export only the visible
   // ones, same set the header line above already reflects.
-  const body = extractRowsData.map(r => extractColumns.map(c => localizeNumericCell(r.values[c.colIndex], decimalSep)).join("\t")).join("\n");
-  copyTextToClipboard(header + "\n" + body);
+  const bodyGrid = extractRowsData.map(r => extractColumns.map(c => extractClipboardCell(r.values[c.colIndex], decimalSep)));
+  const text = headerLabels.join("\t") + "\n" + bodyGrid.map(row => row.map(c => c.value).join("\t")).join("\n");
+  copyTextToClipboard(text, buildExtractClipboardHtml(bodyGrid, headerLabels));
   showCopyToast("Copied " + extractRowsData.length.toLocaleString("de-DE") + " rows");
 }
 
