@@ -71,5 +71,5 @@ function runShard(index) {
   } else {
     console.log("\n(1 shard, " + secs + "s)");
   }
-  process.exit(failed || broken ? 1 : 0);
+  process.exitCode = failed || broken ? 1 : 0; // not process.exit() — see the test file's own note: it truncates buffered stdout
 })();
