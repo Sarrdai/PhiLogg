@@ -15386,6 +15386,14 @@ await withApp(async (w, d, T) => {
    with overflow:hidden/text-overflow:ellipsis/white-space:nowrap, same
    idea as .tree-label's existing truncation; the untruncated name is
    still reachable as a tooltip (chip.title).
+   Follow-up in the same session (person-reported): the chip's
+   justify-content:center meant an overflowing chip clipped BOTH ends
+   equally, leaving an unmarked cut mid-text on the left with the
+   ellipsis only visible on the right — so the truncated pill showed a
+   slice from the MIDDLE of the name instead of its start. Switched to
+   justify-content:flex-start so the start of the name is what stays
+   visible, with the ellipsis correctly marking the (now single) clipped
+   tail.
    ============================================================ */
 group(152);
 await withApp(async (w, d, T) => {
@@ -15409,6 +15417,8 @@ await withApp(async (w, d, T) => {
     "overflowing text is clipped with an ellipsis, same mechanism as .tree-label");
   assert(cs(longCrumb).maxWidth === "220px", "a pill is capped to a bounded width, got " + cs(longCrumb).maxWidth);
   assert(longCrumb.title.includes(longName), "the full untruncated name is still reachable via the chip's tooltip, got " + longCrumb.title);
+  assert(cs(longCrumb).justifyContent === "flex-start",
+    "the chip left-aligns its text (not centered) so the START of a truncated name stays visible instead of a clipped mid-text slice, got " + cs(longCrumb).justifyContent);
 
   // Sanity: a short chip is unaffected — still shows its plain text, no
   // clipping actually kicks in below the cap.
@@ -18930,7 +18940,14 @@ process.exitCode = failed ? 1 : 0;
               overflow:hidden/text-overflow:ellipsis/white-space:nowrap, the
               same truncation idea as .tree-label's; the untruncated name
               stays reachable via chip.title, which #filterTargetChain's
-              chips didn't carry at all before this session.
+              chips didn't carry at all before this session. Follow-up,
+              same session (person-reported): .crumb's own
+              justify-content:center clipped an overflowing chip on BOTH
+              ends, so the ellipsis (which only ever marks the inline-end)
+              left an unmarked cut into the MIDDLE of the name on the
+              left — switched to justify-content:flex-start so a
+              truncated chip shows the name's own start with the ellipsis
+              correctly marking the single clipped tail.
 
    Harness change this session (2026-09-01, person-requested performance
               review) — no group added or removed, the same 2833 assertions:
