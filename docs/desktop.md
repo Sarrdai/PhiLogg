@@ -248,7 +248,7 @@ of silently vanishing after a refresh even though the file is still the same one
 outcomes, plus "absent without `window.philogg`") and the cache round-trip, via a stub
 `window.philogg` — jsdom can't run a real webview host.
 
-## System font list for the UI font picker
+## System font list for the UI font and Log font pickers
 
 A native process has no browser-style permission gate on enumerating installed fonts, so
 `philogg.listSystemFonts()` exists in the desktop build only. `fonts.rs` calls the
@@ -259,14 +259,18 @@ there are approximated from the font files in the three standard font directorie
 one place the list is less than exact. Any failure yields an empty list rather than
 throwing, so a headless or sandboxed OS just means no extra options appear.
 
-`philogg.html`'s `initUiFont()` calls this once (after applying the curated default from
-`UI_FONT_OPTIONS`) and appends every name it gets back to `#settingsUiFontSelect` as an
-`<optgroup>`, skipping any name that duplicates a curated stack's own leading font
-(`appendSystemFontOptions`'s dedup check). Each system-font option's value is
-`"sys:" + name`; `fontStackForId()` computes its actual `--font-ui` stack on the fly
-(`"<name>",<default fallback stack>`) instead of requiring a hardcoded `UI_FONT_OPTIONS`
-entry per font — the plain HTML build (no `window.philogg`) is completely unaffected,
-same curated-list-only behavior as before.
+The same `listSystemFonts()` result feeds two independent pickers: `philogg.html`'s
+`initUiFont()`/`initLogFont()` each call it once (after applying their own curated default
+from `UI_FONT_OPTIONS`/`LOG_FONT_OPTIONS`) and append every name to their own select
+(`#settingsUiFontSelect`/`#settingsLogFontSelect`) as an `<optgroup>`, skipping any name
+that duplicates that select's own curated stacks (`appendSystemFontOptions`'s dedup check,
+now parameterized by select id + options list). Each system-font option's value is
+`"sys:" + name`; `fontStackForId()` computes its actual stack on the fly
+(`"<name>",<that picker's own default fallback stack>`) instead of requiring a hardcoded
+options-array entry per font. UI font drives `--font-ui`, Log font drives its own
+`--font-log` (see `docs/ui-and-views.md` "Theming") — the plain HTML build (no
+`window.philogg`) is completely unaffected, same curated-list-only behavior as before for
+both.
 
 ## Settings: mirrored into a human-editable `settings.json`
 
