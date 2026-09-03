@@ -236,3 +236,33 @@ Wildcards bleibt der zuletzt aktive Log-Tab stehen (Table wäre dort leer).
 - Keine Änderung an Plot-Rendering/-Interaktion.
 - Kein Light-Theme-/Theme-spezifischer Sonderfall — betrifft alle Themes
   gleichermaßen über die bestehenden CSS-Variablen.
+
+## Nachfolge-Session (2026-09-03): filterType-Merge + Doppelklick-Jump
+
+Dieser Plan (Status oben: "Umgesetzt") beließ die separaten `filterType`-Werte
+`"text"`/`"extract"` unangetastet — genau das war der explizit ausgeklammerte
+Punkt "Keine Änderung an der eigentlichen Filter-/Extraktionslogik" oben. Eine
+direkte Folgesession hat diese beiden Typen verschmolzen; hier nur die
+Kurzfassung, die volle Herleitung steht in `docs/extraction-and-plotting.md`
+→ "filterType merge" und im `CHANGELOG.md`-Eintrag desselben Tages:
+
+- Der separate `filterType === "extract"`-Knotentyp und der eigene
+  "Extract"-Button im Filter-Popup (`#filterExtractBtn`) entfallen komplett.
+  Es gibt nur noch "Add filter" — ein `"text"`-Knoten, dessen Pattern
+  `[value:...]`/`[*]`-Wildcards enthält, ist gleichzeitig ein normaler Filter
+  UND extraktionsfähig (`nodeHasExtractableWildcards`, jetzt auf
+  `filterType === "text"` statt `"extract"` geprüft). Damit ist die
+  Table/Plot-Tab-Freischaltung aus Schritt 3 dieses Plans nicht mehr an einen
+  eigenen Knotentyp gekoppelt, sondern direkt an die Pattern-Eigenschaft, die
+  sie ohnehin schon bestimmte.
+- Keine Migration für alte `"extract"`-Knoten aus Session-Exports/der
+  Filter-Library — auf ausdrücklichen Wunsch, da noch keine Version der
+  Software veröffentlicht wurde. `FILTER_TYPES` kennt `"extract"` nicht mehr;
+  ein solcher Knoten wird beim Import schlicht verworfen statt geladen.
+- Neu, im selben Zug umgesetzt (kein Teil dieses ursprünglichen Plans, aber
+  am selben Tag angefragt): Doppelklick auf eine Table-Zeile bzw. Klick auf
+  einen Plot-Punkt springt jetzt in die Filtered-Ansicht **desselben**
+  Knotens (`revealInFilteredView`, siehe `docs/ui-and-views.md` → "Cross-view
+  jumps") statt wie zuvor destruktiv in die rohe Datei
+  (`jumpToFullLog`, weiterhin als Funktion vorhanden und getestet, aber an
+  keiner UI-Stelle mehr verdrahtet).
