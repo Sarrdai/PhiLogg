@@ -586,9 +586,14 @@ await withApp(async (w, d, T) => {
   fireContextMenu([...d.querySelectorAll(".tree-row")].find(r => r.classList.contains("active")), w);
   assert([...d.querySelectorAll("#treeContextMenu [data-action]")].some(n => n.dataset.action === "edit"), "context menu offers 'Edit filter…' for a text filter");
 
-  // Full/Filtered/Stacked three-way toggle (replaces the old 2-tab + separate stack button)
+  // Unified toolbar (docs/ui-implementation-plan.md): "Stacked" is no longer
+  // a tab alongside Context/Filtered — it's a Settings-only layout choice
+  // (precisiation 4), so in the default "Getrennt" layout the tab group is
+  // Context|Filtered|Table|Plot with no "stacked" entry at all; Table/Plot
+  // always render (disabled here, this node has no wildcards).
   const tabs = [...d.querySelectorAll("#fhTabs .view-tab")].map(b => b.dataset.fhTab);
-  assert(tabs.includes("highlight") && tabs.includes("filter") && tabs.includes("stacked"), "view toggle has exactly the three states Full/Filtered/Stacked");
+  assert(tabs.includes("highlight") && tabs.includes("filter") && tabs.includes("table") && tabs.includes("plot") && !tabs.includes("stacked"),
+    "view toggle has Context/Filtered/Table/Plot in the default 'Getrennt' layout, no separate Stacked tab");
   w.applyFhView("stacked");
   assert(d.querySelector("#fhSplit").classList.contains("fh-layout-stacked"), "Stacked applies the stacked layout class");
   assert(d.querySelectorAll(".fh-panel-badge").length > 0 && [...d.querySelectorAll(".fh-panel-badge")].every(b => b.offsetParent !== null || true),
@@ -2758,22 +2763,27 @@ await withApp(async (w, d, T) => {
   assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter buttons render inside the merged bar");
   assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb chips render inside the merged bar");
 
-  // Extract mode (UPDATED, this session, person-requested: "entferne die
-  // Anzeige der Level Leiste im Extraction View. Hier sollte nur noch der
-  // aktuelle Filterpfad zu sehen sein") — #fhTabs, #levelBar, and the three
-  // Filtered/Highlight-view-only toggles all hide; only #breadcrumb (the
-  // filter path) stays visible. renderExtractTable() still applies
-  // applyLevelFilter() internally against whatever the quick-filter was
-  // last set to — there's just no visible pill row to change it from here.
+  // Extract mode (UPDATED again by the unified-toolbar rework —
+  // docs/ui-implementation-plan.md): activating an extraction node still
+  // jumps straight to its Table tab (same "isExtract"-equivalent behaviour
+  // as before, preserved deliberately — see render()'s own comment), where
+  // #levelBar/the six Filtered/Context-only toggles hide exactly as they
+  // used to; the difference is #fhTabs itself no longer hides — Table/Plot
+  // are part of the SAME group Context/Filtered/Stacked live in now, and
+  // switching to Filtered from there shows the level bar/toggles again like
+  // any other filter node (see Group 127).
   const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
-  assert(d.querySelector("#fhTabs").style.display === "none", "tabs hide in extract mode (unchanged behaviour)");
-  assert(d.querySelector("#levelBar").style.display === "none", "level bar hides in extract mode — only the filter path stays visible");
+  assert(T.fhActiveTab === "table", "sanity: activating an extraction node jumps to its Table tab");
+  assert(d.querySelector("#fhTabs").style.display === "flex", "tabs stay visible for an extraction node too (Table/Plot join the same group now)");
+  assert(d.querySelector("#levelBar").style.display === "none", "level bar hides while the Table tab is showing — only the filter path stays visible");
   assert(d.querySelector("#btnPinBookmarks").style.display === "none", "pin-bookmarks toggle hides too (doesn't apply to the extraction table)");
   assert(d.querySelector("#btnMultilineMsg").style.display === "none", "multiline toggle hides too (doesn't apply to the extraction table)");
   assert(d.querySelector("#btnColumns").style.display === "none", "columns toggle hides too (doesn't apply to the extraction table's own columns)");
-  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb STILL renders (and is visible) in extract mode — the one thing meant to stay");
+  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb still renders in extract mode");
+  w.applyFhView("filter");
+  assert(d.querySelector("#levelBar").style.display === "", "switching to the Filtered tab of the SAME extraction node shows the level bar again — it's an ordinary node for Context/Filtered now");
 
   // Back to a normal node so the popup checks below aren't affected
   T.state.activeId = textNode.id;
@@ -7158,7 +7168,10 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#btnCopySelection") === null, "#btnCopySelection button no longer exists");
   assert(d.querySelector("#btnCopyAllExtract") === null, "#btnCopyAllExtract button no longer exists");
   assert(d.querySelector(".extract-actions") === null, "the now-empty .extract-actions wrapper was removed too, not left behind empty");
-  assert(d.querySelector("#extractViewTabs"), "sanity: the rest of the extraction toolbar (Table/Plot tabs) is untouched");
+  // #extractViewTabs itself is gone (docs/ui-implementation-plan.md Schritt 6
+  // — its Table/Plot switch is now part of the main #fhTabs group instead).
+  assert(d.querySelector("#extractViewTabs") === null, "the old sub-toolbar Table/Plot switch is gone, superseded by the main #fhTabs group");
+  assert(d.querySelector("#extractInfo"), "sanity: the rest of the extraction toolbar (pattern/stats/info) is untouched");
 
   // The underlying functions still work when called directly — only their
   // button trigger is gone, same as jumpToFullLog surviving un-wired to a
@@ -17476,6 +17489,143 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 158 — Unified toolbar: Context/Filtered/Table/Plot as one tab
+   group (docs/ui-implementation-plan.md, this session). #fhTabs now renders
+   Context|Filtered|Table|Plot ("Getrennt", default) or Stacked|Table|Plot
+   ("Gestapelt") depending on the new Settings -> Behavior "Context/Filtered
+   display" option; Table/Plot stay in the DOM and visible but carry
+   `disabled` whenever the active node has no extractable wildcards
+   (nodeHasExtractableWildcards). #contextToolbar (match nav +
+   expand/collapse-all) still shows only for the Context tab, not
+   Filtered/Stacked. Old extract-type filter nodes from a pre-rework session
+   export still load and render correctly — no node schema changed.
+   ============================================================ */
+group(158);
+await withApp(async (w, d, T) => {
+  section("158a. Table/Plot tabs: visible-but-disabled without wildcards, enabled with wildcards");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const plain = w.createFilterNode(f.id, "text", "message");
+  T.state.activeId = plain.id;
+  w.render();
+
+  let tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
+  const tableBtn = tabs.find(b => b.dataset.fhTab === "table");
+  const plotBtn = tabs.find(b => b.dataset.fhTab === "plot");
+  assert(tableBtn && plotBtn, "Table/Plot tabs exist even for a plain text filter node");
+  assert(tableBtn.disabled && plotBtn.disabled, "...but are disabled — a plain text filter has no [value:...]/[*] wildcards to tabulate/plot");
+  assert(w.nodeHasExtractableWildcards(plain) === false, "sanity: nodeHasExtractableWildcards agrees");
+
+  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  assert(w.nodeHasExtractableWildcards(extractNode) === true, "an extract node with a real [value:int] wildcard is capable");
+  T.state.activeId = extractNode.id;
+  w.render();
+  // Activating an extraction node jumps straight to its Table tab (see
+  // render()'s own comment) — same "isExtract"-equivalent behavior kept
+  // from before this rework.
+  assert(T.fhActiveTab === "table", "sanity: activating an extraction node jumps to Table");
+  tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
+  assert(!tabs.find(b => b.dataset.fhTab === "table").disabled, "Table is enabled once the active node has wildcards");
+  assert(!tabs.find(b => b.dataset.fhTab === "plot").disabled, "Plot is enabled too");
+  assert(d.querySelector("#extractHead th"), "the extraction table itself actually rendered/populated");
+
+  // A bare "extract" pattern with no wildcards at all compiles to nothing
+  // (compileExtractPattern returns null with zero columns) — Table/Plot stay
+  // disabled and the node falls back to the Filtered tab instead of landing
+  // on a dead Table tab.
+  const emptyExtract = w.createFilterNode(f.id, "extract", "just plain text, no wildcards");
+  T.state.activeId = emptyExtract.id;
+  w.render();
+  assert(T.fhActiveTab === "filter", "an extract node with no wildcards does NOT auto-jump to Table (nothing to show there)");
+  tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
+  assert(tabs.find(b => b.dataset.fhTab === "table").disabled, "Table stays disabled for a wildcard-less extract pattern");
+});
+
+await withApp(async (w, d, T) => {
+  section("158b. Settings 'Context/Filtered display' switches Context|Filtered|Table|Plot <-> Stacked|Table|Plot");
+
+  const select = d.querySelector("#settingsFhLayout");
+  assert(select, "sanity: the new settings row exists");
+  assert(select.value === "tabs", "defaults to 'Separate' (tabs layout)");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  let tabs = [...d.querySelectorAll("#fhTabs .view-tab")].map(b => b.dataset.fhTab);
+  assert(tabs.includes("highlight") && tabs.includes("filter") && !tabs.includes("stacked"),
+    "'Separate': Context|Filtered|Table|Plot, no Stacked tab");
+
+  select.value = "stacked";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.fhLayout === "stacked", "picking 'Stacked' in Settings sets fhLayout — the ONLY way it changes now (no more clicking a 'Stacked' tab to set it)");
+  tabs = [...d.querySelectorAll("#fhTabs .view-tab")].map(b => b.dataset.fhTab);
+  assert(tabs.includes("stacked") && !tabs.includes("highlight") && !tabs.includes("filter"),
+    "'Gestapelt': Stacked|Table|Plot, Context/Filtered collapse into the one Stacked tab");
+  assert(d.querySelector("#fhSplit").classList.contains("fh-layout-stacked"), "the stacked layout class is actually applied");
+
+  select.value = "tabs";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.fhLayout === "tabs", "switching back to 'Separate' restores fhLayout");
+  tabs = [...d.querySelectorAll("#fhTabs .view-tab")].map(b => b.dataset.fhTab);
+  assert(tabs.includes("highlight") && tabs.includes("filter") && !tabs.includes("stacked"), "...and the tab group again");
+});
+
+await withApp(async (w, d, T) => {
+  section("158c. Context slot shows the match navigator, Filtered/Stacked don't");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const node = w.createFilterNode(f.id, "text", "message");
+  T.state.activeId = node.id;
+  w.render();
+
+  assert(T.fhActiveTab === "filter", "sanity: starts on Filtered");
+  assert(d.querySelector("#contextToolbar").classList.contains("hidden"), "no match navigator while on the Filtered tab");
+
+  w.applyFhView("highlight");
+  assert(!d.querySelector("#contextToolbar").classList.contains("hidden"), "the match navigator shows on the Context tab");
+
+  // Stacked shows the Context pane alongside Filtered, so its own match
+  // navigator (which lives inside #highlightWrap, not a separately-toggled
+  // slot — see "Entscheidungen bei der Umsetzung") stays visible there too;
+  // it only hides while the Filtered-ONLY tab is what's on screen, per
+  // precisiation 1.
+  w.applyFhView("stacked");
+  assert(!d.querySelector("#contextToolbar").classList.contains("hidden"), "Stacked still shows the match navigator — its Context pane is genuinely on screen");
+});
+
+await withApp(async (w, d, T) => {
+  section("158d. Old extract-type nodes from a pre-rework session export still load and render correctly");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  // A hand-built export in the exact pre-rework shape — no new fields, since
+  // this rework changed no node schema (docs/ui-implementation-plan.md
+  // Schritt 1: "Kein Schema-Wechsel").
+  const roots = [{
+    attach: "target",
+    type: "filter", filterType: "extract", value: "message [value:int]",
+    inverted: false, ignoredColumns: [], children: [],
+  }];
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: null, roots });
+  T.state.activeId = f.id;
+  w.render();
+  // loadFilterTargetId is a top-level `let` in the page script, reached via
+  // the shared lexical scope the same way every other save/load-JSON group
+  // does (see e.g. GROUP 11's own W_setLoadTarget helper).
+  const setLoadTarget = d.createElement("script");
+  setLoadTarget.textContent = `loadFilterTargetId = ${JSON.stringify(f.id)};`;
+  d.body.appendChild(setLoadTarget);
+  w.importFilterJson(json);
+  const loaded = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "extract");
+  assert(loaded, "the old extract node imports successfully");
+  T.state.activeId = loaded.id;
+  w.render();
+  assert(T.fhActiveTab === "table", "it still auto-reveals its Table tab, same as a freshly-created one");
+  assert(w.nodeHasExtractableWildcards(loaded), "nodeHasExtractableWildcards recognizes the imported node's pattern");
+  assert(d.querySelectorAll("#extractBody tr").length > 0, "the extraction table renders real rows from the old node's pattern");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -19751,10 +19901,37 @@ process.exitCode = failed ? 1 : 0;
               INTERMEDIATE restore state) and uses the new waitFor helper.
               See tests/README.md for the conventions all three imply.
 
+   Group 158 — this session (2026-09-03), docs/ui-implementation-plan.md:
+              the unified toolbar — Table/Plot join the same #fhTabs group
+              Context/Filtered/Stacked already used, instead of their own
+              separate #extractViewTabs sub-toggle. 158a: Table/Plot stay
+              visible but `disabled` without extractable wildcards
+              (nodeHasExtractableWildcards), enabled once the active node
+              has them, and a wildcard-less extract node does NOT auto-jump
+              to a dead Table tab. 158b: the new Settings -> Behavior
+              "Context/Filtered display" option (Separate/Stacked) is now
+              the ONLY way fhLayout changes — clicking a "Stacked" tab
+              button no longer sets it. 158c: #contextToolbar (match nav)
+              still shows for Context only, not Filtered/Stacked. 158d: a
+              hand-built pre-rework extract-node export (no new fields —
+              this rework changed no node schema) still imports and renders
+              correctly, landing on its Table tab same as a fresh one.
+
    Deliberately DROPPED this session:
      - Group 139a's "no reveal item for a picker/drop-loaded file" framing.
        That was the Tauri wrapper's picker/drop route, which no longer
        exists (see 141). The assertion itself is kept, re-pointed at the
        case that IS still pathless there — a File arriving with no path
        supplied, i.e. its folder watch.
+     - Group 26's old "extract mode hides #fhTabs/#levelBar/toggles
+       entirely, only the breadcrumb stays" framing (docs/ui-implementation-
+       plan.md, this session): an extraction node is now an ordinary node
+       for Context/Filtered purposes too, so #fhTabs no longer hides for it
+       at all, and #levelBar/the six toggles hide only while its Table/Plot
+       tab is the one actually on screen — updated in place rather than
+       dropped outright, since the row itself (and most of its assertions)
+       still applies, just to a different condition. Group 60c's
+       "#extractViewTabs untouched" sanity check is gone the same way — that
+       element no longer exists, superseded by the main #fhTabs group
+       (Schritt 6).
    ============================================================ */

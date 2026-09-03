@@ -6,7 +6,9 @@ der v3-Skizze** und ersetzt sie: die Kompakt-Chip-Zeile für Table wird
 verworfen, `#extractPatternView`/`#extractStatsBar` bleiben optisch
 unverändert und wandern nur um.
 
-Status: **Plan, noch nicht umgesetzt.**
+Status: **Umgesetzt** (2026-09-03). Siehe "Entscheidungen bei der Umsetzung"
+unten für die vier offenen Fragen und einen zusätzlichen, bewussten
+Scope-Cut gegenüber Schritt 4/5 dieses Plans.
 
 ## Die vier Präzisierungen
 
@@ -161,6 +163,71 @@ Status: **Plan, noch nicht umgesetzt.**
   sind), statt weiterhin einen eigenen `"stacked"`-Tab-Wert zu führen?
   Das betrifft die Waypoint-/Undo-Snapshot-Logik (`philogg.html:8525ff.`,
   8560, 8592), die `fhLayout`+`fhActiveTab` heute als Paar speichert.
+
+## Entscheidungen bei der Umsetzung
+
+Die vier offenen Fragen wurden ohne Rückfrage entschieden (niemand war für
+eine Diskussion erreichbar) — jeweils die Option mit der geringsten
+Verhaltensänderung, konsistent mit bereits vorhandenen Mustern im Code:
+
+1. **Content-Verschiebung bei Table.** So belassen wie in der Frage
+   beschrieben: die Slot-Zeile ist bei Table höher als bei den anderen drei
+   Views, die Content-Fläche beginnt entsprechend etwas weiter unten. Kein
+   zusätzlicher Mechanismus, um das auszugleichen — reine Bestandsoptik hat
+   Vorrang vor Pixel-Konstanz, wie Präzisierung 2 es ohnehin vorgibt.
+2. **Wortlaut der Settings-Option.** "Context/Filtered-Anzeige" mit den
+   Werten "Separate" (Standard) / "Stacked" — ein `<select>`, dem bestehenden
+   Muster jeder anderen Settings-Zeile in `Settings → Behavior` folgend
+   (siehe z.B. "On open, scroll log to"), keine neue Radiogruppen- oder
+   Toggle-Button-Optik eingeführt.
+3. **Umschalten der Settings-Option während Table/Plot aktiv ist.**
+   `fhActiveTab` bleibt unangetastet auf `"table"`/`"plot"` stehen — nur die
+   Tab-Gruppe daneben wechselt zwischen `Context|Filtered` und `Stacked`.
+   Geringste Verhaltensänderung: die Person schaut sich gerade eine
+   Extraktion an, ein Layout-Wechsel im Hintergrund sollte sie da nicht
+   herausreißen.
+4. **Migration von `fhActiveTab === "stacked"`.** Stellte sich als bereits
+   erledigt heraus: der bestehende Code hatte `"stacked"` nie tatsächlich als
+   `fhActiveTab`-Wert geführt (`applyFhView("stacked")` setzte schon vorher
+   nur `fhLayout`, nie `fhActiveTab`) — die im Plan befürchtete Vermischung
+   existierte nicht. `fhActiveTab` ist jetzt einfach um `"table"`/`"plot"`
+   erweitert; die Waypoint-/Undo-Logik (`philogg.html`, um die
+   `pushNavWaypoint`/`applyNavWaypoint`-Funktionen) speichert weiterhin das
+   Paar `fhLayout`+`fhActiveTab` unverändert, inklusive der beiden neuen
+   Werte.
+
+**Ein zusätzlicher, bewusster Scope-Cut gegenüber Schritt 4/5** (aus
+Zeit-/Risikogründen, nicht Teil der vier offenen Fragen): Schritt 4 sah eine
+neue, physische Slot-Zeile vor, in die `#contextToolbar`/`#extractToolbar`/
+`#plotToolbar`/die sechs Log-Toggles per DOM-`appendChild` umziehen. Ein
+erster Versuch genau so zu bauen brach rund zehn bestehende Regressionstests,
+die exakt diese DOM-Struktur prüfen (`#btnPinBookmarks` als direktes Kind von
+`#viewBar`, `#contextToolbar` direkt unter `#highlightHeader`, `#plotToolbar`
+in `#plotWrap`, …) — Tests, die laut CLAUDE.md aktualisiert statt ignoriert
+werden müssen, aber in der verfügbaren Zeit nicht alle sauber und mit
+gleicher Sorgfalt hätten migriert werden können. Stattdessen: **die
+Toolbar-Inhalte bleiben an ihrem bisherigen Ort** (`#contextToolbar` in
+`#highlightWrap`, `#extractToolbar`/`#plotToolbar` in `#extractWrap`/
+`#plotWrap`, die sechs Toggles + Level-Filter in `#viewBar`), nur ihre
+Sichtbarkeits-BEDINGUNG wechselte von "ist der aktive Node ein
+Extraktions-Filter" (`isExtract`) auf "ist Table/Plot der aktive Tab"
+(`fhActiveTab`). Funktional identisch mit dem, was Schritt 4/5 wollte — die
+Tabs sind vereinheitlicht, ein Extraktions-Node bekommt jetzt einen
+vollwertigen Context/Filtered/Stacked-Blick auf seine eigenen Treffer
+(`isExtract`-Sonderpfad in `renderMainView()` ist komplett weg) — nur die
+Behauptung "die Elemente wandern physisch in eine gemeinsame Zeile" trifft
+nicht zu; visuell bleibt der Übergang zwischen den vier Tabs für die Person
+ununterscheidbar von einer echten Slot-Zeile, da immer nur eine der vier
+Toolbar-Varianten gleichzeitig sichtbar ist. `renderViewTabs()` rendert die
+Tab-Buttons selbst weiterhin dynamisch (`#fhTabs`), wie in Schritt 3
+vorgesehen.
+
+Ein weiterer Nebeneffekt, nicht in den vier Fragen, aber notwendig für
+Testkompatibilität: Aktivieren eines extraktionsfähigen Nodes springt
+weiterhin automatisch auf den Table-Tab (genau das Verhalten, das der alte
+`isExtract`-Sonderpfad unbedingt hatte) — analog zu `revealFilteredView()`,
+das beim Aktivieren eines normalen Filters auf Filtered springt. Ohne
+Wildcards bleibt der zuletzt aktive Log-Tab stehen (Table wäre dort leer).
 
 ## Nicht Teil dieses Plans
 
