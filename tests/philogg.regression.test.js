@@ -18104,6 +18104,148 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 164 — Folder watch settings dialog: filename patterns (with
+   per-pattern auto-open-newest/auto-close-keep-N/show-newest-M), and
+   include-subfolders + show-relative-path.
+   Origin: this session (2026-09-03), person-requested. Adds a gear button
+   (.folder-watch-settings) on each watched folder's header, opening
+   #folderWatchSettingsDialog (styled after #settingsDialog). See
+   defaultFolderSettings/matchFolderPattern/scanFolderHandle/
+   applyFolderAutoRules in philogg.html's "Folder watch" section.
+   ============================================================ */
+group(164);
+await withApp(async (w, d, T) => {
+  section("164. Folder watch settings — patterns, subfolders, auto rules");
+
+  function fakeFileHandle(name, text) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  // entries: plain "name.log" for a file, or ["dirname", {..nested entries}] for a subfolder.
+  function fakeDirHandle(name, entries) {
+    return {
+      kind: "directory", name,
+      async *values() {
+        for (const key of Object.keys(entries)) {
+          const val = entries[key];
+          if (typeof val === "string") yield fakeFileHandle(key, val);
+          else yield fakeDirHandle(key, val);
+        }
+      },
+    };
+  }
+
+  // --- Filename patterns: only files matching at least one configured
+  // pattern are listed, on top of the existing fixed *.log extension filter.
+  const patternFiles = { "App1.log": makeLog(0, 2), "App2.log": makeLog(10, 2), "Input1.log": makeLog(20, 2), "other.log": makeLog(30, 2) };
+  const patternDir = fakeDirHandle("plogs", patternFiles);
+  await w.addWatchedFolder(patternDir);
+  const pFolder = T.state.folders[0];
+  assert(pFolder.settings && pFolder.settings.patterns.length === 1 && pFolder.settings.patterns[0].pattern === "*",
+    "a freshly watched folder defaults to a single \"*\" pattern (matches everything, same as before this feature)");
+  assert(pFolder.files.length === 4, "default \"*\" pattern lists every compatible file, got " + pFolder.files.length);
+
+  pFolder.settings.patterns = [
+    { pattern: "App*.log", autoOpenNewest: false, autoCloseKeep: null, showNewest: null },
+    { pattern: "Input*.log", autoOpenNewest: false, autoCloseKeep: null, showNewest: null },
+  ];
+  await w.rescanFolder(pFolder);
+  assert(pFolder.files.map(f => f.name).sort().join(",") === "App1.log,App2.log,Input1.log",
+    "after narrowing to App*.log/Input*.log, other.log (matches neither) drops out of the listing, got " + pFolder.files.map(f => f.name).join(","));
+
+  // --- Settings dialog: gear button opens it, reflects current folder,
+  // subfolder toggle exposes "show relative path", "+ Add pattern" appends
+  // a "*" pattern row, editing a pattern's text input re-scans live.
+  w.render();
+  const gearBtn = d.querySelector(".folder-watch-settings");
+  assert(gearBtn !== null, "settings gear button rendered on the folder header");
+  fireClick(gearBtn, w);
+  const dialog = d.querySelector("#folderWatchSettingsDialog");
+  assert(!dialog.classList.contains("hidden"), "clicking the gear opens the folder watch settings dialog");
+  assert(d.querySelector("#fwSettingsFolderName").textContent === "plogs", "dialog header names the folder it's editing");
+  assert(d.querySelectorAll(".fw-pattern-card").length === 2, "one pattern card rendered per configured pattern, got " + d.querySelectorAll(".fw-pattern-card").length);
+  assert(d.querySelector("#fwSettingsRelPathRow").classList.contains("hidden"), "\"show relative path\" stays hidden until subfolders are included");
+
+  fireClick(d.querySelector("#fwBtnAddPattern"), w);
+  await waitFor(() => d.querySelectorAll(".fw-pattern-card").length === 3);
+  assert(pFolder.settings.patterns.length === 3 && pFolder.settings.patterns[2].pattern === "*", "\"+ Add pattern\" appends a new \"*\" pattern");
+
+  fireClick(d.querySelector("#fwSettingsClose"), w);
+  assert(d.querySelector("#folderWatchSettingsDialog").classList.contains("hidden"), "close button hides the dialog again");
+
+  // --- Include subfolders + show relative path: recursive scan, and the
+  // grayed listing shows each file's path under the folder instead of just
+  // its basename.
+  const subFiles = { "Root.log": makeLog(0, 1), "sub": { "Nested.log": makeLog(1, 1) } };
+  const subDir = fakeDirHandle("sublogs", subFiles);
+  await w.addWatchedFolder(subDir);
+  const sFolder = T.state.folders.find(f => f.name === "sublogs");
+  assert(sFolder.files.length === 1, "without \"include subfolders\", nested files are not listed, got " + sFolder.files.length);
+
+  sFolder.settings.includeSubfolders = true;
+  sFolder.settings.showRelativePath = true;
+  await w.rescanFolder(sFolder);
+  assert(sFolder.files.length === 2, "with \"include subfolders\" on, the nested file is now listed too, got " + sFolder.files.length);
+  const nestedRec = sFolder.files.find(f => f.name === "Nested.log");
+  assert(nestedRec && nestedRec.relPath === "sub/Nested.log", "the nested file's relPath includes its subfolder, got " + (nestedRec && nestedRec.relPath));
+  w.render();
+  const sBox = [...d.querySelectorAll(".folder-watch")].find(box => box.querySelector(".folder-watch-name").textContent === "sublogs");
+  const labels = [...sBox.querySelectorAll(".folder-watch-file-name")].map(l => l.textContent);
+  assert(labels.includes("sub/Nested.log"), "\"show relative path\" displays the nested file's path, not just its filename — got " + labels.join(","));
+
+  // --- Per-pattern auto rules: auto-open newest, auto-close keep N, show
+  // newest M. "Newest" = last in the (alphabetical) sort order, same
+  // convention the folder listing itself already sorts by.
+  const ruleFiles = { "R-01.log": makeLog(0, 1), "R-02.log": makeLog(1, 1) };
+  const ruleDir = fakeDirHandle("rulelogs", ruleFiles);
+  await w.addWatchedFolder(ruleDir);
+  const rFolder = T.state.folders.find(f => f.name === "rulelogs");
+  rFolder.settings.patterns = [{ pattern: "*", autoOpenNewest: true, autoCloseKeep: 1, showNewest: null }];
+  await w.rescanFolder(rFolder);
+  await waitFor(() => rFolder.files.find(f => f.name === "R-02.log").nodeId !== null);
+  assert(rFolder.files.find(f => f.name === "R-02.log").nodeId, "auto-open-newest opened R-02.log (the alphabetically last match)");
+  assert(!rFolder.files.find(f => f.name === "R-01.log").nodeId, "auto-open-newest did not also open R-01.log");
+  const r02Id = rFolder.files.find(f => f.name === "R-02.log").nodeId;
+  assert(T.state.activeId === r02Id, "the auto-opened file is also selected/activated, same as a manual open");
+  assert(T.state.tailFollow === true, "auto-opening a handle-backed file leaves tailFollow engaged (auto-scroll)");
+
+  ruleFiles["R-03.log"] = makeLog(2, 1);
+  await w.rescanFolder(rFolder);
+  await waitFor(() => rFolder.files.find(f => f.name === "R-03.log").nodeId !== null);
+  assert(!rFolder.files.find(f => f.name === "R-02.log").nodeId,
+    "auto-close (keep only 1 open) closed R-02.log once R-03.log (the new newest) opened");
+  assert(rFolder.files.some(f => f.name === "R-02.log"), "R-02.log stays listed grayed out after auto-close, not removed");
+  assert(rFolder.files.find(f => f.name === "R-03.log").nodeId, "R-03.log (the new newest) is the one auto-opened and left open");
+
+  // Show newest M: drop closed listing entries older than the M most recent.
+  // Before this: R-01/R-02 closed+grayed, R-03 open. Adding R-00 (sorts
+  // first) makes 4 files; keeping the newest 2 by sort order (R-02, R-03)
+  // drops the two oldest closed ones (R-00, R-01) — R-03 stays regardless
+  // since an open file is never dropped.
+  rFolder.settings.patterns = [{ pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: 2 }];
+  ruleFiles["R-00.log"] = makeLog(-1, 1);
+  await w.rescanFolder(rFolder);
+  const namesAfterShowNewest = rFolder.files.map(f => f.name).sort();
+  assert(namesAfterShowNewest.join(",") === "R-02.log,R-03.log",
+    "show-newest-2 kept only the 2 newest (R-02, R-03), dropping the older closed R-00/R-01 — got " + namesAfterShowNewest.join(","));
+  assert(rFolder.files.find(f => f.name === "R-03.log").nodeId, "the still-open R-03.log survives show-newest regardless of its position");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -20472,4 +20614,9 @@ process.exitCode = failed ? 1 : 0;
    Group 163 — this session (2026-09-03): Context view run-line hover
      highlighting the whole run (data-run-id, .ctx-run-hover) instead of
      just the one row segment under the pointer.
+
+   Group 164 — this session (2026-09-03), person-requested: the per-folder
+     Folder watch settings dialog (gear icon on a .folder-watch-header) —
+     filename patterns (with per-pattern auto-open-newest/auto-close-keep-N/
+     show-newest-M) and include-subfolders/show-relative-path.
    ============================================================ */
