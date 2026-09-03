@@ -1783,12 +1783,28 @@
   #extractTable td.assert-violation{background:var(--level-error-soft); color:var(--level-error);}
   #extractTable td.assert-violation.cell-selected{background:var(--level-error-soft) !important; box-shadow:inset 0 0 0 1.5px var(--level-error);}
 
-  /* ---------- Column statistics bar ---------- */
-  #extractStatsBar{
-    display:flex; flex-wrap:wrap; gap:6px 16px; padding:0 0 2px;
+  /* ---------- Column statistics bar ----------
+     Collapsible, default collapsed (person-requested) — #extractStatsToggle
+     is a small header button, #extractStatsContent the actual chip row,
+     hidden via a plain class rather than a second visibility mechanism.
+     One shared #extractStatsBar element serves both Table and Plot (it
+     lives in #extractToolbar, above both), so the collapsed/expanded state
+     is naturally shared between the two views for free — no extra syncing
+     needed. */
+  #extractStatsBar{padding:0 0 2px;}
+  #extractStatsBar.stats-empty{display:none;}
+  #extractStatsToggle{
+    display:flex; align-items:center; gap:5px; background:none; border:none; cursor:pointer;
+    padding:2px 0; font-size:10.8px; font-weight:600; color:var(--text-tertiary);
+  }
+  #extractStatsToggle:hover{color:var(--text-secondary);}
+  #extractStatsToggleIcon{display:flex; transition:transform .12s ease;}
+  #extractStatsBar.collapsed #extractStatsToggleIcon{transform:rotate(-90deg);}
+  #extractStatsContent{
+    display:flex; flex-wrap:wrap; gap:6px 16px; padding:4px 0 2px;
     font-size:10.8px; color:var(--text-tertiary); font-family:var(--font-mono);
   }
-  #extractStatsBar:empty{display:none;}
+  #extractStatsBar.collapsed #extractStatsContent{display:none;}
   .stat-chip-name{font-weight:650;}
   .stat-chip b{color:var(--text-secondary); font-weight:600;}
 
@@ -3034,7 +3050,10 @@
       <div id="extractWrap">
         <div id="extractToolbar">
           <div id="extractPatternView"></div>
-          <div id="extractStatsBar"></div>
+          <div id="extractStatsBar">
+            <button type="button" id="extractStatsToggle" title="Toggle column statistics"><span id="extractStatsToggleIcon"></span>Statistics</button>
+            <div id="extractStatsContent"></div>
+          </div>
           <span id="extractInfo"></span>
         </div>
         <div id="extractScroll">
@@ -8310,6 +8329,9 @@ const extractWrap = el("#extractWrap");
 const extractToolbar = el("#extractToolbar");
 const extractInfo = el("#extractInfo");
 const extractStatsBar = el("#extractStatsBar");
+const extractStatsToggle = el("#extractStatsToggle");
+const extractStatsToggleIcon = el("#extractStatsToggleIcon");
+const extractStatsContent = el("#extractStatsContent");
 const btnPinBookmarks = el("#btnPinBookmarks");
 const btnNotes = el("#btnNotes");
 const btnMultilineMsg = el("#btnMultilineMsg");
@@ -12453,16 +12475,36 @@ function computeColumnStats(colIndex) {
   return { min, max, mean, stddev: Math.sqrt(sqDiff / vals.length), n: vals.length };
 }
 
+// Collapsed by default (person-requested) — shared by Table and Plot since
+// both toolbars share this one #extractStatsBar element, so toggling it in
+// either view toggles it in the other for free. Persisted the same way the
+// theme/fhLayout toggles are: a display preference, not session/filter data.
+const EXTRACT_STATS_COLLAPSED_KEY = "philogg-extract-stats-collapsed";
+let extractStatsCollapsed = localStorage.getItem(EXTRACT_STATS_COLLAPSED_KEY) !== "0";
+const ICON_STATS_CHEVRON = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+
+function updateExtractStatsToggle() {
+  extractStatsBar.classList.toggle("collapsed", extractStatsCollapsed);
+  extractStatsToggleIcon.innerHTML = ICON_STATS_CHEVRON;
+}
+extractStatsToggle.addEventListener("click", () => {
+  extractStatsCollapsed = !extractStatsCollapsed;
+  localStorage.setItem(EXTRACT_STATS_COLLAPSED_KEY, extractStatsCollapsed ? "1" : "0");
+  updateExtractStatsToggle();
+});
+updateExtractStatsToggle();
+
 function renderStatsBar(node) {
   const plottable = extractColumns.map(c => ({ ...c, index: c.colIndex })).filter(c => isPlottableType(c.type));
-  if (plottable.length === 0) { extractStatsBar.innerHTML = ""; return; }
-  extractStatsBar.innerHTML = plottable.map(c => {
+  const chips = plottable.map(c => {
     const stats = computeColumnStats(c.index);
     if (!stats) return "";
     return '<span class="stat-chip"><span class="stat-chip-name" style="color:' + columnColor(c.index) + '">' + escapeHtml(c.name) + ':</span> ' +
       'min <b>' + formatAxisNumber(stats.min) + '</b> · max <b>' + formatAxisNumber(stats.max) + '</b> · ' +
       'mean <b>' + formatAxisNumber(stats.mean) + '</b> · σ <b>' + formatAxisNumber(stats.stddev) + '</b></span>';
   }).join("");
+  extractStatsContent.innerHTML = chips;
+  extractStatsBar.classList.toggle("stats-empty", chips === "");
 }
 
 function renderExtractTable(node) {
@@ -14339,8 +14381,11 @@ function makeContextRunHandle(run, isTop, isBottom) {
   btn.type = "button";
   btn.className = "ctx-run-line" + (isTop ? " ctx-run-top" : isBottom ? " ctx-run-bottom" : "");
   btn.title = "Collapse these lines again";
-  btn.innerHTML = isTop ? '<span class="ctx-run-cap">' + ICON_CARET_UP + '</span>'
-    : isBottom ? '<span class="ctx-run-cap">' + ICON_CARET_DOWN + '</span>' : "";
+  // Caps point INWARD, toward each other — the direction the run will
+  // shrink to on click — rather than outward (which used to read like an
+  // "expand more" affordance instead of "collapse this").
+  btn.innerHTML = isTop ? '<span class="ctx-run-cap">' + ICON_CARET_DOWN + '</span>'
+    : isBottom ? '<span class="ctx-run-cap">' + ICON_CARET_UP + '</span>' : "";
   btn.addEventListener("click", ev => { ev.stopPropagation(); collapseContextRun(run); });
   return btn;
 }

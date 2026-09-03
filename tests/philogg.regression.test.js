@@ -249,6 +249,7 @@ async function withApp(run, opts = {}) {
       get nodeLastView() { return nodeLastView; },
       get filterActivationView() { return filterActivationView; },
       set filterActivationView(v) { filterActivationView = v; },
+      get extractStatsCollapsed() { return extractStatsCollapsed; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -17970,6 +17971,76 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 162 — Collapsible column statistics bar (default collapsed),
+   shared between Table and Plot
+   Origin: this session (2026-09-03), person-requested: the stats bar above
+   the extraction table/plot should be collapsible, default collapsed, and
+   the collapsed/expanded state must be the same regardless of whether it's
+   toggled from Table or from Plot. Both toolbars share the one
+   #extractStatsBar element (it lives in #extractToolbar, above both
+   #extractScroll and #plotWrap), so the state is naturally shared — these
+   tests confirm that stays true rather than asserting it structurally.
+   ============================================================ */
+group(162);
+await withApp(async (w, d, T) => {
+  section("162a. Defaults to collapsed on a fresh load, with no localStorage entry yet");
+
+  assert(w.localStorage.getItem("philogg-extract-stats-collapsed") === null, "sanity: nothing persisted yet");
+  assert(T.extractStatsCollapsed === true, "extractStatsCollapsed defaults to true with nothing stored");
+  assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "the bar itself carries .collapsed by default");
+});
+
+await withApp(async (w, d, T) => {
+  section("162b. Clicking the toggle expands the bar and persists the choice; content renders regardless of collapsed state");
+
+  const log = [0, 1, 2]
+    .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`)
+    .join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "score=[value:float]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const statsBar = d.querySelector("#extractStatsBar");
+  assert(statsBar.classList.contains("collapsed"), "sanity: still collapsed by default");
+  assert(d.querySelector("#extractStatsContent").textContent.includes("value"), "the chip content is rendered even while collapsed (only hidden via CSS, not skipped)");
+
+  fireClick(d.querySelector("#extractStatsToggle"), w);
+  assert(!statsBar.classList.contains("collapsed"), "clicking the toggle expands the bar");
+  assert(w.localStorage.getItem("philogg-extract-stats-collapsed") === "0", "expanded state persisted to localStorage");
+
+  fireClick(d.querySelector("#extractStatsToggle"), w);
+  assert(statsBar.classList.contains("collapsed"), "clicking again re-collapses it");
+  assert(w.localStorage.getItem("philogg-extract-stats-collapsed") === "1", "collapsed state persisted to localStorage");
+});
+
+await withApp(async (w, d, T) => {
+  section("162c. Expanding from the Table tab stays expanded after switching to Plot, and vice versa (one shared bar/state)");
+
+  const log = [0, 1, 2]
+    .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`)
+    .join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "score=[value:float]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  fireClick(d.querySelector("#extractStatsToggle"), w);
+  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "sanity: expanded from Table");
+
+  w.applyFhView("plot");
+  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "still expanded after switching to Plot — same shared element/state");
+
+  fireClick(d.querySelector("#extractStatsToggle"), w);
+  assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "collapsed again from the Plot tab");
+
+  w.applyFhView("table");
+  assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "still collapsed back on Table — the toggle from Plot affected the same shared bar");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -20329,4 +20400,9 @@ process.exitCode = failed ? 1 : 0;
        "#extractViewTabs untouched" sanity check is gone the same way — that
        element no longer exists, superseded by the main #fhTabs group
        (Schritt 6).
+
+   Group 162 — this session (2026-09-03): the collapsible column-statistics
+     bar above Table/Plot (default collapsed, one shared #extractStatsBar
+     element/localStorage key for both tabs — see philogg.html's
+     "Column statistics" comment).
    ============================================================ */
