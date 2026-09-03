@@ -135,6 +135,46 @@ Filter types, the value-extraction pattern language (placeholders, value conditi
 ### `docs/ui-and-views.md`
 Header/toolbar layout (`#viewBar`, breadcrumb, Shortcut Manager, License section), the three "active node" views (Log/Extraction/Link), the Context view (Context/Filtered split, `renderHighlightView` — internally still "Highlight"), level-bar filter-tree mode, the general scroll-anchoring mechanism (`captureViewAnchor`/`restoreViewAnchor`), the multiline-message toggle, column visibility/width, row multi-select+copy, tree interactions (rename, edit, drag-drop, Alt+Arrow navigation, the temporary anchor), theming, and the app's visual language. Start here for anything about `renderMainView()`, `renderNode()`, or CSS/theme vars.
 
+### `docs/ui-sketches.md`
+Labeled box-diagram sketches (SVG) of the UI regions and their established
+names: MainView layout, the Context/Filtered/Stacked split, the filter tree
+row anatomy and context menus, and the Extraction view's Table/Plot tabs.
+Reference for naming a UI element in conversation — points back to
+`docs/ui-and-views.md` for the prose explanation of how they behave.
+
+### `docs/ui-concept-unified-extraction.md`
+Unimplemented proposal (v3): fold the separate `extract`-node Table/Plot
+views into `#viewBar`'s Context/Filtered/Stacked tabs (as `Table`/`Plot`
+tabs on the same node, gated on wildcard patterns) via a fixed 4-row
+toolbar skeleton — minimap/statusStrip/viewBar (tabs+level+breadcrumb
+only)/view-specific slot — so switching views never relocates an element.
+v2 moved the six log-row toggles (Pin/Notes/Multiline/Columns/
+TextMatch/HighlightMatch) out of the universal `#viewBar` into the slot
+row, since they're meaningless in Table/Plot. v3 additionally unifies the
+slot row's *shape* (one fixed 30px height, chip-style content for
+Table's pattern preview/stats) instead of just its position — matching
+`#contextToolbar`'s/`#plotToolbar`'s single-row build rather than
+`#extractToolbar`'s current multi-row block. Superseded on the shape
+point by `docs/ui-implementation-plan.md` (see below).
+
+### `docs/ui-concept-mockup-brief.md`
+Handoff brief for Claude Design: build a realistic, mostly-static mockup
+of `docs/ui-concept-unified-extraction.md`'s unified toolbar (real dark
+theme tokens, sample data, scope of what must vs. needn't be interactive
+— only the Context/Filtered/Table/Plot/Stacked tab switch needs to work).
+
+### `docs/ui-implementation-plan.md`
+Step-by-step implementation plan for `docs/ui-concept-unified-extraction.md`,
+refined with four precisions from discussion: match-navigator only in the
+Context slot, `#extractPatternView`/`#extractStatsBar` keep their current
+look (only relocate — retracts v3's compact chip-row idea), Table/Plot
+tabs always visible but disabled when inapplicable, and Stacked moves
+from a tab into a Settings → Behavior option (mapped onto the existing
+`fhLayout` state) so the tab set becomes either
+`Context|Filtered|Table|Plot` or `Stacked|Table|Plot`. Affected code
+areas, step order, and open questions — **this is the plan currently
+being implemented on `claude/unified-toolbar-implementation`.**
+
 ### `docs/extraction-and-plotting.md`
 The extraction table's synthetic Index/t(ms) columns, virtualized rendering (extraction table + Link pair view), the Plot tab (zoom/pan/hover tooltip), value assertions, column statistics, and the live pattern preview + ignored-columns mechanism. Start here for anything under `renderExtractTable()`/`renderPlotChart()`.
 
