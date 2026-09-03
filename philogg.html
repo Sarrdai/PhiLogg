@@ -1727,10 +1727,7 @@
     width:14px; height:14px; border-radius:50%; color:#0b1016;
     font-size:9px; font-weight:800; flex:0 0 auto;
   }
-  .extract-toolbar-row2{display:flex; align-items:center; justify-content:space-between; gap:10px;}
-  .extract-toolbar-row2-right{display:flex; align-items:center; gap:10px;}
-  .extract-toolbar-row2-sep{width:1px; height:20px; background:var(--border);}
-  #extractInfo{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;}
+  #extractInfo{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; display:block;}
   .btn-mini-outline{
     background:transparent; color:var(--text-secondary); border:1px solid var(--border);
     border-radius:6px; padding:5px 10px; font-size:11.5px; cursor:pointer; transition:border-color .12s, color .12s;
@@ -2911,11 +2908,17 @@
            directions (additive OR vs. subtractive AND — see PROJECT.md
            "Pin bookmarks into the Filtered View"). -->
       <div id="viewBar">
-        <div class="view-tabs" id="fhTabs">
-          <button type="button" class="view-tab" data-fh-tab="highlight" title="Your filter result with the log around it — expand the gaps between matches to reveal the hidden lines">Context</button>
-          <button type="button" class="view-tab active" data-fh-tab="filter" title="Narrowed by the active filter tree node">Filtered</button>
-          <button type="button" class="view-tab" data-fh-tab="stacked" title="Show Context and Filtered at once, split top/bottom">Stacked</button>
-        </div>
+        <!-- Tab buttons rendered dynamically by renderViewTabs() (see
+             "Unified toolbar: Context/Filtered/Table/Plot as one tab
+             group", near applyFhView) — either
+             Context|Filtered|Table|Plot ("Getrennt") or
+             Stacked|Table|Plot ("Gestapelt"), per the Settings → Behavior
+             "Context/Filtered display" option. Table/Plot stay in the DOM
+             and visible but get a `disabled` attribute when the active
+             node has no extractable wildcards (docs/ui-implementation-plan.md
+             precisiation 3), so the rest of the tab group never jumps
+             sideways when they become available. -->
+        <div class="view-tabs" id="fhTabs"></div>
         <button id="btnPinBookmarks" class="toolbar-icon-btn" title="Pin bookmarks into Filtered View"></button>
         <button id="btnNotes" class="toolbar-icon-btn" title="Show/hide notes"></button>
         <button id="btnMultilineMsg" class="toolbar-icon-btn" title="Multi-line message display (line breaks in the message)"></button>
@@ -3033,15 +3036,7 @@
         <div id="extractToolbar">
           <div id="extractPatternView"></div>
           <div id="extractStatsBar"></div>
-          <div class="extract-toolbar-row2">
-            <span id="extractInfo"></span>
-            <div class="extract-toolbar-row2-right">
-              <div class="view-tabs" id="extractViewTabs">
-                <button type="button" class="view-tab active" data-view="table">Table</button>
-                <button type="button" class="view-tab" data-view="plot">Plot</button>
-              </div>
-            </div>
-          </div>
+          <span id="extractInfo"></span>
         </div>
         <div id="extractScroll">
           <table id="extractTable"><thead id="extractHead"></thead><tbody id="extractBody"></tbody></table>
@@ -3565,6 +3560,18 @@
         <section class="settings-section" id="settingsSectionBehavior">
           <div class="settings-section-title">Behavior</div>
           <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsFhLayout">Context/Filtered display</label>
+                <div class="settings-row-hint">"Separate" shows Context and Filtered as two tabs you switch between. "Stacked" shows both at once, split top/bottom, as a single "Stacked" tab alongside Table/Plot.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsFhLayout">
+                  <option value="tabs">Separate</option>
+                  <option value="stacked">Stacked</option>
+                </select>
+              </div>
+            </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsOpenScrollPosition">On open, scroll log to</label>
@@ -4958,6 +4965,48 @@ document.getElementById("settingsOpenScrollPosition").addEventListener("change",
   localStorage.setItem(OPEN_SCROLL_POSITION_KEY, openScrollPosition);
 });
 
+// "Context/Filtered display" (Settings → Behavior): the ONLY way fhLayout
+// changes now (docs/ui-implementation-plan.md precisiation 4 — the old
+// "Stacked" tab button used to set fhLayout itself on click; that tab is
+// gone from the "Separate" group entirely, and the "Stacked" button that
+// replaces the whole group in "Gestapelt" mode only ever switches fhActiveTab
+// back from Table/Plot, see applyFhView). Deliberately does NOT reset
+// fhActiveTab off "table"/"plot" when flipped mid-Table/Plot — see
+// "Entscheidungen bei der Umsetzung" in docs/ui-implementation-plan.md for
+// why (least behavior change: the tab you're looking at stays put, only the
+// other two/one tabs beside it change).
+function initSettingsFhLayoutOption() {
+  const select = document.getElementById("settingsFhLayout");
+  if (select) select.value = fhLayout;
+}
+document.getElementById("settingsFhLayout").addEventListener("change", ev => {
+  fhLayout = ev.target.value === "stacked" ? "stacked" : "tabs";
+  localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout);
+  fhSplit.classList.toggle("fh-layout-tabs", fhLayout === "tabs");
+  fhSplit.classList.toggle("fh-layout-stacked", fhLayout === "stacked");
+  if (fhLayout === "stacked") {
+    filterSlot.classList.remove("fh-active");
+    highlightWrap.classList.remove("fh-active");
+    if (fhActiveTab !== "table" && fhActiveTab !== "plot") fhActiveTab = "highlight";
+  } else {
+    if (fhActiveTab !== "table" && fhActiveTab !== "plot") {
+      state.entriesView = fhActiveTab === "highlight" ? "highlight" : "filter";
+    }
+    filterSlot.classList.toggle("fh-active", fhActiveTab === "filter");
+    highlightWrap.classList.toggle("fh-active", fhActiveTab === "highlight");
+  }
+  // A settings change is infrequent enough that the full renderMainView()
+  // (which rebuilds the timeline minimap SVG wholesale, unlike the lighter
+  // renderVisibleRows()/renderHighlightVisibleRows() pair showFhTab uses for
+  // an ordinary tab click) is the simplest correct choice here — it's what
+  // actually refreshes #fhTabs' own buttons for the new layout too.
+  renderMainView();
+  updateMinimapFullRange();
+  updateMinimapRenderedRange();
+  updateMinimapSelectionMarkers();
+  updateContextToolbar();
+});
+
 /* ===================== Temporary anchor settings (FEATURE_BACKLOG #18) =====
    How (or whether) the "temp anchor" row — the selected entry's would-be
    position after switching the active filter to one it doesn't actually
@@ -6094,6 +6143,20 @@ function compileExtractPattern(pattern) {
   } catch (e) {
     return null;
   }
+}
+
+// Whether a node currently offers a usable Table/Plot view — used by
+// renderViewTabs() to enable/disable those two tabs
+// (docs/ui-implementation-plan.md precisiation 3: they stay visible, just
+// disabled, so the rest of the tab group never jumps sideways when they
+// become available). A node needs to actually be an extract-type filter AND
+// compile to a non-empty, valid column set — compileExtractPattern already
+// returns null for a bare "text" pattern with no wildcards at all, or one
+// whose regex fails to compile, so nodeHasExtractableWildcards is just that
+// check with a name that says what it means at the two call sites that need
+// it (renderViewTabs, renderExtractTable's own invalid-pattern branch).
+function nodeHasExtractableWildcards(node) {
+  return !!(node && node.type === "filter" && node.filterType === "extract" && compileExtractPattern(node.value));
 }
 
 // Display name for a "timerange" filter's { from, to } value (either bound
@@ -8209,6 +8272,7 @@ const detailNoteEl = el("#detailNote");
 const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
+const extractToolbar = el("#extractToolbar");
 const extractInfo = el("#extractInfo");
 const extractStatsBar = el("#extractStatsBar");
 const btnPinBookmarks = el("#btnPinBookmarks");
@@ -8222,7 +8286,6 @@ const extractHead = el("#extractHead");
 const extractBody = el("#extractBody");
 const extractContextMenu = el("#extractContextMenu");
 const extractScroll = el("#extractScroll");
-const extractViewTabs = el("#extractViewTabs");
 const plotWrap = el("#plotWrap");
 const plotBody = el("#plotBody");
 const plotControls = el("#plotControls");
@@ -8288,35 +8351,88 @@ const ctxNextMatch = el("#ctxNextMatch");
 const ctxExpandAll = el("#ctxExpandAll");
 const ctxCollapseAll = el("#ctxCollapseAll");
 
-/* ===================== Filter/Highlight layout =====================
-   One tri-state UI preference, not part of `state` (same reasoning as the
-   theme toggle: purely a display preference, not filter/session data),
+/* ===================== Unified toolbar: Context/Filtered/Table/Plot =====
+   Two independent UI preferences, not part of `state` (same reasoning as
+   the theme toggle: purely a display preference, not filter/session data),
    persisted to localStorage like the theme:
-     - fhLayout: "tabs" (one panel visible at a time) | "stacked" (both,
-       #filterSlot at a resizable height, #highlightWrap filling the rest —
-       see #fhSplitResizer below).
-     - fhActiveTab: "filter" | "highlight" — which panel shows in tabs
-       layout. Irrelevant in stacked layout since both show, but kept around
-       so switching back to tabs restores "what was last jumped to".
-   The three states are exposed as a single control (#fhTabs: Full /
-   Filtered / Stacked) rather than a tab-switcher plus a separate
-   stacked-layout button — "Full" and "Filtered" set fhLayout to "tabs" and
-   pick fhActiveTab, "Stacked" sets fhLayout to "stacked" directly.
+     - fhLayout: "tabs" (one of Context/Filtered visible at a time) |
+       "stacked" (both, #filterSlot at a resizable height, #highlightWrap
+       filling the rest — see #fhSplitResizer below). Set ONLY by the
+       Settings → Behavior "Context/Filtered display" option now (see
+       initSettingsFhLayoutOption below) — clicking the tab group's own
+       "Stacked" button (visible only while fhLayout is already "stacked")
+       just returns to the log views from Table/Plot, it does not change
+       fhLayout itself. This is docs/ui-implementation-plan.md's
+       precisiation 4.
+     - fhActiveTab: "highlight" | "filter" | "table" | "plot" — which
+       content component is on screen. "stacked" is deliberately NOT a
+       value here (see "Entscheidungen bei der Umsetzung" in
+       docs/ui-implementation-plan.md) — whether both log panels show is
+       entirely fhLayout's job; fhActiveTab only ever names one of the four
+       tabs, "highlight"/"filter" doing double duty as "which one is the
+       stacked pair's own last-active pane" the same way it already did
+       before Table/Plot existed.
+   The tab buttons themselves are rendered dynamically by renderViewTabs()
+   (below) rather than living as static markup in #fhTabs — either
+   Context|Filtered|Table|Plot or Stacked|Table|Plot, per fhLayout, with
+   Table/Plot carrying `disabled` (not removed from the DOM) whenever the
+   active node has no extractable wildcards (precisiation 3).
    Internally the whole-file view is still called "Highlight" throughout
    the code (renderHighlightView, #highlightWrap, highlightColorMap, …) —
-   only the UI-facing label changed to "Full"; renaming every internal
+   only the UI-facing label changed to "Context"; renaming every internal
    identifier felt like a much bigger, riskier diff for a label-only ask,
-   so it was left alone. Say the word if you'd rather have the full rename. */
+   so it was left alone. */
 const FH_LAYOUT_STORAGE_KEY = "philogg-fh-layout";
 let fhLayout = "tabs";
 let fhActiveTab = "filter";
 
-// Reflects the current fhLayout/fhActiveTab combination onto the three
-// toggle buttons: "Stacked" is active whenever fhLayout is "stacked",
-// otherwise whichever of "Full"/"Filtered" matches fhActiveTab.
-function updateFhTabButtons() {
-  const active = fhLayout === "stacked" ? "stacked" : fhActiveTab;
-  fhTabs.querySelectorAll(".view-tab").forEach(b => b.classList.toggle("active", b.dataset.fhTab === active));
+// Builds the #fhTabs button group for the current fhLayout, and marks
+// Table/Plot disabled when the active node has nothing to tabulate/plot.
+// Rebuilt on every renderMainView() call (cheap — 3-4 small buttons) rather
+// than patched in place, since which buttons even exist changes with
+// fhLayout. The click handler stays a single delegated listener on #fhTabs
+// itself (wired once, below), so rebuilding the buttons' innerHTML doesn't
+// need to re-wire anything.
+function renderViewTabs(extractCapable) {
+  const logTabs = fhLayout === "stacked"
+    ? [{ tab: "stacked", label: "Stacked", title: "Show Context and Filtered at once, split top/bottom" }]
+    : [
+        { tab: "highlight", label: "Context", title: "Your filter result with the log around it — expand the gaps between matches to reveal the hidden lines" },
+        { tab: "filter", label: "Filtered", title: "Narrowed by the active filter tree node" },
+      ];
+  const tabs = [
+    ...logTabs,
+    { tab: "table", label: "Table", title: extractCapable ? "Extraction table for this node's pattern" : "This node has no [value:...]/[*] wildcards to tabulate" },
+    { tab: "plot", label: "Plot", title: extractCapable ? "Plot extracted values from this node's pattern" : "This node has no [value:...]/[*] wildcards to plot" },
+  ];
+  const activeVal = fhLayout === "stacked" && fhActiveTab !== "table" && fhActiveTab !== "plot" ? "stacked" : fhActiveTab;
+  fhTabs.innerHTML = tabs.map(t => {
+    const disabled = (t.tab === "table" || t.tab === "plot") && !extractCapable;
+    return `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}"${disabled ? " disabled" : ""}>${t.label}</button>`;
+  }).join("");
+}
+
+// Shows/hides the six Filtered/Context-only toggles + the level filter
+// (docs/ui-implementation-plan.md precisiation 1: Table/Plot get none of
+// this — no log rows, no highlight rules, no level filter to apply to
+// them) — same six elements, same #viewBar position they always had; only
+// the CONDITION driving their visibility changed, from "is this node an
+// extraction filter" (isExtract) to "is Table/Plot the tab on screen"
+// (fhActiveTab), since an extraction node now also has an ordinary
+// Filtered/Context pair to show these next to. #contextToolbar's own
+// extra condition (only for "highlight", not "filter"/"stacked") is
+// unaffected by this — it already lived inside #highlightWrap and is
+// governed separately by updateContextToolbar().
+function updateLogToggleVisibility() {
+  const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
+  const display = onTableOrPlot ? "none" : "";
+  levelBarEl.style.display = display;
+  btnPinBookmarks.style.display = display;
+  btnNotes.style.display = display;
+  btnMultilineMsg.style.display = display;
+  btnColumns.style.display = display;
+  btnTextMatchHighlight.style.display = display;
+  btnHighlightMatchText.style.display = display;
 }
 
 // Switches which panel is visible in tabs layout (no-op on visibility in
@@ -8328,7 +8444,12 @@ function updateFhTabButtons() {
 // actually measure itself.
 function showFhTab(tab) {
   fhActiveTab = tab;
-  updateFhTabButtons();
+  // "highlight"/"filter" are always log tabs, so the six toggles/level
+  // filter are always shown here — but an extraction node can reach this
+  // FROM Table/Plot (its own tab clicks call applyFhView("table"/"plot")
+  // instead, so this only ever runs for the two log tabs) and this function
+  // doesn't call the full renderMainView(), so it needs its own refresh.
+  updateLogToggleVisibility();
   if (fhLayout === "tabs") {
     // In tabs layout exactly ONE of the two Log views is on screen, so the
     // pane the arrow keys drive (state.entriesView) can only sensibly be
@@ -8395,16 +8516,26 @@ function showFhTab(tab) {
 // call sites instead.
 function applyFhView(view) {
   if (view === "stacked") {
+    // Only reached while fhLayout is ALREADY "stacked" (the "Stacked" button
+    // only renders in that layout — see renderViewTabs) — this click means
+    // "come back to the log views", relevant only when Table/Plot was the
+    // one on screen. Skip the full renderMainView() otherwise: it rebuilds
+    // more than this branch needs (e.g. the timeline minimap SVG, which
+    // would silently invalidate any DOM reference a caller is still holding
+    // — same DOM-identity class of gotcha CLAUDE.md documents elsewhere).
+    const wasOnTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
     fhLayout = "stacked";
     fhSplit.classList.remove("fh-layout-tabs");
     fhSplit.classList.add("fh-layout-stacked");
     filterSlot.classList.remove("fh-active");
     highlightWrap.classList.remove("fh-active");
-    updateFhTabButtons();
+    if (wasOnTableOrPlot) fhActiveTab = "highlight";
+    updateLogToggleVisibility();
     // Same resync-to-bottom reasoning as showFhTab above: either panel could
     // have been the hidden one while tailing grew.
     if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
     if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
+    if (wasOnTableOrPlot) renderMainView(); // content component switches back from Table/Plot to #fhSplit
     renderVisibleRows();
     renderHighlightVisibleRows();
     // Entering Stacked always shows Box #1 (see updateMinimapFullRange) and
@@ -8415,27 +8546,39 @@ function applyFhView(view) {
     updateMinimapRenderedRange();
     updateMinimapSelectionMarkers(); // see showFhTab's own call for why
     updateContextToolbar();               // ditto — this branch doesn't go through showFhTab
+  } else if (view === "table" || view === "plot") {
+    // Switching to Table/Plot never touches fhLayout — a person who set
+    // "Gestapelt" in Settings stays there when they come back to the log
+    // views (docs/ui-implementation-plan.md's third open question:
+    // fhActiveTab is simply allowed to sit on "table"/"plot" independently
+    // of whichever fhLayout is current, least-behavior-change resolution —
+    // see "Entscheidungen bei der Umsetzung").
+    fhActiveTab = view;
+    renderMainView();
   } else {
     fhLayout = "tabs";
     fhSplit.classList.add("fh-layout-tabs");
     fhSplit.classList.remove("fh-layout-stacked");
     showFhTab(view); // showFhTab re-evaluates both minimap range boxes itself
   }
-  localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout === "stacked" ? "stacked" : fhActiveTab);
+  localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout);
 }
 function initFhView() {
-  const stored = localStorage.getItem(FH_LAYOUT_STORAGE_KEY);
-  applyFhView(stored === "stacked" ? "stacked" : (stored === "highlight" ? "highlight" : "filter"));
+  fhLayout = localStorage.getItem(FH_LAYOUT_STORAGE_KEY) === "stacked" ? "stacked" : "tabs";
+  fhActiveTab = "filter";
+  fhSplit.classList.toggle("fh-layout-tabs", fhLayout === "tabs");
+  fhSplit.classList.toggle("fh-layout-stacked", fhLayout === "stacked");
+  filterSlot.classList.toggle("fh-active", fhLayout === "tabs");
 }
 
-// A newly created (or just-edited) filter is invisible while the Full tab is
-// showing — the Full view deliberately ignores the filter tree — so creating
-// one from there would appear to do nothing except change the sidebar. Jump
-// to the Filtered tab so the result is on screen immediately. In the Stacked
-// layout both panels are already visible, so nothing needs to change there
-// (fhLayout !== "tabs" covers that case). Also used by the entry jumps
-// (bookmarks / jump-to-full-log), which scroll+flash inside the Filter view
-// and would otherwise happen invisibly behind the Full tab.
+// A newly created (or just-edited) filter is invisible while the Context tab
+// is showing — the Context view deliberately ignores the filter tree — so
+// creating one from there would appear to do nothing except change the
+// sidebar. Jump to the Filtered tab so the result is on screen immediately.
+// In the Stacked layout both panels are already visible, so nothing needs to
+// change there (fhLayout !== "tabs" covers that case). Also used by the
+// entry jumps (bookmarks / jump-to-full-log), which scroll+flash inside the
+// Filter view and would otherwise happen invisibly behind the Context tab.
 function revealFilteredView() {
   if (fhLayout === "tabs" && fhActiveTab === "highlight") applyFhView("filter");
 }
@@ -8541,10 +8684,12 @@ const btnNavForward = el("#btnNavForward");
 // in the Stacked layout.
 function activeNavScroller(nodeId) {
   const node = state.nodes[nodeId === undefined ? state.activeId : nodeId];
-  if (node && node.type === "filter") {
-    if (node.filterType === "extract") return extractScroll;
-    if (node.filterType === "link") return linkScroll;
-  }
+  // An extraction node now ALSO has an ordinary Filtered pane (tableBody) —
+  // its own extractScroll only applies while the Table/Plot tab is actually
+  // the one on screen (see renderMainView's Schritt 5 rework).
+  if (node && node.type === "filter" && node.filterType === "extract" &&
+      (fhActiveTab === "table" || fhActiveTab === "plot")) return extractScroll;
+  if (node && node.type === "filter" && node.filterType === "link") return linkScroll;
   return tableBody;
 }
 
@@ -8698,8 +8843,13 @@ function applyNavWaypoint(wp) {
   // After render(), because render()'s own A1 branch calls
   // revealFilteredView() for a filter node, which would otherwise override
   // the pane this waypoint was recorded in.
-  const wantView = wp.fhLayout === "stacked" ? "stacked" : wp.fhActiveTab;
-  if (wp.fhLayout !== fhLayout || (wp.fhLayout === "tabs" && wp.fhActiveTab !== fhActiveTab)) applyFhView(wantView);
+  // "table"/"plot" is a tab in its own right regardless of fhLayout (see the
+  // big comment above applyFhView) — only fall back to "stacked" for the two
+  // log tabs, which fhLayout genuinely governs.
+  const wantView = (wp.fhActiveTab === "table" || wp.fhActiveTab === "plot")
+    ? wp.fhActiveTab
+    : (wp.fhLayout === "stacked" ? "stacked" : wp.fhActiveTab);
+  if (wp.fhLayout !== fhLayout || wp.fhActiveTab !== fhActiveTab) applyFhView(wantView);
   // Restored LAST, after both render() and applyFhView above: each of those
   // can route through showFhTab, which now keeps state.entriesView pinned to
   // whichever pane is on screen in tabs layout (see showFhTab). Assigning it
@@ -8771,7 +8921,7 @@ document.addEventListener("mouseup", ev => {
 
 fhTabs.addEventListener("click", ev => {
   const btn = ev.target.closest(".view-tab");
-  if (btn) { clearSidebarForcedPeek(); applyFhView(btn.dataset.fhTab); }
+  if (btn && !btn.disabled) { clearSidebarForcedPeek(); applyFhView(btn.dataset.fhTab); }
 });
 
 
@@ -8799,7 +8949,15 @@ function render() {
   if (state.activeId !== lastActiveIdForReveal) {
     lastActiveIdForReveal = state.activeId;
     const activeNode = state.nodes[state.activeId];
-    if (activeNode && activeNode.type === "filter") revealFilteredView();
+    if (activeNode && activeNode.type === "filter") {
+      revealFilteredView();
+      // Activating an extraction node jumps straight to its Table tab, the
+      // same way activating any other filter jumps to Filtered above — this
+      // is what "isExtract" used to mean unconditionally before the unified
+      // toolbar (docs/ui-implementation-plan.md), preserved here rather than
+      // requiring an explicit extra click on Table every time.
+      if (nodeHasExtractableWildcards(activeNode) && fhActiveTab !== "table" && fhActiveTab !== "plot") applyFhView("table");
+    }
     if (state.activeId) recordNavVisit();
   }
   renderTree();
@@ -8824,28 +8982,32 @@ function render() {
 }
 
 // Switches the main content area between the (virtualized) log view and the
-// extraction-table view, depending on whether the active node is an
-// extraction filter. Both views share the #viewBar (level filter /
-// breadcrumb) above them.
-//
-// The plain table view and the link view are both
-// "Filter view" flavors now, each paired with the Highlight view via
-// #fhSplit/#fhTabs. The extract view is unaffected — no Highlight
-// companion, full content area to itself, exactly as before.
+// extraction-table/plot view, depending on fhActiveTab. Both share #viewBar
+// above them. Unlike before the unified-toolbar rework, a node can offer
+// BOTH: an extraction filter is a completely ordinary node for
+// Context/Filtered purposes (getEntries(node.id) already returns its real
+// matched entries — that's what renderExtractTable itself has always built
+// the table from), it just ADDITIONALLY unlocks the Table/Plot tabs. There
+// is no more isExtract special path that hides #fhSplit outright — see
+// docs/ui-implementation-plan.md Schritt 5 (with one accepted scope
+// reduction from the plan's original Schritt 4/5: #contextToolbar/
+// #extractToolbar/#plotToolbar/the level-filter row stay in their existing
+// DOM locations rather than being reparented into a new shared slot row —
+// see "Entscheidungen bei der Umsetzung" in docs/ui-implementation-plan.md
+// for why).
 function renderMainView() {
   const hasFiles = state.rootIds.length > 0;
   emptyState.style.display = hasFiles ? "none" : "flex";
-  // #viewBar (Full/Filtered/Stacked tabs, pin-bookmarks/multiline toggles,
-  // level quick-filter, breadcrumb) has nothing meaningful to show with zero
-  // files loaded — person-requested: only #emptyState's centered hint should
-  // be visible then, not an empty toolbar row above it. "" (not a hardcoded
-  // display value) restores the CSS class's own display:flow-root once files
-  // are back.
+  // #viewBar has nothing meaningful to show with zero files loaded —
+  // person-requested (predates this rework): only #emptyState's centered
+  // hint should be visible then. "" (not a hardcoded display value) restores
+  // #viewBar's own CSS display:flow-root once files are back.
   viewBarEl.style.display = hasFiles ? "" : "none";
   if (!hasFiles) {
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
     linkWrap.style.display = "none";
+    fhTabs.innerHTML = "";
     fhTabs.style.display = "none";
     fhSplit.style.display = "none";
     detailResizer.style.display = "none";
@@ -8871,56 +9033,44 @@ function renderMainView() {
   }
 
   const activeNode = state.nodes[state.activeId];
-  const isExtract = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "extract");
   const isLink = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
+  const extractCapable = nodeHasExtractableWildcards(activeNode);
 
-  if (isExtract) {
-    // Person-requested (this session): extract mode's #viewBar now shows
-    // ONLY the filter path (#breadcrumb) — #fhTabs (no Highlight companion
-    // to switch to), #levelBar, and the Filtered/Highlight-view-only
-    // toggles (#btnPinBookmarks/#btnMultilineMsg/#btnColumns/
-    // #btnTextMatchHighlight/#btnHighlightMatchText) all hide, since none of
-    // them apply to what's
-    // actually on screen here (the extraction table has its own columns,
-    // and applyLevelFilter() inside renderExtractTable still runs on
-    // whatever the level quick-filter was last set to — just without a
-    // visible pill row to change it from while in this view). Previously
-    // only #fhTabs hid; #levelBar/the toggles used to stay visible-but-inert,
-    // which read as a layout glitch once #btnColumns joined them (see
-    // #btnColumns' own CSS comment for the actual bug that triggered this
-    // reconsideration).
-    fhTabs.style.display = "none";
-    levelBarEl.style.display = "none";
-    btnPinBookmarks.style.display = "none";
-    btnNotes.style.display = "none";
-    btnMultilineMsg.style.display = "none";
-    btnColumns.style.display = "none";
-    btnTextMatchHighlight.style.display = "none";
-    btnHighlightMatchText.style.display = "none";
+  // A tab left on Table/Plot from a previously-active extraction node falls
+  // back to Filtered once the newly-active node has nothing to tabulate/plot
+  // — Table/Plot are disabled-but-visible for such a node (precisiation 3),
+  // so staying "on" them would show stale content behind a disabled tab.
+  if ((fhActiveTab === "table" || fhActiveTab === "plot") && !extractCapable) fhActiveTab = "filter";
+
+  fhTabs.style.display = "flex";
+  renderViewTabs(extractCapable);
+  updateLogToggleVisibility();
+
+  if (fhActiveTab === "table" || fhActiveTab === "plot") {
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
+    // No entry-detail companion here (see jumpToFullLog's own comment) —
+    // same as before this rework.
     detailResizer.style.display = "none";
     detailPanel.style.display = "none";
-    statusStrip.classList.add("hidden");
-    timelineMinimapEl.classList.add("hidden");
+    // Unlike before this rework, the minimap/status strip are no longer
+    // hidden while an extraction's Table/Plot tab is on screen (Schritt 5) —
+    // there is a real underlying entry set behind this node now that
+    // Context/Filtered work for it too, so hiding them here would just be
+    // inconsistent with every other tab.
+    statusStrip.classList.remove("hidden");
+    timelineMinimapEl.classList.remove("hidden");
     extractWrap.style.display = "flex";
     renderExtractTable(activeNode);
+    switchExtractView(fhActiveTab);
     return;
   }
 
   extractWrap.style.display = "none";
-  fhTabs.style.display = "flex";
-  levelBarEl.style.display = "";
-  btnPinBookmarks.style.display = "";
-  btnNotes.style.display = "";
-  btnMultilineMsg.style.display = "";
-  btnColumns.style.display = "";
-  btnTextMatchHighlight.style.display = "";
-  btnHighlightMatchText.style.display = "";
   fhSplit.style.display = "flex";
   // Highlight-rule matches are shown in both the Filtered view (renderTable/
-  // renderVisibleRows) and the Full view (renderHighlightView) — computed
+  // renderVisibleRows) and the Context view (renderHighlightView) — computed
   // once here, before either renders, so the Filtered view's first paint
   // already has the right colours instead of showing last render's map
   // until the next scroll (renderHighlightView recomputes it again below,
@@ -10728,17 +10878,19 @@ function formatAxisNumber(v) {
   return s;
 }
 
+// Switches which of the extraction node's two content components is on
+// screen — driven by the main #fhTabs "Table"/"Plot" buttons now (via
+// renderMainView(), which calls this whenever fhActiveTab is "table"/"plot")
+// rather than the old #extractViewTabs sub-toggle, which is gone (see
+// docs/ui-implementation-plan.md Schritt 6). `extractView` itself stays a
+// separate variable rather than every one of its many other call sites
+// switching to read fhActiveTab directly — a smaller, lower-risk diff.
 function switchExtractView(view) {
   extractView = view;
-  extractViewTabs.querySelectorAll(".view-tab").forEach(b => b.classList.toggle("active", b.dataset.view === view));
   extractScroll.classList.toggle("hidden", view !== "table");
   plotWrap.classList.toggle("hidden", view !== "plot");
   if (view === "plot") { renderPlotControls(); renderPlotChart(); }
 }
-extractViewTabs.addEventListener("click", ev => {
-  const btn = ev.target.closest(".view-tab");
-  if (btn) switchExtractView(btn.dataset.view);
-});
 window.addEventListener("resize", () => { if (extractView === "plot") renderPlotChart(); });
 
 // Plot point/bar -> log entry: the Plot tab used to be a dead end (an
@@ -14513,9 +14665,8 @@ function updateDetailToggleIcon() {
 // handle would be dead UI if left visible whenever it's collapsed, on top
 // of the existing no-files/extract-mode hide conditions.
 function updateDetailResizerVisibility() {
-  const activeNode = state.nodes[state.activeId];
-  const isExtract = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "extract");
-  detailResizer.style.display = (state.rootIds.length > 0 && !isExtract && !isDetailCollapsed()) ? "block" : "none";
+  const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
+  detailResizer.style.display = (state.rootIds.length > 0 && !onTableOrPlot && !isDetailCollapsed()) ? "block" : "none";
 }
 
 function toggleDetailCollapsed(collapsed) {
@@ -22444,6 +22595,7 @@ initOpenScrollPositionSetting();
 initTempAnchorSettings();
 initCollapsePanels();
 initFhView();
+initSettingsFhLayoutOption();
 render();
 // Log format config (Settings -> Format Manager) loads in parallel with the
 // rest of boot, not gating it — restoreSessionFromCache/loadFromUrlParam

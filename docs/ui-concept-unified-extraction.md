@@ -1,11 +1,27 @@
 # Konzeptvorschlag: Table/Plot als Tabs statt separater Extract-View
 
-Status: **Vorschlag, nicht umgesetzt.** Dient als Diskussionsgrundlage — kein
-Code wurde geändert. **v3** — zweimal überarbeitet: v2 verschob die
-Log-Toggles in die Slot-Zeile (siehe "Warum v1 nicht ausreichte"), v3
-vereinheitlicht zusätzlich die *Optik* der Slot-Zeile selbst (siehe
-"Design der Slot-Zeile" unten) — reine Positionsgleichheit reichte nicht,
-wenn die Bauform (Höhe, Layout) je View trotzdem unterschiedlich bliebe.
+Status: **Umgesetzt** (2026-09-03) — siehe `docs/ui-implementation-plan.md`
+für den tatsächlichen Umsetzungsplan (der diesem Konzept in einem Punkt
+bewusst widerspricht, siehe dessen "Die vier Präzisierungen" Punkt 2) und
+dessen "Entscheidungen bei der Umsetzung" für die finalen Entscheidungen
+inkl. eines Scope-Cuts gegenüber dem "Design der Slot-Zeile" unten. Die
+aktuelle Doku für den umgesetzten Zustand ist `docs/ui-and-views.md` →
+"Unified toolbar: Context/Filtered/Table/Plot as one tab group" und
+`docs/extraction-and-plotting.md`. Dieses Dokument bleibt als historische
+Diskussionsgrundlage stehen, ist aber **keine Beschreibung des aktuellen
+Codes mehr** — insbesondere die Idee einer physisch reparenteten,
+gemeinsamen Slot-Zeile ("Design der Slot-Zeile" unten) wurde aus Zeit-/
+Risikogründen NICHT so gebaut; die Toolbar-Inhalte blieben an ihrem
+bisherigen Ort, nur ihre Sichtbarkeits-Bedingung wechselte auf den aktiven
+Tab.
+
+Ursprünglicher Status (vor Umsetzung): **Vorschlag, nicht umgesetzt.** Dient
+als Diskussionsgrundlage — kein Code wurde geändert. **v3** — zweimal
+überarbeitet: v2 verschob die Log-Toggles in die Slot-Zeile (siehe "Warum v1
+nicht ausreichte"), v3 vereinheitlicht zusätzlich die *Optik* der Slot-Zeile
+selbst (siehe "Design der Slot-Zeile" unten) — reine Positionsgleichheit
+reichte nicht, wenn die Bauform (Höhe, Layout) je View trotzdem
+unterschiedlich bliebe.
 
 ## Problem
 
