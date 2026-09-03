@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" font-family="'DejaVu Sans Mono','Courier New',monospace" font-size="12">
+  <defs>
+    <filter id="sketchy" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" result="n" seed="21"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2"/>
+    </filter>
+  </defs>
+  <style>
+    .ln{fill:none;stroke:#2b2b2b;stroke-width:1.6;filter:url(#sketchy)}
+    .fill{fill:#fffefb}
+    .accent{fill:#fff2cf}
+    .accent2{fill:#e4efff}
+    .lbl{fill:#111;font-weight:bold}
+    .sub{fill:#555;font-size:10.5px}
+    .tag{fill:#333;font-size:10.5px}
+  </style>
+  <rect width="1000" height="560" fill="#f5f2ea"/>
+  <text x="20" y="22" class="lbl" font-size="15">.tree-row Anatomie &amp; Menüs</text>
+
+  <rect class="ln fill" x="20" y="34" width="700" height="34"/>
+  <circle class="ln" cx="34" cy="51" r="7"/><text x="30" y="55" class="tag" font-size="8">▸</text>
+  <text x="46" y="46" class="sub" font-size="8">.tree-icon</text>
+  <circle class="ln" cx="70" cy="51" r="7"/>
+  <text x="60" y="46" class="sub" font-size="8">.tree-icon-type</text>
+  <text x="90" y="55" class="tag">payment link</text>
+  <text x="90" y="46" class="sub" font-size="8">.tree-label</text>
+  <rect class="ln fill" x="260" y="42" width="50" height="18"/><text x="266" y="55" class="tag" font-size="8">link</text>
+  <text x="260" y="46" class="sub" font-size="8">.tree-type-tag</text>
+  <circle class="ln accent" cx="600" cy="51" r="8"/>
+  <text x="590" y="46" class="sub" font-size="8">Farbe (HL-Rule)</text>
+  <text x="650" y="55" class="tag">✕</text>
+  <text x="640" y="46" class="sub" font-size="8">.tree-del</text>
+
+  <text x="20" y="90" class="sub">Zustände: .active  .multi-selected  .cut  .copied  .dragging  .drag-over  .inverted</text>
+
+  <rect class="ln accent" x="20" y="106" width="700" height="34"/>
+  <text x="26" y="120" class="tag">#treeActionBar / #treeActionBarLabel "3 selected"</text>
+  <text x="26" y="134" class="sub" font-size="9">.tree-action-btn: Delete · Duplicate · Move · Colour…</text>
+
+  <text x="20" y="172" class="lbl">Kontextmenüs</text>
+  <rect class="ln fill" x="20" y="182" width="330" height="110"/>
+  <text x="26" y="200" class="tag">#treeContextMenu / #treeCtxInfoMenu</text>
+  <text x="26" y="216" class="sub">Rechtsklick auf einen Baum-Node</text>
+  <rect class="ln fill" x="26" y="224" width="200" height="14"/><text x="30" y="234" class="tag" font-size="9">Rename</text>
+  <rect class="ln fill" x="26" y="240" width="200" height="14"/><text x="30" y="250" class="tag" font-size="9">Duplicate</text>
+  <rect class="ln fill" x="26" y="256" width="200" height="14"/><text x="30" y="266" class="tag" font-size="9">Colour…</text>
+  <rect class="ln fill" x="26" y="272" width="200" height="14"/><text x="30" y="282" class="tag" font-size="9">Delete</text>
+
+  <rect class="ln fill" x="370" y="182" width="330" height="110"/>
+  <text x="376" y="200" class="tag">#contextMenu (Zeilenebene)</text>
+  <text x="376" y="216" class="sub">Rechtsklick auf eine Log-Zeile</text>
+  <rect class="ln fill" x="376" y="224" width="240" height="14"/><text x="380" y="234" class="tag" font-size="9">#ctxBefore / #ctxAfter "Filter before/after"</text>
+  <rect class="ln fill" x="376" y="240" width="240" height="14"/><text x="380" y="250" class="tag" font-size="9">#ctxBookmark  #ctxNote</text>
+  <rect class="ln fill" x="376" y="256" width="240" height="14"/><text x="380" y="266" class="tag" font-size="9">#ctxFilterForColumn</text>
+  <rect class="ln fill" x="376" y="272" width="240" height="14"/><text x="380" y="282" class="tag" font-size="9">#ctxAddToSelection → #addToSelectionMenu</text>
+
+  <text x="20" y="332" class="lbl">#filterPopup — Filter-Builder</text>
+  <rect class="ln accent2" x="20" y="342" width="700" height="130"/>
+  <text x="26" y="360" class="sub">Pattern-Eingabe (Platzhalter [value:...])</text>
+  <rect class="ln fill" x="26" y="368" width="640" height="18"/>
+  <text x="30" y="380" class="tag" font-size="9">user=[value:str] took [value:float]ms</text>
+
+  <text x="26" y="404" class="sub" font-size="9">#filterColumnChips "Applies to:"</text>
+  <rect class="ln fill" x="26" y="410" width="60" height="16"/><text x="34" y="421" class="tag" font-size="8">Time</text>
+  <rect class="ln fill" x="90" y="410" width="60" height="16"/><text x="98" y="421" class="tag" font-size="8">Level</text>
+  <rect class="ln accent" x="154" y="410" width="70" height="16"/><text x="160" y="421" class="tag" font-size="8">Message</text>
+
+  <text x="26" y="446" class="sub" font-size="9">#filterLiveMatch: "1 284 Treffer"</text>
+  <rect class="ln fill" x="400" y="436" width="110" height="20"/><text x="410" y="450" class="tag" font-size="9">#filterExtractBtn Extract</text>
+  <rect class="ln accent" x="520" y="436" width="120" height="20"/><text x="530" y="450" class="tag" font-size="9">#filterSubmitBtn Add filter</text>
+
+  <text x="20" y="500" class="sub">Farb-Swatch öffnet #colorPickerPopup — schaltet die Highlight-Regel des Nodes, die die Context-View einfärbt.</text>
+</svg>

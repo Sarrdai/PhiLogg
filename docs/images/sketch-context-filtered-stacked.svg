@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 720" font-family="'DejaVu Sans Mono','Courier New',monospace" font-size="12">
+  <defs>
+    <filter id="sketchy" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" result="n" seed="11"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2"/>
+    </filter>
+  </defs>
+  <style>
+    .ln{fill:none;stroke:#2b2b2b;stroke-width:1.6;filter:url(#sketchy)}
+    .fill{fill:#fffefb}
+    .accent{fill:#fff2cf}
+    .accent2{fill:#e4efff}
+    .lbl{fill:#111;font-weight:bold}
+    .sub{fill:#555;font-size:10.5px}
+    .tag{fill:#333;font-size:10.5px}
+  </style>
+  <rect width="1260" height="720" fill="#f5f2ea"/>
+  <text x="20" y="22" class="lbl" font-size="15">#viewBar + #fhSplit — Context / Filtered / Stacked (dieselbe Zeile schaltet alle drei)</text>
+
+  <!-- shared viewBar -->
+  <rect class="ln accent" x="15" y="34" width="1230" height="30"/>
+  <text x="22" y="44" class="lbl" font-size="10">#viewBar</text>
+  <rect class="ln fill" x="22" y="46" width="50" height="14"/><text x="27" y="56" class="tag" font-size="8">Context</text>
+  <rect class="ln fill" x="76" y="46" width="50" height="14"/><text x="82" y="56" class="tag" font-size="8">Filtered</text>
+  <rect class="ln fill" x="130" y="46" width="50" height="14"/><text x="136" y="56" class="tag" font-size="8">Stacked</text>
+  <text x="190" y="56" class="sub" font-size="8">#fhTabs data-fh-tab=…</text>
+  <text x="420" y="56" class="sub" font-size="8">📌📝¶▤Aa U̲  #levelBar [ERR][WARN][INFO]  +tree  #breadcrumb: root › … › active-node</text>
+
+  <!-- Context view -->
+  <rect class="ln fill" x="15" y="70" width="390" height="620"/>
+  <text x="24" y="90" class="lbl">Context-View</text>
+  <text x="24" y="104" class="sub">#highlightWrap — data-fh-tab="highlight"</text>
+  <text x="24" y="118" class="sub" font-style="italic">intern noch "highlight"-Namen (Legacy)</text>
+
+  <rect class="ln accent" x="24" y="126" width="372" height="26"/>
+  <text x="30" y="143" class="tag" font-size="10">#contextToolbar: ‹  3/12 match  ›   Expand all   Collapse all</text>
+
+  <rect class="ln fill" x="24" y="156" width="372" height="22"/>
+  <text x="30" y="171" class="tag" font-size="9">#highlightHeader: Time Δt Level Thread Loc Msg</text>
+
+  <rect class="ln fill" x="24" y="182" width="372" height="490"/>
+  <text x="30" y="200" class="sub">#highlightBody / #highlightRows</text>
+  <rect class="ln accent2" x="30" y="210" width="360" height="16"/><text x="34" y="222" class="tag" font-size="8">match (highlighted)</text>
+  <rect class="ln fill" x="30" y="230" width="360" height="14"/>
+  <rect class="ln fill" x="30" y="248" width="360" height="10"/><text x="34" y="256" class="sub" font-size="7">⌄ collapsed gap (contextGaps) — click to expand</text>
+  <rect class="ln accent2" x="30" y="262" width="360" height="16"/><text x="34" y="274" class="tag" font-size="8">match (highlighted)</text>
+
+  <!-- Filtered view -->
+  <rect class="ln fill" x="415" y="70" width="390" height="620"/>
+  <text x="424" y="90" class="lbl">Filtered-View</text>
+  <text x="424" y="104" class="sub">#filterSlot — data-fh-tab="filter" (Standard aktiv)</text>
+  <text x="424" y="118" class="sub">badge .fh-panel-badge "Filtered"</text>
+
+  <rect class="ln fill" x="424" y="156" width="372" height="22"/>
+  <text x="430" y="171" class="tag" font-size="9">#tableHeader</text>
+  <rect class="ln fill" x="424" y="182" width="372" height="490"/>
+  <text x="430" y="200" class="sub">#tableBody / #tableRows — nur Treffer des aktiven Nodes</text>
+  <rect class="ln fill" x="430" y="212" width="360" height="16"/>
+  <rect class="ln fill" x="430" y="232" width="360" height="16"/>
+  <rect class="ln fill" x="430" y="252" width="360" height="16"/>
+
+  <!-- Stacked -->
+  <rect class="ln fill" x="815" y="70" width="430" height="620"/>
+  <text x="824" y="90" class="lbl">Stacked-Layout</text>
+  <text x="824" y="104" class="sub">fhLayout === "stacked" — beide Panels übereinander</text>
+
+  <rect class="ln accent" x="824" y="116" width="412" height="22"/>
+  <text x="830" y="131" class="tag" font-size="9">Context-Panel (kompakt, oben)</text>
+  <rect class="ln fill" x="824" y="140" width="412" height="230"/>
+  <rect class="ln accent2" x="830" y="150" width="400" height="14"/><text x="834" y="161" class="tag" font-size="7.5">match</text>
+  <rect class="ln fill" x="830" y="168" width="400" height="12"/>
+
+  <rect class="ln accent" x="824" y="378" width="412" height="22"/>
+  <text x="830" y="393" class="tag" font-size="9">Filtered-Panel (kompakt, unten)</text>
+  <rect class="ln fill" x="824" y="402" width="412" height="286"/>
+  <rect class="ln fill" x="830" y="412" width="400" height="12"/>
+  <rect class="ln fill" x="830" y="428" width="400" height="12"/>
+
+  <text x="24" y="710" class="sub">Alle drei sind Tabs derselben #fhSplit-Fläche — außer Stacked, das beide Panels gleichzeitig zeigt statt nur eines.</text>
+</svg>
