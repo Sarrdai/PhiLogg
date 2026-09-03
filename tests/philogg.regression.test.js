@@ -17626,6 +17626,16 @@ await withApp(async (w, d, T) => {
   assert(T.state.activeId === node.id, "the active node stays the SAME extraction-capable node — no jump to the root file");
   assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
   assert(T.state.selectedId === targetEntry.id, "the double-clicked row's real underlying entry becomes selected");
+  // The content COMPONENT (#extractWrap vs #fhSplit), not just the tab pill,
+  // must actually switch — renderMainView() is the only place that toggles
+  // these two via inline style.display; showFhTab() (what a plain Filtered-
+  // tab click goes through) never touches them, since before this feature
+  // nothing ever reached it FROM Table/Plot. A "#tableWrap has no .hidden
+  // class" check would pass vacuously here (nothing in this flow ever sets
+  // that class) without proving #extractWrap actually got hidden, which is
+  // exactly the bug this asserts against.
+  assert(d.querySelector("#extractWrap").style.display === "none", "the extraction table is no longer the visible content component");
+  assert(d.querySelector("#fhSplit").style.display === "flex", "the Filtered pane (#fhSplit) is now the visible content component");
   assert(!d.querySelector("#tableWrap").classList.contains("hidden"), "the Filtered pane (log table) is now the visible content");
 });
 
@@ -17656,6 +17666,9 @@ await withApp(async (w, d, T) => {
   assert(T.state.activeId === node.id, "the active node stays the SAME extraction-capable node");
   assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
   assert(T.state.selectedId === targetEntry.id, "the clicked mark's real underlying entry becomes selected");
+  // Same content-component check as 159a — see its comment.
+  assert(d.querySelector("#extractWrap").style.display === "none", "the plot is no longer the visible content component");
+  assert(d.querySelector("#fhSplit").style.display === "flex", "the Filtered pane (#fhSplit) is now the visible content component");
 });
 
 

@@ -15825,7 +15825,18 @@ function revealInFilteredView(entry, sourceRowEl, sourceScrollEl) {
   // own "Stacked" tab button already returns to the combined pane (which
   // includes the Filtered half) without touching fhLayout; tabs layout
   // switches to the Filtered tab the normal way.
+  const wasOnTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
   if (fhLayout === "stacked") applyFhView("stacked"); else applyFhView("filter");
+  // In "tabs" layout, applyFhView("filter") goes through showFhTab(), which
+  // only toggles panel visibility WITHIN #fhSplit — unlike the Table/Plot and
+  // Stacked branches of applyFhView, it never switches which content
+  // component is on screen (#extractWrap vs #fhSplit), because until this
+  // function existed nothing ever reached it FROM Table/Plot. #extractWrap is
+  // still display:flex at this point, so without this, the tab pill says
+  // "Filtered" while the extraction table stays on screen underneath. Only
+  // renderMainView() knows how to swap that component (same fix
+  // applyFhView("stacked")'s own wasOnTableOrPlot branch already needed).
+  if (wasOnTableOrPlot && fhLayout === "tabs") renderMainView();
   updateSelectedRowClass(previousId);
   updateDetailPanel();
   pushNavWaypoint(); // A2-equivalent: the Filtered-pane spot we landed on
