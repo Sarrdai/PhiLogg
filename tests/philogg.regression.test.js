@@ -246,6 +246,9 @@ async function withApp(run, opts = {}) {
       get bootRestore() { return bootRestore; },
       get navHistory() { return navHistory; },
       get navHistoryIndex() { return navHistoryIndex; },
+      get nodeLastView() { return nodeLastView; },
+      get filterActivationView() { return filterActivationView; },
+      set filterActivationView(v) { filterActivationView = v; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -899,6 +902,7 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
 
   // Range mode via the real dialog. Targeted by data-assert-col, not the
   // first ".extract-assert-btn" in the DOM — the synthetic Index/t(ms) columns
@@ -1623,6 +1627,7 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
 
   assert(T.extractRowsData.length === 10, "extraction table populated, one row per matching entry");
   assert(T.extractColumns.find(c => c.colIndex === 0).type === "int", "extracted column typed as int");
@@ -2504,6 +2509,7 @@ await withApp(async (w, d, T) => {
   const node = T.state.nodes[T.state.activeId];
   assert(node.filterType === "text" && node.ignoredColumns && node.ignoredColumns.length === 1 && node.ignoredColumns.includes(1),
     "a filter created via the popup carries ignoredColumns toggled from the live preview, got " + JSON.stringify(node.ignoredColumns));
+  w.applyFhView("table");
 
   /* ---------- Table reflects the ignored column immediately ----------
      4, not 2: extractColumns always leads with the synthetic Index/t(ms)
@@ -2548,7 +2554,9 @@ await withApp(async (w, d, T) => {
   /* ---------- Column statistics / assertions / plot: a SEPARATE node, ignoring the NUMERIC column this time ---------- */
   const numNode = w.createFilterNode(f.id, "text", "id=[value:int] name=[*] score=[value:float]");
   w.setColumnIgnored(numNode, 0, true); // ignore "id" (int, column index 0) — "score" (float, index 2) stays visible
+  T.state.activeId = numNode.id;
   w.render();
+  w.applyFhView("table");
   assert(w.computeColumnStats(0) === null, "computeColumnStats returns null for a currently-ignored column");
   const statsText = d.querySelector("#extractStatsBar").textContent;
   assert(statsText.includes("value 3") && !statsText.includes("value:"), "stats bar shows the visible numeric column ('value 3'/score) but omits the ignored one ('value'/id), got " + JSON.stringify(statsText));
@@ -2557,7 +2565,7 @@ await withApp(async (w, d, T) => {
   // excluded, ignored.
   assert(d.querySelectorAll("#extractHead .extract-assert-btn").length === 3, "only the visible numeric columns get a value-assertion button — an ignored column isn't assertable");
 
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   const xOptions = [...d.querySelectorAll("#plotXSelect option")].map(o => +o.value);
   assert(xOptions.length === 3 && xOptions.includes(-2) && xOptions.includes(-1) && xOptions.includes(2),
     "ignored numeric column is not offered as a plot axis candidate; Index/t(ms) and the visible 'score' column are, got " + JSON.stringify(xOptions));
@@ -2778,7 +2786,8 @@ await withApp(async (w, d, T) => {
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
-  assert(T.fhActiveTab === "table", "sanity: activating an extraction node jumps to its Table tab");
+  w.applyFhView("table");
+  assert(T.fhActiveTab === "table", "sanity: the Table tab is showing (explicit switch — activation no longer auto-jumps here, see applyActivationView)");
   assert(d.querySelector("#fhTabs").style.display === "flex", "tabs stay visible for an extraction node too (Table/Plot join the same group now)");
   assert(d.querySelector("#levelBar").style.display === "none", "level bar hides while the Table tab is showing — only the filter path stays visible");
   assert(d.querySelector("#btnPinBookmarks").style.display === "none", "pin-bookmarks toggle hides too (doesn't apply to the extraction table)");
@@ -2934,6 +2943,7 @@ await withApp(async (w, d, T) => {
   const extractNode = w.createFilterNode(fa.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
+  w.applyFhView("table");
   assert(T.extractRowsData.length === 20, "extract table result is unaffected by the pin toggle (its own placeholder pattern matches all 20 lines regardless)");
   T.state.activeId = textNode.id;
   fireClick(btnPin, w); // back off, leave state clean for cache/export checks below
@@ -4763,6 +4773,7 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
 
   /* ---------- Column descriptors: Index/t(ms) leftmost, ahead of the pattern column ---------- */
   assert(T.extractColumns.length === 3, "3 columns: synthetic Index + t(ms), plus the one pattern column, got " + T.extractColumns.length);
@@ -4817,7 +4828,7 @@ await withApp(async (w, d, T) => {
   assert(lines.includes("2\t3500\t9"), "copy-whole-table body includes a cumulative (not per-step) t(ms) value, got " + JSON.stringify(lines));
 
   /* ---------- Plot tab: Index is the default X axis on every extraction, a real column defaults for Y ---------- */
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   assert(d.querySelector("#plotXSelect").value === "-2", "Index is the default X-axis selection for a freshly opened extraction's plot, got " + d.querySelector("#plotXSelect").value);
   const yChecked = [...d.querySelectorAll('#plotYList input[type="checkbox"]:checked')].map(cb => cb.dataset.col);
   assert(yChecked.length === 1 && yChecked[0] === "0", "Y defaults to the real extracted column, not the synthetic t(ms) one, got " + JSON.stringify(yChecked));
@@ -5054,6 +5065,7 @@ await withApp(async (w, d, T) => {
   const extractNode = w.createFilterNode(fA.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
+  w.applyFhView("table");
 
   assert(T.extractRowsData.length === 300, "sanity: all 300 entries matched the extraction pattern");
   // clientHeight is stubbed to 400 for every element (see withApp); at
@@ -5099,6 +5111,7 @@ await withApp(async (w, d, T) => {
   const extractNode2 = w.createFilterNode(fA2.id, "text", "message [value:int]");
   T.state.activeId = extractNode2.id;
   w.render();
+  w.applyFhView("table");
   assert(extractScrollEl.scrollTop === 0, "scroll resets to 0 when switching to a different extraction node, got " + extractScrollEl.scrollTop);
 
   /* ---------- Part B: Link pair view ---------- */
@@ -5284,6 +5297,7 @@ await withApp(async (w, d, T) => {
   const extractNode = w.createFilterNode(fa.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
+  w.applyFhView("table");
   const assertBtn = d.querySelector('.extract-assert-btn[data-assert-col="0"]');
   fireClick(assertBtn, w);
   d.querySelector("#assertMinInput").value = "2";
@@ -6015,9 +6029,10 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
   assert(T.extractRowsData.length === 3, "sanity: one extraction row per entry");
 
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
   const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
   xSel.value = "0"; xSel.dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -6074,7 +6089,7 @@ await withApp(async (w, d, T) => {
   // delegated listener doesn't misfire on the axes/gridlines/background.
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   const beforeClick = T.state.activeId;
   fireClick(d.querySelector("#plotSvg"), w);
   assert(T.state.activeId === beforeClick, "clicking the plot SVG background (no mark under the cursor) doesn't navigate away");
@@ -6109,9 +6124,10 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
   assert(T.extractRowsData.length === 11, "sanity: 11 extraction rows");
 
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
   const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
   xSel.value = "0"; xSel.dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -6289,7 +6305,7 @@ await withApp(async (w, d, T) => {
     "a plain click (no drag) on a mark still reveals its log entry in the Filtered view, unaffected by the new drag-to-zoom handling");
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
 
   /* ---------- Zoom resets when the axis config changes ---------- */
   w.zoomPlotAt(50, 50, 0.5);
@@ -7133,6 +7149,7 @@ await withApp(async (w, d, T) => {
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
+  w.applyFhView("table");
 
   assert(d.querySelector("#btnCopySelection") === null, "#btnCopySelection button no longer exists");
   assert(d.querySelector("#btnCopyAllExtract") === null, "#btnCopyAllExtract button no longer exists");
@@ -7331,9 +7348,15 @@ await withApp(async (w, d, T) => {
   assert(T.state.activeId === nodeB.id, "sanity: switched active filter to node B");
   assert(T.fhActiveTab === "filter", "switching to another filter while on Context auto-reveals the Filtered view");
 
-  /* ---------- already on Filtered: switching filters is a no-op for the tab ---------- */
+  /* ---------- switching back to nodeA restores ITS OWN last-shown tab (rememberLast, applyActivationView) ----------
+     nodeA was left on Context (the "sanity: on the Context tab" applyFhView("highlight")
+     call above, before it was switched away from) — reactivating it now
+     restores that, not Filtered; this superseded the old "any filter switch
+     forces Filtered" behavior once applyActivationView's remember-last
+     scope was extended to plain (non-extraction) filter nodes too, not only
+     Table/Plot. See applyActivationView()'s own comment. */
   fireClick(rowFor(nodeA.id), w);
-  assert(T.fhActiveTab === "filter", "already on Filtered — stays on Filtered (nothing to reveal)");
+  assert(T.fhActiveTab === "highlight", "switching back to a filter last left on Context restores Context (rememberLast), not forced back to Filtered");
 
   /* ---------- Stacked: switching filters does NOT change fhLayout ---------- */
   w.applyFhView("stacked");
@@ -7414,9 +7437,10 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
   assert(T.extractRowsData.length === 3, "sanity: one extraction row per entry before tailing");
 
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
   const xSelBefore = d.querySelector("#plotXSelect");
   const ySelBefore = d.querySelector("#plotYSelectSingle");
@@ -9594,6 +9618,7 @@ await withApp(async (w, d, T) => {
   /* ---------- table rendering: header badge + every rendered row honors the condition ---------- */
   T.state.activeId = rangeNode.id;
   w.render();
+  w.applyFhView("table");
   const headerType = d.querySelector('#extractHead th[data-col="0"] .extract-col-type').textContent;
   assert(headerType.includes("int") && headerType.includes("<15") && headerType.includes("≥10"),
     "extraction table header shows the condition next to the type, got " + JSON.stringify(headerType));
@@ -9608,6 +9633,7 @@ await withApp(async (w, d, T) => {
   /* ---------- table header visualizes an abs condition with a leading "|" ---------- */
   T.state.activeId = absNode.id;
   w.render();
+  w.applyFhView("table");
   const absHeaderType = d.querySelector('#extractHead th[data-col="0"] .extract-col-type').textContent;
   assert(absHeaderType.includes("|≥10"), "an abs condition's header badge is prefixed with '|', got " + JSON.stringify(absHeaderType));
 
@@ -12899,6 +12925,7 @@ await withApp(async (w, d, T) => {
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
+  w.applyFhView("table");
   const tableBody = d.querySelector("#tableBody");
   const extractScroll = d.querySelector("#extractScroll");
 
@@ -13432,7 +13459,13 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  // A newly-activated node now defaults to Filtered (person-requested, see
+  // GROUP 161) instead of auto-jumping to Table/Plot — applyFhView("plot"),
+  // the real path a Plot tab click takes, is what actually renders
+  // #extractWrap's content (switchExtractView alone only toggles which sub-
+  // view is visible WITHIN it, a no-op while #fhSplit is the shown
+  // component).
+  w.applyFhView("plot");
   assert(T.extractRowsData.length === 5, "sanity: one extraction row per entry");
   assert(T.plotConfig.xCol === -2, "sanity: the synthetic Index column (-2) is the default X axis");
 
@@ -13682,9 +13715,10 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
   assert(T.extractRowsData.length === 3, "sanity: 3 extraction rows");
 
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   fireClick(d.querySelector('.plot-type-btn[data-type="3d"]'), w);
   assert(T.plotConfig.type === "3d", "chart type switches to 3d");
 
@@ -13721,7 +13755,7 @@ await withApp(async (w, d, T) => {
   const node2 = w.createFilterNode(f2.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node2.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   fireClick(d.querySelector('.plot-type-btn[data-type="3d"]'), w);
   d.querySelector("#plotXSelect").value = "0"; d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
   d.querySelector("#plotYSelectSingle").value = "1"; d.querySelector("#plotYSelectSingle").dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -13779,7 +13813,7 @@ await withApp(async (w, d, T) => {
   // docs/extraction-and-plotting.md and Group 126's own dedicated coverage).
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   assert(T.plotConfig.type === "3d" && T.plotConfig.xCol === 0 && T.plotConfig.zCol === 2, "3D type + X/Y/Z remembered after switching back to this extraction, no re-selection needed");
 
   // Force an axis-aligned view (no rotation, zoom=1, no pan) so screen
@@ -13804,7 +13838,7 @@ await withApp(async (w, d, T) => {
   // Empty space (no point under the cursor) is a no-op.
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   T.plot3dView = { rotX: 0, rotY: 0, zoom: 1, panX: 0, panY: 0 };
   w.renderPlotChart();
   const beforeEmptyClick = T.state.activeId;
@@ -13881,7 +13915,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = node.id;
   w.render();
 
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   fireClick(d.querySelector('.plot-type-btn[data-type="3d"]'), w);
   d.querySelector("#plotXSelect").value = "0"; d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
   d.querySelector("#plotYSelectSingle").value = "1"; d.querySelector("#plotYSelectSingle").dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -13899,7 +13933,7 @@ await withApp(async (w, d, T) => {
   w.render(); // "leaving" — the file's own (table) view, no Plot tab at all
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   assert(T.plotConfig.type === "3d" && T.plotConfig.xCol === 0 && T.plotConfig.yCols[0] === 1 && T.plotConfig.zCol === 2
     && T.plotConfig.axisEqual3d === "all" && T.plotConfig.xMax === "80",
     "returning to the SAME extraction's Plot tab shows the exact same plot again, with no re-selection needed");
@@ -13920,7 +13954,7 @@ await withApp(async (w, d, T) => {
 
   T.state.activeId = pasted.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   assert(d.querySelector('.plot-type-btn[data-type="3d"]').classList.contains("active")
     && d.querySelector("#plotZSelect").value === "2" && d.querySelector("#plotAxisEqual3d").value === "all",
     "opening the pasted copy's own Plot tab reproduces the exact same plot, unprompted");
@@ -17011,8 +17045,10 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  w.createFilterNode(f.id, "text", "id=[value:int] score=[value:float]");
+  const node = w.createFilterNode(f.id, "text", "id=[value:int] score=[value:float]");
+  T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
   assert(T.extractRowsData.length === 2, "sanity: extraction produced 2 rows");
 
   w.systemDecimalSeparator = () => ",";
@@ -17041,8 +17077,10 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  w.createFilterNode(f.id, "text", "id=[value:int] score=[value:float]");
+  const node = w.createFilterNode(f.id, "text", "id=[value:int] score=[value:float]");
+  T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
 
   const menu = d.querySelector("#extractContextMenu");
   const body = d.querySelector("#extractBody");
@@ -17102,8 +17140,10 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  w.createFilterNode(f.id, "text", "score=[value:float]");
+  const node = w.createFilterNode(f.id, "text", "score=[value:float]");
+  T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
 
   // Auto-detect (stubbed to comma) is used when nothing is stored.
   w.systemDecimalSeparator = () => ",";
@@ -17154,8 +17194,10 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  w.createFilterNode(f.id, "text", "score=[value:float]");
+  const node = w.createFilterNode(f.id, "text", "score=[value:float]");
+  T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
 
   let written = null;
   w.ClipboardItem = function (items) { this.items = items; };
@@ -17219,7 +17261,7 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
 
   const plotWrap = d.querySelector("#plotWrap");
   const plotToolbar = d.querySelector("#plotToolbar");
@@ -17276,7 +17318,7 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
 
   // Single Y series (the default): both an X and a Y axis title, named
   // after their respective columns.
@@ -17325,6 +17367,7 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
+  w.applyFhView("table");
   const compiledName0 = w.findExtractColumn(0).name; // whatever the pattern compiler names it — not asserted on its own, just remembered
 
   // F2 with no column selected falls through to the tree-node rename (the
@@ -17349,7 +17392,7 @@ await withApp(async (w, d, T) => {
   const chip = d.querySelector('#extractPatternView .pattern-chip[data-col="0"]');
   assert(chip.title.startsWith("MyX"), "the Extraction Pattern view's chip tooltip reflects the renamed name, got " + chip.title);
 
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   let titles = Array.from(d.querySelectorAll("#plotSvg .plot-axis-title")).map(t => t.textContent);
   assert(titles.includes("MyX"), "the Plot view's X axis title uses the renamed name, got " + JSON.stringify(titles));
   w.switchExtractView("table");
@@ -17491,10 +17534,12 @@ await withApp(async (w, d, T) => {
   assert(w.nodeHasExtractableWildcards(extractNode) === true, "an extract node with a real [value:int] wildcard is capable");
   T.state.activeId = extractNode.id;
   w.render();
-  // Activating an extraction node jumps straight to its Table tab (see
-  // render()'s own comment) — same "isExtract"-equivalent behavior kept
-  // from before this rework.
-  assert(T.fhActiveTab === "table", "sanity: activating an extraction node jumps to Table");
+  // A never-before-activated node lands on Filtered by default now
+  // (applyActivationView) — explicitly switch to Table for the rest of
+  // this test, which is about the tab-enabled-state/table-content checks
+  // below, not about the activation-view default itself (see Group 161).
+  w.applyFhView("table");
+  assert(T.fhActiveTab === "table", "sanity: the Table tab is showing (explicit switch)");
   tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
   assert(!tabs.find(b => b.dataset.fhTab === "table").disabled, "Table is enabled once the active node has wildcards");
   assert(!tabs.find(b => b.dataset.fhTab === "plot").disabled, "Plot is enabled too");
@@ -17581,7 +17626,10 @@ await withApp(async (w, d, T) => {
   fireSubmit(d.querySelector("#filterForm"), w);
   const created = T.state.nodes[T.state.activeId];
   assert(created.filterType === "text", "the popup only ever creates 'text' nodes now");
-  assert(T.fhActiveTab === "table", "activating it auto-reveals Table, same as the old dedicated 'extract' node type did");
+  // A brand-new node lands on Filtered by default (applyActivationView) —
+  // explicitly switch to Table, which is what this test is actually about
+  // (Table/Plot enabled + real rows), not the activation-view default.
+  w.applyFhView("table");
   const tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
   assert(!tabs.find(b => b.dataset.fhTab === "table").disabled && !tabs.find(b => b.dataset.fhTab === "plot").disabled,
     "Table/Plot are enabled for this same 'text' node");
@@ -17617,7 +17665,8 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "id=[value:int]");
   T.state.activeId = node.id;
   w.render();
-  assert(T.fhActiveTab === "table", "sanity: activating an extraction-capable node lands on Table");
+  w.applyFhView("table");
+  assert(T.fhActiveTab === "table", "sanity: the Table tab is showing (explicit switch)");
 
   const targetRow = [...d.querySelectorAll("#extractBody tr")][1];
   const targetEntry = T.extractRowsData[1].entry;
@@ -17650,7 +17699,7 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
-  w.switchExtractView("plot");
+  w.applyFhView("plot");
   fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w); // line/bar's multi-Y checkboxes have no single #plotYSelectSingle
   d.querySelector("#plotXSelect").value = "0";
   d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -17701,7 +17750,8 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "id=[value:int]");
   T.state.activeId = node.id;
   w.render();
-  assert(T.fhActiveTab === "table", "sanity: activating an extraction-capable node lands on Table");
+  w.applyFhView("table");
+  assert(T.fhActiveTab === "table", "sanity: the Table tab is showing (explicit switch)");
   assert(d.querySelector("#extractWrap").style.display === "flex", "sanity: the extraction table is the visible content component");
 
   fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="highlight"]'), w);
@@ -17734,6 +17784,190 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
 });
 
+/* ============================================================
+   GROUP 161 — "When switching to a filter" activation view
+   Origin: this session (2026-09-03), person-reported: an extraction-capable
+   node used to auto-jump to Table on EVERY activation, even the very first
+   time it was ever created — which read as "the filter isn't working" until
+   the tab bar was noticed. Replaced with applyActivationView(): a node
+   that's never been active before always lands on Filtered regardless of
+   wildcards; a previously-visited node goes by Settings -> Behavior "When
+   switching to a filter" (filterActivationView) — "rememberLast" (default)
+   restores whichever tab (nodeLastView) it was last left on, "alwaysFiltered"
+   always lands on Filtered again. See applyActivationView()/applyFhView()'s
+   own comments in philogg.html.
+   ============================================================ */
+group(161);
+await withApp(async (w, d, T) => {
+  section("161a. A brand-new extraction-capable node always lands on Filtered, regardless of the setting");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  // Default setting is "rememberLast" — still Filtered for a never-visited node.
+  assert(T.filterActivationView === "rememberLast", "sanity: default setting is rememberLast");
+  const node1 = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = node1.id;
+  w.render();
+  assert(T.fhActiveTab === "filter", "first-ever activation lands on Filtered under rememberLast, not Table");
+
+  // Even with "alwaysFiltered" selected, a never-visited node still lands on
+  // Filtered — same outcome, so this isn't actually distinguishing, but
+  // confirms alwaysFiltered doesn't ever accidentally pick Table for a
+  // fresh node either.
+  T.filterActivationView = "alwaysFiltered";
+  const node2 = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = node2.id;
+  w.render();
+  assert(T.fhActiveTab === "filter", "first-ever activation lands on Filtered under alwaysFiltered too");
+});
+
+await withApp(async (w, d, T) => {
+  section("161b. rememberLast: switching away and back to a node restores its last tab (Table/Plot/Context), a plain-Filtered node stays a no-op");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const tableNode = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = tableNode.id;
+  w.render();
+  w.applyFhView("table"); // first visit, then explicitly switch to Table — recorded in nodeLastView
+
+  const plotNode = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = plotNode.id;
+  w.render();
+  w.applyFhView("plot");
+
+  const ctxNode = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = ctxNode.id;
+  w.render(); // first visit -> Filtered
+  w.applyFhView("highlight"); // then explicitly move to Context
+
+  const plainNode = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = plainNode.id;
+  w.render(); // first visit -> Filtered, never switched away — stays Filtered
+
+  // Switch to an unrelated node first ("switching away"), then back to each.
+  T.state.activeId = f.id;
+  w.render();
+
+  T.state.activeId = tableNode.id;
+  w.render();
+  assert(T.fhActiveTab === "table", "re-activating a node last left on Table restores Table");
+
+  T.state.activeId = f.id;
+  w.render();
+  T.state.activeId = plotNode.id;
+  w.render();
+  assert(T.fhActiveTab === "plot", "re-activating a node last left on Plot restores Plot");
+
+  T.state.activeId = f.id;
+  w.render();
+  T.state.activeId = ctxNode.id;
+  w.render();
+  assert(T.fhActiveTab === "highlight", "re-activating a node last left on Context restores Context");
+
+  T.state.activeId = f.id;
+  w.render();
+  T.state.activeId = plainNode.id;
+  w.render();
+  assert(T.fhActiveTab === "filter", "re-activating a node left on plain Filtered stays on Filtered (no-op, not a regression)");
+});
+
+await withApp(async (w, d, T) => {
+  section("161c. alwaysFiltered: a previously-visited node left on Table lands on Filtered on reactivation");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const node = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table"); // visited once, left on Table
+
+  T.state.activeId = f.id;
+  w.render();
+
+  T.filterActivationView = "alwaysFiltered";
+  T.state.activeId = node.id;
+  w.render();
+  assert(T.fhActiveTab === "filter", "alwaysFiltered overrides the remembered Table tab, lands on Filtered instead");
+});
+
+await withApp(async (w, d, T) => {
+  section("161d. A node last left on Table, edited to drop its wildcards, falls back to Filtered instead of a now-invalid Table tab");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const node = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+  assert(w.nodeHasExtractableWildcards(node) === true, "sanity: the node has an extractable wildcard");
+
+  // Edit the pattern in place to remove the wildcard entirely.
+  node.value = "message";
+  assert(w.nodeHasExtractableWildcards(node) === false, "sanity: the edited pattern has no wildcards left");
+
+  T.state.activeId = f.id;
+  w.render();
+  T.state.activeId = node.id;
+  w.render();
+  assert(T.fhActiveTab === "filter", "reactivating a node remembered as Table, now wildcard-less, falls back to Filtered rather than a dead Table tab");
+});
+
+await withApp(async (w, d, T) => {
+  section("161e. Settings row #settingsFilterActivationView round-trips through localStorage, defaults to rememberLast on a fresh load");
+
+  const select = d.querySelector("#settingsFilterActivationView");
+  assert(select, "sanity: the settings row exists");
+  assert(select.value === "rememberLast", "defaults to 'Remember last view' with nothing stored");
+  assert(w.localStorage.getItem("philogg-filter-activation-view") === null, "nothing persisted yet — setting untouched");
+
+  select.value = "alwaysFiltered";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.filterActivationView === "alwaysFiltered", "picking 'Always Filtered' updates the in-memory setting");
+  assert(w.localStorage.getItem("philogg-filter-activation-view") === "alwaysFiltered", "...and persists it to localStorage");
+
+  select.value = "rememberLast";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.filterActivationView === "rememberLast" && w.localStorage.getItem("philogg-filter-activation-view") === "rememberLast",
+    "switching back to 'Remember last view' updates and persists too");
+});
+
+await withApp(async (w, d, T) => {
+  section("161f. Stacked-layout fallback: a node last recorded as 'stacked', reactivated after switching Context/Filtered display back to Separate, falls back to Filtered");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const node = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = node.id;
+  w.render();
+
+  // Enter Stacked layout while this node is active — applyFhView records
+  // "stacked" into nodeLastView for it (fhActiveTab stays "highlight"/
+  // "filter" under the hood, but the recorded view is "stacked" per the
+  // fhLayout==="stacked" branch in applyFhView's own recording logic).
+  w.applyFhView("stacked");
+  assert(T.nodeLastView.get(node.id) === "stacked", "sanity: nodeLastView records 'stacked' for this node");
+
+  // Switch away, then back to plain "Separate" layout globally (person
+  // toggles Settings -> "Context/Filtered display" back to Separate).
+  T.state.activeId = f.id;
+  w.render();
+  const layoutSelect = d.querySelector("#settingsFhLayout");
+  layoutSelect.value = "tabs";
+  layoutSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.fhLayout === "tabs", "sanity: back to Separate layout");
+
+  T.state.activeId = node.id;
+  w.render();
+  assert(T.fhActiveTab === "filter", "a leftover 'stacked' recording falls back sanely to Filtered once Stacked layout is no longer active, instead of erroring or landing somewhere wrong");
+});
 
 /* ============================================================
    Summary
