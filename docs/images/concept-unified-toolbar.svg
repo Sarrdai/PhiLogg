@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 980" font-family="'DejaVu Sans Mono','Courier New',monospace" font-size="12">
+  <defs>
+    <filter id="sketchy" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" result="n" seed="41"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2"/>
+    </filter>
+  </defs>
+  <style>
+    .ln{fill:none;stroke:#2b2b2b;stroke-width:1.6;filter:url(#sketchy)}
+    .fill{fill:#fffefb}
+    .accent{fill:#fff2cf}
+    .accent2{fill:#e4efff}
+    .accent3{fill:#e8f7e6}
+    .lbl{fill:#111;font-weight:bold}
+    .sub{fill:#555;font-size:10.5px}
+    .tag{fill:#333;font-size:10.5px}
+  </style>
+  <rect width="1260" height="980" fill="#f5f2ea"/>
+  <text x="20" y="24" class="lbl" font-size="15">Konzept v3: Ein Toolbar-Skelett für Context / Filtered / Table / Plot / Stacked</text>
+  <text x="20" y="42" class="sub">Zeile ①–③ enthalten NUR Elemente, die in jeder View gelten. Zeile ④ ist für jede View gleich hoch (30px) und gleich gebaut — nicht nur gleich positioniert.</text>
+
+  <!-- FIXED SKELETON: only truly universal elements -->
+  <rect class="ln accent2" x="20" y="56" width="1220" height="30"/>
+  <text x="28" y="75" class="tag">① #timelineMinimap — immer sichtbar, auch im Table/Plot (heute: verschwindet dort komplett)</text>
+
+  <rect class="ln fill" x="20" y="90" width="1220" height="18"/>
+  <text x="28" y="103" class="tag" font-size="10">② #statusStrip — immer sichtbar</text>
+
+  <rect class="ln accent" x="20" y="112" width="1220" height="30"/>
+  <text x="28" y="124" class="tag" font-size="10">③ #viewBar — NUR Tabs + Level-Filter + Breadcrumb (gilt für jede View, keine toten Buttons mehr)</text>
+  <rect class="ln fill" x="28" y="126" width="50" height="14"/><text x="35" y="136" class="tag" font-size="8">Context</text>
+  <rect class="ln accent2" x="80" y="126" width="52" height="14"/><text x="87" y="136" class="tag" font-size="8">Filtered</text>
+  <rect class="ln fill" x="134" y="126" width="44" height="14"/><text x="141" y="136" class="tag" font-size="8">Table</text>
+  <rect class="ln fill" x="180" y="126" width="40" height="14"/><text x="188" y="136" class="tag" font-size="8">Plot</text>
+  <rect class="ln fill" x="222" y="126" width="52" height="14"/><text x="228" y="136" class="tag" font-size="8">Stacked</text>
+  <text x="280" y="136" class="sub" font-size="7.5">Table/Plot nur aktiv wenn Pattern Wildcards [value:...] enthält — sonst grau, nicht versteckt</text>
+  <rect class="ln fill" x="700" y="124" width="80" height="16"/><text x="705" y="136" class="tag" font-size="8">#levelBar</text>
+  <ellipse class="ln fill" cx="794" cy="132" rx="12" ry="6"/><text x="785" y="135" class="tag" font-size="7">+tree</text>
+  <rect class="ln fill" x="814" y="124" width="416" height="16"/><text x="820" y="136" class="tag" font-size="8">#breadcrumb — root › payment errors</text>
+
+  <!-- SLOT explanation -->
+  <text x="20" y="168" class="lbl" font-size="12">④ Slot-Zeile — immer an derselben Y-Position, Inhalt (inkl. der 6 Log-Toggles!) wechselt je View:</text>
+
+  <!-- Context slot -->
+  <rect class="ln fill" x="20" y="180" width="290" height="88"/>
+  <text x="26" y="196" class="tag" font-size="10">Slot bei Context</text>
+  <rect class="ln accent3" x="26" y="202" width="270" height="18"/>
+  <ellipse class="ln fill" cx="35" cy="211" rx="8" ry="6"/><text x="31" y="214" class="tag" font-size="6.5">📌</text>
+  <ellipse class="ln fill" cx="51" cy="211" rx="8" ry="6"/><text x="47" y="214" class="tag" font-size="6.5">📝</text>
+  <ellipse class="ln fill" cx="67" cy="211" rx="8" ry="6"/><text x="63" y="214" class="tag" font-size="6.5">¶</text>
+  <ellipse class="ln fill" cx="83" cy="211" rx="8" ry="6"/><text x="79" y="214" class="tag" font-size="6.5">▤</text>
+  <ellipse class="ln fill" cx="99" cy="211" rx="8" ry="6"/><text x="95" y="214" class="tag" font-size="6.5">Aa</text>
+  <ellipse class="ln fill" cx="118" cy="211" rx="8" ry="6"/><text x="113" y="214" class="tag" font-size="6.5">U̲</text>
+  <text x="132" y="214" class="sub" font-size="6.5">Pin/Notes/Multiline/Columns/TextMatch/HLMatch</text>
+  <rect class="ln accent3" x="26" y="224" width="270" height="18"/>
+  <text x="32" y="237" class="tag" font-size="8">‹ 3/12 match ›  Expand all  Collapse all</text>
+  <text x="26" y="256" class="sub" font-size="7.5">= heutiges #contextToolbar + die 6 Toggles, in einer Zeile</text>
+
+  <!-- Filtered slot -->
+  <rect class="ln fill" x="322" y="180" width="290" height="88"/>
+  <text x="328" y="196" class="tag" font-size="10">Slot bei Filtered</text>
+  <rect class="ln accent3" x="328" y="202" width="270" height="18"/>
+  <ellipse class="ln fill" cx="337" cy="211" rx="8" ry="6"/><text x="333" y="214" class="tag" font-size="6.5">📌</text>
+  <ellipse class="ln fill" cx="353" cy="211" rx="8" ry="6"/><text x="349" y="214" class="tag" font-size="6.5">📝</text>
+  <ellipse class="ln fill" cx="369" cy="211" rx="8" ry="6"/><text x="365" y="214" class="tag" font-size="6.5">¶</text>
+  <ellipse class="ln fill" cx="385" cy="211" rx="8" ry="6"/><text x="381" y="214" class="tag" font-size="6.5">▤</text>
+  <ellipse class="ln fill" cx="401" cy="211" rx="8" ry="6"/><text x="397" y="214" class="tag" font-size="6.5">Aa</text>
+  <ellipse class="ln fill" cx="420" cy="211" rx="8" ry="6"/><text x="415" y="214" class="tag" font-size="6.5">U̲</text>
+  <text x="434" y="214" class="sub" font-size="6.5">dieselben 6 Toggles, dieselbe Position wie bei Context</text>
+  <text x="328" y="256" class="sub" font-size="7.5">kein zweiter Zeilen-Anteil nötig — Context/Filtered sind Nachbar-Tabs</text>
+  <text x="328" y="245" class="sub" font-size="7.5">derselben Log-Darstellung, Toggles bleiben so am selben Fleck.</text>
+
+  <!-- Table slot -->
+  <rect class="ln fill" x="624" y="180" width="290" height="88"/>
+  <text x="630" y="196" class="tag" font-size="10">Slot bei Table (neu: EINE Zeile statt Block)</text>
+  <rect class="ln accent3" x="630" y="202" width="270" height="18"/>
+  <text x="634" y="214" class="tag" font-size="6.5">…str] took […ms  min4·max812·avg61  142 Treffer ▸scroll</text>
+  <text x="630" y="230" class="sub" font-size="7">gleiche 30px-Höhe wie #contextToolbar/#plotToolbar —</text>
+  <text x="630" y="240" class="sub" font-size="7">Pattern+Stats+Info als Chip-Reihe statt 3 gestapelter Zeilen</text>
+  <text x="630" y="256" class="sub" font-size="7.5">Log-Toggles fehlen hier komplett — sie gelten nicht für</text>
+  <text x="630" y="266" class="sub" font-size="7.5">Tabellen-Zeilen, also stehen sie auch nicht mehr grau herum.</text>
+
+  <!-- Plot slot -->
+  <rect class="ln fill" x="926" y="180" width="290" height="88"/>
+  <text x="932" y="196" class="tag" font-size="10">Slot bei Plot</text>
+  <rect class="ln accent3" x="932" y="202" width="270" height="40"/>
+  <text x="938" y="216" class="tag" font-size="8">Zoom −/100%/+/⟲   Filter:Zeitraum</text>
+  <text x="938" y="230" class="tag" font-size="8">Filter:Einträge   ⛶ Fullscreen   💾 Speichern</text>
+  <text x="932" y="256" class="sub" font-size="7.5">= heutiges #plotToolbar, gleicher Slot, ebenfalls ohne</text>
+  <text x="932" y="266" class="sub" font-size="7.5">die Log-Toggles.</text>
+
+  <text x="20" y="290" class="sub">→ Regel: Zeile ③ zeigt nur, was für ALLE Views gilt (Tabs, Level, Breadcrumb) — nichts wird dort ausgegraut.</text>
+  <text x="20" y="304" class="sub">Zeile ④ zeigt genau die Aktionen, die für die aktive View sinnvoll sind — inklusive der 6 Log-Toggles bei Context/Filtered.</text>
+  <text x="20" y="318" class="sub">Springen entsteht dadurch nicht: Context↔Filtered ändert die Toggle-Reihe gar nicht (identischer Slot-Inhalt); nur beim Wechsel zu Table/Plot ändert sich Zeile ④ sichtbar — bewusst, weil dort andere Werkzeuge gebraucht werden.</text>
+
+  <!-- CONTENT AREA below, showing Table+Plot as tabs of the SAME node -->
+  <text x="20" y="350" class="lbl" font-size="13">Beispiel: ein Filter-Node mit Wildcards liefert alle vier Views — kein separater "extract"-Typ mehr</text>
+
+  <rect class="ln accent" x="20" y="362" width="1220" height="26"/>
+  <text x="26" y="379" class="tag" font-size="10">.tree-row "response times"  · .tree-type-tag "text"  (Pattern enthält [value:float] → Table/Plot-Tabs automatisch aktiv)</text>
+
+  <rect class="ln fill" x="20" y="396" width="1220" height="26"/>
+  <text x="26" y="413" class="sub" font-size="9">① Minimap  ② StatusStrip  ③ #viewBar: Context | Filtered | [Table] | Plot | Stacked   #levelBar   root › response times</text>
+
+  <rect class="ln accent2" x="20" y="428" width="1220" height="24"/>
+  <text x="26" y="444" class="tag" font-size="9">④ Slot (Table aktiv): user=[value:str] took [value:float]ms   min 4ms · max 812ms · avg 61ms</text>
+
+  <rect class="ln fill" x="20" y="458" width="1220" height="220"/>
+  <text x="26" y="476" class="sub">Content: #extractTable — gleiche Zeilen wie bisher, jetzt aber Teil desselben Node statt eines separaten "Extract"-Filters</text>
+  <g stroke="#ccc"><line x1="26" y1="490" x2="1234" y2="490"/><line x1="26" y1="512" x2="1234" y2="512"/><line x1="26" y1="534" x2="1234" y2="534"/></g>
+
+  <text x="20" y="706" class="lbl" font-size="12">Speichern eines Filters mit Wildcards</text>
+  <rect class="ln fill" x="20" y="716" width="1220" height="90"/>
+  <text x="30" y="736" class="sub">Heute: "Add filter" legt einen reinen Text-/Link-Node an; nur "Extract" legt separat einen eigenen "extract"-Node mit eigenem Toolbar-Ast an.</text>
+  <text x="30" y="756" class="sub">Vorschlag: "Add filter" erkennt [value:...]-Wildcards im Pattern selbst und schaltet Table/Plot als zusätzliche, im selben Node</text>
+  <text x="30" y="772" class="sub">liegende Tabs frei — kein zweiter Baumeintrag, keine Wahl zwischen "Filter" und "Extract" mehr nötig. filterType bleibt intern</text>
+  <text x="30" y="788" class="sub">bestehen (Datenmodell unverändert), aber die UI zeigt Table/Plot als Geschwister-Tabs von Context/Filtered statt als eigenen Node-Typ.</text>
+
+  <text x="20" y="836" class="lbl" font-size="12">Offene Fragen für die Umsetzung</text>
+  <rect class="ln fill" x="20" y="846" width="1220" height="120"/>
+  <text x="30" y="866" class="sub">• Stacked-Layout: zeigt heute Context+Filtered übereinander — soll es auch Table/Plot stapeln können, oder bleibt Stacked auf die zwei bestehenden beschränkt?</text>
+  <text x="30" y="884" class="sub">• Stacked braucht die 6 Toggles nur einmal (gilt für beide Panels) — Slot-Zeile bei Stacked zeigt also denselben Inhalt wie bei Context/Filtered.</text>
+  <text x="30" y="902" class="sub">• #extractStatsBar ist z.T. breit (viele Spalten) — passt sie neben die Pattern-Vorschau in eine Slot-Zeile, oder braucht Table zwei Slot-Zeilen (④a/④b)?</text>
+  <text x="30" y="920" class="sub">• Level-Filter-Pills: heute im Extract-Modus wirkungslos-aber-ausgeblendet; im Konzept aktiv sichtbar (Zeile ③) — sollen sie künftig auch Table/Plot filtern?</text>
+  <text x="30" y="938" class="sub">• Ignored-columns/Assertions/Column-Renames (heute Teil des Extract-Workflows) bleiben Node-Property, unabhängig vom Tab-Wechsel.</text>
+</svg>

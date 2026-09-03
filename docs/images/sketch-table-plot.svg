@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 760" font-family="'DejaVu Sans Mono','Courier New',monospace" font-size="12">
+  <defs>
+    <filter id="sketchy" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" result="n" seed="7"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2"/>
+    </filter>
+  </defs>
+  <style>
+    .ln{fill:none;stroke:#2b2b2b;stroke-width:1.6;filter:url(#sketchy)}
+    .fill{fill:#fffefb}
+    .accent{fill:#fff2cf}
+    .accent2{fill:#e4efff}
+    .lbl{fill:#111;font-weight:bold}
+    .sub{fill:#555;font-size:10.5px}
+    .tag{fill:#333;font-size:10.5px}
+  </style>
+  <rect width="1260" height="760" fill="#f5f2ea"/>
+  <text x="20" y="22" class="lbl" font-size="15">Extraction filterType — #extractWrap (im #fhSplit-Bereich, wenn aktiver Node eine Extraction ist)</text>
+
+  <rect class="ln fill" x="15" y="34" width="1230" height="710"/>
+
+  <!-- extractToolbar: row 1 pattern preview -->
+  <rect class="ln accent" x="15" y="34" width="1230" height="130"/>
+  <text x="24" y="52" class="lbl">#extractToolbar</text>
+
+  <rect class="ln fill" x="24" y="58" width="1212" height="30"/>
+  <text x="30" y="70" class="tag" font-size="10">#extractPatternView</text>
+  <text x="30" y="83" class="sub" font-size="9">Musterhervorhebung: "user=[value:str] took [value:float]ms" — Platzhalter farbig markiert, je Capture-Group eine Farbe</text>
+
+  <rect class="ln fill" x="24" y="92" width="1212" height="26"/>
+  <text x="30" y="104" class="tag" font-size="10">#extractStatsBar</text>
+  <text x="30" y="116" class="sub" font-size="9">pro Spalte: min / max / avg / count-Chips (eine Pille je Wertespalte)</text>
+
+  <!-- row2: info left, tabs right -->
+  <rect class="ln fill" x="24" y="122" width="1212" height="34"/>
+  <text x="30" y="140" class="tag" font-size="10">#extractInfo</text>
+  <text x="30" y="152" class="sub" font-size="9">".extract-toolbar-row2" — Treffer-Anzahl links</text>
+
+  <rect class="ln accent2" x="770" y="126" width="90" height="20"/><text x="778" y="140" class="tag" font-size="9">Table ●</text>
+  <rect class="ln fill" x="864" y="126" width="90" height="20"/><text x="878" y="140" class="tag" font-size="9">Plot</text>
+  <text x="770" y="155" class="sub" font-size="9">#extractViewTabs (.view-tabs, data-view)</text>
+
+  <!-- Table content -->
+  <rect class="ln fill" x="15" y="164" width="600" height="580"/>
+  <text x="24" y="182" class="lbl" font-size="12">Table-Tab (data-view="table")</text>
+  <rect class="ln accent" x="24" y="190" width="582" height="24"/>
+  <text x="30" y="206" class="tag" font-size="10">#extractHead — Index, t(ms), Capture-Gruppen-Spalten…</text>
+  <rect class="ln fill" x="24" y="218" width="582" height="500"/>
+  <text x="30" y="236" class="sub">#extractBody — virtualisierte Zeilen</text>
+  <g stroke="#ccc"><line x1="24" y1="250" x2="606" y2="250"/><line x1="24" y1="272" x2="606" y2="272"/><line x1="24" y1="294" x2="606" y2="294"/></g>
+
+  <!-- Plot content -->
+  <rect class="ln fill" x="625" y="164" width="620" height="580"/>
+  <text x="634" y="182" class="lbl" font-size="12">Plot-Tab (data-view="plot") — #plotWrap</text>
+
+  <rect class="ln accent" x="634" y="190" width="602" height="34"/>
+  <text x="640" y="202" class="tag" font-size="9.5">#plotToolbar</text>
+  <ellipse class="ln fill" cx="655" cy="214" rx="10" ry="7"/><text x="650" y="217" class="tag" font-size="8">−</text>
+  <rect class="ln fill" x="670" y="207" width="34" height="14"/><text x="676" y="217" class="tag" font-size="8">100%</text>
+  <ellipse class="ln fill" cx="716" cy="214" rx="10" ry="7"/><text x="711" y="217" class="tag" font-size="8">+</text>
+  <ellipse class="ln fill" cx="738" cy="214" rx="10" ry="7"/><text x="731" y="217" class="tag" font-size="8">⟲</text>
+  <rect class="ln fill" x="754" y="207" width="115" height="14"/><text x="758" y="217" class="tag" font-size="8">Filter: time range</text>
+  <rect class="ln fill" x="874" y="207" width="120" height="14"/><text x="878" y="217" class="tag" font-size="8">Filter: these entries</text>
+  <ellipse class="ln fill" cx="1195" cy="214" rx="14" ry="7"/><text x="1188" y="217" class="tag" font-size="8">⛶</text>
+  <ellipse class="ln fill" cx="1222" cy="214" rx="14" ry="7"/><text x="1215" y="217" class="tag" font-size="8">💾</text>
+  <text x="1150" y="203" class="sub" font-size="7.5">#plotFullscreenBtn/#plotSaveImageBtn</text>
+
+  <rect class="ln fill" x="634" y="228" width="602" height="60"/>
+  <text x="640" y="244" class="sub">#plotControls — Achsen-/Serienauswahl (X, Y, Farbe nach Spalte)</text>
+
+  <rect class="ln accent2" x="634" y="292" width="602" height="406"/>
+  <text x="640" y="310" class="sub">#plotChartArea</text>
+  <path class="ln" d="M660,650 L700,600 L740,620 L790,560 L850,590 L910,520 L980,545 L1050,480 L1120,510 L1200,460" fill="none"/>
+  <text x="640" y="692" class="sub" font-size="9">#plotSvg / #plot3dCanvas · Ziehen = #plotDragRect (Zoom-Auswahl) · Hover = #plotTooltip</text>
+
+  <text x="24" y="756" class="sub">Fullscreen: #plotFullscreenOverlay → #plotFullscreenHeader (#plotFullscreenCloseBtn) → #plotFullscreenChartHost — gleiche Toolbar, volle Fläche.</text>
+</svg>
