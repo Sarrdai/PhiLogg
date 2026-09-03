@@ -18121,18 +18121,31 @@ await withApp(async (w, d, T) => {
    two-open/keep-2/a-3rd-arrives scenario below). Also covers
    nodeDisplayName() keeping a folder-watch file's relative-path name once
    it's actually opened, not just in the still-grayed listing.
+   EXTENDED again same session (person-reported: the sliding window still
+   looked broken): the REPRO block at the end re-tests keep-N through
+   MANUALLY opened files, the real settings-dialog number input, and the
+   real folderScanTick() poll (not a manual rescanFolder() call) — this is
+   what led to the actual second bug, "newest" was pure filename order
+   (sortFolderRecsByRecency now prefers real file mtime, falling back to
+   name order only when mtime is unavailable — see scanFolderHandle/
+   folderSettingsNeedRecency/applyFolderAutoRules), covered by a dedicated
+   Z-old.log/A-new.log case where alphabetical and chronological order
+   disagree. "Show relative path" is also now re-verified through the real
+   dialog checkboxes (not direct folder.settings mutation), toggled live in
+   both directions on an ALREADY-open file, not just right after opening it.
    ============================================================ */
 group(164);
 await withApp(async (w, d, T) => {
   section("164. Folder watch settings — patterns, subfolders, auto rules");
 
-  function fakeFileHandle(name, text) {
+  function fakeFileHandle(name, text, lastModified) {
     return {
       kind: "file", name,
       async getFile() {
         const blob = new w.Blob([text]);
         Object.defineProperty(blob, "name", { value: name, configurable: true });
         Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        if (typeof lastModified === "number") Object.defineProperty(blob, "lastModified", { value: lastModified, configurable: true });
         blob.text = async () => text;
         blob.slice = (start) => {
           const sliced = text.slice(start);
@@ -18144,7 +18157,8 @@ await withApp(async (w, d, T) => {
       },
     };
   }
-  // entries: plain "name.log" for a file, or ["dirname", {..nested entries}] for a subfolder.
+  // entries: plain "name.log" for a file, ["dirname", {..nested entries}] for
+  // a subfolder, or [text, lastModified] to also stub the file's mtime.
   function fakeDirHandle(name, entries) {
     return {
       kind: "directory", name,
@@ -18152,6 +18166,7 @@ await withApp(async (w, d, T) => {
         for (const key of Object.keys(entries)) {
           const val = entries[key];
           if (typeof val === "string") yield fakeFileHandle(key, val);
+          else if (Array.isArray(val)) yield fakeFileHandle(key, val[0], val[1]);
           else yield fakeDirHandle(key, val);
         }
       },
@@ -18205,9 +18220,20 @@ await withApp(async (w, d, T) => {
   const sFolder = T.state.folders.find(f => f.name === "sublogs");
   assert(sFolder.files.length === 1, "without \"include subfolders\", nested files are not listed, got " + sFolder.files.length);
 
-  sFolder.settings.includeSubfolders = true;
-  sFolder.settings.showRelativePath = true;
-  await w.rescanFolder(sFolder);
+  // Toggled through the REAL dialog checkboxes (not by mutating
+  // folder.settings directly), to also catch a UI-wiring-only bug.
+  w.render();
+  fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
+  const subfoldersCb = d.querySelector("#fwSettingsSubfolders");
+  subfoldersCb.checked = true;
+  subfoldersCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await waitFor(() => sFolder.settings.includeSubfolders === true);
+  assert(!d.querySelector("#fwSettingsRelPathRow").classList.contains("hidden"), "\"show relative path\" row appears once subfolders are included");
+  const relPathCb = d.querySelector("#fwSettingsShowRelPath");
+  relPathCb.checked = true;
+  relPathCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await waitFor(() => sFolder.settings.showRelativePath === true && sFolder.files.length === 2);
+  fireClick(d.querySelector("#fwSettingsClose"), w);
   assert(sFolder.files.length === 2, "with \"include subfolders\" on, the nested file is now listed too, got " + sFolder.files.length);
   const nestedRec = sFolder.files.find(f => f.name === "Nested.log");
   assert(nestedRec && nestedRec.relPath === "sub/Nested.log", "the nested file's relPath includes its subfolder, got " + (nestedRec && nestedRec.relPath));
@@ -18227,6 +18253,28 @@ await withApp(async (w, d, T) => {
   w.render();
   const openedLabel = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "sub/Nested.log");
   assert(openedLabel !== undefined, "the opened file's tree row also shows the relative path, not just \"Nested.log\"");
+
+  // Person-reported (literal repro): turning "Show relative path" ON while
+  // the file is ALREADY open (not only right after opening it) must update
+  // its shown name immediately too.
+  fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
+  const relPathCb2 = d.querySelector("#fwSettingsShowRelPath");
+  relPathCb2.checked = false;
+  relPathCb2.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await waitFor(() => sFolder.settings.showRelativePath === false);
+  fireClick(d.querySelector("#fwSettingsClose"), w);
+  w.render();
+  assert([...d.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "Nested.log"),
+    "turning \"show relative path\" back OFF while the file stays open reverts its shown name to the bare filename");
+  fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
+  const relPathCb3 = d.querySelector("#fwSettingsShowRelPath");
+  relPathCb3.checked = true;
+  relPathCb3.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await waitFor(() => sFolder.settings.showRelativePath === true);
+  fireClick(d.querySelector("#fwSettingsClose"), w);
+  w.render();
+  assert([...d.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "sub/Nested.log"),
+    "turning \"show relative path\" back ON while the file stays open shows the relative path again, live, with no re-open needed");
 
   // --- Per-pattern auto rules: auto-open newest, auto-close keep N (a
   // SLIDING WINDOW over the newest N — person-reported: a new, newer file
@@ -18269,6 +18317,61 @@ await withApp(async (w, d, T) => {
   const namesAfterShowNewest = rFolder.files.map(f => f.name).sort();
   assert(namesAfterShowNewest.join(",") === "R-03.log,R-04.log",
     "show-newest-2 kept only the 2 newest closed/open matches — the still-open R-03/R-04 survive, the closed R-00/R-01/R-02 are dropped — got " + namesAfterShowNewest.join(","));
+
+  // --- REPRO: person-reported — files opened MANUALLY (not by an auto
+  // rule) first, "Auto-close — keep only N" enabled AFTER via the actual
+  // settings dialog UI (not by mutating folder.settings directly), and the
+  // new file discovered via the REAL polling path (folderScanTick, not a
+  // manual rescanFolder() call) — to rule out anything specific to how the
+  // other assertions above drove the feature.
+  const manualFiles = { "M-01.log": makeLog(0, 1), "M-02.log": makeLog(1, 1) };
+  const manualDir = fakeDirHandle("manuallogs", manualFiles);
+  await w.addWatchedFolder(manualDir);
+  const mFolder = T.state.folders.find(f => f.name === "manuallogs");
+  const mBoxRows = () => [...d.querySelectorAll(".folder-watch")].find(box => box.querySelector(".folder-watch-name").textContent === "manuallogs").querySelectorAll(".folder-watch-file");
+  w.render();
+  fireDblClick([...mBoxRows()].find(r => r.querySelector(".folder-watch-file-name").textContent === "M-01.log"), w);
+  await waitFor(() => mFolder.files.find(f => f.name === "M-01.log").nodeId !== null);
+  w.render();
+  fireDblClick([...mBoxRows()].find(r => r.querySelector(".folder-watch-file-name").textContent === "M-02.log"), w);
+  await waitFor(() => mFolder.files.find(f => f.name === "M-02.log").nodeId !== null);
+  assert(mFolder.files.every(f => f.nodeId), "sanity: both files were opened manually, no auto rule involved yet");
+
+  w.render();
+  fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "manuallogs"), w);
+  const numInput = d.querySelector("#fwPatternList input[type=\"number\"]");
+  numInput.value = "2";
+  numInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await waitFor(() => mFolder.settings.patterns[0].autoCloseKeep === 2);
+  fireClick(d.querySelector("#fwSettingsClose"), w);
+  assert(mFolder.files.every(f => f.nodeId), "enabling keep-2 with exactly 2 already open changes nothing yet");
+
+  manualFiles["M-03.log"] = makeLog(2, 1);
+  await w.folderScanTick(); // the REAL discovery path, not a manual rescanFolder()
+  await waitFor(() => mFolder.files.find(f => f.name === "M-03.log") && mFolder.files.find(f => f.name === "M-03.log").nodeId !== null);
+  assert(mFolder.files.find(f => f.name === "M-03.log").nodeId,
+    "a new file discovered by the real folderScanTick poll is opened by the keep-2 sliding window, same as a manual rescanFolder()");
+  assert(!mFolder.files.find(f => f.name === "M-01.log").nodeId,
+    "the previously-open OLDEST file (M-01.log) was closed to make room for it");
+  assert(mFolder.files.find(f => f.name === "M-02.log").nodeId, "the still-in-window M-02.log was left open");
+
+  // --- "Newest" uses real file mtime when available, not just filename
+  // order: a naming scheme where the chronologically newer file doesn't
+  // happen to sort last as a plain string (e.g. unpadded day-of-month) must
+  // still be picked correctly by auto-open/auto-close/show-newest.
+  const mtimeFiles = {
+    "Z-old.log": [makeLog(0, 1), 1000],   // sorts LAST alphabetically, but is the OLDEST by mtime
+    "A-new.log": [makeLog(1, 1), 3000],   // sorts FIRST alphabetically, but is the NEWEST by mtime
+  };
+  const mtimeDir = fakeDirHandle("mtimelogs", mtimeFiles);
+  await w.addWatchedFolder(mtimeDir);
+  const mtFolder = T.state.folders.find(f => f.name === "mtimelogs");
+  mtFolder.settings.patterns = [{ pattern: "*", autoOpenNewest: false, autoCloseKeep: 1, showNewest: null }];
+  await w.rescanFolder(mtFolder);
+  assert(mtFolder.files.find(f => f.name === "A-new.log").nodeId,
+    "keep-1 opened A-new.log (newest by mtime, even though it sorts FIRST alphabetically)");
+  assert(!mtFolder.files.find(f => f.name === "Z-old.log").nodeId,
+    "Z-old.log (oldest by mtime, even though it sorts LAST alphabetically) was correctly left/closed");
 });
 
 /* ============================================================
@@ -20644,5 +20747,11 @@ process.exitCode = failed ? 1 : 0;
    Group 164 — this session (2026-09-03), person-requested: the per-folder
      Folder watch settings dialog (gear icon on a .folder-watch-header) —
      filename patterns (with per-pattern auto-open-newest/auto-close-keep-N/
-     show-newest-M) and include-subfolders/show-relative-path.
+     show-newest-M) and include-subfolders/show-relative-path. EXTENDED
+     twice same session, both person-reported follow-ups: the keep-N rule
+     made a genuine sliding window instead of only ever closing; then
+     "newest" switched from pure filename order to real file mtime
+     (falling back to name order only when mtime isn't available, e.g. a
+     natively listed folder), plus re-verifying relative-path display
+     through the real dialog checkboxes on an already-open file.
    ============================================================ */
