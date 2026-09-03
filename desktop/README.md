@@ -72,6 +72,23 @@ The session cache (IndexedDB) lives in the webview's own storage for this
 app, wherever the platform puts it; the tray's "Clear Cache" wipes it and
 reloads.
 
+## Portable build (Windows)
+
+Released alongside the installer as `PhiLogg-<sha>_portable.zip`. Unzip it
+anywhere — a USB stick or external drive included — and run `PhiLogg.exe`
+directly; nothing is installed and nothing is written to the host machine.
+Both `settings.json` and the session cache move into a `data\` folder next
+to the exe instead of the usual OS locations, so the whole thing (app +
+settings + cache) stays self-contained on that one folder/drive. This only
+works because a `philogg-portable` marker file and a `philogg.html` copy
+ship inside the zip next to the exe — don't delete either, and don't rename
+or move the exe away from them.
+
+Building it locally: `npm run build` already produces the raw
+`src-tauri/target/release/philogg-desktop.exe`, which needs no install
+(WebView2 ships with Windows). Drop `philogg.html` and an empty
+`philogg-portable` file next to it to get the same portable layout by hand.
+
 ## Folder watch
 
 Folders are listed natively (Rust `read_dir`) instead of through the File

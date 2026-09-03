@@ -39,6 +39,14 @@ fn html_path(app: &tauri::AppHandle) -> PathBuf {
             return packaged;
         }
     }
+    // The portable build has no installer/resource dir at all — it ships
+    // philogg.html sitting right next to the executable instead.
+    if let Some(dir) = settings::portable_dir() {
+        let sibling = dir.join("philogg.html");
+        if sibling.is_file() {
+            return sibling;
+        }
+    }
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")

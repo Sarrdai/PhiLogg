@@ -13,11 +13,31 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+/// Windows-only portable mode: a `philogg-portable` marker file dropped next
+/// to the executable (see `desktop/README.md` "Portable build") means "keep
+/// everything on this drive" — `settings.json` and the webview's own storage
+/// both move from the OS's per-user directories into a `data/` folder beside
+/// the exe, so nothing is written to the host machine at all.
+#[cfg(target_os = "windows")]
+pub fn portable_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.to_path_buf();
+    dir.join("philogg-portable").is_file().then_some(dir)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn portable_dir() -> Option<PathBuf> {
+    None
+}
+
 /// The config directory this wrapper owns. Deliberately **not** the
 /// identifier-derived `app_config_dir()` (`com.kleinphilipp.philogg`)
 /// but a plain, readable name, so `settings.json` is findable by hand.
 /// See `desktop/README.md`.
 pub fn config_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> PathBuf {
+    if let Some(dir) = portable_dir() {
+        return dir.join("data");
+    }
     use tauri::Manager;
     let base = app
         .path()

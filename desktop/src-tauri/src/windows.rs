@@ -95,6 +95,14 @@ pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
         // watch_window_events below, alongside the close handling.
         .initialization_script(&script);
 
+    // Portable build: WebView2's own storage (including the IndexedDB
+    // session cache) moves alongside settings.json into data/ next to the
+    // exe, same reasoning as settings::config_dir — see desktop/README.md
+    // "Portable build".
+    if let Some(dir) = settings::portable_dir() {
+        builder = builder.data_directory(dir.join("data").join("webview"));
+    }
+
     // FEATURE_BACKLOG.md #31/#34: no OS frame, and rounded corners where the
     // platform provides them for an undecorated window (macOS always,
     // Windows 11 via DWM, Linux compositor-dependent) — the same
