@@ -1374,7 +1374,11 @@
     background:none; border:none; border-left:2px solid var(--text-tertiary); border-radius:0;
     color:var(--text-tertiary); cursor:pointer;
   }
-  .ctx-run-line:hover{ border-left-color:var(--accent); color:var(--accent); }
+  /* .ctx-run-hover (JS-toggled across every slice sharing a data-run-id, see
+     makeContextRunHandle) makes the WHOLE run highlight together on hover,
+     not just the one row segment the pointer happens to be over — plain
+     :hover can't do that on its own since each slice is a separate button. */
+  .ctx-run-line:hover, .ctx-run-line.ctx-run-hover{ border-left-color:var(--accent); color:var(--accent); }
   /* The caret box is exactly the glyph's own 12x12, offset so the chevron's
      apex sits on the line's axis. An absolutely positioned child is placed
      against its parent's PADDING box, which here starts INSIDE the 2px
@@ -14376,16 +14380,30 @@ function renderHighlightVisibleRows() {
 // the button and not just its end caps. The first/last row of the run also
 // gets a caret cap pointing "into" the fold; a single-row run gets exactly
 // one cap, not two overlapping ones.
+//
+// Hover highlights the WHOLE run (person-requested), not just the one row
+// segment under the pointer — since each row's slice is its own separate DOM
+// button, plain CSS :hover can't do that on its own. `run.firstRow` is a
+// stable-for-this-render key shared by every slice of the same run
+// (data-run-id), so mouseenter/mouseleave toggle a .ctx-run-hover class
+// across ALL of them at once, including the end caps' carets.
 function makeContextRunHandle(run, isTop, isBottom) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "ctx-run-line" + (isTop ? " ctx-run-top" : isBottom ? " ctx-run-bottom" : "");
   btn.title = "Collapse these lines again";
+  btn.dataset.runId = String(run.firstRow);
   // Caps point INWARD, toward each other — the direction the run will
   // shrink to on click — rather than outward (which used to read like an
   // "expand more" affordance instead of "collapse this").
   btn.innerHTML = isTop ? '<span class="ctx-run-cap">' + ICON_CARET_DOWN + '</span>'
     : isBottom ? '<span class="ctx-run-cap">' + ICON_CARET_UP + '</span>' : "";
+  const setRunHover = hovered => {
+    highlightRows.querySelectorAll('.ctx-run-line[data-run-id="' + run.firstRow + '"]')
+      .forEach(el => el.classList.toggle("ctx-run-hover", hovered));
+  };
+  btn.addEventListener("mouseenter", () => setRunHover(true));
+  btn.addEventListener("mouseleave", () => setRunHover(false));
   btn.addEventListener("click", ev => { ev.stopPropagation(); collapseContextRun(run); });
   return btn;
 }
