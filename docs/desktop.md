@@ -310,6 +310,19 @@ title-bar close button uses.
 identifier-derived directory Tauri would pick by default. The session cache (IndexedDB)
 lives in the webview's own storage for this app, wherever the platform puts it.
 
+**Portable build (Windows only)**: `settings::portable_dir()` looks for a
+`philogg-portable` marker file next to the running executable; if it's there, both of the
+above move onto the same drive as the exe instead — `config_dir()` returns
+`<exe-dir>/data/` for `settings.json`, and `windows.rs`'s `create_main` points the
+`WebviewWindowBuilder` at `<exe-dir>/data/webview` via `.data_directory(...)`
+(`WebviewBuilder`/`WebviewWindowBuilder` expose this since Tauri 2.1; it redirects
+WebView2's whole user-data folder, IndexedDB included). `html_path()` also falls back to
+an exe-adjacent `philogg.html` before the dev-only `CARGO_MANIFEST_DIR` fallback, since
+the portable build has no installer/resource dir to read it from. Nothing else changes:
+the tray's "Open Config Folder" and "Clear Cache" already go through `config_dir()`/the
+webview APIs, so they work unmodified in either mode. See "Release" below for how the
+portable `.zip` is assembled, and `desktop/README.md` for the user-facing description.
+
 ## Tray, splash, close-to-tray, single instance
 
 - **Splash** (`FEATURE_BACKLOG.md` #51, the "startup takes several seconds with no
@@ -352,11 +365,14 @@ lives in the webview's own storage for this app, wherever the platform puts it.
 separate from `release.yml` (which keeps publishing only `philogg.html`, unaffected by
 any of this). A `prepare` job creates one release tag (`tauri-<short-sha>`) up front so
 the per-OS `build` matrix jobs can each just build and upload their own installer into
-it, without racing each other to create the same release. Three `workflow_dispatch`
-boolean inputs (`build_windows` default on, `build_mac`/`build_linux` default off) pick
-which platforms actually get a `build` job: `prepare` computes a JSON OS list from the
-checkboxes (plain bash + `jq`) and `build`'s `strategy.matrix.os` is
-`fromJSON(needs.prepare.outputs.os_list)`. **Not** a job-level `if:` comparing `inputs.*`
+it, without racing each other to create the same release. Four `workflow_dispatch`
+boolean inputs (`build_windows` default on, `build_mac`/`build_linux`/
+`build_windows_portable` default off) pick which platforms actually get a `build` job:
+`prepare` computes a JSON OS list from the checkboxes (plain bash + `jq`) and `build`'s
+`strategy.matrix.os` is `fromJSON(needs.prepare.outputs.os_list)`.
+`build_windows_portable` alone still needs `windows-latest` in that list, so it's OR'd in
+alongside `build_windows` and deduped with `jq`'s `unique` (ticking both doesn't spawn the
+runner twice). **Not** a job-level `if:` comparing `inputs.*`
 against `matrix.os` — GitHub rejects the whole workflow file at parse time for that
 (`0` jobs, `startup_failure`): the `matrix` context isn't available in
 `jobs.<job_id>.if`, only in `runs-on`/`env` and inside steps. An unchecked-everything
@@ -374,6 +390,14 @@ Each `build` job stamps `PHILOGG_VERSION` to the commit short-SHA and strips
 `philogg.html`'s comments (`scripts/strip-comments.js`, see PROJECT.md → "Release
 builds") before bundling — never committed back, just the checked-out copy the Tauri
 bundler embeds as a resource a moment later.
+
+On a Windows runner with `build_windows_portable` on, one extra step packages the
+portable build after `npm run build`, from the same `cargo build --release` output the
+NSIS installer step already produced: the raw, unbundled `philogg-desktop.exe` (needs no
+install — WebView2 itself ships with Windows), the just-stamped/stripped `philogg.html`
+copy sitting next to it, and an empty `philogg-portable` marker file (see "Persistent
+data" above), all zipped as `PhiLogg-<sha>_portable.zip` and uploaded alongside the other
+artifacts.
 
 ## Capabilities
 
