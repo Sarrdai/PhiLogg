@@ -8450,6 +8450,13 @@ function showFhTab(tab) {
   // instead, so this only ever runs for the two log tabs) and this function
   // doesn't call the full renderMainView(), so it needs its own refresh.
   updateLogToggleVisibility();
+  // Same reasoning: the tab buttons' own ".active" class is only (re)computed
+  // by renderViewTabs(), which the Table/Plot and Stacked branches of
+  // applyFhView() reach via a full renderMainView() — this branch doesn't,
+  // so without this call the just-clicked tab's highlight never moves off
+  // whichever tab was active before (content switches correctly, only the
+  // pill styling goes stale).
+  renderViewTabs(nodeHasExtractableWildcards(state.nodes[state.activeId]));
   if (fhLayout === "tabs") {
     // In tabs layout exactly ONE of the two Log views is on screen, so the
     // pane the arrow keys drive (state.entriesView) can only sensibly be
