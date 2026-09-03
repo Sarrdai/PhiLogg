@@ -17725,6 +17725,35 @@ function matchFolderPattern(settings, rec) {
 // before this field existed (see restoreWatchedFolders).
 function folderFileKey(rec) { return rec.relPath || rec.name; }
 
+// True once a folder actually has a rule that needs to know which of its
+// files is "newest" — gates the extra per-file getFile() call scanFolderHandle
+// does below, so a plain watched folder with no auto rules configured pays
+// nothing extra on every 3s poll.
+function folderSettingsNeedRecency(settings) {
+  return !!(settings && settings.patterns && settings.patterns.some(p => p.autoOpenNewest || p.autoCloseKeep || p.showNewest));
+}
+
+// Sorts folder-file records OLDEST TO NEWEST for the auto rules below
+// (applyFolderAutoRules) — real file.lastModified (mtime, attached during
+// scanFolderHandle) when BOTH sides have one, falling back to name order
+// otherwise. Person-reported: relying on filename order alone silently
+// mis-picks "newest" for any naming scheme where a chronologically newer
+// file doesn't happen to sort last as a plain string (day-of-month rollover
+// without zero-padding, a rotated-log scheme where the ACTIVE file has the
+// smallest name, etc.) — mtime is what "newest" actually means, and is used
+// whenever it's available. NOT available for a natively listed folder's
+// files (desktop wrapper — urlTailHandle.getFile() returns a plain fetched
+// Blob, which has no lastModified; see docs/desktop.md), which is why this
+// still needs the name-order fallback rather than assuming mtime always
+// works — folder.files' own display order (mergeScannedFiles) stays name-
+// sorted regardless, this is only used to pick "which is newest" for rules.
+function sortFolderRecsByRecency(recs) {
+  return recs.slice().sort((a, b) => {
+    if (typeof a.mtime === "number" && typeof b.mtime === "number" && a.mtime !== b.mtime) return a.mtime - b.mtime;
+    return folderFileKey(a).localeCompare(folderFileKey(b));
+  });
+}
+
 // Recursive when settings.includeSubfolders is set, otherwise identical to
 // the original non-recursive walk. A native (Tauri) dirHandle's values()
 // only ever yields files (see docs/desktop.md — list_folder is a flat,
@@ -17734,6 +17763,7 @@ function folderFileKey(rec) { return rec.relPath || rec.name; }
 async function scanFolderHandle(dirHandle, settings) {
   const s = settings || defaultFolderSettings();
   const patterns = s.patterns && s.patterns.length ? s.patterns : [defaultFolderPattern()];
+  const needMtime = folderSettingsNeedRecency(s);
   const out = [];
   async function walk(handle, relDir) {
     for await (const entryHandle of handle.values()) {
@@ -17746,7 +17776,17 @@ async function scanFolderHandle(dirHandle, settings) {
       if (entryHandle.kind !== "file" || !isCompatibleFolderFile(entryHandle.name)) continue;
       if (!patterns.some(p => getCompiledGlob(p.pattern || "*").test(entryHandle.name))) continue;
       const relPath = relDir ? relDir + "/" + entryHandle.name : entryHandle.name;
-      out.push({ name: entryHandle.name, relPath, handle: entryHandle });
+      const rec = { name: entryHandle.name, relPath, handle: entryHandle };
+      if (needMtime) {
+        // Metadata-only cost (no content read) — best-effort: a handle that
+        // fails here (permission hiccup, native Blob with no lastModified)
+        // just leaves mtime unset, falling back to name order for this file.
+        try {
+          const file = await entryHandle.getFile();
+          if (typeof file.lastModified === "number") rec.mtime = file.lastModified;
+        } catch (err) { /* fall back to name order below */ }
+      }
+      out.push(rec);
     }
   }
   await walk(dirHandle, "");
@@ -17767,6 +17807,7 @@ async function mergeScannedFiles(folder, scanned) {
     if (existing) {
       existing.handle = s.handle;
       existing.relPath = s.relPath;
+      if (typeof s.mtime === "number") existing.mtime = s.mtime;
       // A natively listed folder re-registers its files on every scan, and
       // the URL/path that yields are the only location an open file from it
       // has — refreshed here so a session restored from cache picks up this
@@ -17788,7 +17829,7 @@ async function mergeScannedFiles(folder, scanned) {
       }
       return existing;
     }
-    return { name: s.name, relPath: s.relPath, handle: s.handle, nodeId: null };
+    return { name: s.name, relPath: s.relPath, handle: s.handle, nodeId: null, mtime: s.mtime };
   });
   // A file that's still OPEN but no longer shows up in a fresh scan (e.g.
   // deleted on disk while loaded) stays listed rather than being dropped —
@@ -17806,11 +17847,10 @@ async function mergeScannedFiles(folder, scanned) {
 }
 
 // Per-pattern auto rules, applied after every merge (initial scan, poll
-// tick, reconnect). "Newest" = last in the (alphabetical, per
-// mergeScannedFiles) sort order within the pattern's own matching files —
-// the same convention the folder listing itself already sorts by; there's
-// no mtime available without an extra async getFile() per file on every
-// poll, and timestamped log filenames sort the same way anyway.
+// tick, reconnect). "Newest" = last in sortFolderRecsByRecency's order
+// within the pattern's own matching files — real file mtime when available
+// (scanFolderHandle), falling back to name order otherwise (see that
+// function's own comment for why mtime isn't always available).
 // Order: 1) "Show newest M" first drops closed listing entries older than
 // the M newest (never an open one) so the later rules only see what's still
 // listed; 2) "Auto-close — keep only N open" is a SLIDING WINDOW over the N
@@ -17833,6 +17873,7 @@ async function applyFolderAutoRules(folder) {
       const p = groupOf(rec);
       if (p) { if (!map.has(p)) map.set(p, []); map.get(p).push(rec); }
     });
+    for (const [p, recs] of map) map.set(p, sortFolderRecsByRecency(recs));
     return map;
   };
 
