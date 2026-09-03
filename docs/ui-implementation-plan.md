@@ -266,3 +266,25 @@ Kurzfassung, die volle Herleitung steht in `docs/extraction-and-plotting.md`
   jumps") statt wie zuvor destruktiv in die rohe Datei
   (`jumpToFullLog`, weiterhin als Funktion vorhanden und getestet, aber an
   keiner UI-Stelle mehr verdrahtet).
+
+### Nachgereichter Fix (selber Tag): Context/Filtered blieben von Table/Plot aus tot
+
+Person-reported, direkt nach dem Merge: ein neuer Wildcard-Filter landet per
+Default auf Table (bestehendes `extractCapable`-Auto-Jump-Verhalten); von
+dort aktualisierte ein Klick auf "Context" oder "Filtered" zwar die
+Tab-Hervorhebung, ließ aber die Extraktionstabelle/den Plot sichtbar — man
+saß fest, konnte nur zwischen Table/Plot wechseln. Ursache: `applyFhView()`s
+letzter `else`-Zweig (für `"highlight"`/`"filter"`) rief nur `showFhTab()`
+auf, das lediglich Panels *innerhalb* von `#fhSplit` umschaltet, aber nie
+zwischen den beiden Content-Komponenten `#extractWrap`/`#fhSplit` selbst
+wechselt — dieser Zweig wurde vor Table/Plot nie von dort erreicht, war also
+nie darauf vorbereitet. Exakt derselbe Root Cause, den der
+Doppelklick-Sprung (`revealInFilteredView`) schon einmal einzeln getroffen
+und lokal gefixt hatte (siehe dessen eigener Commit) — jetzt einmal zentral
+in `applyFhView()` behoben, sodass jeder Aufrufer (auch ein einfacher
+Tab-Klick) profitiert; die doppelte lokale Fix-Logik in
+`revealInFilteredView` wurde als redundant entfernt. Neue Testgruppe 160
+deckt beide Richtungen ab (Context← Table, Filtered← Plot) und prüft dabei
+explizit `style.display` von `#extractWrap`/`#fhSplit` statt einer nie
+gesetzten CSS-Klasse — genau die Prüf-Schwäche, die den ursprünglichen,
+eng verwandten Bug schon einmal durchrutschen ließ.

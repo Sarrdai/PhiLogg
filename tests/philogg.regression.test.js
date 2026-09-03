@@ -17671,6 +17671,69 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#fhSplit").style.display === "flex", "the Filtered pane (#fhSplit) is now the visible content component");
 });
 
+/* ============================================================
+   GROUP 160 — Context/Filtered tab clicks while stuck on Table/Plot
+   ============================================================
+   Origin: this session, person-reported regression in the filterType-merge
+   work above. A new wildcard filter defaults to the Table tab
+   (extractCapable auto-jump, renderMainView's own existing behavior) — from
+   there, clicking "Context" or "Filtered" updated the tab pill correctly
+   but left the extraction table on screen: applyFhView()'s final "else"
+   branch (view === "highlight"/"filter") only ever called showFhTab(),
+   which just toggles panel visibility WITHIN #fhSplit and never switches
+   the content COMPONENT (#extractWrap vs #fhSplit) — nothing reached that
+   branch FROM Table/Plot before Table/Plot existed as tabs, so it was never
+   taught to handle it. Group 159's own assertions above already caught this
+   for the double-click/mark-click path (revealInFilteredView) and got a
+   local fix there; this is the SAME root cause reached by a plain tab
+   click instead, now fixed once in applyFhView() itself so every caller
+   benefits (revealInFilteredView's own duplicate fix was removed as
+   redundant).
+   ============================================================ */
+group(160);
+await withApp(async (w, d, T) => {
+  section("160a. Clicking Context while on Table switches the content component, not just the tab pill");
+
+  const log = [0, 1, 2]
+    .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"id=${i}"`)
+    .join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "id=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  assert(T.fhActiveTab === "table", "sanity: activating an extraction-capable node lands on Table");
+  assert(d.querySelector("#extractWrap").style.display === "flex", "sanity: the extraction table is the visible content component");
+
+  fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="highlight"]'), w);
+
+  assert(T.fhActiveTab === "highlight", "fhActiveTab switches to Context");
+  assert(d.querySelector('.view-tab.active').dataset.fhTab === "highlight", "the Context tab pill is the one marked active");
+  assert(d.querySelector("#extractWrap").style.display === "none", "the extraction table is no longer the visible content component");
+  assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
+});
+
+await withApp(async (w, d, T) => {
+  section("160b. Clicking Filtered while on Plot switches the content component, not just the tab pill");
+
+  const log = [0, 1, 2]
+    .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"id=${i}"`)
+    .join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "id=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot"); // real path a Plot tab click takes — sets fhActiveTab AND switchExtractView, unlike calling switchExtractView() directly
+  assert(T.fhActiveTab === "plot", "sanity: switched to Plot");
+  assert(d.querySelector("#extractWrap").style.display === "flex", "sanity: the plot is the visible content component");
+
+  fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="filter"]'), w);
+
+  assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
+  assert(d.querySelector('.view-tab.active').dataset.fhTab === "filter", "the Filtered tab pill is the one marked active");
+  assert(d.querySelector("#extractWrap").style.display === "none", "the plot is no longer the visible content component");
+  assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
+});
+
 
 /* ============================================================
    Summary
@@ -19995,6 +20058,20 @@ process.exitCode = failed ? 1 : 0;
               both of those two triggers — jumpToFullLog itself is
               unchanged and still directly tested, Group 10, just no longer
               wired to any UI action).
+
+   Group 160 — this session (2026-09-03), person-reported regression
+              found right after Group 159 landed: a plain Context/Filtered
+              tab click while Table/Plot was showing updated the tab pill
+              but left the extraction table/plot on screen underneath.
+              Same root cause Group 159 already fixed locally for the
+              double-click/mark-click path (revealInFilteredView) — the
+              general case was applyFhView()'s own final "else" branch
+              (view === "highlight"/"filter") only ever calling showFhTab(),
+              which never learned to switch #extractWrap/#fhSplit itself.
+              Fixed once in applyFhView() so every caller benefits;
+              revealInFilteredView's own now-redundant local fix was
+              removed. 160a/b cover the Context and Filtered tab clicks
+              respectively, each starting from Table or Plot.
 
    Deliberately DROPPED this session:
      - Group 41's old two-button "Extract" vs "Add filter" coverage —
