@@ -3573,6 +3573,18 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsFilterActivationView">When switching to a filter</label>
+                <div class="settings-row-hint">A filter you've never viewed before always opens to Filtered. For one you've already viewed, "Remember last view" (default) reopens whichever tab — Context, Filtered, Table, or Plot — you left it on. "Always Filtered" reopens it to Filtered every time instead.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsFilterActivationView">
+                  <option value="rememberLast">Remember last view</option>
+                  <option value="alwaysFiltered">Always Filtered</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsOpenScrollPosition">On open, scroll log to</label>
                 <div class="settings-row-hint">"Start" stays at the top (default). "End" scrolls to and stays at the bottom — with Tailing on, following begins immediately from there.</div>
               </div>
@@ -5004,6 +5016,23 @@ document.getElementById("settingsFhLayout").addEventListener("change", ev => {
   updateMinimapRenderedRange();
   updateMinimapSelectionMarkers();
   updateContextToolbar();
+});
+
+// "When switching to a filter" (Settings -> Behavior): plain
+// localStorage-preference wiring, same shape as initSettingsFhLayoutOption
+// above — see FILTER_ACTIVATION_VIEW_KEY/applyActivationView() for what the
+// two values actually do. No re-render on change: it only affects what
+// happens the NEXT TIME a node becomes active, not anything currently on
+// screen.
+function initFilterActivationViewSetting() {
+  const stored = localStorage.getItem(FILTER_ACTIVATION_VIEW_KEY);
+  filterActivationView = stored === "alwaysFiltered" ? "alwaysFiltered" : "rememberLast";
+  const select = document.getElementById("settingsFilterActivationView");
+  if (select) select.value = filterActivationView;
+}
+document.getElementById("settingsFilterActivationView").addEventListener("change", ev => {
+  filterActivationView = ev.target.value === "alwaysFiltered" ? "alwaysFiltered" : "rememberLast";
+  localStorage.setItem(FILTER_ACTIVATION_VIEW_KEY, filterActivationView);
 });
 
 /* ===================== Temporary anchor settings (FEATURE_BACKLOG #18) =====
@@ -8392,6 +8421,19 @@ const FH_LAYOUT_STORAGE_KEY = "philogg-fh-layout";
 let fhLayout = "tabs";
 let fhActiveTab = "filter";
 
+// Settings -> Behavior "When switching to a filter" (person-requested):
+// "rememberLast" (default) restores whichever tab (Context/Filtered/Table/
+// Plot) was last shown for THAT specific node; "alwaysFiltered" always
+// lands on Filtered. Either way, a node that has never been the active node
+// before always lands on Filtered regardless of the setting — see
+// applyActivationView()'s own comment for why. nodeLastView is
+// intentionally in-memory only (not persisted): it's a per-session
+// convenience, not part of the filter definition, so it resets on reload
+// the same way e.g. scroll position does.
+const FILTER_ACTIVATION_VIEW_KEY = "philogg-filter-activation-view";
+let filterActivationView = "rememberLast";
+const nodeLastView = new Map(); // nodeId -> "highlight" | "filter" | "table" | "plot" | "stacked"
+
 // Builds the #fhTabs button group for the current fhLayout, and marks
 // Table/Plot disabled when the active node has nothing to tabulate/plot.
 // Rebuilt on every renderMainView() call (cheap — 3-4 small buttons) rather
@@ -8587,6 +8629,23 @@ function applyFhView(view) {
     if (wasOnTableOrPlot) renderMainView(); // content component switches back from Table/Plot to #fhSplit
   }
   localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout);
+  // Remember which tab the active node was left on, so a later switch back
+  // to it can restore the same view (Settings -> Behavior "When switching
+  // to a filter": rememberLast, the default) instead of always defaulting
+  // to Filtered — see applyActivationView(). Recorded here, the one place
+  // every applyFhView() call funnels through regardless of which of the
+  // three branches above it took, rather than only in render()'s
+  // activeId-changed block: a plain tab click while a node is ALREADY
+  // active (the common case) never goes through render() at all for
+  // Table/Plot switches (the "table"/"plot" branch above calls
+  // renderMainView() directly).
+  if (state.activeId) {
+    const activeNode = state.nodes[state.activeId];
+    if (activeNode && activeNode.type === "filter") {
+      const recorded = fhLayout === "stacked" && fhActiveTab !== "table" && fhActiveTab !== "plot" ? "stacked" : fhActiveTab;
+      nodeLastView.set(activeNode.id, recorded);
+    }
+  }
 }
 function initFhView() {
   fhLayout = localStorage.getItem(FH_LAYOUT_STORAGE_KEY) === "stacked" ? "stacked" : "tabs";
@@ -8967,6 +9026,53 @@ tableHeaderEl.addEventListener("click", ev => {
   renderTable();
 });
 
+// Decides which view (Context/Filtered/Table/Plot/Stacked) to land on when
+// a filter node BECOMES the active node — person-requested: a brand-new
+// wildcard filter used to always jump straight to Table (see this
+// function's predecessor, the unconditional applyFhView("table") render()
+// used to do here), which read as the filter "not working" until you
+// noticed the tab bar. Now:
+// - a node that has NEVER been the active node before (no entry in
+//   nodeLastView) always lands on Filtered, no matter the setting below or
+//   whether it has extractable wildcards.
+// - a node visited before goes by Settings -> Behavior "When switching to a
+//   filter" (filterActivationView): "alwaysFiltered" always lands on
+//   Filtered again; "rememberLast" (default) restores whichever tab was
+//   last shown for THAT node specifically (nodeLastView, recorded at the
+//   end of every applyFhView() call).
+function applyActivationView(activeNode) {
+  const remembered = nodeLastView.get(activeNode.id);
+  let targetTab;
+  if (remembered === undefined || filterActivationView === "alwaysFiltered") {
+    targetTab = "filter";
+  } else if ((remembered === "table" || remembered === "plot") && !nodeHasExtractableWildcards(activeNode)) {
+    // The pattern lost its wildcards since the last visit (edited in the
+    // meantime) — Table/Plot no longer apply, same fallback
+    // renderMainView()'s own fhActiveTab/!extractCapable check already
+    // makes for a live edit.
+    targetTab = "filter";
+  } else {
+    targetTab = remembered; // "highlight" | "filter" | "table" | "plot" | "stacked"
+  }
+  if (targetTab === "table" || targetTab === "plot") {
+    if (fhActiveTab !== targetTab) applyFhView(targetTab);
+  } else if (fhLayout === "stacked") {
+    // "highlight"/"filter"/"stacked" all mean the same thing here: the
+    // combined pane both Context and Filtered already share. Only need to
+    // act if Table/Plot was showing; otherwise the right thing is already
+    // on screen.
+    if (fhActiveTab === "table" || fhActiveTab === "plot") applyFhView("stacked");
+  } else if (targetTab === "highlight") {
+    if (fhActiveTab !== "highlight") applyFhView("highlight");
+  } else {
+    // targetTab is "filter", or a leftover "stacked" recorded while
+    // fhLayout was "stacked" and the person has since switched the global
+    // Settings option back to "Separate" — "stacked" isn't a valid tab in
+    // that layout, Filtered is the sane fallback.
+    if (fhActiveTab !== "filter") applyFhView("filter");
+  }
+}
+
 function updateSortIndicators() {
   tableHeaderEl.querySelectorAll(".th-sortable").forEach(th => {
     const arrow = th.querySelector(".th-sort-arrow");
@@ -8978,15 +9084,7 @@ function render() {
   if (state.activeId !== lastActiveIdForReveal) {
     lastActiveIdForReveal = state.activeId;
     const activeNode = state.nodes[state.activeId];
-    if (activeNode && activeNode.type === "filter") {
-      revealFilteredView();
-      // Activating an extraction node jumps straight to its Table tab, the
-      // same way activating any other filter jumps to Filtered above — this
-      // is what "isExtract" used to mean unconditionally before the unified
-      // toolbar (docs/ui-implementation-plan.md), preserved here rather than
-      // requiring an explicit extra click on Table every time.
-      if (nodeHasExtractableWildcards(activeNode) && fhActiveTab !== "table" && fhActiveTab !== "plot") applyFhView("table");
-    }
+    if (activeNode && activeNode.type === "filter") applyActivationView(activeNode);
     if (state.activeId) recordNavVisit();
   }
   renderTree();
@@ -22659,6 +22757,7 @@ initTempAnchorSettings();
 initCollapsePanels();
 initFhView();
 initSettingsFhLayoutOption();
+initFilterActivationViewSetting();
 render();
 // Log format config (Settings -> Format Manager) loads in parallel with the
 // rest of boot, not gating it — restoreSessionFromCache/loadFromUrlParam

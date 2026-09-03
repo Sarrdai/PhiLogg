@@ -288,3 +288,33 @@ deckt beide Richtungen ab (Context← Table, Filtered← Plot) und prüft dabei
 explizit `style.display` von `#extractWrap`/`#fhSplit` statt einer nie
 gesetzten CSS-Klasse — genau die Prüf-Schwäche, die den ursprünglichen,
 eng verwandten Bug schon einmal durchrutschen ließ.
+
+### Nachgereichter Fix (selber Tag, direkt danach): Auto-Jump auf Table auch beim allerersten Anlegen eines Filters
+
+Person-reported, unmittelbar im Anschluss an den obigen Fix: der
+Auto-Jump-auf-Table beim Aktivieren eines extraktionsfähigen Knotens (siehe
+"Nachgereichter Fix" oben, dessen `else`-Zweig-Bug erst sichtbar wurde,
+*weil* dieses Auto-Jump-Verhalten überhaupt existiert) griff unterschiedslos
+**bei jeder** Aktivierung — auch beim allerersten Anlegen eines brandneuen
+Wildcard-Filters. Das las sich wie "der Filter matcht nichts", bis man die
+Tab-Leiste bemerkte und selbst auf Filtered wechselte. Ersetzt durch
+`applyActivationView()`: ein Knoten, der noch **nie** aktiv war (kein
+Eintrag in der neuen, rein In-Memory gehaltenen `nodeLastView`-Map, keyed by
+Knoten-ID), landet jetzt immer auf Filtered — unabhängig von Wildcards oder
+der neuen Einstellung. Ein bereits einmal besuchter Knoten richtet sich nach
+Settings → Behavior **"When switching to a filter"** (`filterActivationView`
+/ `FILTER_ACTIVATION_VIEW_KEY`, Default `"rememberLast"`): `"alwaysFiltered"`
+landet wieder immer auf Filtered; `"rememberLast"` stellt den zuletzt für
+GENAU diesen Knoten gezeigten Tab wieder her (Context/Filtered/Table/Plot
+oder die verschmolzene Stacked-Ansicht). `nodeLastView` wird am Ende jedes
+`applyFhView()`-Aufrufs aktualisiert — der eine Punkt, durch den jeder
+Tab-Wechsel ohnehin läuft — bleibt also auch bei einem gewöhnlichen
+Tab-Klick aktuell, nicht nur beim erneuten Aktivieren. Fallbacks auf
+Filtered statt eines ungültigen Ziels: wenn das Pattern seit dem letzten
+Besuch so bearbeitet wurde, dass die Wildcards weg sind (Table/Plot nicht
+mehr anwendbar), oder wenn `"stacked"` erinnert wird, das globale
+"Context/Filtered display" aber inzwischen zurück auf "Separate" steht.
+Neue Testgruppe 161 deckt alle Fälle ab (Erstbesuch, rememberLast pro
+Tab-Typ, alwaysFiltered, Wildcard-Verlust-Fallback, Settings-Rundtrip,
+Stacked-Fallback). Siehe `docs/ui-and-views.md` →
+"Which view a filter node opens to" für die vollständige Beschreibung.
