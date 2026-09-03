@@ -21,6 +21,10 @@ on:
         description: Build Linux (.AppImage)
         type: boolean
         default: false
+      build_windows_portable:
+        description: Build Windows portable (.zip)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -50,7 +54,11 @@ jobs:
         id: os_list
         run: |
           list="[]"
-          [ "${{ inputs.build_windows }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["windows-latest"]')
+          # build_windows_portable also needs the windows-latest runner —
+          # deduped with `unique` so ticking both boxes doesn't spawn it twice.
+          if [ "${{ inputs.build_windows }}" = "true" ] || [ "${{ inputs.build_windows_portable }}" = "true" ]; then
+            list=$(echo "$list" | jq -c '. + ["windows-latest"] | unique')
+          fi
           [ "${{ inputs.build_mac }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["macos-latest"]')
           [ "${{ inputs.build_linux }}" = "true" ] && list=$(echo "$list" | jq -c '. + ["ubuntu-22.04"]')
           echo "list=$list" >> "$GITHUB_OUTPUT"
@@ -125,6 +133,26 @@ jobs:
         working-directory: desktop
         run: npm run build
 
+      # Windows only: `npm run build` already produced the raw, unbundled
+      # `cargo build --release` binary alongside the NSIS installer — that
+      # binary needs nothing installed to run (WebView2 ships with Windows
+      # itself), so it's already "portable" once it carries its own copy of
+      # philogg.html and a marker file telling settings.rs/windows.rs to keep
+      # settings.json and the webview's storage in a data/ folder beside the
+      # exe instead of the OS's per-user directories. See
+      # desktop/README.md "Portable build".
+      - name: Package Windows portable build
+        if: runner.os == 'Windows' && inputs.build_windows_portable
+        shell: bash
+        run: |
+          SHA="${{ steps.stamp.outputs.short_sha }}"
+          STAGE="PhiLogg-${SHA}_portable"
+          mkdir -p "$STAGE"
+          cp desktop/src-tauri/target/release/philogg-desktop.exe "$STAGE/PhiLogg.exe"
+          cp philogg.html "$STAGE/philogg.html"
+          touch "$STAGE/philogg-portable"
+          (cd "$STAGE" && 7z a -tzip "../${STAGE}.zip" .)
+
       - name: Upload installer(s)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -155,4 +183,7 @@ jobs:
             renamed="$(dirname "$f")/PhiLogg-${SHA}.${f##*.}"
             mv "$f" "$renamed"
             upload_with_retry "$renamed"
+          done
+          for f in PhiLogg-"${SHA}"_portable.zip; do
+            upload_with_retry "$f"
           done
