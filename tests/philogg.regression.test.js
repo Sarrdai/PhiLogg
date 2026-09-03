@@ -18112,6 +18112,15 @@ await withApp(async (w, d, T) => {
    #folderWatchSettingsDialog (styled after #settingsDialog). See
    defaultFolderSettings/matchFolderPattern/scanFolderHandle/
    applyFolderAutoRules in philogg.html's "Folder watch" section.
+   EXTENDED same session (person-reported follow-up): "Auto-close — keep
+   only N open" is a genuine SLIDING WINDOW over the N newest matches now —
+   a newer file arriving opens itself, evicting the previous oldest open
+   one, instead of silently staying unopened (the auto rules block was
+   REWRITTEN in place, so the old "auto-open-newest opens, then a single
+   later file triggers exactly one close" framing is gone, replaced by the
+   two-open/keep-2/a-3rd-arrives scenario below). Also covers
+   nodeDisplayName() keeping a folder-watch file's relative-path name once
+   it's actually opened, not just in the still-grayed listing.
    ============================================================ */
 group(164);
 await withApp(async (w, d, T) => {
@@ -18207,42 +18216,59 @@ await withApp(async (w, d, T) => {
   const labels = [...sBox.querySelectorAll(".folder-watch-file-name")].map(l => l.textContent);
   assert(labels.includes("sub/Nested.log"), "\"show relative path\" displays the nested file's path, not just its filename — got " + labels.join(","));
 
-  // --- Per-pattern auto rules: auto-open newest, auto-close keep N, show
-  // newest M. "Newest" = last in the (alphabetical) sort order, same
-  // convention the folder listing itself already sorts by.
-  const ruleFiles = { "R-01.log": makeLog(0, 1), "R-02.log": makeLog(1, 1) };
+  // Person-reported: the relative-path name must keep showing once the file
+  // is actually opened, not revert to the bare filename (nodeDisplayName).
+  const nestedRow = [...sBox.querySelectorAll(".folder-watch-file")].find(r => r.querySelector(".folder-watch-file-name").textContent === "sub/Nested.log");
+  fireDblClick(nestedRow, w);
+  await waitFor(() => sFolder.files.find(f => f.name === "Nested.log").nodeId !== null);
+  const nestedNodeId = sFolder.files.find(f => f.name === "Nested.log").nodeId;
+  assert(w.nodeDisplayName(T.state.nodes[nestedNodeId]) === "sub/Nested.log",
+    "nodeDisplayName keeps showing the relative path once the file is open, got " + w.nodeDisplayName(T.state.nodes[nestedNodeId]));
+  w.render();
+  const openedLabel = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "sub/Nested.log");
+  assert(openedLabel !== undefined, "the opened file's tree row also shows the relative path, not just \"Nested.log\"");
+
+  // --- Per-pattern auto rules: auto-open newest, auto-close keep N (a
+  // SLIDING WINDOW over the newest N — person-reported: a new, newer file
+  // arriving must itself open, evicting the previous oldest, not leave the
+  // open set unchanged), show newest M. "Newest" = last in the
+  // (alphabetical) sort order, same convention the folder listing itself
+  // already sorts by.
+  const ruleFiles = { "R-01.log": makeLog(0, 1), "R-02.log": makeLog(1, 1), "R-03.log": makeLog(2, 1) };
   const ruleDir = fakeDirHandle("rulelogs", ruleFiles);
   await w.addWatchedFolder(ruleDir);
   const rFolder = T.state.folders.find(f => f.name === "rulelogs");
-  rFolder.settings.patterns = [{ pattern: "*", autoOpenNewest: true, autoCloseKeep: 1, showNewest: null }];
+  rFolder.settings.patterns = [{ pattern: "*", autoOpenNewest: false, autoCloseKeep: 2, showNewest: null }];
   await w.rescanFolder(rFolder);
-  await waitFor(() => rFolder.files.find(f => f.name === "R-02.log").nodeId !== null);
-  assert(rFolder.files.find(f => f.name === "R-02.log").nodeId, "auto-open-newest opened R-02.log (the alphabetically last match)");
-  assert(!rFolder.files.find(f => f.name === "R-01.log").nodeId, "auto-open-newest did not also open R-01.log");
-  const r02Id = rFolder.files.find(f => f.name === "R-02.log").nodeId;
-  assert(T.state.activeId === r02Id, "the auto-opened file is also selected/activated, same as a manual open");
+  assert(rFolder.files.find(f => f.name === "R-02.log").nodeId && rFolder.files.find(f => f.name === "R-03.log").nodeId,
+    "keep-2 opened the 2 newest matches (R-02, R-03) right away");
+  assert(!rFolder.files.find(f => f.name === "R-01.log").nodeId, "keep-2 left R-01.log (outside the newest-2 window) closed");
+  const r03IdBefore = rFolder.files.find(f => f.name === "R-03.log").nodeId;
+  assert(T.state.activeId === r03IdBefore, "the last-opened file (the newest of the window) is selected/activated");
   assert(T.state.tailFollow === true, "auto-opening a handle-backed file leaves tailFollow engaged (auto-scroll)");
 
-  ruleFiles["R-03.log"] = makeLog(2, 1);
+  // A new, newer file arrives: the window slides — R-04 opens, R-02 (now
+  // the oldest of the previously-open two) closes, R-03 stays open.
+  ruleFiles["R-04.log"] = makeLog(3, 1);
   await w.rescanFolder(rFolder);
-  await waitFor(() => rFolder.files.find(f => f.name === "R-03.log").nodeId !== null);
+  assert(rFolder.files.find(f => f.name === "R-04.log").nodeId, "R-04.log (the new newest) was itself opened by the sliding keep-2 window, got nodeId=" + rFolder.files.find(f => f.name === "R-04.log").nodeId);
   assert(!rFolder.files.find(f => f.name === "R-02.log").nodeId,
-    "auto-close (keep only 1 open) closed R-02.log once R-03.log (the new newest) opened");
+    "R-02.log (fell out of the newest-2 window) was auto-closed to make room for R-04.log");
   assert(rFolder.files.some(f => f.name === "R-02.log"), "R-02.log stays listed grayed out after auto-close, not removed");
-  assert(rFolder.files.find(f => f.name === "R-03.log").nodeId, "R-03.log (the new newest) is the one auto-opened and left open");
+  const r03Now = rFolder.files.find(f => f.name === "R-03.log");
+  assert(r03Now.nodeId === r03IdBefore, "R-03.log (still inside the window) was left open, untouched");
 
   // Show newest M: drop closed listing entries older than the M most recent.
-  // Before this: R-01/R-02 closed+grayed, R-03 open. Adding R-00 (sorts
-  // first) makes 4 files; keeping the newest 2 by sort order (R-02, R-03)
-  // drops the two oldest closed ones (R-00, R-01) — R-03 stays regardless
-  // since an open file is never dropped.
+  // Current state: R-01/R-02 closed+grayed, R-03/R-04 open. Adding R-00
+  // (sorts first) makes 5 files; keeping the newest 2 by sort order
+  // (R-03, R-04) drops the older closed ones (R-00, R-01, R-02) — the open
+  // files stay regardless.
   rFolder.settings.patterns = [{ pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: 2 }];
   ruleFiles["R-00.log"] = makeLog(-1, 1);
   await w.rescanFolder(rFolder);
   const namesAfterShowNewest = rFolder.files.map(f => f.name).sort();
-  assert(namesAfterShowNewest.join(",") === "R-02.log,R-03.log",
-    "show-newest-2 kept only the 2 newest (R-02, R-03), dropping the older closed R-00/R-01 — got " + namesAfterShowNewest.join(","));
-  assert(rFolder.files.find(f => f.name === "R-03.log").nodeId, "the still-open R-03.log survives show-newest regardless of its position");
+  assert(namesAfterShowNewest.join(",") === "R-03.log,R-04.log",
+    "show-newest-2 kept only the 2 newest closed/open matches — the still-open R-03/R-04 survive, the closed R-00/R-01/R-02 are dropped — got " + namesAfterShowNewest.join(","));
 });
 
 /* ============================================================
