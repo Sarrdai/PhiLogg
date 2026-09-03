@@ -2492,9 +2492,9 @@
     padding:8px 12px; font-size:12px; font-weight:650; cursor:pointer;
   }
   .btn-mini:disabled{opacity:.4; cursor:default;}
-  /* #filterExtractBtn: a plain secondary button, bordered/transparent
-     instead of accent-filled, so "Add filter"/"Save" (still .btn-mini)
-     stays the visually primary action. */
+  /* .btn-mini-secondary: a plain secondary button, bordered/transparent
+     instead of accent-filled, for any .btn-mini that isn't the primary
+     action in its group. */
   .btn-mini-secondary{background:transparent; color:var(--text-secondary); border:1px solid var(--border);}
   .btn-mini-secondary:hover:not(:disabled){filter:brightness(1.25);}
   .btn-icon{background:none; border:none; color:var(--text-tertiary); cursor:pointer; display:flex; padding:6px; border-radius:6px;}
@@ -2867,7 +2867,6 @@
           <div class="filter-footer-row">
             <div id="filterLiveMatch"></div>
             <div class="filter-footer-actions">
-              <button type="button" class="btn-mini btn-mini-secondary" id="filterExtractBtn" title="Build an extraction table from this pattern's [value:...] wildcards">Extract</button>
               <button type="submit" class="btn-mini" id="filterSubmitBtn">Add filter</button>
             </div>
           </div>
@@ -6092,9 +6091,9 @@ function valueSatisfiesConditions(rawStr, conditions) {
 // Tests `text` against an extraction regex AND, for every captured column
 // that carries conditions, the numeric constraint on its captured value —
 // the single shared "does this wildcard pattern really match" primitive
-// used by extraction (getEntries' "extract" branch), a plain "text" filter
-// whose value contains wildcard tokens, and the live-match/pattern-preview
-// UI, so all four never disagree about what a conditioned placeholder
+// used by extraction (renderExtractTable), a plain "text" filter whose value
+// contains wildcard tokens, and the live-match/pattern-preview UI, so all
+// three never disagree about what a conditioned placeholder
 // matches. Returns the match array (truthy) on success, null otherwise —
 // callers that just need a boolean use `!!wildcardMatch(...)`, callers that
 // also want the captured substrings (the pattern preview) reuse the array.
@@ -6149,14 +6148,18 @@ function compileExtractPattern(pattern) {
 // renderViewTabs() to enable/disable those two tabs
 // (docs/ui-implementation-plan.md precisiation 3: they stay visible, just
 // disabled, so the rest of the tab group never jumps sideways when they
-// become available). A node needs to actually be an extract-type filter AND
-// compile to a non-empty, valid column set — compileExtractPattern already
-// returns null for a bare "text" pattern with no wildcards at all, or one
-// whose regex fails to compile, so nodeHasExtractableWildcards is just that
-// check with a name that says what it means at the two call sites that need
-// it (renderViewTabs, renderExtractTable's own invalid-pattern branch).
+// become available). There is no separate "extract" filterType anymore
+// (this session's filterType merge, see docs/ui-implementation-plan.md's
+// follow-up note) — a "text" filter node unlocks Table/Plot the moment its
+// own pattern contains [value:...]/[*] wildcards. Regex mode has no such
+// placeholder vocabulary (isExtractPattern would only find a coincidental
+// literal "[value:...]" in the regex source, not a real token), so a regex
+// node is excluded even if its raw text happens to contain that substring.
+// compileExtractPattern already returns null for a plain pattern with no
+// wildcards at all, or one whose regex fails to compile.
 function nodeHasExtractableWildcards(node) {
-  return !!(node && node.type === "filter" && node.filterType === "extract" && compileExtractPattern(node.value));
+  return !!(node && node.type === "filter" && node.filterType === "text" && !node.isRegex &&
+    isExtractPattern(node.value) && compileExtractPattern(node.value));
 }
 
 // Display name for a "timerange" filter's { from, to } value (either bound
@@ -6197,14 +6200,19 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
   if (filterType === "text") name = (isRegex ? "/" + value + "/" : `“${value}”`);
   else if (filterType === "after") name = `≥ ${formatTime(value)}`;
   else if (filterType === "before") name = `≤ ${formatTime(value)}`;
-  else if (filterType === "extract") name = value;
   else if (filterType === "timerange") name = timeRangeFilterName(value);
   else if (filterType === "level") name = value.join(", ");
   else if (filterType === "idset") name = idSetFilterName(value);
   else name = String(value);
 
   const node = { id: uid("n"), type: "filter", name, parentId, children: [], filterType, value, inverted };
-  if (filterType === "extract" && ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
+  // ignoredColumns only ever means something once the pattern actually has
+  // [value:...]/[*] wildcards (nodeHasExtractableWildcards) — gated on
+  // filterType === "text" rather than that check itself so it's set from the
+  // filter popup's ignore-toggle state regardless of whether the pattern
+  // happens to compile at creation time (same "store it, it's harmless if
+  // unused" stance ignoredColumns/assertions/plotConfig all take).
+  if (filterType === "text" && ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
   if (filterType === "text" && caseSensitive) node.caseSensitive = true;
   if (filterType === "text" && columns && columns.length) node.columns = columns.slice();
   if (filterType === "text" && isRegex) node.isRegex = true;
@@ -6225,7 +6233,7 @@ function idSetFilterName(ids, origin = "plot view") {
   return n + (n === 1 ? " entry (" + origin + ")" : " entries (" + origin + ")");
 }
 
-// Edits an existing "text"/"extract" filter node in place (see
+// Edits an existing "text" filter node in place (see
 // openEditFilterPopup) — updates its value, filterType (typing extraction
 // tokens into a plain text filter, or removing them, flips which one
 // applies), inverted flag and display name. Every other node's cache is
@@ -6243,7 +6251,7 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, c
     : filterType === "level" ? value.join(", ")
     : filterType === "idset" ? idSetFilterName(value)
     : value;
-  if (filterType === "extract" && ignoredColumns !== undefined) {
+  if (filterType === "text" && ignoredColumns !== undefined) {
     if (ignoredColumns && ignoredColumns.length) node.ignoredColumns = ignoredColumns.slice();
     else delete node.ignoredColumns;
   }
@@ -6870,10 +6878,10 @@ function cloneSubtree(nodeId, newParentId) {
     clone.countBefore = orig.countBefore;
     clone.countAfter = orig.countAfter;
   }
-  if (orig.filterType === "extract" && orig.assertions) clone.assertions = JSON.parse(JSON.stringify(orig.assertions));
-  if (orig.filterType === "extract" && orig.columnRenames) clone.columnRenames = JSON.parse(JSON.stringify(orig.columnRenames));
-  if (orig.filterType === "extract" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
-  if (orig.filterType === "extract" && orig.plotConfig) clone.plotConfig = JSON.parse(JSON.stringify(orig.plotConfig));
+  if (orig.filterType === "text" && orig.assertions) clone.assertions = JSON.parse(JSON.stringify(orig.assertions));
+  if (orig.filterType === "text" && orig.columnRenames) clone.columnRenames = JSON.parse(JSON.stringify(orig.columnRenames));
+  if (orig.filterType === "text" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
+  if (orig.filterType === "text" && orig.plotConfig) clone.plotConfig = JSON.parse(JSON.stringify(orig.plotConfig));
   if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
   if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
   if (orig.filterType === "text" && orig.isRegex) clone.isRegex = true;
@@ -6995,10 +7003,11 @@ function textColumnValue(e, key) {
 // line) same as before this feature; caseSensitive off lower-cases both
 // sides same as the original behavior.
 //
-// `wildcardRegex` (optional): a "text" filter can now carry [value:...]/[*]
-// tokens without becoming an "extract" filter — which one a wildcard
-// pattern becomes is decided purely by which filter-popup button gets
-// clicked, "Add filter" vs. "Extract" (see commitFilter). When set,
+// `wildcardRegex` (optional): a "text" filter can carry [value:...]/[*]
+// tokens — there is no separate "extract" filterType (this session's
+// filterType merge, docs/ui-implementation-plan.md's follow-up note): the
+// same "text" node both filters/highlights AND, whenever its pattern has
+// wildcards, unlocks Table/Plot (see nodeHasExtractableWildcards). When set,
 // wildcardRegex is compileExtractPattern's regex (rebuilt with the right
 // case-sensitivity flag) tested against the target text instead of a
 // plain substring check. `wildcardColumns` (required whenever wildcardRegex
@@ -7533,9 +7542,6 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
   } else if (baked.filterType === "timerange") {
     const from = baked.value && baked.value.from, to = baked.value && baked.value.to;
     result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
-  } else if (baked.filterType === "extract") {
-    const spec = compileExtractPattern(baked.value);
-    result = spec ? parentEntries.filter(e => !!wildcardMatch(spec.regex, spec.columns, e.message)) : [];
   } else if (baked.filterType === "idset") {
     const idSet = new Set(Array.isArray(baked.value) ? baked.value : []);
     result = parentEntries.filter(e => idSet.has(e.id));
@@ -7618,12 +7624,15 @@ function getEntriesUncached(node) {
       const re = compileRegexFilter(value, !!node.caseSensitive);
       result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, re)) : [];
     } else if (isExtractPattern(value)) {
-      // A "text" filter's value can itself contain [value:...]/[*] tokens
-      // when it was authored by clicking "Add filter" instead of "Extract"
-      // (wildcard used as a match-shape hint, not to build an extraction
-      // table — see the filter popup's commitFilter). Compiled to the same
-      // regex compileExtractPattern would use for extraction, just tested
-      // rather than captured.
+      // A "text" filter's value can contain [value:...]/[*] tokens — there
+      // is no separate "extract" filterType to route to instead (this
+      // session's filterType merge, docs/ui-implementation-plan.md's
+      // follow-up note). The same node both filters/highlights on this
+      // match AND, via nodeHasExtractableWildcards, unlocks Table/Plot,
+      // which build their own rows from renderExtractTable's own
+      // compileExtractPattern call over these exact same entries. Compiled
+      // here to the same regex compileExtractPattern would use for
+      // extraction, just tested rather than captured.
       const spec = compileExtractPattern(value);
       const wildcardRegex = spec && new RegExp(spec.regexStr, node.caseSensitive ? "" : "i");
       result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, wildcardRegex, spec.columns)) : [];
@@ -7644,9 +7653,6 @@ function getEntriesUncached(node) {
     // "Known gotchas" note on filter-node fields.
     const from = node.value && node.value.from, to = node.value && node.value.to;
     result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
-  } else if (node.filterType === "extract") {
-    const spec = compileExtractPattern(node.value);
-    result = spec ? parentEntries.filter(e => !!wildcardMatch(spec.regex, spec.columns, e.message)) : [];
   } else if (node.filterType === "idset") {
     // value = array of entry ids — an explicit, pre-computed match set
     // rather than a rule evaluated per entry. Built by "Create filter from
@@ -8621,7 +8627,10 @@ let lastActiveIdForReveal = null;
           the same lastActiveIdForReveal check revealFilteredView() uses,
           which is the one place all ~30 activeId call sites funnel through.
       A2  revealInHighlightView() — double-click / Enter into the Context view.
-      A3  jumpToFullLog() — extraction table / plot mark into the log view.
+      A3  revealInFilteredView() — extraction table row / plot mark into the
+          SAME node's Filtered view (this session's follow-up feature;
+          jumpToFullLog, the destructive full-log jump this replaced here,
+          is no longer wired to any UI action, see its own comment).
       A4  jumpToEntry() — jump to an entry from outside the log views.
       A5  the timeline minimap's click-to-jump.
       A6  jumpToTailedNewest() — "jump to newest" on a tailed file.
@@ -8686,15 +8695,16 @@ const btnNavBack = el("#btnNavBack");
 const btnNavForward = el("#btnNavForward");
 
 // The scroll container backing the Filtered pane for a given node. Mirrors
-// the isLink/isExtract branching in renderMainView(). The Context pane's own
-// container (#highlightBody) is tracked separately — both are live at once
-// in the Stacked layout.
+// the isLink/extract-capable branching in renderMainView(). The Context
+// pane's own container (#highlightBody) is tracked separately — both are
+// live at once in the Stacked layout.
 function activeNavScroller(nodeId) {
   const node = state.nodes[nodeId === undefined ? state.activeId : nodeId];
-  // An extraction node now ALSO has an ordinary Filtered pane (tableBody) —
-  // its own extractScroll only applies while the Table/Plot tab is actually
-  // the one on screen (see renderMainView's Schritt 5 rework).
-  if (node && node.type === "filter" && node.filterType === "extract" &&
+  // An extraction-capable node ALSO has an ordinary Filtered pane
+  // (tableBody) — its own extractScroll only applies while the Table/Plot
+  // tab is actually the one on screen (see renderMainView's Schritt 5
+  // rework).
+  if (nodeHasExtractableWildcards(node) &&
       (fhActiveTab === "table" || fhActiveTab === "plot")) return extractScroll;
   if (node && node.type === "filter" && node.filterType === "link") return linkScroll;
   return tableBody;
@@ -9154,10 +9164,14 @@ function renderStatus() {
 // Short type label shown next to each tree node's name (FILE/TXT/TIME/TBL/AND/OR/LNK).
 function typeTagFor(node) {
   if (node.type === "file") return "FILE";
+  // A "text" filter whose pattern has [value:...]/[*] wildcards is now ALSO
+  // an extraction node (this session's filterType merge — there is no more
+  // separate "extract" filterType) — tag it TBL like the old dedicated type
+  // did, since that's the more informative label (it unlocks Table/Plot).
+  if (node.filterType === "text" && nodeHasExtractableWildcards(node)) return "TBL";
   switch (node.filterType) {
     case "text": return "TXT";
     case "after": case "before": case "timerange": return "TIME";
-    case "extract": return "TBL";
     case "and": return "AND";
     case "or": return "OR";
     case "link": return "LNK";
@@ -9173,8 +9187,10 @@ function typeTagFor(node) {
 // Icon lookup for a tree row (renderNode).
 function nodeIconHTML(node) {
   return node.type === "file" ? (node.merged ? ICON_MERGE : ICON_FILE)
+    // A "text" node with extractable wildcards gets the table icon, same as
+    // the retired dedicated "extract" filterType used to.
+    : (node.filterType === "text" && nodeHasExtractableWildcards(node)) ? ICON_TABLE
     : node.filterType === "text" ? ICON_FILTER
-    : node.filterType === "extract" ? ICON_TABLE
     : (node.filterType === "and" || node.filterType === "or") ? ICON_COMBINE
     : node.filterType === "link" ? ICON_LINK
     : (node.filterType === "context" || node.filterType === "countContext") ? ICON_CONTEXT
@@ -9317,7 +9333,6 @@ function ghostTypeTag(filterType) {
   switch (filterType) {
     case "text": return "TXT";
     case "after": case "before": case "timerange": return "TIME";
-    case "extract": return "TBL";
     case "and": return "AND";
     case "or": return "OR";
     case "link": return "LNK";
@@ -9330,9 +9345,13 @@ function ghostTypeTag(filterType) {
   }
 }
 
+// filterType alone (no node value to check for wildcards) — used for a
+// drag/drop ghost preview built before any real node exists, so this never
+// needs the "text node with wildcards" TBL distinction typeTagFor/
+// nodeIconHTML make; a ghost of a to-be-created extraction still just says
+// "text".
 function ghostIconFor(filterType) {
   return filterType === "text" ? ICON_FILTER
-    : filterType === "extract" ? ICON_TABLE
     : (filterType === "and" || filterType === "or") ? ICON_COMBINE
     : filterType === "link" ? ICON_LINK
     : (filterType === "context" || filterType === "countContext") ? ICON_CONTEXT
@@ -9461,7 +9480,7 @@ function editFilterNode(nodeId) {
     openTimeRangeDialog("edit", node.id, timeRangeOfNode(node));
     return true;
   }
-  if (node.filterType === "text" || node.filterType === "extract") {
+  if (node.filterType === "text") {
     openEditFilterPopup(node.id);
     return true;
   }
@@ -10017,8 +10036,10 @@ function getVisibleEntries() {
 }
 
 /* ===================== Extraction table view =====================
-   Renders the matches of an "extract" filter node as a spreadsheet-like
-   grid: one row per matching entry, one column per placeholder. Supports
+   Renders the matches of an extraction-capable "text" filter node (its
+   pattern has [value:...]/[*] wildcards, see nodeHasExtractableWildcards)
+   as a spreadsheet-like grid: one row per matching entry, one column per
+   placeholder. Supports
    click/shift-click/drag range selection (like Excel), one-click column
    and row copy, "copy all", and Ctrl+C on the current selection.
    Row-virtualized the same way the main log table is (see "Virtualized
@@ -10901,22 +10922,26 @@ function switchExtractView(view) {
 window.addEventListener("resize", () => { if (extractView === "plot") renderPlotChart(); });
 
 // Plot point/bar -> log entry: the Plot tab used to be a dead end (an
-// outlier was visible but not reachable) — clicking a mark now jumps to its
-// underlying entry the same way a table row's double-click already does
-// (see jumpToFullLog's own comment: the extraction table/plot has no
-// Highlight-view companion to reveal into instead). One delegated listener
-// rather than one per mark, since renderPlotChart rebuilds the SVG's
-// innerHTML wholesale on every render. plotDragSuppressClick (set by the
-// drag-to-zoom handler below) skips the jump when this click is really the
-// mouseup end of a drag, not a plain click — same pattern the timeline
-// minimap's own drag-select already uses for the identical reason.
+// outlier was visible but not reachable) — clicking a mark now reveals its
+// underlying entry in the Filtered view, the same node the extraction table
+// row double-click reveals into (revealInFilteredView, this session's
+// follow-up feature — previously jumpToFullLog's destructive full-log jump,
+// back when an extraction node had no Filtered pane of its own). One
+// delegated listener rather than one per mark, since renderPlotChart
+// rebuilds the SVG's innerHTML wholesale on every render. Kept as a single
+// click (not a double-click) — unlike the table's row, a mark has no other
+// single-click behavior to disambiguate from, so the extra click would only
+// add friction. plotDragSuppressClick (set by the drag-to-zoom handler
+// below) skips the jump when this click is really the mouseup end of a
+// drag, not a plain click — same pattern the timeline minimap's own
+// drag-select already uses for the identical reason.
 let plotDragSuppressClick = false;
 plotSvg.addEventListener("click", ev => {
   if (plotDragSuppressClick) { plotDragSuppressClick = false; return; }
   const mark = ev.target.closest(".plot-mark");
   if (!mark) return;
   const row = extractRowsData[+mark.dataset.row];
-  if (row) jumpToFullLog(row.entry);
+  if (row) revealInFilteredView(row.entry);
 });
 
 // ---------- Plot zoom / pan / hover tooltip ----------
@@ -12134,7 +12159,7 @@ plot3dCanvas.addEventListener("click", () => {
   if (plot3dDragMoved) { plot3dDragMoved = false; return; } // a drag's trailing click shouldn't also jump to a log entry
   if (!plot3dHoverHit) return;
   const row = extractRowsData[plot3dHoverHit.rowIndex];
-  if (row) jumpToFullLog(row.entry);
+  if (row) revealInFilteredView(row.entry);
 });
 
 let plot3dHoverHit = null;
@@ -12565,7 +12590,12 @@ function renderExtractVisibleRows() {
         escapeHtml(row.values[ci]) + "</td>";
     });
     tr.innerHTML = rowHtml;
-    tr.addEventListener("dblclick", () => jumpToFullLog(row.entry, tr, extractScroll));
+    // Reveals into the SAME node's Filtered pane (this session's follow-up
+    // feature) rather than jumpToFullLog's destructive jump to the raw file
+    // — an extraction-capable node now has an ordinary Filtered view of its
+    // own matched entries (see nodeHasExtractableWildcards), so that's what
+    // double-clicking a row here lands on.
+    tr.addEventListener("dblclick", () => revealInFilteredView(row.entry, tr, extractScroll));
     const gutter = tr.querySelector(".extract-gutter");
     gutter.addEventListener("mouseenter", highlightAllColumns);
     gutter.addEventListener("mouseleave", clearColumnHighlight);
@@ -13234,7 +13264,7 @@ function computeHighlightMap(fileId) {
     const node = state.nodes[stack.pop()];
     if (!node) continue;
     stack.push(...node.children);
-    if (node.type !== "filter" || node.filterType === "extract" || !node.highlightColor) continue;
+    if (node.type !== "filter" || !node.highlightColor) continue;
     const entries = getEntries(node.id);
     if (node.filterType === "link") {
       entries.forEach(pair => getTupleEntries(pair).forEach(e => addColor(e.id, node.highlightColor)));
@@ -15741,10 +15771,14 @@ function moveHighlightSelection(delta) {
 
 // Switches to the full (unfiltered-by-tree) file view that the current node
 // belongs to, clears the quick level filter, and scrolls/highlights the
-// entry. Only the extract table's double-click uses this destructive jump
-// now — it has no Highlight panel of its
-// own to reveal the entry in instead, unlike the plain table/link view
-// double-clicks, which now use revealInHighlightView.
+// entry. No longer wired to any UI action (this session's double-click/
+// plot-click follow-up feature moved the extraction table row / plot mark
+// jump to revealInFilteredView instead, which stays on the same
+// extraction-capable node's own Filtered pane rather than jumping away to
+// the raw file) — kept as a function anyway, same precedent as
+// copyWholeExtractTable (see "Extraction table: synthetic Index + t(ms)
+// columns" in docs/extraction-and-plotting.md), in case a future entry
+// point wants this more destructive full-log jump; still directly tested.
 function jumpToFullLog(entry, sourceRowEl, sourceScrollEl) {
   const chain = getChain(state.activeId);
   const fileNode = chain.find(n => n.type === "file");
@@ -15766,6 +15800,35 @@ function jumpToFullLog(entry, sourceRowEl, sourceScrollEl) {
   // render()'s own A1 push already recorded this destination — the
   // same-place merge (isSameNavPlace) keeps this from doubling it.
   pushNavWaypoint();
+}
+
+// Extraction table row / Plot mark -> reveal that entry in the Filtered
+// view (this session's follow-up feature request, alongside the filterType
+// merge). Unlike jumpToFullLog (the extraction table's own row double-click,
+// unchanged), this does NOT jump away to the root file's unfiltered log —
+// the active node itself already has an ordinary Filtered pane showing
+// exactly its own matched entries (see nodeHasExtractableWildcards/
+// docs/ui-implementation-plan.md's follow-up note), so staying on the same
+// node and just switching fhActiveTab is both simpler and more useful:
+// double-clicking a Table row and clicking that same row's Filtered entry
+// land on the exact same entry, same node. Modeled directly on
+// revealInHighlightView's own Context-view counterpart above.
+function revealInFilteredView(entry, sourceRowEl, sourceScrollEl) {
+  commitCurrentNavPosition(); // A2-equivalent: freeze the spot we're jumping out of
+  const previousId = applySelection(entry.id);
+  state.scrollTargetId = entry.id;
+  // Preserve the row's/mark's current on-screen position instead of
+  // centering it, same courtesy jumpToFullLog/revealInHighlightView extend.
+  state.scrollTargetOffset = sourceRowEl && sourceScrollEl
+    ? captureRowScreenOffset(sourceRowEl, sourceScrollEl) : null;
+  // Stacked layout has no separate "filter" tab to switch to — Table/Plot's
+  // own "Stacked" tab button already returns to the combined pane (which
+  // includes the Filtered half) without touching fhLayout; tabs layout
+  // switches to the Filtered tab the normal way.
+  if (fhLayout === "stacked") applyFhView("stacked"); else applyFhView("filter");
+  updateSelectedRowClass(previousId);
+  updateDetailPanel();
+  pushNavWaypoint(); // A2-equivalent: the Filtered-pane spot we landed on
 }
 
 /* ===================== Bookmarks =====================
@@ -17698,7 +17761,6 @@ const filterCaseCheckbox = el("#filterCaseCheckbox");
 const filterRegexCheckbox = el("#filterRegexCheckbox");
 const filterWholeWordCheckbox = el("#filterWholeWordCheckbox");
 const filterWholeWordRow = el("#filterWholeWordRow");
-const filterExtractBtn = el("#filterExtractBtn");
 const filterColumnChips = el("#filterColumnChips");
 const filterTargetChainEl = el("#filterTargetChain");
 
@@ -17795,19 +17857,20 @@ function openFilterPopup() {
   filterInput.focus();
 }
 
-// Edit mode for an existing filter node: only "text" and "extract" filters
-// have a plain value the popup's single input can represent — and/or/link
-// nodes derive their value from two other nodes, and context filters have
-// their own before/after dialog (see openContextDialog), so this is a no-op
-// for anything else (callers already guard on filterType, this is a second
-// line of defense).
+// Edit mode for an existing filter node: only "text" filters (extraction-
+// capable or not — there is no separate "extract" filterType anymore) have
+// a plain value the popup's single input can represent — and/or/link nodes
+// derive their value from two other nodes, and context filters have their
+// own before/after dialog (see openContextDialog), so this is a no-op for
+// anything else (callers already guard on filterType, this is a second line
+// of defense).
 function openEditFilterPopup(nodeId) {
   const node = state.nodes[nodeId];
-  if (!node || node.type !== "filter" || (node.filterType !== "text" && node.filterType !== "extract")) return;
+  if (!node || node.type !== "filter" || node.filterType !== "text") return;
   editingFilterId = nodeId;
   filterPopupBaseId = node.parentId;
   filterPopupIgnored = new Set(node.ignoredColumns || []);
-  filterPopupColumns = new Set(node.filterType === "text" ? (node.columns || []) : []);
+  filterPopupColumns = new Set(node.columns || []);
   state.activeId = nodeId;
   render();
   filterPopupLabel.textContent = "Edit filter on:";
@@ -18047,33 +18110,15 @@ function updateFilterPatternPreview(val, baseEntries) {
   filterPatternPreview.innerHTML = "";
   filterPatternPreview.appendChild(frag);
 }
-// The Extract button only makes sense once the pattern actually contains a
-// [value:...]/[*] wildcard token — disabled otherwise, same as before.
-// NOT/case-sensitivity/column-restriction are NOT conditionally disabled
-// anymore (person-requested, this session — removed the old "Extract
-// values" checkbox entirely): they're parameters of the "Add filter"
-// outcome only, Extract simply ignores all three (see commitFilter), so
-// there's nothing left to hide/gray out based on pattern content — which
-// button gets clicked is the only thing that decides extract vs. plain
-// filter, and that decision is never made ahead of time by anything typed
-// or toggled here.
-function updateExtractAvailability() {
-  // Regex mode has no [value:...]/[*] placeholders to extract — the raw
-  // pattern text carries no capture-group vocabulary the extraction table
-  // could build columns from, so Extract stays disabled the whole time it's
-  // on, regardless of what's typed.
-  filterExtractBtn.disabled = filterRegexCheckbox.checked || !isExtractPattern(filterInput.value);
-}
-
 // "Match whole word" only governs a plain LITERAL search (see
 // includesWholeWord): a real regex and the wildcard-token language both
 // carry their own boundary vocabulary (\b / lookarounds, [value:word]/[*]), and
 // getEntries ignores the flag for those two. So instead of letting it sit
 // there as a silent no-op, the toggle greys itself out the moment either
 // applies — driven by the same "input" listener and regex-mode change that
-// already drive the Extract button, so it tracks what is typed live.
-const WHOLE_WORD_TITLE = "Only match the input as a whole word — \u201cTest\u201d matches \u201cTest is active\u201d but not \u201cTesting activated\u201d";
-const WHOLE_WORD_TITLE_NA = "Not applicable to a regex or a wildcard-token pattern — those express their own boundaries (\\b, [value:word], \u2026)";
+// already drive live-match evaluation, so it tracks what is typed live.
+const WHOLE_WORD_TITLE = "Only match the input as a whole word — “Test” matches “Test is active” but not “Testing activated”";
+const WHOLE_WORD_TITLE_NA = "Not applicable to a regex or a wildcard-token pattern — those express their own boundaries (\\b, [value:word], …)";
 function updateWholeWordAvailability() {
   const inapplicable = filterRegexCheckbox.checked || isExtractPattern(filterInput.value);
   filterWholeWordCheckbox.disabled = inapplicable;
@@ -18081,10 +18126,12 @@ function updateWholeWordAvailability() {
   filterWholeWordRow.title = inapplicable ? WHOLE_WORD_TITLE_NA : WHOLE_WORD_TITLE;
 }
 
-// Both content-driven availability states in one call, so every place that
-// can change the input text or the regex toggle refreshes them together.
+// Content-driven availability state, kept as its own function (rather than
+// inlined into the "input" listener below) so every place that can change
+// the input text or the regex toggle refreshes it together — historically
+// this also drove the now-removed separate "Extract" button's disabled
+// state.
 function updateFilterAvailability() {
-  updateExtractAvailability();
   updateWholeWordAvailability();
 }
 filterInput.addEventListener("input", () => { updateFilterAvailability(); evaluateLiveMatch(); });
@@ -18092,20 +18139,21 @@ filterInvertCheckbox.addEventListener("change", evaluateLiveMatch);
 filterCaseCheckbox.addEventListener("change", evaluateLiveMatch);
 filterWholeWordCheckbox.addEventListener("change", evaluateLiveMatch);
 
-// Shared by both "Add filter"/"Save" (asExtract=false) and "Extract"
-// (asExtract=true) — the ONLY place that decides "text" vs. "extract",
-// and it does so purely from which button called it, never from any
-// state the popup was carrying around beforehand. Editing an existing
-// node works exactly the same way: clicking "Add filter" on a node that's
-// currently an "extract" replaces it with a plain "text" filter, and
-// clicking "Extract" on a "text" node turns it into a real extraction —
-// updateFilterNode always writes the fresh filterType, there is no
-// merge/preserve-old-type step (see "editingFilterId ? update : create"
-// below, both branches always pass the type asExtract dictates).
-function commitFilter(asExtract) {
+// "Add filter" is now the only outcome the popup can commit — this session's
+// filterType merge (docs/ui-implementation-plan.md's follow-up note) retired
+// the separate "Extract" button/action and the dedicated "extract"
+// filterType entirely. A pattern's [value:...]/[*] wildcards no longer
+// choose between two node types; they simply make the resulting "text" node
+// ALSO extraction-capable (nodeHasExtractableWildcards), unlocking Table/
+// Plot for it, while it keeps filtering/highlighting exactly like any other
+// "text" filter. ignoredColumns (which columns the popup's pattern-preview
+// toggled off) is now passed unconditionally — it's simply unused by a node
+// whose pattern has no wildcards, same as assertions/columnRenames/
+// plotConfig already were.
+function commitFilter() {
   const val = filterInput.value.trim();
   if (!val || !filterPopupBaseId) { closeFilterPopup(); return; }
-  const isRegex = !asExtract && filterRegexCheckbox.checked;
+  const isRegex = filterRegexCheckbox.checked;
 
   if (isRegex) {
     if (!compileRegexFilter(val, filterCaseCheckbox.checked)) {
@@ -18120,21 +18168,16 @@ function commitFilter(asExtract) {
     filterInput.classList.add("input-error");
     return; // keep the popup open so the pattern can be fixed
   }
-  if (asExtract) {
-    const ignoredArr = [...filterPopupIgnored];
-    if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "extract", val, false, ignoredArr);
-    else createFilterNode(filterPopupBaseId, "extract", val, false, ignoredArr);
-  } else {
-    const caseSensitive = filterCaseCheckbox.checked;
-    const columns = [...filterPopupColumns];
-    // Never stored on a node whose value the flag couldn't affect (a regex
-    // or a wildcard pattern) — the toggle is greyed out for those, and a
-    // node carrying a flag that does nothing would be a lie in every
-    // persistence carrier it travels through.
-    const wholeWord = filterWholeWordCheckbox.checked && !isRegex && !isExtractPattern(val);
-    if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, filterInvertCheckbox.checked, undefined, caseSensitive, columns, isRegex, wholeWord);
-    else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, null, caseSensitive, columns, isRegex, wholeWord);
-  }
+  const caseSensitive = filterCaseCheckbox.checked;
+  const columns = [...filterPopupColumns];
+  const ignoredArr = [...filterPopupIgnored];
+  // Never stored on a node whose value the flag couldn't affect (a regex
+  // or a wildcard pattern) — the toggle is greyed out for those, and a node
+  // carrying a flag that does nothing would be a lie in every persistence
+  // carrier it travels through.
+  const wholeWord = filterWholeWordCheckbox.checked && !isRegex && !isExtractPattern(val);
+  if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, filterInvertCheckbox.checked, ignoredArr, caseSensitive, columns, isRegex, wholeWord);
+  else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, ignoredArr, caseSensitive, columns, isRegex, wholeWord);
   closeFilterPopup();
   revealFilteredView(); // a new/edited filter's result lives in the Filtered view
   render();
@@ -18142,13 +18185,8 @@ function commitFilter(asExtract) {
 
 filterForm.addEventListener("submit", ev => {
   ev.preventDefault();
-  commitFilter(false);
+  commitFilter();
 });
-// type="button", not type="submit" — a click never fires the form's
-// "submit" event, and (per spec) implicit submission on Enter in a text
-// field only ever considers real submit buttons, so this can sit anywhere
-// in the form without affecting what Enter does (still "Add filter").
-filterExtractBtn.addEventListener("click", () => commitFilter(true));
 el("#btnCloseFilterPopup").addEventListener("click", closeFilterPopup);
 
 
@@ -18714,21 +18752,24 @@ function openTreeContextMenu(ev, clickedId) {
       // nodes just as much as a plain text filter — so it's unconditional,
       // unlike "Edit filter…" below.
       buckets.edit.push({ action: "rename", label: "Rename…", icon: ICON_RENAME });
-      // "text"/"extract" have a plain value the filter popup's single input
-      // can represent (see openEditFilterPopup); "after"/"before"/"timerange"
-      // go through the dedicated time-range dialog instead (see
+      // "text" (extraction-capable or not — there is no separate "extract"
+      // filterType anymore) has a plain value the filter popup's single
+      // input can represent (see openEditFilterPopup); "after"/"before"/
+      // "timerange" go through the dedicated time-range dialog instead (see
       // openTimeRangeDialog). and/or/link nodes derive their value from two
       // other nodes, and context filters have their own before/after dialog.
-      if (node.filterType === "text" || node.filterType === "extract" || isTimeFilterType(node.filterType)) {
+      if (node.filterType === "text" || isTimeFilterType(node.filterType)) {
         buckets.edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
       }
       // "link" results are pair entries with no parent-relative complement
-      // (see getEntries), inverting "extract" would only ever keep the
-      // non-matching, nothing-to-extract rows, and "context"/"countContext"
-      // always contain their own reference entries so a parent-relative
-      // difference is always empty — all four excluded for the same reason
-      // NOT is disabled in the filter popup for extract patterns.
-      if (node.filterType !== "link" && node.filterType !== "extract" &&
+      // (see getEntries), and "context"/"countContext" always contain their
+      // own reference entries so a parent-relative difference is always
+      // empty — both excluded for the same reason. A "text" filter stays
+      // invertible even with wildcards (NOT still makes sense on the
+      // match/no-match outcome; it just means Table/Plot would tabulate the
+      // NOT'd — i.e. non-wildcard-relevant — result, same as any other
+      // inverted filter).
+      if (node.filterType !== "link" &&
           node.filterType !== "context" && node.filterType !== "countContext") {
         buckets.edit.push({
           action: "invert",
@@ -19298,7 +19339,7 @@ noteDialogInput.addEventListener("keydown", ev => {
 
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "extract", "and", "or", "link", "context", "countContext", "level", "bookmarks", "idset"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "idset"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId, includeAncestors) {
@@ -19343,10 +19384,10 @@ function serializeFilterBranch(nodeId, includeAncestors) {
     }
     if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
     if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
-    if (node.filterType === "extract" && node.assertions) out.assertions = node.assertions;
-    if (node.filterType === "extract" && node.columnRenames) out.columnRenames = node.columnRenames;
-    if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-    if (node.filterType === "extract" && node.plotConfig) out.plotConfig = node.plotConfig;
+    if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
+    if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
+    if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
+    if (node.filterType === "text" && node.plotConfig) out.plotConfig = node.plotConfig;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
@@ -19597,17 +19638,17 @@ function materializeSerializedRoots(roots, resolveParentId) {
     } else if (sn.filterType === "countContext") {
       node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
       node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
-    } else if (sn.filterType === "extract" && sn.assertions && typeof sn.assertions === "object") {
+    } else if (sn.filterType === "text" && sn.assertions && typeof sn.assertions === "object") {
       node.assertions = sn.assertions;
     }
-    if (sn.filterType === "extract" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
+    if (sn.filterType === "text" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
       node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
     }
-    if (sn.filterType === "extract" && sn.columnRenames && typeof sn.columnRenames === "object") {
+    if (sn.filterType === "text" && sn.columnRenames && typeof sn.columnRenames === "object") {
       const renames = sanitizeColumnRenames(sn.columnRenames);
       if (renames) node.columnRenames = renames;
     }
-    if (sn.filterType === "extract" && sn.plotConfig) {
+    if (sn.filterType === "text" && sn.plotConfig) {
       const pc = sanitizePlotConfig(sn.plotConfig);
       if (pc) node.plotConfig = pc;
     }
@@ -21367,10 +21408,10 @@ function serializeFilterTreeForCache(fileNode) {
     }
     if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
     if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
-    if (node.filterType === "extract" && node.assertions) out.assertions = node.assertions;
-    if (node.filterType === "extract" && node.columnRenames) out.columnRenames = node.columnRenames;
-    if (node.filterType === "extract" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-    if (node.filterType === "extract" && node.plotConfig) out.plotConfig = node.plotConfig;
+    if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
+    if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
+    if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
+    if (node.filterType === "text" && node.plotConfig) out.plotConfig = node.plotConfig;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
@@ -21514,17 +21555,17 @@ function materializeCachedFilters(fileNode, roots) {
     } else if (sn.filterType === "countContext") {
       node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
       node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
-    } else if (sn.filterType === "extract" && sn.assertions && typeof sn.assertions === "object") {
+    } else if (sn.filterType === "text" && sn.assertions && typeof sn.assertions === "object") {
       node.assertions = sn.assertions;
     }
-    if (sn.filterType === "extract" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
+    if (sn.filterType === "text" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
       node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
     }
-    if (sn.filterType === "extract" && sn.columnRenames && typeof sn.columnRenames === "object") {
+    if (sn.filterType === "text" && sn.columnRenames && typeof sn.columnRenames === "object") {
       const renames = sanitizeColumnRenames(sn.columnRenames);
       if (renames) node.columnRenames = renames;
     }
-    if (sn.filterType === "extract" && sn.plotConfig) {
+    if (sn.filterType === "text" && sn.plotConfig) {
       const pc = sanitizePlotConfig(sn.plotConfig);
       if (pc) node.plotConfig = pc;
     }

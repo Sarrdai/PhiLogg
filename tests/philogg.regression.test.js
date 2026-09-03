@@ -331,7 +331,7 @@ await withApp(async (w, d, T) => {
   const beforeNode = w.createFilterNode(f.id, "before", f.entries[10].ts);
   assert(w.getEntries(beforeNode.id).length === 11, "before-filter keeps entries with ts <= value");
 
-  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   const spec = w.compileExtractPattern("message [value:int]");
   assert(spec && spec.columns.length === 1 && spec.columns[0].type === "int", "extract pattern compiles with one int column");
   assert(w.getEntries(extractNode.id).length === 20, "extract filter matches every row for this pattern");
@@ -511,7 +511,7 @@ await withApp(async (w, d, T) => {
   // Extract nodes DO get a swatch too (person-requested, later session —
   // purely for tree-indentation clarity; the Highlight view itself still
   // has no dedicated panel that reads an extract node's color).
-  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   const extractRow = [...d.querySelectorAll(".tree-row")].find(r => r.classList.contains("active"));
@@ -896,7 +896,7 @@ group(14);
 await withApp(async (w, d, T) => {
   section("14. Value assertions + Column statistics");
   const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + i }), () => {});
-  const node = w.createFilterNode(f.id, "extract", "n=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = node.id;
   w.render();
 
@@ -974,7 +974,7 @@ await withApp(async (w, d, T) => {
   // Chain fa -> chainNode -> extractNode (with an assertion, to also
   // confirm assertions round-trip through save/load, not just copy/paste).
   const chainNode = w.createFilterNode(fa.id, "text", "message");
-  const extractNode = w.createFilterNode(chainNode.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(chainNode.id, "text", "message [value:int]");
   extractNode.assertions = { 0: { mode: "range", min: 0, max: 100 } };
   // AND node combining extractNode with a filter from file B — always
   // placed directly under extractNode's own root file (fa), not nested
@@ -991,7 +991,7 @@ await withApp(async (w, d, T) => {
   assert(branchJustThis && branchJustThis.roots.length === 1, "just this filter: exactly one exported root, got " + (branchJustThis && branchJustThis.roots.length));
   const bareRoot = branchJustThis.roots[0];
   assert(bareRoot.attach === "target" && bareRoot.children.length === 0, "the single exported node is tagged attach:target with no children");
-  assert(bareRoot.bakedA && bareRoot.bakedA.filterType === "extract" && bareRoot.bakedB && bareRoot.bakedB.filterType === "text",
+  assert(bareRoot.bakedA && bareRoot.bakedA.filterType === "text" && bareRoot.bakedB && bareRoot.bakedB.filterType === "text",
     "bakedA/bakedB (each side's own flat condition) travel with the export even for 'just this filter'");
 
   // --- "Include ancestor chain" (includeAncestors=true): today's original
@@ -1019,10 +1019,9 @@ await withApp(async (w, d, T) => {
   const loadedAnd = T.state.nodes[fcAnchor.children[fcAnchor.children.length - 1]];
   assert(loadedAnd && loadedAnd.filterType === "and", "the loaded node is the AND combiner itself");
   // Assertions are a column-stat/highlight annotation, not part of what
-  // determines matching (getEntries' "extract" branch never reads them) —
-  // bakeNodeCondition intentionally only copies fields that define the
-  // match itself, so they don't travel into bakedA.
-  assert(loadedAnd.bakedA && loadedAnd.bakedA.filterType === "extract" && loadedAnd.bakedA.value === "message [value:int]",
+  // determines matching — bakeNodeCondition intentionally only copies
+  // fields that define the match itself, so they don't travel into bakedA.
+  assert(loadedAnd.bakedA && loadedAnd.bakedA.filterType === "text" && loadedAnd.bakedA.value === "message [value:int]",
     "bakedA (extractNode's own matching condition) round-trips intact");
   assert(loadedAnd.bakedB && loadedAnd.bakedB.filterType === "text" && loadedAnd.bakedB.value === "other",
     "bakedB (fFilterB's own condition) round-trips intact");
@@ -1308,7 +1307,7 @@ await withApp(async (w, d, T) => {
 
   // (1) Escape with an active extraction cell selection
   const f = await w.addFile("a.log", makeLog(0, 5, { suffix: i => "n=" + i }), () => {});
-  const extractNode = w.createFilterNode(f.id, "extract", "n=[value:int]");
+  const extractNode = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   T.state.tableSelection = new Set(["0,0"]);
@@ -1478,14 +1477,19 @@ await withApp(async (w, d, T) => {
   fireClick(invertItem, w);
   assert(plainNode.inverted === true, "context-menu Invert (NOT) toggles the flag");
 
-  // Exclusions: link, extract, context
-  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  // A wildcard "text" filter (extraction-capable) stays invertible — there
+  // is no separate "extract" filterType to exclude anymore (this session's
+  // filterType merge). NOT still means "keep what this pattern would NOT
+  // match", same as any other "text" filter; it just means Table/Plot would
+  // tabulate the inverted (non-wildcard-relevant) result.
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   fireContextMenu([...d.querySelectorAll(".tree-row")].find(r => r.classList.contains("active")), w);
-  assert(![...d.querySelectorAll("#treeContextMenu [data-action]")].some(n => n.dataset.action === "invert"),
-    "tree context menu omits Invert (NOT) for extract nodes");
+  assert([...d.querySelectorAll("#treeContextMenu [data-action]")].some(n => n.dataset.action === "invert"),
+    "tree context menu offers Invert (NOT) for a wildcard/extraction-capable 'text' node too");
 
+  // Exclusions: link, context
   const f2 = await w.addFile("b.log", makeLog(0, 10, { msgPrefix: "other" }), () => {});
   const linkNode = w.createLinkNode(f.id, f2.id, "before", 1);
   T.state.activeId = linkNode.id;
@@ -1508,11 +1512,9 @@ await withApp(async (w, d, T) => {
   assert(![...d.querySelectorAll("#treeContextMenu [data-action]")].some(n => n.dataset.action === "invert"),
     "tree context menu omits Invert (NOT) for countContext nodes (4th exclusion, same reasoning as context: every window contains its own reference entry)");
 
-  // NOT stays available even while typing an extraction pattern (superseded
-  // this session — see Group 41 — by the two-button "Add filter"/"Extract"
-  // redesign: NOT/case/columns are parameters of "Add filter" only, and
-  // "Extract" simply ignores them regardless of their current state, so
-  // there's nothing left to conditionally disable based on pattern content).
+  // NOT stays available while typing a wildcard pattern — "Add filter" is
+  // the only outcome (this session's filterType merge, Group 41), so there
+  // is nothing left to conditionally disable based on pattern content.
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
@@ -1521,7 +1523,7 @@ await withApp(async (w, d, T) => {
   invertCb.checked = true;
   filterInput.value = "[value:int]";
   fireInput(filterInput, w);
-  assert(invertCb.disabled === false, "typing an extraction pattern leaves NOT available — it only governs the 'Add filter' outcome, which Extract never touches");
+  assert(invertCb.disabled === false, "typing a wildcard pattern leaves NOT available");
   w.closeFilterPopup();
 });
 
@@ -1618,7 +1620,7 @@ group(5);
 await withApp(async (w, d, T) => {
   section("5. Extraction table: sort buttons + cell selection regression");
   const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + (10 - i) }), () => {});
-  const node = w.createFilterNode(f.id, "extract", "n=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = node.id;
   w.render();
 
@@ -2495,11 +2497,12 @@ await withApp(async (w, d, T) => {
   assert(!spansAfterToggle[0].classList.contains("chip-ignored") && !spansAfterToggle[2].classList.contains("chip-ignored"),
     "the other two spans stay un-ignored");
 
-  // Click "Extract" (not "Add filter") to actually build an extraction
-  // table — see Group 41: which button gets clicked is what decides this.
-  fireClick(d.querySelector("#filterExtractBtn"), w);
+  // "Add filter" is the only submit action now (the separate "Extract"
+  // button/filterType was retired — a wildcard "text" filter IS the
+  // extraction, see docs/ui-implementation-plan.md's follow-up note).
+  fireClick(d.querySelector("#filterSubmitBtn"), w);
   const node = T.state.nodes[T.state.activeId];
-  assert(node.filterType === "extract" && node.ignoredColumns && node.ignoredColumns.length === 1 && node.ignoredColumns.includes(1),
+  assert(node.filterType === "text" && node.ignoredColumns && node.ignoredColumns.length === 1 && node.ignoredColumns.includes(1),
     "a filter created via the popup carries ignoredColumns toggled from the live preview, got " + JSON.stringify(node.ignoredColumns));
 
   /* ---------- Table reflects the ignored column immediately ----------
@@ -2543,7 +2546,7 @@ await withApp(async (w, d, T) => {
   assert(node.ignoredColumns && node.ignoredColumns.includes(1), "re-ignored via the same chip toggle, for the persistence checks below");
 
   /* ---------- Column statistics / assertions / plot: a SEPARATE node, ignoring the NUMERIC column this time ---------- */
-  const numNode = w.createFilterNode(f.id, "extract", "id=[value:int] name=[*] score=[value:float]");
+  const numNode = w.createFilterNode(f.id, "text", "id=[value:int] name=[*] score=[value:float]");
   w.setColumnIgnored(numNode, 0, true); // ignore "id" (int, column index 0) — "score" (float, index 2) stays visible
   w.render();
   assert(w.computeColumnStats(0) === null, "computeColumnStats returns null for a currently-ignored column");
@@ -2772,7 +2775,7 @@ await withApp(async (w, d, T) => {
   // are part of the SAME group Context/Filtered/Stacked live in now, and
   // switching to Filtered from there shows the level bar/toggles again like
   // any other filter node (see Group 127).
-  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   assert(T.fhActiveTab === "table", "sanity: activating an extraction node jumps to its Table tab");
@@ -2928,7 +2931,7 @@ await withApp(async (w, d, T) => {
 
   // --- Extract mode is untouched (getVisibleEntries is only used by the plain table path) ---
   fireClick(btnPin, w); // back on
-  const extractNode = w.createFilterNode(fa.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(fa.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   assert(T.extractRowsData.length === 20, "extract table result is unaffected by the pin toggle (its own placeholder pattern matches all 20 lines regardless)");
@@ -3938,22 +3941,20 @@ await withApp(async (w, d, T) => {
   assert(editNode.caseSensitive === true, "saving an edit that only touched columns leaves caseSensitive untouched");
   assert(w.getEntries(editNode.id).length === 1 && w.getEntries(editNode.id)[0].id === f.entries[0].id, "the edited filter re-evaluates against its new column restriction");
 
-  // Editing a text filter into an extract pattern clears caseSensitive/columns
-  // (updateFilterNode's else-branch) — extract patterns match via their own
-  // regex against e.message, so these text-only options no longer apply.
-  // Since Group 41 (the two-button "Add filter"/"Extract" redesign, no more
-  // checkbox), typing wildcard tokens alone never flips a filter to
-  // "extract" by itself — only clicking the Extract button does, and
-  // case/columns stay fully available/visible regardless (see Group 41).
-  const toBecomeExtract = w.createFilterNode(f.id, "text", "Marker", false, null, true, ["message"]);
-  w.openEditFilterPopup(toBecomeExtract.id);
+  // Editing a text filter's pattern to include wildcard tokens keeps it a
+  // "text" node (there is no separate "extract" filterType to flip to
+  // anymore — this session's filterType merge, Group 41) — caseSensitive/
+  // columns stay exactly as set, and the node additionally becomes
+  // extraction-capable (nodeHasExtractableWildcards), unlocking Table/Plot.
+  const toGetWildcard = w.createFilterNode(f.id, "text", "Marker", false, null, true, ["message"]);
+  w.openEditFilterPopup(toGetWildcard.id);
   d.querySelector("#filterInput").value = "id=[value:int]";
   fireInput(d.querySelector("#filterInput"), w);
-  assert(d.querySelector("#filterCaseCheckbox").disabled === false, "case-sensitive checkbox stays available even with a wildcard pattern typed — it only governs the 'Add filter' outcome");
-  assert(d.querySelector("#filterExtractBtn").disabled === false, "the Extract button becomes clickable once the pattern has a wildcard token");
-  fireClick(d.querySelector("#filterExtractBtn"), w); // click Extract, not Add filter/Save
-  assert(toBecomeExtract.filterType === "extract" && !toBecomeExtract.caseSensitive && !toBecomeExtract.columns,
-    "clicking Extract on an edited text filter replaces it with an 'extract' node and clears caseSensitive/columns");
+  assert(d.querySelector("#filterCaseCheckbox").disabled === false, "case-sensitive checkbox stays available with a wildcard pattern typed");
+  fireSubmit(d.querySelector("#filterForm"), w);
+  assert(toGetWildcard.filterType === "text" && toGetWildcard.caseSensitive === true && JSON.stringify(toGetWildcard.columns) === JSON.stringify(["message"]),
+    "saving keeps it a 'text' node with caseSensitive/columns intact — only the value changed");
+  assert(w.nodeHasExtractableWildcards(toGetWildcard) === true, "the new wildcard pattern makes this same node extraction-capable");
 
   // --- Persistence carriers ---
 
@@ -4542,9 +4543,9 @@ await withApp(async (w, d, T) => {
   assert(invEntries.length === 2 && [wf.entries[1].id, wf.entries[3].id].every(id => invEntries.some(e => e.id === id)),
     "NOT works normally on a wildcard-as-filter 'text' node (unlike a real 'extract' node, where NOT is unavailable)");
 
-  const realExtract = w.createFilterNode(wf.id, "extract", "temp=[value:float]");
+  const anotherWildcardNode = w.createFilterNode(wf.id, "text", "temp=[value:float]");
   w.invalidateAllCaches();
-  assert(w.getEntries(realExtract.id).length === 2, "an actual 'extract' filterType is unaffected by the wildcard-as-filter 'text' path");
+  assert(w.getEntries(anotherWildcardNode.id).length === 2, "a second independently-created wildcard 'text' node matches the same way — there is no separate 'extract' filterType to diverge from (this session's filterType merge)");
 });
 
 /* ============================================================
@@ -4594,7 +4595,6 @@ await withApp(async (w, d, T) => {
   const settingsRow = d.querySelector(".filter-settings-row");
   assert(settingsRow.contains(d.querySelector("#filterCaseCheckbox")) && settingsRow.contains(d.querySelector("#filterInvertCheckbox")),
     "case-sensitive and NOT live together in the settings row");
-  assert(!settingsRow.contains(d.querySelector("#filterExtractBtn")), "the Extract button is NOT in the settings row — it lives in the footer, among the other action buttons");
 
   assert(d.querySelector("#filterColumnChips .filter-section-label").textContent === "Applies to:", "the column-restriction chips carry an 'Applies to:' caption now that they're their own section");
 
@@ -4603,8 +4603,11 @@ await withApp(async (w, d, T) => {
   assert(footerRow.firstElementChild.id === "filterLiveMatch", "the match count is the footer row's first (left-aligned) child");
   assert(footerRow.lastElementChild === footerActions, "the action buttons are the footer row's last (right-aligned) child");
   const actionChildren = [...footerActions.children];
-  assert(actionChildren[0] === d.querySelector("#filterExtractBtn") && actionChildren[1] === d.querySelector("#filterSubmitBtn"),
-    "Extract sits immediately left of Add filter, both bottom-right");
+  // The separate "Extract" button is gone (this session's filterType merge,
+  // docs/ui-implementation-plan.md's follow-up note) — "Add filter" is the
+  // footer's only action button now.
+  assert(actionChildren.length === 1 && actionChildren[0] === d.querySelector("#filterSubmitBtn"),
+    "Add filter is the footer's sole action button, bottom-right");
 
   const formChildren = [...d.querySelector("#filterForm").children];
   const idx = el => formChildren.indexOf(el);
@@ -4613,16 +4616,15 @@ await withApp(async (w, d, T) => {
     idx(d.querySelector("#filterColumnChips")) < idx(footerRow),
     "sections appear top-to-bottom in the requested order: input, settings, preview, applies-to, footer");
 
-  // --- Bugfix: a direct .value write (token chip click) must also refresh
-  // the Extract button's disabled state, not just the live-match preview ---
+  // --- Bugfix (historical, kept as a plain sanity check now that Extract's
+  // own disabled-state is gone): a direct .value write (token chip click)
+  // must also refresh the live-match preview, not leave it stale ---
   const bf = await w.addFile("bugfix.log", makeLog(0, 3), () => {});
   w.render();
   T.state.activeId = bf.id;
   w.openFilterPopup();
-  assert(d.querySelector("#filterExtractBtn").disabled === true, "sanity: no wildcard tokens yet, Extract starts disabled");
   fireClick(d.querySelector('.token-chip[data-token="float"]'), w);
   assert(d.querySelector("#filterInput").value.includes("[value:float]"), "sanity: the token chip inserted its placeholder");
-  assert(d.querySelector("#filterExtractBtn").disabled === false, "clicking a token chip also re-enables Extract immediately (bugfix, this session)");
   w.closeFilterPopup();
 
   // --- "Filter for this ___" context menu ---
@@ -4639,7 +4641,6 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#ctxFilterForColumn"), w);
   assert(d.querySelector("#filterInput").value === "processed [value:int] items", "numeric message content becomes a wildcard pattern, same as the old 'Extract numbers' action");
   assert(activeCol("message"), "the Message column chip is pre-selected to match what was right-clicked");
-  assert(d.querySelector("#filterExtractBtn").disabled === false, "the Extract button is live and clickable, but nothing has been clicked yet — see Group 41 for which button decides the outcome");
   w.closeFilterPopup();
 
   // A column with no numeric content falls back to its exact literal text
@@ -4648,7 +4649,6 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#ctxFilterForColumn"), w);
   assert(d.querySelector("#filterInput").value === "DoWork", "no numeric content in 'DoWork' -> falls back to the exact literal method text instead of a no-op");
   assert(activeCol("method"), "the Method column chip is pre-selected");
-  assert(d.querySelector("#filterExtractBtn").disabled === true, "no wildcard tokens in a literal fallback, so Extract has nothing to build and stays disabled");
   w.closeFilterPopup();
 
   // A non-message column WITH numeric content also becomes a wildcard pattern
@@ -4657,11 +4657,11 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#ctxFilterForColumn"), w);
   assert(d.querySelector("#filterInput").value === "pool [value:int]", "numeric content in a non-message column ('pool 3') also becomes a wildcard pattern");
   assert(activeCol("thread"), "the Thread column chip is pre-selected");
-  assert(d.querySelector("#filterExtractBtn").disabled === false, "a wildcard pattern from any column re-enables Extract, letting the person choose extraction or a plain wildcard filter afterward");
 
-  // End-to-end: clicking "Add filter" (not "Extract") creates a real
-  // wildcard-as-filter "text" node restricted to the right-clicked column —
-  // "Filter for this ___" never decides extract-vs-plain by itself.
+  // End-to-end: "Add filter" is the only outcome now (the separate
+  // "Extract" button/filterType was retired this session — see Group 41) —
+  // it creates a "text" node restricted to the right-clicked column, ALSO
+  // extraction-capable since its value has a wildcard.
   fireSubmit(d.querySelector("#filterForm"), w);
   const created = T.state.nodes[T.state.activeId];
   assert(created.filterType === "text" && created.value === "pool [value:int]" && JSON.stringify(created.columns) === JSON.stringify(["thread"]),
@@ -4670,41 +4670,27 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 41 — Filter popup: "Extract" and "Add filter" as two separate
-   buttons, no checkbox (person-reported redesign, this session, replacing
-   the "Extract values" checkbox Groups 39/40 originally shipped with)
-   Person report, reproducing a real bug in the checkbox version: "wenn ich
-   einen Filter mit wildcards erstelle z. B. über den create from Message
-   dialog, entsteht eine extraction auch wenn ich auf Add Filter und nicht
-   auf Extract klicke" — creating a filter with wildcards via "Filter for
-   this ___" produced an extraction table even though only "Add filter"
-   was clicked, never the Extract-values toggle. Person's explicit design
-   ask, which this redesign follows literally rather than just patching
-   the checkbox's default value: "Das Filter Edit Dialog sollte keine
-   grundlegend unterschiedlichen Zustände kennen, sondern nur unterschied
-   initialisiert werden. alle Zustände sind dabei im Dialog selbst
-   visualisiert. keine versteckte Logik im Hintergrund" — followed by an
-   explicit "there should be no checkbox at all" follow-up once a flipped
-   default alone still left a checked/unchecked STATE sitting in the
-   popup between typing and submitting. Now there is no such state:
-   #filterExtractBtn ("Extract", type="button") and #filterSubmitBtn ("Add
-   filter"/"Save", type="submit") both call the same commitFilter(asExtract)
-   — the button clicked IS the only thing that decides "text" vs.
-   "extract", full stop, evaluated fresh at the moment of the click. NOT/
-   case-sensitivity/column-restriction are no longer conditionally
-   disabled or hidden by pattern content either (see Group 8's updated
-   note and updateExtractAvailability's comment) — they're parameters of
-   the "Add filter" outcome only, and Extract simply never reads them.
-   Editing an existing filter goes through the exact same commitFilter:
-   clicking "Add filter"/"Save" on a currently-"extract" node replaces it
-   with a plain "text" filter, and clicking "Extract" on a currently-"text"
-   node turns it into a real extraction — updateFilterNode always writes
-   whichever type the clicked button dictates, there is no "preserve the
-   old type" step anywhere.
+   GROUP 41 — filterType merge: "Add filter" is the only outcome, a
+   wildcard pattern makes the resulting "text" node ALSO extraction-capable
+   (this session, follow-up to docs/ui-implementation-plan.md — see that
+   doc's newest section for the full writeup)
+   Origin: this session. The separate "Extract" button/action and the
+   dedicated "extract" filterType are retired outright — there is only ever
+   "Add filter" now. A "text" filter node whose pattern contains
+   [value:...]/[*] wildcards automatically both (a) filters/highlights
+   normally, exactly like any other "text" node, AND (b) unlocks Table/Plot
+   for itself (nodeHasExtractableWildcards, previously gated on
+   filterType==="extract", now gated on filterType==="text" with a
+   compilable wildcard pattern). A non-wildcard "text" node still has
+   Table/Plot visible-but-disabled, unchanged from before this merge. This
+   replaces the old two-button "Extract vs. Add filter" design (formerly
+   Group 41) entirely — #filterExtractBtn no longer exists.
    ============================================================ */
 group(41);
 await withApp(async (w, d, T) => {
-  section("41. Filter popup: Extract vs. Add filter as two separate buttons, no checkbox");
+  section("41. filterType merge: wildcard 'text' filter unlocks Table/Plot");
+
+  assert(d.querySelector("#filterExtractBtn") === null, "the old separate 'Extract' button is gone from the popup entirely");
 
   const log = `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"retrying after 3 attempts"\n` +
     `2024-01-15 10:00:01,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"retrying after 7 attempts"\n`;
@@ -4712,55 +4698,38 @@ await withApp(async (w, d, T) => {
   w.render();
   T.state.activeId = f.id;
 
-  assert(d.querySelector("#filterExtractCheckbox") === null, "the old 'Extract values' checkbox is gone entirely — no checked/unchecked state left in the popup");
-
-  // Exact reported repro: right-click a message -> "Filter for this
-  // Message" -> click "Add filter", never touching "Extract" at all.
+  // "Filter for this ___" -> "Add filter" (the only button) creates a
+  // "text" node, ALSO extraction-capable since its value has a wildcard.
   fireContextMenu(d.querySelector(".log-row"), w, 50, 50);
   fireClick(d.querySelector("#ctxFilterForColumn"), w);
   assert(d.querySelector("#filterInput").value === "retrying after [value:int] attempts", "sanity: the numeric content became a wildcard pattern");
   fireSubmit(d.querySelector("#filterForm"), w);
   const created = T.state.nodes[T.state.activeId];
-  assert(created.filterType === "text", "clicking 'Add filter' after 'Filter for this Message' creates a TEXT filter, never a silent extraction — the reported bug");
+  assert(created.filterType === "text", "'Add filter' always creates a 'text' node — there is no other outcome to choose between anymore");
   assert(w.getEntries(created.id).length === 2, "and it actually filters correctly via the wildcard shape, matching both rows");
+  assert(w.nodeHasExtractableWildcards(created) === true, "the wildcard pattern makes this 'text' node extraction-capable — Table/Plot are unlocked for it");
 
-  // Same holds for a filter typed by hand via plain Ctrl+F — one shared
-  // button-driven decision, not a per-entry-point default of any kind.
-  T.state.activeId = f.id;
-  w.render();
-  w.openFilterPopup();
-  d.querySelector("#filterInput").value = "retrying after [value:int] attempts";
+  // A plain, non-wildcard "text" filter stays NOT extraction-capable.
+  const plainNode = w.createFilterNode(f.id, "text", "retrying");
+  assert(w.nodeHasExtractableWildcards(plainNode) === false, "a plain 'text' filter with no [value:...]/[*] tokens is not extraction-capable");
+
+  // Editing a node's pattern to add/remove wildcards flips its
+  // extraction-capability live — same node, same filterType, just a
+  // different pattern (there is no type to "flip" anymore).
+  w.openEditFilterPopup(created.id);
+  assert(d.querySelector("#filterSubmitBtn").textContent === "Save", "edit mode's button reads 'Save'");
+  d.querySelector("#filterInput").value = "retrying after 3 attempts"; // literal, no wildcard
   fireInput(d.querySelector("#filterInput"), w);
   fireSubmit(d.querySelector("#filterForm"), w);
-  const typedNode = T.state.nodes[T.state.activeId];
-  assert(typedNode.filterType === "text", "typing a wildcard by hand and clicking 'Add filter' also creates a TEXT filter — same single behavior as the context-menu path");
+  assert(created.filterType === "text" && w.nodeHasExtractableWildcards(created) === false,
+    "editing a wildcard filter's pattern down to plain text keeps it a 'text' node, just no longer extraction-capable");
 
-  // Extraction is fully reachable — it just requires the visible, deliberate act of clicking Extract instead.
-  T.state.activeId = f.id;
-  w.render();
-  w.openFilterPopup();
-  assert(d.querySelector("#filterExtractBtn").disabled === true, "Extract starts disabled on an empty input — nothing to extract yet");
-  d.querySelector("#filterInput").value = "retrying after [value:int] attempts";
+  w.openEditFilterPopup(created.id);
+  d.querySelector("#filterInput").value = "retrying after [value:int] attempts"; // add the wildcard back
   fireInput(d.querySelector("#filterInput"), w);
-  assert(d.querySelector("#filterExtractBtn").disabled === false, "Extract becomes clickable once the pattern has a wildcard token");
-  fireClick(d.querySelector("#filterExtractBtn"), w);
-  const extractNode = T.state.nodes[T.state.activeId];
-  assert(extractNode.filterType === "extract", "clicking Extract builds a real extraction table");
-
-  // --- Editing: either button can flip an existing node's type, in either direction ---
-
-  // extract -> text: clicking "Save" (Add filter's edit-mode label) on an existing extraction replaces it with a plain filter.
-  w.openEditFilterPopup(extractNode.id);
-  assert(d.querySelector("#filterSubmitBtn").textContent === "Save", "edit mode's primary button reads 'Save', not 'Add filter'");
-  assert(d.querySelector("#filterExtractBtn").disabled === false, "editing an existing extract node's wildcard pattern keeps Extract clickable too — both directions stay open");
   fireSubmit(d.querySelector("#filterForm"), w);
-  assert(extractNode.filterType === "text", "clicking 'Save' on an edited EXTRACTION replaces it with a plain 'text' filter — going from extraction back to a filter, as requested");
-
-  // text -> extract: clicking "Extract" on an existing plain filter turns it into a real extraction.
-  w.openEditFilterPopup(typedNode.id);
-  assert(d.querySelector("#filterExtractBtn").disabled === false, "editing an existing text node whose value already has a wildcard keeps Extract clickable");
-  fireClick(d.querySelector("#filterExtractBtn"), w);
-  assert(typedNode.filterType === "extract", "clicking 'Extract' on an edited PLAIN FILTER replaces it with a real extraction — going the other way, as requested");
+  assert(created.filterType === "text" && w.nodeHasExtractableWildcards(created) === true,
+    "editing the pattern back to include a wildcard makes the SAME node extraction-capable again");
 });
 
 /* ============================================================
@@ -4791,7 +4760,7 @@ await withApp(async (w, d, T) => {
     `2024-01-15 10:00:01,500\tINFO\t"main"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"n=3"\n` +
     `2024-01-15 10:00:03,500\tINFO\t"main"\tC:\\src\\Foo.cs\tline 2\t[DoWork]\t"n=9"\n`;
   const f = await w.addFile("a.log", log, () => {});
-  const node = w.createFilterNode(f.id, "extract", "n=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = node.id;
   w.render();
 
@@ -5082,7 +5051,7 @@ await withApp(async (w, d, T) => {
   /* ---------- Part A: extraction table ---------- */
   const bigLog = makeLog(0, 300); // "message 0".."message 299", one per second
   const fA = await w.addFile("big.log", bigLog, () => {});
-  const extractNode = w.createFilterNode(fA.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(fA.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
 
@@ -5127,7 +5096,7 @@ await withApp(async (w, d, T) => {
   // entirely past its own end) at the old node's leftover scrollTop.
   const smallLog = makeLog(0, 3);
   const fA2 = await w.addFile("small.log", smallLog, () => {});
-  const extractNode2 = w.createFilterNode(fA2.id, "extract", "message [value:int]");
+  const extractNode2 = w.createFilterNode(fA2.id, "text", "message [value:int]");
   T.state.activeId = extractNode2.id;
   w.render();
   assert(extractScrollEl.scrollTop === 0, "scroll resets to 0 when switching to a different extraction node, got " + extractScrollEl.scrollTop);
@@ -5312,7 +5281,7 @@ await withApp(async (w, d, T) => {
   assert(invNode.inverted === true, "redo re-applies the invert toggle");
 
   // ---------- Value assertion add/clear ----------
-  const extractNode = w.createFilterNode(fa.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(fa.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   const assertBtn = d.querySelector('.extract-assert-btn[data-assert-col="0"]');
@@ -6043,7 +6012,7 @@ await withApp(async (w, d, T) => {
   w.render();
   T.state.activeId = f.id;
 
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
   assert(T.extractRowsData.length === 3, "sanity: one extraction row per entry");
@@ -6095,12 +6064,11 @@ await withApp(async (w, d, T) => {
   const targetMark = markByRow(1);
   assert(targetMark, "row 1's mark carries a data-row attribute for the click handler to resolve");
 
-  const fileNodeId = f.id;
   fireClick(targetMark, w);
-  assert(T.state.activeId === fileNodeId,
-    "clicking a plot mark jumps to the entry's root file — the same destructive jump the extraction table's own row double-click already uses (jumpToFullLog), since the Plot tab has no Highlight-view companion to reveal into instead");
+  assert(T.state.activeId === node.id,
+    "clicking a plot mark reveals the entry in the SAME node's Filtered view (revealInFilteredView, this session's follow-up feature) — it stays on the extraction-capable node rather than jumping away to the raw file");
+  assert(T.fhActiveTab === "filter", "the Filtered tab becomes active");
   assert(T.state.selectedId === targetEntry.id, "the clicked mark's real underlying entry becomes selected");
-  assert(T.state.levelFilter.size === 0, "jumpToFullLog's usual level-filter reset still applies");
 
   // Clicking empty chart space (not a mark) is a no-op — sanity that the
   // delegated listener doesn't misfire on the axes/gridlines/background.
@@ -6138,7 +6106,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("zoom.log", log, () => {});
   w.render();
   T.state.activeId = f.id;
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
   assert(T.extractRowsData.length === 11, "sanity: 11 extraction rows");
@@ -6317,7 +6285,8 @@ await withApp(async (w, d, T) => {
   svgEl.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: cx0, clientY: cy0, button: 0 }));
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: cx0, clientY: cy0, button: 0 }));
   fireClick(markRow0, w);
-  assert(T.state.activeId === f.id, "a plain click (no drag) on a mark still jumps to its log entry, unaffected by the new drag-to-zoom handling");
+  assert(T.state.activeId === node.id && T.fhActiveTab === "filter",
+    "a plain click (no drag) on a mark still reveals its log entry in the Filtered view, unaffected by the new drag-to-zoom handling");
   T.state.activeId = node.id;
   w.render();
   w.switchExtractView("plot");
@@ -7049,14 +7018,14 @@ section("59c. Filter library persists across a simulated reload (separate Indexe
   await withApp(async (w, d, T) => {
     const f = await w.addFile("a.log", makeLog(0, 10), () => {});
     w.render();
-    const node = w.createFilterNode(f.id, "extract", "message [value:int]");
+    const node = w.createFilterNode(f.id, "text", "message [value:int]");
     w.render();
     const savePromise59c = w.saveFilterToLibrary(node.id, "extract preset");
     await new Promise(r => setTimeout(r, 0));
     fireClick(d.querySelector("#exportScopeJustThis"), w);
     await savePromise59c;
     const records = await w.listFilterLibrary();
-    assert(records.length === 1 && records[0].roots[0].filterType === "extract", "sanity: saved before the simulated reload");
+    assert(records.length === 1 && records[0].roots[0].filterType === "text", "sanity: saved before the simulated reload");
   }, { indexedDB: factory });
 
   await withApp(async (w, d, T) => {
@@ -7161,7 +7130,7 @@ await withApp(async (w, d, T) => {
   section("60c. Extraction view: #btnCopySelection/#btnCopyAllExtract removed (person-requested), underlying copy functions kept (jumpToFullLog precedent)");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
-  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
 
@@ -7442,7 +7411,7 @@ await withApp(async (w, d, T) => {
   f.tail = { handle, offset: log.length, pending: "", failed: false, busy: false };
   w.render();
 
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
   assert(T.extractRowsData.length === 3, "sanity: one extraction row per entry before tailing");
@@ -9597,10 +9566,10 @@ await withApp(async (w, d, T) => {
     "abs applies per-condition — a mix of abs and plain conditions in one placeholder parses correctly, got " + JSON.stringify(specAbsMixed.columns[0].conditions));
 
   /* ---------- extraction: only rows satisfying the condition are kept ---------- */
-  const geNode = w.createFilterNode(f.id, "extract", "score=[value:int>=10]");
+  const geNode = w.createFilterNode(f.id, "text", "score=[value:int>=10]");
   assert(w.getEntries(geNode.id).length === 10, "extract >=10 keeps rows 10..19, got " + w.getEntries(geNode.id).length);
 
-  const rangeNode = w.createFilterNode(f.id, "extract", "score=[value:int<15,>=10]");
+  const rangeNode = w.createFilterNode(f.id, "text", "score=[value:int<15,>=10]");
   const rangeEntries = w.getEntries(rangeNode.id);
   assert(rangeEntries.length === 5, "combined </>= condition keeps only rows 10..14, got " + rangeEntries.length);
   assert(rangeEntries.every(e => { const v = +e.message.match(/score=(\d+)/)[1]; return v >= 10 && v < 15; }),
@@ -9611,11 +9580,11 @@ await withApp(async (w, d, T) => {
     .map((v, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"delta=${v}"`)
     .join("\n") + "\n";
   const fd = await w.addFile("d.log", deltaLog, () => {});
-  const absNode = w.createFilterNode(fd.id, "extract", "delta=[value:int|>=10]");
+  const absNode = w.createFilterNode(fd.id, "text", "delta=[value:int|>=10]");
   const absEntries = w.getEntries(absNode.id);
   assert(absEntries.length === 2, "|value|>=10 matches both -20 and 20 (not the three values inside [-10,10]), got " + absEntries.length);
   assert(absEntries.every(e => Math.abs(+e.message.match(/delta=(-?\d+)/)[1]) >= 10), "sanity: every kept row's |delta| is actually >= 10");
-  const nonAbsNode = w.createFilterNode(fd.id, "extract", "delta=[value:int>=10]");
+  const nonAbsNode = w.createFilterNode(fd.id, "text", "delta=[value:int>=10]");
   assert(w.getEntries(nonAbsNode.id).length === 1, "the same threshold WITHOUT the abs prefix only matches +20 (plain >=10), got " + w.getEntries(nonAbsNode.id).length);
 
   /* ---------- a plain "text" filter carrying a conditioned wildcard token (the "Add filter" path) respects it too ---------- */
@@ -12927,7 +12896,7 @@ await withApp(async (w, d, T) => {
   section("118c. jumpToFullLog (extraction table double-click) preserves the source row's on-screen offset into the Filter view too");
 
   const f = await w.addFile("a.log", makeLog(0, 60), () => {});
-  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   const tableBody = d.querySelector("#tableBody");
@@ -13337,7 +13306,6 @@ await withApp(async (w, d, T) => {
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
   assert(d.querySelector("#filterLiveMatch").textContent.includes("3 of 4"), "live match count works in regex mode too (case-insensitive '^connection' also matches entry 3's 'CONNECTION')");
-  assert(d.querySelector("#filterExtractBtn").disabled === true, "Extract stays disabled in regex mode (no [value:...] placeholder vocabulary to extract)");
 
   // Invalid regex while typing -> inline error state, not a crash
   filterInput.value = "(unterminated";
@@ -13461,7 +13429,7 @@ await withApp(async (w, d, T) => {
   assert(pastedIdNode.filterType === "idset" && JSON.stringify(pastedIdNode.value.slice().sort()) === JSON.stringify(idNode.value.slice().sort()),
     "cloneSubtree (copy/paste) carries an idset node's entry-id array to the pasted copy, confirming the generic value-field precedent holds");
 
-  const node = w.createFilterNode(f.id, "extract", "n=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "n=[value:int]");
   T.state.activeId = node.id;
   w.render();
   w.switchExtractView("plot");
@@ -13711,7 +13679,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("scatter3d.log", log, () => {});
   w.render();
   T.state.activeId = f.id;
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int] z=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node.id;
   w.render();
   assert(T.extractRowsData.length === 3, "sanity: 3 extraction rows");
@@ -13750,7 +13718,7 @@ await withApp(async (w, d, T) => {
   const f2 = await w.addFile("scatter3d-asym.log", asymLog, () => {});
   w.render();
   T.state.activeId = f2.id;
-  const node2 = w.createFilterNode(f2.id, "extract", "x=[value:int] y=[value:int] z=[value:int]");
+  const node2 = w.createFilterNode(f2.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node2.id;
   w.render();
   w.switchExtractView("plot");
@@ -13828,9 +13796,9 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#plotTooltip").classList.contains("hidden"), "hovering exactly over a projected point shows the tooltip");
   assert(d.querySelector("#plotTooltip").innerHTML.includes("100"), "tooltip shows the hovered point's real underlying values, got " + d.querySelector("#plotTooltip").innerHTML);
 
-  const fileNodeId = f.id;
   fireClick(canvas, w);
-  assert(T.state.activeId === fileNodeId, "clicking a 3D point jumps to its entry's root file (same jumpToFullLog as 2D scatter marks)");
+  assert(T.state.activeId === node.id, "clicking a 3D point reveals the entry in the SAME node's Filtered view (revealInFilteredView, same as 2D scatter marks) rather than jumping to its root file");
+  assert(T.fhActiveTab === "filter", "the Filtered tab becomes active");
   assert(T.state.selectedId === targetEntry.id, "the clicked point's real underlying entry becomes selected");
 
   // Empty space (no point under the cursor) is a no-op.
@@ -13909,7 +13877,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("persist3d.log", log, () => {});
   w.render();
   T.state.activeId = f.id;
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int] z=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node.id;
   w.render();
 
@@ -13992,20 +13960,20 @@ await withApp(async (w, d, T) => {
 
   /* ---------- Persistence: session cache serialization ---------- */
   const { roots } = w.serializeFilterTreeForCache(f);
-  const serializedNode = roots.find(r => r.filterType === "extract" && r.plotConfig && r.plotConfig.axisEqual3d === "all" && r.plotConfig.xMax === "80");
-  assert(serializedNode, "serializeFilterTreeForCache writes plotConfig for an extract node");
+  const serializedNode = roots.find(r => r.filterType === "text" && r.plotConfig && r.plotConfig.axisEqual3d === "all" && r.plotConfig.xMax === "80");
+  assert(serializedNode, "serializeFilterTreeForCache writes plotConfig for an extraction-capable 'text' node");
 
   const cacheFile = { id: w.uid("n"), type: "file", name: "cachefile", children: [], entries: f.entries, cacheKey: "ck1" };
   T.state.nodes[cacheFile.id] = cacheFile;
   w.materializeCachedFilters(cacheFile, roots);
-  const restoredFromCache = cacheFile.children.map(id => T.state.nodes[id]).find(n => n.filterType === "extract" && n.plotConfig && n.plotConfig.axisEqual3d === "all");
+  const restoredFromCache = cacheFile.children.map(id => T.state.nodes[id]).find(n => n.filterType === "text" && n.plotConfig && n.plotConfig.axisEqual3d === "all");
   assert(restoredFromCache && restoredFromCache.plotConfig.xMax === "80" && restoredFromCache.plotConfig.zCol === 2,
     "materializeCachedFilters restores plotConfig from the session-cache round trip");
 
   /* ---------- sanitizePlotConfig rejects a corrupt/foreign value ---------- */
   const badJson = JSON.stringify({
     format: "philogg-filters", version: 2, activeRef: null,
-    roots: [{ ref: 1, filterType: "extract", name: "bad", inverted: false, children: [], value: "n=[value:int]", attach: "target",
+    roots: [{ ref: 1, filterType: "text", name: "bad", inverted: false, children: [], value: "n=[value:int]", attach: "target",
       plotConfig: { type: "not-a-real-type", xCol: "not-a-number", yCols: "not-an-array", axisEqual3d: "bogus" } }],
   });
   // Switch back to the Table view first: importFilterJson makes the newly
@@ -14276,7 +14244,7 @@ await withApp(async (w, d, T) => {
   const leafSlot = d.querySelector('.tree-row[data-node-id="' + child.id + '"] .tree-chevron-slot');
   assert(leafSlot && !leafSlot.querySelector(".tree-chevron"), "a leaf row reserves the chevron slot but shows no button in it");
 
-  const extract = w.createFilterNode(f.id, "extract", "[value:float]");
+  const extract = w.createFilterNode(f.id, "text", "[value:float]");
   w.render();
 
   // --- The row-count percentage bar is gone outright (person-reported,
@@ -14389,7 +14357,7 @@ await withApp(async (w, d, T) => {
   assert(pairs[0].message.includes(" ⟶ "), "sanity: the pair's message is the clean firstMsg ⟶ secondMsg join");
 
   const pattern = "Value [value:int] ⟶ Position [*]";
-  const extractNode = w.createFilterNode(link.id, "extract", pattern);
+  const extractNode = w.createFilterNode(link.id, "text", pattern);
   const textNode = w.createFilterNode(link.id, "text", pattern);
 
   const extractCount = w.getEntries(extractNode.id).length;
@@ -17043,7 +17011,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  w.createFilterNode(f.id, "extract", "id=[value:int] score=[value:float]");
+  w.createFilterNode(f.id, "text", "id=[value:int] score=[value:float]");
   w.render();
   assert(T.extractRowsData.length === 2, "sanity: extraction produced 2 rows");
 
@@ -17073,7 +17041,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  w.createFilterNode(f.id, "extract", "id=[value:int] score=[value:float]");
+  w.createFilterNode(f.id, "text", "id=[value:int] score=[value:float]");
   w.render();
 
   const menu = d.querySelector("#extractContextMenu");
@@ -17134,7 +17102,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  w.createFilterNode(f.id, "extract", "score=[value:float]");
+  w.createFilterNode(f.id, "text", "score=[value:float]");
   w.render();
 
   // Auto-detect (stubbed to comma) is used when nothing is stored.
@@ -17186,7 +17154,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  w.createFilterNode(f.id, "extract", "score=[value:float]");
+  w.createFilterNode(f.id, "text", "score=[value:float]");
   w.render();
 
   let written = null;
@@ -17248,7 +17216,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int] z=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node.id;
   w.render();
   w.switchExtractView("plot");
@@ -17305,7 +17273,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int] z=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int] z=[value:int]");
   T.state.activeId = node.id;
   w.render();
   w.switchExtractView("plot");
@@ -17354,7 +17322,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
   const compiledName0 = w.findExtractColumn(0).name; // whatever the pattern compiler names it — not asserted on its own, just remembered
@@ -17417,7 +17385,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", log, () => {});
   T.state.activeId = f.id;
   w.render();
-  const node = w.createFilterNode(f.id, "extract", "x=[value:int] y=[value:int]");
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
   T.state.activeId = node.id;
   w.render();
   w.renameColumn(node, 0, "MyX");
@@ -17479,12 +17447,12 @@ await withApp(async (w, d, T) => {
 
   /* ---------- Session cache serialization ---------- */
   const { roots } = w.serializeFilterTreeForCache(f);
-  const serializedNode = roots.find(r => r.filterType === "extract" && r.columnRenames && r.columnRenames[0] === "MyX");
-  assert(serializedNode, "serializeFilterTreeForCache writes columnRenames for an extract node");
+  const serializedNode = roots.find(r => r.filterType === "text" && r.columnRenames && r.columnRenames[0] === "MyX");
+  assert(serializedNode, "serializeFilterTreeForCache writes columnRenames for an extraction-capable 'text' node");
   const cacheFile = { id: w.uid("n"), type: "file", name: "cachefile", children: [], entries: f.entries, cacheKey: "ck1" };
   T.state.nodes[cacheFile.id] = cacheFile;
   w.materializeCachedFilters(cacheFile, roots);
-  const restoredFromCache = cacheFile.children.map(id => T.state.nodes[id]).find(n => n.filterType === "extract" && n.columnRenames && n.columnRenames[0] === "MyX");
+  const restoredFromCache = cacheFile.children.map(id => T.state.nodes[id]).find(n => n.filterType === "text" && n.columnRenames && n.columnRenames[0] === "MyX");
   assert(restoredFromCache && restoredFromCache.columnRenames[1] === "MyY", "materializeCachedFilters restores columnRenames from the session-cache round trip");
 });
 
@@ -17497,8 +17465,11 @@ await withApp(async (w, d, T) => {
    `disabled` whenever the active node has no extractable wildcards
    (nodeHasExtractableWildcards). #contextToolbar (match nav +
    expand/collapse-all) still shows only for the Context tab, not
-   Filtered/Stacked. Old extract-type filter nodes from a pre-rework session
-   export still load and render correctly — no node schema changed.
+   Filtered/Stacked. (158d, which covered old pre-rework "extract"-type
+   session exports loading unchanged, was retired the same session the
+   dedicated "extract" filterType itself was — see Group 159's header for
+   the filterType-merge follow-up and why that compatibility requirement no
+   longer applies.)
    ============================================================ */
 group(158);
 await withApp(async (w, d, T) => {
@@ -17516,7 +17487,7 @@ await withApp(async (w, d, T) => {
   assert(tableBtn.disabled && plotBtn.disabled, "...but are disabled — a plain text filter has no [value:...]/[*] wildcards to tabulate/plot");
   assert(w.nodeHasExtractableWildcards(plain) === false, "sanity: nodeHasExtractableWildcards agrees");
 
-  const extractNode = w.createFilterNode(f.id, "extract", "message [value:int]");
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   assert(w.nodeHasExtractableWildcards(extractNode) === true, "an extract node with a real [value:int] wildcard is capable");
   T.state.activeId = extractNode.id;
   w.render();
@@ -17533,7 +17504,7 @@ await withApp(async (w, d, T) => {
   // (compileExtractPattern returns null with zero columns) — Table/Plot stay
   // disabled and the node falls back to the Filtered tab instead of landing
   // on a dead Table tab.
-  const emptyExtract = w.createFilterNode(f.id, "extract", "just plain text, no wildcards");
+  const emptyExtract = w.createFilterNode(f.id, "text", "just plain text, no wildcards");
   T.state.activeId = emptyExtract.id;
   w.render();
   assert(T.fhActiveTab === "filter", "an extract node with no wildcards does NOT auto-jump to Table (nothing to show there)");
@@ -17595,35 +17566,98 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("158d. Old extract-type nodes from a pre-rework session export still load and render correctly");
+  section("158d. filterType merge follow-up: creating via the popup unlocks Table/Plot for the SAME node");
 
+  // End-to-end (not the direct-API sanity Group 41 already covers): typing
+  // a wildcard pattern and clicking the popup's one and only "Add filter"
+  // button produces a "text" node whose Table/Plot tabs come up enabled
+  // immediately, with no separate "extract" node/type anywhere.
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
-  // A hand-built export in the exact pre-rework shape — no new fields, since
-  // this rework changed no node schema (docs/ui-implementation-plan.md
-  // Schritt 1: "Kein Schema-Wechsel").
-  const roots = [{
-    attach: "target",
-    type: "filter", filterType: "extract", value: "message [value:int]",
-    inverted: false, ignoredColumns: [], children: [],
-  }];
-  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: null, roots });
   T.state.activeId = f.id;
   w.render();
-  // loadFilterTargetId is a top-level `let` in the page script, reached via
-  // the shared lexical scope the same way every other save/load-JSON group
-  // does (see e.g. GROUP 11's own W_setLoadTarget helper).
-  const setLoadTarget = d.createElement("script");
-  setLoadTarget.textContent = `loadFilterTargetId = ${JSON.stringify(f.id)};`;
-  d.body.appendChild(setLoadTarget);
-  w.importFilterJson(json);
-  const loaded = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "extract");
-  assert(loaded, "the old extract node imports successfully");
-  T.state.activeId = loaded.id;
-  w.render();
-  assert(T.fhActiveTab === "table", "it still auto-reveals its Table tab, same as a freshly-created one");
-  assert(w.nodeHasExtractableWildcards(loaded), "nodeHasExtractableWildcards recognizes the imported node's pattern");
-  assert(d.querySelectorAll("#extractBody tr").length > 0, "the extraction table renders real rows from the old node's pattern");
+  w.openFilterPopup();
+  d.querySelector("#filterInput").value = "message [value:int]";
+  fireInput(d.querySelector("#filterInput"), w);
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "text", "the popup only ever creates 'text' nodes now");
+  assert(T.fhActiveTab === "table", "activating it auto-reveals Table, same as the old dedicated 'extract' node type did");
+  const tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
+  assert(!tabs.find(b => b.dataset.fhTab === "table").disabled && !tabs.find(b => b.dataset.fhTab === "plot").disabled,
+    "Table/Plot are enabled for this same 'text' node");
+  assert(d.querySelectorAll("#extractBody tr").length > 0, "and the extraction table actually rendered real rows");
 });
+
+/* ============================================================
+   GROUP 159 — Double-click a Table row / click a Plot mark jumps to the
+   Filtered view (this session, follow-up feature request alongside the
+   filterType merge above)
+   Origin: this session. Previously the extraction table row's double-click
+   and the Plot tab's mark click both called jumpToFullLog — a destructive
+   jump away to the node's root FILE, clearing the level filter, since an
+   extraction node had no Filtered view of its own to reveal into instead.
+   That's no longer true (see the filterType-merge group above): an
+   extraction-capable "text" node has an ordinary Filtered pane showing
+   exactly its own matched entries. Both actions now call
+   revealInFilteredView(entry, sourceEl, sourceScrollEl) instead — same
+   node stays active, fhActiveTab switches to "filter", and the row is
+   selected/scrolled/flashed there, modeled directly on
+   revealInHighlightView's own Context-view counterpart. jumpToFullLog
+   itself is unchanged and still directly tested (Group 10) — it's simply
+   no longer wired to any UI action.
+   ============================================================ */
+group(159);
+await withApp(async (w, d, T) => {
+  section("159a. Double-clicking a Table row reveals the entry in the SAME node's Filtered view");
+
+  const log = [0, 1, 2]
+    .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"id=${i}"`)
+    .join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "id=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  assert(T.fhActiveTab === "table", "sanity: activating an extraction-capable node lands on Table");
+
+  const targetRow = [...d.querySelectorAll("#extractBody tr")][1];
+  const targetEntry = T.extractRowsData[1].entry;
+  fireDblClick(targetRow, w);
+
+  assert(T.state.activeId === node.id, "the active node stays the SAME extraction-capable node — no jump to the root file");
+  assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
+  assert(T.state.selectedId === targetEntry.id, "the double-clicked row's real underlying entry becomes selected");
+  assert(!d.querySelector("#tableWrap").classList.contains("hidden"), "the Filtered pane (log table) is now the visible content");
+});
+
+await withApp(async (w, d, T) => {
+  section("159b. Clicking a Plot mark reveals the entry in the SAME node's Filtered view");
+
+  const rows = [[0, 0], [10, 10], [20, 20]];
+  const log = rows.map(([x, y], i) =>
+    `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${x} y=${y}"`
+  ).join("\n") + "\n";
+  const f = await w.addFile("pos.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.switchExtractView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w); // line/bar's multi-Y checkboxes have no single #plotYSelectSingle
+  d.querySelector("#plotXSelect").value = "0";
+  d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+  d.querySelector("#plotYSelectSingle").value = "1";
+  d.querySelector("#plotYSelectSingle").dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  const marks = [...d.querySelectorAll("#plotSvg circle.plot-mark")];
+  assert(marks.length === 3, "sanity: one mark per plotted row");
+  const targetMark = marks.find(m => +m.dataset.row === 1);
+  const targetEntry = T.extractRowsData[1].entry;
+  fireClick(targetMark, w);
+
+  assert(T.state.activeId === node.id, "the active node stays the SAME extraction-capable node");
+  assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
+  assert(T.state.selectedId === targetEntry.id, "the clicked mark's real underlying entry becomes selected");
+});
+
 
 /* ============================================================
    Summary
@@ -19912,12 +19946,49 @@ process.exitCode = failed ? 1 : 0;
               "Context/Filtered display" option (Separate/Stacked) is now
               the ONLY way fhLayout changes — clicking a "Stacked" tab
               button no longer sets it. 158c: #contextToolbar (match nav)
-              still shows for Context only, not Filtered/Stacked. 158d: a
-              hand-built pre-rework extract-node export (no new fields —
-              this rework changed no node schema) still imports and renders
-              correctly, landing on its Table tab same as a fresh one.
+              still shows for Context only, not Filtered/Stacked. 158d:
+              REWRITTEN the same session for the filterType-merge follow-up
+              below — the old-extract-node-export-still-imports test it
+              covered was retired outright (that compatibility requirement
+              no longer applies, see Group 159's header); it now covers the
+              popup's "Add filter" unlocking Table/Plot for the same node
+              end-to-end.
+
+   Group 159 — this session (2026-09-03), follow-up to
+              docs/ui-implementation-plan.md: the filterType MERGE. The
+              separate "extract" filterType and its "Extract" popup button
+              are retired outright — a "text" filter node whose pattern has
+              [value:...]/[*] wildcards is now simultaneously a normal
+              filter (Context/Filtered/Stacked keep working exactly as
+              before — nodeHasExtractableWildcards's matching already went
+              through the SAME text+wildcard code path a plain wildcard
+              "text" filter always used, see the comment above
+              getEntriesUncached's wildcard branch) AND extraction-capable
+              (Table/Plot unlock for it). No migration for old "extract"-
+              type session exports/filter-library entries (person said so
+              explicitly — the software has no released version yet):
+              FILTER_TYPES no longer recognizes "extract" at all, so an old
+              hand-crafted or exported node of that type is simply rejected
+              on import rather than kept loadable, replacing the retired
+              158d coverage above. Groups 1/8/39/40/41 (createFilterNode
+              fixture calls, the tree context-menu Invert exclusion, the
+              two-button popup redesign, column-rename persistence) were
+              updated in place for the merge rather than left describing a
+              button/type that no longer exists — see their own headers/
+              inline comments for what changed. New coverage here: 159a/b,
+              the accompanying "double-click a Table row / click a Plot
+              mark jumps to the entry in the SAME node's Filtered view"
+              feature (revealInFilteredView, replacing jumpToFullLog on
+              both of those two triggers — jumpToFullLog itself is
+              unchanged and still directly tested, Group 10, just no longer
+              wired to any UI action).
 
    Deliberately DROPPED this session:
+     - Group 41's old two-button "Extract" vs "Add filter" coverage —
+       REWRITTEN in place (same group number) for the filterType merge:
+       there is only "Add filter" now, and the group covers
+       nodeHasExtractableWildcards flipping live as a node's own pattern is
+       edited, instead of two buttons producing two node types.
      - Group 139a's "no reveal item for a picker/drop-loaded file" framing.
        That was the Tauri wrapper's picker/drop route, which no longer
        exists (see 141). The assertion itself is kept, re-pointed at the
