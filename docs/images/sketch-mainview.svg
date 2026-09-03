@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 820" font-family="'DejaVu Sans Mono','Courier New',monospace" font-size="12">
+  <defs>
+    <filter id="sketchy" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" result="n" seed="3"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2"/>
+    </filter>
+  </defs>
+  <style>
+    .ln{fill:none;stroke:#2b2b2b;stroke-width:1.6;filter:url(#sketchy)}
+    .fill{fill:#fffefb}
+    .accent{fill:#fff2cf}
+    .accent2{fill:#e4efff}
+    .lbl{fill:#111;font-weight:bold}
+    .sub{fill:#555;font-size:10.5px}
+    .tag{fill:#333;font-size:10.5px}
+  </style>
+  <rect width="1260" height="820" fill="#f5f2ea"/>
+  <text x="20" y="22" class="lbl" font-size="15">PhiLogg — MainView (grobe Anordnung, nicht maßstabsgetreu)</text>
+
+  <!-- outer app frame -->
+  <rect class="ln fill" x="15" y="34" width="1230" height="770"/>
+
+  <!-- header toolbar -->
+  <rect class="ln accent" x="15" y="34" width="1230" height="40"/>
+  <text x="26" y="49" class="lbl">#toolbar</text>
+  <ellipse class="ln fill" cx="70" cy="63" rx="42" ry="9"/><text x="42" y="66" class="tag">.brand</text>
+  <ellipse class="ln fill" cx="145" cy="63" rx="15" ry="9"/><text x="139" y="66" class="tag">◀</text>
+  <ellipse class="ln fill" cx="172" cy="63" rx="15" ry="9"/><text x="166" y="66" class="tag">▶</text>
+  <text x="200" y="66" class="sub">#btnNavBack / #btnNavForward</text>
+  <ellipse class="ln fill" cx="990" cy="63" rx="55" ry="9"/><text x="955" y="66" class="tag">#statusText</text>
+  <ellipse class="ln fill" cx="1080" cy="63" rx="15" ry="9"/><text x="1074" y="66" class="tag">↺</text>
+  <ellipse class="ln fill" cx="1108" cy="63" rx="15" ry="9"/><text x="1102" y="66" class="tag">↻</text>
+  <ellipse class="ln fill" cx="1160" cy="63" rx="35" ry="9"/><text x="1130" y="66" class="tag">#btnSettings ⚙</text>
+
+  <!-- sidebar -->
+  <rect class="ln accent2" x="15" y="74" width="290" height="730"/>
+  <text x="24" y="94" class="lbl">#sidebar</text>
+
+  <rect class="ln fill" x="24" y="100" width="272" height="30"/>
+  <text x="30" y="118" class="tag">"Files &amp; filters"  #sidebarHeader</text>
+  <rect class="ln fill" x="24" y="134" width="86" height="20"/><text x="30" y="148" class="tag">#btnOpen ▾</text>
+  <rect class="ln fill" x="116" y="134" width="70" height="20"/><text x="122" y="148" class="tag">#btnSave</text>
+  <rect class="ln fill" x="192" y="134" width="100" height="20"/><text x="198" y="148" class="tag">#sidebarToggle ⇤</text>
+
+  <rect class="ln fill" x="24" y="162" width="272" height="600"/>
+  <text x="30" y="180" class="sub">#tree — filter node list</text>
+  <g>
+    <rect class="ln fill" x="30" y="188" width="260" height="24"/>
+    <circle class="ln" cx="42" cy="200" r="6"/><text x="54" y="204" class="tag">nginx errors</text>
+    <text x="200" y="204" class="tag">🖉 ✕</text>
+  </g>
+  <g>
+    <rect class="ln accent" x="30" y="216" width="260" height="24"/>
+    <circle class="ln" cx="42" cy="228" r="6"/><text x="54" y="232" class="tag">payment link (active)</text>
+  </g>
+  <g>
+    <rect class="ln fill" x="30" y="244" width="260" height="24"/>
+    <circle class="ln" cx="42" cy="256" r="6"/><text x="54" y="260" class="tag">slow queries</text>
+  </g>
+  <text x="30" y="284" class="sub">right-click row → #treeContextMenu</text>
+  <text x="30" y="300" class="sub">2+ selected → #treeActionBar "N selected"</text>
+
+  <!-- content column -->
+  <rect class="ln fill" x="315" y="74" width="930" height="730"/>
+  <text x="324" y="94" class="lbl">#content</text>
+
+  <!-- filter popup note -->
+  <rect class="ln accent" x="324" y="100" width="912" height="18"/>
+  <text x="330" y="113" class="sub">#filterPopup (hidden until "Add filter" clicked) — pattern, #filterColumnChips, Extract / Add filter buttons</text>
+
+  <!-- minimap -->
+  <rect class="ln accent2" x="324" y="122" width="912" height="46"/>
+  <text x="330" y="136" class="lbl" font-size="11">#timelineMinimap</text>
+  <path class="ln" d="M330,158 L400,148 L470,152 L560,140 L650,155 L760,144 L860,150 L1000,146 L1150,152 L1228,148" fill="none"/>
+  <text x="900" y="136" class="sub">#timelineMinimapMeta · drag = zoom</text>
+
+  <!-- statusStrip -->
+  <rect class="ln fill" x="324" y="172" width="912" height="14"/>
+  <text x="330" y="182" class="sub">#statusStrip</text>
+
+  <!-- viewBar -->
+  <rect class="ln accent" x="324" y="190" width="912" height="34"/>
+  <text x="330" y="204" class="lbl" font-size="11">#viewBar</text>
+  <rect class="ln fill" x="330" y="207" width="54" height="14"/><text x="333" y="217" class="tag" font-size="9">Context</text>
+  <rect class="ln accent2" x="386" y="207" width="54" height="14"/><text x="391" y="217" class="tag" font-size="9">Filtered</text>
+  <rect class="ln fill" x="442" y="207" width="54" height="14"/><text x="447" y="217" class="tag" font-size="9">Stacked</text>
+  <text x="500" y="217" class="sub" font-size="9">#fhTabs</text>
+  <ellipse class="ln fill" cx="560" cy="214" rx="10" ry="7"/><text x="554" y="217" class="tag" font-size="9">📌</text>
+  <ellipse class="ln fill" cx="582" cy="214" rx="10" ry="7"/><text x="576" y="217" class="tag" font-size="9">📝</text>
+  <ellipse class="ln fill" cx="604" cy="214" rx="10" ry="7"/><text x="598" y="217" class="tag" font-size="9">¶</text>
+  <ellipse class="ln fill" cx="626" cy="214" rx="10" ry="7"/><text x="620" y="217" class="tag" font-size="9">▤</text>
+  <ellipse class="ln fill" cx="648" cy="214" rx="10" ry="7"/><text x="642" y="217" class="tag" font-size="9">Aa</text>
+  <ellipse class="ln fill" cx="670" cy="214" rx="10" ry="7"/><text x="664" y="217" class="tag" font-size="9">U̲</text>
+  <text x="500" y="208" class="sub" font-size="8">Pin/Notes/Multiline/Columns/TextMatch/HL-Match</text>
+  <rect class="ln fill" x="690" y="205" width="90" height="18"/>
+  <text x="696" y="217" class="tag" font-size="9">ERR WARN INFO</text>
+  <text x="694" y="203" class="sub" font-size="8">#levelBar</text>
+  <ellipse class="ln fill" cx="795" cy="214" rx="14" ry="7"/><text x="785" y="217" class="tag" font-size="9">+tree</text>
+  <rect class="ln fill" x="820" y="205" width="410" height="18"/>
+  <text x="826" y="217" class="tag" font-size="9">root › payment errors › link pairs</text>
+  <text x="826" y="203" class="sub" font-size="8">#breadcrumb — .crumb chain of active filter node's ancestors</text>
+
+  <!-- fhSplit -->
+  <rect class="ln fill" x="324" y="228" width="912" height="470"/>
+  <text x="330" y="246" class="sub">#fhSplit → renderMainView() content</text>
+  <text x="330" y="262" class="sub">(Log / Extraction table+plot / Link pair — depends on active node's filterType)</text>
+
+  <!-- detail panel -->
+  <rect class="ln accent2" x="324" y="702" width="912" height="98"/>
+  <text x="330" y="720" class="lbl" font-size="11">#detailPanel</text>
+  <text x="330" y="736" class="sub">#detailPanelHeader "Entry detail" (#detailToggle ▾) / #detailBody / #detailResizer (drag handle, top edge)</text>
+</svg>
