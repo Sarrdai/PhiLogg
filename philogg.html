@@ -826,8 +826,8 @@
      BUG GUARD: #viewBar's OWN `flex:0 0 auto` (below) is a separate concern
      from its `display:flow-root` — the former is about how #viewBar
      behaves as a flex ITEM of its parent #content (a flex column, like
-     #statusStrip/#timelineMinimap right above it, which also carry
-     flex:0 0 auto), the latter is about how #viewBar lays out its OWN
+     #timelineMinimap right above it, which also carries flex:0 0 auto),
+     the latter is about how #viewBar lays out its OWN
      children. Dropping flex:0 0 auto lets #content's flex-shrink algorithm
      compress #viewBar below the height its floated children actually need
      whenever the window is short on vertical space — the floats then
@@ -1119,14 +1119,6 @@
     cursor:col-resize; z-index:3; border-radius:2px;
   }
   .col-resize-handle:hover, .col-resize-handle.dragging{background:var(--accent-soft);}
-
-  #statusStrip{
-    flex:0 0 auto; padding:6px 16px; font-size:11px; color:var(--text-tertiary);
-    background:var(--bg-panel); border-bottom:1px solid var(--border-soft);
-    font-variant-numeric:tabular-nums;
-  }
-  #statusStrip.hidden{display:none;}
-  #statusStrip b{color:var(--text-secondary); font-weight:650;}
 
   /* ---------- Timeline minimap: time-scaled density strip above the table.
      Grey bars = whole root file, colored bars = current filtered/leveled
@@ -1491,6 +1483,18 @@
     padding:0 2px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary);
     font-variant-numeric:tabular-nums; white-space:nowrap;
   }
+  /* Filtered view's own toolbar row — same "real row in normal flow" pattern
+     and same look as #contextToolbar right above it, just for the Filtered
+     pane instead of Context. Always shown (no hidden-node case to gate on,
+     unlike Context's match navigation): currently empty, view-specific
+     actions land here later. */
+  #filteredToolbar{
+    flex:0 0 auto; box-sizing:border-box; height:30px;
+    display:flex; align-items:center; gap:10px;
+    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+  }
+  #filteredToolbar .toolbar-group{ gap:4px; }
+  #filteredToolbar .toolbar-icon-btn{ width:22px; height:22px; border-radius:5px; }
   .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--border); flex:0 0 auto; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
@@ -2386,6 +2390,17 @@
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
+  /* Table view's own toolbar row — same pattern as #plotToolbar/#contextToolbar,
+     sitting directly above #extractScroll instead of #plotBody. Always shown;
+     currently empty, view-specific actions land here later. */
+  #tableToolbar{
+    flex:0 0 auto; box-sizing:border-box; height:30px;
+    display:flex; align-items:center; gap:10px;
+    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+  }
+  #tableToolbar.hidden{ display:none; }
+  #tableToolbar .toolbar-group{ gap:4px; }
+  #tableToolbar .toolbar-icon-btn{ width:22px; height:22px; border-radius:5px; }
   #plot2dToolsGroup{display:flex; align-items:center; gap:10px;}
   #plot2dToolsGroup.hidden{display:none;}
   #plotToolbar .toolbar-group{gap:4px;}
@@ -2971,8 +2986,6 @@
         <div id="timelineMinimapDragLabel" class="hidden"></div>
       </div>
 
-      <div id="statusStrip"></div>
-
       <!-- Filter/Highlight split. Filter view is
            the pre-existing table/link view, narrowed by the active filter
            tree node, unchanged. Highlight view is new: always the active
@@ -3088,6 +3101,10 @@
                 <span class="col-resize-handle" data-col="method" title="Drag to resize"></span>
               </div>
             </div>
+            <!-- Filtered view's own toolbar — same pattern as #contextToolbar
+                 in the Context view (see that div's own comment): a real row
+                 under the header rather than an overlay. Empty for now. -->
+            <div id="filteredToolbar"></div>
             <div id="tableBody">
               <div id="tableSpacer">
                 <div id="tableRows"></div>
@@ -3130,6 +3147,10 @@
           </div>
           <span id="extractInfo"></span>
         </div>
+        <!-- Table view's own toolbar — same pattern as #plotToolbar right
+             below it (see that div's own comment): a real row directly above
+             this view's content. Empty for now. -->
+        <div id="tableToolbar"></div>
         <div id="extractScroll">
           <table id="extractTable"><thead id="extractHead"></thead><tbody id="extractBody"></tbody></table>
         </div>
@@ -8690,6 +8711,7 @@ const plotChartArea = el("#plotChartArea");
 const plotSvg = el("#plotSvg");
 const plot3dCanvas = el("#plot3dCanvas");
 const plotToolbar = el("#plotToolbar");
+const tableToolbar = el("#tableToolbar");
 const plot2dToolsGroup = el("#plot2dToolsGroup");
 const plotZoomOutBtn = el("#plotZoomOutBtn");
 const plotZoomInBtn = el("#plotZoomInBtn");
@@ -8708,7 +8730,6 @@ const linkInfo = el("#linkInfo");
 const linkScroll = el("#linkScroll");
 const linkSpacer = el("#linkSpacer");
 const linkBody = el("#linkBody");
-const statusStrip = el("#statusStrip");
 const tableHeaderEl = el("#tableHeader");
 const highlightHeaderEl = el("#highlightHeader");
 const btnColumns = el("#btnColumns");
@@ -9501,7 +9522,6 @@ function renderMainView() {
     fhSplit.style.display = "none";
     detailResizer.style.display = "none";
     detailPanel.style.display = "none";
-    statusStrip.classList.add("hidden");
     timelineMinimapEl.classList.add("hidden");
     currentViewEntries = [];
     tableRows.innerHTML = "";
@@ -9543,12 +9563,11 @@ function renderMainView() {
     // same as before this rework.
     detailResizer.style.display = "none";
     detailPanel.style.display = "none";
-    // Unlike before this rework, the minimap/status strip are no longer
-    // hidden while an extraction's Table/Plot tab is on screen (Schritt 5) —
-    // there is a real underlying entry set behind this node now that
-    // Context/Filtered work for it too, so hiding them here would just be
-    // inconsistent with every other tab.
-    statusStrip.classList.remove("hidden");
+    // Unlike before this rework, the minimap is no longer hidden while an
+    // extraction's Table/Plot tab is on screen (Schritt 5) — there is a real
+    // underlying entry set behind this node now that Context/Filtered work
+    // for it too, so hiding it here would just be inconsistent with every
+    // other tab.
     timelineMinimapEl.classList.remove("hidden");
     extractWrap.style.display = "flex";
     renderExtractTable(activeNode);
@@ -9583,7 +9602,6 @@ function renderMainView() {
   if (isLink) {
     tableWrap.style.display = "none";
     linkWrap.style.display = "flex";
-    statusStrip.classList.add("hidden");
     // Pair entries duck-type as normal entries (ts/level — see "Link
     // filter" in PROJECT.md), so the minimap works here unchanged; shown
     // now so a brace selection's markers (see renderLinkView) have
@@ -9594,33 +9612,10 @@ function renderMainView() {
     linkWrap.style.display = "none";
     state.tableSelection = null;
     tableWrap.style.display = "flex";
-    statusStrip.classList.remove("hidden");
     timelineMinimapEl.classList.remove("hidden");
     renderTable();
   }
   renderHighlightView(true); // highlightColorMap was computed fresh above
-}
-
-// One-line always-visible summary of what's currently on screen: how many
-// rows are shown vs. the total for the active node's root file, plus which
-// level quick-filters are narrowing that further. Keeps this information in
-// one place instead of scattered only across the breadcrumb/level bar.
-function renderStatusStrip() {
-  const rootId = getRootFileId(state.activeId);
-  const total = rootId ? state.nodes[rootId].entries.length : 0;
-  const shown = currentViewEntries.length;
-  let text = "<b>" + shown.toLocaleString("de-DE") + "</b> of " + total.toLocaleString("de-DE") + " shown";
-  if (state.levelFilter.size > 0) {
-    text += " · filtered to " + [...state.levelFilter].join(", ");
-  }
-  // pinnedOnlyIds is refreshed by the getVisibleEntries() call currentViewEntries
-  // came from (see renderTable) — surfaces the "N of these are only here via
-  // a pin" count so a row that doesn't match the filter chain doesn't read
-  // as a bug (see PROJECT.md "Pin bookmarks into the Filtered View").
-  if (pinnedOnlyIds.size > 0) {
-    text += " · " + pinnedOnlyIds.size.toLocaleString("de-DE") + " pinned";
-  }
-  statusStrip.innerHTML = text;
 }
 
 function renderStatus() {
@@ -11437,6 +11432,7 @@ function formatAxisNumber(v) {
 function switchExtractView(view) {
   extractView = view;
   extractScroll.classList.toggle("hidden", view !== "table");
+  tableToolbar.classList.toggle("hidden", view !== "table");
   plotWrap.classList.toggle("hidden", view !== "plot");
   if (view === "plot") { renderPlotControls(); renderPlotChart(); }
 }
@@ -16904,7 +16900,6 @@ function toggleBookmark(entryId) {
     tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
     cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
     syncTableRowsWidth();
-    renderStatusStrip();
   }
   // Repaint the visible row windows of BOTH views so the bookmark dot
   // appears/disappears immediately — the "B" shortcut previously didn't
@@ -17366,7 +17361,6 @@ function renderTable() {
   tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
   cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
   syncTableRowsWidth();
-  renderStatusStrip();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
   // Table-view-specific ("what's actually got a DOM row right now") — see
   // updateMinimapRenderedRange's own comment for why this isn't folded into

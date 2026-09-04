@@ -1576,7 +1576,7 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(4);
 await withApp(async (w, d, T) => {
-  section("4. Tree / status strip / severity bar / dual-view level filter");
+  section("4. Tree / severity bar / dual-view level filter");
   const f = await w.addFile("a.log", makeLog(0, 30, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
   w.render();
 
@@ -1588,9 +1588,6 @@ await withApp(async (w, d, T) => {
   assert(T.state.sortDir === "desc", "clicking the same header again flips direction");
   fireClick(timeHeader, w);
   T.state.sortColumn = null; w.render(); // reset for later groups' Δt/context assumptions
-
-  // Status strip
-  assert(d.querySelector("#statusStrip").innerHTML.includes("30"), "status strip shows total row count");
 
   // Severity bar column exists (widened 3px -> 5px in that session; just check presence)
   assert(d.querySelector("#tableRows .col-bar") !== null, "severity color bar column renders on rows");
@@ -2926,9 +2923,6 @@ await withApp(async (w, d, T) => {
   assert(matchedRow && !matchedRow.classList.contains("pinned-row"), "a bookmarked entry that already matched the filter is NOT marked .pinned-row (it's not there only because of the pin)");
   w.toggleBookmark(matchedEntry.id); // revert
 
-  // --- Status strip surfaces the pinned count ---
-  assert(d.querySelector("#statusStrip").textContent.includes("1 pinned"), "status strip shows the pinned-only count");
-
   // --- Scoping: a bookmark on a DIFFERENT root file must not leak into this root's Filtered View ---
   const otherRootEntry = fb.entries[0];
   w.toggleBookmark(otherRootEntry.id);
@@ -3001,14 +2995,14 @@ await withApp(async (w, d, T) => {
     "BUGFIX: newly bookmarked entry appears in the Filtered view immediately on toggleBookmark, with no separate render() call");
   assert(d.querySelector('#tableRows [data-entry-id="' + outsideEntry.id + '"]').classList.contains("pinned-row"),
     "the newly-added row is correctly marked .pinned-row immediately");
-  assert(d.querySelector("#statusStrip").textContent.includes("1 pinned"), "status strip's pinned count updates immediately too");
+  assert(d.querySelectorAll("#tableRows .pinned-row").length === 1, "exactly one pinned-only row rendered immediately");
   assert(d.querySelector("#tableBody").scrollTop === 123, "toggleBookmark does NOT reset scroll position (would be a new regression if it routed through renderTable())");
 
   // --- Removing that same bookmark must drop the row immediately too ---
   w.toggleBookmark(outsideEntry.id); // unbookmark, still no w.render() in between
   assert(d.querySelector('#tableRows [data-entry-id="' + outsideEntry.id + '"]') === null,
     "BUGFIX: unbookmarking a pinned-only entry removes its row from the Filtered view immediately");
-  assert(!d.querySelector("#statusStrip").textContent.includes("pinned"), "status strip's pinned suffix disappears once no pinned-only rows remain");
+  assert(d.querySelectorAll("#tableRows .pinned-row").length === 0, "no pinned-only rows remain once the bookmark is removed");
   assert(w.getVisibleEntries().length === baselineCount, "back to the exact unpinned baseline count");
 
   // --- Sanity: with pin mode OFF, toggling a bookmark must NOT trigger the recompute path (no behavior change for the common case) ---
@@ -19345,6 +19339,52 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   Group 175 — this session (2026-09-04), person-requested:
+   1. Removed #statusStrip ("N of M shown" bar) entirely.
+   2. Added a "view toolbar" to the Filtered view (#filteredToolbar, inside
+      #tableWrap, same real-row-under-the-header pattern as #contextToolbar)
+      and to the Table view (#tableToolbar, inside #extractWrap, same pattern
+      as #plotToolbar) — both currently empty, buttons land later. Stacked
+      layout shows both #contextToolbar and #filteredToolbar at once since
+      both panels are simply visible together in that layout.
+   ============================================================ */
+group(175);
+await withApp(async (w, d, T) => {
+  section("175. Status strip removed; Filtered/Table views get their own toolbar row");
+
+  assert(d.querySelector("#statusStrip") === null, "#statusStrip no longer exists in the DOM");
+
+  const fa = await w.addFile("a.log", makeLog(0, 10), () => {});
+  const extractNode = w.createFilterNode(fa.id, "text", "message [value:int]");
+  T.state.activeId = fa.id;
+  w.render();
+
+  // --- Filtered view: toolbar row is present whenever the Filtered panel is ---
+  w.applyFhView("filter");
+  assert(d.querySelector("#filteredToolbar") !== null, "#filteredToolbar exists in the Filtered view");
+  assert(isVisible(d.querySelector("#filteredToolbar"), w) === true, "#filteredToolbar is visible while on the Filtered tab");
+
+  // --- Stacked view: both Context's and Filtered's toolbars are on screen at once ---
+  w.applyFhView("stacked");
+  assert(isVisible(d.querySelector("#filteredToolbar"), w) === true, "#filteredToolbar stays visible in Stacked layout");
+  assert(d.querySelector("#contextToolbar") !== null, "#contextToolbar (Context view's own toolbar) still exists alongside it");
+
+  // --- Table view: #tableToolbar shows only while Table is the active tab, not Plot ---
+  T.state.activeId = extractNode.id;
+  w.render();
+  w.applyFhView("table");
+  assert(isVisible(d.querySelector("#tableToolbar"), w) === true, "#tableToolbar is visible on the Table tab");
+  assert(d.querySelector("#tableToolbar").classList.contains("hidden") === false, "#tableToolbar has no .hidden class while on Table");
+
+  w.applyFhView("plot");
+  assert(d.querySelector("#tableToolbar").classList.contains("hidden") === true, "#tableToolbar gets .hidden when switching to the Plot tab");
+  assert(d.querySelector("#plotToolbar") !== null, "#plotToolbar (Plot view's own, pre-existing toolbar) is still there");
+
+  w.applyFhView("table");
+  assert(d.querySelector("#tableToolbar").classList.contains("hidden") === false, "#tableToolbar reappears when switching back to Table");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -21789,4 +21829,9 @@ process.exitCode = failed ? 1 : 0;
      new context-menu item (#ctxTimeRangeFromSelection) that creates one
      "timerange" filter node spanning the earliest-to-latest ts among the
      selected rows, inclusive both ends; hidden for a single-row selection.
+
+   Group 175 — this session (2026-09-04), person-requested: removed
+     #statusStrip entirely; added #filteredToolbar (Filtered view) and
+     #tableToolbar (Table view), same real-row-under-the-header pattern as
+     the pre-existing #contextToolbar/#plotToolbar, both currently empty.
    ============================================================ */
