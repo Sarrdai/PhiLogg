@@ -578,6 +578,11 @@
     color:var(--text-tertiary); display:flex; padding:3px; border-radius:4px;
   }
   .folder-watch-close:hover{color:var(--level-error); background:var(--level-error-soft);}
+  .folder-watch-settings{
+    flex:0 0 auto; background:none; border:none; cursor:pointer;
+    color:var(--text-tertiary); display:flex; padding:3px; border-radius:4px;
+  }
+  .folder-watch-settings:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
   .folder-watch-reconnect{
     flex:0 0 auto; background:var(--accent-soft); color:var(--accent-strong);
     border:1px solid var(--accent-strong); border-radius:5px; cursor:pointer;
@@ -2002,11 +2007,29 @@
      row layout above for both the format list and the rule list; Add/Edit
      format/rule embed INLINE within their section instead of opening
      another dialog on top (.settings-inline-panel). ---------- */
-  #settingsDialog{
+  #settingsDialog, #folderWatchSettingsDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
     display:flex; align-items:center; justify-content:center;
   }
-  #settingsDialog.hidden{display:none;}
+  #settingsDialog.hidden, #folderWatchSettingsDialog.hidden{display:none;}
+  /* Per-folder settings dialog (gear icon on a .folder-watch-header) — same
+     page-card/row/switch classes as the app Settings dialog above so it
+     looks like one more section of it, just narrower and without the nav
+     column (it has only one topic: this one folder). */
+  .fw-settings-card{width:min(560px, 94vw); max-height:min(760px, 90vh);}
+  .fw-settings-body{padding:16px 22px 22px; overflow-y:auto;}
+  #fwSettingsRelPathRow.hidden{display:none;}
+  .fw-pattern-card{margin-top:12px;}
+  .fw-pattern-card:first-child{margin-top:0;}
+  .fw-pattern-header{
+    display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid var(--border-soft);
+  }
+  .fw-pattern-header input[type="text"]{
+    flex:1 1 auto; min-width:0; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:6px 10px; font-family:var(--font-mono); font-size:12px;
+  }
+  .fw-pattern-header .filter-library-row-del{flex:0 0 auto;}
+  #fwBtnAddPattern.hidden{display:none;}
   .settings-page-card{
     width:min(1140px, 96vw); max-height:min(1080px, 92vh); display:flex; flex-direction:column;
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px;
@@ -3947,6 +3970,56 @@
     </div>
   </div>
 
+  <!-- Per-folder Folder-watch settings (gear icon on a .folder-watch-header —
+       see openFolderWatchSettingsDialog). Reuses the same settings-page-card/
+       settings-row/settings-switch classes as #settingsDialog above so it
+       looks like one more piece of the same Settings UI, just scoped to one
+       watched folder and without the section nav. -->
+  <div id="folderWatchSettingsDialog" class="hidden">
+    <div class="settings-page-card fw-settings-card">
+      <div class="settings-page-header">
+        <div class="settings-page-title">Folder watch settings — <span id="fwSettingsFolderName"></span></div>
+        <button type="button" id="fwSettingsClose" class="btn-icon" title="Close">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg>
+        </button>
+      </div>
+      <div class="fw-settings-body">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-text">
+              <div class="settings-row-label">Include subfolders</div>
+              <div class="settings-row-hint">Also list compatible files from this folder's subfolders, not just its own entries.</div>
+            </div>
+            <div class="settings-row-control">
+              <label class="settings-switch">
+                <input type="checkbox" id="fwSettingsSubfolders">
+                <span class="settings-switch-track"></span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-row" id="fwSettingsRelPathRow">
+            <div class="settings-row-text">
+              <div class="settings-row-label">Show relative path</div>
+              <div class="settings-row-hint">Show each file's path under this folder (e.g. "in/a/subfolder/App.log") instead of just its filename.</div>
+            </div>
+            <div class="settings-row-control">
+              <label class="settings-switch">
+                <input type="checkbox" id="fwSettingsShowRelPath">
+                <span class="settings-switch-track"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-subsection-title">Filename patterns — a file must match at least one to be listed</div>
+        <div class="settings-card" id="fwPatternListCard">
+          <div id="fwPatternList"></div>
+          <div class="settings-card-footer"><button type="button" id="fwBtnAddPattern" class="btn-mini-dashed">+ Add pattern…</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Note editor (Alt+N / context menu "Add note"/"Edit note" / double-click
        an existing note-row — see openNoteEditor). Same fixed-position card
        pattern as #timeRangeDialog just below. -->
@@ -3993,6 +4066,7 @@ const PHILOGG_VERSION = "dev";
 /* ===================== Icons ===================== */
 const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>';
 const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>';
+const ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
 const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
 const ICON_CLOCK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.3l2.2 1.3"/></svg>';
@@ -9655,8 +9729,22 @@ function startRenameNode(nodeId) {
 // auto-derived node.name for DISPLAY only — node.name itself is untouched,
 // so anything that needs the actual pattern (Edit dialog, library save
 // default, etc.) still reads it directly.
+// Same "display only" idea for a folder-watch file with "show relative
+// path" on (Folder watch settings dialog): the grayed listing already shows
+// rec.relPath (renderInactiveFileRow) — this makes an OPENED file's name
+// (tree row, breadcrumb, tab, ...) keep showing it too instead of reverting
+// to the bare filename the moment it's loaded (person-reported).
 function nodeDisplayName(node) {
-  return (node.type === "filter" && node.label) ? node.label : node.name;
+  if (node.type === "filter" && node.label) return node.label;
+  if (node.type === "file" && node.folderId) {
+    const folder = state.folders.find(f => f.id === node.folderId);
+    const settings = folder && folder.settings;
+    if (settings && settings.includeSubfolders && settings.showRelativePath) {
+      const rec = folder.files.find(f => f.nodeId === node.id);
+      if (rec && rec.relPath) return rec.relPath;
+    }
+  }
+  return node.name;
 }
 
 // Grayed placeholder row for a file still waiting its turn in a multi-file
@@ -17611,16 +17699,98 @@ function isCompatibleFolderFile(name) {
   return FOLDER_WATCH_EXTENSIONS.some(ext => lower.endsWith(ext));
 }
 
-// Non-recursive: only the folder's own immediate entries, matching the
-// backlog's "list them" scope — no subfolder walk.
-async function scanFolderHandle(dirHandle) {
+// A pattern's fields double as the per-pattern "auto rules" (see
+// applyFolderAutoRules): autoOpenNewest (bool), autoCloseKeep/showNewest
+// (positive integer, or null for "no limit"). One folder without any
+// configured pattern behaves exactly as before this feature existed — "*"
+// matches every compatible file, all three rules off.
+function defaultFolderPattern() {
+  return { pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: null };
+}
+function defaultFolderSettings() {
+  return { includeSubfolders: false, showRelativePath: false, patterns: [defaultFolderPattern()] };
+}
+
+// Returns the first pattern (in list order) matching rec.name — same
+// "first match wins" rule as resolveFormatIdForFilename's format rules,
+// and the same getCompiledGlob() used there.
+function matchFolderPattern(settings, rec) {
+  const patterns = settings && settings.patterns && settings.patterns.length ? settings.patterns : [defaultFolderPattern()];
+  return patterns.find(p => getCompiledGlob(p.pattern || "*").test(rec.name)) || null;
+}
+
+// A folder file's identity key for merging across rescans: relPath when
+// subfolders are involved (two subfolders can share a filename), the plain
+// name otherwise — kept backward compatible with records restored from
+// before this field existed (see restoreWatchedFolders).
+function folderFileKey(rec) { return rec.relPath || rec.name; }
+
+// True once a folder actually has a rule that needs to know which of its
+// files is "newest" — gates the extra per-file getFile() call scanFolderHandle
+// does below, so a plain watched folder with no auto rules configured pays
+// nothing extra on every 3s poll.
+function folderSettingsNeedRecency(settings) {
+  return !!(settings && settings.patterns && settings.patterns.some(p => p.autoOpenNewest || p.autoCloseKeep || p.showNewest));
+}
+
+// Sorts folder-file records OLDEST TO NEWEST for the auto rules below
+// (applyFolderAutoRules) — real file.lastModified (mtime, attached during
+// scanFolderHandle) when BOTH sides have one, falling back to name order
+// otherwise. Person-reported: relying on filename order alone silently
+// mis-picks "newest" for any naming scheme where a chronologically newer
+// file doesn't happen to sort last as a plain string (day-of-month rollover
+// without zero-padding, a rotated-log scheme where the ACTIVE file has the
+// smallest name, etc.) — mtime is what "newest" actually means, and is used
+// whenever it's available. NOT available for a natively listed folder's
+// files (desktop wrapper — urlTailHandle.getFile() returns a plain fetched
+// Blob, which has no lastModified; see docs/desktop.md), which is why this
+// still needs the name-order fallback rather than assuming mtime always
+// works — folder.files' own display order (mergeScannedFiles) stays name-
+// sorted regardless, this is only used to pick "which is newest" for rules.
+function sortFolderRecsByRecency(recs) {
+  return recs.slice().sort((a, b) => {
+    if (typeof a.mtime === "number" && typeof b.mtime === "number" && a.mtime !== b.mtime) return a.mtime - b.mtime;
+    return folderFileKey(a).localeCompare(folderFileKey(b));
+  });
+}
+
+// Recursive when settings.includeSubfolders is set, otherwise identical to
+// the original non-recursive walk. A native (Tauri) dirHandle's values()
+// only ever yields files (see docs/desktop.md — list_folder is a flat,
+// non-recursive read_dir), so recursion is a silent no-op there; nothing
+// extra needed for that case. Only files matching BOTH the fixed extension
+// filter and at least one configured pattern are returned.
+async function scanFolderHandle(dirHandle, settings) {
+  const s = settings || defaultFolderSettings();
+  const patterns = s.patterns && s.patterns.length ? s.patterns : [defaultFolderPattern()];
+  const needMtime = folderSettingsNeedRecency(s);
   const out = [];
-  for await (const entryHandle of dirHandle.values()) {
-    if (entryHandle.kind === "file" && isCompatibleFolderFile(entryHandle.name)) {
-      out.push({ name: entryHandle.name, handle: entryHandle });
+  async function walk(handle, relDir) {
+    for await (const entryHandle of handle.values()) {
+      if (entryHandle.kind === "directory") {
+        if (s.includeSubfolders && typeof entryHandle.values === "function") {
+          await walk(entryHandle, relDir ? relDir + "/" + entryHandle.name : entryHandle.name);
+        }
+        continue;
+      }
+      if (entryHandle.kind !== "file" || !isCompatibleFolderFile(entryHandle.name)) continue;
+      if (!patterns.some(p => getCompiledGlob(p.pattern || "*").test(entryHandle.name))) continue;
+      const relPath = relDir ? relDir + "/" + entryHandle.name : entryHandle.name;
+      const rec = { name: entryHandle.name, relPath, handle: entryHandle };
+      if (needMtime) {
+        // Metadata-only cost (no content read) — best-effort: a handle that
+        // fails here (permission hiccup, native Blob with no lastModified)
+        // just leaves mtime unset, falling back to name order for this file.
+        try {
+          const file = await entryHandle.getFile();
+          if (typeof file.lastModified === "number") rec.mtime = file.lastModified;
+        } catch (err) { /* fall back to name order below */ }
+      }
+      out.push(rec);
     }
   }
-  out.sort((a, b) => a.name.localeCompare(b.name));
+  await walk(dirHandle, "");
+  out.sort((a, b) => a.relPath.localeCompare(b.relPath));
   return out;
 }
 
@@ -17630,12 +17800,14 @@ async function scanFolderHandle(dirHandle) {
 // shared by the initial scan, folderScanTick's repeat polls, and a restored
 // folder's reconnect scan, so "how a rescan merges into the existing
 // listing" only has one implementation.
-function mergeScannedFiles(folder, scanned) {
-  const known = new Map(folder.files.map(f => [f.name, f]));
+async function mergeScannedFiles(folder, scanned) {
+  const known = new Map(folder.files.map(f => [folderFileKey(f), f]));
   const merged = scanned.map(s => {
-    const existing = known.get(s.name);
+    const existing = known.get(s.relPath);
     if (existing) {
       existing.handle = s.handle;
+      existing.relPath = s.relPath;
+      if (typeof s.mtime === "number") existing.mtime = s.mtime;
       // A natively listed folder re-registers its files on every scan, and
       // the URL/path that yields are the only location an open file from it
       // has — refreshed here so a session restored from cache picks up this
@@ -17657,23 +17829,90 @@ function mergeScannedFiles(folder, scanned) {
       }
       return existing;
     }
-    return { name: s.name, handle: s.handle, nodeId: null };
+    return { name: s.name, relPath: s.relPath, handle: s.handle, nodeId: null, mtime: s.mtime };
   });
-  // A file that's still open but no longer shows up in a fresh scan (e.g.
+  // A file that's still OPEN but no longer shows up in a fresh scan (e.g.
   // deleted on disk while loaded) stays listed rather than being dropped —
   // matches folderScanTick's existing "doesn't detect removed files" scope.
-  for (const [name, rec] of known) {
-    if (!scanned.some(s => s.name === name)) merged.push(rec);
+  // A closed one that no longer shows up (typically: it stopped matching
+  // the folder's own pattern list after a settings change) is simply
+  // dropped instead — nothing keeps it around once it's neither on disk
+  // (as far as this scan can tell) nor open.
+  for (const [key, rec] of known) {
+    if (!scanned.some(s => s.relPath === key) && rec.nodeId && state.nodes[rec.nodeId]) merged.push(rec);
   }
-  merged.sort((a, b) => a.name.localeCompare(b.name));
+  merged.sort((a, b) => folderFileKey(a).localeCompare(folderFileKey(b)));
   folder.files = merged;
+  await applyFolderAutoRules(folder);
+}
+
+// Per-pattern auto rules, applied after every merge (initial scan, poll
+// tick, reconnect). "Newest" = last in sortFolderRecsByRecency's order
+// within the pattern's own matching files — real file mtime when available
+// (scanFolderHandle), falling back to name order otherwise (see that
+// function's own comment for why mtime isn't always available).
+// Order: 1) "Show newest M" first drops closed listing entries older than
+// the M newest (never an open one) so the later rules only see what's still
+// listed; 2) "Auto-close — keep only N open" is a SLIDING WINDOW over the N
+// newest files of a pattern: it opens whichever of those N aren't open yet
+// (person-reported: a new, newer file arriving must itself open, evicting
+// the oldest of the previously-open ones — not just leave the open set
+// unchanged) and closes any currently-open file that fell out of that
+// window; 3) "Auto-open newest" is the plain one-file version of the same
+// idea for a pattern with no keep-N configured — opens the newest file if
+// it isn't open yet, without touching any other open file. A pattern using
+// both settings only needs the keep-N window (it already includes the
+// newest), so 3) is skipped for it.
+async function applyFolderAutoRules(folder) {
+  const settings = folder.settings;
+  if (!settings || !settings.patterns || !settings.patterns.length) return;
+  const groupOf = rec => matchFolderPattern(settings, rec);
+  const groupBy = () => {
+    const map = new Map();
+    folder.files.forEach(rec => {
+      const p = groupOf(rec);
+      if (p) { if (!map.has(p)) map.set(p, []); map.get(p).push(rec); }
+    });
+    for (const [p, recs] of map) map.set(p, sortFolderRecsByRecency(recs));
+    return map;
+  };
+
+  // 1) Show newest M — never drops an open file.
+  for (const [p, recs] of groupBy()) {
+    if (!p.showNewest) continue;
+    const keep = new Set(recs.slice(-p.showNewest).map(folderFileKey));
+    folder.files = folder.files.filter(rec => rec.nodeId || groupOf(rec) !== p || keep.has(folderFileKey(rec)));
+  }
+
+  // 2) Auto-close — keep only the N newest open, per pattern. Opens the
+  // ones missing from that window first (awaited, so it also counts as this
+  // pattern's "auto-open newest" when both are configured), then closes
+  // whatever is open but no longer in it.
+  for (const [p, recs] of groupBy()) {
+    if (!p.autoCloseKeep) continue;
+    const target = recs.slice(-p.autoCloseKeep);
+    for (const rec of target) {
+      if (!rec.nodeId || !state.nodes[rec.nodeId]) await loadFolderFile(folder, rec);
+    }
+    const targetKeys = new Set(target.map(folderFileKey));
+    const toClose = recs.filter(rec => rec.nodeId && state.nodes[rec.nodeId] && !targetKeys.has(folderFileKey(rec)));
+    toClose.forEach(rec => closeFolderFile(rec.nodeId));
+  }
+
+  // 3) Auto-open newest, per pattern — only for a pattern not already
+  // covered by its own keep-N window above.
+  for (const [p, recs] of groupBy()) {
+    if (!p.autoOpenNewest || p.autoCloseKeep || !recs.length) continue;
+    const newest = recs[recs.length - 1];
+    if (!newest.nodeId || !state.nodes[newest.nodeId]) await loadFolderFile(folder, newest);
+  }
 }
 
 async function rescanFolder(folder) {
   folder.busy = true;
   try {
-    const scanned = await scanFolderHandle(folder.handle);
-    mergeScannedFiles(folder, scanned);
+    const scanned = await scanFolderHandle(folder.handle, folder.settings);
+    await mergeScannedFiles(folder, scanned);
     folder.failed = false;
   } catch (err) {
     folder.failed = true; // folder moved/deleted or permission revoked
@@ -17684,7 +17923,10 @@ async function rescanFolder(folder) {
 }
 
 async function addWatchedFolder(handle) {
-  const folder = { id: newCacheKey(), name: handle.name, handle, files: [], busy: false, failed: false, needsPermission: false };
+  const folder = {
+    id: newCacheKey(), name: handle.name, handle, files: [], busy: false, failed: false, needsPermission: false,
+    settings: defaultFolderSettings(),
+  };
   state.folders.push(folder);
   persistFolder(folder); // fire-and-forget, same as persistFileNode
   await rescanFolder(folder);
@@ -17764,10 +18006,10 @@ async function folderScanTick() {
     if (!folder.handle || folder.busy || folder.needsPermission || folder.failed) continue;
     folder.busy = true;
     try {
-      const scanned = await scanFolderHandle(folder.handle);
-      const known = new Set(folder.files.map(f => f.name));
-      const hasNew = scanned.some(s => !known.has(s.name));
-      if (hasNew) { mergeScannedFiles(folder, scanned); render(); }
+      const scanned = await scanFolderHandle(folder.handle, folder.settings);
+      const known = new Set(folder.files.map(folderFileKey));
+      const hasNew = scanned.some(s => !known.has(s.relPath));
+      if (hasNew) { await mergeScannedFiles(folder, scanned); render(); }
     } catch (err) {
       folder.failed = true;
       render();
@@ -17850,6 +18092,13 @@ function renderFolderSection(folder) {
     reconnectBtn.addEventListener("click", () => reconnectFolder(folder));
     header.appendChild(reconnectBtn);
   }
+  const settingsBtn = document.createElement("button");
+  settingsBtn.type = "button";
+  settingsBtn.className = "folder-watch-settings";
+  settingsBtn.innerHTML = ICON_GEAR;
+  settingsBtn.title = "Folder watch settings";
+  settingsBtn.addEventListener("click", () => openFolderWatchSettingsDialog(folder));
+  header.appendChild(settingsBtn);
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "folder-watch-close";
@@ -17896,7 +18145,8 @@ function renderInactiveFileRow(folder, rec) {
   row.appendChild(icon);
   const label = document.createElement("span");
   label.className = "folder-watch-file-name";
-  label.textContent = rec.name;
+  const showRelPath = folder.settings && folder.settings.includeSubfolders && folder.settings.showRelativePath;
+  label.textContent = showRelPath && rec.relPath ? rec.relPath : rec.name;
   row.appendChild(label);
   row.addEventListener("dblclick", () => loadFolderFile(folder, rec));
   row.addEventListener("contextmenu", ev => {
@@ -17920,6 +18170,159 @@ function openFolderFileContextMenu(ev, folder, rec) {
   treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
   treeContextMenu.classList.remove("hidden");
+}
+
+/* ===================== Folder watch settings dialog (gear icon on a
+   .folder-watch-header) — per-folder: include-subfolders/show-relative-path,
+   and a list of filename patterns each with its own auto-open/auto-close/
+   show-newest rules (see defaultFolderSettings/applyFolderAutoRules above).
+   Styled with the same settings-page-card/settings-row/settings-switch
+   classes as the app-wide #settingsDialog (see CLAUDE.md's styling note),
+   just narrower and scoped to one folder — no section nav needed. Every
+   change re-persists the folder and triggers an immediate rescan, same
+   one-action-one-effect immediacy as the rest of Settings (no separate
+   Save button). ===================== */
+const folderWatchSettingsDialog = el("#folderWatchSettingsDialog");
+const fwSettingsFolderName = el("#fwSettingsFolderName");
+const fwSettingsSubfolders = el("#fwSettingsSubfolders");
+const fwSettingsRelPathRow = el("#fwSettingsRelPathRow");
+const fwSettingsShowRelPath = el("#fwSettingsShowRelPath");
+const fwPatternList = el("#fwPatternList");
+const fwBtnAddPattern = el("#fwBtnAddPattern");
+let fwSettingsFolder = null; // the folder currently open in the dialog
+
+function openFolderWatchSettingsDialog(folder) {
+  fwSettingsFolder = folder;
+  if (!folder.settings) folder.settings = defaultFolderSettings();
+  fwSettingsFolderName.textContent = folder.name;
+  fwSettingsSubfolders.checked = !!folder.settings.includeSubfolders;
+  fwSettingsShowRelPath.checked = !!folder.settings.showRelativePath;
+  fwSettingsRelPathRow.classList.toggle("hidden", !folder.settings.includeSubfolders);
+  renderFwPatternList();
+  folderWatchSettingsDialog.classList.remove("hidden");
+}
+function closeFolderWatchSettingsDialog() {
+  folderWatchSettingsDialog.classList.add("hidden");
+  fwSettingsFolder = null;
+}
+async function commitFolderWatchSettings() {
+  if (!fwSettingsFolder) return;
+  persistFolder(fwSettingsFolder);
+  await rescanFolder(fwSettingsFolder);
+  renderFolderWatchList();
+}
+
+fwSettingsSubfolders.addEventListener("change", () => {
+  if (!fwSettingsFolder) return;
+  fwSettingsFolder.settings.includeSubfolders = fwSettingsSubfolders.checked;
+  fwSettingsRelPathRow.classList.toggle("hidden", !fwSettingsFolder.settings.includeSubfolders);
+  commitFolderWatchSettings();
+});
+fwSettingsShowRelPath.addEventListener("change", () => {
+  if (!fwSettingsFolder) return;
+  fwSettingsFolder.settings.showRelativePath = fwSettingsShowRelPath.checked;
+  commitFolderWatchSettings();
+});
+fwBtnAddPattern.addEventListener("click", () => {
+  if (!fwSettingsFolder) return;
+  fwSettingsFolder.settings.patterns.push(defaultFolderPattern());
+  renderFwPatternList();
+  commitFolderWatchSettings();
+});
+el("#fwSettingsClose").addEventListener("click", closeFolderWatchSettingsDialog);
+folderWatchSettingsDialog.addEventListener("click", ev => {
+  if (ev.target === folderWatchSettingsDialog) closeFolderWatchSettingsDialog();
+});
+
+// One .fw-pattern-card per pattern: an editable glob + remove button as its
+// header, then the three per-pattern rules as .settings-row's, matching the
+// app Settings' row/switch/number-input look throughout.
+function renderFwPatternList() {
+  fwPatternList.innerHTML = "";
+  const patterns = fwSettingsFolder.settings.patterns;
+  patterns.forEach((p, idx) => {
+    const card = document.createElement("div");
+    card.className = "settings-card fw-pattern-card";
+
+    const header = document.createElement("div");
+    header.className = "fw-pattern-header";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = p.pattern;
+    input.placeholder = "*";
+    input.spellcheck = false;
+    input.autocomplete = "off";
+    input.addEventListener("change", () => {
+      p.pattern = input.value.trim() || "*";
+      commitFolderWatchSettings();
+    });
+    header.appendChild(input);
+    if (patterns.length > 1) {
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "filter-library-row-del";
+      delBtn.innerHTML = ICON_CLOSE;
+      delBtn.title = "Remove pattern";
+      delBtn.addEventListener("click", () => {
+        patterns.splice(idx, 1);
+        renderFwPatternList();
+        commitFolderWatchSettings();
+      });
+      header.appendChild(delBtn);
+    }
+    card.appendChild(header);
+
+    card.appendChild(fwPatternRuleRow(
+      "Auto-open newest file", "Automatically load and select this pattern's most recently added matching file — tailing/auto-scroll starts the same as opening it by hand.",
+      switchControl(!!p.autoOpenNewest, checked => { p.autoOpenNewest = checked; commitFolderWatchSettings(); })
+    ));
+    card.appendChild(fwPatternRuleRow(
+      "Auto-close — keep only N open", "Keeps the N newest matching files open: a newer file arriving is opened automatically, closing the oldest of the currently open ones to make room (it stays listed, grayed out, like a manual close). Empty = no limit.",
+      numberControl(p.autoCloseKeep, v => { p.autoCloseKeep = v; commitFolderWatchSettings(); })
+    ));
+    card.appendChild(fwPatternRuleRow(
+      "Show M newest files", "Files older than the M most recent matches are dropped from the listing entirely once closed. Empty = no limit.",
+      numberControl(p.showNewest, v => { p.showNewest = v; commitFolderWatchSettings(); })
+    ));
+    fwPatternList.appendChild(card);
+  });
+}
+function fwPatternRuleRow(label, hint, control) {
+  const row = document.createElement("div");
+  row.className = "settings-row";
+  row.innerHTML = '<div class="settings-row-text"><div class="settings-row-label">' + escapeHtml(label) +
+    '</div><div class="settings-row-hint">' + escapeHtml(hint) + '</div></div>';
+  const controlWrap = document.createElement("div");
+  controlWrap.className = "settings-row-control";
+  controlWrap.appendChild(control);
+  row.appendChild(controlWrap);
+  return row;
+}
+function switchControl(checked, onChange) {
+  const label = document.createElement("label");
+  label.className = "settings-switch";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", () => onChange(input.checked));
+  label.appendChild(input);
+  const track = document.createElement("span");
+  track.className = "settings-switch-track";
+  label.appendChild(track);
+  return label;
+}
+function numberControl(value, onChange) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "1";
+  input.step = "1";
+  input.placeholder = "No limit";
+  if (value) input.value = String(value);
+  input.addEventListener("change", () => {
+    const n = parseInt(input.value, 10);
+    onChange(Number.isFinite(n) && n > 0 ? n : null);
+  });
+  return input;
 }
 
 /* ===================== Filter popup (Ctrl+F to create, F2/right-click "Edit filter…" to edit) ===================== */
@@ -21536,6 +21939,7 @@ async function persistFolder(folder) {
     name: folder.name,
     handle: native ? null : folder.handle,
     path: native ? folder.handle[NATIVE_DIR_HANDLE] : null,
+    settings: folder.settings || defaultFolderSettings(),
     savedAt: Date.now(),
   }));
 }
@@ -21965,10 +22369,13 @@ async function restoreWatchedFolders() {
     // shows the Reconnect button.
     const handle = rec.handle || (rec.path ? nativeDirHandle(rec.path, rec.name) : null);
     if (!handle) continue;
-    const folder = { id: rec.key, name: rec.name, handle, files: [], busy: false, failed: false, needsPermission: true };
+    const folder = {
+      id: rec.key, name: rec.name, handle, files: [], busy: false, failed: false, needsPermission: true,
+      settings: rec.settings || defaultFolderSettings(),
+    };
     state.rootIds.forEach(rid => {
       const n = state.nodes[rid];
-      if (n && n.folderId === folder.id) folder.files.push({ name: n.name, handle: null, nodeId: n.id });
+      if (n && n.folderId === folder.id) folder.files.push({ name: n.name, relPath: n.name, handle: null, nodeId: n.id });
     });
     state.folders.push(folder);
     await tryReconnectFolder(folder);
