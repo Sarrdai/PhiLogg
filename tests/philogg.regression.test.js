@@ -2719,9 +2719,11 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector(".brand-name").textContent === "PhiLogg", "brand name itself is untouched");
 
   // --- View bar structure (UPDATED, this session's toolbar reorganization,
-  // person-requested "Gesamtkonzept"): #viewBar is now ONLY the view toggle
-  // + level filter, identical across every tab — the breadcrumb moved out
-  // into its own always-reserved #breadcrumbBar row right below it. ---
+  // person-requested "Filter-Toolbar"): #viewBar ("Filter-Toolbar") holds
+  // the view toggle, level filter, and (rightmost) the row-actions group —
+  // identical across every tab. The breadcrumb moved out into its own
+  // always-reserved #breadcrumbBar row, placed BETWEEN the timeline minimap
+  // and #viewBar (person-requested placement, not below it). ---
   const viewBar = d.querySelector("#viewBar");
   assert(viewBar !== null, "#viewBar exists");
   const viewBarChildren = [...viewBar.children].map(c => c.id);
@@ -2732,9 +2734,18 @@ await withApp(async (w, d, T) => {
   );
   assert(viewBarChildren.indexOf("breadcrumb") === -1, "breadcrumb is NOT inside #viewBar any more");
   assert(d.querySelector("#levelBar").parentElement === viewBar, "level bar is nested INSIDE #viewBar");
+  assert(viewBar.querySelector('[data-row-actions="viewbar"]') !== null, "the row-actions group is nested INSIDE #viewBar too, right of the level filter");
   const breadcrumbBar = d.querySelector("#breadcrumbBar");
   assert(breadcrumbBar !== null, "#breadcrumbBar exists as its own row");
   assert(d.querySelector("#breadcrumb").parentElement === breadcrumbBar, "breadcrumb is nested inside #breadcrumbBar instead");
+  // --- Placement: minimap, then breadcrumb, then the Filter-Toolbar (person-requested) ---
+  const minimapEl = d.querySelector("#timelineMinimap");
+  const contentChildren = [...minimapEl.parentElement.children];
+  const idxMinimap = contentChildren.indexOf(minimapEl);
+  const idxBreadcrumbBar = contentChildren.indexOf(breadcrumbBar);
+  const idxViewBar = contentChildren.indexOf(viewBar);
+  assert(idxMinimap < idxBreadcrumbBar && idxBreadcrumbBar < idxViewBar,
+    "DOM order is timeline minimap, then #breadcrumbBar, then #viewBar (the Filter-Toolbar)");
 
   const cs = w.getComputedStyle;
 
@@ -2794,7 +2805,8 @@ await withApp(async (w, d, T) => {
   assert(T.fhActiveTab === "table", "sanity: the Table tab is showing (explicit switch — activation no longer auto-jumps here, see applyActivationView)");
   assert(d.querySelector("#fhTabs").style.display === "flex", "tabs stay visible for an extraction node too (Table/Plot join the same group now)");
   assert(d.querySelector("#levelBar").style.display === "", "level bar STAYS visible while the Table tab is showing — #viewBar is now identical across every tab");
-  assert(d.querySelector("#fhSplit").style.display === "none", "sanity: the log-view split (and with it #contextToolbar/#filteredToolbar's toggles) isn't on screen on the Table tab");
+  assert(isVisible(d.querySelector('[data-row-actions="viewbar"]'), w) === true, "the row-actions group (in #viewBar) stays visible on the Table tab too — it's part of the universal Filter-Toolbar, not a log-view toolbar");
+  assert(d.querySelector("#fhSplit").style.display === "none", "sanity: the log-view split (and with it #contextToolbar/#filteredToolbar's DISPLAY toggles) isn't on screen on the Table tab");
   assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb still renders in extract mode");
   w.applyFhView("filter");
   assert(d.querySelector("#levelBar").style.display === "", "level bar stays visible switching to the Filtered tab too");
@@ -19380,56 +19392,68 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   Group 176 — this session (2026-09-04), person-requested ("Gesamtkonzept"
-   toolbar reorganization, follow-up to Group 175): the full row-/selection-
-   action button set (Bookmark this row, Add note, Filter after this,
-   Filter before this, Filter for this message, Time filter from selection,
-   Add to selection) is now a permanently visible, selection-dependent icon
-   button group in BOTH #contextToolbar and #filteredToolbar — same
-   underlying functions the pre-existing right-click context menu already
-   used, just fed the current single/multi row selection instead of
-   whichever row was right-clicked. Also: Plot's two filter buttons switched
-   from text to the same icon-button look, and the extraction table's
-   "Export as CSV…" got a second entry point in #tableToolbar.
+   Group 176 — this session (2026-09-04), person-requested ("Filter-
+   Toolbar" reorganization, follow-up to Group 175): the full row-/
+   selection-action button set (Bookmark this row, Add note, Filter after
+   this, Filter before this, Filter for this message, Time filter from
+   selection, Add to selection) is a permanently visible, selection-
+   dependent icon button group living in #viewBar itself (right of the
+   level filter — `[data-row-actions="viewbar"]`) — same underlying
+   functions the pre-existing right-click context menu already used, just
+   fed the current single/multi row selection instead of whichever row was
+   right-clicked. EXTENDED same session, person-requested follow-up: moved
+   from being duplicated inside #contextToolbar/#filteredToolbar into this
+   single #viewBar copy instead, and the breadcrumb's placement (its own
+   row, but between the timeline minimap and #viewBar, not below it) — see
+   Group 26's updated DOM-order assertion for that half. Also: Plot's two
+   filter buttons switched from text to the same icon-button look, and the
+   extraction table's "Export as CSV…" got a second entry point in
+   #tableToolbar.
    ============================================================ */
 group(176);
 await withApp(async (w, d, T) => {
-  section("176a. Row-action buttons: disabled state follows the current selection, in both Context and Filtered");
+  section("176a. Row-action buttons (in #viewBar): disabled state follows the current selection");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   T.state.activeId = f.id;
   w.render();
 
-  const contextActions = [...d.querySelector("#contextToolbar").querySelectorAll("[data-row-action]")];
-  const filteredActions = [...d.querySelector("#filteredToolbar").querySelectorAll("[data-row-action]")];
+  const actions = [...d.querySelector('[data-row-actions="viewbar"]').querySelectorAll("[data-row-action]")];
   const expectedActions = ["bookmark", "note", "filterAfter", "filterBefore", "filterForMessage", "timeRangeFromSelection", "addToSelection"];
-  assert(contextActions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
-    "Context toolbar has all seven row-actions in order, got " + contextActions.map(b => b.dataset.rowAction).join(","));
-  assert(filteredActions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
-    "Filtered toolbar has the exact same seven row-actions");
+  assert(actions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
+    "the Filter-Toolbar's row-actions group has all seven in order, got " + actions.map(b => b.dataset.rowAction).join(","));
+  assert(d.querySelectorAll("[data-row-action]").length === expectedActions.length,
+    "exactly one copy of each — no longer duplicated into #contextToolbar/#filteredToolbar");
+  assert(d.querySelector("#contextToolbar [data-row-action]") === null && d.querySelector("#filteredToolbar [data-row-action]") === null,
+    "row-actions are NOT inside #contextToolbar/#filteredToolbar any more — those keep only the log-display toggles now");
 
-  const byAction = (list, action) => list.find(b => b.dataset.rowAction === action);
+  const byAction = action => actions.find(b => b.dataset.rowAction === action);
 
   // --- No selection: single-row actions AND addToSelection disabled, time-range disabled ---
   expectedActions.forEach(action => {
-    assert(byAction(contextActions, action).disabled === true, action + " starts disabled with no selection (Context copy)");
-    assert(byAction(filteredActions, action).disabled === true, action + " starts disabled with no selection (Filtered copy)");
+    assert(byAction(action).disabled === true, action + " starts disabled with no selection");
   });
 
   // --- Single row selected: single-row actions + addToSelection enabled, time-range still disabled ---
   w.selectEntry(f.entries[2].id);
   ["bookmark", "note", "filterAfter", "filterBefore", "filterForMessage", "addToSelection"].forEach(action => {
-    assert(byAction(contextActions, action).disabled === false, action + " enabled with exactly one row selected");
+    assert(byAction(action).disabled === false, action + " enabled with exactly one row selected");
   });
-  assert(byAction(contextActions, "timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
+  assert(byAction("timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
 
   // --- 2+ rows multi-selected: timeRangeFromSelection enables, single-row actions disable, addToSelection stays enabled ---
   T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]);
   w.updateRowActionButtons();
-  assert(byAction(contextActions, "timeRangeFromSelection").disabled === false, "timeRangeFromSelection enables with 2+ rows multi-selected");
-  assert(byAction(contextActions, "filterAfter").disabled === true, "single-row actions disable once 2+ rows are multi-selected");
-  assert(byAction(contextActions, "addToSelection").disabled === false, "addToSelection stays enabled with a 2+ multi-selection");
-  assert(byAction(filteredActions, "timeRangeFromSelection").disabled === false, "same state reflected in the Filtered copy");
+  assert(byAction("timeRangeFromSelection").disabled === false, "timeRangeFromSelection enables with 2+ rows multi-selected");
+  assert(byAction("filterAfter").disabled === true, "single-row actions disable once 2+ rows are multi-selected");
+  assert(byAction("addToSelection").disabled === false, "addToSelection stays enabled with a 2+ multi-selection");
+
+  // --- Stays visible/functional regardless of which tab is active (Table/Plot too — see Group 26) ---
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = extractNode.id;
+  w.render();
+  w.applyFhView("plot");
+  assert(isVisible(d.querySelector('[data-row-actions="viewbar"]'), w) === true, "row-actions group stays visible on the Plot tab — it's part of the universal Filter-Toolbar");
 });
 
 await withApp(async (w, d, T) => {
@@ -19441,8 +19465,8 @@ await withApp(async (w, d, T) => {
   const entry = f.entries[3];
   w.selectEntry(entry.id);
 
-  const bookmarkBtn = d.querySelector('#contextToolbar [data-row-action="bookmark"]');
-  const noteBtn = d.querySelector('#contextToolbar [data-row-action="note"]');
+  const bookmarkBtn = d.querySelector('[data-row-action="bookmark"]');
+  const noteBtn = d.querySelector('[data-row-action="note"]');
   assert(!bookmarkBtn.classList.contains("active"), "bookmark button starts unmarked (not bookmarked yet)");
   fireClick(bookmarkBtn, w);
   assert(T.state.bookmarks.has(entry.id), "clicking the toolbar bookmark button bookmarks the selected row");
@@ -19460,7 +19484,7 @@ await withApp(async (w, d, T) => {
 
   // --- Filter after this / Filter before this: same "timerange" node the context-menu path creates ---
   const beforeChildCount = f.children.length;
-  fireClick(d.querySelector('#contextToolbar [data-row-action="filterAfter"]'), w);
+  fireClick(d.querySelector('[data-row-action="filterAfter"]'), w);
   assert(f.children.length === beforeChildCount + 1, "Filter-after-this creates one new filter node");
   const afterNode = T.state.nodes[T.state.activeId];
   assert(afterNode.filterType === "timerange" && afterNode.value.from === entry.ts && afterNode.value.to === null,
@@ -19478,7 +19502,7 @@ await withApp(async (w, d, T) => {
   w.updateRowActionButtons();
 
   const beforeChildCount = f.children.length;
-  fireClick(d.querySelector('#filteredToolbar [data-row-action="timeRangeFromSelection"]'), w);
+  fireClick(d.querySelector('[data-row-action="timeRangeFromSelection"]'), w);
   assert(f.children.length === beforeChildCount + 1, "creates exactly one new filter node");
   const rangeNode = T.state.nodes[T.state.activeId];
   assert(rangeNode.filterType === "timerange" && rangeNode.value.from === f.entries[2].ts && rangeNode.value.to === f.entries[7].ts,
@@ -19488,7 +19512,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[5].id]);
   w.updateRowActionButtons();
-  const addBtn = d.querySelector('#filteredToolbar [data-row-action="addToSelection"]');
+  const addBtn = d.querySelector('[data-row-action="addToSelection"]');
   fireClick(addBtn, w);
   assert(isVisible(d.querySelector("#addToSelectionMenu"), w) === true, "clicking Add-to-selection opens the same popup the context-menu entry uses");
   const createItem = d.querySelector('#addToSelectionMenu [data-selection-action="create"]');
@@ -21976,21 +22000,29 @@ process.exitCode = failed ? 1 : 0;
      #tableToolbar (Table view), same real-row-under-the-header pattern as
      the pre-existing #contextToolbar/#plotToolbar, both currently empty.
 
-   Group 176 — this session (2026-09-04), person-requested ("Gesamtkonzept"
-     toolbar reorganization, follow-up to 175): #viewBar reduced to just the
-     view toggle + level filter (now visible on every tab, including Table/
-     Plot); breadcrumb moved into its own always-reserved #breadcrumbBar
-     row; the six log-display toggles (Pin/Notes/Multiline/Columns/
+   Group 176 — this session (2026-09-04), person-requested ("Filter-
+     Toolbar" reorganization, follow-up to 175): #viewBar reduced to the
+     view toggle + level filter + (rightmost) a new row-actions button
+     group (Bookmark/Note/Filter-after/Filter-before/Filter-for-this-
+     message/Time-filter-from-selection/Add-to-selection), all visible on
+     every tab including Table/Plot; breadcrumb moved into its own always-
+     reserved #breadcrumbBar row, placed BETWEEN the timeline minimap and
+     #viewBar; the six log-display toggles (Pin/Notes/Multiline/Columns/
      TextMatch/HighlightMatch) moved out of #viewBar into #contextToolbar
      (five of them) and #filteredToolbar (all six, Pin included) as shared
-     `.toggle-*` classes rather than unique ids (elAll() helper); a new
-     shared row-actions button group (Bookmark/Note/Filter-after/Filter-
-     before/Filter-for-this-message/Time-filter-from-selection/Add-to-
-     selection) rendered into both toolbars from one HTML fragment, wired
-     to the same underlying functions the pre-existing right-click context
-     menu uses, fed the current selection instead of the right-clicked row;
-     Plot's two filter buttons switched from text to the same icon-button
-     look; Table view's toolbar gained an Export-as-CSV button (second
-     entry point alongside the existing right-click menu item). Groups
-     4/26/27/28/29/29b updated in place for the new structure/selectors.
+     `.toggle-*` classes rather than unique ids (elAll() helper). The row-
+     actions group is built from one HTML fragment, wired to the same
+     underlying functions the pre-existing right-click context menu uses,
+     fed the current selection instead of the right-clicked row; Plot's two
+     filter buttons switched from text to the same icon-button look; Table
+     view's toolbar gained an Export-as-CSV button (second entry point
+     alongside the existing right-click menu item). EXTENDED same session,
+     person-requested follow-up: the row-actions group moved from being
+     duplicated inside #contextToolbar/#filteredToolbar into #viewBar
+     itself (right of the level filter, single copy, "Filter-Toolbar")
+     since these are filter-CREATING controls, universal like the view
+     toggle/level filter — unlike the log-DISPLAY toggles, which stay
+     per-view; breadcrumb's placement also corrected to sit ABOVE #viewBar
+     (between it and the minimap), not below. Groups 4/26/27/28/29/29b
+     updated in place for the new structure/selectors.
    ============================================================ */

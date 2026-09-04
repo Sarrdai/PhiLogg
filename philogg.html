@@ -856,6 +856,16 @@
      line. Floating it keeps the row's line-length dynamic no matter how
      many buttons this line ends up with. */
   #btnApplyLevelToTree{float:left; margin:0 14px 6px 0;}
+  /* The row-actions group (Bookmark/Note/Filter after/before/for this
+     message/Time filter from selection/Add to selection — person-requested
+     "Filter-Toolbar" placement, right of the level filter) is #viewBar's
+     fourth floated element, same mechanism as the three above. Its buttons
+     stay the row's own 28x28 `.toolbar-icon-btn` size (no 22px scoped-down
+     override here, unlike #contextToolbar/#filteredToolbar/#tableToolbar/
+     #plotToolbar) since #viewBar's other controls (view-tabs, level pills)
+     are 28px too — a single #viewBar-only group at a different size would
+     look like a misalignment, not a second row. */
+  #viewBar .row-actions{float:left; gap:4px; margin:0 0 6px 0;}
 
   /* Breadcrumb's own row (this session's toolbar reorganization) — always
      reserved, even with no active filter chain, so #viewBar/#breadcrumbBar
@@ -2953,6 +2963,15 @@
         <div id="timelineMinimapDragLabel" class="hidden"></div>
       </div>
 
+      <!-- Breadcrumb: its own always-reserved row (person-requested),
+           sitting between the timeline minimap and #viewBar (Filter-
+           Toolbar) below — the active-filter-chain display never competes
+           for space with the view toggle/level filter/row-actions, and
+           stays visually identical across every tab. -->
+      <div id="breadcrumbBar">
+        <div id="breadcrumb"></div>
+      </div>
+
       <!-- Filter/Highlight split. Filter view is
            the pre-existing table/link view, narrowed by the active filter
            tree node, unchanged. Highlight view is new: always the active
@@ -2960,18 +2979,21 @@
            coloured. Extract view (below) intentionally has no Highlight
            companion — it keeps the full content area to itself.
 
-           #viewBar is the universal, ALWAYS identical row across every
-           tab (Context/Filtered/Table/Plot/Stacked) — this session's
-           toolbar-reorganization (person-requested "Gesamtkonzept"): view
-           toggle, then the level quick-filter, nothing else. The six
-           log-display toggles and the breadcrumb used to live here too —
-           both moved out (toggles into each log view's own toolbar,
-           breadcrumb into its own #breadcrumbBar row right below) so this
-           row reads the same regardless of which view is on screen,
-           including Table/Plot, which the level filter now also stays
-           visible for (it already applied there via applyLevelFilter(),
-           just without a visible pill row to change it from before this
-           session). -->
+           #viewBar is the "Filter-Toolbar" (person-requested naming) — the
+           universal, ALWAYS identical row across every tab (Context/
+           Filtered/Table/Plot/Stacked): view toggle, level quick-filter,
+           and — right of the level filter — the row-/selection-action
+           buttons (Bookmark/Note/Filter after/before/for this message/
+           Time filter from selection/Add to selection, `[data-row-actions]`
+           below), all filter-CREATING controls in one place regardless of
+           which view is on screen. The six log-DISPLAY toggles (Notes/
+           Multiline/Columns/TextMatch/HighlightMatch/Pin) stay out of here
+           — they don't create filters, they control how the log views
+           render, so they live in each log view's own toolbar
+           (#contextToolbar/#filteredToolbar) instead. #levelBar stays
+           visible on every tab including Table/Plot (it already applied
+           there via applyLevelFilter(), just without a visible pill row
+           before this session's reorganization). -->
       <div id="viewBar">
         <!-- Tab buttons rendered dynamically by renderViewTabs() (see
              "Unified toolbar: Context/Filtered/Table/Plot as one tab
@@ -2986,14 +3008,7 @@
         <div class="view-tabs" id="fhTabs"></div>
         <div id="levelBar"></div>
         <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add the current level selection to the filter tree as a node (Settings → Behavior: only shown in Manual mode)"></button>
-      </div>
-
-      <!-- Breadcrumb: its own always-reserved row (person-requested, this
-           session), separate from #viewBar so the active-filter-chain
-           display never competes for space with the view toggle/level
-           filter, and stays visually identical across every tab. -->
-      <div id="breadcrumbBar">
-        <div id="breadcrumb"></div>
+        <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
       </div>
 
       <div id="fhSplit">
@@ -3010,21 +3025,18 @@
               <span class="th">Message</span>
             </div>
           </div>
-          <!-- Context view's own toolbar — this session's toolbar-
-               reorganization ("Gesamtkonzept"): every view-specific control
-               now lives in that view's own toolbar row, same three-group
-               shape (display toggles | row-/selection-actions | navigation)
-               in both Context and Filtered. No Pin-bookmarks toggle here —
-               it only affects the Filtered view's result set, so it's
-               meaningless while looking at Context's always-whole-file
-               result (see #filteredToolbar for it). Row-actions group is
-               filled by JS (renderRowActionsInto, wired once at init) so
-               its markup isn't duplicated by hand between this toolbar and
-               #filteredToolbar. Match-to-match navigation + expand/collapse
-               (originally the old floating corner chip, #contextNav) are
-               unchanged from before this session. Icons/listeners are wired
-               once by initContextToolbar(); updateContextToolbar() only
-               refreshes the label and the disabled states. -->
+          <!-- Context view's own toolbar — the log-DISPLAY toggles and
+               match navigation (person-requested follow-up: filter-CREATING
+               controls, the row-actions group, moved into #viewBar/the
+               Filter-Toolbar instead — see that div's own comment). No
+               Pin-bookmarks toggle here — it only affects the Filtered
+               view's result set, so it's meaningless while looking at
+               Context's always-whole-file result (see #filteredToolbar for
+               it). Match-to-match navigation + expand/collapse (originally
+               the old floating corner chip, #contextNav) are unchanged from
+               before this session. Icons/listeners are wired once by
+               initContextToolbar(); updateContextToolbar() only refreshes
+               the label and the disabled states. -->
           <div id="contextToolbar" class="hidden">
             <div class="toolbar-group">
               <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
@@ -3033,8 +3045,6 @@
               <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Highlight text-filter matches (Settings → Behavior configures what gets marked and where)"></button>
               <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlight-rule matches in the rule's own colour (both views and the entry detail)"></button>
             </div>
-            <span class="ctx-toolbar-sep"></span>
-            <div class="toolbar-group row-actions" data-row-actions="context"></div>
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group">
               <button type="button" id="ctxPrevMatch" class="toolbar-icon-btn" title="Previous match"></button>
@@ -3084,11 +3094,12 @@
                 <span class="col-resize-handle" data-col="method" title="Drag to resize"></span>
               </div>
             </div>
-            <!-- Filtered view's own toolbar — same pattern/three-group shape
-                 as #contextToolbar (see that div's own comment). Gets all
-                 six display toggles (Pin bookmarks included — it's the one
-                 that actually changes what this view shows) and the same
-                 shared row-actions group. -->
+            <!-- Filtered view's own toolbar — the log-DISPLAY toggles only
+                 now (person-requested follow-up: filter-CREATING controls,
+                 the row-actions group, moved into #viewBar/the Filter-
+                 Toolbar instead — see that div's own comment). Gets all six
+                 display toggles (Pin bookmarks included — it's the one that
+                 actually changes what this view shows). -->
             <div id="filteredToolbar">
               <div class="toolbar-group">
                 <button type="button" class="toolbar-icon-btn toggle-pin" title="Pin bookmarks into Filtered View"></button>
@@ -3098,8 +3109,6 @@
                 <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Highlight text-filter matches (Settings → Behavior configures what gets marked and where)"></button>
                 <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlight-rule matches in the rule's own colour (both views and the entry detail)"></button>
               </div>
-              <span class="ctx-toolbar-sep"></span>
-              <div class="toolbar-group row-actions" data-row-actions="filtered"></div>
             </div>
             <div id="tableBody">
               <div id="tableSpacer">
@@ -19782,17 +19791,22 @@ addToSelectionMenu.addEventListener("click", ev => {
 });
 
 /* ===================== Row-/selection-action toolbar buttons =====================
-   This session's toolbar reorganization (person-requested "Gesamtkonzept"):
-   the context-menu row actions above ALSO get a permanently visible,
-   selection-dependent icon button in both #contextToolbar and
-   #filteredToolbar — same actions, same underlying functions, just reached
-   without a right-click and disabled instead of hidden when not applicable.
-   One shared HTML fragment (ROW_ACTIONS_HTML) is rendered into both
-   `[data-row-actions]` containers rather than duplicating the markup by
-   hand, and one delegated click listener per container dispatches on
-   `data-row-action` — so there is exactly one place that knows how to build
-   this button group and exactly one that knows how to react to a click,
-   regardless of which of the two toolbars it happened in. */
+   This session's toolbar reorganization (person-requested "Filter-
+   Toolbar"): the context-menu row actions above ALSO get a permanently
+   visible, selection-dependent icon button group — same actions, same
+   underlying functions, just reached without a right-click and disabled
+   instead of hidden when not applicable. Lives in #viewBar itself, right of
+   the level filter (`[data-row-actions="viewbar"]`, see that div's own HTML
+   comment) rather than inside #contextToolbar/#filteredToolbar: these are
+   filter-CREATING controls, universal across every tab the same way the
+   view toggle/level filter are, unlike the log-DISPLAY toggles (Notes/
+   Multiline/etc.), which stay per-view since they only mean something while
+   looking at an actual log view. Built from one HTML fragment
+   (ROW_ACTIONS_HTML) rather than hand-written inline in the markup, and a
+   single delegated click listener dispatches on `data-row-action` — mainly
+   so there's one place that knows how to build/react to this group,
+   independent of exactly where it's mounted (`[data-row-actions]` is
+   attribute-based, not tied to a specific container count). */
 const ROW_ACTIONS_HTML =
   '<button type="button" class="toolbar-icon-btn" data-row-action="bookmark" title="Bookmark this row">' +
     '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>' +

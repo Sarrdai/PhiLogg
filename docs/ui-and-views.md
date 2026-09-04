@@ -112,47 +112,59 @@ only (not persisted), a per-session convenience like scroll position, not
 part of the filter definition.
 
 **Per-view toolbars — full reorganization, this session (2026-09-04,
-person-requested "Gesamtkonzept")**: the original plan's "slot row" idea
-(above) was tried once and reverted for being too large a migration in one
-sitting — this session did the migration anyway, all the way, once the
-underlying goal (one consistent structure across all four tabs, not a
-physically shared row) was restated as the actual target. Current shape:
+person-requested)**: the original plan's "slot row" idea (above) was tried
+once and reverted for being too large a migration in one sitting — this
+session did the migration anyway, all the way, once the underlying goal
+(one consistent structure across all four tabs, not a physically shared
+row) was restated as the actual target. Refined once more the same session
+into a person-named **"Filter-Toolbar"** distinction: `#viewBar` holds only
+FILTER-CREATING controls (view toggle, level filter, row-actions), while
+each view's own toolbar holds only display/navigation controls. Current
+shape:
 
-- **`#viewBar`** (Zeile 1) — ONLY the view toggle (`#fhTabs`) and the level
-  quick-filter (`#levelBar`/`#btnApplyLevelToTree`), identical on every tab
-  including Table/Plot. `#levelBar` no longer hides for Table/Plot (it
-  already applied there via `applyLevelFilter()`, just without a visible
-  pill row before this session).
-- **`#breadcrumbBar`** (Zeile 2) — just `#breadcrumb`, always reserved
-  (even empty), moved out of `#viewBar` into its own row so it never
-  competes for space with the toggle/level-filter and never changes
-  `#viewBar`'s height.
+- **`#breadcrumbBar`** (Zeile 1, above `#viewBar`) — just `#breadcrumb`,
+  always reserved (even empty), sitting between the timeline minimap and
+  `#viewBar` (person-requested placement — NOT below `#viewBar`, and
+  deliberately its own row so it never competes for space with the toggle/
+  level-filter/row-actions or changes `#viewBar`'s height).
+- **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — the view toggle
+  (`#fhTabs`), the level quick-filter (`#levelBar`/`#btnApplyLevelToTree`),
+  and, floated right after those, the **row-actions** button group
+  (`[data-row-actions="viewbar"]`, `ROW_ACTIONS_HTML`) — Bookmark this row/
+  Add note/Filter after this/Filter before this/Filter for this message/
+  Time filter from selection/Add to selection. All of it identical on
+  every tab including Table/Plot: `#levelBar` no longer hides there (it
+  already applied via `applyLevelFilter()`, just without a visible pill row
+  before this session) and the row-actions group stays visible too (though
+  naturally disabled without a log-row selection to act on, same as on any
+  other tab with nothing selected). The row-actions buttons reuse the exact
+  functions the pre-existing right-click context menu already used, just
+  driven by `state.selectedId`/`state.logMultiSelect`
+  (`currentRowActionEntry()`) instead of `ctxEntry`, and disabled via
+  `updateRowActionButtons()` instead of hidden — the context menu itself is
+  untouched, this is an additional, always-visible entry point. Buttons
+  here stay the row's own 28x28 `.toolbar-icon-btn` size (no 22px scoped-
+  down override, unlike the per-view toolbars below) since `#viewBar`'s
+  other controls are 28px too.
 - **Each view's own toolbar** (Zeile 3 — `#contextToolbar`/
   `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) — same position/shape
-  in every tab, only the content differs. The six log-display toggles
-  (Pin bookmarks/Notes/Multiline/Columns/TextMatch/HighlightMatch) moved
-  out of `#viewBar` into these: five of them (all but Pin, which only
+  in every tab, only the content differs, and only DISPLAY/navigation
+  controls live here now (no filter-creating ones). The six log-display
+  toggles (Pin bookmarks/Notes/Multiline/Columns/TextMatch/HighlightMatch)
+  moved out of `#viewBar` into these: five of them (all but Pin, which only
   affects the Filtered result set) into `#contextToolbar`, all six into
-  `#filteredToolbar` — as shared `.toggle-pin`/`.toggle-notes`/etc.
-  classes rather than unique ids, since each now exists in **two** places
-  in the DOM with one shared state (`elAll()` — `[...document.
+  `#filteredToolbar` — as shared `.toggle-pin`/`.toggle-notes`/etc. classes
+  rather than unique ids, since each now exists in **two** places in the
+  DOM with one shared state (`elAll()` — `[...document.
   querySelectorAll(sel)]` — replaces the old single-element `el()` lookup
   for all six; every update/click-handler site does `.forEach(...)` over
-  the array instead of touching one element). A new **row-actions**
-  button group (Bookmark this row/Add note/Filter after this/Filter before
-  this/Filter for this message/Time filter from selection/Add to
-  selection) is rendered from one shared HTML fragment (`ROW_ACTIONS_HTML`)
-  into both `#contextToolbar` and `#filteredToolbar` — same functions the
-  pre-existing right-click context menu already used, just driven by
-  `state.selectedId`/`state.logMultiSelect` (`currentRowActionEntry()`)
-  instead of `ctxEntry`, and disabled via `updateRowActionButtons()`
-  instead of hidden. `#tableToolbar` gained an Export-as-CSV button
-  (`#tableExportCsvBtn`, second entry point alongside the pre-existing
-  right-click menu item); `#plotToolbar`'s two filter buttons switched
-  from text labels to the same icon-button look as everything else. Each
-  toolbar row still keeps its own pre-existing 30px height/`.toolbar-icon-
-  btn` scoped to 22x22 — nothing shares a literal DOM row across tabs, the
-  consistency is purely positional/structural now.
+  the array instead of touching one element). `#tableToolbar` gained an
+  Export-as-CSV button (`#tableExportCsvBtn`, second entry point alongside
+  the pre-existing right-click menu item); `#plotToolbar`'s two filter
+  buttons switched from text labels to the same icon-button look as
+  everything else. Each toolbar row still keeps its own pre-existing 30px
+  height/`.toolbar-icon-btn` scoped to 22x22 — nothing shares a literal DOM
+  row across tabs, the consistency is purely positional/structural now.
 
 ## The three "active node" views
 
@@ -210,7 +222,7 @@ This is deliberately **not** `captureViewAnchor`/`restoreViewAnchor`, which the 
 
 **Row treatment**: a match gets `ctx-row ctx-match` plus the **same `.ctx-anchor-dot` the `context`/`countContext` filter already draws next to its reference entries in the Filtered view** — one dot per result, in the gutter lane, at full row width and with no indentation. It used to reuse that filter's `.ctx-bracket` instead; that was dropped (person-requested, 2026-09-02) because a bracket says "these rows belong together", which is true of a time window but false of a filter result whose matches are scattered across the file — and it occupied the lane the run line now needs. A revealed context row gets `ctx-context` and **no treatment of its own at all**: not dimmed (that fought the `.lvl-error`/`.lvl-warn` row tinting, the most important colour information in a log view) and, since 2026-09-02, not indented either. Instead every revealed row carries `.ctx-run-line` — a full-row-height `border-left` in that same gutter lane, so stacking the rows of a run draws **one continuous line** from its first row to its last, capped at either end by a caret (`.ctx-run-cap`, pointing INWARD toward the run's own centre — the direction it collapses to) pointing into the fold; a single-row run gets one cap, not two. The line *is* the button: clicking anywhere along it collapses the whole run (`collapseContextRun`), which is what makes a block foldable from wherever you happen to be reading it, and its handler `stopPropagation`s so the click doesn't also select the row underneath. **Hovering any one slice highlights the whole run** (person-requested): since each row's slice is its own separate DOM button, plain CSS `:hover` only ever lit up that one segment — every slice of a run now carries a shared `data-run-id` (`run.firstRow`), and `mouseenter`/`mouseleave` (`makeContextRunHandle`) toggle a `.ctx-run-hover` class across every slice sharing that id (queried within `#highlightRows`), including both end caps' carets, so the whole line lights up together no matter which point along it the pointer is over. Dots and lines share one x (`--ctx-lane-x`, defined once on `#highlightRows.ctx-active`), which is why the marker column reads as one thing: a dot per result, a line per revealed run — and why no log text ever moves sideways when a run opens.
 
-**Toolbar** (`#contextToolbar`, `updateContextToolbar`, wired once by `initContextToolbar`): a real row **inside the table, directly under `#highlightHeader`** — person-requested, 2026-09-02, replacing the floating corner chip this used to be (and with it the "which corner" setting the floating version needed, since there is no corner to pick any more). This session (2026-09-04, "Per-view toolbars" reorganization above) it grew two more groups ahead of the original navigation one: five of the six log-display toggles (`.toggle-notes`/`.toggle-multiline`/`.toggle-columns`/`.toggle-textmatch`/`.toggle-highlightmatch` — no `.toggle-pin`, meaningless here), then the shared row-actions group (Bookmark/Note/Filter-after/Filter-before/Filter-for-this-message/Time-filter-from-selection/Add-to-selection, `ROW_ACTIONS_HTML` — see that section for the full behavior), then the original navigation group: `‹`/`›` (previous/next match, `moveContextMatchSelection`, `ICON_CARET_LEFT`/`ICON_CARET_RIGHT`), a bare "*n* / *m*" position readout (`#contextNavLabel`; the position comes from `contextMatchPos`, an id → ordinal map built during `buildContextView`'s own walk, so it can refresh on every selection change without an O(rows) scan), and **two** fold buttons: reveal everything and collapse everything (`ICON_EXPAND_ALL`/`ICON_COLLAPSE_ALL`, `setAllGapsExpanded`), each disabled when it would do nothing. All of them are `.toolbar-icon-btn` — the app's one icon-button shape — shrunk to 22px by an id-scoped override; icon-only, each explained by its `title`. The nav group's markup is static and only its label and the `disabled` flags are refreshed per render; the toggle/row-action groups' `disabled`/`.active` state is refreshed by `updateRowActionButtons()`/the toggles' own update functions instead. Hidden entirely on a file node (nothing to navigate or fold) and whenever the Context panel isn't the one on screen — this hides the WHOLE toolbar, toggles and row-actions included, not just the nav group.
+**Toolbar** (`#contextToolbar`, `updateContextToolbar`, wired once by `initContextToolbar`): a real row **inside the table, directly under `#highlightHeader`** — person-requested, 2026-09-02, replacing the floating corner chip this used to be (and with it the "which corner" setting the floating version needed, since there is no corner to pick any more). This session (2026-09-04, "Per-view toolbars"/"Filter-Toolbar" reorganization above) it grew a display-toggles group ahead of the original navigation one: five of the six log-display toggles (`.toggle-notes`/`.toggle-multiline`/`.toggle-columns`/`.toggle-textmatch`/`.toggle-highlightmatch` — no `.toggle-pin`, meaningless here), then the original navigation group: `‹`/`›` (previous/next match, `moveContextMatchSelection`, `ICON_CARET_LEFT`/`ICON_CARET_RIGHT`), a bare "*n* / *m*" position readout (`#contextNavLabel`; the position comes from `contextMatchPos`, an id → ordinal map built during `buildContextView`'s own walk, so it can refresh on every selection change without an O(rows) scan), and **two** fold buttons: reveal everything and collapse everything (`ICON_EXPAND_ALL`/`ICON_COLLAPSE_ALL`, `setAllGapsExpanded`), each disabled when it would do nothing. (The row-actions button group — filter-CREATING controls — lives in `#viewBar` instead, not here; see "Per-view toolbars" above for why.) All of them are `.toolbar-icon-btn` — the app's one icon-button shape — shrunk to 22px by an id-scoped override; icon-only, each explained by its `title`. The nav group's markup is static and only its label and the `disabled` flags are refreshed per render; the toggle group's `.active` state is refreshed by the toggles' own update functions instead. Hidden entirely on a file node (nothing to navigate or fold) and whenever the Context panel isn't the one on screen — this hides the WHOLE toolbar, toggles included, not just the nav group.
 
 **The bar is in flow, not overlaid** — it takes `CONTEXT_TOOLBAR_HEIGHT` (30px, and the CSS `height` must stay equal to the constant) out of `#highlightBody`'s viewport rather than covering log lines. On its own that would slide every rendered row down by exactly that much the moment the bar appears, so `setContextToolbarVisible` compensates the scroll position by the same number in the same step, leaving each row where it already was on screen (person-requested). The compensation is deliberately scoped to a bar appearing/disappearing **while the panel stays on screen** — activating a file node, or a filter one, without leaving the Context view. A tab switch hides or shows the whole panel, where there is no visible movement to cancel out and compensating would only perturb the reading position the pane remembers, so `updateContextToolbar` passes `false` there.
 
