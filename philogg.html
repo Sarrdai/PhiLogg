@@ -16439,6 +16439,15 @@ function formatDumpFragmentHtml(raw) {
 // marking when the result contains a fragment (a "syn-block" span) —
 // falling through to markFieldHtml/plain text otherwise — since the toggle
 // now defaults ON and most messages have nothing to format at all.
+// Each fragment block gets its own line — a newline is inserted before it
+// (unless it's right at the very start of the message, i.e. there's no
+// preceding text to separate it from) and after it (unless it's right at
+// the very end), skipped when one is already there (e.g. the message
+// itself already put the fragment on its own line). #detailMessage's
+// white-space:pre-wrap turns these into real line breaks, and .syn-block's
+// own display:inline-block then simply starts flush at that new line's
+// left edge — no extra CSS needed for the "left-aligned block" look
+// (person-requested, this session).
 function formatMessageWithHighlight(text) {
   const hits = findEmbeddedFragments(text);
   if (!hits.length) return escapeHtml(text);
@@ -16446,9 +16455,11 @@ function formatMessageWithHighlight(text) {
   let pos = 0;
   hits.forEach(h => {
     out += escapeHtml(text.slice(pos, h.start));
+    if (out.length && !out.endsWith("\n")) out += "\n";
     const frag = text.slice(h.start, h.end);
     out += h.type === "xml" ? formatXmlFragmentHtml(frag) : h.type === "json" ? formatJsonFragmentHtml(frag) : formatDumpFragmentHtml(frag);
     pos = h.end;
+    if (pos < text.length && text[pos] !== "\n") out += "\n";
   });
   out += escapeHtml(text.slice(pos));
   return out;

@@ -18867,7 +18867,10 @@ await withApp(async (w, d, T) => {
    JSON.parse has already rejected the candidate (169g/h, follow-up
    request this session). Also covers the optional per-theme
    "syntaxHighlightColors" block (SYNTAX_COLOR_KEYS) in the theme template
-   download / import round trip.
+   download / import round trip. Each fragment block also gets a newline
+   before and after it (person-requested follow-up this session, 169i/j/k)
+   so it renders on its own, left-aligned line rather than inline with
+   surrounding text.
    ============================================================ */
 group(169);
 await withApp(async (w, d, T) => {
@@ -19030,6 +19033,28 @@ await withApp(async (w, d, T) => {
   w.updateDetailPanel();
   assert(!d.querySelector("#detailMessage").querySelector(".syn-block"),
     "neither brace block is a valid JSON object nor does every segment match 'key = value', so nothing is highlighted");
+
+  section("169i. Every fragment block gets its own line (a newline before and after), so it renders left-aligned");
+  f.entries[0].message = 'before <root a="1"/> mid {"x":1} after';
+  w.updateDetailPanel();
+  const text169i = d.querySelector("#detailMessage").textContent;
+  assert(text169i.startsWith("before \n") && /\n mid \n/.test(text169i) && text169i.trim().endsWith("after"),
+    "a newline precedes and follows each fragment, got " + JSON.stringify(text169i));
+  assert(text169i.split("\n").length >= 5, "at least 4 line breaks for 2 fragments (one before + one after each), got " + JSON.stringify(text169i));
+
+  section("169j. No spurious blank line when the message already puts the fragment on its own line");
+  f.entries[0].message = 'before\n<root a="1"/>\nafter';
+  w.updateDetailPanel();
+  const text169j = d.querySelector("#detailMessage").textContent;
+  assert(!text169j.includes("\n\n"), "no doubled newline when the surrounding text already had one, got " + JSON.stringify(text169j));
+
+  section("169k. A fragment at the very start/end of the message doesn't get a leading/trailing blank line");
+  f.entries[0].message = '<root a="1"/> after';
+  w.updateDetailPanel();
+  assert(!d.querySelector("#detailMessage").textContent.startsWith("\n"), "a fragment at the very start has no leading blank line");
+  f.entries[0].message = 'before <root a="1"/>';
+  w.updateDetailPanel();
+  assert(!d.querySelector("#detailMessage").textContent.endsWith("\n"), "a fragment at the very end has no trailing blank line");
 });
 
 /* ============================================================
@@ -21441,5 +21466,8 @@ process.exitCode = failed ? 1 : 0;
      now also detected as a conservative fallback once JSON.parse rejects
      the candidate (parseKeyValueDump/formatDumpFragmentHtml, 169g/h).
      EXTENDED AGAIN same session, person-requested: the toggle now
-     defaults ON instead of off (169a updated in place).
+     defaults ON instead of off (169a updated in place). EXTENDED AGAIN
+     same session, person-requested: each fragment block now gets a
+     newline before and after it, rendering left-aligned on its own line
+     instead of inline with surrounding text (169i/j/k, new).
    ============================================================ */
