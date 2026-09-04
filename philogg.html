@@ -1494,6 +1494,15 @@
   #contextToolbar.hidden{ display:none; }
   #contextToolbar .toolbar-group{ gap:4px; }
   #contextToolbar .toolbar-icon-btn{ width:22px; height:22px; border-radius:5px; }
+  /* .row-action-btn (Bookmark this row/Add note, moved in here — see the
+     "Actions" group comment near #contextToolbar's HTML) needs its circle
+     shape to survive the 22px/5px-radius override right above: same
+     specificity (id + one class), so it only wins by coming AFTER it in
+     source order — kept as an explicit rule instead of relying on that
+     order alone, since a future edit could easily reshuffle these. */
+  #contextToolbar .row-action-btn{ border-radius:50%; }
+  #contextToolbar .row-action-btn.expanded, #contextToolbar .row-action-btn:focus-visible{ border-radius:20px; }
+  #contextToolbar .row-action-hit{ width:22px; height:22px; }
   #contextToolbar .ctx-nav-label{
     padding:0 2px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary);
     font-variant-numeric:tabular-nums; white-space:nowrap;
@@ -1510,6 +1519,10 @@
   }
   #filteredToolbar .toolbar-group{ gap:4px; }
   #filteredToolbar .toolbar-icon-btn{ width:22px; height:22px; border-radius:5px; }
+  /* Same reasoning as #contextToolbar's own copy of these three rules above. */
+  #filteredToolbar .row-action-btn{ border-radius:50%; }
+  #filteredToolbar .row-action-btn.expanded, #filteredToolbar .row-action-btn:focus-visible{ border-radius:20px; }
+  #filteredToolbar .row-action-hit{ width:22px; height:22px; }
   .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--border); flex:0 0 auto; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
@@ -3062,20 +3075,28 @@
               <span class="th">Message</span>
             </div>
           </div>
-          <!-- Context view's own toolbar — the log-DISPLAY toggles and
-               match navigation (person-requested follow-up: filter-CREATING
-               controls, the row-actions group, moved into #viewBar/the
-               Filter-Toolbar instead — see that div's own comment). No
-               Pin-bookmarks toggle here — it only affects the Filtered
-               view's result set, so it's meaningless while looking at
-               Context's always-whole-file result (see #filteredToolbar for
-               it). Match-to-match navigation + expand/collapse (originally
-               the old floating corner chip, #contextNav) are unchanged from
-               before this session. Icons/listeners are wired once by
+          <!-- Context view's own toolbar, grouped Settings | Controls |
+               Actions (person-requested, this session — no label on any
+               group, just the `|` divider, same order in every view
+               toolbar): Settings = the log-DISPLAY toggles (no Pin here —
+               it only affects the Filtered view's result set, meaningless
+               while looking at Context's always-whole-file result, see
+               #filteredToolbar for it); Controls = match-to-match
+               navigation + expand/collapse (originally the old floating
+               corner chip, #contextNav), unchanged from before this
+               session, just merged into one group instead of two; Actions
+               = Bookmark this row/Add note (moved in from the Filter-
+               Toolbar's row-actions group — these mutate the SELECTION,
+               not create a filter, so "Actions" fits them better than
+               "row-actions" ever did; `[data-row-actions="toolbar-actions"]`
+               is filled by the same buildRowActionsHtml()/TOOLBAR_ROW_ACTIONS
+               the Filtered toolbar's copy uses, wired up in
+               `[data-row-actions]`'s shared click/update-state code). Icons/
+               listeners for the nav group are wired once by
                initContextToolbar(); updateContextToolbar() only refreshes
-               the label and the disabled states. -->
+               the label and the disabled states there. -->
           <div id="contextToolbar" class="hidden">
-            <div class="toolbar-group">
+            <div class="toolbar-group" data-toolbar-group="settings">
               <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
               <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line message display (line breaks in the message)"></button>
               <button type="button" class="toolbar-icon-btn toggle-columns" title="Show/hide log view columns"></button>
@@ -3083,16 +3104,15 @@
               <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlight-rule matches in the rule's own colour (both views and the entry detail)"></button>
             </div>
             <span class="ctx-toolbar-sep"></span>
-            <div class="toolbar-group">
+            <div class="toolbar-group" data-toolbar-group="controls">
               <button type="button" id="ctxPrevMatch" class="toolbar-icon-btn" title="Previous match"></button>
               <span id="contextNavLabel" class="ctx-nav-label"></span>
               <button type="button" id="ctxNextMatch" class="toolbar-icon-btn" title="Next match"></button>
-            </div>
-            <span class="ctx-toolbar-sep"></span>
-            <div class="toolbar-group">
               <button type="button" id="ctxExpandAll" class="toolbar-icon-btn" title="Reveal every hidden line"></button>
               <button type="button" id="ctxCollapseAll" class="toolbar-icon-btn" title="Collapse all revealed context lines"></button>
             </div>
+            <span class="ctx-toolbar-sep"></span>
+            <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
           </div>
           <div id="highlightBody">
             <div id="highlightSpacer">
@@ -3131,14 +3151,16 @@
                 <span class="col-resize-handle" data-col="method" title="Drag to resize"></span>
               </div>
             </div>
-            <!-- Filtered view's own toolbar — the log-DISPLAY toggles only
-                 now (person-requested follow-up: filter-CREATING controls,
-                 the row-actions group, moved into #viewBar/the Filter-
-                 Toolbar instead — see that div's own comment). Gets all six
-                 display toggles (Pin bookmarks included — it's the one that
-                 actually changes what this view shows). -->
+            <!-- Filtered view's own toolbar, Settings | Actions (person-
+                 requested, this session — same grouping convention as
+                 #contextToolbar; no Controls group here, Filtered has no
+                 navigation buttons of its own). Settings = all six
+                 display toggles (Pin bookmarks included — it's the one
+                 that actually changes what this view shows); Actions =
+                 Bookmark this row/Add note, same shared markup/behavior as
+                 #contextToolbar's copy (see that div's own HTML comment). -->
             <div id="filteredToolbar">
-              <div class="toolbar-group">
+              <div class="toolbar-group" data-toolbar-group="settings">
                 <button type="button" class="toolbar-icon-btn toggle-pin" title="Pin bookmarks into Filtered View"></button>
                 <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
                 <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line message display (line breaks in the message)"></button>
@@ -3146,6 +3168,8 @@
                 <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Highlight text-filter matches (Settings → Behavior configures what gets marked and where)"></button>
                 <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlight-rule matches in the rule's own colour (both views and the entry detail)"></button>
               </div>
+              <span class="ctx-toolbar-sep"></span>
+              <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
             </div>
             <div id="tableBody">
               <div id="tableSpacer">
@@ -3193,11 +3217,14 @@
              below it (see that div's own comment): a real row directly above
              this view's content. #extractStatsBar (above, in #extractToolbar)
              deliberately stays OUT of here — it's shared infrastructure
-             between Table AND Plot, not Table-specific. "Export as CSV…"
-             moves here from being right-click-only (still reachable there
-             too, via #extractContextMenu). -->
+             between Table AND Plot, not Table-specific. Just one group,
+             Actions (same Settings|Controls|Actions convention as every
+             other view toolbar this session — Table has neither a display
+             setting nor a navigation control of its own): "Export as CSV…",
+             which moves here from being right-click-only (still reachable
+             there too, via #extractContextMenu). -->
         <div id="tableToolbar">
-          <div class="toolbar-group">
+          <div class="toolbar-group" data-toolbar-group="actions">
             <button type="button" id="tableExportCsvBtn" class="toolbar-icon-btn" title="Export as CSV…">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v8M8 9.5L5 6.5M8 9.5l3-3"/><path d="M2.5 11v2.5h11V11"/></svg>
             </button>
@@ -3210,32 +3237,36 @@
           <!-- Plot view's own toolbar — a real row INSIDE the plot view,
                directly above its content, same pattern as #contextToolbar in
                the Context view (see that div's own comment). Buttons reuse
-               .toolbar-icon-btn shrunk to 22px the same way. #plot2dToolsGroup
-               (zoom + filter-from-viewport) is only meaningful once there's
-               something plotted in 2D — updatePlotZoomIndicator() toggles it;
-               the Fullscreen/Save group stays available regardless. -->
+               .toolbar-icon-btn shrunk to 22px the same way. Grouped like
+               every other view toolbar this session (person-requested):
+               Controls (zoom + Fullscreen/Save — navigation/display, no
+               label, `|` separator) then Actions (the two filter-creating
+               buttons). #plot2dToolsGroup (zoom) and #plotFilterActionsGroup
+               (the filter buttons) are both only meaningful once there's
+               something plotted in 2D — updatePlotZoomIndicator() toggles
+               BOTH (plus #plotActionsSep, so no dangling `|` with nothing
+               after it) together; Fullscreen/Save stay available
+               regardless, which is why they're the fixed part of Controls
+               rather than folded into the same conditional group as zoom. -->
           <div id="plotToolbar">
-            <div id="plot2dToolsGroup" class="hidden">
-              <div class="toolbar-group">
+            <div class="toolbar-group" data-toolbar-group="controls">
+              <div id="plot2dToolsGroup" class="hidden toolbar-group">
                 <button type="button" id="plotZoomOutBtn" title="Zoom out">−</button>
                 <input type="text" id="plotZoomLevelInput" inputmode="numeric" title="Zoom level — click to edit">
                 <button type="button" id="plotZoomInBtn" title="Zoom in">+</button>
                 <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
               </div>
-              <span class="ctx-toolbar-sep"></span>
-              <div class="toolbar-group">
-                <button type="button" id="plotFilterTimeRangeBtn" class="toolbar-icon-btn" title="Filter: time range — create a time-range filter spanning what's currently visible in the plot">
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/></svg>
-                </button>
-                <button type="button" id="plotFilterEntriesBtn" class="toolbar-icon-btn" title="Filter: these entries — create a filter matching exactly the log entries currently visible in the plot">
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
-                </button>
-              </div>
-              <span class="ctx-toolbar-sep"></span>
-            </div>
-            <div class="toolbar-group">
               <button type="button" id="plotFullscreenBtn" class="toolbar-icon-btn" title="Show the plot and legend in fullscreen (Esc to exit)"></button>
               <button type="button" id="plotSaveImageBtn" class="toolbar-icon-btn" title="Save the plot as an image, exactly as currently zoomed/panned"></button>
+            </div>
+            <span id="plotActionsSep" class="ctx-toolbar-sep hidden"></span>
+            <div id="plotFilterActionsGroup" class="toolbar-group hidden" data-toolbar-group="actions">
+              <button type="button" id="plotFilterTimeRangeBtn" class="toolbar-icon-btn" title="Filter: time range — create a time-range filter spanning what's currently visible in the plot">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/></svg>
+              </button>
+              <button type="button" id="plotFilterEntriesBtn" class="toolbar-icon-btn" title="Filter: these entries — create a filter matching exactly the log entries currently visible in the plot">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
+              </button>
             </div>
           </div>
           <div id="plotBody">
@@ -8775,6 +8806,8 @@ const plot3dCanvas = el("#plot3dCanvas");
 const plotToolbar = el("#plotToolbar");
 const tableToolbar = el("#tableToolbar");
 const plot2dToolsGroup = el("#plot2dToolsGroup");
+const plotFilterActionsGroup = el("#plotFilterActionsGroup");
+const plotActionsSep = el("#plotActionsSep");
 const plotZoomOutBtn = el("#plotZoomOutBtn");
 const plotZoomInBtn = el("#plotZoomInBtn");
 const plotZoomResetBtn = el("#plotZoomResetBtn");
@@ -8879,13 +8912,17 @@ const FILTER_ACTIVATION_VIEW_KEY = "philogg-filter-activation-view";
 let filterActivationView = "rememberLast";
 const nodeLastView = new Map(); // nodeId -> "highlight" | "filter" | "table" | "plot" | "stacked"
 
-// Builds the #fhTabs button group for the current fhLayout, and marks
-// Table/Plot disabled when the active node has nothing to tabulate/plot.
-// Rebuilt on every renderMainView() call (cheap — 3-4 small buttons) rather
-// than patched in place, since which buttons even exist changes with
-// fhLayout. The click handler stays a single delegated listener on #fhTabs
-// itself (wired once, below), so rebuilding the buttons' innerHTML doesn't
-// need to re-wire anything.
+// Builds the #fhTabs button group for the current fhLayout — Table/Plot
+// are left OUT entirely (not just disabled) when the active node has
+// nothing to tabulate/plot (person-requested, this session: an
+// unreachable tab shouldn't sit there taking up space/attention — see
+// docs/ui-and-views.md's "precisiation 3" note on the earlier, now-
+// superseded "stay visible but disabled" decision). Rebuilt on every
+// renderMainView() call (cheap — 2-4 small buttons) rather than patched in
+// place, since which buttons even exist changes with fhLayout AND
+// extractCapable now. The click handler stays a single delegated listener
+// on #fhTabs itself (wired once, below), so rebuilding the buttons'
+// innerHTML doesn't need to re-wire anything.
 function renderViewTabs(extractCapable) {
   const logTabs = fhLayout === "stacked"
     ? [{ tab: "stacked", label: "Stacked", title: "Show Context and Filtered at once, split top/bottom" }]
@@ -8893,16 +8930,17 @@ function renderViewTabs(extractCapable) {
         { tab: "highlight", label: "Context", title: "Your filter result with the log around it — expand the gaps between matches to reveal the hidden lines" },
         { tab: "filter", label: "Filtered", title: "Narrowed by the active filter tree node" },
       ];
-  const tabs = [
-    ...logTabs,
-    { tab: "table", label: "Table", title: extractCapable ? "Extraction table for this node's pattern" : "This node has no [value:...]/[*] wildcards to tabulate" },
-    { tab: "plot", label: "Plot", title: extractCapable ? "Plot extracted values from this node's pattern" : "This node has no [value:...]/[*] wildcards to plot" },
-  ];
+  const tabs = [...logTabs];
+  if (extractCapable) {
+    tabs.push(
+      { tab: "table", label: "Table", title: "Extraction table for this node's pattern" },
+      { tab: "plot", label: "Plot", title: "Plot extracted values from this node's pattern" },
+    );
+  }
   const activeVal = fhLayout === "stacked" && fhActiveTab !== "table" && fhActiveTab !== "plot" ? "stacked" : fhActiveTab;
-  fhTabs.innerHTML = tabs.map(t => {
-    const disabled = (t.tab === "table" || t.tab === "plot") && !extractCapable;
-    return `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}"${disabled ? " disabled" : ""}>${t.label}</button>`;
-  }).join("");
+  fhTabs.innerHTML = tabs.map(t =>
+    `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}">${t.label}</button>`
+  ).join("");
 }
 
 // Switches which panel is visible in tabs layout (no-op on visibility in
@@ -11546,9 +11584,21 @@ function zoomPlotAt(dataX, dataY, factor) {
   renderPlotChart();
 }
 
+// Toggles #plot2dToolsGroup (zoom controls, in the toolbar's Controls
+// group) and #plotFilterActionsGroup + its #plotActionsSep divider (the
+// Actions group) together — both are only meaningful once there's
+// something plotted in 2D (see updatePlotZoomIndicator/renderPlotChart's
+// 3D branch below), and hiding the Actions group without also hiding its
+// leading separator would leave a dangling `|` with nothing after it.
+function setPlot2dToolsVisible(visible) {
+  plot2dToolsGroup.classList.toggle("hidden", !visible);
+  plotFilterActionsGroup.classList.toggle("hidden", !visible);
+  plotActionsSep.classList.toggle("hidden", !visible);
+}
+
 function updatePlotZoomIndicator() {
-  if (!plotLastRender) { plot2dToolsGroup.classList.add("hidden"); return; }
-  plot2dToolsGroup.classList.remove("hidden");
+  if (!plotLastRender) { setPlot2dToolsVisible(false); return; }
+  setPlot2dToolsVisible(true);
   const r = plotLastRender;
   const zx = (r.xHomeDomainMax - r.xHomeDomainMin) / ((r.xDomainMax - r.xDomainMin) || 1);
   const zy = (r.yHomeDomainMax - r.yHomeDomainMin) / ((r.yDomainMax - r.yDomainMin) || 1);
@@ -12137,7 +12187,7 @@ function renderPlotChart() {
   if (plotConfig.type === "3d") {
     plotSvg.classList.add("hidden");
     plot3dCanvas.classList.remove("hidden");
-    plot2dToolsGroup.classList.add("hidden"); // 3D uses its own rotate/zoom/pan on the canvas, not the 2D zoom bar
+    setPlot2dToolsVisible(false); // 3D uses its own rotate/zoom/pan on the canvas, not the 2D zoom bar/filter-from-viewport
     renderPlot3D();
     return;
   }
@@ -19858,26 +19908,39 @@ addToSelectionMenu.addEventListener("click", ev => {
 // (see updateRowActionHover below), not the button's own box, which grows
 // to fit the label once expanded — so reading left-to-right always lands
 // on the very next circle instead of overshooting it.
-const ROW_ACTIONS = [
+// Split in two (person-requested, this session): Bookmark/Note are ACTIONS
+// on the current selection, not filter creation, so they moved out of the
+// Filter-Toolbar's row-actions group into each log view's own toolbar
+// (Context/Filtered) as that toolbar's own "Actions" group — see the HTML
+// comments near #contextToolbar/#filteredToolbar. The other five (which
+// all genuinely create a filter node) stay in #viewBar.
+const TOOLBAR_ROW_ACTIONS = [
   { action: "bookmark", label: "Bookmark this row", svg: '<path d="M4 2.5h8v11l-4-2.6-4 2.6z"/>', strokeWidth: 1.3 },
   { action: "note", label: "Add note", svg: '<path d="M3.5 2.5h9v11l-2.5-1.8H3.5z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>', strokeWidth: 1.3 },
+];
+const VIEWBAR_ROW_ACTIONS = [
   { action: "filterAfter", label: "Filter after this (incl.)", svg: '<path d="M8 3v10M8 3l-3 3M8 3l3 3"/>', strokeWidth: 1.4 },
   { action: "filterBefore", label: "Filter before this (incl.)", svg: '<path d="M8 13V3M8 13l-3-3M8 13l3-3"/>', strokeWidth: 1.4 },
   { action: "filterForMessage", label: "Filter for this message", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/>', strokeWidth: 1.4 },
   { action: "timeRangeFromSelection", label: "Time filter from selection", svg: '<path d="M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/>', strokeWidth: 1.4 },
   { action: "addToSelection", label: "Add to selection", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/>', strokeWidth: 1.4 },
 ];
-const ROW_ACTIONS_HTML = ROW_ACTIONS.map(a =>
-  // .row-action-hit is the fixed 28x28 circle (icon centered inside it) —
-  // the actual mouseenter/mouseleave target (see updateRowActionHover);
-  // .row-action-label follows it and is what grows/shrinks the button's
-  // own (now variable) width.
-  '<button type="button" class="toolbar-icon-btn row-action-btn" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
-    '<span class="row-action-hit"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg></span>' +
-    '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
-  '</button>'
-).join("");
-elAll("[data-row-actions]").forEach(container => { container.innerHTML = ROW_ACTIONS_HTML; });
+function buildRowActionsHtml(list) {
+  return list.map(a =>
+    // .row-action-hit is the fixed-size circle (icon centered inside it) —
+    // the actual mouseenter/mouseleave target (see the listener below);
+    // .row-action-label follows it and is what grows/shrinks the button's
+    // own (now variable) width.
+    '<button type="button" class="toolbar-icon-btn row-action-btn" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
+      '<span class="row-action-hit"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg></span>' +
+      '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
+    '</button>'
+  ).join("");
+}
+const TOOLBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS);
+const VIEWBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(VIEWBAR_ROW_ACTIONS);
+elAll('[data-row-actions="toolbar-actions"]').forEach(container => { container.innerHTML = TOOLBAR_ROW_ACTIONS_HTML; });
+elAll('[data-row-actions="viewbar"]').forEach(container => { container.innerHTML = VIEWBAR_ROW_ACTIONS_HTML; });
 // Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
 // circle specifically, NOT a plain CSS :hover on the button — the button's
 // own box changes width once expanded, so a :hover there would only
