@@ -4889,7 +4889,7 @@ section("43. Bugfix: tail handles persist across a reload");
     const f = await w.addFile("live.log", makeLog(0, 3), () => {});
     f.tail = { handle, offset: w.rebuildFileText(f).length, pending: "", failed: false, busy: false };
     w.render();
-    assert(d.querySelector(".tree-live") !== null, "sanity: the live dot renders for a freshly-tailed file");
+    assert(d.querySelector(".tree-icon-live") !== null, "sanity: the live dot renders for a freshly-tailed file");
 
     await w.persistFileNode(f);
     await w.persistMetaNow();
@@ -4908,7 +4908,7 @@ section("43. Bugfix: tail handles persist across a reload");
     const node = T.state.nodes[T.state.rootIds[0]];
     assert(!node.tail, "restore: a handle that can't survive structured clone leaves the file a static snapshot instead of throwing");
     w.render();
-    assert(d.querySelector(".tree-live") === null, "restore: no live dot renders while the tail couldn't be silently reattached");
+    assert(d.querySelector(".tree-icon-live") === null, "restore: no live dot renders while the tail couldn't be silently reattached");
 
     // Function-level check of the successful path (the part a real
     // IndexedDB round trip can't exercise in jsdom — see the class comment
@@ -4921,7 +4921,7 @@ section("43. Bugfix: tail handles persist across a reload");
     assert(node.tail.offset === w.rebuildFileText(node).length,
       "reattached tail's offset matches the restored file's current byte length, so the next poll only reads genuinely NEW bytes");
     w.render();
-    assert(d.querySelector(".tree-live") !== null, "the live dot renders once tailing is reattached");
+    assert(d.querySelector(".tree-icon-live") !== null, "the live dot renders once tailing is reattached");
 
     // Tailing genuinely resumes polling from here, not just a flag flip.
     const appended = `2024-01-15 10:00:03,000\tINFO\t"main"\tFoo.cs\tline 3\t[DoWork]\t"new entry"\n`;
@@ -5001,7 +5001,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("live.log", initial, () => {});
   f.tail = { handle, offset: initial.length, pending: "", failed: false, busy: false, errorCount: 0 };
   w.render();
-  assert(d.querySelector(".tree-live") !== null, "sanity: live dot shows for a freshly-tailed file");
+  assert(d.querySelector(".tree-icon-live") !== null, "sanity: live dot shows for a freshly-tailed file");
 
   // --- A short streak of transient failures (below the threshold) ---
   handle._failNextCalls(3);
@@ -5009,7 +5009,7 @@ await withApp(async (w, d, T) => {
   assert(f.tail.errorCount === 3, "three consecutive failures recorded, got " + f.tail.errorCount);
   assert(f.tail.failed === false, "still under the threshold — tailing not yet given up on");
   w.render();
-  assert(d.querySelector(".tree-live") !== null, "live dot still shows during a sub-threshold failure streak");
+  assert(d.querySelector(".tree-icon-live") !== null, "live dot still shows during a sub-threshold failure streak");
   assert(warnCalls.length === 3, "each failure is logged via console.warn, not silently swallowed, got " + warnCalls.length);
 
   // --- Recovery: the next poll succeeds (lock released) and growth resumes ---
@@ -5026,7 +5026,7 @@ await withApp(async (w, d, T) => {
   assert(f.tail.errorCount === 5, "five straight failures reach the threshold, got " + f.tail.errorCount);
   assert(f.tail.failed === true, "a genuinely persistent failure still permanently stops tailing, same as before this fix");
   w.render();
-  assert(d.querySelector(".tree-live") === null, "live dot disappears once tailing is genuinely given up on");
+  assert(d.querySelector(".tree-icon-live") === null, "live dot disappears once tailing is genuinely given up on");
 
   // Further ticks on an already-failed node are a no-op, not a crash.
   await w.tailTick();
@@ -7525,13 +7525,13 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("live.log", initial, () => {});
   f.tail = { handle, offset: initial.length, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
   w.render();
-  assert(d.querySelector(".tree-live") !== null, "sanity: the live dot renders right after a fresh growth");
+  assert(d.querySelector(".tree-icon-live") !== null, "sanity: the live dot renders right after a fresh growth");
   assert(w.isTailLive(f.tail) === true, "sanity: isTailLive agrees — growth was just now");
 
   // A tick with genuinely nothing new (writer still there, just idle for a
   // moment) must NOT clear the dot — only a real staleness window should.
   await w.tailTick();
-  assert(d.querySelector(".tree-live") !== null, "an inert tick shortly after growth keeps the dot lit (not stale yet)");
+  assert(d.querySelector(".tree-icon-live") !== null, "an inert tick shortly after growth keeps the dot lit (not stale yet)");
 
   // Now simulate "long since stopped writing" by backdating lastGrowth past
   // the staleness window directly, the same way Group 44 backdates
@@ -7539,13 +7539,13 @@ await withApp(async (w, d, T) => {
   f.tail.lastGrowth = Date.now() - 60000;
   assert(w.isTailLive(f.tail) === false, "isTailLive itself reports stale once lastGrowth is far enough in the past");
   await w.tailTick(); // no byte growth this tick either — only time passed
-  assert(d.querySelector(".tree-live") === null, "the live dot goes dark once the file has been quiet past the staleness window, with NO further tail tick required to have unrelated changes in it");
+  assert(d.querySelector(".tree-icon-live") === null, "the live dot goes dark once the file has been quiet past the staleness window, with NO further tail tick required to have unrelated changes in it");
 
   // A genuinely new write resurrects it.
   const appended = `2024-01-15 10:00:03,000\tINFO\t"main"\tFoo.cs\tline 3\t[DoWork]\t"back again"\n`;
   handle._setText(initial + appended);
   await w.tailTick();
-  assert(d.querySelector(".tree-live") !== null, "a real new write lights the dot back up");
+  assert(d.querySelector(".tree-icon-live") !== null, "a real new write lights the dot back up");
   assert(f.entries.length === 4, "sanity: the resurrecting write was actually parsed, not just a dot flip");
 });
 
@@ -7579,7 +7579,7 @@ await withApp(async (w, d, T) => {
   const newFile = await w.addFile("app-2.log", newLog, () => {});
   newFile.tail = { handle: newHandle, offset: newLog.length, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
   w.render();
-  assert(d.querySelectorAll(".tree-live").length === 2, "sanity: both files show live right after being opened");
+  assert(d.querySelectorAll(".tree-icon-live").length === 2, "sanity: both files show live right after being opened");
 
   // The writer stopped touching the old file a while ago (backdated the same
   // way Part 63a does) and moved on to the new one, which alone grows now.
@@ -7588,7 +7588,7 @@ await withApp(async (w, d, T) => {
   newHandle._setText(newLog + newAppended);
   await w.tailTick();
 
-  const liveRows = Array.from(d.querySelectorAll(".tree-row")).filter(r => r.querySelector(".tree-live"));
+  const liveRows = Array.from(d.querySelectorAll(".tree-row")).filter(r => r.querySelector(".tree-icon-live"));
   assert(liveRows.length === 1, "exactly one file shows the live dot after rotation, got " + liveRows.length);
   assert(liveRows[0] && liveRows[0].textContent.includes("app-2.log"), "the live dot stayed on the file that's ACTUALLY still being written to");
   assert(!liveRows.some(r => r.textContent.includes("app-1.log")), "the rotated-out old file no longer shows the live dot");
@@ -18361,8 +18361,13 @@ await withApp(async (w, d, T) => {
   await waitFor(() => mFolder.files.find(f => f.name === "M-03.log") && mFolder.files.find(f => f.name === "M-03.log").nodeId !== null);
   assert(mFolder.files.find(f => f.name === "M-03.log").nodeId,
     "a new file discovered by the real folderScanTick poll is opened by the keep-2 sliding window, same as a manual rescanFolder()");
-  assert(!mFolder.files.find(f => f.name === "M-01.log").nodeId,
-    "the previously-open OLDEST file (M-01.log) was closed to make room for it");
+  // Person-reported (this session): a file opened BY HAND is never closed
+  // by "keep only N open" — only files the rule itself opened are fair game
+  // for it to later close again. M-01.log was opened manually before the
+  // rule even existed, so it stays open even though it falls outside the
+  // newest-2 window once M-03.log arrives.
+  assert(mFolder.files.find(f => f.name === "M-01.log").nodeId,
+    "the manually opened OLDEST file (M-01.log) stays open — \"keep only N open\" never auto-closes a file the person opened by hand");
   assert(mFolder.files.find(f => f.name === "M-02.log").nodeId, "the still-in-window M-02.log was left open");
 
   // --- "Newest" uses real file mtime when available, not just filename
@@ -18490,6 +18495,265 @@ await withApp(async (w, d, T) => {
   assert(entries[1].message.includes("second custom line") && entries[1].message.includes("continues the previous entry"),
     "a continuation line (no match against the custom regex) still gets appended to the open entry's message");
   assert(entries.every(e => e.formatId === "fmt-165c"), "each entry carries the custom format's id, same as the main-thread compileOneFormat path sets it");
+});
+
+/* ============================================================
+   GROUP 166 — Files & Filters / Folder watch detail fixes (this session,
+   person-reported):
+   1) the tailed-file "live" indicator is a pulsing FILE ICON now (no
+      separate .tree-live dot before it), so a tailed file's icon no longer
+      shifts other rows' labels out of alignment.
+   2) an opened folder-watch file's row lines up flush with its still-closed
+      (grayed) siblings — no chevron-slot/padding indent — instead of
+      reading as extra-indented once opened.
+   3) applyFolderAutoRules' auto-open/auto-close-keep now fire at most once
+      per file (rec.autoOpenFired): a file the person closed again after an
+      auto-open stays closed on the next rescan/poll instead of reopening.
+      A file the person opened by hand is likewise never auto-closed by
+      "keep only N open" (rec.openedByAuto gates that). An auto-opened
+      file's icon carries the "(A)" auto-open badge; a manually opened one
+      doesn't.
+   ============================================================ */
+group(166);
+await withApp(async (w, d, T) => {
+  section("166a. Tailed-file live indicator moved from a separate dot onto the file icon");
+
+  const liveNode = await w.addFile("166-live.log", makeLog(0, 2), () => {});
+  liveNode.tail = { handle: {}, offset: 0, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
+  w.render();
+  const liveRow = [...d.querySelectorAll(".tree-row")].find(r => r.querySelector(".tree-label").textContent === "166-live.log");
+  assert(liveRow.querySelector(".tree-live") === null, "no separate .tree-live dot element is rendered anymore");
+  const liveIcon = liveRow.querySelector(".tree-icon");
+  assert(liveIcon !== null && liveIcon.classList.contains("tree-icon-live"), "the file's own .tree-icon carries the pulsing live class instead");
+  assert(liveIcon.title.includes("Live"), "the live tooltip moved onto the icon itself");
+
+  liveNode.tail.lastGrowth = Date.now() - 20000; // past TAIL_LIVE_MS staleness window
+  w.render();
+  const liveRowNow = [...d.querySelectorAll(".tree-row")].find(r => r.querySelector(".tree-label").textContent === "166-live.log");
+  assert(!liveRowNow.querySelector(".tree-icon").classList.contains("tree-icon-live"), "the icon stops pulsing once the file goes stale, same staleness rule as before");
+});
+
+await withApp(async (w, d, T) => {
+  section("166b. An opened folder-watch file's row aligns with its closed siblings (no extra indent)");
+
+  function fakeFileHandle(name, text) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  function fakeDirHandle(name, fileMap) {
+    return {
+      kind: "directory", name,
+      async *values() { for (const fname of Object.keys(fileMap)) yield fakeFileHandle(fname, fileMap[fname]); },
+    };
+  }
+
+  const fileMap = { "align-a.log": makeLog(0, 2), "align-b.log": makeLog(10, 2) };
+  const dir = fakeDirHandle("alignlogs", fileMap);
+  await w.addWatchedFolder(dir);
+  const folder = T.state.folders[0];
+  const bRec = folder.files.find(f => f.name === "align-b.log");
+  await w.loadFolderFile(folder, bRec);
+  await waitFor(() => bRec.nodeId && T.state.nodes[bRec.nodeId].entries.length === 2);
+  w.render();
+
+  const folderBox = d.querySelector(".folder-watch");
+  const closedRow = folderBox.querySelector(".folder-watch-file");
+  const openRow = [...folderBox.querySelectorAll(".tree-row")].find(r => r.querySelector(".tree-label").textContent === "align-b.log");
+  assert(closedRow !== null && openRow !== null, "both a closed and an opened row are present to compare");
+  assert(openRow.style.paddingLeft === "12px", "an opened top-level folder-watch file's row uses the same 12px inset as its closed siblings, got " + openRow.style.paddingLeft);
+  assert(openRow.querySelector(".tree-chevron-slot") === null, "no chevron-slot is reserved for an opened folder-watch file with no filters of its own, so nothing pushes its icon further right");
+});
+
+await withApp(async (w, d, T) => {
+  section("166c. Auto-open fires once per file; a manual close after it sticks");
+
+  function fakeFileHandle(name, text) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  function fakeDirHandle(name, fileMap) {
+    return {
+      kind: "directory", name,
+      async *values() { for (const fname of Object.keys(fileMap)) yield fakeFileHandle(fname, fileMap[fname]); },
+    };
+  }
+
+  const fileMap = { "auto-1.log": makeLog(0, 1) };
+  const dir = fakeDirHandle("autologs", fileMap);
+  await w.addWatchedFolder(dir);
+  const folder = T.state.folders[0];
+  folder.settings.patterns = [{ pattern: "*", autoOpenNewest: true, autoCloseKeep: null, showNewest: null }];
+  await w.rescanFolder(folder);
+
+  const rec = folder.files.find(f => f.name === "auto-1.log");
+  assert(rec.nodeId && T.state.nodes[rec.nodeId], "auto-open newest opened the only file");
+  assert(rec.autoOpenFired === true, "rec.autoOpenFired is set once an auto rule opens a file");
+  assert(rec.openedByAuto === true, "rec.openedByAuto reflects that this open came from the auto rule");
+  w.render();
+  const autoRow = [...d.querySelectorAll(".tree-row")].find(r => r.querySelector(".tree-label").textContent === "auto-1.log");
+  assert(autoRow.querySelector(".tree-icon").title.includes("automatically"), "the auto-opened file's icon tooltip mentions it was opened automatically");
+
+  // Person closes it by hand.
+  const closeBtn = autoRow.querySelector(".tree-del");
+  fireClick(closeBtn, w);
+  assert(!rec.nodeId, "closing the file clears its folder record's nodeId");
+
+  // A later rescan (simulating the next poll) must NOT reopen it.
+  await w.rescanFolder(folder);
+  const recAfter = folder.files.find(f => f.name === "auto-1.log");
+  assert(!recAfter.nodeId, "a file auto-opened once and then manually closed stays closed across a later rescan, doesn't silently reopen");
+});
+
+await withApp(async (w, d, T) => {
+  section("166d. A manually opened file is never auto-closed by \"keep only N open\"");
+
+  function fakeFileHandle(name, text) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  function fakeDirHandle(name, fileMap) {
+    return {
+      kind: "directory", name,
+      async *values() { for (const fname of Object.keys(fileMap)) yield fakeFileHandle(fname, fileMap[fname]); },
+    };
+  }
+
+  const fileMap = { "keep-01.log": makeLog(0, 1), "keep-02.log": makeLog(1, 1) };
+  const dir = fakeDirHandle("keeplogs", fileMap);
+  await w.addWatchedFolder(dir);
+  const folder = T.state.folders[0];
+
+  // Person opens the OLDER file by hand first, before any auto rule exists.
+  const oldRec = folder.files.find(f => f.name === "keep-01.log");
+  await w.loadFolderFile(folder, oldRec);
+  await waitFor(() => oldRec.nodeId && T.state.nodes[oldRec.nodeId].entries.length === 1);
+  assert(oldRec.openedByAuto === false, "a manually opened file's rec.openedByAuto is false");
+
+  // Now a keep-1 rule is configured and a newer file arrives — the sliding
+  // window would normally close whichever open file falls outside it, but
+  // the manually opened one must be left alone.
+  folder.settings.patterns = [{ pattern: "*", autoOpenNewest: false, autoCloseKeep: 1, showNewest: null }];
+  await w.rescanFolder(folder);
+  const oldRecAfter = folder.files.find(f => f.name === "keep-01.log");
+  const newRecAfter = folder.files.find(f => f.name === "keep-02.log");
+  assert(oldRecAfter.nodeId, "the manually opened older file is still open despite falling outside the keep-1 window");
+  assert(newRecAfter.nodeId && newRecAfter.openedByAuto === true, "the newer file was auto-opened to satisfy the keep-1 rule");
+});
+
+/* ============================================================
+   GROUP 167 — Folder watch: a file deleted outside the app disappears
+   from the listing (this session, person-reported): mergeScannedFiles used
+   to keep an OPEN listing entry forever once a scan stopped finding it on
+   disk (deliberate scope at the time — "doesn't detect removed files").
+   Now any entry a fresh scan no longer finds is dropped from folder.files
+   entirely, closing it first (closeFolderFile) if it was open.
+   ============================================================ */
+group(167);
+await withApp(async (w, d, T) => {
+  section("167. A file deleted outside the app disappears from the folder-watch listing");
+
+  function fakeFileHandle(name, text) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  function fakeDirHandle(name, fileMap) {
+    return {
+      kind: "directory", name,
+      async *values() { for (const fname of Object.keys(fileMap)) yield fakeFileHandle(fname, fileMap[fname]); },
+    };
+  }
+
+  const fileMap = { "del-open.log": makeLog(0, 2), "del-closed.log": makeLog(10, 2), "keep.log": makeLog(20, 2) };
+  const dir = fakeDirHandle("dellogs", fileMap);
+  await w.addWatchedFolder(dir);
+  const folder = T.state.folders[0];
+  assert(folder.files.length === 3, "sanity: all 3 files listed initially");
+
+  // Open one of the files that's about to be "deleted", to prove an open
+  // file is dropped too, not just closed ones.
+  const openRec = folder.files.find(f => f.name === "del-open.log");
+  await w.loadFolderFile(folder, openRec);
+  await waitFor(() => openRec.nodeId && T.state.nodes[openRec.nodeId].entries.length === 2);
+  const openedNodeId = openRec.nodeId;
+  assert(T.state.rootIds.includes(openedNodeId), "sanity: del-open.log is a real open root node before deletion");
+
+  // Both del-open.log and del-closed.log vanish from the real folder.
+  delete fileMap["del-open.log"];
+  delete fileMap["del-closed.log"];
+  await w.folderScanTick();
+
+  assert(folder.files.length === 1 && folder.files[0].name === "keep.log",
+    "both deleted files are gone from folder.files, only the still-present keep.log remains, got " + folder.files.map(f => f.name).join(","));
+  assert(!T.state.rootIds.includes(openedNodeId), "the deleted file's open root node was removed from state.rootIds");
+  assert(T.state.nodes[openedNodeId] === undefined, "the deleted file's open node is fully gone from state.nodes, not just unlinked");
+  assert(T.entryIndex[T.state.nodes[openedNodeId] ? openedNodeId : "__none__"] === undefined,
+    "no stale entryIndex reference survives for the deleted file's entries");
+  w.render();
+  const folderBox = d.querySelector(".folder-watch");
+  assert([...folderBox.querySelectorAll(".folder-watch-file, .tree-row")].every(el => {
+    const label = el.querySelector(".tree-label, .folder-watch-file-name");
+    return !label || (label.textContent !== "del-open.log" && label.textContent !== "del-closed.log");
+  }), "neither deleted file renders in the folder box anymore, open or closed");
+
+  // A later poll finding nothing new/removed leaves the survivor untouched.
+  await w.folderScanTick();
+  assert(folder.files.length === 1 && folder.files[0].name === "keep.log", "a subsequent no-op scan doesn't disturb the surviving file");
 });
 
 /* ============================================================
@@ -19488,7 +19752,7 @@ process.exitCode = failed ? 1 : 0;
               were guarded, not the data), and a genuine control change
               (chart type) still forcing a real rebuild.
    Group 63  — this session (2026-08-19), person-reported bugfix: the live
-              tail dot (`.tree-live`) never went dark once shown, even long
+              tail dot (`.tree-icon-live`) never went dark once shown, even long
               after a file genuinely stopped growing, and a rotated-out
               Folder-watch file kept it lit right alongside the new file
               actually receiving lines. Root cause: the dot's condition was
@@ -20872,4 +21136,21 @@ process.exitCode = failed ? 1 : 0;
      (falling back to name order only when mtime isn't available, e.g. a
      natively listed folder), plus re-verifying relative-path display
      through the real dialog checkboxes on an already-open file.
+
+   Group 166 — this session (2026-09-04), person-reported detail fixes:
+     the tailed-file live dot became a pulsing file icon instead (fixed a
+     row-alignment side effect the separate dot caused); an opened
+     folder-watch file's row no longer sits more indented than its closed
+     siblings; auto-open/auto-close-keep now act on a given file at most
+     once (rec.autoOpenFired) so a manual close afterward sticks, and a
+     manually opened file is never auto-closed (rec.openedByAuto), with an
+     auto-opened file's icon carrying a distinct "(A)" badge.
+
+   Group 167 — this session (2026-09-04), person-reported: a file deleted
+     outside the app used to stay listed in Folder watch forever once it
+     had been opened (mergeScannedFiles kept any OPEN entry regardless of
+     whether the scan still found it, and folderScanTick only ever ran a
+     merge when something NEW appeared, never on a pure removal). Now any
+     listing entry — open or closed — missing from a fresh scan is
+     dropped, closing it first if it was open.
    ============================================================ */
