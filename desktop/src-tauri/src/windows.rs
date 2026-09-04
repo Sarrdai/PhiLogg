@@ -160,6 +160,13 @@ fn disable_alt_accelerator_keys(window: &WebviewWindow) {
 /// the settings poll, so this can decide synchronously.
 fn watch_window_events(window: &WebviewWindow) {
     let window_ref = window.clone();
+    // The native drag-drop handler fires for every drag the webview sees,
+    // including an in-app one (e.g. reparenting a filter tree row via HTML5
+    // drag) — Tauri can't tell those apart from an OS file drag at the
+    // `Over`/`Leave` stage, only `Enter` carries `paths`. So `Enter` decides
+    // whether this drag is a real file drop, and that verdict is remembered
+    // here for the `Over`/`Leave`/`Drop` events that follow it.
+    let is_file_drag = std::cell::Cell::new(false);
     window.on_window_event(move |event| match event {
         WindowEvent::CloseRequested { api, .. } => {
             let app = window_ref.app_handle();
@@ -175,7 +182,7 @@ fn watch_window_events(window: &WebviewWindow) {
                 app.exit(0);
             }
         }
-        WindowEvent::DragDrop(drag) => handle_drag_drop(&window_ref, drag),
+        WindowEvent::DragDrop(drag) => handle_drag_drop(&window_ref, drag, &is_file_drag),
         _ => {}
     });
 }
@@ -212,11 +219,31 @@ fn register_dropped(state: &AppState, paths: &[PathBuf]) -> (Vec<commands::Local
     (files, folders)
 }
 
-fn handle_drag_drop(window: &WebviewWindow, event: &DragDropEvent) {
+fn handle_drag_drop(window: &WebviewWindow, event: &DragDropEvent, is_file_drag: &std::cell::Cell<bool>) {
     match event {
-        DragDropEvent::Enter { .. } | DragDropEvent::Over { .. } => show_drop_overlay(window, true),
-        DragDropEvent::Leave => show_drop_overlay(window, false),
+        DragDropEvent::Enter { paths, .. } => {
+            is_file_drag.set(!paths.is_empty());
+            if is_file_drag.get() {
+                show_drop_overlay(window, true);
+            }
+        }
+        DragDropEvent::Over { .. } => {
+            if is_file_drag.get() {
+                show_drop_overlay(window, true);
+            }
+        }
+        DragDropEvent::Leave => {
+            if is_file_drag.get() {
+                show_drop_overlay(window, false);
+            }
+            is_file_drag.set(false);
+        }
         DragDropEvent::Drop { paths, .. } => {
+            let was_file_drag = is_file_drag.get();
+            is_file_drag.set(false);
+            if !was_file_drag {
+                return;
+            }
             show_drop_overlay(window, false);
             let app = window.app_handle();
             let (files, folders) = register_dropped(&app.state::<AppState>(), paths);

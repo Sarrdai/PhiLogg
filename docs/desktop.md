@@ -121,6 +121,17 @@ the watch wants — see the next section. `Group 139` still pins the underlying
 contract: a `File` arriving with no path supplied must never have a path invented for
 it, even though no route here reaches that case any more.
 
+The native handler fires `DragDropEvent::Enter`/`Over`/`Leave` for *any* drag the
+webview sees, including an in-app one — reparenting a filter tree row via
+`philogg.html`'s own HTML5 `draggable` rows (`renderNode`'s `dragstart`) — not just an
+OS file drag. Only `Enter` carries `paths: Vec<PathBuf>`, so `handle_drag_drop`
+(`windows.rs`) checks it there and remembers the verdict (a `Cell<bool>` captured in the
+`on_window_event` closure) for the `Over`/`Leave`/`Drop` events that follow it in that
+same drag; an in-app drag's `Enter` always arrives with an empty `paths`, so the overlay
+is skipped for the whole gesture. Without this, dragging a filter row briefly showed the
+full-screen "Drop Logfiles to Load" overlay on top of the tree, which then swallowed the
+row's own `dragover`/`drop`.
+
 **Frameless window and window controls.** Off macOS the window is `decorations(false)`
 and the controls are *real DOM*: `inject.js` appends a three-button `#tauri-wc` block
 into `philogg.html`'s own `.toolbar-right`, styled purely from the page's existing
