@@ -6480,7 +6480,14 @@ function compileExtractPattern(pattern) {
   regexStr += escapeRegExp(pattern.slice(lastIndex));
   if (columns.length === 0) return null;
   try {
-    return { regex: new RegExp(regexStr, "i"), columns, regexStr };
+    // "s" (dotAll): a "text"/word wildcard's `.`/`.*` must also match a
+    // literal newline inside e.message, or a pattern spanning a multi-line
+    // message (a stack trace, a wrapped log line) silently finds nothing —
+    // person-reported. Every other place that recompiles a RegExp from this
+    // regexStr (textFilterMatchSpec, getEntriesUncached's two "text"
+    // branches, evaluateLiveMatch, updateFilterPatternPreview) must append
+    // the same flag, since they don't reuse this compiled `regex` object.
+    return { regex: new RegExp(regexStr, "is"), columns, regexStr };
   } catch (e) {
     return null;
   }
@@ -7581,7 +7588,7 @@ function textFilterMatchSpec(node) {
   if (isExtractPattern(value)) {
     const compiled = compileExtractPattern(value);
     if (!compiled) return null;
-    return { regex: null, wildcardRegex: new RegExp(compiled.regexStr, caseSensitive ? "" : "i"), wildcardColumns: compiled.columns, value, caseSensitive, wholeWord: false };
+    return { regex: null, wildcardRegex: new RegExp(compiled.regexStr, (caseSensitive ? "" : "i") + "s"), wildcardColumns: compiled.columns, value, caseSensitive, wholeWord: false };
   }
   // Only the literal branch carries wholeWord — same rule getEntries applies
   // (see includesWholeWord), so a marked span is always a span the filter
@@ -7872,7 +7879,7 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
       result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, re)) : [];
     } else if (isExtractPattern(value)) {
       const spec = compileExtractPattern(value);
-      const wildcardRegex = spec && new RegExp(spec.regexStr, baked.caseSensitive ? "" : "i");
+      const wildcardRegex = spec && new RegExp(spec.regexStr, (baked.caseSensitive ? "" : "i") + "s");
       result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, wildcardRegex, spec.columns)) : [];
     } else {
       result = parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, null, !!baked.wholeWord));
@@ -7976,7 +7983,7 @@ function getEntriesUncached(node) {
       // here to the same regex compileExtractPattern would use for
       // extraction, just tested rather than captured.
       const spec = compileExtractPattern(value);
-      const wildcardRegex = spec && new RegExp(spec.regexStr, node.caseSensitive ? "" : "i");
+      const wildcardRegex = spec && new RegExp(spec.regexStr, (node.caseSensitive ? "" : "i") + "s");
       result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, wildcardRegex, spec.columns)) : [];
     } else {
       result = parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, null, !!node.wholeWord));
@@ -19201,7 +19208,7 @@ function evaluateLiveMatch() {
     if (isExtractPattern(val)) {
       const spec = compileExtractPattern(val);
       if (!spec) { filterLiveMatch.textContent = "Invalid pattern"; filterLiveMatch.className = "error"; return; }
-      wildcardRegex = new RegExp(spec.regexStr, caseSensitive ? "" : "i");
+      wildcardRegex = new RegExp(spec.regexStr, (caseSensitive ? "" : "i") + "s");
       wildcardColumns = spec.columns;
     }
     // wholeWord only reaches the literal branch of textFilterMatches — a
@@ -19247,7 +19254,7 @@ function updateFilterPatternPreview(val, baseEntries) {
 
   let sampleEntry = null, m = null;
   if (baseEntries && baseEntries.length) {
-    const previewRe = new RegExp(spec.regexStr, "id");
+    const previewRe = new RegExp(spec.regexStr, "ids");
     for (const e of baseEntries) {
       previewRe.lastIndex = 0;
       const mm = previewRe.exec(e.message);
