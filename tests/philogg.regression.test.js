@@ -19437,8 +19437,10 @@ await withApp(async (w, d, T) => {
     assert(label !== null, btn.dataset.rowAction + " has a .row-action-label span");
     assert(label.textContent === btn.title && btn.title.length > 0,
       btn.dataset.rowAction + "'s label text matches its title exactly, got label=" + JSON.stringify(label.textContent) + " title=" + JSON.stringify(btn.title));
+    assert(btn.querySelector(".row-action-hit svg") !== null, btn.dataset.rowAction + "'s icon is wrapped in a fixed-size .row-action-hit span");
   });
 
+  const filterAfterBtn = actions.find(b => b.dataset.rowAction === "filterAfter");
   const byAction = action => actions.find(b => b.dataset.rowAction === action);
 
   // --- No selection: single-row actions AND addToSelection disabled, time-range disabled ---
@@ -19453,12 +19455,40 @@ await withApp(async (w, d, T) => {
   });
   assert(byAction("timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
 
+  // --- Expand/collapse keys off the .row-action-hit circle specifically
+  // (person-requested, this session, combining the circle shape with a
+  // layout-shifting pill): entering it expands the button, leaving it
+  // collapses again — regardless of whether the (now wider) button itself
+  // is still nominally hovered, which is exactly the bug this design fixes
+  // (an earlier version released only once the pointer left the whole
+  // widened button, past the label, causing the next circle to arrive
+  // already shoved out from under the cursor). filterAfterBtn is enabled
+  // here (one row selected above), so pointer-events:none doesn't suppress
+  // the mouseenter. ---
+  const hit = filterAfterBtn.querySelector(".row-action-hit");
+  assert(!filterAfterBtn.classList.contains("expanded"), "sanity: starts collapsed");
+  hit.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
+  assert(filterAfterBtn.classList.contains("expanded"), "entering the circle (.row-action-hit) expands the button");
+  hit.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
+  assert(!filterAfterBtn.classList.contains("expanded"), "leaving the circle collapses it again, independent of the button's own (now wider) box");
+
   // --- 2+ rows multi-selected: timeRangeFromSelection enables, single-row actions disable, addToSelection stays enabled ---
   T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]);
   w.updateRowActionButtons();
   assert(byAction("timeRangeFromSelection").disabled === false, "timeRangeFromSelection enables with 2+ rows multi-selected");
   assert(byAction("filterAfter").disabled === true, "single-row actions disable once 2+ rows are multi-selected");
   assert(byAction("addToSelection").disabled === false, "addToSelection stays enabled with a 2+ multi-selection");
+
+  // --- A button that becomes disabled while its pill happens to be expanded
+  // (e.g. the selection changed via keyboard, not by the mouse leaving the
+  // circle) doesn't get stuck expanded — updateRowActionButtons() drops it. ---
+  T.state.logMultiSelect = new Set();
+  w.selectEntry(f.entries[3].id);
+  filterAfterBtn.classList.add("expanded"); // simulate: mouse still sitting over the circle
+  T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]); // disables filterAfter again
+  w.updateRowActionButtons();
+  assert(byAction("filterAfter").disabled === true, "sanity: disabled again");
+  assert(!filterAfterBtn.classList.contains("expanded"), "a newly-disabled button's stuck-open pill is force-collapsed");
 
   // --- Stays visible/functional regardless of which tab is active (Table/Plot too — see Group 26) ---
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
@@ -22042,5 +22072,16 @@ process.exitCode = failed ? 1 : 0;
      expanding into a pill with a text label (`.row-action-label`, same
      string as the button's `title`) on hover/`:focus-visible`; label/title
      now built from one shared `ROW_ACTIONS` data array. 176a extended to
-     assert the class + label-matches-title structure.
+     assert the class + label-matches-title structure. EXTENDED A THIRD
+     TIME same session, person-requested (with a sketch): expanding now
+     pushes later circles rightward again (undoing the previous fix's
+     "float over, never resize" approach) while keeping the earlier
+     fix's guarantee that leaving one circle immediately collapses it — a
+     new fixed 28x28 `.row-action-hit` span wraps just the icon and is the
+     actual `mouseenter`/`mouseleave` target (JS-toggled `.expanded` class)
+     instead of a plain CSS `:hover` on the now-growing button; a button
+     disabled while `.expanded` gets it force-cleared by
+     `updateRowActionButtons()`. 176a extended again: asserts the
+     `.row-action-hit` wrapper, that `mouseenter`/`mouseleave` on it
+     toggles `.expanded`, and the disabled-clears-stuck-expanded case.
    ============================================================ */
