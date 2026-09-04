@@ -13000,6 +13000,25 @@ function renderExtractTable(node) {
   // additionally get a value-assertion (target icon) button; once a column
   // has an assertion configured, a small "N of M outside range" badge
   // appears under its name (see assertionSummary).
+  // A tail tick (onTailChange -> render()) calls renderExtractTable on every
+  // new chunk of a live-tailed file, purely to refresh the row data below —
+  // the header/columns themselves don't change from that. If a rename is
+  // actively focused, rebuilding extractHead.innerHTML would detach the
+  // focused <input>, and a detached input fires "blur" synchronously, which
+  // commits/ends the rename before the user typed anything (it looked like
+  // renaming was impossible while tailing — jumping straight back out of
+  // edit mode). Skipping the header rebuild in that case leaves the input
+  // (and its focus/caret) untouched; it gets rebuilt normally once the
+  // rename actually commits or cancels.
+  if (renamingColIndex != null && document.activeElement &&
+      document.activeElement.classList.contains("extract-col-rename-input") &&
+      +document.activeElement.dataset.col === renamingColIndex &&
+      extractHead.contains(document.activeElement)) {
+    renderExtractVisibleRows();
+    if (extractView === "plot") { renderPlotControls(); renderPlotChart(); }
+    return;
+  }
+
   let headHtml = '<tr><th class="extract-gutter" id="extractCorner" title="Select all">#</th>';
   extractColumns.forEach(c => {
     const i = c.colIndex;

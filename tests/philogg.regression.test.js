@@ -17435,6 +17435,35 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
+  section("157c. A re-render mid-rename (e.g. a live-tailed file's onTailChange -> render()) does not blur/cancel the in-progress edit");
+
+  const log = Array.from({ length: 3 }, (_, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${i} y=${i * 2}"`).join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const node = w.createFilterNode(f.id, "text", "x=[value:int] y=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  d.querySelector('th[data-col="0"]').dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  fireKeydown(d, w, "F2");
+  let input = d.querySelector(".extract-col-rename-input");
+  assert(input && input.dataset.col === "0", "rename input for column 0 is showing");
+  input.value = "WIP";
+  // Simulate a tail tick's re-render landing while the user is mid-edit —
+  // it must not tear down/rebuild the focused input (a detached input fires
+  // "blur" synchronously, which would otherwise commit/cancel the rename
+  // before the user finished typing).
+  w.renderExtractTable(node);
+  input = d.querySelector(".extract-col-rename-input");
+  assert(input && input.dataset.col === "0" && input.value === "WIP" && d.activeElement === input,
+    "the same rename input survives a re-render mid-edit, keeping its in-progress value and focus");
+  fireKeydown(input, w, "Enter");
+  assert(node.columnRenames && node.columnRenames[0] === "WIP", "the rename still commits normally afterward");
+});
+
+await withApp(async (w, d, T) => {
   section("157b. Column renames persist: copy/paste, undo, save/load JSON, session cache");
 
   const log = Array.from({ length: 3 }, (_, i) => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${i} y=${i * 2}"`).join("\n") + "\n";
