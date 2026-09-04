@@ -2718,18 +2718,23 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector(".brand-tag") === null, "the 'local, single-file log viewer' subtitle is gone");
   assert(d.querySelector(".brand-name").textContent === "PhiLogg", "brand name itself is untouched");
 
-  // --- Merged view bar structure: tabs, level filter, breadcrumb share one row ---
+  // --- View bar structure (UPDATED, this session's toolbar reorganization,
+  // person-requested "Gesamtkonzept"): #viewBar is now ONLY the view toggle
+  // + level filter, identical across every tab — the breadcrumb moved out
+  // into its own always-reserved #breadcrumbBar row right below it. ---
   const viewBar = d.querySelector("#viewBar");
   assert(viewBar !== null, "#viewBar exists");
   const viewBarChildren = [...viewBar.children].map(c => c.id);
   assert(
     viewBarChildren.indexOf("fhTabs") !== -1 &&
-    viewBarChildren.indexOf("fhTabs") < viewBarChildren.indexOf("levelBar") &&
-    viewBarChildren.indexOf("levelBar") < viewBarChildren.indexOf("breadcrumb"),
-    "view bar order is tabs, then level filter, then breadcrumb, got " + viewBarChildren.join(",")
+    viewBarChildren.indexOf("fhTabs") < viewBarChildren.indexOf("levelBar"),
+    "view bar order is tabs, then level filter, got " + viewBarChildren.join(",")
   );
-  assert(d.querySelector("#breadcrumb").parentElement === viewBar && d.querySelector("#levelBar").parentElement === viewBar,
-    "breadcrumb and level bar are nested INSIDE #viewBar (previously three separate top-level rows)");
+  assert(viewBarChildren.indexOf("breadcrumb") === -1, "breadcrumb is NOT inside #viewBar any more");
+  assert(d.querySelector("#levelBar").parentElement === viewBar, "level bar is nested INSIDE #viewBar");
+  const breadcrumbBar = d.querySelector("#breadcrumbBar");
+  assert(breadcrumbBar !== null, "#breadcrumbBar exists as its own row");
+  assert(d.querySelector("#breadcrumb").parentElement === breadcrumbBar, "breadcrumb is nested inside #breadcrumbBar instead");
 
   const cs = w.getComputedStyle;
 
@@ -2761,7 +2766,7 @@ await withApp(async (w, d, T) => {
   assert(cs(viewBar).display === "flow-root", "#viewBar is a flow-root (contains the floats regardless of breadcrumb height)");
   assert(cs(d.querySelector("#fhTabs")).float === "left", "#fhTabs floats left so it stays pinned to the top line");
   assert(cs(d.querySelector("#levelBar")).float === "left", "#levelBar floats left so it stays pinned to the top line");
-  assert(cs(d.querySelector("#breadcrumb")).display === "block", "#breadcrumb is a plain block (not flex) so its chips text-wrap around the floats instead of the whole element dropping down");
+  assert(cs(d.querySelector("#breadcrumb")).display === "block", "#breadcrumb is a plain block (not flex) so its chips text-wrap onto their own line(s) instead of the whole element behaving like a flex item");
   // Regression guard for a real bug hit once already: #viewBar's flow-root
   // is a SEPARATE concern from its own flex-item sizing as a child of
   // #content (a flex column). Losing flex-shrink:0 here lets #content
@@ -2771,31 +2776,29 @@ await withApp(async (w, d, T) => {
   // Filtered/Stacked toggle and level filter get cut off" symptom that was
   // reported and fixed in this session.
   assert(cs(viewBar).flexShrink === "0", "#viewBar must not flex-shrink as a child of #content, or its floated children get clipped when vertical space is tight");
-  assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter buttons render inside the merged bar");
-  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb chips render inside the merged bar");
+  assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter buttons render inside #viewBar");
+  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb chips render inside #breadcrumbBar");
 
-  // Extract mode (UPDATED again by the unified-toolbar rework —
-  // docs/ui-implementation-plan.md): activating an extraction node still
-  // jumps straight to its Table tab (same "isExtract"-equivalent behaviour
-  // as before, preserved deliberately — see render()'s own comment), where
-  // #levelBar/the six Filtered/Context-only toggles hide exactly as they
-  // used to; the difference is #fhTabs itself no longer hides — Table/Plot
-  // are part of the SAME group Context/Filtered/Stacked live in now, and
-  // switching to Filtered from there shows the level bar/toggles again like
-  // any other filter node (see Group 127).
+  // Extract mode (UPDATED by this session's toolbar reorganization):
+  // #viewBar (tabs + level filter) is now IDENTICAL regardless of tab,
+  // including Table/Plot — #levelBar no longer hides there (it already
+  // applied via applyLevelFilter() even before this session, just without a
+  // visible pill row). The six log-display toggles moved out of #viewBar
+  // entirely into #contextToolbar/#filteredToolbar, so on Table/Plot
+  // (#fhSplit hidden) they simply aren't on screen at all, same end result
+  // as before, different mechanism.
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
   w.applyFhView("table");
   assert(T.fhActiveTab === "table", "sanity: the Table tab is showing (explicit switch — activation no longer auto-jumps here, see applyActivationView)");
   assert(d.querySelector("#fhTabs").style.display === "flex", "tabs stay visible for an extraction node too (Table/Plot join the same group now)");
-  assert(d.querySelector("#levelBar").style.display === "none", "level bar hides while the Table tab is showing — only the filter path stays visible");
-  assert(d.querySelector("#btnPinBookmarks").style.display === "none", "pin-bookmarks toggle hides too (doesn't apply to the extraction table)");
-  assert(d.querySelector("#btnMultilineMsg").style.display === "none", "multiline toggle hides too (doesn't apply to the extraction table)");
-  assert(d.querySelector("#btnColumns").style.display === "none", "columns toggle hides too (doesn't apply to the extraction table's own columns)");
+  assert(d.querySelector("#levelBar").style.display === "", "level bar STAYS visible while the Table tab is showing — #viewBar is now identical across every tab");
+  assert(d.querySelector("#fhSplit").style.display === "none", "sanity: the log-view split (and with it #contextToolbar/#filteredToolbar's toggles) isn't on screen on the Table tab");
   assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb still renders in extract mode");
   w.applyFhView("filter");
-  assert(d.querySelector("#levelBar").style.display === "", "switching to the Filtered tab of the SAME extraction node shows the level bar again — it's an ordinary node for Context/Filtered now");
+  assert(d.querySelector("#levelBar").style.display === "", "level bar stays visible switching to the Filtered tab too");
+  assert(isVisible(d.querySelector(".toggle-notes"), w) === true, "the log-display toggles (now inside #contextToolbar/#filteredToolbar) are back on screen on the Filtered tab");
 
   // Back to a normal node so the popup checks below aren't affected
   T.state.activeId = textNode.id;
@@ -2890,8 +2893,12 @@ await withApp(async (w, d, T) => {
   w.toggleBookmark(outsideEntry.id);
   assert(w.getVisibleEntries().length === baselineCount, "toggle off (default): bookmarked-but-non-matching entry stays excluded");
 
-  // --- Toggle on via the toolbar button ---
-  const btnPin = d.querySelector("#btnPinBookmarks");
+  // --- Toggle on via the toolbar button --- (.toggle-pin: this session's
+  // toolbar reorganization moved it from a single #btnPinBookmarks in
+  // #viewBar into #filteredToolbar; it's the only one of the six log-display
+  // toggles that ISN'T also duplicated into #contextToolbar — pinning only
+  // affects the Filtered view's own result set.)
+  const btnPin = d.querySelector(".toggle-pin");
   assert(!btnPin.classList.contains("active"), "pin button starts inactive");
   fireClick(btnPin, w);
   assert(T.state.pinBookmarksInFilteredView === true, "click sets state.pinBookmarksInFilteredView");
@@ -2984,7 +2991,7 @@ await withApp(async (w, d, T) => {
   const baselineCount = w.getVisibleEntries().length;
 
   // Turn pin mode on via the button (this path already worked before the fix)
-  fireClick(d.querySelector("#btnPinBookmarks"), w);
+  fireClick(d.querySelector(".toggle-pin"), w);
   assert(T.state.pinBookmarksInFilteredView === true, "sanity: pin mode on");
 
   // --- Adding a bookmark while pin mode is already on must show up WITHOUT any further render() ---
@@ -3006,7 +3013,7 @@ await withApp(async (w, d, T) => {
   assert(w.getVisibleEntries().length === baselineCount, "back to the exact unpinned baseline count");
 
   // --- Sanity: with pin mode OFF, toggling a bookmark must NOT trigger the recompute path (no behavior change for the common case) ---
-  fireClick(d.querySelector("#btnPinBookmarks"), w); // pin mode off
+  fireClick(d.querySelector(".toggle-pin"), w); // pin mode off
   assert(T.state.pinBookmarksInFilteredView === false, "sanity: pin mode off");
   const spacerHeightBefore = d.querySelector("#tableSpacer").style.height;
   w.toggleBookmark(outsideEntry.id);
@@ -3015,84 +3022,72 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 29 — Pin-bookmarks button moved into #viewBar (this session,
-   person-requested). #btnPinBookmarks used to sit in the header, next to
-   #btnBookmarks. It now lives in #viewBar, between #fhTabs and #levelBar —
-   the row that controls what the views show/hide, which is what the
-   toggle does. It keeps its original `.toolbar-icon-btn` look rather than
-   being restyled as a `.level-btn` pill (additive OR vs. the level pills'
-   subtractive AND — see PROJECT.md "Pin bookmarks into the Filtered
-   View"). This group only covers the STRUCTURAL/positional move; the
-   functional behaviour of the toggle itself (merge logic, level-filter
-   bypass, persistence, etc.) is already covered by Group 27/28 above and
-   is deliberately not re-tested here.
+   GROUP 29 — Pin-bookmarks toggle, superseded by this session's toolbar
+   reorganization (person-requested "Gesamtkonzept"). No longer a single
+   #btnPinBookmarks in #viewBar — it now lives inside #filteredToolbar (the
+   ONE log-display toggle that is NOT also duplicated into #contextToolbar,
+   since pinning only affects the Filtered view's own result set — see
+   PROJECT.md "Pin bookmarks into the Filtered View"). This group covers
+   the current structural placement; functional behaviour (merge logic,
+   level-filter bypass, persistence) is covered by Group 27/28.
    ============================================================ */
 group(29);
 await withApp(async (w, d, T) => {
-  section("29. Pin-bookmarks button moved into #viewBar");
+  section("29. Pin-bookmarks toggle lives in #filteredToolbar, not duplicated into #contextToolbar");
 
-  const viewBar = d.querySelector("#viewBar");
-  const btnPin = d.querySelector("#btnPinBookmarks");
-  assert(btnPin !== null, "sanity: #btnPinBookmarks still exists somewhere in the document");
-  assert(btnPin.parentElement === viewBar, "#btnPinBookmarks is now a direct child of #viewBar, not the header");
-  assert(d.querySelector(".toolbar-group").contains(btnPin) === false,
-    "#btnPinBookmarks is no longer inside the header's .toolbar-group");
-
-  // --- Position: between #fhTabs and #levelBar, same as requested ---
-  const viewBarChildren = [...viewBar.children].map(c => c.id);
-  const idxTabs = viewBarChildren.indexOf("fhTabs");
-  const idxPin = viewBarChildren.indexOf("btnPinBookmarks");
-  const idxLevel = viewBarChildren.indexOf("levelBar");
-  assert(idxTabs !== -1 && idxPin !== -1 && idxLevel !== -1, "sanity: all three elements found as direct #viewBar children");
-  assert(idxTabs < idxPin && idxPin < idxLevel,
-    "view bar order is tabs, then pin-bookmarks toggle, then level filter, got " + viewBarChildren.join(","));
+  const btnPin = d.querySelector(".toggle-pin");
+  assert(btnPin !== null, "sanity: .toggle-pin exists somewhere in the document");
+  assert(d.querySelectorAll(".toggle-pin").length === 1, "exactly one copy exists (unlike the other five log-display toggles, which get one per log view)");
+  const filteredToolbar = d.querySelector("#filteredToolbar");
+  assert(filteredToolbar.contains(btnPin), ".toggle-pin lives inside #filteredToolbar");
+  assert(!d.querySelector("#contextToolbar").contains(btnPin), ".toggle-pin is NOT duplicated into #contextToolbar — pinning is meaningless while looking at Context's always-whole-file result");
 
   // --- Visual treatment: kept its own icon-button look, NOT restyled as a level pill ---
-  assert(btnPin.classList.contains("toolbar-icon-btn"), "#btnPinBookmarks keeps its original .toolbar-icon-btn class");
-  assert(!btnPin.classList.contains("level-btn"), "#btnPinBookmarks is NOT styled like the level filter pills (different functionality, deliberately different look)");
+  assert(btnPin.classList.contains("toolbar-icon-btn"), ".toggle-pin keeps its original .toolbar-icon-btn class");
+  assert(!btnPin.classList.contains("level-btn"), ".toggle-pin is NOT styled like the level filter pills (different functionality, deliberately different look)");
 
-  // --- Layout mechanism: floats left alongside #fhTabs/#levelBar so it stays pinned top-left too ---
-  const cs = w.getComputedStyle;
-  assert(cs(btnPin).float === "left", "#btnPinBookmarks floats left, same pinned-top-left mechanism as #fhTabs/#levelBar");
-
-  // --- Still always visible (never tied to #fhTabs' show/hide) ---
-  assert(T.state.rootIds.length === 0, "sanity: no files loaded yet");
-  assert(d.querySelector("#fhTabs").style.display === "none", "sanity: tabs hidden with no files loaded");
-  assert(cs(btnPin).display !== "none", "#btnPinBookmarks stays visible even while #fhTabs is hidden (was already independent of #fhTabs in the header, unchanged by the move)");
-
-  // --- Functional sanity from its new location: click still toggles state + active class ---
+  // --- Functional sanity from its location: click still toggles state + active class ---
   await w.addFile("a.log", makeLog(0, 5, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
   w.render();
   assert(!btnPin.classList.contains("active"), "sanity: pin toggle starts inactive");
   fireClick(btnPin, w);
-  assert(T.state.pinBookmarksInFilteredView === true, "click from the new location still sets state.pinBookmarksInFilteredView");
-  assert(btnPin.classList.contains("active"), "pin button still shows active state after click from its new location");
+  assert(T.state.pinBookmarksInFilteredView === true, "click still sets state.pinBookmarksInFilteredView");
+  assert(btnPin.classList.contains("active"), "pin button still shows active state after click");
   fireClick(btnPin, w); // revert
   assert(T.state.pinBookmarksInFilteredView === false, "sanity: reverted");
 });
 
 /* ============================================================
-   GROUP 29b — Superseded this session by "Main window visual consistency
-   fix": #btnPinBookmarks/#btnMultilineMsg/#btnColumns used to need their
-   own id-specific width/height/padding override to shrink `.toolbar-icon-
-   btn`'s 29x29px header shape down to a 26px pill-matching box in the view
-   bar (two rounds of hand-tuning, see git blame). Now that `.toolbar-icon-
-   btn` itself is the shared 28x28 icon-button shape used by every icon
-   button in the app (header AND view bar alike — see the pill/icon-button
-   system in the CSS), no id-specific size override is needed at all: these
-   three are visually identical to the header's own icon buttons. jsdom has
-   no layout engine (see "Testing approach"), so this asserts the cascaded
-   width/height rather than a rendered pixel size.
+   GROUP 29b — the header's own icon buttons (#btnUndo/#btnRedo) share
+   `.toolbar-icon-btn`'s 28x28 shape, no id-specific override needed.
+   Superseded for the six log-display toggles by this session's toolbar
+   reorganization: they moved out of #viewBar (where they were 28x28, same
+   as the header) into #contextToolbar/#filteredToolbar, which — like every
+   other view toolbar row (#plotToolbar, #tableToolbar, and the toolbar's
+   own pre-existing prev/next-match buttons) — shrinks `.toolbar-icon-btn`
+   to 22x22 via a scoped override, matching that row's shorter 30px height.
+   See Group 151/175-adjacent coverage for the 22x22 shape in its new home.
+   jsdom has no layout engine (see "Testing approach"), so this asserts the
+   cascaded width/height rather than a rendered pixel size.
    ============================================================ */
 group(29);
 await withApp(async (w, d) => {
-  section("29b. #btnPinBookmarks/#btnMultilineMsg/#btnColumns share .toolbar-icon-btn's 28x28 shape with the header's icon buttons");
+  section("29b. Header's own icon buttons share .toolbar-icon-btn's 28x28 shape");
   const cs = w.getComputedStyle;
-  ["#btnUndo", "#btnRedo", "#btnPinBookmarks", "#btnNotes", "#btnMultilineMsg", "#btnColumns"].forEach(sel => {
+  ["#btnUndo", "#btnRedo"].forEach(sel => {
     const btn = d.querySelector(sel);
     assert(btn !== null, "sanity: " + sel + " exists");
     const bcs = cs(btn);
     assert(bcs.width === "28px" && bcs.height === "28px", sel + " has no id-specific size override — it shares .toolbar-icon-btn's 28x28 shape, got " + bcs.width + "x" + bcs.height);
+  });
+  // The six log-display toggles now live in #contextToolbar/#filteredToolbar
+  // and are scoped down to 22x22 there, same as every other view-toolbar
+  // icon button (#ctxPrevMatch, #plotFullscreenBtn, etc.) — not 28x28.
+  [".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch"].forEach(sel => {
+    const btn = d.querySelector(sel);
+    assert(btn !== null, "sanity: " + sel + " exists");
+    const bcs = cs(btn);
+    assert(bcs.width === "22px" && bcs.height === "22px", sel + " is scoped to the view toolbar's 22x22 icon-button size, got " + bcs.width + "x" + bcs.height);
   });
 });
 
@@ -5496,7 +5491,7 @@ await withApp(async (w, d, T) => {
   // it moved into Settings -> Appearance this session, no longer a single
   // one-click toolbar button — see GROUP 70h2).
   const pinBefore = T.state.pinBookmarksInFilteredView;
-  fireClick(d.querySelector("#btnPinBookmarks"), w);
+  fireClick(d.querySelector(".toggle-pin"), w);
   assert(T.state.pinBookmarksInFilteredView !== pinBefore, "other toolbar controls remain responsive while a file load is in flight");
 
   await donePromise;
@@ -6399,8 +6394,8 @@ await withApp(async (w, d, T) => {
   assert(f.entries.length === 5, "sanity: 5 entries parsed, continuation lines didn't create new ones");
   assert(f.entries[2].message.split("\n").length === 3, "sanity: entry 2's message has 3 lines (header + 2 continuation)");
 
-  const btn = d.querySelector("#btnMultilineMsg");
-  assert(btn, "#btnMultilineMsg exists in #viewBar");
+  const btn = d.querySelector(".toggle-multiline");
+  assert(btn, ".toggle-multiline exists");
   assert(!btn.classList.contains("active") && T.state.multilineMessages === false,
     "toggle starts OFF — default stays the current (single-line) view");
   assert(!d.body.classList.contains("multiline-messages"), "no body-level class by default");
@@ -6463,7 +6458,7 @@ await withApp(async (w, d, T) => {
     "sanity: 50 entries, entry 5 has the 21-line message");
   T.state.activeId = f.id;
   w.render();
-  fireClick(d.querySelector("#btnMultilineMsg"), w);
+  fireClick(d.querySelector(".toggle-multiline"), w);
   assert(T.state.multilineMessages === true, "sanity: toggled on");
 
   const target = f.entries[40];
@@ -6540,7 +6535,7 @@ await withApp(async (w, d, T) => {
   // to index 45, where three of the rows before it each grew by 3*15=45px.
   const expectedOn = 45 * 28 + 3 * (3 * 15);
 
-  fireClick(d.querySelector("#btnMultilineMsg"), w);
+  fireClick(d.querySelector(".toggle-multiline"), w);
   assert(T.state.multilineMessages === true, "sanity: toggled on");
   assert(tableBody.scrollTop === expectedOn,
     "Filtered view: scrollTop grows to keep entry 45 at the top (accounting for the 3 taller rows above it), got " + tableBody.scrollTop + " expected " + expectedOn);
@@ -6552,7 +6547,7 @@ await withApp(async (w, d, T) => {
     "...and of the Highlight/Full view too");
 
   /* ---------- Toggle back OFF: scrollTop shrinks back to the exact pixel spot it started at ---------- */
-  fireClick(d.querySelector("#btnMultilineMsg"), w);
+  fireClick(d.querySelector(".toggle-multiline"), w);
   assert(T.state.multilineMessages === false, "sanity: toggled off again");
   assert(tableBody.scrollTop === 45 * 28, "toggling off re-anchors back to the original scrollTop, got " + tableBody.scrollTop);
   assert(highlightBody.scrollTop === 45 * 28, "...in the Highlight/Full view too");
@@ -6563,7 +6558,7 @@ await withApp(async (w, d, T) => {
   w.setHighlightScroll(0);
   w.renderVisibleRows();
   w.renderHighlightVisibleRows();
-  fireClick(d.querySelector("#btnMultilineMsg"), w);
+  fireClick(d.querySelector(".toggle-multiline"), w);
   assert(tableBody.scrollTop === 0 && highlightBody.scrollTop === 0,
     "toggling while already scrolled to the very top stays at 0 (entry 0 is unaffected — nothing above it can grow)");
 
@@ -6576,7 +6571,7 @@ await withApp(async (w, d, T) => {
   // flat ROW_HEIGHT math instead of the still-live variable-row offsets from
   // that toggle — this section is about the Link-view guard, not about
   // multiline row heights.
-  if (T.state.multilineMessages) fireClick(d.querySelector("#btnMultilineMsg"), w);
+  if (T.state.multilineMessages) fireClick(d.querySelector(".toggle-multiline"), w);
   assert(T.state.multilineMessages === false, "sanity: back to single-line mode before the Link-view section");
   // Scrolled away from 0 here specifically so an unguarded capture would
   // resolve to some OTHER entry (not coincidentally 0 again) — proving the
@@ -6589,9 +6584,9 @@ await withApp(async (w, d, T) => {
   const linkNode = w.createLinkNode(refNode.id, targetNode.id, "after", 1);
   T.state.activeId = linkNode.id;
   w.render(); // renderLinkView(), NOT renderTable() — #tableBody stays hidden at scrollTop 20*28
-  fireClick(d.querySelector("#btnMultilineMsg"), w); // toggled while the Link view is active
+  fireClick(d.querySelector(".toggle-multiline"), w); // toggled while the Link view is active
   assert(T.state.multilineMessages === true, "sanity: toggled while the Link view is active");
-  fireClick(d.querySelector("#btnMultilineMsg"), w); // and back off again, still while Link view active
+  fireClick(d.querySelector(".toggle-multiline"), w); // and back off again, still while Link view active
   assert(T.state.multilineMessages === false, "sanity: toggled back off, still while the Link view is active");
   T.state.activeId = f.id;
   w.render(); // switches back to the plain table view, no scrollTargetId set — an ordinary node switch
@@ -6611,7 +6606,7 @@ section("55c. Multiline toggle persists through the session cache (global settin
   const factory = new IDBFactory();
   await withApp(async (w, d, T) => {
     const f = await w.addFile("a.log", makeLog(0, 3), () => {});
-    fireClick(d.querySelector("#btnMultilineMsg"), w);
+    fireClick(d.querySelector(".toggle-multiline"), w);
     assert(T.state.multilineMessages === true, "sanity: toggled on before persisting");
     await w.persistFileNode(f); // fire-and-forget in the app; awaited here so the "files" store write lands before the window closes
     await w.persistMetaNow();
@@ -6623,7 +6618,7 @@ section("55c. Multiline toggle persists through the session cache (global settin
     await T.bootRestore; // exact barrier: restore + restoreWatchedFolders have settled
     assert(T.state.rootIds.length === 1, "sanity: file came back via boot-time restore");
     assert(T.state.multilineMessages === true, "restore: multiline toggle state restored from the cache");
-    assert(d.querySelector("#btnMultilineMsg").classList.contains("active"), "restore: button reflects the restored state");
+    assert(d.querySelector(".toggle-multiline").classList.contains("active"), "restore: button reflects the restored state");
     assert(d.body.classList.contains("multiline-messages"), "restore: body class reflects the restored state");
   }, { indexedDB: factory });
 }
@@ -6793,7 +6788,7 @@ await withApp(async (w, d, T) => {
   assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 92px 158px 168px 1fr",
     "default --row-grid matches the original hardcoded default, got " + rootStyle.getPropertyValue("--row-grid"));
 
-  const btnColumns = d.querySelector("#btnColumns");
+  const btnColumns = d.querySelector(".toggle-columns");
   const columnsPanel = d.querySelector("#columnsPanel");
   assert(columnsPanel.classList.contains("hidden"), "columns popup starts hidden");
   fireClick(btnColumns, w);
@@ -9956,7 +9951,7 @@ group(93);
 await withApp(async (w, d, T) => {
   section("93. Text-filter match highlighting");
 
-  const btn = d.querySelector("#btnTextMatchHighlight");
+  const btn = d.querySelector(".toggle-textmatch");
   const scopeSelect = d.querySelector("#settingsTextMatchHighlightScope");
   const rowsCb = d.querySelector("#settingsTextMatchHighlightRows");
   const detailCb = d.querySelector("#settingsTextMatchHighlightDetail");
@@ -11135,7 +11130,7 @@ await withApp(async (w, d, T) => {
 
   // Rendering: a note-row appears below its entry's row when Show Notes is on (default off)
   assert(T.state.showNotes === false, "sanity: notes hidden by default");
-  const btnNotes = d.querySelector("#btnNotes");
+  const btnNotes = d.querySelector(".toggle-notes");
   assert(!btnNotes.classList.contains("active"), "Show/Hide Notes button starts inactive");
   fireClick(btnNotes, w);
   assert(T.state.showNotes === true, "clicking #btnNotes turns notes on");
@@ -11353,7 +11348,7 @@ await withApp(async (w, d, T) => {
   T.state.selectedId = skip1Id;
   w.render();
 
-  fireClick(d.querySelector("#btnNotes"), w); // show notes
+  fireClick(d.querySelector(".toggle-notes"), w); // show notes
   T.state.notes.set(skip1Id, "orphan me not");
   w.applyTempAnchorFadeSeconds(0.5);
   const modeSelect = d.querySelector("#settingsTempAnchorMode");
@@ -11724,7 +11719,7 @@ await withApp(async (w, d, T) => {
   // ICON_PIN (shared by #btnPinBookmarks, the sidebar peek toggle, and the
   // detail-panel peek toggle) is now a thumbtack (circle head + straight
   // needle path), not the old teardrop map-pin outline.
-  const pinBtn = d.querySelector("#btnPinBookmarks");
+  const pinBtn = d.querySelector(".toggle-pin");
   const pinSvg = pinBtn.querySelector("svg");
   assert(pinSvg.querySelector("circle") && pinSvg.querySelector("path"),
     "#btnPinBookmarks (ICON_PIN) is a circle+path thumbtack shape");
@@ -14657,11 +14652,11 @@ group(137);
 await withApp(async (w, d, T) => {
   section("137. Highlight-rule match text + regex match-spec fix");
 
-  const btn = d.querySelector("#btnHighlightMatchText");
-  const textMatchBtn = d.querySelector("#btnTextMatchHighlight");
+  const btn = d.querySelector(".toggle-highlightmatch");
+  const textMatchBtn = d.querySelector(".toggle-textmatch");
 
   // --- Defaults ---
-  assert(btn && isVisible(btn, w), "#btnHighlightMatchText exists and is visible in the view bar");
+  assert(btn && isVisible(btn, w), ".toggle-highlightmatch exists and is visible");
   assert(btn.classList.contains("active") && T.highlightMatchTextEnabled === true, "highlight-rule match text defaults ON");
   assert(btn.innerHTML.includes("<svg"), "the button carries an icon of its own");
 
@@ -19385,6 +19380,152 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   Group 176 — this session (2026-09-04), person-requested ("Gesamtkonzept"
+   toolbar reorganization, follow-up to Group 175): the full row-/selection-
+   action button set (Bookmark this row, Add note, Filter after this,
+   Filter before this, Filter for this message, Time filter from selection,
+   Add to selection) is now a permanently visible, selection-dependent icon
+   button group in BOTH #contextToolbar and #filteredToolbar — same
+   underlying functions the pre-existing right-click context menu already
+   used, just fed the current single/multi row selection instead of
+   whichever row was right-clicked. Also: Plot's two filter buttons switched
+   from text to the same icon-button look, and the extraction table's
+   "Export as CSV…" got a second entry point in #tableToolbar.
+   ============================================================ */
+group(176);
+await withApp(async (w, d, T) => {
+  section("176a. Row-action buttons: disabled state follows the current selection, in both Context and Filtered");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const contextActions = [...d.querySelector("#contextToolbar").querySelectorAll("[data-row-action]")];
+  const filteredActions = [...d.querySelector("#filteredToolbar").querySelectorAll("[data-row-action]")];
+  const expectedActions = ["bookmark", "note", "filterAfter", "filterBefore", "filterForMessage", "timeRangeFromSelection", "addToSelection"];
+  assert(contextActions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
+    "Context toolbar has all seven row-actions in order, got " + contextActions.map(b => b.dataset.rowAction).join(","));
+  assert(filteredActions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
+    "Filtered toolbar has the exact same seven row-actions");
+
+  const byAction = (list, action) => list.find(b => b.dataset.rowAction === action);
+
+  // --- No selection: single-row actions AND addToSelection disabled, time-range disabled ---
+  expectedActions.forEach(action => {
+    assert(byAction(contextActions, action).disabled === true, action + " starts disabled with no selection (Context copy)");
+    assert(byAction(filteredActions, action).disabled === true, action + " starts disabled with no selection (Filtered copy)");
+  });
+
+  // --- Single row selected: single-row actions + addToSelection enabled, time-range still disabled ---
+  w.selectEntry(f.entries[2].id);
+  ["bookmark", "note", "filterAfter", "filterBefore", "filterForMessage", "addToSelection"].forEach(action => {
+    assert(byAction(contextActions, action).disabled === false, action + " enabled with exactly one row selected");
+  });
+  assert(byAction(contextActions, "timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
+
+  // --- 2+ rows multi-selected: timeRangeFromSelection enables, single-row actions disable, addToSelection stays enabled ---
+  T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]);
+  w.updateRowActionButtons();
+  assert(byAction(contextActions, "timeRangeFromSelection").disabled === false, "timeRangeFromSelection enables with 2+ rows multi-selected");
+  assert(byAction(contextActions, "filterAfter").disabled === true, "single-row actions disable once 2+ rows are multi-selected");
+  assert(byAction(contextActions, "addToSelection").disabled === false, "addToSelection stays enabled with a 2+ multi-selection");
+  assert(byAction(filteredActions, "timeRangeFromSelection").disabled === false, "same state reflected in the Filtered copy");
+});
+
+await withApp(async (w, d, T) => {
+  section("176b. Row-action buttons: bookmark/note reflect state, and clicking one produces the same effect as the context-menu equivalent");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const entry = f.entries[3];
+  w.selectEntry(entry.id);
+
+  const bookmarkBtn = d.querySelector('#contextToolbar [data-row-action="bookmark"]');
+  const noteBtn = d.querySelector('#contextToolbar [data-row-action="note"]');
+  assert(!bookmarkBtn.classList.contains("active"), "bookmark button starts unmarked (not bookmarked yet)");
+  fireClick(bookmarkBtn, w);
+  assert(T.state.bookmarks.has(entry.id), "clicking the toolbar bookmark button bookmarks the selected row");
+  assert(bookmarkBtn.classList.contains("active"), "bookmark button reflects the bookmarked state immediately");
+  fireClick(bookmarkBtn, w);
+  assert(!T.state.bookmarks.has(entry.id), "clicking again removes the bookmark");
+
+  assert(!noteBtn.classList.contains("active"), "note button starts unmarked (no note yet)");
+  fireClick(noteBtn, w);
+  assert(isVisible(d.querySelector("#noteDialog"), w) === true, "clicking the toolbar note button opens the note dialog, same as the context-menu entry");
+  d.querySelector("#noteDialogInput").value = "toolbar note";
+  fireClick(d.querySelector("#noteDialogSave"), w);
+  assert(T.state.notes.get(entry.id) === "toolbar note", "saving from the toolbar-opened dialog sets the note");
+  assert(noteBtn.classList.contains("active"), "note button reflects the now-present note");
+
+  // --- Filter after this / Filter before this: same "timerange" node the context-menu path creates ---
+  const beforeChildCount = f.children.length;
+  fireClick(d.querySelector('#contextToolbar [data-row-action="filterAfter"]'), w);
+  assert(f.children.length === beforeChildCount + 1, "Filter-after-this creates one new filter node");
+  const afterNode = T.state.nodes[T.state.activeId];
+  assert(afterNode.filterType === "timerange" && afterNode.value.from === entry.ts && afterNode.value.to === null,
+    "created node is a timerange filter spanning from this entry's ts onward");
+  assert(T.state.activeId === afterNode.id, "creating it activates the new node, same as the context-menu path");
+});
+
+await withApp(async (w, d, T) => {
+  section("176c. Time filter from selection / Add to selection toolbar buttons match the context-menu behavior");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  T.state.logMultiSelect = new Set([f.entries[2].id, f.entries[7].id, f.entries[4].id]);
+  w.updateRowActionButtons();
+
+  const beforeChildCount = f.children.length;
+  fireClick(d.querySelector('#filteredToolbar [data-row-action="timeRangeFromSelection"]'), w);
+  assert(f.children.length === beforeChildCount + 1, "creates exactly one new filter node");
+  const rangeNode = T.state.nodes[T.state.activeId];
+  assert(rangeNode.filterType === "timerange" && rangeNode.value.from === f.entries[2].ts && rangeNode.value.to === f.entries[7].ts,
+    "spans the earliest/latest ts among the 3 selected rows, regardless of click order");
+
+  // --- Add to selection: opens the same #addToSelectionMenu, anchored to the clicked button ---
+  T.state.activeId = f.id;
+  T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[5].id]);
+  w.updateRowActionButtons();
+  const addBtn = d.querySelector('#filteredToolbar [data-row-action="addToSelection"]');
+  fireClick(addBtn, w);
+  assert(isVisible(d.querySelector("#addToSelectionMenu"), w) === true, "clicking Add-to-selection opens the same popup the context-menu entry uses");
+  const createItem = d.querySelector('#addToSelectionMenu [data-selection-action="create"]');
+  assert(createItem !== null, "'Create new selection filter' option is present");
+  fireClick(createItem, w);
+  const created = Object.values(T.state.nodes).find(n => n.selectionFilter);
+  assert(created && created.value.length === 2 && created.value.includes(f.entries[1].id) && created.value.includes(f.entries[5].id),
+    "creates a selection filter node containing exactly the 2 multi-selected rows");
+});
+
+await withApp(async (w, d, T) => {
+  section("176d. Plot's filter buttons are icon-buttons now; Table view gets its own Export-as-CSV button");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = extractNode.id;
+  w.render();
+  w.applyFhView("plot");
+
+  const plotTimeRangeBtn = d.querySelector("#plotFilterTimeRangeBtn");
+  const plotEntriesBtn = d.querySelector("#plotFilterEntriesBtn");
+  assert(plotTimeRangeBtn.classList.contains("toolbar-icon-btn"), "#plotFilterTimeRangeBtn is now a .toolbar-icon-btn, not a text button");
+  assert(plotEntriesBtn.classList.contains("toolbar-icon-btn"), "#plotFilterEntriesBtn is now a .toolbar-icon-btn, not a text button");
+  assert(plotTimeRangeBtn.textContent.trim() === "", "no visible text label left on the time-range button (icon + title only)");
+  assert(plotEntriesBtn.textContent.trim() === "", "no visible text label left on the entries button (icon + title only)");
+
+  w.applyFhView("table");
+  const exportBtn = d.querySelector("#tableExportCsvBtn");
+  assert(exportBtn !== null, "#tableExportCsvBtn exists in #tableToolbar");
+  assert(isVisible(exportBtn, w) === true, "#tableExportCsvBtn is visible on the Table tab");
+  assert(isVisible(d.querySelector("#csvExportDialog"), w) === false, "sanity: CSV export dialog starts closed");
+  fireClick(exportBtn, w);
+  assert(isVisible(d.querySelector("#csvExportDialog"), w) === true, "clicking it opens the same CSV export dialog as the right-click menu entry");
+  fireClick(d.querySelector("#csvExportCancel"), w);
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -21834,4 +21975,22 @@ process.exitCode = failed ? 1 : 0;
      #statusStrip entirely; added #filteredToolbar (Filtered view) and
      #tableToolbar (Table view), same real-row-under-the-header pattern as
      the pre-existing #contextToolbar/#plotToolbar, both currently empty.
+
+   Group 176 — this session (2026-09-04), person-requested ("Gesamtkonzept"
+     toolbar reorganization, follow-up to 175): #viewBar reduced to just the
+     view toggle + level filter (now visible on every tab, including Table/
+     Plot); breadcrumb moved into its own always-reserved #breadcrumbBar
+     row; the six log-display toggles (Pin/Notes/Multiline/Columns/
+     TextMatch/HighlightMatch) moved out of #viewBar into #contextToolbar
+     (five of them) and #filteredToolbar (all six, Pin included) as shared
+     `.toggle-*` classes rather than unique ids (elAll() helper); a new
+     shared row-actions button group (Bookmark/Note/Filter-after/Filter-
+     before/Filter-for-this-message/Time-filter-from-selection/Add-to-
+     selection) rendered into both toolbars from one HTML fragment, wired
+     to the same underlying functions the pre-existing right-click context
+     menu uses, fed the current selection instead of the right-clicked row;
+     Plot's two filter buttons switched from text to the same icon-button
+     look; Table view's toolbar gained an Export-as-CSV button (second
+     entry point alongside the existing right-click menu item). Groups
+     4/26/27/28/29/29b updated in place for the new structure/selectors.
    ============================================================ */
