@@ -18856,43 +18856,47 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 169 — Entry detail: "format + syntax highlight embedded XML/JSON"
-   toggle (#detailFormatToggle, this session, person-requested). Off by
-   default (raw message text, unchanged); on, auto-detects well-formed XML/
-   JSON fragments EMBEDDED anywhere in the message's free text, pretty-
-   prints and syntax-highlights just those, leaves the rest plain. Also
-   detects a third fragment type — a .NET-style ToString() object dump
-   ("{ Key = Value, ... }", not valid JSON: unquoted keys, "=" instead of
-   ":") — as a conservative fallback once JSON.parse has already rejected
-   the candidate (169g/h, follow-up request this session). Also covers the
-   optional per-theme "syntaxHighlightColors" block (SYNTAX_COLOR_KEYS) in
-   the theme template download / import round trip.
+   toggle (#detailFormatToggle, this session, person-requested). ON by
+   default (person-requested follow-up — originally shipped OFF, see
+   169a); auto-detects well-formed XML/JSON fragments EMBEDDED anywhere in
+   the message's free text, pretty-prints and syntax-highlights just
+   those, leaves the rest plain — still a one-click, persisted toggle to
+   turn back off. Also detects a third fragment type — a .NET-style
+   ToString() object dump ("{ Key = Value, ... }", not valid JSON:
+   unquoted keys, "=" instead of ":") — as a conservative fallback once
+   JSON.parse has already rejected the candidate (169g/h, follow-up
+   request this session). Also covers the optional per-theme
+   "syntaxHighlightColors" block (SYNTAX_COLOR_KEYS) in the theme template
+   download / import round trip.
    ============================================================ */
 group(169);
 await withApp(async (w, d, T) => {
-  section("169a. Toggle defaults off, persists, and gates raw vs formatted rendering");
+  section("169a. Toggle defaults ON, persists, and gates raw vs formatted rendering");
 
   const btn = d.querySelector("#detailFormatToggle");
-  assert(btn && !btn.classList.contains("active") && T.detailFormatHighlightEnabled === false,
-    "the toggle defaults OFF");
+  assert(btn && btn.classList.contains("active") && T.detailFormatHighlightEnabled === true,
+    "the toggle defaults ON (person-requested)");
+  assert(w.localStorage.getItem("philogg-detail-format-highlight") === null,
+    "the ON default is a fallback for an UNSET key, nothing is written to localStorage just from starting up");
 
   const f = await w.addFile("app.log", makeLog(0, 3), () => {});
   f.entries[0].message = 'Sending Control <ctrl><cmd>reset</cmd></ctrl> successful';
   T.state.selectedId = f.entries[0].id;
   w.updateDetailPanel();
   const detailEl = d.querySelector("#detailMessage");
-  assert(detailEl.textContent === f.entries[0].message, "OFF: the raw message text is shown unchanged");
-  assert(!detailEl.querySelector(".syn-block"), "OFF: no syntax-highlight markup is present");
-
-  fireClick(btn, w);
-  assert(T.detailFormatHighlightEnabled === true && btn.classList.contains("active"), "clicking the toggle turns it on");
-  assert(w.localStorage.getItem("philogg-detail-format-highlight") === "1", "the ON state persisted to localStorage");
-  assert(detailEl.querySelector(".syn-block.syn-xml"), "ON: the embedded XML fragment is now wrapped and pretty-printed");
+  assert(detailEl.querySelector(".syn-block.syn-xml"), "ON (default): the embedded XML fragment is wrapped and pretty-printed without any click needed");
   assert(detailEl.textContent.startsWith("Sending Control") && detailEl.textContent.trim().endsWith("successful"),
     "ON: the surrounding plain text is untouched, got " + JSON.stringify(detailEl.textContent));
 
   fireClick(btn, w);
   assert(T.detailFormatHighlightEnabled === false && w.localStorage.getItem("philogg-detail-format-highlight") === "0",
-    "clicking it again turns it back off and persists");
+    "clicking the toggle turns it off and persists that explicit choice");
+  assert(detailEl.textContent === f.entries[0].message, "OFF: the raw message text is shown unchanged");
+  assert(!detailEl.querySelector(".syn-block"), "OFF: no syntax-highlight markup is present");
+
+  fireClick(btn, w);
+  assert(T.detailFormatHighlightEnabled === true && btn.classList.contains("active") && w.localStorage.getItem("philogg-detail-format-highlight") === "1",
+    "clicking it again turns it back on and persists");
 });
 
 await withApp(async (w, d, T) => {
@@ -18901,7 +18905,6 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("app.log", makeLog(0, 1), () => {});
   f.entries[0].message = 'before <root attr="v1"><child x="1">text</child><self/></root> after';
   T.state.selectedId = f.entries[0].id;
-  fireClick(d.querySelector("#detailFormatToggle"), w);
   w.updateDetailPanel();
   const html = d.querySelector("#detailMessage").innerHTML;
   assert(html.includes('<span class="syn-tag">root</span>'), "root tag name highlighted, got " + html);
@@ -18919,7 +18922,6 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("app.log", makeLog(0, 1), () => {});
   f.entries[0].message = 'Response: {"status":"ok","code":200,"ok":true,"extra":null} done';
   T.state.selectedId = f.entries[0].id;
-  fireClick(d.querySelector("#detailFormatToggle"), w);
   w.updateDetailPanel();
   const html = d.querySelector("#detailMessage").innerHTML;
   assert(html.includes('<span class="syn-block syn-json">'), "a JSON block is rendered, got " + html);
@@ -18938,7 +18940,6 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("app.log", makeLog(0, 1), () => {});
   f.entries[0].message = 'a < b and if (x < y) { do() } but <open>never closed, {"bad": } too';
   T.state.selectedId = f.entries[0].id;
-  fireClick(d.querySelector("#detailFormatToggle"), w);
   w.updateDetailPanel();
   const el = d.querySelector("#detailMessage");
   assert(!el.querySelector(".syn-block"), "nothing here is well-formed XML/JSON, so no fragment is highlighted at all, got " + el.innerHTML);
@@ -18956,7 +18957,6 @@ await withApp(async (w, d, T) => {
   // formatted output must re-escape that "&" rather than emit it raw.
   f.entries[0].message = 'payload <img src=x onerror="alert(1)"> unclosed and <safe a="&amp;"/> ok';
   T.state.selectedId = f.entries[0].id;
-  fireClick(d.querySelector("#detailFormatToggle"), w);
   w.updateDetailPanel();
   const el = d.querySelector("#detailMessage");
   assert(!el.querySelector("img"), "an unmatched (unclosed) tag never becomes real DOM markup, only escaped text");
@@ -19013,7 +19013,6 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("app.log", makeLog(0, 1), () => {});
   f.entries[0].message = "Setting selected test procedure to 'Evaluate' with parameters 'TestProcedureParameters { Type = MyProgramRecipe, ViewerName = , MyProgramRecipeId = 4c382e97-c47e-4227-a034-8e1f14ddabc4, CapabilityName = MyProgram }'.";
   T.state.selectedId = f.entries[0].id;
-  fireClick(d.querySelector("#detailFormatToggle"), w);
   w.updateDetailPanel();
   const el = d.querySelector("#detailMessage");
   const html = el.innerHTML;
@@ -21434,12 +21433,13 @@ process.exitCode = failed ? 1 : 0;
    Group 169 — this session (2026-09-04), person-requested: entry-detail
      "format + syntax highlight" toggle (#detailFormatToggle) for embedded
      XML/JSON found anywhere in a message's free text (findEmbeddedFragments
-     + formatXmlFragmentHtml/formatJsonFragmentHtml), off by default;
-     escaping/XSS safety of the formatted output; the optional
-     per-theme "syntaxHighlightColors" block (SYNTAX_COLOR_KEYS) in the
-     theme template download/import round trip. EXTENDED same session,
-     person-reported follow-up: a .NET-style ToString() object dump
-     ("{ Key = Value, ... }", not valid JSON) is now also detected as a
-     conservative fallback once JSON.parse rejects the candidate
-     (parseKeyValueDump/formatDumpFragmentHtml, 169g/h).
+     + formatXmlFragmentHtml/formatJsonFragmentHtml); escaping/XSS safety
+     of the formatted output; the optional per-theme "syntaxHighlightColors"
+     block (SYNTAX_COLOR_KEYS) in the theme template download/import round
+     trip. EXTENDED same session, person-reported follow-up: a .NET-style
+     ToString() object dump ("{ Key = Value, ... }", not valid JSON) is
+     now also detected as a conservative fallback once JSON.parse rejects
+     the candidate (parseKeyValueDump/formatDumpFragmentHtml, 169g/h).
+     EXTENDED AGAIN same session, person-requested: the toggle now
+     defaults ON instead of off (169a updated in place).
    ============================================================ */

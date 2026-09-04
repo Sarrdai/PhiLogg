@@ -16185,11 +16185,11 @@ function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
    a hit — a candidate that fails validation is left as plain text, so a
    stray `<` or `{` used as everyday punctuation never misfires. */
 const DETAIL_FORMAT_HIGHLIGHT_KEY = "philogg-detail-format-highlight";
-let detailFormatHighlightEnabled = false;
+let detailFormatHighlightEnabled = true;
 
 function initDetailFormatHighlightSetting() {
   const stored = localStorage.getItem(DETAIL_FORMAT_HIGHLIGHT_KEY);
-  detailFormatHighlightEnabled = stored === "1"; // default OFF (raw text is the long-standing look)
+  detailFormatHighlightEnabled = stored === null ? true : stored === "1"; // default ON, person-requested; still overridable and persisted either way
   updateDetailFormatToggleButton();
 }
 
@@ -16432,11 +16432,13 @@ function formatDumpFragmentHtml(raw) {
 
 // Full message -> HTML: plain text stays escapeHtml'd exactly as before,
 // every detected+validated fragment is replaced by its pretty-printed,
-// highlighted rendering. This is the ONLY code path used while the toggle
-// is ON — it deliberately does not also apply the text-match-highlight
-// marking (markFieldHtml): combining the two on the same substring space is
-// unspecified/out of scope for this feature, and OFF (the default) keeps
-// text-match marking exactly as it always worked.
+// highlighted rendering. Deliberately does not also apply the text-match-
+// highlight marking (markFieldHtml): combining the two on the same
+// substring space is unspecified/out of scope for this feature. The caller
+// (updateDetailPanel) only actually USES this output in place of match
+// marking when the result contains a fragment (a "syn-block" span) —
+// falling through to markFieldHtml/plain text otherwise — since the toggle
+// now defaults ON and most messages have nothing to format at all.
 function formatMessageWithHighlight(text) {
   const hits = findEmbeddedFragments(text);
   if (!hits.length) return escapeHtml(text);
@@ -16510,12 +16512,21 @@ function updateDetailPanel() {
   // markFieldHtml and formatMessageWithHighlight escape every non-matched/
   // non-fragment slice the same way — the CSS white-space: pre-wrap on
   // #detailMessage preserves line breaks in either case. detailFormatHighlightEnabled
-  // (the #detailFormatToggle button) takes priority over match marking when
-  // both would apply — see formatMessageWithHighlight's own comment for why.
-  if (detailFormatHighlightEnabled) {
-    detailMessageEl.innerHTML = formatMessageWithHighlight(entry.message);
+  // (the #detailFormatToggle button, ON by default) takes priority over
+  // match marking, but ONLY on a message that actually HAS an embedded
+  // fragment to format — combining the two on the same substring space is
+  // still out of scope (see formatMessageWithHighlight's own comment), but
+  // with the toggle now defaulting on, falling all the way through to
+  // plain/unmarked text on every OTHER message (the common case: most
+  // messages contain no XML/JSON/dump at all) would silently break text-
+  // match highlighting for everyone, not just people who opted in.
+  const formatted = detailFormatHighlightEnabled ? formatMessageWithHighlight(entry.message) : null;
+  if (formatted !== null && /class="syn-block/.test(formatted)) {
+    detailMessageEl.innerHTML = formatted;
   } else if (mm.active) {
     detailMessageEl.innerHTML = markFieldHtml(mm, entry.message, "message");
+  } else if (formatted !== null) {
+    detailMessageEl.innerHTML = formatted; // no match marking active — the (fragment-free) escaped output is equivalent to plain text
   } else {
     detailMessageEl.textContent = entry.message;
   }
