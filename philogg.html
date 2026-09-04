@@ -3364,6 +3364,9 @@
       <div class="link-field">
         <label class="plot-checkbox-row"><input type="checkbox" id="csvExportHeadersInput" checked> Include header row</label>
       </div>
+      <div class="link-field">
+        <label class="plot-checkbox-row"><input type="checkbox" id="csvExportFullMessageInput"> Include full log message column</label>
+      </div>
       <div class="link-dialog-actions">
         <button type="button" id="csvExportCancel" class="btn-mini-outline">Cancel</button>
         <button type="button" id="csvExportConfirm" class="btn-mini">Export</button>
@@ -10893,11 +10896,17 @@ function csvQuoteField(value, delimiter) {
   }
   return str;
 }
-function buildExtractCsv(delimiter, decimalSep, includeHeaders) {
+function buildExtractCsv(delimiter, decimalSep, includeHeaders, includeFullMessage) {
   const lines = [];
-  if (includeHeaders) lines.push(extractColumns.map(c => csvQuoteField(c.name, delimiter)).join(delimiter));
+  if (includeHeaders) {
+    const headerCells = extractColumns.map(c => csvQuoteField(c.name, delimiter));
+    if (includeFullMessage) headerCells.push(csvQuoteField("Log message", delimiter));
+    lines.push(headerCells.join(delimiter));
+  }
   extractRowsData.forEach(r => {
-    lines.push(extractColumns.map(c => csvQuoteField(localizeNumericCell(r.values[c.colIndex], decimalSep), delimiter)).join(delimiter));
+    const cells = extractColumns.map(c => csvQuoteField(localizeNumericCell(r.values[c.colIndex], decimalSep), delimiter));
+    if (includeFullMessage) cells.push(csvQuoteField(r.entry.message, delimiter));
+    lines.push(cells.join(delimiter));
   });
   return lines.join("\r\n");
 }
@@ -20320,6 +20329,7 @@ const csvExportDialog = el("#csvExportDialog");
 const csvExportDelimiterSelect = el("#csvExportDelimiterSelect");
 const csvExportDecimalSelect = el("#csvExportDecimalSelect");
 const csvExportHeadersInput = el("#csvExportHeadersInput");
+const csvExportFullMessageInput = el("#csvExportFullMessageInput");
 
 el("#ctxExportCsv").addEventListener("click", () => {
   closeExtractContextMenu();
@@ -20329,6 +20339,7 @@ el("#ctxExportCsv").addEventListener("click", () => {
   // delimiter (so Excel doesn't mistake a decimal comma for a new column).
   csvExportDelimiterSelect.value = decimalSep === "," ? ";" : ",";
   csvExportHeadersInput.checked = true;
+  csvExportFullMessageInput.checked = false;
   csvExportDialog.classList.remove("hidden");
 });
 function closeCsvExportDialog() { csvExportDialog.classList.add("hidden"); }
@@ -20337,7 +20348,7 @@ el("#csvExportCancel").addEventListener("click", closeCsvExportDialog);
 el("#csvExportConfirm").addEventListener("click", async () => {
   if (!extractRowsData.length) { closeCsvExportDialog(); return; }
   const delimiter = csvExportDelimiterSelect.value === "\\t" ? "\t" : csvExportDelimiterSelect.value;
-  const csvText = buildExtractCsv(delimiter, csvExportDecimalSelect.value, csvExportHeadersInput.checked);
+  const csvText = buildExtractCsv(delimiter, csvExportDecimalSelect.value, csvExportHeadersInput.checked, csvExportFullMessageInput.checked);
   closeCsvExportDialog();
   await saveCsvToFile(csvText);
 });
