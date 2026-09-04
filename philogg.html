@@ -6514,6 +6514,38 @@ function nodeHasExtractableWildcards(node) {
     isExtractPattern(node.value) && compileExtractPattern(node.value));
 }
 
+// Upward-lookup inheritance (docs/filters.md "Filterregeln"): a node that
+// isn't itself an extraction-pattern node can still inherit Table/Plot from
+// an ancestor, as long as every filter in between only narrows the entry SET
+// (timerange, idset, level, ...) or extends it with same-shape context
+// (context/countContext) — both are transparent for extraction purposes.
+// Walking stops (returns null) the moment a "link" filter is hit — its
+// synthetic paired entries have a different shape, so nothing above it
+// carries through — or once the root/file node is reached. Returns the
+// extraction-pattern node itself (the ancestor to pull the pattern/
+// ignoredColumns from), not a boolean — nodeIsExtractionView below is the
+// boolean form for pure gating call sites.
+function findExtractionAncestor(node) {
+  let cur = node;
+  while (cur && cur.type === "filter") {
+    if (nodeHasExtractableWildcards(cur)) return cur;
+    if (cur.filterType === "link") return null;
+    cur = state.nodes[cur.parentId];
+  }
+  return null;
+}
+
+// Whether a node shows a Table/Plot view at all — true for a node that
+// carries the pattern itself OR inherits one from an ancestor (see
+// findExtractionAncestor). Drop-in boolean replacement for
+// nodeHasExtractableWildcards at call sites that gate "should Table/Plot be
+// enabled/shown" rather than ones that need the node's OWN pattern (editing
+// UI, the TBL tree tag/icon identifying which node carries the pattern) —
+// those keep using nodeHasExtractableWildcards directly.
+function nodeIsExtractionView(node) {
+  return !!findExtractionAncestor(node);
+}
+
 // Display name for a "timerange" filter's { from, to } value (either bound
 // may be null, meaning unbounded on that side) — shared by createFilterNode,
 // updateTimeRangeFilterNode, and anything else that needs to (re)compute a
@@ -8830,7 +8862,7 @@ function showFhTab(tab) {
   // so without this call the just-clicked tab's highlight never moves off
   // whichever tab was active before (content switches correctly, only the
   // pill styling goes stale).
-  renderViewTabs(nodeHasExtractableWildcards(state.nodes[state.activeId]));
+  renderViewTabs(nodeIsExtractionView(state.nodes[state.activeId]));
   if (fhLayout === "tabs") {
     // In tabs layout exactly ONE of the two Log views is on screen, so the
     // pane the arrow keys drive (state.entriesView) can only sensibly be
@@ -9101,7 +9133,7 @@ function activeNavScroller(nodeId) {
   // (tableBody) — its own extractScroll only applies while the Table/Plot
   // tab is actually the one on screen (see renderMainView's Schritt 5
   // rework).
-  if (nodeHasExtractableWildcards(node) &&
+  if (nodeIsExtractionView(node) &&
       (fhActiveTab === "table" || fhActiveTab === "plot")) return extractScroll;
   if (node && node.type === "filter" && node.filterType === "link") return linkScroll;
   return tableBody;
@@ -9371,7 +9403,7 @@ function applyActivationView(activeNode) {
   let targetTab;
   if (remembered === undefined || filterActivationView === "alwaysFiltered") {
     targetTab = "filter";
-  } else if ((remembered === "table" || remembered === "plot") && !nodeHasExtractableWildcards(activeNode)) {
+  } else if ((remembered === "table" || remembered === "plot") && !nodeIsExtractionView(activeNode)) {
     // The pattern lost its wildcards since the last visit (edited in the
     // meantime) — Table/Plot no longer apply, same fallback
     // renderMainView()'s own fhActiveTab/!extractCapable check already
@@ -9487,7 +9519,7 @@ function renderMainView() {
 
   const activeNode = state.nodes[state.activeId];
   const isLink = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
-  const extractCapable = nodeHasExtractableWildcards(activeNode);
+  const extractCapable = nodeIsExtractionView(activeNode);
 
   // A tab left on Table/Plot from a previously-active extraction node falls
   // back to Filtered once the newly-active node has nothing to tabulate/plot
@@ -12861,6 +12893,18 @@ function renderStatsBar(node) {
 }
 
 function renderExtractTable(node) {
+  // `node` is the ACTIVE node (whose own entries — getEntries(node.id) below
+  // — get tabulated), which is not necessarily the node the pattern lives
+  // on: a timerange/idset/context/... node inherits Table/Plot from an
+  // extraction-pattern ancestor (findExtractionAncestor,
+  // nodeIsExtractionView). `patternNode` is that pattern-bearing node —
+  // `node` itself when it carries the pattern directly, same as before this
+  // inheritance feature. All pattern-shaped config (the pattern text,
+  // ignoredColumns) is read off patternNode; the entries the pattern is
+  // applied to stay `node`'s own (already time/id/...-narrowed) set.
+  // Assertions/columnRenames/plotConfig deliberately stay per-`node` — a
+  // per-view refinement, not part of the inherited pattern.
+  const patternNode = findExtractionAncestor(node) || node;
   // The `plotConfig !== node.plotConfig` half covers undo/redo restoring a
   // fresh node OBJECT under the same id (restoreSubtree/materializeCached
   // Filters both build a brand-new object) — without it, the global
@@ -12879,7 +12923,7 @@ function renderExtractTable(node) {
     // scrolled-past-its-own-end (or a blank spacer) the instant it renders.
     extractScroll.scrollTop = 0;
   }
-  const spec = compileExtractPattern(node.value);
+  const spec = compileExtractPattern(patternNode.value);
   extractNodeId = node.id;
   if (!spec) {
     extractColumns = [];
@@ -12899,7 +12943,7 @@ function renderExtractTable(node) {
   // what assertions/plot config/sort state are keyed by — see
   // findExtractColumn) since positions shift as columns are ignored/
   // un-ignored but that identity must not.
-  const ignoredSet = new Set(node.ignoredColumns || []);
+  const ignoredSet = new Set(patternNode.ignoredColumns || []);
   extractColumns = [
     { name: "Index", type: "int", colIndex: INDEX_COL },
     { name: "t (ms)", type: "int", colIndex: ELAPSED_COL },
@@ -12932,8 +12976,8 @@ function renderExtractTable(node) {
   // table below — it always shows every placeholder, ignored or not (with a
   // dimmed style for ignored ones); its chips double as the ignore toggle.
   const patternColumns = spec.columns.map((c, i) => ({ ...c, colIndex: i, ignored: ignoredSet.has(i), name: getColumnDisplayName(node, i, c.name) }));
-  renderExtractPatternView(node.value, patternColumns, {
-    onToggle: colIndex => { setColumnIgnored(node, colIndex, !isColumnIgnored(node, colIndex)); renderExtractTable(node); },
+  renderExtractPatternView(patternNode.value, patternColumns, {
+    onToggle: colIndex => { setColumnIgnored(patternNode, colIndex, !isColumnIgnored(patternNode, colIndex)); renderExtractTable(node); },
   });
   extractInfo.textContent =
     extractRowsData.length.toLocaleString("de-DE") + " row" + (extractRowsData.length === 1 ? "" : "s") +
