@@ -17932,11 +17932,15 @@ async function scanFolderHandle(dirHandle, settings) {
 }
 
 // Merges a fresh scanFolderHandle() result into folder.files, preserving
-// each already-known entry's nodeId (and, therefore, its rendered position
+// each still-present entry's nodeId (and, therefore, its rendered position
 // as a real tree row instead of a grayed one) while refreshing its handle —
 // shared by the initial scan, folderScanTick's repeat polls, and a restored
 // folder's reconnect scan, so "how a rescan merges into the existing
-// listing" only has one implementation.
+// listing" only has one implementation. A file no longer found by the scan
+// (deleted outside the app, or — closed only — simply stopped matching a
+// pattern) is dropped from the listing entirely, closing it first if it
+// was open (see the loop below) — person-reported: it used to linger
+// forever once opened, since nothing ever rescanned to notice it was gone.
 async function mergeScannedFiles(folder, scanned) {
   const known = new Map(folder.files.map(f => [folderFileKey(f), f]));
   const merged = scanned.map(s => {
@@ -17968,15 +17972,18 @@ async function mergeScannedFiles(folder, scanned) {
     }
     return { name: s.name, relPath: s.relPath, handle: s.handle, nodeId: null, mtime: s.mtime };
   });
-  // A file that's still OPEN but no longer shows up in a fresh scan (e.g.
-  // deleted on disk while loaded) stays listed rather than being dropped —
-  // matches folderScanTick's existing "doesn't detect removed files" scope.
-  // A closed one that no longer shows up (typically: it stopped matching
-  // the folder's own pattern list after a settings change) is simply
-  // dropped instead — nothing keeps it around once it's neither on disk
-  // (as far as this scan can tell) nor open.
+  // A file that no longer shows up in a fresh scan — deleted on disk, or
+  // (closed only) simply stopped matching the folder's own pattern list
+  // after a settings change — is dropped from the listing entirely
+  // (person-reported: a file deleted outside the app used to linger
+  // forever once it had been opened, since it was never scanned again to
+  // notice its removal). An OPEN one is closed first, exactly like the
+  // person closing it by hand (closeFolderFile's own node teardown), so
+  // its entries/tail/filters are released instead of leaking a node no
+  // listing entry points at anymore.
   for (const [key, rec] of known) {
-    if (!scanned.some(s => s.relPath === key) && rec.nodeId && state.nodes[rec.nodeId]) merged.push(rec);
+    if (scanned.some(s => s.relPath === key)) continue;
+    if (rec.nodeId && state.nodes[rec.nodeId]) closeFolderFile(rec.nodeId);
   }
   merged.sort((a, b) => folderFileKey(a).localeCompare(folderFileKey(b)));
   folder.files = merged;
@@ -18148,12 +18155,11 @@ async function loadFolderFile(folder, rec, auto) {
   }
 }
 
-// Polls every actively-watched folder for newly appeared compatible files —
-// mirrors tailTick's shape/guards (skip while busy, catch handle errors)
-// one level up (folder entries, not file bytes). Doesn't detect removed
-// files: matches the backlog scope ("auto-detect NEW files"). Skipped for a
-// folder still awaiting reconnect (see restoreWatchedFolders) — nothing to
-// scan without permission.
+// Polls every actively-watched folder for newly appeared OR since-removed
+// compatible files — mirrors tailTick's shape/guards (skip while busy,
+// catch handle errors) one level up (folder entries, not file bytes).
+// Skipped for a folder still awaiting reconnect (see restoreWatchedFolders)
+// — nothing to scan without permission.
 async function folderScanTick() {
   for (const folder of state.folders) {
     if (!folder.handle || folder.busy || folder.needsPermission || folder.failed) continue;
@@ -18161,8 +18167,15 @@ async function folderScanTick() {
     try {
       const scanned = await scanFolderHandle(folder.handle, folder.settings);
       const known = new Set(folder.files.map(folderFileKey));
+      const scannedKeys = new Set(scanned.map(s => s.relPath));
       const hasNew = scanned.some(s => !known.has(s.relPath));
-      if (hasNew) { await mergeScannedFiles(folder, scanned); render(); }
+      // Person-reported: a file deleted outside the app used to stay
+      // listed forever, since a merge only ever ran when something NEW
+      // showed up — a poll that only lost a file changed nothing. Now any
+      // known entry missing from this scan also triggers the merge (which
+      // is what actually drops/closes it — see mergeScannedFiles).
+      const hasRemoved = folder.files.some(f => !scannedKeys.has(folderFileKey(f)));
+      if (hasNew || hasRemoved) { await mergeScannedFiles(folder, scanned); render(); }
     } catch (err) {
       folder.failed = true;
       render();
