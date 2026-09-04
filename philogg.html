@@ -112,6 +112,24 @@
        fit without clipping. Recomputed whenever that max changes; 3px here
        (room for exactly one mark) is just the pre-JS fallback. */
     --color-mark-w:3px;
+    /* Syntax-highlight colors for embedded XML/JSON fragments in the entry
+       detail message (see #detailFormatToggle / formatMessageWithHighlight
+       in the Syntax highlight script section, and SYNTAX_COLOR_KEYS). Fixed
+       hardcoded defaults for Dark/Light only (this block, plus the
+       [data-theme="light"] override below) — every other theme (the four
+       Catppuccin flavors, and any custom/imported theme) is free to define
+       its own via an optional "syntaxHighlightColors" block, applied inline
+       by applyTheme() the same optional way as THEME_COLOR_KEYS; when a
+       theme doesn't, these :root values are what the cascade falls back to,
+       so they double as the default for every theme that has no opinion. */
+    --syntax-tag:#e8a94a;
+    --syntax-attr-name:#8bd17c;
+    --syntax-attr-value:#6fa8ff;
+    --syntax-string:#6fa8ff;
+    --syntax-number:#c792ea;
+    --syntax-key:#4fc7c3;
+    --syntax-boolean-null:#c792ea;
+    --syntax-punct:#8a92a8;
   }
 
   /* Theme overrides, selected via [data-theme="..."] on <html> — see the
@@ -158,6 +176,14 @@
     --level-warn-on:#fff;
     --level-info-on:#fff;
     --level-debug-on:#fff;
+    --syntax-tag:#a06a1c;
+    --syntax-attr-name:#4a8f3c;
+    --syntax-attr-value:#1f5fbf;
+    --syntax-string:#1f5fbf;
+    --syntax-number:#8e44ad;
+    --syntax-key:#1b8f8a;
+    --syntax-boolean-null:#8e44ad;
+    --syntax-punct:#5b6474;
   }
 
   /* Catppuccin palette (https://catppuccin.com/palette/) — four flavors
@@ -452,6 +478,11 @@
   }
   .panel-toggle-btn:hover{background:var(--bg-elevated-2); color:var(--accent-strong);}
   .panel-toggle-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
+  /* Toggled state for a .panel-toggle-btn used as a persistent on/off switch
+     (currently just #detailFormatToggle) rather than a plain action button
+     like #detailToggle/#sidebarToggle — same convention as
+     .toolbar-icon-btn.active above. */
+  .panel-toggle-btn.active{background:var(--accent-soft); color:var(--accent-strong);}
 
   #sidebar{
     width:270px; flex:0 0 auto;
@@ -1698,6 +1729,22 @@
   #detailPanel.empty #detailMessage{display:none;}
   #detailPanel:not(.empty) #detailPlaceholder{display:none;}
   #detailPanel:not(.empty) #detailMessage{display:block;}
+  /* Syntax-highlight spans for embedded XML/JSON fragments (see
+     formatMessageWithHighlight / #detailFormatToggle) — colors come from
+     the --syntax-* custom properties (Theming: fixed for Dark/Light,
+     optional per other theme, see the :root block up top). syn-block just
+     switches white-space to pre (its own pretty-printed indentation is
+     already exactly what should show, unlike the surrounding free text's
+     pre-wrap reflow) and gives the fragment a hair of breathing room.*/
+  .syn-block{display:inline-block; white-space:pre; vertical-align:top;}
+  .syn-tag{color:var(--syntax-tag);}
+  .syn-attr-name{color:var(--syntax-attr-name);}
+  .syn-attr-value{color:var(--syntax-attr-value);}
+  .syn-string{color:var(--syntax-string);}
+  .syn-number{color:var(--syntax-number);}
+  .syn-key{color:var(--syntax-key);}
+  .syn-bool-null{color:var(--syntax-boolean-null);}
+  .syn-punct{color:var(--syntax-punct);}
   /* The selected entry's note, shown in full below its message — same
      "readable even with multi-line row rendering off" reasoning as the
      backlog item itself: a note-row in the log view can be one line tall,
@@ -3141,6 +3188,7 @@
           <div id="detailPanelHeader">
             <div id="detailPanelHeaderLabel">Entry detail</div>
             <div id="detailMeta"></div>
+            <button type="button" id="detailFormatToggle" class="panel-toggle-btn" title="Format &amp; highlight embedded XML/JSON in the message"></button>
             <button type="button" id="detailToggle" class="panel-toggle-btn" title="Collapse (Ctrl+J)">
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
             </button>
@@ -4125,6 +4173,11 @@ const ICON_RENAME = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none"
 // used both in the tree (nodeIconHTML) and on the level bar's "Add to
 // tree" button (explicit mode, see initLevelFilterTreeModeSettings).
 const ICON_LEVEL = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 12V9"/><path d="M8 12V6"/><path d="M13 12V3"/></svg>';
+// #detailFormatToggle (embedded XML/JSON format + syntax highlight in the
+// entry detail message) — a "</>" code-bracket glyph, standing in for
+// "structured/code content" the same way ICON_MULTILINE's stacked lines
+// stand in for "multi-line text".
+const ICON_FORMAT_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 3.6 1.8 8l3.8 4.4"/><path d="M10.4 3.6 14.2 8l-3.8 4.4"/></svg>';
 
 /* ===================== Theme ===================== */
 // Settings page -> Appearance: a single dropdown (#settingsThemeSelect)
@@ -4167,6 +4220,22 @@ const THEME_COLOR_KEYS = [
 // default reads fine everywhere) — it's here as a custom theme's safety
 // net for a dark/saturated accent color.
 const THEME_ON_KEYS = ["level-error-on", "level-warn-on", "level-info-on", "level-debug-on", "accent-on"];
+
+// Every CSS custom property the OPTIONAL syntax-highlight color block
+// controls (see the entry-detail "format + highlight embedded XML/JSON"
+// feature, #detailFormatToggle) — a parallel array to THEME_COLOR_KEYS, but
+// unlike it, no theme (built-in flavor or custom/imported) is REQUIRED to
+// define these: applyTheme() only sets a var if the active theme's own
+// syntaxColors provides it (custom.syntaxColors[k], mirroring
+// THEME_COLOR_KEYS' `if (custom.colors[k])` pattern below), otherwise the
+// value falls back through the normal CSS cascade to whatever :root (or, for
+// a built-in flavor's own optional block, its [data-theme] rule) declares —
+// fixed hardcoded defaults live only in :root and
+// :root[data-theme="light"], see the CSS block near the top of the file.
+const SYNTAX_COLOR_KEYS = [
+  "syntax-tag", "syntax-attr-name", "syntax-attr-value", "syntax-string",
+  "syntax-number", "syntax-key", "syntax-boolean-null", "syntax-punct",
+];
 
 // highlightPalette: the theme's own curated colors, offered as the ONLY
 // choices in the highlight-color picker's "Theme" mode (see
@@ -4215,11 +4284,12 @@ function currentThemeId() {
 function applyTheme(themeId) {
   document.documentElement.setAttribute("data-theme", themeId);
   const style = document.documentElement.style;
-  THEME_COLOR_KEYS.concat(THEME_ON_KEYS).forEach(k => style.removeProperty("--" + k));
+  THEME_COLOR_KEYS.concat(THEME_ON_KEYS, SYNTAX_COLOR_KEYS).forEach(k => style.removeProperty("--" + k));
   const custom = customThemes.find(t => t.id === themeId);
   if (custom) {
     THEME_COLOR_KEYS.forEach(k => { if (custom.colors[k]) style.setProperty("--" + k, custom.colors[k]); });
     if (custom.activeTextLight) THEME_ON_KEYS.forEach(k => style.setProperty("--" + k, "#fff"));
+    if (custom.syntaxColors) SYNTAX_COLOR_KEYS.forEach(k => { if (custom.syntaxColors[k]) style.setProperty("--" + k, custom.syntaxColors[k]); });
   }
   applyAccentChoice(themeId); // re-picked --accent (if any) for THIS theme, on top of its defaults above
   const select = document.getElementById("settingsThemeSelect");
@@ -4581,12 +4651,16 @@ function buildThemeTemplateJson() {
   const cs = getComputedStyle(document.documentElement);
   const colors = {};
   THEME_COLOR_KEYS.forEach(k => { colors[k] = cs.getPropertyValue("--" + k).trim(); });
+  const syntaxHighlightColors = {};
+  SYNTAX_COLOR_KEYS.forEach(k => { syntaxHighlightColors[k] = cs.getPropertyValue("--" + k).trim(); });
   return JSON.stringify({
     format: THEME_FILE_FORMAT,
     version: THEME_FILE_VERSION,
     name: "My Theme",
     activeTextLight: false,
     colors,
+    syntaxHighlightColors,
+    _syntaxHighlightColors_comment: "optional — omit this block (or delete individual keys) to fall back to the app's default syntax highlighting colors",
   }, null, 2);
 }
 
@@ -4625,9 +4699,25 @@ function importThemeJson(text) {
 
   const colors = {};
   THEME_COLOR_KEYS.forEach(k => { colors[k] = data.colors[k].trim(); });
+  // syntaxHighlightColors is optional (unlike colors above): missing
+  // entirely, or missing individual keys, both just mean "use the app's
+  // default for that var" — see SYNTAX_COLOR_KEYS's comment. The sibling
+  // "_syntaxHighlightColors_comment" hint field (added by
+  // buildThemeTemplateJson) is ignored, never stored on the custom theme.
+  let syntaxColors = null;
+  if (data.syntaxHighlightColors && typeof data.syntaxHighlightColors === "object") {
+    syntaxColors = {};
+    SYNTAX_COLOR_KEYS.forEach(k => {
+      if (typeof data.syntaxHighlightColors[k] === "string" && data.syntaxHighlightColors[k].trim()) {
+        syntaxColors[k] = data.syntaxHighlightColors[k].trim();
+      }
+    });
+  }
   const name = (typeof data.name === "string" && data.name.trim()) ? data.name.trim().slice(0, 80) : "Custom theme";
   const id = "custom:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  customThemes.push({ id, name, colors, activeTextLight: !!data.activeTextLight });
+  const theme = { id, name, colors, activeTextLight: !!data.activeTextLight };
+  if (syntaxColors) theme.syntaxColors = syntaxColors;
+  customThemes.push(theme);
   saveCustomThemes();
   populateThemeSelect();
   renderCustomThemeList();
@@ -14864,6 +14954,7 @@ const DETAIL_COLLAPSED_KEY = "philogg-detail-collapsed";
 const sidebarToggleBtn = el("#sidebarToggle");
 const sidebarRailEl = el("#sidebarRail");
 const detailToggleBtn = el("#detailToggle");
+const detailFormatToggleBtn = el("#detailFormatToggle");
 let sidebarLastWidth = 270;
 let detailLastHeight = 190;
 
@@ -15141,6 +15232,12 @@ function toggleDetailCollapsed(collapsed) {
 }
 
 detailToggleBtn.addEventListener("click", () => toggleDetailCollapsed());
+detailFormatToggleBtn.addEventListener("click", () => {
+  detailFormatHighlightEnabled = !detailFormatHighlightEnabled;
+  localStorage.setItem(DETAIL_FORMAT_HIGHLIGHT_KEY, detailFormatHighlightEnabled ? "1" : "0");
+  updateDetailFormatToggleButton();
+  updateDetailPanel();
+});
 detailPanel.addEventListener("mouseenter", () => {
   if (!isDetailCollapsed() || !hoverExpandDetail) return;
   detailPanel.classList.add("peeking");
@@ -16066,6 +16163,226 @@ function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
   pushNavWaypoint(); // A2: the Context-pane spot we landed on
 }
 
+/* ===================== Entry detail: format + syntax highlight embedded
+   XML/JSON (person-requested) =====================
+   #detailFormatToggle (next to #detailToggle in #detailPanelHeader) — a
+   single ON/OFF toggle for the entry detail message. OFF (default: the
+   original behavior, unchanged): the raw message text, exactly as parsed.
+   ON: auto-detects well-formed XML and/or JSON fragments EMBEDDED ANYWHERE
+   in the free text (e.g. `Sending Control <ctrl><cmd>reset</cmd></ctrl>
+   successful`, or `Response: {"status":"ok"} done`), pretty-prints and
+   syntax-highlights just those fragments, and leaves the surrounding text
+   untouched. Persisted like the other simple view toggles right above this
+   (TEXT_MATCH_HIGHLIGHT_*_KEY) — one global on/off, applied to whichever
+   message is currently shown, remembered across reloads.
+
+   Detection is two-pass by design (never trust a regex alone to decide
+   "this is valid XML/JSON"): a cheap scan finds CANDIDATE spans (a
+   `<letter...` open tag through its balanced matching close tag; a
+   `{`/`[` through its bracket-matched, string-aware close), then each
+   candidate is verified by actually parsing it (DOMParser for XML, checking
+   for a parsererror node; JSON.parse for JSON) before it's ever treated as
+   a hit — a candidate that fails validation is left as plain text, so a
+   stray `<` or `{` used as everyday punctuation never misfires. */
+const DETAIL_FORMAT_HIGHLIGHT_KEY = "philogg-detail-format-highlight";
+let detailFormatHighlightEnabled = false;
+
+function initDetailFormatHighlightSetting() {
+  const stored = localStorage.getItem(DETAIL_FORMAT_HIGHLIGHT_KEY);
+  detailFormatHighlightEnabled = stored === "1"; // default OFF (raw text is the long-standing look)
+  updateDetailFormatToggleButton();
+}
+
+function updateDetailFormatToggleButton() {
+  detailFormatToggleBtn.classList.toggle("active", detailFormatHighlightEnabled);
+}
+
+// Finds the end index of a balanced `{...}`/`[...]` span starting at
+// text[start] (which must be "{" or "["), respecting double-quoted JSON
+// strings (so a brace/bracket inside a string literal doesn't affect
+// nesting). Returns -1 on an unterminated/mismatched span; the caller still
+// has to JSON.parse the result to confirm it's actually valid JSON, this
+// only finds where a candidate span WOULD end.
+function matchBracketSpanEnd(text, start) {
+  const closers = { "{": "}", "[": "]" };
+  const stack = [closers[text[start]]];
+  let inStr = false;
+  for (let i = start + 1; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (c === "\\") { i++; continue; } // skip the escaped char, whatever it is
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{" || c === "[") { stack.push(closers[c]); continue; }
+    if (c === "}" || c === "]") {
+      if (!stack.length || stack[stack.length - 1] !== c) return -1; // mismatched
+      stack.pop();
+      if (!stack.length) return i + 1;
+    }
+  }
+  return -1; // ran off the end, never closed
+}
+
+// Finds the end index of a balanced XML span starting at text[start] (a
+// `<letter...` open tag), through its matching close tag (or immediately
+// past itself, if self-closing). Nested tags of any name are allowed; text
+// content between tags is skipped over freely. Returns -1 on no match (the
+// stack never empties, or a close tag doesn't match what's open) — the
+// caller still has to hand the result to DOMParser to confirm it's actually
+// well-formed, this only finds where a candidate span WOULD end.
+const XML_TAG_RE = /<(\/)?([A-Za-z][\w:.-]*)((?:"[^"]*"|'[^']*'|[^"'<>])*?)(\/)?>/g;
+function matchXmlSpanEnd(text, start) {
+  XML_TAG_RE.lastIndex = start;
+  const first = XML_TAG_RE.exec(text);
+  if (!first || first.index !== start || first[1]) return -1; // must start with an OPEN tag right here
+  if (first[4]) return XML_TAG_RE.lastIndex; // self-closing root tag, e.g. <tag/>
+  const stack = [first[2]];
+  let m;
+  while (stack.length && (m = XML_TAG_RE.exec(text))) {
+    if (m[4]) continue; // self-closing nested tag: doesn't touch the stack
+    if (m[1]) {
+      if (m[2] !== stack[stack.length - 1]) return -1; // close tag doesn't match what's open
+      stack.pop();
+    } else {
+      stack.push(m[2]);
+    }
+  }
+  return stack.length ? -1 : XML_TAG_RE.lastIndex;
+}
+
+// Scans `text` left to right for candidate XML/JSON spans and validates
+// each one, returning a list of {start, end, type: "xml"|"json"} hits in
+// order, non-overlapping (a validated hit's whole span is skipped past
+// before resuming the scan).
+function findEmbeddedFragments(text) {
+  const hits = [];
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "<" && /[A-Za-z]/.test(text[i + 1] || "")) {
+      const end = matchXmlSpanEnd(text, i);
+      if (end !== -1 && isWellFormedXml(text.slice(i, end))) {
+        hits.push({ start: i, end, type: "xml" });
+        i = end;
+        continue;
+      }
+    } else if (c === "{" || c === "[") {
+      const end = matchBracketSpanEnd(text, i);
+      if (end !== -1 && isValidJson(text.slice(i, end))) {
+        hits.push({ start: i, end, type: "json" });
+        i = end;
+        continue;
+      }
+    }
+    i++;
+  }
+  return hits;
+}
+
+function isWellFormedXml(candidate) {
+  try {
+    const doc = new DOMParser().parseFromString(candidate, "application/xml");
+    return !doc.querySelector("parsererror") && !!doc.documentElement;
+  } catch {
+    return false;
+  }
+}
+
+function isValidJson(candidate) {
+  try {
+    const v = JSON.parse(candidate);
+    return v !== null && typeof v === "object"; // only { }/[ ] spans are candidates here, so this always holds — belt-and-braces
+  } catch {
+    return false;
+  }
+}
+
+// Pretty-prints + syntax-highlights an already-validated XML fragment as
+// escaped HTML (every piece of actual element/attribute/text content goes
+// through escapeHtml — only the wrapping <span class="syn-*"> tags
+// themselves are real markup, see CLAUDE.md-flagged XSS requirement).
+function formatXmlFragmentHtml(raw) {
+  const doc = new DOMParser().parseFromString(raw, "application/xml");
+  const root = doc.documentElement;
+  let out = "";
+  function walk(node, depth) {
+    const indent = "  ".repeat(depth);
+    if (node.nodeType === 1) { // element
+      out += indent + '<span class="syn-punct">&lt;</span><span class="syn-tag">' + escapeHtml(node.tagName) + "</span>";
+      for (const attr of node.attributes) {
+        out += ' <span class="syn-attr-name">' + escapeHtml(attr.name) + '</span><span class="syn-punct">=</span><span class="syn-attr-value">"' +
+          escapeHtml(attr.value) + '"</span>';
+      }
+      const children = Array.from(node.childNodes).filter(n => n.nodeType !== 3 || n.textContent.trim());
+      if (!children.length) {
+        out += '<span class="syn-punct">/&gt;</span>\n';
+        return;
+      }
+      out += '<span class="syn-punct">&gt;</span>';
+      if (children.length === 1 && children[0].nodeType === 3) {
+        out += escapeHtml(children[0].textContent.trim());
+      } else {
+        out += "\n";
+        children.forEach(c => walk(c, depth + 1));
+        out += indent;
+      }
+      out += '<span class="syn-punct">&lt;/</span><span class="syn-tag">' + escapeHtml(node.tagName) + '</span><span class="syn-punct">&gt;</span>\n';
+    } else if (node.nodeType === 3) {
+      const t = node.textContent.trim();
+      if (t) out += indent + escapeHtml(t) + "\n";
+    }
+  }
+  walk(root, 0);
+  return '<span class="syn-block syn-xml">' + out.replace(/\n$/, "") + "</span>";
+}
+
+// Pretty-prints + syntax-highlights an already-validated JSON fragment as
+// escaped HTML — same escaping discipline as formatXmlFragmentHtml above.
+function formatJsonValueHtml(v, depth) {
+  const indent = "  ".repeat(depth);
+  const closeIndent = "  ".repeat(Math.max(0, depth - 1));
+  if (v === null) return '<span class="syn-bool-null">null</span>';
+  if (typeof v === "boolean") return '<span class="syn-bool-null">' + v + "</span>";
+  if (typeof v === "number") return '<span class="syn-number">' + v + "</span>";
+  if (typeof v === "string") return '<span class="syn-string">"' + escapeHtml(v) + '"</span>';
+  if (Array.isArray(v)) {
+    if (!v.length) return '<span class="syn-punct">[]</span>';
+    const items = v.map(item => indent + formatJsonValueHtml(item, depth + 1)).join('<span class="syn-punct">,</span>\n');
+    return '<span class="syn-punct">[</span>\n' + items + "\n" + closeIndent + '<span class="syn-punct">]</span>';
+  }
+  const keys = Object.keys(v);
+  if (!keys.length) return '<span class="syn-punct">{}</span>';
+  const items = keys.map(k => indent + '<span class="syn-key">"' + escapeHtml(k) + '"</span><span class="syn-punct">:</span> ' + formatJsonValueHtml(v[k], depth + 1))
+    .join('<span class="syn-punct">,</span>\n');
+  return '<span class="syn-punct">{</span>\n' + items + "\n" + closeIndent + '<span class="syn-punct">}</span>';
+}
+function formatJsonFragmentHtml(raw) {
+  return '<span class="syn-block syn-json">' + formatJsonValueHtml(JSON.parse(raw), 1) + "</span>";
+}
+
+// Full message -> HTML: plain text stays escapeHtml'd exactly as before,
+// every detected+validated fragment is replaced by its pretty-printed,
+// highlighted rendering. This is the ONLY code path used while the toggle
+// is ON — it deliberately does not also apply the text-match-highlight
+// marking (markFieldHtml): combining the two on the same substring space is
+// unspecified/out of scope for this feature, and OFF (the default) keeps
+// text-match marking exactly as it always worked.
+function formatMessageWithHighlight(text) {
+  const hits = findEmbeddedFragments(text);
+  if (!hits.length) return escapeHtml(text);
+  let out = "";
+  let pos = 0;
+  hits.forEach(h => {
+    out += escapeHtml(text.slice(pos, h.start));
+    out += h.type === "xml" ? formatXmlFragmentHtml(text.slice(h.start, h.end)) : formatJsonFragmentHtml(text.slice(h.start, h.end));
+    pos = h.end;
+  });
+  out += escapeHtml(text.slice(pos));
+  return out;
+}
+
 // Renders the currently selected entry's full details (all fields + full,
 // line-break-preserved message) into the bottom panel. Looks the entry up
 // via the global index, so it works even if it isn't part of the current
@@ -16120,10 +16437,15 @@ function updateDetailPanel() {
       '<span class="detail-method">' + markField(entry.method, "method") + '</span>';
   }
   // Plain textContent (message can never be interpreted as markup) unless
-  // there's actually something to mark, in which case markFieldHtml itself
-  // escapes every non-matched slice the same way — the CSS white-space:
-  // pre-wrap on #detailMessage preserves line breaks in either case.
-  if (mm.active) {
+  // there's actually something to mark or format, in which case both
+  // markFieldHtml and formatMessageWithHighlight escape every non-matched/
+  // non-fragment slice the same way — the CSS white-space: pre-wrap on
+  // #detailMessage preserves line breaks in either case. detailFormatHighlightEnabled
+  // (the #detailFormatToggle button) takes priority over match marking when
+  // both would apply — see formatMessageWithHighlight's own comment for why.
+  if (detailFormatHighlightEnabled) {
+    detailMessageEl.innerHTML = formatMessageWithHighlight(entry.message);
+  } else if (mm.active) {
     detailMessageEl.innerHTML = markFieldHtml(mm, entry.message, "message");
   } else {
     detailMessageEl.textContent = entry.message;
@@ -23407,6 +23729,7 @@ btnRedo.innerHTML = ICON_REDO;
 btnPinBookmarks.innerHTML = ICON_PIN;
 btnNotes.innerHTML = ICON_NOTE;
 btnMultilineMsg.innerHTML = ICON_MULTILINE;
+detailFormatToggleBtn.innerHTML = ICON_FORMAT_HIGHLIGHT;
 btnColumns.innerHTML = ICON_COLUMNS;
 btnTextMatchHighlight.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT;
 btnHighlightMatchText.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT;
@@ -23439,6 +23762,7 @@ initContextToolbar();
 initMinimapFullRangeSetting();
 initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
+initDetailFormatHighlightSetting();
 initLevelFilterTreeModeSettings();
 initTreeIndicatorModeSetting();
 initOpenScrollPositionSetting();
