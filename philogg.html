@@ -11041,6 +11041,24 @@ function applyLinkSelectionClasses() {
   if (block) block.classList.add("pair-selected");
 }
 
+// Up/Down navigation for the Link view's block selection (mirrors
+// moveSelection/moveHighlightSelection) — moves linkSelectedPairIndex by one
+// block and scrolls it into view using linkBlockOffsets, then re-renders the
+// visible window if the move stepped outside it (virtualized, see
+// "Link view: virtualized block rendering").
+function moveLinkSelection(delta) {
+  if (!linkPairsData.length) return;
+  const cur = linkSelectedPairIndex == null ? (delta > 0 ? -1 : linkPairsData.length) : linkSelectedPairIndex;
+  const next = Math.max(0, Math.min(linkPairsData.length - 1, cur + delta));
+  linkSelectedPairIndex = next;
+  const top = linkBlockOffsets[next];
+  const bottom = linkBlockOffsets[next + 1];
+  if (top < linkScroll.scrollTop) linkScroll.scrollTop = top;
+  else if (bottom > linkScroll.scrollTop + linkScroll.clientHeight) linkScroll.scrollTop = bottom - linkScroll.clientHeight;
+  renderLinkVisibleBlocks();
+  updateMinimapSelectionMarkers();
+}
+
 function buildPairBlock(entryData, index) {
   const { pair, realEntries } = entryData;
   const block = document.createElement("div");
@@ -11054,12 +11072,18 @@ function buildPairBlock(entryData, index) {
   // so a click here marks every real entry the pair/tuple is made of on the
   // minimap — not just a single point.
   brace.dataset.entryIds = realEntries.map(e => e.id).join(",");
-  brace.addEventListener("click", () => {
+  brace.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, pair); });
+
+  // Selecting the block: a click anywhere on the block (brace or any row)
+  // selects the whole pair/tuple, same as clicking the brace itself — a row
+  // click no longer just falls through to nothing. dblclick/contextmenu on
+  // a row (buildPairRow) still target that single real entry, since click
+  // and dblclick are independent DOM events.
+  block.addEventListener("click", () => {
     linkSelectedPairIndex = linkSelectedPairIndex === index ? null : index;
     applyLinkSelectionClasses();
     updateMinimapSelectionMarkers();
   });
-  brace.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, pair); });
 
   const rowsWrap = document.createElement("div");
   rowsWrap.className = "pair-rows";
@@ -21667,9 +21691,15 @@ document.addEventListener("keydown", ev => {
     // updateDetailPanel shows an entry from the old filter while no row in
     // the (unrelated) Link view ever matches it, i.e. the panel updates but
     // nothing visibly selects. The Link view has its own click-driven pair
-    // selection (linkSelectedPairIndex), no Up/Down navigation of its own,
-    // so this is a no-op rather than routing into a different mechanism.
-    if (state.entriesView === "filter" && linkWrap.style.display !== "none") return;
+    // selection (linkSelectedPairIndex) — Up/Down moves it via
+    // moveLinkSelection instead of routing into moveSelection/
+    // moveHighlightSelection, which would navigate the stale
+    // currentViewEntries list described above.
+    if (state.entriesView === "filter" && linkWrap.style.display !== "none") {
+      ev.preventDefault();
+      moveLinkSelection(ev.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
     ev.preventDefault();
     const delta = ev.key === "ArrowDown" ? 1 : -1;
     if (state.entriesView === "highlight") moveHighlightSelection(delta); else moveSelection(delta);
@@ -21802,12 +21832,24 @@ document.addEventListener("keydown", ev => {
   // Always targets the message column: there's no mouse event here to
   // resolve a clicked column from, and message is the one column every
   // entry always has meaningful text in (same fallback the mouse path uses).
-  if (ev.key === "Enter" && ev.altKey && state.focusRegion === "entries" && state.selectedId) {
-    const entry = entryIndex[state.selectedId];
-    if (entry) {
+  if (ev.key === "Enter" && ev.altKey && state.focusRegion === "entries") {
+    const messageColumn = TEXT_FILTER_COLUMNS.find(c => c.key === "message");
+    // Link view: target the selected pair/tuple as a whole (same object the
+    // brace's own right-click → "Filter for this message" passes in), not
+    // whichever single real entry state.selectedId happens to still hold
+    // from an earlier row dblclick — see moveLinkSelection/buildPairBlock.
+    if (state.entriesView === "filter" && linkWrap.style.display !== "none" &&
+        linkSelectedPairIndex != null && linkPairsData[linkSelectedPairIndex]) {
       ev.preventDefault();
-      const messageColumn = TEXT_FILTER_COLUMNS.find(c => c.key === "message");
-      openFilterForEntryColumn(entry, messageColumn);
+      openFilterForEntryColumn(linkPairsData[linkSelectedPairIndex].pair, messageColumn);
+      return;
+    }
+    if (state.selectedId) {
+      const entry = entryIndex[state.selectedId];
+      if (entry) {
+        ev.preventDefault();
+        openFilterForEntryColumn(entry, messageColumn);
+      }
     }
     return;
   }
