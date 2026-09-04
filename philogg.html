@@ -866,6 +866,13 @@
      are 28px too — a single #viewBar-only group at a different size would
      look like a misalignment, not a second row. */
   #viewBar .row-actions{float:left; gap:4px; margin:0 0 6px 0;}
+  /* Which of the two row-actions groups is shown is entirely
+     JS-driven (updateViewBarRowActions(), person-requested this session —
+     swap the generic five for Plot's own two viewport filters while the
+     Plot tab is active). Needed explicitly: unlike most `.hidden` usages
+     elsewhere in this file, there is no bare `.hidden{display:none}` rule
+     in this stylesheet — every one is scoped to its own selector. */
+  #viewBar .row-actions.hidden{display:none;}
 
   /* Breadcrumb's own row (this session's toolbar reorganization) — always
      reserved, even with no active filter chain, so #viewBar/#breadcrumbBar
@@ -1487,22 +1494,19 @@
      bar. Hidden entirely on a file node (see updateContextToolbar): nothing
      there to navigate or fold. */
   #contextToolbar{
-    flex:0 0 auto; box-sizing:border-box; height:30px;
+    flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #contextToolbar.hidden{ display:none; }
   #contextToolbar .toolbar-group{ gap:4px; }
-  #contextToolbar .toolbar-icon-btn{ width:22px; height:22px; border-radius:5px; }
-  /* .row-action-btn (Bookmark this row/Add note, moved in here — see the
-     "Actions" group comment near #contextToolbar's HTML) needs its circle
-     shape to survive the 22px/5px-radius override right above: same
-     specificity (id + one class), so it only wins by coming AFTER it in
-     source order — kept as an explicit rule instead of relying on that
-     order alone, since a future edit could easily reshuffle these. */
-  #contextToolbar .row-action-btn{ border-radius:50%; }
-  #contextToolbar .row-action-btn.expanded, #contextToolbar .row-action-btn:focus-visible{ border-radius:20px; }
-  #contextToolbar .row-action-hit{ width:22px; height:22px; }
+  /* Buttons here used to be scoped down to 22x22 (a "compact toolbar row"
+     treatment) — person-requested, this session: they now stay the app's
+     full 28x28 `.toolbar-icon-btn` size, matching #viewBar's row-actions
+     right above (the Filter-Toolbar) instead of reading smaller than it.
+     The row itself grew from 30px to 36px to keep comfortable padding
+     around the now-bigger buttons (see CONTEXT_TOOLBAR_HEIGHT in the JS,
+     which must stay equal to this height). */
   #contextToolbar .ctx-nav-label{
     padding:0 2px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary);
     font-variant-numeric:tabular-nums; white-space:nowrap;
@@ -1510,19 +1514,13 @@
   /* Filtered view's own toolbar row — same "real row in normal flow" pattern
      and same look as #contextToolbar right above it, just for the Filtered
      pane instead of Context. Always shown (no hidden-node case to gate on,
-     unlike Context's match navigation): currently empty, view-specific
-     actions land here later. */
+     unlike Context's match navigation). */
   #filteredToolbar{
-    flex:0 0 auto; box-sizing:border-box; height:30px;
+    flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #filteredToolbar .toolbar-group{ gap:4px; }
-  #filteredToolbar .toolbar-icon-btn{ width:22px; height:22px; border-radius:5px; }
-  /* Same reasoning as #contextToolbar's own copy of these three rules above. */
-  #filteredToolbar .row-action-btn{ border-radius:50%; }
-  #filteredToolbar .row-action-btn.expanded, #filteredToolbar .row-action-btn:focus-visible{ border-radius:20px; }
-  #filteredToolbar .row-action-hit{ width:22px; height:22px; }
   .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--border); flex:0 0 auto; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
@@ -2414,25 +2412,28 @@
      visible on both Table and Plot tabs, just hidden while on Table); this
      gives it its own row inside #plotWrap instead, plus Fullscreen/Save. */
   #plotToolbar{
-    flex:0 0 auto; box-sizing:border-box; height:30px;
+    flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   /* Table view's own toolbar row — same pattern as #plotToolbar/#contextToolbar,
-     sitting directly above #extractScroll instead of #plotBody. Always shown;
-     currently empty, view-specific actions land here later. */
+     sitting directly above #extractScroll instead of #plotBody. Always shown. */
   #tableToolbar{
-    flex:0 0 auto; box-sizing:border-box; height:30px;
+    flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #tableToolbar.hidden{ display:none; }
   #tableToolbar .toolbar-group{ gap:4px; }
-  #tableToolbar .toolbar-icon-btn{ width:22px; height:22px; border-radius:5px; }
   #plot2dToolsGroup{display:flex; align-items:center; gap:10px;}
   #plot2dToolsGroup.hidden{display:none;}
   #plotToolbar .toolbar-group{gap:4px;}
-  #plotToolbar .toolbar-icon-btn{width:22px; height:22px; border-radius:5px;}
+  /* Buttons in these two toolbars (and #contextToolbar/#filteredToolbar
+     above) used to be scoped down to 22x22 — person-requested, this
+     session: they now stay the app's full 28x28 `.toolbar-icon-btn` size,
+     matching #viewBar's row-actions (the Filter-Toolbar) instead of
+     reading smaller than it; both rows grew from 30px to 36px to keep
+     comfortable padding around the now-bigger buttons. */
   #plotToolbar button:not(.toolbar-icon-btn){
     background:transparent; border:none; color:var(--text-secondary); cursor:pointer; border-radius:5px;
     font-family:var(--font-mono); font-size:12px; font-weight:650; line-height:1; padding:5px 7px;
@@ -3032,33 +3033,60 @@
            #viewBar is the "Filter-Toolbar" (person-requested naming) — the
            universal, ALWAYS identical row across every tab (Context/
            Filtered/Table/Plot/Stacked): view toggle, level quick-filter,
-           and — right of the level filter — the row-/selection-action
-           buttons (Bookmark/Note/Filter after/before/for this message/
-           Time filter from selection/Add to selection, `[data-row-actions]`
-           below), all filter-CREATING controls in one place regardless of
-           which view is on screen. The six log-DISPLAY toggles (Notes/
-           Multiline/Columns/TextMatch/HighlightMatch/Pin) stay out of here
-           — they don't create filters, they control how the log views
-           render, so they live in each log view's own toolbar
-           (#contextToolbar/#filteredToolbar) instead. #levelBar stays
-           visible on every tab including Table/Plot (it already applied
-           there via applyLevelFilter(), just without a visible pill row
-           before this session's reorganization). -->
+           and — right of the level filter — whichever set of filter-
+           CREATING actions actually makes sense for the tab currently on
+           screen. For Context/Filtered/Table that's the row-/selection-
+           action buttons (Filter after/before/for this message/Time filter
+           from selection/Add to selection, `[data-row-actions="viewbar"]`
+           below); for Plot it's a DIFFERENT pair instead (person-requested,
+           this session) — those five all key off a log-row selection,
+           which Plot has no notion of, so they'd sit there permanently
+           disabled and useless. Plot's own two viewport-based filters
+           (`[data-row-actions="plot-viewbar"]`, same buttons that used to
+           live inside #plotToolbar's own Actions group) take their place
+           instead, shown ONLY while the Plot tab is active — see
+           updateViewBarRowActions() near applyFhView/renderMainView for
+           the tab-driven show/hide, and setPlot2dToolsVisible() (near
+           #plotToolbar's own comment) for the further "only once there's
+           something actually plotted in 2D" gating layered on top of that.
+           The six log-DISPLAY toggles (Notes/Multiline/Columns/TextMatch/
+           HighlightMatch/Pin) stay out of here regardless of tab — they
+           don't create filters, they control how the log views render, so
+           they live in each log view's own toolbar (#contextToolbar/
+           #filteredToolbar) instead. #levelBar stays visible on every tab
+           including Table/Plot (it already applied there via
+           applyLevelFilter(), just without a visible pill row before this
+           session's reorganization). -->
       <div id="viewBar">
         <!-- Tab buttons rendered dynamically by renderViewTabs() (see
              "Unified toolbar: Context/Filtered/Table/Plot as one tab
              group", near applyFhView) — either
              Context|Filtered|Table|Plot ("Getrennt") or
              Stacked|Table|Plot ("Gestapelt"), per the Settings → Behavior
-             "Context/Filtered display" option. Table/Plot stay in the DOM
-             and visible but get a `disabled` attribute when the active
-             node has no extractable wildcards (docs/ui-implementation-plan.md
-             precisiation 3), so the rest of the tab group never jumps
-             sideways when they become available. -->
+             "Context/Filtered display" option. Table/Plot are left out of
+             the group entirely when the active node has no extractable
+             wildcards (see renderViewTabs's own comment), so the rest of
+             the tab group never jumps sideways once they're added. -->
         <div class="view-tabs" id="fhTabs"></div>
         <div id="levelBar"></div>
         <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add the current level selection to the filter tree as a node (Settings → Behavior: only shown in Manual mode)"></button>
         <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
+        <!-- Plot's own two viewport-based filters (moved up from
+             #plotToolbar's own Actions group, see that div's own comment) —
+             shown ONLY while the Plot tab is active (updateViewBarRowActions,
+             near applyFhView) and, on top of that, only once there's
+             something actually plotted in 2D (setPlot2dToolsVisible, near
+             #plotToolbar), same double-gating #plot2dToolsGroup itself has
+             always had. Ids/click-handlers unchanged from their old
+             location — only the DOM location moved. -->
+        <div class="toolbar-group row-actions hidden" data-row-actions="plot-viewbar">
+          <button type="button" id="plotFilterTimeRangeBtn" class="toolbar-icon-btn" title="Filter: time range — create a time-range filter spanning what's currently visible in the plot">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/></svg>
+          </button>
+          <button type="button" id="plotFilterEntriesBtn" class="toolbar-icon-btn" title="Filter: these entries — create a filter matching exactly the log entries currently visible in the plot">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
+          </button>
+        </div>
       </div>
 
       <div id="fhSplit">
@@ -3237,17 +3265,19 @@
           <!-- Plot view's own toolbar — a real row INSIDE the plot view,
                directly above its content, same pattern as #contextToolbar in
                the Context view (see that div's own comment). Buttons reuse
-               .toolbar-icon-btn shrunk to 22px the same way. Grouped like
-               every other view toolbar this session (person-requested):
-               Controls (zoom + Fullscreen/Save — navigation/display, no
-               label, `|` separator) then Actions (the two filter-creating
-               buttons). #plot2dToolsGroup (zoom) and #plotFilterActionsGroup
-               (the filter buttons) are both only meaningful once there's
+               .toolbar-icon-btn shrunk to 22px the same way. Controls-only
+               now (person-requested, this session): the two viewport-based
+               filter buttons that used to live here in their own Actions
+               group moved up into #viewBar (the Filter-Toolbar) instead —
+               they're the ONLY filter-creating actions that make sense
+               while on the Plot tab, so they take the place of the row-
+               actions group there rather than sitting in a second,
+               plot-local Actions group too (see #viewBar's own comment).
+               #plot2dToolsGroup (zoom) is only meaningful once there's
                something plotted in 2D — updatePlotZoomIndicator() toggles
-               BOTH (plus #plotActionsSep, so no dangling `|` with nothing
-               after it) together; Fullscreen/Save stay available
-               regardless, which is why they're the fixed part of Controls
-               rather than folded into the same conditional group as zoom. -->
+               it (and, via setPlot2dToolsVisible(), the #viewBar filter
+               buttons together with it); Fullscreen/Save stay available
+               regardless. -->
           <div id="plotToolbar">
             <div class="toolbar-group" data-toolbar-group="controls">
               <div id="plot2dToolsGroup" class="hidden toolbar-group">
@@ -3258,15 +3288,6 @@
               </div>
               <button type="button" id="plotFullscreenBtn" class="toolbar-icon-btn" title="Show the plot and legend in fullscreen (Esc to exit)"></button>
               <button type="button" id="plotSaveImageBtn" class="toolbar-icon-btn" title="Save the plot as an image, exactly as currently zoomed/panned"></button>
-            </div>
-            <span id="plotActionsSep" class="ctx-toolbar-sep hidden"></span>
-            <div id="plotFilterActionsGroup" class="toolbar-group hidden" data-toolbar-group="actions">
-              <button type="button" id="plotFilterTimeRangeBtn" class="toolbar-icon-btn" title="Filter: time range — create a time-range filter spanning what's currently visible in the plot">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/></svg>
-              </button>
-              <button type="button" id="plotFilterEntriesBtn" class="toolbar-icon-btn" title="Filter: these entries — create a filter matching exactly the log entries currently visible in the plot">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
-              </button>
             </div>
           </div>
           <div id="plotBody">
@@ -8806,8 +8827,8 @@ const plot3dCanvas = el("#plot3dCanvas");
 const plotToolbar = el("#plotToolbar");
 const tableToolbar = el("#tableToolbar");
 const plot2dToolsGroup = el("#plot2dToolsGroup");
-const plotFilterActionsGroup = el("#plotFilterActionsGroup");
-const plotActionsSep = el("#plotActionsSep");
+const viewBarRowActions = el('[data-row-actions="viewbar"]');
+const plotViewBarActions = el('[data-row-actions="plot-viewbar"]');
 const plotZoomOutBtn = el("#plotZoomOutBtn");
 const plotZoomInBtn = el("#plotZoomInBtn");
 const plotZoomResetBtn = el("#plotZoomResetBtn");
@@ -9081,6 +9102,7 @@ function applyFhView(view) {
     showFhTab(view); // showFhTab re-evaluates both minimap range boxes itself
     if (wasOnTableOrPlot) renderMainView(); // content component switches back from Table/Plot to #fhSplit
   }
+  updateViewBarRowActions();
   localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout);
   // Remember which tab the active node was left on, so a later switch back
   // to it can restore the same view (Settings -> Behavior "When switching
@@ -9106,6 +9128,7 @@ function initFhView() {
   fhSplit.classList.toggle("fh-layout-tabs", fhLayout === "tabs");
   fhSplit.classList.toggle("fh-layout-stacked", fhLayout === "stacked");
   filterSlot.classList.toggle("fh-active", fhLayout === "tabs");
+  updateViewBarRowActions();
 }
 
 // A newly created (or just-edited) filter is invisible while the Context tab
@@ -9623,6 +9646,7 @@ function renderMainView() {
 
   fhTabs.style.display = "flex";
   renderViewTabs(extractCapable);
+  updateViewBarRowActions();
 
   if (fhActiveTab === "table" || fhActiveTab === "plot") {
     fhSplit.style.display = "none";
@@ -11584,16 +11608,33 @@ function zoomPlotAt(dataX, dataY, factor) {
   renderPlotChart();
 }
 
+// #viewBar's row-actions group is swapped for the tab currently on screen
+// (person-requested, this session): the five generic row-actions
+// (Filter after/before/etc.) all key off a log-row selection, which Plot
+// has none of, so they'd sit there permanently disabled and useless —
+// Plot's own two viewport-based filters (moved up from #plotToolbar's own
+// Actions group, `#viewBar`'s own comment) take their place instead, and
+// ONLY while on the Plot tab. Layered on top of that (`plot2dToolsAvailable`,
+// set by setPlot2dToolsVisible below): Plot's filter buttons additionally
+// need something actually plotted in 2D to make sense at all, same
+// condition #plot2dToolsGroup's own zoom controls already gate on — two
+// independent booleans ANDed here rather than two separate `.hidden`
+// toggles fighting over the same element's class.
+let plot2dToolsAvailable = false;
+function updateViewBarRowActions() {
+  const onPlot = fhActiveTab === "plot";
+  viewBarRowActions.classList.toggle("hidden", onPlot);
+  plotViewBarActions.classList.toggle("hidden", !(onPlot && plot2dToolsAvailable));
+}
+
 // Toggles #plot2dToolsGroup (zoom controls, in the toolbar's Controls
-// group) and #plotFilterActionsGroup + its #plotActionsSep divider (the
-// Actions group) together — both are only meaningful once there's
-// something plotted in 2D (see updatePlotZoomIndicator/renderPlotChart's
-// 3D branch below), and hiding the Actions group without also hiding its
-// leading separator would leave a dangling `|` with nothing after it.
+// group) and the #viewBar Plot filter buttons together — both are only
+// meaningful once there's something plotted in 2D (see
+// updatePlotZoomIndicator/renderPlotChart's 3D branch below).
 function setPlot2dToolsVisible(visible) {
+  plot2dToolsAvailable = visible;
   plot2dToolsGroup.classList.toggle("hidden", !visible);
-  plotFilterActionsGroup.classList.toggle("hidden", !visible);
-  plotActionsSep.classList.toggle("hidden", !visible);
+  updateViewBarRowActions();
 }
 
 function updatePlotZoomIndicator() {
@@ -13955,7 +13996,7 @@ function computeHighlightMap(fileId) {
    node field has to be threaded through (see CLAUDE.md).
 */
 const CONTEXT_STRIP_HEIGHT = 22; // must match .ctx-gap-placeholder's own CSS height
-const CONTEXT_TOOLBAR_HEIGHT = 30; // must match #contextToolbar's own CSS height
+const CONTEXT_TOOLBAR_HEIGHT = 36; // must match #contextToolbar's own CSS height
 
 // False on a file node / with nothing active: no match marking, no gaps — the
 // view is just the whole file, as before this feature.
