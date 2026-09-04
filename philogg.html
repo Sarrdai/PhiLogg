@@ -5499,6 +5499,18 @@ const PARSE_CHUNK_LINES = 4000;
 
 async function parseLogTextAsync(text, node, onProgress) {
   const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  if (typeof Worker !== "undefined") {
+    try {
+      await parseLogTextInWorker(text, formatId, node, onProgress);
+      return;
+    } catch (err) {
+      // Worker unavailable, or building/running its blob failed (blocked
+      // blob: URLs, out of memory, …) — fall through to the plain loop
+      // below so a load never hard-fails just because the fast path didn't
+      // work. node.entries/entryIndex are untouched at this point: nothing
+      // is appended until the worker's first "chunk" message.
+    }
+  }
   const compiled = getCompiledFormat(formatId);
   const lines = text.split(/\r\n|\n/);
   let current = null;
@@ -5785,6 +5797,116 @@ function getCompiledFormat(formatId) {
   c = compileOneFormat(fmt);
   formatCompileCache.set(formatId, c);
   return c;
+}
+
+/* ===================== Off-main-thread parsing =====================
+   The chunked loop in parseLogTextAsync only ever yields between chunks
+   (setTimeout(…, 0)) — it never runs two files' parsing at the same time,
+   because it's still one function on one thread. A Web Worker is the only
+   way to get real, multi-core speedup for CPU-bound parsing, which matters
+   once several large files are loaded together (loadFileDescriptors now
+   runs the whole batch concurrently — see its own comment).
+
+   The worker script is NOT a hand-copied mirror of the functions above —
+   that would drift the moment either side changed (the one place this file
+   accepts that risk deliberately is the token-vocabulary note in
+   tools/log-simulator.html, which isn't reachable from a Worker at all).
+   Instead buildLogParseWorkerSrc() serializes the actual functions via
+   Function.prototype.toString() into a Blob, so the worker runs the exact
+   same source. Falls back to the plain main-thread loop (parseLogTextAsync)
+   whenever Worker itself, or building this blob, is unavailable. */
+function buildLogParseWorkerSrc() {
+  const constDefs = [
+    ["DATE_TOKEN_RE", DATE_TOKEN_RE],
+    ["DATE_TOKEN_FRAG", DATE_TOKEN_FRAG],
+    ["FORMAT_TOKEN_RE", FORMAT_TOKEN_RE],
+    ["FORMAT_TOKEN_FIELD", FORMAT_TOKEN_FIELD],
+    ["HEADER_RE", HEADER_RE],
+    ["PARSE_CHUNK_LINES", PARSE_CHUNK_LINES],
+  ].map(([name, val]) => "const " + name + " = " + (val instanceof RegExp ? val.toString() : JSON.stringify(val)) + ";").join("\n");
+  const fnDefs = [
+    unescapePatternText, compileDateFormat, parseTimestampGeneric,
+    compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
+    formatLocation, applyFormatMatch, parseTimestamp, parseHeaderLine,
+    compileOneFormat,
+  ].map(fn => fn.toString()).join("\n\n");
+  // A local, worker-scoped id counter — never the page's own uidCounter,
+  // which is main-thread-only state a worker can't share. The main thread
+  // reassigns real ids when it merges each chunk back in (see
+  // parseLogTextInWorker), so these only need to be unique within one file.
+  const uidDef = "let workerUidCounter = 0;\nfunction uid(prefix) { return prefix + (++workerUidCounter); }";
+  const mainLoop = [
+    'self.onmessage = (ev) => {',
+    '  const { text, fmt } = ev.data;',
+    '  const compiled = compileOneFormat(fmt);',
+    '  const lines = text.split(/\\r\\n|\\n/);',
+    '  let current = null;',
+    '  let pending = [];',
+    '  for (let i = 0; i < lines.length; i++) {',
+    '    const line = lines[i];',
+    '    if (compiled.isHeaderLine(line)) {',
+    '      if (current) pending.push(current);',
+    '      current = compiled.parseHeader(line);',
+    '      current.formatId = fmt.id;',
+    '    } else if (current && line !== "") {',
+    '      current.message += "\\n" + line;',
+    '      current.raw += "\\n" + line;',
+    '    }',
+    '    if (i % PARSE_CHUNK_LINES === 0) {',
+    '      if (pending.length) { postMessage({ type: "chunk", entries: pending }); pending = []; }',
+    '      postMessage({ type: "progress", done: i, total: lines.length });',
+    '    }',
+    '  }',
+    '  if (current) pending.push(current);',
+    '  if (pending.length) postMessage({ type: "chunk", entries: pending });',
+    '  postMessage({ type: "done", total: lines.length });',
+    '};',
+  ].join("\n");
+  return constDefs + "\n\n" + uidDef + "\n\n" + fnDefs + "\n\n" + mainLoop;
+}
+
+let logParseWorkerUrl = null;
+function getLogParseWorkerUrl() {
+  if (!logParseWorkerUrl) {
+    const blob = new Blob([buildLogParseWorkerSrc()], { type: "application/javascript" });
+    logParseWorkerUrl = URL.createObjectURL(blob);
+  }
+  return logParseWorkerUrl;
+}
+
+// Mirrors the main-thread loop's chunked streaming: node.entries fills in
+// live in the same PARSE_CHUNK_LINES-sized batches, just produced by the
+// worker instead. Rejects (never resolves-with-partial-work) on any worker
+// failure so parseLogTextAsync can fall back to the plain loop cleanly.
+function parseLogTextInWorker(text, formatId, node, onProgress) {
+  const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  return new Promise((resolve, reject) => {
+    let worker;
+    try {
+      worker = new Worker(getLogParseWorkerUrl());
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    worker.onerror = (err) => { worker.terminate(); reject(err); };
+    worker.onmessage = (ev) => {
+      const msg = ev.data;
+      if (msg.type === "chunk") {
+        for (const entry of msg.entries) {
+          entry.id = uid("e");
+          entryIndex[entry.id] = entry;
+          node.entries.push(entry);
+        }
+      } else if (msg.type === "progress") {
+        if (onProgress) onProgress(msg.done, msg.total);
+      } else if (msg.type === "done") {
+        if (onProgress) onProgress(msg.total, msg.total);
+        worker.terminate();
+        resolve();
+      }
+    };
+    worker.postMessage({ text, fmt });
+  });
 }
 
 // Cheap, targeted update for JUST the loading file's own tree row (progress
@@ -17045,9 +17167,14 @@ el("#mergeLoadDialogNo").addEventListener("click", () => closeMergeLoadDialog(fa
 // file drop shows every file's eventual position right away instead of only
 // revealing each one once its own turn to load arrives (person-reported: the
 // old behavior only ever showed the file currently being read). Files are
-// still read/parsed one at a time (loadOneFileIntoTree), each placeholder
-// flipping from grayed to a normal, actively-loading row exactly when its
-// turn comes.
+// read/parsed concurrently, each placeholder flipping from grayed to a
+// normal, actively-loading row the moment its own read starts — not
+// necessarily in original order any more, since a later file's read can
+// finish first. That's an acceptable trade for the real, off-main-thread
+// parallelism parseLogTextAsync's Worker path unlocks: several large files
+// now actually parse on separate cores at once instead of taking turns on
+// the main thread. loadedIds is still collected in the original desc order
+// (not completion order), so a merge afterward stays deterministic.
 async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
 
@@ -17058,8 +17185,7 @@ async function loadFileDescriptors(descs) {
 
   const loadedIds = [];
   try {
-    for (let i = 0; i < descs.length; i++) {
-      const desc = descs[i];
+    const results = await Promise.all(descs.map(async (desc, i) => {
       const { handle } = desc;
       try {
         // localPath/sourceUrl are set on the queued placeholder rather than
@@ -17076,7 +17202,7 @@ async function loadFileDescriptors(descs) {
         // URL rather than an already-open File object.
         const file = desc.file || await desc.openFile();
         const node = await loadOneFileIntoTree(file.name, file, handle, null, queuedNodes[i]);
-        loadedIds.push(node.id);
+        return node.id;
       } catch (err) {
         // One file's read/parse failure (loadOneFileIntoTree already removed
         // its own node) must not abort the rest of the batch — every other
@@ -17086,8 +17212,10 @@ async function loadFileDescriptors(descs) {
         // has removed the placeholder yet — so do it here.
         if (state.nodes[queuedNodes[i].id] === queuedNodes[i]) deleteNode(queuedNodes[i].id);
         showCopyToast(`Couldn't load "${queuedNodes[i].name}"`);
+        return null;
       }
-    }
+    }));
+    loadedIds.push(...results.filter(id => id != null));
   } finally {
     render();
   }
