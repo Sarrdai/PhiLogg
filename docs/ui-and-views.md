@@ -145,45 +145,51 @@ shape:
   untouched, this is an additional, always-visible entry point. Buttons
   here stay the row's own 28x28 `.toolbar-icon-btn` size (no 22px scoped-
   down override, unlike the per-view toolbars below) since `#viewBar`'s
-  other controls are 28px too. **Shape (person-requested, this session):
-  `.row-action-btn`** renders each one as a plain circle — `border-
-  radius:50%` on the 28x28 box, the same 14px radius `.level-btn`'s own
-  rounded end-caps have (28px height, `border-radius:20px`) — showing only
-  the icon. Hovering (or `:focus-visible`, for keyboard parity) reveals a
-  `.row-action-label` — a separately, absolutely positioned pill-shaped
-  span (`border-radius:14px`, same `left:0` as the circle, so the two
-  shapes share that left curve exactly, per a person-provided sketch)
-  growing out to the right via a `max-width`/`opacity` transition (not
-  `width` — the label's natural width varies per action and isn't known up
-  front) and floating OVER whatever later circle happens to sit there,
-  rather than pushing it aside.
+  other controls are 28px too. **Shape (person-requested, third iteration
+  this session): `.row-action-btn`** renders each one as a plain circle —
+  `border-radius:50%` on the 28x28 box, the same 14px radius `.level-btn`'s
+  own rounded end-caps have (28px height, `border-radius:20px`) — showing
+  only the icon. Interacting with it reveals a `.row-action-label` growing
+  out to the right via a `max-width`/`opacity` transition (not `width` —
+  the label's natural width varies per action and isn't known up front),
+  turning the button itself into a pill (`border-radius:20px`) — this
+  DOES push later circles further right, same as any flex sibling growing
+  would (person-requested, combining the first iteration's layout-shifting
+  growth with the second iteration's circle shape).
 
-  **The circle's own box never resizes** — this is a deliberate fix for a
-  person-reported issue with an earlier version that grew the BUTTON's own
-  `width` on hover: since a flex sibling's growth shifts every later
-  sibling further right by the same amount, moving the cursor rightward
-  across the row hovered circle N, which promptly pushed circle N+1 out
-  from under the arriving cursor, overshooting onto N+2 instead of landing
-  on N+1 — reading the seven left-to-right was never actually possible.
-  Now: `.row-action-label` has `pointer-events:none`, so hovering the
-  visible pill (which may overlap N+1/N+2's own real, UNMOVED 28x28 boxes)
-  hit-tests straight through it to whichever real circle is physically
-  there — leaving circle N's real box (even while still visually "inside"
-  N's floated-over label) immediately drops `:hover` on N and, the instant
-  the cursor crosses into circle N+1's own real box, raises it there
-  instead. `.row-action-btn:hover{z-index:2}` lifts the hovered/focused
-  button's label above its later-DOM siblings, since flex/absolutely
-  positioned children otherwise stack in DOM order and a later circle
-  would otherwise paint over an earlier one's expanding label; the label
-  markup sits BEFORE the `<svg>` icon in `ROW_ACTIONS_HTML` so the icon
-  itself always paints on top of its own label once expanded, never
-  occluded by it. The label text is the exact same string as the button's
-  `title` (e.g. "Filter after this (incl.)") — both come from one
-  `ROW_ACTIONS` data array (`{action, label, svg, strokeWidth}`) that
-  builds `ROW_ACTIONS_HTML`, so the two can't drift apart. Seven of these
-  permanently spelled out would be far too wide for the row — the circle
-  is the resting state precisely so the row stays compact until the person
-  is actually pointing at one.
+  **What decides expand/collapse is entering/leaving the CIRCLE
+  specifically, not the button's own (now width-changing) box** — this is
+  the fix for what both earlier iterations got wrong in opposite ways.
+  Iteration 1 keyed expand/collapse off a plain CSS `:hover` on the growing
+  button itself: since `:hover` only releases once the pointer leaves the
+  ALREADY-WIDENED box (i.e. past the label too, not just past the icon),
+  moving the cursor rightward across the row hovered circle N, which then
+  widened and only let go once the cursor was already past where circle
+  N+1 used to be — by then N+1 had been shoved further right by N's own
+  growth and the cursor overshot onto N+2. Iteration 2's fix was to never
+  resize the circle at all (an absolutely positioned, non-layout-affecting
+  label overlaid on top of later circles instead) — this fixed the
+  overshoot but reverted the request for layout-shifting growth, so was
+  fixed again the same session: `.row-action-hit` is a new, fixed 28x28
+  inner `<span>` wrapping just the icon, and plain `mouseenter`/
+  `mouseleave` JS listeners on THAT (not a CSS `:hover`) toggle an
+  `.expanded` class on the parent button (`updateRowActionButtons()` also
+  force-clears a stuck `.expanded` if a button becomes disabled while the
+  mouse happens to be sitting over it, e.g. the selection changed via
+  keyboard rather than the mouse actually leaving). Since `.row-action-hit`
+  itself never moves or resizes, leaving it collapses the pill immediately
+  regardless of how wide the button's own box has grown, and the very next
+  circle is now free to receive the arriving cursor at its own, unshifted-
+  until-just-now position. Keyboard focus still uses a plain
+  `.row-action-btn:focus-visible` CSS rule (not the JS listeners) — Tab
+  moves in discrete jumps rather than a continuously arriving cursor, so
+  the overshoot bug never applied there. The label text is the exact same
+  string as the button's `title` (e.g. "Filter after this (incl.)") — both
+  come from one `ROW_ACTIONS` data array (`{action, label, svg,
+  strokeWidth}`) that builds `ROW_ACTIONS_HTML`, so the two can't drift
+  apart. Seven of these permanently spelled out would be far too wide for
+  the row — the circle is the resting state precisely so the row stays
+  compact until the person is actually pointing at one.
 - **Each view's own toolbar** (Zeile 3 — `#contextToolbar`/
   `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) — same position/shape
   in every tab, only the content differs, and only DISPLAY/navigation

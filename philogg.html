@@ -966,54 +966,37 @@
      etc. group) — a plain circle at rest, radius exactly matching
      .level-btn's rounded end-caps (28px height/20px radius above -> a
      14px-radius half-circle at each end; 28x28 + 50% here is the same
-     14px radius, full circle instead of just an end-cap). Hovering (or
-     keyboard-focusing) reveals a pill-shaped label growing out to the
-     RIGHT of the circle, sharing the circle's own left curve (person-
-     requested, this session, with a sketch) — same "which pill would this
-     become" idea as the level filter, but revealed on interaction instead
-     of shown permanently (seven of these permanently labeled would be far
-     too wide for the row).
-
-     Person-reported follow-up the same session: an EARLIER version grew
-     the button's own `width`, which shifts every later sibling further
-     right by the same amount — reading circles left-to-right, the growth
-     from circle N landing under the cursor pushed circle N+1 further away
-     right as the cursor arrived, overshooting onto N+2 instead. Fixed by
-     never resizing the button (`.row-action-btn` keeps its static 28x28
-     box — its hover target, and therefore every sibling's position, never
-     move) and using an absolutely positioned `.row-action-label` instead:
-     it starts at the SAME `left:0`/`border-radius` as the circle (so the
-     circle visually reads as the pill's left cap — the two shapes share
-     that curve exactly, per the sketch) and grows rightward, floating
-     OVER whatever sibling circles happen to sit there rather than
-     shoving them aside. `pointer-events:none` on the label makes that
-     overlap purely visual: the cursor's hit-test passes straight through
-     to the real circle underneath, so moving right off circle N and onto
-     circle N+1's own (unmoved) 28x28 box immediately un-hovers N (its
-     label collapses) and hovers N+1 (its label opens) — exactly the "one
-     circle owns exactly one label, moving right always lands on the very
-     next one" reading order that was asked for. `z-index` bumps the
-     hovered/focused button above its later-DOM siblings so its label
-     paints on top of them instead of vice versa (flex/absolute siblings
-     otherwise stack in DOM order); the label sits BEHIND its own button's
-     icon (source order — the label markup comes before the `<svg>` in
-     `ROW_ACTIONS_HTML`) so the icon is never occluded by the label's own
-     background once expanded. `max-width` (not `width`) is what's
-     animated, since each label's natural width is text-content-driven and
-     unknown up front. */
-  .row-action-btn{position:relative; z-index:0;}
-  .row-action-btn:hover, .row-action-btn:focus-visible{z-index:2;}
+     14px radius, full circle instead of just an end-cap). Interacting with
+     the circle reveals a pill-shaped label growing out to the right of it,
+     sharing the circle's own left curve (person-requested, this session,
+     with a sketch) — same "which pill would this become" idea as the
+     level filter, but revealed on interaction instead of shown
+     permanently (seven of these permanently labeled would be far too wide
+     for the row). Growing the label DOES push later siblings further
+     right (person-requested, combining two earlier iterations) — the
+     circle itself keeps its fixed 28x28 box throughout, so the row still
+     reads left-to-right one circle at a time: what decides expand/
+     collapse is entering/leaving the CIRCLE specifically
+     (`.row-action-hit`, a fixed-size inner span, via `mouseenter`/
+     `mouseleave` — `updateRowActionHover()` below), not the button's own
+     (now width-changing) box, which is what a plain CSS `:hover` on the
+     button would key off instead — that was the exact bug an earlier
+     version had (`:hover` only releases once the pointer leaves the
+     ALREADY-EXPANDED box, i.e. past the label too, so the next circle
+     arrives already shoved rightward under the cursor and gets
+     overshot). Keyboard focus still uses a plain `:focus-visible` on the
+     button — Tab moves in discrete jumps, not a continuously arriving
+     cursor, so the earlier overshoot bug doesn't apply there. */
+  .row-action-btn{border-radius:50%; overflow:hidden; transition:border-radius .15s, width .15s;}
+  .row-action-btn.expanded, .row-action-btn:focus-visible{border-radius:20px; width:auto; padding-right:10px;}
+  .row-action-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .row-action-label{
-    position:absolute; left:0; top:0; height:28px; box-sizing:border-box;
-    display:flex; align-items:center; justify-content:flex-end;
-    background:var(--bg-elevated); border:1px solid var(--border); border-radius:14px;
-    padding:0 10px 0 32px; /* left padding clears the circle+icon in front of it */
-    max-width:0; opacity:0; overflow:hidden; white-space:nowrap; pointer-events:none;
+    max-width:0; opacity:0; margin-left:0; overflow:hidden; white-space:nowrap;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
-    transition:max-width .15s ease, opacity .1s ease;
+    transition:max-width .15s ease, opacity .1s ease, margin-left .15s ease;
   }
-  .row-action-btn:hover .row-action-label, .row-action-btn:focus-visible .row-action-label{
-    max-width:240px; opacity:1;
+  .row-action-btn.expanded .row-action-label, .row-action-btn:focus-visible .row-action-label{
+    max-width:240px; opacity:1; margin-left:6px;
   }
   .level-btn.lvl-error{color:var(--level-error); border-color:color-mix(in srgb, var(--level-error) 35%, transparent);}
   .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
@@ -19867,13 +19850,14 @@ addToSelectionMenu.addEventListener("click", ev => {
 // comment near .level-btn) renders each button as a plain, FIXED-SIZE
 // circle — same 28px height/radius as the level-filter pills right next to
 // it, radius exactly matching their rounded end-caps — with only the icon
-// visible; hovering (or keyboard-focusing) reveals an overlaid pill-shaped
-// label growing rightward out of it, person-requested to read like "which
-// pill would this become" rather than needing the title tooltip's hover
-// delay. The circle itself never resizes (see the CSS comment for why —
-// resizing it used to shove every later circle rightward as the cursor
-// arrived, overshooting the intended one), so reading left-to-right always
-// lands exactly one circle at a time.
+// visible; hovering the circle specifically (or keyboard-focusing the whole
+// button) grows a pill-shaped label out of it, person-requested to read
+// like "which pill would this become" rather than needing the title
+// tooltip's hover delay. The circle itself (`.row-action-hit`) stays a
+// fixed 28x28 box — entering/leaving THAT is what expand/collapse keys off
+// (see updateRowActionHover below), not the button's own box, which grows
+// to fit the label once expanded — so reading left-to-right always lands
+// on the very next circle instead of overshooting it.
 const ROW_ACTIONS = [
   { action: "bookmark", label: "Bookmark this row", svg: '<path d="M4 2.5h8v11l-4-2.6-4 2.6z"/>', strokeWidth: 1.3 },
   { action: "note", label: "Add note", svg: '<path d="M3.5 2.5h9v11l-2.5-1.8H3.5z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>', strokeWidth: 1.3 },
@@ -19884,17 +19868,32 @@ const ROW_ACTIONS = [
   { action: "addToSelection", label: "Add to selection", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/>', strokeWidth: 1.4 },
 ];
 const ROW_ACTIONS_HTML = ROW_ACTIONS.map(a =>
-  // .row-action-label BEFORE the <svg> in source order — the label sits
-  // behind the icon once expanded (see the CSS comment near .row-action-btn
-  // for why: the label is an absolutely positioned overlay, and a later
-  // sibling in the same stacking context always paints on top of an
-  // earlier one, so the icon needs to come second to stay visible).
+  // .row-action-hit is the fixed 28x28 circle (icon centered inside it) —
+  // the actual mouseenter/mouseleave target (see updateRowActionHover);
+  // .row-action-label follows it and is what grows/shrinks the button's
+  // own (now variable) width.
   '<button type="button" class="toolbar-icon-btn row-action-btn" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
+    '<span class="row-action-hit"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg></span>' +
     '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
-    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg>' +
   '</button>'
 ).join("");
 elAll("[data-row-actions]").forEach(container => { container.innerHTML = ROW_ACTIONS_HTML; });
+// Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
+// circle specifically, NOT a plain CSS :hover on the button — the button's
+// own box changes width once expanded, so a :hover there would only
+// release once the pointer leaves the ALREADY-WIDENED box (i.e. past the
+// label too), by which point the next circle has already been shoved
+// rightward under the cursor and gets overshot (see the CSS comment near
+// .row-action-btn for the full story). mouseenter/mouseleave don't bubble,
+// so one listener per hit-zone (there are only seven) is simplest here.
+// (pointer-events:none on a disabled button — see .toolbar-icon-btn:disabled
+// — already stops these from firing on its children, so no disabled check
+// needed here.)
+elAll(".row-action-hit").forEach(hit => {
+  const btn = hit.closest(".row-action-btn");
+  hit.addEventListener("mouseenter", () => btn.classList.add("expanded"));
+  hit.addEventListener("mouseleave", () => btn.classList.remove("expanded"));
+});
 
 // The row-action buttons' "current row" — state.selectedId, NOT ctxEntry
 // (that's only ever set while the right-click menu is open). Falls back to
@@ -19929,6 +19928,11 @@ function updateRowActionButtons() {
   elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !singleRowEnabled; });
   elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !rangeEnabled; });
   elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !addToSelectionEnabled; });
+  // A button that just became disabled while the mouse happened to be
+  // sitting over its circle (e.g. the selection changed via keyboard, not
+  // by the mouse actually leaving) never gets its own `mouseleave` — drop
+  // its expanded pill explicitly instead of leaving it stuck open.
+  elAll(".row-action-btn:disabled.expanded").forEach(b => b.classList.remove("expanded"));
 }
 
 // Dispatches a toolbar row-action click by name — shares the exact same
