@@ -19506,6 +19506,24 @@ function buildNumericExtractPattern(message) {
   return count > 0 ? out : null;
 }
 
+// #filterInput is a single-line <input type="text"> — the HTML value
+// sanitization algorithm for single-line text controls silently STRIPS any
+// "\r"/"\n" the moment it's assigned to .value (see WHATWG "value
+// sanitization algorithm"). openFilterForEntryColumn below builds its
+// pattern straight from a real entry's raw column text, which for the
+// message column of a multi-line entry (a stack trace, a wrapped line)
+// contains literal newlines — assigning that pattern to filterInput.value
+// as-is silently dropped them, corrupting the very thing "Filter for this
+// message" was supposed to reproduce (person-reported follow-up to the
+// dotAll fix above: the auto-generated pattern still didn't find the
+// message it was built from, because the newline never survived into the
+// input at all). Replacing each newline with the bare `[*]` wildcard
+// token both survives the input untouched and, since [*] now spans a
+// newline (dotAll), still matches straight through the break.
+function collapseNewlinesToWildcard(pattern) {
+  return pattern.replace(/\r\n|\r|\n/g, "[*]");
+}
+
 // "Filter for this ___" opens the filter popup prefilled from whichever
 // column was right-clicked (see resolveContextFilterColumn), with that
 // column pre-selected in the "Applies to" chips — but deliberately does
@@ -19527,7 +19545,7 @@ function openFilterForEntryColumn(entry, column) {
   if (!entry || !state.activeId) return;
   const value = textColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
-  const pattern = buildNumericExtractPattern(value) || value;
+  const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
   openFilterPopup();
   filterInput.value = pattern;
   filterPopupColumns = new Set([column.key]);
