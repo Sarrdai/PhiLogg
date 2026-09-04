@@ -146,21 +146,44 @@ shape:
   here stay the row's own 28x28 `.toolbar-icon-btn` size (no 22px scoped-
   down override, unlike the per-view toolbars below) since `#viewBar`'s
   other controls are 28px too. **Shape (person-requested, this session):
-  `.row-action-btn`** renders each one as a plain circle at rest —
-  `border-radius:50%` on the 28x28 box, the same 14px radius `.level-btn`'s
-  own rounded end-caps have (28px height, `border-radius:20px`) — showing
-  only the icon. Hovering (or `:focus-visible`, for keyboard parity) turns
-  it into a pill exactly like `.level-btn`'s own shape (`border-radius:20px`,
-  `width:auto`, horizontal padding) and reveals a `.row-action-label` span
-  next to the icon via a `max-width`/`opacity` transition (not `width` —
-  the label's natural width varies per action and isn't known up front).
-  The label text is the exact same string as the button's `title` (e.g.
-  "Filter after this (incl.)") — both come from one `ROW_ACTIONS` data
-  array (`{action, label, svg, strokeWidth}`) that builds `ROW_ACTIONS_HTML`,
-  so the two can't drift apart. Seven of these permanently spelled out
-  would be far too wide for the row — the circle is the resting state
-  precisely so the row stays compact until the person is actually pointing
-  at one.
+  `.row-action-btn`** renders each one as a plain circle — `border-
+  radius:50%` on the 28x28 box, the same 14px radius `.level-btn`'s own
+  rounded end-caps have (28px height, `border-radius:20px`) — showing only
+  the icon. Hovering (or `:focus-visible`, for keyboard parity) reveals a
+  `.row-action-label` — a separately, absolutely positioned pill-shaped
+  span (`border-radius:14px`, same `left:0` as the circle, so the two
+  shapes share that left curve exactly, per a person-provided sketch)
+  growing out to the right via a `max-width`/`opacity` transition (not
+  `width` — the label's natural width varies per action and isn't known up
+  front) and floating OVER whatever later circle happens to sit there,
+  rather than pushing it aside.
+
+  **The circle's own box never resizes** — this is a deliberate fix for a
+  person-reported issue with an earlier version that grew the BUTTON's own
+  `width` on hover: since a flex sibling's growth shifts every later
+  sibling further right by the same amount, moving the cursor rightward
+  across the row hovered circle N, which promptly pushed circle N+1 out
+  from under the arriving cursor, overshooting onto N+2 instead of landing
+  on N+1 — reading the seven left-to-right was never actually possible.
+  Now: `.row-action-label` has `pointer-events:none`, so hovering the
+  visible pill (which may overlap N+1/N+2's own real, UNMOVED 28x28 boxes)
+  hit-tests straight through it to whichever real circle is physically
+  there — leaving circle N's real box (even while still visually "inside"
+  N's floated-over label) immediately drops `:hover` on N and, the instant
+  the cursor crosses into circle N+1's own real box, raises it there
+  instead. `.row-action-btn:hover{z-index:2}` lifts the hovered/focused
+  button's label above its later-DOM siblings, since flex/absolutely
+  positioned children otherwise stack in DOM order and a later circle
+  would otherwise paint over an earlier one's expanding label; the label
+  markup sits BEFORE the `<svg>` icon in `ROW_ACTIONS_HTML` so the icon
+  itself always paints on top of its own label once expanded, never
+  occluded by it. The label text is the exact same string as the button's
+  `title` (e.g. "Filter after this (incl.)") — both come from one
+  `ROW_ACTIONS` data array (`{action, label, svg, strokeWidth}`) that
+  builds `ROW_ACTIONS_HTML`, so the two can't drift apart. Seven of these
+  permanently spelled out would be far too wide for the row — the circle
+  is the resting state precisely so the row stays compact until the person
+  is actually pointing at one.
 - **Each view's own toolbar** (Zeile 3 — `#contextToolbar`/
   `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) — same position/shape
   in every tab, only the content differs, and only DISPLAY/navigation

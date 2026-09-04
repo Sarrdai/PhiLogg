@@ -963,27 +963,57 @@
   .level-btn:hover{filter:brightness(1.25);}
 
   /* Row-action buttons (the Filter-Toolbar's Bookmark/Note/Filter-after/
-     etc. group, person-requested this session) — a plain circle at rest,
-     radius exactly matching .level-btn's rounded end-caps (28px height/20px
-     radius above -> a 14px-radius half-circle at each end; 28x28 + 50% here
-     is the same 14px radius, full circle instead of just an end-cap).
-     Hovering (or keyboard-focusing) turns it into a pill exactly like
-     .level-btn's own shape, sliding in a text label next to the icon —
-     same "which pill would this become" idea as the level filter, but
-     revealed on interaction instead of shown permanently, since seven of
-     these next to each other permanently labeled would be far too wide for
-     the row. `.row-action-label`'s width/opacity are what's actually
-     animated (`max-width`, not `width`, since the label's natural width is
-     unknown up front — text-content driven, per action). */
-  .row-action-btn{border-radius:50%; transition:background .12s, border-color .12s, color .12s, border-radius .15s, padding .15s;}
-  .row-action-btn:hover, .row-action-btn:focus-visible{border-radius:20px; width:auto; padding:0 10px;}
+     etc. group) — a plain circle at rest, radius exactly matching
+     .level-btn's rounded end-caps (28px height/20px radius above -> a
+     14px-radius half-circle at each end; 28x28 + 50% here is the same
+     14px radius, full circle instead of just an end-cap). Hovering (or
+     keyboard-focusing) reveals a pill-shaped label growing out to the
+     RIGHT of the circle, sharing the circle's own left curve (person-
+     requested, this session, with a sketch) — same "which pill would this
+     become" idea as the level filter, but revealed on interaction instead
+     of shown permanently (seven of these permanently labeled would be far
+     too wide for the row).
+
+     Person-reported follow-up the same session: an EARLIER version grew
+     the button's own `width`, which shifts every later sibling further
+     right by the same amount — reading circles left-to-right, the growth
+     from circle N landing under the cursor pushed circle N+1 further away
+     right as the cursor arrived, overshooting onto N+2 instead. Fixed by
+     never resizing the button (`.row-action-btn` keeps its static 28x28
+     box — its hover target, and therefore every sibling's position, never
+     move) and using an absolutely positioned `.row-action-label` instead:
+     it starts at the SAME `left:0`/`border-radius` as the circle (so the
+     circle visually reads as the pill's left cap — the two shapes share
+     that curve exactly, per the sketch) and grows rightward, floating
+     OVER whatever sibling circles happen to sit there rather than
+     shoving them aside. `pointer-events:none` on the label makes that
+     overlap purely visual: the cursor's hit-test passes straight through
+     to the real circle underneath, so moving right off circle N and onto
+     circle N+1's own (unmoved) 28x28 box immediately un-hovers N (its
+     label collapses) and hovers N+1 (its label opens) — exactly the "one
+     circle owns exactly one label, moving right always lands on the very
+     next one" reading order that was asked for. `z-index` bumps the
+     hovered/focused button above its later-DOM siblings so its label
+     paints on top of them instead of vice versa (flex/absolute siblings
+     otherwise stack in DOM order); the label sits BEHIND its own button's
+     icon (source order — the label markup comes before the `<svg>` in
+     `ROW_ACTIONS_HTML`) so the icon is never occluded by the label's own
+     background once expanded. `max-width` (not `width`) is what's
+     animated, since each label's natural width is text-content-driven and
+     unknown up front. */
+  .row-action-btn{position:relative; z-index:0;}
+  .row-action-btn:hover, .row-action-btn:focus-visible{z-index:2;}
   .row-action-label{
-    display:inline-block; max-width:0; opacity:0; margin-left:0; overflow:hidden; white-space:nowrap;
+    position:absolute; left:0; top:0; height:28px; box-sizing:border-box;
+    display:flex; align-items:center; justify-content:flex-end;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:14px;
+    padding:0 10px 0 32px; /* left padding clears the circle+icon in front of it */
+    max-width:0; opacity:0; overflow:hidden; white-space:nowrap; pointer-events:none;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
-    transition:max-width .15s ease, opacity .1s ease, margin-left .15s ease;
+    transition:max-width .15s ease, opacity .1s ease;
   }
   .row-action-btn:hover .row-action-label, .row-action-btn:focus-visible .row-action-label{
-    max-width:220px; opacity:1; margin-left:6px;
+    max-width:240px; opacity:1;
   }
   .level-btn.lvl-error{color:var(--level-error); border-color:color-mix(in srgb, var(--level-error) 35%, transparent);}
   .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
@@ -19834,12 +19864,16 @@ addToSelectionMenu.addEventListener("click", ev => {
 // Data-driven instead of hand-written button strings: label text and the
 // native `title` tooltip are the exact same string, from one place, rather
 // than two copies that could drift. `.row-action-btn` (see its own CSS
-// comment near .level-btn) renders each button as a plain circle — same
-// 28px height/radius as the level-filter pills right next to it, radius
-// exactly matching their rounded end-caps — with only the icon visible;
-// hovering (or keyboard-focusing) expands it into a pill showing this label
-// text next to the icon, person-requested to read like "which pill would
-// this become" rather than needing the title tooltip's hover delay.
+// comment near .level-btn) renders each button as a plain, FIXED-SIZE
+// circle — same 28px height/radius as the level-filter pills right next to
+// it, radius exactly matching their rounded end-caps — with only the icon
+// visible; hovering (or keyboard-focusing) reveals an overlaid pill-shaped
+// label growing rightward out of it, person-requested to read like "which
+// pill would this become" rather than needing the title tooltip's hover
+// delay. The circle itself never resizes (see the CSS comment for why —
+// resizing it used to shove every later circle rightward as the cursor
+// arrived, overshooting the intended one), so reading left-to-right always
+// lands exactly one circle at a time.
 const ROW_ACTIONS = [
   { action: "bookmark", label: "Bookmark this row", svg: '<path d="M4 2.5h8v11l-4-2.6-4 2.6z"/>', strokeWidth: 1.3 },
   { action: "note", label: "Add note", svg: '<path d="M3.5 2.5h9v11l-2.5-1.8H3.5z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>', strokeWidth: 1.3 },
@@ -19850,9 +19884,14 @@ const ROW_ACTIONS = [
   { action: "addToSelection", label: "Add to selection", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/>', strokeWidth: 1.4 },
 ];
 const ROW_ACTIONS_HTML = ROW_ACTIONS.map(a =>
+  // .row-action-label BEFORE the <svg> in source order — the label sits
+  // behind the icon once expanded (see the CSS comment near .row-action-btn
+  // for why: the label is an absolutely positioned overlay, and a later
+  // sibling in the same stacking context always paints on top of an
+  // earlier one, so the icon needs to come second to stay visible).
   '<button type="button" class="toolbar-icon-btn row-action-btn" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
-    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg>' +
     '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
+    '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg>' +
   '</button>'
 ).join("");
 elAll("[data-row-actions]").forEach(container => { container.innerHTML = ROW_ACTIONS_HTML; });
