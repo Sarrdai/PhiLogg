@@ -3072,36 +3072,29 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 29b — the header's own icon buttons (#btnUndo/#btnRedo) share
-   `.toolbar-icon-btn`'s 28x28 shape, no id-specific override needed.
-   Superseded for the six log-display toggles by this session's toolbar
-   reorganization: they moved out of #viewBar (where they were 28x28, same
-   as the header) into #contextToolbar/#filteredToolbar, which — like every
-   other view toolbar row (#plotToolbar, #tableToolbar, and the toolbar's
-   own pre-existing prev/next-match buttons) — shrinks `.toolbar-icon-btn`
-   to 22x22 via a scoped override, matching that row's shorter 30px height.
-   See Group 151/175-adjacent coverage for the 22x22 shape in its new home.
+   GROUP 29b — every icon button in the app shares `.toolbar-icon-btn`'s
+   28x28 shape, no id/scope-specific size override anywhere. The six
+   log-display toggles moved out of #viewBar into #contextToolbar/
+   #filteredToolbar this session (see the toolbar-reorganization groups
+   above) briefly got a 22x22 scoped-down override there (matching those
+   rows' then-30px height) — person-reported follow-up, same session:
+   "the elements look far too small now, size them like the permanent
+   Filter-Toolbar" — removed again, so every view toolbar (#contextToolbar/
+   #filteredToolbar/#tableToolbar/#plotToolbar) now uses the full 28x28
+   size, its own row height grown from 30px to 36px to fit them
+   comfortably (`CONTEXT_TOOLBAR_HEIGHT` in the JS updated to match).
    jsdom has no layout engine (see "Testing approach"), so this asserts the
    cascaded width/height rather than a rendered pixel size.
    ============================================================ */
 group(29);
 await withApp(async (w, d) => {
-  section("29b. Header's own icon buttons share .toolbar-icon-btn's 28x28 shape");
+  section("29b. Every icon button — header, Filter-Toolbar, and every view toolbar — shares .toolbar-icon-btn's 28x28 shape");
   const cs = w.getComputedStyle;
-  ["#btnUndo", "#btnRedo"].forEach(sel => {
+  ["#btnUndo", "#btnRedo", ".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch"].forEach(sel => {
     const btn = d.querySelector(sel);
     assert(btn !== null, "sanity: " + sel + " exists");
     const bcs = cs(btn);
-    assert(bcs.width === "28px" && bcs.height === "28px", sel + " has no id-specific size override — it shares .toolbar-icon-btn's 28x28 shape, got " + bcs.width + "x" + bcs.height);
-  });
-  // The six log-display toggles now live in #contextToolbar/#filteredToolbar
-  // and are scoped down to 22x22 there, same as every other view-toolbar
-  // icon button (#ctxPrevMatch, #plotFullscreenBtn, etc.) — not 28x28.
-  [".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch"].forEach(sel => {
-    const btn = d.querySelector(sel);
-    assert(btn !== null, "sanity: " + sel + " exists");
-    const bcs = cs(btn);
-    assert(bcs.width === "22px" && bcs.height === "22px", sel + " is scoped to the view toolbar's 22x22 icon-button size, got " + bcs.width + "x" + bcs.height);
+    assert(bcs.width === "28px" && bcs.height === "28px", sel + " has no size override — it shares .toolbar-icon-btn's 28x28 shape, got " + bcs.width + "x" + bcs.height);
   });
 });
 
@@ -19505,12 +19498,15 @@ await withApp(async (w, d, T) => {
   assert(byAction("filterAfter").disabled === true, "sanity: disabled again");
   assert(!filterAfterBtn.classList.contains("expanded"), "a newly-disabled button's stuck-open pill is force-collapsed");
 
-  // --- Stays visible/functional regardless of which tab is active (Table/Plot too — see Group 26) ---
+  // --- Stays visible/functional on Table too (Table/Plot presence — see Group 26/158a) ---
+  // NOTE: on the Plot tab specifically these five hide entirely (person-
+  // requested, this session) in favor of Plot's own viewport filters — see
+  // Group 178 for that coverage; not re-checked here.
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
-  w.applyFhView("plot");
-  assert(isVisible(d.querySelector('[data-row-actions="viewbar"]'), w) === true, "row-actions group stays visible on the Plot tab — it's part of the universal Filter-Toolbar");
+  w.applyFhView("table");
+  assert(isVisible(d.querySelector('[data-row-actions="viewbar"]'), w) === true, "row-actions group stays visible on the Table tab — it's part of the universal Filter-Toolbar");
 });
 
 await withApp(async (w, d, T) => {
@@ -19704,20 +19700,67 @@ await withApp(async (w, d, T) => {
   assert(tableKinds.join(",") === "actions", "#tableToolbar is Actions-only (Export as CSV…, no display setting or nav control of its own), got " + tableKinds.join(","));
   assertNoGroupLabel(d.querySelector("#tableToolbar"));
 
+  // Plot's own toolbar is Controls-only now (person-requested follow-up,
+  // same session — see Group 178): its Actions group (the two viewport-
+  // based filter buttons) moved up into #viewBar instead, since those are
+  // the ONLY filter-creating actions that make sense on the Plot tab —
+  // see Group 178 for that coverage.
   w.applyFhView("plot");
   const plotKinds = groupKinds(d.querySelector("#plotToolbar"));
-  assert(plotKinds.join(",") === "controls,actions", "#plotToolbar is Controls|Actions (zoom/fullscreen/save, then the two filter-creating buttons), got " + plotKinds.join(","));
-  assertOrdered(plotKinds, "#plotToolbar");
+  assert(plotKinds.join(",") === "controls", "#plotToolbar is Controls-only (zoom/fullscreen/save) — its Actions group moved into #viewBar, got " + plotKinds.join(","));
   assertNoGroupLabel(d.querySelector("#plotToolbar"));
-  // Plot's Controls/Actions groups are BOTH gated on "something plotted in
-  // 2D" together (zoom controls AND the filter buttons — see
-  // setPlot2dToolsVisible) except Fullscreen/Save, which stay available
-  // regardless — sanity-check the pairing holds, and that hiding one also
-  // hides its leading separator (no dangling `|`).
-  w.render(); // triggers renderPlotChart -> updatePlotZoomIndicator with a real 2D plot
+});
+
+/* ============================================================
+   Group 178 — this session (2026-09-04), person-requested: on the Plot
+   tab, the Filter-Toolbar's five generic row-actions (Filter after/before/
+   for this message, Time filter from selection, Add to selection) all key
+   off a log-row selection Plot doesn't have, so they'd sit there
+   permanently disabled and useless — hidden on that tab now, replaced by
+   Plot's own two viewport-based filters (moved up from #plotToolbar's own
+   Actions group into #viewBar itself), shown ONLY while on Plot AND only
+   once there's something actually plotted in 2D (same condition
+   #plot2dToolsGroup's zoom controls already gated on).
+   ============================================================ */
+group(178);
+await withApp(async (w, d, T) => {
+  section("178. Plot tab swaps the Filter-Toolbar's row-actions for its own viewport filters");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = extractNode.id;
+  w.render();
+
+  const viewbarActions = d.querySelector('[data-row-actions="viewbar"]');
+  const plotViewbarActions = d.querySelector('[data-row-actions="plot-viewbar"]');
+  assert(viewbarActions !== null && plotViewbarActions !== null, "sanity: both groups exist in #viewBar");
+  assert(plotViewbarActions.querySelector("#plotFilterTimeRangeBtn") !== null && plotViewbarActions.querySelector("#plotFilterEntriesBtn") !== null,
+    "Plot's two viewport-filter buttons now live inside #viewBar, not #plotToolbar");
+  assert(d.querySelector("#plotToolbar #plotFilterTimeRangeBtn") === null, "...and are gone from #plotToolbar");
+
+  // --- Context/Filtered/Table: the five generic row-actions show, Plot's own stay hidden ---
+  ["highlight", "filter", "table"].forEach(tab => {
+    w.applyFhView(tab);
+    assert(isVisible(viewbarActions, w) === true, "the five generic row-actions are visible on the " + tab + " tab");
+    assert(isVisible(plotViewbarActions, w) === false, "Plot's own filter buttons stay hidden on the " + tab + " tab");
+  });
+
+  // --- Plot, but nothing plotted yet (plotLastRender null before any render): neither group shows ---
+  w.applyFhView("plot");
+  assert(isVisible(viewbarActions, w) === false, "the five generic row-actions are hidden on the Plot tab (none of them apply to a plot)");
+  // (plotViewbarActions itself may still be mid-transition here depending on
+  // whether a 2D render already happened via applyFhView's own renderMainView —
+  // the real assertion is right after an explicit render() below.)
+
+  w.render(); // renders the plot, triggers renderPlotChart -> updatePlotZoomIndicator with a real 2D plot
   assert(isVisible(d.querySelector("#plot2dToolsGroup"), w) === true, "sanity: 2D plot -> zoom controls visible");
-  assert(isVisible(d.querySelector("#plotFilterActionsGroup"), w) === true, "...and the filter-creating Actions group visible too");
-  assert(isVisible(d.querySelector("#plotActionsSep"), w) === true, "...and its leading separator");
+  assert(isVisible(plotViewbarActions, w) === true, "...and Plot's own filter buttons in #viewBar become visible too, once something is actually plotted");
+  assert(isVisible(viewbarActions, w) === false, "...while the five generic row-actions stay hidden");
+
+  // --- Leaving Plot for another tab restores the generic row-actions and re-hides Plot's own ---
+  w.applyFhView("filter");
+  assert(isVisible(viewbarActions, w) === true, "back on Filtered: the five generic row-actions are visible again");
+  assert(isVisible(plotViewbarActions, w) === false, "...and Plot's own filter buttons are hidden again");
 });
 
 /* ============================================================
@@ -22237,4 +22280,24 @@ process.exitCode = failed ? 1 : 0;
      covers bookmark/note's new duplicated home; 177b covers every
      toolbar's group kinds/order/no-label-text and Plot's paired
      Controls/Actions visibility.
+
+   Group 178 — this session (2026-09-04), person-requested follow-up to
+     177: on the Plot tab, #viewBar's five generic row-actions (all keyed
+     off a log-row selection Plot doesn't have) hide entirely, replaced by
+     a second #viewBar group holding Plot's own two viewport-based filters
+     — #plotFilterActionsGroup/#plotActionsSep removed from #plotToolbar
+     (now Controls-only) and the two buttons moved up into #viewBar's new
+     `[data-row-actions="plot-viewbar"]`; updateViewBarRowActions() (called
+     from applyFhView()/renderMainView()/initFhView()) shows exactly one of
+     `[data-row-actions="viewbar"]`/`[data-row-actions="plot-viewbar"]` —
+     the Plot group additionally needs plot2dToolsAvailable (set by
+     setPlot2dToolsVisible(), which now calls updateViewBarRowActions()
+     after updating that boolean instead of toggling the old Actions
+     group/separator directly). ALSO this session, person-reported: every
+     view toolbar's icon buttons reverted from a 22x22 scoped-down size
+     back to the app's full 28x28 (row height 30px -> 36px,
+     CONTEXT_TOOLBAR_HEIGHT updated to match) — Group 29b consolidated into
+     one assertion covering the header, Filter-Toolbar, AND all four view
+     toolbars sharing that one size; 177b's Plot assertions updated for
+     #plotToolbar being Controls-only now.
    ============================================================ */
