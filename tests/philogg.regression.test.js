@@ -18860,8 +18860,12 @@ await withApp(async (w, d, T) => {
    default (raw message text, unchanged); on, auto-detects well-formed XML/
    JSON fragments EMBEDDED anywhere in the message's free text, pretty-
    prints and syntax-highlights just those, leaves the rest plain. Also
-   covers the optional per-theme "syntaxHighlightColors" block
-   (SYNTAX_COLOR_KEYS) in the theme template download / import round trip.
+   detects a third fragment type — a .NET-style ToString() object dump
+   ("{ Key = Value, ... }", not valid JSON: unquoted keys, "=" instead of
+   ":") — as a conservative fallback once JSON.parse has already rejected
+   the candidate (169g/h, follow-up request this session). Also covers the
+   optional per-theme "syntaxHighlightColors" block (SYNTAX_COLOR_KEYS) in
+   the theme template download / import round trip.
    ============================================================ */
 group(169);
 await withApp(async (w, d, T) => {
@@ -19001,6 +19005,32 @@ await withApp(async (w, d, T) => {
   cs = w.getComputedStyle(d.documentElement);
   assert(cs.getPropertyValue("--syntax-tag").trim() === "#e8a94a",
     "with no per-theme override, --syntax-tag falls back to the :root default (Dark's own hardcoded value) via the cascade, got " + JSON.stringify(cs.getPropertyValue("--syntax-tag")));
+});
+
+await withApp(async (w, d, T) => {
+  section("169g. .NET-style ToString() dump ('{ Key = Value, ... }', not valid JSON) is detected as its own fragment type");
+
+  const f = await w.addFile("app.log", makeLog(0, 1), () => {});
+  f.entries[0].message = "Setting selected test procedure to 'Evaluate' with parameters 'TestProcedureParameters { Type = MyProgramRecipe, ViewerName = , MyProgramRecipeId = 4c382e97-c47e-4227-a034-8e1f14ddabc4, CapabilityName = MyProgram }'.";
+  T.state.selectedId = f.entries[0].id;
+  fireClick(d.querySelector("#detailFormatToggle"), w);
+  w.updateDetailPanel();
+  const el = d.querySelector("#detailMessage");
+  const html = el.innerHTML;
+  assert(el.querySelector(".syn-block"), "the dump block is detected and formatted, got " + html);
+  assert(html.includes('<span class="syn-key">Type</span>'), "unquoted key highlighted, got " + html);
+  assert(html.includes('<span class="syn-string">MyProgramRecipe</span>'), "unquoted value highlighted");
+  assert(html.includes('<span class="syn-key">ViewerName</span><span class="syn-punct"> = </span><span class="syn-punct">,</span>') ||
+    /syn-key">ViewerName<\/span><span class="syn-punct"> = <\/span>\n?\s*<span class="syn-punct">,<\/span>/.test(html),
+    "a blank value ('ViewerName = ,') renders with no stray value span, got " + html);
+  assert(el.textContent.startsWith("Setting selected test procedure") && el.textContent.trim().endsWith("."),
+    "surrounding plain text (including the outer 'TestProcedureParameters' name and quotes) is preserved outside the { } block");
+
+  section("169h. A brace block whose segments don't all fit 'key = value' stays plain (no misfire)");
+  f.entries[0].message = "if (x < y) { do(); other() } and { a = 1, just some text }";
+  w.updateDetailPanel();
+  assert(!d.querySelector("#detailMessage").querySelector(".syn-block"),
+    "neither brace block is a valid JSON object nor does every segment match 'key = value', so nothing is highlighted");
 });
 
 /* ============================================================
@@ -21407,5 +21437,9 @@ process.exitCode = failed ? 1 : 0;
      + formatXmlFragmentHtml/formatJsonFragmentHtml), off by default;
      escaping/XSS safety of the formatted output; the optional
      per-theme "syntaxHighlightColors" block (SYNTAX_COLOR_KEYS) in the
-     theme template download/import round trip.
+     theme template download/import round trip. EXTENDED same session,
+     person-reported follow-up: a .NET-style ToString() object dump
+     ("{ Key = Value, ... }", not valid JSON) is now also detected as a
+     conservative fallback once JSON.parse rejects the candidate
+     (parseKeyValueDump/formatDumpFragmentHtml, 169g/h).
    ============================================================ */

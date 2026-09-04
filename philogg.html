@@ -16270,10 +16270,18 @@ function findEmbeddedFragments(text) {
       }
     } else if (c === "{" || c === "[") {
       const end = matchBracketSpanEnd(text, i);
-      if (end !== -1 && isValidJson(text.slice(i, end))) {
-        hits.push({ start: i, end, type: "json" });
-        i = end;
-        continue;
+      if (end !== -1) {
+        const candidate = text.slice(i, end);
+        if (isValidJson(candidate)) {
+          hits.push({ start: i, end, type: "json" });
+          i = end;
+          continue;
+        }
+        if (c === "{" && parseKeyValueDump(candidate)) {
+          hits.push({ start: i, end, type: "dump" });
+          i = end;
+          continue;
+        }
       }
     }
     i++;
@@ -16297,6 +16305,50 @@ function isValidJson(candidate) {
   } catch {
     return false;
   }
+}
+
+// Splits the inside of a {...} span on top-level commas only — a nested
+// {...}/[...] or a "..." string doesn't count, same depth/quote tracking as
+// matchBracketSpanEnd above (kept separate: that one finds where a span
+// ENDS, this one cuts an already-found span's inside into pieces).
+function splitTopLevelByComma(inner) {
+  const parts = [];
+  let depth = 0, inStr = false, segStart = 0;
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (inStr) {
+      if (c === "\\") { i++; continue; }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{" || c === "[") { depth++; continue; }
+    if (c === "}" || c === "]") { depth--; continue; }
+    if (c === "," && depth === 0) { parts.push(inner.slice(segStart, i)); segStart = i + 1; }
+  }
+  parts.push(inner.slice(segStart));
+  return parts;
+}
+
+// A .NET-style ToString() object dump: `{ Key = Value, Key2 = Value2 }`
+// (unquoted keys, "=" instead of ":", values that may themselves be blank
+// or contain nested "{ ... }" dumps) — not valid JSON, so this is only
+// tried as a fallback once isValidJson has already rejected the candidate.
+// Requires EVERY top-level, non-blank segment to be "identifier = value"
+// and at least one such segment, to stay conservative (an arbitrary
+// brace-delimited code block won't have that shape).
+const DUMP_KV_RE = /^([A-Za-z_]\w*)\s*=\s*([\s\S]*)$/;
+function parseKeyValueDump(candidate) {
+  const inner = candidate.slice(1, -1);
+  const segments = splitTopLevelByComma(inner).map(s => s.trim()).filter(s => s.length);
+  if (!segments.length) return null;
+  const pairs = [];
+  for (const seg of segments) {
+    const m = DUMP_KV_RE.exec(seg);
+    if (!m) return null;
+    pairs.push([m[1], m[2].trim()]);
+  }
+  return pairs;
 }
 
 // Pretty-prints + syntax-highlights an already-validated XML fragment as
@@ -16362,6 +16414,22 @@ function formatJsonFragmentHtml(raw) {
   return '<span class="syn-block syn-json">' + formatJsonValueHtml(JSON.parse(raw), 1) + "</span>";
 }
 
+// Pretty-prints + highlights an already-validated "{ Key = Value, ... }"
+// dump (see parseKeyValueDump above) — a value that is itself a nested
+// dump ("Foo = { X = 1 }") is rendered as-is (flat, not recursively
+// indented): dumps rarely nest more than one level deep in practice, and
+// recursing would need to re-detect + re-validate the nested span rather
+// than trust the flat parse this function already did.
+function formatDumpFragmentHtml(raw) {
+  const pairs = parseKeyValueDump(raw);
+  if (!pairs.length) return '<span class="syn-punct">{}</span>';
+  const indent = "  ";
+  const items = pairs.map(([k, v]) => indent + '<span class="syn-key">' + escapeHtml(k) + '</span><span class="syn-punct"> = </span>' +
+    (v ? '<span class="syn-string">' + escapeHtml(v) + "</span>" : ""))
+    .join('<span class="syn-punct">,</span>\n');
+  return '<span class="syn-block syn-json"><span class="syn-punct">{</span>\n' + items + '\n<span class="syn-punct">}</span></span>';
+}
+
 // Full message -> HTML: plain text stays escapeHtml'd exactly as before,
 // every detected+validated fragment is replaced by its pretty-printed,
 // highlighted rendering. This is the ONLY code path used while the toggle
@@ -16376,7 +16444,8 @@ function formatMessageWithHighlight(text) {
   let pos = 0;
   hits.forEach(h => {
     out += escapeHtml(text.slice(pos, h.start));
-    out += h.type === "xml" ? formatXmlFragmentHtml(text.slice(h.start, h.end)) : formatJsonFragmentHtml(text.slice(h.start, h.end));
+    const frag = text.slice(h.start, h.end);
+    out += h.type === "xml" ? formatXmlFragmentHtml(frag) : h.type === "json" ? formatJsonFragmentHtml(frag) : formatDumpFragmentHtml(frag);
     pos = h.end;
   });
   out += escapeHtml(text.slice(pos));
