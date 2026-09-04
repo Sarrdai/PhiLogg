@@ -65,12 +65,19 @@ the existing `"highlight"`/`"filter"` — `"stacked"` was never actually one
 of its values even before this (`applyFhView("stacked")` only ever set
 `fhLayout`), so no migration was needed there.
 
-**Table/Plot stay visible but `disabled`** when the active node has nothing
-to tabulate/plot (`nodeHasExtractableWildcards(node)` — a `filterType ===
-"extract"` node whose pattern compiles to at least one column), so the rest
-of the tab group never shifts sideways as a node becomes extraction-capable
-or stops being the active one. Clicking a disabled tab is a no-op (the
-`#fhTabs` click delegate checks `btn.disabled`).
+**Table/Plot are left out of `#fhTabs` entirely** (person-requested, this
+session — superseding the earlier "stay visible but `disabled`" decision
+below) when the active node has nothing to tabulate/plot
+(`nodeHasExtractableWildcards(node)` — a `filterType === "extract"` node
+whose pattern compiles to at least one column): `renderViewTabs(extractCapable)`
+only pushes the two tab entries onto its `tabs` array when `extractCapable`
+is true, rather than always including them with a `disabled` attribute. An
+unreachable tab sitting there taking up space/attention was worse than the
+tab group shifting width as a node's extraction-capability changes — the
+original tradeoff this replaced. `#fhTabs`' click delegate still checks
+`btn.disabled` (a harmless leftover guard — no tab is ever actually rendered
+disabled any more, since one that can't be clicked now simply isn't
+rendered).
 
 **An extraction node is now an ordinary node for Context/Filtered purposes
 too** — the `isExtract` special path that used to make `renderMainView()`
@@ -130,12 +137,17 @@ shape:
 - **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — the view toggle
   (`#fhTabs`), the level quick-filter (`#levelBar`/`#btnApplyLevelToTree`),
   and, floated right after those, the **row-actions** button group
-  (`[data-row-actions="viewbar"]`, `ROW_ACTIONS_HTML`) — Bookmark this row/
-  Add note/Filter after this/Filter before this/Filter for this message/
-  Time filter from selection/Add to selection. All of it identical on
-  every tab including Table/Plot: `#levelBar` no longer hides there (it
-  already applied via `applyLevelFilter()`, just without a visible pill row
-  before this session) and the row-actions group stays visible too (though
+  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — the FIVE
+  actions that genuinely create a filter node: Filter after this/Filter
+  before this/Filter for this message/Time filter from selection/Add to
+  selection. (Bookmark this row/Add note used to live here too — moved out,
+  person-requested follow-up same session, into each log view's own
+  toolbar instead; see the "Actions" group below for why: they mutate the
+  selection's bookmark/note state, not create a filter, so "Filter-
+  Toolbar" was the wrong home for them.) All of it identical on every tab
+  including Table/Plot: `#levelBar` no longer hides there (it already
+  applied via `applyLevelFilter()`, just without a visible pill row before
+  this session) and the row-actions group stays visible too (though
   naturally disabled without a log-row selection to act on, same as on any
   other tab with nothing selected). The row-actions buttons reuse the exact
   functions the pre-existing right-click context menu already used, just
@@ -192,10 +204,9 @@ shape:
   compact until the person is actually pointing at one.
 - **Each view's own toolbar** (Zeile 3 — `#contextToolbar`/
   `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) — same position/shape
-  in every tab, only the content differs, and only DISPLAY/navigation
-  controls live here now (no filter-creating ones). The six log-display
-  toggles (Pin bookmarks/Notes/Multiline/Columns/TextMatch/HighlightMatch)
-  moved out of `#viewBar` into these: five of them (all but Pin, which only
+  in every tab, only the content differs. The six log-display toggles
+  (Pin bookmarks/Notes/Multiline/Columns/TextMatch/HighlightMatch) moved
+  out of `#viewBar` into these: five of them (all but Pin, which only
   affects the Filtered result set) into `#contextToolbar`, all six into
   `#filteredToolbar` — as shared `.toggle-pin`/`.toggle-notes`/etc. classes
   rather than unique ids, since each now exists in **two** places in the
@@ -209,6 +220,42 @@ shape:
   everything else. Each toolbar row still keeps its own pre-existing 30px
   height/`.toolbar-icon-btn` scoped to 22x22 — nothing shares a literal DOM
   row across tabs, the consistency is purely positional/structural now.
+
+  **Grouped Settings | Controls | Actions, in that fixed order, no label on
+  any group** (person-requested follow-up, same session) — every top-level
+  `.toolbar-group` child of the four toolbars carries a `data-toolbar-
+  group="settings"|"controls"|"actions"` attribute saying which it is;
+  `.ctx-toolbar-sep` (the existing `|` divider) sits between whichever
+  groups a given toolbar actually has, never after the last one and never
+  when a toolbar has only one group:
+  - **Settings** — the log-DISPLAY toggles (Pin/Notes/Multiline/Columns/
+    TextMatch/HighlightMatch) and, conceptually, `#extractStatsToggle`
+    (though that one stays in `#extractToolbar`, shared infrastructure
+    between Table and Plot, not inside either's own toolbar — see that
+    div's own comment). `#contextToolbar`/`#filteredToolbar` have one;
+    `#tableToolbar`/`#plotToolbar` don't (no display setting of their own).
+  - **Controls** — navigation/view controls with nothing to do with
+    filters: Context's match-navigation + expand/collapse (now ONE merged
+    group instead of two separately-separated ones — Prev/Next and
+    Expand/Collapse are both "Controls", so the divider between them is
+    gone), Plot's zoom controls + Fullscreen/Save. `#filteredToolbar`/
+    `#tableToolbar` have none (Filtered has no navigation buttons of its
+    own; Table's only control, Export-as-CSV, is an action, not a
+    navigation control).
+  - **Actions** — one-off actions on the current row/selection/viewport,
+    never persistent state: Bookmark this row/Add note (moved in here from
+    `#viewBar`'s row-actions group, see above — `[data-row-actions=
+    "toolbar-actions"]`, built from the same `buildRowActionsHtml()`/
+    `TOOLBAR_ROW_ACTIONS` the Filter-Toolbar's own five use, just a
+    different two-item list), Table's Export-as-CSV, Plot's two filter-
+    creating buttons (`#plotFilterActionsGroup`, gated together with
+    `#plotZoomGroup`/`#plotActionsSep` on "something plotted in 2D" — see
+    `setPlot2dToolsVisible()`). Every one of the four toolbars has this
+    group.
+
+  Resulting shape per toolbar: Context = Settings|Controls|Actions (all
+  three); Filtered = Settings|Actions (no Controls); Table = Actions only;
+  Plot = Controls|Actions (no Settings).
 
 ## The three "active node" views
 
