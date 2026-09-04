@@ -19427,6 +19427,18 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#contextToolbar [data-row-action]") === null && d.querySelector("#filteredToolbar [data-row-action]") === null,
     "row-actions are NOT inside #contextToolbar/#filteredToolbar any more — those keep only the log-display toggles now");
 
+  // --- Circle-with-hover-pill shape (person-requested, this session): each
+  // button is a plain circle (.row-action-btn, matching .level-btn's own
+  // rounded-end radius) with a hidden .row-action-label that CSS reveals on
+  // hover/focus, carrying the exact same text as the button's title. ---
+  actions.forEach(btn => {
+    assert(btn.classList.contains("row-action-btn"), btn.dataset.rowAction + " has the .row-action-btn circle/hover-pill class");
+    const label = btn.querySelector(".row-action-label");
+    assert(label !== null, btn.dataset.rowAction + " has a .row-action-label span");
+    assert(label.textContent === btn.title && btn.title.length > 0,
+      btn.dataset.rowAction + "'s label text matches its title exactly, got label=" + JSON.stringify(label.textContent) + " title=" + JSON.stringify(btn.title));
+  });
+
   const byAction = action => actions.find(b => b.dataset.rowAction === action);
 
   // --- No selection: single-row actions AND addToSelection disabled, time-range disabled ---
@@ -22024,5 +22036,11 @@ process.exitCode = failed ? 1 : 0;
      toggle/level filter — unlike the log-DISPLAY toggles, which stay
      per-view; breadcrumb's placement also corrected to sit ABOVE #viewBar
      (between it and the minimap), not below. Groups 4/26/27/28/29/29b
-     updated in place for the new structure/selectors.
+     updated in place for the new structure/selectors. EXTENDED AGAIN same
+     session, person-requested: row-action buttons are now circles at rest
+     (`.row-action-btn`, radius matching `.level-btn`'s rounded end-caps),
+     expanding into a pill with a text label (`.row-action-label`, same
+     string as the button's `title`) on hover/`:focus-visible`; label/title
+     now built from one shared `ROW_ACTIONS` data array. 176a extended to
+     assert the class + label-matches-title structure.
    ============================================================ */

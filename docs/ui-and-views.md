@@ -145,7 +145,22 @@ shape:
   untouched, this is an additional, always-visible entry point. Buttons
   here stay the row's own 28x28 `.toolbar-icon-btn` size (no 22px scoped-
   down override, unlike the per-view toolbars below) since `#viewBar`'s
-  other controls are 28px too.
+  other controls are 28px too. **Shape (person-requested, this session):
+  `.row-action-btn`** renders each one as a plain circle at rest —
+  `border-radius:50%` on the 28x28 box, the same 14px radius `.level-btn`'s
+  own rounded end-caps have (28px height, `border-radius:20px`) — showing
+  only the icon. Hovering (or `:focus-visible`, for keyboard parity) turns
+  it into a pill exactly like `.level-btn`'s own shape (`border-radius:20px`,
+  `width:auto`, horizontal padding) and reveals a `.row-action-label` span
+  next to the icon via a `max-width`/`opacity` transition (not `width` —
+  the label's natural width varies per action and isn't known up front).
+  The label text is the exact same string as the button's `title` (e.g.
+  "Filter after this (incl.)") — both come from one `ROW_ACTIONS` data
+  array (`{action, label, svg, strokeWidth}`) that builds `ROW_ACTIONS_HTML`,
+  so the two can't drift apart. Seven of these permanently spelled out
+  would be far too wide for the row — the circle is the resting state
+  precisely so the row stays compact until the person is actually pointing
+  at one.
 - **Each view's own toolbar** (Zeile 3 — `#contextToolbar`/
   `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) — same position/shape
   in every tab, only the content differs, and only DISPLAY/navigation
