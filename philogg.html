@@ -1040,10 +1040,10 @@
   #tailJumpBtn.hidden{display:none;}
   #tailJumpBtnHighlight.hidden{display:none;}
 
-  /* Pulsing "live" dot next to a tailed file's name in the tree. */
-  .tree-live{
-    flex:0 0 auto; width:7px; height:7px; border-radius:50%;
-    background:var(--accent); margin-right:2px;
+  /* Pulsing file icon for a file actively being tailed (replaces a separate
+     live dot, which used to throw off row indentation whenever it was
+     present on some rows but not others — see .tree-icon-live's usage). */
+  .tree-icon-live{
     animation:tree-live-pulse 1.6s ease-in-out infinite;
   }
   @keyframes tree-live-pulse{
@@ -4065,6 +4065,10 @@ const PHILOGG_VERSION = "dev";
 
 /* ===================== Icons ===================== */
 const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>';
+// Same file glyph, plus a small circled "A" badge (Auto-Open, person-
+// requested — see renderNode's autoOpened opt) — marks a folder-watch file
+// that was opened automatically by a rule, not by hand.
+const ICON_FILE_AUTO = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>';
 const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>';
 const ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
@@ -9943,7 +9947,7 @@ function renderRenameInput(id, node) {
   return input;
 }
 
-function renderNode(id, depth) {
+function renderNode(id, depth, opts) {
   const node = state.nodes[id];
   if (node.type === "file" && node.queued) return renderQueuedFileRow(node, depth);
   const wrap = document.createElement("div");
@@ -9960,7 +9964,15 @@ function renderNode(id, depth) {
   // to the RIGHT of its file's icon column instead of visually overlapping
   // it — see the chevron-slot/swatch comments below for why file rows now
   // reserve less prefix space than filter rows.
-  row.style.paddingLeft = (8 + depth * 18) + "px";
+  // folderTopLevelNoChevron (renderFolderSection only, depth 0): an opened
+  // file inside a watched folder sits directly among that folder's closed
+  // .folder-watch-file rows, which have no chevron slot at all and a flat
+  // 12px inset — matching that padding here (instead of the normal 8px)
+  // and skipping the chevron slot below when there's nothing to collapse
+  // keeps an opened file's icon lined up with its closed siblings instead
+  // of reading as more indented than them (person-reported).
+  const folderTopLevelNoChevron = opts && opts.folderTopLevelNoChevron;
+  row.style.paddingLeft = (folderTopLevelNoChevron ? 12 : 8 + depth * 18) + "px";
   // Lets a load tick (see updateLoadRowProgress) find and update this exact
   // row's count/progress-fill/percentage-of-parent directly, without a full
   // render() — every row, not just file rows, since a filter created under
@@ -9989,7 +10001,7 @@ function renderNode(id, depth) {
     });
     chevronSlot.appendChild(chevron);
   }
-  row.appendChild(chevronSlot);
+  if (!folderTopLevelNoChevron || hasRealChildren) row.appendChild(chevronSlot);
 
   // Highlight-colour swatch — replaces the old multi-select checkbox (that
   // affordance is Ctrl+click-only now, see the row click handler below;
@@ -10022,20 +10034,17 @@ function renderNode(id, depth) {
   // see .tree-icon-type in CSS) and the separate badge below is skipped
   // entirely, so the type is stated exactly once either way.
   const icon = document.createElement("span");
-  icon.className = "tree-icon" + (treeIndicatorMode === "type" ? " tree-icon-type" : "");
+  const iconIsLive = node.type === "file" && isTailLive(node.tail);
+  icon.className = "tree-icon" + (treeIndicatorMode === "type" ? " tree-icon-type" : "") +
+    (iconIsLive ? " tree-icon-live" : "");
   if (treeIndicatorMode === "type") icon.textContent = typeTagFor(node);
+  else if (opts && opts.autoOpened) icon.innerHTML = ICON_FILE_AUTO;
   else icon.innerHTML = nodeIconHTML(node);
+  const titleParts = [];
+  if (iconIsLive) titleParts.push("Live: file is being tailed for new entries");
+  if (opts && opts.autoOpened) titleParts.push("Opened automatically by a folder watch rule");
+  if (titleParts.length) icon.title = titleParts.join(" — ");
   row.appendChild(icon);
-
-  // Pulsing dot on file nodes actively receiving new entries right now (see
-  // isTailLive — "being tailed" alone isn't enough, or a rotated-out file's
-  // dot would never go dark).
-  if (node.type === "file" && isTailLive(node.tail)) {
-    const live = document.createElement("span");
-    live.className = "tree-live";
-    live.title = "Live: file is being tailed for new entries";
-    row.appendChild(live);
-  }
 
   const label = document.createElement("span");
   label.className = "tree-label";
@@ -17567,15 +17576,15 @@ const TAIL_POLL_MS = 1500;
 // the rest of the session — any successful poll resets the counter to 0.
 const TAIL_MAX_CONSECUTIVE_ERRORS = 5;
 
-// The pulsing "live" dot (.tree-live) means "actually being written to right
-// now", not just "still polled" — a handle stays valid (and t.failed stays
-// false) long after a writer moves on to a different file, e.g. rotation in
-// Folder watch. Without a staleness window, a rotated-out file's dot never
-// went dark (person-reported), and a newly-written file's dot looked no
-// different from an idle one. TAIL_LIVE_MS is comfortably above
-// log-simulator's slowest line interval (3000ms, plus jitter) so ordinary
-// gaps between writes don't flicker the dot, while still going dark soon
-// after writing genuinely stops.
+// The pulsing file icon (.tree-icon-live) means "actually being written to
+// right now", not just "still polled" — a handle stays valid (and t.failed
+// stays false) long after a writer moves on to a different file, e.g.
+// rotation in Folder watch. Without a staleness window, a rotated-out
+// file's icon never went dark (person-reported), and a newly-written
+// file's icon looked no different from an idle one. TAIL_LIVE_MS is
+// comfortably above log-simulator's slowest line interval (3000ms, plus
+// jitter) so ordinary gaps between writes don't flicker it, while still
+// going dark soon after writing genuinely stops.
 const TAIL_LIVE_MS = 10000;
 function isTailLive(t) {
   return !!(t && !t.failed && (t.lastGrowth == null || Date.now() - t.lastGrowth < TAIL_LIVE_MS));
@@ -18014,25 +18023,30 @@ async function applyFolderAutoRules(folder) {
 
   // 2) Auto-close — keep only the N newest open, per pattern. Opens the
   // ones missing from that window first (awaited, so it also counts as this
-  // pattern's "auto-open newest" when both are configured), then closes
-  // whatever is open but no longer in it.
+  // pattern's "auto-open newest" when both are configured — but only once
+  // per file, see rec.autoOpenFired below), then closes whatever is open,
+  // fell out of the window, AND wasn't opened by hand (rec.openedByAuto —
+  // a person's own open is never auto-closed, person-reported).
   for (const [p, recs] of groupBy()) {
     if (!p.autoCloseKeep) continue;
     const target = recs.slice(-p.autoCloseKeep);
     for (const rec of target) {
-      if (!rec.nodeId || !state.nodes[rec.nodeId]) await loadFolderFile(folder, rec);
+      if ((!rec.nodeId || !state.nodes[rec.nodeId]) && !rec.autoOpenFired) await loadFolderFile(folder, rec, true);
     }
     const targetKeys = new Set(target.map(folderFileKey));
-    const toClose = recs.filter(rec => rec.nodeId && state.nodes[rec.nodeId] && !targetKeys.has(folderFileKey(rec)));
+    const toClose = recs.filter(rec => rec.nodeId && state.nodes[rec.nodeId] && rec.openedByAuto && !targetKeys.has(folderFileKey(rec)));
     toClose.forEach(rec => closeFolderFile(rec.nodeId));
   }
 
   // 3) Auto-open newest, per pattern — only for a pattern not already
-  // covered by its own keep-N window above.
+  // covered by its own keep-N window above. rec.autoOpenFired makes this
+  // fire at most once per file ever: a person who closes an auto-opened
+  // file again is left closed instead of having the next rescan/poll
+  // silently reopen it (person-reported).
   for (const [p, recs] of groupBy()) {
     if (!p.autoOpenNewest || p.autoCloseKeep || !recs.length) continue;
     const newest = recs[recs.length - 1];
-    if (!newest.nodeId || !state.nodes[newest.nodeId]) await loadFolderFile(folder, newest);
+    if ((!newest.nodeId || !state.nodes[newest.nodeId]) && !newest.autoOpenFired) await loadFolderFile(folder, newest, true);
   }
 }
 
@@ -18095,7 +18109,16 @@ function removeWatchedFolder(folderId) {
 // root file node tagged with folderId (see deleteFilterNodeWithUndo). A
 // handle-backed file also starts tailing immediately — no special-casing
 // needed, loadOneFileIntoTree already does that for any handle it's given.
-async function loadFolderFile(folder, rec) {
+// `auto` (default false) distinguishes an applyFolderAutoRules-driven open
+// from a person double-clicking/context-menuing a listing row: it's what
+// rec.openedByAuto (drives the "(A)" auto-open icon, see renderNode) and
+// rec.autoOpenFired (permanent — an auto rule never opens the SAME file
+// twice, so a person who closes an auto-opened file again is left alone
+// instead of having it silently reappear on the next scan/rule pass, and
+// symmetrically a person who opens a file themselves is never later
+// auto-closed by "auto-close — keep only N open", see applyFolderAutoRules'
+// rule 2) get set from.
+async function loadFolderFile(folder, rec, auto) {
   if (rec.nodeId && state.nodes[rec.nodeId]) {
     state.activeId = rec.nodeId;
     state.focusRegion = "tree";
@@ -18112,6 +18135,8 @@ async function loadFolderFile(folder, rec) {
   try {
     const node = await loadOneFileIntoTree(rec.name, file, rec.handle, folder.id);
     rec.nodeId = node.id;
+    rec.openedByAuto = !!auto;
+    if (auto) rec.autoOpenFired = true;
     // Under a wrapper that listed the folder natively the file's real path
     // and its philogg://local/… URL are both known, so a folder file gets
     // "Open File Location"/"Copy Path" like every other route there. Set
@@ -18240,17 +18265,28 @@ function renderFolderSection(folder) {
     const list = document.createElement("div");
     list.className = "folder-watch-files";
     folder.files.forEach(rec => {
-      if (rec.nodeId && state.nodes[rec.nodeId]) { list.appendChild(renderNode(rec.nodeId, 0)); return; }
-      // Still loading: the real node already exists (see createFileNode,
-      // called synchronously at the top of loadOneFileIntoTree) but
-      // loadFolderFile hasn't linked rec.nodeId yet — find it by folder+name
-      // so its own progress-carrying row renders here instead of falling
-      // through to the "not yet loaded" placeholder below.
+      if (rec.nodeId && state.nodes[rec.nodeId]) {
+        list.appendChild(renderNode(rec.nodeId, 0, { folderTopLevelNoChevron: true, autoOpened: !!rec.openedByAuto }));
+        return;
+      }
+      // Still loading, or just finished but not yet linked: the real node
+      // already exists (see createFileNode, called synchronously at the top
+      // of loadOneFileIntoTree) but loadFolderFile hasn't set rec.nodeId yet
+      // — find it by folder+name so its own row (progress-carrying while
+      // loadFraction is still a number, a normal open row once loading
+      // finishes) renders here instead of falling through to the "not yet
+      // loaded" placeholder below. Deliberately NOT gated on loadFraction
+      // being a number (person-reported): loadOneFileIntoTree's own
+      // `finally` block deletes loadFraction and renders BEFORE
+      // loadFolderFile (its caller) gets to set rec.nodeId on the very next
+      // line after it returns — gating on loadFraction left exactly that
+      // gap uncovered, showing the file as a closed/grayed listing entry
+      // for one render in between "loading" and "open".
       const loadingId = state.rootIds.find(id => {
         const n = state.nodes[id];
-        return n && n.folderId === folder.id && n.name === rec.name && typeof n.loadFraction === "number";
+        return n && n.folderId === folder.id && n.name === rec.name;
       });
-      if (loadingId) list.appendChild(renderNode(loadingId, 0));
+      if (loadingId) list.appendChild(renderNode(loadingId, 0, { folderTopLevelNoChevron: true }));
       else list.appendChild(renderInactiveFileRow(folder, rec));
     });
     box.appendChild(list);
