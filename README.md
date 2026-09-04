@@ -120,7 +120,10 @@ open it in a browser to view it.
   any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and
   Filtered views auto-following the newest entry; a watched folder picks up
-  new files automatically.
+  new files automatically. Each folder's own gear-icon settings dialog
+  configures filename patterns (e.g. `App*.log`, `Input*.log`, each with its
+  own auto-open-newest-file / auto-close-keep-N-open / show-M-newest-files
+  rules), plus include-subfolders and show-relative-path.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file.
