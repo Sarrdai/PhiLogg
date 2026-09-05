@@ -2563,7 +2563,7 @@ await withApp(async (w, d, T) => {
   w.render();
   w.applyFhView("table");
   assert(w.computeColumnStats(0) === null, "computeColumnStats returns null for a currently-ignored column");
-  const statsText = d.querySelector("#extractStatsBar").textContent;
+  const statsText = d.querySelector("#statsPanel").textContent;
   assert(statsText.includes("value 3") && !statsText.includes("value:"), "stats bar shows the visible numeric column ('value 3'/score) but omits the ignored one ('value'/id), got " + JSON.stringify(statsText));
   // 3, not 1: the synthetic Index/t(ms) columns are always visible/plottable
   // too, alongside the one visible pattern column ("score") — "id" stays
@@ -6083,8 +6083,8 @@ await withApp(async (w, d, T) => {
 
   fireClick(targetMark, w);
   assert(T.state.activeId === node.id,
-    "clicking a plot mark reveals the entry in the SAME node's Filtered view (revealInFilteredView, this session's follow-up feature) — it stays on the extraction-capable node rather than jumping away to the raw file");
-  assert(T.fhActiveTab === "filter", "the Filtered tab becomes active");
+    "clicking a plot mark reveals the entry as the corresponding Table row (revealInTableView, person-requested this session) — it stays on the extraction-capable node rather than jumping away to the raw file");
+  assert(T.fhActiveTab === "table", "the Table tab becomes active, not Filtered — Filtered is one more step away via that row's own double-click");
   assert(T.state.selectedId === targetEntry.id, "the clicked mark's real underlying entry becomes selected");
 
   // Clicking empty chart space (not a mark) is a no-op — sanity that the
@@ -6303,8 +6303,8 @@ await withApp(async (w, d, T) => {
   svgEl.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: cx0, clientY: cy0, button: 0 }));
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: cx0, clientY: cy0, button: 0 }));
   fireClick(markRow0, w);
-  assert(T.state.activeId === node.id && T.fhActiveTab === "filter",
-    "a plain click (no drag) on a mark still reveals its log entry in the Filtered view, unaffected by the new drag-to-zoom handling");
+  assert(T.state.activeId === node.id && T.fhActiveTab === "table",
+    "a plain click (no drag) on a mark still reveals its log entry (as the corresponding Table row), unaffected by the new drag-to-zoom handling");
   T.state.activeId = node.id;
   w.render();
   w.applyFhView("plot");
@@ -7159,7 +7159,7 @@ await withApp(async (w, d, T) => {
   // #extractViewTabs itself is gone (docs/ui-implementation-plan.md Schritt 6
   // — its Table/Plot switch is now part of the main #fhTabs group instead).
   assert(d.querySelector("#extractViewTabs") === null, "the old sub-toolbar Table/Plot switch is gone, superseded by the main #fhTabs group");
-  assert(d.querySelector("#extractInfo"), "sanity: the rest of the extraction toolbar (pattern/stats/info) is untouched");
+  assert(d.querySelector("#extractPatternView"), "sanity: the rest of the extraction toolbar (pattern view) is untouched");
 
   // The underlying functions still work when called directly — only their
   // button trigger is gone, same as jumpToFullLog surviving un-wired to a
@@ -8391,20 +8391,28 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 72 — Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter
+   GROUP 72 — Ctrl+0/1/2/3(/4) tree/Log-view shortcuts + Enter
    Origin: this session (2026-08-21), FEATURE_BACKLOG.md "Shortcuts to
    switch between Tree and Filter view", REVISED twice same session per
-   person-requested follow-up feedback: Ctrl+0 focuses the filter tree at
-   whichever node is ALREADY active — a filter included, not just its root
-   file — so arrow keys continue navigating from wherever the person
-   currently is (an even earlier pass jumped up to the active node's root
-   FILE instead, which undid exactly that); falls back to the first root
-   file only if nothing's active yet. Ctrl+1/2/3 mirror the Full/Filtered/
-   Stacked toggle buttons one-for-one AND focus the entries pane for
-   arrow-key navigation — a new state.entriesView ("filter" | "highlight")
-   decides which of moveSelection/moveHighlightSelection the global
-   ArrowUp/Down handler calls, also updated by a plain click/dblclick in
-   either Log view.
+   person-requested follow-up feedback, and again on 2026-09-05
+   (person-requested): Ctrl+0 focuses the filter tree at whichever node is
+   ALREADY active — a filter included, not just its root file — so arrow
+   keys continue navigating from wherever the person currently is (an even
+   earlier pass jumped up to the active node's root FILE instead, which
+   undid exactly that); falls back to the first root file only if nothing's
+   active yet. Ctrl+1-4 (jumpToViewTab/currentViewTabsList) no longer mirror
+   fixed Full/Filtered/Stacked toggle buttons — they jump POSITIONALLY
+   through whichever tabs the View Selector currently shows, same order:
+   with a plain (non-extraction) node that's just [Context, Filtered], so
+   Ctrl+3/4 are no-ops there; Ctrl+1/2 still open Full/Filtered and focus
+   the entries pane for arrow-key navigation exactly as before — a new
+   state.entriesView ("filter" | "highlight") decides which of
+   moveSelection/moveHighlightSelection the global ArrowUp/Down handler
+   calls, also updated by a plain click/dblclick in either Log view.
+   Entering Stacked itself is no longer a Ctrl+3 action (there's no
+   "Stacked" tab to jump to from tabs layout — it only appears once Stacked
+   is already the active layout) — that's exercised with an
+   extraction-capable node instead, see 72b below.
    ============================================================ */
 group(72);
 await withApp(async (w, d, T) => {
@@ -8440,10 +8448,11 @@ await withApp(async (w, d, T) => {
   assert(T.fhActiveTab === "filter", "Ctrl+2 opens the Filtered view");
   assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...and focuses it (entriesView) for arrow-key navigation");
 
-  // Ctrl+3: opens Stacked (both panels visible), defaulting arrow-key focus to Filtered.
+  // Ctrl+3: this node isn't extraction-capable, so the View Selector only
+  // has 2 tabs (Context, Filtered) — position 3 doesn't exist, a silent no-op.
+  const beforeCtrl3 = { tab: T.fhActiveTab, layout: T.fhLayout };
   fireKeydown(d, w, "3", { ctrlKey: true });
-  assert(T.fhLayout === "stacked", "Ctrl+3 opens the Stacked layout");
-  assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...defaulting arrow-key focus to the Filtered pane");
+  assert(T.fhActiveTab === beforeCtrl3.tab && T.fhLayout === beforeCtrl3.layout, "Ctrl+3 with only 2 available tabs is a no-op");
 
   // Enter on an active FILTER node while the tree has focus reveals the Filtered view.
   w.applyFhView("highlight");
@@ -8460,6 +8469,41 @@ await withApp(async (w, d, T) => {
   fireKeydown(d, w, "Enter");
   assert(T.fhActiveTab === "highlight", "Enter on a file node (not a filter) leaves the Full tab showing");
   assert(T.state.focusRegion === "tree", "...and focus stays on the tree");
+});
+
+await withApp(async (w, d, T) => {
+  section("72b. Ctrl+1-4 on an extraction-capable node jump positionally (Context/Filtered/Table/Plot); once Stacked layout is active, only 1-3 exist (Stacked/Table/Plot)");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const node = w.createFilterNode(f.id, "text", "message [value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("filter");
+
+  fireKeydown(d, w, "3", { ctrlKey: true });
+  assert(T.fhActiveTab === "table", "Ctrl+3 jumps to position 3 (Table), now that a 3rd tab exists");
+  fireKeydown(d, w, "4", { ctrlKey: true });
+  assert(T.fhActiveTab === "plot", "Ctrl+4 jumps to position 4 (Plot)");
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.fhActiveTab === "highlight", "Ctrl+1 jumps back to position 1 (Context)");
+
+  // Switch to Stacked layout (a Settings choice, not a Ctrl shortcut) — from
+  // here the View Selector collapses Context+Filtered into one "Stacked"
+  // slot, so there are only 3 positions: Stacked, Table, Plot.
+  const layoutSelect = d.querySelector("#settingsFhLayout");
+  layoutSelect.value = "stacked";
+  layoutSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.fhLayout === "stacked", "sanity: now in Stacked layout");
+
+  fireKeydown(d, w, "2", { ctrlKey: true });
+  assert(T.fhActiveTab === "table", "Ctrl+2 in Stacked layout jumps to position 2 (Table)");
+  fireKeydown(d, w, "3", { ctrlKey: true });
+  assert(T.fhActiveTab === "plot", "Ctrl+3 in Stacked layout jumps to position 3 (Plot)");
+  const before4 = T.fhActiveTab;
+  fireKeydown(d, w, "4", { ctrlKey: true });
+  assert(T.fhActiveTab === before4, "Ctrl+4 in Stacked layout is a no-op — only 3 positions exist");
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.fhLayout === "stacked" && T.fhActiveTab !== "table" && T.fhActiveTab !== "plot", "Ctrl+1 in Stacked layout jumps to position 1 (Stacked itself)");
 });
 
 /* ============================================================
@@ -12113,7 +12157,7 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
   assert(!d.querySelector("#settingsSectionShortcuts .settings-section-desc"), "the usage-instruction prose under the section title is gone");
   const rebindableRows = d.querySelectorAll("#shortcutBindingsList > div[data-action-id]");
-  assert(rebindableRows.length === 18, "the rebindable-actions rows render one per registered action");
+  assert(rebindableRows.length === 19, "the rebindable-actions rows render one per registered action");
   const fixedRows = d.querySelectorAll("#shortcutBindingsList > div.shortcut-row-fixed");
   assert(fixedRows.length > 0, "fixed (non-rebindable) shortcuts are listed too, so the list stays complete");
   fixedRows.forEach(row => {
@@ -13843,8 +13887,8 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#plotTooltip").innerHTML.includes("100"), "tooltip shows the hovered point's real underlying values, got " + d.querySelector("#plotTooltip").innerHTML);
 
   fireClick(canvas, w);
-  assert(T.state.activeId === node.id, "clicking a 3D point reveals the entry in the SAME node's Filtered view (revealInFilteredView, same as 2D scatter marks) rather than jumping to its root file");
-  assert(T.fhActiveTab === "filter", "the Filtered tab becomes active");
+  assert(T.state.activeId === node.id, "clicking a 3D point reveals the entry as the corresponding Table row (revealInTableView, same as 2D scatter marks) rather than jumping to its root file");
+  assert(T.fhActiveTab === "table", "the Table tab becomes active, not Filtered");
   assert(T.state.selectedId === targetEntry.id, "the clicked point's real underlying entry becomes selected");
 
   // Empty space (no point under the cursor) is a no-op.
@@ -17687,22 +17731,28 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 159 — Double-click a Table row / click a Plot mark jumps to the
-   Filtered view (this session, follow-up feature request alongside the
-   filterType merge above)
+   GROUP 159 — Double-click a Table row jumps to the Filtered view; click a
+   Plot mark jumps to the corresponding Table row (this session, follow-up
+   feature request alongside the filterType merge above; the Plot half
+   REVISED 2026-09-05, person-requested: a plot click used to go straight to
+   Filtered too, now it lands on Table first)
    Origin: this session. Previously the extraction table row's double-click
    and the Plot tab's mark click both called jumpToFullLog — a destructive
    jump away to the node's root FILE, clearing the level filter, since an
    extraction node had no Filtered view of its own to reveal into instead.
    That's no longer true (see the filterType-merge group above): an
    extraction-capable "text" node has an ordinary Filtered pane showing
-   exactly its own matched entries. Both actions now call
-   revealInFilteredView(entry, sourceEl, sourceScrollEl) instead — same
-   node stays active, fhActiveTab switches to "filter", and the row is
+   exactly its own matched entries. The Table row's double-click calls
+   revealInFilteredView(entry, sourceEl, sourceScrollEl) — same node stays
+   active, fhActiveTab switches to "filter", and the row is
    selected/scrolled/flashed there, modeled directly on
-   revealInHighlightView's own Context-view counterpart. jumpToFullLog
-   itself is unchanged and still directly tested (Group 10) — it's simply
-   no longer wired to any UI action.
+   revealInHighlightView's own Context-view counterpart. The Plot mark's
+   click instead calls revealInTableView(entry) — same node, fhActiveTab
+   switches to "table" and the matching row is selected/scrolled there; from
+   there that row's own double-click already goes on into Filtered, so one
+   more click gets you the same place a direct plot-to-Filtered jump used to.
+   jumpToFullLog itself is unchanged and still directly tested (Group 10) —
+   it's simply no longer wired to any UI action.
    ============================================================ */
 group(159);
 await withApp(async (w, d, T) => {
@@ -17739,7 +17789,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("159b. Clicking a Plot mark reveals the entry in the SAME node's Filtered view");
+  section("159b. Clicking a Plot mark reveals the entry as the corresponding row in the SAME node's Table view");
 
   const rows = [[0, 0], [10, 10], [20, 20]];
   const log = rows.map(([x, y], i) =>
@@ -17763,11 +17813,16 @@ await withApp(async (w, d, T) => {
   fireClick(targetMark, w);
 
   assert(T.state.activeId === node.id, "the active node stays the SAME extraction-capable node");
-  assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
+  assert(T.fhActiveTab === "table", "fhActiveTab switches to Table, not Filtered");
   assert(T.state.selectedId === targetEntry.id, "the clicked mark's real underlying entry becomes selected");
-  // Same content-component check as 159a — see its comment.
-  assert(d.querySelector("#extractWrap").style.display === "none", "the plot is no longer the visible content component");
-  assert(d.querySelector("#fhSplit").style.display === "flex", "the Filtered pane (#fhSplit) is now the visible content component");
+  // #extractWrap (Table/Plot's shared content component) stays the visible
+  // one throughout — unlike 159a's Table-row double-click, this never leaves
+  // it for #fhSplit.
+  assert(d.querySelector("#extractWrap").style.display !== "none", "the extraction view stays the visible content component");
+  assert(!d.querySelector("#extractScroll").classList.contains("hidden"), "the Table sub-view (not Plot) is now the one showing inside it");
+  const selectedCells = [...d.querySelectorAll("#extractBody td.cell-selected")];
+  assert(selectedCells.length > 0, "the matching Table row is selected/highlighted");
+  assert(selectedCells.every(td => +td.dataset.row === 1), "the highlighted row is row 1, the one whose mark was clicked");
 });
 
 /* ============================================================
@@ -18020,27 +18075,24 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 162 — Column statistics visibility, per-tab Setting
-   Origin: this session (2026-09-03), later revised (2026-09-05,
-   person-requested): statistics visibility is a Setting independently
-   controlled on Table and on Plot, not one shared collapse chevron — each
-   view's own toolbar carries its own toggle (#statsToggleTable/
-   #statsTogglePlot), both driving the same shared #extractStatsBar element
-   (it lives in #extractToolbar, above both #extractScroll and #plotWrap)
-   based on which tab is active.
+   GROUP 162 — Statistics panel: Table-only, Entry-Detail-style pin/hover
+   Origin: this session (2026-09-03), fully replaced (2026-09-05,
+   person-requested): the Statistics panel moved out of #extractToolbar
+   entirely into its own #statsPanel, positioned and behaving (including
+   pin-or-hover, mirroring #detailPanel) — but only for the Table view; Plot
+   lost the Statistics panel completely. Default is pinned open (no more
+   separate show/hide button — the panel's own header toggle is it).
    ============================================================ */
 group(162);
 await withApp(async (w, d, T) => {
-  section("162a. Defaults to hidden on both tabs, with no localStorage entry yet");
+  section("162a. Defaults to pinned open, with no localStorage entry yet");
 
-  assert(w.localStorage.getItem("philogg-table-stats-visible") === null, "sanity: nothing persisted yet for Table");
-  assert(w.localStorage.getItem("philogg-plot-stats-visible") === null, "sanity: nothing persisted yet for Plot");
-  assert(T.tableStatsVisible === false && T.plotStatsVisible === false, "both default to false with nothing stored");
-  assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "the bar itself carries .collapsed by default");
+  assert(w.localStorage.getItem("philogg-stats-collapsed") === null, "sanity: nothing persisted yet");
+  assert(!d.querySelector("#statsPanel").classList.contains("collapsed"), "the panel is expanded by default");
 });
 
 await withApp(async (w, d, T) => {
-  section("162b. Clicking each tab's own toggle shows/hides the bar independently and persists the choice; content renders regardless of visibility");
+  section("162b. Statistics panel shows on Table, is entirely absent (display:none) on Plot");
 
   const log = [0, 1, 2]
     .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`)
@@ -18051,42 +18103,65 @@ await withApp(async (w, d, T) => {
   w.render();
   w.applyFhView("table");
 
-  const statsBar = d.querySelector("#extractStatsBar");
-  assert(statsBar.classList.contains("collapsed"), "sanity: hidden by default on Table");
-  assert(d.querySelector("#extractStatsContent").textContent.includes("value"), "the chip content is rendered even while hidden (only hidden via CSS, not skipped)");
-
-  fireClick(d.querySelector("#statsToggleTable"), w);
-  assert(!statsBar.classList.contains("collapsed"), "clicking Table's toggle shows the bar");
-  assert(w.localStorage.getItem("philogg-table-stats-visible") === "1", "visible state persisted to localStorage under the Table key");
-
-  fireClick(d.querySelector("#statsToggleTable"), w);
-  assert(statsBar.classList.contains("collapsed"), "clicking again re-hides it");
-  assert(w.localStorage.getItem("philogg-table-stats-visible") === "0", "hidden state persisted to localStorage");
-});
-
-await withApp(async (w, d, T) => {
-  section("162c. Table and Plot visibility are independent — switching tabs reflects each tab's own stored choice");
-
-  const log = [0, 1, 2]
-    .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`)
-    .join("\n") + "\n";
-  const f = await w.addFile("a.log", log, () => {});
-  const node = w.createFilterNode(f.id, "text", "score=[value:float]");
-  T.state.activeId = node.id;
-  w.render();
-  w.applyFhView("table");
-
-  fireClick(d.querySelector("#statsToggleTable"), w);
-  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "sanity: shown on Table");
+  const statsPanel = d.querySelector("#statsPanel");
+  assert(statsPanel.style.display === "flex", "shown while on Table");
+  assert(d.querySelector("#extractStatsContent").textContent.includes("value"), "the chip content is rendered");
+  assert(!d.querySelector("#tableToolbar").querySelector("#statsToggleTable"), "sanity: the old per-tab toggle button is gone from Table's toolbar");
 
   w.applyFhView("plot");
-  assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "Plot has its own, still-hidden default — independent of Table's choice");
-
-  fireClick(d.querySelector("#statsTogglePlot"), w);
-  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "shown on Plot after clicking Plot's own toggle");
+  assert(statsPanel.style.display === "none", "hidden entirely while on Plot — Plot has no Statistics panel anymore");
+  assert(!d.querySelector("#plotToolbar").querySelector("#statsTogglePlot"), "sanity: the old per-tab toggle button is gone from Plot's toolbar too");
 
   w.applyFhView("table");
-  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "Table's own choice (shown) is unaffected by Plot's toggle");
+  assert(statsPanel.style.display === "flex", "shown again switching back to Table");
+});
+
+await withApp(async (w, d, T) => {
+  section("162c. Header toggle collapses/pins the panel, same mechanic as Entry Detail's own toggle, persisted across app restart");
+
+  const log = [0, 1, 2]
+    .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`)
+    .join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "score=[value:float]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const statsPanel = d.querySelector("#statsPanel");
+  assert(!statsPanel.classList.contains("collapsed"), "sanity: starts expanded (pinned)");
+
+  fireClick(d.querySelector("#statsToggle"), w);
+  assert(statsPanel.classList.contains("collapsed"), "clicking the header toggle collapses it");
+  assert(w.localStorage.getItem("philogg-stats-collapsed") === "1", "collapsed state persisted to localStorage");
+
+  fireClick(d.querySelector("#statsToggle"), w);
+  assert(!statsPanel.classList.contains("collapsed"), "clicking again re-expands (pins) it");
+  assert(w.localStorage.getItem("philogg-stats-collapsed") === "0", "expanded state persisted to localStorage");
+});
+
+await withApp(async (w, d, T) => {
+  section("162d. Collapsed + hover peeks the panel open, same as Entry Detail (hoverExpandDetail governs both)");
+
+  const log = [0, 1, 2]
+    .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`)
+    .join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "score=[value:float]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const statsPanel = d.querySelector("#statsPanel");
+  fireClick(d.querySelector("#statsToggle"), w);
+  assert(statsPanel.classList.contains("collapsed"), "sanity: collapsed");
+
+  statsPanel.dispatchEvent(new w.Event("mouseenter", { bubbles: true }));
+  assert(statsPanel.classList.contains("peeking"), "hovering a collapsed panel peeks it open");
+
+  statsPanel.dispatchEvent(new w.Event("mouseleave", { bubbles: true }));
+  assert(!statsPanel.classList.contains("peeking"), "leaving drops the peek again");
+  assert(statsPanel.classList.contains("collapsed"), "sanity: still collapsed, only the peek ended");
 });
 
 /* ============================================================
@@ -19701,23 +19776,23 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#filteredToolbar").querySelectorAll(".ctx-toolbar-sep").length === 1,
     "#filteredToolbar has exactly 1 separator for 2 groups (Settings|Actions)");
 
-  // Table gained its own Statistics visibility Setting this session
-  // (2026-09-05, person-requested — replaces the old shared collapse
-  // chevron), so it's now Settings|Actions instead of Actions-only.
+  // Table is Actions-only (just "Export as CSV…") — the Statistics
+  // visibility Setting/toggle it briefly had is gone again (2026-09-05,
+  // person-requested, later the same day): Statistics moved out into its
+  // own standalone #statsPanel (Entry-Detail-style pin/hover), so there's no
+  // toolbar button for it anymore, on Table or Plot.
   w.applyFhView("table");
   const tableKinds = groupKinds(d.querySelector("#tableToolbar"));
-  assert(tableKinds.join(",") === "settings,actions", "#tableToolbar is Settings|Actions (Statistics toggle, Export as CSV…), got " + tableKinds.join(","));
+  assert(tableKinds.join(",") === "actions", "#tableToolbar is Actions-only (Export as CSV…), got " + tableKinds.join(","));
   assertOrdered(tableKinds, "#tableToolbar");
   assertNoGroupLabel(d.querySelector("#tableToolbar"));
 
-  // Plot's own toolbar (2026-09-05, person-requested): gained the same
-  // Statistics Setting as Table, and Save-as-image moved out of Controls
-  // into its own Actions group — its two viewport-based filters remain up
-  // in #viewBar instead, since those are the ONLY filter-creating actions
-  // that make sense on the Plot tab — see Group 178 for that coverage.
+  // Plot's own toolbar: back to Controls|Actions (zoom/fullscreen, Save
+  // image) — no Settings group, same Statistics-panel-moved-out reasoning as
+  // Table above.
   w.applyFhView("plot");
   const plotKinds = groupKinds(d.querySelector("#plotToolbar"));
-  assert(plotKinds.join(",") === "controls,settings,actions", "#plotToolbar is Controls|Settings|Actions (zoom/fullscreen, Statistics toggle, Save image), got " + plotKinds.join(","));
+  assert(plotKinds.join(",") === "controls,actions", "#plotToolbar is Controls|Actions (zoom/fullscreen, Save image), got " + plotKinds.join(","));
   assertOrdered(plotKinds, "#plotToolbar");
   assertNoGroupLabel(d.querySelector("#plotToolbar"));
 });
@@ -19819,8 +19894,10 @@ await withApp(async (w, d, T) => {
    a pill — "gleiches Konzept, nur Rechteck statt Pille in den View
    Toolbars, Pille bleibt bei den Filtern". Applies to every plain
    .toolbar-icon-btn in those four toolbars (display toggles, Context's
-   nav buttons, the stats toggles, Export as CSV, Save as image,
-   Fullscreen) via makeToolbarBtnExpandable(), and to the duplicated
+   nav buttons, Export as CSV, Save as image, Fullscreen) via
+   makeToolbarBtnExpandable() — the Statistics panel's own header toggle
+   moved out of these toolbars entirely, this session, see Group 162 — and to
+   the duplicated
    Bookmark/Add note/Add to selection copies via buildRowActionsHtml's new
    "rect" shape argument (`.row-action-btn.rect`) — the Filter-Toolbar's
    own row-actions (`[data-row-actions="viewbar"]`/`"plot-viewbar"`) keep
@@ -19855,7 +19932,7 @@ await withApp(async (w, d, T) => {
   // Applied consistently across all four toolbars' plain buttons, not just
   // one — spot-check one from each.
   w.applyFhView("table");
-  assert(d.querySelector("#statsToggleTable").querySelector(".tb-hit") !== null, "#statsToggleTable is wrapped too");
+  assert(d.querySelector("#tableExportCsvBtn").querySelector(".tb-hit") !== null, "#tableExportCsvBtn is wrapped too");
   w.applyFhView("plot");
   w.render();
   assert(d.querySelector("#plotSaveImageBtn").querySelector(".tb-hit") !== null, "#plotSaveImageBtn is wrapped too");
@@ -22293,13 +22370,14 @@ process.exitCode = failed ? 1 : 0;
        (Schritt 6).
 
    Group 162 — this session (2026-09-03): the collapsible column-statistics
-     bar above Table/Plot. REVISED 2026-09-05 (person-requested): visibility
-     is now a per-tab Setting (#statsToggleTable/#statsTogglePlot, each in
-     its own toolbar), not one shared collapse chevron — the old
-     #extractStatsToggle/"philogg-extract-stats-collapsed" single-flag
-     mechanism is gone; 162a/b/c now cover tableStatsVisible/plotStatsVisible
-     toggling independently while still sharing the one #extractStatsBar
-     element.
+     bar above Table/Plot. REVISED 2026-09-05 (person-requested, twice): first
+     to a per-tab Setting (#statsToggleTable/#statsTogglePlot), then fully
+     replaced later the same day by a standalone #statsPanel — Table-only now
+     (Plot's Statistics panel is gone entirely), positioned/behaving
+     (including pin-or-hover) like #detailPanel, default pinned open, no more
+     separate show/hide button. 162a/b/c/d now cover: default pinned-open
+     state, Table-only visibility (absent on Plot), the header toggle's
+     collapse/pin persistence, and hover-peek while collapsed.
 
    Group 163 — this session (2026-09-03): Context view run-line hover
      highlighting the whole run (data-run-id, .ctx-run-hover) instead of

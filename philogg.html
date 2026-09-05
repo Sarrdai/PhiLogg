@@ -1886,7 +1886,6 @@
     width:14px; height:14px; border-radius:50%; color:#0b1016;
     font-size:9px; font-weight:800; flex:0 0 auto;
   }
-  #extractInfo{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; display:block;}
   .btn-mini-outline{
     background:transparent; color:var(--text-secondary); border:1px solid var(--border);
     border-radius:6px; padding:5px 10px; font-size:11.5px; cursor:pointer; transition:border-color .12s, color .12s;
@@ -1942,20 +1941,42 @@
   #extractTable td.assert-violation{background:var(--level-error-soft); color:var(--level-error);}
   #extractTable td.assert-violation.cell-selected{background:var(--level-error-soft) !important; box-shadow:inset 0 0 0 1.5px var(--level-error);}
 
-  /* ---------- Column statistics bar ----------
-     Visibility is a per-tab Setting (person-requested), toggled by
-     #statsToggleTable/#statsTogglePlot in each view's own toolbar —
-     #extractStatsBar.collapsed hides #extractStatsContent, same shared
-     element for both Table and Plot (it lives in #extractToolbar, above
-     both), driven by tableStatsVisible/plotStatsVisible depending on
-     fhActiveTab (see updateExtractStatsVisibility()). */
-  #extractStatsBar{padding:0 0 2px;}
-  #extractStatsBar.stats-empty{display:none;}
+  /* ---------- Statistics panel ----------
+     Table-only now (person-requested, this session — Plot lost it
+     entirely). Position/behavior (including the pin-or-hover mechanism)
+     mirrors #detailPanel exactly, just nested inside #extractWrap's own
+     flex column instead of #content's, and with a header label ("Statistics")
+     instead of a toggle-only header. No manual drag-resizer — a fixed default
+     height is enough here, unlike Entry Detail's much more variable content. */
+  #statsPanel{
+    flex:0 0 auto; height:150px; position:relative;
+    background:var(--bg-panel); border-top:1px solid var(--border);
+    display:flex; flex-direction:column; min-height:0;
+  }
+  #statsPanelInner{display:flex; flex-direction:column; height:100%; min-height:0;}
+  #statsPanel.collapsed:not(.peeking) #statsPanelBody{display:none;}
+  #statsPanel.collapsed{overflow:visible; height:34px;}
+  #statsPanel.collapsed.peeking #statsPanelInner{
+    position:absolute; left:0; right:0; bottom:0; z-index:30;
+    height:auto; max-height:50vh;
+    background:var(--bg-panel); box-shadow:0 -14px 34px rgba(0,0,0,.45);
+  }
+  #statsPanelHeader{
+    flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px;
+    padding:0 8px 0 16px; border-bottom:1px solid var(--border-soft);
+  }
+  #statsPanelHeaderLabel{
+    flex:1 1 auto; font-size:11px; font-weight:650; letter-spacing:.7px;
+    text-transform:uppercase; color:var(--text-tertiary);
+  }
+  #statsPanelBody{flex:1 1 auto; overflow-y:auto; padding:8px 16px;}
   #extractStatsContent{
-    display:flex; flex-wrap:wrap; gap:6px 16px; padding:4px 0 2px;
+    display:flex; flex-wrap:wrap; gap:6px 16px;
     font-size:10.8px; color:var(--text-tertiary); font-family:var(--font-mono);
   }
-  #extractStatsBar.collapsed #extractStatsContent{display:none;}
+  #statsPanelEmpty{display:none; color:var(--text-tertiary); font-size:12px;}
+  #statsPanel.stats-empty #extractStatsContent{display:none;}
+  #statsPanel.stats-empty #statsPanelEmpty{display:block;}
   .stat-chip-name{font-weight:650;}
   .stat-chip b{color:var(--text-secondary); font-weight:600;}
 
@@ -3300,37 +3321,15 @@
       <div id="extractWrap">
         <div id="extractToolbar">
           <div id="extractPatternView"></div>
-          <!-- #extractStatsContent's visibility is no longer a single shared
-               collapse toggle (person-requested, this session) — it's now
-               driven per-tab by #statsToggleTable/#statsTogglePlot, each in
-               its own toolbar's Settings group below, so Table and Plot can
-               show/hide the same stats independently. The chevron toggle
-               button that used to live directly on this bar is gone;
-               updateExtractStatsVisibility() (near those two buttons)
-               toggles the same #extractStatsBar.collapsed class instead,
-               based on fhActiveTab + whichever of the two booleans applies. -->
-          <div id="extractStatsBar">
-            <div id="extractStatsContent"></div>
-          </div>
-          <span id="extractInfo"></span>
         </div>
         <!-- Table view's own toolbar — same pattern as #plotToolbar right
              below it (see that div's own comment): a real row directly above
-             this view's content. Settings | Actions (Controls|Settings|
-             Actions convention, this session — Table has no navigation
-             control of its own): Settings = the Statistics visibility
-             toggle (#statsToggleTable, person-requested — used to be a
-             single collapse chevron shared with Plot, now Table's own);
-             Actions = "Export as CSV…", which moves here from being
-             right-click-only (still reachable there too, via
-             #extractContextMenu). -->
+             this view's content. Actions-only now (person-requested, this
+             session — the Statistics visibility toggle that used to live
+             here is gone, see #statsPanel's own comment below): "Export as
+             CSV…", which moves here from being right-click-only (still
+             reachable there too, via #extractContextMenu). -->
         <div id="tableToolbar">
-          <div class="toolbar-group" data-toolbar-group="settings">
-            <button type="button" id="statsToggleTable" class="toolbar-icon-btn" title="Statistics">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13V7M8 13V3M13 13V9"/></svg>
-            </button>
-          </div>
-          <span class="ctx-toolbar-sep"></span>
           <div class="toolbar-group" data-toolbar-group="actions">
             <button type="button" id="tableExportCsvBtn" class="toolbar-icon-btn" title="Export as CSV…">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v8M8 9.5L5 6.5M8 9.5l3-3"/><path d="M2.5 11v2.5h11V11"/></svg>
@@ -3339,6 +3338,31 @@
         </div>
         <div id="extractScroll">
           <table id="extractTable"><thead id="extractHead"></thead><tbody id="extractBody"></tbody></table>
+        </div>
+        <!-- Statistics panel — Table-only now (person-requested, this
+             session: it used to be a shared bar collapsible independently on
+             Table and Plot via #statsToggleTable/#statsTogglePlot; Plot lost
+             it entirely). Modeled directly on #detailPanel below (same
+             collapsed/peeking pin-or-hover mechanism, see its own CSS/JS
+             comments) rather than that old collapse-toggle-button pattern:
+             default pinned open (STATS_COLLAPSED_KEY unset = expanded), no
+             separate show/hide button anymore — the panel's own header
+             toggle (mirroring #detailToggle) is it. switchExtractView()
+             shows/hides the whole panel based on which of Table/Plot is
+             current. -->
+        <div id="statsPanel">
+          <div id="statsPanelInner">
+            <div id="statsPanelHeader">
+              <div id="statsPanelHeaderLabel">Statistics</div>
+              <button type="button" id="statsToggle" class="panel-toggle-btn" title="Collapse">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
+              </button>
+            </div>
+            <div id="statsPanelBody">
+              <div id="extractStatsContent"></div>
+              <div id="statsPanelEmpty">No plottable columns in this pattern.</div>
+            </div>
+          </div>
         </div>
         <div id="plotWrap" class="hidden">
           <!-- Plot view's own toolbar — a real row INSIDE the plot view,
@@ -3366,12 +3390,6 @@
                 <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
               </div>
               <button type="button" id="plotFullscreenBtn" class="toolbar-icon-btn" title="Fullscreen"></button>
-            </div>
-            <span class="ctx-toolbar-sep"></span>
-            <div class="toolbar-group" data-toolbar-group="settings">
-              <button type="button" id="statsTogglePlot" class="toolbar-icon-btn" title="Statistics">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13V7M8 13V3M13 13V9"/></svg>
-              </button>
             </div>
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="actions">
@@ -5191,6 +5209,10 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
     detailPanel.classList.remove("peeking");
     updateDetailToggleIcon();
     updateDetailPanel();
+  }
+  if (!hoverExpandDetail && statsPanel.classList.contains("peeking")) {
+    statsPanel.classList.remove("peeking");
+    updateStatsToggleIcon();
   }
 });
 
@@ -8954,11 +8976,10 @@ const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
 const extractToolbar = el("#extractToolbar");
-const extractInfo = el("#extractInfo");
-const extractStatsBar = el("#extractStatsBar");
+const statsPanel = el("#statsPanel");
+const statsPanelBody = el("#statsPanelBody");
+const statsToggleBtn = el("#statsToggle");
 const extractStatsContent = el("#extractStatsContent");
-const statsToggleTable = el("#statsToggleTable");
-const statsTogglePlot = el("#statsTogglePlot");
 // These six log-display toggles now exist TWICE in the DOM (once in
 // #contextToolbar, once in #filteredToolbar — see "Unified toolbar" HTML
 // comments), sharing one class instead of an id, so every reference is an
@@ -9101,7 +9122,11 @@ const nodeLastView = new Map(); // nodeId -> "highlight" | "filter" | "table" | 
 // extractCapable now. The click handler stays a single delegated listener
 // on #fhTabs itself (wired once, below), so rebuilding the buttons'
 // innerHTML doesn't need to re-wire anything.
-function renderViewTabs(extractCapable) {
+// Shared with the Ctrl+1-4 view-cycling shortcuts (jumpToViewTab below) so
+// both read the exact same tab list/order — person-requested: the shortcuts
+// jump through "the currently available views, same order as the View
+// Selector", so there must be exactly one place that decides that order.
+function currentViewTabsList(extractCapable) {
   const logTabs = fhLayout === "stacked"
     ? [{ tab: "stacked", label: "Stacked", title: "Show Context and Filtered at once, split top/bottom" }]
     : [
@@ -9115,10 +9140,30 @@ function renderViewTabs(extractCapable) {
       { tab: "plot", label: "Plot", title: "Plot extracted values from this node's pattern" },
     );
   }
+  return tabs;
+}
+function renderViewTabs(extractCapable) {
+  const tabs = currentViewTabsList(extractCapable);
   const activeVal = fhLayout === "stacked" && fhActiveTab !== "table" && fhActiveTab !== "plot" ? "stacked" : fhActiveTab;
   fhTabs.innerHTML = tabs.map(t =>
     `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}">${t.label}</button>`
   ).join("");
+}
+// Ctrl+1-4: jump to the Nth tab currently shown in the View Selector (1-based)
+// — person-requested. In tabs layout that's up to 4 slots (Context, Filtered,
+// plus Table/Plot when the active node is extraction-capable); in stacked
+// layout the first two collapse into one "Stacked" slot, so there are only
+// up to 3 slots and Ctrl+4 does nothing. Out-of-range n (e.g. Ctrl+4 with no
+// Table/Plot) is a silent no-op, same as clicking a tab that isn't there.
+function jumpToViewTab(n) {
+  const extractCapable = nodeIsExtractionView(state.nodes[state.activeId]);
+  const tabs = currentViewTabsList(extractCapable);
+  const t = tabs[n - 1];
+  if (!t) return;
+  clearSidebarForcedPeek();
+  applyFhView(t.tab);
+  state.entriesView = t.tab === "highlight" ? "highlight" : "filter";
+  state.focusRegion = "entries";
 }
 
 // Switches which panel is visible in tabs layout (no-op on visibility in
@@ -9260,7 +9305,6 @@ function applyFhView(view) {
     if (wasOnTableOrPlot) renderMainView(); // content component switches back from Table/Plot to #fhSplit
   }
   updateViewBarRowActions();
-  updateExtractStatsVisibility();
   localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout);
   // Remember which tab the active node was left on, so a later switch back
   // to it can restore the same view (Settings -> Behavior "When switching
@@ -9287,7 +9331,6 @@ function initFhView() {
   fhSplit.classList.toggle("fh-layout-stacked", fhLayout === "stacked");
   filterSlot.classList.toggle("fh-active", fhLayout === "tabs");
   updateViewBarRowActions();
-  updateExtractStatsVisibility();
 }
 
 // A newly created (or just-edited) filter is invisible while the Context tab
@@ -9333,8 +9376,10 @@ let lastActiveIdForReveal = null;
           the same lastActiveIdForReveal check revealFilteredView() uses,
           which is the one place all ~30 activeId call sites funnel through.
       A2  revealInHighlightView() — double-click / Enter into the Context view.
-      A3  revealInFilteredView() — extraction table row / plot mark into the
-          SAME node's Filtered view (this session's follow-up feature;
+      A3  revealInFilteredView() — extraction table row into the SAME node's
+          Filtered view; revealInTableView() — plot mark into that same
+          node's Table row instead (person-requested, this session:
+          previously plot marks also went straight to Filtered).
           jumpToFullLog, the destructive full-log jump this replaced here,
           is no longer wired to any UI action, see its own comment).
       A4  jumpToEntry() — jump to an entry from outside the log views.
@@ -9806,7 +9851,6 @@ function renderMainView() {
   fhTabs.style.display = "flex";
   renderViewTabs(extractCapable);
   updateViewBarRowActions();
-  updateExtractStatsVisibility();
 
   if (fhActiveTab === "table" || fhActiveTab === "plot") {
     fhSplit.style.display = "none";
@@ -11687,16 +11731,20 @@ function switchExtractView(view) {
   extractScroll.classList.toggle("hidden", view !== "table");
   tableToolbar.classList.toggle("hidden", view !== "table");
   plotWrap.classList.toggle("hidden", view !== "plot");
+  // Statistics panel is Table-only (person-requested, this session) — Plot
+  // has no Statistics panel at all anymore, unlike the old shared, per-tab-
+  // toggleable bar.
+  statsPanel.style.display = view === "table" ? "flex" : "none";
   if (view === "plot") { renderPlotControls(); renderPlotChart(); }
 }
 window.addEventListener("resize", () => { if (extractView === "plot") renderPlotChart(); });
 
 // Plot point/bar -> log entry: the Plot tab used to be a dead end (an
 // outlier was visible but not reachable) — clicking a mark now reveals its
-// underlying entry in the Filtered view, the same node the extraction table
-// row double-click reveals into (revealInFilteredView, this session's
-// follow-up feature — previously jumpToFullLog's destructive full-log jump,
-// back when an extraction node had no Filtered pane of its own). One
+// underlying entry as the corresponding row in the Table view
+// (revealInTableView, person-requested this session — a plot click used to
+// jump straight into the Filtered view, skipping Table; that row's own
+// double-click already goes on into Filtered from there). One
 // delegated listener rather than one per mark, since renderPlotChart
 // rebuilds the SVG's innerHTML wholesale on every render. Kept as a single
 // click (not a double-click) — unlike the table's row, a mark has no other
@@ -11711,7 +11759,7 @@ plotSvg.addEventListener("click", ev => {
   const mark = ev.target.closest(".plot-mark");
   if (!mark) return;
   const row = extractRowsData[+mark.dataset.row];
-  if (row) revealInFilteredView(row.entry);
+  if (row) revealInTableView(row.entry);
 });
 
 // ---------- Plot zoom / pan / hover tooltip ----------
@@ -12958,7 +13006,7 @@ plot3dCanvas.addEventListener("click", () => {
   if (plot3dDragMoved) { plot3dDragMoved = false; return; } // a drag's trailing click shouldn't also jump to a log entry
   if (!plot3dHoverHit) return;
   const row = extractRowsData[plot3dHoverHit.rowIndex];
-  if (row) revealInFilteredView(row.entry);
+  if (row) revealInTableView(row.entry);
 });
 
 let plot3dHoverHit = null;
@@ -13142,32 +13190,14 @@ function computeColumnStats(colIndex) {
   return { min, max, mean, stddev: Math.sqrt(sqDiff / vals.length), n: vals.length };
 }
 
-// Statistics visibility is a per-tab Setting (person-requested) — Table and
-// Plot each control their own #statsToggleTable/#statsTogglePlot, both
-// driving the same shared #extractStatsBar element (it lives in
-// #extractToolbar, above both views) based on which tab is active.
-const TABLE_STATS_VISIBLE_KEY = "philogg-table-stats-visible";
-const PLOT_STATS_VISIBLE_KEY = "philogg-plot-stats-visible";
-let tableStatsVisible = localStorage.getItem(TABLE_STATS_VISIBLE_KEY) === "1";
-let plotStatsVisible = localStorage.getItem(PLOT_STATS_VISIBLE_KEY) === "1";
-
-function updateExtractStatsVisibility() {
-  const visible = fhActiveTab === "table" ? tableStatsVisible : fhActiveTab === "plot" ? plotStatsVisible : false;
-  extractStatsBar.classList.toggle("collapsed", !visible);
-  statsToggleTable.classList.toggle("active", tableStatsVisible);
-  statsTogglePlot.classList.toggle("active", plotStatsVisible);
-}
-statsToggleTable.addEventListener("click", () => {
-  tableStatsVisible = !tableStatsVisible;
-  localStorage.setItem(TABLE_STATS_VISIBLE_KEY, tableStatsVisible ? "1" : "0");
-  updateExtractStatsVisibility();
-});
-statsTogglePlot.addEventListener("click", () => {
-  plotStatsVisible = !plotStatsVisible;
-  localStorage.setItem(PLOT_STATS_VISIBLE_KEY, plotStatsVisible ? "1" : "0");
-  updateExtractStatsVisibility();
-});
-updateExtractStatsVisibility();
+// Statistics panel: Table-only now (person-requested, this session — Plot
+// lost it entirely; see #statsPanel's own HTML/CSS comments). Pin-or-hover
+// mechanism modeled directly on #detailPanel/toggleDetailCollapsed below —
+// see isStatsCollapsed/isStatsPeeking/toggleStatsCollapsed further down,
+// near their #detailPanel counterparts. Default is pinned open (unset key =
+// expanded) — there's no separate show/hide button anymore, the panel's own
+// header toggle is it.
+const STATS_COLLAPSED_KEY = "philogg-stats-collapsed";
 
 function renderStatsBar(node) {
   const plottable = extractColumns.map(c => ({ ...c, index: c.colIndex })).filter(c => isPlottableType(c.type));
@@ -13179,7 +13209,7 @@ function renderStatsBar(node) {
       'mean <b>' + formatAxisNumber(stats.mean) + '</b> · σ <b>' + formatAxisNumber(stats.stddev) + '</b></span>';
   }).join("");
   extractStatsContent.innerHTML = chips;
-  extractStatsBar.classList.toggle("stats-empty", chips === "");
+  statsPanel.classList.toggle("stats-empty", chips === "");
 }
 
 function renderExtractTable(node) {
@@ -13220,8 +13250,7 @@ function renderExtractTable(node) {
     extractRowsData = [];
     extractHead.innerHTML = "";
     extractBody.innerHTML = "";
-    extractPatternEl.textContent = "";
-    extractInfo.textContent = "Invalid pattern";
+    extractPatternEl.textContent = "Invalid pattern";
     return;
   }
   // row.values always holds one entry PER COMPILED COLUMN (spec.columns,
@@ -13269,10 +13298,6 @@ function renderExtractTable(node) {
   renderExtractPatternView(patternNode.value, patternColumns, {
     onToggle: colIndex => { setColumnIgnored(patternNode, colIndex, !isColumnIgnored(patternNode, colIndex)); renderExtractTable(node); },
   });
-  extractInfo.textContent =
-    extractRowsData.length.toLocaleString("de-DE") + " row" + (extractRowsData.length === 1 ? "" : "s") +
-    " · " + extractColumns.length + " column" + (extractColumns.length === 1 ? "" : "s") +
-    (ignoredSet.size ? " (" + ignoredSet.size + " ignored)" : "");
   renderStatsBar(node);
 
   // Header row: corner "select all" cell + one <th> per VISIBLE column
@@ -15629,9 +15654,51 @@ function initDetailCollapsed() {
   if (localStorage.getItem(DETAIL_COLLAPSED_KEY) === "1") toggleDetailCollapsed(true);
 }
 
+// Statistics panel: same collapsed/peeking pin-or-hover mechanism as
+// #detailPanel above (isDetailCollapsed/isDetailPeeking/toggleDetailCollapsed
+// and their listeners just above), applied to #statsPanel instead — see its
+// own HTML/CSS comments. Default is pinned open (STATS_COLLAPSED_KEY unset =
+// expanded), unlike Entry Detail which defaults collapsed.
+function isStatsCollapsed() { return statsPanel.classList.contains("collapsed"); }
+function isStatsPeeking() { return statsPanel.classList.contains("peeking"); }
+function updateStatsToggleIcon() {
+  if (isStatsPeeking()) {
+    statsToggleBtn.innerHTML = ICON_PIN;
+    statsToggleBtn.title = "Pin open";
+  } else {
+    const collapsed = isStatsCollapsed();
+    statsToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
+    statsToggleBtn.title = collapsed ? "Expand" : "Collapse";
+  }
+}
+function toggleStatsCollapsed(collapsed) {
+  if (collapsed === undefined) collapsed = !isStatsCollapsed();
+  statsPanel.classList.remove("peeking");
+  statsPanel.classList.toggle("collapsed", collapsed);
+  localStorage.setItem(STATS_COLLAPSED_KEY, collapsed ? "1" : "0");
+  updateStatsToggleIcon();
+}
+statsToggleBtn.addEventListener("click", () => toggleStatsCollapsed());
+statsPanel.addEventListener("mouseenter", () => {
+  if (!isStatsCollapsed() || !hoverExpandDetail) return;
+  statsPanel.classList.add("peeking");
+  updateStatsToggleIcon();
+});
+statsPanel.addEventListener("mouseleave", () => {
+  if (!isStatsCollapsed()) return;
+  statsPanel.classList.remove("peeking");
+  updateStatsToggleIcon();
+});
+
+function initStatsCollapsed() {
+  if (localStorage.getItem(STATS_COLLAPSED_KEY) === "1") toggleStatsCollapsed(true);
+  else updateStatsToggleIcon();
+}
+
 function initCollapsePanels() {
   initSidebarCollapsed();
   initDetailCollapsed();
+  initStatsCollapsed();
 }
 
 /* ---------- Stacked-layout resizer (drag the handle between Full and
@@ -17035,6 +17102,30 @@ function revealInFilteredView(entry, sourceRowEl, sourceScrollEl) {
   updateSelectedRowClass(previousId);
   updateDetailPanel();
   pushNavWaypoint(); // A2-equivalent: the Filtered-pane spot we landed on
+}
+
+// Plot mark -> reveal that entry in the Table view instead (person-requested,
+// this session — a Plot click used to jump straight into the Filtered view
+// via revealInFilteredView above; now it lands on the corresponding Table
+// row first, since a Table row's own double-click already goes on into
+// Filtered from there — one extra, deliberate step instead of skipping
+// Table entirely). Stays on the same extraction-capable node, just switches
+// fhActiveTab to "table" (works regardless of fhLayout, same as
+// applyFhView("table") elsewhere) and scrolls/selects the matching row.
+function revealInTableView(entry) {
+  commitCurrentNavPosition(); // A3-equivalent: freeze the spot we're jumping out of
+  const previousId = applySelection(entry.id);
+  applyFhView("table");
+  const rowIndex = extractRowsData.findIndex(r => r.entry.id === entry.id);
+  if (rowIndex !== -1) {
+    selectionAnchor = { row: rowIndex, col: 0 };
+    selectCells(rowCells(rowIndex));
+    const targetTop = rowIndex * EXTRACT_ROW_HEIGHT - extractScroll.clientHeight / 2 + EXTRACT_ROW_HEIGHT / 2;
+    extractScroll.scrollTop = Math.max(0, targetTop);
+    renderExtractVisibleRows();
+  }
+  updateSelectedRowClass(previousId);
+  pushNavWaypoint();
 }
 
 /* ===================== Bookmarks =====================
@@ -21821,11 +21912,12 @@ const SHORTCUT_ACTIONS = [
   { id: "bookmark",      label: "Bookmark the selected row",           default: { key: "b" } },
   { id: "addNote",       label: "Add/edit a note on the selected row", default: { alt: true, key: "n" } },
   { id: "focusTree",     label: "Focus the filter tree",               default: { ctrl: true, key: "0" } },
-  { id: "viewFull",      label: "Switch to Context view",              default: { ctrl: true, key: "1" } },
+  { id: "viewTab1",      label: "Switch to View Selector tab 1",       default: { ctrl: true, key: "1" } },
   { id: "nextMatch",     label: "Context view: next filter match",     default: { ctrl: true, key: "arrowdown" } },
   { id: "prevMatch",     label: "Context view: previous filter match", default: { ctrl: true, key: "arrowup" } },
-  { id: "viewFiltered",  label: "Switch to Filtered view",             default: { ctrl: true, key: "2" } },
-  { id: "viewStacked",   label: "Switch to Stacked view",              default: { ctrl: true, key: "3" } },
+  { id: "viewTab2",      label: "Switch to View Selector tab 2",       default: { ctrl: true, key: "2" } },
+  { id: "viewTab3",      label: "Switch to View Selector tab 3",       default: { ctrl: true, key: "3" } },
+  { id: "viewTab4",      label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
 ];
@@ -22804,16 +22896,12 @@ document.addEventListener("keydown", ev => {
   // node is ALREADY active — a filter included, not just its root file —
   // so arrow keys continue navigating from wherever the person currently
   // is, rather than jumping back up to the file; falls back to the first
-  // root file only if nothing's active yet. Ctrl+1/2/3 mirror the three
-  // Full/Filtered/Stacked toggle buttons (#fhTabs) one-for-one — same
-  // applyFhView call each of those already makes on click — and additionally
-  // focus the entries pane for arrow-key navigation: Ctrl+1 -> Full (arrow
-  // keys move through moveHighlightSelection), Ctrl+2 -> Filtered
-  // (moveSelection), Ctrl+3 -> Stacked (both panels visible; defaults arrow
-  // keys to the Filtered pane, same as a plain click there would). Enter on
+  // root file only if nothing's active yet. Ctrl+1-4 jump positionally
+  // through whichever tabs the View Selector (#fhTabs) currently shows, same
+  // order (jumpToViewTab/currentViewTabsList) — person-requested. Enter on
   // an active filter node while the tree has focus reveals the Filtered view
-  // the same way Ctrl+2 does, so the tree and the Log views read as a fast
-  // back-and-forth pair either way.
+  // the same way clicking that tab does, so the tree and the Log views read
+  // as a fast back-and-forth pair either way.
   if (matchesShortcut(ev, "focusTree")) {
     ev.preventDefault();
     if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
@@ -22826,30 +22914,10 @@ document.addEventListener("keydown", ev => {
     render();
     return;
   }
-  if (matchesShortcut(ev, "viewFull")) {
-    ev.preventDefault();
-    clearSidebarForcedPeek();
-    applyFhView("highlight");
-    state.entriesView = "highlight";
-    state.focusRegion = "entries";
-    return;
-  }
-  if (matchesShortcut(ev, "viewFiltered")) {
-    ev.preventDefault();
-    clearSidebarForcedPeek();
-    applyFhView("filter");
-    state.entriesView = "filter";
-    state.focusRegion = "entries";
-    return;
-  }
-  if (matchesShortcut(ev, "viewStacked")) {
-    ev.preventDefault();
-    clearSidebarForcedPeek();
-    applyFhView("stacked");
-    state.entriesView = "filter";
-    state.focusRegion = "entries";
-    return;
-  }
+  if (matchesShortcut(ev, "viewTab1")) { ev.preventDefault(); jumpToViewTab(1); return; }
+  if (matchesShortcut(ev, "viewTab2")) { ev.preventDefault(); jumpToViewTab(2); return; }
+  if (matchesShortcut(ev, "viewTab3")) { ev.preventDefault(); jumpToViewTab(3); return; }
+  if (matchesShortcut(ev, "viewTab4")) { ev.preventDefault(); jumpToViewTab(4); return; }
   if (ev.key === "Enter" && state.focusRegion === "tree") {
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") {
