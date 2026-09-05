@@ -205,6 +205,28 @@ shape:
   apart. Seven of these permanently spelled out would be far too wide for
   the row — the circle is the resting state precisely so the row stays
   compact until the person is actually pointing at one.
+
+  **Same mechanic, rectangle instead of pill, in the log views' own
+  toolbars (person-requested, 2026-09-05)**: `#contextToolbar`/
+  `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`'s buttons reveal a
+  hover label the same way, but expand into a rounded RECTANGLE (the
+  toolbar's ordinary 7px `.toolbar-icon-btn` corner radius, at rest and
+  expanded) instead of a pill — only the Filter-Toolbar's own row-actions
+  above become pills. Every plain `.toolbar-icon-btn` in those four
+  toolbars (display toggles, Context's match-nav/expand-collapse, the
+  Statistics toggles, Export as CSV, Save as image, Fullscreen) gets
+  wrapped once, near the very end of the script (after every button's icon
+  has already been assigned), by `makeToolbarBtnExpandable()` into a
+  `.tb-hit`/`.tb-label` pair — same fixed-hit-zone `mouseenter`/
+  `mouseleave` idea as `.row-action-hit` above, scoped in CSS via
+  `.toolbar-icon-btn:has(.tb-hit)` so it never touches a `.toolbar-icon-btn`
+  elsewhere (header nav, Settings, …) that was never wrapped. The
+  duplicated Bookmark/Add note/Add to selection copies (`buildRowActionsHtml`
+  now takes a `shape` argument, `"circle"` for `VIEWBAR_ROW_ACTIONS`/
+  Plot's viewport filters or `"rect"` for `TOOLBAR_ROW_ACTIONS`) reuse the
+  exact same `.row-action-btn`/`.row-action-hit`/`.row-action-label`
+  markup and JS, just with an added `.rect` class overriding the
+  border-radius back to 7px at every stage instead of 50%/20px.
 - **Each view's own toolbar** (Zeile 3 — `#contextToolbar`/
   `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) — same position/shape
   in every tab, only the content differs. The six log-display toggles

@@ -15340,15 +15340,15 @@ await withApp(async (w, d, T) => {
   const prev = d.querySelector("#ctxPrevMatch"), next = d.querySelector("#ctxNextMatch");
   assert([...bar.querySelectorAll("button")].every(b => b.classList.contains("toolbar-icon-btn")),
     "every button uses the app's own icon-button shape (.toolbar-icon-btn), not a one-off style");
-  // .row-action-btn (the Actions group's Bookmark/Note, moved in here this
-  // session) is the one deliberate exception: its label text lives in the
-  // DOM (collapsed to nothing visible via CSS max-width:0 at rest, revealed
-  // on hover — see docs/ui-and-views.md's "Per-view toolbars" section) so
-  // jsdom's plain .textContent isn't empty for it the way a purely
-  // icon-only button's is.
-  assert([...bar.querySelectorAll("button")].every(b =>
-    b.title && (b.classList.contains("row-action-btn") ? true : !b.textContent.trim())),
-    "…icon-only, each explained by a tooltip (row-action buttons carry a hover-revealed label instead)");
+  // Every button here (person-requested, 2026-09-05: the same
+  // reveal-a-label-on-hover mechanic as the Filter-Toolbar's row-actions,
+  // just square-to-rectangle instead of circle-to-pill — see
+  // makeToolbarBtnExpandable) carries its label text in the DOM, collapsed
+  // to nothing visible via CSS max-width:0 at rest and revealed on hover —
+  // so jsdom's plain .textContent is never empty here, unlike a purely
+  // icon-only button with nothing but a native title tooltip.
+  assert([...bar.querySelectorAll("button")].every(b => b.title && b.textContent.trim()),
+    "…icon-only at rest, each carries a hover-revealed label matching its tooltip");
   assert(!prev.disabled && !next.disabled, "two matches, so both arrows are live");
   assert(d.querySelector("#contextNavLabel").textContent.trim() === "2",
     "no selection yet, so the label is the bare match count, got " +
@@ -19810,6 +19810,75 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 180 — this session (2026-09-05), person-requested: the log views'
+   own toolbars (Context/Filtered/Table/Plot) get the same reveal-a-label-
+   on-hover mechanic as the Filter-Toolbar's row-actions, but expanding into
+   a rounded RECTANGLE (the toolbar's normal 7px corner radius) instead of
+   a pill — "gleiches Konzept, nur Rechteck statt Pille in den View
+   Toolbars, Pille bleibt bei den Filtern". Applies to every plain
+   .toolbar-icon-btn in those four toolbars (display toggles, Context's
+   nav buttons, the stats toggles, Export as CSV, Save as image,
+   Fullscreen) via makeToolbarBtnExpandable(), and to the duplicated
+   Bookmark/Add note/Add to selection copies via buildRowActionsHtml's new
+   "rect" shape argument (`.row-action-btn.rect`) — the Filter-Toolbar's
+   own row-actions (`[data-row-actions="viewbar"]`/`"plot-viewbar"`) keep
+   the original circle/pill shape, untouched.
+   ============================================================ */
+group(180);
+await withApp(async (w, d, T) => {
+  section("180a. Plain view-toolbar buttons (toggles, nav, stats, export, save, fullscreen) get a hover label that expands into a rectangle, not a pill");
+
+  const log = [0, 1, 2].map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`).join("\n") + "\n";
+  const f = await w.addFile("a.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "score=[value:float]");
+  T.state.activeId = node.id;
+  w.render();
+
+  const notesBtn = d.querySelector("#contextToolbar .toggle-notes");
+  assert(notesBtn.querySelector(".tb-hit") !== null, "wrapped in a .tb-hit span");
+  const label = notesBtn.querySelector(".tb-label");
+  assert(label !== null && label.textContent === notesBtn.title, "carries a .tb-label matching its title exactly");
+  assert(!notesBtn.classList.contains("row-action-btn"), "sanity: not a row-action-btn (different mechanism, same idea)");
+
+  assert(!notesBtn.classList.contains("expanded"), "sanity: starts collapsed");
+  notesBtn.querySelector(".tb-hit").dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
+  assert(notesBtn.classList.contains("expanded"), "entering .tb-hit expands the button");
+  notesBtn.querySelector(".tb-hit").dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
+  assert(!notesBtn.classList.contains("expanded"), "leaving .tb-hit collapses it again");
+
+  // Applied consistently across all four toolbars' plain buttons, not just
+  // one — spot-check one from each.
+  w.applyFhView("table");
+  assert(d.querySelector("#statsToggleTable").querySelector(".tb-hit") !== null, "#statsToggleTable is wrapped too");
+  w.applyFhView("plot");
+  w.render();
+  assert(d.querySelector("#plotSaveImageBtn").querySelector(".tb-hit") !== null, "#plotSaveImageBtn is wrapped too");
+  assert(d.querySelector("#plotFullscreenBtn").querySelector(".tb-hit") !== null, "#plotFullscreenBtn is wrapped too");
+});
+
+await withApp(async (w, d, T) => {
+  section("180b. Bookmark/Add note/Add to selection (duplicated into the log views) carry .rect, not the Filter-Toolbar's circle/pill shape");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  ["bookmark", "note", "addToSelection"].forEach(action => {
+    const btn = d.querySelector('#contextToolbar [data-row-action="' + action + '"]');
+    assert(btn.classList.contains("row-action-btn") && btn.classList.contains("rect"),
+      action + " carries both .row-action-btn (shared mechanism) and .rect (square/rectangle, not circle/pill)");
+  });
+
+  // The Filter-Toolbar's own row-actions are untouched — still the
+  // original circle/pill shape, no .rect.
+  ["filterAfter", "filterBefore", "filterForMessage", "timeRangeFromSelection"].forEach(action => {
+    const btn = d.querySelector('[data-row-actions="viewbar"] [data-row-action="' + action + '"]');
+    assert(btn.classList.contains("row-action-btn") && !btn.classList.contains("rect"),
+      action + " keeps the circle/pill shape in the Filter-Toolbar (no .rect)");
+  });
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -22368,4 +22437,22 @@ process.exitCode = failed ? 1 : 0;
      from Settings|Controls|Actions to Controls|Settings|Actions — 177b's
      `assertOrdered()`/expected-kinds strings updated for the new order and
      for Table/Plot's added Settings groups.
+
+   Group 180 — this session (2026-09-05), person-requested: the log views'
+     own toolbars (Context/Filtered/Table/Plot) get the same reveal-a-
+     label-on-hover mechanic as the Filter-Toolbar's row-actions, but
+     expanding into a rounded rectangle instead of a pill. Every plain
+     `.toolbar-icon-btn` in those four toolbars is wrapped (once, at the
+     very end of the script, after every icon has already been assigned)
+     by `makeToolbarBtnExpandable()` into a `.tb-hit`/`.tb-label` pair,
+     using the same `mouseenter`/`mouseleave`-on-the-fixed-hit-zone
+     mechanism `.row-action-hit` already established; `buildRowActionsHtml`
+     gained a `shape` argument ("circle", the Filter-Toolbar's own default,
+     or "rect") so the duplicated Bookmark/Add note/Add to selection
+     copies get `.row-action-btn.rect` (square-to-rectangle) while
+     `VIEWBAR_ROW_ACTIONS`/the Plot viewport filters keep the original
+     circle/pill untouched. Group 151's "icon-only, explained by a
+     tooltip" assertion updated — every button in `#contextToolbar` now
+     carries non-empty `.textContent` (its collapsed label), not just
+     `.row-action-btn` copies as before.
    ============================================================ */
