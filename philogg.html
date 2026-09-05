@@ -996,6 +996,15 @@
      cursor, so the earlier overshoot bug doesn't apply there. */
   .row-action-btn{border-radius:50%; overflow:hidden; transition:border-radius .15s, width .15s;}
   .row-action-btn.expanded, .row-action-btn:focus-visible{border-radius:20px; width:auto; padding-right:10px;}
+  /* .rect variant (person-requested, 2026-09-05): the copies duplicated
+     into each log view's own toolbar (Bookmark/Add note/Add to selection)
+     stay square with the toolbar's normal 7px corner radius at rest and
+     expand into a rounded RECTANGLE (same 7px radius, not a pill) — only
+     the Filter-Toolbar's own row-actions (#viewBar) keep the circle/pill
+     shape above. Same expand/collapse mechanism (.row-action-hit/
+     .expanded), just a different resting+expanded radius. */
+  .row-action-btn.rect{border-radius:7px;}
+  .row-action-btn.rect.expanded, .row-action-btn.rect:focus-visible{border-radius:7px;}
   .row-action-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .row-action-label{
     max-width:0; opacity:0; margin-left:0; overflow:hidden; white-space:nowrap;
@@ -1003,6 +1012,26 @@
     transition:max-width .15s ease, opacity .1s ease, margin-left .15s ease;
   }
   .row-action-btn.expanded .row-action-label, .row-action-btn:focus-visible .row-action-label{
+    max-width:240px; opacity:1; margin-left:6px;
+  }
+  /* Same reveal-a-label-on-hover mechanic as .row-action-btn above, but for
+     the log views' own toolbars' plain buttons (Context/Filtered/Table/
+     Plot — see makeToolbarBtnExpandable near the end of the script): stays
+     square with the ordinary .toolbar-icon-btn 7px corner radius at rest
+     AND once expanded (a rounded rectangle, never a pill) — only the
+     Filter-Toolbar's row-actions become pills. `:has(.tb-hit)` scopes this
+     to buttons this mechanic actually wrapped, so it never affects a plain
+     .toolbar-icon-btn elsewhere (header nav, Settings, etc.) that was never
+     given the .tb-hit/.tb-label structure. */
+  .toolbar-icon-btn:has(.tb-hit){justify-content:flex-start; overflow:hidden; width:28px; transition:width .15s, background .12s, border-color .12s, color .12s;}
+  .toolbar-icon-btn.expanded:has(.tb-hit), .toolbar-icon-btn:has(.tb-hit):focus-visible{width:auto; padding-right:10px;}
+  .tb-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
+  .tb-label{
+    max-width:0; opacity:0; margin-left:0; overflow:hidden; white-space:nowrap;
+    font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
+    transition:max-width .15s ease, opacity .1s ease, margin-left .15s ease;
+  }
+  .toolbar-icon-btn.expanded .tb-label, .toolbar-icon-btn:focus-visible .tb-label{
     max-width:240px; opacity:1; margin-left:6px;
   }
   .level-btn.lvl-error{color:var(--level-error); border-color:color-mix(in srgb, var(--level-error) 35%, transparent);}
@@ -14704,6 +14733,10 @@ function updateContextToolbar() {
   const anyRevealed = contextGaps.some(g => contextRevealedCount(g.start) > 0);
   ctxExpandAll.disabled = !hiddenLeft;
   ctxCollapseAll.disabled = !anyRevealed;
+  // Same stuck-open guard as updateRowActionButtons() (see its own comment):
+  // a button that just became disabled while the mouse happened to be
+  // sitting over it never gets its own mouseleave.
+  elAll("#contextToolbar .toolbar-icon-btn:disabled.expanded").forEach(b => b.classList.remove("expanded"));
 }
 
 // The bar sits in #highlightWrap's flex column, so showing it takes
@@ -19996,20 +20029,27 @@ const VIEWBAR_ROW_ACTIONS = [
   { action: "filterForMessage", label: "Filter for this message", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/>', strokeWidth: 1.4 },
   { action: "timeRangeFromSelection", label: "Time filter from selection", svg: '<path d="M8 3v4M5 4l3 3 3-3M8 13v-4M5 12l3-3 3 3"/>', strokeWidth: 1.4 },
 ];
-function buildRowActionsHtml(list) {
+// shape: "circle" (default, Filter-Toolbar's own row-actions — expands into
+// a pill, person-requested) or "rect" (the duplicated copies inside the log
+// views' own toolbars — expands into a rounded rectangle instead, matching
+// the rest of that toolbar's plain .toolbar-icon-btn shape; person-
+// requested, 2026-09-05: "gleiches Konzept, nur Rechteck statt Pille in den
+// View Toolbars, Pille bleibt bei den Filtern").
+function buildRowActionsHtml(list, shape) {
+  const shapeClass = shape === "rect" ? " rect" : "";
   return list.map(a =>
-    // .row-action-hit is the fixed-size circle (icon centered inside it) —
-    // the actual mouseenter/mouseleave target (see the listener below);
-    // .row-action-label follows it and is what grows/shrinks the button's
-    // own (now variable) width.
-    '<button type="button" class="toolbar-icon-btn row-action-btn" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
+    // .row-action-hit is the fixed-size circle/square (icon centered
+    // inside it) — the actual mouseenter/mouseleave target (see the
+    // listener below); .row-action-label follows it and is what grows/
+    // shrinks the button's own (now variable) width.
+    '<button type="button" class="toolbar-icon-btn row-action-btn' + shapeClass + '" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
       '<span class="row-action-hit"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg></span>' +
       '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
     '</button>'
   ).join("");
 }
-const TOOLBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS);
-const VIEWBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(VIEWBAR_ROW_ACTIONS);
+const TOOLBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS, "rect");
+const VIEWBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(VIEWBAR_ROW_ACTIONS, "circle");
 elAll('[data-row-actions="toolbar-actions"]').forEach(container => { container.innerHTML = TOOLBAR_ROW_ACTIONS_HTML; });
 elAll('[data-row-actions="viewbar"]').forEach(container => { container.innerHTML = VIEWBAR_ROW_ACTIONS_HTML; });
 // Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
@@ -24321,6 +24361,33 @@ initFhView();
 initSettingsFhLayoutOption();
 initFilterActivationViewSetting();
 render();
+
+// Rectangle-expand hover mechanic for the log views' own toolbars (Context/
+// Filtered/Table/Plot) — same reveal-a-label-on-hover idea as the Filter-
+// Toolbar's circle/pill row-actions (see .row-action-btn above), but
+// square-at-rest -> rounded-RECTANGLE-on-hover instead of circle -> pill:
+// these toolbars' buttons keep the ordinary .toolbar-icon-btn corner radius
+// throughout instead of becoming pills like the filter buttons do
+// (person-requested, 2026-09-05 — "Pille bleibt bei den Filtern"). Run once,
+// after every button's icon has already been assigned above, so it can just
+// wrap each button's existing content rather than needing its own copy of
+// every icon constant; `.rect` row-action-btn copies (Bookmark/Add note/
+// Add to selection, see buildRowActionsHtml) already carry this shape and
+// their own hit/label markup, so they're excluded here.
+function makeToolbarBtnExpandable(btn) {
+  if (!btn || btn.querySelector(".tb-hit")) return;
+  const icon = btn.innerHTML;
+  btn.innerHTML = '<span class="tb-hit">' + icon + '</span><span class="tb-label">' + escapeHtml(btn.title) + '</span>';
+  const hit = btn.querySelector(".tb-hit");
+  hit.addEventListener("mouseenter", () => btn.classList.add("expanded"));
+  hit.addEventListener("mouseleave", () => btn.classList.remove("expanded"));
+}
+elAll(
+  "#contextToolbar .toolbar-icon-btn:not(.row-action-btn), " +
+  "#filteredToolbar .toolbar-icon-btn:not(.row-action-btn), " +
+  "#tableToolbar .toolbar-icon-btn:not(.row-action-btn), " +
+  "#plotToolbar .toolbar-icon-btn:not(.row-action-btn)"
+).forEach(makeToolbarBtnExpandable);
 // Log format config (Settings -> Format Manager) loads in parallel with the
 // rest of boot, not gating it — restoreSessionFromCache/loadFromUrlParam
 // fire at their original, unchanged timing below. addFile is the one place
