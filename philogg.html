@@ -1329,6 +1329,24 @@
     position:absolute; top:0; left:0; right:0; box-sizing:border-box;
     --rows-pad-left: calc(26px + (var(--color-mark-w) - 3px));
     padding:2px 16px 20px var(--rows-pad-left);
+    /* Belt-and-braces floor (person-reported, 2026-09-05): syncTableRowsWidth/
+       syncHighlightRowsWidth already clear their own inline `width` (falling
+       back to this rule's left:0;right:0 stretch-fill) whenever the widest
+       message needs LESS room than the view — but that JS decision is only
+       ever recomputed when the entry list itself changes (see their own
+       comments), not on every resize/layout pass, so a stale narrower inline
+       width computed once (e.g. mid-layout, before the panel reached its
+       final size) could otherwise stick around and make every row — and so
+       its .selected box-shadow outline — visibly stop partway across the
+       view instead of spanning it, with plain page background showing past
+       that point. `min-width:100%` (of the positioned #tableSpacer/
+       #highlightSpacer ancestor) is a pure-CSS floor requiring no JS timing
+       to get right: it always wins over a smaller explicit `width`
+       (min-width clamps upward per spec, regardless of how `width` was set),
+       while a genuinely wider explicit `width` (the real "content needs a
+       horizontal scrollbar" case) still wins over this 100% floor since it's
+       larger. */
+    min-width:100%;
   }
 
   /* Highlight-rule match markers: thin stripes in the row's left gutter, one

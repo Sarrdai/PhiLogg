@@ -8658,6 +8658,18 @@ await withApp(async (w, d, T) => {
   await w.addFile("short.log", makeLog(0, 5), () => {});
   w.render();
   assert(tableRows.style.width === "", "a file with only short messages leaves #tableRows filling the view (no inline width)");
+
+  // Belt-and-braces CSS floor (person-reported, 2026-09-05): #tableRows'
+  // stretch-fill relies on JS clearing its inline width at the right moment
+  // (above) — should that ever go stale (a width computed once, before the
+  // panel reached its final size, never revisited), a plain CSS min-width:
+  // 100% on #tableRows/#highlightRows independently guarantees rows (and so
+  // their .selected box-shadow outline) can never render narrower than the
+  // view, no JS timing involved. min-width always wins over a smaller
+  // explicit width per the CSS box model, so this is provably a no-op for
+  // the long-message case above (explicit width there is already > 100%).
+  assert(w.getComputedStyle(tableRows).minWidth === "100%", "#tableRows has a CSS min-width:100% floor, independent of the JS width sync");
+  assert(w.getComputedStyle(d.getElementById("highlightRows")).minWidth === "100%", "#highlightRows has the same floor");
 });
 
 /* ============================================================
