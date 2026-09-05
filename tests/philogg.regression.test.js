@@ -251,7 +251,8 @@ async function withApp(run, opts = {}) {
       get nodeLastView() { return nodeLastView; },
       get filterActivationView() { return filterActivationView; },
       set filterActivationView(v) { filterActivationView = v; },
-      get extractStatsCollapsed() { return extractStatsCollapsed; },
+      get tableStatsVisible() { return tableStatsVisible; },
+      get plotStatsVisible() { return plotStatsVisible; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
     };
   `;
@@ -18017,27 +18018,27 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 162 — Collapsible column statistics bar (default collapsed),
-   shared between Table and Plot
-   Origin: this session (2026-09-03), person-requested: the stats bar above
-   the extraction table/plot should be collapsible, default collapsed, and
-   the collapsed/expanded state must be the same regardless of whether it's
-   toggled from Table or from Plot. Both toolbars share the one
-   #extractStatsBar element (it lives in #extractToolbar, above both
-   #extractScroll and #plotWrap), so the state is naturally shared — these
-   tests confirm that stays true rather than asserting it structurally.
+   GROUP 162 — Column statistics visibility, per-tab Setting
+   Origin: this session (2026-09-03), later revised (2026-09-05,
+   person-requested): statistics visibility is a Setting independently
+   controlled on Table and on Plot, not one shared collapse chevron — each
+   view's own toolbar carries its own toggle (#statsToggleTable/
+   #statsTogglePlot), both driving the same shared #extractStatsBar element
+   (it lives in #extractToolbar, above both #extractScroll and #plotWrap)
+   based on which tab is active.
    ============================================================ */
 group(162);
 await withApp(async (w, d, T) => {
-  section("162a. Defaults to collapsed on a fresh load, with no localStorage entry yet");
+  section("162a. Defaults to hidden on both tabs, with no localStorage entry yet");
 
-  assert(w.localStorage.getItem("philogg-extract-stats-collapsed") === null, "sanity: nothing persisted yet");
-  assert(T.extractStatsCollapsed === true, "extractStatsCollapsed defaults to true with nothing stored");
+  assert(w.localStorage.getItem("philogg-table-stats-visible") === null, "sanity: nothing persisted yet for Table");
+  assert(w.localStorage.getItem("philogg-plot-stats-visible") === null, "sanity: nothing persisted yet for Plot");
+  assert(T.tableStatsVisible === false && T.plotStatsVisible === false, "both default to false with nothing stored");
   assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "the bar itself carries .collapsed by default");
 });
 
 await withApp(async (w, d, T) => {
-  section("162b. Clicking the toggle expands the bar and persists the choice; content renders regardless of collapsed state");
+  section("162b. Clicking each tab's own toggle shows/hides the bar independently and persists the choice; content renders regardless of visibility");
 
   const log = [0, 1, 2]
     .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`)
@@ -18049,20 +18050,20 @@ await withApp(async (w, d, T) => {
   w.applyFhView("table");
 
   const statsBar = d.querySelector("#extractStatsBar");
-  assert(statsBar.classList.contains("collapsed"), "sanity: still collapsed by default");
-  assert(d.querySelector("#extractStatsContent").textContent.includes("value"), "the chip content is rendered even while collapsed (only hidden via CSS, not skipped)");
+  assert(statsBar.classList.contains("collapsed"), "sanity: hidden by default on Table");
+  assert(d.querySelector("#extractStatsContent").textContent.includes("value"), "the chip content is rendered even while hidden (only hidden via CSS, not skipped)");
 
-  fireClick(d.querySelector("#extractStatsToggle"), w);
-  assert(!statsBar.classList.contains("collapsed"), "clicking the toggle expands the bar");
-  assert(w.localStorage.getItem("philogg-extract-stats-collapsed") === "0", "expanded state persisted to localStorage");
+  fireClick(d.querySelector("#statsToggleTable"), w);
+  assert(!statsBar.classList.contains("collapsed"), "clicking Table's toggle shows the bar");
+  assert(w.localStorage.getItem("philogg-table-stats-visible") === "1", "visible state persisted to localStorage under the Table key");
 
-  fireClick(d.querySelector("#extractStatsToggle"), w);
-  assert(statsBar.classList.contains("collapsed"), "clicking again re-collapses it");
-  assert(w.localStorage.getItem("philogg-extract-stats-collapsed") === "1", "collapsed state persisted to localStorage");
+  fireClick(d.querySelector("#statsToggleTable"), w);
+  assert(statsBar.classList.contains("collapsed"), "clicking again re-hides it");
+  assert(w.localStorage.getItem("philogg-table-stats-visible") === "0", "hidden state persisted to localStorage");
 });
 
 await withApp(async (w, d, T) => {
-  section("162c. Expanding from the Table tab stays expanded after switching to Plot, and vice versa (one shared bar/state)");
+  section("162c. Table and Plot visibility are independent — switching tabs reflects each tab's own stored choice");
 
   const log = [0, 1, 2]
     .map(i => `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"score=${i}.5"`)
@@ -18073,17 +18074,17 @@ await withApp(async (w, d, T) => {
   w.render();
   w.applyFhView("table");
 
-  fireClick(d.querySelector("#extractStatsToggle"), w);
-  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "sanity: expanded from Table");
+  fireClick(d.querySelector("#statsToggleTable"), w);
+  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "sanity: shown on Table");
 
   w.applyFhView("plot");
-  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "still expanded after switching to Plot — same shared element/state");
+  assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "Plot has its own, still-hidden default — independent of Table's choice");
 
-  fireClick(d.querySelector("#extractStatsToggle"), w);
-  assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "collapsed again from the Plot tab");
+  fireClick(d.querySelector("#statsTogglePlot"), w);
+  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "shown on Plot after clicking Plot's own toggle");
 
   w.applyFhView("table");
-  assert(d.querySelector("#extractStatsBar").classList.contains("collapsed"), "still collapsed back on Table — the toggle from Plot affected the same shared bar");
+  assert(!d.querySelector("#extractStatsBar").classList.contains("collapsed"), "Table's own choice (shown) is unaffected by Plot's toggle");
 });
 
 /* ============================================================
@@ -19422,18 +19423,19 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
 
-  // Bookmark/Note moved OUT of #viewBar this session (person-requested
-  // follow-up: they're actions on the current selection, not filter
-  // creation, so they belong in each log view's own toolbar's Actions
-  // group instead — see 176e below for their new home) — only the five
-  // that genuinely create a filter node stay in the Filter-Toolbar.
+  // Bookmark/Note/Add-to-selection moved OUT of #viewBar this session
+  // (person-requested follow-up: they're actions on the current selection,
+  // not filter creation, so they belong in each log view's own toolbar's
+  // Actions group instead — see 176e below for their new home) — only the
+  // four that genuinely create a filter node stay in the Filter-Toolbar.
   const actions = [...d.querySelector('[data-row-actions="viewbar"]').querySelectorAll("[data-row-action]")];
-  const expectedActions = ["filterAfter", "filterBefore", "filterForMessage", "timeRangeFromSelection", "addToSelection"];
+  const expectedActions = ["filterAfter", "filterBefore", "filterForMessage", "timeRangeFromSelection"];
   assert(actions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
-    "the Filter-Toolbar's row-actions group has all five filter-creating actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
+    "the Filter-Toolbar's row-actions group has all four filter-creating actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
   assert(d.querySelector('[data-row-actions="viewbar"] [data-row-action="bookmark"]') === null &&
-    d.querySelector('[data-row-actions="viewbar"] [data-row-action="note"]') === null,
-    "bookmark/note are NOT in #viewBar any more");
+    d.querySelector('[data-row-actions="viewbar"] [data-row-action="note"]') === null &&
+    d.querySelector('[data-row-actions="viewbar"] [data-row-action="addToSelection"]') === null,
+    "bookmark/note/addToSelection are NOT in #viewBar any more");
 
   // --- Circle-with-hover-pill shape (person-requested, this session): each
   // button is a plain circle (.row-action-btn, matching .level-btn's own
@@ -19451,14 +19453,14 @@ await withApp(async (w, d, T) => {
   const filterAfterBtn = actions.find(b => b.dataset.rowAction === "filterAfter");
   const byAction = action => actions.find(b => b.dataset.rowAction === action);
 
-  // --- No selection: single-row actions AND addToSelection disabled, time-range disabled ---
+  // --- No selection: single-row actions disabled, time-range disabled ---
   expectedActions.forEach(action => {
     assert(byAction(action).disabled === true, action + " starts disabled with no selection");
   });
 
-  // --- Single row selected: single-row actions + addToSelection enabled, time-range still disabled ---
+  // --- Single row selected: single-row actions enabled, time-range still disabled ---
   w.selectEntry(f.entries[2].id);
-  ["filterAfter", "filterBefore", "filterForMessage", "addToSelection"].forEach(action => {
+  ["filterAfter", "filterBefore", "filterForMessage"].forEach(action => {
     assert(byAction(action).disabled === false, action + " enabled with exactly one row selected");
   });
   assert(byAction("timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
@@ -19480,12 +19482,11 @@ await withApp(async (w, d, T) => {
   hit.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
   assert(!filterAfterBtn.classList.contains("expanded"), "leaving the circle collapses it again, independent of the button's own (now wider) box");
 
-  // --- 2+ rows multi-selected: timeRangeFromSelection enables, single-row actions disable, addToSelection stays enabled ---
+  // --- 2+ rows multi-selected: timeRangeFromSelection enables, single-row actions disable ---
   T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]);
   w.updateRowActionButtons();
   assert(byAction("timeRangeFromSelection").disabled === false, "timeRangeFromSelection enables with 2+ rows multi-selected");
   assert(byAction("filterAfter").disabled === true, "single-row actions disable once 2+ rows are multi-selected");
-  assert(byAction("addToSelection").disabled === false, "addToSelection stays enabled with a 2+ multi-selection");
 
   // --- A button that becomes disabled while its pill happens to be expanded
   // (e.g. the selection changed via keyboard, not by the mouse leaving the
@@ -19617,23 +19618,26 @@ await withApp(async (w, d, T) => {
    2. Bookmark this row/Add note moved out of #viewBar's row-actions group
       into each log view's own toolbar as a new "Actions" group — they
       mutate the SELECTION (bookmark/note state), not create a filter, so
-      they no longer belong next to the five that do.
+      they no longer belong next to the ones that do. (2026-09-05,
+      person-requested: Add to selection joined them there for the same
+      reason.)
    3. Every view toolbar (#contextToolbar/#filteredToolbar/#tableToolbar/
-      #plotToolbar) is now grouped Settings | Controls | Actions, in that
-      fixed order, no label on any group — just the existing
+      #plotToolbar) is grouped Controls | Settings | Actions (order
+      revised 2026-09-05, person-requested — was Settings | Controls |
+      Actions), no label on any group — just the existing
       `.ctx-toolbar-sep` `|` divider between whichever groups a given
       toolbar actually has (a toolbar with nothing for a group omits it
       entirely, never a dangling separator).
    ============================================================ */
 group(177);
 await withApp(async (w, d, T) => {
-  section("177a. Bookmark/Note live in each log view's own toolbar as an Actions group, duplicated like the display toggles");
+  section("177a. Bookmark/Note/Add-to-selection live in each log view's own toolbar as an Actions group, duplicated like the display toggles");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   T.state.activeId = f.id;
   w.render();
 
-  ["bookmark", "note"].forEach(action => {
+  ["bookmark", "note", "addToSelection"].forEach(action => {
     const copies = [...d.querySelectorAll('[data-row-action="' + action + '"]')];
     assert(copies.length === 2, action + " exists exactly twice (Context's and Filtered's own Actions group), got " + copies.length);
     assert(d.querySelector("#contextToolbar [data-row-action=\"" + action + "\"]") !== null, action + " is present inside #contextToolbar");
@@ -19643,7 +19647,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("177b. Every view toolbar is grouped Settings | Controls | Actions, in that order, no dangling separator");
+  section("177b. Every view toolbar is grouped Controls | Settings | Actions, in that order, no dangling separator");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
@@ -19662,9 +19666,9 @@ await withApp(async (w, d, T) => {
       .map(c => c.dataset.toolbarGroup);
   }
   function assertOrdered(kinds, toolbarName) {
-    const order = { settings: 0, controls: 1, actions: 2 };
+    const order = { controls: 0, settings: 1, actions: 2 };
     for (let i = 1; i < kinds.length; i++) {
-      assert(order[kinds[i - 1]] <= order[kinds[i]], toolbarName + "'s groups are in Settings|Controls|Actions order, got " + kinds.join(","));
+      assert(order[kinds[i - 1]] <= order[kinds[i]], toolbarName + "'s groups are in Controls|Settings|Actions order, got " + kinds.join(","));
     }
   }
   // No group has a label of its own (person-requested: "ohne Label") — just
@@ -19679,13 +19683,13 @@ await withApp(async (w, d, T) => {
 
   w.applyFhView("highlight");
   const contextKinds = groupKinds(d.querySelector("#contextToolbar"));
-  assert(contextKinds.join(",") === "settings,controls,actions", "#contextToolbar is Settings|Controls|Actions, got " + contextKinds.join(","));
+  assert(contextKinds.join(",") === "controls,settings,actions", "#contextToolbar is Controls|Settings|Actions, got " + contextKinds.join(","));
   assertOrdered(contextKinds, "#contextToolbar");
   assertNoGroupLabel(d.querySelector("#contextToolbar"));
   // Merged nav (Prev/Next match + Expand/Collapse) into one Controls group,
   // no separator between them any more (both are "Controls").
   assert(d.querySelector("#contextToolbar").querySelectorAll(".ctx-toolbar-sep").length === 2,
-    "#contextToolbar has exactly 2 separators for 3 groups (Settings|Controls|Actions)");
+    "#contextToolbar has exactly 2 separators for 3 groups (Controls|Settings|Actions)");
 
   w.applyFhView("filter");
   const filteredKinds = groupKinds(d.querySelector("#filteredToolbar"));
@@ -19695,19 +19699,24 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#filteredToolbar").querySelectorAll(".ctx-toolbar-sep").length === 1,
     "#filteredToolbar has exactly 1 separator for 2 groups (Settings|Actions)");
 
+  // Table gained its own Statistics visibility Setting this session
+  // (2026-09-05, person-requested — replaces the old shared collapse
+  // chevron), so it's now Settings|Actions instead of Actions-only.
   w.applyFhView("table");
   const tableKinds = groupKinds(d.querySelector("#tableToolbar"));
-  assert(tableKinds.join(",") === "actions", "#tableToolbar is Actions-only (Export as CSV…, no display setting or nav control of its own), got " + tableKinds.join(","));
+  assert(tableKinds.join(",") === "settings,actions", "#tableToolbar is Settings|Actions (Statistics toggle, Export as CSV…), got " + tableKinds.join(","));
+  assertOrdered(tableKinds, "#tableToolbar");
   assertNoGroupLabel(d.querySelector("#tableToolbar"));
 
-  // Plot's own toolbar is Controls-only now (person-requested follow-up,
-  // same session — see Group 178): its Actions group (the two viewport-
-  // based filter buttons) moved up into #viewBar instead, since those are
-  // the ONLY filter-creating actions that make sense on the Plot tab —
-  // see Group 178 for that coverage.
+  // Plot's own toolbar (2026-09-05, person-requested): gained the same
+  // Statistics Setting as Table, and Save-as-image moved out of Controls
+  // into its own Actions group — its two viewport-based filters remain up
+  // in #viewBar instead, since those are the ONLY filter-creating actions
+  // that make sense on the Plot tab — see Group 178 for that coverage.
   w.applyFhView("plot");
   const plotKinds = groupKinds(d.querySelector("#plotToolbar"));
-  assert(plotKinds.join(",") === "controls", "#plotToolbar is Controls-only (zoom/fullscreen/save) — its Actions group moved into #viewBar, got " + plotKinds.join(","));
+  assert(plotKinds.join(",") === "controls,settings,actions", "#plotToolbar is Controls|Settings|Actions (zoom/fullscreen, Statistics toggle, Save image), got " + plotKinds.join(","));
+  assertOrdered(plotKinds, "#plotToolbar");
   assertNoGroupLabel(d.querySelector("#plotToolbar"));
 });
 
@@ -19738,16 +19747,16 @@ await withApp(async (w, d, T) => {
     "Plot's two viewport-filter buttons now live inside #viewBar, not #plotToolbar");
   assert(d.querySelector("#plotToolbar #plotFilterTimeRangeBtn") === null, "...and are gone from #plotToolbar");
 
-  // --- Context/Filtered/Table: the five generic row-actions show, Plot's own stay hidden ---
+  // --- Context/Filtered/Table: the four generic row-actions show, Plot's own stay hidden ---
   ["highlight", "filter", "table"].forEach(tab => {
     w.applyFhView(tab);
-    assert(isVisible(viewbarActions, w) === true, "the five generic row-actions are visible on the " + tab + " tab");
+    assert(isVisible(viewbarActions, w) === true, "the four generic row-actions are visible on the " + tab + " tab");
     assert(isVisible(plotViewbarActions, w) === false, "Plot's own filter buttons stay hidden on the " + tab + " tab");
   });
 
   // --- Plot, but nothing plotted yet (plotLastRender null before any render): neither group shows ---
   w.applyFhView("plot");
-  assert(isVisible(viewbarActions, w) === false, "the five generic row-actions are hidden on the Plot tab (none of them apply to a plot)");
+  assert(isVisible(viewbarActions, w) === false, "the four generic row-actions are hidden on the Plot tab (none of them apply to a plot)");
   // (plotViewbarActions itself may still be mid-transition here depending on
   // whether a 2D render already happened via applyFhView's own renderMainView —
   // the real assertion is right after an explicit render() below.)
@@ -19755,12 +19764,49 @@ await withApp(async (w, d, T) => {
   w.render(); // renders the plot, triggers renderPlotChart -> updatePlotZoomIndicator with a real 2D plot
   assert(isVisible(d.querySelector("#plot2dToolsGroup"), w) === true, "sanity: 2D plot -> zoom controls visible");
   assert(isVisible(plotViewbarActions, w) === true, "...and Plot's own filter buttons in #viewBar become visible too, once something is actually plotted");
-  assert(isVisible(viewbarActions, w) === false, "...while the five generic row-actions stay hidden");
+  assert(isVisible(viewbarActions, w) === false, "...while the four generic row-actions stay hidden");
 
   // --- Leaving Plot for another tab restores the generic row-actions and re-hides Plot's own ---
   w.applyFhView("filter");
-  assert(isVisible(viewbarActions, w) === true, "back on Filtered: the five generic row-actions are visible again");
+  assert(isVisible(viewbarActions, w) === true, "back on Filtered: the four generic row-actions are visible again");
   assert(isVisible(plotViewbarActions, w) === false, "...and Plot's own filter buttons are hidden again");
+});
+
+/* ============================================================
+   GROUP 179 — this session (2026-09-05), person-requested corrections to
+   the toolbar reorganization: Add to selection moved from the Filter-
+   Toolbar's row-actions (a filter-creating action) into the log views'
+   own Actions group (an action on the selection, like Bookmark/Note — see
+   Group 177 for that coverage); the time-filter arrow icons were reversed
+   (Filter before this now points UP — it keeps everything above; Filter
+   after this now points DOWN — it keeps everything below) and Time filter
+   from selection now shows two arrows converging instead of diverging;
+   and every view toolbar's group order flipped from Settings|Controls|
+   Actions to Controls|Settings|Actions (see Group 177b for that
+   coverage). This group covers just the icon-path swap itself, since the
+   membership/ordering changes are already covered above.
+   ============================================================ */
+group(179);
+await withApp(async (w, d, T) => {
+  section("179. filterBefore/filterAfter arrow directions swapped; timeRangeFromSelection shows converging arrows");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const pathOf = action => d.querySelector('[data-row-action="' + action + '"] svg path').getAttribute("d");
+  // filterBefore points up (its path ends going up from the shaft, i.e. the
+  // vertical segment runs TO the top y=3): the shaft goes from y=13 to y=3.
+  assert(pathOf("filterBefore").startsWith("M8 3v10"), "filterBefore now uses the up-pointing arrow path, got " + pathOf("filterBefore"));
+  assert(pathOf("filterAfter").startsWith("M8 13V3"), "filterAfter now uses the down-pointing arrow path, got " + pathOf("filterAfter"));
+  assert(pathOf("filterBefore") !== pathOf("filterAfter"), "sanity: the two are no longer identical");
+
+  // Converging design: two separate arrowhead segments (one per half),
+  // not the old single-path diverging design — distinguished simply by no
+  // longer being the old literal path string.
+  const rangePath = pathOf("timeRangeFromSelection");
+  assert(rangePath !== "M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3", "timeRangeFromSelection no longer uses the old diverging-arrows path");
+  assert(rangePath.includes("M8 3v4") && rangePath.includes("M8 13v-4"), "timeRangeFromSelection's path has a top segment ending at y=7 and a bottom segment ending at y=9, meeting in the middle");
 });
 
 /* ============================================================
@@ -22125,9 +22171,13 @@ process.exitCode = failed ? 1 : 0;
        (Schritt 6).
 
    Group 162 — this session (2026-09-03): the collapsible column-statistics
-     bar above Table/Plot (default collapsed, one shared #extractStatsBar
-     element/localStorage key for both tabs — see philogg.html's
-     "Column statistics" comment).
+     bar above Table/Plot. REVISED 2026-09-05 (person-requested): visibility
+     is now a per-tab Setting (#statsToggleTable/#statsTogglePlot, each in
+     its own toolbar), not one shared collapse chevron — the old
+     #extractStatsToggle/"philogg-extract-stats-collapsed" single-flag
+     mechanism is gone; 162a/b/c now cover tableStatsVisible/plotStatsVisible
+     toggling independently while still sharing the one #extractStatsBar
+     element.
 
    Group 163 — this session (2026-09-03): Context view run-line hover
      highlighting the whole run (data-run-id, .ctx-run-hover) instead of
@@ -22300,4 +22350,22 @@ process.exitCode = failed ? 1 : 0;
      one assertion covering the header, Filter-Toolbar, AND all four view
      toolbars sharing that one size; 177b's Plot assertions updated for
      #plotToolbar being Controls-only now.
+
+   Group 179 — this session (2026-09-05), person-requested corrections to
+     177/178's toolbar reorganization: (1) Add to selection is an ACTION on
+     the selection like Bookmark/Note, not a filter-creating action, so it
+     moved from `VIEWBAR_ROW_ACTIONS` into `TOOLBAR_ROW_ACTIONS` — 176a's
+     `expectedActions` trimmed to the remaining four, 177a extended to cover
+     all three toolbar-actions buttons. (2) Save as image is likewise an
+     Action, not a Control — #plotToolbar gained a dedicated Actions group
+     for #plotSaveImageBtn, moved out of its old Controls group. (3) Column
+     statistics visibility became a per-tab Setting — see Group 162's
+     revision. (4) filterBefore/filterAfter's arrow icons swapped direction
+     (before now points up — everything above; after now points down —
+     everything below) and timeRangeFromSelection's icon changed from
+     diverging to converging arrows — this group's own test asserts the
+     new SVG paths directly. (5) Every view toolbar's group order flipped
+     from Settings|Controls|Actions to Controls|Settings|Actions — 177b's
+     `assertOrdered()`/expected-kinds strings updated for the new order and
+     for Table/Plot's added Settings groups.
    ============================================================ */

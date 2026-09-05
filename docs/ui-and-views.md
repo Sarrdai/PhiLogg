@@ -151,7 +151,7 @@ shape:
   requested follow-up, same session): on Plot it's swapped out entirely for
   a second, Plot-only group — see "Plot's Actions swap into `#viewBar`"
   further down for the full mechanism; on every other tab (including a
-  file node with no filter active, where the five are simply all disabled)
+  file node with no filter active, where the four are simply all disabled)
   it's this one. The row-actions buttons reuse the exact
   functions the pre-existing right-click context menu already used, just
   driven by `state.selectedId`/`state.logMultiSelect`
@@ -228,64 +228,92 @@ shape:
   Nothing shares a literal DOM row across tabs — the consistency is purely
   positional/structural, and now also dimensional.
 
-  **Grouped Settings | Controls | Actions, in that fixed order, no label on
-  any group** (person-requested follow-up, same session) — every top-level
-  `.toolbar-group` child of the four toolbars carries a `data-toolbar-
-  group="settings"|"controls"|"actions"` attribute saying which it is;
-  `.ctx-toolbar-sep` (the existing `|` divider) sits between whichever
-  groups a given toolbar actually has, never after the last one and never
-  when a toolbar has only one group:
-  - **Settings** — the log-DISPLAY toggles (Pin/Notes/Multiline/Columns/
-    TextMatch/HighlightMatch) and, conceptually, `#extractStatsToggle`
-    (though that one stays in `#extractToolbar`, shared infrastructure
-    between Table and Plot, not inside either's own toolbar — see that
-    div's own comment). `#contextToolbar`/`#filteredToolbar` have one;
-    `#tableToolbar`/`#plotToolbar` don't (no display setting of their own).
+  **Grouped Controls | Settings | Actions, in that fixed order, no label on
+  any group** (person-requested follow-up; order flipped from the original
+  Settings|Controls|Actions on 2026-09-05, also person-requested) — every
+  top-level `.toolbar-group` child of the four toolbars carries a
+  `data-toolbar-group="settings"|"controls"|"actions"` attribute saying
+  which it is; `.ctx-toolbar-sep` (the existing `|` divider) sits between
+  whichever groups a given toolbar actually has, never after the last one
+  and never when a toolbar has only one group:
   - **Controls** — navigation/view controls with nothing to do with
-    filters: Context's match-navigation + expand/collapse (now ONE merged
-    group instead of two separately-separated ones — Prev/Next and
-    Expand/Collapse are both "Controls", so the divider between them is
-    gone), Plot's zoom controls + Fullscreen/Save. `#filteredToolbar`/
+    filters: Context's match-navigation + expand/collapse (one merged
+    group — Prev/Next and Expand/Collapse are both "Controls", no divider
+    between them), Plot's zoom controls + Fullscreen. `#filteredToolbar`/
     `#tableToolbar` have none (Filtered has no navigation buttons of its
-    own; Table's only control, Export-as-CSV, is an action, not a
-    navigation control).
+    own; Table has no navigation control at all).
+  - **Settings** — persistent display preferences: the log-DISPLAY toggles
+    (Pin/Notes/Multiline/Columns/TextMatch/HighlightMatch) on
+    `#contextToolbar`/`#filteredToolbar`, and the column-statistics
+    visibility toggle (`#statsToggleTable`/`#statsTogglePlot`, see "Column
+    statistics" below) on `#tableToolbar`/`#plotToolbar`.
   - **Actions** — one-off actions on the current row/selection, never
-    persistent state: Bookmark this row/Add note (moved in here from
-    `#viewBar`'s row-actions group, see above — `[data-row-actions=
-    "toolbar-actions"]`, built from the same `buildRowActionsHtml()`/
-    `TOOLBAR_ROW_ACTIONS` the Filter-Toolbar's own five use, just a
-    different two-item list), Table's Export-as-CSV. `#plotToolbar` no
-    longer has an Actions group at all (see below — its own two filter
-    buttons moved up into `#viewBar` instead, this session's follow-up).
+    persistent state: Bookmark this row/Add note/Add to selection (all
+    three built from the same `buildRowActionsHtml()`/
+    `TOOLBAR_ROW_ACTIONS` list, rendered into `[data-row-actions=
+    "toolbar-actions"]`, duplicated into `#contextToolbar` and
+    `#filteredToolbar`), Table's Export-as-CSV, Plot's Save-as-image
+    (`#plotSaveImageBtn`, moved out of Plot's Controls group on
+    2026-09-05, person-requested — it's a one-off action, not a
+    persistent view control).
 
-  Resulting shape per toolbar: Context = Settings|Controls|Actions (all
-  three); Filtered = Settings|Actions (no Controls); Table = Actions only;
-  Plot = Controls only (no Settings, no Actions of its own any more).
+  Resulting shape per toolbar: Context = Controls|Settings|Actions (all
+  three); Filtered = Settings|Actions (no Controls); Table =
+  Settings|Actions (no Controls); Plot = Controls|Settings|Actions (all
+  three).
+
+  **Add to selection is an Action, not a filter (person-requested,
+  2026-09-05)**: it doesn't create a filter node by itself (it opens
+  `#addToSelectionMenu`, same as the other two), so it moved from
+  `VIEWBAR_ROW_ACTIONS` into `TOOLBAR_ROW_ACTIONS` alongside Bookmark/Add
+  note — `#viewBar`'s row-actions group is now four items (Filter after/
+  before this, Filter for this message, Time filter from selection), not
+  five.
+
+  **Time-filter arrow icons (person-requested, 2026-09-05)**: Filter
+  before this now points UP (it keeps everything above the row) and Filter
+  after this now points DOWN (it keeps everything below) — the reverse of
+  the icons that shipped originally. Time filter from selection now shows
+  two arrows converging toward the middle (one from each end of the
+  selected range) instead of diverging outward.
 
   **Plot's Actions swap into `#viewBar` instead of living in `#plotToolbar`
-  (person-requested follow-up, same session)**: the five generic row-
-  actions (Filter after/before this/for this message/Time filter from
-  selection/Add to selection) all key off a log-row selection — Plot has
-  none, so on that tab they'd sit there permanently disabled and useless.
-  Plot's own two viewport-based filters (`#plotFilterTimeRangeBtn`/
-  `#plotFilterEntriesBtn`, previously `#plotToolbar`'s own Actions group)
-  moved up into `#viewBar` itself instead — a SECOND row-actions group,
+  (person-requested follow-up)**: the four generic row-actions (Filter
+  after/before this/for this message/Time filter from selection) all key
+  off a log-row selection — Plot has none, so on that tab they'd sit there
+  permanently disabled and useless. Plot's own two viewport-based filters
+  (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`) live up in `#viewBar`
+  itself instead — a SECOND row-actions group,
   `[data-row-actions="plot-viewbar"]`, right next to the generic one
   (`[data-row-actions="viewbar"]`) — and `updateViewBarRowActions()`
   (called from `applyFhView()`/`renderMainView()`/`initFhView()`, wherever
   `fhActiveTab` can change) shows exactly one of the two at a time: the
-  generic five whenever `fhActiveTab !== "plot"`, Plot's own two only while
+  generic four whenever `fhActiveTab !== "plot"`, Plot's own two only while
   `fhActiveTab === "plot"` — **and** only once there's actually something
   plotted in 2D (`plot2dToolsAvailable`, the same condition
   `#plot2dToolsGroup`'s zoom controls already gate on — `viewBar`'s Plot
-  group and `#plotToolbar`'s own zoom group are now kept in sync by the
-  same `setPlot2dToolsVisible(visible)` call, which used to toggle
-  `#plotFilterActionsGroup`/`#plotActionsSep` directly and now instead
-  calls `updateViewBarRowActions()` after setting the shared boolean). Both
-  `#viewBar` row-actions groups are `.row-actions.hidden{display:none}`
-  scoped specifically to `#viewBar .row-actions` — this stylesheet has no
-  bare `.hidden{display:none}` rule, every hidden-toggle target needs its
-  own scoped rule, easy to miss when adding a new one.
+  group and `#plotToolbar`'s own zoom group are kept in sync by
+  `setPlot2dToolsVisible(visible)`, which calls `updateViewBarRowActions()`
+  after setting the shared boolean). Both `#viewBar` row-actions groups are
+  `.row-actions.hidden{display:none}` scoped specifically to `#viewBar
+  .row-actions` — this stylesheet has no bare `.hidden{display:none}`
+  rule, every hidden-toggle target needs its own scoped rule, easy to miss
+  when adding a new one.
+
+  **Column statistics visibility is a per-tab Setting (person-requested,
+  2026-09-05)**: replaces the earlier single shared collapse chevron
+  (`#extractStatsToggle`, now removed) with two independent toggles,
+  `#statsToggleTable` in `#tableToolbar`'s Settings group and
+  `#statsTogglePlot` in `#plotToolbar`'s — each persisted to its own
+  localStorage key (`philogg-table-stats-visible`/`philogg-plot-stats-
+  visible`) and reflected on the button via an `.active` class.
+  `updateExtractStatsVisibility()` (called from the same three hook points
+  as `updateViewBarRowActions()` above) toggles `#extractStatsBar`'s
+  `.collapsed` class based on `tableStatsVisible`/`plotStatsVisible`,
+  whichever applies to the currently active tab — the bar itself
+  (`#extractStatsContent`, in `#extractToolbar`, shared infrastructure
+  above both `#extractScroll` and `#plotWrap`) stays a single DOM element,
+  only which boolean drives its visibility changes per tab.
 
 ## The three "active node" views
 
