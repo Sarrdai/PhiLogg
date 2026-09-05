@@ -1022,8 +1022,19 @@
      Filter-Toolbar's row-actions become pills. `:has(.tb-hit)` scopes this
      to buttons this mechanic actually wrapped, so it never affects a plain
      .toolbar-icon-btn elsewhere (header nav, Settings, etc.) that was never
-     given the .tb-hit/.tb-label structure. */
-  .toolbar-icon-btn:has(.tb-hit){justify-content:flex-start; overflow:hidden; width:28px; transition:width .15s, background .12s, border-color .12s, color .12s;}
+     given the .tb-hit/.tb-label structure. Deliberately does NOT override
+     `justify-content` (person-reported bug, this session: it did at first,
+     `flex-start` instead of the base rule's `center` — harmless once
+     expanded, since `width:auto` leaves no slack to justify either way,
+     but at REST it left-aligns the 28px `.tb-hit` inside the button's
+     26px content box under this stylesheet's global `box-sizing:
+     border-box` (28px minus the 1px border each side), clipping only the
+     right edge instead of both sides evenly and visibly shifting the icon
+     off-center. `.row-action-btn` above never had this problem — it never
+     touches `justify-content` either, always using the base rule's
+     `center`, which clips both sides symmetrically and hides the same
+     2px). */
+  .toolbar-icon-btn:has(.tb-hit){overflow:hidden; width:28px; transition:width .15s, background .12s, border-color .12s, color .12s;}
   .toolbar-icon-btn.expanded:has(.tb-hit), .toolbar-icon-btn:has(.tb-hit):focus-visible{width:auto; padding-right:10px;}
   .tb-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .tb-label{
