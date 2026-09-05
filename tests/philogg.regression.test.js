@@ -19467,22 +19467,22 @@ await withApp(async (w, d, T) => {
   });
   assert(byAction("timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
 
-  // --- Expand/collapse keys off the .row-action-hit circle specifically
-  // (person-requested, this session, combining the circle shape with a
-  // layout-shifting pill): entering it expands the button, leaving it
-  // collapses again — regardless of whether the (now wider) button itself
-  // is still nominally hovered, which is exactly the bug this design fixes
-  // (an earlier version released only once the pointer left the whole
-  // widened button, past the label, causing the next circle to arrive
-  // already shoved out from under the cursor). filterAfterBtn is enabled
-  // here (one row selected above), so pointer-events:none doesn't suppress
-  // the mouseenter. ---
+  // --- Expand/collapse keys off the .row-action-hit circle's position AS
+  // MEASURED WHILE THE GROUP IS COLLAPSED (setupHitExpandGroups), not off a
+  // plain mouseenter/mouseleave on the (now width-changing) button itself —
+  // that avoids the flicker bug where a preceding sibling's growing box
+  // keeps shoving the next hit-zone back and forth under a stationary
+  // cursor mid-animation (person-reported, 2026-09-05). filterAfterBtn is
+  // enabled here (one row selected above). ---
   const hit = filterAfterBtn.querySelector(".row-action-hit");
+  hit.getBoundingClientRect = () => ({ top: 0, left: 0, right: 28, bottom: 28, width: 28, height: 28, x: 0, y: 0 });
+  const group = filterAfterBtn.parentElement;
   assert(!filterAfterBtn.classList.contains("expanded"), "sanity: starts collapsed");
-  hit.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(filterAfterBtn.classList.contains("expanded"), "entering the circle (.row-action-hit) expands the button");
-  hit.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
-  assert(!filterAfterBtn.classList.contains("expanded"), "leaving the circle collapses it again, independent of the button's own (now wider) box");
+  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 10, clientY: 10 }));
+  assert(filterAfterBtn.classList.contains("expanded"), "moving into the circle's (collapsed-state) rect expands the button");
+  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 500, clientY: 500 }));
+  assert(!filterAfterBtn.classList.contains("expanded"), "moving off the circle's rect collapses it again");
+  group.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
 
   // --- 2+ rows multi-selected: timeRangeFromSelection enables, single-row actions disable ---
   T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]);
@@ -19843,10 +19843,14 @@ await withApp(async (w, d, T) => {
   assert(!notesBtn.classList.contains("row-action-btn"), "sanity: not a row-action-btn (different mechanism, same idea)");
 
   assert(!notesBtn.classList.contains("expanded"), "sanity: starts collapsed");
-  notesBtn.querySelector(".tb-hit").dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
-  assert(notesBtn.classList.contains("expanded"), "entering .tb-hit expands the button");
-  notesBtn.querySelector(".tb-hit").dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
-  assert(!notesBtn.classList.contains("expanded"), "leaving .tb-hit collapses it again");
+  const notesHit = notesBtn.querySelector(".tb-hit");
+  notesHit.getBoundingClientRect = () => ({ top: 0, left: 0, right: 28, bottom: 28, width: 28, height: 28, x: 0, y: 0 });
+  const notesGroup = notesBtn.parentElement;
+  notesGroup.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 10, clientY: 10 }));
+  assert(notesBtn.classList.contains("expanded"), "moving into .tb-hit's (collapsed-state) rect expands the button");
+  notesGroup.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 500, clientY: 500 }));
+  assert(!notesBtn.classList.contains("expanded"), "moving off .tb-hit's rect collapses it again");
+  notesGroup.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
 
   // Applied consistently across all four toolbars' plain buttons, not just
   // one — spot-check one from each.

@@ -185,20 +185,35 @@ shape:
   resize the circle at all (an absolutely positioned, non-layout-affecting
   label overlaid on top of later circles instead) — this fixed the
   overshoot but reverted the request for layout-shifting growth, so was
-  fixed again the same session: `.row-action-hit` is a new, fixed 28x28
-  inner `<span>` wrapping just the icon, and plain `mouseenter`/
-  `mouseleave` JS listeners on THAT (not a CSS `:hover`) toggle an
-  `.expanded` class on the parent button (`updateRowActionButtons()` also
+  fixed again the same session: `.row-action-hit`, a fixed 28x28 inner
+  `<span>` wrapping just the icon, is the fixed-size element expand/collapse
+  keys off, instead of a CSS `:hover` on the button itself.
+
+  A later fix (person-reported, 2026-09-05: hover state flickering rapidly
+  or freezing mid-animation "at some edge positions") replaced the original
+  per-hit-zone `mouseenter`/`mouseleave` listener pair with
+  `setupHitExpandGroups()`: while a preceding button in the row is
+  expanding/collapsing, its growing/shrinking box keeps shoving the NEXT
+  hit-zone back and forth under a stationary cursor, so that hit-zone's own
+  `mouseenter`/`mouseleave` kept firing repeatedly off the currently-
+  animating (shifting) geometry. `setupHitExpandGroups()` instead groups all
+  hit-zones sharing a parent container and drives `.expanded` off a single
+  `mousemove` listener on the container: each hit-zone's rect is measured
+  and cached only while the whole group sits collapsed (i.e. right before
+  anything expands, never refreshed again until the group returns to fully
+  collapsed), so the hover decision always tests the pointer against the
+  stable, at-rest layout — never the geometry that's mid-animation because a
+  neighbor is growing or shrinking. `updateRowActionButtons()` also
   force-clears a stuck `.expanded` if a button becomes disabled while the
   mouse happens to be sitting over it, e.g. the selection changed via
-  keyboard rather than the mouse actually leaving). Since `.row-action-hit`
-  itself never moves or resizes, leaving it collapses the pill immediately
-  regardless of how wide the button's own box has grown, and the very next
-  circle is now free to receive the arriving cursor at its own, unshifted-
-  until-just-now position. Keyboard focus still uses a plain
-  `.row-action-btn:focus-visible` CSS rule (not the JS listeners) — Tab
-  moves in discrete jumps rather than a continuously arriving cursor, so
-  the overshoot bug never applied there. The label text is the exact same
+  keyboard rather than the mouse actually leaving. Since the hit-test rect
+  itself never reflects the animating state, leaving a hit-zone collapses
+  the pill immediately regardless of how wide the button's own box has
+  grown, and the very next circle is now free to receive the arriving
+  cursor at its own, unshifted-until-just-now position. Keyboard focus still
+  uses a plain `.row-action-btn:focus-visible` CSS rule (not the JS
+  listeners) — Tab moves in discrete jumps rather than a continuously
+  arriving cursor, so the overshoot bug never applied there. The label text is the exact same
   string as the button's `title` (e.g. "Filter after this (incl.)") — both
   come from one `ROW_ACTIONS` data array (`{action, label, svg,
   strokeWidth}`) that builds `ROW_ACTIONS_HTML`, so the two can't drift
@@ -217,8 +232,8 @@ shape:
   Statistics toggles, Export as CSV, Save as image, Fullscreen) gets
   wrapped once, near the very end of the script (after every button's icon
   has already been assigned), by `makeToolbarBtnExpandable()` into a
-  `.tb-hit`/`.tb-label` pair — same fixed-hit-zone `mouseenter`/
-  `mouseleave` idea as `.row-action-hit` above, scoped in CSS via
+  `.tb-hit`/`.tb-label` pair — same fixed-hit-zone idea as `.row-action-hit`
+  above, driven by the same `setupHitExpandGroups()` call, scoped in CSS via
   `.toolbar-icon-btn:has(.tb-hit)` so it never touches a `.toolbar-icon-btn`
   elsewhere (header nav, Settings, …) that was never wrapped. The
   duplicated Bookmark/Add note/Add to selection copies (`buildRowActionsHtml`
