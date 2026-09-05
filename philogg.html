@@ -20167,20 +20167,52 @@ elAll('[data-row-actions="toolbar-actions"]').forEach(container => { container.i
 elAll('[data-row-actions="viewbar"]').forEach(container => { container.innerHTML = VIEWBAR_ROW_ACTIONS_HTML; });
 // Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
 // circle specifically, NOT a plain CSS :hover on the button — the button's
-// own box changes width once expanded, so a :hover there would only
-// release once the pointer leaves the ALREADY-WIDENED box (i.e. past the
-// label too), by which point the next circle has already been shoved
-// rightward under the cursor and gets overshot (see the CSS comment near
-// .row-action-btn for the full story). mouseenter/mouseleave don't bubble,
-// so one listener per hit-zone (there are only seven) is simplest here.
+// own box changes width once expanded, pushing later siblings' hit-zones
+// rightward (see the CSS comment near .row-action-btn for why the hit-zone
+// itself is fixed-size). A per-hit mouseenter/mouseleave pair still isn't
+// enough on its own, though: while a preceding button is mid-animation, its
+// growing box keeps shoving the NEXT hit-zone back and forth under a
+// stationary cursor, so that hit-zone's own enter/leave fires repeatedly —
+// visible as the target flickering between expanded/collapsed or freezing
+// half-animated. setupHitExpandGroups (below) fixes this by only ever
+// deciding hover against each hit's rect as measured while the whole group
+// sits collapsed (cached right before anything expands, never refreshed
+// again until the group is fully collapsed), so the decision never sees the
+// animating, currently-shifting geometry — only the stable at-rest layout.
 // (pointer-events:none on a disabled button — see .toolbar-icon-btn:disabled
 // — already stops these from firing on its children, so no disabled check
 // needed here.)
-elAll(".row-action-hit").forEach(hit => {
-  const btn = hit.closest(".row-action-btn");
-  hit.addEventListener("mouseenter", () => btn.classList.add("expanded"));
-  hit.addEventListener("mouseleave", () => btn.classList.remove("expanded"));
-});
+// Groups hit-zones by their shared parent container (the toolbar/group div
+// they were rendered into) and drives .expanded off mousemove instead of
+// per-hit mouseenter/mouseleave: rects are measured and cached only while
+// no button in the group is currently expanded (i.e. the group is at rest),
+// so the hit-test always uses the stable, collapsed-state geometry instead
+// of geometry that's shifting mid-animation because a neighboring button is
+// growing/shrinking — that shifting geometry is what caused the flicker/
+// stuck-mid-animation bug this replaces (person-reported, 2026-09-05).
+function setupHitExpandGroups(hitSelector) {
+  const groups = new Map(); // container element -> [{hit, btn}, ...]
+  elAll(hitSelector).forEach(hit => {
+    const btn = hit.closest(".toolbar-icon-btn");
+    if (!btn) return;
+    const container = btn.parentElement;
+    if (!groups.has(container)) groups.set(container, []);
+    groups.get(container).push({ hit, btn });
+  });
+  groups.forEach((entries, container) => {
+    let restRects = null; // Array<{btn, rect}>, measured only while collapsed
+    const anyExpanded = () => entries.some(e => e.btn.classList.contains("expanded"));
+    const collapseAll = () => entries.forEach(e => e.btn.classList.remove("expanded"));
+    container.addEventListener("mousemove", ev => {
+      if (!anyExpanded()) restRects = entries.map(e => ({ btn: e.btn, rect: e.hit.getBoundingClientRect() }));
+      const { clientX: x, clientY: y } = ev;
+      const hovered = restRects.find(r => !r.btn.disabled && x >= r.rect.left && x <= r.rect.right && y >= r.rect.top && y <= r.rect.bottom);
+      entries.forEach(e => e.btn.classList.toggle("expanded", !!hovered && e.btn === hovered.btn));
+    });
+    container.addEventListener("mouseleave", () => { collapseAll(); restRects = null; });
+  });
+}
+setupHitExpandGroups(".row-action-hit");
 
 // The row-action buttons' "current row" — state.selectedId, NOT ctxEntry
 // (that's only ever set while the right-click menu is open). Falls back to
@@ -24492,9 +24524,6 @@ function makeToolbarBtnExpandable(btn) {
   if (!btn || btn.querySelector(".tb-hit")) return;
   const icon = btn.innerHTML;
   btn.innerHTML = '<span class="tb-hit">' + icon + '</span><span class="tb-label">' + escapeHtml(btn.title) + '</span>';
-  const hit = btn.querySelector(".tb-hit");
-  hit.addEventListener("mouseenter", () => btn.classList.add("expanded"));
-  hit.addEventListener("mouseleave", () => btn.classList.remove("expanded"));
 }
 elAll(
   "#contextToolbar .toolbar-icon-btn:not(.row-action-btn), " +
@@ -24502,6 +24531,10 @@ elAll(
   "#tableToolbar .toolbar-icon-btn:not(.row-action-btn), " +
   "#plotToolbar .toolbar-icon-btn:not(.row-action-btn)"
 ).forEach(makeToolbarBtnExpandable);
+// Same collapsed-geometry hover mechanism as the Filter-Toolbar's
+// .row-action-hit above (see setupHitExpandGroups) — avoids the same
+// flicker/stuck-animation bug for these toolbars' buttons.
+setupHitExpandGroups(".tb-hit");
 // Log format config (Settings -> Format Manager) loads in parallel with the
 // rest of boot, not gating it — restoreSessionFromCache/loadFromUrlParam
 // fire at their original, unchanged timing below. addFile is the one place
