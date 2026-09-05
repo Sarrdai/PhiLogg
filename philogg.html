@@ -1034,6 +1034,39 @@
   .toolbar-icon-btn.expanded .tb-label, .toolbar-icon-btn:focus-visible .tb-label{
     max-width:240px; opacity:1; margin-left:6px;
   }
+  /* Settings -> Behavior: "Filter-Toolbar button labels" / "View Toolbar
+     button labels" (person-requested, 2026-09-05) — "On hover" (default)
+     is just the plain mechanics above, nothing to override here. "Never"
+     and "Always" force the collapsed/expanded look regardless of
+     .expanded/:focus-visible, applied via a class on <body> so every
+     button of the relevant kind reacts without each one needing its own
+     per-button state. Higher specificity (body class + selector) than the
+     plain `.row-action-btn.expanded`/`.toolbar-icon-btn.expanded` rules
+     above, so these always win regardless of source order — the JS still
+     toggles `.expanded` on hover either way, these rules just make it a
+     no-op while "Never"/"Always" is active. Split in two independent
+     settings/classes (Filter-Toolbar's `.row-action-btn:not(.rect)` vs
+     View Toolbar's `.row-action-btn.rect`/`.toolbar-icon-btn:has(.tb-hit)`)
+     since the person wanted them settable separately. */
+  body.filter-toolbar-labels-never .row-action-btn:not(.rect),
+  body.filter-toolbar-labels-never .row-action-btn:not(.rect).expanded,
+  body.filter-toolbar-labels-never .row-action-btn:not(.rect):focus-visible{border-radius:50%; width:28px; padding-right:0;}
+  body.filter-toolbar-labels-never .row-action-btn:not(.rect) .row-action-label{max-width:0 !important; opacity:0 !important; margin-left:0 !important;}
+  body.filter-toolbar-labels-always .row-action-btn:not(.rect){border-radius:20px; width:auto; padding-right:10px;}
+  body.filter-toolbar-labels-always .row-action-btn:not(.rect) .row-action-label{max-width:240px; opacity:1; margin-left:6px;}
+
+  body.view-toolbar-labels-never .row-action-btn.rect,
+  body.view-toolbar-labels-never .row-action-btn.rect.expanded,
+  body.view-toolbar-labels-never .row-action-btn.rect:focus-visible,
+  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit),
+  body.view-toolbar-labels-never .toolbar-icon-btn.expanded:has(.tb-hit),
+  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit):focus-visible{width:28px; padding-right:0;}
+  body.view-toolbar-labels-never .row-action-btn.rect .row-action-label,
+  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit) .tb-label{max-width:0 !important; opacity:0 !important; margin-left:0 !important;}
+  body.view-toolbar-labels-always .row-action-btn.rect,
+  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit){width:auto; padding-right:10px;}
+  body.view-toolbar-labels-always .row-action-btn.rect .row-action-label,
+  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit) .tb-label{max-width:240px; opacity:1; margin-left:6px;}
   .level-btn.lvl-error{color:var(--level-error); border-color:color-mix(in srgb, var(--level-error) 35%, transparent);}
   .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
   .level-btn.lvl-info{color:var(--level-info); border-color:color-mix(in srgb, var(--level-info) 35%, transparent);}
@@ -3847,6 +3880,32 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsFilterToolbarLabels">Filter-Toolbar button labels</label>
+                <div class="settings-row-hint">Whether the row-action buttons next to the level filter (Filter after this, Add to selection, …) show their name. "On hover" (default) reveals it only while pointing at one, expanding it into a pill. "Never" keeps them plain icons (still explained by their tooltip); "Always" keeps every label expanded permanently.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsFilterToolbarLabels">
+                  <option value="never">Never</option>
+                  <option value="hover">On hover</option>
+                  <option value="always">Always</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsViewToolbarLabels">View Toolbar button labels</label>
+                <div class="settings-row-hint">Same idea, for the buttons in each view's own toolbar (Context/Filtered/Table/Plot) — these expand into a rounded rectangle rather than a pill. Set independently from the Filter-Toolbar above.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsViewToolbarLabels">
+                  <option value="never">Never</option>
+                  <option value="hover">On hover</option>
+                  <option value="always">Always</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsFilterActivationView">When switching to a filter</label>
                 <div class="settings-row-hint">A filter you've never viewed before always opens to Filtered. For one you've already viewed, "Remember last view" (default) reopens whichever tab — Context, Filtered, Table, or Plot — you left it on. "Always Filtered" reopens it to Filtered every time instead.</div>
               </div>
@@ -5404,6 +5463,49 @@ function initFilterActivationViewSetting() {
 document.getElementById("settingsFilterActivationView").addEventListener("change", ev => {
   filterActivationView = ev.target.value === "alwaysFiltered" ? "alwaysFiltered" : "rememberLast";
   localStorage.setItem(FILTER_ACTIVATION_VIEW_KEY, filterActivationView);
+});
+
+// "Filter-Toolbar button labels" / "View Toolbar button labels" (Settings ->
+// Behavior, person-requested, 2026-09-05): whether the row-action/toolbar
+// buttons' hover-revealed labels show Never, on Hover (default — the plain
+// mechanics near .row-action-btn/.tb-hit above, nothing extra needed), or
+// Always. Applied as a class on <body> (see the CSS overrides next to
+// .row-action-btn/.toolbar-icon-btn:has(.tb-hit) above) rather than per-
+// button state, so a single change instantly affects every button of that
+// kind, wherever it's duplicated. Two independent settings/keys since the
+// person wanted Filter-Toolbar and View Toolbar controllable separately.
+const FILTER_TOOLBAR_LABELS_KEY = "philogg-filter-toolbar-labels";
+const VIEW_TOOLBAR_LABELS_KEY = "philogg-view-toolbar-labels";
+let filterToolbarLabels = "hover"; // "never" | "hover" | "always"
+let viewToolbarLabels = "hover";
+function normalizeToolbarLabelsMode(v) { return v === "never" || v === "always" ? v : "hover"; }
+function applyFilterToolbarLabels() {
+  document.body.classList.toggle("filter-toolbar-labels-never", filterToolbarLabels === "never");
+  document.body.classList.toggle("filter-toolbar-labels-always", filterToolbarLabels === "always");
+}
+function applyViewToolbarLabels() {
+  document.body.classList.toggle("view-toolbar-labels-never", viewToolbarLabels === "never");
+  document.body.classList.toggle("view-toolbar-labels-always", viewToolbarLabels === "always");
+}
+function initToolbarLabelsSettings() {
+  filterToolbarLabels = normalizeToolbarLabelsMode(localStorage.getItem(FILTER_TOOLBAR_LABELS_KEY));
+  viewToolbarLabels = normalizeToolbarLabelsMode(localStorage.getItem(VIEW_TOOLBAR_LABELS_KEY));
+  const filterSelect = document.getElementById("settingsFilterToolbarLabels");
+  if (filterSelect) filterSelect.value = filterToolbarLabels;
+  const viewSelect = document.getElementById("settingsViewToolbarLabels");
+  if (viewSelect) viewSelect.value = viewToolbarLabels;
+  applyFilterToolbarLabels();
+  applyViewToolbarLabels();
+}
+document.getElementById("settingsFilterToolbarLabels").addEventListener("change", ev => {
+  filterToolbarLabels = normalizeToolbarLabelsMode(ev.target.value);
+  localStorage.setItem(FILTER_TOOLBAR_LABELS_KEY, filterToolbarLabels);
+  applyFilterToolbarLabels();
+});
+document.getElementById("settingsViewToolbarLabels").addEventListener("change", ev => {
+  viewToolbarLabels = normalizeToolbarLabelsMode(ev.target.value);
+  localStorage.setItem(VIEW_TOOLBAR_LABELS_KEY, viewToolbarLabels);
+  applyViewToolbarLabels();
 });
 
 /* ===================== Temporary anchor settings (FEATURE_BACKLOG #18) =====
@@ -24360,6 +24462,7 @@ initCollapsePanels();
 initFhView();
 initSettingsFhLayoutOption();
 initFilterActivationViewSetting();
+initToolbarLabelsSettings();
 render();
 
 // Rectangle-expand hover mechanic for the log views' own toolbars (Context/

@@ -227,6 +227,25 @@ shape:
   exact same `.row-action-btn`/`.row-action-hit`/`.row-action-label`
   markup and JS, just with an added `.rect` class overriding the
   border-radius back to 7px at every stage instead of 50%/20px.
+
+  **Settings -> Behavior: "Filter-Toolbar button labels" /
+  "View Toolbar button labels" (person-requested, 2026-09-05)** — a real
+  app-wide setting (not a per-toolbar control), independent for each of
+  the two: Never/On hover (default)/Always. `#settingsFilterToolbarLabels`/
+  `#settingsViewToolbarLabels` are plain localStorage-preference selects
+  (`philogg-filter-toolbar-labels`/`philogg-view-toolbar-labels`, same
+  wiring shape as `settingsFilterActivationView`) that toggle a class on
+  `<body>` — `filter-toolbar-labels-never`/`-always` and
+  `view-toolbar-labels-never`/`-always` — rather than touching individual
+  buttons. CSS rules scoped under those body classes (higher specificity
+  than the plain `.expanded`/`:focus-visible` rules, so they always win)
+  force every button of that kind permanently collapsed ("Never") or
+  permanently expanded ("Always"); "On hover" needs no override at all,
+  it's just the mechanics above with no body class present. The Filter-
+  Toolbar's class targets `.row-action-btn:not(.rect)` (the circle/pill
+  buttons in `#viewBar`); the View Toolbar's targets `.row-action-btn.rect`
+  and `.toolbar-icon-btn:has(.tb-hit)` together (every button in
+  `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/`#plotToolbar`).
 - **Each view's own toolbar** (Zeile 3 — `#contextToolbar`/
   `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) — same position/shape
   in every tab, only the content differs. The six log-display toggles
