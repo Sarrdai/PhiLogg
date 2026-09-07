@@ -239,8 +239,8 @@ shape:
   `.toolbar-icon-btn:has(.tb-hit)` so it never touches a `.toolbar-icon-btn`
   elsewhere (header nav, Settings, …) that was never wrapped. The
   duplicated Bookmark/Add note/Add to selection copies (`buildRowActionsHtml`
-  now takes a `shape` argument, `"circle"` for `VIEWBAR_ROW_ACTIONS`/
-  Plot's viewport filters or `"rect"` for `TOOLBAR_ROW_ACTIONS`) reuse the
+  now takes a `shape` argument, `"circle"` for `VIEWBAR_ROW_ACTIONS` or
+  `"rect"` for `TOOLBAR_ROW_ACTIONS`) reuse the
   exact same `.row-action-btn`/`.row-action-hit`/`.row-action-label`
   markup and JS, just with an added `.rect` class overriding the
   border-radius back to 7px at every stage instead of 50%/20px.
@@ -336,28 +336,22 @@ shape:
   two arrows converging toward the middle (one from each end of the
   selected range) instead of diverging outward.
 
-  **Plot's Actions swap into `#viewBar` instead of living in `#plotToolbar`
-  (person-requested follow-up)**: the four generic row-actions (Filter
-  after/before this/for this message/Time filter from selection) all key
-  off a log-row selection — Plot has none, so on that tab they'd sit there
-  permanently disabled and useless. Plot's own two viewport-based filters
-  (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`) live up in `#viewBar`
-  itself instead — a SECOND row-actions group,
-  `[data-row-actions="plot-viewbar"]`, right next to the generic one
-  (`[data-row-actions="viewbar"]`) — and `updateViewBarRowActions()`
-  (called from `applyFhView()`/`renderMainView()`/`initFhView()`, wherever
-  `fhActiveTab` can change) shows exactly one of the two at a time: the
-  generic four whenever `fhActiveTab !== "plot"`, Plot's own two only while
-  `fhActiveTab === "plot"` — **and** only once there's actually something
-  plotted in 2D (`plot2dToolsAvailable`, the same condition
-  `#plot2dToolsGroup`'s zoom controls already gate on — `viewBar`'s Plot
-  group and `#plotToolbar`'s own zoom group are kept in sync by
-  `setPlot2dToolsVisible(visible)`, which calls `updateViewBarRowActions()`
-  after setting the shared boolean). Both `#viewBar` row-actions groups are
-  `.row-actions.hidden{display:none}` scoped specifically to `#viewBar
-  .row-actions` — this stylesheet has no bare `.hidden{display:none}`
-  rule, every hidden-toggle target needs its own scoped rule, easy to miss
-  when adding a new one.
+  **`#viewBar`'s row-actions hide entirely on the Plot tab**: the four
+  generic row-actions (Filter after/before this/for this message/Time
+  filter from selection) all key off a log-row selection — Plot has none,
+  so on that tab they'd sit there permanently disabled and useless.
+  `updateViewBarRowActions()` (called from `applyFhView()`/
+  `renderMainView()`/`initFhView()`, wherever `fhActiveTab` can change)
+  just toggles `[data-row-actions="viewbar"]`'s `.hidden` class off
+  whenever `fhActiveTab !== "plot"` — nothing replaces it while on Plot.
+  (Plot previously had its own two viewport-based filters,
+  `#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, living in a second
+  `[data-row-actions="plot-viewbar"]` group next to the generic one —
+  removed, person-requested; see docs/filters.md's "Time filters"/"idset"
+  sections, which no longer mention a plot-view producer.) `.row-actions
+  .hidden{display:none}` stays `#viewBar`-scoped — this stylesheet has no
+  bare `.hidden{display:none}` rule, every hidden-toggle target needs its
+  own scoped rule, easy to miss when adding a new one.
 
   **Statistics moved out of both toolbars entirely (person-requested,
   2026-09-05, superseding an earlier per-tab-toggle design from the same
