@@ -212,11 +212,28 @@ Mouse-wheel zoom anchored at the cursor, middle-click-drag panning, an editable 
 
 ### "Create filter from plot view" (`FEATURE_BACKLOG.md` #11)
 
-Two buttons live in `#plotToolbar`'s `#plot2dToolsGroup` (see above — the toolbar row above the chart, not overlaid on it) alongside the zoom controls: **`#plotFilterTimeRangeBtn`** ("Filter: time range") and **`#plotFilterEntriesBtn`** ("Filter: these entries") — both create a new child filter under the extraction node (`extractNodeId`), scoped to whatever's currently visible in the plot's own zoomed/panned viewport (the home/un-zoomed domain when no zoom is active, so clicking either with no zoom applied covers the whole extraction). "Time range" creates a `"timerange"` filter (see `docs/filters.md` → "Time filters") spanning the visible rows' min/max timestamp; "These entries" creates an `"idset"` filter (`docs/filters.md` → "Entry-set filter") matching exactly those rows, not just their time span.
+**Rewritten 2026-09-07 (person-requested — unify the Table/Plot filters):**
+the two dedicated `#plotToolbar` buttons this used to live behind
+(`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`) are gone. The Plot
+tab's viewport now feeds the same unified row-actions every other tab
+uses (see "Filter-Toolbar" in `docs/ui-and-views.md`): **"Time range"**
+in `#viewBar` creates a `"timerange"` filter (see `docs/filters.md` →
+"Time filters") spanning the viewport's min/max timestamp, and
+**"Select"** in `#plotToolbar`'s own Actions group builds a selection
+filter (`docs/filters.md` → "Add to selection") from exactly those entries —
+covering what the old dedicated "Filter: these entries" `"idset"` button
+used to (an `"idset"` filter still exists, and selections are built from
+it — see `docs/filters.md`, "Add to selection" — the direct viewport→`"idset"`
+button just no longer has its own dedicated trigger). Both key off the
+extraction node currently active, resolve their input from whatever's
+currently visible in the plot's own zoomed/panned viewport (the home/
+un-zoomed domain when no zoom is active, so either with no zoom applied
+covers the whole extraction), and are enabled only once something is
+actually plotted in 2D (`plot2dToolsAvailable`).
 
-`getPlotViewportEntries()` is the shared "what's on screen right now" primitive: it reads `plotLastRender.xDomainMin`/`xDomainMax`/`yDomainMin`/`yDomainMax` (the last real render's effective, possibly-zoomed domain on both axes) and, for each `extractRowsData` row, derives the same X position `renderPlotChart` itself would place it at — a bar chart's row-index slot center (`r + 0.5`, since bar's X is categorical row-index space, see above) or the X column's `parseValueForPlot`-parsed value for line/scatter — so it can never drift out of sync with what's actually drawn. A row also needs a **Y** check, not just X (bugfix, this session, 2026-08-28, person-reported): a row can have an in-range X but sit above/below the current Y zoom/pan, or have no finite Y at all for any of `plotConfig.yCols` (the same NaN-drop `renderPlotChart`'s own `series` construction applies) — either way it isn't actually drawn, so it's kept only if X is in range **and** at least one selected Y column's parsed value is finite and within the Y domain. A viewport containing zero rows (e.g. zoomed into a genuine gap between data points, or panned so nothing in X range has a Y value on screen either) shows a toast and creates no filter node.
+`getPlotViewportEntries()` is the shared "what's on screen right now" primitive: it reads `plotLastRender.xDomainMin`/`xDomainMax`/`yDomainMin`/`yDomainMax` (the last real render's effective, possibly-zoomed domain on both axes) and, for each `extractRowsData` row, derives the same X position `renderPlotChart` itself would place it at — a bar chart's row-index slot center (`r + 0.5`, since bar's X is categorical row-index space, see above) or the X column's `parseValueForPlot`-parsed value for line/scatter — so it can never drift out of sync with what's actually drawn. A row also needs a **Y** check, not just X (bugfix, this session, 2026-08-28, person-reported): a row can have an in-range X but sit above/below the current Y zoom/pan, or have no finite Y at all for any of `plotConfig.yCols` (the same NaN-drop `renderPlotChart`'s own `series` construction applies) — either way it isn't actually drawn, so it's kept only if X is in range **and** at least one selected Y column's parsed value is finite and within the Y domain. A viewport containing fewer than two rows shows a toast and creates no "Time range" filter node (2026-09-07: the threshold moved from "zero rows" to "fewer than two", since "Time range" now needs 2+ entries the same way it does everywhere else — "Select" still only needs one).
 
-Regression-tested: **Group 123** in `tests/philogg.regression.test.js` — both buttons under the home view (covers the whole extraction), the same buttons under a real zoomed viewport (scoped to exactly the visible rows), and the empty-viewport no-op case.
+Regression-tested: **Group 123** in `tests/philogg.regression.test.js` — the unified "Time range" action under the home view (covers the whole extraction), under a real zoomed viewport (scoped to exactly the visible rows), and the sub-2-entries-viewport no-op case; **Group 183c** covers "Select" building a selection filter from the Plot viewport.
 
 ## Value assertions (extraction columns)
 
