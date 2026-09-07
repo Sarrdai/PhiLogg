@@ -2956,6 +2956,56 @@
   }
 
   :focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+
+  /* ---------- Picture-in-picture (desktop build) ----------
+     Toggled by philoggSetPip (driven from the wrapper's enter_pip/exit_pip):
+     hides every piece of chrome and leaves only the active content view. The
+     content itself — the real renderTable/renderExtractTable/renderPlotChart/
+     renderHighlightView output, virtualization, tailFollow, the stats panel —
+     already manages its own visibility and runs unchanged, exactly as it
+     does in the full window. Kept content-only on purpose: the floating
+     .tail-jump-btn and the .fh-panel-badge stay visible, since they annotate
+     the content rather than the window chrome around it. The wrapper's own
+     #tauri-pip strip (injected) is NOT hidden — it is the mini window's only
+     chrome and drag handle, and #fhTabs (the ViewMode switcher) is surfaced
+     into its far left. */
+  html.pip-mode #toolbar,
+  html.pip-mode #sidebar,
+  html.pip-mode #breadcrumbBar,
+  html.pip-mode #extractToolbar,
+  html.pip-mode #tableToolbar,
+  html.pip-mode #plotToolbar,
+  html.pip-mode #plotControls,
+  html.pip-mode #contextToolbar,
+  html.pip-mode #filteredToolbar,
+  html.pip-mode #linkToolbar,
+  html.pip-mode #treeActionBar,
+  html.pip-mode #detailPanel,
+  html.pip-mode #detailResizer,
+  html.pip-mode #timelineMinimap,
+  html.pip-mode #emptyState {
+    display: none !important;
+  }
+  /* #viewBar is not hidden wholesale — it owns #fhTabs, which stays usable in
+     PiP. Collapse the bar to nothing, hide everything in it but the tabs, and
+     surface #fhTabs into the mini strip's far left (above the injected
+     #tauri-pip, which sits at z-index:100). */
+  html.pip-mode #viewBar {
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+    border-bottom: none;
+  }
+  html.pip-mode #viewBar > :not(#fhTabs) {
+    display: none !important;
+  }
+  html.pip-mode #fhTabs {
+    position: fixed;
+    top: 1px;
+    left: 4px;
+    z-index: 101;
+    margin: 0;
+  }
 </style>
 </head>
 <body>
@@ -5648,6 +5698,11 @@ const state = {
   scrollTargetOffset: null, // pixel offset (from viewport top) to land scrollTargetId at, captured from the source view; null = center (nothing to preserve)
   highlightScrollTargetId: null, // twin of scrollTargetId, but for the Highlight view (see revealInHighlightView)
   highlightScrollTargetOffset: null, // twin of scrollTargetOffset, for highlightScrollTargetId
+  pipActive: false,        // picture-in-picture mode (desktop build): the wrapper enters it
+                           // via a diagonal <-> window-control button and sets this through
+                           // philoggSetPip, which also toggles the html.pip-mode class that
+                           // hides all chrome — see docs/desktop.md "Picture-in-picture".
+                           // Runtime-only, never persisted.
   tableSelection: null,    // Set of "row,col" keys selected in the extraction table view (null = none)
   selectedId: null,        // currently selected entry id
   tempAnchor: null,        // { entryId, nodeId, faded } | null — the selected entry's
@@ -11565,7 +11620,7 @@ function buildPairRow(entry) {
     '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
     '<span class="pair-row-msg">' + escapeHtml(entry.message) + '</span>';
   row.title = entry.message;
-  row.addEventListener("dblclick", () => revealInHighlightView(entry, row, linkScroll));
+  row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [entry, row, linkScroll]));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, entry); });
   return row;
 }
@@ -11777,7 +11832,7 @@ plotSvg.addEventListener("click", ev => {
   const mark = ev.target.closest(".plot-mark");
   if (!mark) return;
   const row = extractRowsData[+mark.dataset.row];
-  if (row) revealInTableView(row.entry);
+  if (row) jumpAfterPip(revealInTableView, [row.entry]);
 });
 
 // ---------- Plot zoom / pan / hover tooltip ----------
@@ -13024,7 +13079,7 @@ plot3dCanvas.addEventListener("click", () => {
   if (plot3dDragMoved) { plot3dDragMoved = false; return; } // a drag's trailing click shouldn't also jump to a log entry
   if (!plot3dHoverHit) return;
   const row = extractRowsData[plot3dHoverHit.rowIndex];
-  if (row) revealInTableView(row.entry);
+  if (row) jumpAfterPip(revealInTableView, [row.entry]);
 });
 
 let plot3dHoverHit = null;
@@ -13496,7 +13551,7 @@ function renderExtractVisibleRows() {
     // — an extraction-capable node now has an ordinary Filtered view of its
     // own matched entries (see nodeHasExtractableWildcards), so that's what
     // double-clicking a row here lands on.
-    tr.addEventListener("dblclick", () => revealInFilteredView(row.entry, tr, extractScroll));
+    tr.addEventListener("dblclick", () => jumpAfterPip(revealInFilteredView, [row.entry, tr, extractScroll]));
     const gutter = tr.querySelector(".extract-gutter");
     gutter.addEventListener("mouseenter", highlightAllColumns);
     gutter.addEventListener("mouseleave", clearColumnHighlight);
@@ -14063,7 +14118,7 @@ function renderVisibleRows() {
       '<span class="col-msg">' + msgHtml + '</span>';
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
-    row.addEventListener("dblclick", () => revealInHighlightView(e, row, tableBody));
+    row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
     frag.appendChild(row);
     appendNoteRow(frag, e);
   }
@@ -16586,6 +16641,21 @@ function selectHighlightEntry(entryId, opts) {
   updateDetailPanel();
 }
 
+// PiP exit-before-jump (see docs/desktop.md "Picture-in-picture"): while the
+// window is in picture-in-picture, a "jump to another view" interaction must
+// first restore the full window (and drop chrome hiding) so the reveal's
+// scroll/anchor math runs against the restored viewport. The .then() ordering
+// is what makes that safe — the wrapper's pip_exit command resolves only
+// after the geometry restore is applied. Not in PiP (or not the desktop
+// build), the jump runs directly, byte-identical to main.
+function jumpAfterPip(fn, args) {
+  if (state.pipActive && window.philogg && typeof window.philogg.exitPip === "function") {
+    window.philogg.exitPip().then(() => fn.apply(null, args));
+  } else {
+    fn.apply(null, args);
+  }
+}
+
 // What a Filter-view (or link-view) row double-click does now, in place of
 // the old jumpToFullLog: select the entry and centre the Highlight view on
 // it, WITHOUT jumping the Filter view itself to a different node or
@@ -18405,6 +18475,17 @@ window.addEventListener("dragover", ev => { if (isFileDrag(ev)) ev.preventDefaul
 window.philoggDropOverlay = function (show) {
   dragCounter = show ? 1 : 0;
   dropOverlay.classList.toggle("hidden", !show);
+};
+
+// The desktop wrapper's picture-in-picture hook (see docs/desktop.md
+// "Picture-in-picture"): the wrapper's enter_pip/exit_pip owns the window
+// geometry (set_size/set_always_on_top/unminimize) and calls this to toggle
+// the page-side appearance — the runtime flag plus the html.pip-mode class
+// that hides all chrome except the active content view. No query flag, no
+// second document: this is the main document toggling its own chrome.
+window.philoggSetPip = function (active) {
+  state.pipActive = !!active;
+  document.documentElement.classList.toggle("pip-mode", !!active);
 };
 window.addEventListener("dragleave", ev => {
   if (!isFileDrag(ev)) return;
@@ -22962,7 +23043,7 @@ document.addEventListener("keydown", ev => {
     if (entry) {
       ev.preventDefault();
       const rowEl = tableRows.querySelector('[data-entry-id="' + CSS.escape(entry.id) + '"]');
-      revealInHighlightView(entry, rowEl, tableBody);
+      jumpAfterPip(revealInHighlightView, [entry, rowEl, tableBody]);
     }
     return;
   }
