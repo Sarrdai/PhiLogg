@@ -20149,66 +20149,6 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 184 — this session (2026-09-07), person-reported: the Link dialog's
-   "Enforce chronological order" checkbox checks whether the WHOLE chain's
-   timestamps stay non-decreasing hop over hop (see PROJECT.md "Link
-   filter"), not whether each hop's own search direction is internally
-   consistent — a deliberate choice, kept (see Group 22's REPRO case). But
-   that means it can only ever reject *some* tuples and keep others when the
-   hops don't all search the same direction: with a single hop, or multiple
-   hops all "before"/all "after", every match already satisfies (or already
-   violates) that check by construction, so the option would silently drop
-   nothing or drop everything. `updateLinkOrderEnforceAvailability()` now
-   gates the checkbox (disabled + unchecked + a hint shown) on the hop
-   directions actually differing, so the dialog can no longer produce that
-   silently-empty trap. Filter-evaluation semantics themselves are
-   unchanged — this is dialog-only.
-   ============================================================ */
-group(184);
-await withApp(async (w, d, T) => {
-  section("184. Link dialog: order-enforce checkbox gated on hop direction mix");
-
-  const log = "2024-01-15 10:00:00,000\tINFO\t\"main\"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t\"First A\"\n" +
-    "2024-01-15 10:00:05,000\tINFO\t\"main\"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t\"Second A\"\n" +
-    "2024-01-15 10:00:08,000\tINFO\t\"main\"\tC:\\src\\Foo.cs\tline 2\t[DoWork]\t\"Third A\"\n";
-  const f = await w.addFile("a.log", log, () => {});
-  const first = w.createFilterNode(f.id, "text", "First");
-  const second = w.createFilterNode(f.id, "text", "Second");
-  const third = w.createFilterNode(f.id, "text", "Third");
-  w.render();
-
-  // Single hop (2-filter link): only one direction possible -> disabled.
-  w.openLinkDialog([first.id, second.id]);
-  const checkbox1 = d.querySelector("#linkOrderEnforceInput");
-  const hint1 = d.querySelector("#linkOrderEnforceHint");
-  assert(checkbox1.disabled === true, "single-hop link: order-enforce checkbox is disabled");
-  assert(!hint1.classList.contains("hidden"), "single-hop link: hint explaining why is shown");
-
-  // Multi-hop, both hops same direction -> still disabled.
-  w.openLinkDialog([first.id, second.id, third.id]);
-  d.querySelector("#linkRefSelect").value = first.id;
-  d.querySelector("#linkRefSelect").dispatchEvent(new w.Event("change"));
-  const hopDirs = d.querySelectorAll("#linkHopsList .link-hop-dir");
-  assert(hopDirs.length === 2, "2-hop dialog: 2 hop rows");
-  hopDirs[0].value = "after"; hopDirs[0].dispatchEvent(new w.Event("change"));
-  hopDirs[1].value = "after"; hopDirs[1].dispatchEvent(new w.Event("change"));
-  const checkbox2 = d.querySelector("#linkOrderEnforceInput");
-  assert(checkbox2.disabled === true, "2 hops, same direction (after/after): still disabled");
-
-  // Multi-hop, hops differ in direction -> now enabled and usable.
-  hopDirs[1].value = "before"; hopDirs[1].dispatchEvent(new w.Event("change"));
-  assert(checkbox2.disabled === false, "2 hops, mixed direction (after/before): enabled");
-  assert(d.querySelector("#linkOrderEnforceHint").classList.contains("hidden"), "hint hidden once enabled");
-  checkbox2.checked = true;
-
-  // Flipping back to a uniform direction while checked auto-unchecks it,
-  // so a stale checked-but-meaningless state can't survive into Create.
-  hopDirs[1].value = "after"; hopDirs[1].dispatchEvent(new w.Event("change"));
-  assert(checkbox2.disabled === true && checkbox2.checked === false,
-    "reverting to uniform direction disables AND unchecks, even if it was checked before");
-});
-
-/* ============================================================
    GROUP 183 — this session (2026-09-07), person-requested: unify the
    Table/Plot filters. Plot's two dedicated viewport-filter buttons are gone
    ("Visible entries" removed entirely; "Time range" folded into the
@@ -22910,35 +22850,24 @@ process.exitCode = failed ? 1 : 0;
      popout-window approach. Covers the page-side half jsdom can see:
      `philoggSetPip` toggling `state.pipActive` + `html.pip-mode`, the
      `html.pip-mode` chrome-hide CSS list (a tripwire like Group 140), and
-     `jumpAfterPip` routing (direct when not in PiP, through a stubbed
-     `window.philogg.exitPip` when in PiP). Real window geometry and the
-     injected <->/X buttons are not jsdom-testable — verify via `cd desktop
-     && npm run tauri dev`.
+      `jumpAfterPip` routing (direct when not in PiP, through a stubbed
+      `window.philogg.exitPip` when in PiP). Real window geometry and the
+      injected <->/X buttons are not jsdom-testable — verify via `cd desktop
+      && npm run tauri dev`.
 
    Group 183 — this session (2026-09-07), person-requested: unify the
-     Table/Plot filters. Plot's two dedicated viewport-filter buttons are
-     gone ("Visible entries" removed entirely; "Time range" folded into the
-     Filtered tab's generic "Time range" row-action, now context-aware via
-     timeRangeActionEntries/selectActionEntries). The Filtered view's
-     "Select" (Add to selection) action now also lives in Table's and
-     Plot's own toolbars (`[data-row-actions="select-action"]`, the
-     addToSelection entry from TOOLBAR_ROW_ACTIONS). Both resolve their
-     input per view: marked-cell rows in Table (a partial row counts as the
-     whole row), the plot's visible viewport in Plot, and the log-row
-     selection elsewhere. "Time range" needs 2+ entries everywhere (a
-     single row/element leaves it disabled or a toast at click time); on
-     Plot its enabled state is gated on plot2dToolsAvailable (the exact
-     viewport count is re-checked at click time, since zoom/pan don't
-     necessarily go through updateRowActionButtons()).
-
-   Group 184 — this session (2026-09-07), person-reported: the Link
-     dialog's "Enforce chronological order" checkbox always requires the
-     whole chain's timestamps non-decreasing hop over hop (kept, see Group
-     22's REPRO case), which means it can only reject *some* tuples and
-     keep others when the chain's hops don't all search the same
-     direction — a single hop, or multiple hops all "before"/all "after",
-     made it silently drop nothing or drop everything. Dialog-only fix:
-     `updateLinkOrderEnforceAvailability()` disables + unchecks the
-     checkbox (with a hint) whenever the current hop directions don't
-     differ.
+      Table/Plot filters. Plot's two dedicated viewport-filter buttons are
+      gone ("Visible entries" removed entirely; "Time range" folded into the
+      Filtered tab's generic "Time range" row-action, now context-aware via
+      timeRangeActionEntries/selectActionEntries). The Filtered view's
+      "Select" (Add to selection) action now also lives in Table's and
+      Plot's own toolbars (`[data-row-actions="select-action"]`, the
+      addToSelection entry from TOOLBAR_ROW_ACTIONS). Both resolve their
+      input per view: marked-cell rows in Table (a partial row counts as the
+      whole row), the plot's visible viewport in Plot, and the log-row
+      selection elsewhere. "Time range" needs 2+ entries everywhere (a
+      single row/element leaves it disabled or a toast at click time); on
+      Plot its enabled state is gated on plot2dToolsAvailable (the exact
+      viewport count is re-checked at click time, since zoom/pan don't
+      necessarily go through updateRowActionButtons()).
    ============================================================ */
