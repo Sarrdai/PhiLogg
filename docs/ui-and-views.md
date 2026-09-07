@@ -139,22 +139,36 @@ shape:
 - **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — the view toggle
   (`#fhTabs`), the level quick-filter (`#levelBar`/`#btnApplyLevelToTree`),
   and, floated right after those, the **row-actions** button group
-  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — the FIVE
+  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — the FOUR
   actions that genuinely create a filter node: Filter after this/Filter
-  before this/Filter for this message/Time filter from selection/Add to
-  selection. (Bookmark this row/Add note used to live here too — moved out,
-  person-requested follow-up same session, into each log view's own
-  toolbar instead; see the "Actions" group below for why: they mutate the
-  selection's bookmark/note state, not create a filter, so "Filter-
-  Toolbar" was the wrong home for them.) `#levelBar` is identical on every
-  tab including Table/Plot (it already applied via `applyLevelFilter()`,
-  just without a visible pill row before this session). The row-actions
-  group ITSELF, however, is NOT the same on every tab any more (person-
-  requested follow-up, same session): on Plot it's swapped out entirely for
-  a second, Plot-only group — see "Plot's Actions swap into `#viewBar`"
-  further down for the full mechanism; on every other tab (including a
-  file node with no filter active, where the four are simply all disabled)
-  it's this one. The row-actions buttons reuse the exact
+  before this/Filter for this message/Time range. (Bookmark this row/Add
+  note/Add to selection used to live here too — moved out, person-requested
+  follow-up same session, into each log view's own toolbar instead; see the
+  "Actions" group below for why: they mutate the selection's bookmark/note/
+  selection state, not create a filter, so "Filter-Toolbar" was the wrong
+  home for them.) `#levelBar` is identical on every tab including Table/
+  Plot (it already applied via `applyLevelFilter()`, just without a visible
+  pill row before this session).
+  **Table/Plot are context-aware now, not a swapped-out second group
+  (person-requested, 2026-09-07 — unifies what used to be a Plot-only
+  detour)**: After/Before/Message all key off a single log-row selection,
+  which Table/Plot have none of, so `updateViewBarRowActions()` hides just
+  those three on those two tabs (`fhActiveTab === "table" || "plot"`) —
+  "Time range" stays visible everywhere and resolves its own input per
+  view instead: a 2+ log-row multi-selection in Context/Filtered
+  (unchanged), rows with at least one marked cell in Table, or the Plot
+  tab's own currently-visible viewport (`timeRangeActionEntries()`, near
+  `currentSelectionRowIds()`) — on Plot it's additionally gated on
+  `plot2dToolsAvailable` (something actually plotted in 2D, the same
+  condition `#plot2dToolsGroup`'s zoom controls gate on), the exact
+  viewport count is re-checked at click time with a toast since zoom/pan
+  don't always go through `updateRowActionButtons()`. Plot's own two
+  dedicated viewport-filter buttons this used to swap in
+  (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, see the CHANGELOG for
+  their original 2026-09-04 design) are gone entirely — "these entries"
+  as an `"idset"` filter no longer has a UI trigger of its own; use "Select"
+  (below) to build a selection filter from the same viewport instead. The
+  row-actions buttons reuse the exact
   functions the pre-existing right-click context menu already used, just
   driven by `state.selectedId`/`state.logMultiSelect`
   (`currentRowActionEntry()`) instead of `ctxEntry`, and disabled via
@@ -317,7 +331,21 @@ shape:
     `#filteredToolbar`), Table's Export-as-CSV, Plot's Save-as-image
     (`#plotSaveImageBtn`, moved out of Plot's Controls group on
     2026-09-05, person-requested — it's a one-off action, not a
-    persistent view control).
+    persistent view control). **Add to selection ("Select") also lives in
+    Table's and Plot's own Actions groups now (person-requested,
+    2026-09-07 — unify the Table/Plot filters)**: a lone
+    `[data-row-actions="select-action"]` span in each toolbar's markup
+    holds just that one `TOOLBAR_ROW_ACTIONS` entry
+    (`SELECT_ROW_ACTION_HTML`), same `.row-action-btn.rect` shape and
+    shared click/disabled logic as the Context/Filtered copies — four
+    copies of `addToSelection` exist in the DOM total. Its input resolves
+    per view too, same idea as "Time range" above:
+    `selectActionEntries()` returns the marked-cell rows in Table (a
+    single marked row is enough, unlike "Time range"'s 2+), the Plot
+    viewport (gated on `plot2dToolsAvailable`, same as "Time range" on
+    Plot), or the existing log-row selection everywhere else —
+    `currentSelectionRowIds()` (used throughout the selection-filter code)
+    is now a thin wrapper around it.
 
   Resulting shape per toolbar: Context = Controls|Settings|Actions (all
   three); Filtered = Settings|Actions (no Controls); Table = Actions-only;
@@ -327,9 +355,7 @@ shape:
   2026-09-05)**: it doesn't create a filter node by itself (it opens
   `#addToSelectionMenu`, same as the other two), so it moved from
   `VIEWBAR_ROW_ACTIONS` into `TOOLBAR_ROW_ACTIONS` alongside Bookmark/Add
-  note — `#viewBar`'s row-actions group is now four items (Filter after/
-  before this, Filter for this message, Time filter from selection), not
-  five.
+  note.
 
   **Time-filter arrow icons (person-requested, 2026-09-05)**: Filter
   before this now points UP (it keeps everything above the row) and Filter
@@ -338,28 +364,24 @@ shape:
   two arrows converging toward the middle (one from each end of the
   selected range) instead of diverging outward.
 
-  **Plot's Actions swap into `#viewBar` instead of living in `#plotToolbar`
-  (person-requested follow-up)**: the four generic row-actions (Filter
-  after/before this/for this message/Time filter from selection) all key
-  off a log-row selection — Plot has none, so on that tab they'd sit there
-  permanently disabled and useless. Plot's own two viewport-based filters
-  (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`) live up in `#viewBar`
-  itself instead — a SECOND row-actions group,
-  `[data-row-actions="plot-viewbar"]`, right next to the generic one
-  (`[data-row-actions="viewbar"]`) — and `updateViewBarRowActions()`
-  (called from `applyFhView()`/`renderMainView()`/`initFhView()`, wherever
-  `fhActiveTab` can change) shows exactly one of the two at a time: the
-  generic four whenever `fhActiveTab !== "plot"`, Plot's own two only while
-  `fhActiveTab === "plot"` — **and** only once there's actually something
-  plotted in 2D (`plot2dToolsAvailable`, the same condition
-  `#plot2dToolsGroup`'s zoom controls already gate on — `viewBar`'s Plot
-  group and `#plotToolbar`'s own zoom group are kept in sync by
-  `setPlot2dToolsVisible(visible)`, which calls `updateViewBarRowActions()`
-  after setting the shared boolean). Both `#viewBar` row-actions groups are
-  `.row-actions.hidden{display:none}` scoped specifically to `#viewBar
-  .row-actions` — this stylesheet has no bare `.hidden{display:none}`
-  rule, every hidden-toggle target needs its own scoped rule, easy to miss
-  when adding a new one.
+  **Table/Plot no longer swap `#viewBar`'s row-actions for a Plot-only
+  group (person-requested, 2026-09-07 — superseding the 2026-09-04 design
+  below)**: `[data-row-actions="plot-viewbar"]` and its two dedicated
+  buttons (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`) are gone
+  entirely — see "Time range"/"Select" above for what replaced them
+  (context-aware input resolution instead of a second button group). The
+  original design this replaced: the four generic row-actions all keyed
+  off a log-row selection Plot has none of, so on that tab they were
+  swapped out wholesale for a second `#viewBar` group holding Plot's own
+  viewport-based filters, shown only once something was actually plotted
+  in 2D (`plot2dToolsAvailable`/`setPlot2dToolsVisible()`, which still
+  exists and still gates "Time range"'s own enabled state on Plot). Every
+  `#viewBar` row-action still lives under `.row-actions.hidden{display:
+  none}` scoped specifically to `#viewBar .row-actions` — this stylesheet
+  has no bare `.hidden{display:none}` rule, every hidden-toggle target
+  needs its own scoped rule, easy to miss when adding a new one (now also
+  `#viewBar .row-action-btn.hidden{display:none}` for hiding individual
+  buttons within the group rather than the whole group at once).
 
   **Statistics moved out of both toolbars entirely (person-requested,
   2026-09-05, superseding an earlier per-tab-toggle design from the same
