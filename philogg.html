@@ -866,10 +866,10 @@
      are 28px too — a single #viewBar-only group at a different size would
      look like a misalignment, not a second row. */
   #viewBar .row-actions{float:left; gap:4px; margin:0 0 6px 0;}
-  /* Whether the row-actions group is shown is entirely JS-driven
-     (updateViewBarRowActions(), person-requested this session — hide the
-     generic five while the Plot tab is active, since none of them key off
-     anything Plot has). Needed explicitly: unlike most `.hidden` usages
+  /* Which of the two row-actions groups is shown is entirely
+     JS-driven (updateViewBarRowActions(), person-requested this session —
+     swap the generic five for Plot's own two viewport filters while the
+     Plot tab is active). Needed explicitly: unlike most `.hidden` usages
      elsewhere in this file, there is no bare `.hidden{display:none}` rule
      in this stylesheet — every one is scoped to its own selector. */
   #viewBar .row-actions.hidden{display:none;}
@@ -2509,7 +2509,7 @@
   .plot-mark{cursor:pointer;}
   .plot-mark:hover{opacity:.7;}
 
-  /* ---------- Plot view's own toolbar (zoom/pan/fullscreen/save) ----------
+  /* ---------- Plot view's own toolbar (zoom/pan/filter/fullscreen/save) ----------
      Same "real row in normal flow, not an overlay" pattern as #contextToolbar
      (see that div's own comment for the rationale) — Plot has always had a
      zoom bar, but it used to live in the shared extract toolbar (row2,
@@ -3187,12 +3187,23 @@
            #viewBar is the "Filter-Toolbar" (person-requested naming) — the
            universal, ALWAYS identical row across every tab (Context/
            Filtered/Table/Plot/Stacked): view toggle, level quick-filter,
-           and — right of the level filter — the row-/selection-action
-           buttons (Filter after/before/for this message/Time filter from
-           selection/Add to selection, `[data-row-actions="viewbar"]`
-           below). Plot has no log-row selection to key those off, so they
-           sit there disabled while the Plot tab is active. The six
-           log-DISPLAY toggles (Notes/Multiline/Columns/TextMatch/
+           and — right of the level filter — whichever set of filter-
+           CREATING actions actually makes sense for the tab currently on
+           screen. For Context/Filtered/Table that's the row-/selection-
+           action buttons (Filter after/before/for this message/Time filter
+           from selection/Add to selection, `[data-row-actions="viewbar"]`
+           below); for Plot it's a DIFFERENT pair instead (person-requested,
+           this session) — those five all key off a log-row selection,
+           which Plot has no notion of, so they'd sit there permanently
+           disabled and useless. Plot's own two viewport-based filters
+           (`[data-row-actions="plot-viewbar"]`, same buttons that used to
+           live inside #plotToolbar's own Actions group) take their place
+           instead, shown ONLY while the Plot tab is active — see
+           updateViewBarRowActions() near applyFhView/renderMainView for
+           the tab-driven show/hide, and setPlot2dToolsVisible() (near
+           #plotToolbar's own comment) for the further "only once there's
+           something actually plotted in 2D" gating layered on top of that.
+           The six log-DISPLAY toggles (Notes/Multiline/Columns/TextMatch/
            HighlightMatch/Pin) stay out of here regardless of tab — they
            don't create filters, they control how the log views render, so
            they live in each log view's own toolbar (#contextToolbar/
@@ -3214,6 +3225,22 @@
         <div id="levelBar"></div>
         <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
         <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
+        <!-- Plot's own two viewport-based filters (moved up from
+             #plotToolbar's own Actions group, see that div's own comment) —
+             shown ONLY while the Plot tab is active (updateViewBarRowActions,
+             near applyFhView) and, on top of that, only once there's
+             something actually plotted in 2D (setPlot2dToolsVisible, near
+             #plotToolbar), same double-gating #plot2dToolsGroup itself has
+             always had. Ids/click-handlers unchanged from their old
+             location — only the DOM location moved. -->
+        <div class="toolbar-group row-actions hidden" data-row-actions="plot-viewbar">
+          <button type="button" id="plotFilterTimeRangeBtn" class="toolbar-icon-btn" title="Time range">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/></svg>
+          </button>
+          <button type="button" id="plotFilterEntriesBtn" class="toolbar-icon-btn" title="Visible entries">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
+          </button>
+        </div>
       </div>
 
       <div id="fhSplit">
@@ -8397,8 +8424,13 @@ function getEntriesUncached(node) {
     result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
   } else if (node.filterType === "idset") {
     // value = array of entry ids — an explicit, pre-computed match set
-    // rather than a rule evaluated per entry. See "Add to selection" (near
-    // createSelectionFilterNode) for the current producer.
+    // rather than a rule evaluated per entry. Built by "Create filter from
+    // plot view" (see openPlotViewportFilterMenu/createIdSetFilterFromPlot)
+    // to pin down exactly the entries currently visible in the Plot tab's
+    // zoomed/panned viewport. Kept generic (not plot-specific) so any other
+    // future "exact entry set" producer could reuse it the same way
+    // "timerange" is generic rather than tied to the minimap that first
+    // created it.
     const idSet = new Set(Array.isArray(node.value) ? node.value : []);
     result = parentEntries.filter(e => idSet.has(e.id));
   } else if (node.filterType === "bookmarks") {
@@ -9047,6 +9079,7 @@ const plotToolbar = el("#plotToolbar");
 const tableToolbar = el("#tableToolbar");
 const plot2dToolsGroup = el("#plot2dToolsGroup");
 const viewBarRowActions = el('[data-row-actions="viewbar"]');
+const plotViewBarActions = el('[data-row-actions="plot-viewbar"]');
 const plotZoomOutBtn = el("#plotZoomOutBtn");
 const plotZoomInBtn = el("#plotZoomInBtn");
 const plotZoomResetBtn = el("#plotZoomResetBtn");
@@ -11856,19 +11889,33 @@ function zoomPlotAt(dataX, dataY, factor) {
   renderPlotChart();
 }
 
-// #viewBar's row-actions group is hidden on the Plot tab (person-requested,
-// this session): the five generic row-actions (Filter after/before/etc.)
-// all key off a log-row selection, which Plot has none of, so they'd sit
-// there permanently disabled and useless.
+// #viewBar's row-actions group is swapped for the tab currently on screen
+// (person-requested, this session): the five generic row-actions
+// (Filter after/before/etc.) all key off a log-row selection, which Plot
+// has none of, so they'd sit there permanently disabled and useless —
+// Plot's own two viewport-based filters (moved up from #plotToolbar's own
+// Actions group, `#viewBar`'s own comment) take their place instead, and
+// ONLY while on the Plot tab. Layered on top of that (`plot2dToolsAvailable`,
+// set by setPlot2dToolsVisible below): Plot's filter buttons additionally
+// need something actually plotted in 2D to make sense at all, same
+// condition #plot2dToolsGroup's own zoom controls already gate on — two
+// independent booleans ANDed here rather than two separate `.hidden`
+// toggles fighting over the same element's class.
+let plot2dToolsAvailable = false;
 function updateViewBarRowActions() {
-  viewBarRowActions.classList.toggle("hidden", fhActiveTab === "plot");
+  const onPlot = fhActiveTab === "plot";
+  viewBarRowActions.classList.toggle("hidden", onPlot);
+  plotViewBarActions.classList.toggle("hidden", !(onPlot && plot2dToolsAvailable));
 }
 
 // Toggles #plot2dToolsGroup (zoom controls, in the toolbar's Controls
-// group) — only meaningful once there's something plotted in 2D (see
+// group) and the #viewBar Plot filter buttons together — both are only
+// meaningful once there's something plotted in 2D (see
 // updatePlotZoomIndicator/renderPlotChart's 3D branch below).
 function setPlot2dToolsVisible(visible) {
+  plot2dToolsAvailable = visible;
   plot2dToolsGroup.classList.toggle("hidden", !visible);
+  updateViewBarRowActions();
 }
 
 function updatePlotZoomIndicator() {
@@ -12027,6 +12074,64 @@ async function exportPlotImage() {
   }
 }
 plotSaveImageBtn.addEventListener("click", exportPlotImage);
+
+// "Create filter from plot view" (FEATURE_BACKLOG.md #11) — resolves the
+// backlog item's open question by offering BOTH: (a) a time-range filter
+// spanning the visible viewport's timestamps, reusing the existing generic
+// "timerange" filter type (see "Time filters" in docs/filters.md), and
+// (b) a filter matching exactly the entries currently plotted in view, via
+// a new "idset" filter type (an explicit entry-id set, the same "second,
+// non-parent source of truth baked into node.value at creation time" shape
+// "timerange" already established — see getEntries' "idset" branch).
+//
+// "Currently visible" = the plot's current zoomed/panned viewport
+// (plotLastRender's xDomainMin/xDomainMax — the home view's own full range
+// when no zoom is active), NOT the whole extraction result. Read off
+// extractRowsData/plotConfig.xCol the same way renderPlotChart itself
+// derives each row's X position, so this can never disagree with what's
+// actually drawn.
+function getPlotViewportEntries() {
+  if (!plotLastRender || !extractRowsData.length || plotConfig.xCol == null || !plotConfig.yCols.length) return [];
+  const { xDomainMin, xDomainMax, yDomainMin, yDomainMax, isBarChart } = plotLastRender;
+  const xCol = findExtractColumn(plotConfig.xCol);
+  const xType = xCol ? xCol.type : null;
+  // A row also needs a Y check, not just X — a point can have an in-range X
+  // but sit above/below the current Y zoom/pan (clipped away by the chart's
+  // own clip-path), or have no finite Y at all for any plotted column (the
+  // same NaN-drop renderPlotChart's own `series` construction applies).
+  // Checking X alone previously counted such off-screen points as "visible."
+  const yTypes = plotConfig.yCols.map(yCol => findExtractColumn(yCol).type);
+  const out = [];
+  extractRowsData.forEach((row, r) => {
+    // Bar's X is categorical row-index space (see renderPlotChart) — each
+    // row occupies the pixel slot [r, r+1), so its center is what a visible
+    // domain range actually needs to cover.
+    const x = isBarChart ? r + 0.5 : parseValueForPlot(row.values[plotConfig.xCol], xType);
+    if (!Number.isFinite(x) || x < xDomainMin - 1e-9 || x > xDomainMax + 1e-9 || !row.entry) return;
+    const yVisible = plotConfig.yCols.some((yCol, i) => {
+      const y = parseValueForPlot(row.values[yCol], yTypes[i]);
+      return Number.isFinite(y) && y >= yDomainMin - 1e-9 && y <= yDomainMax + 1e-9;
+    });
+    if (yVisible) out.push(row.entry);
+  });
+  return out;
+}
+el("#plotFilterTimeRangeBtn").addEventListener("click", () => {
+  const entries = getPlotViewportEntries();
+  if (!entries.length) { showCopyToast("No entries currently visible in the plot."); return; }
+  let from = Infinity, to = -Infinity;
+  entries.forEach(e => { if (e.ts < from) from = e.ts; if (e.ts > to) to = e.ts; });
+  createFilterNode(extractNodeId, "timerange", { from, to });
+  revealFilteredView();
+  render();
+});
+el("#plotFilterEntriesBtn").addEventListener("click", () => {
+  const entries = getPlotViewportEntries();
+  if (!entries.length) { showCopyToast("No entries currently visible in the plot."); return; }
+  createFilterNode(extractNodeId, "idset", entries.map(e => e.id));
+  revealFilteredView();
+  render();
+});
 
 // Mouse wheel: zoom in/out anchored at the cursor's data-space position.
 // Only active when the cursor is actually over the plot rectangle, so
@@ -12404,7 +12509,7 @@ function renderPlotChart() {
   if (plotConfig.type === "3d") {
     plotSvg.classList.add("hidden");
     plot3dCanvas.classList.remove("hidden");
-    setPlot2dToolsVisible(false); // 3D uses its own rotate/zoom/pan on the canvas, not the 2D zoom bar
+    setPlot2dToolsVisible(false); // 3D uses its own rotate/zoom/pan on the canvas, not the 2D zoom bar/filter-from-viewport
     renderPlot3D();
     return;
   }
