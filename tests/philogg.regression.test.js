@@ -13478,19 +13478,30 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 123 — generic "idset" filter type sanity (getEntries branch +
-   persistence). Originally written alongside the Plot tab's "Create filter
-   from plot view" viewport buttons (FEATURE_BACKLOG.md #11); those buttons
-   were removed in a later session (Plot-View specific filters dropped —
-   see "Deliberately DROPPED" below), but "idset" itself stays generic
-   infrastructure (also used by "Add to selection", GROUP 124), so its own
-   getEntries/persistence coverage stays.
+   GROUP 123 — "Create filter from plot view" (FEATURE_BACKLOG.md #11)
+   Origin: this session. Resolves the backlog item's open question by
+   offering BOTH options off the Plot tab's zoomed/panned viewport
+   (plotLastRender's xDomainMin/xDomainMax — the currently-visible range,
+   not the full extraction result): (a) a "timerange" filter spanning the
+   viewport's timestamps (reusing the existing generic time-filter node),
+   and (b) a new "idset" filter (an explicit array of entry ids) matching
+   exactly the entries currently plotted in view. Two toolbar buttons in
+   #plotToolbar's #plot2dToolsGroup (#plotFilterTimeRangeBtn/#plotFilterEntriesBtn),
+   following the same "small buttons in the plot's own toolbar" convention as
+   the zoom controls already there.
    ============================================================ */
 group(123);
 await withApp(async (w, d, T) => {
-  section("123. \"idset\" filter type: getEntries branch + persistence round trip");
+  section("123. \"Create filter from plot view\": timerange + idset from the Plot tab's visible viewport");
 
-  const f = await w.addFile("idset.log", makeLog(0, 10), () => {});
+  // 5 entries, 1s apart, extracting a distinct int per row (0,10,20,30,40) —
+  // the synthetic Index column (default X axis, plottable[0]) then gives a
+  // clean, exact 0..4 row-index domain to zoom into.
+  const lines = [0, 10, 20, 30, 40].map((n, i) =>
+    `2024-01-15 10:00:0${i},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"n=${n}"`
+  );
+  const logText = lines.join("\n") + "\n";
+  const f = await w.addFile("plotfilter.log", logText, () => {});
   w.render();
 
   // --- getEntries "idset" branch, direct sanity check ---
@@ -13512,6 +13523,77 @@ await withApp(async (w, d, T) => {
   const pastedIdNode = T.state.nodes[f.children[f.children.length - 1]];
   assert(pastedIdNode.filterType === "idset" && JSON.stringify(pastedIdNode.value.slice().sort()) === JSON.stringify(idNode.value.slice().sort()),
     "cloneSubtree (copy/paste) carries an idset node's entry-id array to the pasted copy, confirming the generic value-field precedent holds");
+
+  const node = w.createFilterNode(f.id, "text", "n=[value:int]");
+  T.state.activeId = node.id;
+  w.render();
+  // A newly-activated node now defaults to Filtered (person-requested, see
+  // GROUP 161) instead of auto-jumping to Table/Plot — applyFhView("plot"),
+  // the real path a Plot tab click takes, is what actually renders
+  // #extractWrap's content (switchExtractView alone only toggles which sub-
+  // view is visible WITHIN it, a no-op while #fhSplit is the shown
+  // component).
+  w.applyFhView("plot");
+  assert(T.extractRowsData.length === 5, "sanity: one extraction row per entry");
+  assert(T.plotConfig.xCol === -2, "sanity: the synthetic Index column (-2) is the default X axis");
+
+  const beforeChildren = node.children.length;
+
+  // No zoom active yet (home view) — the whole extraction is "visible".
+  fireClick(d.querySelector("#plotFilterTimeRangeBtn"), w);
+  assert(node.children.length === beforeChildren + 1, "clicking \"Filter: time range\" with no zoom active creates one new child filter");
+  const homeTimeNode = T.state.nodes[node.children[node.children.length - 1]];
+  assert(homeTimeNode.filterType === "timerange" && homeTimeNode.value.from === f.entries[0].ts && homeTimeNode.value.to === f.entries[4].ts,
+    "with no zoom, the time-range filter spans the FULL extraction's timestamps (home view == the whole result)");
+
+  // Zoom the plot's X domain down to rows [1.5, 3.5] — i.e. rows 2 and 3
+  // only (Index values 2 and 3) — directly via the plotZoom test hook
+  // (equivalent to what the wheel/drag-rect zoom interaction would produce),
+  // then re-render so plotLastRender reflects it.
+  T.state.activeId = node.id;
+  T.plotZoom = { x0: 1.5, x1: 3.5, y0: -1e6, y1: 1e6 };
+  w.renderPlotChart();
+  assert(T.plotLastRender.xDomainMin > 1 && T.plotLastRender.xDomainMax < 4, "sanity: the zoomed render's X domain is narrowed to roughly [1.5, 3.5]");
+
+  fireClick(d.querySelector("#plotFilterEntriesBtn"), w);
+  const idsetNode = T.state.nodes[node.children[node.children.length - 1]];
+  assert(idsetNode.filterType === "idset" && idsetNode.value.length === 2 &&
+    idsetNode.value.includes(f.entries[2].id) && idsetNode.value.includes(f.entries[3].id),
+    "\"Filter: these entries\" with the zoomed viewport creates an idset filter with EXACTLY rows 2 and 3 (Index 2 and 3), not the whole extraction");
+  assert(w.getEntries(idsetNode.id).length === 2, "the created idset filter's own getEntries result matches those same 2 entries");
+
+  T.state.activeId = node.id;
+  fireClick(d.querySelector("#plotFilterTimeRangeBtn"), w);
+  const zoomedTimeNode = T.state.nodes[node.children[node.children.length - 1]];
+  assert(zoomedTimeNode.filterType === "timerange" && zoomedTimeNode.value.from === f.entries[2].ts && zoomedTimeNode.value.to === f.entries[3].ts,
+    "with the same zoom, \"Filter: time range\" spans only rows 2..3's timestamps, not the full extraction's");
+
+  // Zooming into a gap with no rows at all (strictly between two integer
+  // Index values, well inside the home domain so clampZoomAxis's
+  // zoom-out-buffer snapping can't pull a real row back into view at an
+  // edge) must not create a broken/empty filter.
+  T.state.activeId = node.id;
+  T.plotZoom = { x0: 2.6, x1: 2.9, y0: -1e6, y1: 1e6 };
+  w.renderPlotChart();
+  assert(w.getPlotViewportEntries().length === 0, "sanity: this zoom window genuinely contains no row's Index value");
+  const beforeEmptyClickCount = node.children.length;
+  fireClick(d.querySelector("#plotFilterEntriesBtn"), w);
+  assert(node.children.length === beforeEmptyClickCount, "a viewport with zero visible entries creates no filter node at all (a toast is shown instead)");
+
+  // --- Bugfix (this session, person-reported): getPlotViewportEntries used
+  // to only check the X domain, so a row panned/zoomed OUT of view on the Y
+  // axis alone (in range on X, off-screen on Y) was still counted as
+  // "visible" and included in the created filter. Full X range, Y range
+  // narrowed to rows with n=20/30/40 (indices 2..4) only, excluding n=0/10
+  // (indices 0..1) which stay in X range but fall below the Y window. ---
+  T.state.activeId = node.id;
+  T.plotZoom = { x0: -1e6, x1: 1e6, y0: 15, y1: 45 };
+  w.renderPlotChart();
+  const yFiltered = w.getPlotViewportEntries();
+  assert(yFiltered.length === 3 &&
+    [f.entries[2].id, f.entries[3].id, f.entries[4].id].every(id => yFiltered.some(e => e.id === id)) &&
+    ![f.entries[0].id, f.entries[1].id].some(id => yFiltered.some(e => e.id === id)),
+    "getPlotViewportEntries excludes rows that are in the X range but panned/zoomed out of the Y range, got " + yFiltered.length);
 });
 
 /* ============================================================
@@ -13627,16 +13709,15 @@ await withApp(async (w, d, T) => {
   fireClick(menuAction('data-selection-id="' + sel1.id + '"'), w);
   assert(sel1.value.length === 3, "re-adding a row already in the selection is deduped, not appended again");
 
-  // --- A plain "idset" node with no selectionFilter flag (any other
-  // producer of the generic entry-set filter type) must NOT appear in the
-  // "Add to selection" submenu. ---
-  const plainIdsetNode = w.createFilterNode(f.id, "idset", [f.entries[0].id]);
-  assert(!plainIdsetNode.selectionFilter, "sanity: a plain createFilterNode idset call leaves selectionFilter unset");
+  // --- A plot-view-created "idset" node (no selectionFilter flag) must NOT
+  // appear in the "Add to selection" submenu — it's a different producer. ---
+  const plotNode = w.createFilterNode(f.id, "idset", [f.entries[0].id]);
+  assert(!plotNode.selectionFilter, "sanity: a plain createFilterNode idset call (the plot-view producer's path) leaves selectionFilter unset");
   T.state.activeId = f.id;
   w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[3]);
   fireClick(d.querySelector("#ctxAddToSelection"), w);
-  assert(menuAction('data-selection-id="' + plainIdsetNode.id + '"') === null,
-    "a non-selection idset node is excluded from the submenu's list of selection filters");
+  assert(menuAction('data-selection-id="' + plotNode.id + '"') === null,
+    "the plot-view idset node is excluded from the submenu's list of selection filters");
   assert(menuAction('data-selection-id="' + sel1.id + '"') !== null, "...while the real selection filter still is listed");
   w.closeContextMenu();
 
@@ -19592,12 +19673,20 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("176d. Table view gets its own Export-as-CSV button");
+  section("176d. Plot's filter buttons are icon-buttons now; Table view gets its own Export-as-CSV button");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
   T.state.activeId = extractNode.id;
   w.render();
+  w.applyFhView("plot");
+
+  const plotTimeRangeBtn = d.querySelector("#plotFilterTimeRangeBtn");
+  const plotEntriesBtn = d.querySelector("#plotFilterEntriesBtn");
+  assert(plotTimeRangeBtn.classList.contains("toolbar-icon-btn"), "#plotFilterTimeRangeBtn is now a .toolbar-icon-btn, not a text button");
+  assert(plotEntriesBtn.classList.contains("toolbar-icon-btn"), "#plotFilterEntriesBtn is now a .toolbar-icon-btn, not a text button");
+  assert(plotTimeRangeBtn.textContent.trim() === "", "no visible text label left on the time-range button (icon + title only)");
+  assert(plotEntriesBtn.textContent.trim() === "", "no visible text label left on the entries button (icon + title only)");
 
   w.applyFhView("table");
   const exportBtn = d.querySelector("#tableExportCsvBtn");
@@ -19721,19 +19810,19 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   Group 178 — on the Plot tab, the Filter-Toolbar's five generic
-   row-actions (Filter after/before/for this message, Time filter from
-   selection, Add to selection) all key off a log-row selection Plot
-   doesn't have, so they'd sit there permanently disabled and useless —
-   hidden on that tab. Originally (2026-09-04, person-requested) Plot had
-   its own two viewport-based filter buttons take their place in #viewBar
-   while active; those were removed in a later session (see "Deliberately
-   DROPPED" below) — #viewBar's row-actions group is simply hidden on Plot
-   now, with nothing replacing it.
+   Group 178 — this session (2026-09-04), person-requested: on the Plot
+   tab, the Filter-Toolbar's five generic row-actions (Filter after/before/
+   for this message, Time filter from selection, Add to selection) all key
+   off a log-row selection Plot doesn't have, so they'd sit there
+   permanently disabled and useless — hidden on that tab now, replaced by
+   Plot's own two viewport-based filters (moved up from #plotToolbar's own
+   Actions group into #viewBar itself), shown ONLY while on Plot AND only
+   once there's something actually plotted in 2D (same condition
+   #plot2dToolsGroup's zoom controls already gated on).
    ============================================================ */
 group(178);
 await withApp(async (w, d, T) => {
-  section("178. Plot tab hides the Filter-Toolbar's row-actions");
+  section("178. Plot tab swaps the Filter-Toolbar's row-actions for its own viewport filters");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   const extractNode = w.createFilterNode(f.id, "text", "message [value:int]");
@@ -19741,24 +19830,35 @@ await withApp(async (w, d, T) => {
   w.render();
 
   const viewbarActions = d.querySelector('[data-row-actions="viewbar"]');
-  assert(viewbarActions !== null, "sanity: the row-actions group exists in #viewBar");
+  const plotViewbarActions = d.querySelector('[data-row-actions="plot-viewbar"]');
+  assert(viewbarActions !== null && plotViewbarActions !== null, "sanity: both groups exist in #viewBar");
+  assert(plotViewbarActions.querySelector("#plotFilterTimeRangeBtn") !== null && plotViewbarActions.querySelector("#plotFilterEntriesBtn") !== null,
+    "Plot's two viewport-filter buttons now live inside #viewBar, not #plotToolbar");
+  assert(d.querySelector("#plotToolbar #plotFilterTimeRangeBtn") === null, "...and are gone from #plotToolbar");
 
-  // --- Context/Filtered/Table: the four generic row-actions show ---
+  // --- Context/Filtered/Table: the four generic row-actions show, Plot's own stay hidden ---
   ["highlight", "filter", "table"].forEach(tab => {
     w.applyFhView(tab);
     assert(isVisible(viewbarActions, w) === true, "the four generic row-actions are visible on the " + tab + " tab");
+    assert(isVisible(plotViewbarActions, w) === false, "Plot's own filter buttons stay hidden on the " + tab + " tab");
   });
 
-  // --- Plot: hidden, whether or not anything is actually plotted yet ---
+  // --- Plot, but nothing plotted yet (plotLastRender null before any render): neither group shows ---
   w.applyFhView("plot");
   assert(isVisible(viewbarActions, w) === false, "the four generic row-actions are hidden on the Plot tab (none of them apply to a plot)");
+  // (plotViewbarActions itself may still be mid-transition here depending on
+  // whether a 2D render already happened via applyFhView's own renderMainView —
+  // the real assertion is right after an explicit render() below.)
+
   w.render(); // renders the plot, triggers renderPlotChart -> updatePlotZoomIndicator with a real 2D plot
   assert(isVisible(d.querySelector("#plot2dToolsGroup"), w) === true, "sanity: 2D plot -> zoom controls visible");
-  assert(isVisible(viewbarActions, w) === false, "...the four generic row-actions stay hidden once something is plotted, too");
+  assert(isVisible(plotViewbarActions, w) === true, "...and Plot's own filter buttons in #viewBar become visible too, once something is actually plotted");
+  assert(isVisible(viewbarActions, w) === false, "...while the four generic row-actions stay hidden");
 
-  // --- Leaving Plot for another tab restores the generic row-actions ---
+  // --- Leaving Plot for another tab restores the generic row-actions and re-hides Plot's own ---
   w.applyFhView("filter");
   assert(isVisible(viewbarActions, w) === true, "back on Filtered: the four generic row-actions are visible again");
+  assert(isVisible(plotViewbarActions, w) === false, "...and Plot's own filter buttons are hidden again");
 });
 
 /* ============================================================
@@ -19812,8 +19912,8 @@ await withApp(async (w, d, T) => {
    the duplicated
    Bookmark/Add note/Add to selection copies via buildRowActionsHtml's new
    "rect" shape argument (`.row-action-btn.rect`) — the Filter-Toolbar's
-   own row-actions (`[data-row-actions="viewbar"]`) keep the original
-   circle/pill shape, untouched.
+   own row-actions (`[data-row-actions="viewbar"]`/`"plot-viewbar"`) keep
+   the original circle/pill shape, untouched.
    ============================================================ */
 group(180);
 await withApp(async (w, d, T) => {
@@ -21749,20 +21849,30 @@ process.exitCode = failed ? 1 : 0;
               serializeFilterBranch/importFilterJson,
               serializeFilterTreeForCache/materializeCachedFilters.
 
-   Group 123 — originally (this session, 2026-08-27), FEATURE_BACKLOG.md
-              #11 ("Create a filter from the currently visible plot area"):
-              offered a "timerange" filter and a new "idset" filterType (a
-              plain array of entry ids in node.value) off the Plot tab's
-              own zoomed/panned viewport, via two toolbar buttons. UPDATED
-              this session (2026-08-28, person-reported): a Y-only zoom/pan
-              bugfix in the viewport-entries derivation. UPDATED again in a
-              later session (Plot-View specific filters removed — see
-              "Deliberately DROPPED" below): the two toolbar buttons and
-              their viewport-derivation helper are gone; this group now
-              covers only the generic "idset" filterType's getEntries
-              branch and its persistence (copy/paste round trip), which
-              other producers (e.g. "Add to selection", Group 124) still
-              rely on.
+   Group 123 — this session (2026-08-27), FEATURE_BACKLOG.md #11 ("Create a
+              filter from the currently visible plot area"): resolves the
+              backlog item's "time-range vs. exact-entries" open question by
+              offering BOTH off the Plot tab's own zoomed/panned viewport
+              (plotLastRender's xDomainMin/xDomainMax) via two new toolbar
+              buttons in #plotZoomBar — #plotFilterTimeRangeBtn (a
+              "timerange" filter spanning the viewport's timestamps,
+              reusing the existing generic time-filter node type) and
+              #plotFilterEntriesBtn (a new "idset" filterType — a plain
+              array of entry ids in node.value — matching exactly the
+              entries currently plotted in view). getPlotViewportEntries()
+              derives "currently visible" the same way renderPlotChart
+              itself positions each row (bar: row-index center; line/
+              scatter: the X column's parsed value), so it can never
+              disagree with what's actually drawn. "idset" needed no new
+              persistence-carrier code (its value rides the same generic
+              `value` field every filter type already gets copied through,
+              same precedent as "timerange") — verified directly via
+              getEntries and a copy/paste round trip in this group. UPDATED
+              this session (2026-08-28, person-reported): getPlotViewportEntries
+              used to check only the X domain, so a row panned/zoomed out of
+              view on Y alone (in-range X, off-screen Y) was still counted as
+              "visible" — now also checks yDomainMin/yDomainMax against every
+              selected Y column; added a case zooming the Y axis only.
    Group 124 — this session (2026-08-27), "Add to selection" (redesign of the
               same-day "Filter from selection" item above): selection filters
               ("idset" nodes, new node.selectionFilter flag) are now created
@@ -22517,21 +22627,19 @@ process.exitCode = failed ? 1 : 0;
      toolbar's group kinds/order/no-label-text and Plot's paired
      Controls/Actions visibility.
 
-   Group 178 — originally (2026-09-04), person-requested follow-up to 177:
-     on the Plot tab, #viewBar's five generic row-actions (all keyed off a
-     log-row selection Plot doesn't have) hid entirely, replaced by a
-     second #viewBar group holding Plot's own two viewport-based filters —
-     #plotFilterActionsGroup/#plotActionsSep removed from #plotToolbar
+   Group 178 — this session (2026-09-04), person-requested follow-up to
+     177: on the Plot tab, #viewBar's five generic row-actions (all keyed
+     off a log-row selection Plot doesn't have) hide entirely, replaced by
+     a second #viewBar group holding Plot's own two viewport-based filters
+     — #plotFilterActionsGroup/#plotActionsSep removed from #plotToolbar
      (now Controls-only) and the two buttons moved up into #viewBar's new
      `[data-row-actions="plot-viewbar"]`; updateViewBarRowActions() (called
-     from applyFhView()/renderMainView()/initFhView()) showed exactly one of
+     from applyFhView()/renderMainView()/initFhView()) shows exactly one of
      `[data-row-actions="viewbar"]`/`[data-row-actions="plot-viewbar"]` —
-     the Plot group additionally needed plot2dToolsAvailable (set by
-     setPlot2dToolsVisible()). UPDATED in a later session (Plot-View
-     specific filters removed — see "Deliberately DROPPED" below): the
-     second group and plot2dToolsAvailable are gone; updateViewBarRowActions()
-     now just hides `[data-row-actions="viewbar"]` on the Plot tab, with
-     nothing replacing it. ALSO this session (2026-09-04), person-reported: every
+     the Plot group additionally needs plot2dToolsAvailable (set by
+     setPlot2dToolsVisible(), which now calls updateViewBarRowActions()
+     after updating that boolean instead of toggling the old Actions
+     group/separator directly). ALSO this session, person-reported: every
      view toolbar's icon buttons reverted from a 22x22 scoped-down size
      back to the app's full 28x28 (row height 30px -> 36px,
      CONTEXT_TOOLBAR_HEIGHT updated to match) — Group 29b consolidated into
@@ -22593,18 +22701,4 @@ process.exitCode = failed ? 1 : 0;
      `window.philogg.exitPip` when in PiP). Real window geometry and the
      injected <->/X buttons are not jsdom-testable — verify via `cd desktop
      && npm run tauri dev`.
-
-   Deliberately DROPPED this session (2026-09-07), person-requested:
-     - Plot-View specific filters ("Time range"/#plotFilterTimeRangeBtn and
-       "Entries from visible elements"/#plotFilterEntriesBtn, plus the
-       `getPlotViewportEntries()` helper, the `[data-row-actions="plot-viewbar"]`
-       toolbar group, and `plot2dToolsAvailable`) removed outright. Group
-       123's viewport-derived timerange/idset assertions and Group 178's
-       "swap in Plot's own filters" assertions removed with them — Group
-       123 rewritten to cover only the generic "idset" filterType's
-       getEntries/persistence behavior (still relied on by "Add to
-       selection"), Group 178 rewritten to cover only "the generic
-       row-actions hide on the Plot tab, nothing replaces them." Group
-       176d's icon-button assertions for the two removed buttons dropped;
-       its Table Export-as-CSV coverage kept.
    ============================================================ */
