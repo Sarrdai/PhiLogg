@@ -873,6 +873,11 @@
      elsewhere in this file, there is no bare `.hidden{display:none}` rule
      in this stylesheet — every one is scoped to its own selector. */
   #viewBar .row-actions.hidden{display:none;}
+  /* Individual row-action buttons can be hidden too (person-requested, this
+     session: on Table/Plot only "Time range" applies, so After/Before/
+     Message hide there — see updateViewBarRowActions). Same no-bare-.hidden
+     scoping as the group rule above. */
+  #viewBar .row-action-btn.hidden{display:none;}
 
   /* Breadcrumb's own row (this session's toolbar reorganization) — always
      reserved, even with no active filter chain, so #viewBar/#breadcrumbBar
@@ -3187,22 +3192,17 @@
            #viewBar is the "Filter-Toolbar" (person-requested naming) — the
            universal, ALWAYS identical row across every tab (Context/
            Filtered/Table/Plot/Stacked): view toggle, level quick-filter,
-           and — right of the level filter — whichever set of filter-
-           CREATING actions actually makes sense for the tab currently on
-           screen. For Context/Filtered/Table that's the row-/selection-
-           action buttons (Filter after/before/for this message/Time filter
-           from selection/Add to selection, `[data-row-actions="viewbar"]`
-           below); for Plot it's a DIFFERENT pair instead (person-requested,
-           this session) — those five all key off a log-row selection,
-           which Plot has no notion of, so they'd sit there permanently
-           disabled and useless. Plot's own two viewport-based filters
-           (`[data-row-actions="plot-viewbar"]`, same buttons that used to
-           live inside #plotToolbar's own Actions group) take their place
-           instead, shown ONLY while the Plot tab is active — see
-           updateViewBarRowActions() near applyFhView/renderMainView for
-           the tab-driven show/hide, and setPlot2dToolsVisible() (near
-           #plotToolbar's own comment) for the further "only once there's
-           something actually plotted in 2D" gating layered on top of that.
+           and — right of the level filter — the filter-CREATING actions.
+           After/Before/Message key off a log-row selection, which Table/
+           Plot have none of, so they hide there — leaving only "Time
+           range", which is context-aware now (person-requested, this
+           session): a 2+ log-row multi-selection in Context/Filtered, rows
+           with at least one marked cell in Table, and the plot's visible
+           viewport in Plot. See updateViewBarRowActions() near
+           applyFhView/renderMainView for the tab-driven show/hide, and
+           setPlot2dToolsVisible() (near #plotToolbar's own comment) for
+           the further "only once there's something actually plotted in 2D"
+           gating layered on top of that for the Plot tab.
            The six log-DISPLAY toggles (Notes/Multiline/Columns/TextMatch/
            HighlightMatch/Pin) stay out of here regardless of tab — they
            don't create filters, they control how the log views render, so
@@ -3225,22 +3225,6 @@
         <div id="levelBar"></div>
         <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
         <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
-        <!-- Plot's own two viewport-based filters (moved up from
-             #plotToolbar's own Actions group, see that div's own comment) —
-             shown ONLY while the Plot tab is active (updateViewBarRowActions,
-             near applyFhView) and, on top of that, only once there's
-             something actually plotted in 2D (setPlot2dToolsVisible, near
-             #plotToolbar), same double-gating #plot2dToolsGroup itself has
-             always had. Ids/click-handlers unchanged from their old
-             location — only the DOM location moved. -->
-        <div class="toolbar-group row-actions hidden" data-row-actions="plot-viewbar">
-          <button type="button" id="plotFilterTimeRangeBtn" class="toolbar-icon-btn" title="Time range">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/></svg>
-          </button>
-          <button type="button" id="plotFilterEntriesBtn" class="toolbar-icon-btn" title="Visible entries">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
-          </button>
-        </div>
       </div>
 
       <div id="fhSplit">
@@ -3402,6 +3386,14 @@
             <button type="button" id="tableExportCsvBtn" class="toolbar-icon-btn" title="Export as CSV…">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v8M8 9.5L5 6.5M8 9.5l3-3"/><path d="M2.5 11v2.5h11V11"/></svg>
             </button>
+            <!-- "Select" (Add to selection) action, person-requested this
+                 session — the Filtered view's Select action now also lives in
+                 Table/Plot. Rendered from the same TOOLBAR_ROW_ACTIONS entry,
+                 so it shares the rect shape, hover label, click delegation
+                 and disabled-state logic with the log-view copies. Input is
+                 context-aware: marked-cell rows in Table, viewport entries in
+                 Plot (see selectActionEntries). -->
+            <span data-row-actions="select-action"></span>
           </div>
         </div>
         <div id="extractScroll">
@@ -3436,18 +3428,15 @@
           <!-- Plot view's own toolbar — a real row INSIDE the plot view,
                directly above its content, same pattern as #contextToolbar in
                the Context view (see that div's own comment). Buttons reuse
-               .toolbar-icon-btn shrunk to 22px the same way. Controls-only
-               now (person-requested, this session): the two viewport-based
-               filter buttons that used to live here in their own Actions
-               group moved up into #viewBar (the Filter-Toolbar) instead —
-               they're the ONLY filter-creating actions that make sense
-               while on the Plot tab, so they take the place of the row-
-               actions group there rather than sitting in a second,
-               plot-local Actions group too (see #viewBar's own comment).
-               #plot2dToolsGroup (zoom) is only meaningful once there's
-               something plotted in 2D — updatePlotZoomIndicator() toggles
-               it (and, via setPlot2dToolsVisible(), the #viewBar filter
-               buttons together with it); Fullscreen/Save stay available
+               .toolbar-icon-btn. Controls = zoom (once a 2D plot exists) +
+               Fullscreen; Actions = Save image + "Select" (Add to selection,
+               person-requested this session — see the matching #tableToolbar
+               comment; input is the plot's visible viewport via
+               selectActionEntries). #plot2dToolsGroup (zoom) is only
+               meaningful once there's something plotted in 2D —
+               updatePlotZoomIndicator() toggles it (and, via
+               setPlot2dToolsVisible(), the #viewBar "Time range" button's
+               availability together with it); Fullscreen/Save stay available
                regardless. -->
           <div id="plotToolbar">
             <div class="toolbar-group" data-toolbar-group="controls">
@@ -3462,6 +3451,9 @@
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="actions">
               <button type="button" id="plotSaveImageBtn" class="toolbar-icon-btn" title="Save image"></button>
+              <!-- "Select" (Add to selection) action — see the matching
+                   #tableToolbar comment. -->
+              <span data-row-actions="select-action"></span>
             </div>
           </div>
           <div id="plotBody">
@@ -9078,8 +9070,6 @@ const plot3dCanvas = el("#plot3dCanvas");
 const plotToolbar = el("#plotToolbar");
 const tableToolbar = el("#tableToolbar");
 const plot2dToolsGroup = el("#plot2dToolsGroup");
-const viewBarRowActions = el('[data-row-actions="viewbar"]');
-const plotViewBarActions = el('[data-row-actions="plot-viewbar"]');
 const plotZoomOutBtn = el("#plotZoomOutBtn");
 const plotZoomInBtn = el("#plotZoomInBtn");
 const plotZoomResetBtn = el("#plotZoomResetBtn");
@@ -11131,6 +11121,7 @@ function allCells() { return rowsRangeCells(0, extractRowsData.length - 1); }
 function selectCells(cells) {
   state.tableSelection = new Set(cells.map(([r, c]) => cellKey(r, c)));
   applyExtractSelectionClasses();
+  updateRowActionButtons();
 }
 // Toggles these cells in/out of the current selection (Ctrl+click), preserving
 // whatever else was already selected.
@@ -11140,6 +11131,7 @@ function toggleCells(cells) {
   cells.forEach(([r, c]) => { const k = cellKey(r, c); allIn ? set.delete(k) : set.add(k); });
   state.tableSelection = set.size ? set : null;
   applyExtractSelectionClasses();
+  updateRowActionButtons();
 }
 function isColumnFullySelected(col) {
   const s = state.tableSelection;
@@ -11889,28 +11881,27 @@ function zoomPlotAt(dataX, dataY, factor) {
   renderPlotChart();
 }
 
-// #viewBar's row-actions group is swapped for the tab currently on screen
-// (person-requested, this session): the five generic row-actions
-// (Filter after/before/etc.) all key off a log-row selection, which Plot
-// has none of, so they'd sit there permanently disabled and useless —
-// Plot's own two viewport-based filters (moved up from #plotToolbar's own
-// Actions group, `#viewBar`'s own comment) take their place instead, and
-// ONLY while on the Plot tab. Layered on top of that (`plot2dToolsAvailable`,
-// set by setPlot2dToolsVisible below): Plot's filter buttons additionally
-// need something actually plotted in 2D to make sense at all, same
-// condition #plot2dToolsGroup's own zoom controls already gate on — two
-// independent booleans ANDed here rather than two separate `.hidden`
-// toggles fighting over the same element's class.
+// #viewBar's row-actions group is now context-aware (person-requested, this
+// session — unify the filters across Filtered/Table/Plot): the three
+// single-log-row actions (Filter after/before/for this message) still key
+// off a log-row selection, which Table/Plot have none of, so they hide
+// there — leaving only "Time range", which now resolves its input per view
+// (a 2+ log-row multi-selection, rows with marked cells, or the plot's
+// visible viewport — see timeRangeActionEntries/selectActionEntries).
+// "Time range" on Plot additionally needs something actually plotted in 2D
+// to make sense at all (plot2dToolsAvailable, set by setPlot2dToolsVisible
+// below), same condition #plot2dToolsGroup's own zoom controls gate on.
 let plot2dToolsAvailable = false;
 function updateViewBarRowActions() {
-  const onPlot = fhActiveTab === "plot";
-  viewBarRowActions.classList.toggle("hidden", onPlot);
-  plotViewBarActions.classList.toggle("hidden", !(onPlot && plot2dToolsAvailable));
+  const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
+  elAll('[data-row-action="filterAfter"], [data-row-action="filterBefore"], [data-row-action="filterForMessage"]')
+    .forEach(b => b.classList.toggle("hidden", onTableOrPlot));
+  updateRowActionButtons();
 }
 
 // Toggles #plot2dToolsGroup (zoom controls, in the toolbar's Controls
-// group) and the #viewBar Plot filter buttons together — both are only
-// meaningful once there's something plotted in 2D (see
+// group) and refreshes the #viewBar "Time range" button's availability —
+// both only meaningful once there's something plotted in 2D (see
 // updatePlotZoomIndicator/renderPlotChart's 3D branch below).
 function setPlot2dToolsVisible(visible) {
   plot2dToolsAvailable = visible;
@@ -12075,15 +12066,9 @@ async function exportPlotImage() {
 }
 plotSaveImageBtn.addEventListener("click", exportPlotImage);
 
-// "Create filter from plot view" (FEATURE_BACKLOG.md #11) — resolves the
-// backlog item's open question by offering BOTH: (a) a time-range filter
-// spanning the visible viewport's timestamps, reusing the existing generic
-// "timerange" filter type (see "Time filters" in docs/filters.md), and
-// (b) a filter matching exactly the entries currently plotted in view, via
-// a new "idset" filter type (an explicit entry-id set, the same "second,
-// non-parent source of truth baked into node.value at creation time" shape
-// "timerange" already established — see getEntries' "idset" branch).
-//
+// "Create filter from plot view" (FEATURE_BACKLOG.md #11) — its "currently
+// visible in the plot" primitive, reused now by the unified "Time range" /
+// "Select" row-actions (see timeRangeActionEntries/selectActionEntries):
 // "Currently visible" = the plot's current zoomed/panned viewport
 // (plotLastRender's xDomainMin/xDomainMax — the home view's own full range
 // when no zoom is active), NOT the whole extraction result. Read off
@@ -12116,22 +12101,6 @@ function getPlotViewportEntries() {
   });
   return out;
 }
-el("#plotFilterTimeRangeBtn").addEventListener("click", () => {
-  const entries = getPlotViewportEntries();
-  if (!entries.length) { showCopyToast("No entries currently visible in the plot."); return; }
-  let from = Infinity, to = -Infinity;
-  entries.forEach(e => { if (e.ts < from) from = e.ts; if (e.ts > to) to = e.ts; });
-  createFilterNode(extractNodeId, "timerange", { from, to });
-  revealFilteredView();
-  render();
-});
-el("#plotFilterEntriesBtn").addEventListener("click", () => {
-  const entries = getPlotViewportEntries();
-  if (!entries.length) { showCopyToast("No entries currently visible in the plot."); return; }
-  createFilterNode(extractNodeId, "idset", entries.map(e => e.id));
-  revealFilteredView();
-  render();
-});
 
 // Mouse wheel: zoom in/out anchored at the cursor's data-space position.
 // Only active when the cursor is actually over the plot rectangle, so
@@ -20168,10 +20137,49 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
 // the context-menu path keeps acting on the row actually right-clicked even
 // if it differs from state.selectedId; the toolbar buttons (no ctxEntry)
 // fall back to the current single-click selection instead.
+//
+// Context-aware now (person-requested, this session — unify the Filtered/
+// Table/Plot filters): outside the log views, the "current rows" come from
+// the view's own input (marked-cell rows in Table, viewport entries in Plot)
+// rather than a log-row selection that view doesn't have — see
+// selectActionEntries.
 function currentSelectionRowIds() {
-  if (state.logMultiSelect.size >= 2) return [...state.logMultiSelect];
+  return selectActionEntries().map(e => e.id);
+}
+
+// The entries a given view's "Select"/"Time range" actions act on, resolved
+// per view (person-requested, this session): the extraction table's rows
+// with at least one marked cell (a partial row counts as the whole row),
+// the plot's currently-visible viewport, or the log views' own selection.
+// Distinct rows (by row index) with at least one marked cell in the
+// extraction table — mapped back to their underlying entries.
+function markedRowEntries() {
+  const s = state.tableSelection;
+  if (!s) return [];
+  const rows = new Set();
+  s.forEach(k => rows.add(+k.split(",")[0]));
+  return [...rows].sort((a, b) => a - b)
+    .map(r => (extractRowsData[r] && extractRowsData[r].entry) || null)
+    .filter(Boolean);
+}
+
+// "Select" (Add to selection) input: a single log row also qualifies, unlike
+// "Time range" below which needs two.
+function selectActionEntries() {
+  if (fhActiveTab === "table") return markedRowEntries();
+  if (fhActiveTab === "plot") return getPlotViewportEntries();
+  if (state.logMultiSelect.size >= 2) return [...state.logMultiSelect].map(id => entryIndex[id]).filter(Boolean);
   const entry = ctxEntry || currentRowActionEntry();
-  return entry ? [entry.id] : [];
+  return entry ? [entry] : [];
+}
+
+// "Time range" input: two-or-more entries. In the log views that's the 2+
+// multi-selection (no single-row fallback — a one-row range is degenerate
+// and already covered by "Filter after/before this").
+function timeRangeActionEntries() {
+  if (fhActiveTab === "table") return markedRowEntries();
+  if (fhActiveTab === "plot") return getPlotViewportEntries();
+  return [...state.logMultiSelect].map(id => entryIndex[id]).filter(Boolean);
 }
 
 // All person-created selection filters directly under a root file — the
@@ -20353,7 +20361,13 @@ function buildRowActionsHtml(list, shape) {
 }
 const TOOLBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS, "rect");
 const VIEWBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(VIEWBAR_ROW_ACTIONS, "circle");
+// "Select" (Add to selection) on its own — the Table/Plot toolbars' Actions
+// groups carry only this one of the three TOOLBAR_ROW_ACTIONS (Bookmark/Note
+// key off a log-row selection those views don't have). Same rect shape and
+// shared click/disabled logic as the log-view copies.
+const SELECT_ROW_ACTION_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS.filter(a => a.action === "addToSelection"), "rect");
 elAll('[data-row-actions="toolbar-actions"]').forEach(container => { container.innerHTML = TOOLBAR_ROW_ACTIONS_HTML; });
+elAll('[data-row-actions="select-action"]').forEach(container => { container.innerHTML = SELECT_ROW_ACTION_HTML; });
 elAll('[data-row-actions="viewbar"]').forEach(container => { container.innerHTML = VIEWBAR_ROW_ACTIONS_HTML; });
 // Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
 // circle specifically, NOT a plain CSS :hover on the button — the button's
@@ -20420,10 +20434,21 @@ function currentRowActionEntry() {
 // call sites (applySelection, toggleBookmark, setNoteAndRepaint, the Escape
 // handler's multi-select clear).
 function updateRowActionButtons() {
+  const onTable = fhActiveTab === "table";
+  const onPlot = fhActiveTab === "plot";
   const entry = currentRowActionEntry();
   const singleRowEnabled = !!entry && state.logMultiSelect.size <= 1;
   const rangeEnabled = state.logMultiSelect.size >= 2;
   const addToSelectionEnabled = singleRowEnabled || rangeEnabled;
+  // "Time range"/"Select" resolve their input per view (see
+  // timeRangeActionEntries/selectActionEntries). On Plot the enabled state is
+  // gated on plot2dToolsAvailable (something actually plotted in 2D) rather
+  // than the live viewport count — the exact count is re-checked at click
+  // time with a toast, since it changes with every zoom/pan without
+  // necessarily going through updateRowActionButtons().
+  const markedRows = markedRowEntries().length;
+  const timeRangeEnabled = onTable ? markedRows >= 2 : onPlot ? plot2dToolsAvailable : rangeEnabled;
+  const selectEnabled = onTable ? markedRows >= 1 : onPlot ? plot2dToolsAvailable : addToSelectionEnabled;
   elAll('[data-row-action="bookmark"]').forEach(b => {
     b.disabled = !singleRowEnabled;
     b.classList.toggle("active", !!entry && state.bookmarks.has(entry.id));
@@ -20435,8 +20460,8 @@ function updateRowActionButtons() {
   elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !singleRowEnabled; });
   elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !singleRowEnabled; });
   elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !singleRowEnabled; });
-  elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !rangeEnabled; });
-  elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !addToSelectionEnabled; });
+  elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !timeRangeEnabled; });
+  elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !selectEnabled; });
   // A button that just became disabled while the mouse happened to be
   // sitting over its circle (e.g. the selection changed via keyboard, not
   // by the mouse actually leaving) never gets its own `mouseleave` — drop
@@ -20466,9 +20491,13 @@ function handleRowActionClick(action, anchorBtn) {
       if (entry) openFilterForEntryColumn(entry, TEXT_FILTER_COLUMNS.find(c => c.key === "message"));
       break;
     case "timeRangeFromSelection": {
-      const ids = [...state.logMultiSelect];
-      const tsList = ids.map(id => entryIndex[id]).filter(Boolean).map(e => e.ts);
-      if (tsList.length >= 2 && state.activeId) {
+      const tsList = timeRangeActionEntries().map(e => e.ts);
+      if (tsList.length < 2) {
+        const what = fhActiveTab === "table" ? "two marked rows" : fhActiveTab === "plot" ? "two visible entries" : "two selected rows";
+        showCopyToast("Need " + what + " to create a time-range filter.");
+        break;
+      }
+      if (state.activeId) {
         createFilterNode(state.activeId, "timerange", { from: Math.min(...tsList), to: Math.max(...tsList) });
         revealFilteredView();
         render();
