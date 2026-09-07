@@ -3590,6 +3590,7 @@
       </div>
       <div class="link-field">
         <label class="plot-checkbox-row"><input type="checkbox" id="linkOrderEnforceInput"> Enforce chronological order (drop tuples where a hop lands before the previous match)</label>
+        <span id="linkOrderEnforceHint" class="link-hops-hint hidden">Only meaningful with 2+ hops that don't all search the same direction — with a single direction throughout, it either drops nothing or drops everything.</span>
         <label class="plot-checkbox-row"><input type="checkbox" id="linkExclusiveInput"> Exclusive matches (don't reuse a target entry once it's matched)</label>
       </div>
       <div class="link-dialog-actions">
@@ -21054,7 +21055,25 @@ const linkDialog = el("#linkDialog");
 const linkRefSelect = el("#linkRefSelect");
 const linkHopsList = el("#linkHopsList");
 const linkOrderEnforceInput = el("#linkOrderEnforceInput");
+const linkOrderEnforceHint = el("#linkOrderEnforceHint");
 const linkExclusiveInput = el("#linkExclusiveInput");
+
+// "Enforce chronological order" checks whether the WHOLE chain's timestamps
+// stay non-decreasing hop over hop (see PROJECT.md "Link filter"), not
+// whether each hop's own search direction is internally consistent. That
+// means it only has a chance to reject *some* tuples and keep others when
+// the hops don't all search the same direction: with a single hop, or
+// multiple hops all "before" (or all "after"), every match already
+// satisfies (or already violates) that check by construction — the option
+// would either drop nothing or drop everything, silently. Gate it on the
+// hop directions actually differing so the dialog can't produce that trap.
+function updateLinkOrderEnforceAvailability() {
+  const dirs = linkHopRows.map(h => h.dirSelect.value);
+  const useful = dirs.length >= 2 && new Set(dirs).size > 1;
+  linkOrderEnforceInput.disabled = !useful;
+  linkOrderEnforceHint.classList.toggle("hidden", useful);
+  if (!useful) linkOrderEnforceInput.checked = false;
+}
 let linkDialogIds = [];
 let linkHopRows = []; // [{targetId, nInput, dirSelect}], rebuilt by renderLinkHops()
 
@@ -21096,7 +21115,11 @@ function renderLinkHops() {
     return { targetId, nInput: row.querySelector(".link-hop-n"), dirSelect: row.querySelector(".link-hop-dir"), row };
   });
   linkHopsList.innerHTML = "";
-  linkHopRows.forEach(h => linkHopsList.appendChild(h.row));
+  linkHopRows.forEach(h => {
+    linkHopsList.appendChild(h.row);
+    h.dirSelect.addEventListener("change", updateLinkOrderEnforceAvailability);
+  });
+  updateLinkOrderEnforceAvailability();
 }
 linkRefSelect.addEventListener("change", renderLinkHops);
 linkDialog.addEventListener("click", ev => { if (ev.target === linkDialog) closeLinkDialog(); });
