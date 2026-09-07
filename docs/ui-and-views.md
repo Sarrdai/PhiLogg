@@ -26,6 +26,8 @@ An A1 waypoint is pushed at the *top* of `render()`, before the view it belongs 
 
 **`#viewBar`** — a single row at the top of `#content`, above `#fhSplit`, that merges what used to be **three separate toolbar rows**: the breadcrumb (active filter chain), the level quick-filter, and the Context/Filtered/Stacked toggle. `#fhTabs` (the toggle), `#btnPinBookmarks` (the pin-bookmarks toggle, moved in from the header — see "Pin bookmarks into the Filtered View") and `#levelBar` are `float:left`, so they stay **pinned to the top-left line** no matter how long the filter chain gets, in that DOM order (tabs, then the pin toggle, then the level pills); `#breadcrumb` is a plain block (not flex) with `display:inline-block` chips, so it flows text-style around those three floats on the first line(s) and then uses the **full row width** on any line it wraps to below them — a filter chain long enough to wrap doesn't push the toggle/pin/level-filter down or squeeze itself into a narrow leftover column, it just drops to its own full-width line(s) underneath. `#viewBar` itself is `display:flow-root` so its own height always reaches the floats' bottom edge even when the breadcrumb is short or empty (a plain float doesn't otherwise contribute to a parent's auto height). Flexbox can't produce this "first line shares space, later lines full width" shape — a flex item's box is always one rectangle — hence floats + normal block flow instead; see the CSS comment directly above `#viewBar` if this needs touching again. **`#viewBar` also needs its own `flex:0 0 auto`** — that's a separate concern (how `#viewBar` behaves as a flex ITEM of its parent `#content`, a flex column, not how it lays out its own children) that got dropped once already and let `#content`'s flex-shrink algorithm compress `#viewBar` below the floats' actual height whenever the window was short on vertical space, clipping/overlapping the toggle+level-filter against the table below; `#timelineMinimap` carries the same declaration for the same reason. **(Updated, this session, 2026-08-18, person-requested)** The row used to be always visible with zero files loaded (just an empty `#fhTabs`/`#levelBar`/`#breadcrumb` shell) — now `renderMainView()` hides `#viewBar` itself (`viewBarEl.style.display = hasFiles ? "" : "none"`, the `""` restoring the CSS class's own `display:flow-root` rather than hardcoding a value) whenever no file is loaded, so `#emptyState`'s centered hint is the only thing on screen instead of an empty toolbar row above it — see "No-file-loaded state" below for the other two hints removed alongside this. With files loaded, the row is visible exactly as before. **(Superseded this session — "Unified toolbar: Context/Filtered/Table/Plot" below, `docs/ui-implementation-plan.md`)** `#fhTabs` no longer hides for an extraction node — Table/Plot joined the same tab group Context/Filtered/Stacked already lived in, so an extraction node is now an ordinary node with its own Context/Filtered view too, and `#fhTabs` is only ever hidden with zero files loaded (`fhTabs.style.display` tracks `hasFiles`, same as `#viewBar` itself). `#levelBar`/`#btnPinBookmarks`/`#btnMultilineMsg`/`#btnColumns`/`#btnTextMatchHighlight`/`#btnHighlightMatchText` (`updateLogToggleVisibility()`) instead hide/show based on **which tab is active**, not the node's type: hidden while `fhActiveTab` is `"table"`/`"plot"` (none of the six apply to what's on screen there), visible for `"highlight"`/`"filter"`/the Stacked tab — so switching an extraction node from its Table tab to its Filtered tab shows the level filter/toggles again, the same as any other filter node. `renderExtractTable()` still calls `applyLevelFilter()` internally against whatever the quick-filter was last set to; there's just no visible pill row to change it from while Table/Plot is showing. Which view activating a node lands on (Filtered by default for a first-ever visit, or the Settings-driven remember-last/always-Filtered choice for a node visited before) is `applyActivationView()`'s call — see below; the `isExtract` branch inside `renderMainView()` itself is gone entirely; the function now always renders `#viewBar` the same way and only swaps which content component (`#fhSplit` vs `#extractWrap`) is visible based on `fhActiveTab`. See "Unified toolbar" below for the full picture, including the deliberate scope-cut versus the original plan's "physical slot row" idea (the six toggles/level filter/`#contextToolbar`/`#extractToolbar`/`#plotToolbar` all stay in their pre-existing DOM locations; only their show/hide condition changed). `#btnPinBookmarks` keeps its own `.toolbar-icon-btn`/`.active` look (an icon button, styled like the other header toggles it used to sit next to) rather than being restyled as a `.level-btn` pill — it's an additive OR toggle, not a subtractive level filter, and looking identical to the pills would misrepresent what it does; it's positioned in the same floated row as the level pills, not literally nested inside `#levelBar`. **Sizing (bugfix, same session)**: `.toolbar-icon-btn`'s fixed `29x29px` box is correct in the header, where every neighboring button is the same square — but here it made `#btnPinBookmarks` visibly taller than `#fhTabs`/`#levelBar`/`#breadcrumb`, which all get their height from `padding:4px` + `border:1px` + content instead of a fixed box (see `.crumb`'s own CSS comment for the underlying mechanic). Fixed with a `#btnPinBookmarks{width:auto; height:auto; padding:4px 8px}` override, scoped to the id (not `.toolbar-icon-btn` itself, so the header buttons using that class are untouched) — the button now sizes around its 12x12 icon exactly the way `.level-btn` sizes around its text, landing at the same row height instead of towering over it. See "Context view (Context/Filtered split)" → "Layout" for the toggle itself.
 
+**Vertical centering (this session, 2026-09-07, person-requested):** the four floated controls in `#viewBar` (`#fhTabs`/`#levelBar`/`#btnApplyLevelToTree`/`#viewBar .row-actions`) carried a vestigial `margin-bottom:6px` left over from when the breadcrumb used to wrap *below* them inside the same row — with the breadcrumb long gone into its own `#breadcrumbBar`, that 6px made the row's effective bottom spacing (6px margin + 8px padding) larger than its 8px top padding, so the controls sat a few px above vertical center. The bottom margin was removed (now `margin:0 14px 0 0`, and `.row-actions` just `margin:0`), leaving the symmetric 8px top/bottom padding to center them. Keep the bottom margin off if this row is touched again — it only belonged to the pre-reorg breadcrumb-wrap layout.
+
 **Breadcrumb chips are sized to match the level filter pills** (`.crumb`'s `font-size`/`padding` mirror `.level-btn`'s exactly — same 10.5px text, same 4px 9px padding — so the two pill styles read as one consistent row instead of the breadcrumb looking subtly smaller/shorter). **Matching font-size and padding alone wasn't actually enough** — `#breadcrumb` used to carry `line-height:26px` (leftover from before the chips were resized, meant to space wrapped lines apart), silently inherited by the inline-block `.crumb`/`.crumb-sep` and adding ~26px on top of their padding, since an inline-block's own single line of text IS sized by line-height. `.level-btn` never showed the equivalent problem because it's a flex container — flex layout ignores line-height for its own box sizing entirely, so the mismatch was invisible on the level side and only visible on the breadcrumb side. Fixed by removing the line-height from `#breadcrumb` and setting `line-height:normal` explicitly on `.crumb`/`.crumb-sep` instead; the gap between wrapped lines now comes purely from their own vertical margin. **Lesson for future work here**: `font-size`/`padding` parity between two differently-laid-out elements (flex vs. inline-block) doesn't guarantee height parity — check `line-height` too, since it only affects one of the two layout modes.
 
 **Same row, a third round: top alignment.** Even with matching height, `.crumb`'s chips weren't reliably lining up vertically with `#fhTabs`/`#levelBar`'s floated tops — `vertical-align:middle` aligns an inline-block relative to its *parent's* font baseline/x-height, not to wherever a float happens to start; the two only coincided by accident, dependent on inherited font metrics, and could drift. Fixed by switching `.crumb`/`.crumb-sep` to `vertical-align:top` with `margin-top:0` — since `#fhTabs`/`#levelBar` are the first content in `#viewBar` and floats don't push the following normal-flow content's *starting* y-position down (they only narrow the available width), a float's top and `#breadcrumb`'s first line both begin flush at `#viewBar`'s content-box top; pinning `.crumb` to the top of its own line box (instead of centering it against a font-metric reference) makes it coincide with that same y-position structurally, not by coincidence. The wrapped-line spacing that used to come from `.crumb`'s top+bottom margin now comes from `margin-bottom` alone (`0 4px 6px 0`), matching `#fhTabs`/`#levelBar`'s own `margin-bottom` for a consistent gap. `.crumb-sep` keeps a small top margin (`4px 3px 6px`) to roughly center its thin "›" glyph against the taller padded pill beside it, rather than sharing the pill's own top-alignment reference — it has no padding/border of its own, so top-aligning it flush would visually sit too high next to the pill's text. **Chips are also clickable**: `renderBreadcrumb()` attaches a click handler per chip that sets `state.activeId`/`state.multiSelect` to just that node and calls `render()` — the exact same single-select behavior a plain (non-Ctrl) tree-row click already does (see `renderNode`'s row click handler) — so the breadcrumb doubles as a quick "jump to an ancestor filter" shortcut without any new selection machinery. Works for every node in the chain, including the file root at the start and the currently-active node's own chip (a harmless no-op re-selection).
@@ -137,22 +139,36 @@ shape:
 - **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — the view toggle
   (`#fhTabs`), the level quick-filter (`#levelBar`/`#btnApplyLevelToTree`),
   and, floated right after those, the **row-actions** button group
-  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — the FIVE
+  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — the FOUR
   actions that genuinely create a filter node: Filter after this/Filter
-  before this/Filter for this message/Time filter from selection/Add to
-  selection. (Bookmark this row/Add note used to live here too — moved out,
-  person-requested follow-up same session, into each log view's own
-  toolbar instead; see the "Actions" group below for why: they mutate the
-  selection's bookmark/note state, not create a filter, so "Filter-
-  Toolbar" was the wrong home for them.) `#levelBar` is identical on every
-  tab including Table/Plot (it already applied via `applyLevelFilter()`,
-  just without a visible pill row before this session). The row-actions
-  group ITSELF, however, is NOT the same on every tab any more (person-
-  requested follow-up, same session): on Plot it's swapped out entirely for
-  a second, Plot-only group — see "Plot's Actions swap into `#viewBar`"
-  further down for the full mechanism; on every other tab (including a
-  file node with no filter active, where the four are simply all disabled)
-  it's this one. The row-actions buttons reuse the exact
+  before this/Filter for this message/Time range. (Bookmark this row/Add
+  note/Add to selection used to live here too — moved out, person-requested
+  follow-up same session, into each log view's own toolbar instead; see the
+  "Actions" group below for why: they mutate the selection's bookmark/note/
+  selection state, not create a filter, so "Filter-Toolbar" was the wrong
+  home for them.) `#levelBar` is identical on every tab including Table/
+  Plot (it already applied via `applyLevelFilter()`, just without a visible
+  pill row before this session).
+  **Table/Plot are context-aware now, not a swapped-out second group
+  (person-requested, 2026-09-07 — unifies what used to be a Plot-only
+  detour)**: After/Before/Message all key off a single log-row selection,
+  which Table/Plot have none of, so `updateViewBarRowActions()` hides just
+  those three on those two tabs (`fhActiveTab === "table" || "plot"`) —
+  "Time range" stays visible everywhere and resolves its own input per
+  view instead: a 2+ log-row multi-selection in Context/Filtered
+  (unchanged), rows with at least one marked cell in Table, or the Plot
+  tab's own currently-visible viewport (`timeRangeActionEntries()`, near
+  `currentSelectionRowIds()`) — on Plot it's additionally gated on
+  `plot2dToolsAvailable` (something actually plotted in 2D, the same
+  condition `#plot2dToolsGroup`'s zoom controls gate on), the exact
+  viewport count is re-checked at click time with a toast since zoom/pan
+  don't always go through `updateRowActionButtons()`. Plot's own two
+  dedicated viewport-filter buttons this used to swap in
+  (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, see the CHANGELOG for
+  their original 2026-09-04 design) are gone entirely — "these entries"
+  as an `"idset"` filter no longer has a UI trigger of its own; use "Select"
+  (below) to build a selection filter from the same viewport instead. The
+  row-actions buttons reuse the exact
   functions the pre-existing right-click context menu already used, just
   driven by `state.selectedId`/`state.logMultiSelect`
   (`currentRowActionEntry()`) instead of `ctxEntry`, and disabled via
@@ -315,7 +331,21 @@ shape:
     `#filteredToolbar`), Table's Export-as-CSV, Plot's Save-as-image
     (`#plotSaveImageBtn`, moved out of Plot's Controls group on
     2026-09-05, person-requested — it's a one-off action, not a
-    persistent view control).
+    persistent view control). **Add to selection ("Select") also lives in
+    Table's and Plot's own Actions groups now (person-requested,
+    2026-09-07 — unify the Table/Plot filters)**: a lone
+    `[data-row-actions="select-action"]` span in each toolbar's markup
+    holds just that one `TOOLBAR_ROW_ACTIONS` entry
+    (`SELECT_ROW_ACTION_HTML`), same `.row-action-btn.rect` shape and
+    shared click/disabled logic as the Context/Filtered copies — four
+    copies of `addToSelection` exist in the DOM total. Its input resolves
+    per view too, same idea as "Time range" above:
+    `selectActionEntries()` returns the marked-cell rows in Table (a
+    single marked row is enough, unlike "Time range"'s 2+), the Plot
+    viewport (gated on `plot2dToolsAvailable`, same as "Time range" on
+    Plot), or the existing log-row selection everywhere else —
+    `currentSelectionRowIds()` (used throughout the selection-filter code)
+    is now a thin wrapper around it.
 
   Resulting shape per toolbar: Context = Controls|Settings|Actions (all
   three); Filtered = Settings|Actions (no Controls); Table = Actions-only;
@@ -325,9 +355,7 @@ shape:
   2026-09-05)**: it doesn't create a filter node by itself (it opens
   `#addToSelectionMenu`, same as the other two), so it moved from
   `VIEWBAR_ROW_ACTIONS` into `TOOLBAR_ROW_ACTIONS` alongside Bookmark/Add
-  note — `#viewBar`'s row-actions group is now four items (Filter after/
-  before this, Filter for this message, Time filter from selection), not
-  five.
+  note.
 
   **Time-filter arrow icons (person-requested, 2026-09-05)**: Filter
   before this now points UP (it keeps everything above the row) and Filter
@@ -336,28 +364,24 @@ shape:
   two arrows converging toward the middle (one from each end of the
   selected range) instead of diverging outward.
 
-  **Plot's Actions swap into `#viewBar` instead of living in `#plotToolbar`
-  (person-requested follow-up)**: the four generic row-actions (Filter
-  after/before this/for this message/Time filter from selection) all key
-  off a log-row selection — Plot has none, so on that tab they'd sit there
-  permanently disabled and useless. Plot's own two viewport-based filters
-  (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`) live up in `#viewBar`
-  itself instead — a SECOND row-actions group,
-  `[data-row-actions="plot-viewbar"]`, right next to the generic one
-  (`[data-row-actions="viewbar"]`) — and `updateViewBarRowActions()`
-  (called from `applyFhView()`/`renderMainView()`/`initFhView()`, wherever
-  `fhActiveTab` can change) shows exactly one of the two at a time: the
-  generic four whenever `fhActiveTab !== "plot"`, Plot's own two only while
-  `fhActiveTab === "plot"` — **and** only once there's actually something
-  plotted in 2D (`plot2dToolsAvailable`, the same condition
-  `#plot2dToolsGroup`'s zoom controls already gate on — `viewBar`'s Plot
-  group and `#plotToolbar`'s own zoom group are kept in sync by
-  `setPlot2dToolsVisible(visible)`, which calls `updateViewBarRowActions()`
-  after setting the shared boolean). Both `#viewBar` row-actions groups are
-  `.row-actions.hidden{display:none}` scoped specifically to `#viewBar
-  .row-actions` — this stylesheet has no bare `.hidden{display:none}`
-  rule, every hidden-toggle target needs its own scoped rule, easy to miss
-  when adding a new one.
+  **Table/Plot no longer swap `#viewBar`'s row-actions for a Plot-only
+  group (person-requested, 2026-09-07 — superseding the 2026-09-04 design
+  below)**: `[data-row-actions="plot-viewbar"]` and its two dedicated
+  buttons (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`) are gone
+  entirely — see "Time range"/"Select" above for what replaced them
+  (context-aware input resolution instead of a second button group). The
+  original design this replaced: the four generic row-actions all keyed
+  off a log-row selection Plot has none of, so on that tab they were
+  swapped out wholesale for a second `#viewBar` group holding Plot's own
+  viewport-based filters, shown only once something was actually plotted
+  in 2D (`plot2dToolsAvailable`/`setPlot2dToolsVisible()`, which still
+  exists and still gates "Time range"'s own enabled state on Plot). Every
+  `#viewBar` row-action still lives under `.row-actions.hidden{display:
+  none}` scoped specifically to `#viewBar .row-actions` — this stylesheet
+  has no bare `.hidden{display:none}` rule, every hidden-toggle target
+  needs its own scoped rule, easy to miss when adding a new one (now also
+  `#viewBar .row-action-btn.hidden{display:none}` for hiding individual
+  buttons within the group rather than the whole group at once).
 
   **Statistics moved out of both toolbars entirely (person-requested,
   2026-09-05, superseding an earlier per-tab-toggle design from the same
