@@ -77,11 +77,13 @@ fn main() {
             commands::list_folder,
             commands::path_for_local_url,
             commands::list_system_fonts,
-            commands::toggle_fullscreen,
             commands::window_minimize,
             commands::window_toggle_maximize,
             commands::window_close,
             commands::app_ready,
+            commands::pip_exit,
+            commands::pip_enter,
+            commands::pip_minimize,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

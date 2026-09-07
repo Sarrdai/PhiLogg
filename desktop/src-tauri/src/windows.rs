@@ -10,6 +10,11 @@ use crate::{commands, inject, protocol, settings};
 pub const MAIN: &str = "main";
 pub const SPLASH: &str = "splash";
 
+/// The small fixed size the window takes on while in picture-in-picture. In
+/// logical pixels, same as the popout's content window was; tune later.
+pub const PIP_W: f64 = 420.0;
+pub const PIP_H: f64 = 320.0;
+
 /// Windows/Linux: a `.log` file association relaunches the app with the path
 /// as a plain argv entry. macOS never does this — it delivers the path
 /// through `RunEvent::Opened` instead, even on a cold launch.
@@ -185,6 +190,99 @@ fn watch_window_events(window: &WebviewWindow) {
         WindowEvent::DragDrop(drag) => handle_drag_drop(&window_ref, drag, &is_file_drag),
         _ => {}
     });
+}
+
+/// Enter picture-in-picture: shrink the one real window to a small,
+/// always-on-top, content-only view. Only existing-window operations here —
+/// nothing is ever constructed, so there is no second copy of the app state
+/// to fall out of sync. Remembers the full window's windowed position + size
+/// and whether it was maximized (for `exit_pip`), and restores the mini
+/// window's own remembered position + size.
+pub fn enter_pip(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN) else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    if state.pip_active.load(Ordering::Relaxed) {
+        return;
+    }
+
+    // Leave maximize first so the bounds captured below are the real windowed
+    // ones (the OS restores the pre-maximize windowed rect on its own).
+    let was_maximized = window.is_maximized().unwrap_or(false);
+    if was_maximized {
+        let _ = window.unmaximize();
+    }
+
+    // Remember the full window's windowed geometry (position + size).
+    if let (Ok(size), Ok(pos)) = (window.inner_size(), window.outer_position()) {
+        let mut prev = state.full_prev.lock().expect("full_prev poisoned");
+        *prev = Some((pos.x as f64, pos.y as f64, size.width as f64, size.height as f64));
+    }
+    state.full_was_maximized.store(was_maximized, Ordering::Relaxed);
+
+    // The mini window returns to where/how big it last was, defaulting to
+    // PIP_W × PIP_H at the current top-left on first entry.
+    let mini = state
+        .pip_prev
+        .lock()
+        .expect("pip_prev poisoned")
+        .clone()
+        .unwrap_or_else(|| {
+            let (x, y) = window
+                .outer_position()
+                .map(|p| (p.x as f64, p.y as f64))
+                .unwrap_or((0.0, 0.0));
+            (x, y, PIP_W, PIP_H)
+        });
+
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_position(tauri::LogicalPosition::new(mini.0, mini.1));
+    let _ = window.set_size(tauri::LogicalSize::new(mini.2, mini.3));
+    state.pip_active.store(true, Ordering::Relaxed);
+    // Rust owns geometry; the page owns the CSS class that hides the chrome
+    // (see philogg.html's `philoggSetPip`).
+    let _ = window.eval("window.philoggSetPip && window.philoggSetPip(true)");
+}
+
+/// Exit picture-in-picture: restore the full window's remembered position +
+/// size AND its previous windowed/maximized state, and drop the chrome
+/// hiding. Exits are user-driven — the mini window's `<->` button, a
+/// "jump to another view" (`jumpAfterPip`), or the mini window's X button
+/// (`pip_minimize`, which follows this with a minimize) — never detected from
+/// a window event, so there is no restore to distinguish. Remembers the mini
+/// window's own geometry for the next enter.
+pub fn exit_pip(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN) else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    if !state.pip_active.load(Ordering::Relaxed) {
+        return;
+    }
+
+    // Remember where/how big the mini window was, for the next enter.
+    if let (Ok(size), Ok(pos)) = (window.inner_size(), window.outer_position()) {
+        let mut prev = state.pip_prev.lock().expect("pip_prev poisoned");
+        *prev = Some((pos.x as f64, pos.y as f64, size.width as f64, size.height as f64));
+    }
+
+    let _ = window.set_always_on_top(false);
+    // Always restore the windowed bounds first, even when re-maximizing right
+    // after: resizing a normal (non-maximized) window sets the OS's "restore
+    // size", so a later unmaximize/drag-out-of-maximize lands on the full
+    // windowed size — never the mini size (which is what enter_pip's own
+    // set_size would otherwise have left as the restore size).
+    let full = state.full_prev.lock().expect("full_prev poisoned").clone();
+    if let Some((x, y, w, h)) = full {
+        let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+        let _ = window.set_size(tauri::LogicalSize::new(w, h));
+    }
+    if state.full_was_maximized.load(Ordering::Relaxed) {
+        let _ = window.maximize();
+    }
+    state.pip_active.store(false, Ordering::Relaxed);
+    let _ = window.eval("window.philoggSetPip && window.philoggSetPip(false)");
 }
 
 /// Drives `philogg.html`'s own drop overlay, which the page can no longer

@@ -44,6 +44,24 @@ pub struct AppState {
     /// hide-to-tray path, so the close interception doesn't loop.
     pub is_quitting: AtomicBool,
     pub close_to_tray: AtomicBool,
+    /// Whether the window is currently in PiP mode. Guards `enter_pip`/
+    /// `exit_pip` against re-entry (e.g. the `Resized` fired by `exit_pip`'s
+    /// own `set_size`).
+    pub pip_active: AtomicBool,
+    /// Last known windowed geometry of the FULL window, `(x, y, width,
+    /// height)` in logical pixels. Captured by `enter_pip` after leaving
+    /// maximize, so it is the real windowed bounds — never the maximize or
+    /// mini size — and restored by `exit_pip`.
+    pub full_prev: Mutex<Option<(f64, f64, f64, f64)>>,
+    /// Whether the full window was maximized when `enter_pip` captured it —
+    /// restored by re-maximizing on exit, with `full_prev` holding the
+    /// unmaximized bounds for a later restore.
+    pub full_was_maximized: AtomicBool,
+    /// Last known geometry of the mini window, `(x, y, width, height)`,
+    /// captured on exit and remembered into the next enter, so it returns to
+    /// where and how big it last was. Defaults to `PIP_W × PIP_H` at the
+    /// current position if never captured.
+    pub pip_prev: Mutex<Option<(f64, f64, f64, f64)>>,
     /// Process-lifetime cache for the system font list (enumeration shells
     /// out to the OS, which is slow enough to be worth doing once).
     pub fonts: Mutex<Option<Vec<String>>>,
@@ -65,6 +83,10 @@ impl AppState {
             settings_path,
             is_quitting: AtomicBool::new(false),
             close_to_tray: AtomicBool::new(true),
+            pip_active: AtomicBool::new(false),
+            full_prev: Mutex::new(None),
+            full_was_maximized: AtomicBool::new(false),
+            pip_prev: Mutex::new(None),
             fonts: Mutex::new(None),
             nonce: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

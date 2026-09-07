@@ -28,12 +28,12 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 |---|---|
 | `main.rs` | builder wiring, `setup`, the macOS-only `RunEvent` arms |
 | `protocol.rs` | the `philogg://` scheme (app page, splash page, local files) |
-| `windows.rs` | main/splash window creation, close-to-tray, file routing |
+| `windows.rs` | main/splash window creation, close-to-tray, PiP, file routing |
 | `tray.rs` | tray icon + menu |
 | `settings.rs` | `settings.json` read/write and its directory |
 | `commands.rs` | everything the injected script may call |
 | `inject.rs` + `inject.js` | the injected script itself |
-| `state.rs` | the `localFiles` map, quit/close flags, caches |
+| `state.rs` | the `localFiles` map, quit/close/PiP flags, caches |
 | `fonts.rs` | system font enumeration |
 
 ## The `philogg://` scheme, and why there is a `fetch` shim
@@ -85,11 +85,12 @@ gets no script (it ends by reporting "painted", which would dismiss the splash i
 
 **Bridge.** `window.philogg` is the narrow surface `philogg.html` feature-detects on
 (`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`,
-`pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, and
+`pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, `exitPip`, and
 `getPathForFile`. That last one returns `null` permanently — no system webview can
 resolve a `File` object back to its OS path — which is why the wrapper opens files
 itself instead (next paragraph). `philogg.html` treats a null `getPathForFile` as "no
 path known", so nothing breaks; under this wrapper no route reaches that case any more.
+`exitPip` is the PiP exit half, see "Picture-in-picture" below.
 
 **Knowing a file's path anyway.** Because the webview will never hand the page a real
 path, this wrapper *is* the thing that opens files, so the path is known before the
@@ -168,8 +169,11 @@ no console error, no invoke failure visible from the page — clicking empty too
 space is silently a no-op and the window cannot be moved.
 
 **F11** (`FEATURE_BACKLOG.md` #31). A Tauri webview has no main-process input hook, so
-the key is caught in the page (capture phase) and routed to a `toggle_fullscreen`
-command that flips the same native fullscreen state the maximize control uses.
+the key is caught in the page (capture phase) and routed to the `window_toggle_maximize`
+command — the exact same native maximize/restore the injected rectangle window-control
+button uses. F11, the rectangle button, and a double-click on the toolbar's drag region
+are all equivalent: they toggle the SAME native maximize state, so a maximized window
+restores under the cursor the same way whichever trigger entered it.
 
 ## Folder watch without the File System Access API
 
@@ -369,6 +373,81 @@ portable `.zip` is assembled, and `desktop/README.md` for the user-facing descri
   refactored out and exposed on `window` for exactly this.) Windows/Linux receive the
   path as argv; macOS delivers it through `RunEvent::Opened` instead, including on a cold
   launch.
+
+## Picture-in-picture (PiP)
+
+PiP replaces an earlier "popout window" design (a second `WebviewWindow`
+mirroring the active view) that never landed on main. Its whole history was sync bugs —
+every fix after the first ship was a missed or wrong *push* of state into the second
+window — plus a window-creation deadlock on Windows (tauri-apps/wry#583). The lesson is
+not "do the popout more carefully"; it is **never make the second copy at all.** So this
+feature keeps the *one* real `philogg.html` instance — same `state`, same DOM, same
+render pipeline, same real nodes — and only changes its appearance.
+
+- **Trigger** is a dedicated button, not a setting: a diagonal `<->` window-control button
+  (`inject.js`, left of minimize in the injected `#tauri-wc` controls) invokes the
+  `pip_enter` command. Minimize itself is untouched (`window_minimize` is back to a plain
+  minimize).
+- **Enter** (`enter_pip`): first leaves maximize (so the bounds it captures are the real
+  windowed ones — the OS restores the pre-maximize rect on its own, which is what
+  guarantees "maximized back to windowed keeps the full size, never the mini size"),
+  then remembers the full window's windowed **position + size** and whether it was
+  **maximized** in `full_prev`/`full_was_maximized`. It then restores the mini window's
+  own remembered position + size (`pip_prev`, defaulting to `420 × 320` at the current
+  top-left on first entry) via `set_always_on_top(true)` + `set_position` + `set_size`,
+  and `eval("window.philoggSetPip && window.philoggSetPip(true)")`. Only existing-window
+  operations — no `WebviewWindowBuilder::build()`, so wry#583 is structurally out of scope.
+- **Page-side appearance**: `philoggSetPip(active)` sets `state.pipActive` and toggles
+  `html.pip-mode`, whose single CSS rule block hides every piece of chrome
+  (`#toolbar`, `#sidebar`, `#viewBar`, the four view toolbars, `#plotControls`,
+  `#treeActionBar`, `#detailPanel`, `#detailResizer`, `#timelineMinimap`, `#emptyState`)
+  and leaves the active content view — the real `renderTable`/`renderExtractTable`/
+  `renderPlotChart`/`renderHighlightView` output, virtualization, `state.tailFollow`, the
+  stats panel — running unchanged. Content-only annotation stays visible (the floating
+  `.tail-jump-btn`, the `.fh-panel-badge`).
+- **The mini window's chrome** is a slim strip `inject.js` injects (`#tauri-pip`, shown
+  only under `html.pip-mode`, styled from the page's own theme vars) that doubles as the
+  drag handle (via `markDragRegion`). At the far left sits the **ViewMode switcher** —
+  `#fhTabs` is not hidden in PiP; `html.pip-mode` collapses `#viewBar` and re-parents
+  nothing, instead `position: fixed`-ing `#fhTabs` into the strip's top-left (above the
+  strip, which sits at `z-index:100`). On the right are two buttons: a diagonal `<->`
+  ("Back to full window") that calls `pip_exit`, and an **X that does not close the app**
+  — it calls `pip_minimize`, which ends PiP (restoring the full geometry first) and then
+  minimizes the full window back to the taskbar, so the app keeps running in the
+  background. **Double-clicking an empty spot of the strip** also expands to full mode —
+  and restores the full window to its **windowed** state (never maximized). Tauri's own
+  drag script turns a double-click on a `data-tauri-drag-region` into `internal_toggle_maximize`
+  (see tauri's `src/window/scripts/drag.js`); `inject.js`'s `interceptDragDoubleClick`
+  intercepts that second `mousedown` (`detail === 2`, before Tauri's document-level
+  listener) and routes it to `pip_exit` instead, so the exit lands in windowed mode.
+- **Full-mode double-click** on `#toolbar`'s drag region toggles the same native
+  **maximize/restore** as the rectangle button (via Tauri's own `internal_toggle_maximize`,
+  left untouched). This is deliberate: it keeps F11, the rectangle button and the
+  double-click equivalent, so dragging a maximized window restores it under the cursor
+  exactly the same way however it was entered. (A borderless *fullscreen* was tried
+  first; its "restore on drag" had to be hand-rolled and never felt native, so fullscreen
+  was dropped entirely in favour of maximize. In PiP the toolbar is `display:none`, so
+  this can't fire there.)
+- **Exit** (`exit_pip`): remember the mini window's current position + size (into
+  `pip_prev`, so the next enter returns it there), then restore `always_on_top(false)`
+  and the full window's previous state — it always re-applies the windowed position + size
+  first (which also resets the OS's "restore size", so a later unmaximize/drag-out-of-
+  maximize lands on the windowed size, never the mini size), then re-`maximize()` if that
+  was the state at entry — and `philoggSetPip(false)`. Exits are entirely user-driven —
+  the mini window's `<->`, its X (`pip_minimize`), or a jump — so there is no "restore"
+  window event to distinguish.
+- **Jump-before-reveal ordering**: `philogg.html`'s `jumpAfterPip(fn, args)` wraps the six
+  jump entry points (link-view dblclick, Context-row dblclick, extraction-row dblclick,
+  2D/3D plot-mark click, the Enter reveal). In PiP it awaits `window.philogg.exitPip`
+  (`pip_exit`) *before* running the reveal — `pip_exit` resolves only after the geometry
+  restore is applied, so the reveal's scroll/anchor math runs against the restored
+  viewport, not the small PiP one. Not in PiP (or not the desktop build) the reveal runs
+  directly, byte-identical to main.
+- **Not jsdom-testable** (verify via `cd desktop && npm run tauri dev`): real
+  `set_always_on_top`/`set_size`/`unminimize`, the injected buttons, and the restore
+  ordering. Out of scope for v1: any PiP in the plain browser build, and hiding the
+  taskbar entry while in PiP (`skip_taskbar` may not be togglable live without recreating
+  the window — the exact hazard this design avoids).
 
 ## Release
 
