@@ -132,6 +132,13 @@
         return [];
       });
     },
+    // PiP exit half: philogg.html's jumpAfterPip awaits this before running
+    // a "jump to another view", so the reveal lands on the restored
+    // (full-size) viewport. Resolves only after the Rust side has applied the
+    // geometry restore (see commands.rs's pip_exit).
+    exitPip: function () {
+      return invoke("pip_exit");
+    },
   };
 
   // ------------------------------------------------------------ frameless
@@ -156,10 +163,31 @@
     "}",
     "#tauri-wc button:hover { background: var(--bg-elevated-2); color: var(--accent); }",
     "#tauri-wc button[data-act=\"close\"]:hover { background: var(--level-error); color: #fff; }",
+    // The picture-in-picture title strip: a slim, always-on-top bar holding
+    // the mini window's two controls (back-to-full and minimize). Hidden
+    // until philogg.html flips `html.pip-mode` on, at which point the normal
+    // #toolbar is hidden and this becomes the window's only chrome + drag
+    // handle. It floats out of flow, so #app gets a matching top padding to
+    // keep the content view from sitting underneath it.
+    "#tauri-pip { display: none; position: fixed; top: 0; left: 0; right: 0; height: 30px; z-index: 100;",
+    "  align-items: center; justify-content: flex-end; gap: 2px; padding: 0 4px;",
+    "  background: var(--bg-panel); border-bottom: 1px solid var(--border); }",
+    "html.pip-mode #tauri-pip { display: flex; }",
+    "html.pip-mode #app { padding-top: 30px; }",
+    "#tauri-pip button {",
+    "  width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px;",
+    "  display: flex; align-items: center; justify-content: center;",
+    "  background: transparent; color: var(--text-secondary); cursor: pointer;",
+    "}",
+    "#tauri-pip button:hover { background: var(--bg-elevated-2); color: var(--accent); }",
+    "#tauri-pip button[data-act=\"minimize\"]:hover { background: var(--level-error); color: #fff; }",
     "[data-tauri-drag-region] { cursor: default; }",
   ].join("\n");
 
   var CONTROLS =
+    '<button type="button" data-act="pip" title="Picture-in-picture">' +
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" aria-hidden="true"><path d="M7 3 3 7M7 3H5.2M7 3V4.8M3 7h1.8M3 7v-1.8"/></svg>' +
+    "</button>" +
     '<button type="button" data-act="minimize" title="Minimize">' +
     '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0" y="4.5" width="10" height="1" fill="currentColor"/></svg>' +
     "</button>" +
@@ -167,6 +195,18 @@
     '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"/></svg>' +
     "</button>" +
     '<button type="button" data-act="close" title="Close">' +
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg>' +
+    "</button>";
+
+  // The picture-in-picture strip's own controls. Its X is NOT a close — it
+  // ends PiP and minimizes the (full) window, the inverse of the `<->` that
+  // entered PiP from the full window's toolbar. See commands.rs's pip_exit /
+  // pip_minimize.
+  var PIP_CONTROLS =
+    '<button type="button" data-act="expand" title="Back to full window">' +
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" aria-hidden="true"><path d="M3 3 7 7M3 3h1.8M3 3v1.8M7 7H5.2M7 7V5.2"/></svg>' +
+    "</button>" +
+    '<button type="button" data-act="minimize" title="Minimize">' +
     '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg>' +
     "</button>";
 
@@ -186,6 +226,26 @@
       if (nodes[i].closest(NO_DRAG)) continue;
       nodes[i].setAttribute("data-tauri-drag-region", "");
     }
+  }
+
+  // Tauri's own drag script turns a double-click on a data-tauri-drag-region
+  // into `internal_toggle_maximize` (see tauri's src/window/scripts/drag.js).
+  // The PiP strip should double-click back into the full window's WINDOWED
+  // state instead (never maximize) — so intercept the second mousedown
+  // (detail === 2), which fires on this element before Tauri's document-level
+  // listener, and route it to `action`. The full-mode toolbar deliberately
+  // keeps Tauri's native behavior (drag + double-click-to-maximize), which is
+  // exactly what the person wants F11/double-click to share with the maximize
+  // button.
+  function interceptDragDoubleClick(el, action) {
+    el.addEventListener("mousedown", function (event) {
+      if (event.button !== 0) return;
+      if (event.detail !== 2) return;
+      if (event.target.closest(NO_DRAG)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      action();
+    });
   }
 
   function setUpChrome() {
@@ -212,23 +272,47 @@
           if (!btn) return;
           if (btn.dataset.act === "minimize") invoke("window_minimize");
           else if (btn.dataset.act === "maximize") invoke("window_toggle_maximize");
+          else if (btn.dataset.act === "pip") invoke("pip_enter");
           else invoke("window_close");
         });
         right.appendChild(wc);
       }
     }
+
+    // The PiP strip is added on every platform: PiP hides #toolbar, so the
+    // native traffic lights (macOS) aren't enough to offer the two PiP
+    // controls. markDragRegion makes the strip the mini window's drag handle.
+    var pipBar = document.createElement("div");
+    pipBar.id = "tauri-pip";
+    pipBar.innerHTML = PIP_CONTROLS;
+    pipBar.addEventListener("click", function (event) {
+      var btn = event.target.closest("button[data-act]");
+      if (!btn) return;
+      if (btn.dataset.act === "expand") invoke("pip_exit");
+      else invoke("pip_minimize");
+    });
+    // Double-click on an empty spot of the strip = expand back to the full
+    // window's windowed state (interceptDragDoubleClick suppresses Tauri's
+    // default maximize-on-double-click; see its comment).
+    interceptDragDoubleClick(pipBar, function () {
+      invoke("pip_exit");
+    });
+    document.body.appendChild(pipBar);
+    markDragRegion(pipBar);
   }
 
-  // FEATURE_BACKLOG.md #31: F11 toggles the same native fullscreen state the
-  // maximize control uses. A Tauri webview has no backend-side input hook,
-  // so it is a capture-phase listener here, routed to toggle_fullscreen.
+  // FEATURE_BACKLOG.md #31: F11 is equivalent to the injected maximize
+  // control (both toggle the same native maximize state, so a maximized
+  // window restores under the cursor the same way however it was entered).
+  // A Tauri webview has no backend-side input hook, so it is a capture-phase
+  // listener here, routed to window_toggle_maximize.
   function setUpShortcuts() {
     window.addEventListener(
       "keydown",
       function (event) {
         if (event.key === "F11") {
           event.preventDefault();
-          invoke("toggle_fullscreen");
+          invoke("window_toggle_maximize");
         }
       },
       true

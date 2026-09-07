@@ -26,7 +26,10 @@ deployments possible:
   `philogg.html` unmodified into a native-feeling app with `.log` file
   associations and a frameless window, so double-clicking a log file opens
   it straight into PhiLogg like any other document. Built on Tauri and the
-  OS's own webview, so the installer stays small. See
+  OS's own webview, so the installer stays small. Desktop-only extras
+  include close-to-system-tray and picture-in-picture: a diagonal `<->`
+  window-control button shrinks the window to a small always-on-top content
+  view (with its own return-to-full and minimize buttons). See
   `desktop/README.md`.
 
 ## Screenshots
