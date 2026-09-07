@@ -846,7 +846,7 @@
      float/margin to the #fhTabs id rather than the shared class), this ID
      rule overrides display at rest. float:left is harmless while hidden —
      it only takes effect once JS sets display back to "flex". */
-  #fhTabs{display:none; float:left; margin:0 14px 6px 0;}
+  #fhTabs{display:none; float:left; margin:0 14px 0 0;}
   /* #btnApplyLevelToTree ("Add to tree", Settings → Behavior: Manual mode
      only) sits after #levelBar in the same float flow. It's toggled via
      display:none/"" by JS (see updateLevelBarVisibility/similar), not
@@ -855,7 +855,7 @@
      floats, it drops below the #levelBar float instead of continuing the
      line. Floating it keeps the row's line-length dynamic no matter how
      many buttons this line ends up with. */
-  #btnApplyLevelToTree{float:left; margin:0 14px 6px 0;}
+  #btnApplyLevelToTree{float:left; margin:0 14px 0 0;}
   /* The row-actions group (Bookmark/Note/Filter after/before/for this
      message/Time filter from selection/Add to selection — person-requested
      "Filter-Toolbar" placement, right of the level filter) is #viewBar's
@@ -865,7 +865,7 @@
      #plotToolbar) since #viewBar's other controls (view-tabs, level pills)
      are 28px too — a single #viewBar-only group at a different size would
      look like a misalignment, not a second row. */
-  #viewBar .row-actions{float:left; gap:4px; margin:0 0 6px 0;}
+  #viewBar .row-actions{float:left; gap:4px; margin:0 0 0 0;}
   /* Which of the two row-actions groups is shown is entirely
      JS-driven (updateViewBarRowActions(), person-requested this session —
      swap the generic five for Plot's own two viewport filters while the
@@ -954,7 +954,7 @@
 
   /* ---------- Level filter bar ---------- */
   #levelBar{
-    float:left; margin:0 14px 6px 0;
+    float:left; margin:0 14px 0 0;
     display:flex; align-items:center; gap:6px; flex-wrap:wrap;
   }
   .level-btn{
@@ -3001,7 +3001,7 @@
   }
   html.pip-mode #fhTabs {
     position: fixed;
-    top: 1px;
+    top: 4px;
     left: 4px;
     z-index: 101;
     margin: 0;

@@ -11113,7 +11113,7 @@ await withApp(async (w, d, T) => {
    button pinned to #viewBar's top-left float line (#fhTabs,
    #btnPinBookmarks, #btnMultilineMsg, #btnColumns,
    #btnTextMatchHighlight, #levelBar — see the "Unified view bar" CSS
-   comment) carries float:left plus the shared 14px/6px margin, but
+   comment) carries float:left plus the shared 14px/0px margin, but
    #btnApplyLevelToTree never got that rule. Toggled via display:none/""
    rather than added/removed from the DOM, so once visible it sat as an
    unfloated normal-flow block sibling of the #levelBar float and dropped
@@ -11139,8 +11139,8 @@ await withApp(async (w, d, T) => {
 
   const cs = w.getComputedStyle;
   assert(cs(applyBtn).float === "left", "#btnApplyLevelToTree floats left, joining #fhTabs/#levelBar's pinned top-left line");
-  assert(cs(applyBtn).marginRight === "14px" && cs(applyBtn).marginBottom === "6px",
-    "...with the SAME 14px/6px margin as its sibling toolbar-icon-btns, so it doesn't sit any differently on the line");
+  assert(cs(applyBtn).marginRight === "14px" && cs(applyBtn).marginBottom === "0px",
+    "...with the SAME 14px/0px margin as its sibling toolbar-icon-btns, so it doesn't sit any differently on the line");
 });
 
 /* ============================================================
