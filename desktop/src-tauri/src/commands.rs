@@ -6,8 +6,8 @@
 //! That still holds for the `dialog` plugin added here: it is driven from
 //! Rust (`pick_files`), never invoked from the page, exactly like `opener`.
 //! Deliberately narrow: the file/folder routes the page cannot take itself,
-//! plus the few window actions a webview has no native say over (fullscreen,
-//! close, and the injected window controls).
+//! plus the few window actions a webview has no native say over (maximize,
+//! minimize, close, and the injected window controls).
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 
@@ -221,21 +221,18 @@ pub fn list_system_fonts(state: State<'_, AppState>) -> Vec<String> {
     cache.get_or_insert_with(crate::fonts::list).clone()
 }
 
-/// `FEATURE_BACKLOG.md` #31/#36: F11 flips the same native fullscreen state
-/// the window's own maximize control uses, so either one can exit what the
-/// other entered. A Tauri webview has no backend-side input hook, so the key
-/// is caught in the page (see `inject.rs`) and routed here.
-#[tauri::command]
-pub fn toggle_fullscreen(window: Window) {
-    let current = window.is_fullscreen().unwrap_or(false);
-    let _ = window.set_fullscreen(!current);
-}
-
 #[tauri::command]
 pub fn window_minimize(window: Window) {
     let _ = window.minimize();
 }
 
+/// The single maximize/restore route, shared by the injected `<->`/rectangle
+/// window-control button, F11, and a double-click on the toolbar's drag
+/// region — all three toggle the SAME native maximize state, so dragging a
+/// maximized window restores it under the cursor the same way whichever
+/// trigger entered it. (Person-requested: F11/double-click were previously
+/// a separate borderless-fullscreen, whose "restore on drag" had to be
+/// hand-rolled and never felt like the native maximize.)
 #[tauri::command]
 pub fn window_toggle_maximize(window: Window) {
     if window.is_maximized().unwrap_or(false) {
@@ -259,4 +256,38 @@ pub fn window_close(window: Window) {
 #[tauri::command]
 pub fn app_ready(app: AppHandle) {
     windows::dismiss_splash(&app);
+}
+
+/// The page's exit half of PiP (see philogg.html's `jumpAfterPip`): restores
+/// the full window before a "jump to another view" interaction runs its
+/// reveal. `async` so the invoke resolves as a promise the page can `.then()`
+/// off — the ordering is load-bearing: the command only resolves after
+/// `windows::exit_pip` has applied the geometry restore, so the reveal's
+/// scroll/anchor math runs against the restored (full-size) viewport rather
+/// than the small PiP one.
+#[tauri::command]
+pub async fn pip_exit(app: AppHandle) {
+    windows::exit_pip(&app);
+}
+
+/// The injected diagonal `<->` button's enter half (see `inject.js`): shrinks
+/// the window into picture-in-picture. `async` for the same reason as
+/// `pip_exit` — keeps the whole PiP surface off the WebView2 IPC callback's
+/// own call stack.
+#[tauri::command]
+pub async fn pip_enter(app: AppHandle) {
+    windows::enter_pip(&app);
+}
+
+/// The mini window's X button: ends picture-in-picture (restoring the full
+/// window) and then minimizes it, so the app goes back to the taskbar showing
+/// the full view rather than quitting — the exact inverse of `pip_enter`.
+/// Restore-before-minimize ordering matters: `exit_pip` restores the geometry
+/// first, so a later restore from the taskbar lands on the full-size window.
+#[tauri::command]
+pub async fn pip_minimize(app: AppHandle) {
+    windows::exit_pip(&app);
+    if let Some(window) = app.get_webview_window(windows::MAIN) {
+        let _ = window.minimize();
+    }
 }

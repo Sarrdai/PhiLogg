@@ -55,12 +55,15 @@ comments in place, which is what you want while developing.
 ## What it does
 
 `.log` file associations and CLI-argument opening, a frameless window with
-rounded corners, window controls in the app's own theme, F11 fullscreen, a
+rounded corners, window controls in the app's own theme, F11 / double-click /
+maximize all toggling the same native maximize, a
 splash screen, a tray icon with Open / Open Config Folder / Clear Cache /
-Quit, "close to system tray", `settings.json` mirroring of the `philogg-*`
-settings, "Open File Location" / "Copy Path", the system font list for the
-UI font picker, and a folder watch that does not go through the browser's
-File System Access API (see below).
+Quit, "close to system tray", picture-in-picture (a diagonal `<->` window
+button shrinks the window to a small always-on-top content view; its own
+strip offers return-to-full and a minimize back to the taskbar),
+`settings.json` mirroring of the `philogg-*` settings, "Open File Location" /
+"Copy Path", the system font list for the UI font picker, and a folder watch
+that does not go through the browser's File System Access API (see below).
 
 ## Persistent data
 
@@ -148,6 +151,14 @@ uses. See `docs/desktop.md` for both.
 The native folder watch (2026-09-01) is verified by `cargo check` plus the
 jsdom suite's Group 145 only — the picker, the listing and a real Desktop
 folder still need a person on a real desktop session.
+
+**Picture-in-picture (2026-09-07)** is verified by `cargo check` plus the
+jsdom suite's Group 182 only. The real `set_always_on_top`/`set_size`/
+`unminimize` transitions and the injected `<->`/X buttons still need a person
+on a real desktop session (`npm run dev`), on Windows and macOS especially —
+the injected strip's `markDragRegion` drag handle and the async
+`pip_enter`/`pip_exit`/`pip_minimize` commands (see `docs/desktop.md` →
+"Picture-in-picture") are the parts most likely to need platform adjustment.
 
 **Not yet run on macOS.** The window chrome specifically (the injected
 title-bar buttons, the drag region, rounded corners, the traffic-light
