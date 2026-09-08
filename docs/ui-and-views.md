@@ -166,19 +166,30 @@ shape:
   Table-Plot hiding with "Message" (Extract) or gate on `state.activeId`
   alone (New).
   **Table/Plot are context-aware now, not a swapped-out second group
-  (person-requested, 2026-09-07 — unifies what used to be a Plot-only
-  detour)**: After/Before/Message/Extract all key off a single log-row
-  selection, which Table/Plot have none of, so `updateViewBarRowActions()`
-  hides those four on those two tabs (`fhActiveTab === "table" ||
-  "plot"`) — "Time range" and "New" stay visible everywhere; "Time range"
-  resolves its own input per view instead: a 2+ log-row multi-selection
-  in Context/Filtered (unchanged), rows with at least one marked cell in
+  (person-requested, 2026-09-07, extended 2026-09-08 — unifies what used to
+  be a Plot-only detour)**: "Time range"/"Select"/"After"/"Before" all
+  resolve their own input per view instead of keying off a single
+  Context/Filtered log-row selection: a 2+ log-row multi-selection in
+  Context/Filtered (unchanged), rows with at least one marked cell in
   Table, or the Plot tab's own currently-visible viewport
-  (`timeRangeActionEntries()`, near `currentSelectionRowIds()`) — on Plot
-  it's additionally gated on `plot2dToolsAvailable` (something actually
-  plotted in 2D, the same condition `#plot2dToolsGroup`'s zoom controls
-  gate on), the exact viewport count is re-checked at click time with a
-  toast since zoom/pan don't always go through `updateRowActionButtons()`.
+  (`timeRangeActionEntries()`/`afterBeforeActionEntries()`, near
+  `currentSelectionRowIds()`) — on Plot it's additionally gated on
+  `plot2dToolsAvailable` (something actually plotted in 2D, the same
+  condition `#plot2dToolsGroup`'s zoom controls gate on), the exact
+  viewport count is re-checked at click time with a toast since zoom/pan
+  don't always go through `updateRowActionButtons()`. "After"/"Before"
+  differ from "Time range" in one way: a *single* resolved entry is a valid
+  input too (that entry's own ts becomes the bound, the original
+  single-row behavior), while 2+ entries resolve *inclusively* — "After"
+  uses the earliest ts among them, "Before" the latest — rather than
+  requiring an exact single reference point. "Message"/"Extract" are the
+  one pair that stays a true single-entry action (`singleMessageActionEntry()`):
+  extracting a pattern only makes sense for one specific message, so Table
+  enables them only with **exactly one** marked row (0 or 2+ disables), and
+  Plot never enables them at all — there's no "one clicked/hovered point"
+  concept there (no click/hover tracking was built for this). "New" stays
+  visible/enabled everywhere regardless (`state.activeId` is its only
+  gate).
   Plot's own two dedicated viewport-filter buttons this used to swap in
   (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, see the CHANGELOG for
   their original 2026-09-04 design) are gone entirely — "these entries"
