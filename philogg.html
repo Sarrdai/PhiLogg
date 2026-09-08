@@ -878,6 +878,14 @@
      Message hide there — see updateViewBarRowActions). Same no-bare-.hidden
      scoping as the group rule above. */
   #viewBar .row-action-btn.hidden{display:none;}
+  /* The group-dividing "|" separators are DIRECT children of #viewBar (not
+     inside a flex .row-actions group), so the generic .row-action-separator's
+     align-self:stretch can't size them — they float in the same left flow as
+     the button groups and need an explicit height. The 4px side margins make
+     the gap from the separator to the button on each side equal to the gap
+     between two adjacent filter buttons (.row-actions gap:4px), person-
+     requested. 20px bar + 4px top/bottom margin = the row's 28px. */
+  #viewBar > .row-action-separator{float:left; height:20px; margin:4px 4px;}
 
   /* Breadcrumb's own row (this session's toolbar reorganization) — always
      reserved, even with no active filter chain, so #viewBar/#breadcrumbBar
@@ -886,8 +894,18 @@
      inline-block .crumb chips wrap line-by-line on their own now that
      there's nothing else sharing the row to wrap around. */
   #breadcrumbBar{
-    flex:0 0 auto; min-height:44px; box-sizing:border-box;
-    padding:8px 16px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    /* Flex-centers #breadcrumb's whole box; the row is kept as small as the
+       chips need (person-requested: may shrink, never grow beyond the old
+       44px). min-height is a floor, not the real height: #breadcrumb's own
+       content (a single line of .crumb chips) needs 32px — 28px chip height
+       plus its own 2px top/2px bottom margin (see #breadcrumb .crumb below,
+       kept symmetric so #breadcrumbBar's centering doesn't shift the visible
+       pill off-center) — so the actual rendered height ends up 4+32+4=40px
+       (plus the 1px border), still a fixed reserved height so #viewBar below
+       never jumps across views. */
+    flex:0 0 auto; min-height:40px; box-sizing:border-box;
+    display:flex; align-items:center;
+    padding:4px 16px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #breadcrumb{
     /* No line-height override here: it would be inherited by .crumb below
@@ -895,6 +913,27 @@
        already — see .crumb's comment). Vertical gap between wrapped lines
        comes from .crumb/.crumb-sep's own margin instead. */
   }
+  /* #breadcrumbBar centers #breadcrumb's whole rendered box (align-items:center,
+     see #breadcrumbBar above) — it does NOT center each chip individually. The
+     base .crumb/.crumb-sep rules below still carry their ORIGINAL asymmetric
+     vertical margins (0/6 and 8/6), hand-tuned for the pre-#breadcrumbBar era
+     when this content sat directly inside floated #viewBar with no outer
+     centering at all. Left as-is, that asymmetry (margin-bottom > margin-top)
+     shifts the visible pill toward the TOP of #breadcrumb's own box, so once
+     THAT box gets centered by #breadcrumbBar, the gap below the pill visibly
+     exceeds the gap above it (person-reported, mockup with measured margins).
+     Scoped override: symmetric small margins (2px vertical, half the old 6px
+     total) so the pill sits genuinely centered within its own margin box —
+     #breadcrumbBar's centering then produces an equal gap top and bottom. The
+     .crumb-sep margin-top is re-derived to keep its 12px glyph line vertically
+     centered against .crumb's now-2px-margin-top box: crumb's visible pill
+     spans margin-top(2)..margin-top+28, center at 2+14=16; sep's margin-top
+     must put its 12px line's center at that same 16 -> margin-top = 16-6 = 10
+     (was 8, tuned for the old margin-top:0 crumb). Bottom margins mirror the
+     new top values so the still-supported multi-line wrap case (a long filter
+     chain) keeps a modest, even gap between lines instead of 0. */
+  #breadcrumb .crumb{margin:2px 4px 2px 0;}
+  #breadcrumb .crumb-sep{margin:10px 3px 10px;}
   .crumb{
     /* Shared 28px pill shape (this session — see "Main window visual
        consistency fix"), same box model as .level-btn right below: a fixed
@@ -959,7 +998,10 @@
 
   /* ---------- Level filter bar ---------- */
   #levelBar{
-    float:left; margin:0 14px 0 0;
+    /* Sits right of the filter groups now (person-requested) with a fixed
+       ~3-button gap to their left, so changing pill numbers never shift the
+       filter buttons. 84px ≈ three 28px buttons. */
+    float:left; margin:0 14px 0 84px;
     display:flex; align-items:center; gap:6px; flex-wrap:wrap;
   }
   .level-btn{
@@ -1032,6 +1074,20 @@
   .row-action-btn.expanded .row-action-label, .row-action-btn:focus-visible .row-action-label{
     opacity:1; transform:translateX(-50%) translateY(0);
   }
+  /* Library preset pills (#libraryPresetBar) + the management buttons
+     (#libraryManageBar) drive the floating label off plain :hover instead of
+     the JS setupHitExpandGroups mechanism — the label floats (position:absolute)
+     and shifts no siblings, so the flicker-avoidance that motivated the JS path
+     doesn't apply here, and a CSS :hover survives the container's dynamic
+     re-render without re-wiring. */
+  #libraryPresetBar .row-action-btn:hover:not(:disabled) .row-action-label,
+  #libraryManageBar .row-action-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
+  /* Management group (Add to Library / Library) pinned to the far right of
+     #viewBar. Two ids so it beats `#viewBar .row-actions{float:left}`. */
+  #viewBar #libraryManageBar{float:right; margin:0;}
+  /* The "Library Filter" group and its leading "|" collapse out entirely when
+     nothing is pinned (id+[hidden] beats the .row-actions flex display). */
+  #libraryPresetBar[hidden], #libraryPresetSep[hidden]{display:none;}
   /* Same floating-label mechanic as .row-action-btn above, but for the log
      views' own toolbars' plain buttons (Context/Filtered/Table/Plot — see
      makeToolbarBtnExpandable near the end of the script). `:has(.tb-hit)`
@@ -2189,11 +2245,38 @@
   .filter-library-row-main{flex:1 1 auto; min-width:0;}
   .filter-library-row-name{font-size:12px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .filter-library-row-meta{font-size:10.5px; color:var(--text-tertiary); margin-top:2px;}
+  /* All row controls share a 28px height so the row's elements line up cleanly
+     (the row is already align-items:center — the fix is equal intrinsic
+     heights). Scoped Apply button height override lives with the row rules. */
   .filter-library-row-del{
     background:none; border:none; color:var(--text-tertiary); cursor:pointer;
-    display:flex; padding:4px; border-radius:4px; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border-radius:6px; flex:0 0 auto;
   }
   .filter-library-row-del:hover{color:var(--level-error); background:var(--level-error-soft);}
+  #filterLibraryList .btn-mini{height:28px; padding:0 14px; display:inline-flex; align-items:center; flex:0 0 auto;}
+  /* Filter-library row controls (person-requested): a leading icon button that
+     opens an inline icon grid, and a "Show in Filter Toolbar" pin toggle. The
+     icon shown here is the same one the pinned toolbar pill uses. */
+  .filter-library-row-icon{
+    flex:0 0 auto; width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+    border:1px solid var(--border); border-radius:7px; background:transparent; color:var(--text-secondary); cursor:pointer;
+  }
+  .filter-library-row-icon:hover{color:var(--accent-strong); background:var(--accent-soft);}
+  .filter-library-row-icon.active{color:var(--accent-strong); border-color:var(--accent-strong);}
+  .filter-library-icon-grid{
+    display:flex; flex-wrap:wrap; gap:4px; padding:2px 2px 10px 34px; border-bottom:1px solid var(--border-soft);
+  }
+  .filter-library-icon-grid button{
+    width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+    border:1px solid var(--border); border-radius:7px; background:transparent; color:var(--text-secondary); cursor:pointer;
+  }
+  .filter-library-icon-grid button:hover{color:var(--accent-strong); background:var(--accent-soft);}
+  .filter-library-icon-grid button.active{color:var(--accent-strong); border-color:var(--accent-strong); background:var(--accent-soft);}
+  .filter-library-pin{
+    flex:0 0 auto; height:28px; display:flex; align-items:center; gap:7px; font-size:10.5px; color:var(--text-tertiary);
+    user-select:none; white-space:nowrap;
+  }
+  .filter-library-pin.active{color:var(--accent-strong);}
 
   /* ---------- Settings page — a single wide, scrollable, sectioned dialog
      (not a menu of separate popups). Log Formats reuses the filter-library
@@ -2471,8 +2554,13 @@
     background:transparent; border:none; color:var(--text-tertiary); font-size:11px; font-weight:600;
     padding:0 11px; border-radius:5px; cursor:pointer; transition:background .12s, color .12s;
   }
-  .view-tab:hover{color:var(--text-secondary);}
+  .view-tab:hover:not(:disabled){color:var(--text-secondary);}
   .view-tab.active{background:var(--bg-elevated-2); color:var(--accent-strong);}
+  /* Table/Plot stay in the tab row even when the active node has nothing to
+     tabulate/plot — rendered disabled (person-requested) so the filter buttons
+     to their right never jump sideways as tabs appear/disappear. */
+  .view-tab:disabled{opacity:.35; cursor:not-allowed;}
+  .view-tab:disabled:hover{color:var(--text-tertiary);}
 
   /* ---------- Plot view ---------- */
   #plotWrap{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
@@ -3255,9 +3343,41 @@
              wildcards (see renderViewTabs's own comment), so the rest of
              the tab group never jumps sideways once they're added. -->
         <div class="view-tabs" id="fhTabs"></div>
+        <!-- Group 1: standard filter-creation actions (Before/After/Time
+             range/Message/Extract) — directly right of the view selector so
+             they never shift when the level pills' numbers change width (the
+             level filter now sits to their RIGHT, person-requested). -->
+        <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
+        <!-- Group 2: pinned library presets (person-requested). Rendered
+             dynamically by renderLibraryToolbarPresets; the group and its
+             leading "|" divider (#libraryPresetSep) are hidden when no preset
+             is pinned, so the bar never shows an empty "| |". Same circle-pill
+             .row-action-btn styling as the filter buttons; the floating label
+             is driven purely by CSS :hover here (the label floats and shifts
+             nothing, so the JS setupHitExpandGroups mechanism isn't needed). -->
+        <span class="row-action-separator" id="libraryPresetSep"></span>
+        <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
+        <!-- Group 3: "New" on its own (person-requested), always divided from
+             whatever precedes it by this "|". -->
+        <span class="row-action-separator"></span>
+        <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
+        <!-- Level quick-filter — sits RIGHT of the filter groups now
+             (person-requested), a fixed ~3-button gap away (#levelBar's
+             margin-left), so changing pill numbers never push the filter
+             buttons sideways. -->
         <div id="levelBar"></div>
         <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
-        <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
+        <!-- Library management, pinned to the far right (float:right):
+             "Add to Library" (saves the active filter) then "Library" (opens
+             the manage dialog). -->
+        <div class="toolbar-group row-actions" id="libraryManageBar">
+          <button type="button" id="btnAddToLibrary" class="toolbar-icon-btn row-action-btn" title="Add active filter to library">
+            <span class="row-action-hit"></span><span class="row-action-label">Add to Library</span>
+          </button>
+          <button type="button" id="btnOpenLibrary" class="toolbar-icon-btn row-action-btn" title="Open filter library">
+            <span class="row-action-hit"></span><span class="row-action-label">Library</span>
+          </button>
+        </div>
       </div>
 
       <div id="fhSplit">
@@ -3850,8 +3970,9 @@
     </div>
   </div>
 
-  <!-- Reusable filter library (FEATURE_BACKLOG.md): "Save to library…" on a
-       filter node's context menu opens this to name the branch being saved. -->
+  <!-- Reusable filter library (FEATURE_BACKLOG.md): the "+ Add to Library"
+       button in the Filter-Toolbar opens this to name the active filter's
+       branch being saved. -->
   <div id="filterLibrarySaveDialog" class="hidden">
     <div class="link-dialog-card">
       <div class="link-dialog-title">Save to filter library</div>
@@ -4526,6 +4647,14 @@ const ICON_TIME_RANGE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="n
 // fall through nodeIconHTML's switch into ICON_CLOCK despite not being a
 // time filter; this gives it its own identity like every other filter type.
 const ICON_CHECKLIST = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l1.3 1.3L7 3M3 9.5l1.3 1.3L7 7M3 14.5l1.3-1.3L4.3 12M9 4.5h4M9 9.5h4M9 14.5h4"/></svg>';
+// Single checkmark — used for the selection-filter (idset) tree node icon
+// (person-requested: a plain "selected" tick instead of the multi-line list).
+const ICON_CHECK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.3 3.5L13 4.5"/></svg>';
+// Floppy-disk "save" — the Filter-Toolbar's "Add to Library" button (a disk,
+// distinct from ICON_SAVE's download-to-tray arrow used by "Save filter…").
+const ICON_DISK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5 2.5v3.5h5V2.5"/><rect x="5" y="9" width="6" height="4.5"/></svg>';
+// Open book — the Filter-Toolbar's "Library" button.
+const ICON_BOOK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.3 5.3 3 3.5 3H2v9h1.5c1.8 0 3.3.3 4.5 1.2"/><path d="M8 4.2C9.2 3.3 10.7 3 12.5 3H14v9h-1.5c-1.8 0-3.3.3-4.5 1.2z"/><path d="M8 4.2v9"/></svg>';
 const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2.2v4.3c0 2 1.8 3 3.6 3M12 2.2v4.3c0 2-1.8 3-3.6 3v3.3"/><circle cx="4" cy="2.2" r="1.2"/><circle cx="12" cy="2.2" r="1.2"/><circle cx="8.4" cy="13.8" r="1.2"/></svg>';
 const ICON_COMBINE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6.2" cy="8" r="4.3"/><circle cx="9.8" cy="8" r="4.3"/></svg>';
 const ICON_LINK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6.3 9.7 9.7 6.3"/><path d="M6.7 6.9 4.9 8.7a2 2 0 0 0 2.8 2.8l1.8-1.8"/><path d="M9.3 9.1l1.8-1.8a2 2 0 0 0-2.8-2.8L6.5 6.3"/></svg>';
@@ -9294,19 +9423,21 @@ function currentViewTabsList(extractCapable) {
         { tab: "filter", label: "Filtered", title: "Narrowed by the active filter tree node" },
       ];
   const tabs = [...logTabs];
-  if (extractCapable) {
-    tabs.push(
-      { tab: "table", label: "Table", title: "Extraction table for this node's pattern" },
-      { tab: "plot", label: "Plot", title: "Plot extracted values from this node's pattern" },
-    );
-  }
+  // Table/Plot are ALWAYS listed now (person-requested) — but flagged
+  // `disabled` when the active node has no extractable wildcards, so they stay
+  // visibly in place instead of being omitted (which shifted the filter
+  // buttons to their right sideways every time a node gained/lost wildcards).
+  tabs.push(
+    { tab: "table", label: "Table", title: extractCapable ? "Extraction table for this node's pattern" : "No extractable [*] pattern on this filter — nothing to tabulate", disabled: !extractCapable },
+    { tab: "plot", label: "Plot", title: extractCapable ? "Plot extracted values from this node's pattern" : "No extractable [*] pattern on this filter — nothing to plot", disabled: !extractCapable },
+  );
   return tabs;
 }
 function renderViewTabs(extractCapable) {
   const tabs = currentViewTabsList(extractCapable);
   const activeVal = fhLayout === "stacked" && fhActiveTab !== "table" && fhActiveTab !== "plot" ? "stacked" : fhActiveTab;
   fhTabs.innerHTML = tabs.map(t =>
-    `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}">${t.label}</button>`
+    `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}"${t.disabled ? " disabled" : ""}>${t.label}</button>`
   ).join("");
 }
 // Ctrl+1-4: jump to the Nth tab currently shown in the View Selector (1-based)
@@ -9319,7 +9450,7 @@ function jumpToViewTab(n) {
   const extractCapable = nodeIsExtractionView(state.nodes[state.activeId]);
   const tabs = currentViewTabsList(extractCapable);
   const t = tabs[n - 1];
-  if (!t) return;
+  if (!t || t.disabled) return; // a disabled Table/Plot slot is a silent no-op, same as before it was omitted
   clearSidebarForcedPeek();
   applyFhView(t.tab);
   state.entriesView = t.tab === "highlight" ? "highlight" : "filter";
@@ -10150,7 +10281,7 @@ function nodeIconHTML(node) {
     : node.filterType === "level" ? ICON_LEVEL
     : node.filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
     : node.filterType === "notes" ? ICON_NOTE
-    : node.filterType === "idset" ? ICON_CHECKLIST
+    : node.filterType === "idset" ? ICON_CHECK
     : timeFilterIcon(node);
 }
 
@@ -20721,15 +20852,21 @@ const VIEWBAR_ROW_ACTIONS = [
   { action: "filterBefore", label: "Before", svg: '<path d="M8 3v10M8 3l-3 3M8 3l3 3"/>', strokeWidth: 1.4 },
   { action: "filterAfter", label: "After", svg: '<path d="M8 13V3M8 13l-3-3M8 13l3-3"/>', strokeWidth: 1.4 },
   { action: "timeRangeFromSelection", label: "Time range", svg: '<path d="M8 3v4M5 4l3 3 3-3M8 13v-4M5 12l3-3 3 3"/>', strokeWidth: 1.4 },
-  { action: "filterForMessage", label: "Message", svg: '<path d="M2.5 3.2h11v7.6h-6.2L4.5 13V10.8h-2z"/><path d="M6 6.6l-1.2 1 1.2 1M10 6.6l1.2 1-1.2 1"/>', strokeWidth: 1.4 },
+  // "[ * ]" — brackets spaced well clear of a compact centered asterisk
+  // (person-requested: the token must stay legible at 13px), the
+  // extraction-wildcard glyph, replacing the old speech-bubble.
+  { action: "filterForMessage", label: "Message", svg: '<path d="M5.2 3.5H4v9h1.2"/><path d="M10.8 3.5H12v9h-1.2"/><path d="M8 6.3v3.4M6.5 7.15l3 1.7M9.5 7.15l-3 1.7"/>', strokeWidth: 1.3 },
   // Same auto-extraction pattern as "Message" (see extractMessageFilter),
   // but committed straight to a new filter node instead of opening the
   // popup first — reuses ICON_TABLE's markup ("extraction table"), the
   // one icon constant not already used in a toolbar.
   { action: "extractMessage", label: "Extract", svg: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/>', strokeWidth: 1.4 },
-  // Separated from the row-scoped actions above (person-requested): "New"
-  // needs no selected row, just opens the plain filter popup (Ctrl+F).
-  { action: "newFilter", label: "New", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/>', strokeWidth: 1.4, separator: true },
+];
+// "New" is its own group in #viewBar (person-requested: Standard filters |
+// Library presets | New) — a plain "+", opens the filter popup (Ctrl+F). It
+// needs no selected row, only state.activeId (see updateRowActionButtons).
+const VIEWBAR_NEW_ROW_ACTION = [
+  { action: "newFilter", label: "New", svg: '<path d="M8 3.5v9M3.5 8h9"/>', strokeWidth: 1.8 },
 ];
 // shape: "circle" (default, Filter-Toolbar's own row-actions — expands into
 // a pill, person-requested) or "rect" (the duplicated copies inside the log
@@ -20756,6 +20893,7 @@ function buildRowActionsHtml(list, shape) {
 }
 const TOOLBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS, "rect");
 const VIEWBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(VIEWBAR_ROW_ACTIONS, "circle");
+const VIEWBAR_NEW_ROW_ACTION_HTML = buildRowActionsHtml(VIEWBAR_NEW_ROW_ACTION, "circle");
 // "Select" (Add to selection) on its own — the Table/Plot toolbars' Actions
 // groups carry only this one of the three TOOLBAR_ROW_ACTIONS (Bookmark/Note
 // key off a log-row selection those views don't have). Same rect shape and
@@ -20764,6 +20902,7 @@ const SELECT_ROW_ACTION_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS.filter(a 
 elAll('[data-row-actions="toolbar-actions"]').forEach(container => { container.innerHTML = TOOLBAR_ROW_ACTIONS_HTML; });
 elAll('[data-row-actions="select-action"]').forEach(container => { container.innerHTML = SELECT_ROW_ACTION_HTML; });
 elAll('[data-row-actions="viewbar"]').forEach(container => { container.innerHTML = VIEWBAR_ROW_ACTIONS_HTML; });
+elAll('[data-row-actions="viewbar-new"]').forEach(container => { container.innerHTML = VIEWBAR_NEW_ROW_ACTION_HTML; });
 // Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
 // circle specifically, NOT a plain CSS :hover on the button — the button's
 // own box changes width once expanded, pushing later siblings' hit-zones
@@ -20876,6 +21015,10 @@ function updateRowActionButtons() {
   // "New" needs no selected row at all — just an active filter tree to add
   // to (same guard openFilterPopup itself applies).
   elAll('[data-row-action="newFilter"]').forEach(b => { b.disabled = !state.activeId; });
+  // "+ Add to Library" needs an active FILTER node (a file/folder has nothing
+  // to serialize into a preset) — same guard saveFilterToLibrary itself applies.
+  const addLibBtn = document.getElementById("btnAddToLibrary");
+  if (addLibBtn) addLibBtn.disabled = !state.activeId || (state.nodes[state.activeId] || {}).type !== "filter";
   elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !selectEnabled; });
   // A button that just became disabled while the mouse happened to be
   // sitting over its circle (e.g. the selection changed via keyboard, not
@@ -21264,7 +21407,10 @@ function openTreeContextMenu(ev, clickedId) {
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
       buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
-      buckets.library.push({ action: "saveToLibrary", label: "Save to library…", icon: ICON_SAVE });
+      // "Save to library…" moved out of the context menu (person-requested):
+      // it's now the "+ Add to Library" button in the Filter-Toolbar, acting on
+      // the active filter. "Apply from library…" (below) stays here — it targets
+      // the right-clicked node, which the toolbar can't address arbitrarily.
       // "Unpack" (and/or/link only): materializes the node's two baked
       // inputs as real, visible sibling filters next to it — the node
       // itself is untouched — see unpackAndOrLinkNode.
@@ -21432,10 +21578,6 @@ treeContextMenu.addEventListener("click", ev => {
       const newId = unpackAndOrLinkNode(treeCtxId);
       if (newId) { state.activeId = newId; render(); showCopyToast("Unpacked into its two inputs"); }
     }
-    return;
-  }
-  if (action === "saveToLibrary") {
-    if (treeCtxId && state.nodes[treeCtxId]) openFilterLibrarySaveDialog(treeCtxId);
     return;
   }
   if (action === "loadFilter") {
@@ -22237,9 +22379,9 @@ function importFilterJson(text) {
 
 /* ===================== Reusable filter library (FEATURE_BACKLOG.md
    "Reusable filter library") =====================
-   Named presets, saved from any filter node's "Save to library…" context
-   menu action and applied to ANY node (file or filter, any file) via
-   "Apply from library…" — the global counterpart to the per-file filter
+   Named presets, saved from the Filter-Toolbar's "+ Add to Library" button
+   (acting on the active filter) and applied to ANY node (file or filter, any
+   file) via a pinned toolbar pill or the "Apply from library…" context action — the global counterpart to the per-file filter
    history (see "File filter history" further below): that one auto-offers
    a ghost preview keyed by CONTENT FINGERPRINT (ambient, one file, no
    naming); this one is explicit, named, and file-agnostic on purpose — the
@@ -22258,6 +22400,30 @@ function newFilterLibraryKey() {
   return "fl-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 }
 
+// Icon inventory a saved preset may pick from (person-requested): a curated
+// subset of the existing ICON_* constants for now, extended later. The record
+// stores the NAME (a short stable string), not the SVG — libraryIconSvg maps
+// it back at render time. An unknown/missing name falls back to ICON_FILTER,
+// so a preset with no icon assigned still shows something in its toolbar pill.
+const LIBRARY_ICON_SET = [
+  { name: "filter", svg: ICON_FILTER },
+  { name: "clock", svg: ICON_CLOCK },
+  { name: "bookmark", svg: ICON_BOOKMARK_FILLED },
+  { name: "table", svg: ICON_TABLE },
+  { name: "link", svg: ICON_LINK },
+  { name: "combine", svg: ICON_COMBINE },
+  { name: "level", svg: ICON_LEVEL },
+  { name: "message", svg: ICON_MESSAGE_EXTRACT },
+  { name: "note", svg: ICON_NOTE },
+  { name: "invert", svg: ICON_INVERT },
+  { name: "target", svg: ICON_TARGET },
+  { name: "checklist", svg: ICON_CHECKLIST },
+];
+function libraryIconSvg(name) {
+  const entry = LIBRARY_ICON_SET.find(i => i.name === name);
+  return entry ? entry.svg : ICON_FILTER;
+}
+
 async function saveFilterToLibrary(nodeId, name) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return;
@@ -22270,8 +22436,27 @@ async function saveFilterToLibrary(nodeId, name) {
     savedAt: Date.now(),
     roots: branch.roots,
     activeRef: branch.activeRef,
+    // Toolbar-pin state + chosen icon are library-record fields, NOT filter-node
+    // fields — so they need no threading through cloneSubtree/serializeFilterBranch
+    // (CLAUDE.md's carrier rule is about node.* fields). Default off/unset; the
+    // manage dialog toggles them per entry.
+    showInToolbar: false,
+    icon: null,
   }));
   showCopyToast("Saved to filter library");
+  await renderLibraryToolbarPresets();
+}
+
+// Persists a single field change on one library record (pin toggle / icon pick
+// from the manage dialog), then refreshes the toolbar pill row. Mirrors the
+// store.put shape saveFilterToLibrary uses.
+async function updateFilterLibraryEntry(key, patch) {
+  const all = await listFilterLibrary();
+  const rec = all.find(r => r.key === key);
+  if (!rec) return;
+  Object.assign(rec, patch);
+  await cacheStoreOp("filterLibrary", "readwrite", store => store.put(rec));
+  await renderLibraryToolbarPresets();
 }
 
 async function listFilterLibrary() {
@@ -22281,6 +22466,7 @@ async function listFilterLibrary() {
 
 async function deleteFilterLibraryEntry(key) {
   await cacheStoreOp("filterLibrary", "readwrite", store => store.delete(key));
+  await renderLibraryToolbarPresets();
 }
 
 // Applies one saved record onto targetId — identical mechanism to Load
@@ -22367,11 +22553,13 @@ filterLibraryNameInput.addEventListener("keydown", ev => {
   if (ev.key === "Enter") { ev.preventDefault(); el("#filterLibrarySaveConfirm").click(); }
 });
 
-function closeFilterLibraryDialog() { filterLibraryDialog.classList.add("hidden"); filterLibraryApplyTargetId = null; }
+function closeFilterLibraryDialog() { filterLibraryDialog.classList.add("hidden"); filterLibraryApplyTargetId = null; filterLibraryIconOpenKey = null; }
+// Which row's inline icon grid is currently expanded (by record key), or null.
+let filterLibraryIconOpenKey = null;
 async function renderFilterLibraryDialog() {
   const records = await listFilterLibrary();
   if (!records.length) {
-    filterLibraryList.innerHTML = '<div class="filter-library-empty">No saved filters yet. Right-click a filter and choose "Save to library…".</div>';
+    filterLibraryList.innerHTML = '<div class="filter-library-empty">No saved filters yet. Activate a filter and use the "+ Add to Library" button in the Filter-Toolbar.</div>';
     return;
   }
   filterLibraryList.innerHTML = "";
@@ -22379,12 +22567,51 @@ async function renderFilterLibraryDialog() {
   records.forEach(rec => {
     const row = document.createElement("div");
     row.className = "filter-library-row";
+    // Leading icon button — shows the preset's current icon (or the ICON_FILTER
+    // fallback) and toggles an inline icon grid below the row.
+    const iconBtn = document.createElement("button");
+    iconBtn.type = "button";
+    iconBtn.className = "filter-library-row-icon" + (rec.icon ? " active" : "");
+    iconBtn.title = "Choose icon";
+    iconBtn.innerHTML = libraryIconSvg(rec.icon);
+    iconBtn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      filterLibraryIconOpenKey = filterLibraryIconOpenKey === rec.key ? null : rec.key;
+      renderFilterLibraryDialog();
+    });
+    row.appendChild(iconBtn);
     const main = document.createElement("div");
     main.className = "filter-library-row-main";
     main.innerHTML =
       '<div class="filter-library-row-name">' + escapeHtml(rec.name) + '</div>' +
       '<div class="filter-library-row-meta">' + escapeHtml(new Date(rec.savedAt).toLocaleString()) + '</div>';
     row.appendChild(main);
+    // "Show in Filter Toolbar" pin toggle — the reusable pill switch
+    // (.settings-switch) instead of a plain checkbox (person-requested).
+    // Persists rec.showInToolbar and refreshes the toolbar pill row via
+    // updateFilterLibraryEntry. (A <div>, not a <label>, so the inner
+    // .settings-switch <label> isn't nested inside another label.)
+    const pin = document.createElement("div");
+    pin.className = "filter-library-pin" + (rec.showInToolbar ? " active" : "");
+    pin.title = "Show this preset as a pill in the Filter-Toolbar";
+    const pinLabelText = document.createElement("span");
+    pinLabelText.textContent = "Toolbar";
+    const pinSwitch = document.createElement("label");
+    pinSwitch.className = "settings-switch settings-switch-sm";
+    const pinCb = document.createElement("input");
+    pinCb.type = "checkbox";
+    pinCb.checked = !!rec.showInToolbar;
+    pinCb.addEventListener("click", ev => ev.stopPropagation());
+    pinCb.addEventListener("change", () => {
+      updateFilterLibraryEntry(rec.key, { showInToolbar: pinCb.checked }).then(renderFilterLibraryDialog);
+    });
+    const pinTrack = document.createElement("span");
+    pinTrack.className = "settings-switch-track";
+    pinSwitch.appendChild(pinCb);
+    pinSwitch.appendChild(pinTrack);
+    pin.appendChild(pinLabelText);
+    pin.appendChild(pinSwitch);
+    row.appendChild(pin);
     const applyBtn = document.createElement("button");
     applyBtn.type = "button";
     applyBtn.className = "btn-mini";
@@ -22403,16 +22630,89 @@ async function renderFilterLibraryDialog() {
     delBtn.addEventListener("click", () => { deleteFilterLibraryEntry(rec.key).then(renderFilterLibraryDialog); });
     row.appendChild(delBtn);
     frag.appendChild(row);
+    // Inline icon grid, shown as a sibling block under the row while open.
+    if (filterLibraryIconOpenKey === rec.key) {
+      const grid = document.createElement("div");
+      grid.className = "filter-library-icon-grid";
+      LIBRARY_ICON_SET.forEach(ic => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "" + (rec.icon === ic.name ? "active" : "");
+        b.title = ic.name;
+        b.innerHTML = ic.svg;
+        b.addEventListener("click", () => {
+          const next = rec.icon === ic.name ? null : ic.name;
+          filterLibraryIconOpenKey = null;
+          updateFilterLibraryEntry(rec.key, { icon: next }).then(renderFilterLibraryDialog);
+        });
+        grid.appendChild(b);
+      });
+      frag.appendChild(grid);
+    }
   });
   filterLibraryList.appendChild(frag);
 }
 async function openFilterLibraryDialog(nodeId) {
   filterLibraryApplyTargetId = nodeId;
+  filterLibraryIconOpenKey = null;
   filterLibraryDialog.classList.remove("hidden");
   await renderFilterLibraryDialog();
 }
 filterLibraryDialog.addEventListener("click", ev => { if (ev.target === filterLibraryDialog) closeFilterLibraryDialog(); });
 el("#filterLibraryDialogClose").addEventListener("click", closeFilterLibraryDialog);
+
+/* ---- Filter-library toolbar section ----
+   The pinned presets render as circle→pill .row-action-btn buttons matching
+   the filter-creation buttons, in their own group (#libraryPresetBar, "Library
+   Filter"); clicking one applies that preset onto the currently active node
+   (state.activeId), the same target and mechanism as the manage dialog's
+   "Apply". The two management buttons (Add / Library) live in a separate,
+   right-aligned group (#libraryManageBar) and are wired once here; the pills
+   are rebuilt on every library change by renderLibraryToolbarPresets. */
+const libraryPresetBar = el("#libraryPresetBar");
+const libraryPresetSep = el("#libraryPresetSep");
+const btnAddToLibrary = el("#btnAddToLibrary");
+const btnOpenLibrary = el("#btnOpenLibrary");
+btnAddToLibrary.querySelector(".row-action-hit").innerHTML = ICON_DISK;
+btnOpenLibrary.querySelector(".row-action-hit").innerHTML = ICON_BOOK;
+btnAddToLibrary.addEventListener("click", () => {
+  const node = state.activeId ? state.nodes[state.activeId] : null;
+  if (!node || node.type !== "filter") return; // guarded, and disabled below
+  openFilterLibrarySaveDialog(state.activeId);
+});
+btnOpenLibrary.addEventListener("click", () => { openFilterLibraryDialog(state.activeId); });
+
+async function renderLibraryToolbarPresets() {
+  if (!libraryPresetBar) return;
+  // Use the bar's own ownerDocument, not the global `document` — the async
+  // listFilterLibrary() below can resolve after the window is gone (e.g. a
+  // fire-and-forget re-render from a library mutator during teardown), and the
+  // detached element still carries a live ownerDocument to build nodes from.
+  const doc = libraryPresetBar.ownerDocument;
+  libraryPresetBar.querySelectorAll(".row-action-btn[data-lib-key]").forEach(b => b.remove());
+  const records = await listFilterLibrary();
+  const frag = doc.createDocumentFragment();
+  records.filter(r => r.showInToolbar).forEach(rec => {
+    const btn = doc.createElement("button");
+    btn.type = "button";
+    btn.className = "toolbar-icon-btn row-action-btn";
+    btn.dataset.libKey = rec.key;
+    btn.title = "Apply preset: " + rec.name;
+    btn.innerHTML =
+      '<span class="row-action-hit">' + libraryIconSvg(rec.icon) + '</span>' +
+      '<span class="row-action-label">' + escapeHtml(rec.name) + '</span>';
+    btn.addEventListener("click", () => {
+      if (state.activeId && state.nodes[state.activeId]) applyFilterFromLibrary(state.activeId, rec);
+    });
+    frag.appendChild(btn);
+  });
+  libraryPresetBar.appendChild(frag);
+  // Hide the whole "Library Filter" group and its leading "|" divider when
+  // nothing is pinned, so the bar never shows an empty "| |".
+  const pinnedCount = records.filter(r => r.showInToolbar).length;
+  libraryPresetBar.hidden = pinnedCount === 0;
+  if (libraryPresetSep) libraryPresetSep.hidden = pinnedCount === 0;
+}
 
 /* ===================== Settings page =====================
    One wide, scrollable, sectioned dialog (Appearance, Log Formats, more
@@ -25199,6 +25499,9 @@ setupHitExpandGroups(".tb-hit");
 // default) and awaits this promise itself, narrowly, only when that
 // specific case applies — see addFile's own comment.
 const formatConfigReady = loadFormatConfig();
+// Populate the Filter-Toolbar's pinned library presets once at boot (they're
+// global, not per-file — later changes re-render via the library mutators).
+renderLibraryToolbarPresets();
 // Deep-link ?url= load, fire-and-forget — independent of session restore
 // below (a link straight into a log doesn't need a prior cached session).
 loadFromUrlParam();
