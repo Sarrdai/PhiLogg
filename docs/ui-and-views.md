@@ -139,14 +139,17 @@ shape:
   `#viewBar` (person-requested placement — NOT below `#viewBar`, and
   deliberately its own row so it never competes for space with the toggle/
   level-filter/row-actions or changes `#viewBar`'s height).
-- **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — the view toggle
-  (`#fhTabs`), the level quick-filter (`#levelBar`/`#btnApplyLevelToTree`),
-  and, floated right after those, the **row-actions** button group
-  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — SIX
-  entries, in order: Filter after this/Filter before this/Filter for this
-  message/**Extract**/Time range, then a visual separator, then **New**
-  (`separator: true` on that last entry, rendered by `buildRowActionsHtml`
-  as a `.row-action-separator` divider immediately before it). (Bookmark
+- **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — everything floats left
+  in DOM order (`#viewBar` is `display:flow-root`), except the management
+  group which floats right. Order (person-requested, 2026-09-08): the view
+  toggle (`#fhTabs`), then **directly** the **row-actions** button group
+  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML` — FIVE entries:
+  Before/After/Time range/Message/Extract), then the pinned-preset group and
+  **New** (see "Three groups" below), then the level quick-filter
+  (`#levelBar`/`#btnApplyLevelToTree`) a fixed ~3-button gap to their right
+  (`#levelBar`'s `margin-left:84px`) — the level bar sits AFTER the filters
+  now so its pills changing number-width never shift the filter buttons — and
+  finally the right-floated management group. (Bookmark
   this row/Add note/Add to selection used to live here too — moved out,
   person-requested follow-up same session, into each log view's own
   toolbar instead; see the "Actions" group below for why: they mutate the
@@ -171,18 +174,24 @@ shape:
   range/Message/Extract) · **Library presets** (`#libraryPresetBar`) ·
   **New** (`#viewbarNew`, its own group now — a plain `+` icon, one-click
   `openFilterPopup()` identical to Ctrl+F; needs only `state.activeId`).
-  The Library-presets group and its **leading** separator (`#libraryPresetSep`)
-  collapse out (`hidden`) when no preset is pinned, so the bar never shows an
-  empty "| |". Pinned presets (`showInToolbar` on the `filterLibrary` record)
-  render there as circle-pills matching the filter buttons, icon from
-  `LIBRARY_ICON_SET` (falling back to `ICON_FILTER`); clicking one applies the
-  preset onto the active node. The two **management** buttons sit in a
-  separate, right-aligned group (`#libraryManageBar`, `margin-left:auto`):
-  **"Add to Library"** (`#btnAddToLibrary`, floppy-disk `ICON_DISK`, a dashed
-  `.lib-add-placeholder` outline marking it as the "add a preset" slot; opens
-  the save dialog on the active filter, disabled unless the active node is a
-  filter — see `updateRowActionButtons`) and **"Library"** (`#btnOpenLibrary`,
-  `ICON_BOOK`; opens the manage dialog). Unlike the standard-actions group,
+  The two dividing separators are **direct children** of `#viewBar` (not
+  inside a flex `.row-actions` group), so they float in the same left flow and
+  carry an explicit height — `#viewBar > .row-action-separator{float:left;
+  height:20px; margin:4px 4px}` — the 4px side margins making the gap from the
+  separator to the button on each side equal the 4px gap between two adjacent
+  filter buttons (person-requested). The Library-presets group and its
+  **leading** separator (`#libraryPresetSep`) collapse out (`hidden`) when no
+  preset is pinned, so the bar never shows an empty "| |". Pinned presets
+  (`showInToolbar` on the `filterLibrary` record) render there as circle-pills
+  matching the filter buttons, icon from `LIBRARY_ICON_SET` (falling back to
+  `ICON_FILTER`); clicking one applies the preset onto the active node. The two
+  **management** buttons sit in a separate group pinned to the **far right**
+  (`#viewBar #libraryManageBar{float:right}` — two ids so it beats
+  `#viewBar .row-actions{float:left}`): **"Add to Library"** (`#btnAddToLibrary`,
+  floppy-disk `ICON_DISK`; opens the save dialog on the active filter, disabled
+  unless the active node is a filter — see `updateRowActionButtons`) and
+  **"Library"** (`#btnOpenLibrary`, `ICON_BOOK`; opens the manage dialog).
+  Unlike the standard-actions group,
   the pills' and management buttons' floating labels are driven by plain CSS
   `:hover` scoped to `#libraryPresetBar`/`#libraryManageBar` (the label floats
   and shifts nothing, so `setupHitExpandGroups` isn't needed — and a CSS rule
