@@ -8384,6 +8384,8 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
     result = parentEntries.filter(e => idSet.has(e.id));
   } else if (baked.filterType === "bookmarks") {
     result = parentEntries.filter(e => state.bookmarks.has(e.id));
+  } else if (baked.filterType === "notes") {
+    result = parentEntries.filter(e => state.notes.has(e.id));
   } else if (baked.filterType === "level") {
     result = parentEntries.filter(e => baked.value.includes(levelBucket(e.level, e.formatId)));
   } else if (baked.filterType === "and" || baked.filterType === "or") {
@@ -8509,6 +8511,11 @@ function getEntriesUncached(node) {
     // bookmark dot), so this just mirrors it through the normal filter-node
     // matching path instead of inventing a parallel one.
     result = parentEntries.filter(e => state.bookmarks.has(e.id));
+  } else if (node.filterType === "notes") {
+    // Auto-managed per-file node (see syncNotesFilterNode) — same shape as
+    // "bookmarks" just above, mirroring state.notes instead of
+    // state.bookmarks.
+    result = parentEntries.filter(e => state.notes.has(e.id));
   } else if (node.filterType === "level") {
     // value = array of active level names (e.g. ["ERROR", "WARN"]) — the
     // tree-node counterpart of the level bar's own quick-filter (see
@@ -9498,6 +9505,15 @@ function revealFilteredView() {
 // active or the Filtered tab is already showing.
 let lastActiveIdForReveal = null;
 
+// state.showNotes snapshot taken the moment the auto-managed "Notes" filter
+// node (see syncNotesFilterNode) becomes active, restored the moment it stops
+// being active — person-requested "Notes" overview: standing on that node
+// force-enables Show Notes so its whole point (reading every note at a
+// glance) works even if the toggle was off, and leaving it puts the toggle
+// back exactly how it was, same as if the person had never touched it. Only
+// meaningful while the "notes" node is the active one; stale otherwise.
+let notesFilterPrevShowNotes = false;
+
 /* ===================== Back/forward "where I looked" navigation ==========
    FEATURE_BACKLOG.md #53, extended this session with a real
    "meaningful interaction" heuristic (person-requested, modeled on Visual
@@ -9904,8 +9920,17 @@ function updateSortIndicators() {
 
 function render() {
   if (state.activeId !== lastActiveIdForReveal) {
+    const prevNode = state.nodes[lastActiveIdForReveal];
     lastActiveIdForReveal = state.activeId;
     const activeNode = state.nodes[state.activeId];
+    const enteringNotesNode = !!(activeNode && activeNode.filterType === "notes");
+    const leavingNotesNode = !!(prevNode && prevNode.filterType === "notes");
+    if (enteringNotesNode && !leavingNotesNode) {
+      notesFilterPrevShowNotes = state.showNotes;
+      if (!state.showNotes) { state.showNotes = true; updateNotesButton(); }
+    } else if (leavingNotesNode && !enteringNotesNode) {
+      if (state.showNotes !== notesFilterPrevShowNotes) { state.showNotes = notesFilterPrevShowNotes; updateNotesButton(); }
+    }
     if (activeNode && activeNode.type === "filter") applyActivationView(activeNode);
     if (state.activeId) recordNavVisit();
   }
@@ -10102,6 +10127,7 @@ function nodeIconHTML(node) {
     : (node.filterType === "context" || node.filterType === "countContext") ? ICON_CONTEXT
     : node.filterType === "level" ? ICON_LEVEL
     : node.filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
+    : node.filterType === "notes" ? ICON_NOTE
     : ICON_CLOCK;
 }
 
@@ -17516,6 +17542,40 @@ function syncBookmarksFilterNode(rootId) {
   }
 }
 
+// Same auto-managed shape as syncBookmarksFilterNode right above, mirroring
+// state.notes instead of state.bookmarks (person-requested "Notes" overview,
+// FEATURE_BACKLOG.md "Bookmarks rework" follow-up): a locked, non-persisted
+// filter node named "Notes" that appears the moment this file has ≥1 entry
+// with a note and disappears once none are left. Placed directly below the
+// "Bookmarks" node when one exists (root.children[0]) so it always reads as
+// "Bookmarks, then Notes" in the tree; unshifted to the top itself when
+// Bookmarks isn't present, same top-level placement Bookmarks uses.
+function syncNotesFilterNode(rootId) {
+  const root = state.nodes[rootId];
+  if (!root || root.type !== "file") return;
+  const existing = root.children.map(id => state.nodes[id]).find(n => n && n.filterType === "notes");
+  const hasAny = root.entries.some(e => state.notes.has(e.id));
+  if (hasAny && !existing) {
+    const node = {
+      id: uid("n"), type: "filter", name: "Notes", parentId: rootId,
+      children: [], filterType: "notes", value: null, inverted: false, locked: true,
+    };
+    state.nodes[node.id] = node;
+    const bookmarksIdx = root.children.findIndex(id => state.nodes[id] && state.nodes[id].filterType === "bookmarks");
+    root.children.splice(bookmarksIdx === -1 ? 0 : bookmarksIdx + 1, 0, node.id);
+    invalidateAllCaches();
+  } else if (!hasAny && existing) {
+    // Same "don't strand the Filtered tab on a node that's about to vanish"
+    // guard as syncBookmarksFilterNode's own delete branch.
+    const wasActiveAndShowing = state.activeId === existing.id
+      && fhLayout === "tabs" && fhActiveTab === "filter";
+    deleteNode(existing.id);
+    if (wasActiveAndShowing) applyFhView("highlight");
+  } else if (hasAny && existing) {
+    invalidateAllCaches();
+  }
+}
+
 function toggleBookmark(entryId) {
   if (!entryId) return;
   if (state.bookmarks.has(entryId)) {
@@ -21703,6 +21763,9 @@ el("#noteDialogCancel").addEventListener("click", closeNoteDialog);
 function setNoteAndRepaint(entryId, text) {
   const trimmed = (text || "").replace(/\s+$/, ""); // trailing whitespace/newlines only — leading/internal formatting is the person's own
   if (trimmed) state.notes.set(entryId, trimmed); else state.notes.delete(entryId);
+  const rootId = findRootIdForEntry(entryId);
+  if (rootId) syncNotesFilterNode(rootId);
+  renderTree(); // repaint the sidebar in case the auto "Notes" node just appeared/disappeared
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
   rebuildHighlightOffsets();
@@ -21766,7 +21829,7 @@ noteDialogInput.addEventListener("keydown", ev => {
 
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "idset"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "idset"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId, includeAncestors) {
@@ -22127,7 +22190,7 @@ function importFilterJson(text) {
     // written to a saved filter file in the first place — an imported one
     // (hand-edited file, or an old export from before this restriction
     // existed) would just be an unlocked look-alike with a stale match set.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes") return false;
     // and/or/link carry their two sides as baked condition snapshots. A file
     // or library preset written before that model carries node-id references
     // instead, which mean nothing here — importing it would produce a filter
@@ -23811,7 +23874,7 @@ function serializeFilterTreeForCache(fileNode) {
   // serializing the node itself would just be redundant, drifting state to
   // keep in sync. (A filter manually added as its CHILD, if the person did
   // that, is lost along with it — an accepted edge case, see PROJECT.md.)
-  const persistableChildren = ids => ids.filter(id => state.nodes[id] && state.nodes[id].filterType !== "bookmarks");
+  const persistableChildren = ids => ids.filter(id => state.nodes[id] && state.nodes[id].filterType !== "bookmarks" && state.nodes[id].filterType !== "notes");
 
   function ser(id) {
     const node = state.nodes[id];
@@ -23955,7 +24018,7 @@ function materializeCachedFilters(fileNode, roots) {
     // Same "bookmarks" exclusion as importFilterJson's validate() — the
     // cache never writes this type either (see serializeFilterTreeForCache's
     // persistableChildren), so any that show up here are stale/foreign.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks") return false;
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes") return false;
     return (sn.children || []).every(valid);
   }
 
@@ -24143,7 +24206,7 @@ async function restoreSessionFromCache() {
     // that state.bookmarks is back (see syncBookmarksFilterNode — the node
     // itself is never persisted, only re-created from the Set on any path
     // that restores bookmarks).
-    Object.values(byKey).forEach(fileNode => syncBookmarksFilterNode(fileNode.id));
+    Object.values(byKey).forEach(fileNode => { syncBookmarksFilterNode(fileNode.id); syncNotesFilterNode(fileNode.id); });
 
     const s = meta.settings || {};
     if (Array.isArray(s.levelFilter)) {
@@ -24516,6 +24579,7 @@ function applySessionEntryByOrdinal(rec, fileNode) {
     notesPlaced++;
   });
   syncBookmarksFilterNode(fileNode.id);
+  syncNotesFilterNode(fileNode.id);
   return { refMap, placed, total, notesPlaced, notesTotal };
 }
 
@@ -24561,6 +24625,7 @@ function applySessionEntryByContent(rec, fileNode) {
     }
   });
   syncBookmarksFilterNode(fileNode.id);
+  syncNotesFilterNode(fileNode.id);
   return { refMap, placed, total, notesPlaced, notesTotal };
 }
 
