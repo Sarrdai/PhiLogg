@@ -2994,7 +2994,9 @@
   /* #viewBar is not hidden wholesale — it owns #fhTabs, which stays usable in
      PiP. Collapse the bar to nothing, hide everything in it but the tabs, and
      surface #fhTabs into the mini strip's far left (above the injected
-     #tauri-pip, which sits at z-index:100). */
+     #tauri-pip, which sits at z-index:100). top:6px centers #fhTabs' fixed
+     28px height inside the wrapper's 40px-tall #tauri-pip strip (6px
+     clearance top and bottom) — keep the two in sync if either changes. */
   html.pip-mode #viewBar {
     padding: 0;
     min-height: 0;
@@ -3006,7 +3008,7 @@
   }
   html.pip-mode #fhTabs {
     position: fixed;
-    top: 4px;
+    top: 6px;
     left: 4px;
     z-index: 101;
     margin: 0;
@@ -3014,6 +3016,22 @@
 </style>
 </head>
 <body>
+<script>(function(){
+  // FOUC fix: applies the stored (or system-preferred) theme to <html>
+  // synchronously, before the rest of the page parses/paints, so the app
+  // never flashes the default dark :root values first. initTheme() (near
+  // the end of the main <script>) still runs later and is the source of
+  // truth — it re-applies via resolveThemeId(), which can fall back to
+  // "dark" for a theme id that no longer resolves (e.g. a deleted custom
+  // theme). That resolution isn't duplicated here on purpose: this script
+  // only needs to be right in the common case fast enough to beat first
+  // paint; an occasional stale custom-theme id gets silently corrected by
+  // initTheme() a moment later, which is an acceptable trade for keeping
+  // this inline script trivial and free of the themes-array dependency.
+  var t = localStorage.getItem("philogg-theme");
+  if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", t);
+})();</script>
 <div id="app">
 
   <header id="toolbar">

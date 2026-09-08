@@ -41,17 +41,26 @@ const { IDBFactory, IDBKeyRange } = require("fake-indexeddb");
 const HTML_PATH = process.env.PHILOGG_HTML || path.join(__dirname, "..", "philogg.html");
 const html = fs.readFileSync(HTML_PATH, "utf8");
 
-// philogg.html's inline <script> is ~870 KB and identical in every window, so
-// compile it ONCE and run that same vm.Script into each new window's context.
-// Left inline, jsdom re-parses and re-compiles it for all ~290 windows this
-// suite builds — which measured as ~75% of the whole suite's runtime.
-// Equivalent to running it inline: the file has exactly one <script>, it is
-// the last element in <body>, and the app hooks neither DOMContentLoaded/load
-// nor readyState/document.currentScript, so nothing depends on it executing
+// philogg.html's main inline <script> is ~870 KB and identical in every
+// window, so compile it ONCE and run that same vm.Script into each new
+// window's context. Left inline, jsdom re-parses and re-compiles it for all
+// ~290 windows this suite builds — which measured as ~75% of the whole
+// suite's runtime. Equivalent to running it inline: it is the last element
+// in <body>, and the app hooks neither DOMContentLoaded/load nor
+// readyState/document.currentScript, so nothing depends on it executing
 // mid-parse. runScripts stays "dangerously" so that the <script> elements the
 // tests themselves inject (the window.__t bridge below, and the ~30 per-group
 // helper bridges) still execute as before.
-const PAGE_SCRIPT_MATCH = html.match(/<script>([\s\S]*)<\/script>/);
+//
+// There are now TWO inline <script>s in the file: the tiny synchronous FOUC
+// fix right after <body> (sets data-theme before first paint — see
+// CHANGELOG.md) and this huge main one at the end of <body>. Both need to
+// run for parity with the real page (the FOUC one is harmless/idempotent in
+// jsdom), so all `<script>...</script>` blocks are matched and only the LAST
+// one — the main app script — is pulled out and precompiled; the rest are
+// left inline in PAGE_SHELL for jsdom to run normally as before.
+const PAGE_SCRIPT_MATCHES = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+const PAGE_SCRIPT_MATCH = PAGE_SCRIPT_MATCHES[PAGE_SCRIPT_MATCHES.length - 1];
 const PAGE_SHELL = html.replace(PAGE_SCRIPT_MATCH[0], "<script></script>");
 const PAGE_SCRIPT = new vm.Script(PAGE_SCRIPT_MATCH[1], { filename: "philogg-inline.js" });
 
@@ -16270,7 +16279,14 @@ if (groupSelected()) { // the one group with no withApp of its own to gate it
 
   // The load-bearing check: the same file, minus comments, still parses.
   // A mis-read regex literal almost always breaks this outright.
-  const scriptBody = stripped.slice(stripped.indexOf("<script>") + "<script>".length, stripped.lastIndexOf("</script>"));
+  // Two inline <script>s now (the tiny FOUC one right after <body>, and the
+  // huge main one at the end) — take the LAST "<script>...</script>" pair
+  // (the main app script), not the first opening tag, or this slice spans
+  // across the HTML/markup sitting between the two scripts.
+  const scriptBody = stripped.slice(
+    stripped.lastIndexOf("<script>") + "<script>".length,
+    stripped.lastIndexOf("</script>")
+  );
   let parsed = true;
   try { new Function(scriptBody); } catch (err) { parsed = false; }
   assert(parsed, "the stripped script still parses as JavaScript");
