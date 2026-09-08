@@ -41,17 +41,26 @@ const { IDBFactory, IDBKeyRange } = require("fake-indexeddb");
 const HTML_PATH = process.env.PHILOGG_HTML || path.join(__dirname, "..", "philogg.html");
 const html = fs.readFileSync(HTML_PATH, "utf8");
 
-// philogg.html's inline <script> is ~870 KB and identical in every window, so
-// compile it ONCE and run that same vm.Script into each new window's context.
-// Left inline, jsdom re-parses and re-compiles it for all ~290 windows this
-// suite builds — which measured as ~75% of the whole suite's runtime.
-// Equivalent to running it inline: the file has exactly one <script>, it is
-// the last element in <body>, and the app hooks neither DOMContentLoaded/load
-// nor readyState/document.currentScript, so nothing depends on it executing
+// philogg.html's main inline <script> is ~870 KB and identical in every
+// window, so compile it ONCE and run that same vm.Script into each new
+// window's context. Left inline, jsdom re-parses and re-compiles it for all
+// ~290 windows this suite builds — which measured as ~75% of the whole
+// suite's runtime. Equivalent to running it inline: it is the last element
+// in <body>, and the app hooks neither DOMContentLoaded/load nor
+// readyState/document.currentScript, so nothing depends on it executing
 // mid-parse. runScripts stays "dangerously" so that the <script> elements the
 // tests themselves inject (the window.__t bridge below, and the ~30 per-group
 // helper bridges) still execute as before.
-const PAGE_SCRIPT_MATCH = html.match(/<script>([\s\S]*)<\/script>/);
+//
+// There are now TWO inline <script>s in the file: the tiny synchronous FOUC
+// fix right after <body> (sets data-theme before first paint — see
+// CHANGELOG.md) and this huge main one at the end of <body>. Both need to
+// run for parity with the real page (the FOUC one is harmless/idempotent in
+// jsdom), so all `<script>...</script>` blocks are matched and only the LAST
+// one — the main app script — is pulled out and precompiled; the rest are
+// left inline in PAGE_SHELL for jsdom to run normally as before.
+const PAGE_SCRIPT_MATCHES = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+const PAGE_SCRIPT_MATCH = PAGE_SCRIPT_MATCHES[PAGE_SCRIPT_MATCHES.length - 1];
 const PAGE_SHELL = html.replace(PAGE_SCRIPT_MATCH[0], "<script></script>");
 const PAGE_SCRIPT = new vm.Script(PAGE_SCRIPT_MATCH[1], { filename: "philogg-inline.js" });
 
@@ -16270,7 +16279,14 @@ if (groupSelected()) { // the one group with no withApp of its own to gate it
 
   // The load-bearing check: the same file, minus comments, still parses.
   // A mis-read regex literal almost always breaks this outright.
-  const scriptBody = stripped.slice(stripped.indexOf("<script>") + "<script>".length, stripped.lastIndexOf("</script>"));
+  // Two inline <script>s now (the tiny FOUC one right after <body>, and the
+  // huge main one at the end) — take the LAST "<script>...</script>" pair
+  // (the main app script), not the first opening tag, or this slice spans
+  // across the HTML/markup sitting between the two scripts.
+  const scriptBody = stripped.slice(
+    stripped.lastIndexOf("<script>") + "<script>".length,
+    stripped.lastIndexOf("</script>")
+  );
   let parsed = true;
   try { new Function(scriptBody); } catch (err) { parsed = false; }
   assert(parsed, "the stripped script still parses as JavaScript");
@@ -19547,9 +19563,14 @@ await withApp(async (w, d, T) => {
   // Actions group instead — see 176e below for their new home) — only the
   // four that genuinely create a filter node stay in the Filter-Toolbar.
   const actions = [...d.querySelector('[data-row-actions="viewbar"]').querySelectorAll("[data-row-action]")];
-  const expectedActions = ["filterAfter", "filterBefore", "filterForMessage", "timeRangeFromSelection"];
+  // "Extract" (next to "Message") and "New" (at the end, behind a
+  // separator) joined this group this session (Paket A) — see Group 186.
+  // Reordered (person-requested, 2026-09-08 — see Group 187/188): Before/
+  // After/Time range first, so they never shift position depending on
+  // whether Message/Extract are visible (Context/Filtered only).
+  const expectedActions = ["filterBefore", "filterAfter", "timeRangeFromSelection", "filterForMessage", "extractMessage", "newFilter"];
   assert(actions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
-    "the Filter-Toolbar's row-actions group has all four filter-creating actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
+    "the Filter-Toolbar's row-actions group has all six filter-creating/opening actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
   assert(d.querySelector('[data-row-actions="viewbar"] [data-row-action="bookmark"]') === null &&
     d.querySelector('[data-row-actions="viewbar"] [data-row-action="note"]') === null &&
     d.querySelector('[data-row-actions="viewbar"] [data-row-action="addToSelection"]') === null,
@@ -19572,13 +19593,17 @@ await withApp(async (w, d, T) => {
   const byAction = action => actions.find(b => b.dataset.rowAction === action);
 
   // --- No selection: single-row actions disabled, time-range disabled ---
-  expectedActions.forEach(action => {
+  // "New" (newFilter) is excluded here — it only needs an active filter
+  // tree (state.activeId, already set above), not a selected row, so it's
+  // enabled from the start (see Group 186b).
+  expectedActions.filter(a => a !== "newFilter").forEach(action => {
     assert(byAction(action).disabled === true, action + " starts disabled with no selection");
   });
+  assert(byAction("newFilter").disabled === false, "newFilter needs no row selection, only an active filter tree");
 
   // --- Single row selected: single-row actions enabled, time-range still disabled ---
   w.selectEntry(f.entries[2].id);
-  ["filterAfter", "filterBefore", "filterForMessage"].forEach(action => {
+  ["filterAfter", "filterBefore", "filterForMessage", "extractMessage"].forEach(action => {
     assert(byAction(action).disabled === false, action + " enabled with exactly one row selected");
   });
   assert(byAction("timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
@@ -19590,37 +19615,56 @@ await withApp(async (w, d, T) => {
   // keeps shoving the next hit-zone back and forth under a stationary
   // cursor mid-animation (person-reported, 2026-09-05). filterAfterBtn is
   // enabled here (one row selected above). ---
-  const hit = filterAfterBtn.querySelector(".row-action-hit");
-  hit.getBoundingClientRect = () => ({ top: 0, left: 0, right: 28, bottom: 28, width: 28, height: 28, x: 0, y: 0 });
+  // Every sibling hit in the group needs its own non-overlapping stub rect —
+  // the harness's default getBoundingClientRect (see withApp's setup) is a
+  // huge 800x400 box that would otherwise match (10,10) for WHICHEVER
+  // sibling happens to come first in DOM order, masking filterAfterBtn's
+  // own rect regardless of the reorder below.
   const group = filterAfterBtn.parentElement;
+  [...group.querySelectorAll(".row-action-hit")].forEach((h, i) => {
+    h.getBoundingClientRect = () => ({ top: 0, left: i * 30, right: i * 30 + 28, bottom: 28, width: 28, height: 28, x: i * 30, y: 0 });
+  });
+  const filterAfterHit = filterAfterBtn.querySelector(".row-action-hit");
+  const filterAfterRect = filterAfterHit.getBoundingClientRect();
+  const midX = (filterAfterRect.left + filterAfterRect.right) / 2;
   assert(!filterAfterBtn.classList.contains("expanded"), "sanity: starts collapsed");
-  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 10, clientY: 10 }));
+  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: midX, clientY: 10 }));
   assert(filterAfterBtn.classList.contains("expanded"), "moving into the circle's (collapsed-state) rect expands the button");
-  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 500, clientY: 500 }));
+  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 5000, clientY: 5000 }));
   assert(!filterAfterBtn.classList.contains("expanded"), "moving off the circle's rect collapses it again");
   group.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
 
-  // --- 2+ rows multi-selected: timeRangeFromSelection enables, single-row actions disable ---
+  // --- 2+ rows multi-selected: timeRangeFromSelection enables. filterAfter/
+  // filterBefore ALSO stay enabled now (person-requested follow-up,
+  // 2026-09-08): they resolve inclusively across the whole selection (see
+  // afterBeforeActionEntries) — earliest/latest ts becomes the bound —
+  // unlike filterForMessage/extractMessage, which still need exactly one. ---
   T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]);
   w.updateRowActionButtons();
   assert(byAction("timeRangeFromSelection").disabled === false, "timeRangeFromSelection enables with 2+ rows multi-selected");
-  assert(byAction("filterAfter").disabled === true, "single-row actions disable once 2+ rows are multi-selected");
+  assert(byAction("filterAfter").disabled === false, "filterAfter stays enabled with 2+ rows multi-selected (inclusive earliest-ts bound)");
+  assert(byAction("filterBefore").disabled === false, "filterBefore stays enabled with 2+ rows multi-selected (inclusive latest-ts bound)");
+  assert(byAction("filterForMessage").disabled === true, "filterForMessage still needs exactly one reference entry — disabled with 2+ multi-selected");
+  assert(byAction("extractMessage").disabled === true, "extractMessage still needs exactly one reference entry — disabled with 2+ multi-selected");
 
   // --- A button that becomes disabled while its pill happens to be expanded
   // (e.g. the selection changed via keyboard, not by the mouse leaving the
-  // circle) doesn't get stuck expanded — updateRowActionButtons() drops it. ---
+  // circle) doesn't get stuck expanded — updateRowActionButtons() drops it.
+  // filterAfter no longer disables on 2+ multi-select, so use
+  // filterForMessage (still single-entry-only) to exercise this guard. ---
   T.state.logMultiSelect = new Set();
   w.selectEntry(f.entries[3].id);
-  filterAfterBtn.classList.add("expanded"); // simulate: mouse still sitting over the circle
-  T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]); // disables filterAfter again
+  const filterForMessageBtn = byAction("filterForMessage");
+  filterForMessageBtn.classList.add("expanded"); // simulate: mouse still sitting over the circle
+  T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]); // disables filterForMessage again
   w.updateRowActionButtons();
-  assert(byAction("filterAfter").disabled === true, "sanity: disabled again");
-  assert(!filterAfterBtn.classList.contains("expanded"), "a newly-disabled button's stuck-open pill is force-collapsed");
+  assert(filterForMessageBtn.disabled === true, "sanity: disabled again");
+  assert(!filterForMessageBtn.classList.contains("expanded"), "a newly-disabled button's stuck-open pill is force-collapsed");
 
   // --- Stays visible/functional on Table too (Table/Plot presence — see Group 26/158a) ---
-  // NOTE: on Table/Plot the three single-log-row actions hide while the
-  // context-aware "Time range" stays (person-requested, this session) — see
-  // Group 178 for that coverage; not re-checked here.
+  // NOTE: on Table/Plot, After/Before/Extract/Time range are all now
+  // context-aware and stay visible (Message hides only on Plot) —
+  // see Group 178 for that coverage; not re-checked here.
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
   T.state.activeId = extractNode.id;
   w.render();
@@ -19857,17 +19901,22 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    Group 178 — this session (2026-09-04), person-requested: on the Plot
    tab, the Filter-Toolbar's row-actions all key off a log-row selection
-   Plot doesn't have. REVISED this session (person-requested, unify the
-   Table/Plot filters): instead of swapping the whole group for Plot's own
-   two viewport-filter buttons (which are gone), the three single-log-row
-   actions (After/Before/Message) now HIDE on Table/Plot while the
-   context-aware "Time range" stays — it resolves its input per view (a 2+
-   log-row multi-selection, marked-cell rows, or the plot's visible
+   Plot doesn't have. REVISED 2026-09-08 (person-requested, unify the
+   Table/Plot filters): "Time range"/"Select" resolve their input per view
+   (a 2+ log-row multi-selection, marked-cell rows, or the plot's visible
    viewport). Plot's two dedicated buttons are removed entirely.
+   REVISED AGAIN this session (2026-09-08, person-requested follow-up):
+   "Filter after"/"Filter before" also resolve per view now (see
+   afterBeforeActionEntries) and stay VISIBLE on Table/Plot too.
+   REVISED ONCE MORE the same session (person-requested correction):
+   "Message"/"Extract" — which both need exactly one reference entry — go
+   back to hiding on BOTH Table and Plot, not just Plot; even though Table
+   could technically supply a single marked row, it doesn't read as a
+   sensible action there.
    ============================================================ */
 group(178);
 await withApp(async (w, d, T) => {
-  section("178. Table/Plot hide the log-row row-actions and keep the context-aware Time range");
+  section("178. Table/Plot: After/Before stay visible everywhere; Message/Extract hide on both");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
@@ -19875,33 +19924,36 @@ await withApp(async (w, d, T) => {
   w.render();
 
   const byAction = action => d.querySelector('[data-row-action="' + action + '"]');
-  const logOnlyActions = ["filterAfter", "filterBefore", "filterForMessage"];
+  const alwaysVisibleActions = ["filterAfter", "filterBefore"];
+  const singleEntryActions = ["filterForMessage", "extractMessage"];
 
   // No plot-viewbar group any more — Plot's two dedicated buttons are gone.
   assert(d.querySelector('[data-row-actions="plot-viewbar"]') === null, "the plot-viewbar group is gone");
   assert(d.querySelector("#plotFilterTimeRangeBtn") === null && d.querySelector("#plotFilterEntriesBtn") === null,
     "Plot's two dedicated viewport-filter buttons are gone");
 
-  // --- Context/Filtered: all four row-actions show ---
+  // --- Context/Filtered: all row-actions show ---
   ["highlight", "filter"].forEach(tab => {
     w.applyFhView(tab);
-    logOnlyActions.forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible on the " + tab + " tab"));
+    alwaysVisibleActions.concat(singleEntryActions).forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible on the " + tab + " tab"));
     assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range is visible on the " + tab + " tab");
   });
 
-  // --- Table: the log-row actions hide, Time range stays ---
+  // --- Table: After/Before stay visible (marked-row resolved); Message/Extract hide (doesn't read as sensible there) ---
   w.applyFhView("table");
-  logOnlyActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " is hidden on the Table tab (no log-row selection there)"));
+  alwaysVisibleActions.forEach(a => assert(isVisible(byAction(a), w) === true, a + " stays visible on the Table tab"));
+  singleEntryActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " hides on the Table tab (person-requested — doesn't read as sensible there)"));
   assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range stays visible on the Table tab (it is context-aware now)");
 
-  // --- Plot: same hiding; Time range stays (enabled only once a 2D plot exists) ---
+  // --- Plot: After/Before stay visible (viewport-resolved); Message/Extract both hide (no single-point reference on Plot) ---
   w.applyFhView("plot");
-  logOnlyActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " is hidden on the Plot tab (no log-row selection there)"));
-  assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range stays visible on the Plot tab (it is context-aware now)");
+  alwaysVisibleActions.forEach(a => assert(isVisible(byAction(a), w) === true, a + " stays visible on the Plot tab (resolves from the visible viewport)"));
+  singleEntryActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " hides on the Plot tab (no single-point reference there)"));
+  assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range stays visible on the Plot tab (enabled only once a 2D plot exists)");
 
-  // --- Leaving Table/Plot restores the full row-actions set ---
+  // --- Leaving Table/Plot restores Message/Extract's visibility ---
   w.applyFhView("filter");
-  logOnlyActions.forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible again on the Filtered tab"));
+  alwaysVisibleActions.concat(singleEntryActions).forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible again on the Filtered tab"));
   assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range is visible again on the Filtered tab");
 });
 
@@ -20238,6 +20290,504 @@ await withApp(async (w, d, T) => {
   const sel = Object.values(T.state.nodes).find(n => n.selectionFilter);
   assert(sel && sel.value.length === 10, "home view: Select creates a selection filter covering the whole extraction (all 10 visible entries)");
   assert(sel.parentId === f.id, "the selection filter is top-level under the root file");
+});
+
+/* ============================================================
+   GROUP 184 — Minimap sync for Table & Plot (this session, 2026-09-08,
+   person-requested bugfix): updateMinimapRenderedRange() previously had no
+   branch for fhActiveTab === "table"/"plot" — switching to either view left
+   #minimapRenderedRangeRect showing whatever the Log view last computed,
+   and scrolling the table or zooming the plot did nothing to it.
+     a) New Table branch: derives the visible row range from
+        extractScroll.scrollTop/EXTRACT_ROW_HEIGHT (fixed row height, same
+        idea as minimapRenderedSpan's flat-ROW_HEIGHT case, header height
+        subtracted first — see renderExtractVisibleRows), sets the rect from
+        the first/last visible row's entry.ts via minimapBarSpan. Wired into
+        renderExtractTable() (Table branch) and the extractScroll scroll
+        listener (rAF-batched, same pattern as tableBody/highlightBody).
+     b) New Plot branch + new shared helper visiblePlotPoints() (also meant
+        for Paket B's filter-info point count): every finite-(x,y) point
+        from the last render, restricted to plotZoom's x-domain when set.
+        The rect bounds come from each point's SOURCE ENTRY ts
+        (extractRowsData[p.rowIndex].entry.ts), not the plotted x value —
+        the X column plotted is often not time at all. Wired into
+        renderPlotChart()'s end (covers every plotZoom-changing call site
+        too, since they all re-render the chart).
+     c) Both renderExtractTable()/renderPlotChart() now also call
+        renderTimelineMinimap(rootId, entries) with their OWN view's
+        entries, so the minimap's background/full-range reflects Table/Plot
+        data instead of stale Log-view data — renderTimelineMinimap() does
+        NOT call updateMinimapRenderedRange() itself, so both are called.
+   ============================================================ */
+group(184);
+await withApp(async (w, d, T) => {
+  section("184a. Table view: #minimapRenderedRangeRect follows extractScroll's scroll position");
+
+  const f = await w.addFile("a.log", makeLog(0, 100), () => {}); // 100 entries, 1s apart
+  const node = w.createFilterNode(f.id, "text", "message [*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+  assert(T.fhActiveTab === "table", "sanity: Table tab active");
+  assert(T.extractRowsData.length === 100, "sanity: 100 extraction rows");
+
+  const rect = d.querySelector("#minimapRenderedRangeRect");
+  const extractScrollEl = d.querySelector("#extractScroll");
+  assert(!rect.classList.contains("hidden"), "rect visible once the Table view has rows");
+
+  // Scroll to bring rows [30..~44] into the (400px-tall, EXTRACT_ROW_HEIGHT=28) viewport.
+  extractScrollEl.scrollTop = 30 * 28;
+  extractScrollEl.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  await new Promise(resolve => setTimeout(resolve, 50)); // let the rAF-batched scroll handler flush
+
+  const headerH = d.querySelector("#extractHead").offsetHeight || 0;
+  const viewportH = extractScrollEl.clientHeight || 400;
+  const bodyScrollTop = Math.max(0, extractScrollEl.scrollTop - headerH);
+  const startIdx = Math.min(99, Math.max(0, Math.floor(bodyScrollTop / 28)));
+  const endIdx = Math.min(99, Math.max(startIdx, Math.ceil((bodyScrollTop + viewportH) / 28)));
+  const expLeft = w.minimapBarSpan(T.extractRowsData[startIdx].entry.ts).left;
+  const expRight = w.minimapBarSpan(T.extractRowsData[endIdx].entry.ts).right;
+  assert(Math.abs(+rect.getAttribute("x") - expLeft) < 0.2,
+    "rect x matches the scrolled-to row range's earliest ts, got " + rect.getAttribute("x") + " expected ~" + expLeft.toFixed(1));
+  assert(Math.abs(+rect.getAttribute("width") - Math.max(2, expRight - expLeft)) < 0.2,
+    "rect width matches the scrolled-to row range's span, got " + rect.getAttribute("width") + " expected ~" + Math.max(2, expRight - expLeft).toFixed(1));
+
+  // Scrolling further changes it again — proves this isn't a one-shot value frozen at the first scroll.
+  const rectXAtRow30 = +rect.getAttribute("x");
+  extractScrollEl.scrollTop = 80 * 28;
+  extractScrollEl.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert(+rect.getAttribute("x") > rectXAtRow30, "scrolling further down the table moves the rect further right, got " + rect.getAttribute("x") + " (was " + rectXAtRow30 + ")");
+});
+
+await withApp(async (w, d, T) => {
+  section("184b. Plot view: #minimapRenderedRangeRect narrows to plotZoom's time span; visiblePlotPoints() reflects it");
+
+  const rows = Array.from({ length: 11 }, (_, i) => i * 10); // 0,10,...,100
+  const log = rows.map((v, i) =>
+    `2024-01-15 10:00:${String(i).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${v} y=${v}"`
+  ).join("\n") + "\n";
+  const f = await w.addFile("zoom.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "x=[*:int] y=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
+  xSel.value = "0"; xSel.dispatchEvent(new w.Event("change", { bubbles: true }));
+  ySel.value = "1"; ySel.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  // NOTE: re-queried after every render() call below, never cached across
+  // one — renderPlotChart() calls renderTimelineMinimap(), which rebuilds
+  // the minimap SVG's innerHTML wholesale (a fresh #minimapRenderedRangeRect
+  // node each time), detaching any previously-held reference.
+  assert(!d.querySelector("#minimapRenderedRangeRect").classList.contains("hidden"), "sanity: rect visible for the unzoomed (home) Plot view");
+  const homeWidth = +d.querySelector("#minimapRenderedRangeRect").getAttribute("width");
+  assert(w.visiblePlotPoints().length === 11, "visiblePlotPoints() reports all 11 points at the home (unzoomed) view");
+
+  // Zoom to x in [40, 60] — rows 4..6 (x=40,50,60).
+  T.plotZoom = { x0: 40, x1: 60, y0: 0, y1: 100 };
+  w.renderPlotChart();
+  const zoomedPts = w.visiblePlotPoints();
+  assert(zoomedPts.length === 3, "visiblePlotPoints() restricted to plotZoom's x-domain reports exactly the 3 in-range points, got " + zoomedPts.length);
+
+  const rectAfterZoom = d.querySelector("#minimapRenderedRangeRect");
+  const zoomedWidth = +rectAfterZoom.getAttribute("width");
+  assert(zoomedWidth < homeWidth, "rect narrows once zoomed, got " + zoomedWidth + " (was " + homeWidth + " unzoomed)");
+  const expLeft = w.minimapBarSpan(T.extractRowsData[4].entry.ts).left;
+  const expRight = w.minimapBarSpan(T.extractRowsData[6].entry.ts).right;
+  assert(Math.abs(+rectAfterZoom.getAttribute("x") - expLeft) < 0.2, "rect x matches the zoomed span's earliest source-entry ts, got " + rectAfterZoom.getAttribute("x") + " expected ~" + expLeft.toFixed(1));
+  assert(Math.abs(zoomedWidth - Math.max(2, expRight - expLeft)) < 0.2, "rect width matches the zoomed span, got " + zoomedWidth + " expected ~" + Math.max(2, expRight - expLeft).toFixed(1));
+
+  // Zooming out to where nothing matches hides the rect instead of leaving a stale span.
+  T.plotZoom = { x0: 1000, x1: 2000, y0: 0, y1: 100 };
+  w.renderPlotChart();
+  assert(d.querySelector("#minimapRenderedRangeRect").classList.contains("hidden"), "rect hides when plotZoom's x-domain matches zero points");
+});
+
+await withApp(async (w, d, T) => {
+  section("184c. Regression: Log -> Table -> Plot -> Log leaves no stale rendered-range span at any point");
+
+  const f = await w.addFile("a.log", makeLog(0, 60), () => {}); // 60 entries, 1s apart
+  const node = w.createFilterNode(f.id, "text", "message [*:int]");
+  T.state.activeId = node.id;
+  w.render();
+
+  // NOTE: re-queried after every render() call below, never cached across
+  // one — Table/Plot's renders call renderTimelineMinimap(), which rebuilds
+  // the minimap SVG's innerHTML wholesale (a fresh #minimapRenderedRangeRect
+  // node each time), detaching any previously-held reference.
+  const tableBodyEl = d.querySelector("#tableBody");
+
+  // --- Log (Filtered) view: scroll to row 40, note its span ---
+  w.applyFhView("filter");
+  tableBodyEl.scrollTop = 40 * 28; // ROW_HEIGHT=28
+  w.renderVisibleRows();
+  w.updateMinimapRenderedRange();
+  const logX = +d.querySelector("#minimapRenderedRangeRect").getAttribute("x");
+  assert(!d.querySelector("#minimapRenderedRangeRect").classList.contains("hidden"), "sanity: rect visible in the Log/Filtered view");
+
+  // --- Table view: rect must reflect Table's OWN scroll (top of the table), not the Log view's leftover span ---
+  w.applyFhView("table");
+  const extractScrollEl = d.querySelector("#extractScroll");
+  assert(extractScrollEl.scrollTop === 0, "sanity: Table view starts scrolled to the top for this freshly-activated node");
+  const tableX = +d.querySelector("#minimapRenderedRangeRect").getAttribute("x");
+  const expTableLeft = w.minimapBarSpan(T.extractRowsData[0].entry.ts).left;
+  assert(Math.abs(tableX - expTableLeft) < 0.2, "switching to Table immediately re-evaluates the rect from Table's own (top-of-scroll) span, not the Log view's row-40 span, got " + tableX + " expected ~" + expTableLeft.toFixed(1));
+
+  // --- Plot view: rect must reflect Plot's own visible points, not Table's leftover span ---
+  w.applyFhView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
+  xSel.value = "-1"; xSel.dispatchEvent(new w.Event("change", { bubbles: true })); // t (ms) column
+  ySel.value = "0"; ySel.dispatchEvent(new w.Event("change", { bubbles: true }));
+  const plotX = +d.querySelector("#minimapRenderedRangeRect").getAttribute("x");
+  const expPlotLeft = w.minimapBarSpan(T.extractRowsData[0].entry.ts).left;
+  assert(Math.abs(plotX - expPlotLeft) < 0.2, "switching to Plot re-evaluates the rect from Plot's own visible points (all 60, unzoomed), got " + plotX + " expected ~" + expPlotLeft.toFixed(1));
+
+  // --- Back to Log view: rect must NOT still show Table/Plot's leftover span ---
+  w.applyFhView("filter");
+  const backX = +d.querySelector("#minimapRenderedRangeRect").getAttribute("x");
+  assert(Math.abs(backX - logX) < 0.2, "switching back to Log/Filtered restores the Log view's own row-40 span (not left stuck on Table/Plot's), got " + backX + " expected ~" + logX.toFixed(1));
+});
+
+/* ============================================================
+   GROUP 185 — Table/Plot toolbar filter-info span (#tableFilterInfo /
+   #plotFilterInfo)
+   Origin: this session, person-requested ("Paket B" of a larger plan) —
+   Table and Plot had no visible indication of an active time filter
+   (after/before/timerange) narrowing the extraction, nor of how many rows/
+   points are actually shown vs. selected. activeTimeFilters() (near
+   isTimeFilterType) walks getChain(state.activeId) for time-filter
+   ancestors; updateTableFilterInfo()/updatePlotFilterInfo() (end of
+   renderExtractTable/renderPlotChart) render that plus a row/selection or
+   visible-point count into the two spans as plain text.
+   NOTE: the Plot-view point count goes through visiblePlotPoints() — owned
+   by the sibling "Paket C" (minimap sync) package, merged in ahead of this
+   one; this group runs against its real implementation (a TEMP stub that
+   stood in for it locally has been removed as part of the merge).
+   ============================================================ */
+group(185);
+await withApp(async (w, d, T) => {
+  section("185a. Table: filter-info text combines active time filter + row/selection counts");
+
+  const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + i }), () => {});
+  const node = w.createFilterNode(f.id, "text", "n=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const infoEl = () => d.querySelector("#tableFilterInfo");
+  assert(infoEl().textContent.includes("10 rows"), "no time filter active: info shows just the row count, got " + JSON.stringify(infoEl().textContent));
+  assert(!infoEl().textContent.includes("selected"), "no marked cells yet: no selection count shown");
+
+  // Add a "timerange" filter as a child of the extraction node, and re-activate it.
+  const rangeNode = w.createFilterNode(node.id, "timerange", { from: f.entries[2].ts, to: f.entries[7].ts });
+  T.state.activeId = rangeNode.id;
+  w.render();
+  w.applyFhView("table");
+  const expectedRangeText = w.timeRangeFilterName({ from: f.entries[2].ts, to: f.entries[7].ts });
+  assert(infoEl().textContent.includes(expectedRangeText),
+    "active timerange filter's name (timeRangeFilterName) appears in the info text, got " + JSON.stringify(infoEl().textContent));
+  assert(infoEl().textContent.includes("6 rows"), "row count reflects the timerange-narrowed extraction (entries 2..7 inclusive), got " + JSON.stringify(infoEl().textContent));
+
+  // Mark 2 cells (different rows) via state.tableSelection, re-render, expect "2 selected".
+  const td = (r, c) => d.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
+  td(0, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+  td(3, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, ctrlKey: true }));
+  w.updateTableFilterInfo();
+  assert(infoEl().textContent.includes("2 selected"),
+    "marking cells in 2 distinct rows shows \"2 selected\", got " + JSON.stringify(infoEl().textContent));
+});
+
+await withApp(async (w, d, T) => {
+  section("185b. Plot: filter-info text combines active time filter + visible-point count");
+
+  const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + i }), () => {});
+  const node = w.createFilterNode(f.id, "text", "n=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+
+  const infoEl = () => d.querySelector("#plotFilterInfo");
+  assert(infoEl().textContent.includes("10 points"), "home view (no zoom): all 10 finite points counted, got " + JSON.stringify(infoEl().textContent));
+  assert(!infoEl().textContent.includes("≥") && !infoEl().textContent.includes("→"), "no time filter active: no timeRangeFilterName text shown");
+
+  // Add a timerange filter and re-activate + re-render the plot.
+  const rangeNode = w.createFilterNode(node.id, "timerange", { from: f.entries[2].ts, to: f.entries[7].ts });
+  T.state.activeId = rangeNode.id;
+  w.render();
+  w.applyFhView("plot");
+  const expectedRangeText = w.timeRangeFilterName({ from: f.entries[2].ts, to: f.entries[7].ts });
+  assert(infoEl().textContent.includes(expectedRangeText),
+    "active timerange filter's name appears in the Plot info text too, got " + JSON.stringify(infoEl().textContent));
+  assert(infoEl().textContent.includes("6 points"), "visible-point count reflects the timerange-narrowed extraction, got " + JSON.stringify(infoEl().textContent));
+});
+
+/* ============================================================
+   GROUP 186 — this session (2026-09-08), Paket A: two new Filter-Toolbar
+   (#viewBar) row-actions. "Extract" is a one-click version of "Message"
+   (same auto-extraction pattern from buildNumericExtractPattern/
+   collapseNewlinesToWildcard) that skips the filter popup entirely and
+   commits the pattern straight to a new "text" filter node. "New" is a
+   one-click "openFilterPopup()", identical to Ctrl+F. Also: a distinct
+   "Message" icon (ICON_MESSAGE_EXTRACT, a speech bubble) replacing the
+   generic funnel it used to share with every other filter action.
+   (Renumbered from a colliding "184" at merge time — Paket C already
+   claimed 184, Paket B claimed 185.)
+   ============================================================ */
+group(186);
+await withApp(async (w, d, T) => {
+  section("186a. Extract: one-click filter creation from the message column, no popup shown");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const entry = f.entries[3];
+  w.selectEntry(entry.id);
+
+  const extractBtn = d.querySelector('[data-row-action="extractMessage"]');
+  assert(extractBtn !== null && extractBtn.disabled === false, "sanity: Extract button exists and is enabled with a row selected");
+
+  const beforeChildCount = f.children.length;
+  fireClick(extractBtn, w);
+
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") === true,
+    "the filter popup is NOT shown by Extract — the node is created directly");
+  assert(f.children.length === beforeChildCount + 1, "Extract creates exactly one new filter node");
+
+  const created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "text", "the created node is a plain 'text' filter node");
+  assert(/\[\*:(int|float|time)\]/.test(created.value),
+    "its pattern contains a [*:int]/[*:float]/[*:time] wildcard token, got " + JSON.stringify(created.value));
+  assert(Array.isArray(created.columns) && created.columns.length === 1 && created.columns[0] === "message",
+    "the node is restricted to the message column, same as 'Filter for this message'");
+  assert(T.state.activeId === created.id, "creating it activates the new node, same as the other row-actions");
+
+  // --- Same primitive commitFilter() uses (createFilterNode), so nothing
+  // marks this node as special: editing it afterward (F2 -> openEditFilterPopup)
+  // works exactly like any other plain text filter node. ---
+  w.openEditFilterPopup(created.id);
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") === false, "opening edit on the Extract-created node opens the popup normally");
+  assert(d.querySelector("#filterInput").value === created.value, "...prefilled with the extracted pattern");
+  assert(d.querySelector("#filterSubmitBtn").textContent === "Save", "...in edit mode (submit button reflects editing, not a fresh 'Add filter')");
+  fireClick(d.querySelector("#btnCloseFilterPopup"), w);
+});
+
+await withApp(async (w, d, T) => {
+  section("186b. New: one-click openFilterPopup(), same outcome as Ctrl+F, needs only an active node");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const newBtn = d.querySelector('[data-row-action="newFilter"]');
+  assert(newBtn !== null, "the New button exists in the Filter-Toolbar");
+  assert(newBtn.disabled === false, "New is enabled with an active node even though no row is selected");
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") === true, "sanity: popup starts closed");
+
+  fireClick(newBtn, w);
+
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") === false, "clicking New opens the filter popup");
+  assert(d.querySelector("#filterInput").value === "", "...with an empty pattern input, fresh 'Add filter' mode");
+  assert(d.querySelector("#filterSubmitBtn").textContent === "Add filter", "...and the submit button reads 'Add filter'");
+  fireClick(d.querySelector("#btnCloseFilterPopup"), w);
+
+  // --- Disabled with no active node at all (nothing to add the filter under) ---
+  T.state.activeId = null;
+  w.updateRowActionButtons();
+  assert(d.querySelector('[data-row-action="newFilter"]').disabled === true, "New disables once there is no active node");
+});
+
+await withApp(async (w, d, T) => {
+  section("186c. \"Message\" gets its own distinct icon, no longer sharing the generic funnel ICON_FILTER");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const messageBtn = d.querySelector('[data-row-action="filterForMessage"]');
+  const afterBtn = d.querySelector('[data-row-action="filterAfter"]'); // uses its own arrow icon, unrelated
+  const messageSvg = messageBtn.querySelector(".row-action-hit svg").innerHTML;
+  // Guard against an accidental revert to the shared funnel path — the
+  // generic ICON_FILTER's single path is exactly this shape.
+  const funnelPath = 'M2 3h12l-4.5 5.5v4L7 14v-5.5Z';
+  assert(!messageSvg.includes(funnelPath), "'Message' no longer renders the generic funnel path, got " + messageSvg);
+  assert(messageSvg !== afterBtn.querySelector(".row-action-hit svg").innerHTML, "'Message' icon differs from 'After's icon (sanity: they're not accidentally identical)");
+});
+
+/* ============================================================
+   GROUP 187 — this session (2026-09-08), person-requested follow-up:
+   "Filter after"/"Filter before" (and, for consistency, "Message"/
+   "Extract") were only ever usable in Context/Filtered — they hid entirely
+   on Table/Plot (see the now-superseded Group 178 text). Now:
+     a) After/Before resolve per view like Time range/Select
+        (afterBeforeActionEntries): a single marked row in Table, the
+        visible viewport in Plot, a single/multi log-row selection in
+        Context/Filtered. With 2+ entries the bound is INCLUSIVE — After
+        uses the earliest ts, Before the latest — rather than requiring an
+        exact single reference point.
+     b) Message/Extract still need EXACTLY ONE reference entry
+        (singleMessageActionEntry) — Table only enables them with exactly
+        one marked row (0 or 2+ disables); Plot has no single-point
+        reference and never enables them.
+   ============================================================ */
+group(187);
+await withApp(async (w, d, T) => {
+  section("187a. Table: After/Before resolve from marked rows, inclusively across 2+");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {}); // 10 entries, 1s apart
+  const node = w.createFilterNode(f.id, "text", "message [*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const afterBtn = d.querySelector('[data-row-action="filterAfter"]');
+  const beforeBtn = d.querySelector('[data-row-action="filterBefore"]');
+  assert(afterBtn.disabled === true && beforeBtn.disabled === true, "no marked rows: After/Before start disabled on Table");
+
+  // Mark a single row (row 3) — single-entry behavior, same as the old Context/Filtered path.
+  const td = (r, c) => d.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
+  td(3, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+  w.updateRowActionButtons();
+  assert(afterBtn.disabled === false && beforeBtn.disabled === false, "one marked row: After/Before enable on Table");
+
+  fireClick(afterBtn, w);
+  let created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "timerange" && created.value.from === T.extractRowsData[3].entry.ts && created.value.to === null,
+    "single marked row: After uses that row's own ts as the 'from' bound, got " + JSON.stringify(created.value));
+
+  // Mark rows 2, 5, 7 — inclusive multi-row behavior: After = earliest (row 2), Before = latest (row 7).
+  T.state.activeId = node.id;
+  T.state.tableSelection = null;
+  w.render();
+  w.applyFhView("table");
+  [2, 5, 7].forEach(r => td(r, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, ctrlKey: r !== 2 })));
+  w.updateRowActionButtons();
+  assert(d.querySelector('[data-row-action="filterAfter"]').disabled === false, "2+ marked rows: After stays enabled (inclusive)");
+
+  fireClick(d.querySelector('[data-row-action="filterBefore"]'), w);
+  created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "timerange" && created.value.to === T.extractRowsData[7].entry.ts && created.value.from === null,
+    "3 marked rows (2,5,7): Before uses the LATEST ts among them (row 7), got " + JSON.stringify(created.value));
+});
+
+await withApp(async (w, d, T) => {
+  section("187b. Plot: After/Before resolve from the visible viewport, inclusively");
+
+  const rows = Array.from({ length: 11 }, (_, i) => i * 10); // 0,10,...,100
+  const log = rows.map((v, i) =>
+    `2024-01-15 10:00:${String(i).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${v} y=${v}"`
+  ).join("\n") + "\n";
+  const f = await w.addFile("zoom.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "x=[*:int] y=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
+  xSel.value = "0"; xSel.dispatchEvent(new w.Event("change", { bubbles: true }));
+  ySel.value = "1"; ySel.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  const afterBtn = () => d.querySelector('[data-row-action="filterAfter"]');
+  assert(afterBtn().disabled === false, "unzoomed (home) view: After is enabled once a 2D plot exists");
+
+  // Zoom to x in [40, 60] — rows 4..6 (x=40,50,60).
+  T.plotZoom = { x0: 40, x1: 60, y0: 0, y1: 100 };
+  w.renderPlotChart();
+  fireClick(afterBtn(), w);
+  const created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "timerange" && created.value.from === T.extractRowsData[4].entry.ts && created.value.to === null,
+    "zoomed to rows 4-6: After uses the EARLIEST ts among the visible viewport (row 4), got " + JSON.stringify(created.value));
+});
+
+await withApp(async (w, d, T) => {
+  section("187c. Table: Message/Extract stay hidden regardless of marked rows (person-requested — doesn't read as sensible there)");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  const node = w.createFilterNode(f.id, "text", "message [*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const messageBtn = d.querySelector('[data-row-action="filterForMessage"]');
+  const extractBtn = d.querySelector('[data-row-action="extractMessage"]');
+  assert(isVisible(messageBtn, w) === false && isVisible(extractBtn, w) === false, "no marked rows: Message/Extract hidden on Table");
+
+  const td = (r, c) => d.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
+  td(3, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+  w.updateRowActionButtons();
+  assert(isVisible(messageBtn, w) === false && isVisible(extractBtn, w) === false,
+    "even with exactly one marked row: Message/Extract stay hidden on Table (person-requested, 2026-09-08)");
+  assert(d.querySelector('[data-row-action="filterAfter"]').disabled === false, "sanity: After stays visible/enabled with one marked row (contrast case)");
+});
+
+await withApp(async (w, d, T) => {
+  section("187d. Plot: Message/Extract stay hidden/disabled always (no single-point reference)");
+
+  const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + i }), () => {});
+  const node = w.createFilterNode(f.id, "text", "n=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
+  xSel.value = "0"; xSel.dispatchEvent(new w.Event("change", { bubbles: true }));
+  ySel.value = "1"; ySel.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  assert(isVisible(d.querySelector('[data-row-action="filterForMessage"]'), w) === false, "Message stays hidden on Plot even with a 2D plot active");
+  assert(isVisible(d.querySelector('[data-row-action="extractMessage"]'), w) === false, "Extract stays hidden on Plot even with a 2D plot active");
+  assert(isVisible(d.querySelector('[data-row-action="filterAfter"]'), w) === true, "sanity: After stays visible/enabled on Plot (contrast case)");
+});
+
+/* ============================================================
+   GROUP 188 — this session (2026-09-08), person-requested: "Extract"'s
+   enabled state now additionally depends on whether the current row's
+   message actually has something extractable — reusing the exact same
+   buildNumericExtractPattern() the button's own click handler
+   (extractMessageFilter) already builds its pattern with. A message with
+   no numeric/time content would only ever produce a literal-text filter
+   node from "Extract" (indistinguishable from what "New"/manual entry
+   already does), so the button disables instead. "Message" is UNCHANGED —
+   it still enables for any single-row selection regardless of content,
+   since its dialog lets the person adjust the pattern before committing.
+   ============================================================ */
+group(188);
+await withApp(async (w, d, T) => {
+  section("188. Extract disables when the selected row's message has nothing extractable; Message doesn't care");
+
+  // Built by hand, not makeLog() — makeLog always appends " " + i to every
+  // message, which is itself numeric content and would defeat this test.
+  const noDigitsLog = '2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"no numbers in here at all"\n';
+  const f = await w.addFile("a.log", noDigitsLog, () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const extractBtn = d.querySelector('[data-row-action="extractMessage"]');
+  const messageBtn = d.querySelector('[data-row-action="filterForMessage"]');
+
+  assert(w.buildNumericExtractPattern(f.entries[0].message) === null, "sanity: a purely non-numeric message yields no wildcard pattern");
+
+  w.selectEntry(f.entries[0].id);
+  assert(messageBtn.disabled === false, "Message enables regardless of extractable content");
+  assert(extractBtn.disabled === true, "Extract disables when the row's message has no numeric/time content to wildcard");
+
+  // A message that DOES contain something extractable (the trailing " 0"
+  // index makeLog always appends) enables Extract again.
+  const f2 = await w.addFile("b.log", makeLog(0, 2), () => {});
+  T.state.activeId = f2.id;
+  w.render();
+  w.selectEntry(f2.entries[0].id);
+  assert(d.querySelector('[data-row-action="extractMessage"]').disabled === false,
+    "Extract re-enables once the selected row's message has extractable numeric content");
+
+  // Extract's own pattern-building is untouched — still identical to what a
+  // disabled-state check reuses (buildNumericExtractPattern), so a
+  // successful click still produces the same [*:int]-style pattern.
+  fireClick(d.querySelector('[data-row-action="extractMessage"]'), w);
+  const created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "text" && /\[\*:(int|float|time)\]/.test(created.value),
+    "clicking the now-enabled Extract still creates the expected wildcard pattern, got " + JSON.stringify(created.value));
 });
 
 /* ============================================================
@@ -22870,4 +23420,64 @@ process.exitCode = failed ? 1 : 0;
       Plot its enabled state is gated on plot2dToolsAvailable (the exact
       viewport count is re-checked at click time, since zoom/pan don't
       necessarily go through updateRowActionButtons()).
+
+   Group 184 — this session (2026-09-08), person-requested bugfix: the
+      timeline minimap's "currently rendered" rect (#minimapRenderedRangeRect,
+      updateMinimapRenderedRange()) had no branch for the Table/Plot tabs, so
+      switching to either left it showing a stale Log-view span, and
+      scrolling the table or zooming the plot did nothing to it. Adds a
+      Table branch (extractScroll scroll position -> visible row range,
+      fixed EXTRACT_ROW_HEIGHT, header height subtracted) and a Plot branch
+      (built on a new shared `visiblePlotPoints()` helper — every finite
+      point from the last render, restricted to plotZoom's x-domain when
+      set — also meant for Paket B's filter-info point count). Both
+      renderExtractTable()/renderPlotChart() now also call
+      renderTimelineMinimap() with their own view's entries so the
+      background/full-range box isn't stale either, plus
+      updateMinimapRenderedRange() itself (renderTimelineMinimap()
+      deliberately doesn't call it — see its own comment).
+
+   Group 185 — this session (2026-09-08), "Paket B" of a multi-package plan
+      (person-approved plan, delegated in parallel with "Paket C" minimap
+      sync on a sibling branch, merged first — hence the 185 renumbering
+      from an original 184 that collided with the group above):
+      #tableFilterInfo/#plotFilterInfo toolbar spans showing the active
+      time filter(s) (activeTimeFilters(), near isTimeFilterType) plus a
+      row/selection count (Table, updateTableFilterInfo()) or visible-point
+      count (Plot, updatePlotFilterInfo()). The Plot half runs against
+      Paket C's real visiblePlotPoints() (a TEMP stub that stood in for it
+      locally was removed during the merge).
+
+   Group 186 — this session (2026-09-08), "Paket A" of the same multi-package
+      plan (merged last, hence renumbered from an original 184 that collided
+      with both groups above): two new Filter-Toolbar (#viewBar) row-actions,
+      "Extract" (one-click auto-extraction from the message column, straight
+      to a new "text" filter node, no popup) and "New" (one-click
+      openFilterPopup(), identical to Ctrl+F, behind a visual separator), plus
+      a distinct "Message" icon (ICON_MESSAGE_EXTRACT) replacing the generic
+      funnel it used to share with every other filter-creating action.
+
+   Group 187 — this session (2026-09-08), person-requested follow-up: After/
+      Before were reported "missing" from Table/Plot — they'd actually been
+      hidden there since an earlier session (see the now-superseded Group
+      178 text), while what WAS added (Group 185's #tableFilterInfo/
+      #plotFilterInfo text) was a passive info readout, not the buttons
+      themselves. After/Before now resolve per view like Time range/Select
+      (new afterBeforeActionEntries helper) and stay visible/usable on
+      Table (marked rows) and Plot (visible viewport) too, inclusively
+      across a 2+ selection (After = earliest ts, Before = latest ts).
+      Message/Extract (new singleMessageActionEntry helper) still need
+      exactly one reference entry and stay hidden on BOTH Table and Plot
+      (person-requested correction, same session: Table could technically
+      supply a single marked row, but it doesn't read as a sensible action
+      there) — Plot has no single-point reference either way.
+
+   Group 188 — this session (2026-09-08), person-requested: "Extract"'s
+      enabled state now also depends on whether the selected row's message
+      actually has extractable numeric/time content — reusing
+      buildNumericExtractPattern() (the exact function the button's own
+      click handler already uses to build the pattern) rather than
+      re-deciding this some other way. "Message" is unaffected — it still
+      enables for any single-row selection, since its dialog lets the
+      person adjust the pattern before committing.
    ============================================================ */
