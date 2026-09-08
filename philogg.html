@@ -11685,6 +11685,35 @@ let lastPlotControlsHtml = null;
 // mouse event without recomputing the whole chart).
 let plotZoom = null;
 let plotLastRender = null;
+// Snapshot of the series built by the most recent renderPlotChart() —
+// [{col, name, color, pts: [{x, y, colorVal, rowIndex, violated}]}], one
+// entry per selected Y column, NaNs already dropped. Reset to [] whenever
+// renderPlotChart bails out early (nothing plottable/no numeric rows) so
+// visiblePlotPoints() below never reports stale points from a previous
+// node/config. Read by visiblePlotPoints() and, downstream, by the minimap
+// sync (updateMinimapRenderedRange's Plot branch) and the Plot toolbar's
+// filter-info point count.
+let plotLastSeries = [];
+
+// Shared helper: which plotted points are actually visible right now — every
+// finite-(x,y) point from the last render, restricted to plotZoom's x-domain
+// when a zoom is active (plotZoom === null means "home view", i.e. every
+// point qualifies). Each returned point keeps its .rowIndex, so a caller can
+// look its source entry back up via extractRowsData[p.rowIndex].entry.
+// Deliberately a plain top-level function (not nested in renderPlotChart) —
+// shared by updateMinimapRenderedRange's Plot branch and the Plot toolbar's
+// selection/filter-info point count.
+function visiblePlotPoints() {
+  const pts = [];
+  for (const s of plotLastSeries) {
+    for (const p of s.pts) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      if (plotZoom && (p.x < plotZoom.x0 || p.x > plotZoom.x1)) continue;
+      pts.push(p);
+    }
+  }
+  return pts;
+}
 // One entry per rendered mark (line/scatter point or bar), rebuilt every
 // renderPlotChart() alongside the marks themselves — read by the hover-
 // tooltip listener to hit-test without re-walking extractRowsData/series.
@@ -12480,6 +12509,10 @@ function renderPlotChart() {
     plot3dCanvas.classList.remove("hidden");
     setPlot2dToolsVisible(false); // 3D uses its own rotate/zoom/pan on the canvas, not the 2D zoom bar/filter-from-viewport
     renderPlot3D();
+    // No 2D series in the 3D view — clear so visiblePlotPoints()/the minimap
+    // rendered-range rect don't keep reporting whatever the last 2D render left.
+    plotLastSeries = [];
+    updateMinimapRenderedRange();
     return;
   }
   plotSvg.classList.remove("hidden");
@@ -12491,7 +12524,9 @@ function renderPlotChart() {
     plotSvg.innerHTML = '<text class="plot-empty-label" x="16" y="24">Select an X and at least one Y column to plot.</text>';
     plotLastRender = null;
     plotHoverPoints = [];
+    plotLastSeries = [];
     updatePlotZoomIndicator();
+    updateMinimapRenderedRange();
     return;
   }
 
@@ -12548,7 +12583,9 @@ function renderPlotChart() {
     plotSvg.innerHTML = '<text class="plot-empty-label" x="16" y="24">No rows have numeric values for the selected columns.</text>';
     plotLastRender = null;
     plotHoverPoints = [];
+    plotLastSeries = [];
     updatePlotZoomIndicator();
+    updateMinimapRenderedRange();
     return;
   }
 
@@ -12786,7 +12823,19 @@ function renderPlotChart() {
     xDomainMin, xDomainMax, yDomainMin, yDomainMax,
     xHomeDomainMin, xHomeDomainMax, yHomeDomainMin, yHomeDomainMax,
   };
+  plotLastSeries = series;
   updatePlotZoomIndicator();
+
+  // Keep the minimap's background/full-range in sync with what's actually
+  // plotted (Plot view inherits entries the same way Table does — see
+  // renderExtractTable's own renderTimelineMinimap call) and refresh the
+  // "currently rendered" sub-rectangle to match the zoomed/visible points —
+  // covers every plotZoom-changing call site too, since they all re-render
+  // the chart. renderTimelineMinimap() does NOT call
+  // updateMinimapRenderedRange() itself (see its own comment), so both calls
+  // are needed here.
+  renderTimelineMinimap(getRootFileId(assertNode.id), extractRowsData.map(r => r.entry));
+  updateMinimapRenderedRange();
 }
 
 /* ===================== 3D scatter ===================== */
@@ -13463,7 +13512,17 @@ function renderExtractTable(node) {
 
   renderExtractVisibleRows();
 
-  if (extractView === "plot") { renderPlotControls(); renderPlotChart(); }
+  if (extractView === "plot") {
+    renderPlotControls(); renderPlotChart(); // renderPlotChart() does its own minimap sync (Plot branch)
+  } else {
+    // Table view: keep the minimap's background in sync with this node's
+    // own entries (not stale Log-view data) and the rendered-range rect in
+    // sync with what's actually scrolled into view right now.
+    // renderTimelineMinimap() does NOT call updateMinimapRenderedRange()
+    // itself (see its own comment), so both calls are needed here.
+    renderTimelineMinimap(getRootFileId(node.id), entries);
+    updateMinimapRenderedRange();
+  }
 }
 
 /* ---------- Extraction table: virtualized row rendering ----------
@@ -13547,7 +13606,17 @@ let extractScrollTicking = false;
 extractScroll.addEventListener("scroll", () => {
   if (extractScrollTicking) return;
   extractScrollTicking = true;
-  requestAnimationFrame(() => { renderExtractVisibleRows(); extractScrollTicking = false; });
+  requestAnimationFrame(() => {
+    renderExtractVisibleRows();
+    // Same rAF batching as the row repaint above — keeps the minimap's
+    // rendered-range rect following the Table view's scroll live (mirrors
+    // the tableBody/highlightBody scroll listeners elsewhere). No-op while
+    // Plot is the active tab (extractScroll is hidden then, but this can
+    // still fire from residual scroll events) since updateMinimapRenderedRange
+    // branches on fhActiveTab, not on which container just scrolled.
+    updateMinimapRenderedRange();
+    extractScrollTicking = false;
+  });
 });
 window.addEventListener("resize", () => renderExtractVisibleRows());
 
@@ -16089,6 +16158,53 @@ function updateMinimapRenderedRange() {
     if (!span) { rect.classList.add("hidden"); return; }
     rect.setAttribute("x", span.left.toFixed(1));
     rect.setAttribute("width", Math.max(2, span.right - span.left).toFixed(1));
+    rect.classList.remove("hidden");
+    return;
+  }
+
+  if (fhActiveTab === "table") {
+    // Table view: extractRowsData rows are a flat EXTRACT_ROW_HEIGHT each
+    // (no per-row offsets — see renderExtractVisibleRows), so this is the
+    // same start/end-index-from-scrollTop math minimapRenderedSpan uses for
+    // the flat-ROW_HEIGHT case, just against extractScroll/EXTRACT_ROW_HEIGHT
+    // and with the sticky #extractHead's own height subtracted first (the
+    // header occupies real scroll-flow space above row 0 there — see
+    // renderExtractVisibleRows' own comment).
+    if (extractRowsData.length === 0) { rect.classList.add("hidden"); return; }
+    const total = extractRowsData.length;
+    const viewportH = extractScroll.clientHeight || 400;
+    const headerH = extractHead.offsetHeight || 0;
+    const bodyScrollTop = Math.max(0, extractScroll.scrollTop - headerH);
+    const startIdx = Math.min(total - 1, Math.max(0, Math.floor(bodyScrollTop / EXTRACT_ROW_HEIGHT)));
+    const endIdx = Math.min(total - 1, Math.max(startIdx, Math.ceil((bodyScrollTop + viewportH) / EXTRACT_ROW_HEIGHT)));
+    const x1 = minimapBarSpan(extractRowsData[startIdx].entry.ts).left;
+    const x2 = minimapBarSpan(extractRowsData[endIdx].entry.ts).right;
+    rect.setAttribute("x", x1.toFixed(1));
+    rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
+    rect.classList.remove("hidden");
+    return;
+  }
+
+  if (fhActiveTab === "plot") {
+    // Plot view has no scroll position to speak of — "rendered" here means
+    // "currently plotted", i.e. visiblePlotPoints() (all finite points,
+    // restricted to plotZoom's x-domain when zoomed). Bounds come from each
+    // point's SOURCE ENTRY timestamp (extractRowsData[p.rowIndex].entry.ts),
+    // not the plotted x value itself — the X column plotted often isn't time
+    // at all (e.g. a numeric column on X), so minimapBarSpan needs actual
+    // ts values, same as every other branch here.
+    const pts = visiblePlotPoints();
+    if (pts.length === 0) { rect.classList.add("hidden"); return; }
+    let minTs = Infinity, maxTs = -Infinity;
+    for (const p of pts) {
+      const ts = extractRowsData[p.rowIndex].entry.ts;
+      if (ts < minTs) minTs = ts;
+      if (ts > maxTs) maxTs = ts;
+    }
+    const x1 = minimapBarSpan(minTs).left;
+    const x2 = minimapBarSpan(maxTs).right;
+    rect.setAttribute("x", x1.toFixed(1));
+    rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
     rect.classList.remove("hidden");
     return;
   }
