@@ -1241,7 +1241,23 @@
 
   #tableHeader, #highlightHeader{
     flex:0 0 auto; background:var(--bg-panel); border-bottom:1px solid var(--border);
-    padding:0 16px 0 14px;
+    /* Left padding mirrors #tableRows/#highlightRows' own --rows-pad-left
+       formula exactly (see that rule's comment) instead of a fixed value —
+       a header that's a fixed 14px in while its rows are a dynamic 26px+
+       (growing further with simultaneous highlight-color count, or with
+       #highlightRows.ctx-active's wider context-marker lane) is exactly what
+       used to walk the header out of alignment with its columns whenever
+       either grew (person-reported). No visible content lives in this
+       padding (that's the "extra column with no text" the fix asked for,
+       done as padding rather than a real grid track since the rows already
+       reserve this space as padding, not a column, and a header column has
+       nothing to size against on its own) — it just keeps pace with
+       whatever the rows reserve so every .th still lands directly over its
+       column. */
+    padding:0 16px 0 calc(26px + (var(--color-mark-w) - 3px));
+  }
+  #highlightHeader.ctx-active{
+    padding-left: calc(38px + (var(--color-mark-w) - 3px));
   }
   #tableHeader .row-grid, #highlightHeader .row-grid{padding:9px 0;}
   /* Horizontal scrollbar in the Filter view, Filter
@@ -3382,28 +3398,14 @@
 
       <div id="fhSplit">
         <div id="highlightWrap" class="fh-panel">
-          <div id="highlightHeader">
-            <div class="row-grid">
-              <span></span>
-              <span class="th">Time</span>
-              <span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>
-              <span class="th">Level</span>
-              <span class="th" data-col="thread" title="Middle-click to hide">Thread</span>
-              <span class="th" data-col="loc" title="Middle-click to hide">Location</span>
-              <span class="th" data-col="method" title="Middle-click to hide">Method</span>
-              <span class="th">Message</span>
-            </div>
-          </div>
           <!-- Context view's own toolbar, grouped Settings | Controls |
-               Actions (person-requested, this session — no label on any
-               group, just the `|` divider, same order in every view
-               toolbar): Settings = the log-DISPLAY toggles (no Pin here —
-               it only affects the Filtered view's result set, meaningless
-               while looking at Context's always-whole-file result, see
-               #filteredToolbar for it); Controls = match-to-match
-               navigation + expand/collapse (originally the old floating
-               corner chip, #contextNav), unchanged from before this
-               session, just merged into one group instead of two; Actions
+               Actions (person-requested — no label on any group, just the
+               `|` divider, same order in every view toolbar): Settings =
+               the log-DISPLAY toggles (no Pin here — it only affects the
+               Filtered view's result set, meaningless while looking at
+               Context's always-whole-file result, see #filteredToolbar for
+               it); Controls = match-to-match navigation + expand/collapse
+               (originally the old floating corner chip, #contextNav); Actions
                = Bookmark this row/Add note (moved in from the Filter-
                Toolbar's row-actions group — these mutate the SELECTION,
                not create a filter, so "Actions" fits them better than
@@ -3413,7 +3415,10 @@
                `[data-row-actions]`'s shared click/update-state code). Icons/
                listeners for the nav group are wired once by
                initContextToolbar(); updateContextToolbar() only refreshes
-               the label and the disabled states there. -->
+               the label and the disabled states there. Sits directly under
+               #viewBar now (person-requested), ABOVE #highlightHeader — so
+               the column header stays the one thing directly over the log
+               rows, instead of the toolbar sitting between header and rows. -->
           <div id="contextToolbar" class="hidden">
             <div class="toolbar-group" data-toolbar-group="controls">
               <button type="button" id="ctxPrevMatch" class="toolbar-icon-btn" title="Previous match"></button>
@@ -3433,6 +3438,18 @@
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
           </div>
+          <div id="highlightHeader">
+            <div class="row-grid">
+              <span></span>
+              <span class="th">Time</span>
+              <span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>
+              <span class="th">Level</span>
+              <span class="th" data-col="thread" title="Middle-click to hide">Thread</span>
+              <span class="th" data-col="loc" title="Middle-click to hide">Location</span>
+              <span class="th" data-col="method" title="Middle-click to hide">Method</span>
+              <span class="th">Message</span>
+            </div>
+          </div>
           <div id="highlightBody">
             <div id="highlightSpacer">
               <div id="highlightRows"></div>
@@ -3449,6 +3466,28 @@
         <div id="filterSlot" class="fh-panel">
           <div class="fh-panel-badge">Filtered</div>
           <div id="tableWrap">
+            <!-- Filtered view's own toolbar, Settings | Actions (person-
+                 requested — same grouping convention as #contextToolbar; no
+                 Controls group here, Filtered has no navigation buttons of
+                 its own). Settings = all six display toggles (Pin bookmarks
+                 included — it's the one that actually changes what this
+                 view shows); Actions = Bookmark this row/Add note, same
+                 shared markup/behavior as #contextToolbar's copy (see that
+                 div's own HTML comment). Sits directly under #viewBar now
+                 (person-requested), ABOVE #tableHeader — see
+                 #contextToolbar's own comment for why. -->
+            <div id="filteredToolbar">
+              <div class="toolbar-group" data-toolbar-group="settings">
+                <button type="button" class="toolbar-icon-btn toggle-pin" title="Pin bookmarks"></button>
+                <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
+                <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line messages"></button>
+                <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
+                <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
+                <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
+              </div>
+              <span class="ctx-toolbar-sep"></span>
+              <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
+            </div>
             <div id="tableHeader">
               <div class="row-grid">
                 <span></span>
@@ -3469,26 +3508,6 @@
                 <span class="col-resize-handle" data-col="loc" title="Drag to resize"></span>
                 <span class="col-resize-handle" data-col="method" title="Drag to resize"></span>
               </div>
-            </div>
-            <!-- Filtered view's own toolbar, Settings | Actions (person-
-                 requested, this session — same grouping convention as
-                 #contextToolbar; no Controls group here, Filtered has no
-                 navigation buttons of its own). Settings = all six
-                 display toggles (Pin bookmarks included — it's the one
-                 that actually changes what this view shows); Actions =
-                 Bookmark this row/Add note, same shared markup/behavior as
-                 #contextToolbar's copy (see that div's own HTML comment). -->
-            <div id="filteredToolbar">
-              <div class="toolbar-group" data-toolbar-group="settings">
-                <button type="button" class="toolbar-icon-btn toggle-pin" title="Pin bookmarks"></button>
-                <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
-                <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line messages"></button>
-                <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
-                <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
-                <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
-              </div>
-              <span class="ctx-toolbar-sep"></span>
-              <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
             </div>
             <div id="tableBody">
               <div id="tableSpacer">
@@ -15248,6 +15267,7 @@ function contextWouldBeIndex(entryId) {
 // standing in as an (unrelated) "whole file" readout.
 function updateContextToolbar() {
   highlightRows.classList.toggle("ctx-active", contextActive);
+  highlightHeaderEl.classList.toggle("ctx-active", contextActive);
   const panelOnScreen = fhSplit.style.display !== "none" &&
     (fhLayout === "stacked" || fhActiveTab === "highlight");
   const onScreen = contextActive && panelOnScreen;
