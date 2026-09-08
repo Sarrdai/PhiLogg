@@ -6973,7 +6973,7 @@ section("58c. Column visibility/width persist through the session cache (global 
    ============================================================ */
 group(59);
 await withApp(async (w, d, T) => {
-  section("59a. Save to library (context menu) + name dialog");
+  section("59a. Add to Library (Filter-Toolbar '+' button) + name dialog");
   // Needs a real (fake-indexeddb) IndexedDB — unlike state.multilineMessages
   // et al., the library has no in-memory fallback; cacheStoreOp silently
   // no-ops without one (same graceful-degradation jsdom sees in every OTHER
@@ -6982,28 +6982,29 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   w.render();
   const textNode = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = textNode.id;
   w.render();
 
-  // Right-click the filter node -> "Save to library…" opens the naming dialog
-  const treeRow = d.querySelector('.tree-row[data-node-id="' + textNode.id + '"]');
-  assert(treeRow, "sanity: tree row exists for the filter node");
-  fireContextMenu(treeRow, w);
-  const saveItem = [...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "saveToLibrary");
-  assert(saveItem, "'Save to library…' appears in a filter node's context menu");
-  fireClick(saveItem, w);
+  // Saving moved off the context menu onto the Filter-Toolbar's "+ Add to
+  // Library" button (person-requested), acting on the ACTIVE filter node.
+  const addBtn = d.querySelector("#btnAddToLibrary");
+  assert(addBtn, "the '+ Add to Library' button exists in the Filter-Toolbar");
+  w.updateRowActionButtons();
+  assert(!addBtn.disabled, "the button is enabled while the active node is a filter");
+  fireClick(addBtn, w);
 
   const saveDialog = d.querySelector("#filterLibrarySaveDialog");
   assert(!saveDialog.classList.contains("hidden"), "the naming dialog opens");
   const nameInput = d.querySelector("#filterLibraryNameInput");
-  assert(nameInput.value === textNode.name, "name input pre-fills with the filter node's own name");
+  assert(nameInput.value === textNode.name, "name input pre-fills with the active filter node's own name");
 
   nameInput.value = "My saved filter";
   fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
   assert(saveDialog.classList.contains("hidden"), "confirming closes the dialog");
 
   // General "Just this filter" vs "Include ancestor chain" prompt (see
-  // GROUP 129) now appears for EVERY save-to-library action, not just
-  // and/or/link nodes — pick "Just this filter" to proceed.
+  // GROUP 129) appears for EVERY save-to-library action — pick "Just this
+  // filter" to proceed.
   await new Promise(r => setTimeout(r, 0));
   const scopeDialog = d.querySelector("#exportScopeDialog");
   assert(!scopeDialog.classList.contains("hidden"), "the general export-scope prompt opens as part of the actual save-to-library action");
@@ -7017,10 +7018,21 @@ await withApp(async (w, d, T) => {
   assert(records.length === 1 && records[0].name === "My saved filter", "one record saved under the entered name");
   assert(Array.isArray(records[0].roots) && records[0].roots.length === 1 && records[0].roots[0].filterType === "text",
     "the saved record carries serializeFilterBranch()'s own shape (roots/activeRef)");
+  assert(records[0].showInToolbar === false && records[0].icon === null,
+    "new records default to showInToolbar:false / icon:null (unpinned, no icon)");
+
+  // The button is disabled when the active node is NOT a filter (a file/folder
+  // has nothing to serialize) — same guard saveFilterToLibrary itself applies.
+  T.state.activeId = f.id;
+  w.render();
+  w.updateRowActionButtons();
+  assert(addBtn.disabled, "the '+ Add to Library' button is disabled when the active node is a plain file, not a filter");
 
   // Blank name is a no-op (dialog stays open, nothing saved)
-  fireContextMenu(treeRow, w);
-  fireClick([...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "saveToLibrary"), w);
+  T.state.activeId = textNode.id;
+  w.render();
+  w.updateRowActionButtons();
+  fireClick(addBtn, w);
   d.querySelector("#filterLibraryNameInput").value = "   ";
   fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
   assert(!d.querySelector("#filterLibrarySaveDialog").classList.contains("hidden"), "a blank/whitespace-only name does not save or close the dialog");
@@ -7162,16 +7174,18 @@ await withApp(async (w, d, T) => {
   assert(seps >= 4, "a filter node's context menu has at least 4 separators (meta + 3 group boundaries among edit/clipboard/library/danger), got " + seps);
 
   // Group order: edit (edit/invert/context/countContext) before clipboard
-  // (copy/cut) before library (save/saveToLibrary/loadFilter/
-  // applyFromLibrary) before danger (delete) — verify relative order via
-  // each action's index.
+  // (copy/cut) before library (saveFilter/loadFilter/applyFromLibrary) before
+  // danger (delete) — verify relative order via each action's index.
+  // ("Save to library…" moved out of this menu onto the Filter-Toolbar's
+  // "+ Add to Library" button; "Apply from library…" stays here.)
   const indexOf = action => children.findIndex(c => c.dataset && c.dataset.action === action);
   assert(indexOf("edit") < indexOf("invert") && indexOf("invert") < indexOf("context") && indexOf("context") < indexOf("countContext"),
     "edit group stays together and in order: edit, invert, time context, count context");
   assert(indexOf("countContext") < indexOf("copy") && indexOf("copy") < indexOf("cut"), "clipboard group (copy, cut) comes after the edit group");
-  assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("saveToLibrary") &&
-    indexOf("saveToLibrary") < indexOf("loadFilter") && indexOf("loadFilter") < indexOf("applyFromLibrary"),
-    "library group (save filter, save to library, load filter, apply from library) comes after clipboard, in order");
+  assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("loadFilter") &&
+    indexOf("loadFilter") < indexOf("applyFromLibrary"),
+    "library group (save filter, load filter, apply from library) comes after clipboard, in order");
+  assert(indexOf("saveToLibrary") === -1, "'Save to library…' is no longer a context-menu action (moved to the toolbar '+' button)");
   assert(indexOf("applyFromLibrary") < indexOf("delete"), "danger group (remove filter) comes last");
 
   // A .ctx-sep must actually separate the edit and clipboard groups (not
@@ -21084,6 +21098,113 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 193 — Filter library: Toolbar presets (pin + icon)
+   Origin: this session, person-requested. The filter library gained a
+   Filter-Toolbar section: a preset flagged showInToolbar renders as a
+   circle-pill .row-action-btn in #libraryPresetBar (left of the "+ Add to
+   Library" button), clicking it applies the preset onto the active node.
+   Each preset can be assigned an icon (LIBRARY_ICON_SET) shown in its pill,
+   falling back to ICON_FILTER when unset. Pin + icon are library-RECORD
+   fields (showInToolbar/icon), not filter-node fields, so no persistence
+   carrier threading is involved. The manage dialog gained the pin toggle and
+   an inline icon grid per row.
+   ============================================================ */
+group(193);
+await withApp(async (w, d, T) => {
+  section("193a. Pinned preset renders as a toolbar pill; clicking it applies onto the active node");
+
+  const fa = await w.addFile("a.log", makeLog(0, 20), () => {});
+  w.render();
+  const textNode = w.createFilterNode(fa.id, "text", "message 1");
+  T.state.activeId = textNode.id;
+  w.render();
+
+  // Save a preset directly (the save flow itself is covered by 59a).
+  const savePromise = w.saveFilterToLibrary(textNode.id, "toolbar preset");
+  await new Promise(r => setTimeout(r, 0));
+  fireClick(d.querySelector("#exportScopeJustThis"), w);
+  await savePromise;
+  await waitFor(async () => (await w.listFilterLibrary()).length === 1);
+
+  // Unpinned by default → no pill yet.
+  await w.renderLibraryToolbarPresets();
+  assert(d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 0,
+    "an unpinned preset produces no toolbar pill");
+
+  // Pin it via the manage dialog's toggle.
+  await w.openFilterLibraryDialog(fa.id);
+  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-pin input"));
+  const pinCb = d.querySelector("#filterLibraryList .filter-library-pin input");
+  pinCb.checked = true;
+  pinCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 1);
+  const pill = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
+  assert(pill, "pinning the preset adds a pill to #libraryPresetBar");
+  assert(pill.querySelector(".row-action-label").textContent === "toolbar preset", "the pill carries the preset name as its label");
+  // No icon assigned yet → ICON_FILTER fallback (funnel path, not a circle).
+  assert(pill.querySelector(".row-action-hit").innerHTML.includes("M2 3h12"), "with no icon assigned the pill shows the ICON_FILTER fallback");
+  // The pill sits to the LEFT of the "+ Add to Library" button.
+  const kids = [...d.querySelector("#libraryPresetBar").children];
+  assert(kids.indexOf(pill) < kids.indexOf(d.querySelector("#btnAddToLibrary")), "pinned pills are inserted left of the '+ Add to Library' button");
+
+  // Close dialog, switch active node to a fresh file, click the pill → the
+  // preset applies onto the active node (same mechanism as dialog "Apply").
+  w.closeFilterLibraryDialog();
+  const fb = await w.addFile("b.log", makeLog(0, 20, { msgPrefix: "message" }), () => {});
+  T.state.activeId = fb.id;
+  w.render();
+  const before = fb.children.length;
+  fireClick(d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]"), w);
+  assert(fb.children.length === before + 1, "clicking the pill applies the preset onto the active node (a fresh filter is created under it)");
+  const appliedNode = T.state.nodes[fb.children[fb.children.length - 1]];
+  assert(appliedNode.filterType === "text" && appliedNode.value === "message 1", "the applied node carries the preset's filter definition, re-evaluated against the active file");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("193b. Assigning an icon updates the pill; unpinning removes it");
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  w.render();
+  const node = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = node.id;
+  w.render();
+  const savePromise = w.saveFilterToLibrary(node.id, "with icon");
+  await new Promise(r => setTimeout(r, 0));
+  fireClick(d.querySelector("#exportScopeJustThis"), w);
+  await savePromise;
+  await waitFor(async () => (await w.listFilterLibrary()).length === 1);
+  const key = (await w.listFilterLibrary())[0].key;
+
+  // Pin + assign the "clock" icon via updateFilterLibraryEntry (the same
+  // mutator the dialog's toggle/grid call).
+  await w.updateFilterLibraryEntry(key, { showInToolbar: true, icon: "clock" });
+  await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 1);
+  const pill = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
+  assert(pill.querySelector(".row-action-hit").innerHTML.includes("<circle"), "the pill shows the assigned 'clock' icon (a circle), not the funnel fallback");
+
+  // The icon field actually persisted on the record.
+  const rec = (await w.listFilterLibrary())[0];
+  assert(rec.icon === "clock" && rec.showInToolbar === true, "icon + pin persisted on the library record");
+
+  // Open the manage dialog: the leading icon button reflects the choice, and
+  // clicking it opens the inline icon grid.
+  await w.openFilterLibraryDialog(f.id);
+  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-row-icon"));
+  fireClick(d.querySelector("#filterLibraryList .filter-library-row-icon"), w);
+  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-icon-grid"));
+  // 12 = current LIBRARY_ICON_SET size (curated subset of ICON_*, extended later).
+  assert(d.querySelectorAll("#filterLibraryList .filter-library-icon-grid button").length === 12,
+    "the inline icon grid offers one button per LIBRARY_ICON_SET entry (12 today)");
+  w.closeFilterLibraryDialog();
+
+  // Unpin → pill disappears.
+  await w.updateFilterLibraryEntry(key, { showInToolbar: false });
+  await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 0);
+  assert(d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 0, "unpinning removes the toolbar pill");
+}, { indexedDB: new IDBFactory() });
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -23809,4 +23930,15 @@ process.exitCode = failed ? 1 : 0;
       nodeIconHTML into ICON_CLOCK despite not being a time filter — they
       now get their own ICON_CHECKLIST. Text and extraction-wildcard text
       icons were already correct and are asserted unchanged.
+   Group 193 — this session (2026-09-08), person-requested filter-library
+      toolbar presets: a preset flagged showInToolbar renders as a circle-pill
+      .row-action-btn in #libraryPresetBar (left of the "+ Add to Library"
+      button), clicking it applies the preset onto the active node. Each preset
+      can be assigned an icon from LIBRARY_ICON_SET, shown in its pill with an
+      ICON_FILTER fallback when unset. showInToolbar/icon are library-RECORD
+      fields (not filter-node fields, so no persistence-carrier threading). The
+      manage dialog gained a per-row pin toggle and an inline icon grid. Save
+      moved off the tree context menu onto the toolbar "+ Add to Library"
+      button (Group 59a rewritten accordingly; Group 60b's ordering assertion
+      updated — "Apply from library…" stays in the context menu).
    ============================================================ */

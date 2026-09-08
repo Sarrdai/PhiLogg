@@ -149,7 +149,8 @@ open it in a browser to view it.
 - **Session cache** — reload the browser tab and get your files, filters,
   and settings back.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
-  presets you apply across different files.
+  presets you apply across different files — pin a preset (with an icon of
+  your choice) to the Filter-Toolbar for one-click reuse.
 - **Session export/import** — package an analysis (files, filters,
   bookmarks, notes) to share with a colleague.
 - **Configurable log formats** (Settings → Format Manager) — define

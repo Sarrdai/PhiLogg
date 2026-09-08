@@ -165,6 +165,23 @@ shape:
   (an active node to add the filter under). Both share `singleRowEnabled`/
   Table-Plot hiding with "Message" (Extract) or gate on `state.activeId`
   alone (New).
+  **Filter-library section** (`#libraryPresetBar`, this session, 2026-09-08)
+  follows the row-actions group, divided from it by a `.row-action-separator`
+  "|". It holds, left-to-right: the pinned library presets (rendered
+  dynamically by `renderLibraryToolbarPresets`), then two static
+  `.row-action-btn`s — **"+ Add to Library"** (`#btnAddToLibrary`,
+  `ICON_PLUS_SMALL`; opens the save dialog on the active filter, disabled
+  unless the active node is a filter — see `updateRowActionButtons`) and
+  **"Library"** (`#btnOpenLibrary`, `ICON_CHECKLIST`; opens the manage
+  dialog). A pinned preset (`showInToolbar` on its `filterLibrary` record)
+  renders as a circle-pill matching the filter buttons, its icon from
+  `LIBRARY_ICON_SET` (falling back to `ICON_FILTER`), and clicking it applies
+  the preset onto the active node. Unlike the row-actions group these pills'
+  floating labels are driven by plain CSS `:hover` scoped to
+  `#libraryPresetBar` (the label floats and shifts nothing, so
+  `setupHitExpandGroups` isn't wired here — and a CSS rule survives the
+  container's dynamic re-render). See `docs/persistence-and-sync.md` →
+  "Reusable filter library" for the record shape and storage.
   **Table/Plot are context-aware now, not a swapped-out second group
   (person-requested, 2026-09-07, extended 2026-09-08 — unifies what used to
   be a Plot-only detour)**: "Time range"/"Select"/"After"/"Before" all
