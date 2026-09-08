@@ -19565,7 +19565,10 @@ await withApp(async (w, d, T) => {
   const actions = [...d.querySelector('[data-row-actions="viewbar"]').querySelectorAll("[data-row-action]")];
   // "Extract" (next to "Message") and "New" (at the end, behind a
   // separator) joined this group this session (Paket A) — see Group 186.
-  const expectedActions = ["filterAfter", "filterBefore", "filterForMessage", "extractMessage", "timeRangeFromSelection", "newFilter"];
+  // Reordered (person-requested, 2026-09-08 — see Group 187/188): Before/
+  // After/Time range first, so they never shift position depending on
+  // whether Message/Extract are visible (Context/Filtered only).
+  const expectedActions = ["filterBefore", "filterAfter", "timeRangeFromSelection", "filterForMessage", "extractMessage", "newFilter"];
   assert(actions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
     "the Filter-Toolbar's row-actions group has all six filter-creating/opening actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
   assert(d.querySelector('[data-row-actions="viewbar"] [data-row-action="bookmark"]') === null &&
@@ -19612,13 +19615,22 @@ await withApp(async (w, d, T) => {
   // keeps shoving the next hit-zone back and forth under a stationary
   // cursor mid-animation (person-reported, 2026-09-05). filterAfterBtn is
   // enabled here (one row selected above). ---
-  const hit = filterAfterBtn.querySelector(".row-action-hit");
-  hit.getBoundingClientRect = () => ({ top: 0, left: 0, right: 28, bottom: 28, width: 28, height: 28, x: 0, y: 0 });
+  // Every sibling hit in the group needs its own non-overlapping stub rect —
+  // the harness's default getBoundingClientRect (see withApp's setup) is a
+  // huge 800x400 box that would otherwise match (10,10) for WHICHEVER
+  // sibling happens to come first in DOM order, masking filterAfterBtn's
+  // own rect regardless of the reorder below.
   const group = filterAfterBtn.parentElement;
+  [...group.querySelectorAll(".row-action-hit")].forEach((h, i) => {
+    h.getBoundingClientRect = () => ({ top: 0, left: i * 30, right: i * 30 + 28, bottom: 28, width: 28, height: 28, x: i * 30, y: 0 });
+  });
+  const filterAfterHit = filterAfterBtn.querySelector(".row-action-hit");
+  const filterAfterRect = filterAfterHit.getBoundingClientRect();
+  const midX = (filterAfterRect.left + filterAfterRect.right) / 2;
   assert(!filterAfterBtn.classList.contains("expanded"), "sanity: starts collapsed");
-  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 10, clientY: 10 }));
+  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: midX, clientY: 10 }));
   assert(filterAfterBtn.classList.contains("expanded"), "moving into the circle's (collapsed-state) rect expands the button");
-  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 500, clientY: 500 }));
+  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: 5000, clientY: 5000 }));
   assert(!filterAfterBtn.classList.contains("expanded"), "moving off the circle's rect collapses it again");
   group.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
 
