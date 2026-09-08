@@ -999,95 +999,90 @@
      overshot). Keyboard focus still uses a plain `:focus-visible` on the
      button — Tab moves in discrete jumps, not a continuously arriving
      cursor, so the earlier overshoot bug doesn't apply there. */
-  .row-action-btn{border-radius:50%; overflow:hidden; transition:border-radius .15s, width .15s;}
-  .row-action-btn.expanded, .row-action-btn:focus-visible{border-radius:20px; width:auto; padding-right:10px;}
+  .row-action-btn{border-radius:50%; position:relative; transition:border-radius .15s, width .15s;}
   /* .rect variant (person-requested, 2026-09-05): the copies duplicated
      into each log view's own toolbar (Bookmark/Add note/Add to selection)
-     stay square with the toolbar's normal 7px corner radius at rest and
-     expand into a rounded RECTANGLE (same 7px radius, not a pill) — only
-     the Filter-Toolbar's own row-actions (#viewBar) keep the circle/pill
-     shape above. Same expand/collapse mechanism (.row-action-hit/
-     .expanded), just a different resting+expanded radius. */
+     stay square with the toolbar's normal 7px corner radius — only the
+     Filter-Toolbar's own row-actions (#viewBar) keep the circle shape
+     above. */
   .row-action-btn.rect{border-radius:7px;}
-  .row-action-btn.rect.expanded, .row-action-btn.rect:focus-visible{border-radius:7px;}
   .row-action-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   /* Thin vertical divider rendered immediately before a row-action entry
      flagged `separator:true` (see buildRowActionsHtml) — visually groups
      "New" apart from the filter-creation actions preceding it in
      #viewBar's Filter-Toolbar without adding a whole new toolbar group. */
   .row-action-separator{width:1px; align-self:stretch; margin:4px 6px; background:var(--border); flex:0 0 auto;}
+  /* Redesigned 2026-09-08 (person-reported: the old inline expand-to-pill
+     pushed every sibling button sideways on hover and snapped back on
+     leave, making it hard to move from one button to the next). "On
+     hover" (default) now draws the label as a small pill floating ABOVE
+     the button, centered, overlaid via `position:absolute` — it never
+     participates in toolbar layout, so nothing next to it shifts. The JS
+     still toggles `.expanded`/`:focus-visible` via setupHitExpandGroups;
+     that mechanism's flicker-avoidance is reused as-is, only what it
+     reveals changed. */
   .row-action-label{
-    max-width:0; opacity:0; margin-left:0; overflow:hidden; white-space:nowrap;
+    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%) translateY(4px);
+    width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
-    transition:max-width .15s ease, opacity .1s ease, margin-left .15s ease;
+    box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45;
+    transition:opacity .12s ease, transform .12s ease;
   }
   .row-action-btn.expanded .row-action-label, .row-action-btn:focus-visible .row-action-label{
-    max-width:240px; opacity:1; margin-left:6px;
+    opacity:1; transform:translateX(-50%) translateY(0);
   }
-  /* Same reveal-a-label-on-hover mechanic as .row-action-btn above, but for
-     the log views' own toolbars' plain buttons (Context/Filtered/Table/
-     Plot — see makeToolbarBtnExpandable near the end of the script): stays
-     square with the ordinary .toolbar-icon-btn 7px corner radius at rest
-     AND once expanded (a rounded rectangle, never a pill) — only the
-     Filter-Toolbar's row-actions become pills. `:has(.tb-hit)` scopes this
-     to buttons this mechanic actually wrapped, so it never affects a plain
-     .toolbar-icon-btn elsewhere (header nav, Settings, etc.) that was never
-     given the .tb-hit/.tb-label structure. Deliberately does NOT override
-     `justify-content` (person-reported bug, this session: it did at first,
-     `flex-start` instead of the base rule's `center` — harmless once
-     expanded, since `width:auto` leaves no slack to justify either way,
-     but at REST it left-aligns the 28px `.tb-hit` inside the button's
-     26px content box under this stylesheet's global `box-sizing:
-     border-box` (28px minus the 1px border each side), clipping only the
-     right edge instead of both sides evenly and visibly shifting the icon
-     off-center. `.row-action-btn` above never had this problem — it never
-     touches `justify-content` either, always using the base rule's
-     `center`, which clips both sides symmetrically and hides the same
-     2px). */
-  .toolbar-icon-btn:has(.tb-hit){overflow:hidden; width:28px; transition:width .15s, background .12s, border-color .12s, color .12s;}
-  .toolbar-icon-btn.expanded:has(.tb-hit), .toolbar-icon-btn:has(.tb-hit):focus-visible{width:auto; padding-right:10px;}
+  /* Same floating-label mechanic as .row-action-btn above, but for the log
+     views' own toolbars' plain buttons (Context/Filtered/Table/Plot — see
+     makeToolbarBtnExpandable near the end of the script). `:has(.tb-hit)`
+     scopes this to buttons this mechanic actually wrapped, so it never
+     affects a plain .toolbar-icon-btn elsewhere (header nav, Settings,
+     etc.) that was never given the .tb-hit/.tb-label structure. */
+  .toolbar-icon-btn:has(.tb-hit){position:relative;}
   .tb-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .tb-label{
-    max-width:0; opacity:0; margin-left:0; overflow:hidden; white-space:nowrap;
+    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%) translateY(4px);
+    width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
-    transition:max-width .15s ease, opacity .1s ease, margin-left .15s ease;
+    box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45;
+    transition:opacity .12s ease, transform .12s ease;
   }
   .toolbar-icon-btn.expanded .tb-label, .toolbar-icon-btn:focus-visible .tb-label{
-    max-width:240px; opacity:1; margin-left:6px;
+    opacity:1; transform:translateX(-50%) translateY(0);
   }
   /* Settings -> Behavior: "Filter-Toolbar button labels" / "View Toolbar
-     button labels" (person-requested, 2026-09-05) — "On hover" (default)
-     is just the plain mechanics above, nothing to override here. "Never"
-     and "Always" force the collapsed/expanded look regardless of
-     .expanded/:focus-visible, applied via a class on <body> so every
-     button of the relevant kind reacts without each one needing its own
-     per-button state. Higher specificity (body class + selector) than the
-     plain `.row-action-btn.expanded`/`.toolbar-icon-btn.expanded` rules
-     above, so these always win regardless of source order — the JS still
-     toggles `.expanded` on hover either way, these rules just make it a
-     no-op while "Never"/"Always" is active. Split in two independent
+     button labels" (person-requested, 2026-09-05; redesigned 2026-09-08) —
+     "On hover" (default) is the floating-pill mechanic above, nothing to
+     override here. "Never" hides the label outright (button stays a plain
+     circle/rect icon). "Always" restores the ORIGINAL inline expand-to-pill
+     look — the button itself grows into a pill and the label sits inside
+     it, permanently, in the toolbar's normal layout flow — since that
+     shape is only confusing when it happens on every hover, not when it's
+     the button's permanent rest state. Applied via a class on <body> so
+     every button of the relevant kind reacts without each one needing its
+     own per-button state; higher specificity (body class + selector) than
+     the plain `.expanded`/`:focus-visible` rules above, so these always
+     win regardless of source order. Split in two independent
      settings/classes (Filter-Toolbar's `.row-action-btn:not(.rect)` vs
      View Toolbar's `.row-action-btn.rect`/`.toolbar-icon-btn:has(.tb-hit)`)
      since the person wanted them settable separately. */
-  body.filter-toolbar-labels-never .row-action-btn:not(.rect),
-  body.filter-toolbar-labels-never .row-action-btn:not(.rect).expanded,
-  body.filter-toolbar-labels-never .row-action-btn:not(.rect):focus-visible{border-radius:50%; width:28px; padding-right:0;}
-  body.filter-toolbar-labels-never .row-action-btn:not(.rect) .row-action-label{max-width:0 !important; opacity:0 !important; margin-left:0 !important;}
-  body.filter-toolbar-labels-always .row-action-btn:not(.rect){border-radius:20px; width:auto; padding-right:10px;}
-  body.filter-toolbar-labels-always .row-action-btn:not(.rect) .row-action-label{max-width:240px; opacity:1; margin-left:6px;}
+  body.filter-toolbar-labels-never .row-action-btn:not(.rect) .row-action-label{display:none !important;}
+  body.filter-toolbar-labels-always .row-action-btn:not(.rect){border-radius:20px; width:auto; padding-right:10px; overflow:hidden;}
+  body.filter-toolbar-labels-always .row-action-btn:not(.rect) .row-action-label{
+    position:static; transform:none; opacity:1; max-width:240px; margin-left:6px;
+    background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
+  }
 
-  body.view-toolbar-labels-never .row-action-btn.rect,
-  body.view-toolbar-labels-never .row-action-btn.rect.expanded,
-  body.view-toolbar-labels-never .row-action-btn.rect:focus-visible,
-  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit),
-  body.view-toolbar-labels-never .toolbar-icon-btn.expanded:has(.tb-hit),
-  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit):focus-visible{width:28px; padding-right:0;}
   body.view-toolbar-labels-never .row-action-btn.rect .row-action-label,
-  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit) .tb-label{max-width:0 !important; opacity:0 !important; margin-left:0 !important;}
+  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit) .tb-label{display:none !important;}
   body.view-toolbar-labels-always .row-action-btn.rect,
-  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit){width:auto; padding-right:10px;}
+  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit){width:auto; padding-right:10px; overflow:hidden;}
   body.view-toolbar-labels-always .row-action-btn.rect .row-action-label,
-  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit) .tb-label{max-width:240px; opacity:1; margin-left:6px;}
+  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit) .tb-label{
+    position:static; transform:none; opacity:1; max-width:240px; margin-left:6px;
+    background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
+  }
   .level-btn.lvl-error{color:var(--level-error); border-color:color-mix(in srgb, var(--level-error) 35%, transparent);}
   .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
   .level-btn.lvl-info{color:var(--level-info); border-color:color-mix(in srgb, var(--level-info) 35%, transparent);}
