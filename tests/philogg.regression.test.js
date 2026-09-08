@@ -19622,27 +19622,37 @@ await withApp(async (w, d, T) => {
   assert(!filterAfterBtn.classList.contains("expanded"), "moving off the circle's rect collapses it again");
   group.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
 
-  // --- 2+ rows multi-selected: timeRangeFromSelection enables, single-row actions disable ---
+  // --- 2+ rows multi-selected: timeRangeFromSelection enables. filterAfter/
+  // filterBefore ALSO stay enabled now (person-requested follow-up,
+  // 2026-09-08): they resolve inclusively across the whole selection (see
+  // afterBeforeActionEntries) — earliest/latest ts becomes the bound —
+  // unlike filterForMessage/extractMessage, which still need exactly one. ---
   T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]);
   w.updateRowActionButtons();
   assert(byAction("timeRangeFromSelection").disabled === false, "timeRangeFromSelection enables with 2+ rows multi-selected");
-  assert(byAction("filterAfter").disabled === true, "single-row actions disable once 2+ rows are multi-selected");
+  assert(byAction("filterAfter").disabled === false, "filterAfter stays enabled with 2+ rows multi-selected (inclusive earliest-ts bound)");
+  assert(byAction("filterBefore").disabled === false, "filterBefore stays enabled with 2+ rows multi-selected (inclusive latest-ts bound)");
+  assert(byAction("filterForMessage").disabled === true, "filterForMessage still needs exactly one reference entry — disabled with 2+ multi-selected");
+  assert(byAction("extractMessage").disabled === true, "extractMessage still needs exactly one reference entry — disabled with 2+ multi-selected");
 
   // --- A button that becomes disabled while its pill happens to be expanded
   // (e.g. the selection changed via keyboard, not by the mouse leaving the
-  // circle) doesn't get stuck expanded — updateRowActionButtons() drops it. ---
+  // circle) doesn't get stuck expanded — updateRowActionButtons() drops it.
+  // filterAfter no longer disables on 2+ multi-select, so use
+  // filterForMessage (still single-entry-only) to exercise this guard. ---
   T.state.logMultiSelect = new Set();
   w.selectEntry(f.entries[3].id);
-  filterAfterBtn.classList.add("expanded"); // simulate: mouse still sitting over the circle
-  T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]); // disables filterAfter again
+  const filterForMessageBtn = byAction("filterForMessage");
+  filterForMessageBtn.classList.add("expanded"); // simulate: mouse still sitting over the circle
+  T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]); // disables filterForMessage again
   w.updateRowActionButtons();
-  assert(byAction("filterAfter").disabled === true, "sanity: disabled again");
-  assert(!filterAfterBtn.classList.contains("expanded"), "a newly-disabled button's stuck-open pill is force-collapsed");
+  assert(filterForMessageBtn.disabled === true, "sanity: disabled again");
+  assert(!filterForMessageBtn.classList.contains("expanded"), "a newly-disabled button's stuck-open pill is force-collapsed");
 
   // --- Stays visible/functional on Table too (Table/Plot presence — see Group 26/158a) ---
-  // NOTE: on Table/Plot the three single-log-row actions hide while the
-  // context-aware "Time range" stays (person-requested, this session) — see
-  // Group 178 for that coverage; not re-checked here.
+  // NOTE: on Table/Plot, After/Before/Extract/Time range are all now
+  // context-aware and stay visible (Message hides only on Plot) —
+  // see Group 178 for that coverage; not re-checked here.
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
   T.state.activeId = extractNode.id;
   w.render();
@@ -19879,17 +19889,20 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    Group 178 — this session (2026-09-04), person-requested: on the Plot
    tab, the Filter-Toolbar's row-actions all key off a log-row selection
-   Plot doesn't have. REVISED this session (person-requested, unify the
-   Table/Plot filters): instead of swapping the whole group for Plot's own
-   two viewport-filter buttons (which are gone), the three single-log-row
-   actions (After/Before/Message) now HIDE on Table/Plot while the
-   context-aware "Time range" stays — it resolves its input per view (a 2+
-   log-row multi-selection, marked-cell rows, or the plot's visible
+   Plot doesn't have. REVISED 2026-09-08 (person-requested, unify the
+   Table/Plot filters): "Time range"/"Select" resolve their input per view
+   (a 2+ log-row multi-selection, marked-cell rows, or the plot's visible
    viewport). Plot's two dedicated buttons are removed entirely.
+   REVISED AGAIN this session (2026-09-08, person-requested follow-up):
+   "Filter after"/"Filter before" also resolve per view now (see
+   afterBeforeActionEntries) and stay VISIBLE on Table/Plot too. "Message"/
+   "Extract" — which both need exactly one reference entry — still hide on
+   Plot only (no single-point reference there); Table supplies that from a
+   single marked row, so both stay visible there.
    ============================================================ */
 group(178);
 await withApp(async (w, d, T) => {
-  section("178. Table/Plot hide the log-row row-actions and keep the context-aware Time range");
+  section("178. Table/Plot: After/Before stay visible everywhere; Message/Extract hide only on Plot");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
@@ -19897,33 +19910,35 @@ await withApp(async (w, d, T) => {
   w.render();
 
   const byAction = action => d.querySelector('[data-row-action="' + action + '"]');
-  const logOnlyActions = ["filterAfter", "filterBefore", "filterForMessage", "extractMessage"];
+  const alwaysVisibleActions = ["filterAfter", "filterBefore"];
+  const singleEntryActions = ["filterForMessage", "extractMessage"];
 
   // No plot-viewbar group any more — Plot's two dedicated buttons are gone.
   assert(d.querySelector('[data-row-actions="plot-viewbar"]') === null, "the plot-viewbar group is gone");
   assert(d.querySelector("#plotFilterTimeRangeBtn") === null && d.querySelector("#plotFilterEntriesBtn") === null,
     "Plot's two dedicated viewport-filter buttons are gone");
 
-  // --- Context/Filtered: all four row-actions show ---
+  // --- Context/Filtered: all row-actions show ---
   ["highlight", "filter"].forEach(tab => {
     w.applyFhView(tab);
-    logOnlyActions.forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible on the " + tab + " tab"));
+    alwaysVisibleActions.concat(singleEntryActions).forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible on the " + tab + " tab"));
     assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range is visible on the " + tab + " tab");
   });
 
-  // --- Table: the log-row actions hide, Time range stays ---
+  // --- Table: everything stays visible, including Message/Extract (a single marked row supplies their reference) ---
   w.applyFhView("table");
-  logOnlyActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " is hidden on the Table tab (no log-row selection there)"));
+  alwaysVisibleActions.concat(singleEntryActions).forEach(a => assert(isVisible(byAction(a), w) === true, a + " stays visible on the Table tab"));
   assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range stays visible on the Table tab (it is context-aware now)");
 
-  // --- Plot: same hiding; Time range stays (enabled only once a 2D plot exists) ---
+  // --- Plot: After/Before stay visible (viewport-resolved); Message/Extract both hide (no single-point reference on Plot) ---
   w.applyFhView("plot");
-  logOnlyActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " is hidden on the Plot tab (no log-row selection there)"));
-  assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range stays visible on the Plot tab (it is context-aware now)");
+  alwaysVisibleActions.forEach(a => assert(isVisible(byAction(a), w) === true, a + " stays visible on the Plot tab (resolves from the visible viewport)"));
+  singleEntryActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " hides on the Plot tab (no single-point reference there)"));
+  assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range stays visible on the Plot tab (enabled only once a 2D plot exists)");
 
-  // --- Leaving Table/Plot restores the full row-actions set ---
+  // --- Leaving Table/Plot keeps the full row-actions set (nothing was ever hidden there for these) ---
   w.applyFhView("filter");
-  logOnlyActions.forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible again on the Filtered tab"));
+  alwaysVisibleActions.concat(singleEntryActions).forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible again on the Filtered tab"));
   assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range is visible again on the Filtered tab");
 });
 
@@ -20584,6 +20599,134 @@ await withApp(async (w, d, T) => {
   const funnelPath = 'M2 3h12l-4.5 5.5v4L7 14v-5.5Z';
   assert(!messageSvg.includes(funnelPath), "'Message' no longer renders the generic funnel path, got " + messageSvg);
   assert(messageSvg !== afterBtn.querySelector(".row-action-hit svg").innerHTML, "'Message' icon differs from 'After's icon (sanity: they're not accidentally identical)");
+});
+
+/* ============================================================
+   GROUP 187 — this session (2026-09-08), person-requested follow-up:
+   "Filter after"/"Filter before" (and, for consistency, "Message"/
+   "Extract") were only ever usable in Context/Filtered — they hid entirely
+   on Table/Plot (see the now-superseded Group 178 text). Now:
+     a) After/Before resolve per view like Time range/Select
+        (afterBeforeActionEntries): a single marked row in Table, the
+        visible viewport in Plot, a single/multi log-row selection in
+        Context/Filtered. With 2+ entries the bound is INCLUSIVE — After
+        uses the earliest ts, Before the latest — rather than requiring an
+        exact single reference point.
+     b) Message/Extract still need EXACTLY ONE reference entry
+        (singleMessageActionEntry) — Table only enables them with exactly
+        one marked row (0 or 2+ disables); Plot has no single-point
+        reference and never enables them.
+   ============================================================ */
+group(187);
+await withApp(async (w, d, T) => {
+  section("187a. Table: After/Before resolve from marked rows, inclusively across 2+");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {}); // 10 entries, 1s apart
+  const node = w.createFilterNode(f.id, "text", "message [*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const afterBtn = d.querySelector('[data-row-action="filterAfter"]');
+  const beforeBtn = d.querySelector('[data-row-action="filterBefore"]');
+  assert(afterBtn.disabled === true && beforeBtn.disabled === true, "no marked rows: After/Before start disabled on Table");
+
+  // Mark a single row (row 3) — single-entry behavior, same as the old Context/Filtered path.
+  const td = (r, c) => d.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
+  td(3, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+  w.updateRowActionButtons();
+  assert(afterBtn.disabled === false && beforeBtn.disabled === false, "one marked row: After/Before enable on Table");
+
+  fireClick(afterBtn, w);
+  let created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "timerange" && created.value.from === T.extractRowsData[3].entry.ts && created.value.to === null,
+    "single marked row: After uses that row's own ts as the 'from' bound, got " + JSON.stringify(created.value));
+
+  // Mark rows 2, 5, 7 — inclusive multi-row behavior: After = earliest (row 2), Before = latest (row 7).
+  T.state.activeId = node.id;
+  T.state.tableSelection = null;
+  w.render();
+  w.applyFhView("table");
+  [2, 5, 7].forEach(r => td(r, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, ctrlKey: r !== 2 })));
+  w.updateRowActionButtons();
+  assert(d.querySelector('[data-row-action="filterAfter"]').disabled === false, "2+ marked rows: After stays enabled (inclusive)");
+
+  fireClick(d.querySelector('[data-row-action="filterBefore"]'), w);
+  created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "timerange" && created.value.to === T.extractRowsData[7].entry.ts && created.value.from === null,
+    "3 marked rows (2,5,7): Before uses the LATEST ts among them (row 7), got " + JSON.stringify(created.value));
+});
+
+await withApp(async (w, d, T) => {
+  section("187b. Plot: After/Before resolve from the visible viewport, inclusively");
+
+  const rows = Array.from({ length: 11 }, (_, i) => i * 10); // 0,10,...,100
+  const log = rows.map((v, i) =>
+    `2024-01-15 10:00:${String(i).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${v} y=${v}"`
+  ).join("\n") + "\n";
+  const f = await w.addFile("zoom.log", log, () => {});
+  const node = w.createFilterNode(f.id, "text", "x=[*:int] y=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
+  xSel.value = "0"; xSel.dispatchEvent(new w.Event("change", { bubbles: true }));
+  ySel.value = "1"; ySel.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  const afterBtn = () => d.querySelector('[data-row-action="filterAfter"]');
+  assert(afterBtn().disabled === false, "unzoomed (home) view: After is enabled once a 2D plot exists");
+
+  // Zoom to x in [40, 60] — rows 4..6 (x=40,50,60).
+  T.plotZoom = { x0: 40, x1: 60, y0: 0, y1: 100 };
+  w.renderPlotChart();
+  fireClick(afterBtn(), w);
+  const created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "timerange" && created.value.from === T.extractRowsData[4].entry.ts && created.value.to === null,
+    "zoomed to rows 4-6: After uses the EARLIEST ts among the visible viewport (row 4), got " + JSON.stringify(created.value));
+});
+
+await withApp(async (w, d, T) => {
+  section("187c. Table: Message/Extract need EXACTLY one marked row (0 or 2+ disables, unlike After/Before)");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  const node = w.createFilterNode(f.id, "text", "message [*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const messageBtn = d.querySelector('[data-row-action="filterForMessage"]');
+  const extractBtn = d.querySelector('[data-row-action="extractMessage"]');
+  assert(messageBtn.disabled === true && extractBtn.disabled === true, "no marked rows: Message/Extract disabled");
+
+  const td = (r, c) => d.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
+  td(3, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+  w.updateRowActionButtons();
+  assert(messageBtn.disabled === false && extractBtn.disabled === false, "exactly one marked row: Message/Extract enable");
+
+  td(6, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, ctrlKey: true }));
+  w.updateRowActionButtons();
+  assert(messageBtn.disabled === true && extractBtn.disabled === true,
+    "2 marked rows: Message/Extract disable again (unlike After/Before, they need exactly one reference entry)");
+  assert(d.querySelector('[data-row-action="filterAfter"]').disabled === false, "sanity: After stays enabled with 2 marked rows (contrast case)");
+});
+
+await withApp(async (w, d, T) => {
+  section("187d. Plot: Message/Extract stay hidden/disabled always (no single-point reference)");
+
+  const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + i }), () => {});
+  const node = w.createFilterNode(f.id, "text", "n=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  const xSel = d.querySelector("#plotXSelect"), ySel = d.querySelector("#plotYSelectSingle");
+  xSel.value = "0"; xSel.dispatchEvent(new w.Event("change", { bubbles: true }));
+  ySel.value = "1"; ySel.dispatchEvent(new w.Event("change", { bubbles: true }));
+
+  assert(isVisible(d.querySelector('[data-row-action="filterForMessage"]'), w) === false, "Message stays hidden on Plot even with a 2D plot active");
+  assert(isVisible(d.querySelector('[data-row-action="extractMessage"]'), w) === false, "Extract stays hidden on Plot even with a 2D plot active");
+  assert(isVisible(d.querySelector('[data-row-action="filterAfter"]'), w) === true, "sanity: After stays visible/enabled on Plot (contrast case)");
 });
 
 /* ============================================================
@@ -23252,4 +23395,17 @@ process.exitCode = failed ? 1 : 0;
       openFilterPopup(), identical to Ctrl+F, behind a visual separator), plus
       a distinct "Message" icon (ICON_MESSAGE_EXTRACT) replacing the generic
       funnel it used to share with every other filter-creating action.
+
+   Group 187 — this session (2026-09-08), person-requested follow-up: After/
+      Before were reported "missing" from Table/Plot — they'd actually been
+      hidden there since an earlier session (see the now-superseded Group
+      178 text), while what WAS added (Group 185's #tableFilterInfo/
+      #plotFilterInfo text) was a passive info readout, not the buttons
+      themselves. After/Before now resolve per view like Time range/Select
+      (new afterBeforeActionEntries helper) and stay visible/usable on
+      Table (marked rows) and Plot (visible viewport) too, inclusively
+      across a 2+ selection (After = earliest ts, Before = latest ts).
+      Message/Extract (new singleMessageActionEntry helper) still need
+      exactly one reference entry — Table enables them only with exactly
+      one marked row, Plot never (no single-point reference there).
    ============================================================ */

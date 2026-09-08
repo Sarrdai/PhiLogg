@@ -11966,21 +11966,24 @@ function zoomPlotAt(dataX, dataY, factor) {
   renderPlotChart();
 }
 
-// #viewBar's row-actions group is now context-aware (person-requested, this
-// session — unify the filters across Filtered/Table/Plot): the three
-// single-log-row actions (Filter after/before/for this message) still key
-// off a log-row selection, which Table/Plot have none of, so they hide
-// there — leaving only "Time range", which now resolves its input per view
-// (a 2+ log-row multi-selection, rows with marked cells, or the plot's
-// visible viewport — see timeRangeActionEntries/selectActionEntries).
+// #viewBar's row-actions group is context-aware across Filtered/Table/Plot
+// (person-requested, extended further this session): "Filter after/before"
+// now resolve their input per view too, same as Time range/Select — a
+// single selected/marked/visible entry, or (new) an inclusive earliest/
+// latest bound across a 2+ selection (see afterBeforeActionEntries) — so
+// they stay visible and usable on Table and Plot, not just Filtered/Context.
+// "Message"/"Extract" still need exactly ONE reference entry (a message to
+// extract a pattern from) — Table can supply that from a single marked row,
+// but Plot has no single-point reference (no hover/click tracking), so
+// those two remain hidden there only.
 // "Time range" on Plot additionally needs something actually plotted in 2D
 // to make sense at all (plot2dToolsAvailable, set by setPlot2dToolsVisible
 // below), same condition #plot2dToolsGroup's own zoom controls gate on.
 let plot2dToolsAvailable = false;
 function updateViewBarRowActions() {
-  const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
-  elAll('[data-row-action="filterAfter"], [data-row-action="filterBefore"], [data-row-action="filterForMessage"], [data-row-action="extractMessage"]')
-    .forEach(b => b.classList.toggle("hidden", onTableOrPlot));
+  const onPlot = fhActiveTab === "plot";
+  elAll('[data-row-action="filterForMessage"], [data-row-action="extractMessage"]')
+    .forEach(b => b.classList.toggle("hidden", onPlot));
   updateRowActionButtons();
 }
 
@@ -20422,6 +20425,37 @@ function timeRangeActionEntries() {
   return [...state.logMultiSelect].map(id => entryIndex[id]).filter(Boolean);
 }
 
+// "Filter after"/"Filter before" input: same per-view sources as Time range
+// (marked table rows, the plot's visible viewport, or the log multi-select),
+// but — unlike Time range — a single entry is a valid input too (it's the
+// pre-existing single-row behavior: that one entry's own ts becomes the
+// bound). With 2+ entries, After/Before use the earliest/latest ts among
+// them as the bound (see the filterAfter/filterBefore cases below), an
+// inclusive "everything from/until this selection" rather than requiring
+// an exact single reference point.
+function afterBeforeActionEntries() {
+  if (fhActiveTab === "table") return markedRowEntries();
+  if (fhActiveTab === "plot") return getPlotViewportEntries();
+  if (state.logMultiSelect.size >= 2) return [...state.logMultiSelect].map(id => entryIndex[id]).filter(Boolean);
+  const entry = currentRowActionEntry();
+  return entry ? [entry] : [];
+}
+
+// "Message"/"Extract" input: exactly one entry — extracting a pattern from
+// a message only makes sense for a single row. Table: enabled only when
+// exactly one row is marked (a multi-row mark is ambiguous, not "pick one").
+// Plot has no single-point reference (no hover/click tracking), so it never
+// resolves here — these two stay unavailable on Plot.
+function singleMessageActionEntry() {
+  if (fhActiveTab === "plot") return null;
+  if (fhActiveTab === "table") {
+    const rows = markedRowEntries();
+    return rows.length === 1 ? rows[0] : null;
+  }
+  if (state.logMultiSelect.size >= 2) return null;
+  return currentRowActionEntry();
+}
+
 // All person-created selection filters directly under a root file — the
 // exact set the "Add to selection" submenu lists and the only nodes this
 // feature ever mutates. Deliberately excludes plot-view-created "idset"
@@ -20701,6 +20735,13 @@ function updateRowActionButtons() {
   const markedRows = markedRowEntries().length;
   const timeRangeEnabled = onTable ? markedRows >= 2 : onPlot ? plot2dToolsAvailable : rangeEnabled;
   const selectEnabled = onTable ? markedRows >= 1 : onPlot ? plot2dToolsAvailable : addToSelectionEnabled;
+  // "Filter after/before" resolve the same per-view way as Time range/Select
+  // (see afterBeforeActionEntries), but a single entry is enough (unlike
+  // Time range's 2+). On Plot, gated on plot2dToolsAvailable same as the
+  // other two — the exact viewport count is re-checked at click time.
+  const afterBeforeEnabled = onPlot ? plot2dToolsAvailable : afterBeforeActionEntries().length >= 1;
+  // "Message"/"Extract" always need exactly one entry (see singleMessageActionEntry) — never available on Plot.
+  const messageActionEnabled = singleMessageActionEntry() !== null;
   elAll('[data-row-action="bookmark"]').forEach(b => {
     b.disabled = !singleRowEnabled;
     b.classList.toggle("active", !!entry && state.bookmarks.has(entry.id));
@@ -20709,10 +20750,10 @@ function updateRowActionButtons() {
     b.disabled = !singleRowEnabled;
     b.classList.toggle("active", !!entry && state.notes.has(entry.id));
   });
-  elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !singleRowEnabled; });
-  elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !singleRowEnabled; });
-  elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !singleRowEnabled; });
-  elAll('[data-row-action="extractMessage"]').forEach(b => { b.disabled = !singleRowEnabled; });
+  elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
+  elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
+  elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !messageActionEnabled; });
+  elAll('[data-row-action="extractMessage"]').forEach(b => { b.disabled = !messageActionEnabled; });
   elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !timeRangeEnabled; });
   // "New" needs no selected row at all — just an active filter tree to add
   // to (same guard openFilterPopup itself applies).
@@ -20737,18 +20778,34 @@ function handleRowActionClick(action, anchorBtn) {
     case "note":
       if (entry && entryIndex[entry.id]) openNoteEditor(entry.id);
       break;
-    case "filterAfter":
-      if (entry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: entry.ts, to: null }); revealFilteredView(); render(); }
+    case "filterAfter": {
+      const entries = afterBeforeActionEntries();
+      if (!entries.length) { showCopyToast("Select or mark at least one entry to filter after."); break; }
+      if (state.activeId) {
+        createFilterNode(state.activeId, "timerange", { from: Math.min(...entries.map(e => e.ts)), to: null });
+        revealFilteredView(); render();
+      }
       break;
-    case "filterBefore":
-      if (entry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: null, to: entry.ts }); revealFilteredView(); render(); }
+    }
+    case "filterBefore": {
+      const entries = afterBeforeActionEntries();
+      if (!entries.length) { showCopyToast("Select or mark at least one entry to filter before."); break; }
+      if (state.activeId) {
+        createFilterNode(state.activeId, "timerange", { from: null, to: Math.max(...entries.map(e => e.ts)) });
+        revealFilteredView(); render();
+      }
       break;
-    case "filterForMessage":
-      if (entry) openFilterForEntryColumn(entry, TEXT_FILTER_COLUMNS.find(c => c.key === "message"));
+    }
+    case "filterForMessage": {
+      const msgEntry = singleMessageActionEntry();
+      if (msgEntry) openFilterForEntryColumn(msgEntry, TEXT_FILTER_COLUMNS.find(c => c.key === "message"));
       break;
-    case "extractMessage":
-      if (entry) extractMessageFilter(entry);
+    }
+    case "extractMessage": {
+      const msgEntry = singleMessageActionEntry();
+      if (msgEntry) extractMessageFilter(msgEntry);
       break;
+    }
     case "newFilter":
       openFilterPopup();
       break;
