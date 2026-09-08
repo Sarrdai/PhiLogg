@@ -2082,6 +2082,8 @@
   .link-dialog-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:16px;}
   .link-dialog-card-wide{width:min(460px, 92%);}
   .link-hops-hint{font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-tertiary);}
+  .link-order-enforce-hint{font-size:11px; color:var(--text-tertiary); margin:2px 0 8px 22px;}
+  .link-order-enforce-hint.hidden{display:none;}
   .link-hop-row{
     background:var(--bg-app); border:1px solid var(--border); border-radius:8px;
     padding:8px 10px; margin-bottom:8px; font-size:12px; color:var(--text-secondary); line-height:1.7;
@@ -3623,6 +3625,7 @@
       </div>
       <div class="link-field">
         <label class="plot-checkbox-row"><input type="checkbox" id="linkOrderEnforceInput"> Enforce chronological order (drop tuples where a hop lands before the previous match)</label>
+        <div id="linkOrderEnforceHint" class="link-order-enforce-hint hidden">Only meaningful when hops mix "before" and "after" directions — a single-direction chain is either always-empty or a no-op.</div>
         <label class="plot-checkbox-row"><input type="checkbox" id="linkExclusiveInput"> Exclusive matches (don't reuse a target entry once it's matched)</label>
       </div>
       <div class="link-dialog-actions">
@@ -21394,6 +21397,7 @@ const linkDialog = el("#linkDialog");
 const linkRefSelect = el("#linkRefSelect");
 const linkHopsList = el("#linkHopsList");
 const linkOrderEnforceInput = el("#linkOrderEnforceInput");
+const linkOrderEnforceHint = el("#linkOrderEnforceHint");
 const linkExclusiveInput = el("#linkExclusiveInput");
 let linkDialogIds = [];
 let linkHopRows = []; // [{targetId, nInput, dirSelect}], rebuilt by renderLinkHops()
@@ -21433,10 +21437,28 @@ function renderLinkHops() {
       '<select class="link-hop-dir"><option value="before">before</option><option value="after">after</option></select> ' +
       '<span class="link-hop-anchor">' + anchorText + '</span></span>';
     row.querySelector(".link-hop-dir").value = "before";
-    return { targetId, nInput: row.querySelector(".link-hop-n"), dirSelect: row.querySelector(".link-hop-dir"), row };
+    const dirSelect = row.querySelector(".link-hop-dir");
+    dirSelect.addEventListener("change", updateLinkOrderEnforceAvailability);
+    return { targetId, nInput: row.querySelector(".link-hop-n"), dirSelect, row };
   });
   linkHopsList.innerHTML = "";
   linkHopRows.forEach(h => linkHopsList.appendChild(h.row));
+  updateLinkOrderEnforceAvailability();
+}
+
+// "Enforce chronological order" is only meaningful when the hop chain mixes
+// "before" and "after" directions — see docs/filters.md's "Opt-in options"
+// section. A single-direction chain makes the monotonic-timestamp check in
+// getEntriesFromBaked/getEntries trivial: all-"before" always drops every
+// tuple, all-"after" (or a lone hop of either direction) never drops any.
+// Disable + uncheck the box (never leave a stale checked-but-disabled state)
+// whenever the current hop directions aren't diverse.
+function updateLinkOrderEnforceAvailability() {
+  const dirs = linkHopRows.map(h => h.dirSelect.value);
+  const diverse = dirs.length >= 2 && new Set(dirs).size > 1;
+  linkOrderEnforceInput.disabled = !diverse;
+  if (!diverse) linkOrderEnforceInput.checked = false;
+  linkOrderEnforceHint.classList.toggle("hidden", diverse);
 }
 linkRefSelect.addEventListener("change", renderLinkHops);
 linkDialog.addEventListener("click", ev => { if (ev.target === linkDialog) closeLinkDialog(); });
