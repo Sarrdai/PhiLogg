@@ -351,6 +351,27 @@ shape:
   three); Filtered = Settings|Actions (no Controls); Table = Actions-only;
   Plot = Controls|Actions (no Settings).
 
+  **Filter-info spans, Table/Plot only (person-requested, 2026-09-08)**:
+  `#tableToolbar`/`#plotToolbar` each end in a right-aligned
+  `#tableFilterInfo`/`#plotFilterInfo` span (`.toolbar-filter-info`, the
+  same muted `--text-tertiary`/tabular-numeric styling as `#contextNavLabel`
+  in `#contextToolbar`), reporting what's currently narrowing/shown on that
+  tab — plain text, no markup, `margin-left:auto` pushes it against the
+  toolbar's right edge and it renders empty (no reserved space) when there's
+  nothing to say. Built from `activeTimeFilters()` (near `isTimeFilterType`
+  in the JS — walks `getChain(state.activeId)` for any "after"/"before"/
+  "timerange" ancestor filter node, one entry per hit, named via the
+  existing `timeRangeFilterName()`, joined with " · " when more than one)
+  plus a count: Table's `updateTableFilterInfo()` (called at the end of
+  `renderExtractTable()`) appends `extractRowsData.length` rows and, when
+  non-zero, `markedRowEntries().length` selected; Plot's
+  `updatePlotFilterInfo()` (end of `renderPlotChart()`, including its 3D/
+  empty/too-small-viewport early returns, so the span never goes stale)
+  appends the count of currently visible/zoomed finite points via
+  `visiblePlotPoints()` (shared with the minimap-sync feature's rendered-
+  range rectangle) — omitted for the 3D plot type, which that helper
+  doesn't cover.
+
   **Add to selection is an Action, not a filter (person-requested,
   2026-09-05)**: it doesn't create a filter node by itself (it opens
   `#addToSelectionMenu`, same as the other two), so it moved from
