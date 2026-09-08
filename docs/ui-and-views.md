@@ -184,12 +184,12 @@ shape:
   uses the earliest ts among them, "Before" the latest — rather than
   requiring an exact single reference point. "Message"/"Extract" are the
   one pair that stays a true single-entry action (`singleMessageActionEntry()`):
-  extracting a pattern only makes sense for one specific message, so Table
-  enables them only with **exactly one** marked row (0 or 2+ disables), and
-  Plot never enables them at all — there's no "one clicked/hovered point"
-  concept there (no click/hover tracking was built for this). "New" stays
-  visible/enabled everywhere regardless (`state.activeId` is its only
-  gate).
+  extracting a pattern only makes sense for one specific message, and
+  (person-requested, 2026-09-08) that doesn't read as a sensible Table/Plot
+  action even when Table could technically supply one from a single marked
+  row — both stay **hidden on Table and Plot alike**, Context/Filtered only.
+  "New" stays visible/enabled everywhere regardless (`state.activeId` is
+  its only gate).
   Plot's own two dedicated viewport-filter buttons this used to swap in
   (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, see the CHANGELOG for
   their original 2026-09-04 design) are gone entirely — "these entries"

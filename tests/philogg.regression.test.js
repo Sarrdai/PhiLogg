@@ -19895,14 +19895,16 @@ await withApp(async (w, d, T) => {
    viewport). Plot's two dedicated buttons are removed entirely.
    REVISED AGAIN this session (2026-09-08, person-requested follow-up):
    "Filter after"/"Filter before" also resolve per view now (see
-   afterBeforeActionEntries) and stay VISIBLE on Table/Plot too. "Message"/
-   "Extract" — which both need exactly one reference entry — still hide on
-   Plot only (no single-point reference there); Table supplies that from a
-   single marked row, so both stay visible there.
+   afterBeforeActionEntries) and stay VISIBLE on Table/Plot too.
+   REVISED ONCE MORE the same session (person-requested correction):
+   "Message"/"Extract" — which both need exactly one reference entry — go
+   back to hiding on BOTH Table and Plot, not just Plot; even though Table
+   could technically supply a single marked row, it doesn't read as a
+   sensible action there.
    ============================================================ */
 group(178);
 await withApp(async (w, d, T) => {
-  section("178. Table/Plot: After/Before stay visible everywhere; Message/Extract hide only on Plot");
+  section("178. Table/Plot: After/Before stay visible everywhere; Message/Extract hide on both");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
@@ -19925,9 +19927,10 @@ await withApp(async (w, d, T) => {
     assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range is visible on the " + tab + " tab");
   });
 
-  // --- Table: everything stays visible, including Message/Extract (a single marked row supplies their reference) ---
+  // --- Table: After/Before stay visible (marked-row resolved); Message/Extract hide (doesn't read as sensible there) ---
   w.applyFhView("table");
-  alwaysVisibleActions.concat(singleEntryActions).forEach(a => assert(isVisible(byAction(a), w) === true, a + " stays visible on the Table tab"));
+  alwaysVisibleActions.forEach(a => assert(isVisible(byAction(a), w) === true, a + " stays visible on the Table tab"));
+  singleEntryActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " hides on the Table tab (person-requested — doesn't read as sensible there)"));
   assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range stays visible on the Table tab (it is context-aware now)");
 
   // --- Plot: After/Before stay visible (viewport-resolved); Message/Extract both hide (no single-point reference on Plot) ---
@@ -19936,7 +19939,7 @@ await withApp(async (w, d, T) => {
   singleEntryActions.forEach(a => assert(isVisible(byAction(a), w) === false, a + " hides on the Plot tab (no single-point reference there)"));
   assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range stays visible on the Plot tab (enabled only once a 2D plot exists)");
 
-  // --- Leaving Table/Plot keeps the full row-actions set (nothing was ever hidden there for these) ---
+  // --- Leaving Table/Plot restores Message/Extract's visibility ---
   w.applyFhView("filter");
   alwaysVisibleActions.concat(singleEntryActions).forEach(a => assert(isVisible(byAction(a), w) === true, a + " is visible again on the Filtered tab"));
   assert(isVisible(byAction("timeRangeFromSelection"), w) === true, "Time range is visible again on the Filtered tab");
@@ -20687,7 +20690,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("187c. Table: Message/Extract need EXACTLY one marked row (0 or 2+ disables, unlike After/Before)");
+  section("187c. Table: Message/Extract stay hidden regardless of marked rows (person-requested — doesn't read as sensible there)");
 
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   const node = w.createFilterNode(f.id, "text", "message [*:int]");
@@ -20697,18 +20700,14 @@ await withApp(async (w, d, T) => {
 
   const messageBtn = d.querySelector('[data-row-action="filterForMessage"]');
   const extractBtn = d.querySelector('[data-row-action="extractMessage"]');
-  assert(messageBtn.disabled === true && extractBtn.disabled === true, "no marked rows: Message/Extract disabled");
+  assert(isVisible(messageBtn, w) === false && isVisible(extractBtn, w) === false, "no marked rows: Message/Extract hidden on Table");
 
   const td = (r, c) => d.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
   td(3, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
   w.updateRowActionButtons();
-  assert(messageBtn.disabled === false && extractBtn.disabled === false, "exactly one marked row: Message/Extract enable");
-
-  td(6, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, ctrlKey: true }));
-  w.updateRowActionButtons();
-  assert(messageBtn.disabled === true && extractBtn.disabled === true,
-    "2 marked rows: Message/Extract disable again (unlike After/Before, they need exactly one reference entry)");
-  assert(d.querySelector('[data-row-action="filterAfter"]').disabled === false, "sanity: After stays enabled with 2 marked rows (contrast case)");
+  assert(isVisible(messageBtn, w) === false && isVisible(extractBtn, w) === false,
+    "even with exactly one marked row: Message/Extract stay hidden on Table (person-requested, 2026-09-08)");
+  assert(d.querySelector('[data-row-action="filterAfter"]').disabled === false, "sanity: After stays visible/enabled with one marked row (contrast case)");
 });
 
 await withApp(async (w, d, T) => {
@@ -23406,6 +23405,8 @@ process.exitCode = failed ? 1 : 0;
       Table (marked rows) and Plot (visible viewport) too, inclusively
       across a 2+ selection (After = earliest ts, Before = latest ts).
       Message/Extract (new singleMessageActionEntry helper) still need
-      exactly one reference entry — Table enables them only with exactly
-      one marked row, Plot never (no single-point reference there).
+      exactly one reference entry and stay hidden on BOTH Table and Plot
+      (person-requested correction, same session: Table could technically
+      supply a single marked row, but it doesn't read as a sensible action
+      there) — Plot has no single-point reference either way.
    ============================================================ */
