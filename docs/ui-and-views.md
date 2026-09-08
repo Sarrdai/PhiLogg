@@ -67,19 +67,22 @@ the existing `"highlight"`/`"filter"` — `"stacked"` was never actually one
 of its values even before this (`applyFhView("stacked")` only ever set
 `fhLayout`), so no migration was needed there.
 
-**Table/Plot are left out of `#fhTabs` entirely** (person-requested, this
-session — superseding the earlier "stay visible but `disabled`" decision
-below) when the active node has nothing to tabulate/plot
-(`nodeHasExtractableWildcards(node)` — a `filterType === "extract"` node
-whose pattern compiles to at least one column): `renderViewTabs(extractCapable)`
-only pushes the two tab entries onto its `tabs` array when `extractCapable`
-is true, rather than always including them with a `disabled` attribute. An
-unreachable tab sitting there taking up space/attention was worse than the
-tab group shifting width as a node's extraction-capability changes — the
-original tradeoff this replaced. `#fhTabs`' click delegate still checks
-`btn.disabled` (a harmless leftover guard — no tab is ever actually rendered
-disabled any more, since one that can't be clicked now simply isn't
-rendered).
+**Table/Plot are always in `#fhTabs`, rendered `disabled` when unavailable**
+(person-requested, 2026-09-08 — this reverses the intermediate "omit
+entirely" decision, because omitting them made the filter buttons to their
+right **jump sideways** every time a node gained or lost
+extraction-capability). `currentViewTabsList(extractCapable)` always pushes
+the Table and Plot entries, each carrying `disabled: !extractCapable`
+(`extractCapable = nodeIsExtractionView(node)` — a node whose pattern
+compiles to at least one extractable column). `renderViewTabs` emits the
+native `disabled` attribute plus a "why" `title` for the disabled ones;
+`.view-tab:disabled` greys them (`opacity:.35; cursor:not-allowed`). The
+`#fhTabs` click delegate already guards `!btn.disabled`, and
+`jumpToViewTab` (Ctrl+1-4) skips a disabled slot (`if (!t || t.disabled)
+return;`) so the shortcut indices behave exactly as when the tabs were
+omitted. `renderMainView` still flips `fhActiveTab` off Table/Plot when the
+newly active node isn't extraction-capable, so a disabled tab is never left
+showing.
 
 **An extraction node is now an ordinary node for Context/Filtered purposes
 too** — the `isExtract` special path that used to make `renderMainView()`
@@ -159,29 +162,33 @@ shape:
   `filterType:"text"` node (`extractMessageFilter()`, sharing
   `commitFilter()`'s own `createFilterNode` call) instead of opening the
   popup for review first — no popup shown, and the resulting node stays a
-  perfectly ordinary editable text-filter node afterward. **New**
-  (`newFilter`, same session) is a one-click `openFilterPopup()`, identical
-  to Ctrl+F — it needs no row selection at all, only `state.activeId`
-  (an active node to add the filter under). Both share `singleRowEnabled`/
-  Table-Plot hiding with "Message" (Extract) or gate on `state.activeId`
-  alone (New).
-  **Filter-library section** (`#libraryPresetBar`, this session, 2026-09-08)
-  follows the row-actions group, divided from it by a `.row-action-separator`
-  "|". It holds, left-to-right: the pinned library presets (rendered
-  dynamically by `renderLibraryToolbarPresets`), then two static
-  `.row-action-btn`s — **"+ Add to Library"** (`#btnAddToLibrary`,
-  `ICON_PLUS_SMALL`; opens the save dialog on the active filter, disabled
-  unless the active node is a filter — see `updateRowActionButtons`) and
-  **"Library"** (`#btnOpenLibrary`, `ICON_CHECKLIST`; opens the manage
-  dialog). A pinned preset (`showInToolbar` on its `filterLibrary` record)
-  renders as a circle-pill matching the filter buttons, its icon from
-  `LIBRARY_ICON_SET` (falling back to `ICON_FILTER`), and clicking it applies
-  the preset onto the active node. Unlike the row-actions group these pills'
-  floating labels are driven by plain CSS `:hover` scoped to
-  `#libraryPresetBar` (the label floats and shifts nothing, so
-  `setupHitExpandGroups` isn't wired here — and a CSS rule survives the
-  container's dynamic re-render). See `docs/persistence-and-sync.md` →
-  "Reusable filter library" for the record shape and storage.
+  perfectly ordinary editable text-filter node afterward. Its icon is
+  `[*]` (brackets + asterisk, the extraction-wildcard token), replacing the
+  earlier speech-bubble (person-requested, 2026-09-08).
+  **Three groups + right-aligned management** (person-requested, 2026-09-08).
+  The bar reads as three `.row-action-separator`-divided groups:
+  **Standard filters** (`[data-row-actions="viewbar"]`: Before/After/Time
+  range/Message/Extract) · **Library presets** (`#libraryPresetBar`) ·
+  **New** (`#viewbarNew`, its own group now — a plain `+` icon, one-click
+  `openFilterPopup()` identical to Ctrl+F; needs only `state.activeId`).
+  The Library-presets group and its **leading** separator (`#libraryPresetSep`)
+  collapse out (`hidden`) when no preset is pinned, so the bar never shows an
+  empty "| |". Pinned presets (`showInToolbar` on the `filterLibrary` record)
+  render there as circle-pills matching the filter buttons, icon from
+  `LIBRARY_ICON_SET` (falling back to `ICON_FILTER`); clicking one applies the
+  preset onto the active node. The two **management** buttons sit in a
+  separate, right-aligned group (`#libraryManageBar`, `margin-left:auto`):
+  **"Add to Library"** (`#btnAddToLibrary`, floppy-disk `ICON_DISK`, a dashed
+  `.lib-add-placeholder` outline marking it as the "add a preset" slot; opens
+  the save dialog on the active filter, disabled unless the active node is a
+  filter — see `updateRowActionButtons`) and **"Library"** (`#btnOpenLibrary`,
+  `ICON_BOOK`; opens the manage dialog). Unlike the standard-actions group,
+  the pills' and management buttons' floating labels are driven by plain CSS
+  `:hover` scoped to `#libraryPresetBar`/`#libraryManageBar` (the label floats
+  and shifts nothing, so `setupHitExpandGroups` isn't needed — and a CSS rule
+  survives the pill container's dynamic re-render). See
+  `docs/persistence-and-sync.md` → "Reusable filter library" for the record
+  shape and storage.
   **Table/Plot are context-aware now, not a swapped-out second group
   (person-requested, 2026-09-07, extended 2026-09-08 — unifies what used to
   be a Plot-only detour)**: "Time range"/"Select"/"After"/"Before" all
