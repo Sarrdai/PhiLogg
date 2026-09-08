@@ -1782,17 +1782,19 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(f.entries[3].message === savedMsg3, "restore: multi-line message round-tripped");
     assert(f.entries[5].raw === savedEntryRaw, "restore: entry raw identical after re-parse");
 
-    // 4 children, not 3: the three restored top-level filters (t1, t2, the
+    // 5 children, not 3: the three restored top-level filters (t1, t2, the
     // AND combiner — always placed directly under the file, see "Core data
     // model" in PROJECT.md; createAndOrNode unshifts, same convention as
     // syncBookmarksFilterNode, so exact order isn't guaranteed) PLUS the
-    // auto "Bookmarks" node re-derived from the restored state.bookmarks
-    // (see syncBookmarksFilterNode, called at the end of
-    // restoreSessionFromCache).
-    assert(f.children.length === 4, "restore: all three top-level filters back, plus the re-derived auto 'Bookmarks' node");
+    // auto "Bookmarks" AND "Notes" nodes, both re-derived from the restored
+    // state.bookmarks/state.notes (see syncBookmarksFilterNode/
+    // syncNotesFilterNode, called at the end of restoreSessionFromCache).
+    assert(f.children.length === 5, "restore: all three top-level filters back, plus the re-derived auto 'Bookmarks'/'Notes' nodes");
     const childNodes = f.children.map(id => T.state.nodes[id]);
     const autoNode = childNodes.find(n => n.filterType === "bookmarks");
     assert(autoNode && autoNode.locked === true, "restore: the auto 'Bookmarks' node is re-created, not persisted-and-reloaded verbatim");
+    const autoNotesNode = childNodes.find(n => n.filterType === "notes");
+    assert(autoNotesNode && autoNotesNode.locked === true, "restore: the auto 'Notes' node is re-created, not persisted-and-reloaded verbatim");
     const r1 = childNodes.find(n => n.filterType === "text" && n.value === "message 1");
     const r2 = childNodes.find(n => n.filterType === "text" && n.value === "ERROR");
     assert(r1, "restore: first filter type/value");
@@ -1968,16 +1970,18 @@ group(21);
     await sleep(80);
     assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"),
       "tier1: identical content auto-matches with no dialog (name is display-only)");
-    // 4, not 3: the three imported top-level filters (t1, t2, the AND
+    // 5, not 3: the three imported top-level filters (t1, t2, the AND
     // combiner — always placed directly under the file, see "Core data
-    // model" in PROJECT.md) plus the auto "Bookmarks" node re-derived from
-    // the imported bookmarks (see syncBookmarksFilterNode, called at the
-    // end of applySessionEntryByOrdinal/ByContent). createAndOrNode/
+    // model" in PROJECT.md) plus the auto "Bookmarks"/"Notes" nodes
+    // re-derived from the imported bookmarks/notes (see
+    // syncBookmarksFilterNode/syncNotesFilterNode, called at the end of
+    // applySessionEntryByOrdinal/ByContent). createAndOrNode/
     // syncBookmarksFilterNode both unshift, so exact order isn't guaranteed
     // — find nodes by value/filterType instead.
-    assert(f.children.length === 4, "tier1: all three top-level filters applied, plus the re-derived auto 'Bookmarks' node");
+    assert(f.children.length === 5, "tier1: all three top-level filters applied, plus the re-derived auto 'Bookmarks'/'Notes' nodes");
     const childNodes = f.children.map(id => T.state.nodes[id]);
     assert(childNodes.some(n => n.filterType === "bookmarks"), "tier1: auto 'Bookmarks' node re-created from the imported bookmarks");
+    assert(childNodes.some(n => n.filterType === "notes"), "tier1: auto 'Notes' node re-created from the imported notes");
     const r1 = childNodes.find(n => n.filterType === "text" && n.value === "message 1");
     const r2 = childNodes.find(n => n.filterType === "text" && n.value === "ERROR");
     assert(r1 && r2 && r2.highlightColor === "#ff0000",
@@ -2011,7 +2015,7 @@ group(21);
     await sleep(80);
     assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"),
       "tier2: grown file auto-matches via the overlapping time window");
-    assert(f.children.length === 4, "tier2: filters applied to the grown file, plus the auto 'Bookmarks' node");
+    assert(f.children.length === 5, "tier2: filters applied to the grown file, plus the auto 'Bookmarks'/'Notes' nodes");
     assert(T.state.bookmarks.has(f.entries[5].id) && f.entries[5].raw === savedRaw5,
       "tier2: ordinal-based bookmark lands on the identical in-window entry");
   });
@@ -2037,7 +2041,7 @@ group(21);
     radio.checked = true;
     fireClick(d.querySelector("#sessionMatchApply"), w);
     await sleep(80);
-    assert(f.children.length === 4, "tier3: filters applied to the manually picked file, plus the auto 'Bookmarks' node");
+    assert(f.children.length === 5, "tier3: filters applied to the manually picked file, plus the auto 'Bookmarks'/'Notes' nodes");
     assert(T.state.bookmarks.size === 1, "tier3: only the still-present bookmarked line resolves");
     const [bid] = [...T.state.bookmarks.keys()];
     assert(T.entryIndex[bid].raw === savedRaw5,
@@ -2074,13 +2078,19 @@ group(21);
       "embedded: dialog offers loading the embedded log (only when text is present)");
     radio.checked = true;
     fireClick(d.querySelector("#sessionMatchApply"), w);
-    await sleep(120); // addFile parses async
+    // addFile parses async; the auto "Bookmarks"/"Notes" nodes added this
+    // session mean there's slightly more synchronous work queued after the
+    // parse than the old fixed sleep(120) reliably outlasted — wait on the
+    // actual condition instead of a longer guess (see tests/README.md
+    // "never poll a proxy condition", applied here via the file's own entry
+    // count rather than a bespoke promise).
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
     assert(T.state.rootIds.length === 1, "embedded: file materialized from the export");
     const f = T.state.nodes[T.state.rootIds[0]];
     assert(f.name === "worker-3.log" && f.entries.length === 30,
       "embedded: name + entry count round-trip through the embedded text");
-    assert(f.children.length === 4 && T.state.bookmarks.has(f.entries[5].id),
-      "embedded: filters + ordinal bookmarks applied to the materialized file, plus the auto 'Bookmarks' node");
+    assert(f.children.length === 5 && T.state.bookmarks.has(f.entries[5].id),
+      "embedded: filters + ordinal bookmarks applied to the materialized file, plus the auto 'Bookmarks'/'Notes' nodes");
     const combo = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "and");
     assert(combo && T.state.activeId === combo.id, "embedded: active filter (the AND combiner) restored");
   });
@@ -20918,6 +20928,97 @@ group(190);
 }
 
 /* ============================================================
+   GROUP 191 — "Notes" overview: second auto-managed filter node below
+   "Bookmarks" (syncNotesFilterNode). Covers: appears/disappears with the
+   note count like Bookmarks does; placed directly after the Bookmarks node
+   when one exists, at the top otherwise; matches exactly the entries with a
+   note; restricted (locked) like Bookmarks; selecting it force-enables Show
+   Notes and leaving it restores whatever Show Notes was set to before.
+   ============================================================ */
+group(191);
+await withApp(async (w, d, T) => {
+  section("191. Notes overview: auto-managed 'Notes' filter node");
+  const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const fb = await w.addFile("b.log", makeLog(0, 5, { msgPrefix: "other" }), () => {});
+  T.state.activeId = fa.id;
+  w.render();
+
+  const notesNode = () => fa.children.map(id => T.state.nodes[id]).find(n => n && n.filterType === "notes");
+  const bookmarksNode = () => fa.children.map(id => T.state.nodes[id]).find(n => n && n.filterType === "bookmarks");
+
+  assert(!notesNode(), "sanity: no 'Notes' node before any note exists");
+
+  // Appears the moment the first note is added, with no bookmark present yet
+  // -> unshifted to the top, same top-level placement Bookmarks itself uses.
+  w.setNoteAndRepaint(fa.entries[1].id, "first note");
+  assert(notesNode(), "the auto 'Notes' filter node appears the moment the first note is set");
+  assert(notesNode().locked === true, "the auto 'Notes' node is marked locked");
+  assert(fa.children[0] === notesNode().id, "with no Bookmarks node present, 'Notes' sits at the very top");
+  assert(w.getEntries(notesNode().id).map(e => e.id).includes(fa.entries[1].id), "the auto 'Notes' node actually matches the noted row");
+
+  // Now bookmark a different entry -> "Notes" must end up directly BELOW
+  // "Bookmarks", not above/instead of it.
+  w.toggleBookmark(fa.entries[0].id);
+  assert(bookmarksNode(), "sanity: Bookmarks node created");
+  const bmIdx = fa.children.indexOf(bookmarksNode().id);
+  const notesIdx = fa.children.indexOf(notesNode().id);
+  assert(bmIdx === 0, "'Bookmarks' takes the top slot");
+  assert(notesIdx === bmIdx + 1, "'Notes' sits directly below 'Bookmarks'");
+
+  // Restricted: not draggable/deletable/reorderable via the normal filter-tree operations API
+  const node = notesNode();
+  const childrenBefore = fa.children.slice();
+  assert(w.deleteFilterNodeWithUndo(node.id) === undefined && T.state.nodes[node.id], "deleteFilterNodeWithUndo is a no-op on a locked 'Notes' node — it survives");
+  assert(w.moveFilterNodeWithUndo(node.id, fb.id) === false, "moveFilterNodeWithUndo refuses to move a locked 'Notes' node");
+  assert(T.state.nodes[node.id].parentId === fa.id, "locked 'Notes' node's parent is unchanged after the refused move");
+  assert(fa.children.join(",") === childrenBefore.join(","), "locked 'Notes' node's position among siblings is unchanged");
+
+  // Adding a second note keeps the same node, just extends its match set.
+  w.setNoteAndRepaint(fa.entries[2].id, "second note");
+  assert(notesNode().id === node.id, "same 'Notes' node persists across a second note");
+  assert(w.getEntries(node.id).length === 2, "'Notes' node's match count updates live as notes are added");
+
+  // Removing one of two notes must NOT remove the node.
+  w.setNoteAndRepaint(fa.entries[1].id, "");
+  assert(!T.state.notes.has(fa.entries[1].id), "first note removed");
+  assert(notesNode(), "'Notes' node persists while at least one note remains on this file");
+  assert(w.getEntries(notesNode().id).length === 1, "'Notes' node's match count updates live as notes are removed");
+
+  // Removing the LAST note removes the node.
+  w.setNoteAndRepaint(fa.entries[2].id, "");
+  assert(!T.state.notes.has(fa.entries[2].id), "last note removed");
+  assert(!notesNode(), "the auto 'Notes' node is removed once no note remains on this file");
+
+  // Selecting the "Notes" node force-enables Show Notes even if it was off;
+  // leaving it restores whatever Show Notes was set to before.
+  w.setNoteAndRepaint(fa.entries[3].id, "third note");
+  T.state.activeId = fa.id;
+  assert(T.state.showNotes === false, "sanity: Show Notes is off before standing on the 'Notes' node");
+  T.state.activeId = notesNode().id;
+  w.render();
+  assert(T.state.showNotes === true, "standing on the 'Notes' node force-enables Show Notes");
+  T.state.activeId = fa.id;
+  w.render();
+  assert(T.state.showNotes === false, "leaving the 'Notes' node restores Show Notes to what it was before (off)");
+
+  // Same round trip, but Show Notes was already ON before entering — must
+  // stay ON, not get toggled off by mistake, either while active or after leaving.
+  const btnNotes = d.querySelector(".toggle-notes");
+  fireClick(btnNotes, w);
+  assert(T.state.showNotes === true, "sanity: Show Notes turned on manually");
+  T.state.activeId = notesNode().id;
+  w.render();
+  assert(T.state.showNotes === true, "Show Notes stays on while standing on the 'Notes' node if it was already on");
+  T.state.activeId = fa.id;
+  w.render();
+  assert(T.state.showNotes === true, "leaving the 'Notes' node restores Show Notes to what it was before (on)");
+
+  // The auto "Notes" node is excluded from filter-tree persistence, same as Bookmarks.
+  const { roots: cacheRoots } = w.serializeFilterTreeForCache(fa);
+  assert(!cacheRoots.some(sn => sn.filterType === "notes"), "the auto 'Notes' node is excluded from serializeFilterTreeForCache, same as Bookmarks");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -23625,4 +23726,13 @@ process.exitCode = failed ? 1 : 0;
       hiding the row outright (too subtle otherwise), reordered it below
       Exclusive matches, and switched both options to the pill-shaped
       .settings-switch component.
+
+   Group 191 — this session (2026-09-08), person-requested "Notes" overview:
+      a second auto-managed, restricted filter node (syncNotesFilterNode,
+      same shape as syncBookmarksFilterNode) appears directly below the
+      "Bookmarks" node the moment any entry on the file has a note, and
+      disappears once the last one is cleared. Selecting it force-enables
+      Show Notes (even if it was off) so the whole point — reading every
+      note in the file at a glance — works immediately; leaving it restores
+      whatever Show Notes was set to beforehand.
    ============================================================ */
