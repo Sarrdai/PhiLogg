@@ -25,7 +25,7 @@
 
   <rect class="ln fill" x="24" y="58" width="1212" height="30"/>
   <text x="30" y="70" class="tag" font-size="10">#extractPatternView</text>
-  <text x="30" y="83" class="sub" font-size="9">Musterhervorhebung: "user=[value:str] took [value:float]ms" — Platzhalter farbig markiert, je Capture-Group eine Farbe</text>
+  <text x="30" y="83" class="sub" font-size="9">Musterhervorhebung: "user=[*:str] took [*:float]ms" — Platzhalter farbig markiert, je Capture-Group eine Farbe</text>
 
   <rect class="ln fill" x="24" y="92" width="1212" height="26"/>
   <text x="30" y="104" class="tag" font-size="10">#extractStatsBar</text>

@@ -56,9 +56,9 @@
 
   <text x="20" y="332" class="lbl">#filterPopup — Filter-Builder</text>
   <rect class="ln accent2" x="20" y="342" width="700" height="130"/>
-  <text x="26" y="360" class="sub">Pattern-Eingabe (Platzhalter [value:...])</text>
+  <text x="26" y="360" class="sub">Pattern-Eingabe (Platzhalter [*:...])</text>
   <rect class="ln fill" x="26" y="368" width="640" height="18"/>
-  <text x="30" y="380" class="tag" font-size="9">user=[value:str] took [value:float]ms</text>
+  <text x="30" y="380" class="tag" font-size="9">user=[*:str] took [*:float]ms</text>
 
   <text x="26" y="404" class="sub" font-size="9">#filterColumnChips "Applies to:"</text>
   <rect class="ln fill" x="26" y="410" width="60" height="16"/><text x="34" y="421" class="tag" font-size="8">Time</text>
