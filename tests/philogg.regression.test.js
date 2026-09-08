@@ -20241,6 +20241,86 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 184 — Table/Plot toolbar filter-info span (#tableFilterInfo /
+   #plotFilterInfo)
+   Origin: this session, person-requested ("Paket B" of a larger plan) —
+   Table and Plot had no visible indication of an active time filter
+   (after/before/timerange) narrowing the extraction, nor of how many rows/
+   points are actually shown vs. selected. activeTimeFilters() (near
+   isTimeFilterType) walks getChain(state.activeId) for time-filter
+   ancestors; updateTableFilterInfo()/updatePlotFilterInfo() (end of
+   renderExtractTable/renderPlotChart) render that plus a row/selection or
+   visible-point count into the two spans as plain text.
+   NOTE: the Plot-view point count goes through visiblePlotPoints() — a
+   helper this session ("Paket B") deliberately does NOT define, per the
+   orchestrating plan: a sibling package ("Paket C", minimap sync) owns its
+   real implementation and merges in separately. This file currently
+   defines a TEMP stub (commented "remove this whole block during merge",
+   next to plotLastRender) purely so this group can exercise the Plot
+   assertions locally; once Paket C's branch merges, its real
+   visiblePlotPoints() replaces the stub and this group should be
+   re-verified against it (behavior should be identical for the 2D-scatter
+   case exercised here, since the stub follows the same documented
+   contract).
+   ============================================================ */
+group(184);
+await withApp(async (w, d, T) => {
+  section("184a. Table: filter-info text combines active time filter + row/selection counts");
+
+  const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + i }), () => {});
+  const node = w.createFilterNode(f.id, "text", "n=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+
+  const infoEl = () => d.querySelector("#tableFilterInfo");
+  assert(infoEl().textContent.includes("10 rows"), "no time filter active: info shows just the row count, got " + JSON.stringify(infoEl().textContent));
+  assert(!infoEl().textContent.includes("selected"), "no marked cells yet: no selection count shown");
+
+  // Add a "timerange" filter as a child of the extraction node, and re-activate it.
+  const rangeNode = w.createFilterNode(node.id, "timerange", { from: f.entries[2].ts, to: f.entries[7].ts });
+  T.state.activeId = rangeNode.id;
+  w.render();
+  w.applyFhView("table");
+  const expectedRangeText = w.timeRangeFilterName({ from: f.entries[2].ts, to: f.entries[7].ts });
+  assert(infoEl().textContent.includes(expectedRangeText),
+    "active timerange filter's name (timeRangeFilterName) appears in the info text, got " + JSON.stringify(infoEl().textContent));
+  assert(infoEl().textContent.includes("6 rows"), "row count reflects the timerange-narrowed extraction (entries 2..7 inclusive), got " + JSON.stringify(infoEl().textContent));
+
+  // Mark 2 cells (different rows) via state.tableSelection, re-render, expect "2 selected".
+  const td = (r, c) => d.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
+  td(0, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true }));
+  td(3, 0).dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, ctrlKey: true }));
+  w.updateTableFilterInfo();
+  assert(infoEl().textContent.includes("2 selected"),
+    "marking cells in 2 distinct rows shows \"2 selected\", got " + JSON.stringify(infoEl().textContent));
+});
+
+await withApp(async (w, d, T) => {
+  section("184b. Plot: filter-info text combines active time filter + visible-point count (via TEMP visiblePlotPoints() stub)");
+
+  const f = await w.addFile("a.log", makeLog(0, 10, { suffix: i => "n=" + i }), () => {});
+  const node = w.createFilterNode(f.id, "text", "n=[*:int]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+
+  const infoEl = () => d.querySelector("#plotFilterInfo");
+  assert(infoEl().textContent.includes("10 points"), "home view (no zoom): all 10 finite points counted, got " + JSON.stringify(infoEl().textContent));
+  assert(!infoEl().textContent.includes("≥") && !infoEl().textContent.includes("→"), "no time filter active: no timeRangeFilterName text shown");
+
+  // Add a timerange filter and re-activate + re-render the plot.
+  const rangeNode = w.createFilterNode(node.id, "timerange", { from: f.entries[2].ts, to: f.entries[7].ts });
+  T.state.activeId = rangeNode.id;
+  w.render();
+  w.applyFhView("plot");
+  const expectedRangeText = w.timeRangeFilterName({ from: f.entries[2].ts, to: f.entries[7].ts });
+  assert(infoEl().textContent.includes(expectedRangeText),
+    "active timerange filter's name appears in the Plot info text too, got " + JSON.stringify(infoEl().textContent));
+  assert(infoEl().textContent.includes("6 points"), "visible-point count reflects the timerange-narrowed extraction, got " + JSON.stringify(infoEl().textContent));
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -22870,4 +22950,15 @@ process.exitCode = failed ? 1 : 0;
       Plot its enabled state is gated on plot2dToolsAvailable (the exact
       viewport count is re-checked at click time, since zoom/pan don't
       necessarily go through updateRowActionButtons()).
+
+   Group 184 — this session (2026-09-08), "Paket B" of a multi-package plan
+      (person-approved plan, delegated in parallel with "Paket C" minimap
+      sync on a sibling branch): #tableFilterInfo/#plotFilterInfo toolbar
+      spans showing the active time filter(s) (activeTimeFilters(), near
+      isTimeFilterType) plus a row/selection count (Table,
+      updateTableFilterInfo()) or visible-point count (Plot,
+      updatePlotFilterInfo()). The Plot half depends on visiblePlotPoints()
+      — owned by Paket C — and this file carries a clearly-marked TEMP stub
+      near plotLastRender so 184b can run standalone; remove the stub once
+      Paket C's real implementation merges in, and re-verify 184b against it.
    ============================================================ */

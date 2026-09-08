@@ -2534,6 +2534,14 @@
   }
   #tableToolbar.hidden{ display:none; }
   #tableToolbar .toolbar-group{ gap:4px; }
+  /* Filter/selection/visibility info spans (#tableFilterInfo, #plotFilterInfo)
+     — same muted, tabular-numeric look as #contextToolbar's .ctx-nav-label,
+     pushed to the toolbar's right edge, empty (no text) → no visual space. */
+  .toolbar-filter-info{
+    margin-left:auto; padding:0 2px; font-family:var(--font-mono); font-size:10.5px;
+    color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }
   #plot2dToolsGroup{display:flex; align-items:center; gap:10px;}
   #plot2dToolsGroup.hidden{display:none;}
   #plotToolbar .toolbar-group{gap:4px;}
@@ -3395,6 +3403,7 @@
                  Plot (see selectActionEntries). -->
             <span data-row-actions="select-action"></span>
           </div>
+          <span id="tableFilterInfo" class="toolbar-filter-info"></span>
         </div>
         <div id="extractScroll">
           <table id="extractTable"><thead id="extractHead"></thead><tbody id="extractBody"></tbody></table>
@@ -3455,6 +3464,7 @@
                    #tableToolbar comment. -->
               <span data-row-actions="select-action"></span>
             </div>
+            <span id="plotFilterInfo" class="toolbar-filter-info"></span>
           </div>
           <div id="plotBody">
             <div id="plotControls"></div>
@@ -7064,6 +7074,18 @@ function timeRangeOfNode(node) {
 // both gate on it (see their call sites).
 function isTimeFilterType(filterType) {
   return filterType === "after" || filterType === "before" || filterType === "timerange";
+}
+
+// Active time-range filters (any of "after"/"before"/"timerange") in the
+// active node's ancestor chain, in root-to-node order — feeds the Table/Plot
+// toolbar's filter-info span (see updateTableFilterInfo/updatePlotFilterInfo)
+// so it's obvious a time filter is narrowing what's shown, without having to
+// scroll the breadcrumb/tree to spot it.
+function activeTimeFilters() {
+  if (!state.activeId) return [];
+  return getChain(state.activeId)
+    .filter(n => n.type === "filter" && isTimeFilterType(n.filterType))
+    .map(n => ({ node: n, range: timeRangeOfNode(n) }));
 }
 
 function isDescendantOrSelf(rootId, targetId) {
@@ -11685,6 +11707,24 @@ let lastPlotControlsHtml = null;
 // mouse event without recomputing the whole chart).
 let plotZoom = null;
 let plotLastRender = null;
+let plotLastSeries = null; // series snapshot ({x,y,colorVal,rowIndex,...} per point) from the most recent renderPlotChart() — read by the TEMP visiblePlotPoints() stub below.
+// TEMP stub — Paket C (minimap sync) defines the real visiblePlotPoints(),
+// remove this whole block during merge. Local-dev-only: restricts
+// plotLastSeries to plotZoom's x-domain when a zoom is active, matching
+// Paket C's documented contract, so updatePlotFilterInfo() below is
+// testable in isolation before that branch merges in.
+function visiblePlotPoints() {
+  if (!plotLastSeries) return [];
+  const pts = [];
+  plotLastSeries.forEach(s => {
+    s.pts.forEach(p => {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+      if (plotZoom && (p.x < plotZoom.x0 || p.x > plotZoom.x1)) return;
+      pts.push(p);
+    });
+  });
+  return pts;
+}
 // One entry per rendered mark (line/scatter point or bar), rebuilt every
 // renderPlotChart() alongside the marks themselves — read by the hover-
 // tooltip listener to hit-test without re-walking extractRowsData/series.
@@ -12474,12 +12514,36 @@ const PLOT_ZOOM_OUT_BUFFER = 0.08;
 // raw SVG attribute strings, so this stays consistent with that.
 const PLOT_ASSERT_COLOR = "#f16565";
 
+// Fills #plotFilterInfo with the active time filter(s) (if any) and the
+// visible-point count — called at the end of renderPlotChart (and its early-
+// return branches) so it stays in sync with whatever's actually plotted.
+// visiblePlotPoints() is defined elsewhere (Paket C, minimap sync) — see the
+// comment on its call site below. Left empty when there's nothing to say.
+function updatePlotFilterInfo() {
+  const infoEl = el("#plotFilterInfo");
+  if (!infoEl) return;
+  const parts = [];
+  const timeFilters = activeTimeFilters();
+  if (timeFilters.length) {
+    parts.push(timeFilters.map(f => timeRangeFilterName(f.range)).join(" · "));
+  }
+  // visiblePlotPoints() is only meaningful for the 2D SVG plot (it reads the
+  // last 2D render's series snapshot) — 3D and empty/no-plot states have
+  // nothing to count, so they leave the count out entirely.
+  if (plotConfig.type !== "3d" && typeof visiblePlotPoints === "function") {
+    const n = visiblePlotPoints().length;
+    parts.push(n + (n === 1 ? " point" : " points"));
+  }
+  infoEl.textContent = parts.join(" · ");
+}
+
 function renderPlotChart() {
   if (plotConfig.type === "3d") {
     plotSvg.classList.add("hidden");
     plot3dCanvas.classList.remove("hidden");
     setPlot2dToolsVisible(false); // 3D uses its own rotate/zoom/pan on the canvas, not the 2D zoom bar/filter-from-viewport
     renderPlot3D();
+    updatePlotFilterInfo();
     return;
   }
   plotSvg.classList.remove("hidden");
@@ -12490,8 +12554,10 @@ function renderPlotChart() {
   if (plottable.length === 0 || plotConfig.xCol == null || plotConfig.yCols.length === 0) {
     plotSvg.innerHTML = '<text class="plot-empty-label" x="16" y="24">Select an X and at least one Y column to plot.</text>';
     plotLastRender = null;
+    plotLastSeries = null;
     plotHoverPoints = [];
     updatePlotZoomIndicator();
+    updatePlotFilterInfo();
     return;
   }
 
@@ -12503,7 +12569,7 @@ function renderPlotChart() {
   const plotW = W - left - rightMargin, plotH = H - top - PLOT_MARGIN.bottom;
   plotSvg.setAttribute("viewBox", "0 0 " + W + " " + H);
 
-  if (plotW < 40 || plotH < 40) { plotSvg.innerHTML = ""; plotLastRender = null; plotHoverPoints = []; updatePlotZoomIndicator(); return; }
+  if (plotW < 40 || plotH < 40) { plotSvg.innerHTML = ""; plotLastRender = null; plotLastSeries = null; plotHoverPoints = []; updatePlotZoomIndicator(); updatePlotFilterInfo(); return; }
 
   const xType = findExtractColumn(plotConfig.xCol).type;
 
@@ -12547,8 +12613,10 @@ function renderPlotChart() {
   if (series.every(s => s.pts.length === 0)) {
     plotSvg.innerHTML = '<text class="plot-empty-label" x="16" y="24">No rows have numeric values for the selected columns.</text>';
     plotLastRender = null;
+    plotLastSeries = series;
     plotHoverPoints = [];
     updatePlotZoomIndicator();
+    updatePlotFilterInfo();
     return;
   }
 
@@ -12786,7 +12854,9 @@ function renderPlotChart() {
     xDomainMin, xDomainMax, yDomainMin, yDomainMax,
     xHomeDomainMin, xHomeDomainMax, yHomeDomainMin, yHomeDomainMax,
   };
+  plotLastSeries = series;
   updatePlotZoomIndicator();
+  updatePlotFilterInfo();
 }
 
 /* ===================== 3D scatter ===================== */
@@ -13462,6 +13532,7 @@ function renderExtractTable(node) {
   });
 
   renderExtractVisibleRows();
+  updateTableFilterInfo();
 
   if (extractView === "plot") { renderPlotControls(); renderPlotChart(); }
 }
@@ -20153,6 +20224,24 @@ function currentSelectionRowIds() {
 // the plot's currently-visible viewport, or the log views' own selection.
 // Distinct rows (by row index) with at least one marked cell in the
 // extraction table — mapped back to their underlying entries.
+// Fills #tableFilterInfo with the active time filter(s) (if any) and a row/
+// selection count — called at the end of renderExtractTable so it stays in
+// sync with whatever's currently tabulated. Left empty (not just blank text)
+// when there's nothing to say, so the span takes no visual space.
+function updateTableFilterInfo() {
+  const infoEl = el("#tableFilterInfo");
+  if (!infoEl) return;
+  const parts = [];
+  const timeFilters = activeTimeFilters();
+  if (timeFilters.length) {
+    parts.push(timeFilters.map(f => timeRangeFilterName(f.range)).join(" · "));
+  }
+  parts.push(extractRowsData.length + (extractRowsData.length === 1 ? " row" : " rows"));
+  const selected = markedRowEntries().length;
+  if (selected > 0) parts.push(selected + " selected");
+  infoEl.textContent = parts.join(" · ");
+}
+
 function markedRowEntries() {
   const s = state.tableSelection;
   if (!s) return [];
