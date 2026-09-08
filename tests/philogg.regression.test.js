@@ -15449,9 +15449,9 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#settingsContextNavCorner"),
     "…and so is the 'which corner' setting that only existed because it floated");
   const kids = [...d.querySelector("#highlightWrap").children].map(el => el.id);
-  assert(kids.indexOf("contextToolbar") === kids.indexOf("highlightHeader") + 1 &&
-    kids.indexOf("highlightBody") === kids.indexOf("contextToolbar") + 1,
-    "it sits inside the table, between the header and the scrolling body, got " + JSON.stringify(kids));
+  assert(kids.indexOf("contextToolbar") === kids.indexOf("highlightHeader") - 1 &&
+    kids.indexOf("highlightBody") === kids.indexOf("highlightHeader") + 1,
+    "it sits directly under the filter bar, above the header, which stays directly over the scrolling body, got " + JSON.stringify(kids));
   assert(w.getComputedStyle(bar).position !== "absolute",
     "it is in normal flow — it shrinks the viewport rather than covering log rows");
 
