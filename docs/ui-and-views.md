@@ -139,31 +139,47 @@ shape:
 - **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — the view toggle
   (`#fhTabs`), the level quick-filter (`#levelBar`/`#btnApplyLevelToTree`),
   and, floated right after those, the **row-actions** button group
-  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — the FOUR
-  actions that genuinely create a filter node: Filter after this/Filter
-  before this/Filter for this message/Time range. (Bookmark this row/Add
-  note/Add to selection used to live here too — moved out, person-requested
-  follow-up same session, into each log view's own toolbar instead; see the
-  "Actions" group below for why: they mutate the selection's bookmark/note/
-  selection state, not create a filter, so "Filter-Toolbar" was the wrong
-  home for them.) `#levelBar` is identical on every tab including Table/
-  Plot (it already applied via `applyLevelFilter()`, just without a visible
-  pill row before this session).
+  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — SIX
+  entries, in order: Filter after this/Filter before this/Filter for this
+  message/**Extract**/Time range, then a visual separator, then **New**
+  (`separator: true` on that last entry, rendered by `buildRowActionsHtml`
+  as a `.row-action-separator` divider immediately before it). (Bookmark
+  this row/Add note/Add to selection used to live here too — moved out,
+  person-requested follow-up same session, into each log view's own
+  toolbar instead; see the "Actions" group below for why: they mutate the
+  selection's bookmark/note/selection state, not create a filter, so
+  "Filter-Toolbar" was the wrong home for them.) `#levelBar` is identical
+  on every tab including Table/Plot (it already applied via
+  `applyLevelFilter()`, just without a visible pill row before this
+  session).
+  **Extract** (`extractMessage`, this session, 2026-09-08) is a one-click
+  version of "Message": same auto-extraction pattern built from the
+  current row's message column (`buildNumericExtractPattern` +
+  `collapseNewlinesToWildcard`), but committed straight to a new
+  `filterType:"text"` node (`extractMessageFilter()`, sharing
+  `commitFilter()`'s own `createFilterNode` call) instead of opening the
+  popup for review first — no popup shown, and the resulting node stays a
+  perfectly ordinary editable text-filter node afterward. **New**
+  (`newFilter`, same session) is a one-click `openFilterPopup()`, identical
+  to Ctrl+F — it needs no row selection at all, only `state.activeId`
+  (an active node to add the filter under). Both share `singleRowEnabled`/
+  Table-Plot hiding with "Message" (Extract) or gate on `state.activeId`
+  alone (New).
   **Table/Plot are context-aware now, not a swapped-out second group
   (person-requested, 2026-09-07 — unifies what used to be a Plot-only
-  detour)**: After/Before/Message all key off a single log-row selection,
-  which Table/Plot have none of, so `updateViewBarRowActions()` hides just
-  those three on those two tabs (`fhActiveTab === "table" || "plot"`) —
-  "Time range" stays visible everywhere and resolves its own input per
-  view instead: a 2+ log-row multi-selection in Context/Filtered
-  (unchanged), rows with at least one marked cell in Table, or the Plot
-  tab's own currently-visible viewport (`timeRangeActionEntries()`, near
-  `currentSelectionRowIds()`) — on Plot it's additionally gated on
-  `plot2dToolsAvailable` (something actually plotted in 2D, the same
-  condition `#plot2dToolsGroup`'s zoom controls gate on), the exact
-  viewport count is re-checked at click time with a toast since zoom/pan
-  don't always go through `updateRowActionButtons()`. Plot's own two
-  dedicated viewport-filter buttons this used to swap in
+  detour)**: After/Before/Message/Extract all key off a single log-row
+  selection, which Table/Plot have none of, so `updateViewBarRowActions()`
+  hides those four on those two tabs (`fhActiveTab === "table" ||
+  "plot"`) — "Time range" and "New" stay visible everywhere; "Time range"
+  resolves its own input per view instead: a 2+ log-row multi-selection
+  in Context/Filtered (unchanged), rows with at least one marked cell in
+  Table, or the Plot tab's own currently-visible viewport
+  (`timeRangeActionEntries()`, near `currentSelectionRowIds()`) — on Plot
+  it's additionally gated on `plot2dToolsAvailable` (something actually
+  plotted in 2D, the same condition `#plot2dToolsGroup`'s zoom controls
+  gate on), the exact viewport count is re-checked at click time with a
+  toast since zoom/pan don't always go through `updateRowActionButtons()`.
+  Plot's own two dedicated viewport-filter buttons this used to swap in
   (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, see the CHANGELOG for
   their original 2026-09-04 design) are gone entirely — "these entries"
   as an `"idset"` filter no longer has a UI trigger of its own; use "Select"
