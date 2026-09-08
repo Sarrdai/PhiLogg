@@ -20842,15 +20842,20 @@ await withApp(async (w, d, T) => {
    GROUP 190 — this session (2026-09-08), person-reported bug: "before" +
    "Enforce chronological order" always produced an empty result. Diagnosed
    as not a bug in linkOrderEnforced itself (Group 22 already pins the
-   monotonic-timestamp semantics deliberately) — the checkbox is simply a
+   monotonic-timestamp semantics deliberately) — the option is simply a
    no-op or an always-empty trap for a single-direction hop chain (all
    "before" always drops everything, all "after"/a lone hop never drops
    anything), and is only meaningful once the chain mixes directions. Fix
-   is dialog-side gating: updateLinkOrderEnforceAvailability() disables +
-   unchecks #linkOrderEnforceInput and shows #linkOrderEnforceHint whenever
-   the current hop directions aren't diverse (< 2 hops, or all hops share a
-   direction), called from renderLinkHops() and on every hop dir <select>
-   change. See docs/filters.md "Opt-in options: order enforcement &
+   is dialog-side gating: updateLinkOrderEnforceAvailability() hides the
+   whole #linkOrderEnforceRow (and unchecks its input) whenever the current
+   hop directions aren't diverse (< 2 hops, or all hops share a direction),
+   called from renderLinkHops() and on every hop dir <select> change.
+   Person-requested follow-up (same session): a disabled-but-visible
+   checkbox with a hint text read as too subtle — the row is hidden
+   outright instead, moved below Exclusive matches, and both options now
+   use the pill-shaped .settings-switch (same component as the Settings
+   dialog and the filter popup's Aa/NOT toggles) instead of plain
+   checkboxes. See docs/filters.md "Opt-in options: order enforcement &
    exclusive matches".
    ============================================================ */
 group(190);
@@ -20871,12 +20876,10 @@ group(190);
     const third = w.createFilterNode(f.id, "text", "Third");
     w.render();
 
-    // Single hop (2 filters) -> disabled, hint visible.
+    // Single hop (2 filters) -> row hidden outright.
     w.openLinkDialog([first.id, second.id]);
-    const checkbox = d.querySelector("#linkOrderEnforceInput");
-    const hint = d.querySelector("#linkOrderEnforceHint");
-    assert(checkbox.disabled === true, "single hop: order-enforce checkbox is disabled");
-    assert(!hint.classList.contains("hidden"), "single hop: hint is visible");
+    const row = d.querySelector("#linkOrderEnforceRow");
+    assert(row.classList.contains("hidden"), "single hop: order-enforce row is hidden");
   });
 
   await withApp(async (w, d, T) => {
@@ -20886,7 +20889,7 @@ group(190);
     const third = w.createFilterNode(f.id, "text", "Third");
     w.render();
 
-    // Two hops, same direction (after/after) -> still disabled.
+    // Two hops, same direction (after/after) -> still hidden.
     w.openLinkDialog([first.id, second.id, third.id]);
     d.querySelector("#linkRefSelect").value = first.id;
     d.querySelector("#linkRefSelect").dispatchEvent(new w.Event("change"));
@@ -20895,25 +20898,22 @@ group(190);
     hopRows[0].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
     hopRows[1].querySelector(".link-hop-dir").value = "after";
     hopRows[1].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
+    const row = d.querySelector("#linkOrderEnforceRow");
     const checkbox = d.querySelector("#linkOrderEnforceInput");
-    const hint = d.querySelector("#linkOrderEnforceHint");
-    assert(checkbox.disabled === true, "two hops, same direction (after/after): checkbox stays disabled");
-    assert(!hint.classList.contains("hidden"), "two hops, same direction: hint stays visible");
+    assert(row.classList.contains("hidden"), "two hops, same direction (after/after): row stays hidden");
 
-    // Switching one hop to a different direction (after/before) -> enabled, hint hidden.
+    // Switching one hop to a different direction (after/before) -> row shown.
     hopRows[1].querySelector(".link-hop-dir").value = "before";
     hopRows[1].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
-    assert(checkbox.disabled === false, "two hops, mixed direction (after/before): checkbox is enabled");
-    assert(hint.classList.contains("hidden"), "two hops, mixed direction: hint is hidden");
+    assert(!row.classList.contains("hidden"), "two hops, mixed direction (after/before): row is shown");
 
     // Check it, then switch back to a single (same) direction -> auto
-    // disabled AND unchecked, no stale checked-but-disabled state.
+    // hidden AND unchecked, no stale checked-but-hidden state.
     checkbox.checked = true;
     hopRows[1].querySelector(".link-hop-dir").value = "after";
     hopRows[1].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
-    assert(checkbox.disabled === true, "reverting to same direction while checked: checkbox becomes disabled again");
+    assert(row.classList.contains("hidden"), "reverting to same direction while checked: row becomes hidden again");
     assert(checkbox.checked === false, "reverting to same direction while checked: checkbox is auto-unchecked, not left stale");
-    assert(!hint.classList.contains("hidden"), "reverting to same direction: hint reappears");
   });
 }
 
@@ -23619,7 +23619,10 @@ process.exitCode = failed ? 1 : 0;
       linkOrderEnforced's monotonic-timestamp semantics (Group 22 pins
       those deliberately) — the option is trivial (always-empty or
       always-no-op) for a single-direction hop chain and only meaningful
-      once directions mix. Fix is dialog-side gating that disables/unchecks
-      the checkbox and shows an explanatory hint for non-diverse hop
-      direction sets.
+      once directions mix. Fix is dialog-side gating that hides the whole
+      row (and unchecks it) for non-diverse hop direction sets; follow-up
+      same session swapped the disabled-checkbox-plus-hint approach for
+      hiding the row outright (too subtle otherwise), reordered it below
+      Exclusive matches, and switched both options to the pill-shaped
+      .settings-switch component.
    ============================================================ */
