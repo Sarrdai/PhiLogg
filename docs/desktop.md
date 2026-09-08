@@ -407,10 +407,11 @@ render pipeline, same real nodes — and only changes its appearance.
   `.tail-jump-btn`, the `.fh-panel-badge`).
 - **The mini window's chrome** is a slim strip `inject.js` injects (`#tauri-pip`, shown
   only under `html.pip-mode`, styled from the page's own theme vars) that doubles as the
-  drag handle (via `markDragRegion`). The strip is 36px tall — sized (this session,
-  2026-09-07) so the 28px ViewMode switcher fits with comfortable top/bottom padding
-  instead of nearly touching the strip's edges; `html.pip-mode #app` carries the matching
-  `padding-top:36px`. At the far left sits the **ViewMode switcher** —
+  drag handle (via `markDragRegion`). The strip is 40px tall (bumped from 36px, this
+  session, 2026-09-08) so the 28px ViewMode switcher fits with 6px of clearance top and
+  bottom instead of sitting nearly edge-to-edge; `html.pip-mode #app` carries the matching
+  `padding-top:40px`, and `#fhTabs`' fixed `top:6px` centers it in the taller strip. At
+  the far left sits the **ViewMode switcher** —
   `#fhTabs` is not hidden in PiP; `html.pip-mode` collapses `#viewBar` and re-parents
   nothing, instead `position: fixed`-ing `#fhTabs` into the strip's top-left (above the
   strip, which sits at `z-index:100`). On the right are two buttons: a diagonal `<->`

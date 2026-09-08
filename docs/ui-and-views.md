@@ -139,31 +139,66 @@ shape:
 - **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — the view toggle
   (`#fhTabs`), the level quick-filter (`#levelBar`/`#btnApplyLevelToTree`),
   and, floated right after those, the **row-actions** button group
-  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — the FOUR
-  actions that genuinely create a filter node: Filter after this/Filter
-  before this/Filter for this message/Time range. (Bookmark this row/Add
-  note/Add to selection used to live here too — moved out, person-requested
-  follow-up same session, into each log view's own toolbar instead; see the
-  "Actions" group below for why: they mutate the selection's bookmark/note/
-  selection state, not create a filter, so "Filter-Toolbar" was the wrong
-  home for them.) `#levelBar` is identical on every tab including Table/
-  Plot (it already applied via `applyLevelFilter()`, just without a visible
-  pill row before this session).
+  (`[data-row-actions="viewbar"]`, `VIEWBAR_ROW_ACTIONS_HTML`) — SIX
+  entries, in order: Filter after this/Filter before this/Filter for this
+  message/**Extract**/Time range, then a visual separator, then **New**
+  (`separator: true` on that last entry, rendered by `buildRowActionsHtml`
+  as a `.row-action-separator` divider immediately before it). (Bookmark
+  this row/Add note/Add to selection used to live here too — moved out,
+  person-requested follow-up same session, into each log view's own
+  toolbar instead; see the "Actions" group below for why: they mutate the
+  selection's bookmark/note/selection state, not create a filter, so
+  "Filter-Toolbar" was the wrong home for them.) `#levelBar` is identical
+  on every tab including Table/Plot (it already applied via
+  `applyLevelFilter()`, just without a visible pill row before this
+  session).
+  **Extract** (`extractMessage`, this session, 2026-09-08) is a one-click
+  version of "Message": same auto-extraction pattern built from the
+  current row's message column (`buildNumericExtractPattern` +
+  `collapseNewlinesToWildcard`), but committed straight to a new
+  `filterType:"text"` node (`extractMessageFilter()`, sharing
+  `commitFilter()`'s own `createFilterNode` call) instead of opening the
+  popup for review first — no popup shown, and the resulting node stays a
+  perfectly ordinary editable text-filter node afterward. **New**
+  (`newFilter`, same session) is a one-click `openFilterPopup()`, identical
+  to Ctrl+F — it needs no row selection at all, only `state.activeId`
+  (an active node to add the filter under). Both share `singleRowEnabled`/
+  Table-Plot hiding with "Message" (Extract) or gate on `state.activeId`
+  alone (New).
   **Table/Plot are context-aware now, not a swapped-out second group
-  (person-requested, 2026-09-07 — unifies what used to be a Plot-only
-  detour)**: After/Before/Message all key off a single log-row selection,
-  which Table/Plot have none of, so `updateViewBarRowActions()` hides just
-  those three on those two tabs (`fhActiveTab === "table" || "plot"`) —
-  "Time range" stays visible everywhere and resolves its own input per
-  view instead: a 2+ log-row multi-selection in Context/Filtered
-  (unchanged), rows with at least one marked cell in Table, or the Plot
-  tab's own currently-visible viewport (`timeRangeActionEntries()`, near
+  (person-requested, 2026-09-07, extended 2026-09-08 — unifies what used to
+  be a Plot-only detour)**: "Time range"/"Select"/"After"/"Before" all
+  resolve their own input per view instead of keying off a single
+  Context/Filtered log-row selection: a 2+ log-row multi-selection in
+  Context/Filtered (unchanged), rows with at least one marked cell in
+  Table, or the Plot tab's own currently-visible viewport
+  (`timeRangeActionEntries()`/`afterBeforeActionEntries()`, near
   `currentSelectionRowIds()`) — on Plot it's additionally gated on
   `plot2dToolsAvailable` (something actually plotted in 2D, the same
   condition `#plot2dToolsGroup`'s zoom controls gate on), the exact
   viewport count is re-checked at click time with a toast since zoom/pan
-  don't always go through `updateRowActionButtons()`. Plot's own two
-  dedicated viewport-filter buttons this used to swap in
+  don't always go through `updateRowActionButtons()`. "After"/"Before"
+  differ from "Time range" in one way: a *single* resolved entry is a valid
+  input too (that entry's own ts becomes the bound, the original
+  single-row behavior), while 2+ entries resolve *inclusively* — "After"
+  uses the earliest ts among them, "Before" the latest — rather than
+  requiring an exact single reference point. "Message"/"Extract" are the
+  one pair that stays a true single-entry action (`singleMessageActionEntry()`):
+  extracting a pattern only makes sense for one specific message, and
+  (person-requested, 2026-09-08) that doesn't read as a sensible Table/Plot
+  action even when Table could technically supply one from a single marked
+  row — both stay **hidden on Table and Plot alike**, Context/Filtered only.
+  "Extract" additionally disables (even where visible) when the selected
+  row's message has nothing extractable — it reuses
+  `buildNumericExtractPattern()`, the same function its own click handler
+  builds the pattern with; a message with no numeric/time content would
+  otherwise just create a literal-text node indistinguishable from "New".
+  "Message" doesn't share that gate — its dialog lets the person adjust the
+  pattern before committing, so it stays enabled for any single-row
+  selection regardless of content.
+  "New" stays visible/enabled everywhere regardless (`state.activeId` is
+  its only gate).
+  Plot's own two dedicated viewport-filter buttons this used to swap in
   (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, see the CHANGELOG for
   their original 2026-09-04 design) are gone entirely — "these entries"
   as an `"idset"` filter no longer has a UI trigger of its own; use "Select"
@@ -350,6 +385,27 @@ shape:
   Resulting shape per toolbar: Context = Controls|Settings|Actions (all
   three); Filtered = Settings|Actions (no Controls); Table = Actions-only;
   Plot = Controls|Actions (no Settings).
+
+  **Filter-info spans, Table/Plot only (person-requested, 2026-09-08)**:
+  `#tableToolbar`/`#plotToolbar` each end in a right-aligned
+  `#tableFilterInfo`/`#plotFilterInfo` span (`.toolbar-filter-info`, the
+  same muted `--text-tertiary`/tabular-numeric styling as `#contextNavLabel`
+  in `#contextToolbar`), reporting what's currently narrowing/shown on that
+  tab — plain text, no markup, `margin-left:auto` pushes it against the
+  toolbar's right edge and it renders empty (no reserved space) when there's
+  nothing to say. Built from `activeTimeFilters()` (near `isTimeFilterType`
+  in the JS — walks `getChain(state.activeId)` for any "after"/"before"/
+  "timerange" ancestor filter node, one entry per hit, named via the
+  existing `timeRangeFilterName()`, joined with " · " when more than one)
+  plus a count: Table's `updateTableFilterInfo()` (called at the end of
+  `renderExtractTable()`) appends `extractRowsData.length` rows and, when
+  non-zero, `markedRowEntries().length` selected; Plot's
+  `updatePlotFilterInfo()` (end of `renderPlotChart()`, including its 3D/
+  empty/too-small-viewport early returns, so the span never goes stale)
+  appends the count of currently visible/zoomed finite points via
+  `visiblePlotPoints()` (shared with the minimap-sync feature's rendered-
+  range rectangle) — omitted for the 3D plot type, which that helper
+  doesn't cover.
 
   **Add to selection is an Action, not a filter (person-requested,
   2026-09-05)**: it doesn't create a filter node by itself (it opens
@@ -660,6 +716,7 @@ Person-reported/requested reworks (this session, screenshot-driven) to `renderNo
 - **The temporary anchor** (`state.tempAnchor = { entryId, nodeId, faded } | null`): switching the active tree node — via a tree row click OR the Alt+Arrow forwarding above, the only two ways to do that now — while the currently selected log row isn't actually a member of the new node's own result shows that row at its would-be position instead of losing it. `computeTempAnchorForNode(nodeId, entry)` (membership check against `getEntries(nodeId)`) is called by `applyTempAnchorOnActiveNodeSwitch(nodeId)`, wired into both `moveTreeSelection` and the tree row's own click handler (`renderNode`), right before each sets `state.activeId`. `spliceTempAnchor(list)` (called right after `getVisibleEntries()` in both `renderTable` render paths) splices a shallow-copy clone of the real entry, flagged `_tempAnchor`, into the Filtered table's own list at its chronological would-be position (`tempAnchorInsertIndex`, ts-based — a subsequent column-sort copy, when `state.sortColumn` is active, repositions it correctly too) — never written into `entryIndex`/`node.entries`, purely a render-time placeholder, so row rendering/click/context-menu code all keep working against it unmodified. Rendered with a dashed left border + italic (`.temp-anchor-row` CSS) except in **"Off"** mode. `applySelection` clears `state.tempAnchor` on any OTHER real selection change. New Settings → Behavior three-way `#settingsTempAnchorMode` (`tempAnchorMode`, `philogg-temp-anchor-mode`, default **`"fade"`** — changed from `"persistent"` this session, 2026-08-26, person-requested) plus a fade-duration stepper (`#tempAnchorFadeDown`/`#tempAnchorFadeValue`/`#tempAnchorFadeUp`, `applyTempAnchorFadeSeconds` clamping `[0.5, 30]` in `0.5` steps, same −/value/+ shape as the Font Size row's own `#fontScaleValue` stepper — just without the `%`) whose row (`#settingsTempAnchorFadeRow`) is only shown while mode is `"fade"` (`updateTempAnchorFadeRowVisibility`): **Off** never splices (but `moveSelection` still special-cases a selected id matching `state.tempAnchor` when `entries.findIndex` comes up empty, recovering its would-be index via `tempAnchorInsertIndex` so Up/Down still act as if it were really there); **Persistent** splices until a different entry is selected; **Fade** splices immediately, then `scheduleTempAnchorFade()` collapses just that row's own height to 0 (`.temp-anchor-fading`'s CSS `height`/`opacity` transition, values set from JS via two nested `requestAnimationFrame`s so the transition actually runs) and then removes the single DOM node plus splices it out of `currentViewEntries` — deliberately **not** a full `renderMainView()`, which would re-run the scroll-anchor-restoring heuristic and could jump the view by much more than one row; this way the surrounding rows close up by exactly one row's height through normal document flow.
 - **The minimap's selection pin only shows while the selected entry is actually a member of the pane currently on screen** (bugfix, this session, 2026-08-27, person-reported, follow-up to the range-box fixes below): `minimapMarkedEntries` used to resolve `state.selectedId` via a plain `entryIndex` lookup, which finds any real entry ever selected regardless of view membership, so the pin kept pointing at a stale position once nothing on screen actually marked it any more — e.g. a faded temp anchor row (dropped from `currentViewEntries` by `spliceTempAnchor`) whose entryId `state.selectedId`/`state.tempAnchor` still reference internally for Up/Down continuation, or a selection left over after switching to an unrelated node/root file. It now resolves against `currentHighlightViewEntries` while the Context tab is on screen (`fhLayout === "tabs" && fhActiveTab === "highlight"`) and `currentViewEntries` while the Filtered tab is (both checked in Stacked layout) — same `fhLayout`/`fhActiveTab` split `updateMinimapRenderedRange`/the click-to-jump listener already use — with the `entryIndex` fallback dropped entirely (`currentViewEntries`/`currentHighlightViewEntries` already cover the synthetic-Link-pair-entry case it used to be needed for). Three call sites now refresh the pin immediately instead of waiting for some unrelated future render: `scheduleTempAnchorFade` calls `updateMinimapSelectionMarkers()` itself the instant a faded anchor's row is actually removed (both the animated-collapse branch and the "scrolled out of the rendered window" early return, which now also splices the anchor out of `currentViewEntries` right away instead of leaving that until the next full render); `showFhTab` and `applyFhView`'s Stacked branch call it on every tab switch too, same pattern as their existing `updateMinimapFullRange`/`updateMinimapRenderedRange` calls.
 - **The temp anchor is excluded from BOTH of the timeline minimap's range boxes** (bugfix, this session, 2026-08-27, person-reported, two rounds). (a) `renderMainView()` used to pass `renderTimelineMinimap` the POST-`spliceTempAnchor` list (`currentViewEntries`, anchor row included), so an anchor sitting far outside the actually-filtered entries' own time span made `updateMinimapFullRange`'s box (`#minimapFullRangeRect`) balloon out to cover it. `minimapViewEntries` is now captured from `getVisibleEntries()` **before** `spliceTempAnchor` runs, so this box always buckets by the view's real members only. (b) That alone wasn't enough for the *second* box, `#minimapRenderedRangeRect` (`updateMinimapRenderedRange`/`minimapRenderedSpan`, "what's actually rendered right now") — it legitimately sources from `currentViewEntries` directly, since the anchor row genuinely is a rendered DOM row when it's on screen, so it kept stretching out to the anchor even after (a). `minimapRenderedSpan` now walks its computed start/end index inward past any `_tempAnchor`-flagged row to the nearest real one before converting to a pixel span, returning `null` (box hidden) in the edge case where only the anchor row sits in the visible range.
+- **`#minimapRenderedRangeRect` now has branches for the Table and Plot tabs too** (bugfix, this session, 2026-09-08, person-reported): `updateMinimapRenderedRange()` previously only knew about the Log view's Context/Filtered tabs, so switching to Table or Plot left the box showing whatever the Log view last computed, frozen — scrolling the table or zooming the plot didn't move it. **Table**: the visible row range comes from `extractScroll.scrollTop`/`EXTRACT_ROW_HEIGHT` (a flat row height there, no per-row offsets — the sticky `#extractHead`'s own height is subtracted from `scrollTop` first, same as `renderExtractVisibleRows()` does), wired into `renderExtractTable()` and `extractScroll`'s own scroll listener (rAF-batched). **Plot**: built on `visiblePlotPoints()` — a shared top-level helper next to `renderPlotChart()`, returning every finite-`(x,y)` point from the most recent render (`plotLastSeries`), restricted to `plotZoom`'s x-domain when a zoom is active — whose min/max bounds come from each point's *source entry* timestamp (`extractRowsData[p.rowIndex].entry.ts`), not the plotted x value, since the X column plotted is often not time at all. Both `renderExtractTable()`/`renderPlotChart()` now also call `renderTimelineMinimap(rootId, entries)` with their own view's entries (rather than leaving the minimap's background/full-range box showing stale Log-view data too), plus `updateMinimapRenderedRange()` itself right after, since `renderTimelineMinimap()` deliberately never calls it (see that function's own comment).
 - **"Show temporary anchor across files"** (`#settingsTempAnchorAcrossFiles`, `temporaryAnchorAcrossFiles`, `philogg-temp-anchor-across-files`, default **ON** — this session, 2026-08-26, person-requested, default kept as the pre-existing behavior): when off, `computeTempAnchorForNode` additionally checks whether the *target* node's root file (`getRootFileId(nodeId)`) actually contains the selected entry (`file.entries.includes(entry)`, reference-equality — cheap and correct even for a `merged` file node's reused entry objects) and returns `null` (no anchor at all) when it doesn't, rather than showing an anchor that points at a different file entirely. Same-file filter switches are unaffected either way — the gate only ever suppresses a genuinely cross-file jump.
 - **Alt+Enter** opens "Filter for this message" for the currently selected row directly, in Full or Filtered view alike — `openFilterForEntryColumn(entry, column)`, factored out of the right-click "Filter for this ___" context-menu item's own click handler (see "Filter popup" above) so both share it; Alt+Enter always passes the message column, since there's no mouse event to resolve a clicked column from.
 
@@ -677,7 +734,7 @@ Rewritten this session (2026-08-22) from a two-way Light/Dark toggle into a full
 
 **Stylesheet audit, same session, follow-up ("Prüfe... ob Du das konsequent umgesetzt hast").** A pass over every rule outside the `:root[data-theme=...]` blocks found ~18 places still hardcoding the DARK theme's own hex/rgba values instead of the var every sibling rule already used — invisible on Dark (where the hardcoded value and the themed one happened to match) but wrong on every other theme: the scrollbar thumb, `#btnOpen`/`#btnSession`/`.toolbar-icon-btn` hover borders, `.brand-mark`'s gradient/text, `.toolbar-badge`/`.column-chip.active`/`.btn-mini` text, and — the highest-impact group — `.crumb.current`/`.level-btn.lvl-*`/`.level-badge`/`.log-row.lvl-*:hover`/`.token-chip`'s alpha-tinted borders and backgrounds, all still using the dark theme's specific level-color rgba() triplets regardless of the active theme. Fixed via `--accent-on`/`--border-hover` above for the flat-color cases, and `color-mix(in srgb, var(--x) N%, transparent)` for the alpha-tinted ones (CSS can't apply an arbitrary alpha to a `var()` color any other way; every browser this app targets — Chromium, for the File System Access API it already requires — supports `color-mix()`). The timeline minimap was audited too and needed no changes: `.minimap-lvl-*`/`.minimap-bg-bar`/`.minimap-full-range`/etc. were already `fill:var(--level-error)` etc. from when the minimap was first built. **Deliberately left alone**: modal/dialog backdrop scrims (`rgba(16,19,26,.7-.88)`) and `box-shadow`s (`rgba(0,0,0,...)`) — a dark dimming layer and a black shadow are a normal convention regardless of the app's own light/dark theme, not a theming bug; and `COLUMN_PALETTE`'s 6 fixed extraction-column/plot colors (`.pattern-chip-num`'s `color:#0b1016`) — see "Visual language" below, deliberately theme-independent by design, unrelated to `--accent-on` despite the visual similarity. Group 82a is a static regression guard (`.textContent` of `<style>`, not computed style — jsdom can't resolve `color-mix()`) against the specific hardcoded literals this audit found creeping back in.
 
-**Two application mechanisms, one var surface.** The six built-ins are plain CSS: one `:root[data-theme="<id>"]{...}` override block per theme (Light's block also sets the four `-on` vars to white, same as before; Catppuccin Latte does too — both are light-background themes whose level colors are too dark for the near-black default). Custom/imported themes have no CSS block — `applyTheme(themeId)` sets `data-theme` on `<html>` either way, but for a custom theme it also walks `THEME_COLOR_KEYS`/`THEME_ON_KEYS` and sets each one as an inline `style.setProperty("--x", ...)` on `document.documentElement`, after first clearing every one of those properties (so switching *back* to a built-in never leaves a stale inline override shadowing its CSS block — verified in Group 81b). `setTheme()` calls `applyTheme()` then persists the id to `localStorage` (`philogg-theme`, same key/tier as before); `initTheme()` on load resolves a stored id through `resolveThemeId()` (falls back to `"dark"` if it names a since-deleted custom theme — Group 81c) or, with nothing stored yet, falls back to `prefers-color-scheme` same as before.
+**Two application mechanisms, one var surface.** The six built-ins are plain CSS: one `:root[data-theme="<id>"]{...}` override block per theme (Light's block also sets the four `-on` vars to white, same as before; Catppuccin Latte does too — both are light-background themes whose level colors are too dark for the near-black default). Custom/imported themes have no CSS block — `applyTheme(themeId)` sets `data-theme` on `<html>` either way, but for a custom theme it also walks `THEME_COLOR_KEYS`/`THEME_ON_KEYS` and sets each one as an inline `style.setProperty("--x", ...)` on `document.documentElement`, after first clearing every one of those properties (so switching *back* to a built-in never leaves a stale inline override shadowing its CSS block — verified in Group 81b). `setTheme()` calls `applyTheme()` then persists the id to `localStorage` (`philogg-theme`, same key/tier as before); `initTheme()` on load resolves a stored id through `resolveThemeId()` (falls back to `"dark"` if it names a since-deleted custom theme — Group 81c) or, with nothing stored yet, falls back to `prefers-color-scheme` same as before. `initTheme()` itself only runs at the very end of the big inline `<script>`, which would otherwise leave a visible flash of the default dark `:root` values before it does (worst on Light/Latte) — a tiny synchronous `<script>` right after `<body>` (this session, 2026-09-08) reads the same `localStorage["philogg-theme"]` key (or `prefers-color-scheme`) and sets `data-theme` immediately, without duplicating `resolveThemeId()`'s custom-theme lookup; `initTheme()` still runs later and corrects a stale/unresolvable id.
 
 **Custom themes** are plain JSON, validated and stored as `{id, name, colors: {...THEME_COLOR_KEYS}, activeTextLight}` in a `customThemes` array persisted to `localStorage` (`philogg-custom-themes`) — same tier as the theme choice itself, not IndexedDB (unlike the Log Formats/Filter Library lists, which expect larger/more numerous entries; a handful of ~25-key color maps doesn't need that). Settings → Appearance has a "Custom themes" card (reuses the `filter-library-row` list styling from Log Formats) with:
 - **Download template…** (`buildThemeTemplateJson`) — seeds the JSON from the *currently active* theme's own `getComputedStyle` values (whichever theme that is, built-in or custom), so the file that comes out is always already valid and ready to tweak, not a fixed baseline disconnected from what's on screen. Ships via the same `showSaveFilePicker`/`downloadJsonFallback` pattern as `saveFilterToFile`.

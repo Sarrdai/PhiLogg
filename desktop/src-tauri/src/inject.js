@@ -169,11 +169,17 @@
     // #toolbar is hidden and this becomes the window's only chrome + drag
     // handle. It floats out of flow, so #app gets a matching top padding to
     // keep the content view from sitting underneath it.
-    "#tauri-pip { display: none; position: fixed; top: 0; left: 0; right: 0; height: 36px; z-index: 100;",
+    // Height is 40px (not the full-toolbar's 36px #tauri-wc row): #fhTabs
+    // (the View-Selector, surfaced into this strip by philogg.html's
+    // html.pip-mode #fhTabs rule) is a fixed 28px-tall control, and 40px
+    // gives it 6px of clearance above and below instead of sitting flush
+    // against the strip's edges. See that rule's `top` for the matching
+    // vertical centering math.
+    "#tauri-pip { display: none; position: fixed; top: 0; left: 0; right: 0; height: 40px; z-index: 100;",
     "  align-items: center; justify-content: flex-end; gap: 2px; padding: 0 4px;",
     "  background: var(--bg-panel); border-bottom: 1px solid var(--border); }",
     "html.pip-mode #tauri-pip { display: flex; }",
-    "html.pip-mode #app { padding-top: 36px; }",
+    "html.pip-mode #app { padding-top: 40px; }",
     "#tauri-pip button {",
     "  width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px;",
     "  display: flex; align-items: center; justify-content: center;",

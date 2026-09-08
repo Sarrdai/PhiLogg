@@ -1011,6 +1011,11 @@
   .row-action-btn.rect{border-radius:7px;}
   .row-action-btn.rect.expanded, .row-action-btn.rect:focus-visible{border-radius:7px;}
   .row-action-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
+  /* Thin vertical divider rendered immediately before a row-action entry
+     flagged `separator:true` (see buildRowActionsHtml) — visually groups
+     "New" apart from the filter-creation actions preceding it in
+     #viewBar's Filter-Toolbar without adding a whole new toolbar group. */
+  .row-action-separator{width:1px; align-self:stretch; margin:4px 6px; background:var(--border); flex:0 0 auto;}
   .row-action-label{
     max-width:0; opacity:0; margin-left:0; overflow:hidden; white-space:nowrap;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
@@ -2534,6 +2539,14 @@
   }
   #tableToolbar.hidden{ display:none; }
   #tableToolbar .toolbar-group{ gap:4px; }
+  /* Filter/selection/visibility info spans (#tableFilterInfo, #plotFilterInfo)
+     — same muted, tabular-numeric look as #contextToolbar's .ctx-nav-label,
+     pushed to the toolbar's right edge, empty (no text) → no visual space. */
+  .toolbar-filter-info{
+    margin-left:auto; padding:0 2px; font-family:var(--font-mono); font-size:10.5px;
+    color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }
   #plot2dToolsGroup{display:flex; align-items:center; gap:10px;}
   #plot2dToolsGroup.hidden{display:none;}
   #plotToolbar .toolbar-group{gap:4px;}
@@ -2994,7 +3007,9 @@
   /* #viewBar is not hidden wholesale — it owns #fhTabs, which stays usable in
      PiP. Collapse the bar to nothing, hide everything in it but the tabs, and
      surface #fhTabs into the mini strip's far left (above the injected
-     #tauri-pip, which sits at z-index:100). */
+     #tauri-pip, which sits at z-index:100). top:6px centers #fhTabs' fixed
+     28px height inside the wrapper's 40px-tall #tauri-pip strip (6px
+     clearance top and bottom) — keep the two in sync if either changes. */
   html.pip-mode #viewBar {
     padding: 0;
     min-height: 0;
@@ -3006,7 +3021,7 @@
   }
   html.pip-mode #fhTabs {
     position: fixed;
-    top: 4px;
+    top: 6px;
     left: 4px;
     z-index: 101;
     margin: 0;
@@ -3014,6 +3029,22 @@
 </style>
 </head>
 <body>
+<script>(function(){
+  // FOUC fix: applies the stored (or system-preferred) theme to <html>
+  // synchronously, before the rest of the page parses/paints, so the app
+  // never flashes the default dark :root values first. initTheme() (near
+  // the end of the main <script>) still runs later and is the source of
+  // truth — it re-applies via resolveThemeId(), which can fall back to
+  // "dark" for a theme id that no longer resolves (e.g. a deleted custom
+  // theme). That resolution isn't duplicated here on purpose: this script
+  // only needs to be right in the common case fast enough to beat first
+  // paint; an occasional stale custom-theme id gets silently corrected by
+  // initTheme() a moment later, which is an acceptable trade for keeping
+  // this inline script trivial and free of the themes-array dependency.
+  var t = localStorage.getItem("philogg-theme");
+  if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", t);
+})();</script>
 <div id="app">
 
   <header id="toolbar">
@@ -3395,6 +3426,7 @@
                  Plot (see selectActionEntries). -->
             <span data-row-actions="select-action"></span>
           </div>
+          <span id="tableFilterInfo" class="toolbar-filter-info"></span>
         </div>
         <div id="extractScroll">
           <table id="extractTable"><thead id="extractHead"></thead><tbody id="extractBody"></tbody></table>
@@ -3455,6 +3487,7 @@
                    #tableToolbar comment. -->
               <span data-row-actions="select-action"></span>
             </div>
+            <span id="plotFilterInfo" class="toolbar-filter-info"></span>
           </div>
           <div id="plotBody">
             <div id="plotControls"></div>
@@ -4449,6 +4482,17 @@ const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"
 const ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
 const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
+// "Filter for this message" row-action's own icon (distinct from the plain
+// funnel ICON_FILTER used by every other filter-creation button) — a
+// speech-bubble outline (this action's input is always the message column)
+// with two small bracket-like accents standing in for the "extract the
+// numbers out of this text" behavior the action actually performs.
+const ICON_MESSAGE_EXTRACT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.2h11v7.6h-6.2L4.5 13V10.8h-2z"/><path d="M6 6.6l-1.2 1 1.2 1M10 6.6l1.2 1-1.2 1"/></svg>';
+// "New filter" row-action's icon: the same funnel as ICON_FILTER with a
+// small "+" badge overlaid in the corner, same badge-overlay technique as
+// ICON_FILE_AUTO's circled "A" (the circle's fill hides the funnel path
+// behind it so the "+" reads cleanly instead of visually merging).
+const ICON_FILTER_PLUS = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/></svg>';
 const ICON_CLOCK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.3l2.2 1.3"/></svg>';
 // Recovered from the old per-row bookmark marker (removed in the "Bookmarks
 // rework" — see PROJECT.md) and reused as the "Bookmarks" filter-tree node's
@@ -7064,6 +7108,18 @@ function timeRangeOfNode(node) {
 // both gate on it (see their call sites).
 function isTimeFilterType(filterType) {
   return filterType === "after" || filterType === "before" || filterType === "timerange";
+}
+
+// Active time-range filters (any of "after"/"before"/"timerange") in the
+// active node's ancestor chain, in root-to-node order — feeds the Table/Plot
+// toolbar's filter-info span (see updateTableFilterInfo/updatePlotFilterInfo)
+// so it's obvious a time filter is narrowing what's shown, without having to
+// scroll the breadcrumb/tree to spot it.
+function activeTimeFilters() {
+  if (!state.activeId) return [];
+  return getChain(state.activeId)
+    .filter(n => n.type === "filter" && isTimeFilterType(n.filterType))
+    .map(n => ({ node: n, range: timeRangeOfNode(n) }));
 }
 
 function isDescendantOrSelf(rootId, targetId) {
@@ -11685,6 +11741,35 @@ let lastPlotControlsHtml = null;
 // mouse event without recomputing the whole chart).
 let plotZoom = null;
 let plotLastRender = null;
+// Snapshot of the series built by the most recent renderPlotChart() —
+// [{col, name, color, pts: [{x, y, colorVal, rowIndex, violated}]}], one
+// entry per selected Y column, NaNs already dropped. Reset to [] whenever
+// renderPlotChart bails out early (nothing plottable/no numeric rows) so
+// visiblePlotPoints() below never reports stale points from a previous
+// node/config. Read by visiblePlotPoints() and, downstream, by the minimap
+// sync (updateMinimapRenderedRange's Plot branch) and the Plot toolbar's
+// filter-info point count.
+let plotLastSeries = [];
+
+// Shared helper: which plotted points are actually visible right now — every
+// finite-(x,y) point from the last render, restricted to plotZoom's x-domain
+// when a zoom is active (plotZoom === null means "home view", i.e. every
+// point qualifies). Each returned point keeps its .rowIndex, so a caller can
+// look its source entry back up via extractRowsData[p.rowIndex].entry.
+// Deliberately a plain top-level function (not nested in renderPlotChart) —
+// shared by updateMinimapRenderedRange's Plot branch and the Plot toolbar's
+// selection/filter-info point count.
+function visiblePlotPoints() {
+  const pts = [];
+  for (const s of plotLastSeries) {
+    for (const p of s.pts) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      if (plotZoom && (p.x < plotZoom.x0 || p.x > plotZoom.x1)) continue;
+      pts.push(p);
+    }
+  }
+  return pts;
+}
 // One entry per rendered mark (line/scatter point or bar), rebuilt every
 // renderPlotChart() alongside the marks themselves — read by the hover-
 // tooltip listener to hit-test without re-walking extractRowsData/series.
@@ -11881,20 +11966,24 @@ function zoomPlotAt(dataX, dataY, factor) {
   renderPlotChart();
 }
 
-// #viewBar's row-actions group is now context-aware (person-requested, this
-// session — unify the filters across Filtered/Table/Plot): the three
-// single-log-row actions (Filter after/before/for this message) still key
-// off a log-row selection, which Table/Plot have none of, so they hide
-// there — leaving only "Time range", which now resolves its input per view
-// (a 2+ log-row multi-selection, rows with marked cells, or the plot's
-// visible viewport — see timeRangeActionEntries/selectActionEntries).
+// #viewBar's row-actions group is context-aware across Filtered/Table/Plot
+// (person-requested, extended further this session): "Filter after/before"
+// now resolve their input per view too, same as Time range/Select — a
+// single selected/marked/visible entry, or (new) an inclusive earliest/
+// latest bound across a 2+ selection (see afterBeforeActionEntries) — so
+// they stay visible and usable on Table and Plot, not just Filtered/Context.
+// "Message"/"Extract" still need exactly ONE reference entry (a message to
+// extract a pattern from) — person-requested, 2026-09-08: even though Table
+// COULD supply that from a single marked row, it doesn't read as a sensible
+// action there, so both stay hidden on Table AND Plot, same as before this
+// session's After/Before work.
 // "Time range" on Plot additionally needs something actually plotted in 2D
 // to make sense at all (plot2dToolsAvailable, set by setPlot2dToolsVisible
 // below), same condition #plot2dToolsGroup's own zoom controls gate on.
 let plot2dToolsAvailable = false;
 function updateViewBarRowActions() {
   const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
-  elAll('[data-row-action="filterAfter"], [data-row-action="filterBefore"], [data-row-action="filterForMessage"]')
+  elAll('[data-row-action="filterForMessage"], [data-row-action="extractMessage"]')
     .forEach(b => b.classList.toggle("hidden", onTableOrPlot));
   updateRowActionButtons();
 }
@@ -12474,12 +12563,40 @@ const PLOT_ZOOM_OUT_BUFFER = 0.08;
 // raw SVG attribute strings, so this stays consistent with that.
 const PLOT_ASSERT_COLOR = "#f16565";
 
+// Fills #plotFilterInfo with the active time filter(s) (if any) and the
+// visible-point count — called at the end of renderPlotChart (and its early-
+// return branches) so it stays in sync with whatever's actually plotted.
+// visiblePlotPoints() is defined elsewhere (Paket C, minimap sync) — see the
+// comment on its call site below. Left empty when there's nothing to say.
+function updatePlotFilterInfo() {
+  const infoEl = el("#plotFilterInfo");
+  if (!infoEl) return;
+  const parts = [];
+  const timeFilters = activeTimeFilters();
+  if (timeFilters.length) {
+    parts.push(timeFilters.map(f => timeRangeFilterName(f.range)).join(" · "));
+  }
+  // visiblePlotPoints() is only meaningful for the 2D SVG plot (it reads the
+  // last 2D render's series snapshot) — 3D and empty/no-plot states have
+  // nothing to count, so they leave the count out entirely.
+  if (plotConfig.type !== "3d" && typeof visiblePlotPoints === "function") {
+    const n = visiblePlotPoints().length;
+    parts.push(n + (n === 1 ? " point" : " points"));
+  }
+  infoEl.textContent = parts.join(" · ");
+}
+
 function renderPlotChart() {
   if (plotConfig.type === "3d") {
     plotSvg.classList.add("hidden");
     plot3dCanvas.classList.remove("hidden");
     setPlot2dToolsVisible(false); // 3D uses its own rotate/zoom/pan on the canvas, not the 2D zoom bar/filter-from-viewport
     renderPlot3D();
+    // No 2D series in the 3D view — clear so visiblePlotPoints()/the minimap
+    // rendered-range rect don't keep reporting whatever the last 2D render left.
+    plotLastSeries = [];
+    updateMinimapRenderedRange();
+    updatePlotFilterInfo();
     return;
   }
   plotSvg.classList.remove("hidden");
@@ -12490,8 +12607,12 @@ function renderPlotChart() {
   if (plottable.length === 0 || plotConfig.xCol == null || plotConfig.yCols.length === 0) {
     plotSvg.innerHTML = '<text class="plot-empty-label" x="16" y="24">Select an X and at least one Y column to plot.</text>';
     plotLastRender = null;
+    plotLastSeries = null;
     plotHoverPoints = [];
+    plotLastSeries = [];
     updatePlotZoomIndicator();
+    updateMinimapRenderedRange();
+    updatePlotFilterInfo();
     return;
   }
 
@@ -12503,7 +12624,7 @@ function renderPlotChart() {
   const plotW = W - left - rightMargin, plotH = H - top - PLOT_MARGIN.bottom;
   plotSvg.setAttribute("viewBox", "0 0 " + W + " " + H);
 
-  if (plotW < 40 || plotH < 40) { plotSvg.innerHTML = ""; plotLastRender = null; plotHoverPoints = []; updatePlotZoomIndicator(); return; }
+  if (plotW < 40 || plotH < 40) { plotSvg.innerHTML = ""; plotLastRender = null; plotLastSeries = null; plotHoverPoints = []; updatePlotZoomIndicator(); updatePlotFilterInfo(); return; }
 
   const xType = findExtractColumn(plotConfig.xCol).type;
 
@@ -12547,8 +12668,12 @@ function renderPlotChart() {
   if (series.every(s => s.pts.length === 0)) {
     plotSvg.innerHTML = '<text class="plot-empty-label" x="16" y="24">No rows have numeric values for the selected columns.</text>';
     plotLastRender = null;
+    plotLastSeries = series;
     plotHoverPoints = [];
+    plotLastSeries = [];
     updatePlotZoomIndicator();
+    updateMinimapRenderedRange();
+    updatePlotFilterInfo();
     return;
   }
 
@@ -12786,7 +12911,20 @@ function renderPlotChart() {
     xDomainMin, xDomainMax, yDomainMin, yDomainMax,
     xHomeDomainMin, xHomeDomainMax, yHomeDomainMin, yHomeDomainMax,
   };
+  plotLastSeries = series;
   updatePlotZoomIndicator();
+
+  // Keep the minimap's background/full-range in sync with what's actually
+  // plotted (Plot view inherits entries the same way Table does — see
+  // renderExtractTable's own renderTimelineMinimap call) and refresh the
+  // "currently rendered" sub-rectangle to match the zoomed/visible points —
+  // covers every plotZoom-changing call site too, since they all re-render
+  // the chart. renderTimelineMinimap() does NOT call
+  // updateMinimapRenderedRange() itself (see its own comment), so both calls
+  // are needed here.
+  renderTimelineMinimap(getRootFileId(assertNode.id), extractRowsData.map(r => r.entry));
+  updateMinimapRenderedRange();
+  updatePlotFilterInfo();
 }
 
 /* ===================== 3D scatter ===================== */
@@ -13462,8 +13600,19 @@ function renderExtractTable(node) {
   });
 
   renderExtractVisibleRows();
+  updateTableFilterInfo();
 
-  if (extractView === "plot") { renderPlotControls(); renderPlotChart(); }
+  if (extractView === "plot") {
+    renderPlotControls(); renderPlotChart(); // renderPlotChart() does its own minimap sync (Plot branch)
+  } else {
+    // Table view: keep the minimap's background in sync with this node's
+    // own entries (not stale Log-view data) and the rendered-range rect in
+    // sync with what's actually scrolled into view right now.
+    // renderTimelineMinimap() does NOT call updateMinimapRenderedRange()
+    // itself (see its own comment), so both calls are needed here.
+    renderTimelineMinimap(getRootFileId(node.id), entries);
+    updateMinimapRenderedRange();
+  }
 }
 
 /* ---------- Extraction table: virtualized row rendering ----------
@@ -13547,7 +13696,17 @@ let extractScrollTicking = false;
 extractScroll.addEventListener("scroll", () => {
   if (extractScrollTicking) return;
   extractScrollTicking = true;
-  requestAnimationFrame(() => { renderExtractVisibleRows(); extractScrollTicking = false; });
+  requestAnimationFrame(() => {
+    renderExtractVisibleRows();
+    // Same rAF batching as the row repaint above — keeps the minimap's
+    // rendered-range rect following the Table view's scroll live (mirrors
+    // the tableBody/highlightBody scroll listeners elsewhere). No-op while
+    // Plot is the active tab (extractScroll is hidden then, but this can
+    // still fire from residual scroll events) since updateMinimapRenderedRange
+    // branches on fhActiveTab, not on which container just scrolled.
+    updateMinimapRenderedRange();
+    extractScrollTicking = false;
+  });
 });
 window.addEventListener("resize", () => renderExtractVisibleRows());
 
@@ -16089,6 +16248,53 @@ function updateMinimapRenderedRange() {
     if (!span) { rect.classList.add("hidden"); return; }
     rect.setAttribute("x", span.left.toFixed(1));
     rect.setAttribute("width", Math.max(2, span.right - span.left).toFixed(1));
+    rect.classList.remove("hidden");
+    return;
+  }
+
+  if (fhActiveTab === "table") {
+    // Table view: extractRowsData rows are a flat EXTRACT_ROW_HEIGHT each
+    // (no per-row offsets — see renderExtractVisibleRows), so this is the
+    // same start/end-index-from-scrollTop math minimapRenderedSpan uses for
+    // the flat-ROW_HEIGHT case, just against extractScroll/EXTRACT_ROW_HEIGHT
+    // and with the sticky #extractHead's own height subtracted first (the
+    // header occupies real scroll-flow space above row 0 there — see
+    // renderExtractVisibleRows' own comment).
+    if (extractRowsData.length === 0) { rect.classList.add("hidden"); return; }
+    const total = extractRowsData.length;
+    const viewportH = extractScroll.clientHeight || 400;
+    const headerH = extractHead.offsetHeight || 0;
+    const bodyScrollTop = Math.max(0, extractScroll.scrollTop - headerH);
+    const startIdx = Math.min(total - 1, Math.max(0, Math.floor(bodyScrollTop / EXTRACT_ROW_HEIGHT)));
+    const endIdx = Math.min(total - 1, Math.max(startIdx, Math.ceil((bodyScrollTop + viewportH) / EXTRACT_ROW_HEIGHT)));
+    const x1 = minimapBarSpan(extractRowsData[startIdx].entry.ts).left;
+    const x2 = minimapBarSpan(extractRowsData[endIdx].entry.ts).right;
+    rect.setAttribute("x", x1.toFixed(1));
+    rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
+    rect.classList.remove("hidden");
+    return;
+  }
+
+  if (fhActiveTab === "plot") {
+    // Plot view has no scroll position to speak of — "rendered" here means
+    // "currently plotted", i.e. visiblePlotPoints() (all finite points,
+    // restricted to plotZoom's x-domain when zoomed). Bounds come from each
+    // point's SOURCE ENTRY timestamp (extractRowsData[p.rowIndex].entry.ts),
+    // not the plotted x value itself — the X column plotted often isn't time
+    // at all (e.g. a numeric column on X), so minimapBarSpan needs actual
+    // ts values, same as every other branch here.
+    const pts = visiblePlotPoints();
+    if (pts.length === 0) { rect.classList.add("hidden"); return; }
+    let minTs = Infinity, maxTs = -Infinity;
+    for (const p of pts) {
+      const ts = extractRowsData[p.rowIndex].entry.ts;
+      if (ts < minTs) minTs = ts;
+      if (ts > maxTs) maxTs = ts;
+    }
+    const x1 = minimapBarSpan(minTs).left;
+    const x2 = minimapBarSpan(maxTs).right;
+    rect.setAttribute("x", x1.toFixed(1));
+    rect.setAttribute("width", Math.max(2, x2 - x1).toFixed(1));
     rect.classList.remove("hidden");
     return;
   }
@@ -20101,6 +20307,26 @@ function openFilterForEntryColumn(entry, column) {
   evaluateLiveMatch();
 }
 
+// "Extract" row-action (#viewBar) — one-click version of "Message" that
+// skips the filter popup entirely: builds the exact same auto-extraction
+// pattern from the current row's message column (numbers/times become
+// [*:int]/[*:float]/[*:time] wildcards, newlines collapsed the same way
+// the popup path needs them collapsed) and commits it straight to a new
+// text-filter node, same primitive commitFilter()'s submit uses. The
+// resulting node is a plain filterType:"text" node like any other, so it
+// stays editable afterward (F2/dblclick/context menu) with no special-
+// casing needed anywhere else.
+function extractMessageFilter(entry) {
+  if (!entry || !state.activeId) return;
+  const column = TEXT_FILTER_COLUMNS.find(c => c.key === "message");
+  const value = textColumnValue(entry, column.key);
+  if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
+  const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
+  createFilterNode(state.activeId, "text", pattern, false, [], false, ["message"], false, false);
+  revealFilteredView();
+  render();
+}
+
 el("#ctxFilterForColumn").addEventListener("click", ev => {
   ev.stopPropagation();
   const entry = ctxEntry;
@@ -20153,6 +20379,24 @@ function currentSelectionRowIds() {
 // the plot's currently-visible viewport, or the log views' own selection.
 // Distinct rows (by row index) with at least one marked cell in the
 // extraction table — mapped back to their underlying entries.
+// Fills #tableFilterInfo with the active time filter(s) (if any) and a row/
+// selection count — called at the end of renderExtractTable so it stays in
+// sync with whatever's currently tabulated. Left empty (not just blank text)
+// when there's nothing to say, so the span takes no visual space.
+function updateTableFilterInfo() {
+  const infoEl = el("#tableFilterInfo");
+  if (!infoEl) return;
+  const parts = [];
+  const timeFilters = activeTimeFilters();
+  if (timeFilters.length) {
+    parts.push(timeFilters.map(f => timeRangeFilterName(f.range)).join(" · "));
+  }
+  parts.push(extractRowsData.length + (extractRowsData.length === 1 ? " row" : " rows"));
+  const selected = markedRowEntries().length;
+  if (selected > 0) parts.push(selected + " selected");
+  infoEl.textContent = parts.join(" · ");
+}
+
 function markedRowEntries() {
   const s = state.tableSelection;
   if (!s) return [];
@@ -20180,6 +20424,36 @@ function timeRangeActionEntries() {
   if (fhActiveTab === "table") return markedRowEntries();
   if (fhActiveTab === "plot") return getPlotViewportEntries();
   return [...state.logMultiSelect].map(id => entryIndex[id]).filter(Boolean);
+}
+
+// "Filter after"/"Filter before" input: same per-view sources as Time range
+// (marked table rows, the plot's visible viewport, or the log multi-select),
+// but — unlike Time range — a single entry is a valid input too (it's the
+// pre-existing single-row behavior: that one entry's own ts becomes the
+// bound). With 2+ entries, After/Before use the earliest/latest ts among
+// them as the bound (see the filterAfter/filterBefore cases below), an
+// inclusive "everything from/until this selection" rather than requiring
+// an exact single reference point.
+function afterBeforeActionEntries() {
+  if (fhActiveTab === "table") return markedRowEntries();
+  if (fhActiveTab === "plot") return getPlotViewportEntries();
+  if (state.logMultiSelect.size >= 2) return [...state.logMultiSelect].map(id => entryIndex[id]).filter(Boolean);
+  const entry = currentRowActionEntry();
+  return entry ? [entry] : [];
+}
+
+// "Message"/"Extract" input: exactly one entry — extracting a pattern from
+// a message only makes sense for a single row. Table: enabled only when
+// exactly one row is marked (a multi-row mark is ambiguous, not "pick one").
+// Plot has no single-point reference (no hover/click tracking), so it never
+// resolves here — these two stay unavailable on Plot.
+function singleMessageActionEntry() {
+  // person-requested, 2026-09-08: doesn't read as a sensible action on
+  // Table/Plot even though Table could technically supply a single marked
+  // row — both buttons are hidden there anyway (updateViewBarRowActions).
+  if (fhActiveTab === "table" || fhActiveTab === "plot") return null;
+  if (state.logMultiSelect.size >= 2) return null;
+  return currentRowActionEntry();
 }
 
 // All person-created selection filters directly under a root file — the
@@ -20334,11 +20608,22 @@ const TOOLBAR_ROW_ACTIONS = [
 // Before points up (shows everything above), after points down (shows
 // everything below) — person-requested arrow directions matching what
 // each filter actually keeps.
+// Order (person-requested, 2026-09-08): Before/After/Time range first — the
+// three that stay visible in every view — so their position never shifts
+// depending on whether Message/Extract are visible (Context/Filtered only).
 const VIEWBAR_ROW_ACTIONS = [
-  { action: "filterAfter", label: "After", svg: '<path d="M8 13V3M8 13l-3-3M8 13l3-3"/>', strokeWidth: 1.4 },
   { action: "filterBefore", label: "Before", svg: '<path d="M8 3v10M8 3l-3 3M8 3l3 3"/>', strokeWidth: 1.4 },
-  { action: "filterForMessage", label: "Message", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/>', strokeWidth: 1.4 },
+  { action: "filterAfter", label: "After", svg: '<path d="M8 13V3M8 13l-3-3M8 13l3-3"/>', strokeWidth: 1.4 },
   { action: "timeRangeFromSelection", label: "Time range", svg: '<path d="M8 3v4M5 4l3 3 3-3M8 13v-4M5 12l3-3 3 3"/>', strokeWidth: 1.4 },
+  { action: "filterForMessage", label: "Message", svg: '<path d="M2.5 3.2h11v7.6h-6.2L4.5 13V10.8h-2z"/><path d="M6 6.6l-1.2 1 1.2 1M10 6.6l1.2 1-1.2 1"/>', strokeWidth: 1.4 },
+  // Same auto-extraction pattern as "Message" (see extractMessageFilter),
+  // but committed straight to a new filter node instead of opening the
+  // popup first — reuses ICON_TABLE's markup ("extraction table"), the
+  // one icon constant not already used in a toolbar.
+  { action: "extractMessage", label: "Extract", svg: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/>', strokeWidth: 1.4 },
+  // Separated from the row-scoped actions above (person-requested): "New"
+  // needs no selected row, just opens the plain filter popup (Ctrl+F).
+  { action: "newFilter", label: "New", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/>', strokeWidth: 1.4, separator: true },
 ];
 // shape: "circle" (default, Filter-Toolbar's own row-actions — expands into
 // a pill, person-requested) or "rect" (the duplicated copies inside the log
@@ -20352,7 +20637,11 @@ function buildRowActionsHtml(list, shape) {
     // .row-action-hit is the fixed-size circle/square (icon centered
     // inside it) — the actual mouseenter/mouseleave target (see the
     // listener below); .row-action-label follows it and is what grows/
-    // shrinks the button's own (now variable) width.
+    // shrinks the button's own (now variable) width. An entry flagged
+    // separator:true gets a thin divider rendered immediately before it
+    // (see .row-action-separator) — used to set "New" apart from the
+    // row-scoped filter actions preceding it.
+    (a.separator ? '<span class="row-action-separator"></span>' : '') +
     '<button type="button" class="toolbar-icon-btn row-action-btn' + shapeClass + '" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
       '<span class="row-action-hit"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg></span>' +
       '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
@@ -20449,6 +20738,22 @@ function updateRowActionButtons() {
   const markedRows = markedRowEntries().length;
   const timeRangeEnabled = onTable ? markedRows >= 2 : onPlot ? plot2dToolsAvailable : rangeEnabled;
   const selectEnabled = onTable ? markedRows >= 1 : onPlot ? plot2dToolsAvailable : addToSelectionEnabled;
+  // "Filter after/before" resolve the same per-view way as Time range/Select
+  // (see afterBeforeActionEntries), but a single entry is enough (unlike
+  // Time range's 2+). On Plot, gated on plot2dToolsAvailable same as the
+  // other two — the exact viewport count is re-checked at click time.
+  const afterBeforeEnabled = onPlot ? plot2dToolsAvailable : afterBeforeActionEntries().length >= 1;
+  // "Message"/"Extract" always need exactly one entry (see singleMessageActionEntry) — never available on Plot.
+  const messageActionEntry = singleMessageActionEntry();
+  const messageActionEnabled = messageActionEntry !== null;
+  // "Extract" additionally needs that entry's message to actually contain
+  // something extractable — same buildNumericExtractPattern() the button's
+  // own click handler (extractMessageFilter) already uses to build the
+  // pattern; a message with no numeric/time content would just create a
+  // literal-text filter node, which isn't what "Extract" is for (person-
+  // requested, 2026-09-08 — use "Message" for that case instead).
+  const extractActionEnabled = messageActionEnabled &&
+    buildNumericExtractPattern(textColumnValue(messageActionEntry, "message")) !== null;
   elAll('[data-row-action="bookmark"]').forEach(b => {
     b.disabled = !singleRowEnabled;
     b.classList.toggle("active", !!entry && state.bookmarks.has(entry.id));
@@ -20457,10 +20762,14 @@ function updateRowActionButtons() {
     b.disabled = !singleRowEnabled;
     b.classList.toggle("active", !!entry && state.notes.has(entry.id));
   });
-  elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !singleRowEnabled; });
-  elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !singleRowEnabled; });
-  elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !singleRowEnabled; });
+  elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
+  elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
+  elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !messageActionEnabled; });
+  elAll('[data-row-action="extractMessage"]').forEach(b => { b.disabled = !extractActionEnabled; });
   elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !timeRangeEnabled; });
+  // "New" needs no selected row at all — just an active filter tree to add
+  // to (same guard openFilterPopup itself applies).
+  elAll('[data-row-action="newFilter"]').forEach(b => { b.disabled = !state.activeId; });
   elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !selectEnabled; });
   // A button that just became disabled while the mouse happened to be
   // sitting over its circle (e.g. the selection changed via keyboard, not
@@ -20481,14 +20790,36 @@ function handleRowActionClick(action, anchorBtn) {
     case "note":
       if (entry && entryIndex[entry.id]) openNoteEditor(entry.id);
       break;
-    case "filterAfter":
-      if (entry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: entry.ts, to: null }); revealFilteredView(); render(); }
+    case "filterAfter": {
+      const entries = afterBeforeActionEntries();
+      if (!entries.length) { showCopyToast("Select or mark at least one entry to filter after."); break; }
+      if (state.activeId) {
+        createFilterNode(state.activeId, "timerange", { from: Math.min(...entries.map(e => e.ts)), to: null });
+        revealFilteredView(); render();
+      }
       break;
-    case "filterBefore":
-      if (entry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: null, to: entry.ts }); revealFilteredView(); render(); }
+    }
+    case "filterBefore": {
+      const entries = afterBeforeActionEntries();
+      if (!entries.length) { showCopyToast("Select or mark at least one entry to filter before."); break; }
+      if (state.activeId) {
+        createFilterNode(state.activeId, "timerange", { from: null, to: Math.max(...entries.map(e => e.ts)) });
+        revealFilteredView(); render();
+      }
       break;
-    case "filterForMessage":
-      if (entry) openFilterForEntryColumn(entry, TEXT_FILTER_COLUMNS.find(c => c.key === "message"));
+    }
+    case "filterForMessage": {
+      const msgEntry = singleMessageActionEntry();
+      if (msgEntry) openFilterForEntryColumn(msgEntry, TEXT_FILTER_COLUMNS.find(c => c.key === "message"));
+      break;
+    }
+    case "extractMessage": {
+      const msgEntry = singleMessageActionEntry();
+      if (msgEntry) extractMessageFilter(msgEntry);
+      break;
+    }
+    case "newFilter":
+      openFilterPopup();
       break;
     case "timeRangeFromSelection": {
       const tsList = timeRangeActionEntries().map(e => e.ts);
