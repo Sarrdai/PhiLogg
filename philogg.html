@@ -11973,17 +11973,18 @@ function zoomPlotAt(dataX, dataY, factor) {
 // latest bound across a 2+ selection (see afterBeforeActionEntries) — so
 // they stay visible and usable on Table and Plot, not just Filtered/Context.
 // "Message"/"Extract" still need exactly ONE reference entry (a message to
-// extract a pattern from) — Table can supply that from a single marked row,
-// but Plot has no single-point reference (no hover/click tracking), so
-// those two remain hidden there only.
+// extract a pattern from) — person-requested, 2026-09-08: even though Table
+// COULD supply that from a single marked row, it doesn't read as a sensible
+// action there, so both stay hidden on Table AND Plot, same as before this
+// session's After/Before work.
 // "Time range" on Plot additionally needs something actually plotted in 2D
 // to make sense at all (plot2dToolsAvailable, set by setPlot2dToolsVisible
 // below), same condition #plot2dToolsGroup's own zoom controls gate on.
 let plot2dToolsAvailable = false;
 function updateViewBarRowActions() {
-  const onPlot = fhActiveTab === "plot";
+  const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
   elAll('[data-row-action="filterForMessage"], [data-row-action="extractMessage"]')
-    .forEach(b => b.classList.toggle("hidden", onPlot));
+    .forEach(b => b.classList.toggle("hidden", onTableOrPlot));
   updateRowActionButtons();
 }
 
@@ -20447,11 +20448,10 @@ function afterBeforeActionEntries() {
 // Plot has no single-point reference (no hover/click tracking), so it never
 // resolves here — these two stay unavailable on Plot.
 function singleMessageActionEntry() {
-  if (fhActiveTab === "plot") return null;
-  if (fhActiveTab === "table") {
-    const rows = markedRowEntries();
-    return rows.length === 1 ? rows[0] : null;
-  }
+  // person-requested, 2026-09-08: doesn't read as a sensible action on
+  // Table/Plot even though Table could technically supply a single marked
+  // row — both buttons are hidden there anyway (updateViewBarRowActions).
+  if (fhActiveTab === "table" || fhActiveTab === "plot") return null;
   if (state.logMultiSelect.size >= 2) return null;
   return currentRowActionEntry();
 }
