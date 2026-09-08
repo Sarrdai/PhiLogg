@@ -95,7 +95,7 @@ sich beim Wechsel zu Table/Plot mehr in Zeile ④ ändert als bei v1.
    `Context | Filtered | Stacked` künftig
    `Context | Filtered | Table | Plot | Stacked`. Die beiden neuen Tabs
    sind nur aktivierbar, wenn das Pattern des aktiven Nodes
-   `[value:...]`-Platzhalter enthält — sonst sichtbar, aber deaktiviert
+   `[*:...]`-Platzhalter enthält — sonst sichtbar, aber deaktiviert
    (das macht dem Nutzer transparent, *dass* die Funktion existiert, statt
    sie hinter einem separaten "Extract"-Button zu verstecken).
 

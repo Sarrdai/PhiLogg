@@ -25,7 +25,7 @@ Scope-Cut gegenüber Schritt 4/5 dieses Plans.
    als bei Context/Filtered/Plot — das wird bewusst in Kauf genommen,
    siehe "Offene Fragen".
 3. **Table/Plot-Tabs immer sichtbar, nur deaktiviert wenn nicht
-   anwendbar** (kein Pattern mit `[value:...]`-Wildcards) — damit
+   anwendbar** (kein Pattern mit `[*:...]`-Wildcards) — damit
    springen die übrigen Tabs nicht, wenn Table/Plot verfügbar werden.
 4. **Stacked verschwindet aus dem Tab-Toggle, wird zur Settings-Option.**
    Ein neuer Schalter in Settings → Behavior bestimmt, ob Context und
@@ -249,7 +249,7 @@ Kurzfassung, die volle Herleitung steht in `docs/extraction-and-plotting.md`
 - Der separate `filterType === "extract"`-Knotentyp und der eigene
   "Extract"-Button im Filter-Popup (`#filterExtractBtn`) entfallen komplett.
   Es gibt nur noch "Add filter" — ein `"text"`-Knoten, dessen Pattern
-  `[value:...]`/`[*]`-Wildcards enthält, ist gleichzeitig ein normaler Filter
+  `[*:...]`/`[*]`-Wildcards enthält, ist gleichzeitig ein normaler Filter
   UND extraktionsfähig (`nodeHasExtractableWildcards`, jetzt auf
   `filterType === "text"` statt `"extract"` geprüft). Damit ist die
   Table/Plot-Tab-Freischaltung aus Schritt 3 dieses Plans nicht mehr an einen
