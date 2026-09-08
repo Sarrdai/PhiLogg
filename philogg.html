@@ -1032,12 +1032,23 @@
   .row-action-btn.expanded .row-action-label, .row-action-btn:focus-visible .row-action-label{
     opacity:1; transform:translateX(-50%) translateY(0);
   }
-  /* Library preset pills + their two static buttons (#libraryPresetBar) drive
-     the floating label off plain :hover instead of the JS setupHitExpandGroups
-     mechanism — the label floats (position:absolute) and shifts no siblings, so
-     the flicker-avoidance that motivated the JS path doesn't apply here, and a
-     CSS :hover survives the container's dynamic re-render without re-wiring. */
-  #libraryPresetBar .row-action-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
+  /* Library preset pills (#libraryPresetBar) + the management buttons
+     (#libraryManageBar) drive the floating label off plain :hover instead of
+     the JS setupHitExpandGroups mechanism — the label floats (position:absolute)
+     and shifts no siblings, so the flicker-avoidance that motivated the JS path
+     doesn't apply here, and a CSS :hover survives the container's dynamic
+     re-render without re-wiring. */
+  #libraryPresetBar .row-action-btn:hover:not(:disabled) .row-action-label,
+  #libraryManageBar .row-action-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
+  /* Right-aligned management group (Add to Library / Library). */
+  #libraryManageBar{margin-left:auto;}
+  /* "Add to Library" reads as a placeholder slot for the next pinned preset —
+     a dashed outline around the circle (person-requested). */
+  .lib-add-placeholder{border:1px dashed var(--border);}
+  .lib-add-placeholder:hover:not(:disabled){border-color:var(--accent-strong);}
+  /* The "Library Filter" group and its leading "|" collapse out entirely when
+     nothing is pinned (id+[hidden] beats the .row-actions flex display). */
+  #libraryPresetBar[hidden], #libraryPresetSep[hidden]{display:none;}
   /* Same floating-label mechanic as .row-action-btn above, but for the log
      views' own toolbars' plain buttons (Context/Filtered/Table/Plot — see
      makeToolbarBtnExpandable near the end of the script). `:has(.tb-hit)`
@@ -2195,16 +2206,20 @@
   .filter-library-row-main{flex:1 1 auto; min-width:0;}
   .filter-library-row-name{font-size:12px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .filter-library-row-meta{font-size:10.5px; color:var(--text-tertiary); margin-top:2px;}
+  /* All row controls share a 28px height so the row's elements line up cleanly
+     (the row is already align-items:center — the fix is equal intrinsic
+     heights). Scoped Apply button height override lives with the row rules. */
   .filter-library-row-del{
     background:none; border:none; color:var(--text-tertiary); cursor:pointer;
-    display:flex; padding:4px; border-radius:4px; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border-radius:6px; flex:0 0 auto;
   }
   .filter-library-row-del:hover{color:var(--level-error); background:var(--level-error-soft);}
+  #filterLibraryList .btn-mini{height:28px; padding:0 14px; display:inline-flex; align-items:center; flex:0 0 auto;}
   /* Filter-library row controls (person-requested): a leading icon button that
      opens an inline icon grid, and a "Show in Filter Toolbar" pin toggle. The
      icon shown here is the same one the pinned toolbar pill uses. */
   .filter-library-row-icon{
-    flex:0 0 auto; width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+    flex:0 0 auto; width:28px; height:28px; display:flex; align-items:center; justify-content:center;
     border:1px solid var(--border); border-radius:7px; background:transparent; color:var(--text-secondary); cursor:pointer;
   }
   .filter-library-row-icon:hover{color:var(--accent-strong); background:var(--accent-soft);}
@@ -2219,10 +2234,9 @@
   .filter-library-icon-grid button:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .filter-library-icon-grid button.active{color:var(--accent-strong); border-color:var(--accent-strong); background:var(--accent-soft);}
   .filter-library-pin{
-    flex:0 0 auto; display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--text-tertiary);
-    cursor:pointer; user-select:none; white-space:nowrap;
+    flex:0 0 auto; height:28px; display:flex; align-items:center; gap:7px; font-size:10.5px; color:var(--text-tertiary);
+    user-select:none; white-space:nowrap;
   }
-  .filter-library-pin input{margin:0; cursor:pointer;}
   .filter-library-pin.active{color:var(--accent-strong);}
 
   /* ---------- Settings page — a single wide, scrollable, sectioned dialog
@@ -2501,8 +2515,13 @@
     background:transparent; border:none; color:var(--text-tertiary); font-size:11px; font-weight:600;
     padding:0 11px; border-radius:5px; cursor:pointer; transition:background .12s, color .12s;
   }
-  .view-tab:hover{color:var(--text-secondary);}
+  .view-tab:hover:not(:disabled){color:var(--text-secondary);}
   .view-tab.active{background:var(--bg-elevated-2); color:var(--accent-strong);}
+  /* Table/Plot stay in the tab row even when the active node has nothing to
+     tabulate/plot — rendered disabled (person-requested) so the filter buttons
+     to their right never jump sideways as tabs appear/disappear. */
+  .view-tab:disabled{opacity:.35; cursor:not-allowed;}
+  .view-tab:disabled:hover{color:var(--text-tertiary);}
 
   /* ---------- Plot view ---------- */
   #plotWrap{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
@@ -3287,19 +3306,27 @@
         <div class="view-tabs" id="fhTabs"></div>
         <div id="levelBar"></div>
         <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
+        <!-- Group 1: standard filter-creation actions (Before/After/Time
+             range/Message/Extract). -->
         <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
-        <!-- Filter-library toolbar section (person-requested): separated from
-             the filter-creation actions above by the same "|" divider. Holds,
-             left-to-right, the pinned library presets (rendered dynamically by
-             renderLibraryToolbarPresets before #btnAddToLibrary), then the
-             "+ Add to Library" button (saves the active filter) and the
-             "Library" button (opens the manage dialog). Same circle-pill
+        <!-- Group 2: pinned library presets (person-requested). Rendered
+             dynamically by renderLibraryToolbarPresets; the group and its
+             leading "|" divider (#libraryPresetSep) are hidden when no preset
+             is pinned, so the bar never shows an empty "| |". Same circle-pill
              .row-action-btn styling as the filter buttons; the floating label
              is driven purely by CSS :hover here (the label floats and shifts
              nothing, so the JS setupHitExpandGroups mechanism isn't needed). -->
+        <span class="row-action-separator" id="libraryPresetSep"></span>
+        <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
+        <!-- Group 3: "New" on its own (person-requested), always divided from
+             whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
-        <div class="toolbar-group row-actions" id="libraryPresetBar">
-          <button type="button" id="btnAddToLibrary" class="toolbar-icon-btn row-action-btn" title="Add active filter to library">
+        <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
+        <!-- Library management, right-aligned (margin-left:auto on the group):
+             "Add to Library" (saves the active filter; dashed placeholder
+             outline) then "Library" (opens the manage dialog). -->
+        <div class="toolbar-group row-actions" id="libraryManageBar">
+          <button type="button" id="btnAddToLibrary" class="toolbar-icon-btn row-action-btn lib-add-placeholder" title="Add active filter to library">
             <span class="row-action-hit"></span><span class="row-action-label">Add to Library</span>
           </button>
           <button type="button" id="btnOpenLibrary" class="toolbar-icon-btn row-action-btn" title="Open filter library">
@@ -4575,6 +4602,14 @@ const ICON_TIME_RANGE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="n
 // fall through nodeIconHTML's switch into ICON_CLOCK despite not being a
 // time filter; this gives it its own identity like every other filter type.
 const ICON_CHECKLIST = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l1.3 1.3L7 3M3 9.5l1.3 1.3L7 7M3 14.5l1.3-1.3L4.3 12M9 4.5h4M9 9.5h4M9 14.5h4"/></svg>';
+// Single checkmark — used for the selection-filter (idset) tree node icon
+// (person-requested: a plain "selected" tick instead of the multi-line list).
+const ICON_CHECK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.3 3.5L13 4.5"/></svg>';
+// Floppy-disk "save" — the Filter-Toolbar's "Add to Library" button (a disk,
+// distinct from ICON_SAVE's download-to-tray arrow used by "Save filter…").
+const ICON_DISK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5 2.5v3.5h5V2.5"/><rect x="5" y="9" width="6" height="4.5"/></svg>';
+// Open book — the Filter-Toolbar's "Library" button.
+const ICON_BOOK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.3 5.3 3 3.5 3H2v9h1.5c1.8 0 3.3.3 4.5 1.2"/><path d="M8 4.2C9.2 3.3 10.7 3 12.5 3H14v9h-1.5c-1.8 0-3.3.3-4.5 1.2z"/><path d="M8 4.2v9"/></svg>';
 const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2.2v4.3c0 2 1.8 3 3.6 3M12 2.2v4.3c0 2-1.8 3-3.6 3v3.3"/><circle cx="4" cy="2.2" r="1.2"/><circle cx="12" cy="2.2" r="1.2"/><circle cx="8.4" cy="13.8" r="1.2"/></svg>';
 const ICON_COMBINE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6.2" cy="8" r="4.3"/><circle cx="9.8" cy="8" r="4.3"/></svg>';
 const ICON_LINK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6.3 9.7 9.7 6.3"/><path d="M6.7 6.9 4.9 8.7a2 2 0 0 0 2.8 2.8l1.8-1.8"/><path d="M9.3 9.1l1.8-1.8a2 2 0 0 0-2.8-2.8L6.5 6.3"/></svg>';
@@ -9343,19 +9378,21 @@ function currentViewTabsList(extractCapable) {
         { tab: "filter", label: "Filtered", title: "Narrowed by the active filter tree node" },
       ];
   const tabs = [...logTabs];
-  if (extractCapable) {
-    tabs.push(
-      { tab: "table", label: "Table", title: "Extraction table for this node's pattern" },
-      { tab: "plot", label: "Plot", title: "Plot extracted values from this node's pattern" },
-    );
-  }
+  // Table/Plot are ALWAYS listed now (person-requested) — but flagged
+  // `disabled` when the active node has no extractable wildcards, so they stay
+  // visibly in place instead of being omitted (which shifted the filter
+  // buttons to their right sideways every time a node gained/lost wildcards).
+  tabs.push(
+    { tab: "table", label: "Table", title: extractCapable ? "Extraction table for this node's pattern" : "No extractable [*] pattern on this filter — nothing to tabulate", disabled: !extractCapable },
+    { tab: "plot", label: "Plot", title: extractCapable ? "Plot extracted values from this node's pattern" : "No extractable [*] pattern on this filter — nothing to plot", disabled: !extractCapable },
+  );
   return tabs;
 }
 function renderViewTabs(extractCapable) {
   const tabs = currentViewTabsList(extractCapable);
   const activeVal = fhLayout === "stacked" && fhActiveTab !== "table" && fhActiveTab !== "plot" ? "stacked" : fhActiveTab;
   fhTabs.innerHTML = tabs.map(t =>
-    `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}">${t.label}</button>`
+    `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}"${t.disabled ? " disabled" : ""}>${t.label}</button>`
   ).join("");
 }
 // Ctrl+1-4: jump to the Nth tab currently shown in the View Selector (1-based)
@@ -9368,7 +9405,7 @@ function jumpToViewTab(n) {
   const extractCapable = nodeIsExtractionView(state.nodes[state.activeId]);
   const tabs = currentViewTabsList(extractCapable);
   const t = tabs[n - 1];
-  if (!t) return;
+  if (!t || t.disabled) return; // a disabled Table/Plot slot is a silent no-op, same as before it was omitted
   clearSidebarForcedPeek();
   applyFhView(t.tab);
   state.entriesView = t.tab === "highlight" ? "highlight" : "filter";
@@ -10199,7 +10236,7 @@ function nodeIconHTML(node) {
     : node.filterType === "level" ? ICON_LEVEL
     : node.filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
     : node.filterType === "notes" ? ICON_NOTE
-    : node.filterType === "idset" ? ICON_CHECKLIST
+    : node.filterType === "idset" ? ICON_CHECK
     : timeFilterIcon(node);
 }
 
@@ -20770,15 +20807,20 @@ const VIEWBAR_ROW_ACTIONS = [
   { action: "filterBefore", label: "Before", svg: '<path d="M8 3v10M8 3l-3 3M8 3l3 3"/>', strokeWidth: 1.4 },
   { action: "filterAfter", label: "After", svg: '<path d="M8 13V3M8 13l-3-3M8 13l3-3"/>', strokeWidth: 1.4 },
   { action: "timeRangeFromSelection", label: "Time range", svg: '<path d="M8 3v4M5 4l3 3 3-3M8 13v-4M5 12l3-3 3 3"/>', strokeWidth: 1.4 },
-  { action: "filterForMessage", label: "Message", svg: '<path d="M2.5 3.2h11v7.6h-6.2L4.5 13V10.8h-2z"/><path d="M6 6.6l-1.2 1 1.2 1M10 6.6l1.2 1-1.2 1"/>', strokeWidth: 1.4 },
+  // "[*]" — brackets around a centered asterisk, the extraction-wildcard
+  // token (person-requested), replacing the old speech-bubble.
+  { action: "filterForMessage", label: "Message", svg: '<path d="M6.5 3H4.3v10h2.2"/><path d="M9.5 3h2.2v10H9.5"/><path d="M8 6v4M6.3 7l3.4 2M9.7 7l-3.4 2"/>', strokeWidth: 1.3 },
   // Same auto-extraction pattern as "Message" (see extractMessageFilter),
   // but committed straight to a new filter node instead of opening the
   // popup first — reuses ICON_TABLE's markup ("extraction table"), the
   // one icon constant not already used in a toolbar.
   { action: "extractMessage", label: "Extract", svg: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/>', strokeWidth: 1.4 },
-  // Separated from the row-scoped actions above (person-requested): "New"
-  // needs no selected row, just opens the plain filter popup (Ctrl+F).
-  { action: "newFilter", label: "New", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/>', strokeWidth: 1.4, separator: true },
+];
+// "New" is its own group in #viewBar (person-requested: Standard filters |
+// Library presets | New) — a plain "+", opens the filter popup (Ctrl+F). It
+// needs no selected row, only state.activeId (see updateRowActionButtons).
+const VIEWBAR_NEW_ROW_ACTION = [
+  { action: "newFilter", label: "New", svg: '<path d="M8 3.5v9M3.5 8h9"/>', strokeWidth: 1.8 },
 ];
 // shape: "circle" (default, Filter-Toolbar's own row-actions — expands into
 // a pill, person-requested) or "rect" (the duplicated copies inside the log
@@ -20805,6 +20847,7 @@ function buildRowActionsHtml(list, shape) {
 }
 const TOOLBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS, "rect");
 const VIEWBAR_ROW_ACTIONS_HTML = buildRowActionsHtml(VIEWBAR_ROW_ACTIONS, "circle");
+const VIEWBAR_NEW_ROW_ACTION_HTML = buildRowActionsHtml(VIEWBAR_NEW_ROW_ACTION, "circle");
 // "Select" (Add to selection) on its own — the Table/Plot toolbars' Actions
 // groups carry only this one of the three TOOLBAR_ROW_ACTIONS (Bookmark/Note
 // key off a log-row selection those views don't have). Same rect shape and
@@ -20813,6 +20856,7 @@ const SELECT_ROW_ACTION_HTML = buildRowActionsHtml(TOOLBAR_ROW_ACTIONS.filter(a 
 elAll('[data-row-actions="toolbar-actions"]').forEach(container => { container.innerHTML = TOOLBAR_ROW_ACTIONS_HTML; });
 elAll('[data-row-actions="select-action"]').forEach(container => { container.innerHTML = SELECT_ROW_ACTION_HTML; });
 elAll('[data-row-actions="viewbar"]').forEach(container => { container.innerHTML = VIEWBAR_ROW_ACTIONS_HTML; });
+elAll('[data-row-actions="viewbar-new"]').forEach(container => { container.innerHTML = VIEWBAR_NEW_ROW_ACTION_HTML; });
 // Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
 // circle specifically, NOT a plain CSS :hover on the button — the button's
 // own box changes width once expanded, pushing later siblings' hit-zones
@@ -22496,11 +22540,18 @@ async function renderFilterLibraryDialog() {
       '<div class="filter-library-row-name">' + escapeHtml(rec.name) + '</div>' +
       '<div class="filter-library-row-meta">' + escapeHtml(new Date(rec.savedAt).toLocaleString()) + '</div>';
     row.appendChild(main);
-    // "Show in Filter Toolbar" pin toggle — persists rec.showInToolbar and
-    // refreshes the toolbar pill row via updateFilterLibraryEntry.
-    const pin = document.createElement("label");
+    // "Show in Filter Toolbar" pin toggle — the reusable pill switch
+    // (.settings-switch) instead of a plain checkbox (person-requested).
+    // Persists rec.showInToolbar and refreshes the toolbar pill row via
+    // updateFilterLibraryEntry. (A <div>, not a <label>, so the inner
+    // .settings-switch <label> isn't nested inside another label.)
+    const pin = document.createElement("div");
     pin.className = "filter-library-pin" + (rec.showInToolbar ? " active" : "");
     pin.title = "Show this preset as a pill in the Filter-Toolbar";
+    const pinLabelText = document.createElement("span");
+    pinLabelText.textContent = "Toolbar";
+    const pinSwitch = document.createElement("label");
+    pinSwitch.className = "settings-switch settings-switch-sm";
     const pinCb = document.createElement("input");
     pinCb.type = "checkbox";
     pinCb.checked = !!rec.showInToolbar;
@@ -22508,8 +22559,12 @@ async function renderFilterLibraryDialog() {
     pinCb.addEventListener("change", () => {
       updateFilterLibraryEntry(rec.key, { showInToolbar: pinCb.checked }).then(renderFilterLibraryDialog);
     });
-    pin.appendChild(pinCb);
-    pin.appendChild(document.createTextNode("Toolbar"));
+    const pinTrack = document.createElement("span");
+    pinTrack.className = "settings-switch-track";
+    pinSwitch.appendChild(pinCb);
+    pinSwitch.appendChild(pinTrack);
+    pin.appendChild(pinLabelText);
+    pin.appendChild(pinSwitch);
     row.appendChild(pin);
     const applyBtn = document.createElement("button");
     applyBtn.type = "button";
@@ -22560,18 +22615,20 @@ async function openFilterLibraryDialog(nodeId) {
 filterLibraryDialog.addEventListener("click", ev => { if (ev.target === filterLibraryDialog) closeFilterLibraryDialog(); });
 el("#filterLibraryDialogClose").addEventListener("click", closeFilterLibraryDialog);
 
-/* ---- Filter-library toolbar section (#libraryPresetBar) ----
+/* ---- Filter-library toolbar section ----
    The pinned presets render as circle→pill .row-action-btn buttons matching
-   the filter-creation buttons; clicking one applies that preset onto the
-   currently active node (state.activeId), the same target and mechanism as
-   the manage dialog's "Apply". The two static buttons (+ Add / Library) are
-   wired once here; the pills are rebuilt on every library change by
-   renderLibraryToolbarPresets and inserted before the + button. */
+   the filter-creation buttons, in their own group (#libraryPresetBar, "Library
+   Filter"); clicking one applies that preset onto the currently active node
+   (state.activeId), the same target and mechanism as the manage dialog's
+   "Apply". The two management buttons (Add / Library) live in a separate,
+   right-aligned group (#libraryManageBar) and are wired once here; the pills
+   are rebuilt on every library change by renderLibraryToolbarPresets. */
 const libraryPresetBar = el("#libraryPresetBar");
+const libraryPresetSep = el("#libraryPresetSep");
 const btnAddToLibrary = el("#btnAddToLibrary");
 const btnOpenLibrary = el("#btnOpenLibrary");
-btnAddToLibrary.querySelector(".row-action-hit").innerHTML = ICON_PLUS_SMALL;
-btnOpenLibrary.querySelector(".row-action-hit").innerHTML = ICON_CHECKLIST;
+btnAddToLibrary.querySelector(".row-action-hit").innerHTML = ICON_DISK;
+btnOpenLibrary.querySelector(".row-action-hit").innerHTML = ICON_BOOK;
 btnAddToLibrary.addEventListener("click", () => {
   const node = state.activeId ? state.nodes[state.activeId] : null;
   if (!node || node.type !== "filter") return; // guarded, and disabled below
@@ -22603,7 +22660,12 @@ async function renderLibraryToolbarPresets() {
     });
     frag.appendChild(btn);
   });
-  libraryPresetBar.insertBefore(frag, btnAddToLibrary);
+  libraryPresetBar.appendChild(frag);
+  // Hide the whole "Library Filter" group and its leading "|" divider when
+  // nothing is pinned, so the bar never shows an empty "| |".
+  const pinnedCount = records.filter(r => r.showInToolbar).length;
+  libraryPresetBar.hidden = pinnedCount === 0;
+  if (libraryPresetSep) libraryPresetSep.hidden = pinnedCount === 0;
 }
 
 /* ===================== Settings page =====================

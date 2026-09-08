@@ -621,13 +621,16 @@ await withApp(async (w, d, T) => {
   // Unified toolbar (docs/ui-implementation-plan.md): "Stacked" is no longer
   // a tab alongside Context/Filtered — it's a Settings-only layout choice
   // (precisiation 4), so in the default "Getrennt" layout the tab group is
-  // Context|Filtered(|Table|Plot) with no "stacked" entry at all; Table/Plot
-  // are left out entirely here (person-requested, this session — this node
-  // has no wildcards to tabulate/plot, see Group 158a for the full
-  // presence/absence coverage).
-  const tabs = [...d.querySelectorAll("#fhTabs .view-tab")].map(b => b.dataset.fhTab);
-  assert(tabs.includes("highlight") && tabs.includes("filter") && !tabs.includes("table") && !tabs.includes("plot") && !tabs.includes("stacked"),
-    "view toggle has Context/Filtered in the default 'Getrennt' layout, no Table/Plot (no wildcards) and no separate Stacked tab");
+  // Context|Filtered|Table|Plot with no "stacked" entry at all; Table/Plot are
+  // present but disabled here (person-requested — this node has no wildcards to
+  // tabulate/plot, so they stay in place rather than shifting the row; see
+  // Group 158a for the full enabled/disabled coverage).
+  const tabEls = [...d.querySelectorAll("#fhTabs .view-tab")];
+  const tabs = tabEls.map(b => b.dataset.fhTab);
+  assert(tabs.includes("highlight") && tabs.includes("filter") && tabs.includes("table") && tabs.includes("plot") && !tabs.includes("stacked"),
+    "view toggle has Context/Filtered/Table/Plot in the default 'Getrennt' layout, no separate Stacked tab");
+  assert(tabEls.find(b => b.dataset.fhTab === "table").disabled && tabEls.find(b => b.dataset.fhTab === "plot").disabled,
+    "Table/Plot are disabled (this node has no wildcards)");
   w.applyFhView("stacked");
   assert(d.querySelector("#fhSplit").classList.contains("fh-layout-stacked"), "Stacked applies the stacked layout class");
   assert(d.querySelectorAll(".fh-panel-badge").length > 0 && [...d.querySelectorAll(".fh-panel-badge")].every(b => b.offsetParent !== null || true),
@@ -17691,20 +17694,21 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(158);
 await withApp(async (w, d, T) => {
-  section("158a. Table/Plot tabs: HIDDEN entirely without wildcards, shown once the node has them");
+  section("158a. Table/Plot tabs: always present, DISABLED without wildcards, enabled once the node has them");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const plain = w.createFilterNode(f.id, "text", "message");
   T.state.activeId = plain.id;
   w.render();
 
-  // Person-requested (this session): an unreachable Table/Plot tab is left
-  // out of #fhTabs entirely now, not rendered-but-disabled (superseded
-  // "docs/ui-implementation-plan.md precisiation 3" decision — see
-  // renderViewTabs's own comment).
-  let tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
-  assert(!tabs.find(b => b.dataset.fhTab === "table") && !tabs.find(b => b.dataset.fhTab === "plot"),
-    "Table/Plot tabs don't exist at all for a plain text filter node (no [*:...]/[*] wildcards to tabulate/plot)");
+  // Person-requested (this session): Table/Plot stay in #fhTabs but render
+  // DISABLED when the active node has nothing to tabulate/plot — so the filter
+  // buttons to their right don't jump sideways as tabs appear/disappear
+  // (reverses the earlier "omit entirely" decision — see renderViewTabs).
+  let tableTab = () => [...d.querySelectorAll("#fhTabs .view-tab")].find(b => b.dataset.fhTab === "table");
+  let plotTab = () => [...d.querySelectorAll("#fhTabs .view-tab")].find(b => b.dataset.fhTab === "plot");
+  assert(tableTab() && plotTab(), "Table/Plot tabs are present in the DOM even for a plain text filter node");
+  assert(tableTab().disabled && plotTab().disabled, "...but rendered disabled (no [*:...]/[*] wildcards to tabulate/plot)");
   assert(w.nodeHasExtractableWildcards(plain) === false, "sanity: nodeHasExtractableWildcards agrees");
 
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
@@ -17717,21 +17721,19 @@ await withApp(async (w, d, T) => {
   // below, not about the activation-view default itself (see Group 161).
   w.applyFhView("table");
   assert(T.fhActiveTab === "table", "sanity: the Table tab is showing (explicit switch)");
-  tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
-  assert(tabs.find(b => b.dataset.fhTab === "table"), "Table tab now exists once the active node has wildcards");
-  assert(tabs.find(b => b.dataset.fhTab === "plot"), "Plot tab exists too");
+  assert(tableTab() && !tableTab().disabled, "Table tab is now enabled once the active node has wildcards");
+  assert(plotTab() && !plotTab().disabled, "Plot tab is enabled too");
   assert(d.querySelector("#extractHead th"), "the extraction table itself actually rendered/populated");
 
   // A bare "extract" pattern with no wildcards at all compiles to nothing
-  // (compileExtractPattern returns null with zero columns) — Table/Plot are
-  // absent again and the node falls back to the Filtered tab instead of
+  // (compileExtractPattern returns null with zero columns) — Table/Plot go
+  // disabled again and the node falls back to the Filtered tab instead of
   // landing on a dead Table tab.
   const emptyExtract = w.createFilterNode(f.id, "text", "just plain text, no wildcards");
   T.state.activeId = emptyExtract.id;
   w.render();
   assert(T.fhActiveTab === "filter", "an extract node with no wildcards does NOT auto-jump to Table (nothing to show there)");
-  tabs = [...d.querySelectorAll("#fhTabs .view-tab")];
-  assert(!tabs.find(b => b.dataset.fhTab === "table"), "Table tab is gone again for a wildcard-less extract pattern");
+  assert(tableTab() && tableTab().disabled, "Table tab is present but disabled again for a wildcard-less extract pattern");
 });
 
 await withApp(async (w, d, T) => {
@@ -19589,14 +19591,17 @@ await withApp(async (w, d, T) => {
   // Actions group instead — see 176e below for their new home) — only the
   // four that genuinely create a filter node stay in the Filter-Toolbar.
   const actions = [...d.querySelector('[data-row-actions="viewbar"]').querySelectorAll("[data-row-action]")];
-  // "Extract" (next to "Message") and "New" (at the end, behind a
-  // separator) joined this group this session (Paket A) — see Group 186.
+  // "Extract" (next to "Message") joined this group in Paket A (see Group 186).
   // Reordered (person-requested, 2026-09-08 — see Group 187/188): Before/
   // After/Time range first, so they never shift position depending on
-  // whether Message/Extract are visible (Context/Filtered only).
-  const expectedActions = ["filterBefore", "filterAfter", "timeRangeFromSelection", "filterForMessage", "extractMessage", "newFilter"];
+  // whether Message/Extract are visible (Context/Filtered only). "New" was
+  // then broken out into its own group (#viewbarNew, see Group 194), so it's
+  // no longer part of this standard-filters group.
+  const expectedActions = ["filterBefore", "filterAfter", "timeRangeFromSelection", "filterForMessage", "extractMessage"];
   assert(actions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
-    "the Filter-Toolbar's row-actions group has all six filter-creating/opening actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
+    "the Filter-Toolbar's standard row-actions group has the five filter-creating actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
+  const newBtnRef = d.querySelector('#viewbarNew [data-row-action="newFilter"]');
+  assert(newBtnRef, "New lives in its own #viewbarNew group now, not the standard row-actions group");
   assert(d.querySelector('[data-row-actions="viewbar"] [data-row-action="bookmark"]') === null &&
     d.querySelector('[data-row-actions="viewbar"] [data-row-action="note"]') === null &&
     d.querySelector('[data-row-actions="viewbar"] [data-row-action="addToSelection"]') === null,
@@ -19619,13 +19624,13 @@ await withApp(async (w, d, T) => {
   const byAction = action => actions.find(b => b.dataset.rowAction === action);
 
   // --- No selection: single-row actions disabled, time-range disabled ---
-  // "New" (newFilter) is excluded here — it only needs an active filter
-  // tree (state.activeId, already set above), not a selected row, so it's
-  // enabled from the start (see Group 186b).
-  expectedActions.filter(a => a !== "newFilter").forEach(action => {
+  expectedActions.forEach(action => {
     assert(byAction(action).disabled === true, action + " starts disabled with no selection");
   });
-  assert(byAction("newFilter").disabled === false, "newFilter needs no row selection, only an active filter tree");
+  // "New" only needs an active filter tree (state.activeId, already set above),
+  // not a selected row, so it's enabled from the start (see Group 186b). It's
+  // in its own #viewbarNew group now.
+  assert(newBtnRef.disabled === false, "newFilter needs no row selection, only an active filter tree");
 
   // --- Single row selected: single-row actions enabled, time-range still disabled ---
   w.selectEntry(f.entries[2].id);
@@ -21101,13 +21106,14 @@ await withApp(async (w, d, T) => {
    GROUP 193 — Filter library: Toolbar presets (pin + icon)
    Origin: this session, person-requested. The filter library gained a
    Filter-Toolbar section: a preset flagged showInToolbar renders as a
-   circle-pill .row-action-btn in #libraryPresetBar (left of the "+ Add to
-   Library" button), clicking it applies the preset onto the active node.
-   Each preset can be assigned an icon (LIBRARY_ICON_SET) shown in its pill,
-   falling back to ICON_FILTER when unset. Pin + icon are library-RECORD
-   fields (showInToolbar/icon), not filter-node fields, so no persistence
-   carrier threading is involved. The manage dialog gained the pin toggle and
-   an inline icon grid per row.
+   circle-pill .row-action-btn in the "Library Filter" group (#libraryPresetBar),
+   clicking it applies the preset onto the active node. The management buttons
+   (Add to Library / Library) live in a separate right-aligned group
+   (#libraryManageBar). Each preset can be assigned an icon (LIBRARY_ICON_SET)
+   shown in its pill, falling back to ICON_FILTER when unset. Pin + icon are
+   library-RECORD fields (showInToolbar/icon), not filter-node fields, so no
+   persistence carrier threading is involved. The manage dialog gained the pin
+   toggle (a .settings-switch pill) and an inline icon grid per row.
    ============================================================ */
 group(193);
 await withApp(async (w, d, T) => {
@@ -21144,9 +21150,14 @@ await withApp(async (w, d, T) => {
   assert(pill.querySelector(".row-action-label").textContent === "toolbar preset", "the pill carries the preset name as its label");
   // No icon assigned yet → ICON_FILTER fallback (funnel path, not a circle).
   assert(pill.querySelector(".row-action-hit").innerHTML.includes("M2 3h12"), "with no icon assigned the pill shows the ICON_FILTER fallback");
-  // The pill sits to the LEFT of the "+ Add to Library" button.
-  const kids = [...d.querySelector("#libraryPresetBar").children];
-  assert(kids.indexOf(pill) < kids.indexOf(d.querySelector("#btnAddToLibrary")), "pinned pills are inserted left of the '+ Add to Library' button");
+  // Pills live in the "Library Filter" group (#libraryPresetBar); the
+  // management buttons live in a separate right-aligned group (#libraryManageBar).
+  assert(d.querySelector("#libraryManageBar").contains(d.querySelector("#btnAddToLibrary")) &&
+    d.querySelector("#libraryManageBar").contains(d.querySelector("#btnOpenLibrary")),
+    "Add to Library + Library buttons live in #libraryManageBar, not in the pills group");
+  assert(!d.querySelector("#libraryPresetBar").contains(d.querySelector("#btnAddToLibrary")),
+    "the pills group holds only pills, not the management buttons");
+  assert(!d.querySelector("#libraryPresetBar").hidden, "the Library Filter group is shown while a preset is pinned");
 
   // Close dialog, switch active node to a fresh file, click the pill → the
   // preset applies onto the active node (same mechanism as dialog "Apply").
@@ -21202,7 +21213,96 @@ await withApp(async (w, d, T) => {
   await w.updateFilterLibraryEntry(key, { showInToolbar: false });
   await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 0);
   assert(d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 0, "unpinning removes the toolbar pill");
+  assert(d.querySelector("#libraryPresetBar").hidden && d.querySelector("#libraryPresetSep").hidden,
+    "the Library Filter group and its leading separator collapse out when nothing is pinned");
 }, { indexedDB: new IDBFactory() });
+
+/* ============================================================
+   GROUP 194 — Filter-Toolbar refinements (this session, person-requested)
+   Three-group layout (Standard filters | Library presets | New) with the
+   New button broken out into its own #viewbarNew group and a pill "+" icon;
+   the Message button's icon switched to "[*]"; the library management buttons
+   moved to a right-aligned #libraryManageBar with a floppy-disk "Add to
+   Library" (dashed placeholder outline) and a book "Library". Selection-filter
+   (idset) tree nodes now show a single check (ICON_CHECK) instead of the
+   multi-line checklist. Ctrl+1-4 still skips a disabled Table/Plot slot.
+   ============================================================ */
+group(194);
+await withApp(async (w, d, T) => {
+  section("194a. New is its own #viewbarNew group with a plain '+' icon; Message shows '[*]'");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const node = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = node.id;
+  w.render();
+
+  const newBtn = d.querySelector('#viewbarNew [data-row-action="newFilter"]');
+  assert(newBtn, "New renders in its own #viewbarNew group");
+  assert(!d.querySelector('[data-row-actions="viewbar"] [data-row-action="newFilter"]'),
+    "New is no longer inside the standard filter-actions group");
+  const newSvg = newBtn.querySelector("svg").innerHTML;
+  assert(newSvg.includes("M8 3.5v9") && !newSvg.includes("5.5v4"),
+    "the New button shows a plain '+' path, not the old funnel-plus");
+
+  const msgSvg = d.querySelector('[data-row-action="filterForMessage"] svg').innerHTML;
+  assert(msgSvg.includes("M8 6v4"), "the Message button shows the '[*]' asterisk glyph");
+});
+
+await withApp(async (w, d, T) => {
+  section("194b. Management buttons: floppy-disk Add (dashed placeholder) + book Library, right-aligned");
+
+  const addBtn = d.querySelector("#btnAddToLibrary");
+  const openBtn = d.querySelector("#btnOpenLibrary");
+  // (Border shorthand isn't reliably expanded by jsdom's getComputedStyle, so
+  // assert the placeholder CLASS is applied rather than the resolved border.)
+  assert(addBtn.classList.contains("lib-add-placeholder"), "Add to Library carries the dashed-placeholder class");
+  // Add (disk) and Library (book) carry distinct, non-empty icons.
+  assert(addBtn.querySelector(".row-action-hit").innerHTML.length > 0 &&
+    openBtn.querySelector(".row-action-hit").innerHTML !== addBtn.querySelector(".row-action-hit").innerHTML,
+    "Add (disk) and Library (book) carry distinct icons");
+  // Right-alignment is margin-left:auto in CSS (jsdom can't resolve `auto`
+  // margins from a stylesheet) — assert the structural precondition instead:
+  // the management group is the last element in #viewBar, so margin-left:auto
+  // pushes it flush right.
+  const viewBarKids = [...d.querySelector("#viewBar").children];
+  assert(viewBarKids[viewBarKids.length - 1].id === "libraryManageBar",
+    "the management group is the last child of #viewBar (right-aligned via margin-left:auto)");
+});
+
+await withApp(async (w, d, T) => {
+  section("194c. Selection-filter (idset) node shows a single check, not the checklist");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  w.render();
+  // idset node icon comes from nodeIconHTML — its branch keys off filterType
+  // only, so set that directly rather than going through createFilterNode's
+  // idset value contract.
+  const node = w.createFilterNode(f.id, "text", "message");
+  node.filterType = "idset";
+  const html = w.nodeIconHTML(node);
+  assert(html.includes("M3 8.5l3.3 3.5") && !html.includes("M3 4.5l1.3"),
+    "an idset (selection) node uses the single-check ICON_CHECK, not the multi-line ICON_CHECKLIST");
+});
+
+await withApp(async (w, d, T) => {
+  section("194d. Ctrl+1-4 skips a disabled Table/Plot slot (no-op), reaches it once enabled");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const plain = w.createFilterNode(f.id, "text", "message");
+  T.state.activeId = plain.id;
+  w.render();
+  // Table is slot 3 but disabled here — Ctrl+3 must be a no-op.
+  w.applyFhView("filter");
+  const before = T.fhActiveTab;
+  w.jumpToViewTab(3);
+  assert(T.fhActiveTab === before, "Ctrl+3 does nothing while Table is disabled (no wildcards)");
+
+  const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
+  T.state.activeId = extractNode.id;
+  w.render();
+  w.jumpToViewTab(3);
+  assert(T.fhActiveTab === "table", "Ctrl+3 reaches Table once the node has wildcards");
+});
 
 /* ============================================================
    Summary
@@ -23928,8 +24028,9 @@ process.exitCode = failed ? 1 : 0;
       (VIEWBAR_ROW_ACTIONS), instead of always falling to the generic
       ICON_CLOCK. Also fixes "idset" nodes, which used to fall through
       nodeIconHTML into ICON_CLOCK despite not being a time filter — they
-      now get their own ICON_CHECKLIST. Text and extraction-wildcard text
-      icons were already correct and are asserted unchanged.
+      got their own ICON_CHECKLIST here (later changed to a single-check
+      ICON_CHECK in Group 194). Text and extraction-wildcard text icons were
+      already correct and are asserted unchanged.
    Group 193 — this session (2026-09-08), person-requested filter-library
       toolbar presets: a preset flagged showInToolbar renders as a circle-pill
       .row-action-btn in #libraryPresetBar (left of the "+ Add to Library"
@@ -23941,4 +24042,18 @@ process.exitCode = failed ? 1 : 0;
       moved off the tree context menu onto the toolbar "+ Add to Library"
       button (Group 59a rewritten accordingly; Group 60b's ordering assertion
       updated — "Apply from library…" stays in the context menu).
+   Group 194 — this session (2026-09-08), person-requested Filter-Toolbar
+      refinements: (a) Table/Plot view tabs are now always present but rendered
+      `disabled` when the node has no extractable wildcards, instead of being
+      omitted — so the filter buttons to their right don't shift sideways
+      (Group 158a + the Group-around-628 tab check updated accordingly;
+      jumpToViewTab/Ctrl+1-4 skips a disabled slot). (b) Icon changes: New →
+      plain "+", Message → "[*]", Add to Library → floppy-disk ICON_DISK with a
+      dashed .lib-add-placeholder outline, Library → ICON_BOOK, idset selection
+      node → single-check ICON_CHECK. (c) Layout: three groups (Standard filters
+      | Library presets #libraryPresetBar | New #viewbarNew) with the management
+      buttons in a right-aligned #libraryManageBar; the Library-presets group +
+      its leading separator collapse out when nothing is pinned (Group 193
+      updated). (d) The manage dialog's pin toggle is now the .settings-switch
+      pill and row controls share a 28px height.
    ============================================================ */
