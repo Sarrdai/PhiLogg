@@ -20744,7 +20744,16 @@ function updateRowActionButtons() {
   // other two — the exact viewport count is re-checked at click time.
   const afterBeforeEnabled = onPlot ? plot2dToolsAvailable : afterBeforeActionEntries().length >= 1;
   // "Message"/"Extract" always need exactly one entry (see singleMessageActionEntry) — never available on Plot.
-  const messageActionEnabled = singleMessageActionEntry() !== null;
+  const messageActionEntry = singleMessageActionEntry();
+  const messageActionEnabled = messageActionEntry !== null;
+  // "Extract" additionally needs that entry's message to actually contain
+  // something extractable — same buildNumericExtractPattern() the button's
+  // own click handler (extractMessageFilter) already uses to build the
+  // pattern; a message with no numeric/time content would just create a
+  // literal-text filter node, which isn't what "Extract" is for (person-
+  // requested, 2026-09-08 — use "Message" for that case instead).
+  const extractActionEnabled = messageActionEnabled &&
+    buildNumericExtractPattern(textColumnValue(messageActionEntry, "message")) !== null;
   elAll('[data-row-action="bookmark"]').forEach(b => {
     b.disabled = !singleRowEnabled;
     b.classList.toggle("active", !!entry && state.bookmarks.has(entry.id));
@@ -20756,7 +20765,7 @@ function updateRowActionButtons() {
   elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
   elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
   elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !messageActionEnabled; });
-  elAll('[data-row-action="extractMessage"]').forEach(b => { b.disabled = !messageActionEnabled; });
+  elAll('[data-row-action="extractMessage"]').forEach(b => { b.disabled = !extractActionEnabled; });
   elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !timeRangeEnabled; });
   // "New" needs no selected row at all — just an active filter tree to add
   // to (same guard openFilterPopup itself applies).

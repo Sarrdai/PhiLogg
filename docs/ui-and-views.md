@@ -188,6 +188,14 @@ shape:
   (person-requested, 2026-09-08) that doesn't read as a sensible Table/Plot
   action even when Table could technically supply one from a single marked
   row — both stay **hidden on Table and Plot alike**, Context/Filtered only.
+  "Extract" additionally disables (even where visible) when the selected
+  row's message has nothing extractable — it reuses
+  `buildNumericExtractPattern()`, the same function its own click handler
+  builds the pattern with; a message with no numeric/time content would
+  otherwise just create a literal-text node indistinguishable from "New".
+  "Message" doesn't share that gate — its dialog lets the person adjust the
+  pattern before committing, so it stays enabled for any single-row
+  selection regardless of content.
   "New" stays visible/enabled everywhere regardless (`state.activeId` is
   its only gate).
   Plot's own two dedicated viewport-filter buttons this used to swap in
