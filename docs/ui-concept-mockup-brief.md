@@ -106,7 +106,7 @@ positioniert:
   (Beweis: kein Sprung zu Context). Content = dieselbe Log-Tabelle, aber
   nur die Treffer-Zeilen, keine Lücken.
 - **Table**: Slot-Zeile = **eine** Chip-Zeile: Pattern-Vorschau
-  (`user=[value:str] took [value:float]ms` mit farbig hervorgehobenen
+  (`user=[*:str] took [*:float]ms` mit farbig hervorgehobenen
   Platzhaltern) + Stats-Chips (`min 4ms`/`max 812ms`/`avg 61ms`) +
   Treffer-Zahl, alles in einer 30px-Zeile (horizontal scrollbar/kompakt,
   keine Toggle-Icons). Content = Tabelle mit Spalten `Index`, `t(ms)`,
