@@ -211,80 +211,51 @@ shape:
   untouched, this is an additional, always-visible entry point. Buttons
   here stay the row's own 28x28 `.toolbar-icon-btn` size (no 22px scoped-
   down override, unlike the per-view toolbars below) since `#viewBar`'s
-  other controls are 28px too. **Shape (person-requested, third iteration
-  this session): `.row-action-btn`** renders each one as a plain circle —
-  `border-radius:50%` on the 28x28 box, the same 14px radius `.level-btn`'s
-  own rounded end-caps have (28px height, `border-radius:20px`) — showing
-  only the icon. Interacting with it reveals a `.row-action-label` growing
-  out to the right via a `max-width`/`opacity` transition (not `width` —
-  the label's natural width varies per action and isn't known up front),
-  turning the button itself into a pill (`border-radius:20px`) — this
-  DOES push later circles further right, same as any flex sibling growing
-  would (person-requested, combining the first iteration's layout-shifting
-  growth with the second iteration's circle shape).
+  other controls are 28px too. **Shape: `.row-action-btn`** renders each
+  one as a plain circle — `border-radius:50%` on the 28x28 box, the same
+  14px radius `.level-btn`'s own rounded end-caps have (28px height,
+  `border-radius:20px`) — showing only the icon; the button itself never
+  resizes.
 
-  **What decides expand/collapse is entering/leaving the CIRCLE
-  specifically, not the button's own (now width-changing) box** — this is
-  the fix for what both earlier iterations got wrong in opposite ways.
-  Iteration 1 keyed expand/collapse off a plain CSS `:hover` on the growing
-  button itself: since `:hover` only releases once the pointer leaves the
-  ALREADY-WIDENED box (i.e. past the label too, not just past the icon),
-  moving the cursor rightward across the row hovered circle N, which then
-  widened and only let go once the cursor was already past where circle
-  N+1 used to be — by then N+1 had been shoved further right by N's own
-  growth and the cursor overshot onto N+2. Iteration 2's fix was to never
-  resize the circle at all (an absolutely positioned, non-layout-affecting
-  label overlaid on top of later circles instead) — this fixed the
-  overshoot but reverted the request for layout-shifting growth, so was
-  fixed again the same session: `.row-action-hit`, a fixed 28x28 inner
-  `<span>` wrapping just the icon, is the fixed-size element expand/collapse
-  keys off, instead of a CSS `:hover` on the button itself.
+  **Hover reveals the label as a small pill floating ABOVE the button**
+  (redesigned 2026-09-08, replacing an earlier design where the button grew
+  sideways into a pill on hover — person-reported: that pushed every later
+  button in the row further right and snapped them back on mouse-leave,
+  making it hard to move the cursor from one button to the next). The
+  `.row-action-label` span is `position:absolute`, centered over its button
+  (`left:50%; transform:translateX(-50%)`) and anchored to its bottom edge,
+  so it overlays the row instead of participating in its layout — nothing
+  next to it ever shifts. What decides expand/collapse is unchanged from
+  the earlier design: `.row-action-hit`, a fixed 28x28 inner `<span>`
+  wrapping just the icon, not a CSS `:hover` on the button itself (a bare
+  `:hover` here would still work now that nothing resizes, but the fixed-hit
+  mechanism was already in place and is reused as-is). `setupHitExpandGroups()`
+  groups all hit-zones sharing a parent container and drives `.expanded` off
+  a single `mousemove` listener on the container, testing the pointer
+  against each hit-zone's rect — see its own code comment for why (a fix for
+  flickering/freezing hover state, person-reported 2026-09-05, that predates
+  this redesign and still applies since hit-zones are still fixed-size).
+  `updateRowActionButtons()` also force-clears a stuck `.expanded` if a
+  button becomes disabled while the mouse happens to be sitting over it,
+  e.g. the selection changed via keyboard rather than the mouse actually
+  leaving. Keyboard focus uses a plain `.row-action-btn:focus-visible` CSS
+  rule (not the JS listeners) to reveal the same floating label. The label
+  text is the exact same string as the button's `title` (e.g. "Filter after
+  this (incl.)") — both come from one `ROW_ACTIONS` data array (`{action,
+  label, svg, strokeWidth}`) that builds `ROW_ACTIONS_HTML`, so the two
+  can't drift apart. Seven of these permanently spelled out would be far too
+  wide for the row — the circle is the resting state precisely so the row
+  stays compact until the person is actually pointing at one.
 
-  A later fix (person-reported, 2026-09-05: hover state flickering rapidly
-  or freezing mid-animation "at some edge positions") replaced the original
-  per-hit-zone `mouseenter`/`mouseleave` listener pair with
-  `setupHitExpandGroups()`: while a preceding button in the row is
-  expanding/collapsing, its growing/shrinking box keeps shoving the NEXT
-  hit-zone back and forth under a stationary cursor, so that hit-zone's own
-  `mouseenter`/`mouseleave` kept firing repeatedly off the currently-
-  animating (shifting) geometry. `setupHitExpandGroups()` instead groups all
-  hit-zones sharing a parent container and drives `.expanded` off a single
-  `mousemove` listener on the container: each hit-zone's rect is measured
-  and cached only while the whole group sits collapsed (i.e. right before
-  anything expands, never refreshed again until the group returns to fully
-  collapsed), so the hover decision always tests the pointer against the
-  stable, at-rest layout — never the geometry that's mid-animation because a
-  neighbor is growing or shrinking. `updateRowActionButtons()` also
-  force-clears a stuck `.expanded` if a button becomes disabled while the
-  mouse happens to be sitting over it, e.g. the selection changed via
-  keyboard rather than the mouse actually leaving. Since the hit-test rect
-  itself never reflects the animating state, leaving a hit-zone collapses
-  the pill immediately regardless of how wide the button's own box has
-  grown, and the very next circle is now free to receive the arriving
-  cursor at its own, unshifted-until-just-now position. Keyboard focus still
-  uses a plain `.row-action-btn:focus-visible` CSS rule (not the JS
-  listeners) — Tab moves in discrete jumps rather than a continuously
-  arriving cursor, so the overshoot bug never applied there. The label text is the exact same
-  string as the button's `title` (e.g. "Filter after this (incl.)") — both
-  come from one `ROW_ACTIONS` data array (`{action, label, svg,
-  strokeWidth}`) that builds `ROW_ACTIONS_HTML`, so the two can't drift
-  apart. Seven of these permanently spelled out would be far too wide for
-  the row — the circle is the resting state precisely so the row stays
-  compact until the person is actually pointing at one.
-
-  **Same mechanic, rectangle instead of pill, in the log views' own
-  toolbars (person-requested, 2026-09-05)**: `#contextToolbar`/
-  `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`'s buttons reveal a
-  hover label the same way, but expand into a rounded RECTANGLE (the
-  toolbar's ordinary 7px `.toolbar-icon-btn` corner radius, at rest and
-  expanded) instead of a pill — only the Filter-Toolbar's own row-actions
-  above become pills. Every plain `.toolbar-icon-btn` in those four
-  toolbars (display toggles, Context's match-nav/expand-collapse, Export as
-  CSV, Save as image, Fullscreen — the Statistics toggle that used to live
-  here is gone, moved into its own `#statsPanel` header instead, see
-  "Statistics panel" below) gets wrapped once, near the very end of the
-  script (after every button's icon
-  has already been assigned), by `makeToolbarBtnExpandable()` into a
+  **Same mechanic in the log views' own toolbars**:
+  `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/`#plotToolbar`'s
+  buttons reveal the same kind of floating hover label. Every plain
+  `.toolbar-icon-btn` in those four toolbars (display toggles, Context's
+  match-nav/expand-collapse, Export as CSV, Save as image, Fullscreen — the
+  Statistics toggle that used to live here is gone, moved into its own
+  `#statsPanel` header instead, see "Statistics panel" below) gets wrapped
+  once, near the very end of the script (after every button's icon has
+  already been assigned), by `makeToolbarBtnExpandable()` into a
   `.tb-hit`/`.tb-label` pair — same fixed-hit-zone idea as `.row-action-hit`
   above, driven by the same `setupHitExpandGroups()` call, scoped in CSS via
   `.toolbar-icon-btn:has(.tb-hit)` so it never touches a `.toolbar-icon-btn`
@@ -293,27 +264,38 @@ shape:
   now takes a `shape` argument, `"circle"` for `VIEWBAR_ROW_ACTIONS`/
   Plot's viewport filters or `"rect"` for `TOOLBAR_ROW_ACTIONS`) reuse the
   exact same `.row-action-btn`/`.row-action-hit`/`.row-action-label`
-  markup and JS, just with an added `.rect` class overriding the
-  border-radius back to 7px at every stage instead of 50%/20px.
+  markup and JS, just with an added `.rect` class (only relevant to the
+  "Always" setting below, which restores the button's own border-radius —
+  20px pill vs. 7px rounded rectangle — since the floating label itself
+  doesn't depend on the button's shape).
 
   **Settings -> Behavior: "Filter-Toolbar button labels" /
-  "View Toolbar button labels" (person-requested, 2026-09-05)** — a real
-  app-wide setting (not a per-toolbar control), independent for each of
-  the two: Never/On hover (default)/Always. `#settingsFilterToolbarLabels`/
+  "View Toolbar button labels"** — a real app-wide setting (not a
+  per-toolbar control), independent for each of the two: Never/On hover
+  (default)/Always. `#settingsFilterToolbarLabels`/
   `#settingsViewToolbarLabels` are plain localStorage-preference selects
   (`philogg-filter-toolbar-labels`/`philogg-view-toolbar-labels`, same
   wiring shape as `settingsFilterActivationView`) that toggle a class on
   `<body>` — `filter-toolbar-labels-never`/`-always` and
   `view-toolbar-labels-never`/`-always` — rather than touching individual
-  buttons. CSS rules scoped under those body classes (higher specificity
-  than the plain `.expanded`/`:focus-visible` rules, so they always win)
-  force every button of that kind permanently collapsed ("Never") or
-  permanently expanded ("Always"); "On hover" needs no override at all,
-  it's just the mechanics above with no body class present. The Filter-
-  Toolbar's class targets `.row-action-btn:not(.rect)` (the circle/pill
-  buttons in `#viewBar`); the View Toolbar's targets `.row-action-btn.rect`
-  and `.toolbar-icon-btn:has(.tb-hit)` together (every button in
-  `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/`#plotToolbar`).
+  buttons. "On hover" needs no override at all, it's just the floating-pill
+  mechanics above with no body class present. "Never" (`display:none` on
+  the label) hides it outright — the button stays a plain icon regardless of
+  hover/focus. "Always" restores the ORIGINAL (pre-2026-09-08) inline
+  expand-to-pill look: the body-class override switches the button itself
+  to `width:auto` with the pill/rect border-radius, and switches the label
+  from a floating, styled pill (`position:absolute`, its own background/
+  border/shadow) back to a plain inline span (`position:static`, no
+  background/border, `max-width`-driven reveal) sitting inside it — that
+  layout-shifting look is only confusing when it happens transiently on
+  every hover, not when it's the button's permanent rest state. CSS rules
+  scoped under those body classes have higher specificity than the plain
+  `.expanded`/`:focus-visible` rules, so they always win regardless of
+  source order. The Filter-Toolbar's class targets `.row-action-btn:not(.rect)`
+  (the circle buttons in `#viewBar`); the View Toolbar's targets
+  `.row-action-btn.rect` and `.toolbar-icon-btn:has(.tb-hit)` together
+  (every button in `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/
+  `#plotToolbar`).
 - **Each view's own toolbar** (Zeile 3 — `#contextToolbar`/
   `#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) — same position/shape
   in every tab, only the content differs. The six log-display toggles
