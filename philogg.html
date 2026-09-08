@@ -7783,7 +7783,13 @@ function deleteNode(nodeId) {
   if (state.activeId === nodeId) state.activeId = node.parentId || state.rootIds[state.rootIds.length - 1] || null;
   if (state.clipboard && state.clipboard.id === nodeId) state.clipboard = null;
   state.multiSelect.delete(nodeId);
-  invalidateAllCaches();
+  // No cache invalidation needed here: a surviving node's cached result
+  // depends only on its own parentId chain (see invalidateCachesForRoots
+  // above), and deletion never changes any surviving node's parentId — the
+  // removed subtree is just dropped from state.nodes. Previously this
+  // called the global invalidateAllCaches() sweep, which forced every
+  // remaining node's count badge to be recomputed from scratch on the next
+  // render() — an O(all nodes x log size) stall on every delete.
 }
 
 // Target-column options for "text" filters (FEATURE_BACKLOG.md "Per-filter
@@ -8636,8 +8642,11 @@ function getEntriesUncached(node) {
   return result;
 }
 
-// Clears every node's cached entries. Used after structural changes (move,
-// delete) — simplest-correct sweep after any tree mutation.
+// Clears every node's cached entries. Used after structural changes that
+// affect a surviving node's own result (move, invert, field-edit) —
+// simplest-correct sweep after such a mutation. NOT used by deleteNode()
+// any more: a deletion never changes any surviving node's parentId, so no
+// surviving node's cache needs clearing at all (see deleteNode's comment).
 function invalidateAllCaches() {
   Object.values(state.nodes).forEach(n => { n._cache = null; n._levelCounts = null; });
 }
