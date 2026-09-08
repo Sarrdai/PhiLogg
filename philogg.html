@@ -1011,6 +1011,11 @@
   .row-action-btn.rect{border-radius:7px;}
   .row-action-btn.rect.expanded, .row-action-btn.rect:focus-visible{border-radius:7px;}
   .row-action-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
+  /* Thin vertical divider rendered immediately before a row-action entry
+     flagged `separator:true` (see buildRowActionsHtml) — visually groups
+     "New" apart from the filter-creation actions preceding it in
+     #viewBar's Filter-Toolbar without adding a whole new toolbar group. */
+  .row-action-separator{width:1px; align-self:stretch; margin:4px 6px; background:var(--border); flex:0 0 auto;}
   .row-action-label{
     max-width:0; opacity:0; margin-left:0; overflow:hidden; white-space:nowrap;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
@@ -4459,6 +4464,17 @@ const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"
 const ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
 const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
+// "Filter for this message" row-action's own icon (distinct from the plain
+// funnel ICON_FILTER used by every other filter-creation button) — a
+// speech-bubble outline (this action's input is always the message column)
+// with two small bracket-like accents standing in for the "extract the
+// numbers out of this text" behavior the action actually performs.
+const ICON_MESSAGE_EXTRACT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.2h11v7.6h-6.2L4.5 13V10.8h-2z"/><path d="M6 6.6l-1.2 1 1.2 1M10 6.6l1.2 1-1.2 1"/></svg>';
+// "New filter" row-action's icon: the same funnel as ICON_FILTER with a
+// small "+" badge overlaid in the corner, same badge-overlay technique as
+// ICON_FILE_AUTO's circled "A" (the circle's fill hides the funnel path
+// behind it so the "+" reads cleanly instead of visually merging).
+const ICON_FILTER_PLUS = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/></svg>';
 const ICON_CLOCK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.3l2.2 1.3"/></svg>';
 // Recovered from the old per-row bookmark marker (removed in the "Bookmarks
 // rework" — see PROJECT.md) and reused as the "Bookmarks" filter-tree node's
@@ -11945,7 +11961,7 @@ function zoomPlotAt(dataX, dataY, factor) {
 let plot2dToolsAvailable = false;
 function updateViewBarRowActions() {
   const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
-  elAll('[data-row-action="filterAfter"], [data-row-action="filterBefore"], [data-row-action="filterForMessage"]')
+  elAll('[data-row-action="filterAfter"], [data-row-action="filterBefore"], [data-row-action="filterForMessage"], [data-row-action="extractMessage"]')
     .forEach(b => b.classList.toggle("hidden", onTableOrPlot));
   updateRowActionButtons();
 }
@@ -20269,6 +20285,26 @@ function openFilterForEntryColumn(entry, column) {
   evaluateLiveMatch();
 }
 
+// "Extract" row-action (#viewBar) — one-click version of "Message" that
+// skips the filter popup entirely: builds the exact same auto-extraction
+// pattern from the current row's message column (numbers/times become
+// [*:int]/[*:float]/[*:time] wildcards, newlines collapsed the same way
+// the popup path needs them collapsed) and commits it straight to a new
+// text-filter node, same primitive commitFilter()'s submit uses. The
+// resulting node is a plain filterType:"text" node like any other, so it
+// stays editable afterward (F2/dblclick/context menu) with no special-
+// casing needed anywhere else.
+function extractMessageFilter(entry) {
+  if (!entry || !state.activeId) return;
+  const column = TEXT_FILTER_COLUMNS.find(c => c.key === "message");
+  const value = textColumnValue(entry, column.key);
+  if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
+  const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
+  createFilterNode(state.activeId, "text", pattern, false, [], false, ["message"], false, false);
+  revealFilteredView();
+  render();
+}
+
 el("#ctxFilterForColumn").addEventListener("click", ev => {
   ev.stopPropagation();
   const entry = ctxEntry;
@@ -20523,8 +20559,16 @@ const TOOLBAR_ROW_ACTIONS = [
 const VIEWBAR_ROW_ACTIONS = [
   { action: "filterAfter", label: "After", svg: '<path d="M8 13V3M8 13l-3-3M8 13l3-3"/>', strokeWidth: 1.4 },
   { action: "filterBefore", label: "Before", svg: '<path d="M8 3v10M8 3l-3 3M8 3l3 3"/>', strokeWidth: 1.4 },
-  { action: "filterForMessage", label: "Message", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/>', strokeWidth: 1.4 },
+  { action: "filterForMessage", label: "Message", svg: '<path d="M2.5 3.2h11v7.6h-6.2L4.5 13V10.8h-2z"/><path d="M6 6.6l-1.2 1 1.2 1M10 6.6l1.2 1-1.2 1"/>', strokeWidth: 1.4 },
+  // Same auto-extraction pattern as "Message" (see extractMessageFilter),
+  // but committed straight to a new filter node instead of opening the
+  // popup first — reuses ICON_TABLE's markup ("extraction table"), the
+  // one icon constant not already used in a toolbar.
+  { action: "extractMessage", label: "Extract", svg: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/>', strokeWidth: 1.4 },
   { action: "timeRangeFromSelection", label: "Time range", svg: '<path d="M8 3v4M5 4l3 3 3-3M8 13v-4M5 12l3-3 3 3"/>', strokeWidth: 1.4 },
+  // Separated from the row-scoped actions above (person-requested): "New"
+  // needs no selected row, just opens the plain filter popup (Ctrl+F).
+  { action: "newFilter", label: "New", svg: '<path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/>', strokeWidth: 1.4, separator: true },
 ];
 // shape: "circle" (default, Filter-Toolbar's own row-actions — expands into
 // a pill, person-requested) or "rect" (the duplicated copies inside the log
@@ -20538,7 +20582,11 @@ function buildRowActionsHtml(list, shape) {
     // .row-action-hit is the fixed-size circle/square (icon centered
     // inside it) — the actual mouseenter/mouseleave target (see the
     // listener below); .row-action-label follows it and is what grows/
-    // shrinks the button's own (now variable) width.
+    // shrinks the button's own (now variable) width. An entry flagged
+    // separator:true gets a thin divider rendered immediately before it
+    // (see .row-action-separator) — used to set "New" apart from the
+    // row-scoped filter actions preceding it.
+    (a.separator ? '<span class="row-action-separator"></span>' : '') +
     '<button type="button" class="toolbar-icon-btn row-action-btn' + shapeClass + '" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
       '<span class="row-action-hit"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg></span>' +
       '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
@@ -20646,7 +20694,11 @@ function updateRowActionButtons() {
   elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !singleRowEnabled; });
   elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !singleRowEnabled; });
   elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !singleRowEnabled; });
+  elAll('[data-row-action="extractMessage"]').forEach(b => { b.disabled = !singleRowEnabled; });
   elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !timeRangeEnabled; });
+  // "New" needs no selected row at all — just an active filter tree to add
+  // to (same guard openFilterPopup itself applies).
+  elAll('[data-row-action="newFilter"]').forEach(b => { b.disabled = !state.activeId; });
   elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !selectEnabled; });
   // A button that just became disabled while the mouse happened to be
   // sitting over its circle (e.g. the selection changed via keyboard, not
@@ -20675,6 +20727,12 @@ function handleRowActionClick(action, anchorBtn) {
       break;
     case "filterForMessage":
       if (entry) openFilterForEntryColumn(entry, TEXT_FILTER_COLUMNS.find(c => c.key === "message"));
+      break;
+    case "extractMessage":
+      if (entry) extractMessageFilter(entry);
+      break;
+    case "newFilter":
+      openFilterPopup();
       break;
     case "timeRangeFromSelection": {
       const tsList = timeRangeActionEntries().map(e => e.ts);

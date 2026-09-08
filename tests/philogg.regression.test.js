@@ -19547,9 +19547,11 @@ await withApp(async (w, d, T) => {
   // Actions group instead — see 176e below for their new home) — only the
   // four that genuinely create a filter node stay in the Filter-Toolbar.
   const actions = [...d.querySelector('[data-row-actions="viewbar"]').querySelectorAll("[data-row-action]")];
-  const expectedActions = ["filterAfter", "filterBefore", "filterForMessage", "timeRangeFromSelection"];
+  // "Extract" (next to "Message") and "New" (at the end, behind a
+  // separator) joined this group this session (Paket A) — see Group 186.
+  const expectedActions = ["filterAfter", "filterBefore", "filterForMessage", "extractMessage", "timeRangeFromSelection", "newFilter"];
   assert(actions.map(b => b.dataset.rowAction).join(",") === expectedActions.join(","),
-    "the Filter-Toolbar's row-actions group has all four filter-creating actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
+    "the Filter-Toolbar's row-actions group has all six filter-creating/opening actions in order, got " + actions.map(b => b.dataset.rowAction).join(","));
   assert(d.querySelector('[data-row-actions="viewbar"] [data-row-action="bookmark"]') === null &&
     d.querySelector('[data-row-actions="viewbar"] [data-row-action="note"]') === null &&
     d.querySelector('[data-row-actions="viewbar"] [data-row-action="addToSelection"]') === null,
@@ -19572,13 +19574,17 @@ await withApp(async (w, d, T) => {
   const byAction = action => actions.find(b => b.dataset.rowAction === action);
 
   // --- No selection: single-row actions disabled, time-range disabled ---
-  expectedActions.forEach(action => {
+  // "New" (newFilter) is excluded here — it only needs an active filter
+  // tree (state.activeId, already set above), not a selected row, so it's
+  // enabled from the start (see Group 186b).
+  expectedActions.filter(a => a !== "newFilter").forEach(action => {
     assert(byAction(action).disabled === true, action + " starts disabled with no selection");
   });
+  assert(byAction("newFilter").disabled === false, "newFilter needs no row selection, only an active filter tree");
 
   // --- Single row selected: single-row actions enabled, time-range still disabled ---
   w.selectEntry(f.entries[2].id);
-  ["filterAfter", "filterBefore", "filterForMessage"].forEach(action => {
+  ["filterAfter", "filterBefore", "filterForMessage", "extractMessage"].forEach(action => {
     assert(byAction(action).disabled === false, action + " enabled with exactly one row selected");
   });
   assert(byAction("timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
@@ -19875,7 +19881,7 @@ await withApp(async (w, d, T) => {
   w.render();
 
   const byAction = action => d.querySelector('[data-row-action="' + action + '"]');
-  const logOnlyActions = ["filterAfter", "filterBefore", "filterForMessage"];
+  const logOnlyActions = ["filterAfter", "filterBefore", "filterForMessage", "extractMessage"];
 
   // No plot-viewbar group any more — Plot's two dedicated buttons are gone.
   assert(d.querySelector('[data-row-actions="plot-viewbar"]') === null, "the plot-viewbar group is gone");
@@ -20470,6 +20476,98 @@ await withApp(async (w, d, T) => {
   assert(infoEl().textContent.includes(expectedRangeText),
     "active timerange filter's name appears in the Plot info text too, got " + JSON.stringify(infoEl().textContent));
   assert(infoEl().textContent.includes("6 points"), "visible-point count reflects the timerange-narrowed extraction, got " + JSON.stringify(infoEl().textContent));
+});
+
+/* ============================================================
+   GROUP 186 — this session (2026-09-08), Paket A: two new Filter-Toolbar
+   (#viewBar) row-actions. "Extract" is a one-click version of "Message"
+   (same auto-extraction pattern from buildNumericExtractPattern/
+   collapseNewlinesToWildcard) that skips the filter popup entirely and
+   commits the pattern straight to a new "text" filter node. "New" is a
+   one-click "openFilterPopup()", identical to Ctrl+F. Also: a distinct
+   "Message" icon (ICON_MESSAGE_EXTRACT, a speech bubble) replacing the
+   generic funnel it used to share with every other filter action.
+   (Renumbered from a colliding "184" at merge time — Paket C already
+   claimed 184, Paket B claimed 185.)
+   ============================================================ */
+group(186);
+await withApp(async (w, d, T) => {
+  section("186a. Extract: one-click filter creation from the message column, no popup shown");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const entry = f.entries[3];
+  w.selectEntry(entry.id);
+
+  const extractBtn = d.querySelector('[data-row-action="extractMessage"]');
+  assert(extractBtn !== null && extractBtn.disabled === false, "sanity: Extract button exists and is enabled with a row selected");
+
+  const beforeChildCount = f.children.length;
+  fireClick(extractBtn, w);
+
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") === true,
+    "the filter popup is NOT shown by Extract — the node is created directly");
+  assert(f.children.length === beforeChildCount + 1, "Extract creates exactly one new filter node");
+
+  const created = T.state.nodes[T.state.activeId];
+  assert(created.filterType === "text", "the created node is a plain 'text' filter node");
+  assert(/\[\*:(int|float|time)\]/.test(created.value),
+    "its pattern contains a [*:int]/[*:float]/[*:time] wildcard token, got " + JSON.stringify(created.value));
+  assert(Array.isArray(created.columns) && created.columns.length === 1 && created.columns[0] === "message",
+    "the node is restricted to the message column, same as 'Filter for this message'");
+  assert(T.state.activeId === created.id, "creating it activates the new node, same as the other row-actions");
+
+  // --- Same primitive commitFilter() uses (createFilterNode), so nothing
+  // marks this node as special: editing it afterward (F2 -> openEditFilterPopup)
+  // works exactly like any other plain text filter node. ---
+  w.openEditFilterPopup(created.id);
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") === false, "opening edit on the Extract-created node opens the popup normally");
+  assert(d.querySelector("#filterInput").value === created.value, "...prefilled with the extracted pattern");
+  assert(d.querySelector("#filterSubmitBtn").textContent === "Save", "...in edit mode (submit button reflects editing, not a fresh 'Add filter')");
+  fireClick(d.querySelector("#btnCloseFilterPopup"), w);
+});
+
+await withApp(async (w, d, T) => {
+  section("186b. New: one-click openFilterPopup(), same outcome as Ctrl+F, needs only an active node");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const newBtn = d.querySelector('[data-row-action="newFilter"]');
+  assert(newBtn !== null, "the New button exists in the Filter-Toolbar");
+  assert(newBtn.disabled === false, "New is enabled with an active node even though no row is selected");
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") === true, "sanity: popup starts closed");
+
+  fireClick(newBtn, w);
+
+  assert(d.querySelector("#filterPopup").classList.contains("hidden") === false, "clicking New opens the filter popup");
+  assert(d.querySelector("#filterInput").value === "", "...with an empty pattern input, fresh 'Add filter' mode");
+  assert(d.querySelector("#filterSubmitBtn").textContent === "Add filter", "...and the submit button reads 'Add filter'");
+  fireClick(d.querySelector("#btnCloseFilterPopup"), w);
+
+  // --- Disabled with no active node at all (nothing to add the filter under) ---
+  T.state.activeId = null;
+  w.updateRowActionButtons();
+  assert(d.querySelector('[data-row-action="newFilter"]').disabled === true, "New disables once there is no active node");
+});
+
+await withApp(async (w, d, T) => {
+  section("186c. \"Message\" gets its own distinct icon, no longer sharing the generic funnel ICON_FILTER");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const messageBtn = d.querySelector('[data-row-action="filterForMessage"]');
+  const afterBtn = d.querySelector('[data-row-action="filterAfter"]'); // uses its own arrow icon, unrelated
+  const messageSvg = messageBtn.querySelector(".row-action-hit svg").innerHTML;
+  // Guard against an accidental revert to the shared funnel path — the
+  // generic ICON_FILTER's single path is exactly this shape.
+  const funnelPath = 'M2 3h12l-4.5 5.5v4L7 14v-5.5Z';
+  assert(!messageSvg.includes(funnelPath), "'Message' no longer renders the generic funnel path, got " + messageSvg);
+  assert(messageSvg !== afterBtn.querySelector(".row-action-hit svg").innerHTML, "'Message' icon differs from 'After's icon (sanity: they're not accidentally identical)");
 });
 
 /* ============================================================
@@ -23129,4 +23227,13 @@ process.exitCode = failed ? 1 : 0;
       count (Plot, updatePlotFilterInfo()). The Plot half runs against
       Paket C's real visiblePlotPoints() (a TEMP stub that stood in for it
       locally was removed during the merge).
+
+   Group 186 — this session (2026-09-08), "Paket A" of the same multi-package
+      plan (merged last, hence renumbered from an original 184 that collided
+      with both groups above): two new Filter-Toolbar (#viewBar) row-actions,
+      "Extract" (one-click auto-extraction from the message column, straight
+      to a new "text" filter node, no popup) and "New" (one-click
+      openFilterPopup(), identical to Ctrl+F, behind a visual separator), plus
+      a distinct "Message" icon (ICON_MESSAGE_EXTRACT) replacing the generic
+      funnel it used to share with every other filter-creating action.
    ============================================================ */
