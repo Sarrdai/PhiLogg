@@ -98,11 +98,11 @@ open it in a browser to view it.
   and just walking rows with the arrow keys leaves none. Going back restores
   the whole view: the filter, the Context/Filtered/Stacked mode, the selected
   row, and the line you were reading.
-- **Value extraction** — turn a pattern like `x=[value:float] y=[value:float]`
+- **Value extraction** — turn a pattern like `x=[*:float] y=[*:float]`
   into a spreadsheet-style table with per-column stats, value assertions, and
   a Plot tab (line/bar/scatter/3D scatter, zoom/pan/rotate, click a point to
   jump to its log entry). `float`/`int` placeholders can also carry an inline condition —
-  `[value:float>=10]`, `[value:int<20,>10]` for a range, or `[value:float|>=10]`
+  `[*:float>=10]`, `[*:int<20,>10]` for a range, or `[*:float|>=10]`
   to compare against the absolute value — so a pattern matches/extracts only
   the entries whose value actually satisfies it.
 - **Link filter** — pair up nearest-preceding/following entries across two

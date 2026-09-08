@@ -3112,11 +3112,11 @@
             <label class="filter-toggle-label" for="filterRegexCheckbox">Interpret input as regex</label>
           </div>
           <div class="filter-input-section">
-            <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [value:float]" autocomplete="off">
+            <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [*:float]" autocomplete="off">
             <div id="filterTokenChips" class="filter-token-chips">
               <span class="filter-section-label">Insert:</span>
-              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [value:float>=10], [value:float&lt;20,>10], or [value:float|>=10] for |value|>=10">[float]</button>
-              <button type="button" class="token-chip" data-token="int" title="Add a condition manually, e.g. [value:int>=10], [value:int&lt;20,>10], or [value:int|>=10] for |value|>=10">[int]</button>
+              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [*:float>=10], [*:float&lt;20,>10], or [*:float|>=10] for |value|>=10">[float]</button>
+              <button type="button" class="token-chip" data-token="int" title="Add a condition manually, e.g. [*:int>=10], [*:int&lt;20,>10], or [*:int|>=10] for |value|>=10">[int]</button>
               <button type="button" class="token-chip" data-token="time">[time]</button>
               <button type="button" class="token-chip" data-token="word">[word]</button>
               <button type="button" class="token-chip" data-token="hex">[hex]</button>
@@ -6700,17 +6700,17 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
 /* ===================== Value-extraction patterns =====================
    A filter query can, instead of being a plain substring search, be a
    template such as:
-     Position moved to [value:float] after [value:int] tries at [value:time]
+     Position moved to [*:float] after [*:int] tries at [*:time]
    Recognized placeholders:
-     [value:float] [value:int] [value:time] [value:word] [value:hex] [*]
+     [*:float] [*:int] [*:time] [*:word] [*:hex] [*]
    Matching entries get their placeholder values pulled out into a table
    (see renderExtractTable) instead of being shown as normal log rows.
 
    float/int placeholders may additionally carry one or more numeric
-   conditions right inside the brackets, e.g. [value:float>=10] or
-   [value:int<20,>10] (","-separated conditions are AND-ed together). A
+   conditions right inside the brackets, e.g. [*:float>=10] or
+   [*:int<20,>10] (","-separated conditions are AND-ed together). A
    condition's operator can be prefixed with "|" to compare against the
-   captured value's ABSOLUTE value instead, e.g. [value:float|>=10] matches
+   captured value's ABSOLUTE value instead, e.g. [*:float|>=10] matches
    10 and -15 alike (|value| >= 10). These don't change the capturing regex
    itself (a comparison isn't expressible as a regex quantifier) —
    compileExtractPattern parses them onto each column as `conditions`, and
@@ -6743,7 +6743,7 @@ const VALUE_CONDITION_ONE = '\\|?' + VALUE_CONDITION_OP + VALUE_CONDITION_NUM;
 const VALUE_CONDITION_RE = new RegExp('(\\|?)(' + VALUE_CONDITION_OP + ')(' + VALUE_CONDITION_NUM + ')', 'g');
 
 const EXTRACT_TOKEN_RE = new RegExp(
-  '\\[(?:value:(float|int|time|word|hex)((?:' + VALUE_CONDITION_ONE + ')(?:,(?:' + VALUE_CONDITION_ONE + '))*)?|(\\*))\\]',
+  '\\[(?:\\*:(float|int|time|word|hex)((?:' + VALUE_CONDITION_ONE + ')(?:,(?:' + VALUE_CONDITION_ONE + '))*)?|(\\*))\\]',
   'g'
 );
 
@@ -6791,7 +6791,7 @@ function describeValueConditions(conditions) {
 // conditions? No conditions = always true. A capture that doesn't parse as
 // a number (shouldn't happen for float/int, the only types conditions are
 // allowed on) fails every condition rather than being treated as a match.
-// An `abs` condition compares |value| instead of value (e.g. [value:float|>=10]
+// An `abs` condition compares |value| instead of value (e.g. [*:float|>=10]
 // matches both 10 and -15).
 function valueSatisfiesConditions(rawStr, conditions) {
   if (!conditions) return true;
@@ -6880,9 +6880,9 @@ function compileExtractPattern(pattern) {
 // become available). There is no separate "extract" filterType anymore
 // (this session's filterType merge, see docs/ui-implementation-plan.md's
 // follow-up note) — a "text" filter node unlocks Table/Plot the moment its
-// own pattern contains [value:...]/[*] wildcards. Regex mode has no such
+// own pattern contains [*:...]/[*] wildcards. Regex mode has no such
 // placeholder vocabulary (isExtractPattern would only find a coincidental
-// literal "[value:...]" in the regex source, not a real token), so a regex
+// literal "[*:...]" in the regex source, not a real token), so a regex
 // node is excluded even if its raw text happens to contain that substring.
 // compileExtractPattern already returns null for a plain pattern with no
 // wildcards at all, or one whose regex fails to compile.
@@ -6968,7 +6968,7 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
 
   const node = { id: uid("n"), type: "filter", name, parentId, children: [], filterType, value, inverted };
   // ignoredColumns only ever means something once the pattern actually has
-  // [value:...]/[*] wildcards (nodeHasExtractableWildcards) — gated on
+  // [*:...]/[*] wildcards (nodeHasExtractableWildcards) — gated on
   // filterType === "text" rather than that check itself so it's set from the
   // filter popup's ignore-toggle state regardless of whether the pattern
   // happens to compile at creation time (same "store it, it's harmless if
@@ -7764,7 +7764,7 @@ function textColumnValue(e, key) {
 // line) same as before this feature; caseSensitive off lower-cases both
 // sides same as the original behavior.
 //
-// `wildcardRegex` (optional): a "text" filter can carry [value:...]/[*]
+// `wildcardRegex` (optional): a "text" filter can carry [*:...]/[*]
 // tokens — there is no separate "extract" filterType (this session's
 // filterType merge, docs/ui-implementation-plan.md's follow-up note): the
 // same "text" node both filters/highlights AND, whenever its pattern has
@@ -7773,7 +7773,7 @@ function textColumnValue(e, key) {
 // case-sensitivity flag) tested against the target text instead of a
 // plain substring check. `wildcardColumns` (required whenever wildcardRegex
 // is set) is that same compile's `spec.columns` — carries each placeholder's
-// optional numeric `conditions` ([value:float>=10]), checked via
+// optional numeric `conditions` ([*:float>=10]), checked via
 // wildcardMatch() against structural regex match alone.
 // Compiles a person-typed regex source string into a real RegExp — used
 // both by getEntries' "text"/isRegex branch and the filter popup's live
@@ -7797,7 +7797,7 @@ function compileRegexFilter(source, caseSensitive) {
    path allocation-free.
 
    Only the LITERAL branch honours it: a regex pattern (\b, lookarounds)
-   and the wildcard-token language ([value:word], [*]) both express boundaries
+   and the wildcard-token language ([*:word], [*]) both express boundaries
    themselves, so the popup greys the toggle out for those and never stores
    the flag on such a node (see updateWholeWordAvailability/commitFilter). */
 const WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
@@ -7823,7 +7823,7 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
     if (columns && columns.length) {
       return columns.some(key => !!wildcardMatch(wildcardRegex, wildcardColumns, textColumnValue(e, key)));
     }
-    // Person-reported bug: a "text" filter carrying [value:...]/[*] tokens
+    // Person-reported bug: a "text" filter carrying [*:...]/[*] tokens
     // (see "A text filter's value can itself contain wildcard tokens"
     // above) used to test e.raw here — the WHOLE tab-separated line — while
     // getEntries()'s real "extract" branch always tests e.message. For a
@@ -8021,7 +8021,7 @@ function textMatchTargetColumns(node) {
 // the first, so a repeated word shows every hit. Wildcard patterns re-run
 // wildcardMatch's own numeric-condition check (valueSatisfiesConditions) per
 // occurrence, since a structurally-matching span can still fail e.g.
-// [value:float>=10].
+// [*:float>=10].
 function findMatchRanges(text, spec) {
   const ranges = [];
   if (!text || !spec) return ranges;
@@ -8385,7 +8385,7 @@ function getEntriesUncached(node) {
       const re = compileRegexFilter(value, !!node.caseSensitive);
       result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, re)) : [];
     } else if (isExtractPattern(value)) {
-      // A "text" filter's value can contain [value:...]/[*] tokens — there
+      // A "text" filter's value can contain [*:...]/[*] tokens — there
       // is no separate "extract" filterType to route to instead (this
       // session's filterType merge, docs/ui-implementation-plan.md's
       // follow-up note). The same node both filters/highlights on this
@@ -9991,7 +9991,7 @@ function renderStatus() {
 // Short type label shown next to each tree node's name (FILE/TXT/TIME/TBL/AND/OR/LNK).
 function typeTagFor(node) {
   if (node.type === "file") return "FILE";
-  // A "text" filter whose pattern has [value:...]/[*] wildcards is now ALSO
+  // A "text" filter whose pattern has [*:...]/[*] wildcards is now ALSO
   // an extraction node (this session's filterType merge — there is no more
   // separate "extract" filterType) — tag it TBL like the old dedicated type
   // did, since that's the more informative label (it unlocks Table/Plot).
@@ -10883,7 +10883,7 @@ function getVisibleEntries() {
 
 /* ===================== Extraction table view =====================
    Renders the matches of an extraction-capable "text" filter node (its
-   pattern has [value:...]/[*] wildcards, see nodeHasExtractableWildcards)
+   pattern has [*:...]/[*] wildcards, see nodeHasExtractableWildcards)
    as a spreadsheet-like grid: one row per matching entry, one column per
    placeholder. Supports
    click/shift-click/drag range selection (like Excel), one-click column
@@ -19659,7 +19659,7 @@ filterTokenChips.addEventListener("click", ev => {
   const chip = ev.target.closest(".token-chip");
   if (!chip) return;
   const type = chip.dataset.token;
-  insertTokenAtCursor(type === "*" ? "[*]" : "[value:" + type + "]");
+  insertTokenAtCursor(type === "*" ? "[*]" : "[*:" + type + "]");
 });
 
 // Regex mode (FEATURE_BACKLOG.md #16): hides/disables ONLY the UI that's
@@ -19689,7 +19689,7 @@ filterRegexCheckbox.addEventListener("change", () => {
 // anything before committing to it with Enter.
 //
 // This ALWAYS previews the "Add filter" outcome specifically (a "text"
-// filter — using the wildcard-shape regex once the pattern has [value:...]
+// filter — using the wildcard-shape regex once the pattern has [*:...]
 // tokens, same as getEntries' "text" branch does — honoring NOT/case/
 // column-restriction exactly as they're currently set), never the
 // "Extract" outcome: which one actually happens is decided entirely by
@@ -19768,7 +19768,7 @@ function evaluateLiveMatch() {
 // submit handler) — this is the ignore-toggle UI while authoring; the
 // post-creation #extractPatternView chips offer the same toggle afterward.
 //
-// A placeholder carrying numeric conditions ([value:float>=10]) gets a
+// A placeholder carrying numeric conditions ([*:float>=10]) gets a
 // small badge next to its highlighted span (describeValueConditions) so the
 // constraint is visible while authoring, not just implied by the typed
 // text — and the sample message this previews against is picked with
@@ -19840,13 +19840,13 @@ function updateFilterPatternPreview(val, baseEntries) {
 }
 // "Match whole word" only governs a plain LITERAL search (see
 // includesWholeWord): a real regex and the wildcard-token language both
-// carry their own boundary vocabulary (\b / lookarounds, [value:word]/[*]), and
+// carry their own boundary vocabulary (\b / lookarounds, [*:word]/[*]), and
 // getEntries ignores the flag for those two. So instead of letting it sit
 // there as a silent no-op, the toggle greys itself out the moment either
 // applies — driven by the same "input" listener and regex-mode change that
 // already drive live-match evaluation, so it tracks what is typed live.
 const WHOLE_WORD_TITLE = "Only match the input as a whole word — “Test” matches “Test is active” but not “Testing activated”";
-const WHOLE_WORD_TITLE_NA = "Not applicable to a regex or a wildcard-token pattern — those express their own boundaries (\\b, [value:word], …)";
+const WHOLE_WORD_TITLE_NA = "Not applicable to a regex or a wildcard-token pattern — those express their own boundaries (\\b, [*:word], …)";
 function updateWholeWordAvailability() {
   const inapplicable = filterRegexCheckbox.checked || isExtractPattern(filterInput.value);
   filterWholeWordCheckbox.disabled = inapplicable;
@@ -19870,7 +19870,7 @@ filterWholeWordCheckbox.addEventListener("change", evaluateLiveMatch);
 // "Add filter" is now the only outcome the popup can commit — this session's
 // filterType merge (docs/ui-implementation-plan.md's follow-up note) retired
 // the separate "Extract" button/action and the dedicated "extract"
-// filterType entirely. A pattern's [value:...]/[*] wildcards no longer
+// filterType entirely. A pattern's [*:...]/[*] wildcards no longer
 // choose between two node types; they simply make the resulting "text" node
 // ALSO extraction-capable (nodeHasExtractableWildcards), unlocking Table/
 // Plot for it, while it keeps filtering/highlighting exactly like any other
@@ -20023,8 +20023,8 @@ el("#ctxNote").addEventListener("click", () => {
 
 // Scans a column's text for numbers and replaces each with a typed
 // placeholder, producing a ready-to-use wildcard pattern (e.g. "moved to
-// [value:float] after [value:int] tries"). Clock times / durations are
-// recognized as a single [value:time] rather than being split into
+// [*:float] after [*:int] tries"). Clock times / durations are
+// recognized as a single [*:time] rather than being split into
 // separate numbers, and a number glued directly onto letters (e.g. inside
 // a hash or "v2") is left alone rather than being pulled out. Returns null
 // if none were found — "Filter for this ___" (below) then falls back to
@@ -20045,7 +20045,7 @@ function buildNumericExtractPattern(message) {
   while ((m = NUMERIC_TOKEN_RE.exec(message)) !== null) {
     out += message.slice(lastIndex, m.index);
     const tok = m[0];
-    out += tok.includes(":") || /[a-zA-Z]/.test(tok) ? "[value:time]" : (tok.includes(".") ? "[value:float]" : "[value:int]");
+    out += tok.includes(":") || /[a-zA-Z]/.test(tok) ? "[*:time]" : (tok.includes(".") ? "[*:float]" : "[*:int]");
     lastIndex = NUMERIC_TOKEN_RE.lastIndex;
     count++;
   }
@@ -20075,7 +20075,7 @@ function collapseNewlinesToWildcard(pattern) {
 // column was right-clicked (see resolveContextFilterColumn), with that
 // column pre-selected in the "Applies to" chips — but deliberately does
 // NOT decide text-filter vs. extraction itself anymore: any numeric
-// content becomes a [value:...] wildcard pattern same as the old "Extract
+// content becomes a [*:...] wildcard pattern same as the old "Extract
 // numbers from this message" action did, but whether that pattern actually
 // builds an extraction table is left entirely to which popup button gets
 // clicked afterward (see "Filter popup" — this is the same decision

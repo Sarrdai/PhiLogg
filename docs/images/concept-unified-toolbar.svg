@@ -33,7 +33,7 @@
   <rect class="ln fill" x="134" y="126" width="44" height="14"/><text x="141" y="136" class="tag" font-size="8">Table</text>
   <rect class="ln fill" x="180" y="126" width="40" height="14"/><text x="188" y="136" class="tag" font-size="8">Plot</text>
   <rect class="ln fill" x="222" y="126" width="52" height="14"/><text x="228" y="136" class="tag" font-size="8">Stacked</text>
-  <text x="280" y="136" class="sub" font-size="7.5">Table/Plot nur aktiv wenn Pattern Wildcards [value:...] enthält — sonst grau, nicht versteckt</text>
+  <text x="280" y="136" class="sub" font-size="7.5">Table/Plot nur aktiv wenn Pattern Wildcards [*:...] enthält — sonst grau, nicht versteckt</text>
   <rect class="ln fill" x="700" y="124" width="80" height="16"/><text x="705" y="136" class="tag" font-size="8">#levelBar</text>
   <ellipse class="ln fill" cx="794" cy="132" rx="12" ry="6"/><text x="785" y="135" class="tag" font-size="7">+tree</text>
   <rect class="ln fill" x="814" y="124" width="416" height="16"/><text x="820" y="136" class="tag" font-size="8">#breadcrumb — root › payment errors</text>
@@ -97,13 +97,13 @@
   <text x="20" y="350" class="lbl" font-size="13">Beispiel: ein Filter-Node mit Wildcards liefert alle vier Views — kein separater "extract"-Typ mehr</text>
 
   <rect class="ln accent" x="20" y="362" width="1220" height="26"/>
-  <text x="26" y="379" class="tag" font-size="10">.tree-row "response times"  · .tree-type-tag "text"  (Pattern enthält [value:float] → Table/Plot-Tabs automatisch aktiv)</text>
+  <text x="26" y="379" class="tag" font-size="10">.tree-row "response times"  · .tree-type-tag "text"  (Pattern enthält [*:float] → Table/Plot-Tabs automatisch aktiv)</text>
 
   <rect class="ln fill" x="20" y="396" width="1220" height="26"/>
   <text x="26" y="413" class="sub" font-size="9">① Minimap  ② StatusStrip  ③ #viewBar: Context | Filtered | [Table] | Plot | Stacked   #levelBar   root › response times</text>
 
   <rect class="ln accent2" x="20" y="428" width="1220" height="24"/>
-  <text x="26" y="444" class="tag" font-size="9">④ Slot (Table aktiv): user=[value:str] took [value:float]ms   min 4ms · max 812ms · avg 61ms</text>
+  <text x="26" y="444" class="tag" font-size="9">④ Slot (Table aktiv): user=[*:str] took [*:float]ms   min 4ms · max 812ms · avg 61ms</text>
 
   <rect class="ln fill" x="20" y="458" width="1220" height="220"/>
   <text x="26" y="476" class="sub">Content: #extractTable — gleiche Zeilen wie bisher, jetzt aber Teil desselben Node statt eines separaten "Extract"-Filters</text>
@@ -112,7 +112,7 @@
   <text x="20" y="706" class="lbl" font-size="12">Speichern eines Filters mit Wildcards</text>
   <rect class="ln fill" x="20" y="716" width="1220" height="90"/>
   <text x="30" y="736" class="sub">Heute: "Add filter" legt einen reinen Text-/Link-Node an; nur "Extract" legt separat einen eigenen "extract"-Node mit eigenem Toolbar-Ast an.</text>
-  <text x="30" y="756" class="sub">Vorschlag: "Add filter" erkennt [value:...]-Wildcards im Pattern selbst und schaltet Table/Plot als zusätzliche, im selben Node</text>
+  <text x="30" y="756" class="sub">Vorschlag: "Add filter" erkennt [*:...]-Wildcards im Pattern selbst und schaltet Table/Plot als zusätzliche, im selben Node</text>
   <text x="30" y="772" class="sub">liegende Tabs frei — kein zweiter Baumeintrag, keine Wahl zwischen "Filter" und "Extract" mehr nötig. filterType bleibt intern</text>
   <text x="30" y="788" class="sub">bestehen (Datenmodell unverändert), aber die UI zeigt Table/Plot als Geschwister-Tabs von Context/Filtered statt als eigenen Node-Typ.</text>
 
