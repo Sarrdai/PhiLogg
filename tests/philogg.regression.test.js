@@ -2887,21 +2887,27 @@ await withApp(async (w, d, T) => {
     "#fhTabs' own button (.view-tab) fills its container via height:100% + flex-centering, not a pinned line-height");
   assert(cs(crumbEl).height === "28px" && cs(levelBtnEl).height === "28px",
     "breadcrumb chips and level pills share the exact same 28px height as #fhTabs, no line-height arithmetic needed");
-  // Regression guard for a third reported round on this same row (person
-  // screenshot: "top chain row should align with the level filters and
-  // STAY that way"): vertical-align:middle aligns a .crumb relative to its
-  // PARENT's font baseline/x-height, not to where #fhTabs/#levelBar's
-  // floats actually start — the two only coincided by accident depending on
-  // inherited font metrics. vertical-align:top + margin-top:0 pins the
-  // chip's own top edge to the same y-position the floats start at
-  // (both are the first content in #viewBar, so a float's top and a
-  // normal-flow block's first line both begin flush at #viewBar's
-  // content-box top), which holds regardless of font/content changes.
-  const levelBarEl = d.querySelector("#levelBar");
-  assert(cs(crumbEl).verticalAlign === "top", "breadcrumb chips use vertical-align:top, not middle, so they align to where the floats start rather than to a font-baseline-relative position");
-  assert(cs(crumbEl).marginTop === "0px", "breadcrumb chips have no top margin, so their top edge isn't pushed down relative to the floats");
-  assert(cs(fhTabsEl).marginTop === "0px" && cs(levelBarEl).marginTop === "0px",
-    "sanity: #fhTabs/#levelBar also have no top margin — all three share the same starting y-position in #viewBar");
+  // Regression guard, UPDATED this session (2026-09-08, person-reported via
+  // an annotated mockup: "unten sichtbar größer als oben"): the vertical-align
+  // :top + margin-top:0 rationale below the fold used to hold because #breadcrumb
+  // lived directly inside floated #viewBar alongside #fhTabs/#levelBar (a
+  // #fhTabs/#levelBar-alignment concern that no longer applies — breadcrumb
+  // has its own dedicated #breadcrumbBar row now, see the "Toolbar
+  // reorganization follow-up" changelog entry). Once #breadcrumbBar started
+  // flex-centering #breadcrumb's WHOLE box (align-items:center), the old
+  // asymmetric margin (0 top / 6 bottom, needed only to add a gap between
+  // wrapped lines) shifted the visible pill toward the top of that centered
+  // box, leaving a visibly bigger gap below the pill than above it. Fix:
+  // #breadcrumb .crumb now carries a SYMMETRIC vertical margin (2px/2px) —
+  // small enough that #breadcrumbBar still shrinks (not grows) relative to
+  // its old 44px height, but equal on both sides so the outer centering
+  // produces an equal gap top and bottom.
+  assert(cs(crumbEl).verticalAlign === "top", "breadcrumb chips still use vertical-align:top (harmless/inert once the row is centered by its own flex parent, not load-bearing any more, but left as-is)");
+  assert(cs(crumbEl).marginTop === "2px" && cs(crumbEl).marginBottom === "2px",
+    "breadcrumb chips carry a SYMMETRIC 2px top/bottom margin (was 0px/6px) so #breadcrumbBar's centering doesn't visibly shift the pill toward the top");
+  const breadcrumbBarEl = d.querySelector("#breadcrumbBar");
+  assert(cs(breadcrumbBarEl).paddingTop === cs(breadcrumbBarEl).paddingBottom,
+    "sanity: #breadcrumbBar's own top/bottom padding is symmetric too, so nothing upstream reintroduces the asymmetry");
 
   const crumbs = [...d.querySelectorAll("#breadcrumb .crumb")];
   assert(crumbs.length === 2, "sanity: breadcrumb has file + filter = 2 chips, got " + crumbs.length);

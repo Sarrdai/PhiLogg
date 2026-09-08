@@ -894,11 +894,16 @@
      inline-block .crumb chips wrap line-by-line on their own now that
      there's nothing else sharing the row to wrap around. */
   #breadcrumbBar{
-    /* Flex-centered so the 28px .crumb chips sit vertically centered; the row
-       is kept as small as the chips need (person-requested: may shrink, never
-       grow beyond the old 44px). 28px chip + 2×4px = 36px; still a fixed
-       reserved height so #viewBar below never jumps across views. */
-    flex:0 0 auto; min-height:36px; box-sizing:border-box;
+    /* Flex-centers #breadcrumb's whole box; the row is kept as small as the
+       chips need (person-requested: may shrink, never grow beyond the old
+       44px). min-height is a floor, not the real height: #breadcrumb's own
+       content (a single line of .crumb chips) needs 32px — 28px chip height
+       plus its own 2px top/2px bottom margin (see #breadcrumb .crumb below,
+       kept symmetric so #breadcrumbBar's centering doesn't shift the visible
+       pill off-center) — so the actual rendered height ends up 4+32+4=40px
+       (plus the 1px border), still a fixed reserved height so #viewBar below
+       never jumps across views. */
+    flex:0 0 auto; min-height:40px; box-sizing:border-box;
     display:flex; align-items:center;
     padding:4px 16px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
@@ -908,6 +913,27 @@
        already — see .crumb's comment). Vertical gap between wrapped lines
        comes from .crumb/.crumb-sep's own margin instead. */
   }
+  /* #breadcrumbBar centers #breadcrumb's whole rendered box (align-items:center,
+     see #breadcrumbBar above) — it does NOT center each chip individually. The
+     base .crumb/.crumb-sep rules below still carry their ORIGINAL asymmetric
+     vertical margins (0/6 and 8/6), hand-tuned for the pre-#breadcrumbBar era
+     when this content sat directly inside floated #viewBar with no outer
+     centering at all. Left as-is, that asymmetry (margin-bottom > margin-top)
+     shifts the visible pill toward the TOP of #breadcrumb's own box, so once
+     THAT box gets centered by #breadcrumbBar, the gap below the pill visibly
+     exceeds the gap above it (person-reported, mockup with measured margins).
+     Scoped override: symmetric small margins (2px vertical, half the old 6px
+     total) so the pill sits genuinely centered within its own margin box —
+     #breadcrumbBar's centering then produces an equal gap top and bottom. The
+     .crumb-sep margin-top is re-derived to keep its 12px glyph line vertically
+     centered against .crumb's now-2px-margin-top box: crumb's visible pill
+     spans margin-top(2)..margin-top+28, center at 2+14=16; sep's margin-top
+     must put its 12px line's center at that same 16 -> margin-top = 16-6 = 10
+     (was 8, tuned for the old margin-top:0 crumb). Bottom margins mirror the
+     new top values so the still-supported multi-line wrap case (a long filter
+     chain) keeps a modest, even gap between lines instead of 0. */
+  #breadcrumb .crumb{margin:2px 4px 2px 0;}
+  #breadcrumb .crumb-sep{margin:10px 3px 10px;}
   .crumb{
     /* Shared 28px pill shape (this session — see "Main window visual
        consistency fix"), same box model as .level-btn right below: a fixed

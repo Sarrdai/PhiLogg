@@ -138,7 +138,27 @@ shape:
   always reserved (even empty), sitting between the timeline minimap and
   `#viewBar` (person-requested placement — NOT below `#viewBar`, and
   deliberately its own row so it never competes for space with the toggle/
-  level-filter/row-actions or changes `#viewBar`'s height).
+  level-filter/row-actions or changes `#viewBar`'s height). **Vertically
+  centered and shrunk** (2026-09-08, person-requested twice: first to center
+  the chips at all, then a follow-up from an annotated mockup measuring an
+  actual top/bottom gap mismatch). `#breadcrumbBar` is `display:flex;
+  align-items:center` — but that only centers `#breadcrumb`'s WHOLE rendered
+  box, not each `.crumb` chip individually, so `.crumb`'s own vertical margin
+  still matters: it used to be asymmetric (`0` top / `6px` bottom — a leftover
+  from the pre-`#breadcrumbBar` era, when the extra bottom margin only
+  provided a gap between wrapped lines while the content sat directly inside
+  floated `#viewBar` with no outer centering at all). That asymmetry shifted
+  the visible pill toward the top of `#breadcrumb`'s own box, so once THAT box
+  got centered, the gap below the pill visibly exceeded the gap above it.
+  Fixed by making `#breadcrumb .crumb`'s margin **symmetric** (`2px` top/
+  bottom, small enough that the row still shrinks — `min-height:40px`, down
+  from the old `44px` — rather than growing) and re-deriving
+  `#breadcrumb .crumb-sep`'s top margin (`8px`→`10px`) to keep its glyph
+  centered against the chip's now-`2px`-margin-top box. Both overrides are
+  scoped to `#breadcrumb` (not the base `.crumb`/`.crumb-sep` rules) since
+  those classes are reused elsewhere (`.filter-target-chain` in the filter
+  popup, `#extractFilterChain`) with their own layout and aren't part of this
+  fix.
 - **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — everything floats left
   in DOM order (`#viewBar` is `display:flow-root`), except the management
   group which floats right. Order (person-requested, 2026-09-08): the view
