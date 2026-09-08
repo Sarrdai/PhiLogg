@@ -878,6 +878,14 @@
      Message hide there — see updateViewBarRowActions). Same no-bare-.hidden
      scoping as the group rule above. */
   #viewBar .row-action-btn.hidden{display:none;}
+  /* The group-dividing "|" separators are DIRECT children of #viewBar (not
+     inside a flex .row-actions group), so the generic .row-action-separator's
+     align-self:stretch can't size them — they float in the same left flow as
+     the button groups and need an explicit height. The 4px side margins make
+     the gap from the separator to the button on each side equal to the gap
+     between two adjacent filter buttons (.row-actions gap:4px), person-
+     requested. 20px bar + 4px top/bottom margin = the row's 28px. */
+  #viewBar > .row-action-separator{float:left; height:20px; margin:4px 4px;}
 
   /* Breadcrumb's own row (this session's toolbar reorganization) — always
      reserved, even with no active filter chain, so #viewBar/#breadcrumbBar
@@ -886,8 +894,13 @@
      inline-block .crumb chips wrap line-by-line on their own now that
      there's nothing else sharing the row to wrap around. */
   #breadcrumbBar{
-    flex:0 0 auto; min-height:44px; box-sizing:border-box;
-    padding:8px 16px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    /* Flex-centered so the 28px .crumb chips sit vertically centered; the row
+       is kept as small as the chips need (person-requested: may shrink, never
+       grow beyond the old 44px). 28px chip + 2×4px = 36px; still a fixed
+       reserved height so #viewBar below never jumps across views. */
+    flex:0 0 auto; min-height:36px; box-sizing:border-box;
+    display:flex; align-items:center;
+    padding:4px 16px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #breadcrumb{
     /* No line-height override here: it would be inherited by .crumb below
@@ -959,7 +972,10 @@
 
   /* ---------- Level filter bar ---------- */
   #levelBar{
-    float:left; margin:0 14px 0 0;
+    /* Sits right of the filter groups now (person-requested) with a fixed
+       ~3-button gap to their left, so changing pill numbers never shift the
+       filter buttons. 84px ≈ three 28px buttons. */
+    float:left; margin:0 14px 0 84px;
     display:flex; align-items:center; gap:6px; flex-wrap:wrap;
   }
   .level-btn{
@@ -1040,12 +1056,9 @@
      re-render without re-wiring. */
   #libraryPresetBar .row-action-btn:hover:not(:disabled) .row-action-label,
   #libraryManageBar .row-action-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
-  /* Right-aligned management group (Add to Library / Library). */
-  #libraryManageBar{margin-left:auto;}
-  /* "Add to Library" reads as a placeholder slot for the next pinned preset —
-     a dashed outline around the circle (person-requested). */
-  .lib-add-placeholder{border:1px dashed var(--border);}
-  .lib-add-placeholder:hover:not(:disabled){border-color:var(--accent-strong);}
+  /* Management group (Add to Library / Library) pinned to the far right of
+     #viewBar. Two ids so it beats `#viewBar .row-actions{float:left}`. */
+  #viewBar #libraryManageBar{float:right; margin:0;}
   /* The "Library Filter" group and its leading "|" collapse out entirely when
      nothing is pinned (id+[hidden] beats the .row-actions flex display). */
   #libraryPresetBar[hidden], #libraryPresetSep[hidden]{display:none;}
@@ -3304,10 +3317,10 @@
              wildcards (see renderViewTabs's own comment), so the rest of
              the tab group never jumps sideways once they're added. -->
         <div class="view-tabs" id="fhTabs"></div>
-        <div id="levelBar"></div>
-        <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
         <!-- Group 1: standard filter-creation actions (Before/After/Time
-             range/Message/Extract). -->
+             range/Message/Extract) — directly right of the view selector so
+             they never shift when the level pills' numbers change width (the
+             level filter now sits to their RIGHT, person-requested). -->
         <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
         <!-- Group 2: pinned library presets (person-requested). Rendered
              dynamically by renderLibraryToolbarPresets; the group and its
@@ -3322,11 +3335,17 @@
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
         <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
-        <!-- Library management, right-aligned (margin-left:auto on the group):
-             "Add to Library" (saves the active filter; dashed placeholder
-             outline) then "Library" (opens the manage dialog). -->
+        <!-- Level quick-filter — sits RIGHT of the filter groups now
+             (person-requested), a fixed ~3-button gap away (#levelBar's
+             margin-left), so changing pill numbers never push the filter
+             buttons sideways. -->
+        <div id="levelBar"></div>
+        <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
+        <!-- Library management, pinned to the far right (float:right):
+             "Add to Library" (saves the active filter) then "Library" (opens
+             the manage dialog). -->
         <div class="toolbar-group row-actions" id="libraryManageBar">
-          <button type="button" id="btnAddToLibrary" class="toolbar-icon-btn row-action-btn lib-add-placeholder" title="Add active filter to library">
+          <button type="button" id="btnAddToLibrary" class="toolbar-icon-btn row-action-btn" title="Add active filter to library">
             <span class="row-action-hit"></span><span class="row-action-label">Add to Library</span>
           </button>
           <button type="button" id="btnOpenLibrary" class="toolbar-icon-btn row-action-btn" title="Open filter library">
@@ -20807,9 +20826,10 @@ const VIEWBAR_ROW_ACTIONS = [
   { action: "filterBefore", label: "Before", svg: '<path d="M8 3v10M8 3l-3 3M8 3l3 3"/>', strokeWidth: 1.4 },
   { action: "filterAfter", label: "After", svg: '<path d="M8 13V3M8 13l-3-3M8 13l3-3"/>', strokeWidth: 1.4 },
   { action: "timeRangeFromSelection", label: "Time range", svg: '<path d="M8 3v4M5 4l3 3 3-3M8 13v-4M5 12l3-3 3 3"/>', strokeWidth: 1.4 },
-  // "[*]" — brackets around a centered asterisk, the extraction-wildcard
-  // token (person-requested), replacing the old speech-bubble.
-  { action: "filterForMessage", label: "Message", svg: '<path d="M6.5 3H4.3v10h2.2"/><path d="M9.5 3h2.2v10H9.5"/><path d="M8 6v4M6.3 7l3.4 2M9.7 7l-3.4 2"/>', strokeWidth: 1.3 },
+  // "[ * ]" — brackets spaced well clear of a compact centered asterisk
+  // (person-requested: the token must stay legible at 13px), the
+  // extraction-wildcard glyph, replacing the old speech-bubble.
+  { action: "filterForMessage", label: "Message", svg: '<path d="M5.2 3.5H4v9h1.2"/><path d="M10.8 3.5H12v9h-1.2"/><path d="M8 6.3v3.4M6.5 7.15l3 1.7M9.5 7.15l-3 1.7"/>', strokeWidth: 1.3 },
   // Same auto-extraction pattern as "Message" (see extractMessageFilter),
   // but committed straight to a new filter node instead of opening the
   // popup first — reuses ICON_TABLE's markup ("extraction table"), the

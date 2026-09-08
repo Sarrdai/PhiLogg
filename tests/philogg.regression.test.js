@@ -21245,28 +21245,28 @@ await withApp(async (w, d, T) => {
     "the New button shows a plain '+' path, not the old funnel-plus");
 
   const msgSvg = d.querySelector('[data-row-action="filterForMessage"] svg').innerHTML;
-  assert(msgSvg.includes("M8 6v4"), "the Message button shows the '[*]' asterisk glyph");
+  assert(msgSvg.includes("M8 6.3v3.4"), "the Message button shows the '[ * ]' asterisk glyph");
 });
 
 await withApp(async (w, d, T) => {
-  section("194b. Management buttons: floppy-disk Add (dashed placeholder) + book Library, right-aligned");
+  section("194b. Management buttons: floppy-disk Add + book Library, right-aligned (no dashed outline)");
 
   const addBtn = d.querySelector("#btnAddToLibrary");
   const openBtn = d.querySelector("#btnOpenLibrary");
   // (Border shorthand isn't reliably expanded by jsdom's getComputedStyle, so
   // assert the placeholder CLASS is applied rather than the resolved border.)
-  assert(addBtn.classList.contains("lib-add-placeholder"), "Add to Library carries the dashed-placeholder class");
-  // Add (disk) and Library (book) carry distinct, non-empty icons.
+  // Add (disk) and Library (book) carry distinct, non-empty icons; the dashed
+  // placeholder outline was dropped (person-requested).
+  assert(!addBtn.classList.contains("lib-add-placeholder"), "Add to Library no longer carries the dashed-placeholder class");
   assert(addBtn.querySelector(".row-action-hit").innerHTML.length > 0 &&
     openBtn.querySelector(".row-action-hit").innerHTML !== addBtn.querySelector(".row-action-hit").innerHTML,
     "Add (disk) and Library (book) carry distinct icons");
-  // Right-alignment is margin-left:auto in CSS (jsdom can't resolve `auto`
-  // margins from a stylesheet) — assert the structural precondition instead:
-  // the management group is the last element in #viewBar, so margin-left:auto
-  // pushes it flush right.
+  // Right-alignment is float:right in CSS (jsdom has no layout engine to
+  // resolve the visual position) — assert the structural precondition instead:
+  // the management group is the last element in #viewBar, floated right.
   const viewBarKids = [...d.querySelector("#viewBar").children];
   assert(viewBarKids[viewBarKids.length - 1].id === "libraryManageBar",
-    "the management group is the last child of #viewBar (right-aligned via margin-left:auto)");
+    "the management group is the last child of #viewBar (pinned right via float:right)");
 });
 
 await withApp(async (w, d, T) => {
@@ -21302,6 +21302,28 @@ await withApp(async (w, d, T) => {
   w.render();
   w.jumpToViewTab(3);
   assert(T.fhActiveTab === "table", "Ctrl+3 reaches Table once the node has wildcards");
+});
+
+await withApp(async (w, d, T) => {
+  section("194e. Layout order: filter groups first, then the level bar, then the right-aligned management group");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const kids = [...d.querySelector("#viewBar").children].map(c => c.id || c.dataset.rowActions || c.className);
+  const idxOf = pred => kids.findIndex(pred);
+  const iTabs = kids.indexOf("fhTabs");
+  const iFilters = idxOf(k => k === "viewbar");
+  const iNew = kids.indexOf("viewbarNew");
+  const iLevel = kids.indexOf("levelBar");
+  const iManage = kids.indexOf("libraryManageBar");
+  assert(iTabs === 0, "view selector (#fhTabs) is first");
+  assert(iTabs < iFilters && iFilters < iNew, "the standard filter group and New come right after the view selector");
+  assert(iNew < iLevel, "the level bar now sits AFTER the filter groups (so changing pill widths never shifts the filters)");
+  assert(iManage === kids.length - 1, "the management group is last (floated right)");
+  // Both group separators are DIRECT children of #viewBar (not inside a flex group).
+  assert([...d.querySelectorAll("#viewBar > .row-action-separator")].length >= 1,
+    "the group-dividing separators are direct #viewBar children");
 });
 
 /* ============================================================
@@ -24048,12 +24070,19 @@ process.exitCode = failed ? 1 : 0;
       omitted — so the filter buttons to their right don't shift sideways
       (Group 158a + the Group-around-628 tab check updated accordingly;
       jumpToViewTab/Ctrl+1-4 skips a disabled slot). (b) Icon changes: New →
-      plain "+", Message → "[*]", Add to Library → floppy-disk ICON_DISK with a
-      dashed .lib-add-placeholder outline, Library → ICON_BOOK, idset selection
-      node → single-check ICON_CHECK. (c) Layout: three groups (Standard filters
-      | Library presets #libraryPresetBar | New #viewbarNew) with the management
-      buttons in a right-aligned #libraryManageBar; the Library-presets group +
-      its leading separator collapse out when nothing is pinned (Group 193
-      updated). (d) The manage dialog's pin toggle is now the .settings-switch
-      pill and row controls share a 28px height.
+      plain "+", Message → "[ * ]" (spaced so it reads at 13px), Add to Library
+      → floppy-disk ICON_DISK, Library → ICON_BOOK, idset selection node →
+      single-check ICON_CHECK. (c) Layout (refined 194e, from an annotated
+      mockup): standard filters follow the view selector directly, then the
+      Library-presets group (#libraryPresetBar) and New (#viewbarNew), then the
+      level bar (#levelBar) moved to their RIGHT with a fixed ~3-button gap so
+      pill-width changes never shift the filters; the management buttons
+      (#libraryManageBar) float far-right; the two dividing separators are
+      direct #viewBar children with 4px side margins (== the inter-button gap);
+      the dashed placeholder outline on Add was dropped. The Library-presets
+      group + its leading separator collapse out when nothing is pinned (Group
+      193 updated). (d) The manage dialog's pin toggle is now the
+      .settings-switch pill and row controls share a 28px height. (e)
+      #breadcrumbBar flex-centered and shrunk (44→36px) so its chips sit
+      centered.
    ============================================================ */
