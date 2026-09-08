@@ -3543,16 +3543,14 @@
       </div>
 
       <div id="extractWrap">
-        <div id="extractToolbar">
-          <div id="extractPatternView"></div>
-        </div>
         <!-- Table view's own toolbar — same pattern as #plotToolbar right
-             below it (see that div's own comment): a real row directly above
-             this view's content. Actions-only now (person-requested, this
-             session — the Statistics visibility toggle that used to live
-             here is gone, see #statsPanel's own comment below): "Export as
-             CSV…", which moves here from being right-click-only (still
-             reachable there too, via #extractContextMenu). -->
+             below it (see that div's own comment): a real row directly under
+             the filter bar, ABOVE #extractToolbar's pattern-view row now
+             (person-requested — it used to sit between the pattern view and
+             the extraction table, same "toolbar directly under the filter
+             bar" fix applied to #contextToolbar/#filteredToolbar). Actions-
+             only: "Export as CSV…", which also remains reachable via
+             #extractContextMenu. -->
         <div id="tableToolbar">
           <div class="toolbar-group" data-toolbar-group="actions">
             <button type="button" id="tableExportCsvBtn" class="toolbar-icon-btn" title="Export as CSV…">
@@ -3568,6 +3566,9 @@
             <span data-row-actions="select-action"></span>
           </div>
           <span id="tableFilterInfo" class="toolbar-filter-info"></span>
+        </div>
+        <div id="extractToolbar">
+          <div id="extractPatternView"></div>
         </div>
         <div id="extractScroll">
           <table id="extractTable"><thead id="extractHead"></thead><tbody id="extractBody"></tbody></table>
@@ -12103,6 +12104,15 @@ function switchExtractView(view) {
   extractScroll.classList.toggle("hidden", view !== "table");
   tableToolbar.classList.toggle("hidden", view !== "table");
   plotWrap.classList.toggle("hidden", view !== "plot");
+  // #extractToolbar (the pattern-view row) is shared by both Table and Plot
+  // — a single instance, not duplicated per view like the toggle-* buttons
+  // are. It's relocated here (not just shown/hidden in place) so it always
+  // sits directly under whichever view's own toolbar is currently on screen
+  // (#tableToolbar/#plotToolbar) rather than only ever living before
+  // #extractScroll and so sitting ahead of #plotToolbar — inside #plotWrap —
+  // whenever Plot was the active view (person-reported: left a toolbar-like
+  // bar between the tab row and Plot's own toolbar).
+  (view === "plot" ? plotBody : extractScroll).before(extractToolbar);
   // Statistics panel is Table-only (person-requested, this session) — Plot
   // has no Statistics panel at all anymore, unlike the old shared, per-tab-
   // toggleable bar.
