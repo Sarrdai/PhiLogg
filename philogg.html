@@ -18762,6 +18762,19 @@ function nativeDirHandle(path, name) {
         handle.name = f.name;  // and keeps the entry itself as the handle
         yield handle;
       }
+      // Subdirectories, so scanFolderHandle's own recursion (gated there on
+      // settings.includeSubfolders, same as a real FileSystemDirectoryHandle)
+      // has something to descend into — without this, listFolder alone only
+      // ever yields files and "Include subfolders" is a silent no-op under
+      // the desktop wrapper. See commands.rs::list_subfolders.
+      if (typeof window.philogg.listSubfolders === "function") {
+        const subdirs = await window.philogg.listSubfolders(path);
+        for (const d of subdirs || []) {
+          const handle = nativeDirHandle(d.path, d.name);
+          handle.kind = "directory";
+          yield handle;
+        }
+      }
     },
     async queryPermission() { return "granted"; },
     async requestPermission() { return "granted"; },
@@ -19338,10 +19351,11 @@ function sortFolderRecsByRecency(recs) {
 
 // Recursive when settings.includeSubfolders is set, otherwise identical to
 // the original non-recursive walk. A native (Tauri) dirHandle's values()
-// only ever yields files (see docs/desktop.md — list_folder is a flat,
-// non-recursive read_dir), so recursion is a silent no-op there; nothing
-// extra needed for that case. Only files matching BOTH the fixed extension
-// filter and at least one configured pattern are returned.
+// yields both files (list_folder) and subdirectories as nested
+// nativeDirHandles (list_subfolders) — see nativeDirHandle — so this walk
+// treats it exactly like a real FileSystemDirectoryHandle. Only files
+// matching BOTH the fixed extension filter and at least one configured
+// pattern are returned.
 async function scanFolderHandle(dirHandle, settings) {
   const s = settings || defaultFolderSettings();
   const patterns = s.patterns && s.patterns.length ? s.patterns : [defaultFolderPattern()];
