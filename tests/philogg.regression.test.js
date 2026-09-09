@@ -16056,6 +16056,18 @@ function nativeFolderBridge(dirs, idBase = 1) {
           return { url, path: full, name };
         });
     },
+    // Mirrors commands.rs::list_subfolders: this dir's immediate
+    // subdirectories, modeled here as other `dirs` keys nested one segment
+    // below `dirPath`.
+    listSubfolders: async dirPath => {
+      const prefix = dirPath + "/";
+      const names = new Set();
+      for (const key of Object.keys(dirs)) {
+        if (!key.startsWith(prefix)) continue;
+        names.add(key.slice(prefix.length).split("/")[0]);
+      }
+      return Array.from(names).sort().map(name => ({ path: dirPath + "/" + name, name }));
+    },
   };
   // The fetch every philogg://local/… read goes through (the wrapper serves
   // these; jsdom has to be told how).
@@ -16217,6 +16229,37 @@ await withApp(async (w, d, T) => {
     assert(node.tail && typeof node.tail.handle.getFile === "function", "...tailing resumes off the fresh URL");
   }, { indexedDB: factory, philogg: second });
 });
+
+const dirsF = {
+  "/logs": { "root.log": makeLog(0, 1) },
+  "/logs/sub": { "nested.log": makeLog(1, 1) },
+  "/logs/sub/deeper": { "deep.log": makeLog(2, 1) },
+};
+const bridgeF = nativeFolderBridge(dirsF);
+bridgeF.picked = { path: "/logs", name: "logs" };
+
+await withApp(async (w, d, T) => {
+  section("145f. \"Include subfolders\" recurses under the native (Tauri) bridge too — nativeDirHandle.values() also yields subdirectories via listSubfolders");
+  bridgeF.installFetch(w);
+
+  await w.openFolderPickerFlow();
+  const folder = T.state.folders[0];
+  assert(folder.files.length === 1, "without \"include subfolders\", only the top-level file is listed, got " + folder.files.length);
+
+  folder.settings.includeSubfolders = true;
+  await w.folderScanTick();
+  assert(folder.files.map(f => f.name).sort().join(",") === "deep.log,nested.log,root.log",
+    "recursion descends into nested subdirectories on the native bridge too, got " + folder.files.map(f => f.name).sort().join(","));
+  const nested = folder.files.find(f => f.name === "nested.log");
+  assert(nested.relPath === "sub/nested.log", "a nested file's relPath carries its subfolder path, got " + nested.relPath);
+  const deep = folder.files.find(f => f.name === "deep.log");
+  assert(deep.relPath === "sub/deeper/deep.log", "...two levels deep too, got " + deep.relPath);
+
+  folder.settings.includeSubfolders = false;
+  await w.folderScanTick();
+  assert(folder.files.map(f => f.name).join(",") === "root.log",
+    "turning the setting back off drops the nested files from the listing again, got " + folder.files.map(f => f.name).join(","));
+}, { philogg: bridgeF });
 
 /* ============================================================
    GROUP 146 — Release-only comment stripping (scripts/strip-comments.js)

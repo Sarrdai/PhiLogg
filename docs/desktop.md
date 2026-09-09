@@ -188,24 +188,30 @@ restores under the cursor the same way whichever trigger entered it.
 - WKWebView (macOS) and WebKitGTK (Linux) don't implement the API at all, so folder
   watch simply didn't exist there.
 
-So this wrapper doesn't ask the webview. `commands.rs` has two commands — `pick_folder`
-(the OS folder dialog, Rust-driven like `pick_files`, so still no ACL entry) and
-`list_folder(path, extensions)` (a non-recursive `read_dir`, filtered by the extensions
-the *page* considers loadable, each match registered through the same
-`LocalFile::register` every other route uses) — and `inject.js` exposes both as
-`philogg.pickFolder` / `philogg.listFolder`. Rust's filesystem access has no blocklist,
-so Desktop is just a directory.
+So this wrapper doesn't ask the webview. `commands.rs` has three commands —
+`pick_folder` (the OS folder dialog, Rust-driven like `pick_files`, so still no ACL
+entry), `list_folder(path, extensions)` (a non-recursive `read_dir`, filtered by the
+extensions the *page* considers loadable, each match registered through the same
+`LocalFile::register` every other route uses), and `list_subfolders(path)` (the same
+directory's immediate subdirectories, unregistered — just names and paths) — and
+`inject.js` exposes all three as `philogg.pickFolder` / `philogg.listFolder` /
+`philogg.listSubfolders`. Rust's filesystem access has no blocklist, so Desktop is just
+a directory.
 
 On the page side this is one duck-typed stand-in, `nativeDirHandle(path, name)`, sitting
 next to `urlTailHandle` in the Tailing section. It implements exactly the four members
 the folder-watch code touches — `name`, `values()`, `queryPermission()`,
 `requestPermission()` — so `scanFolderHandle`, `mergeScannedFiles`, `rescanFolder`,
 `folderScanTick` and `tryReconnectFolder` run against it unmodified; there is no
-"native or browser" branch anywhere in that section. `queryPermission()` is a constant
-`"granted"`: a native listing has no permission model, the person picked the folder in
-the OS's own dialog. Each yielded entry *is* a `urlTailHandle` (which carries the file's
-path alongside its URL), so a file opened from a watched folder tails, reveals and
-copies its path exactly like a dropped one.
+"native or browser" branch anywhere in that section. `values()` yields both
+`list_folder`'s files (as `urlTailHandle`s) AND `list_subfolders`'s directories (as
+nested `nativeDirHandle`s, `kind: "directory"`) — mirroring a real
+`FileSystemDirectoryHandle`, so `scanFolderHandle`'s own recursion (gated on
+`settings.includeSubfolders`) descends into them exactly as it would in the browser.
+`queryPermission()` is a constant `"granted"`: a native listing has no permission model,
+the person picked the folder in the OS's own dialog. Each yielded file entry *is* a
+`urlTailHandle` (which carries the file's path alongside its URL), so a file opened from
+a watched folder tails, reveals and copies its path exactly like a dropped one.
 
 Two details that are easy to get wrong:
 
