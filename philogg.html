@@ -19164,12 +19164,25 @@ function onTailChange(changedRootIds) {
   // heavily debounced (see CACHE_FILE_DEBOUNCE_MS), pagehide flushes the rest.
   changedRootIds.forEach(id => { const n = state.nodes[id]; if (n) schedulePersistFileNode(n); });
   const activeRoot = state.activeId ? getRootFileId(state.activeId) : null;
+  const affectsActiveView = !!(activeRoot && changedRootIds.includes(activeRoot));
+  // A tailed root that ISN'T behind the currently active view growing is not
+  // a reason for a full render(): nothing on screen actually needs new
+  // content, and render()->renderTree()'s innerHTML wipe-and-rebuild would
+  // otherwise disrupt unrelated in-progress UI state (a tree row rename, a
+  // click landing elsewhere) on every poll tick for as long as ANY tailed
+  // file in the sidebar keeps growing in the background — person-reported.
+  // updateLoadRowProgress already exists for exactly this "just refresh one
+  // row's own count, no render()" case (see its own comment, load ticks).
+  if (!affectsActiveView) {
+    changedRootIds.forEach(id => updateLoadRowProgress(id));
+    return;
+  }
   // Follow only moves the view when the file behind the *current* view grew.
   // Both the Filtered view's and the Highlight/Full view's own scroll are
   // driven off the same decision (FEATURE_BACKLOG #25 — live-follow used to
   // be Filtered-only) — see renderTable()/renderHighlightView()'s own
   // pendingTableScroll/pendingHighlightScroll consumption.
-  const followThisChange = !!(activeRoot && changedRootIds.includes(activeRoot) && state.tailFollow);
+  const followThisChange = state.tailFollow;
   pendingTableScroll = followThisChange ? "bottom" : "keep";
   pendingHighlightScroll = followThisChange ? "bottom" : "keep";
   render();
