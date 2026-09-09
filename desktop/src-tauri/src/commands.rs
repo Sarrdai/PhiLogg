@@ -195,6 +195,30 @@ pub fn list_folder(
     Ok(paths.iter().map(|p| LocalFile::register(&state, p)).collect())
 }
 
+/// The subfolder half of `list_folder`'s non-recursive walk: this directory's
+/// immediate subdirectories, so the page's own `scanFolderHandle` recursion
+/// (`philogg.html`, gated on `settings.includeSubfolders`) has something to
+/// recurse into. `nativeDirHandle.values()` calls this alongside `list_folder`
+/// and yields each result as a fresh nested `nativeDirHandle`, which is why a
+/// native (Tauri) watched folder's "Include subfolders" used to be a silent
+/// no-op — `list_folder` only ever returned files, so `walk()` never found a
+/// directory entry to descend into.
+#[tauri::command]
+pub fn list_subfolders(path: String) -> Result<Vec<PickedFolder>, String> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(&path).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let entry_path = entry.path();
+        // `entry_path.is_dir()`, not `entry.file_type()`, for the same
+        // symlink reason as list_folder's `is_file()` check above.
+        if entry_path.is_dir() {
+            out.push(PickedFolder::new(&entry_path));
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(out)
+}
+
 /// "Copy Path" for a file the page knows only by its `philogg://local/…`
 /// URL (a file-association open) — same id -> path lookup `reveal_local_url`
 /// does, but handing the answer back instead of acting on it.

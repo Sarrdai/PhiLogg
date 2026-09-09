@@ -75,6 +75,7 @@ fn main() {
             commands::pick_files,
             commands::pick_folder,
             commands::list_folder,
+            commands::list_subfolders,
             commands::path_for_local_url,
             commands::list_system_fonts,
             commands::window_minimize,
