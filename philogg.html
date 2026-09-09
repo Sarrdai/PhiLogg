@@ -19431,6 +19431,11 @@ async function scanFolderHandle(dirHandle, settings) {
 // was open (see the loop below) — person-reported: it used to linger
 // forever once opened, since nothing ever rescanned to notice it was gone.
 async function mergeScannedFiles(folder, scanned) {
+  // The ground truth for "have we already seen this file on disk" — see
+  // folderScanTick's own comment for why this must NOT be re-derived from
+  // folder.files, which "Show newest M" (applyFolderAutoRules, below) can
+  // shrink without anything actually disappearing from disk.
+  folder._lastScanKeys = new Set(scanned.map(s => s.relPath));
   const known = new Map(folder.files.map(f => [folderFileKey(f), f]));
   const merged = scanned.map(s => {
     const existing = known.get(s.relPath);
@@ -19655,15 +19660,33 @@ async function folderScanTick() {
     folder.busy = true;
     try {
       const scanned = await scanFolderHandle(folder.handle, folder.settings);
-      const known = new Set(folder.files.map(folderFileKey));
       const scannedKeys = new Set(scanned.map(s => s.relPath));
+      // Compared against the KEYS OF THE LAST ACTUAL SCAN, not folder.files —
+      // bugfix, person-reported ("Show M newest files" made scrolling feel
+      // laggy and repeatedly disturbed elsewhere). "Show newest M" (rule 1 of
+      // applyFolderAutoRules) drops closed listing entries beyond the newest
+      // M straight out of folder.files, so a file it hid was still on disk
+      // and reappeared in every later scan — looking "new" against
+      // folder.files forever, since the entry that would have marked it
+      // "known" had just been removed. That triggered mergeScannedFiles
+      // (which puts it back) then applyFolderAutoRules (which drops it
+      // again) on EVERY poll, an unbounded merge+render loop every
+      // FOLDER_SCAN_MS for as long as a folder had more matching files than
+      // its "Show newest M" setting — not just wasted work, but a `render()`
+      // every poll that could yank a scrolled-away selection back into view
+      // (see renderTable/renderHighlightView's captureViewAnchor/
+      // restoreViewAnchor). folder._lastScanKeys is updated to the raw scan
+      // result inside mergeScannedFiles itself (the one shared merge funnel),
+      // so it always reflects "what's actually on disk", never what the auto
+      // rules decided to hide from the listing afterward.
+      const known = folder._lastScanKeys || new Set(folder.files.map(folderFileKey));
       const hasNew = scanned.some(s => !known.has(s.relPath));
       // Person-reported: a file deleted outside the app used to stay
       // listed forever, since a merge only ever ran when something NEW
       // showed up — a poll that only lost a file changed nothing. Now any
       // known entry missing from this scan also triggers the merge (which
       // is what actually drops/closes it — see mergeScannedFiles).
-      const hasRemoved = folder.files.some(f => !scannedKeys.has(folderFileKey(f)));
+      const hasRemoved = [...known].some(k => !scannedKeys.has(k));
       if (hasNew || hasRemoved) { await mergeScannedFiles(folder, scanned); render(); }
     } catch (err) {
       folder.failed = true;
