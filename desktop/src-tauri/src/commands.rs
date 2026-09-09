@@ -55,11 +55,22 @@ pub fn reveal_path(app: AppHandle, path: String) {
 /// under, plus the real path that URL stands for. Both halves matter —
 /// `philogg.html` loads (and tails) the URL, and needs the path for
 /// "Open File Location"/"Copy Path".
+///
+/// `mtime` (milliseconds since the Unix epoch, same units as a `File`
+/// object's `lastModified`) is `None` only when the filesystem can't report
+/// one (a `metadata()` error, or a platform with no mtime at all) — the page
+/// falls back to name-order sorting for that file only (scanFolderHandle).
+/// Populated here rather than making the page fetch the file just to ask its
+/// `lastModified`: that round-trip fetches real content over the
+/// `philogg://local/…` scheme for nothing, and — the reason this field
+/// exists at all — the resulting `Blob` has no `lastModified` in the first
+/// place, so that fetch bought scanFolderHandle's "newest" sort nothing.
 #[derive(serde::Serialize)]
 pub struct LocalFile {
     url: String,
     path: String,
     name: String,
+    mtime: Option<u64>,
 }
 
 impl LocalFile {
@@ -71,8 +82,21 @@ impl LocalFile {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.to_string_lossy().to_string()),
+            mtime: file_mtime_millis(path),
         }
     }
+}
+
+/// A file's modification time in the same shape as JS `Date.now()`/a
+/// `File`'s `lastModified`: milliseconds since the Unix epoch. `None` on any
+/// failure (missing file, permission error, a filesystem that doesn't track
+/// mtime) — never fatal to the caller, just a name-order sort for that file.
+fn file_mtime_millis(path: &std::path::Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
 }
 
 /// "Open… → File(s)…" under this wrapper. No system webview resolves a
