@@ -16032,7 +16032,10 @@ group(145);
 // scan tick re-lists everything every few seconds. `idBase` lets a second
 // "process" hand out different ids for the same paths — which is exactly
 // what a restart does, and what the restore case below leans on.
-function nativeFolderBridge(dirs, idBase = 1) {
+// `mtimes`, keyed by "dirPath/name" (same shape as `full` below), mirrors
+// commands.rs::LocalFile.mtime — omitted for a path means "no mtime", same
+// as a real fs::metadata() failure.
+function nativeFolderBridge(dirs, idBase = 1, mtimes = {}) {
   const ids = new Map();
   const urls = new Map();
   let next = idBase;
@@ -16053,7 +16056,8 @@ function nativeFolderBridge(dirs, idBase = 1) {
           if (!ids.has(full)) ids.set(full, String(next++));
           const url = "philogg://local/" + ids.get(full) + "/" + name;
           urls.set(url, () => dirs[dirPath][name]);
-          return { url, path: full, name };
+          const mtime = mtimes[full];
+          return typeof mtime === "number" ? { url, path: full, name, mtime } : { url, path: full, name };
         });
     },
     // Mirrors commands.rs::list_subfolders: this dir's immediate
@@ -16260,6 +16264,41 @@ await withApp(async (w, d, T) => {
   assert(folder.files.map(f => f.name).join(",") === "root.log",
     "turning the setting back off drops the nested files from the listing again, got " + folder.files.map(f => f.name).join(","));
 }, { philogg: bridgeF });
+
+// Deliberately picked so relPath order and mtime order DISAGREE: the
+// top-level file's name sorts last alphabetically but is the oldest by
+// mtime, while the true two newest files both live in a subfolder.
+const dirsG = {
+  "/watch": { "zzz_old.log": makeLog(0, 1) },
+  "/watch/sub": { "a_older.log": makeLog(1, 1), "b_newest.log": makeLog(2, 1) },
+};
+const mtimesG = {
+  "/watch/zzz_old.log": 1000,
+  "/watch/sub/a_older.log": 2000,
+  "/watch/sub/b_newest.log": 3000,
+};
+const bridgeG = nativeFolderBridge(dirsG, 1, mtimesG);
+bridgeG.picked = { path: "/watch", name: "watch" };
+
+await withApp(async (w, d, T) => {
+  section("145g. Auto-close \"keep N newest\" uses real mtime, not relPath order, across subfolders on the native bridge (person-reported: picked stale files from a subfolder instead of the true newest)");
+  bridgeG.installFetch(w);
+
+  await w.openFolderPickerFlow();
+  const folder = T.state.folders[0];
+  folder.settings.includeSubfolders = true;
+  folder.settings.patterns = [{ pattern: "*", autoOpenNewest: false, autoCloseKeep: 2, showNewest: null }];
+  await w.folderScanTick();
+
+  const openNames = folder.files.filter(f => f.nodeId).map(f => f.name).sort();
+  assert(openNames.join(",") === "a_older.log,b_newest.log",
+    "the 2 newest BY MTIME are opened (both from the subfolder), got " + openNames.join(","));
+  const stale = folder.files.find(f => f.name === "zzz_old.log");
+  assert(!stale.nodeId, "the alphabetically-last-but-chronologically-oldest top-level file is NOT opened, despite relPath sorting it last");
+
+  const nested = folder.files.find(f => f.name === "b_newest.log");
+  assert(nested.mtime === 3000, "mtime is attached straight from listFolder's result — no getFile() round trip needed, got " + nested.mtime);
+}, { philogg: bridgeG });
 
 /* ============================================================
    GROUP 146 — Release-only comment stripping (scripts/strip-comments.js)
