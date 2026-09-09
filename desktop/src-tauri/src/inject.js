@@ -118,6 +118,11 @@
     listFolder: function (path, extensions) {
       return invoke("list_folder", { path: path, extensions: extensions || [] });
     },
+    // The subfolder half of listFolder, for the "Include subfolders" setting
+    // — see commands.rs::list_subfolders.
+    listSubfolders: function (path) {
+      return invoke("list_subfolders", { path: path });
+    },
     pathForLocalUrl: function (url) {
       return invoke("path_for_local_url", { url: url });
     },
