@@ -192,26 +192,49 @@ So this wrapper doesn't ask the webview. `commands.rs` has three commands —
 `pick_folder` (the OS folder dialog, Rust-driven like `pick_files`, so still no ACL
 entry), `list_folder(path, extensions)` (a non-recursive `read_dir`, filtered by the
 extensions the *page* considers loadable, each match registered through the same
-`LocalFile::register` every other route uses), and `list_subfolders(path)` (the same
-directory's immediate subdirectories, unregistered — just names and paths) — and
-`inject.js` exposes all three as `philogg.pickFolder` / `philogg.listFolder` /
-`philogg.listSubfolders`. Rust's filesystem access has no blocklist, so Desktop is just
-a directory.
+`LocalFile::register` every other route uses — and, since `LocalFile` carries an
+`mtime: Option<u64>` from `fs::metadata`, listed with its real modification time), and
+`list_subfolders(path)` (the same directory's immediate subdirectories, unregistered —
+just names and paths) — and `inject.js` exposes all three as `philogg.pickFolder` /
+`philogg.listFolder` / `philogg.listSubfolders`. Rust's filesystem access has no
+blocklist, so Desktop is just a directory.
 
 On the page side this is one duck-typed stand-in, `nativeDirHandle(path, name)`, sitting
 next to `urlTailHandle` in the Tailing section. It implements exactly the four members
 the folder-watch code touches — `name`, `values()`, `queryPermission()`,
 `requestPermission()` — so `scanFolderHandle`, `mergeScannedFiles`, `rescanFolder`,
 `folderScanTick` and `tryReconnectFolder` run against it unmodified; there is no
-"native or browser" branch anywhere in that section. `values()` yields both
-`list_folder`'s files (as `urlTailHandle`s) AND `list_subfolders`'s directories (as
-nested `nativeDirHandle`s, `kind: "directory"`) — mirroring a real
+"native or browser" branch anywhere in that section. `values()` calls `list_folder` and
+`list_subfolders` together (`Promise.all`, not one after the other — this is on the hot
+path of every rescan) and yields both: `list_folder`'s files (as `urlTailHandle`s, each
+carrying `list_folder`'s `mtime` straight across so `scanFolderHandle` doesn't need its
+own `getFile()` round trip to get one — see below) AND `list_subfolders`'s directories
+(as nested `nativeDirHandle`s, `kind: "directory"`) — mirroring a real
 `FileSystemDirectoryHandle`, so `scanFolderHandle`'s own recursion (gated on
-`settings.includeSubfolders`) descends into them exactly as it would in the browser.
-`queryPermission()` is a constant `"granted"`: a native listing has no permission model,
-the person picked the folder in the OS's own dialog. Each yielded file entry *is* a
-`urlTailHandle` (which carries the file's path alongside its URL), so a file opened from
-a watched folder tails, reveals and copies its path exactly like a dropped one.
+`settings.includeSubfolders`, and itself recursing into sibling subdirectories together
+via `Promise.all` rather than one at a time) descends into them exactly as it would in
+the browser. `queryPermission()` is a constant `"granted"`: a native listing has no
+permission model, the person picked the folder in the OS's own dialog. Each yielded file
+entry *is* a `urlTailHandle` (which carries the file's path alongside its URL), so a
+file opened from a watched folder tails, reveals and copies its path exactly like a
+dropped one.
+
+**Why `mtime` travels with the listing instead of `scanFolderHandle` asking each file
+for its own** (person-reported: "keep N newest" was slow AND picked the wrong files
+once subfolders were involved): `scanFolderHandle`'s recency sort (`sortFolderRecsByRecency`,
+feeding `applyFolderAutoRules`'s "auto-open newest"/"auto-close — keep N open"/"show
+newest M" rules) needs each file's real mtime, and asks for one via `getFile()` when a
+handle doesn't already carry one — cheap for a browser `FileSystemFileHandle` (a real
+`File.lastModified`), but for a native listing `getFile()` fetches the file's actual
+*content* over `philogg://local/…` for nothing: the resulting `Blob` has no
+`lastModified` at all, so that round trip never supplied a usable mtime in the first
+place — it just cost one extra IPC + disk read per file, on every rescan, for every
+pattern using a recency rule. With mtime absent, the sort silently fell back to
+`relPath` (name) order — which groups by subfolder path first, so once "include
+subfolders" was on, "newest N" could pick stale files from whichever subfolder happened
+to sort last alphabetically instead of the files that were actually newest. `list_folder`
+now reads each file's mtime once, from the same `read_dir` pass that lists it, and
+`scanFolderHandle` uses it directly — correct sort, no extra round trip.
 
 Two details that are easy to get wrong:
 
