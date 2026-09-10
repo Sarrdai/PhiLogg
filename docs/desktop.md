@@ -319,6 +319,46 @@ of silently vanishing after a refresh even though the file is still the same one
 outcomes, plus "absent without `window.philogg`") and the cache round-trip, via a stub
 `window.philogg` — jsdom can't run a real webview host.
 
+## Clickable local file paths in log lines
+
+Person-requested: an absolute path a log line happens to mention (e.g. a file the logged
+process touched) can be opened directly from the log view, but only when it can be
+trusted to refer to *this* machine's filesystem — which only holds when the log is being
+read on the machine that wrote it, and only the desktop build can act on it at all.
+
+`linkifyPaths` (`philogg.html`, next to `markFieldHtml`) runs in every build: it scans a
+rendered message field's HTML for absolute Windows (`C:\…`), UNC (`\\server\share\…`) and
+Unix (`/…`) paths via `FILE_PATH_RE` and wraps each match in a plain
+`<span class="fp-candidate" data-fp="…">` — skipping existing tags (e.g. a `<mark>` from
+match/highlight marking) rather than matching across them, since the input is already
+HTML, not raw text. This runs identically in the browser build, so a candidate span can
+appear there too — it just never becomes clickable (see below). No relative-path support
+yet; a bare filename or a relative path is too ambiguous to resolve against (which
+directory? the log's own location isn't tracked generically enough — see `PROJECT.md`'s
+gotchas), and absolute paths cover the common case (stack traces, file-not-found
+messages) without that ambiguity.
+
+Hovering a `.fp-candidate` span only does anything when `window.philogg` exists (desktop
+build) — after a short debounce (~180ms, so a fast mouse pass over several candidates
+doesn't fire one round trip per span it merely crossed), it calls the new
+`window.philogg.pathExists(path)`, backed by `path_exists` (`commands.rs`,
+`std::fs::metadata(&path).is_ok()` — a single syscall, no new plugin needed). Only if it
+resolves `true` does the span get `.fp-verified` (styled as a link) and a hover popup
+(`#fpPathMenu`, same shape/CSS as `#addToSelectionMenu`/`#treeCtxInfoMenu` above) offering
+two actions:
+
+- **Open file** — `philogg.openPath` → new `open_path` command, `app.opener().open_path(…)`
+  (same `tauri_plugin_opener::OpenerExt` the reveal commands already use).
+- **Open containing folder** — `philogg.revealPath`, the same command "Open File Location"
+  above already uses.
+
+A path that doesn't exist is left exactly as `linkifyPaths` rendered it: plain text, never
+verified again until the next hover. `tests/philogg.regression.test.js` Group 199 covers
+the detection regex (including that it must not mistake a URL's own `//` for an absolute
+Unix path, or a bare fraction/date for one), the no-op case with no `window.philogg`, a
+verified path's popup and both its actions, and a nonexistent path never getting styled or
+opening anything.
+
 ## System font list for the UI font and Log font pickers
 
 A native process has no browser-style permission gate on enumerating installed fonts, so
