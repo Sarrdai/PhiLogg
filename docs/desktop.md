@@ -122,6 +122,18 @@ the watch wants — see the next section. `Group 139` still pins the underlying
 contract: a `File` arriving with no path supplied must never have a path invented for
 it, even though no route here reaches that case any more.
 
+That suppression is a webview/platform behavior `philogg.html` relies on rather than
+enforces, so it also guards for it explicitly: `nativeDragDropOwnsThis()` (true whenever
+`window.philogg` exists) gates the page's own `dragenter`/`dragover`/`dragleave`/`drop`
+listeners. Person-reported: if the suppression doesn't hold on some platform/webview
+version, an OS drop reaches both the native handler (a real, path-carrying load through
+`philogg://local/…`) and the page's own listener (a redundant second load attempt of the
+same drop) — the two race, and the visible symptom is a queued placeholder flashing grey
+then vanishing with "Couldn't load". The guard makes the native handler the only thing
+that ever processes an OS file drop under this wrapper, regardless of whether the
+HTML-suppression is airtight on a given build. Covered by **Group 198**, alongside the
+"Couldn't load" toast now naming the actual failure reason instead of just the filename.
+
 The native handler fires `DragDropEvent::Enter`/`Over`/`Leave` for *any* drag the
 webview sees, including an in-app one — reparenting a filter tree row via
 `philogg.html`'s own HTML5 `draggable` rows (`renderNode`'s `dragstart`) — not just an

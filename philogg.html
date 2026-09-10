@@ -18691,7 +18691,14 @@ async function loadFileDescriptors(descs) {
         // loadOneFileIntoTree ever runs (openFile's fetch), and then nobody
         // has removed the placeholder yet — so do it here.
         if (state.nodes[queuedNodes[i].id] === queuedNodes[i]) deleteNode(queuedNodes[i].id);
-        showCopyToast(`Couldn't load "${queuedNodes[i].name}"`);
+        // The underlying reason (an HTTP status from openFile's fetch, a
+        // parse error, ...) used to be swallowed here, leaving only a bare
+        // "couldn't load" with no way to tell a real read failure apart from
+        // e.g. a wrapper-side race (see nativeDragDropOwnsThis above) —
+        // surfaced now so the actual cause shows up without needing to
+        // reproduce under devtools.
+        const reason = err && err.message ? ` (${err.message})` : "";
+        showCopyToast(`Couldn't load "${queuedNodes[i].name}"${reason}`);
         return null;
       }
     }));
@@ -18965,13 +18972,30 @@ const dropOverlay = el("#dropOverlay");
 function isFileDrag(ev) {
   return !!(ev.dataTransfer && ev.dataTransfer.types && Array.from(ev.dataTransfer.types).includes("Files"));
 }
+// Under a desktop wrapper that handles OS drops itself (window.philogg —
+// see loadDesktopLocalFiles/philoggDropOverlay below), these HTML-level
+// events are meant to never fire at all: the wrapper's native drag-drop
+// handler is supposed to fully replace them (windows.rs's own comment on
+// why it leaves Tauri's native handling on). Person-reported: that
+// replacement isn't airtight on every platform/webview version — a drop
+// can reach BOTH the native handler (which loads the real OS path through
+// philogg://local, see loadDesktopLocalFiles) AND this HTML listener (which
+// would then try to load the exact same drop a second time, racing the
+// first attempt and best case duplicating it, worst case losing it — the
+// placeholder flashing grey and vanishing with "Couldn't load" some people
+// saw). Bailing out here whenever the wrapper is present costs nothing on a
+// build where the replacement DOES work (these listeners were already
+// unreachable dead code then) and removes the race everywhere it doesn't.
+function nativeDragDropOwnsThis() {
+  return !!window.philogg;
+}
 window.addEventListener("dragenter", ev => {
-  if (!isFileDrag(ev)) return;
+  if (nativeDragDropOwnsThis() || !isFileDrag(ev)) return;
   ev.preventDefault();
   dragCounter++;
   dropOverlay.classList.remove("hidden");
 });
-window.addEventListener("dragover", ev => { if (isFileDrag(ev)) ev.preventDefault(); });
+window.addEventListener("dragover", ev => { if (!nativeDragDropOwnsThis() && isFileDrag(ev)) ev.preventDefault(); });
 // A desktop wrapper that handles OS drags natively (Tauri: its own drag-drop
 // handler replaces the HTML events below entirely, which is the price of
 // getting real paths out of a drop) still needs the same visual feedback.
@@ -18993,12 +19017,16 @@ window.philoggSetPip = function (active) {
   document.documentElement.classList.toggle("pip-mode", !!active);
 };
 window.addEventListener("dragleave", ev => {
-  if (!isFileDrag(ev)) return;
+  if (nativeDragDropOwnsThis() || !isFileDrag(ev)) return;
   ev.preventDefault();
   dragCounter = Math.max(0, dragCounter - 1);
   if (dragCounter === 0) dropOverlay.classList.add("hidden");
 });
 window.addEventListener("drop", ev => {
+  // See nativeDragDropOwnsThis' own comment above: under a wrapper that
+  // drops natively, a drop reaching here too is exactly the failure mode
+  // that got reported, not a normal event to process a second time.
+  if (nativeDragDropOwnsThis()) return;
   ev.preventDefault();
   dragCounter = 0;
   dropOverlay.classList.add("hidden");
