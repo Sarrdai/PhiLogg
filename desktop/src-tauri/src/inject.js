@@ -132,6 +132,15 @@
     revealLocalUrl: function (url) {
       return invoke("reveal_local_url", { url: url });
     },
+    // Clickable-local-path feature: pathExists gates the hover popup,
+    // openPath is its "Open file" action (revealPath above already covers
+    // "Open containing folder"). See commands.rs.
+    pathExists: function (path) {
+      return invoke("path_exists", { path: path });
+    },
+    openPath: function (path) {
+      return invoke("open_path", { path: path });
+    },
     listSystemFonts: function () {
       return invoke("list_system_fonts").catch(function () {
         return [];
