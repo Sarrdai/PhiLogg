@@ -7196,6 +7196,19 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
   if (filterType === "text" && columns && columns.length) node.columns = columns.slice();
   if (filterType === "text" && isRegex) node.isRegex = true;
   if (filterType === "text" && wholeWord) node.wholeWord = true;
+  // One-time inherited copy of the parent's plot definition (person-
+  // requested): if you're looking at a configured Plot and create a new
+  // child filter under it (e.g. a timerange via the plot's own "Select"),
+  // that child starts with the SAME axes/columns/limits already dialed in,
+  // instead of the Plot tab resetting to defaultPlotConfig() the first time
+  // it's opened on the new node. A plain deep copy, not a live link — later
+  // edits on either node's plot never affect the other (same idiom
+  // cloneSubtree already uses for copy/paste). Gated only on
+  // parent.plotConfig existing, not on parent's own filterType/extraction-
+  // view status: that field is only ever set by loadPlotConfigForNode when
+  // an actual Plot tab was opened, which already implies the parent (or one
+  // of ITS ancestors) was extraction-capable.
+  if (parent.plotConfig) node.plotConfig = JSON.parse(JSON.stringify(parent.plotConfig));
   state.nodes[node.id] = node;
   parent.children.push(node.id);
   return activateNewNode(node);
@@ -7872,7 +7885,14 @@ function cloneSubtree(nodeId, newParentId) {
   if (orig.filterType === "text" && orig.assertions) clone.assertions = JSON.parse(JSON.stringify(orig.assertions));
   if (orig.filterType === "text" && orig.columnRenames) clone.columnRenames = JSON.parse(JSON.stringify(orig.columnRenames));
   if (orig.filterType === "text" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
-  if (orig.filterType === "text" && orig.plotConfig) clone.plotConfig = JSON.parse(JSON.stringify(orig.plotConfig));
+  // Gated on nodeIsExtractionView (not filterType === "text" like the fields
+  // around it) because plotConfig itself is per-VIEW, not per-pattern — a
+  // timerange/idset/... node that only inherits Table/Plot from an
+  // extraction ancestor (findExtractionAncestor) has its own real
+  // node.plotConfig too (see loadPlotConfigForNode/renderExtractTable's
+  // "plotConfig deliberately stay per-node"), and needs it copy/pasted same
+  // as a wildcard "text" node's does.
+  if (nodeIsExtractionView(orig) && orig.plotConfig) clone.plotConfig = JSON.parse(JSON.stringify(orig.plotConfig));
   if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
   if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
   if (orig.filterType === "text" && orig.isRegex) clone.isRegex = true;
@@ -11905,7 +11925,12 @@ let extractView = "table"; // 'table' | 'plot'
 // them are preserved, same reasoning as 2D's axisEqual); any axis outside
 // the chosen group stays independently auto-scaled to fill the view.
 function defaultPlotConfig() {
-  return { type: "line", xCol: null, yCols: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
+  // yColsMulti: the last multi-series Y selection (Line/Bar), preserved
+  // separately from yCols so switching to Scatter/3D — which only show ONE
+  // Y series and so truncate yCols down to it, see the plot-type-btn click
+  // handler below — doesn't lose the rest of it; switching back to Line/Bar
+  // restores yCols from here instead of staying stuck on the single column.
+  return { type: "line", xCol: null, yCols: [], yColsMulti: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
 }
 const PLOT_CHART_TYPES = new Set(["line", "bar", "scatter", "3d"]);
 const PLOT_AXIS_EQUAL_3D_MODES = new Set(["off", "all", "xy", "xz", "yz"]);
@@ -11921,6 +11946,7 @@ function sanitizePlotConfig(raw) {
   if (PLOT_CHART_TYPES.has(raw.type)) cfg.type = raw.type;
   if (raw.xCol === null || Number.isInteger(raw.xCol)) cfg.xCol = raw.xCol;
   if (Array.isArray(raw.yCols)) cfg.yCols = raw.yCols.filter(Number.isInteger);
+  if (Array.isArray(raw.yColsMulti)) cfg.yColsMulti = raw.yColsMulti.filter(Number.isInteger);
   if (raw.zCol === null || Number.isInteger(raw.zCol)) cfg.zCol = raw.zCol;
   if (raw.colorCol === null || Number.isInteger(raw.colorCol)) cfg.colorCol = raw.colorCol;
   ["xMin", "xMax", "yMin", "yMax", "zMin", "zMax"].forEach(k => { if (typeof raw[k] === "string") cfg[k] = raw[k]; });
@@ -12720,8 +12746,19 @@ function renderPlotControls() {
 
   plotControls.querySelectorAll(".plot-type-btn").forEach(btn => {
     btn.addEventListener("click", () => {
+      const wasSingleYType = plotConfig.type === "scatter" || plotConfig.type === "3d";
       plotConfig.type = btn.dataset.type;
-      if ((plotConfig.type === "scatter" || plotConfig.type === "3d") && plotConfig.yCols.length) plotConfig.yCols = [plotConfig.yCols[0]];
+      const isSingleYType = plotConfig.type === "scatter" || plotConfig.type === "3d";
+      if (isSingleYType && !wasSingleYType && plotConfig.yCols.length) {
+        // Save the full multi-series selection before truncating it down to
+        // one column — Scatter/3D can only show a single Y series — so
+        // switching back to Line/Bar later (below) can restore it instead of
+        // leaving the other columns permanently dropped (person-reported).
+        plotConfig.yColsMulti = plotConfig.yCols.slice();
+        plotConfig.yCols = [plotConfig.yCols[0]];
+      } else if (!isSingleYType && wasSingleYType && plotConfig.yColsMulti.length) {
+        plotConfig.yCols = plotConfig.yColsMulti.slice();
+      }
       plotZoom = null; // the home view's shape changes with chart type — a bar's categorical X vs. a scatter's continuous X mean any prior zoom domain is meaningless here
       if (plotConfig.type === "3d") resetPlot3dView();
       renderPlotControls();
@@ -22152,7 +22189,7 @@ function serializeFilterBranch(nodeId, includeAncestors) {
     if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
     if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
     if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-    if (node.filterType === "text" && node.plotConfig) out.plotConfig = node.plotConfig;
+    if (nodeIsExtractionView(node) && node.plotConfig) out.plotConfig = node.plotConfig;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
@@ -22413,7 +22450,7 @@ function materializeSerializedRoots(roots, resolveParentId) {
       const renames = sanitizeColumnRenames(sn.columnRenames);
       if (renames) node.columnRenames = renames;
     }
-    if (sn.filterType === "text" && sn.plotConfig) {
+    if (nodeIsExtractionView(node) && sn.plotConfig) {
       const pc = sanitizePlotConfig(sn.plotConfig);
       if (pc) node.plotConfig = pc;
     }
@@ -24330,7 +24367,7 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
     if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
     if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-    if (node.filterType === "text" && node.plotConfig) out.plotConfig = node.plotConfig;
+    if (nodeIsExtractionView(node) && node.plotConfig) out.plotConfig = node.plotConfig;
     if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
     if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
     if (node.filterType === "text" && node.isRegex) out.isRegex = true;
@@ -24484,7 +24521,7 @@ function materializeCachedFilters(fileNode, roots) {
       const renames = sanitizeColumnRenames(sn.columnRenames);
       if (renames) node.columnRenames = renames;
     }
-    if (sn.filterType === "text" && sn.plotConfig) {
+    if (nodeIsExtractionView(node) && sn.plotConfig) {
       const pc = sanitizePlotConfig(sn.plotConfig);
       if (pc) node.plotConfig = pc;
     }
