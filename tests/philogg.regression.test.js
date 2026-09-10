@@ -21636,6 +21636,71 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 198 — Desktop wrapper: the HTML drop path steps aside for native
+   drag-drop, and a failed load reports why
+   Origin: this session, person-reported: "In der Tauri Variante kann ich
+   keine einzelnen Dateien mehr Laden. Weder per Drag&Drop noch über den
+   Dialog... erscheint kurz grau im Tree, dann verschwindet sie und das
+   'Could not load' Popup erscheint." windows.rs's own comment states that
+   Tauri's native drag-drop handler is "left ON, which suppresses the HTML
+   drop events philogg.html would otherwise use" — but that suppression is
+   a platform/webview-version assumption, not something this page enforces.
+   If it ever doesn't hold, a single OS drop reaches BOTH the wrapper's
+   native handler (which loads the real path via philogg://local, see
+   loadDesktopLocalFiles) AND philogg.html's own window "drop" listener
+   (which would then race it with a second, redundant load attempt of the
+   same drop) — exactly the flash-then-"Couldn't load" symptom reported.
+   Fix: the HTML-level dragenter/dragover/dragleave/drop listeners now bail
+   out via nativeDragDropOwnsThis() whenever window.philogg exists, so the
+   wrapper's own native handling is the only thing that ever processes an
+   OS file drop there, regardless of whether the browser-level suppression
+   is airtight on a given platform. Also: the swallowed failure reason
+   behind "Couldn't load" is now included in the toast, so a real read/parse
+   failure is distinguishable from this race without needing devtools.
+   ============================================================ */
+group(198);
+await withApp(async (w, d, T) => {
+  section("198a. window's own drop listener no-ops under a desktop wrapper — native handling owns it");
+
+  let loadFilesCalls = 0;
+  const originalLoadFiles = w.loadFiles;
+  w.loadFiles = (...args) => { loadFilesCalls++; return originalLoadFiles.apply(w, args); };
+
+  const file = new w.File([makeLog(0, 2)], "dropped.log", { type: "text/plain" });
+  const dt = { types: ["Files"], files: [file], items: [] };
+  w.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+  await new Promise(r => setTimeout(r, 0));
+
+  assert(loadFilesCalls === 0,
+    "philogg.html's own drop handler must not process an OS file drop when window.philogg exists — " +
+    "the wrapper's native handler already did (or is about to), got " + loadFilesCalls + " call(s)");
+  assert(T.state.rootIds.length === 0, "...so no node was created from the HTML-side attempt either");
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("198b. window's own drop listener still works normally in the plain browser build (no window.philogg)");
+
+  const file = new w.File([makeLog(0, 2)], "dropped.log", { type: "text/plain" });
+  const dt = { types: ["Files"], files: [file], items: [] };
+  w.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+  await new Promise(r => setTimeout(r, 0));
+
+  assert(T.state.rootIds.length === 1, "a plain browser build (no desktop wrapper) still loads a dropped file via the HTML path");
+  const node = T.state.nodes[T.state.rootIds[0]];
+  assert(node && node.name === "dropped.log", "...as the dropped file, got " + (node && node.name));
+});
+
+await withApp(async (w, d, T) => {
+  section("198c. a failed wrapper-supplied load now names the underlying reason, not just the filename");
+
+  w.fetch = async () => ({ ok: false, status: 404 });
+  await w.philoggLoadLocalFiles({ files: [{ url: "philogg://local/9/gone.log", path: "/logs/gone.log", name: "gone.log" }] });
+  const toast = d.querySelector("#copyToast").textContent;
+  assert(toast.includes("gone.log"), "...still names the file, got " + toast);
+  assert(toast.includes("404"), "...and now includes the actual failure reason instead of a bare \"couldn't load\", got " + toast);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -24459,4 +24524,20 @@ process.exitCode = failed ? 1 : 0;
       (no regression for the ordinary non-plotting case); and drives a
       Line -> Scatter -> Line round trip asserting the full Y-column
       selection survives (fails without the yColsMulti fix).
+   Group 198 — this session (2026-09-10), person-reported: individual files
+      (drag&drop or the Open… dialog) failed to load under the Tauri desktop
+      wrapper — flashed grey in the tree then vanished with "Couldn't load".
+      philogg.html's own window "drop" listener had no guard against also
+      processing a drop the wrapper's native handler (windows.rs) already
+      owns, so if that handler's HTML-suppression assumption doesn't hold on
+      a given platform/webview version, the same OS drop is loaded twice —
+      racing the wrapper's real, path-carrying load with a redundant one.
+      Fixed by gating dragenter/dragover/dragleave/drop on a new
+      nativeDragDropOwnsThis() (true whenever window.philogg exists), and by
+      including the swallowed failure reason in the "Couldn't load" toast so
+      a genuine read/parse failure is distinguishable from this race without
+      devtools. 198a/b: the HTML drop listener no-ops under a desktop
+      wrapper and still works unmodified in the plain browser build. 198c:
+      a failed wrapper-supplied load's toast now names the reason (e.g.
+      "HTTP 404"), not just the filename.
    ============================================================ */
