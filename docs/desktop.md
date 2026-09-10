@@ -112,6 +112,21 @@ placeholders, the multi-file merge prompt and tailing all work exactly as they d
 a dropped `File`; `node.localPath` and `node.sourceUrl` are both set, so "Open File
 Location" and "Copy Path" are offered. Covered by tests **Groups 141-143**.
 
+**`res.arrayBuffer()`, never `res.blob()`, when reading a `philogg://local/…`
+response.** Person-reported: a real ~80KB file failed to load through both drag&drop
+and the dialog (grayed placeholder, then "Couldn't load") while a ~3KB one in the same
+folder, same format, loaded fine — and the *same* 80KB file loaded without trouble
+through a folder watch on that folder. The descriptor's `openFile()` (used by both
+drag&drop and the dialog, via `loadDesktopLocalFiles`) was the only reader going through
+`res.blob()`; `urlTailHandle.getFile()` (folder watch, tailing) and `loadUrlIntoTree`
+(the file-association `?url=` deep link) both already read via `res.arrayBuffer()` —
+and both already worked for files of any size. `.blob()` over this custom scheme
+reliably failed once the response crossed some size threshold between 3KB and 80KB
+under the Tauri webview; `.arrayBuffer()` of the identical URL never did. Fixed by
+reading `openFile()`'s response the same way as the two routes that already worked.
+Covered by **Group 198d** — a fetch mock implementing ONLY `arrayBuffer()` (no `blob()`
+at all), so a regression back to `res.blob()` fails loudly instead of silently.
+
 **The drag-drop trade.** The native handler is the only one carrying OS paths, and
 turning it on suppresses the HTML drop events. This wrapper takes that trade — an
 earlier version did the opposite (`disable_drag_drop_handler()`) and accepted pathless
@@ -121,6 +136,18 @@ hook. A dropped **folder** travels in the same call as a path, which is exactly 
 the watch wants — see the next section. `Group 139` still pins the underlying
 contract: a `File` arriving with no path supplied must never have a path invented for
 it, even though no route here reaches that case any more.
+
+That suppression is a webview/platform behavior `philogg.html` relies on rather than
+enforces, so it also guards for it explicitly: `nativeDragDropOwnsThis()` (true whenever
+`window.philogg` exists) gates the page's own `dragenter`/`dragover`/`dragleave`/`drop`
+listeners. Person-reported: if the suppression doesn't hold on some platform/webview
+version, an OS drop reaches both the native handler (a real, path-carrying load through
+`philogg://local/…`) and the page's own listener (a redundant second load attempt of the
+same drop) — the two race, and the visible symptom is a queued placeholder flashing grey
+then vanishing with "Couldn't load". The guard makes the native handler the only thing
+that ever processes an OS file drop under this wrapper, regardless of whether the
+HTML-suppression is airtight on a given build. Covered by **Group 198**, alongside the
+"Couldn't load" toast now naming the actual failure reason instead of just the filename.
 
 The native handler fires `DragDropEvent::Enter`/`Over`/`Leave` for *any* drag the
 webview sees, including an in-app one — reparenting a filter tree row via
