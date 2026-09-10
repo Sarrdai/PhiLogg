@@ -184,6 +184,7 @@ jobs:
             mv "$f" "$renamed"
             upload_with_retry "$renamed"
           done
-          for f in PhiLogg-"${SHA}"_portable.zip; do
-            upload_with_retry "$f"
-          done
+          PORTABLE="PhiLogg-${SHA}_portable.zip"
+          if [ -f "$PORTABLE" ]; then
+            upload_with_retry "$PORTABLE"
+          fi
