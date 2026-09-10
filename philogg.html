@@ -2911,6 +2911,20 @@
   }
   #treeCtxInfoMenu.hidden{display:none;}
 
+  /* Clickable local file paths (desktop build only, see openFpPathMenu) —
+     the candidate span looks inert until confirmed to exist on disk
+     (fp-verified added right before the popup opens), so a path that turns
+     out missing never looked clickable in the first place. Same popup shape
+     as #addToSelectionMenu/#treeCtxInfoMenu, reusing .ctx-item/.ctx-sep. */
+  .fp-candidate.fp-verified{text-decoration:underline dotted; text-decoration-color:var(--text-tertiary); cursor:pointer;}
+  .fp-candidate.fp-verified:hover{color:var(--accent-strong); text-decoration-color:var(--accent-strong);}
+  #fpPathMenu{
+    position:fixed; z-index:51; background:var(--bg-elevated);
+    border:1px solid var(--border); border-radius:8px; padding:5px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:320px;
+  }
+  #fpPathMenu.hidden{display:none;}
+
   /* ---------- Highlight-colour picker (tree swatch) ---------- */
   #colorPickerPopup{
     position:fixed; z-index:55; width:176px; background:var(--bg-elevated);
@@ -3713,6 +3727,7 @@
 
   <div id="addToSelectionMenu" class="hidden"></div>
   <div id="treeCtxInfoMenu" class="hidden"></div>
+  <div id="fpPathMenu" class="hidden"></div>
 
   <div id="treeContextMenu" class="hidden"></div>
 
@@ -8499,6 +8514,29 @@ function markFieldHtml(mm, text, columnKey) {
   return markCombinedHtml(text,
     matchRangesFor(text, columnKey, mm.nodes, mm.specs),
     highlightMatchRangesFor(text, columnKey, mm.hlNodes, mm.hlSpecs));
+}
+
+// Clickable local file paths (desktop build only — see openFpPathMenu):
+// detects absolute Windows/UNC/Unix paths inside a rendered field's HTML.
+// Runs on already-escaped HTML (markFieldHtml's output), not raw text, so it
+// has to skip existing tags (e.g. <mark> from match/highlight marking)
+// rather than run over the whole string — see linkifyPaths' tag split.
+// The negative lookbehind on the Unix alternative rejects a match starting
+// right after a word character, ":" or "/" — without it "https://host/path"
+// would linkify as "//host/path" from the URL's own double slash.
+const FILE_PATH_RE = /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\s]+\\)*[^\\/:*?"<>|\r\n\s]+|\\\\[^\\/:*?"<>|\r\n\s]+(?:\\[^\\/:*?"<>|\r\n\s]+)+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
+
+// Wraps every detected path candidate in a span the hover popup (see
+// openFpPathMenu) can key off. `m` is already HTML-escaped text (it came out
+// of an escaped token), so it's safe to reuse verbatim both as the span's
+// content and as its data-fp attribute value — the HTML parser decodes
+// entities in attributes the same way it does in text.
+function linkifyPaths(html) {
+  if (!html) return html;
+  return html.split(/(<[^>]+>)/).map(part =>
+    part.charAt(0) === "<" ? part :
+      part.replace(FILE_PATH_RE, m => '<span class="fp-candidate" data-fp="' + m + '">' + m + '</span>')
+  ).join("");
 }
 
 // Filter results only ever change for a node when it (or an ancestor) gets
@@ -14498,7 +14536,7 @@ function renderVisibleRows() {
     const threadHtml = markFieldHtml(mm, e.thread, "thread");
     const locHtml = markFieldHtml(mm, e.locationShort, "location");
     const methodHtml = markFieldHtml(mm, e.method, "method");
-    const msgHtml = markFieldHtml(mm, e.message, "message");
+    const msgHtml = linkifyPaths(markFieldHtml(mm, e.message, "message"));
 
     row.className = cls;
     row.style.height = baseRowHeightForEntry(e) + "px";
@@ -21430,6 +21468,83 @@ treeContextMenu.addEventListener("mouseover", ev => {
 // already relies on (see CLAUDE.md's stopPropagation gotcha).
 treeCtxInfoMenu.addEventListener("click", ev => ev.stopPropagation());
 
+/* ===================== Clickable local file paths (desktop build only) =====================
+   linkifyPaths (see markFieldHtml) wraps every candidate absolute path found
+   in a rendered row's message field in a plain, unstyled .fp-candidate span
+   regardless of build — so the same philogg.html looks identical in the
+   browser build, which has no way to check or open an arbitrary path. Only
+   here, gated on window.philogg (desktop build), does hovering one actually
+   ask the Rust side whether it exists (pathExists) and, only if it does,
+   style it as a link and offer "Open file"/"Open containing folder"
+   (openPath/revealPath — revealPath already exists for FEATURE_BACKLOG #52).
+   A path that doesn't exist never gets fp-verified and stays plain text. */
+const fpPathMenu = el("#fpPathMenu");
+let fpHoverEl = null;
+let fpHoverTimer = null;
+let fpHideTimer = null;
+
+function closeFpPathMenu() { fpPathMenu.classList.add("hidden"); }
+
+function openFpPathMenu(anchorEl, path) {
+  fpPathMenu.innerHTML =
+    '<div class="ctx-item" data-fp-action="open">Open file</div>' +
+    '<div class="ctx-item" data-fp-action="reveal">Open containing folder</div>';
+  fpPathMenu.dataset.fp = path;
+  const r = anchorEl.getBoundingClientRect();
+  fpPathMenu.style.left = Math.min(r.left, window.innerWidth - 280) + "px";
+  fpPathMenu.style.top = Math.min(r.bottom + 2, window.innerHeight - 100) + "px";
+  fpPathMenu.classList.remove("hidden");
+}
+
+function scheduleFpHide() {
+  clearTimeout(fpHideTimer);
+  fpHideTimer = setTimeout(() => { fpHoverEl = null; closeFpPathMenu(); }, 200);
+}
+function cancelFpHide() { clearTimeout(fpHideTimer); }
+
+// Delegated on tableRows (not per-span) because renderVisibleRows rebuilds
+// every row's DOM on each render — a listener on the span itself would be
+// gone the next tick (see CLAUDE.md's "DOM identity across clicks" gotcha).
+tableRows.addEventListener("mouseover", ev => {
+  const span = ev.target.closest(".fp-candidate");
+  if (!span) return;
+  cancelFpHide();
+  if (span === fpHoverEl) return;
+  fpHoverEl = span;
+  clearTimeout(fpHoverTimer);
+  if (!window.philogg || typeof window.philogg.pathExists !== "function") return;
+  const path = span.dataset.fp;
+  // Debounced: a fast mouse pass over several candidates shouldn't fire one
+  // IPC round-trip per span it merely crossed.
+  fpHoverTimer = setTimeout(() => {
+    if (fpHoverEl !== span) return;
+    window.philogg.pathExists(path).then(exists => {
+      if (fpHoverEl !== span) return;
+      if (exists) {
+        span.classList.add("fp-verified");
+        openFpPathMenu(span, path);
+      }
+    }).catch(() => {});
+  }, 180);
+});
+tableRows.addEventListener("mouseout", ev => {
+  if (ev.target.closest(".fp-candidate")) scheduleFpHide();
+});
+fpPathMenu.addEventListener("mouseenter", cancelFpHide);
+fpPathMenu.addEventListener("mouseleave", scheduleFpHide);
+// stopPropagation: same reasoning as treeCtxInfoMenu above — otherwise the
+// document-level "click outside closes the popup" listener would close this
+// before the click on one of its own items ever reaches it.
+fpPathMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest("[data-fp-action]");
+  if (!item || !window.philogg) return;
+  const path = fpPathMenu.dataset.fp;
+  if (item.dataset.fpAction === "open") window.philogg.openPath(path);
+  else if (item.dataset.fpAction === "reveal") window.philogg.revealPath(path);
+  closeFpPathMenu();
+});
+
 // Figures out which bulk actions the current multi-selection supports.
 // Shared by the right-click context menu and the always-visible action bar
 // above the tree, so both surfaces offer exactly the same logic/wording.
@@ -23794,6 +23909,7 @@ document.addEventListener("click", ev => {
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
+  if (!fpPathMenu.contains(ev.target) && !ev.target.closest(".fp-candidate")) closeFpPathMenu();
   // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
   // on a click anywhere outside the sidebar itself — a click ON a tree row is
   // deliberately NOT treated as "outside" (still navigating the tree).

@@ -21717,6 +21717,102 @@ await withApp(async (w, d, T) => {
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
 /* ============================================================
+   GROUP 199 — Clickable local file paths (linkifyPaths, the hover popup)
+   Origin: this session. Absolute Windows/Unix paths detected inside a
+   rendered message field get wrapped in a plain .fp-candidate span
+   regardless of build (so a browser build looks identical) — only under a
+   desktop wrapper (window.philogg.pathExists) does hovering verify the path
+   and, only if it exists, offer "Open file"/"Open containing folder"
+   (openPath/revealPath). A path that doesn't exist never gets styled as a
+   link and never shows the popup.
+   ============================================================ */
+group(199);
+await withApp(async (w, d, T) => {
+  section("199a. absolute path detection: positive and negative cases");
+
+  assert(w.linkifyPaths('plain text, no path here').indexOf("fp-candidate") === -1,
+    "no false positive on ordinary text");
+  assert(w.linkifyPaths(w.escapeHtml("ratio 3/4 and date 10/09/2026")).indexOf("fp-candidate") === -1,
+    "no false positive on a bare fraction or a mid-text date (not preceded by a path-safe boundary)");
+  const win = w.linkifyPaths(w.escapeHtml('see C:\\src\\Foo.cs for details'));
+  assert(win.includes('<span class="fp-candidate" data-fp="C:\\src\\Foo.cs">C:\\src\\Foo.cs</span>'),
+    "an absolute Windows path is wrapped, got " + win);
+  const unix = w.linkifyPaths(w.escapeHtml('see /var/log/app.log for details'));
+  assert(unix.includes('<span class="fp-candidate" data-fp="/var/log/app.log">/var/log/app.log</span>'),
+    "an absolute Unix path is wrapped, got " + unix);
+  const url = w.linkifyPaths(w.escapeHtml('fetched https://example.com/path/file failed'));
+  assert(!url.includes("fp-candidate"), "a URL's own \"//\" is not mistaken for an absolute Unix path, got " + url);
+  const tagged = w.linkifyPaths('<mark class="hl">/etc/passwd</mark> plain');
+  assert(tagged === '<mark class="hl"><span class="fp-candidate" data-fp="/etc/passwd">/etc/passwd</span></mark> plain',
+    "linkifyPaths skips existing tags themselves and only wraps text content, got " + tagged);
+});
+
+await withApp(async (w, d, T) => {
+  section("199b. rendered rows: a candidate span appears, but the popup never opens without window.philogg (browser build)");
+
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+
+  const span = d.querySelector(".fp-candidate");
+  assert(span && span.dataset.fp === "/var/log/app.log", "the rendered row wraps the detected path, got " + (span && span.dataset.fp));
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  await new Promise(r => setTimeout(r, 250));
+  assert(d.querySelector("#fpPathMenu").classList.contains("hidden"),
+    "no window.philogg in this build, so hovering never opens the popup or verifies the path");
+  assert(!span.classList.contains("fp-verified"), "...and the span is never marked verified either");
+});
+
+await withApp(async (w, d, T) => {
+  section("199c. desktop build: hovering a real path verifies it and opens the popup with both actions");
+
+  let openedPath = null;
+  w.philogg.openPath = p => { openedPath = p; };
+
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+
+  const span = d.querySelector(".fp-candidate");
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  await new Promise(r => setTimeout(r, 250));
+
+  assert(span.classList.contains("fp-verified"), "an existing path gets marked verified after the hover round-trip");
+  const menu = d.querySelector("#fpPathMenu");
+  assert(!menu.classList.contains("hidden"), "the popup opens for a verified (existing) path");
+  const items = [...menu.querySelectorAll("[data-fp-action]")].map(i => i.dataset.fpAction);
+  assert(items.includes("open") && items.includes("reveal"), "both actions are offered, got " + JSON.stringify(items));
+
+  fireClick(menu.querySelector('[data-fp-action="open"]'), w);
+  assert(openedPath === "/var/log/app.log", "\"Open file\" calls window.philogg.openPath with the path, got " + openedPath);
+}, { philogg: {
+  getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
+  pathExists: () => Promise.resolve(true),
+  openPath: () => {},
+} });
+
+await withApp(async (w, d, T) => {
+  section("199d. desktop build: hovering a path that doesn't exist never verifies it or opens the popup");
+
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/gone.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+
+  const span = d.querySelector(".fp-candidate");
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  await new Promise(r => setTimeout(r, 250));
+
+  assert(!span.classList.contains("fp-verified"), "a nonexistent path is never marked verified");
+  assert(d.querySelector("#fpPathMenu").classList.contains("hidden"), "...and the popup never opens for it");
+}, { philogg: {
+  getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
+  pathExists: () => Promise.resolve(false),
+} });
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -24571,4 +24667,18 @@ process.exitCode = failed ? 1 : 0;
       that implements ONLY arrayBuffer() (no blob() at all) — pins the fix
       and fails loudly (blob is not a function) on any regression back to
       res.blob().
+   Group 199 — this session (2026-09-10), person-requested: clickable local
+      file paths. linkifyPaths (extracted next to markFieldHtml) detects
+      absolute Windows/UNC/Unix paths in a rendered message field's HTML and
+      wraps them in a plain .fp-candidate span in EVERY build (199a covers
+      the regex itself — Windows/Unix positives, a fraction/date/URL
+      negative, and that it skips existing tags like <mark> rather than
+      matching across them). Only under a desktop wrapper does hovering one
+      actually verify it (window.philogg.pathExists) and, if it exists,
+      style it as a link (fp-verified) and open a popup offering "Open
+      file"/"Open containing folder" (openPath/revealPath — the latter
+      already existed for #52). 199b: no window.philogg (browser build) —
+      the span renders but hovering never verifies or opens anything. 199c:
+      an existing path verifies, gets styled, and both actions work. 199d: a
+      nonexistent path never gets styled or opens the popup.
    ============================================================ */
