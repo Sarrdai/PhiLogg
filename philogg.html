@@ -18949,9 +18949,19 @@ async function loadDesktopLocalFiles({ files, folders } = {}) {
   const descs = (files || []).map(f => ({
     name: f.name,
     openFile: async () => {
+      // arrayBuffer(), not blob() — see this const's own comment above and
+      // urlTailHandle.getFile() right below: both existing consumers of a
+      // philogg://local/… response read it this way, and person-reported,
+      // it's not interchangeable in practice under the Tauri wrapper: a
+      // fetch()'s .blob() over that custom scheme reliably failed on a real
+      // ~80KB file (worked fine on a ~3KB one) while .arrayBuffer() of the
+      // exact same file, same URL, never did — a large-response quirk in
+      // however this webview's custom-protocol responses stream into a Blob
+      // specifically. Reading the bytes directly and handing THEM to File's
+      // constructor sidesteps whatever that is.
       const res = await fetch(f.url);
       if (!res.ok) throw new Error("HTTP " + res.status);
-      return new File([await res.blob()], f.name);
+      return new File([await res.arrayBuffer()], f.name);
     },
     handle: urlTailHandle(f.url),
     localPath: f.path,
