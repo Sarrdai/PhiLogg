@@ -112,6 +112,21 @@ placeholders, the multi-file merge prompt and tailing all work exactly as they d
 a dropped `File`; `node.localPath` and `node.sourceUrl` are both set, so "Open File
 Location" and "Copy Path" are offered. Covered by tests **Groups 141-143**.
 
+**`res.arrayBuffer()`, never `res.blob()`, when reading a `philogg://local/…`
+response.** Person-reported: a real ~80KB file failed to load through both drag&drop
+and the dialog (grayed placeholder, then "Couldn't load") while a ~3KB one in the same
+folder, same format, loaded fine — and the *same* 80KB file loaded without trouble
+through a folder watch on that folder. The descriptor's `openFile()` (used by both
+drag&drop and the dialog, via `loadDesktopLocalFiles`) was the only reader going through
+`res.blob()`; `urlTailHandle.getFile()` (folder watch, tailing) and `loadUrlIntoTree`
+(the file-association `?url=` deep link) both already read via `res.arrayBuffer()` —
+and both already worked for files of any size. `.blob()` over this custom scheme
+reliably failed once the response crossed some size threshold between 3KB and 80KB
+under the Tauri webview; `.arrayBuffer()` of the identical URL never did. Fixed by
+reading `openFile()`'s response the same way as the two routes that already worked.
+Covered by **Group 198d** — a fetch mock implementing ONLY `arrayBuffer()` (no `blob()`
+at all), so a regression back to `res.blob()` fails loudly instead of silently.
+
 **The drag-drop trade.** The native handler is the only one carrying OS paths, and
 turning it on suppresses the HTML drop events. This wrapper takes that trade — an
 earlier version did the opposite (`disable_drag_drop_handler()`) and accepted pathless

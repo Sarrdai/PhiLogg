@@ -15731,7 +15731,7 @@ await withApp(async (w, d, T) => {
 
   let inPagePickerCalls = 0;
   w.showOpenFilePicker = () => { inPagePickerCalls++; return Promise.reject(new w.Error("should not be reached")); };
-  w.fetch = async (u) => ({ ok: true, status: 200, blob: async () => new w.Blob([makeLog(0, 6)]) });
+  w.fetch = async (u) => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(makeLog(0, 6)).buffer });
   w.philogg.pickFiles = () => Promise.resolve([
     { url: "philogg://local/7/picked.log", path: "/home/user/logs/picked.log", name: "picked.log" },
   ]);
@@ -15787,7 +15787,7 @@ await withApp(async (w, d, T) => {
 await withApp(async (w, d, T) => {
   section("141c. A multi-file batch keeps the queued placeholders and the merge prompt");
 
-  w.fetch = async () => ({ ok: true, status: 200, blob: async () => new w.Blob([makeLog(0, 3)]) });
+  w.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(makeLog(0, 3)).buffer });
   const loading = w.philoggLoadLocalFiles({ files: [
     { url: "philogg://local/1/a.log", path: "/logs/a.log", name: "a.log" },
     { url: "philogg://local/2/b.log", path: "/logs/b.log", name: "b.log" },
@@ -21700,6 +21700,21 @@ await withApp(async (w, d, T) => {
   assert(toast.includes("404"), "...and now includes the actual failure reason instead of a bare \"couldn't load\", got " + toast);
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
+await withApp(async (w, d, T) => {
+  section("198d. A wrapper-picked/dropped file loads through arrayBuffer(), not blob() — person-reported: a real ~80KB file failed via blob() while an ~3KB one didn't, and the same file loaded fine through the folder-watch route (urlTailHandle.getFile(), which already used arrayBuffer())");
+
+  // No `blob` on this mock at all — if loadDesktopLocalFiles' openFile() ever
+  // regresses back to res.blob(), this throws (res.blob is not a function)
+  // and the assertions below fail instead of passing for the wrong reason.
+  const text = makeLog(0, 5);
+  w.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(text).buffer });
+  await w.philoggLoadLocalFiles({ files: [{ url: "philogg://local/3/big.log", path: "/logs/big.log", name: "big.log" }] });
+
+  const node = T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
+  assert(node && !node.queued, "the file loads (and its placeholder is activated) using only arrayBuffer(), got " + (node && JSON.stringify({ name: node.name, queued: node.queued })));
+  assert(node.entries.length === 5, "...fully parsed via the arrayBuffer-backed File, got " + (node && node.entries.length));
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
 /* ============================================================
    Summary
    ============================================================ */
@@ -24527,17 +24542,32 @@ process.exitCode = failed ? 1 : 0;
    Group 198 — this session (2026-09-10), person-reported: individual files
       (drag&drop or the Open… dialog) failed to load under the Tauri desktop
       wrapper — flashed grey in the tree then vanished with "Couldn't load".
-      philogg.html's own window "drop" listener had no guard against also
-      processing a drop the wrapper's native handler (windows.rs) already
-      owns, so if that handler's HTML-suppression assumption doesn't hold on
-      a given platform/webview version, the same OS drop is loaded twice —
-      racing the wrapper's real, path-carrying load with a redundant one.
-      Fixed by gating dragenter/dragover/dragleave/drop on a new
-      nativeDragDropOwnsThis() (true whenever window.philogg exists), and by
-      including the swallowed failure reason in the "Couldn't load" toast so
-      a genuine read/parse failure is distinguishable from this race without
-      devtools. 198a/b: the HTML drop listener no-ops under a desktop
-      wrapper and still works unmodified in the plain browser build. 198c:
-      a failed wrapper-supplied load's toast now names the reason (e.g.
-      "HTTP 404"), not just the filename.
+      First follow-up (198a/b/c): philogg.html's own window "drop" listener
+      had no guard against also processing a drop the wrapper's native
+      handler (windows.rs) already owns — fixed via a new
+      nativeDragDropOwnsThis() gate, and the swallowed failure reason was
+      added to the "Couldn't load" toast. That didn't fix it — person
+      reported back with the actual reason now visible: a real root cause,
+      found from the extra detail that made it diagnosable. Two files, same
+      format, same folder: a ~3KB one loaded fine via both drag&drop and the
+      dialog, an ~80KB one failed via BOTH — but loaded fine through a
+      folder watch on the same folder (double-click). All three routes read
+      a `philogg://local/…` response, but loadDesktopLocalFiles' openFile()
+      (drag&drop + dialog) was the only one doing it via `res.blob()`;
+      urlTailHandle.getFile() (folder watch, tailing) and loadUrlIntoTree
+      (file-association) both already used `res.arrayBuffer()`. `.blob()`
+      over that custom scheme reliably failed once the response crossed
+      some size threshold between 3KB and 80KB under the Tauri webview,
+      `.arrayBuffer()` of the exact same URL never did — the toast's now-
+      visible reason on a real repro would have been a generic fetch/read
+      error rather than an HTTP status, since the request itself likely
+      never completed as `.blob()` expects. Fixed by switching openFile() to
+      `res.arrayBuffer()`, matching the two working routes exactly. 198a/b:
+      the HTML drop listener no-ops under a desktop wrapper and still works
+      unmodified in the plain browser build. 198c: a failed wrapper-supplied
+      load's toast names the reason (e.g. "HTTP 404"), not just the
+      filename. 198d: a wrapper-supplied load succeeds through a fetch mock
+      that implements ONLY arrayBuffer() (no blob() at all) — pins the fix
+      and fails loudly (blob is not a function) on any regression back to
+      res.blob().
    ============================================================ */
