@@ -15731,7 +15731,7 @@ await withApp(async (w, d, T) => {
 
   let inPagePickerCalls = 0;
   w.showOpenFilePicker = () => { inPagePickerCalls++; return Promise.reject(new w.Error("should not be reached")); };
-  w.fetch = async (u) => ({ ok: true, status: 200, blob: async () => new w.Blob([makeLog(0, 6)]) });
+  w.fetch = async (u) => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(makeLog(0, 6)).buffer });
   w.philogg.pickFiles = () => Promise.resolve([
     { url: "philogg://local/7/picked.log", path: "/home/user/logs/picked.log", name: "picked.log" },
   ]);
@@ -15787,7 +15787,7 @@ await withApp(async (w, d, T) => {
 await withApp(async (w, d, T) => {
   section("141c. A multi-file batch keeps the queued placeholders and the merge prompt");
 
-  w.fetch = async () => ({ ok: true, status: 200, blob: async () => new w.Blob([makeLog(0, 3)]) });
+  w.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(makeLog(0, 3)).buffer });
   const loading = w.philoggLoadLocalFiles({ files: [
     { url: "philogg://local/1/a.log", path: "/logs/a.log", name: "a.log" },
     { url: "philogg://local/2/b.log", path: "/logs/b.log", name: "b.log" },
@@ -21414,6 +21414,69 @@ await withApp(async (w, d, T) => {
     "the group-dividing separators are direct #viewBar children");
 });
 
+group(196);
+await withApp(async (w, d, T) => {
+  section("196. A background-tailed file growing does NOT trigger a full render() — only the ACTIVE view's tailed root does");
+
+  function fakeHandle(initialText) {
+    let text = initialText;
+    return {
+      _setText(t) { text = t; },
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => { const sliced = text.slice(start); const b = new w.Blob([sliced]); b.text = async () => sliced; return b; };
+        return blob;
+      },
+    };
+  }
+
+  const activeInitial = makeLog(0, 3);
+  const activeHandle = fakeHandle(activeInitial);
+  const active = await w.addFile("active.log", activeInitial, () => {});
+  active.tail = { handle: activeHandle, offset: activeInitial.length, pending: "", failed: false, busy: false };
+
+  const bgInitial = makeLog(0, 3, { msgPrefix: "bg" });
+  const bgHandle = fakeHandle(bgInitial);
+  const bg = await w.addFile("background.log", bgInitial, () => {});
+  bg.tail = { handle: bgHandle, offset: bgInitial.length, pending: "", failed: false, busy: false };
+
+  T.state.activeId = active.id;
+  w.render();
+
+  const originalRender = w.render;
+  let renderCount = 0;
+  w.render = (...args) => { renderCount++; return originalRender.apply(w, args); };
+
+  // Simulate an in-progress tree interaction (e.g. a row rename) by grabbing
+  // the background file's own tree row node identity before the tick.
+  const bgRowBefore = d.querySelector('.tree-row[data-node-id="' + bg.id + '"]');
+  assert(bgRowBefore, "sanity: background file has a tree row");
+
+  bgHandle._setText(bgInitial + `2024-01-15 10:00:03,000\tINFO\t"main"\tFoo.cs\tline 3\t[DoWork]\t"bg new"\n`);
+  await w.tailTick();
+
+  assert(renderCount === 0,
+    "a tailed file growing in the BACKGROUND (not behind the active view) triggers zero render() calls — " +
+    "before the fix, onTailChange() called render() unconditionally on every append, which via renderTree()'s " +
+    "innerHTML wipe-and-rebuild reset any in-progress, unrelated tree UI state on every poll tick");
+  assert(bg.entries.length === 4, "the background file's own entries still update from the tail poll, got " + bg.entries.length);
+  const bgRowAfter = d.querySelector('.tree-row[data-node-id="' + bg.id + '"]');
+  assert(bgRowAfter === bgRowBefore, "the background file's tree row DOM node identity is preserved (no renderTree() rebuild)");
+  assert(bgRowAfter.querySelector(".tree-count").textContent === "4",
+    "…yet its row's own entry count is still refreshed via the existing updateLoadRowProgress cheap-update path");
+
+  // Growth on the file BEHIND the active view still does a real render(),
+  // proving the fix didn't just silently stop tailing from ever rendering.
+  activeHandle._setText(activeInitial + `2024-01-15 10:00:03,000\tINFO\t"main"\tFoo.cs\tline 3\t[DoWork]\t"active new"\n`);
+  await w.tailTick();
+  assert(renderCount === 1, "growth behind the ACTIVE view still triggers exactly one render(), got " + renderCount);
+  assert(active.entries.length === 4, "the active file's entries updated too, got " + active.entries.length);
+
+  w.render = originalRender;
+});
+
 group(195);
 await withApp(async (w, d, T) => {
   section("195a. \"Show M newest files\" doesn't re-trigger a merge+render on every poll for a file it hid");
@@ -21463,6 +21526,194 @@ await withApp(async (w, d, T) => {
   assert(folder.files.length === 1 && folder.files[0].name === "d-newest.log",
     "a real new file on disk is still detected and \"Show newest 1\" still swaps the window onto it");
 });
+
+group(197);
+await withApp(async (w, d, T) => {
+  section("197. Plot settings: inherited-at-creation, persisted for a non-\"text\" node inheriting Table/Plot, and yCols survive a Line<->Scatter round trip");
+
+  const rows = [[0, 0, 0], [50, 25, 5], [100, 50, 10]];
+  const log = rows.map(([x, y, z], i) =>
+    `2024-01-15 10:00:${String(i).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"x=${x} y=${y} z=${z}"`
+  ).join("\n") + "\n";
+  const f = await w.addFile("plotinherit.log", log, () => {});
+  w.render();
+  T.state.activeId = f.id;
+  const extractNode = w.createFilterNode(f.id, "text", "x=[*:int] y=[*:int] z=[*:int]");
+  T.state.activeId = extractNode.id;
+  w.render();
+
+  /* ---------- 197a. Configure a plot on the extraction node ---------- */
+  w.applyFhView("plot");
+  d.querySelector("#plotXSelect").value = "0"; d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(d.querySelector('#plotYList input[data-col="1"]'), w); // add column 1 alongside the default (column 0) -> yCols = [0,1]
+  const eqCb = d.querySelector("#plotAxisEqual");
+  eqCb.checked = true; eqCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(extractNode.plotConfig.xCol === 0 && extractNode.plotConfig.yCols.length === 2 && extractNode.plotConfig.axisEqual === true,
+    "sanity: extraction node's own plot is configured, got " + JSON.stringify(extractNode.plotConfig));
+
+  /* ---------- 197b. A new child inherits a ONE-TIME COPY at creation ---------- */
+  const timeChild = w.createFilterNode(extractNode.id, "timerange", { from: rows[0][0], to: null });
+  assert(timeChild.plotConfig && JSON.stringify(timeChild.plotConfig) === JSON.stringify(extractNode.plotConfig),
+    "a timerange filter created under a plotted extraction node inherits the exact same plot settings at creation, got " + JSON.stringify(timeChild.plotConfig));
+  assert(timeChild.plotConfig !== extractNode.plotConfig, "...as an independent deep copy, not a live-shared reference");
+  timeChild.plotConfig.axisEqual = false;
+  assert(extractNode.plotConfig.axisEqual === true, "editing the child's inherited plot afterward does not leak back into the parent");
+  extractNode.plotConfig.xCol = 1;
+  assert(timeChild.plotConfig.xCol === 0, "...nor does a later edit on the parent leak forward into the already-created child (one-time copy, not a live link)");
+
+  /* ---------- 197c. Persistence for the inheriting node (filterType "timerange", NOT "text") ---------- */
+  T.state.activeId = timeChild.id;
+  w.render();
+  w.applyFhView("plot"); // opens fine: timeChild inherits Table/Plot from extractNode via findExtractionAncestor/nodeIsExtractionView
+  assert(d.querySelector("#plotXSelect"), "the inheriting timerange node's own Plot tab actually renders (view inheritance already worked before this fix)");
+
+  // Copy/paste (cloneSubtree) — previously dropped plotConfig here because
+  // the gate was `filterType === "text"`, which a timerange node never is.
+  T.state.clipboard = { id: timeChild.id, mode: "copy" };
+  T.state.activeId = extractNode.id;
+  w.pasteClipboard();
+  const pastedId = extractNode.children[extractNode.children.length - 1];
+  const pastedChild = T.state.nodes[pastedId];
+  assert(pastedChild.plotConfig && JSON.stringify(pastedChild.plotConfig) === JSON.stringify(timeChild.plotConfig),
+    "cloneSubtree (copy/paste) now preserves plotConfig on a non-\"text\" node that only inherits its Plot tab, got " + JSON.stringify(pastedChild.plotConfig));
+
+  // Undo/redo (snapshotSubtree/restoreSubtree) — was already correct (no filterType gate there), re-verified live here.
+  T.resetUndoRedo();
+  w.deleteFilterNodeWithUndo(timeChild.id);
+  assert(!T.state.nodes[timeChild.id], "sanity: node gone after delete");
+  w.undo();
+  const restoredChild = T.state.nodes[timeChild.id];
+  assert(restoredChild && restoredChild.plotConfig && JSON.stringify(restoredChild.plotConfig) === JSON.stringify(timeChild.plotConfig),
+    "undo restores the deleted timerange node's plotConfig alongside the rest of it");
+
+  // JSON export/import round trip (serializeFilterBranch/importFilterJson via materializeSerializedRoots).
+  const branch = w.serializeFilterBranch(restoredChild.id);
+  const savedRoot = branch.roots.find(r => r.attach === "target");
+  assert(savedRoot && savedRoot.plotConfig && JSON.stringify(savedRoot.plotConfig) === JSON.stringify(restoredChild.plotConfig),
+    "serializeFilterBranch now writes plotConfig for a non-\"text\" inheriting node too, got " + JSON.stringify(savedRoot && savedRoot.plotConfig));
+  const created = w.materializeSerializedRoots([savedRoot], () => extractNode.id).created;
+  assert(created[0].plotConfig && JSON.stringify(created[0].plotConfig) === JSON.stringify(restoredChild.plotConfig),
+    "...and materializeSerializedRoots (the shared import/apply path) reads it back correctly");
+
+  // Session-cache round trip (serializeFilterTreeForCache/materializeCachedFilters)
+  // — serializes the whole file's tree, so find the timerange descendant
+  // (nested under the extraction node's own serialized `children`) by its
+  // distinguishing plotConfig value, same as the two copies below it.
+  const { roots: cacheRoots } = w.serializeFilterTreeForCache(f);
+  const extractSerialized = cacheRoots.find(r => r.filterType === "text");
+  const restoredSerialized = extractSerialized.children.find(c => c.filterType === "timerange" && c.plotConfig && c.plotConfig.axisEqual === false);
+  assert(restoredSerialized && JSON.stringify(restoredSerialized.plotConfig) === JSON.stringify(restoredChild.plotConfig),
+    "serializeFilterTreeForCache now writes plotConfig for a non-\"text\" inheriting node too, got " + JSON.stringify(restoredSerialized && restoredSerialized.plotConfig));
+
+  const cacheFile = { id: w.uid("n"), type: "file", name: "cachefile", children: [], entries: f.entries, cacheKey: "ck-197" };
+  T.state.nodes[cacheFile.id] = cacheFile;
+  w.materializeCachedFilters(cacheFile, cacheRoots);
+  const cacheExtract = cacheFile.children.map(id => T.state.nodes[id]).find(n => n.filterType === "text");
+  const cacheChild = cacheExtract.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.plotConfig && n.plotConfig.axisEqual === false);
+  assert(cacheChild && JSON.stringify(cacheChild.plotConfig) === JSON.stringify(restoredChild.plotConfig),
+    "materializeCachedFilters (session cache restore) also reads plotConfig back for the inheriting node");
+
+  /* ---------- 197d. Gegenprobe: a plain timerange with no extraction ancestor never gets/keeps a plotConfig ---------- */
+  const plainTime = w.createFilterNode(f.id, "timerange", { from: rows[0][0], to: null });
+  assert(!plainTime.plotConfig, "a timerange filter with no plotted extraction ancestor inherits nothing (no parent.plotConfig to copy)");
+  const plainBranch = w.serializeFilterBranch(plainTime.id);
+  const plainSaved = plainBranch.roots.find(r => r.attach === "target");
+  assert(!plainSaved.plotConfig, "...and stays that way through export (no Plot tab exists for it either, so this is correctly inert)");
+
+  /* ---------- 197e. yCols survives a Line -> Scatter -> Line round trip (previously destructively truncated) ---------- */
+  T.state.activeId = extractNode.id;
+  w.render();
+  w.applyFhView("plot");
+  d.querySelector("#plotXSelect").value = "-2"; d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+  extractNode.plotConfig.yCols = [0, 1, 2];
+  w.renderPlotControls();
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  assert(extractNode.plotConfig.yCols.length === 1 && extractNode.plotConfig.yCols[0] === 0,
+    "switching to Scatter still truncates yCols down to the first column (Scatter only shows one Y series), got " + JSON.stringify(extractNode.plotConfig.yCols));
+  fireClick(d.querySelector('.plot-type-btn[data-type="line"]'), w);
+  assert(JSON.stringify(extractNode.plotConfig.yCols) === JSON.stringify([0, 1, 2]),
+    "...but switching back to Line restores the full original Y selection instead of leaving it stuck on one column, got " + JSON.stringify(extractNode.plotConfig.yCols));
+});
+
+/* ============================================================
+   GROUP 198 — Desktop wrapper: the HTML drop path steps aside for native
+   drag-drop, and a failed load reports why
+   Origin: this session, person-reported: "In der Tauri Variante kann ich
+   keine einzelnen Dateien mehr Laden. Weder per Drag&Drop noch über den
+   Dialog... erscheint kurz grau im Tree, dann verschwindet sie und das
+   'Could not load' Popup erscheint." windows.rs's own comment states that
+   Tauri's native drag-drop handler is "left ON, which suppresses the HTML
+   drop events philogg.html would otherwise use" — but that suppression is
+   a platform/webview-version assumption, not something this page enforces.
+   If it ever doesn't hold, a single OS drop reaches BOTH the wrapper's
+   native handler (which loads the real path via philogg://local, see
+   loadDesktopLocalFiles) AND philogg.html's own window "drop" listener
+   (which would then race it with a second, redundant load attempt of the
+   same drop) — exactly the flash-then-"Couldn't load" symptom reported.
+   Fix: the HTML-level dragenter/dragover/dragleave/drop listeners now bail
+   out via nativeDragDropOwnsThis() whenever window.philogg exists, so the
+   wrapper's own native handling is the only thing that ever processes an
+   OS file drop there, regardless of whether the browser-level suppression
+   is airtight on a given platform. Also: the swallowed failure reason
+   behind "Couldn't load" is now included in the toast, so a real read/parse
+   failure is distinguishable from this race without needing devtools.
+   ============================================================ */
+group(198);
+await withApp(async (w, d, T) => {
+  section("198a. window's own drop listener no-ops under a desktop wrapper — native handling owns it");
+
+  let loadFilesCalls = 0;
+  const originalLoadFiles = w.loadFiles;
+  w.loadFiles = (...args) => { loadFilesCalls++; return originalLoadFiles.apply(w, args); };
+
+  const file = new w.File([makeLog(0, 2)], "dropped.log", { type: "text/plain" });
+  const dt = { types: ["Files"], files: [file], items: [] };
+  w.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+  await new Promise(r => setTimeout(r, 0));
+
+  assert(loadFilesCalls === 0,
+    "philogg.html's own drop handler must not process an OS file drop when window.philogg exists — " +
+    "the wrapper's native handler already did (or is about to), got " + loadFilesCalls + " call(s)");
+  assert(T.state.rootIds.length === 0, "...so no node was created from the HTML-side attempt either");
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("198b. window's own drop listener still works normally in the plain browser build (no window.philogg)");
+
+  const file = new w.File([makeLog(0, 2)], "dropped.log", { type: "text/plain" });
+  const dt = { types: ["Files"], files: [file], items: [] };
+  w.dispatchEvent(Object.assign(new w.Event("drop", { bubbles: true, cancelable: true }), { dataTransfer: dt }));
+  await new Promise(r => setTimeout(r, 0));
+
+  assert(T.state.rootIds.length === 1, "a plain browser build (no desktop wrapper) still loads a dropped file via the HTML path");
+  const node = T.state.nodes[T.state.rootIds[0]];
+  assert(node && node.name === "dropped.log", "...as the dropped file, got " + (node && node.name));
+});
+
+await withApp(async (w, d, T) => {
+  section("198c. a failed wrapper-supplied load now names the underlying reason, not just the filename");
+
+  w.fetch = async () => ({ ok: false, status: 404 });
+  await w.philoggLoadLocalFiles({ files: [{ url: "philogg://local/9/gone.log", path: "/logs/gone.log", name: "gone.log" }] });
+  const toast = d.querySelector("#copyToast").textContent;
+  assert(toast.includes("gone.log"), "...still names the file, got " + toast);
+  assert(toast.includes("404"), "...and now includes the actual failure reason instead of a bare \"couldn't load\", got " + toast);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
+
+await withApp(async (w, d, T) => {
+  section("198d. A wrapper-picked/dropped file loads through arrayBuffer(), not blob() — person-reported: a real ~80KB file failed via blob() while an ~3KB one didn't, and the same file loaded fine through the folder-watch route (urlTailHandle.getFile(), which already used arrayBuffer())");
+
+  // No `blob` on this mock at all — if loadDesktopLocalFiles' openFile() ever
+  // regresses back to res.blob(), this throws (res.blob is not a function)
+  // and the assertions below fail instead of passing for the wrong reason.
+  const text = makeLog(0, 5);
+  w.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(text).buffer });
+  await w.philoggLoadLocalFiles({ files: [{ url: "philogg://local/3/big.log", path: "/logs/big.log", name: "big.log" }] });
+
+  const node = T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
+  assert(node && !node.queued, "the file loads (and its placeholder is activated) using only arrayBuffer(), got " + (node && JSON.stringify({ name: node.name, queued: node.queued })));
+  assert(node.entries.length === 5, "...fully parsed via the arrayBuffer-backed File, got " + (node && node.entries.length));
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
 /* ============================================================
    Summary
@@ -24238,4 +24489,85 @@ process.exitCode = failed ? 1 : 0;
       folder.files. 195a: 3 static files with "Show newest 1" — zero
       render() calls across 4 stable polls (fails without the fix), the 2
       hidden files staying hidden, and a genuinely new file still detected.
+   Group 196 — this session (2026-09-09), person-reported bugfix: a
+      background-tailed file (growing but not behind the active view) still
+      triggered a full render() -> renderTree() innerHTML wipe-and-rebuild
+      on every poll tick, discarding DOM node identity for any unrelated
+      in-progress tree UI state elsewhere. onTailChange() now only calls
+      render() for a root behind the active view; a background-only change
+      calls updateLoadRowProgress(rootId) instead (the same cheap per-row
+      update load ticks already use). 196: two tailed files, one active one
+      backgrounded — asserts zero render() calls and preserved tree-row DOM
+      identity for the backgrounded file across a poll (fails without the
+      fix), its own entry count still refreshing via updateLoadRowProgress,
+      and growth behind the active view still producing exactly one real
+      render().
+   Group 197 — this session (2026-09-10), person-requested: (1) a new
+      filter created under a node with a configured Plot should inherit a
+      ONE-TIME COPY of its plot settings, (2) plot settings should survive
+      reload/restore/session-export even for a node that only INHERITS its
+      Table/Plot tab from an extraction ancestor (findExtractionAncestor/
+      nodeIsExtractionView) rather than carrying the wildcard pattern
+      itself — e.g. a timerange filter created via the plot's own "Select".
+      Found: (1) didn't exist yet (createFilterNode copied no field from
+      the parent). (2) was a real, previously-unknown bug: all four
+      persistence carriers (cloneSubtree, serializeFilterBranch/
+      importFilterJson, serializeFilterTreeForCache/materializeCachedFilters)
+      gated plotConfig on `filterType === "text"`, which a timerange/idset/
+      ...-only node inheriting the Plot tab never is — so such a node's own
+      plotConfig (real, and in active use per loadPlotConfigForNode) was
+      silently dropped by copy/paste, JSON export/import, and session-cache
+      restore alike (only undo/redo's snapshotSubtree/restoreSubtree, which
+      never had that gate, was already correct). Fixed by gating on
+      `nodeIsExtractionView(node)` instead — the same predicate that
+      decides whether the node shows a Plot tab in the first place — at all
+      four carrier call sites, and by adding the one-time inherit-at-
+      creation copy to createFilterNode (`if (parent.plotConfig) node.
+      plotConfig = deepCopy(...)`). Also fixed a related, separately
+      person-reported gap: switching a plot's chart type to Scatter/3D
+      destructively truncated `plotConfig.yCols` down to one column
+      in-place (Scatter/3D show only one Y series); switching back to
+      Line/Bar left the rest of the original multi-column selection
+      permanently gone. New `plotConfig.yColsMulti` field stashes the full
+      selection before truncating and restores it when switching back to a
+      multi-Y chart type. 197: configures a plot on an extraction node,
+      creates a timerange child and asserts it inherits an independent
+      one-time copy (not a live link); pushes that timerange node's own
+      plotConfig through all four persistence carriers (fails without the
+      gate fix on three of them); confirms a timerange node with NO
+      extraction ancestor still correctly gets/keeps no plotConfig at all
+      (no regression for the ordinary non-plotting case); and drives a
+      Line -> Scatter -> Line round trip asserting the full Y-column
+      selection survives (fails without the yColsMulti fix).
+   Group 198 — this session (2026-09-10), person-reported: individual files
+      (drag&drop or the Open… dialog) failed to load under the Tauri desktop
+      wrapper — flashed grey in the tree then vanished with "Couldn't load".
+      First follow-up (198a/b/c): philogg.html's own window "drop" listener
+      had no guard against also processing a drop the wrapper's native
+      handler (windows.rs) already owns — fixed via a new
+      nativeDragDropOwnsThis() gate, and the swallowed failure reason was
+      added to the "Couldn't load" toast. That didn't fix it — person
+      reported back with the actual reason now visible: a real root cause,
+      found from the extra detail that made it diagnosable. Two files, same
+      format, same folder: a ~3KB one loaded fine via both drag&drop and the
+      dialog, an ~80KB one failed via BOTH — but loaded fine through a
+      folder watch on the same folder (double-click). All three routes read
+      a `philogg://local/…` response, but loadDesktopLocalFiles' openFile()
+      (drag&drop + dialog) was the only one doing it via `res.blob()`;
+      urlTailHandle.getFile() (folder watch, tailing) and loadUrlIntoTree
+      (file-association) both already used `res.arrayBuffer()`. `.blob()`
+      over that custom scheme reliably failed once the response crossed
+      some size threshold between 3KB and 80KB under the Tauri webview,
+      `.arrayBuffer()` of the exact same URL never did — the toast's now-
+      visible reason on a real repro would have been a generic fetch/read
+      error rather than an HTTP status, since the request itself likely
+      never completed as `.blob()` expects. Fixed by switching openFile() to
+      `res.arrayBuffer()`, matching the two working routes exactly. 198a/b:
+      the HTML drop listener no-ops under a desktop wrapper and still works
+      unmodified in the plain browser build. 198c: a failed wrapper-supplied
+      load's toast names the reason (e.g. "HTTP 404"), not just the
+      filename. 198d: a wrapper-supplied load succeeds through a fetch mock
+      that implements ONLY arrayBuffer() (no blob() at all) — pins the fix
+      and fails loudly (blob is not a function) on any regression back to
+      res.blob().
    ============================================================ */
