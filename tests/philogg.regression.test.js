@@ -21747,17 +21747,33 @@ await withApp(async (w, d, T) => {
    since the main log view has no literal per-line-number column to copy
    (it's a field-column table, not line-numbered text) — numbers live in
    their own non-selectable .itv-line-num column, never interleaved into
-   the copyable .itv-line-content text, and a delegated click listener on
-   the stable #inlineTextViewer container (not per-line, which would be
-   lost on every rebuild — the exact DOM-identity trap CLAUDE.md's
-   "renderVisibleRows() rebuilds nodes" gotcha describes) toggles a
-   click-to-highlight .itv-line-selected class, tracked on
-   state.inlineViewer.selectedLine so it survives a re-render. (2) a non-log
-   entry's row (renderZipEntryRow) now carries the same grayed/opened/
-   active lifecycle a log file's own real tree row already had
-   (.zip-entry-opened/.zip-entry-active, zip.inlineViewers cache keyed by
-   entry name) with its own .tree-del ✕ to close it — #inlineViewerCloseBtn
-   is gone, closing/reselecting only ever happens through the row now.
+   the copyable .itv-line-content text. (2) a non-log entry's row
+   (renderZipEntryRow) now carries the same grayed/opened/active lifecycle
+   a log file's own real tree row already had (.zip-entry-opened/
+   .zip-entry-active, zip.inlineViewers cache keyed by entry name) with its
+   own .tree-del ✕ to close it — #inlineViewerCloseBtn is gone, closing/
+   reselecting only ever happens through the row now.
+
+   199n-199p (bugfix session, three person-reported issues + one UX ask):
+   199k/m's own click-to-highlight-a-line experiment (a delegated click
+   listener toggling .itv-line-selected, tracked on
+   state.inlineViewer.selectedLine) is REMOVED outright — it interfered
+   with plain drag-to-select (the listener's click handler fired on every
+   drag-selection's mouseup) and the person asked for hover-only anyway
+   (pure CSS .itv-line:hover, no JS/state) — so the 199l tests that
+   exercised it are gone, replaced by 199n below. 199o covers the actual
+   root cause of "opened non-log entries still look grayed": the
+   .zip-entry-opened class fixed opacity but never reset the dimmed
+   color:var(--text-tertiary) .folder-watch-file's base rule sets, unlike a
+   real opened .tree-row (default color:var(--text-secondary)) it's meant
+   to match — plus flattenTreeIds/moveTreeSelection now give an opened
+   non-log entry a virtual nav id (zipViewerNavId) so Alt+Up/Down actually
+   reaches it, which it never did before (only real state.nodes entries
+   were ever walked). 199p covers the copy-introduces-extra-line-breaks fix:
+   a `copy` listener on #inlineTextViewer now writes plain text straight
+   from state.inlineViewer.text (sliced to the selected line/char range)
+   instead of trusting the browser's own block-per-line DOM-to-text
+   serialization.
    ============================================================ */
 group(199);
 {
@@ -22131,7 +22147,7 @@ group(199);
   });
 
   await withApp(async (w, d, T) => {
-    section("199l. inline text viewer: clicking a line toggles the same click-to-highlight class a second click removes, via one delegated listener (not lost on re-render)");
+    section("199n. inline text viewer: hover-only line highlight — pure CSS :hover, no click handler, no selectedLine state (click-to-highlight removed, person-reported interference with drag-to-select)");
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
@@ -22142,22 +22158,18 @@ group(199);
     row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.inlineViewer !== null);
 
+    // No click-driven state or class exists any more.
+    assert(T.state.inlineViewer.selectedLine === undefined, "state.inlineViewer no longer carries a selectedLine field");
     const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
     lines[1].dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(lines[1].classList.contains("itv-line-selected"), "clicking a line highlights it");
-    assert(T.state.inlineViewer.selectedLine === 1, "the selected line index is tracked on state.inlineViewer, got " + T.state.inlineViewer.selectedLine);
-    assert(!lines[0].classList.contains("itv-line-selected") && !lines[2].classList.contains("itv-line-selected"), "only the clicked line is highlighted");
+    assert(!lines[1].classList.contains("itv-line-selected"), "a click on a line does nothing any more — no .itv-line-selected class exists");
+    assert(!/\.itv-line-selected\{/.test(html), "the .itv-line-selected CSS rule itself is gone from the stylesheet, not just unused");
 
-    // Re-render (renderInlineTextViewer rebuilds the DOM wholesale, same as
-    // renderVisibleRows/renderTree do for the log view — CLAUDE.md's DOM-
-    // identity gotcha) must not break the click handler, since it's
-    // delegated on the stable #inlineTextViewer container, not per-line.
-    w.render();
-    const newLines = d.querySelectorAll("#inlineTextViewer .itv-line");
-    assert(newLines[1].classList.contains("itv-line-selected"), "the selection survives a re-render (state.inlineViewer.selectedLine is re-applied)");
-    newLines[1].dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(!newLines[1].classList.contains("itv-line-selected"), "clicking an already-selected line (even a freshly-rendered node) toggles it back off");
-    assert(T.state.inlineViewer.selectedLine === null, "...and clears state.inlineViewer.selectedLine, got " + T.state.inlineViewer.selectedLine);
+    // Hover is pure CSS (:hover on .itv-line, always active, no listener) —
+    // jsdom doesn't run :hover, so what's assertable here is that the CSS
+    // source carries the rule and that .itv-line has no click affordance
+    // left (no inline "cursor:pointer" tied to a now-removed click target).
+    assert(/\.itv-line:hover\{background:var\(--bg-elevated\);\}/.test(html), "the plain CSS :hover rule for a line is present");
   });
 
   await withApp(async (w, d, T) => {
@@ -22212,6 +22224,116 @@ group(199);
     assert(T.state.inlineViewer === null, "closing via the row's own ✕ clears state.inlineViewer");
     const finalRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
     assert(!finalRow.classList.contains("zip-entry-opened"), "...and the row goes back to its grayed, unopened look");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199o. bugfix: an opened non-log entry's row is no longer left LOOKING grayed (color, not just opacity), and Alt+Up/Down now reaches it");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    // Root cause: .zip-entry-opened used to only reset opacity, leaving
+    // .folder-watch-file's own dim color:var(--text-tertiary) in place —
+    // jsdom doesn't resolve CSS custom properties through the cascade, so
+    // the assertable proxy is the stylesheet rule itself carrying the color
+    // override, matching a real opened .tree-row's non-dimmed look.
+    assert(/\.zip-source-file\.zip-entry-opened\{[^}]*color:var\(--text-secondary\)/.test(html),
+      "the opened-row CSS rule also resets color (not just opacity), matching an opened .tree-row's default color");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    // Alt+Up/Down (moveTreeSelection) used to only ever walk real
+    // state.nodes entries (flattenTreeIds) — an opened non-log entry had no
+    // node at all, so it was silently skipped by the cycle no matter what.
+    const zip = T.state.zips[0];
+    assert(zip.inlineViewers.has("notes.txt"), "sanity: the entry is cached as opened");
+
+    // From nothing active, Alt+Down should land straight on the (only)
+    // opened non-log entry.
+    T.state.activeId = null;
+    w.moveTreeSelection("ArrowDown");
+    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.txt",
+      "Alt+Down reaches the opened non-log entry, got " + JSON.stringify(T.state.inlineViewer));
+
+    // Open a second, real log entry from a second zip so there's something
+    // else in the nav cycle to move to/from.
+    const zipBuf2 = buildZipFixture([{ name: "app.log", data: makeLog(0, 2), method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf2], "second.zip"), "second.zip");
+    const logRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("app.log"));
+    logRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+    assert(T.state.inlineViewer === null, "opening the log entry cleared the non-log viewer (existing behavior)");
+
+    // Real tree nodes are walked before the appended zip-viewer virtual ids
+    // (see flattenTreeIds), so from the real log node, Alt+Down is the step
+    // that reaches the still-opened non-log entry's viewer — exactly like
+    // stepping on to another open file.
+    w.moveTreeSelection("ArrowDown");
+    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.txt",
+      "Alt+Down from the log node steps to the opened non-log entry, got " + JSON.stringify(T.state.inlineViewer));
+
+    // And Alt+Up from there returns to the real log node.
+    w.moveTreeSelection("ArrowUp");
+    assert(T.state.inlineViewer === null && T.state.activeId === T.state.rootIds[0],
+      "Alt+Up from the non-log entry moves back to the real log node, got inlineViewer=" + JSON.stringify(T.state.inlineViewer) + " activeId=" + T.state.activeId);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199p. bugfix: copying a text-viewer selection produces exactly the original line breaks, no extra ones (copy event, not the DOM's own block-per-line serialization)");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const original = "first line\nsecond line\nthird line\n\nfifth line";
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: original, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    const lines = inlineTextViewerEl.querySelectorAll(".itv-line-content");
+
+    function fireCopy(range) {
+      const sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+      ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+      inlineTextViewerEl.dispatchEvent(ev);
+      return ev;
+    }
+
+    // Partial selection spanning three lines (mid line 0 through mid line 2).
+    let range = w.document.createRange();
+    range.setStart(lines[0].firstChild, 6);  // "line" (from "first line")
+    range.setEnd(lines[2].firstChild, 5);    // "third"
+    let ev = fireCopy(range);
+    assert(ev.defaultPrevented, "the copy event is intercepted (preventDefault)");
+    assert(ev.clipboardData.data["text/plain"] === "line\nsecond line\nthird",
+      "exactly the source's own line breaks, no extras, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // A selection that includes the genuinely empty line (index 3) — the
+    // known extra-blank-line edge case this bug report called out.
+    range = w.document.createRange();
+    range.setStart(lines[2].firstChild, 0);
+    range.setEnd(lines[4].firstChild, 5);
+    ev = fireCopy(range);
+    assert(ev.clipboardData.data["text/plain"] === "third line\n\nfifth",
+      "an empty line in the middle produces exactly one blank line, not two, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // A collapsed (empty) selection is left alone — nothing to copy, so the
+    // handler must not touch clipboardData or call preventDefault.
+    range = w.document.createRange();
+    range.setStart(lines[0].firstChild, 3);
+    range.setEnd(lines[0].firstChild, 3);
+    ev = fireCopy(range);
+    assert(!ev.defaultPrevented && ev.clipboardData.data["text/plain"] === undefined,
+      "a collapsed selection is left to the browser's default (no-op) copy behavior");
   });
 }
 

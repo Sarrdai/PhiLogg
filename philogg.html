@@ -651,7 +651,14 @@
      plain, non-dimmed .tree-row) plus the same accent highlight
      .tree-row.active uses for whichever one is the currently DISPLAYED
      entry — see renderZipEntryRow. */
-  .zip-source-file.zip-entry-opened{opacity:1;}
+  /* color, not just opacity (bugfix, person-reported): .folder-watch-file's
+     own base rule also sets color:var(--text-tertiary) (a dim gray) for the
+     "not yet opened" look — without overriding it here too, an opened-but-
+     not-active row stayed at opacity:1 (fixed) but still LOOKED grayed out
+     because the text itself was still the dim tertiary color, unlike an
+     opened log file's real .tree-row (default color:var(--text-secondary),
+     see near .tree-row above) which this is meant to match. */
+  .zip-source-file.zip-entry-opened{opacity:1; color:var(--text-secondary);}
   .zip-source-file.zip-entry-active{background:var(--accent-soft); color:var(--text-primary);}
   #treeActionBar{
     flex:0 0 auto; display:none; align-items:center; gap:6px; flex-wrap:wrap;
@@ -1849,29 +1856,29 @@
     color:var(--text-primary);
   }
   /* Line-number gutter (this session): mirrors the app's own line-oriented
-     row look (.log-row's left gutter markers, .log-row.selected's inset
-     accent box-shadow — see near .tree-row above) rather than inventing a
-     new visual language, since the main log view itself has no literal
-     "line number" column to copy (it's a field-column table: time/level/
-     thread/.../message, not line-numbered text) — this is a small, new,
-     consistently-styled addition, per the plan's fallback instruction.
-     Two-column flex row (gutter + text) rather than interleaving numbers
-     into the text nodes, so a text selection/copy in the content column
-     never includes the numbers — .itv-line-num is also `user-select:none`
-     as a second, belt-and-suspenders guard (matching the pattern already
-     used for other non-selectable row chrome in this file, e.g. .th-sortable
-     just above). */
-  .itv-line{display:flex; align-items:flex-start; padding:0 16px; line-height:1.6; cursor:pointer;}
+     row look (.log-row's left gutter markers — see near .tree-row above)
+     rather than inventing a new visual language, since the main log view
+     itself has no literal "line number" column to copy (it's a
+     field-column table: time/level/thread/.../message, not line-numbered
+     text) — this is a small, new, consistently-styled addition, per the
+     plan's fallback instruction. Two-column flex row (gutter + text)
+     rather than interleaving numbers into the text nodes, so a text
+     selection/copy in the content column never includes the numbers —
+     .itv-line-num is also `user-select:none` as a second,
+     belt-and-suspenders guard (matching the pattern already used for other
+     non-selectable row chrome in this file, e.g. .th-sortable just above).
+     Hover-only reading aid (a later same-day revert of an earlier
+     click-to-highlight/select experiment, which interfered with plain
+     drag-selection — see the removed .itv-line-selected class and click
+     listener in the changelog): pure CSS :hover, no JS/state involved, no
+     `cursor:pointer` (this is plain selectable text, not a clickable row). */
+  .itv-line{display:flex; align-items:flex-start; padding:0 16px; line-height:1.6;}
   .itv-line:hover{background:var(--bg-elevated);}
   .itv-line-num{
     flex:0 0 auto; min-width:3.4em; padding-right:12px; text-align:right;
     color:var(--text-tertiary); user-select:none;
   }
   .itv-line-content{flex:1 1 auto; min-width:0; white-space:pre-wrap; word-break:break-word;}
-  /* Click-to-highlight "reading aid" — same accent inset box-shadow as an
-     active/selected log row (.log-row.selected, see near .tree-row). */
-  .itv-line-selected{background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent);}
-  .itv-line-selected .itv-line-num{color:var(--accent-strong);}
   /* Reuses the same JSON/XML token classes highlightLogMessage's own markup
      already defines colors for elsewhere in the app (see renderHighlightView/
      the message-highlighting section) is a log-line concept, not a generic
@@ -10552,6 +10559,21 @@ function renderTree() {
 // top-to-bottom layout (renderNode walks state.rootIds/children the same
 // way) — the order arrow-key tree navigation (moveTreeSelection) steps
 // through.
+// Virtual nav-id for an opened non-log zip entry (bugfix, person-reported):
+// these never get a real state.nodes entry (renderZipEntryRow's own
+// comment explains why — there's no filter tree to hang off a plain text/
+// image viewer), so Alt+Up/Down had nothing to land on for them at all.
+// Tagged distinctly from real node ids (which are plain numbers/strings
+// from newCacheKey) so moveTreeSelection can tell them apart without
+// touching state.nodes.
+function zipViewerNavId(zipId, entryName) { return "zipviewer:" + zipId + ":" + entryName; }
+function isZipViewerNavId(id) { return typeof id === "string" && id.startsWith("zipviewer:"); }
+function parseZipViewerNavId(id) {
+  const rest = id.slice("zipviewer:".length);
+  const sep = rest.indexOf(":");
+  return { zipId: rest.slice(0, sep), entryName: rest.slice(sep + 1) };
+}
+
 function flattenTreeIds() {
   const ids = [];
   (function walk(list) {
@@ -10568,6 +10590,19 @@ function flattenTreeIds() {
       if (node && !node.collapsed) walk(node.children);
     });
   })(state.rootIds);
+  // Opened non-log zip entries (bugfix, person-reported): appended after
+  // the main tree, one virtual id per zip per opened entry, in the same
+  // per-zip/per-entry order renderZipSection itself walks — a real tree
+  // node for an opened LOG entry is already covered above (it's a normal
+  // state.rootIds member, just tagged with node.zipId, per docs/
+  // persistence-and-sync.md's "ZIP sources" section), so only entries
+  // still missing a real node (i.e. actually keyed in zip.inlineViewers)
+  // need a stand-in slot here.
+  state.zips.forEach(zip => {
+    zip.entries.forEach(entry => {
+      if (zip.inlineViewers.has(entry.name)) ids.push(zipViewerNavId(zip.id, entry.name));
+    });
+  });
   return ids;
 }
 
@@ -10609,10 +10644,19 @@ function moveTreeSelection(key) {
   const ids = flattenTreeIds();
   if (ids.length === 0) return;
   const node = state.nodes[state.activeId];
+  // Bugfix (person-reported): when a non-log zip entry's inline viewer is
+  // the thing currently shown, "where we are" in the nav list isn't
+  // state.activeId (that still points at whatever real tree node was
+  // active before the viewer opened) — it's the entry's own virtual id,
+  // so Up/Down steps relative to IT instead of jumping back to the stale
+  // real-node position.
+  const currentId = (state.inlineViewer && state.inlineViewer.zipId)
+    ? zipViewerNavId(state.inlineViewer.zipId, state.inlineViewer.entryName)
+    : state.activeId;
 
   let targetId = null;
   if (key === "ArrowDown" || key === "ArrowUp") {
-    const idx = node ? ids.indexOf(state.activeId) : -1;
+    const idx = ids.indexOf(currentId);
     const delta = key === "ArrowDown" ? 1 : -1;
     const nextIdx = idx === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, idx + delta));
     targetId = ids[nextIdx];
@@ -10623,6 +10667,20 @@ function moveTreeSelection(key) {
   }
   if (!targetId) return;
 
+  if (isZipViewerNavId(targetId)) {
+    const { zipId, entryName } = parseZipViewerNavId(targetId);
+    const zip = state.zips.find(z => z.id === zipId);
+    const viewer = zip && zip.inlineViewers.get(entryName);
+    if (!viewer) return;
+    state.inlineViewer = viewer;
+    render();
+    return;
+  }
+
+  // Landing on a real tree node always hides a non-log viewer — same rule
+  // a plain tree-row click and a brand-new zip log entry open already
+  // follow (see renderNode's click handler / openZipEntry's own comment).
+  state.inlineViewer = null;
   applyTempAnchorOnActiveNodeSwitch(targetId);
   state.multiSelect = new Set([targetId]);
   state.activeId = targetId;
@@ -19089,14 +19147,7 @@ async function openInlineViewer(name, bytes, kind, zip) {
   if (kind === "text") {
     const text = new TextDecoder().decode(bytes);
     const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
-    // selectedLine: the click-to-highlight "reading aid" line (this
-    // session) — see the itv-line click handler below. Lives on the
-    // viewer object itself (not a separate module-level variable) so it
-    // survives a close-then-reopen... actually it doesn't survive that
-    // (a fresh viewer object starts at null below), only a mere re-select
-    // of an already-open entry via zip.inlineViewers (see renderZipEntryRow),
-    // which reuses this exact object.
-    viewer = { kind, name, text, ext, selectedLine: null };
+    viewer = { kind, name, text, ext };
   } else {
     const blob = new Blob([bytes], { type: guessZipEntryMimeType(name) });
     const dataUrl = await new Promise(resolve => {
@@ -19167,46 +19218,98 @@ function highlightXmlText(text) {
   );
 }
 
-// Line-number gutter + click-to-highlight (this session): tokenizing is
-// done PER LINE (splitting v.text first, then running highlightJsonText/
-// highlightXmlText on each line individually) rather than on the whole
-// text followed by splitting the highlighted HTML on "\n" — a match that
-// spans a raw newline (e.g. a literal newline inside a JSON string) would
-// otherwise leave an unclosed <span> dangling into the next line's HTML.
-// The small cost is a multi-line string/comment losing its highlighting
-// past its first line, an accepted edge case for these regex tokenizers.
+// Line-number gutter (this session): tokenizing is done PER LINE (splitting
+// v.text first, then running highlightJsonText/highlightXmlText on each
+// line individually) rather than on the whole text followed by splitting
+// the highlighted HTML on "\n" — a match that spans a raw newline (e.g. a
+// literal newline inside a JSON string) would otherwise leave an unclosed
+// <span> dangling into the next line's HTML. The small cost is a
+// multi-line string/comment losing its highlighting past its first line,
+// an accepted edge case for these regex tokenizers.
+// No click-to-highlight any more (person-reported, same day): an earlier
+// version of this feature also let a click toggle a persisted
+// .itv-line-selected state, which turned out to interfere with plain
+// drag-to-select (its delegated click listener fired after every
+// drag-selection's mouseup, in the middle of the user just trying to
+// re-select text) — removed outright in favor of the plain CSS :hover
+// already on .itv-line above, which needs no listener and no state at all.
 function renderInlineTextViewer(v) {
   inlineTextViewerEl.classList.remove("hidden");
   inlineImageViewerEl.classList.remove("active");
   const tokenize = v.ext === "json" ? highlightJsonText : v.ext === "xml" ? highlightXmlText : escapeHtml;
   const lines = v.text.split("\n");
   inlineTextViewerEl.innerHTML = lines.map((line, i) =>
-    '<div class="itv-line' + (i === v.selectedLine ? ' itv-line-selected' : '') + '" data-line="' + i + '">' +
+    '<div class="itv-line" data-line="' + i + '">' +
       '<span class="itv-line-num">' + (i + 1) + '</span>' +
       '<span class="itv-line-content">' + tokenize(line) + '</span>' +
     '</div>'
   ).join("");
 }
 
-// Delegated click listener (this session), attached ONCE to the stable
-// #inlineTextViewer container rather than to each .itv-line — per-line
-// listeners would be silently lost on every render (renderInlineTextViewer
-// rebuilds the whole innerHTML each time), the exact DOM-identity trap
-// CLAUDE.md's "renderVisibleRows() rebuilds nodes" gotcha warns about for
-// renderVisibleRows/renderTree. Toggling the highlighted line is done as a
-// direct class swap, not a render() call — no state a full re-render would
-// need to pick up beyond this one line, so this mirrors updateSelectedRowClass's
-// targeted-update pattern instead of paying for a full content rebuild.
-inlineTextViewerEl.addEventListener("click", ev => {
-  const lineEl = ev.target.closest(".itv-line");
-  if (!lineEl || !state.inlineViewer || state.inlineViewer.kind !== "text") return;
-  const line = Number(lineEl.dataset.line);
-  const v = state.inlineViewer;
-  const wasSelected = v.selectedLine === line;
-  v.selectedLine = wasSelected ? null : line;
-  const prevEl = inlineTextViewerEl.querySelector(".itv-line-selected");
-  if (prevEl) prevEl.classList.remove("itv-line-selected");
-  if (!wasSelected) lineEl.classList.add("itv-line-selected");
+// Copy fix (Bug 3, person-reported): each line is its own block-level
+// .itv-line div (needed for the gutter layout), and a block-element
+// boundary makes browsers insert a line break into a copied selection's
+// plain-text serialization at each one — usually fine (that's exactly the
+// one-break-per-line the original text has), but real browsers are
+// inconsistent about it at the FIRST/LAST partially-selected line and
+// around genuinely empty lines, producing extra blank lines on paste that
+// aren't in the source file. Rather than fight that per-browser DOM->text
+// serialization, this intercepts `copy` and writes the plain text straight
+// from the ORIGINAL source string (state.inlineViewer.text), sliced to the
+// exact line/character range the selection covers — always byte-identical
+// to the source, regardless of how any browser would have serialized the
+// DOM. Only engages for a selection that's actually inside this viewer;
+// anything else (e.g. copying from a different part of the page) is left
+// to the browser's own default copy behavior untouched.
+function itvLineElFor(node) {
+  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  return el && el.closest ? el.closest(".itv-line") : null;
+}
+// Character offset of (container, offset) within its line's .itv-line-content
+// text, using Range#toString() so it's correct regardless of how many nested
+// <span> tokenizer wrappers sit between the content column and the text node
+// (no need to walk them by hand).
+function itvContentOffset(container, offset, lineEl) {
+  const contentEl = lineEl.querySelector(".itv-line-content");
+  if (!contentEl) return 0;
+  const el = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+  if (!contentEl.contains(el) && el !== contentEl) {
+    // Selection boundary landed in the (non-selectable) gutter or outside
+    // the content span entirely — clamp to the nearest content edge.
+    const r2 = document.createRange();
+    r2.selectNodeContents(lineEl);
+    return contentEl.compareDocumentPosition ? (
+      (contentEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) ? 0 : contentEl.textContent.length
+    ) : 0;
+  }
+  const r = document.createRange();
+  r.selectNodeContents(contentEl);
+  r.setEnd(container, offset);
+  return r.toString().length;
+}
+inlineTextViewerEl.addEventListener("copy", ev => {
+  if (!state.inlineViewer || state.inlineViewer.kind !== "text") return;
+  const sel = window.getSelection && window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  if (!inlineTextViewerEl.contains(range.commonAncestorContainer)) return;
+  const startLineEl = itvLineElFor(range.startContainer);
+  const endLineEl = itvLineElFor(range.endContainer);
+  if (!startLineEl || !endLineEl) return;
+  const startLine = Number(startLineEl.dataset.line);
+  const endLine = Number(endLineEl.dataset.line);
+  const startOffset = itvContentOffset(range.startContainer, range.startOffset, startLineEl);
+  const endOffset = itvContentOffset(range.endContainer, range.endOffset, endLineEl);
+  const lines = state.inlineViewer.text.split("\n");
+  const picked = lines.slice(startLine, endLine + 1);
+  if (picked.length === 1) {
+    picked[0] = picked[0].slice(startOffset, endOffset);
+  } else {
+    picked[0] = picked[0].slice(startOffset);
+    picked[picked.length - 1] = picked[picked.length - 1].slice(0, endOffset);
+  }
+  ev.clipboardData.setData("text/plain", picked.join("\n"));
+  ev.preventDefault();
 });
 
 // --- Inline image viewer: zoom/pan/reset/rect-select-zoom -------------
