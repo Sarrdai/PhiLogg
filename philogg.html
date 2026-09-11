@@ -10336,6 +10336,12 @@ function renderMainView() {
     linkWrap.style.display = "none";
     fhTabs.style.display = "none";
     fhSplit.style.display = "none";
+    // Bug 1 fix (person-reported): Entry Detail is a log-row concept (its
+    // other two gates, 10402 and 18564, both key off hasFiles/an actual log
+    // node) — this early-return branch never touched it either, same class
+    // of oversight as the minimap fix right above it.
+    detailPanel.style.display = "none";
+    detailResizer.style.display = "none";
     inlineViewerWrap.style.display = "flex";
     inlineViewerNameEl.textContent = state.inlineViewer.name;
     inlineViewerNameEl.title = state.inlineViewer.name;
@@ -19305,39 +19311,25 @@ function renderInlineTextViewer(v) {
 // DOM. Only engages for a selection that's actually inside this viewer;
 // anything else (e.g. copying from a different part of the page) is left
 // to the browser's own default copy behavior untouched.
-function itvLineElFor(node) {
-  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-  return el && el.closest ? el.closest(".itv-line") : null;
-}
-// Character offset of (container, offset) within its line's .itv-line-content
-// text, using Range#toString() so it's correct regardless of how many nested
-// <span> tokenizer wrappers sit between the content column and the text node
-// (no need to walk them by hand).
-// Bugfix (Bug 1, person-reported): the previous version special-cased a
-// boundary that landed outside .itv-line-content (gutter, or past the last
-// character) using Node#compareDocumentPosition(el) to decide which edge to
-// clamp to. That heuristic is wrong whenever `el` is an ANCESTOR of
-// contentEl rather than a sibling/cousin — which is exactly what a real
-// selection boundary resolves to when a drag ends past the end of a line
-// (browsers commonly report that boundary as (lineEl, childNodes.length),
-// i.e. the .itv-line DIV itself, one level above .itv-line-content).
-// compareDocumentPosition's PRECEDING flag is ALSO set for an ancestor (per
-// spec, a containing node counts as "preceding" the node it contains), so
-// the old code always took the "before" branch and clamped such an
-// end-of-line boundary to 0 — silently truncating the last selected line to
-// empty and collapsing a multi-line copy down to (at most) its next-to-last
-// line. Range#setEnd needs no such special-casing at all: it repositions the
-// boundary correctly regardless of how deep/shallow `container` sits
-// relative to contentEl (ancestor, descendant, or unrelated sibling like the
-// line-number gutter) — the general path below handles every case, so the
-// old containment check and its manual clamp branch are gone entirely.
-function itvContentOffset(container, offset, lineEl) {
+// Character offset of a Range boundary (container, offset) within a given
+// line's .itv-line-content text, using Range#toString() so it's correct
+// regardless of how many nested tokenizer <span>s sit between the content
+// column and the text node. Works whether `container` sits inside, above
+// (an ancestor, e.g. the .itv-line DIV, or #inlineTextViewer itself), or
+// beside contentEl (e.g. the gutter) — Range#setEnd repositions the boundary
+// correctly in all of those cases, no manual walking or special-casing
+// needed. Clamped to [0, fullText.length] since a boundary reported outside
+// this specific line (see the Bug 2 fix below, where a touched-lines list is
+// built from Range#intersectsNode rather than from this boundary's own
+// closest .itv-line) can otherwise yield an offset larger than the line
+// actually has.
+function itvContentOffset(container, offset, lineEl, fullText) {
   const contentEl = lineEl.querySelector(".itv-line-content");
   if (!contentEl) return 0;
   const r = document.createRange();
   r.selectNodeContents(contentEl);
   r.setEnd(container, offset);
-  return r.toString().length;
+  return Math.max(0, Math.min(r.toString().length, fullText.length));
 }
 // Bugfix (Bug 3, person-reported): re-selecting text that overlaps (or
 // starts right next to) an EXISTING selection was being hijacked into the
@@ -19356,27 +19348,41 @@ function itvContentOffset(container, offset, lineEl) {
 // fix is simply to opt out of the browser's native drag-a-selection feature
 // entirely for this element, restoring ordinary click/drag == select.
 inlineTextViewerEl.addEventListener("dragstart", ev => ev.preventDefault());
+// Copy fix (Bug 2, person-reported, supersedes the 13efc9b attempt): that
+// version found each touched line via `boundary.closest(".itv-line")`. A
+// real drag that starts before the first line's text (e.g. from column 0 of
+// a selection "from the very start") or ends past the last line commonly
+// reports the boundary's container as #inlineTextViewer itself — an
+// ancestor of every .itv-line, so `.closest(".itv-line")` returns null and
+// the whole handler silently bailed, leaving the browser's own inconsistent
+// block-serialization copy in place (the extra/missing line breaks this was
+// meant to fix in the first place). Range#intersectsNode doesn't have that
+// gap: it only needs the CONTAINER (#inlineTextViewer) as the range's common
+// ancestor to already be established by the bail-out check below, and
+// correctly reports every .itv-line the selection touches regardless of
+// where its boundaries actually resolved to. Only the first and last touched
+// line need a partial-offset lookup (itvContentOffset, clamped there to each
+// line's own length); every line strictly between them is taken whole,
+// straight from the source text.
 inlineTextViewerEl.addEventListener("copy", ev => {
   if (!state.inlineViewer || state.inlineViewer.kind !== "text") return;
   const sel = window.getSelection && window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
   const range = sel.getRangeAt(0);
   if (!inlineTextViewerEl.contains(range.commonAncestorContainer)) return;
-  const startLineEl = itvLineElFor(range.startContainer);
-  const endLineEl = itvLineElFor(range.endContainer);
-  if (!startLineEl || !endLineEl) return;
-  const startLine = Number(startLineEl.dataset.line);
-  const endLine = Number(endLineEl.dataset.line);
-  const startOffset = itvContentOffset(range.startContainer, range.startOffset, startLineEl);
-  const endOffset = itvContentOffset(range.endContainer, range.endOffset, endLineEl);
+  const lineEls = Array.from(inlineTextViewerEl.querySelectorAll(".itv-line"))
+    .filter(lineEl => range.intersectsNode(lineEl));
+  if (!lineEls.length) return;
   const lines = state.inlineViewer.text.split("\n");
-  const picked = lines.slice(startLine, endLine + 1);
-  if (picked.length === 1) {
-    picked[0] = picked[0].slice(startOffset, endOffset);
-  } else {
-    picked[0] = picked[0].slice(startOffset);
-    picked[picked.length - 1] = picked[picked.length - 1].slice(0, endOffset);
-  }
+  const picked = lineEls.map((lineEl, i) => {
+    const fullText = lines[Number(lineEl.dataset.line)] || "";
+    const isFirst = i === 0;
+    const isLast = i === lineEls.length - 1;
+    if (!isFirst && !isLast) return fullText;
+    const startOffset = isFirst ? itvContentOffset(range.startContainer, range.startOffset, lineEl, fullText) : 0;
+    const endOffset = isLast ? itvContentOffset(range.endContainer, range.endOffset, lineEl, fullText) : fullText.length;
+    return fullText.slice(startOffset, Math.max(startOffset, endOffset));
+  });
   ev.clipboardData.setData("text/plain", picked.join("\n"));
   ev.preventDefault();
 });
