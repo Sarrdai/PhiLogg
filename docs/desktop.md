@@ -328,36 +328,59 @@ read on the machine that wrote it, and only the desktop build can act on it at a
 
 `linkifyPaths` (`philogg.html`, next to `markFieldHtml`) runs in every build: it scans a
 rendered message field's HTML for absolute Windows (`C:\…`), UNC (`\\server\share\…`) and
-Unix (`/…`) paths via `FILE_PATH_RE` and wraps each match in a plain
+Unix (`/…`) paths via `FILE_PATH_RE` and wraps each match in
 `<span class="fp-candidate" data-fp="…">` — skipping existing tags (e.g. a `<mark>` from
 match/highlight marking) rather than matching across them, since the input is already
-HTML, not raw text. This runs identically in the browser build, so a candidate span can
-appear there too — it just never becomes clickable (see below). No relative-path support
-yet; a bare filename or a relative path is too ambiguous to resolve against (which
+HTML, not raw text. This runs identically in the browser build, so a candidate span
+appears there too — it just never becomes fully clickable (see below). No relative-path
+support yet; a bare filename or a relative path is too ambiguous to resolve against (which
 directory? the log's own location isn't tracked generically enough — see `PROJECT.md`'s
 gotchas), and absolute paths cover the common case (stack traces, file-not-found
 messages) without that ambiguity.
 
-Hovering a `.fp-candidate` span only does anything when `window.philogg` exists (desktop
-build) — after a short debounce (~180ms, so a fast mouse pass over several candidates
-doesn't fire one round trip per span it merely crossed), it calls the new
-`window.philogg.pathExists(path)`, backed by `path_exists` (`commands.rs`,
-`std::fs::metadata(&path).is_ok()` — a single syscall, no new plugin needed). Only if it
-resolves `true` does the span get `.fp-verified` (styled as a link) and a hover popup
-(`#fpPathMenu`, same shape/CSS as `#addToSelectionMenu`/`#treeCtxInfoMenu` above) offering
-two actions:
+**Every** `.fp-candidate` gets a dim, muted dotted underline immediately on render, in
+every build, regardless of whether it's ever verified. This exists specifically so the
+feature is self-diagnosing: person-reported (this session, after building a portable
+installer from this branch) that a hovered path did nothing at all, and code review found
+no functional bug but a real gap — a candidate had *zero* CSS before verification
+succeeded, making it indistinguishable from plain text, so there was no way to tell
+"nothing was detected here" apart from "verification silently failed" apart from "the
+path genuinely doesn't exist." Now: no underline anywhere → detection itself isn't
+running (a build/packaging problem). A dim underline that never upgrades → detection
+works, verification is the broken half (the Tauri bridge, or the path really doesn't
+exist on disk). Full accent-colored underline + popup on hover → working as intended.
+
+Verification itself is **eager and cached**, not hover-triggered: `verifyVisibleFpCandidates()`
+runs once at the end of every `renderVisibleRows()`, gated on `window.philogg` existing
+(desktop build only, same as before) — it walks the just-rendered `.fp-candidate` spans,
+dedupes by path (`fpPathCache`, plus `fpPathPending` so an in-flight check for the same
+path is never started twice), and calls the new `window.philogg.pathExists(path)` exactly
+once per unique path ever seen, backed by `path_exists` (`commands.rs`,
+`std::fs::metadata(&path).is_ok()` — a single syscall, no new plugin needed). This was
+originally hover-triggered (a 180ms debounce, one IPC call per hover) — moved to eager
+per-render checking because success shouldn't depend on how long the cursor happens to
+sit still, and because the same path routinely recurs across many rows in one file (a
+config path logged on every save, say): eager+cached checks it once total instead of once
+per hover. Only when `pathExists` resolves `true` does every currently-rendered occurrence
+of that path (looked up fresh via `tableRows.querySelectorAll`, not the original span
+reference — a later render may have already replaced it) get `.fp-verified` — the full
+link look. Hovering a verified span now just opens the popup (`#fpPathMenu`, same
+shape/CSS as `#addToSelectionMenu`/`#treeCtxInfoMenu` above) straight from the cache, no
+IPC call, offering two actions:
 
 - **Open file** — `philogg.openPath` → new `open_path` command, `app.opener().open_path(…)`
   (same `tauri_plugin_opener::OpenerExt` the reveal commands already use).
 - **Open containing folder** — `philogg.revealPath`, the same command "Open File Location"
   above already uses.
 
-A path that doesn't exist is left exactly as `linkifyPaths` rendered it: plain text, never
-verified again until the next hover. `tests/philogg.regression.test.js` Group 199 covers
-the detection regex (including that it must not mistake a URL's own `//` for an absolute
-Unix path, or a bare fraction/date for one), the no-op case with no `window.philogg`, a
-verified path's popup and both its actions, and a nonexistent path never getting styled or
-opening anything.
+A path that doesn't exist stays exactly as `linkifyPaths` rendered it (dim underline, no
+popup) — it is checked once and never re-checked on a later hover.
+`tests/philogg.regression.test.js` Group 199 covers the detection regex (including that it
+must not mistake a URL's own `//` for an absolute Unix path, or a bare fraction/date for
+one), the always-on underline with no `window.philogg`, eager verification with zero
+`mouseover` dispatched and exactly one `pathExists()` call (including after a later
+hover), the per-path dedupe across multiple rows sharing one path, and a nonexistent path
+never getting styled or opening anything.
 
 ## System font list for the UI font and Log font pickers
 
