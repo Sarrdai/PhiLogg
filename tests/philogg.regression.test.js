@@ -22456,6 +22456,132 @@ group(199);
     inlineTextViewerEl.dispatchEvent(dragEv);
     assert(dragEv.defaultPrevented, "dragstart on the text viewer is prevented, so clicking/dragging over an existing selection re-selects instead of native-dragging it");
   });
+
+  section("199t. bugfix (Bug 1, person-reported): a multi-line copy is correct even when a Range boundary resolves past the last character of a line — i.e. to the .itv-line DIV itself (an ANCESTOR of .itv-line-content), which a real drag commonly produces when the drag point is past a line's rendered text");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    // Nested <span> tokenizer wrappers (highlightXmlText) on every line,
+    // closing tags each on their own line — matches the person's report
+    // (</Value>, </ConfigItem>, </ConfigItems>, tab-indented).
+    const original = "<ConfigItems>\n\t<ConfigItem>\n\t\t<Value>\n\t\t\t1\n\t\t</Value>\n\t</ConfigItem>\n</ConfigItems>";
+    const zipBuf = buildZipFixture([{ name: "notes.xml", data: original, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    const lineEls = inlineTextViewerEl.querySelectorAll(".itv-line");
+    function fireCopy(range) {
+      const sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+      ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+      inlineTextViewerEl.dispatchEvent(ev);
+      return ev;
+    }
+
+    // Select the three closing-tag lines top-to-bottom: </Value> (idx 4)
+    // through </ConfigItems> (idx 6), ending at the .itv-line DIV itself
+    // (offset = childNodes.length), exactly what a real browser reports for
+    // a drag that ends past the end of the last selected line's text.
+    const startContent = lineEls[4].querySelector(".itv-line-content");
+    const endLineDiv = lineEls[6];
+    let range = w.document.createRange();
+    range.setStart(startContent, 0);
+    range.setEnd(endLineDiv, endLineDiv.childNodes.length);
+    let ev = fireCopy(range);
+    assert(ev.clipboardData.data["text/plain"] === "\t\t</Value>\n\t</ConfigItem>\n</ConfigItems>",
+      "top-to-bottom drag ending past the last line's text still copies the full last line, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // Same selection, bottom-to-top drag direction (anchor at the end,
+    // focus at the start) — Selection normalizes start/end regardless, but
+    // exercised explicitly since drag direction was called out in the report.
+    const sel = w.getSelection();
+    sel.removeAllRanges();
+    sel.setBaseAndExtent(endLineDiv, endLineDiv.childNodes.length, startContent, 0);
+    const ev2 = new w.Event("copy", { bubbles: true, cancelable: true });
+    ev2.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+    inlineTextViewerEl.dispatchEvent(ev2);
+    assert(ev2.clipboardData.data["text/plain"] === "\t\t</Value>\n\t</ConfigItem>\n</ConfigItems>",
+      "bottom-to-top drag direction produces the identical result, got " + JSON.stringify(ev2.clipboardData.data["text/plain"]));
+  });
+
+  section("199u. bugfix (Bug 2, person-reported): opening/selecting a non-log inline-viewer entry clears the previously-active log file's tree-row 'active' styling, the same state.activeId-clearing transition a log-to-log switch already gets");
+  await withApp(async (w, d, T) => {
+    const log = makeLog(0, 2);
+    const file = new w.File([log], "app.log", { type: "text/plain" });
+    await w.loadFileDescriptors([{ file, handle: null }]);
+    await waitFor(() => T.state.activeId && T.state.nodes[T.state.activeId]);
+    const logNodeId = T.state.activeId;
+    let logRow = d.querySelector('.tree-row[data-node-id="' + logNodeId + '"]');
+    assert(logRow && logRow.classList.contains("active"), "the log file's tree row starts out active");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const zipRow = d.querySelector("#zipList .folder-watch-file");
+    zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    assert(T.state.activeId === null, "state.activeId is cleared once a non-log entry becomes the active content, got " + JSON.stringify(T.state.activeId));
+    logRow = d.querySelector('.tree-row[data-node-id="' + logNodeId + '"]');
+    assert(logRow && !logRow.classList.contains("active"), "the log file's tree row no longer carries the active class");
+
+    // Re-clicking the already-opened non-log entry (the plain-click path,
+    // not dblclick) goes through the same transition.
+    T.state.activeId = logNodeId;
+    w.render();
+    const zipRow2 = d.querySelector("#zipList .folder-watch-file");
+    zipRow2.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.activeId === null, "re-selecting the already-opened non-log entry via plain click also clears state.activeId");
+
+    // Third path: Alt+Up/Down tree nav (moveTreeSelection) landing on a
+    // non-log entry's virtual nav id goes through the same transition.
+    T.state.activeId = logNodeId;
+    T.state.inlineViewer = null;
+    w.render();
+    w.moveTreeSelection("ArrowDown");
+    assert(T.state.inlineViewer !== null && T.state.activeId === null,
+      "Alt+Down landing on the non-log entry also clears state.activeId, got activeId=" + JSON.stringify(T.state.activeId));
+    logRow = d.querySelector('.tree-row[data-node-id="' + logNodeId + '"]');
+    assert(logRow && !logRow.classList.contains("active"), "the log file's tree row is not active after Alt+Down lands on the non-log entry");
+  });
+
+  section("199v. bugfix (Bug 3, person-reported): the minimap hides whenever a non-log entry is the active content, including after the log file open before the switch is closed entirely");
+  await withApp(async (w, d, T) => {
+    const log = makeLog(0, 3);
+    const file = new w.File([log], "app.log", { type: "text/plain" });
+    await w.loadFileDescriptors([{ file, handle: null }]);
+    await waitFor(() => T.state.activeId && T.state.nodes[T.state.activeId]);
+    const logNodeId = T.state.activeId;
+    const minimapEl = d.querySelector("#timelineMinimap");
+    assert(!minimapEl.classList.contains("hidden"), "the minimap is shown while a log file is active");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const zipRow = d.querySelector("#zipList .folder-watch-file");
+    zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+    assert(minimapEl.classList.contains("hidden"), "switching to the non-log entry hides the minimap");
+
+    // Close the log file that was open before the switch, while the non-log
+    // viewer stays active — the minimap must stay hidden (this is the
+    // specific trigger the report called out, distinct from the plain
+    // switch above: renderMainView's state.inlineViewer branch returns
+    // before ever reaching the !hasFiles branch that would otherwise hide it).
+    delete T.state.nodes[logNodeId];
+    T.state.rootIds = T.state.rootIds.filter(id => id !== logNodeId);
+    w.render();
+    assert(T.state.rootIds.length === 0, "the log file is now fully closed");
+    assert(T.state.inlineViewer !== null, "the non-log viewer is still active");
+    assert(minimapEl.classList.contains("hidden"), "the minimap stays hidden after closing the log file while the non-log viewer is active");
+  });
 }
 
 /* ============================================================
