@@ -10576,7 +10576,7 @@ function parseZipViewerNavId(id) {
 
 function flattenTreeIds() {
   const ids = [];
-  (function walk(list) {
+  function walk(list) {
     list.forEach(id => {
       const node = state.nodes[id];
       // A queued placeholder (see createQueuedFileNode) has nothing to
@@ -10589,18 +10589,37 @@ function flattenTreeIds() {
       // renderNode's own row-recursion follows.
       if (node && !node.collapsed) walk(node.children);
     });
-  })(state.rootIds);
-  // Opened non-log zip entries (bugfix, person-reported): appended after
-  // the main tree, one virtual id per zip per opened entry, in the same
-  // per-zip/per-entry order renderZipSection itself walks — a real tree
-  // node for an opened LOG entry is already covered above (it's a normal
-  // state.rootIds member, just tagged with node.zipId, per docs/
-  // persistence-and-sync.md's "ZIP sources" section), so only entries
-  // still missing a real node (i.e. actually keyed in zip.inlineViewers)
-  // need a stand-in slot here.
+  }
+  // Main tree: a node with node.zipId never renders here (renderTree skips
+  // it — it nests inside its own zip's renderZipSection container instead),
+  // so it's excluded from this top-level walk too and picked up below, in
+  // its actual visual position within its zip's entry list.
+  walk(state.rootIds.filter(id => {
+    const node = state.nodes[id];
+    return !(node && node.zipId);
+  }));
+  // ZIP sections (bugfix, person-reported: nav order didn't match the
+  // visual order — every opened non-log entry was being tacked on as one
+  // block AFTER the whole main tree, regardless of where its zip container
+  // actually sits, and even within one zip a real tree node for an opened
+  // log entry landed wherever it happened to sit in state.rootIds — usually
+  // "whenever it was opened" — instead of its zip's alphabetical listing
+  // position). Mirrors renderZipSection's own walk EXACTLY: per zip (in
+  // state.zips order, matching renderZipList), per zip.entries order (the
+  // alphabetical listing order the container actually renders), either the
+  // real open tree node — found the same way renderZipSection looks it up,
+  // by node.zipId + node.name — and its children, or (for a non-log entry
+  // with no real node) the virtual stand-in id, but only once it's actually
+  // been opened (an unopened placeholder row has nothing to select/copy and
+  // stays unreachable by design, same as before this fix).
   state.zips.forEach(zip => {
     zip.entries.forEach(entry => {
-      if (zip.inlineViewers.has(entry.name)) ids.push(zipViewerNavId(zip.id, entry.name));
+      const openId = state.rootIds.find(id => {
+        const n = state.nodes[id];
+        return n && n.zipId === zip.id && n.name === entry.name;
+      });
+      if (openId) walk([openId]);
+      else if (zip.inlineViewers.has(entry.name)) ids.push(zipViewerNavId(zip.id, entry.name));
     });
   });
   return ids;
@@ -19287,6 +19306,23 @@ function itvContentOffset(container, offset, lineEl) {
   r.setEnd(container, offset);
   return r.toString().length;
 }
+// Bugfix (Bug 3, person-reported): re-selecting text that overlaps (or
+// starts right next to) an EXISTING selection was being hijacked into the
+// browser's own native "drag the currently-selected text" gesture (the same
+// affordance that lets you drag a text selection into another input) instead
+// of starting a plain new drag-select — every browser makes text inside an
+// active selection natively draggable by default, no app code required to
+// opt in. That explains both halves of the report: the "drag element"
+// feel near/inside the selected region, AND the leading-whitespace loss —
+// when the native drag hijacks the gesture, mouseup never produces a fresh
+// Range at all, so the OLD selection (whatever it was before, generally not
+// starting at column 0) is still what's active when Ctrl+C fires, silently
+// dropping the leading run of whitespace the person thought they'd just
+// re-selected. There is no per-app "selectable text" concept to preserve —
+// this viewer is meant to behave like a plain read-only text pane — so the
+// fix is simply to opt out of the browser's native drag-a-selection feature
+// entirely for this element, restoring ordinary click/drag == select.
+inlineTextViewerEl.addEventListener("dragstart", ev => ev.preventDefault());
 inlineTextViewerEl.addEventListener("copy", ev => {
   if (!state.inlineViewer || state.inlineViewer.kind !== "text") return;
   const sel = window.getSelection && window.getSelection();
@@ -25194,12 +25230,20 @@ document.addEventListener("keydown", ev => {
     // in preference to the tree's own filter-node copy/paste clipboard below
     // (state.clipboard), which only makes sense while focusRegion is "tree".
     // Exception: if the person has selected text inside the Entry Detail
-    // panel (e.g. to grab a substring of a long message), let the browser's
+    // panel (e.g. to grab a substring of a long message) or inside an open
+    // ZIP inline text viewer (bugfix, person-reported: a background log-row
+    // selection was winning over an actual, active text selection made
+    // inside the viewer — e.g. selecting text within an opened XML — because
+    // this handler fires on keydown and calls copyLogSelectionToClipboard()
+    // directly, pre-empting the native `copy` event entirely, including the
+    // inline viewer's own `copy` listener near inlineTextViewerEl's
+    // definition, which never got a chance to run), let the browser's
     // native copy handle that selection instead of overriding it with the
     // full raw line.
     if (state.focusRegion === "entries" && state.selectedId) {
       const sel = window.getSelection();
-      if (sel && sel.toString().length && detailPanel.contains(sel.anchorNode)) return;
+      if (sel && sel.toString().length &&
+          (detailPanel.contains(sel.anchorNode) || inlineTextViewerEl.contains(sel.anchorNode))) return;
       ev.preventDefault();
       copyLogSelectionToClipboard();
       return;
