@@ -1919,8 +1919,8 @@ group(21);
     fireClick(btnOpenSess, w);
     assert(!openMenuSess.classList.contains("hidden"), "clicking \"Open\" reveals the dropdown");
     const openActions = [...openMenuSess.querySelectorAll("[data-action]")].map(i => i.dataset.action);
-    assert(openActions.join(",") === "files,folder,importSession",
-      "open menu offers File(s)…/Folder…/Import session…, got " + openActions.join(","));
+    assert(openActions.join(",") === "files,folder,zip,importSession",
+      "open menu offers File(s)…/Folder…/ZIP…/Import session…, got " + openActions.join(","));
     fireClick(d.body, w);
     assert(openMenuSess.classList.contains("hidden"), "clicking outside the open menu closes it");
     assert(!!d.querySelector("#btnSave"), "\"Save\" button (session export) exists");
@@ -21717,6 +21717,194 @@ await withApp(async (w, d, T) => {
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
 /* ============================================================
+   GROUP 199 — ZIP files as a log source (this session, 2026-09-11):
+   readZipEntries (EOCD + central directory parsing, no bulk extraction),
+   per-entry lazy extract() via DecompressionStream('deflate-raw')/
+   passthrough for stored entries, and the double-click -> loadFileDescriptors
+   ingestion wiring producing a static (non-tailable) node. The synthetic ZIP
+   fixture is hand-built here (buildZipFixture, using Node's zlib.
+   deflateRawSync) purely as test-fixture tooling — philogg.html's own ZIP
+   reader stays dependency-free at runtime, per CLAUDE.md's "no new runtime
+   dependencies" constraint; only this test file requires "zlib".
+   ============================================================ */
+group(199);
+{
+  const zlib = require("zlib");
+  // Hand-builds a minimal, valid ZIP (local file headers + central
+  // directory + EOCD) from raw entries — test-fixture tooling only, not a
+  // stand-in for philogg.html's own reader. `entries`: [{ name, data:
+  // string|Buffer, method: 0|8 (default 8) }]. No CRC written (0) — the
+  // app's reader intentionally doesn't check it either, see readZipEntries.
+  function buildZipFixture(entries) {
+    let offset = 0;
+    const localBufs = [];
+    const centralBufs = [];
+    for (const e of entries) {
+      const nameBuf = Buffer.from(e.name, "utf8");
+      const uncompressed = Buffer.isBuffer(e.data) ? e.data : Buffer.from(e.data, "utf8");
+      const method = e.method === undefined ? 8 : e.method;
+      const compressed = method === 8 ? zlib.deflateRawSync(uncompressed) : uncompressed;
+
+      const localHeader = Buffer.alloc(30);
+      localHeader.writeUInt32LE(0x04034b50, 0);
+      localHeader.writeUInt16LE(20, 4);       // version needed
+      localHeader.writeUInt16LE(0, 6);        // flags
+      localHeader.writeUInt16LE(method, 8);
+      localHeader.writeUInt16LE(0, 10);       // mod time
+      localHeader.writeUInt16LE(0, 12);       // mod date
+      localHeader.writeUInt32LE(0, 14);       // crc32 (unused by the reader)
+      localHeader.writeUInt32LE(compressed.length, 18);
+      localHeader.writeUInt32LE(uncompressed.length, 22);
+      localHeader.writeUInt16LE(nameBuf.length, 26);
+      localHeader.writeUInt16LE(0, 28);       // extra field length
+      const localOffset = offset;
+      const localRecord = Buffer.concat([localHeader, nameBuf, compressed]);
+      localBufs.push(localRecord);
+      offset += localRecord.length;
+
+      const centralHeader = Buffer.alloc(46);
+      centralHeader.writeUInt32LE(0x02014b50, 0);
+      centralHeader.writeUInt16LE(20, 4);     // version made by
+      centralHeader.writeUInt16LE(20, 6);     // version needed
+      centralHeader.writeUInt16LE(0, 8);      // flags
+      centralHeader.writeUInt16LE(method, 10);
+      centralHeader.writeUInt16LE(0, 12);
+      centralHeader.writeUInt16LE(0, 14);
+      centralHeader.writeUInt32LE(0, 16);     // crc32
+      centralHeader.writeUInt32LE(compressed.length, 20);
+      centralHeader.writeUInt32LE(uncompressed.length, 24);
+      centralHeader.writeUInt16LE(nameBuf.length, 28);
+      centralHeader.writeUInt16LE(0, 30);     // extra field length
+      centralHeader.writeUInt16LE(0, 32);     // comment length
+      centralHeader.writeUInt16LE(0, 34);     // disk number start
+      centralHeader.writeUInt16LE(0, 36);     // internal attrs
+      centralHeader.writeUInt32LE(0, 38);     // external attrs
+      centralHeader.writeUInt32LE(localOffset, 42);
+      centralBufs.push(Buffer.concat([centralHeader, nameBuf]));
+    }
+    const localSection = Buffer.concat(localBufs);
+    const centralSection = Buffer.concat(centralBufs);
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(0, 4);                 // disk number
+    eocd.writeUInt16LE(0, 6);                 // disk with CD start
+    eocd.writeUInt16LE(entries.length, 8);    // entries on this disk
+    eocd.writeUInt16LE(entries.length, 10);   // total entries
+    eocd.writeUInt32LE(centralSection.length, 12);
+    eocd.writeUInt32LE(localSection.length, 16); // CD offset = end of local section
+    eocd.writeUInt16LE(0, 20);                // comment length
+    return Buffer.concat([localSection, centralSection, eocd]);
+  }
+
+  const ENTRY_A_TEXT = makeLog(0, 3, { msgPrefix: "stored" });   // method 0
+  const ENTRY_B_TEXT = makeLog(0, 4, { msgPrefix: "deflated" }); // method 8
+
+  await withApp(async (w, d, T) => {
+    section("199a. readZipEntries parses the central directory (name/size/compressionMethod) without inflating anything");
+
+    // Neither Response nor DecompressionStream exist on a jsdom window —
+    // philogg.html's extract() needs both, so this and every other group
+    // below hands the real Node ones in, exactly as opts.indexedDB does for
+    // fake-indexeddb elsewhere in this suite.
+    w.Response = Response;
+    let decompressCount = 0;
+    class CountingDecompressionStream extends DecompressionStream {
+      constructor(...args) { super(...args); decompressCount++; }
+    }
+    w.DecompressionStream = CountingDecompressionStream;
+
+    const zipBuf = buildZipFixture([
+      { name: "a-stored.log", data: ENTRY_A_TEXT, method: 0 },
+      { name: "b-deflated.log", data: ENTRY_B_TEXT, method: 8 },
+    ]);
+    const zipFile = new w.File([zipBuf], "logs.zip");
+
+    const entries = await w.readZipEntries(zipFile);
+    assert(entries.length === 2, "both entries are listed, got " + entries.length);
+    assert(entries[0].name === "a-stored.log" && entries[1].name === "b-deflated.log",
+      "names come out in archive order, got " + entries.map(e => e.name).join(","));
+    assert(entries[0].compressionMethod === 0 && entries[1].compressionMethod === 8,
+      "compression methods are read correctly, got " + entries.map(e => e.compressionMethod).join(","));
+    assert(entries[0].size === Buffer.byteLength(ENTRY_A_TEXT) && entries[1].size === Buffer.byteLength(ENTRY_B_TEXT),
+      "uncompressed sizes are read correctly, got " + entries.map(e => e.size).join(","));
+    assert(decompressCount === 0, "listing the central directory must never inflate anything, got " + decompressCount + " DecompressionStream construction(s)");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199b. extract() is lazy — only the entry actually called is ever inflated, and stored vs deflated both decode correctly");
+
+    w.Response = Response;
+    let decompressCount = 0;
+    class CountingDecompressionStream extends DecompressionStream {
+      constructor(...args) { super(...args); decompressCount++; }
+    }
+    w.DecompressionStream = CountingDecompressionStream;
+
+    const zipBuf = buildZipFixture([
+      { name: "a-stored.log", data: ENTRY_A_TEXT, method: 0 },
+      { name: "b-deflated.log", data: ENTRY_B_TEXT, method: 8 },
+    ]);
+    const entries = await w.readZipEntries(new w.File([zipBuf], "logs.zip"));
+
+    const storedBytes = await entries[0].extract();
+    assert(new w.TextDecoder().decode(storedBytes) === ENTRY_A_TEXT, "stored (method 0) entry round-trips byte-for-byte untouched");
+    assert(decompressCount === 0, "a stored entry must never touch DecompressionStream, got " + decompressCount);
+
+    const deflatedBytes = await entries[1].extract();
+    assert(new w.TextDecoder().decode(deflatedBytes) === ENTRY_B_TEXT, "deflated (method 8) entry inflates back to the original text");
+    assert(decompressCount === 1, "only the ONE entry actually extracted was ever inflated, got " + decompressCount);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199c. openZipSource adds a state.zips entry rendered without the folder-watch scanning indicator or settings gear");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "only.log", data: ENTRY_A_TEXT, method: 0 }]);
+    const zip = await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    assert(T.state.zips.length === 1 && T.state.zips[0] === zip, "the zip is added to state.zips");
+    assert(zip.entries.length === 1 && zip.entries[0].name === "only.log", "its entry list is populated from the central directory");
+
+    const box = d.querySelector("#zipList .folder-watch");
+    assert(!!box, "a folder-watch-styled box is rendered for the zip source");
+    assert(!box.querySelector(".folder-watch-icon.scanning"), "unlike folder watch, a zip source's icon never carries the scanning-ping class — nothing here is polled");
+    assert(!box.querySelector(".folder-watch-settings"), "unlike folder watch, a zip source has no settings gear — no auto-load rules apply to an immutable zip");
+    assert(!!box.querySelector(".folder-watch-close"), "a zip source still has a close affordance, same as a watched folder");
+    const row = box.querySelector(".folder-watch-file");
+    assert(!!row && row.textContent.includes("only.log"), "the entry row shows the entry name, got " + (row && row.textContent));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199d. double-clicking a zip entry row extracts just that entry and loads it as a static (non-tailable) file via loadFileDescriptors");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([
+      { name: "a-stored.log", data: ENTRY_A_TEXT, method: 0 },
+      { name: "b-deflated.log", data: ENTRY_B_TEXT, method: 8 },
+    ]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    let loadFileDescriptorsCalls = 0;
+    const originalLFD = w.loadFileDescriptors;
+    w.loadFileDescriptors = (...args) => { loadFileDescriptorsCalls++; return originalLFD.apply(w, args); };
+
+    const rows = d.querySelectorAll("#zipList .folder-watch-file");
+    assert(rows.length === 2, "both entries render as inert rows, got " + rows.length);
+    rows[1].dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]] && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+
+    assert(loadFileDescriptorsCalls === 1, "double-click routes through the shared loadFileDescriptors ingestion path, got " + loadFileDescriptorsCalls + " call(s)");
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(node && node.name === "b-deflated.log", "the loaded node is the double-clicked entry, got " + (node && node.name));
+    assert(node.entries.length === 4, "the entry's inflated content was parsed into log entries, got " + (node && node.entries.length));
+    assert(!node.tail, "a zip entry has no live source to poll — no `handle` is passed, so the node gets no `.tail` and stays non-tailable, got " + JSON.stringify(node.tail));
+  });
+}
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -24571,4 +24759,21 @@ process.exitCode = failed ? 1 : 0;
       that implements ONLY arrayBuffer() (no blob() at all) — pins the fix
       and fails loudly (blob is not a function) on any regression back to
       res.blob().
+   Group 199 — this session (2026-09-11): ZIP files as a log source
+      (readZipEntries central-directory parsing, lazy per-entry extract()
+      via DecompressionStream, and the double-click -> loadFileDescriptors
+      ingestion wiring producing a static non-tailable node). 199a: parsing
+      the central directory lists both entries with correct name/size/
+      compressionMethod and never touches DecompressionStream. 199b:
+      extract() is lazy — a stored (method 0) entry round-trips untouched
+      and never invokes DecompressionStream, a deflated (method 8) entry
+      inflates correctly, and only the entry actually called is ever
+      inflated. 199c: openZipSource adds a state.zips entry rendered as a
+      folder-watch-styled box with neither the scanning-ping indicator nor
+      the settings gear (both folder-watch-only, since nothing here is
+      polled and no auto-load rules apply to an immutable zip). 199d:
+      double-clicking one entry row extracts only that entry, routes
+      through the shared loadFileDescriptors path, and the resulting node
+      has no `.tail` (no `handle` passed in, so it's non-tailable, matching
+      how a handle-less descriptor is already treated everywhere else).
    ============================================================ */
