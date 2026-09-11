@@ -1305,9 +1305,10 @@ await withApp(async (w, d, T) => {
    reached only through Settings, with no direct header shortcut to it.
    Also a short commit-hash "version" shown both next to the product name
    and inside the license section — PHILOGG_VERSION defaults to the
-   literal "dev" in source control; only the "Build tester release" GitHub
-   Action (.github/workflows/release.yml) stamps it to a real short SHA, in
-   a build artifact that's never committed back. This suite runs against
+   literal "dev" in source control; only the "Build Tester Files" / "Build
+   Release" GitHub Actions (.github/workflows/build-tester-files.yml,
+   build-release.yml) stamp it to a real short SHA, in a build artifact
+   that's never committed back. This suite runs against
    the literal source file, so it always sees "dev".
    ============================================================ */
 group(65);
