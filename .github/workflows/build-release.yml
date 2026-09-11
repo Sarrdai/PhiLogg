@@ -1,18 +1,25 @@
-name: Build desktop release
+name: Build Release
 
-# Manual only, and deliberately separate from release.yml, which keeps
-# publishing the plain philogg.html tester build and is untouched by
-# anything here. See docs/desktop.md → "Release".
-#
-# Artifacts are named PhiLogg-<sha>.<ext>. Tauri's bundler has no
-# `artifactName` template, so the rename happens in the upload step below.
+# Manual only — same variant checkboxes and build steps as "Build Tester
+# Files" (pick the branch to build from via the workflow's own branch
+# selector), but this workflow additionally publishes every selected
+# variant as a single GitHub Release. Use "Build Tester Files" instead when
+# testers just need the build artifacts without a release being created.
 on:
   workflow_dispatch:
     inputs:
+      build_html:
+        description: Build HTML (philogg.html)
+        type: boolean
+        default: true
       build_windows:
         description: Build Windows (.exe)
         type: boolean
-        default: true
+        default: false
+      build_windows_portable:
+        description: Build Windows portable (.zip)
+        type: boolean
+        default: false
       build_mac:
         description: Build macOS (.dmg)
         type: boolean
@@ -21,35 +28,35 @@ on:
         description: Build Linux (.AppImage)
         type: boolean
         default: false
-      build_windows_portable:
-        description: Build Windows portable (.zip)
-        type: boolean
-        default: false
 
 permissions:
   contents: write
 
 jobs:
-  # Creates the release once, up front, so the per-OS build jobs below can
-  # each just upload into it — avoids parallel jobs racing to create (or
+  # Creates the release once, up front, so the build jobs below can each
+  # just upload into it — avoids parallel jobs racing to create (or
   # half-create) the same release tag.
   prepare:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      short_sha: ${{ steps.tag.outputs.short_sha }}
       os_list: ${{ steps.os_list.outputs.list }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Compute release tag
         id: tag
-        run: echo "tag=desktop-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "tag=build-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       # The `matrix` context isn't available in a job-level `if:` (only in
       # `runs-on`/`env` and inside steps) — trying to filter a fixed matrix
       # that way makes GitHub reject the whole file at parse time, 0 jobs
-      # created. So the checkboxes are turned into the `build` job's actual
-      # matrix list here instead.
+      # created. So the checkboxes are turned into the `build_desktop` job's
+      # actual matrix list here instead.
       - name: Compute selected OS matrix
         id: os_list
         run: |
@@ -68,11 +75,37 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.tag.outputs.tag }}" \
-            --title "PhiLogg desktop build ${{ steps.tag.outputs.tag }}" \
-            --notes "Automated desktop tester build — see desktop/README.md. Proprietary — see the in-app License panel. Not for redistribution."
+            --title "PhiLogg build ${{ steps.tag.outputs.tag }}" \
+            --notes "Automated tester build. Proprietary — see the in-app License panel. Not for redistribution."
 
-  build:
+  build_html:
     needs: prepare
+    if: inputs.build_html
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Stamp version, strip comments and upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+        run: |
+          COMMIT_DATE=$(git show -s --format=%cd --date=format:%Y-%m-%d HEAD)
+          sed -i "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
+          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          ASSET_NAME="philogg-${COMMIT_DATE}-${SHORT_SHA}.html"
+          cp philogg.html "${ASSET_NAME}"
+          node scripts/strip-comments.js "${ASSET_NAME}"
+          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" "${ASSET_NAME}"
+          gh release upload "${{ needs.prepare.outputs.tag }}" "${ASSET_NAME}" --clobber
+
+  build_desktop:
+    needs: prepare
+    if: needs.prepare.outputs.os_list != '[]'
     strategy:
       fail-fast: false
       matrix:
@@ -110,24 +143,21 @@ jobs:
         working-directory: desktop
         run: npm install
 
-      # Same short-SHA stamp release.yml uses, plus the same release-only
-      # comment strip — neither committed back, both applied to the
+      # Same short-SHA stamp + comment strip build_html uses, applied to the
       # checked-out copy the Tauri bundler embeds as a resource a moment
-      # later, so the packaged philogg.html matches what release.yml
-      # publishes standalone. `sed -i.bak` because BSD sed (macOS runner)
-      # requires an argument to -i.
+      # later, so the packaged philogg.html matches the standalone HTML
+      # build. `sed -i.bak` because BSD sed (macOS runner) requires an
+      # argument to -i.
       - name: Stamp version and strip comments
-        id: stamp
         shell: bash
+        env:
+          SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
         run: |
-          SHORT_SHA="${{ needs.prepare.outputs.tag }}"
-          SHORT_SHA="${SHORT_SHA#desktop-}"
           sed -i.bak "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
           rm -f philogg.html.bak
           grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
           node scripts/strip-comments.js philogg.html
           grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build installer
         working-directory: desktop
@@ -144,8 +174,9 @@ jobs:
       - name: Package Windows portable build
         if: runner.os == 'Windows' && inputs.build_windows_portable
         shell: bash
+        env:
+          SHA: ${{ needs.prepare.outputs.short_sha }}
         run: |
-          SHA="${{ steps.stamp.outputs.short_sha }}"
           STAGE="PhiLogg-${SHA}_portable"
           mkdir -p "$STAGE"
           cp desktop/src-tauri/target/release/philogg-desktop.exe "$STAGE/PhiLogg.exe"
@@ -156,6 +187,7 @@ jobs:
       - name: Upload installer(s)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ needs.prepare.outputs.short_sha }}
         shell: bash
         # windows/macos have both failed a `gh release upload` before with a
         # clean build and no error output, which matches a transient upload
@@ -177,7 +209,6 @@ jobs:
             return 1
           }
           BUNDLE=desktop/src-tauri/target/release/bundle
-          SHA="${{ steps.stamp.outputs.short_sha }}"
           shopt -s nullglob
           for f in "$BUNDLE"/nsis/*.exe "$BUNDLE"/dmg/*.dmg "$BUNDLE"/appimage/*.AppImage; do
             renamed="$(dirname "$f")/PhiLogg-${SHA}.${f##*.}"
