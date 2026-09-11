@@ -131,12 +131,15 @@ open it in a browser to view it.
   read-only listing of what's inside, full relative paths included for
   nested entries (only the archive's central directory is read, nothing is
   extracted in bulk). Double-click a log file to inflate just that one entry
-  and load it like any other; double-click anything else (a `.txt`, an
-  image, …) to open it with the OS's default app for it (or a browser tab
-  in the plain-browser build) — no watching/polling (a ZIP is immutable
-  once opened), and no extra library: uses the browser's native
-  `DecompressionStream` Web API, identically in the plain-browser build and
-  the desktop build.
+  and load it like any other, staying nested in the zip's own listing while
+  open. Double-click a common text or image file (`.txt`/`.xml`/`.json`,
+  `.jpg`/`.jpeg`/`.png`/`.tiff`/`.tif`) to view it right in the app — JSON/XML
+  get syntax highlighting, images get pan/zoom/reset (drag-to-select a
+  region to zoom, same as Plot View). Anything else opens with the OS's
+  default app for it (or a browser tab in the plain-browser build) — no
+  watching/polling (a ZIP is immutable once opened), and no extra library:
+  uses the browser's native `DecompressionStream` Web API, identically in
+  the plain-browser build and the desktop build.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
