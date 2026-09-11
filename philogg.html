@@ -636,6 +636,14 @@
   .folder-watch-note{
     padding:7px 10px; font-size:10.8px; color:var(--text-tertiary); font-style:italic;
   }
+  /* ZIP source sections (renderZipSection, near renderFolderSection): same
+     box-per-source look as folder watch (.folder-watch, .folder-watch-file,
+     .folder-watch-file-name reused directly), but with no scanning-ping
+     indicator and no settings gear — a ZIP is a one-shot listing, nothing is
+     polled and there are no auto-load rules to configure. See #zipList. */
+  #zipList{flex:0 0 auto;}
+  .zip-source-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
+  .zip-source-file{opacity:.7;}
   #treeActionBar{
     flex:0 0 auto; display:none; align-items:center; gap:6px; flex-wrap:wrap;
     padding:9px 12px; border-bottom:1px solid var(--border-soft); background:var(--bg-elevated);
@@ -3180,6 +3188,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
+      <input type="file" id="zipInput" hidden accept=".zip,application/zip">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
       <input type="file" id="themeFileInput" hidden accept=".json,application/json">
@@ -3205,6 +3214,10 @@
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>
               Folder…
             </div>
+            <div class="ctx-item" data-action="zip">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M7 6v1M7 8v1M7 10v1"/></svg>
+              ZIP…
+            </div>
             <div class="ctx-item" data-action="importSession">
               <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 2v8M8 10 5.4 7.4M8 10l2.6-2.6"/></svg>
               Import session…
@@ -3222,6 +3235,7 @@
             <span id="treeActionBarLabel"></span>
           </div>
           <div id="folderWatchList"></div>
+          <div id="zipList"></div>
           <div id="tree"></div>
         </div>
       </div>
@@ -5967,6 +5981,14 @@ const state = {
   //   session restore, before the person clicks "Reconnect" — see
   //   restoreWatchedFolders/reconnectFolder.
   folders: [],
+
+  // Opened ZIP sources (readZipEntries/openZipSource, near loadFileDescriptors).
+  // Each entry: { id, name, entries: [{ name, size, compressionMethod,
+  // extract(): Promise<Uint8Array> }] }. Unlike state.folders this is never
+  // persisted/restored and never polled — a ZIP is immutable once opened, so
+  // there's nothing to watch and nothing to reconnect after a reload; closing
+  // the tab drops it, exactly like a plain <input type=file> pick would.
+  zips: [],
 
   // Log format definitions + filename-pattern rules (Settings -> Format
   // Manager, see "Log format definitions"). Loaded once at boot via
@@ -10356,6 +10378,7 @@ function buildLevelNodeLabelContent(node) {
 
 function renderTree() {
   renderFolderWatchList();
+  renderZipList();
   treeEl.innerHTML = "";
   // A file loaded from a watched folder renders inside its folder's own
   // section (renderFolderSection, above) instead of here, so its position
@@ -18498,8 +18521,250 @@ openMenu.addEventListener("click", ev => {
   closeOpenMenu();
   if (item.dataset.action === "files") openFilesPicker();
   else if (item.dataset.action === "folder") openFolderPickerFlow();
+  else if (item.dataset.action === "zip") openZipPickerFlow();
   else if (item.dataset.action === "importSession") importSessionFromFile();
 });
+
+/* ===================== ZIP sources (open a .zip as a log source) =====================
+   Distinct from folder watch (state.folders): a ZIP is immutable once
+   opened, so there's no scanning/polling/auto-rule machinery here at all —
+   just a one-shot read of the ZIP's central directory to list entries
+   (readZipEntries), then a lazy per-entry inflate on double-click
+   (extract(), via the native DecompressionStream('deflate-raw') Web API —
+   no unzip library, works identically in the browser build and the Tauri
+   desktop build since both webviews implement it). Nothing is extracted in
+   bulk and nothing is written to disk; only the entry a person actually
+   opens gets read+inflated. See PROJECT.md's file-loading section and
+   docs/persistence-and-sync.md for the full picture.
+
+   ZIP layout this reads (ZIP64 not implemented — not needed for the log
+   files this app targets, which are far below the 4GB/65535-entry
+   thresholds ZIP64 exists for; a ZIP requiring it fails to parse with a
+   toast rather than silently producing a truncated listing):
+     End Of Central Directory (EOCD), signature 0x06054b50, found by
+       scanning backward from the file's tail (it's followed only by an
+       optional comment, at most 65535 bytes) — gives the central
+       directory's offset/size and total entry count.
+     Central Directory File Headers, signature 0x02014b50, one per entry,
+       read as a single contiguous block — name, compression method,
+       compressed/uncompressed size, and the entry's Local File Header
+       offset. No CRC check (per the plan: these files are always complete,
+       integrity checking isn't a real problem here).
+     Local File Header, signature 0x04034b50, read lazily inside extract()
+       — its name/extra field lengths can differ from the central
+       directory's own copy, so the actual compressed-data offset has to be
+       computed from THIS header, not assumed from the central one. */
+
+const ZIP_EOCD_SIG = 0x06054b50;
+const ZIP_CENTRAL_SIG = 0x02014b50;
+const ZIP_LOCAL_SIG = 0x04034b50;
+const ZIP_EOCD_MIN_SIZE = 22;
+const ZIP_EOCD_MAX_COMMENT = 65535;
+
+// Reads only the EOCD + central directory (never the file data itself) and
+// returns [{ name, size, compressionMethod, extract() }]. `source` is
+// anything Blob-shaped (File, or a Blob built from raw bytes in tests) —
+// read via .slice()/.arrayBuffer() the same way tailing already reads File
+// byte ranges (see loadOneFileIntoTree/urlTailHandle), so this works
+// unchanged whether the ZIP came from a picker, a drop, or (in tests) an
+// in-memory Blob.
+async function readZipEntries(source) {
+  const fileSize = source.size;
+  if (fileSize < ZIP_EOCD_MIN_SIZE) throw new Error("Not a ZIP file (too small)");
+  const tailSize = Math.min(fileSize, ZIP_EOCD_MIN_SIZE + ZIP_EOCD_MAX_COMMENT);
+  const tailBuf = await source.slice(fileSize - tailSize, fileSize).arrayBuffer();
+  const tailView = new DataView(tailBuf);
+  let eocdPos = -1;
+  for (let i = tailBuf.byteLength - ZIP_EOCD_MIN_SIZE; i >= 0; i--) {
+    if (tailView.getUint32(i, true) === ZIP_EOCD_SIG) { eocdPos = i; break; }
+  }
+  if (eocdPos < 0) throw new Error("Not a ZIP file (no end-of-central-directory record found)");
+  const totalEntries = tailView.getUint16(eocdPos + 10, true);
+  const cdSize = tailView.getUint32(eocdPos + 12, true);
+  const cdOffset = tailView.getUint32(eocdPos + 16, true);
+  // ZIP64 tell: a plain EOCD stores these as 0xFFFF/0xFFFFFFFF when the
+  // real values need the ZIP64 extension this reader doesn't implement.
+  if (totalEntries === 0xffff || cdOffset === 0xffffffff || cdSize === 0xffffffff) {
+    throw new Error("This ZIP uses the ZIP64 format, which isn't supported");
+  }
+
+  const cdBuf = await source.slice(cdOffset, cdOffset + cdSize).arrayBuffer();
+  const cdView = new DataView(cdBuf);
+  const cdBytes = new Uint8Array(cdBuf);
+  const decoder = new TextDecoder();
+  const entries = [];
+  let pos = 0;
+  for (let i = 0; i < totalEntries; i++) {
+    if (pos + 46 > cdBuf.byteLength || cdView.getUint32(pos, true) !== ZIP_CENTRAL_SIG) {
+      throw new Error("Malformed ZIP central directory");
+    }
+    const compressionMethod = cdView.getUint16(pos + 10, true);
+    const compressedSize = cdView.getUint32(pos + 20, true);
+    const uncompressedSize = cdView.getUint32(pos + 24, true);
+    const nameLen = cdView.getUint16(pos + 28, true);
+    const extraLen = cdView.getUint16(pos + 30, true);
+    const commentLen = cdView.getUint16(pos + 32, true);
+    const localHeaderOffset = cdView.getUint32(pos + 42, true);
+    const nameBytes = cdBytes.subarray(pos + 46, pos + 46 + nameLen);
+    const name = decoder.decode(nameBytes);
+    pos += 46 + nameLen + extraLen + commentLen;
+    // Directory entries (name ends in "/") carry no data of their own —
+    // skip them, there's nothing a double-click could ever extract.
+    if (name.endsWith("/")) continue;
+    entries.push({
+      name,
+      size: uncompressedSize,
+      compressionMethod,
+      compressedSize,
+      localHeaderOffset,
+      // Lazy: reads and inflates ONLY this entry's bytes, only when called.
+      // The plan's key constraint — double-clicking one row must never
+      // touch any other entry's data.
+      async extract() {
+        const headBuf = await source.slice(localHeaderOffset, localHeaderOffset + 30).arrayBuffer();
+        const headView = new DataView(headBuf);
+        if (headView.getUint32(0, true) !== ZIP_LOCAL_SIG) throw new Error("Malformed ZIP local file header");
+        const localNameLen = headView.getUint16(26, true);
+        const localExtraLen = headView.getUint16(28, true);
+        const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
+        const compressedBuf = await source.slice(dataStart, dataStart + compressedSize).arrayBuffer();
+        if (compressionMethod === 0) return new Uint8Array(compressedBuf); // stored, no compression
+        if (compressionMethod === 8) {
+          const ds = new DecompressionStream("deflate-raw");
+          const writer = ds.writable.getWriter();
+          writer.write(new Uint8Array(compressedBuf));
+          writer.close();
+          const inflatedBuf = await new Response(ds.readable).arrayBuffer();
+          return new Uint8Array(inflatedBuf);
+        }
+        throw new Error(`Unsupported ZIP compression method (${compressionMethod}) for "${name}"`);
+      },
+    });
+  }
+  return entries;
+}
+
+// Opens `source` (a File, or anything Blob-shaped) as a new ZIP source:
+// reads the central directory once (fast — no inflate) and adds it to
+// state.zips, parallel to but independent from state.folders (see its own
+// comment) — never persisted/restored, since re-opening after a reload
+// would need the actual file picked again anyway (no live handle to a ZIP
+// on disk, same as a plain <input type=file> pick).
+async function openZipSource(source, name) {
+  let entries;
+  try {
+    entries = await readZipEntries(source);
+  } catch (err) {
+    showCopyToast(`Couldn't open "${name}" as a ZIP (${err.message})`);
+    return null;
+  }
+  const zip = { id: newCacheKey(), name, entries };
+  state.zips.push(zip);
+  render();
+  return zip;
+}
+
+function removeZipSource(zipId) {
+  state.zips = state.zips.filter(z => z.id !== zipId);
+  render();
+}
+
+// Mirrors openFilesPicker/openFolderPickerFlow's shape, but deliberately
+// uses the plain <input type=file> uniformly for both the browser build and
+// the Tauri desktop build (per the plan: this doesn't need to be Tauri-
+// exclusive — the Tauri bridge has no native zip-filtered picker, and a
+// plain <input> works fine inside its webview too), rather than branching
+// on window.philogg like openFilesPicker/openFolderPickerFlow do.
+const zipInput = el("#zipInput");
+function openZipPickerFlow() { zipInput.click(); }
+zipInput.addEventListener("change", ev => {
+  const file = ev.target.files[0];
+  zipInput.value = "";
+  if (file) openZipSource(file, file.name);
+});
+
+const zipListEl = el("#zipList");
+function renderZipList() {
+  zipListEl.innerHTML = "";
+  state.zips.forEach(zip => zipListEl.appendChild(renderZipSection(zip)));
+}
+
+// Visually a folder-watch box (reuses .folder-watch/-header/-name/-close/
+// -files/-file/-file-name/-note directly), but WITHOUT the two pieces of
+// chrome that only make sense for something being actively watched: no
+// scanning-ping indicator (.folder-watch-icon.scanning — nothing here is
+// polled) and no settings gear (no auto-open/auto-close rules apply to an
+// immutable ZIP). Rows are inert until double-clicked.
+function renderZipSection(zip) {
+  const box = document.createElement("div");
+  box.className = "folder-watch";
+
+  const header = document.createElement("div");
+  header.className = "folder-watch-header";
+  const icon = document.createElement("span");
+  icon.className = "folder-watch-icon zip-source-icon";
+  icon.innerHTML = ICON_FILE;
+  icon.title = "ZIP archive (opened read-only, not watched)";
+  header.appendChild(icon);
+  const nameEl = document.createElement("span");
+  nameEl.className = "folder-watch-name";
+  nameEl.textContent = zip.name;
+  nameEl.title = zip.name;
+  header.appendChild(nameEl);
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "folder-watch-close";
+  closeBtn.innerHTML = ICON_CLOSE;
+  closeBtn.title = "Remove this ZIP from the list";
+  closeBtn.addEventListener("click", () => removeZipSource(zip.id));
+  header.appendChild(closeBtn);
+  box.appendChild(header);
+
+  if (zip.entries.length) {
+    const list = document.createElement("div");
+    list.className = "folder-watch-files";
+    zip.entries.forEach(entry => list.appendChild(renderZipEntryRow(zip, entry)));
+    box.appendChild(list);
+  } else {
+    const note = document.createElement("div");
+    note.className = "folder-watch-note";
+    note.textContent = "No files in this archive";
+    box.appendChild(note);
+  }
+  return box;
+}
+
+function renderZipEntryRow(zip, entry) {
+  const row = document.createElement("div");
+  row.className = "folder-watch-file zip-source-file";
+  row.title = `Double-click to open "${entry.name}"`;
+  const icon = document.createElement("span");
+  icon.className = "tree-icon";
+  icon.innerHTML = ICON_FILE;
+  row.appendChild(icon);
+  const label = document.createElement("span");
+  label.className = "folder-watch-file-name";
+  label.textContent = entry.name;
+  row.appendChild(label);
+  row.addEventListener("dblclick", () => openZipEntry(entry));
+  return row;
+}
+
+// Inflates (or, for a stored/method-0 entry, just reads) this one entry and
+// feeds it into the existing ingestion path — the same loadFileDescriptors
+// every other loading route (file picker, drop, folder watch's "load this
+// file") ultimately funnels through. No `handle` is passed, so the
+// resulting node gets no `node.tail` (see loadOneFileIntoTree: tailing is
+// only wired up `if (handle)`) — a static, non-tailable row exactly like a
+// plain <input type=file> pick, which is what a one-shot ZIP entry should
+// be: tailTick/folderScanTick never see it since neither iterates
+// state.nodes directly, only state.folders and live tail handles.
+function openZipEntry(entry) {
+  loadFileDescriptors([{
+    name: entry.name,
+    openFile: async () => new File([await entry.extract()], entry.name),
+  }]);
+}
 
 // "Save" now covers session export only (FEATURE_BACKLOG.md #56) — a single
 // icon button, no dropdown, since there's only the one action. Session
@@ -18947,7 +19212,24 @@ async function loadDesktopLocalFiles({ files, folders } = {}) {
       showCopyToast("Dropping a folder can't start a folder watch here — use Open… → Folder…");
     }
   }
-  const descs = (files || []).map(f => ({
+  // A single dropped/picked .zip is a ZIP source, not a plain log file —
+  // detected before the normal descs mapping below so it never enters the
+  // regular ingestion path. Only handled when it's the sole file in the
+  // batch: a zip mixed into a multi-file drop falls through and loads (and
+  // fails to parse) as an ordinary file instead, same as the browser drop
+  // handler below.
+  const fileList = files || [];
+  if (fileList.length === 1 && /\.zip$/i.test(fileList[0].name)) {
+    const f = fileList[0];
+    const res = await fetch(f.url);
+    if (res.ok) {
+      await openZipSource(await res.blob(), f.name);
+      return;
+    }
+    showCopyToast(`Couldn't open "${f.name}" (HTTP ${res.status})`);
+    return;
+  }
+  const descs = fileList.map(f => ({
     name: f.name,
     openFile: async () => {
       // arrayBuffer(), not blob() — see this const's own comment above and
@@ -19053,6 +19335,17 @@ window.addEventListener("drop", ev => {
   // DataTransfer contents are gone once the handler returns.
   const plainFiles = dt.files ? Array.from(dt.files) : [];
   const items = dt.items ? Array.from(dt.items) : [];
+
+  // A single dropped .zip is a ZIP source, not a plain log file — checked
+  // before the FileSystemHandle/plain-file branches below so it never falls
+  // into the regular multi-file ingestion path. Only when it's the sole
+  // file dropped; a zip mixed into a larger drop loads (and fails to
+  // parse) as an ordinary file instead, same as loadDesktopLocalFiles.
+  if (plainFiles.length === 1 && /\.zip$/i.test(plainFiles[0].name)) {
+    openZipSource(plainFiles[0], plainFiles[0].name);
+    return;
+  }
+
   if (FOLDER_WATCH_SUPPORTED && items.length && typeof items[0].getAsFileSystemHandle === "function") {
     const handlePromises = items.filter(it => it.kind === "file").map(it => it.getAsFileSystemHandle());
     Promise.all(handlePromises).then(async handles => {
