@@ -8526,22 +8526,50 @@ function markFieldHtml(mm, text, columnKey) {
 // detects absolute Windows/UNC/Unix paths inside a rendered field's HTML.
 // Runs on already-escaped HTML (markFieldHtml's output), not raw text, so it
 // has to skip existing tags (e.g. <mark> from match/highlight marking)
-// rather than run over the whole string — see linkifyPaths' tag split.
+// rather than run over the whole string — see linkifyPaths' tag split — and
+// match against escaped quote entities (&#39;/&quot;), not literal '/", when
+// a path is quoted in the source log line.
+//
+// Person-reported (this session, follow-up): real log lines often have
+// spaces in the path itself ("C:\My Program\config.xml") and are
+// inconsistently quoted by whatever wrote them — sometimes 'like this',
+// sometimes bare. Six alternatives, tried in this order:
+//   1-3. A path wrapped in '...', "..." (escaped &#39;/&quot;) or `...` — an
+//        UNQUAMBIGUOUS boundary, so the inner path may contain spaces freely,
+//        matched lazily up to the closing quote (own capture group each, so
+//        linkifyPaths can keep the quote chars outside the <span>).
+//   4-5. An UNQUOTED Windows/UNC path allowed to contain spaces, bounded by
+//        requiring the match to end at a plausible ".ext" (also capping each
+//        segment to 60 chars) — without a quote to mark the end, a bare
+//        "…\Foo Bar.txt and then more sentence" has to stop *somewhere*, and
+//        "ends at a recognizable extension" is that anchor. A compound
+//        extension (archive.tar.gz) only matches through the first dot-run
+//        (archive.tar) — accepted, rare, low-impact.
+//   6-8. The original no-space Windows/UNC/Unix alternatives, kept as a
+//        fallback for an unquoted, space-free, extension-less path (e.g. a
+//        bare directory like C:\Windows\System32) that 4-5 can't anchor.
 // The negative lookbehind on the Unix alternative rejects a match starting
 // right after a word character, ":" or "/" — without it "https://host/path"
 // would linkify as "//host/path" from the URL's own double slash.
-const FILE_PATH_RE = /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\s]+\\)*[^\\/:*?"<>|\r\n\s]+|\\\\[^\\/:*?"<>|\r\n\s]+(?:\\[^\\/:*?"<>|\r\n\s]+)+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
+const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&quot;|`((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)`|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)*[^\\/:*?"<>|\r\n\t]{0,60}?\.[A-Za-z0-9]{1,10}\b|\\\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)+[^\\/:*?"<>|\r\n\t]{0,60}?\.[A-Za-z0-9]{1,10}\b|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\s]+\\)*[^\\/:*?"<>|\r\n\s]+|\\\\[^\\/:*?"<>|\r\n\s]+(?:\\[^\\/:*?"<>|\r\n\s]+)+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
 
 // Wraps every detected path candidate in a span the hover popup (see
-// openFpPathMenu) can key off. `m` is already HTML-escaped text (it came out
-// of an escaped token), so it's safe to reuse verbatim both as the span's
-// content and as its data-fp attribute value — the HTML parser decodes
-// entities in attributes the same way it does in text.
+// openFpPathMenu) can key off. The path text (whichever of FILE_PATH_RE's
+// quoted capture groups matched, or the whole match for an unquoted one) is
+// already HTML-escaped (it came out of an escaped token), so it's safe to
+// reuse verbatim both as the span's content and as its data-fp attribute
+// value — the HTML parser decodes entities in attributes the same way it
+// does in text. A quote match keeps its quote characters OUTSIDE the span
+// (plain punctuation around the link, not part of it).
 function linkifyPaths(html) {
   if (!html) return html;
   return html.split(/(<[^>]+>)/).map(part =>
     part.charAt(0) === "<" ? part :
-      part.replace(FILE_PATH_RE, m => '<span class="fp-candidate" data-fp="' + m + '">' + m + '</span>')
+      part.replace(FILE_PATH_RE, (m, sq, dq, bt) => {
+        const path = sq || dq || bt || m;
+        const quote = sq !== undefined ? "&#39;" : dq !== undefined ? "&quot;" : bt !== undefined ? "`" : "";
+        return quote + '<span class="fp-candidate" data-fp="' + path + '">' + path + '</span>' + quote;
+      })
   ).join("");
 }
 
