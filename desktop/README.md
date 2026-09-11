@@ -36,15 +36,18 @@ packaged as a bundle resource. Opening a file directly:
 npm run dev -- -- path/to/file.log
 ```
 
-Releases are built by `.github/workflows/desktop-release.yml`
-(`workflow_dispatch`, per-OS checkboxes, tag `tauri-<short-sha>`, artifacts
-named `PhiLogg-<sha>.<ext>`).
+Builds are produced by two manual workflows sharing the same per-OS
+checkboxes and build steps: `.github/workflows/build-tester-files.yml`
+(uploads installers as workflow run artifacts named `PhiLogg-<sha>.<ext>`,
+no release) and `.github/workflows/build-release.yml` (same artifacts,
+also published together under one GitHub Release tagged `build-<sha>`).
 
 ## Version stamp and release-only comment stripping
 
-Same scheme as `release.yml`: the release job rewrites `PHILOGG_VERSION` in
-the checked-out `philogg.html` to the commit short-SHA before bundling
-(never committed back), and the installer filename carries the same SHA.
+Same scheme as the HTML build: the desktop build job rewrites
+`PHILOGG_VERSION` in the checked-out `philogg.html` to the commit
+short-SHA before bundling (never committed back), and the installer
+filename carries the same SHA.
 
 The same job also runs `node scripts/strip-comments.js philogg.html`,
 so the copy packaged into the installer carries no source comments — the

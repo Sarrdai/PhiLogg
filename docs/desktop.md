@@ -511,32 +511,36 @@ render pipeline, same real nodes — and only changes its appearance.
 
 ## Release
 
-`.github/workflows/desktop-release.yml`, manual-only (`workflow_dispatch`), entirely
-separate from `release.yml` (which keeps publishing only `philogg.html`, unaffected by
-any of this). A `prepare` job creates one release tag (`tauri-<short-sha>`) up front so
-the per-OS `build` matrix jobs can each just build and upload their own installer into
-it, without racing each other to create the same release. Four `workflow_dispatch`
-boolean inputs (`build_windows` default on, `build_mac`/`build_linux`/
-`build_windows_portable` default off) pick which platforms actually get a `build` job:
-`prepare` computes a JSON OS list from the checkboxes (plain bash + `jq`) and `build`'s
-`strategy.matrix.os` is `fromJSON(needs.prepare.outputs.os_list)`.
+Two manual-only (`workflow_dispatch`) workflows share the same build logic and the same
+five boolean checkboxes (`build_html` default on, `build_windows`/`build_mac`/
+`build_linux`/`build_windows_portable` default off): `.github/workflows/build-tester-files.yml`
+uploads every selected variant as a workflow run artifact and creates no release;
+`.github/workflows/build-release.yml` builds the same variants and additionally
+publishes them together under one GitHub Release tagged `build-<short-sha>`. In
+`build-release.yml`, a `prepare` job creates that release tag up front so the `build_html`
+and `build_desktop` jobs can each just build and upload into it, without racing each
+other to create the same release; `build-tester-files.yml` has no such job since there's
+no shared release to race over. In both workflows, `prepare`'s `os_list` step turns
+the desktop checkboxes into a JSON OS list (plain bash + `jq`) that `build_desktop`'s
+`strategy.matrix.os` reads via `fromJSON(needs.prepare.outputs.os_list)`.
 `build_windows_portable` alone still needs `windows-latest` in that list, so it's OR'd in
 alongside `build_windows` and deduped with `jq`'s `unique` (ticking both doesn't spawn the
 runner twice). **Not** a job-level `if:` comparing `inputs.*`
 against `matrix.os` — GitHub rejects the whole workflow file at parse time for that
 (`0` jobs, `startup_failure`): the `matrix` context isn't available in
 `jobs.<job_id>.if`, only in `runs-on`/`env` and inside steps. An unchecked-everything
-dispatch just produces an empty matrix, no separate guard needed. `fail-fast: false` so
-one platform's failure doesn't cancel the still-running others, and `Upload installer(s)`
-retries `gh release upload` up to 5x with backoff (both added after real runs saw exactly
-those failures — see changelog).
+dispatch just produces an empty matrix, so `build_desktop` is skipped via
+`needs.prepare.outputs.os_list != '[]'`, no separate guard needed. `fail-fast: false` so
+one platform's failure doesn't cancel the still-running others, and (in `build-release.yml`)
+`Upload installer(s)` retries `gh release upload` up to 5x with backoff (both added after
+real runs saw exactly those failures — see changelog).
 
 Linux builds on `ubuntu-22.04` rather than `-latest` because an AppImage links against
 its build machine's glibc, and the job installs the WebKitGTK/GTK/appindicator dev
 packages first. Tauri's bundler has no `artifactName` template, so the upload step
 renames the bundles to `PhiLogg-<sha>.<ext>`.
 
-Each `build` job stamps `PHILOGG_VERSION` to the commit short-SHA and strips
+Each `build_desktop` job stamps `PHILOGG_VERSION` to the commit short-SHA and strips
 `philogg.html`'s comments (`scripts/strip-comments.js`, see PROJECT.md → "Release
 builds") before bundling — never committed back, just the checked-out copy the Tauri
 bundler embeds as a resource a moment later.

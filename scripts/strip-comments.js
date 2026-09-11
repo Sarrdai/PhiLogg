@@ -3,8 +3,8 @@
 //
 // The tracked philogg.html keeps every comment — they are most of what makes
 // a 20k-line single file navigable. The copies that leave the repo as a
-// release asset (release.yml) or packaged into the desktop installer
-// (desktop-release.yml) do not need them, so both workflows run this over their
+// release asset or packaged into a desktop installer do not need them, so
+// both build-tester-files.yml and build-release.yml run this over their
 // checked-out copy right after the PHILOGG_VERSION stamp and before
 // publishing. Nothing is ever committed back.
 //
