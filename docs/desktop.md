@@ -338,6 +338,26 @@ directory? the log's own location isn't tracked generically enough — see `PROJ
 gotchas), and absolute paths cover the common case (stack traces, file-not-found
 messages) without that ambiguity.
 
+**Spaces and quoting.** Person-reported (this session): real log lines routinely have
+spaces inside the path itself (`C:\My Program\config.xml`) and are inconsistently quoted
+by whatever wrote them — sometimes `'like this'`, sometimes bare — while the original
+regex excluded `\s` from every Windows/UNC segment entirely, so detection stopped dead at
+the first space. `FILE_PATH_RE` now tries, in order: a path wrapped in `'...'`, `"..."`
+(matched via its escaped `&quot;` form — `linkifyPaths` runs on already-HTML-escaped text,
+so a raw `"`/`'` never appears) or `` `...` `` — an unambiguous boundary, so the inner path
+may contain spaces freely, captured lazily up to the closing quote; then a bare (unquoted)
+Windows/UNC path that allows spaces only when the match can anchor on a trailing `.ext`
+(each segment capped to 60 chars, so a lazy "look ahead for any later dot" can't run away
+into unrelated trailing sentence text — `"C:\My Program\config.xml for details"` still
+stops right after `.xml`); then the original no-space, no-extension-required alternative
+as a fallback for a bare directory path like `C:\Windows\System32` that the extension
+anchor can't bound. `linkifyPaths`' replacer keeps a quote's characters *outside* the
+`<span>` (plain surrounding punctuation) rather than swallowing them into the link.
+
+Two accepted, still-open limitations: an unquoted path with spaces **and** no file
+extension can't be anchored at all (quoting it at the source is the fix); a compound
+extension (`archive.tar.gz`) only matches through the first dot-run (`archive.tar`).
+
 **Every** `.fp-candidate` gets a dim, muted dotted underline immediately on render, in
 every build, regardless of whether it's ever verified. This exists specifically so the
 feature is self-diagnosing: person-reported (this session, after building a portable
@@ -377,10 +397,11 @@ A path that doesn't exist stays exactly as `linkifyPaths` rendered it (dim under
 popup) — it is checked once and never re-checked on a later hover.
 `tests/philogg.regression.test.js` Group 199 covers the detection regex (including that it
 must not mistake a URL's own `//` for an absolute Unix path, or a bare fraction/date for
-one), the always-on underline with no `window.philogg`, eager verification with zero
-`mouseover` dispatched and exactly one `pathExists()` call (including after a later
-hover), the per-path dedupe across multiple rows sharing one path, and a nonexistent path
-never getting styled or opening anything.
+one; a spaced path both quoted in all three forms and bare-with-an-extension; and the
+space-free/extension-less fallback case), the always-on underline with no
+`window.philogg`, eager verification with zero `mouseover` dispatched and exactly one
+`pathExists()` call (including after a later hover), the per-path dedupe across multiple
+rows sharing one path, and a nonexistent path never getting styled or opening anything.
 
 ## System font list for the UI font and Log font pickers
 

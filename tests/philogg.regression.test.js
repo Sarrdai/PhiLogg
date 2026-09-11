@@ -21750,6 +21750,33 @@ await withApp(async (w, d, T) => {
   const tagged = w.linkifyPaths('<mark class="hl">/etc/passwd</mark> plain');
   assert(tagged === '<mark class="hl"><span class="fp-candidate" data-fp="/etc/passwd">/etc/passwd</span></mark> plain',
     "linkifyPaths skips existing tags themselves and only wraps text content, got " + tagged);
+
+  // Follow-up (person-reported root cause): real paths have spaces and are
+  // inconsistently quoted ("mal '' drumherum, mal gar nichts").
+  const bareSpaced = w.linkifyPaths(w.escapeHtml('Saved to C:\\My Program\\config.xml'));
+  assert(bareSpaced.includes('<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>'),
+    "an unquoted Windows path with a space in a segment is still detected when it ends in a recognizable extension, got " + bareSpaced);
+
+  const bareSpacedTrailing = w.linkifyPaths(w.escapeHtml('C:\\My Program\\config.xml for details'));
+  assert(bareSpacedTrailing.includes('<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>') &&
+    bareSpacedTrailing.endsWith('span> for details'),
+    "...and still stops right after the extension, not swallowing the rest of the sentence, got " + bareSpacedTrailing);
+
+  const singleQuoted = w.linkifyPaths(w.escapeHtml("see 'C:\\My Program\\config.xml' done"));
+  assert(singleQuoted.includes('&#39;<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>&#39;'),
+    "a single-quoted path (spaces included) is detected, with the quote marks left outside the span, got " + singleQuoted);
+
+  const doubleQuoted = w.linkifyPaths(w.escapeHtml('see "C:\\My Program\\config.xml" done'));
+  assert(doubleQuoted.includes('&quot;<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>&quot;'),
+    "a double-quoted path is detected through its escaped &quot; boundary, got " + doubleQuoted);
+
+  const backtickQuoted = w.linkifyPaths(w.escapeHtml('see `C:\\My Program\\config.xml` done'));
+  assert(backtickQuoted.includes('`<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>`'),
+    "a backtick-quoted path is detected too, got " + backtickQuoted);
+
+  const bareDir = w.linkifyPaths(w.escapeHtml('path C:\\Windows\\System32 is bare'));
+  assert(bareDir.includes('<span class="fp-candidate" data-fp="C:\\Windows\\System32">C:\\Windows\\System32</span>'),
+    "regression: a space-free, extension-less directory path still matches via the original fallback, got " + bareDir);
 });
 
 await withApp(async (w, d, T) => {
@@ -24729,4 +24756,24 @@ process.exitCode = failed ? 1 : 0;
       common case — a path recurring across many log lines) still cost
       exactly one pathExists() call. 199e (was 199d): a nonexistent path
       never gets verified or opens the popup.
+   Second follow-up (same session, 2026-09-11, person found the actual root
+      cause themselves after the hover-eagerness fix didn't help): real log
+      lines have spaces inside the path itself ("C:\My Program\config.xml")
+      and are inconsistently quoted by whatever wrote them — sometimes
+      'like this', sometimes bare — while FILE_PATH_RE excluded \s from
+      every Windows/UNC segment, so detection stopped dead at the first
+      space. Fixed with three quoted alternatives (single/double/backtick —
+      double matched via its escaped &quot; form, since linkifyPaths runs on
+      already-escaped HTML) that allow spaces freely inside an unambiguous
+      quote boundary, plus a bounded unquoted alternative that allows
+      spaces only when the match can anchor on a trailing ".ext" (capped
+      segment length so a lazy "look for any later dot" can't run into
+      unrelated trailing text) — the original no-space/no-extension
+      alternative stays as a fallback for a bare directory path like
+      C:\Windows\System32. linkifyPaths' replacer reworked to keep quote
+      characters outside the <span> rather than swallowing them into the
+      link. 199a extended: the person's exact unquoted example, the same
+      with trailing sentence text (still stops right after the extension),
+      all three quote forms, and the space-free/extension-less fallback
+      case (regression check).
    ============================================================ */
