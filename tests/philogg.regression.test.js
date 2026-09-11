@@ -22268,18 +22268,23 @@ group(199);
     await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
     assert(T.state.inlineViewer === null, "opening the log entry cleared the non-log viewer (existing behavior)");
 
-    // Real tree nodes are walked before the appended zip-viewer virtual ids
-    // (see flattenTreeIds), so from the real log node, Alt+Down is the step
-    // that reaches the still-opened non-log entry's viewer — exactly like
-    // stepping on to another open file.
+    // Nav order now follows each zip's own on-screen position (Bug 1 fix,
+    // see flattenTreeIds/GROUP 199q below), not "real tree nodes first, then
+    // every zip-viewer virtual id appended afterwards": "logs.zip" (holding
+    // notes.txt) renders above "second.zip" (holding app.log) in #zipList,
+    // since it was opened first, so notes.txt's virtual nav id precedes
+    // app.log's real node in the flattened order. From nothing active,
+    // Alt+Down already landed on notes.txt above; from there Alt+Down is the
+    // step that reaches app.log's real node.
     w.moveTreeSelection("ArrowDown");
-    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.txt",
-      "Alt+Down from the log node steps to the opened non-log entry, got " + JSON.stringify(T.state.inlineViewer));
-
-    // And Alt+Up from there returns to the real log node.
-    w.moveTreeSelection("ArrowUp");
     assert(T.state.inlineViewer === null && T.state.activeId === T.state.rootIds[0],
-      "Alt+Up from the non-log entry moves back to the real log node, got inlineViewer=" + JSON.stringify(T.state.inlineViewer) + " activeId=" + T.state.activeId);
+      "Alt+Down from the non-log entry steps to the real log node (its zip renders below), got inlineViewer=" +
+      JSON.stringify(T.state.inlineViewer) + " activeId=" + T.state.activeId);
+
+    // And Alt+Up from there returns to the still-opened non-log entry.
+    w.moveTreeSelection("ArrowUp");
+    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.txt",
+      "Alt+Up from the real log node moves back to the non-log entry above it, got " + JSON.stringify(T.state.inlineViewer));
   });
 
   await withApp(async (w, d, T) => {
@@ -22334,6 +22339,122 @@ group(199);
     ev = fireCopy(range);
     assert(!ev.defaultPrevented && ev.clipboardData.data["text/plain"] === undefined,
       "a collapsed selection is left to the browser's default (no-op) copy behavior");
+
+  });
+
+  section("199q. bugfix (Bug 1, person-reported): Alt+Up/Down nav order now matches the zip container's rendered top-to-bottom order (alphabetical, log and non-log entries interleaved) instead of tacking every opened non-log entry on as one block after the whole tree");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    // Alphabetical listing per the report's own example: a.png above b.txt
+    // above c.log — a real tree node for the opened log entry (node.zipId)
+    // should land BETWEEN the two opened non-log virtual nav ids, not after
+    // both of them.
+    const zipBuf = buildZipFixture([
+      { name: "a.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47]), method: 0 },
+      { name: "b.txt", data: "hello", method: 0 },
+      { name: "c.log", data: makeLog(0, 2), method: 0 },
+    ]);
+    await w.openZipSource(new w.File([zipBuf], "assets.zip"), "assets.zip");
+    const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
+    // Open all three, in a DELIBERATELY non-alphabetical order (c.log first,
+    // then a.png, then b.txt) — flattenTreeIds must ignore this open order
+    // and reflect only the alphabetical RENDER order.
+    rows().find(r => r.title.includes("c.log")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => d.querySelectorAll("#zipList .folder-watch-file, #zipList .tree-row").length >= 1 &&
+      T.state.rootIds.some(id => T.state.nodes[id] && T.state.nodes[id].zipId));
+    rows().find(r => r.title.includes("a.png")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.entryName === "a.png");
+    rows().find(r => r.title.includes("b.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.entryName === "b.txt");
+
+    const zip = T.state.zips[0];
+    const logNode = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n && n.zipId === zip.id);
+    const ids = w.flattenTreeIds();
+    const idxPng = ids.indexOf(w.zipViewerNavId(zip.id, "a.png"));
+    const idxLog = ids.indexOf(logNode.id);
+    const idxTxt = ids.indexOf(w.zipViewerNavId(zip.id, "b.txt"));
+    assert(idxPng !== -1 && idxLog !== -1 && idxTxt !== -1, "all three entries have a nav slot");
+    // Alphabetical render order is a.png, b.txt, c.log — the real c.log tree
+    // node must land LAST despite being opened FIRST (open order must not
+    // matter, only render order does).
+    assert(idxPng < idxTxt && idxTxt < idxLog,
+      "nav order follows the zip's alphabetical render order (a.png, b.txt, then the real c.log tree node) — got png@" +
+      idxPng + " txt@" + idxTxt + " log@" + idxLog);
+  });
+
+  section("199r. bugfix (Bug 2, person-reported): Ctrl+C with a selected log row in the background AND an active text-viewer selection copies the text-viewer's selection, not the log row");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const log = makeLog(0, 3, { msgPrefix: "row" });
+    const file = new w.File([log], "app.log", { type: "text/plain" });
+    const donePromise = w.loadFileDescriptors([{ file, handle: null }]);
+    await donePromise;
+    await waitFor(() => d.querySelector(".log-row"));
+    const firstRow = d.querySelector(".log-row");
+    firstRow.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.focusRegion === "entries" && T.state.selectedId, "a log row is selected (background selection)");
+
+    const zipBuf = buildZipFixture([{ name: "notes.xml", data: "<a>hello world</a>", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "docs.zip"), "docs.zip");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+    // Opening the viewer leaves focusRegion/selectedId exactly as before
+    // (see the tree-row click handler's own comment) — the log row stays
+    // "selected in the background" while the viewer is what's actually shown.
+    assert(T.state.focusRegion === "entries" && T.state.selectedId, "the log row selection is still there in the background");
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    const contentEl = inlineTextViewerEl.querySelector(".itv-line-content");
+    const range = w.document.createRange();
+    range.selectNodeContents(contentEl);
+    const sel = w.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    assert(sel.toString().length > 0, "a genuine text selection exists inside the inline viewer");
+
+    const ev = new w.KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true });
+    d.dispatchEvent(ev);
+    assert(!ev.defaultPrevented, "the global Ctrl+C handler yields — does not preventDefault — when a real text selection exists in the inline viewer");
+  });
+
+  section("199s. bugfix (Bug 3, person-reported): leading whitespace on a line is preserved in a copied text-viewer selection, and the viewer opts out of the browser's native drag-the-selection gesture");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "indented.json", data: '{\n  "a": 1,\n  "b": 2\n}', method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    const lines = inlineTextViewerEl.querySelectorAll(".itv-line-content");
+    function fireCopy(range) {
+      const sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+      ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+      inlineTextViewerEl.dispatchEvent(ev);
+      return ev;
+    }
+    // Selecting the whole of line 1 ('  "a": 1,') — starting exactly at the
+    // leading-whitespace text node — must keep the two leading spaces.
+    const range = w.document.createRange();
+    range.setStart(lines[1].firstChild, 0);
+    range.setEnd(lines[1].lastChild, lines[1].lastChild.textContent.length);
+    const ev = fireCopy(range);
+    assert(ev.clipboardData.data["text/plain"] === '  "a": 1,',
+      "leading whitespace is preserved in the copied text, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // The viewer opts out of the browser's native "drag the current
+    // selection" affordance (Bug 3's other half) — dragstart is prevented.
+    const dragEv = new w.Event("dragstart", { bubbles: true, cancelable: true });
+    inlineTextViewerEl.dispatchEvent(dragEv);
+    assert(dragEv.defaultPrevented, "dragstart on the text viewer is prevented, so clicking/dragging over an existing selection re-selects instead of native-dragging it");
   });
 }
 
