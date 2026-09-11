@@ -247,9 +247,9 @@ examples/
   bracket-format.log                    a sample log file in a different format, for trying the Format Manager
 scripts/
   install_pkgs.sh                       helper for installing test dependencies
-  strip-comments.js                     release-only: strips every comment out of a copy of philogg.html (both release workflows run it)
-.github/workflows/release.yml           manual workflow: stamps a version, strips comments and publishes a tester build
-.github/workflows/desktop-release.yml   manual workflow: builds the desktop/ wrapper per OS
+  strip-comments.js                     release-only: strips every comment out of a copy of philogg.html (both build workflows run it)
+.github/workflows/build-tester-files.yml  manual workflow: builds the selected variants (HTML/Windows/Windows portable/macOS/Linux) as downloadable run artifacts, no release created
+.github/workflows/build-release.yml       manual workflow: same variant selection, published as a single GitHub Release
 PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
 docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
 CHANGELOG.md                            full chronological, dated changelog
@@ -290,10 +290,14 @@ Project documentation is split by audience:
 ## Versioning & releases
 
 `philogg.html` carries a `PHILOGG_VERSION` constant, which stays the literal
-string `"dev"` in source control. The manual **"Build tester release"**
-GitHub Action (`.github/workflows/release.yml`) stamps a checked-out commit's
-short SHA into a copy of the file and publishes it as a GitHub Release asset
-— the tracked file in this repo is never modified by it.
+string `"dev"` in source control. Two manual GitHub Actions, both with
+checkboxes for which variants to build (HTML, Windows, Windows portable,
+macOS, Linux), stamp a checked-out commit's short SHA into a copy of each
+selected file — the tracked files in this repo are never modified by
+either: **"Build Tester Files"** (`.github/workflows/build-tester-files.yml`)
+uploads the results as downloadable workflow run artifacts, while
+**"Build Release"** (`.github/workflows/build-release.yml`) additionally
+publishes them together as a single GitHub Release.
 
 ## License
 
