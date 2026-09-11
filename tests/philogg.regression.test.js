@@ -22582,6 +22582,83 @@ group(199);
     assert(T.state.inlineViewer !== null, "the non-log viewer is still active");
     assert(minimapEl.classList.contains("hidden"), "the minimap stays hidden after closing the log file while the non-log viewer is active");
   });
+
+  section("199w. bugfix (Bug 1, person-reported, this session): Entry Detail hides whenever a non-log entry is the active content, matching the tab bar and minimap's own gating");
+  await withApp(async (w, d, T) => {
+    const log = makeLog(0, 3);
+    const file = new w.File([log], "app.log", { type: "text/plain" });
+    await w.loadFileDescriptors([{ file, handle: null }]);
+    await waitFor(() => d.querySelector(".log-row"));
+    d.querySelector(".log-row").dispatchEvent(new w.Event("click", { bubbles: true }));
+    const detailPanel = d.querySelector("#detailPanel");
+    assert(detailPanel.style.display === "flex", "Entry Detail is shown once a log row is selected");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const zipRow = d.querySelector("#zipList .folder-watch-file");
+    zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+    assert(detailPanel.style.display === "none", "Entry Detail hides once a non-log entry becomes the active content, got " + detailPanel.style.display);
+    const detailResizer = d.querySelector("#detailResizer");
+    assert(detailResizer.style.display === "none", "the detail resizer handle hides along with the panel");
+  });
+
+  section("199x. bugfix (Bug 2, person-reported, this session — supersedes 199t's closest()-based lookup): multi-line copy is correct even when a selection boundary's container is #inlineTextViewer itself (a real drag \"from the very start\"/past the very end commonly reports this), not just a .itv-line ancestor");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const original = "<ConfigItems>\n\t<ConfigItem>\n\t\t<Value>\n\t\t\t1\n\t\t</Value>\n\t</ConfigItem>\n</ConfigItems>";
+    const zipBuf = buildZipFixture([{ name: "notes.xml", data: original, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    function fireCopy(range) {
+      const sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+      ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+      inlineTextViewerEl.dispatchEvent(ev);
+      return ev;
+    }
+
+    // "Select all lines from the very start": start boundary's container is
+    // the viewer element itself (offset 0, before its first child) — exactly
+    // what a real drag that begins above/before the first line's rendered
+    // text produces, and what 199t's closest()-based lookup could not
+    // resolve to any line at all. End boundary similarly the viewer element
+    // itself, past its last child, for a drag ending below the last line.
+    const range = w.document.createRange();
+    range.setStart(inlineTextViewerEl, 0);
+    range.setEnd(inlineTextViewerEl, inlineTextViewerEl.childNodes.length);
+    const ev = fireCopy(range);
+    assert(ev.clipboardData.data["text/plain"] === original,
+      "a container-level start AND end boundary still copies the entire original text, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // Single line, container-level end boundary only (start still resolves
+    // inside the line's own content) — the other half of "ends past a line".
+    const lineEls = inlineTextViewerEl.querySelectorAll(".itv-line");
+    const oneLineRange = w.document.createRange();
+    oneLineRange.setStart(lineEls[1].querySelector(".itv-line-content").firstChild, 0);
+    oneLineRange.setEnd(inlineTextViewerEl, 2);
+    const ev2 = fireCopy(oneLineRange);
+    assert(ev2.clipboardData.data["text/plain"] === "\t<ConfigItem>",
+      "a single line's own text is captured even when the end boundary resolves to the container, got " + JSON.stringify(ev2.clipboardData.data["text/plain"]));
+
+    // Column-0 mid-file start (exactly at a line's own leading tab, not the
+    // container) through a normal in-line end — leading whitespace preserved.
+    const midRange = w.document.createRange();
+    midRange.setStart(lineEls[2].querySelector(".itv-line-content").firstChild, 0);
+    midRange.setEnd(lineEls[3].querySelector(".itv-line-content").lastChild, lineEls[3].querySelector(".itv-line-content").lastChild.textContent.length);
+    const ev3 = fireCopy(midRange);
+    assert(ev3.clipboardData.data["text/plain"] === "\t\t<Value>\n\t\t\t1",
+      "a normal cross-line selection (no container-level boundary) still works after the rewrite, got " + JSON.stringify(ev3.clipboardData.data["text/plain"]));
+  });
 }
 
 /* ============================================================
