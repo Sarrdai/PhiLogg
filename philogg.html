@@ -4649,6 +4649,11 @@ const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" s
 // that was opened automatically by a rule, not by hand.
 const ICON_FILE_AUTO = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>';
 const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>';
+// ZIP source header icon (renderZipSection) — same viewBox/stroke
+// conventions as ICON_FOLDER above (its container's own icon, which this
+// replaces): an archive box with a "zipper" strip down the middle, so a ZIP
+// source reads as visually distinct from a watched folder at a glance.
+const ICON_ZIP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.2" width="12.4" height="11.6" rx="1.2"/><path d="M8 2.2v1.6M8 5.4v1.6M8 8.6v1.6"/><rect x="6.9" y="9.6" width="2.2" height="2.2" rx="0.4"/></svg>';
 const ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
 const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
@@ -18533,9 +18538,20 @@ openMenu.addEventListener("click", ev => {
    (extract(), via the native DecompressionStream('deflate-raw') Web API —
    no unzip library, works identically in the browser build and the Tauri
    desktop build since both webviews implement it). Nothing is extracted in
-   bulk and nothing is written to disk; only the entry a person actually
-   opens gets read+inflated. See PROJECT.md's file-loading section and
+   bulk and nothing is written to disk (an "open externally" target gets a
+   throwaway OS temp file, on the desktop build only — see
+   openZipEntryExternally); only the entry a person actually opens gets
+   read+inflated. See PROJECT.md's file-loading section and
    docs/persistence-and-sync.md for the full picture.
+
+   Every entry is listed and openable, not just recognized log files
+   (isLogZipEntry, reusing folder watch's own FOLDER_WATCH_EXTENSIONS
+   notion of "log file"): double-clicking a log entry loads it into a tab
+   via loadFileDescriptors, same as any other route; double-clicking
+   anything else (openZipEntryExternally) hands the extracted bytes to the
+   OS's default app under the desktop wrapper, or opens a Blob-URL browser
+   tab otherwise. Same double-click interaction either way, matching folder
+   watch's own renderInactiveFileRow -> loadFolderFile pattern exactly.
 
    ZIP layout this reads (ZIP64 not implemented — not needed for the log
    files this app targets, which are far below the 4GB/65535-entry
@@ -18703,7 +18719,7 @@ function renderZipSection(zip) {
   header.className = "folder-watch-header";
   const icon = document.createElement("span");
   icon.className = "folder-watch-icon zip-source-icon";
-  icon.innerHTML = ICON_FILE;
+  icon.innerHTML = ICON_ZIP;
   icon.title = "ZIP archive (opened read-only, not watched)";
   header.appendChild(icon);
   const nameEl = document.createElement("span");
@@ -18750,16 +18766,85 @@ function renderZipEntryRow(zip, entry) {
   return row;
 }
 
-// Inflates (or, for a stored/method-0 entry, just reads) this one entry and
-// feeds it into the existing ingestion path — the same loadFileDescriptors
-// every other loading route (file picker, drop, folder watch's "load this
-// file") ultimately funnels through. No `handle` is passed, so the
+// Same "is this a log file?" question folder watch's scan filter already
+// answers (FOLDER_WATCH_EXTENSIONS/isCompatibleFolderFile, above) — reused
+// as-is rather than inventing a second notion of "log file", per the plan.
+// `entry.name` is the ZIP entry's full relative path (e.g. "sub/app.log"),
+// but only the extension matters here, same as isCompatibleFolderFile itself.
+function isLogZipEntry(entry) { return isCompatibleFolderFile(entry.name); }
+
+// Minimal extension -> MIME map for the "open externally" path (item 3):
+// only needs to be good enough for a browser tab (img/video/audio render
+// inline, text/pdf/xml preview, anything else downloads) and for
+// tauri-plugin-opener's open_path, which resolves the OS app from the
+// temp file's own extension and ignores this value entirely. Not a general
+// mime-sniffing utility — deliberately small, extend if a real gap shows up.
+const ZIP_EXTRA_MIME_TYPES = {
+  txt: "text/plain", md: "text/markdown", csv: "text/csv", json: "application/json",
+  xml: "application/xml", html: "text/html", htm: "text/html", css: "text/css", js: "text/javascript",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", svg: "image/svg+xml",
+  webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon",
+  pdf: "application/pdf", zip: "application/zip",
+  mp3: "audio/mpeg", wav: "audio/wav", mp4: "video/mp4", webm: "video/webm",
+};
+function guessZipEntryMimeType(name) {
+  const dot = name.lastIndexOf(".");
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return ZIP_EXTRA_MIME_TYPES[ext] || "application/octet-stream";
+}
+
+// Item 3 (FEATURE_BACKLOG-adjacent refinement, this session): a non-log
+// entry (a .txt/.png/whatever else lives in the archive) is extracted the
+// same lazy way as a log entry, then handed off to a VIEWER instead of
+// philogg's own ingestion path — either the OS's default app for it (via
+// window.philogg.openExtractedEntry under the desktop wrapper — see
+// desktop/src-tauri/src/commands.rs::open_extracted_entry, which writes the
+// bytes to a temp file and calls tauri-plugin-opener's open_path, the same
+// plugin reveal_path/revealLocalUrl already depend on) or, in the plain
+// browser build where there's no OS-level "open with" available at all, a
+// new tab on a Blob URL (works fine for images/text/PDF/XML, per the plan) —
+// revoked after a delay generous enough for the browser to have actually
+// loaded it.
+const ZIP_BLOB_URL_REVOKE_MS = 60000;
+async function openZipEntryExternally(entry) {
+  let bytes;
+  try {
+    bytes = await entry.extract();
+  } catch (err) {
+    showCopyToast(`Couldn't open "${entry.name}" (${err.message})`);
+    return;
+  }
+  if (window.philogg && window.philogg.openExtractedEntry) {
+    try {
+      await window.philogg.openExtractedEntry(entry.name, bytes);
+    } catch (err) {
+      showCopyToast(`Couldn't open "${entry.name}" (${err.message})`);
+    }
+    return;
+  }
+  const blob = new Blob([bytes], { type: guessZipEntryMimeType(entry.name) });
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), ZIP_BLOB_URL_REVOKE_MS);
+}
+
+// Same interaction as folder watch's own renderInactiveFileRow -> dblclick
+// -> loadFolderFile (double-click, exact same DOM event, same resulting UI
+// state for a log file: loaded as an ordinary active tab via the shared
+// loadFileDescriptors path). What happens on that double-click now branches
+// on isLogZipEntry: a recognized log entry inflates (or, for a stored/
+// method-0 entry, just reads) and feeds into loadFileDescriptors — the same
+// path every other loading route (file picker, drop, folder watch's "load
+// this file") ultimately funnels through. No `handle` is passed, so the
 // resulting node gets no `node.tail` (see loadOneFileIntoTree: tailing is
 // only wired up `if (handle)`) — a static, non-tailable row exactly like a
 // plain <input type=file> pick, which is what a one-shot ZIP entry should
 // be: tailTick/folderScanTick never see it since neither iterates
-// state.nodes directly, only state.folders and live tail handles.
+// state.nodes directly, only state.folders and live tail handles. Any OTHER
+// entry (item 3) goes to openZipEntryExternally instead — same double-click,
+// different destination.
 function openZipEntry(entry) {
+  if (!isLogZipEntry(entry)) return openZipEntryExternally(entry);
   loadFileDescriptors([{
     name: entry.name,
     openFile: async () => new File([await entry.extract()], entry.name),
