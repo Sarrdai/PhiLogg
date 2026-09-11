@@ -21740,6 +21740,24 @@ await withApp(async (w, d, T) => {
    refinement) have no dedicated assertions here — the icon is a pure visual
    swap with no behavioral surface, and the interaction match is exercised
    implicitly by every dblclick-driven assertion in this group.
+
+   199k-199m (further refinements, same day, two asks): (1) the inline
+   text viewer (.txt/.xml/.json) now renders a line-number gutter — a new,
+   small, consistently-styled addition (renderInlineTextViewer/.itv-line*),
+   since the main log view has no literal per-line-number column to copy
+   (it's a field-column table, not line-numbered text) — numbers live in
+   their own non-selectable .itv-line-num column, never interleaved into
+   the copyable .itv-line-content text, and a delegated click listener on
+   the stable #inlineTextViewer container (not per-line, which would be
+   lost on every rebuild — the exact DOM-identity trap CLAUDE.md's
+   "renderVisibleRows() rebuilds nodes" gotcha describes) toggles a
+   click-to-highlight .itv-line-selected class, tracked on
+   state.inlineViewer.selectedLine so it survives a re-render. (2) a non-log
+   entry's row (renderZipEntryRow) now carries the same grayed/opened/
+   active lifecycle a log file's own real tree row already had
+   (.zip-entry-opened/.zip-entry-active, zip.inlineViewers cache keyed by
+   entry name) with its own .tree-del ✕ to close it — #inlineViewerCloseBtn
+   is gone, closing/reselecting only ever happens through the row now.
    ============================================================ */
 group(199);
 {
@@ -22042,7 +22060,10 @@ group(199);
     assert(!windowOpenCalled, "a .txt entry no longer falls through to the browser-tab fallback");
     assert(T.state.rootIds.length === 0, "no tree/log node is created for an inline-viewed entry");
     assert(d.querySelector("#inlineViewerWrap").style.display === "flex", "the inline viewer wrap is shown");
-    assert(d.querySelector("#inlineTextViewer").textContent === "hello world", "the text viewer renders the extracted content");
+    // Note: the CONTENT column, not the whole viewer's textContent — that
+    // would also pick up the line-number gutter's "1" (see GROUP 199k-199n
+    // below for the gutter itself).
+    assert(d.querySelector("#inlineTextViewer .itv-line-content").textContent === "hello world", "the text viewer renders the extracted content");
     assert(d.querySelector("#breadcrumbBar").style.display === "none", "the tab bar (#breadcrumbBar) is hidden while a non-log inline viewer is active");
 
     w.closeInlineViewer();
@@ -22081,6 +22102,116 @@ group(199);
     assert(!windowOpenCalled && !extractedCalled, "a .png entry no longer falls through to either external-open route");
     assert(d.querySelector("#inlineImageViewer").classList.contains("active"), "the inline image viewer is the active sub-view");
     assert(!!d.querySelector("#imgViewerToolbar"), "the image viewer's zoom/pan/reset toolbar is present");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199k. inline text viewer: line-number gutter renders one .itv-line per line, numbers live in a separate non-selectable column from the copyable text");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "first\nsecond\nthird", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
+    assert(lines.length === 3, "one .itv-line per source line, got " + lines.length);
+    const nums = Array.from(lines).map(l => l.querySelector(".itv-line-num").textContent);
+    assert(nums.join(",") === "1,2,3", "line numbers are 1-based and in order, got " + nums.join(","));
+    const contents = Array.from(lines).map(l => l.querySelector(".itv-line-content").textContent);
+    assert(contents.join("|") === "first|second|third", "each line's own text lives in its .itv-line-content, got " + contents.join("|"));
+
+    // Non-selectable via CSS (jsdom doesn't compute layout/selection, so the
+    // only thing assertable here is the class carrying the user-select:none
+    // rule, per docs/testing-and-limitations.md's jsdom blind spots).
+    const numEl = lines[0].querySelector(".itv-line-num");
+    assert(numEl.className === "itv-line-num", "the gutter number is its own element/class (user-select:none in CSS), not interleaved into .itv-line-content's text");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199l. inline text viewer: clicking a line toggles the same click-to-highlight class a second click removes, via one delegated listener (not lost on re-render)");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "alpha\nbeta\ngamma", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
+    lines[1].dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(lines[1].classList.contains("itv-line-selected"), "clicking a line highlights it");
+    assert(T.state.inlineViewer.selectedLine === 1, "the selected line index is tracked on state.inlineViewer, got " + T.state.inlineViewer.selectedLine);
+    assert(!lines[0].classList.contains("itv-line-selected") && !lines[2].classList.contains("itv-line-selected"), "only the clicked line is highlighted");
+
+    // Re-render (renderInlineTextViewer rebuilds the DOM wholesale, same as
+    // renderVisibleRows/renderTree do for the log view — CLAUDE.md's DOM-
+    // identity gotcha) must not break the click handler, since it's
+    // delegated on the stable #inlineTextViewer container, not per-line.
+    w.render();
+    const newLines = d.querySelectorAll("#inlineTextViewer .itv-line");
+    assert(newLines[1].classList.contains("itv-line-selected"), "the selection survives a re-render (state.inlineViewer.selectedLine is re-applied)");
+    newLines[1].dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(!newLines[1].classList.contains("itv-line-selected"), "clicking an already-selected line (even a freshly-rendered node) toggles it back off");
+    assert(T.state.inlineViewer.selectedLine === null, "...and clears state.inlineViewer.selectedLine, got " + T.state.inlineViewer.selectedLine);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199m. lifecycle unification: a non-log zip entry's row toggles the same grayed/opened/active look and ✕-to-close a log file's own tree row uses, instead of a separate close button on the viewer");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    assert(!d.querySelector("#inlineViewerCloseBtn"), "the viewer's own separate close button is gone");
+
+    let row = d.querySelector("#zipList .folder-watch-file");
+    assert(!row.classList.contains("zip-entry-opened"), "an unopened entry's row is still grayed (no zip-entry-opened class)");
+
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+    row = d.querySelector("#zipList .folder-watch-file");
+    assert(row.classList.contains("zip-entry-opened"), "once opened, the row is no longer grayed");
+    assert(row.classList.contains("zip-entry-active"), "and, being the currently-shown content, is also marked active");
+    const closeBtn = row.querySelector(".tree-del");
+    assert(!!closeBtn, "the row itself now carries a close ✕ — the same .tree-del class/icon a log file's own tree row uses");
+
+    // Clicking elsewhere (a real tree row) hides it, matching "only one
+    // log's content shows at a time" extended to non-log entries.
+    const zipBuf2 = buildZipFixture([{ name: "app.log", data: makeLog(0, 2), method: 0 }]);
+    // (reuse the same zip list — open a second, log-shaped source instead,
+    // simpler than reaching into an unrelated fixture's internals)
+    await w.openZipSource(new w.File([zipBuf2], "second.zip"), "second.zip");
+    const logRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("app.log"));
+    logRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+    assert(T.state.inlineViewer === null, "opening a log entry from the zip clears the previously-open non-log inline viewer, got " + JSON.stringify(T.state.inlineViewer));
+
+    // The notes.txt row is still "opened" (grayed-off) but no longer
+    // "active" (not currently shown) — same as an open-but-not-selected
+    // log file's own tree row.
+    const txtRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    assert(txtRow.classList.contains("zip-entry-opened") && !txtRow.classList.contains("zip-entry-active"),
+      "the notes.txt row stays opened (not grayed) but is no longer active, got " + txtRow.className);
+
+    // A plain click on that still-opened row re-selects/re-shows it,
+    // without needing to re-extract it (no fresh dblclick needed) —
+    // mirroring a plain click on an already-open log file's tree row.
+    txtRow.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.txt", "a plain click on an opened non-log row re-selects it, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.name));
+
+    // And the row's own ✕ closes it — the row goes back to being grayed,
+    // and state.inlineViewer clears, exactly like closing a log file.
+    const reRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    reRow.querySelector(".tree-del").dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.inlineViewer === null, "closing via the row's own ✕ clears state.inlineViewer");
+    const finalRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    assert(!finalRow.classList.contains("zip-entry-opened"), "...and the row goes back to its grayed, unopened look");
   });
 }
 

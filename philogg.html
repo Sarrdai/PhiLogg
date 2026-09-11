@@ -644,6 +644,15 @@
   #zipList{flex:0 0 auto;}
   .zip-source-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
   .zip-source-file{opacity:.7;}
+  /* Non-log inline-viewer lifecycle (this session, lifecycle unification):
+     a non-log entry's own row now carries the same "closed = grayed,
+     opened = normal" distinction a log file's real .tree-row already has
+     (grayed .folder-watch-file/.zip-source-file above vs. an opened file's
+     plain, non-dimmed .tree-row) plus the same accent highlight
+     .tree-row.active uses for whichever one is the currently DISPLAYED
+     entry — see renderZipEntryRow. */
+  .zip-source-file.zip-entry-opened{opacity:1;}
+  .zip-source-file.zip-entry-active{background:var(--accent-soft); color:var(--text-primary);}
   #treeActionBar{
     flex:0 0 auto; display:none; align-items:center; gap:6px; flex-wrap:wrap;
     padding:9px 12px; border-bottom:1px solid var(--border-soft); background:var(--bg-elevated);
@@ -1830,17 +1839,39 @@
     background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #inlineViewerName{font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto;}
-  #inlineViewerCloseBtn{
-    flex:0 0 auto; width:26px; height:26px; display:flex; align-items:center; justify-content:center;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:6px;
-    color:var(--text-secondary); cursor:pointer;
-  }
-  #inlineViewerCloseBtn:hover{color:var(--text-primary);}
+  /* No close button here any more (this session, lifecycle unification) —
+     closing a non-log zip entry now happens through its own row in the ZIP
+     section (the same .tree-del ✕ a log file's row already uses), not a
+     separate control living on the viewer itself. See renderZipEntryRow. */
   #inlineViewerBody{flex:1 1 auto; min-height:0; overflow:auto; position:relative;}
   #inlineTextViewer{
-    margin:0; padding:12px 16px; font-family:var(--font-mono); font-size:12px; line-height:1.6;
-    white-space:pre-wrap; word-break:break-word; color:var(--text-primary);
+    margin:0; padding:12px 0; font-family:var(--font-mono); font-size:12px; line-height:1.6;
+    color:var(--text-primary);
   }
+  /* Line-number gutter (this session): mirrors the app's own line-oriented
+     row look (.log-row's left gutter markers, .log-row.selected's inset
+     accent box-shadow — see near .tree-row above) rather than inventing a
+     new visual language, since the main log view itself has no literal
+     "line number" column to copy (it's a field-column table: time/level/
+     thread/.../message, not line-numbered text) — this is a small, new,
+     consistently-styled addition, per the plan's fallback instruction.
+     Two-column flex row (gutter + text) rather than interleaving numbers
+     into the text nodes, so a text selection/copy in the content column
+     never includes the numbers — .itv-line-num is also `user-select:none`
+     as a second, belt-and-suspenders guard (matching the pattern already
+     used for other non-selectable row chrome in this file, e.g. .th-sortable
+     just above). */
+  .itv-line{display:flex; align-items:flex-start; padding:0 16px; line-height:1.6; cursor:pointer;}
+  .itv-line:hover{background:var(--bg-elevated);}
+  .itv-line-num{
+    flex:0 0 auto; min-width:3.4em; padding-right:12px; text-align:right;
+    color:var(--text-tertiary); user-select:none;
+  }
+  .itv-line-content{flex:1 1 auto; min-width:0; white-space:pre-wrap; word-break:break-word;}
+  /* Click-to-highlight "reading aid" — same accent inset box-shadow as an
+     active/selected log row (.log-row.selected, see near .tree-row). */
+  .itv-line-selected{background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent);}
+  .itv-line-selected .itv-line-num{color:var(--accent-strong);}
   /* Reuses the same JSON/XML token classes highlightLogMessage's own markup
      already defines colors for elsewhere in the app (see renderHighlightView/
      the message-highlighting section) is a log-line concept, not a generic
@@ -3624,9 +3655,6 @@
       <div id="inlineViewerWrap">
         <div id="inlineViewerHeader">
           <span id="inlineViewerName"></span>
-          <button type="button" id="inlineViewerCloseBtn" title="Close">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
-          </button>
         </div>
         <div id="inlineViewerBody">
           <pre id="inlineTextViewer" class="hidden"></pre>
@@ -11068,6 +11096,12 @@ function renderNode(id, depth, opts) {
     }
     applyTempAnchorOnActiveNodeSwitch(id);
     state.activeId = id;
+    // Selecting a real tree row (a log file or a filter) always hides any
+    // currently-shown non-log inline viewer (this session, lifecycle
+    // unification) — matches "only one log's content shows at a time",
+    // now extended to "or one non-log entry's content". Harmless no-op
+    // when nothing was open.
+    state.inlineViewer = null;
     // Same choice as Alt+Arrow tree nav (see the keydown handler's comment):
     // a mouse click on a filter switches the active filter but should not
     // steal arrow-key focus away from the log — leave focusRegion as
@@ -18795,13 +18829,19 @@ async function openZipSource(source, name) {
     showCopyToast(`Couldn't open "${name}" as a ZIP (${err.message})`);
     return null;
   }
-  const zip = { id: newCacheKey(), name, entries };
+  // inlineViewers (this session): name -> cached inline-viewer object for
+  // every non-log entry that has been opened at least once, so its row can
+  // toggle back to "active"/re-show its content on a plain click without
+  // re-extracting/re-decoding the entry (see renderZipEntryRow). Not
+  // persisted, same as the zip source itself.
+  const zip = { id: newCacheKey(), name, entries, inlineViewers: new Map() };
   state.zips.push(zip);
   render();
   return zip;
 }
 
 function removeZipSource(zipId) {
+  if (state.inlineViewer && state.inlineViewer.zipId === zipId) state.inlineViewer = null;
   state.zips = state.zips.filter(z => z.id !== zipId);
   render();
 }
@@ -18887,10 +18927,29 @@ function renderZipSection(zip) {
   return box;
 }
 
+// Non-log, inline-viewable entries (.txt/.xml/.json, .jpg/.png/... — see
+// inlineViewableKind) get the SAME open/select/close lifecycle a log
+// entry's own real .tree-row already has once opened (renderNode's
+// click-to-select + hover .tree-del ✕ — see that function above), applied
+// here to this placeholder row instead, since a non-log entry never
+// becomes a real tree node: `zip.inlineViewers` (name -> cached viewer
+// object) is this row's stand-in for "does state.nodes have an open node
+// for this entry", so a plain click can re-select an already-opened entry
+// without re-extracting it, and the row's own ✕ (reusing .tree-del as-is)
+// closes it — no separate close button on the viewer itself any more (see
+// #inlineViewerHeader's own comment). A log entry, or a non-log entry of a
+// type with no inline viewer (still routed through openZipEntryExternally),
+// keeps the original dblclick-only, no-persistent-row-state behavior.
 function renderZipEntryRow(zip, entry) {
+  const kind = inlineViewableKind(entry.name);
+  const cachedViewer = kind ? zip.inlineViewers.get(entry.name) : null;
+  const isActive = !!cachedViewer && state.inlineViewer &&
+    state.inlineViewer.zipId === zip.id && state.inlineViewer.entryName === entry.name;
+
   const row = document.createElement("div");
-  row.className = "folder-watch-file zip-source-file";
-  row.title = `Double-click to open "${entry.name}"`;
+  row.className = "folder-watch-file zip-source-file" +
+    (cachedViewer ? " zip-entry-opened" : "") + (isActive ? " zip-entry-active" : "");
+  row.title = cachedViewer ? `Click to view "${entry.name}"` : `Double-click to open "${entry.name}"`;
   const icon = document.createElement("span");
   icon.className = "tree-icon";
   icon.innerHTML = ICON_FILE;
@@ -18899,6 +18958,31 @@ function renderZipEntryRow(zip, entry) {
   label.className = "folder-watch-file-name";
   label.textContent = entry.name;
   row.appendChild(label);
+
+  if (cachedViewer) {
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "tree-del";
+    del.innerHTML = ICON_CLOSE;
+    del.title = "Close";
+    del.addEventListener("click", ev => {
+      ev.stopPropagation();
+      zip.inlineViewers.delete(entry.name);
+      if (isActive) state.inlineViewer = null;
+      render();
+    });
+    row.appendChild(del);
+  }
+
+  row.addEventListener("click", () => {
+    // Only an already-opened entry responds to a plain click (matching a
+    // real tree row's click-to-select) — opening for the first time is
+    // still a double-click, same convention every zip entry row already
+    // uses (see the row's own title above).
+    if (!cachedViewer) return;
+    state.inlineViewer = cachedViewer;
+    render();
+  });
   row.addEventListener("dblclick", () => openZipEntry(entry, zip));
   return row;
 }
@@ -18943,7 +19027,7 @@ function guessZipEntryMimeType(name) {
 // revoked after a delay generous enough for the browser to have actually
 // loaded it.
 const ZIP_BLOB_URL_REVOKE_MS = 60000;
-async function openZipEntryExternally(entry) {
+async function openZipEntryExternally(entry, zip) {
   let bytes;
   try {
     bytes = await entry.extract();
@@ -18958,7 +19042,7 @@ async function openZipEntryExternally(entry) {
   // same as this whole function — see openInlineViewer's own comment on
   // why that's fine and not a generalized "open any file" system).
   const kind = inlineViewableKind(entry.name);
-  if (kind) return openInlineViewer(entry.name, bytes, kind);
+  if (kind) return openInlineViewer(entry.name, bytes, kind, zip);
   if (window.philogg && window.philogg.openExtractedEntry) {
     try {
       await window.philogg.openExtractedEntry(entry.name, bytes);
@@ -19000,11 +19084,19 @@ const inlineTextViewerEl = el("#inlineTextViewer");
 const inlineImageViewerEl = el("#inlineImageViewer");
 const imgViewerSvg = el("#imgViewerSvg");
 
-async function openInlineViewer(name, bytes, kind) {
+async function openInlineViewer(name, bytes, kind, zip) {
+  let viewer;
   if (kind === "text") {
     const text = new TextDecoder().decode(bytes);
     const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
-    state.inlineViewer = { kind, name, text, ext };
+    // selectedLine: the click-to-highlight "reading aid" line (this
+    // session) — see the itv-line click handler below. Lives on the
+    // viewer object itself (not a separate module-level variable) so it
+    // survives a close-then-reopen... actually it doesn't survive that
+    // (a fresh viewer object starts at null below), only a mere re-select
+    // of an already-open entry via zip.inlineViewers (see renderZipEntryRow),
+    // which reuses this exact object.
+    viewer = { kind, name, text, ext, selectedLine: null };
   } else {
     const blob = new Blob([bytes], { type: guessZipEntryMimeType(name) });
     const dataUrl = await new Promise(resolve => {
@@ -19012,16 +19104,30 @@ async function openInlineViewer(name, bytes, kind) {
       reader.onload = () => resolve(reader.result);
       reader.readAsDataURL(blob);
     });
-    state.inlineViewer = { kind, name, dataUrl };
+    viewer = { kind, name, dataUrl };
     imgZoom = null; // fresh image starts at its home (fit) view
   }
+  // zipId/entryName (this session): identifies which row this viewer
+  // belongs to, so renderZipEntryRow can tell "opened" (cached) apart from
+  // "active" (the one currently shown) and so a click on a real log tree
+  // row / a different zip entry's row can tell it should clear this one
+  // (see the tree row click handler's own comment on state.inlineViewer).
+  if (zip) {
+    viewer.zipId = zip.id;
+    viewer.entryName = name;
+    zip.inlineViewers.set(name, viewer);
+  }
+  state.inlineViewer = viewer;
   render();
 }
+// No longer wired to a header button (this session, lifecycle unification —
+// see #inlineViewerHeader's own comment); kept as a plain function since
+// nothing else calls it internally any more, but harmless/still correct if
+// something needs to force-clear the viewer later.
 function closeInlineViewer() {
   state.inlineViewer = null;
   render();
 }
-el("#inlineViewerCloseBtn").addEventListener("click", closeInlineViewer);
 
 // No dedicated syntax highlighter exists anywhere else in philogg.html to
 // reuse for JSON/XML (checked, per the plan — message highlighting
@@ -19061,13 +19167,47 @@ function highlightXmlText(text) {
   );
 }
 
+// Line-number gutter + click-to-highlight (this session): tokenizing is
+// done PER LINE (splitting v.text first, then running highlightJsonText/
+// highlightXmlText on each line individually) rather than on the whole
+// text followed by splitting the highlighted HTML on "\n" — a match that
+// spans a raw newline (e.g. a literal newline inside a JSON string) would
+// otherwise leave an unclosed <span> dangling into the next line's HTML.
+// The small cost is a multi-line string/comment losing its highlighting
+// past its first line, an accepted edge case for these regex tokenizers.
 function renderInlineTextViewer(v) {
   inlineTextViewerEl.classList.remove("hidden");
   inlineImageViewerEl.classList.remove("active");
-  if (v.ext === "json") inlineTextViewerEl.innerHTML = highlightJsonText(v.text);
-  else if (v.ext === "xml") inlineTextViewerEl.innerHTML = highlightXmlText(v.text);
-  else inlineTextViewerEl.textContent = v.text;
+  const tokenize = v.ext === "json" ? highlightJsonText : v.ext === "xml" ? highlightXmlText : escapeHtml;
+  const lines = v.text.split("\n");
+  inlineTextViewerEl.innerHTML = lines.map((line, i) =>
+    '<div class="itv-line' + (i === v.selectedLine ? ' itv-line-selected' : '') + '" data-line="' + i + '">' +
+      '<span class="itv-line-num">' + (i + 1) + '</span>' +
+      '<span class="itv-line-content">' + tokenize(line) + '</span>' +
+    '</div>'
+  ).join("");
 }
+
+// Delegated click listener (this session), attached ONCE to the stable
+// #inlineTextViewer container rather than to each .itv-line — per-line
+// listeners would be silently lost on every render (renderInlineTextViewer
+// rebuilds the whole innerHTML each time), the exact DOM-identity trap
+// CLAUDE.md's "renderVisibleRows() rebuilds nodes" gotcha warns about for
+// renderVisibleRows/renderTree. Toggling the highlighted line is done as a
+// direct class swap, not a render() call — no state a full re-render would
+// need to pick up beyond this one line, so this mirrors updateSelectedRowClass's
+// targeted-update pattern instead of paying for a full content rebuild.
+inlineTextViewerEl.addEventListener("click", ev => {
+  const lineEl = ev.target.closest(".itv-line");
+  if (!lineEl || !state.inlineViewer || state.inlineViewer.kind !== "text") return;
+  const line = Number(lineEl.dataset.line);
+  const v = state.inlineViewer;
+  const wasSelected = v.selectedLine === line;
+  v.selectedLine = wasSelected ? null : line;
+  const prevEl = inlineTextViewerEl.querySelector(".itv-line-selected");
+  if (prevEl) prevEl.classList.remove("itv-line-selected");
+  if (!wasSelected) lineEl.classList.add("itv-line-selected");
+});
 
 // --- Inline image viewer: zoom/pan/reset/rect-select-zoom -------------
 // Genuinely reuses Plot View's own interaction MODEL and constants
@@ -19276,7 +19416,12 @@ window.addEventListener("mouseup", ev => {
 // file on the next reload — correct, since there's no live zip source left
 // to nest it back into.
 function openZipEntry(entry, zip) {
-  if (!isLogZipEntry(entry)) return openZipEntryExternally(entry);
+  if (!isLogZipEntry(entry)) return openZipEntryExternally(entry, zip);
+  // A brand-new log file entering the tree for the first time never goes
+  // through the plain tree-row click handler above (it doesn't have a real
+  // row to click yet) — clear any currently-shown non-log inline viewer
+  // here too, same reasoning as that handler's own comment.
+  state.inlineViewer = null;
   loadFileDescriptors([{
     name: entry.name,
     zipId: zip.id,
