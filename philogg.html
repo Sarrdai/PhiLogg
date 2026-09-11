@@ -1817,6 +1817,56 @@
     gap:10px; color:var(--text-tertiary); text-align:center; padding:40px;
   }
   #emptyState .empty-icon{color:var(--text-tertiary); opacity:.6;}
+
+  /* Inline viewers (ZIP feature, this session): a non-log ZIP entry of a
+     common type (.txt/.xml/.json, .jpg/.jpeg/.png/.tiff/.tif) renders here,
+     in the main content area, instead of being handed off to
+     openZipEntryExternally — see openZipEntryExternally's own comment for
+     which entries still go external. Sits alongside #emptyState/#tableWrap/
+     etc., shown/hidden by renderMainView the same way. */
+  #inlineViewerWrap{display:none; flex-direction:column; height:100%; min-height:0;}
+  #inlineViewerHeader{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 14px;
+    background:var(--bg-panel); border-bottom:1px solid var(--border);
+  }
+  #inlineViewerName{font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto;}
+  #inlineViewerCloseBtn{
+    flex:0 0 auto; width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:6px;
+    color:var(--text-secondary); cursor:pointer;
+  }
+  #inlineViewerCloseBtn:hover{color:var(--text-primary);}
+  #inlineViewerBody{flex:1 1 auto; min-height:0; overflow:auto; position:relative;}
+  #inlineTextViewer{
+    margin:0; padding:12px 16px; font-family:var(--font-mono); font-size:12px; line-height:1.6;
+    white-space:pre-wrap; word-break:break-word; color:var(--text-primary);
+  }
+  /* Reuses the same JSON/XML token classes highlightLogMessage's own markup
+     already defines colors for elsewhere in the app (see renderHighlightView/
+     the message-highlighting section) is a log-line concept, not a generic
+     text-syntax one — there was nothing to literally reuse for JSON/XML, so
+     these are new, minimal, regex-based tokenizers (highlightJsonText/
+     highlightXmlText) using the app's own existing color tokens so a
+     JSON/XML preview reads consistently with the rest of the UI. */
+  .tok-key{color:var(--accent);}
+  .tok-string{color:#3fa860;}
+  .tok-number{color:#c98a3e;}
+  .tok-bool, .tok-null{color:#b06bcf;}
+  .tok-punct{color:var(--text-tertiary);}
+  .tok-tag{color:var(--accent);}
+  .tok-attr{color:#c98a3e;}
+  .tok-comment{color:var(--text-tertiary); font-style:italic;}
+  #inlineImageViewer{position:absolute; inset:0; display:none;}
+  #inlineImageViewer.active{display:block;}
+  #imgViewerToolbar{
+    position:absolute; top:8px; left:8px; z-index:5; display:flex; align-items:center; gap:4px;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:7px; padding:3px;
+  }
+  #imgViewerToolbar button{font-size:10.5px; padding:5px 8px;}
+  #imgViewerZoomLevel{
+    font-family:var(--font-mono); font-size:10.5px; color:var(--text-secondary); min-width:40px; text-align:center;
+  }
+  #imgViewerSvg{width:100%; height:100%; cursor:crosshair; touch-action:none;}
   #emptyState h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0;}
   #emptyState p{font-size:12px; margin:0; max-width:320px; line-height:1.6;}
 
@@ -2713,11 +2763,16 @@
     color:var(--text-secondary); cursor:pointer; transition:background .12s, color .12s;
   }
   #plotFullscreenCloseBtn:hover{background:var(--bg-elevated-3, var(--bg-elevated-2)); color:var(--text-primary);}
-  #plotDragRect{
+  /* .plot-drag-rect: the rectangle-drag-to-zoom overlay's visual, shared
+     between Plot View's own #plotDragRect and the inline image viewer's
+     #imgViewerDragRect (see "Inline viewers" below) — same look, same
+     "drag a rect, zoom to it" gesture, genuinely the same CSS rather than a
+     copy-pasted duplicate. */
+  .plot-drag-rect{
     position:absolute; border:1px solid var(--accent); background:var(--accent-soft); opacity:.55;
     pointer-events:none; z-index:4;
   }
-  #plotDragRect.hidden{display:none;}
+  .plot-drag-rect.hidden{display:none;}
   #plotTooltip{
     position:absolute; padding:4px 8px; background:var(--bg-elevated-2); border:1px solid var(--border);
     border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
@@ -3556,6 +3611,38 @@
         <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>.</p>
       </div>
 
+      <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
+           comment. #inlineImageViewer mirrors Plot View's own zoom/pan/
+           rect-select-zoom interaction model and toolbar (same shared
+           .plot-drag-rect overlay, same button classes) rather than being
+           spliced into #plotWrap itself — Plot View's rendering/state is
+           tightly coupled to the extraction-table data model (extractNodeId/
+           extractColumns/extractRowsData), so an image has its own small,
+           independent SVG + the same interaction functions/constants
+           (imgZoomAt/PLOT_ZOOM_WHEEL_FACTOR/PLOT_ZOOM_BUTTON_FACTOR/
+           PLOT_DRAG_THRESHOLD_PX) instead. -->
+      <div id="inlineViewerWrap">
+        <div id="inlineViewerHeader">
+          <span id="inlineViewerName"></span>
+          <button type="button" id="inlineViewerCloseBtn" title="Close">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </div>
+        <div id="inlineViewerBody">
+          <pre id="inlineTextViewer" class="hidden"></pre>
+          <div id="inlineImageViewer">
+            <div id="imgViewerToolbar">
+              <button type="button" id="imgZoomOutBtn" title="Zoom out">−</button>
+              <span id="imgViewerZoomLevel">100%</span>
+              <button type="button" id="imgZoomInBtn" title="Zoom in">+</button>
+              <button type="button" id="imgZoomResetBtn" title="Reset zoom">Reset</button>
+            </div>
+            <svg id="imgViewerSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div id="imgViewerDragRect" class="plot-drag-rect hidden"></div>
+          </div>
+        </div>
+      </div>
+
       <div id="extractWrap">
         <!-- Table view's own toolbar — same pattern as #plotToolbar right
              below it (see that div's own comment): a real row directly under
@@ -3650,7 +3737,7 @@
             <div id="plotChartArea">
               <svg id="plotSvg" xmlns="http://www.w3.org/2000/svg"></svg>
               <canvas id="plot3dCanvas" class="hidden"></canvas>
-              <div id="plotDragRect" class="hidden"></div>
+              <div id="plotDragRect" class="plot-drag-rect hidden"></div>
               <div id="plotTooltip" class="hidden"></div>
             </div>
           </div>
@@ -5994,6 +6081,13 @@ const state = {
   // there's nothing to watch and nothing to reconnect after a reload; closing
   // the tab drops it, exactly like a plain <input type=file> pick would.
   zips: [],
+
+  // Inline viewer (ZIP feature): a non-log ZIP entry of a common type
+  // (text-ish or image, see INLINE_VIEWER_EXTENSIONS) shown in the main
+  // content area instead of being handed to openZipEntryExternally.
+  // { kind: "text"|"image", name, text (kind "text") or dataUrl (kind
+  // "image") } or null. Ephemeral like state.zips itself — never persisted.
+  inlineViewer: null,
 
   // Log format definitions + filename-pattern rules (Settings -> Format
   // Manager, see "Log format definitions"). Loaded once at boot via
@@ -9318,6 +9412,7 @@ const el = sel => document.querySelector(sel);
 const elAll = sel => [...document.querySelectorAll(sel)];
 const treeEl = el("#tree");
 const breadcrumbEl = el("#breadcrumb");
+const breadcrumbBarEl = el("#breadcrumbBar");
 const levelBarEl = el("#levelBar");
 const btnApplyLevelToTree = el("#btnApplyLevelToTree");
 const tableBody = el("#tableBody");
@@ -10181,6 +10276,30 @@ function render() {
 // for why).
 function renderMainView() {
   const hasFiles = state.rootIds.length > 0;
+  // Tab bar (#breadcrumbBar) UI fix, this session: hidden whenever the
+  // active/displayed content isn't a log tab — nothing loaded at all, or a
+  // non-log inline viewer (image/syntax-highlighted text) is the active
+  // content instead, since breadcrumb chips are a log-filter-tree concept
+  // with nothing meaningful to show either way. Set here (not left to
+  // renderBreadcrumb itself) since both conditions this checks — hasFiles,
+  // state.inlineViewer — are exactly renderMainView's own inputs below.
+  breadcrumbBarEl.style.display = (hasFiles && !state.inlineViewer) ? "" : "none";
+  if (state.inlineViewer) {
+    emptyState.style.display = "none";
+    viewBarEl.style.display = "none";
+    tableWrap.style.display = "none";
+    extractWrap.style.display = "none";
+    linkWrap.style.display = "none";
+    fhTabs.style.display = "none";
+    fhSplit.style.display = "none";
+    inlineViewerWrap.style.display = "flex";
+    inlineViewerNameEl.textContent = state.inlineViewer.name;
+    inlineViewerNameEl.title = state.inlineViewer.name;
+    if (state.inlineViewer.kind === "text") renderInlineTextViewer(state.inlineViewer);
+    else renderInlineImageViewer(state.inlineViewer);
+    return;
+  }
+  inlineViewerWrap.style.display = "none";
   emptyState.style.display = hasFiles ? "none" : "flex";
   // #viewBar has nothing meaningful to show with zero files loaded —
   // person-requested (predates this rework): only #emptyState's centered
@@ -10388,9 +10507,11 @@ function renderTree() {
   // A file loaded from a watched folder renders inside its folder's own
   // section (renderFolderSection, above) instead of here, so its position
   // in the folder's file order stays visible — skip it in this plain list.
+  // Same idea for a file opened from a ZIP source (node.zipId) — it renders
+  // nested inside its zip's own renderZipSection container instead.
   state.rootIds.forEach(id => {
     const node = state.nodes[id];
-    if (node && node.folderId) return;
+    if (node && (node.folderId || node.zipId)) return;
     treeEl.appendChild(renderNode(id, 0));
   });
   renderTreeActionBar();
@@ -18739,7 +18860,23 @@ function renderZipSection(zip) {
   if (zip.entries.length) {
     const list = document.createElement("div");
     list.className = "folder-watch-files";
-    zip.entries.forEach(entry => list.appendChild(renderZipEntryRow(zip, entry)));
+    // Mixes real tree rows (renderNode, for an already-opened entry) with
+    // inert placeholder rows (renderZipEntryRow) for everything not opened
+    // yet — same "opened files stay visible in their container's own order"
+    // idea as renderFolderSection above. A zip entry has no persisted
+    // "files" record to carry a nodeId the way folder.files does (see
+    // openZipEntry's own comment on why: zip sources are never persisted),
+    // so instead this looks the open node up directly by node.zipId +
+    // node.name, which openZipEntry/loadFileDescriptors tag on the node
+    // from the very first (queued-placeholder) render.
+    zip.entries.forEach(entry => {
+      const openId = state.rootIds.find(id => {
+        const n = state.nodes[id];
+        return n && n.zipId === zip.id && n.name === entry.name;
+      });
+      if (openId) list.appendChild(renderNode(openId, 0, { folderTopLevelNoChevron: true }));
+      else list.appendChild(renderZipEntryRow(zip, entry));
+    });
     box.appendChild(list);
   } else {
     const note = document.createElement("div");
@@ -18762,7 +18899,7 @@ function renderZipEntryRow(zip, entry) {
   label.className = "folder-watch-file-name";
   label.textContent = entry.name;
   row.appendChild(label);
-  row.addEventListener("dblclick", () => openZipEntry(entry));
+  row.addEventListener("dblclick", () => openZipEntry(entry, zip));
   return row;
 }
 
@@ -18814,6 +18951,14 @@ async function openZipEntryExternally(entry) {
     showCopyToast(`Couldn't open "${entry.name}" (${err.message})`);
     return;
   }
+  // This session: a common text-ish or image type gets a richer in-app
+  // viewer instead of external-open/browser-tab — see inlineViewableKind
+  // and openInlineViewer below. Everything else keeps the pre-existing
+  // external-open behavior unchanged (the check below is zip-specific,
+  // same as this whole function — see openInlineViewer's own comment on
+  // why that's fine and not a generalized "open any file" system).
+  const kind = inlineViewableKind(entry.name);
+  if (kind) return openInlineViewer(entry.name, bytes, kind);
   if (window.philogg && window.philogg.openExtractedEntry) {
     try {
       await window.philogg.openExtractedEntry(entry.name, bytes);
@@ -18827,6 +18972,272 @@ async function openZipEntryExternally(entry) {
   window.open(url, "_blank");
   setTimeout(() => URL.revokeObjectURL(url), ZIP_BLOB_URL_REVOKE_MS);
 }
+
+// --- Inline viewers (this session) ------------------------------------
+// A non-log ZIP entry of one of these extensions renders in the main
+// content area instead of going to openZipEntryExternally's OS-open/
+// browser-tab fallback. Deliberately zip-specific, matching
+// openZipEntryExternally's own scope — checked, per the plan, whether any
+// OTHER route in this app hands a non-log file to that function (folder
+// watch, plain drag/drop): it doesn't — FOLDER_WATCH_EXTENSIONS/
+// isCompatibleFolderFile only ever lists .log for folder watch, and a
+// dropped non-log file simply fails to parse as a log via the ordinary
+// loadFileDescriptors path (see docs/persistence-and-sync.md). So there is
+// no existing "open any file" mechanism elsewhere to generalize this into.
+const INLINE_TEXT_EXTENSIONS = ["txt", "xml", "json"];
+const INLINE_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "tiff", "tif"];
+function inlineViewableKind(name) {
+  const dot = name.lastIndexOf(".");
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+  if (INLINE_TEXT_EXTENSIONS.includes(ext)) return "text";
+  if (INLINE_IMAGE_EXTENSIONS.includes(ext)) return "image";
+  return null;
+}
+
+const inlineViewerWrap = el("#inlineViewerWrap");
+const inlineViewerNameEl = el("#inlineViewerName");
+const inlineTextViewerEl = el("#inlineTextViewer");
+const inlineImageViewerEl = el("#inlineImageViewer");
+const imgViewerSvg = el("#imgViewerSvg");
+
+async function openInlineViewer(name, bytes, kind) {
+  if (kind === "text") {
+    const text = new TextDecoder().decode(bytes);
+    const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+    state.inlineViewer = { kind, name, text, ext };
+  } else {
+    const blob = new Blob([bytes], { type: guessZipEntryMimeType(name) });
+    const dataUrl = await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+    state.inlineViewer = { kind, name, dataUrl };
+    imgZoom = null; // fresh image starts at its home (fit) view
+  }
+  render();
+}
+function closeInlineViewer() {
+  state.inlineViewer = null;
+  render();
+}
+el("#inlineViewerCloseBtn").addEventListener("click", closeInlineViewer);
+
+// No dedicated syntax highlighter exists anywhere else in philogg.html to
+// reuse for JSON/XML (checked, per the plan — message highlighting
+// elsewhere in the app only ever colors whole log LINES by level/search
+// match, never tokenizes structured text) — these are small, regex-based
+// tokenizers, using the app's own existing color tokens (see .tok-* CSS
+// near #inlineViewerWrap) so a preview reads consistently with the rest of
+// the UI rather than introducing a new palette.
+function highlightJsonText(text) {
+  // Tokenizes the RAW text first (quotes/angle-brackets intact) and escapes
+  // each piece as it's emitted — escaping the whole string upfront (as
+  // highlightXmlText does below) would turn every `"` into `&quot;` before
+  // this regex ever saw a real quote to match against.
+  const re = /("(?:\\.|[^"\\])*")(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+  let out = "", last = 0, m;
+  while ((m = re.exec(text))) {
+    out += escapeHtml(text.slice(last, m.index));
+    const tok = m[0];
+    const cls = m[1] ? (m[2] ? "tok-key" : "tok-string")
+      : (tok === "true" || tok === "false") ? "tok-bool"
+      : tok === "null" ? "tok-null" : "tok-number";
+    out += '<span class="' + cls + '">' + escapeHtml(tok) + '</span>';
+    last = re.lastIndex;
+  }
+  return out + escapeHtml(text.slice(last));
+}
+function highlightXmlText(text) {
+  return escapeHtml(text).replace(
+    /(&lt;!--[\s\S]*?--&gt;)|(&lt;\/?[a-zA-Z_][\w:.-]*)|([a-zA-Z_][\w:.-]*)(=)(&quot;[^&]*?&quot;|&#39;[^&#]*?&#39;)|(\/?&gt;)/g,
+    (m, comment, tagOpen, attrName, eq, attrVal, tagClose) => {
+      if (comment) return `<span class="tok-comment">${comment}</span>`;
+      if (tagOpen) return `<span class="tok-tag">${tagOpen}</span>`;
+      if (attrName) return `<span class="tok-attr">${attrName}</span>${eq}<span class="tok-string">${attrVal}</span>`;
+      if (tagClose) return `<span class="tok-tag">${tagClose}</span>`;
+      return m;
+    }
+  );
+}
+
+function renderInlineTextViewer(v) {
+  inlineTextViewerEl.classList.remove("hidden");
+  inlineImageViewerEl.classList.remove("active");
+  if (v.ext === "json") inlineTextViewerEl.innerHTML = highlightJsonText(v.text);
+  else if (v.ext === "xml") inlineTextViewerEl.innerHTML = highlightXmlText(v.text);
+  else inlineTextViewerEl.textContent = v.text;
+}
+
+// --- Inline image viewer: zoom/pan/reset/rect-select-zoom -------------
+// Genuinely reuses Plot View's own interaction MODEL and constants
+// (PLOT_ZOOM_WHEEL_FACTOR/PLOT_ZOOM_BUTTON_FACTOR/PLOT_DRAG_THRESHOLD_PX,
+// same .plot-drag-rect overlay) — wheel-zoom anchored at the cursor,
+// left-drag-to-select-a-region-then-zoom, middle-drag pan, a Reset button.
+// Not spliced into #plotSvg/renderPlotChart itself: that code's domain math
+// is built entirely around extractRowsData/extractColumns (a log
+// extraction's numeric columns), and threading an "image mode" through it
+// would mean guarding every one of its data-plot branches for no shared
+// benefit, since none of that data-specific logic (series/columns/hover-by-
+// row-value) applies to a bitmap. imgZoom plays the exact same role
+// plotZoom does (a {x0,x1,y0,y1} domain override, null = home/fit view),
+// just in image-PIXEL space instead of data space, and imgLastRender plays
+// plotLastRender's role (the last render's geometry, read back by the
+// interaction handlers below) — same shape, same names, so the two stay
+// easy to compare line-for-line.
+let imgZoom = null;
+let imgLastRender = null; // { W, H, imgW, imgH, xDomainMin, xDomainMax, yDomainMin, yDomainMax }
+let imgNaturalSize = null; // { w, h } of the currently-loaded image, set once on load
+
+function imgHomeDomain() {
+  const w = imgNaturalSize ? imgNaturalSize.w : 1;
+  const h = imgNaturalSize ? imgNaturalSize.h : 1;
+  return { xDomainMin: 0, xDomainMax: w, yDomainMin: 0, yDomainMax: h };
+}
+// Same clamp-to-home idea as Plot View's clampZoomAxis (below, private to
+// this section — no shared helper existed at the right granularity to
+// import) — zooming in stays unlimited, zooming out/panning can never
+// escape the home (fully-fit) view.
+function imgClampAxis(homeLo, homeHi, lo, hi) {
+  const homeSpan = homeHi - homeLo, span = Math.min(hi - lo, homeSpan);
+  let clampedLo = lo, clampedHi = lo + span;
+  if (clampedLo < homeLo) { clampedLo = homeLo; clampedHi = homeLo + span; }
+  if (clampedHi > homeHi) { clampedHi = homeHi; clampedLo = homeHi - span; }
+  return [clampedLo, clampedHi];
+}
+
+function renderInlineImageViewer(v) {
+  inlineTextViewerEl.classList.add("hidden");
+  inlineImageViewerEl.classList.add("active");
+  const area = inlineImageViewerEl;
+  const W = Math.max(100, area.clientWidth || 600), H = Math.max(100, area.clientHeight || 400);
+  const load = () => {
+    const home = imgHomeDomain();
+    let [xDomainMin, xDomainMax] = [home.xDomainMin, home.xDomainMax];
+    let [yDomainMin, yDomainMax] = [home.yDomainMin, home.yDomainMax];
+    if (imgZoom) {
+      [xDomainMin, xDomainMax] = imgClampAxis(home.xDomainMin, home.xDomainMax, imgZoom.x0, imgZoom.x1);
+      [yDomainMin, yDomainMax] = imgClampAxis(home.yDomainMin, home.yDomainMax, imgZoom.y0, imgZoom.y1);
+    }
+    // Fit the home domain (the whole image) into the viewport, letterboxed,
+    // so aspect ratio is never distorted; the zoomed domain then just picks
+    // a sub-rectangle of that same fitted space via the SVG viewBox.
+    const scale = Math.min(W / home.xDomainMax, H / home.yDomainMax) || 1;
+    imgViewerSvg.setAttribute("viewBox",
+      (xDomainMin * scale) + " " + ((home.yDomainMax - yDomainMax) * scale) + " " +
+      ((xDomainMax - xDomainMin) * scale) + " " + ((yDomainMax - yDomainMin) * scale));
+    imgViewerSvg.innerHTML = '<image href="' + v.dataUrl + '" x="0" y="0" width="' +
+      (home.xDomainMax * scale) + '" height="' + (home.yDomainMax * scale) + '" preserveAspectRatio="none"></image>';
+    imgLastRender = { W, H, xDomainMin, xDomainMax, yDomainMin, yDomainMax, left: 0, top: 0, plotW: W, plotH: H };
+    const zoomPct = Math.round((home.xDomainMax - home.xDomainMin) / (xDomainMax - xDomainMin) * 100);
+    el("#imgViewerZoomLevel").textContent = zoomPct + "%";
+  };
+  if (imgNaturalSize) { load(); return; }
+  const probe = new Image();
+  probe.onload = () => { imgNaturalSize = { w: probe.naturalWidth || 1, h: probe.naturalHeight || 1 }; load(); };
+  probe.onerror = () => { imgNaturalSize = { w: 1, h: 1 }; load(); };
+  probe.src = v.dataUrl;
+}
+
+function imgSvgPointFromEvent(ev) {
+  if (!imgLastRender) return null;
+  const rect = imgViewerSvg.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return null;
+  const r = imgLastRender;
+  return {
+    x: r.xDomainMin + (ev.clientX - rect.left) / rect.width * (r.xDomainMax - r.xDomainMin),
+    y: r.yDomainMin + (rect.bottom - ev.clientY) / rect.height * (r.yDomainMax - r.yDomainMin),
+  };
+}
+function imgZoomAt(dataX, dataY, factor) {
+  if (!imgLastRender) return;
+  const r = imgLastRender;
+  imgZoom = {
+    x0: dataX - (dataX - r.xDomainMin) * factor, x1: dataX + (r.xDomainMax - dataX) * factor,
+    y0: dataY - (dataY - r.yDomainMin) * factor, y1: dataY + (r.yDomainMax - dataY) * factor,
+  };
+  renderInlineImageViewer(state.inlineViewer);
+}
+el("#imgZoomInBtn").addEventListener("click", () => {
+  if (!imgLastRender) return;
+  const r = imgLastRender;
+  imgZoomAt((r.xDomainMin + r.xDomainMax) / 2, (r.yDomainMin + r.yDomainMax) / 2, PLOT_ZOOM_BUTTON_FACTOR);
+});
+el("#imgZoomOutBtn").addEventListener("click", () => {
+  if (!imgLastRender) return;
+  const r = imgLastRender;
+  imgZoomAt((r.xDomainMin + r.xDomainMax) / 2, (r.yDomainMin + r.yDomainMax) / 2, 1 / PLOT_ZOOM_BUTTON_FACTOR);
+});
+el("#imgZoomResetBtn").addEventListener("click", () => { imgZoom = null; renderInlineImageViewer(state.inlineViewer); });
+
+imgViewerSvg.addEventListener("wheel", ev => {
+  if (!imgLastRender) return;
+  ev.preventDefault();
+  const pt = imgSvgPointFromEvent(ev);
+  if (!pt) return;
+  imgZoomAt(pt.x, pt.y, ev.deltaY < 0 ? PLOT_ZOOM_WHEEL_FACTOR : 1 / PLOT_ZOOM_WHEEL_FACTOR);
+}, { passive: false });
+
+const imgViewerDragRect = el("#imgViewerDragRect");
+let imgPanActive = false, imgPanStartClient = null, imgPanStartDomain = null;
+let imgDragActive = false, imgDragStartSvg = null, imgDragStartClient = null, imgDragMoved = false;
+
+imgViewerSvg.addEventListener("mousedown", ev => {
+  if (!imgLastRender) return;
+  if (ev.button === 1) {
+    ev.preventDefault();
+    imgPanActive = true;
+    imgPanStartClient = { x: ev.clientX, y: ev.clientY };
+    imgPanStartDomain = { xDomainMin: imgLastRender.xDomainMin, xDomainMax: imgLastRender.xDomainMax, yDomainMin: imgLastRender.yDomainMin, yDomainMax: imgLastRender.yDomainMax };
+    document.body.style.userSelect = "none";
+  } else if (ev.button === 0) {
+    imgDragActive = true;
+    imgDragMoved = false;
+    imgDragStartSvg = imgSvgPointFromEvent(ev);
+    const rect = imgViewerSvg.getBoundingClientRect();
+    imgDragStartClient = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  }
+});
+window.addEventListener("mousemove", ev => {
+  if (imgPanActive) {
+    const rect = imgViewerSvg.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const r = imgPanStartDomain;
+    const dxData = (ev.clientX - imgPanStartClient.x) / rect.width * (r.xDomainMax - r.xDomainMin);
+    const dyData = (ev.clientY - imgPanStartClient.y) / rect.height * (r.yDomainMax - r.yDomainMin);
+    imgZoom = { x0: r.xDomainMin - dxData, x1: r.xDomainMax - dxData, y0: r.yDomainMin + dyData, y1: r.yDomainMax + dyData };
+    renderInlineImageViewer(state.inlineViewer);
+    return;
+  }
+  if (imgDragActive) {
+    const rect = imgViewerSvg.getBoundingClientRect();
+    const cur = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+    if (!imgDragMoved && Math.hypot(cur.x - imgDragStartClient.x, cur.y - imgDragStartClient.y) < PLOT_DRAG_THRESHOLD_PX) return;
+    imgDragMoved = true;
+    const lo = { x: Math.min(imgDragStartClient.x, cur.x), y: Math.min(imgDragStartClient.y, cur.y) };
+    const hi = { x: Math.max(imgDragStartClient.x, cur.x), y: Math.max(imgDragStartClient.y, cur.y) };
+    imgViewerDragRect.style.left = lo.x.toFixed(1) + "px";
+    imgViewerDragRect.style.top = lo.y.toFixed(1) + "px";
+    imgViewerDragRect.style.width = Math.max(1, hi.x - lo.x).toFixed(1) + "px";
+    imgViewerDragRect.style.height = Math.max(1, hi.y - lo.y).toFixed(1) + "px";
+    imgViewerDragRect.classList.remove("hidden");
+  }
+});
+window.addEventListener("mouseup", ev => {
+  if (imgPanActive && ev.button === 1) { imgPanActive = false; document.body.style.userSelect = ""; }
+  if (imgDragActive && ev.button === 0) {
+    imgDragActive = false;
+    imgViewerDragRect.classList.add("hidden");
+    if (imgDragMoved && imgLastRender) {
+      const endSvg = imgSvgPointFromEvent(ev) || imgDragStartSvg;
+      imgZoom = {
+        x0: Math.min(imgDragStartSvg.x, endSvg.x), x1: Math.max(imgDragStartSvg.x, endSvg.x),
+        y0: Math.min(imgDragStartSvg.y, endSvg.y), y1: Math.max(imgDragStartSvg.y, endSvg.y),
+      };
+      renderInlineImageViewer(state.inlineViewer);
+    }
+  }
+});
 
 // Same interaction as folder watch's own renderInactiveFileRow -> dblclick
 // -> loadFolderFile (double-click, exact same DOM event, same resulting UI
@@ -18843,10 +19254,32 @@ async function openZipEntryExternally(entry) {
 // state.nodes directly, only state.folders and live tail handles. Any OTHER
 // entry (item 3) goes to openZipEntryExternally instead — same double-click,
 // different destination.
-function openZipEntry(entry) {
+// Bugfix (person-reported): an opened log entry used to land as a plain
+// top-level file, detached from its zip's own renderZipSection container —
+// folder watch's equivalent (loadFolderFile) tags the node with
+// node.folderId so renderFolderSection/renderTree keep it nested inside the
+// folder's box instead. The zip entry point (loadFileDescriptors) had no
+// such tagging at all. Fixed the same way, but under its OWN field
+// (node.zipId, set via the `zipId` descriptor field below — see
+// loadFileDescriptors) rather than reusing node.folderId itself: every
+// consumer of node.folderId (closeFolderFile, restoreWatchedFolders,
+// persistFileNode's cache record, nodeDisplayName, ...) assumes a real,
+// possibly-reconnectable state.folders entry exists for it, and a zip
+// source is deliberately never persisted (see its own "Data model" comment
+// near state.zips) — reusing folderId would either need every one of those
+// call sites defensively guarded, or leave a stale folderId surviving a
+// reload pointing at a zip that no longer exists, making the node invisible
+// (renderTree skips any node.folderId row unconditionally, but there'd be
+// no surviving zip section left to render it into either). node.zipId is
+// intentionally NOT written into persistFileNode's cache record, so a
+// session-restored zip-opened file simply becomes an ordinary top-level
+// file on the next reload — correct, since there's no live zip source left
+// to nest it back into.
+function openZipEntry(entry, zip) {
   if (!isLogZipEntry(entry)) return openZipEntryExternally(entry);
   loadFileDescriptors([{
     name: entry.name,
+    zipId: zip.id,
     openFile: async () => new File([await entry.extract()], entry.name),
   }]);
 }
@@ -19009,7 +19442,16 @@ el("#mergeLoadDialogNo").addEventListener("click", () => closeMergeLoadDialog(fa
 async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
 
-  const queuedNodes = descs.map(d => createQueuedFileNode(d.file ? d.file.name : d.name));
+  const queuedNodes = descs.map(d => {
+    const n = createQueuedFileNode(d.file ? d.file.name : d.name);
+    // Tags a zip-sourced entry from the very first (queued-placeholder)
+    // render, same as node.folderId does for a watched-folder file (see
+    // createFileNode) — this is what lets renderZipSection nest it inside
+    // its zip's own container instead of it appearing detached. See
+    // openZipEntry's comment for why this is its own field, not folderId.
+    if (d.zipId) n.zipId = d.zipId;
+    return n;
+  });
   render();
 
   const mergeAfter = descs.length > 1 ? await confirmMergeOnLoad(queuedNodes.map(n => n.name)) : false;

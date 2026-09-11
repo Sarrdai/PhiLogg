@@ -21936,12 +21936,12 @@ group(199);
   });
 
   await withApp(async (w, d, T) => {
-    section("199f. a non-log entry (item 3) double-clicked in the plain browser build opens a Blob-URL tab instead of loading into the tree");
+    section("199f. a non-log, non-inline-viewable entry (item 3) double-clicked in the plain browser build opens a Blob-URL tab instead of loading into the tree — updated this session to a .mp3 fixture: .png now gets the inline image viewer instead (see 199i)");
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
-    const zipBuf = buildZipFixture([{ name: "shot.png", data: pngBytes, method: 0 }]);
+    const mp3Bytes = Buffer.from([0xff, 0xfb, 1, 2, 3, 4]);
+    const zipBuf = buildZipFixture([{ name: "clip.mp3", data: mp3Bytes, method: 0 }]);
     await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
 
     let loadFileDescriptorsCalls = 0;
@@ -21967,11 +21967,11 @@ group(199);
   {
     let openedName = null, openedBytes = null;
     await withApp(async (w, d, T) => {
-      section("199g. a non-log entry double-clicked under the desktop wrapper hands the extracted bytes to window.philogg.openExtractedEntry instead of opening a browser tab");
+      section("199g. a non-log, non-inline-viewable entry double-clicked under the desktop wrapper hands the extracted bytes to window.philogg.openExtractedEntry instead of opening a browser tab — updated this session to a .pdf fixture: .txt now gets the inline text viewer instead (see 199h)");
 
       w.Response = Response;
       w.DecompressionStream = DecompressionStream;
-      const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+      const zipBuf = buildZipFixture([{ name: "manual.pdf", data: "%PDF-1.4 fake", method: 0 }]);
       await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
 
       let windowOpenCalled = false;
@@ -21981,8 +21981,8 @@ group(199);
       row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
       await waitFor(() => openedName !== null);
 
-      assert(openedName === "notes.txt", "the entry's name is passed through, got " + openedName);
-      assert(Buffer.from(openedBytes).toString("utf8") === "hello world", "the extracted bytes are passed through correctly, got " + Buffer.from(openedBytes || []).toString("utf8"));
+      assert(openedName === "manual.pdf", "the entry's name is passed through, got " + openedName);
+      assert(Buffer.from(openedBytes).toString("utf8") === "%PDF-1.4 fake", "the extracted bytes are passed through correctly, got " + Buffer.from(openedBytes || []).toString("utf8"));
       assert(!windowOpenCalled, "the browser-tab fallback is never used when window.philogg.openExtractedEntry exists");
       assert(T.state.rootIds.length === 0, "no tree node is created for a non-log entry opened this way");
     }, { philogg: {
@@ -21990,6 +21990,98 @@ group(199);
       openExtractedEntry: (name, bytes) => { openedName = name; openedBytes = bytes; return Promise.resolve(); },
     } });
   }
+
+  await withApp(async (w, d, T) => {
+    section("199h. bugfix (this session): an opened zip log entry nests inside its zip's own renderZipSection container (node.zipId) instead of appearing as a detached top-level file");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "a.log", data: ENTRY_A_TEXT, method: 0 }]);
+    const zip = await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]] && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(node.zipId === zip.id, "the loaded node is tagged with the zip's id, got " + node.zipId);
+
+    assert(!d.querySelector("#tree [data-node-id='" + node.id + "']"), "the opened file does NOT render as a detached row in the plain #tree list");
+    const nestedRow = d.querySelector("#zipList [data-node-id='" + node.id + "']");
+    assert(!!nestedRow, "the opened file DOES render nested inside its zip's own #zipList container");
+    assert(d.querySelector("#zipList .folder-watch-file") === null, "the now-opened entry no longer shows its inert placeholder row alongside the real one");
+
+    // Closing it (same ✕/delete path any ordinary file uses) drops it back
+    // to being an inert, unopened listing row again — the zip's own entries
+    // list is the source of truth, unlike folder watch's persisted `files`
+    // records, so this falls out of the node.zipId lookup in
+    // renderZipSection for free.
+    w.deleteFilterNodeWithUndo(node.id);
+    w.render(); // deleteFilterNodeWithUndo itself doesn't render — its callers (tree-row ✕ button etc.) do
+    await waitFor(() => T.state.rootIds.length === 0);
+    assert(!!d.querySelector("#zipList .folder-watch-file"), "closing the opened file returns it to an inert placeholder row in the zip section, got " + d.querySelector("#zipList").innerHTML);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199i. a .txt zip entry (item 3, this session's inline-viewer extension) opens the inline text viewer in the main content area, hiding the tab bar");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    let windowOpenCalled = false;
+    w.open = () => { windowOpenCalled = true; };
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    assert(T.state.inlineViewer.kind === "text", "state.inlineViewer is set to the text kind, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.kind));
+    assert(T.state.inlineViewer.text === "hello world", "the extracted text content is stored, got " + (T.state.inlineViewer && T.state.inlineViewer.text));
+    assert(!windowOpenCalled, "a .txt entry no longer falls through to the browser-tab fallback");
+    assert(T.state.rootIds.length === 0, "no tree/log node is created for an inline-viewed entry");
+    assert(d.querySelector("#inlineViewerWrap").style.display === "flex", "the inline viewer wrap is shown");
+    assert(d.querySelector("#inlineTextViewer").textContent === "hello world", "the text viewer renders the extracted content");
+    assert(d.querySelector("#breadcrumbBar").style.display === "none", "the tab bar (#breadcrumbBar) is hidden while a non-log inline viewer is active");
+
+    w.closeInlineViewer();
+    assert(T.state.inlineViewer === null, "closing the inline viewer clears state.inlineViewer");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199i-2. .json/.xml zip entries get JSON/XML token highlighting (highlightJsonText/highlightXmlText) in the inline text viewer");
+
+    assert(w.highlightJsonText('{"a":1}').includes('class="tok-key"'), "JSON object keys are tokenized");
+    assert(w.highlightJsonText('{"a":1}').includes('class="tok-number"'), "JSON numbers are tokenized");
+    assert(w.highlightXmlText('<a b="c"/>').includes('class="tok-tag"'), "XML tags are tokenized");
+    assert(w.highlightXmlText('<a b="c"/>').includes('class="tok-attr"'), "XML attributes are tokenized");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199j. a .png zip entry (item 3) opens the inline image viewer instead of the browser-tab/external-open fallback");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    const zipBuf = buildZipFixture([{ name: "shot.png", data: pngBytes, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    let windowOpenCalled = false;
+    w.open = () => { windowOpenCalled = true; };
+    let extractedCalled = false;
+    if (w.philogg) w.philogg.openExtractedEntry = () => { extractedCalled = true; return Promise.resolve(); };
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    assert(T.state.inlineViewer.kind === "image", "state.inlineViewer is set to the image kind, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.kind));
+    assert(typeof T.state.inlineViewer.dataUrl === "string" && T.state.inlineViewer.dataUrl.startsWith("data:"), "the extracted bytes are turned into a data: URL, got " + (T.state.inlineViewer && T.state.inlineViewer.dataUrl));
+    assert(!windowOpenCalled && !extractedCalled, "a .png entry no longer falls through to either external-open route");
+    assert(d.querySelector("#inlineImageViewer").classList.contains("active"), "the inline image viewer is the active sub-view");
+    assert(!!d.querySelector("#imgViewerToolbar"), "the image viewer's zoom/pan/reset toolbar is present");
+  });
 }
 
 /* ============================================================
