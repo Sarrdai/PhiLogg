@@ -21717,7 +21717,8 @@ await withApp(async (w, d, T) => {
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
 /* ============================================================
-   GROUP 199 — ZIP files as a log source (this session, 2026-09-11):
+   GROUP 199 — ZIP files as a log source (this session, 2026-09-11, later
+   extended same-day with four refinements — see 199e-199g below):
    readZipEntries (EOCD + central directory parsing, no bulk extraction),
    per-entry lazy extract() via DecompressionStream('deflate-raw')/
    passthrough for stored entries, and the double-click -> loadFileDescriptors
@@ -21726,6 +21727,19 @@ await withApp(async (w, d, T) => {
    deflateRawSync) purely as test-fixture tooling — philogg.html's own ZIP
    reader stays dependency-free at runtime, per CLAUDE.md's "no new runtime
    dependencies" constraint; only this test file requires "zlib".
+
+   199e-199g (refinements, same day): a nested-folder entry's full relative
+   path is both displayed and used as the loaded name (199e — was already
+   correct, verified rather than fixed); a non-log entry double-clicked
+   (isLogZipEntry, reusing folder watch's own FOLDER_WATCH_EXTENSIONS) opens
+   a Blob-URL browser tab in the plain build (199f) or is handed to
+   window.philogg.openExtractedEntry under the desktop wrapper (199g),
+   instead of going through loadFileDescriptors either way. The archive-icon
+   swap (ICON_ZIP) and the double-click interaction itself (already matching
+   folder watch's renderInactiveFileRow -> loadFolderFile before this
+   refinement) have no dedicated assertions here — the icon is a pure visual
+   swap with no behavioral surface, and the interaction match is exercised
+   implicitly by every dblclick-driven assertion in this group.
    ============================================================ */
 group(199);
 {
@@ -21902,6 +21916,80 @@ group(199);
     assert(node.entries.length === 4, "the entry's inflated content was parsed into log entries, got " + (node && node.entries.length));
     assert(!node.tail, "a zip entry has no live source to poll — no `handle` is passed, so the node gets no `.tail` and stays non-tailable, got " + JSON.stringify(node.tail));
   });
+
+  await withApp(async (w, d, T) => {
+    section("199e. a nested-folder entry's full relative path is shown as the row's name and used as the loaded file's name (item 4)");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "subfolder/app.log", data: ENTRY_A_TEXT, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    assert(row && row.textContent.includes("subfolder/app.log"),
+      "the row displays the entry's full relative path, not just its basename, got " + (row && row.textContent));
+
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]] && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(node.name === "subfolder/app.log", "the loaded node keeps the full relative path as its name, got " + (node && node.name));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199f. a non-log entry (item 3) double-clicked in the plain browser build opens a Blob-URL tab instead of loading into the tree");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    const zipBuf = buildZipFixture([{ name: "shot.png", data: pngBytes, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    let loadFileDescriptorsCalls = 0;
+    const originalLFD = w.loadFileDescriptors;
+    w.loadFileDescriptors = (...args) => { loadFileDescriptorsCalls++; return originalLFD.apply(w, args); };
+
+    let openedUrl = null;
+    w.URL.createObjectURL = blob => { openedUrl = blob; return "blob:fake-url"; };
+    w.URL.revokeObjectURL = () => {};
+    let windowOpenUrl = null;
+    w.open = url => { windowOpenUrl = url; };
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => windowOpenUrl !== null);
+
+    assert(loadFileDescriptorsCalls === 0, "a non-log entry never goes through the log ingestion path, got " + loadFileDescriptorsCalls + " call(s)");
+    assert(windowOpenUrl === "blob:fake-url", "window.open() is called with the created Blob URL, got " + windowOpenUrl);
+    assert(openedUrl instanceof w.Blob, "a Blob was actually constructed from the extracted bytes");
+    assert(T.state.rootIds.length === 0, "no tree node is created for a non-log entry opened this way");
+  });
+
+  {
+    let openedName = null, openedBytes = null;
+    await withApp(async (w, d, T) => {
+      section("199g. a non-log entry double-clicked under the desktop wrapper hands the extracted bytes to window.philogg.openExtractedEntry instead of opening a browser tab");
+
+      w.Response = Response;
+      w.DecompressionStream = DecompressionStream;
+      const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+      await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+      let windowOpenCalled = false;
+      w.open = () => { windowOpenCalled = true; };
+
+      const row = d.querySelector("#zipList .folder-watch-file");
+      row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+      await waitFor(() => openedName !== null);
+
+      assert(openedName === "notes.txt", "the entry's name is passed through, got " + openedName);
+      assert(Buffer.from(openedBytes).toString("utf8") === "hello world", "the extracted bytes are passed through correctly, got " + Buffer.from(openedBytes || []).toString("utf8"));
+      assert(!windowOpenCalled, "the browser-tab fallback is never used when window.philogg.openExtractedEntry exists");
+      assert(T.state.rootIds.length === 0, "no tree node is created for a non-log entry opened this way");
+    }, { philogg: {
+      getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
+      openExtractedEntry: (name, bytes) => { openedName = name; openedBytes = bytes; return Promise.resolve(); },
+    } });
+  }
 }
 
 /* ============================================================
@@ -24776,4 +24864,19 @@ process.exitCode = failed ? 1 : 0;
       through the shared loadFileDescriptors path, and the resulting node
       has no `.tail` (no `handle` passed in, so it's non-tailable, matching
       how a handle-less descriptor is already treated everywhere else).
+      Extended same day with 199e-199g (four refinements: match folder
+      watch's own open interaction exactly, an archive icon instead of the
+      generic file icon, non-log entries openable too, relative paths
+      shown/used for nested entries). 199e: a "subfolder/app.log" entry's
+      full relative path is both the displayed row name and the loaded
+      node's name (readZipEntries already carried the full central-
+      directory name — this was verification, not a fix). 199f: a non-log
+      entry (isLogZipEntry, reusing folder watch's own
+      FOLDER_WATCH_EXTENSIONS notion of "log file") double-clicked in the
+      plain browser build never reaches loadFileDescriptors, instead
+      building a Blob from the extracted bytes and calling window.open()
+      with its URL. 199g: the same double-click under the desktop wrapper
+      (window.philogg.openExtractedEntry present) hands the entry's name
+      and extracted bytes to that bridge call instead, and never falls back
+      to window.open().
    ============================================================ */

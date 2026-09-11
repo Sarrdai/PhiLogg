@@ -132,6 +132,13 @@
     revealLocalUrl: function (url) {
       return invoke("reveal_local_url", { url: url });
     },
+    // ZIP sources, item 3 (this session): a non-log entry extracted from an
+    // opened ZIP has only its bytes in hand (see philogg.html's
+    // openZipEntryExternally) — this writes them to a temp file and opens it
+    // with the OS's default app for its type. See commands.rs::open_extracted_entry.
+    openExtractedEntry: function (name, bytes) {
+      return invoke("open_extracted_entry", { name: name, bytes: Array.from(bytes) });
+    },
     listSystemFonts: function () {
       return invoke("list_system_fonts").catch(function () {
         return [];
