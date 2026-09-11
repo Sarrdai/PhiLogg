@@ -10320,6 +10320,15 @@ function renderMainView() {
   // state.inlineViewer — are exactly renderMainView's own inputs below.
   breadcrumbBarEl.style.display = (hasFiles && !state.inlineViewer) ? "" : "none";
   if (state.inlineViewer) {
+    // Bug 3 fix (person-reported): the minimap is a log-view-only concept
+    // (see timelineMinimapEl's other gating below, all keyed on a log node
+    // actually being the active content) — this early-return branch never
+    // touched it at all, so whatever visibility it had before switching to
+    // a non-log entry just stuck, including staying visible after the
+    // underlying log file was closed entirely while this non-log viewer
+    // stayed open (this branch returns before the `!hasFiles` block further
+    // down ever runs). Same condition as breadcrumbBarEl right above.
+    timelineMinimapEl.classList.add("hidden");
     emptyState.style.display = "none";
     viewBarEl.style.display = "none";
     tableWrap.style.display = "none";
@@ -10691,7 +10700,7 @@ function moveTreeSelection(key) {
     const zip = state.zips.find(z => z.id === zipId);
     const viewer = zip && zip.inlineViewers.get(entryName);
     if (!viewer) return;
-    state.inlineViewer = viewer;
+    activateInlineViewer(viewer);
     render();
     return;
   }
@@ -19057,7 +19066,7 @@ function renderZipEntryRow(zip, entry) {
     // still a double-click, same convention every zip entry row already
     // uses (see the row's own title above).
     if (!cachedViewer) return;
-    state.inlineViewer = cachedViewer;
+    activateInlineViewer(cachedViewer);
     render();
   });
   row.addEventListener("dblclick", () => openZipEntry(entry, zip));
@@ -19161,6 +19170,22 @@ const inlineTextViewerEl = el("#inlineTextViewer");
 const inlineImageViewerEl = el("#inlineImageViewer");
 const imgViewerSvg = el("#imgViewerSvg");
 
+// Bug 2/3 fix (person-reported): the single shared "a non-log entry becomes
+// the active content" transition — every call site that sets
+// state.inlineViewer to make a viewer the one currently shown (first open,
+// re-selecting an already-opened entry, Alt+Up/Down nav landing on one)
+// goes through this instead of assigning state.inlineViewer directly, so
+// none of them can again forget the other half of the transition a
+// log-to-log switch already gets for free: clearing state.activeId. Two
+// things read state.activeId downstream and both broke without this —
+// renderNode's tree-row "active" class (Bug 2: the previously-active log's
+// row stayed visually selected) and renderMainView's minimap gating, which
+// keys off there being no active log content (Bug 3).
+function activateInlineViewer(viewer) {
+  state.activeId = null;
+  state.inlineViewer = viewer;
+}
+
 async function openInlineViewer(name, bytes, kind, zip) {
   let viewer;
   if (kind === "text") {
@@ -19187,7 +19212,7 @@ async function openInlineViewer(name, bytes, kind, zip) {
     viewer.entryName = name;
     zip.inlineViewers.set(name, viewer);
   }
-  state.inlineViewer = viewer;
+  activateInlineViewer(viewer);
   render();
 }
 // No longer wired to a header button (this session, lifecycle unification —
@@ -19288,19 +19313,27 @@ function itvLineElFor(node) {
 // text, using Range#toString() so it's correct regardless of how many nested
 // <span> tokenizer wrappers sit between the content column and the text node
 // (no need to walk them by hand).
+// Bugfix (Bug 1, person-reported): the previous version special-cased a
+// boundary that landed outside .itv-line-content (gutter, or past the last
+// character) using Node#compareDocumentPosition(el) to decide which edge to
+// clamp to. That heuristic is wrong whenever `el` is an ANCESTOR of
+// contentEl rather than a sibling/cousin — which is exactly what a real
+// selection boundary resolves to when a drag ends past the end of a line
+// (browsers commonly report that boundary as (lineEl, childNodes.length),
+// i.e. the .itv-line DIV itself, one level above .itv-line-content).
+// compareDocumentPosition's PRECEDING flag is ALSO set for an ancestor (per
+// spec, a containing node counts as "preceding" the node it contains), so
+// the old code always took the "before" branch and clamped such an
+// end-of-line boundary to 0 — silently truncating the last selected line to
+// empty and collapsing a multi-line copy down to (at most) its next-to-last
+// line. Range#setEnd needs no such special-casing at all: it repositions the
+// boundary correctly regardless of how deep/shallow `container` sits
+// relative to contentEl (ancestor, descendant, or unrelated sibling like the
+// line-number gutter) — the general path below handles every case, so the
+// old containment check and its manual clamp branch are gone entirely.
 function itvContentOffset(container, offset, lineEl) {
   const contentEl = lineEl.querySelector(".itv-line-content");
   if (!contentEl) return 0;
-  const el = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
-  if (!contentEl.contains(el) && el !== contentEl) {
-    // Selection boundary landed in the (non-selectable) gutter or outside
-    // the content span entirely — clamp to the nearest content edge.
-    const r2 = document.createRange();
-    r2.selectNodeContents(lineEl);
-    return contentEl.compareDocumentPosition ? (
-      (contentEl.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING) ? 0 : contentEl.textContent.length
-    ) : 0;
-  }
   const r = document.createRange();
   r.selectNodeContents(contentEl);
   r.setEnd(container, offset);
