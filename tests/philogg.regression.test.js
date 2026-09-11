@@ -21717,14 +21717,19 @@ await withApp(async (w, d, T) => {
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
 /* ============================================================
-   GROUP 199 — Clickable local file paths (linkifyPaths, the hover popup)
+   GROUP 199 — Clickable local file paths (linkifyPaths, eager verification, the popup)
    Origin: this session. Absolute Windows/Unix paths detected inside a
-   rendered message field get wrapped in a plain .fp-candidate span
-   regardless of build (so a browser build looks identical) — only under a
-   desktop wrapper (window.philogg.pathExists) does hovering verify the path
-   and, only if it exists, offer "Open file"/"Open containing folder"
-   (openPath/revealPath). A path that doesn't exist never gets styled as a
-   link and never shows the popup.
+   rendered message field get wrapped in a .fp-candidate span with a dim
+   "detected" underline regardless of build (so a browser build looks the
+   same, just never upgrades further) — only under a desktop wrapper
+   (window.philogg.pathExists) does verifyVisibleFpCandidates(), called once
+   per render, verify each newly-seen path and, only if it exists, upgrade
+   it to the full link look (.fp-verified) and offer "Open
+   file"/"Open containing folder" on hover (openPath/revealPath). A path
+   that doesn't exist never gets .fp-verified and never shows the popup.
+   Updated by this session's follow-up (person-reported: "hovered for a
+   while, nothing happened") to verify eagerly at render time, cached by
+   path, instead of on a hover debounce — 199c/199e cover that.
    ============================================================ */
 group(199);
 await withApp(async (w, d, T) => {
@@ -21748,8 +21753,9 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("199b. rendered rows: a candidate span appears, but the popup never opens without window.philogg (browser build)");
+  section("199b. rendered rows: a candidate always gets its dim \"detected\" underline, but the popup never opens without window.philogg (browser build)");
 
+  const cs = w.getComputedStyle;
   await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
   const node = T.state.nodes[T.state.rootIds[0]];
   T.state.activeId = node.id;
@@ -21757,55 +21763,77 @@ await withApp(async (w, d, T) => {
 
   const span = d.querySelector(".fp-candidate");
   assert(span && span.dataset.fp === "/var/log/app.log", "the rendered row wraps the detected path, got " + (span && span.dataset.fp));
+  assert(cs(span).textDecoration.includes("underline"),
+    "every detected candidate gets a visible underline immediately on render, before any verification — person-reported: with no cue at all, a detected path looked identical to plain text");
+  assert(!span.classList.contains("fp-verified"), "...but not the stronger .fp-verified look, since no window.philogg exists here to confirm it");
+
   span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
-  await new Promise(r => setTimeout(r, 250));
+  await new Promise(r => setTimeout(r, 50));
   assert(d.querySelector("#fpPathMenu").classList.contains("hidden"),
     "no window.philogg in this build, so hovering never opens the popup or verifies the path");
-  assert(!span.classList.contains("fp-verified"), "...and the span is never marked verified either");
 });
 
 await withApp(async (w, d, T) => {
-  section("199c. desktop build: hovering a real path verifies it and opens the popup with both actions");
+  section("199c. desktop build: a candidate verifies itself right at render time, no hover needed — hovering only opens the popup from the cache");
 
+  let pathExistsCalls = 0;
   let openedPath = null;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
   w.philogg.openPath = p => { openedPath = p; };
 
   await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
   const node = T.state.nodes[T.state.rootIds[0]];
   T.state.activeId = node.id;
   w.render();
+  await new Promise(r => setTimeout(r, 0)); // let the pathExists() promise settle
 
   const span = d.querySelector(".fp-candidate");
-  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
-  await new Promise(r => setTimeout(r, 250));
+  assert(span.classList.contains("fp-verified"),
+    "an existing path is already marked verified right after render — no mouseover was dispatched here at all");
+  assert(pathExistsCalls === 1, "verified via exactly one pathExists() call, got " + pathExistsCalls);
 
-  assert(span.classList.contains("fp-verified"), "an existing path gets marked verified after the hover round-trip");
   const menu = d.querySelector("#fpPathMenu");
-  assert(!menu.classList.contains("hidden"), "the popup opens for a verified (existing) path");
+  assert(menu.classList.contains("hidden"), "...but the popup itself still only opens on an actual hover");
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  assert(!menu.classList.contains("hidden"), "hovering an already-verified span opens the popup immediately — no debounce, no new IPC call needed");
+  assert(pathExistsCalls === 1, "...confirmed: still exactly one pathExists() call after hovering, got " + pathExistsCalls);
+
   const items = [...menu.querySelectorAll("[data-fp-action]")].map(i => i.dataset.fpAction);
   assert(items.includes("open") && items.includes("reveal"), "both actions are offered, got " + JSON.stringify(items));
-
   fireClick(menu.querySelector('[data-fp-action="open"]'), w);
   assert(openedPath === "/var/log/app.log", "\"Open file\" calls window.philogg.openPath with the path, got " + openedPath);
-}, { philogg: {
-  getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
-  pathExists: () => Promise.resolve(true),
-  openPath: () => {},
-} });
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true), openPath: () => {} } });
 
 await withApp(async (w, d, T) => {
-  section("199d. desktop build: hovering a path that doesn't exist never verifies it or opens the popup");
+  section("199d. two rows sharing the same path only trigger one pathExists() call (per-path cache/dedupe)");
+
+  let pathExistsCalls = 0;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
+
+  await w.addFile("a.log", makeLog(0, 5, { msgPrefix: "wrote to /var/log/shared.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0));
+
+  const spans = [...d.querySelectorAll(".fp-candidate")];
+  assert(spans.length >= 2, "sanity: more than one row rendered the same repeated path, got " + spans.length);
+  assert(spans.every(s => s.classList.contains("fp-verified")), "every occurrence of the same path gets verified, not just the first one rendered");
+  assert(pathExistsCalls === 1, "the repeated path is only checked once across all rows/renders, got " + pathExistsCalls + " call(s)");
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true) } });
+
+await withApp(async (w, d, T) => {
+  section("199e. desktop build: a nonexistent path never gets verified or opens the popup");
 
   await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/gone.log ok" }), () => {});
   const node = T.state.nodes[T.state.rootIds[0]];
   T.state.activeId = node.id;
   w.render();
+  await new Promise(r => setTimeout(r, 0));
 
   const span = d.querySelector(".fp-candidate");
-  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
-  await new Promise(r => setTimeout(r, 250));
-
   assert(!span.classList.contains("fp-verified"), "a nonexistent path is never marked verified");
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
   assert(d.querySelector("#fpPathMenu").classList.contains("hidden"), "...and the popup never opens for it");
 }, { philogg: {
   getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
@@ -24670,15 +24698,35 @@ process.exitCode = failed ? 1 : 0;
    Group 199 — this session (2026-09-10), person-requested: clickable local
       file paths. linkifyPaths (extracted next to markFieldHtml) detects
       absolute Windows/UNC/Unix paths in a rendered message field's HTML and
-      wraps them in a plain .fp-candidate span in EVERY build (199a covers
-      the regex itself — Windows/Unix positives, a fraction/date/URL
-      negative, and that it skips existing tags like <mark> rather than
-      matching across them). Only under a desktop wrapper does hovering one
-      actually verify it (window.philogg.pathExists) and, if it exists,
-      style it as a link (fp-verified) and open a popup offering "Open
-      file"/"Open containing folder" (openPath/revealPath — the latter
-      already existed for #52). 199b: no window.philogg (browser build) —
-      the span renders but hovering never verifies or opens anything. 199c:
-      an existing path verifies, gets styled, and both actions work. 199d: a
-      nonexistent path never gets styled or opens the popup.
+      wraps them in a .fp-candidate span in EVERY build (199a covers the
+      regex itself — Windows/Unix positives, a fraction/date/URL negative,
+      and that it skips existing tags like <mark> rather than matching
+      across them). Only under a desktop wrapper does the path actually
+      verify (window.philogg.pathExists) and, if it exists, get the full
+      link look (fp-verified) plus a popup offering "Open file"/"Open
+      containing folder" (openPath/revealPath — the latter already existed
+      for #52).
+   Follow-up (same session, 2026-09-11, person-reported after building a
+      portable installer from this branch and hovering a real path for
+      over a second: nothing happened). Code review found no functional
+      bug, but a real design gap: a .fp-candidate had ZERO CSS before
+      verification succeeded — indistinguishable from plain text — and the
+      whole feature depended on a single hover-timing window (180ms
+      debounce) succeeding silently, with no way to tell "nothing
+      detected" apart from "verification silently failed". Fixed two ways:
+      (1) every .fp-candidate now gets a dim "detected" underline
+      immediately on render, regardless of build/verification — 199b
+      pins this via computed style, and that hovering still never opens
+      the popup with no window.philogg. (2) verification moved from
+      hover-triggered to eager: verifyVisibleFpCandidates(), called once
+      at the end of renderVisibleRows(), resolves every newly-seen path
+      exactly once (cached in fpPathCache, keyed by path) — hovering now
+      only ever opens the popup from that cache, no IPC call, no
+      debounce. 199c: a path verifies right after render with no
+      mouseover dispatched at all, exactly one pathExists() call total,
+      and hovering the already-verified span opens the popup immediately
+      without a second call. 199d: two rows sharing the same path (the
+      common case — a path recurring across many log lines) still cost
+      exactly one pathExists() call. 199e (was 199d): a nonexistent path
+      never gets verified or opens the popup.
    ============================================================ */

@@ -2911,12 +2911,18 @@
   }
   #treeCtxInfoMenu.hidden{display:none;}
 
-  /* Clickable local file paths (desktop build only, see openFpPathMenu) —
-     the candidate span looks inert until confirmed to exist on disk
-     (fp-verified added right before the popup opens), so a path that turns
-     out missing never looked clickable in the first place. Same popup shape
-     as #addToSelectionMenu/#treeCtxInfoMenu, reusing .ctx-item/.ctx-sep. */
-  .fp-candidate.fp-verified{text-decoration:underline dotted; text-decoration-color:var(--text-tertiary); cursor:pointer;}
+  /* Clickable local file paths (desktop build only for the actual link —
+     see verifyVisibleFpCandidates/openFpPathMenu). EVERY detected candidate
+     gets this dim dotted underline immediately on render, in every build —
+     person-reported: with no visible cue at all before verification, a
+     detected path was indistinguishable from plain text, so there was no
+     way to tell "nothing was detected here" apart from "verification
+     silently failed". .fp-verified (added once window.philogg.pathExists
+     confirms the file is actually there) upgrades it to the real link
+     look — accent color, solid cursor. Same popup shape as
+     #addToSelectionMenu/#treeCtxInfoMenu, reusing .ctx-item/.ctx-sep. */
+  .fp-candidate{text-decoration:underline dotted; text-decoration-color:var(--border-soft);}
+  .fp-candidate.fp-verified{text-decoration-color:var(--text-tertiary); cursor:pointer;}
   .fp-candidate.fp-verified:hover{color:var(--accent-strong); text-decoration-color:var(--accent-strong);}
   #fpPathMenu{
     position:fixed; z-index:51; background:var(--bg-elevated);
@@ -14560,6 +14566,7 @@ function renderVisibleRows() {
   }
   tableRows.innerHTML = "";
   tableRows.appendChild(frag);
+  verifyVisibleFpCandidates();
   syncTableHeaderWidth();
 }
 
@@ -21470,18 +21477,31 @@ treeCtxInfoMenu.addEventListener("click", ev => ev.stopPropagation());
 
 /* ===================== Clickable local file paths (desktop build only) =====================
    linkifyPaths (see markFieldHtml) wraps every candidate absolute path found
-   in a rendered row's message field in a plain, unstyled .fp-candidate span
-   regardless of build — so the same philogg.html looks identical in the
-   browser build, which has no way to check or open an arbitrary path. Only
-   here, gated on window.philogg (desktop build), does hovering one actually
-   ask the Rust side whether it exists (pathExists) and, only if it does,
-   style it as a link and offer "Open file"/"Open containing folder"
+   in a rendered row's message field in a .fp-candidate span regardless of
+   build, styled with a dim "detected" underline immediately (see its CSS
+   comment) — so the same philogg.html looks identical in the browser build,
+   which has no way to check or open an arbitrary path, and a detected path
+   is never indistinguishable from plain text even before it's confirmed.
+   verifyVisibleFpCandidates(), called from renderVisibleRows, is the only
+   thing gated on window.philogg (desktop build): right after each render it
+   asks the Rust side (pathExists) whether every newly-seen candidate path
+   actually exists — once per unique path, cached in fpPathCache, not once
+   per hover or per occurrence (the same path routinely repeats across many
+   rows in one file). Only a path that resolves true gets .fp-verified (the
+   full link look) and offers "Open file"/"Open containing folder" on hover
    (openPath/revealPath — revealPath already exists for FEATURE_BACKLOG #52).
-   A path that doesn't exist never gets fp-verified and stays plain text. */
+   Originally this verification ran on hover itself (debounced); switched to
+   eager per-render verification after a person report ("hovered for a
+   while, nothing happened") that traced back to two compounding gaps: a
+   candidate had no visual cue at all before verification succeeded, so
+   there was no way to tell detection-not-running apart from
+   verification-silently-failing, and success depended on a single
+   hover-timing window instead of being decided once, up front. */
 const fpPathMenu = el("#fpPathMenu");
 let fpHoverEl = null;
-let fpHoverTimer = null;
 let fpHideTimer = null;
+const fpPathCache = new Map(); // path -> true|false, resolved once per unique path
+const fpPathPending = new Set(); // paths with a pathExists() call in flight
 
 function closeFpPathMenu() { fpPathMenu.classList.add("hidden"); }
 
@@ -21502,30 +21522,53 @@ function scheduleFpHide() {
 }
 function cancelFpHide() { clearTimeout(fpHideTimer); }
 
+// Marks every currently-rendered occurrence of `path` as verified — not just
+// the span that triggered the pathExists() call, and not via the original
+// span reference either: by the time the async call resolves, a later
+// render may already have replaced that exact node (renderVisibleRows
+// rebuilds row DOM on scroll/tail ticks — see CLAUDE.md's "DOM identity"
+// gotcha), so the lookup is redone fresh against whatever's in tableRows now.
+function applyFpVerifiedClass(path) {
+  const escaped = (window.CSS && CSS.escape) ? CSS.escape(path) : path.replace(/"/g, '\\"');
+  tableRows.querySelectorAll('.fp-candidate[data-fp="' + escaped + '"]').forEach(span => span.classList.add("fp-verified"));
+}
+
+// Called once per renderVisibleRows() pass (not per hover): resolves every
+// newly-seen candidate path's existence exactly once, from the cache
+// thereafter, so a path that recurs across many rows in one file (the
+// common case) costs one IPC round-trip total rather than one per row.
+function verifyVisibleFpCandidates() {
+  if (!window.philogg || typeof window.philogg.pathExists !== "function") return;
+  tableRows.querySelectorAll(".fp-candidate").forEach(span => {
+    const path = span.dataset.fp;
+    if (fpPathCache.has(path)) {
+      if (fpPathCache.get(path)) span.classList.add("fp-verified");
+      return;
+    }
+    if (fpPathPending.has(path)) return;
+    fpPathPending.add(path);
+    window.philogg.pathExists(path).then(exists => {
+      fpPathCache.set(path, !!exists);
+      fpPathPending.delete(path);
+      if (exists) applyFpVerifiedClass(path);
+    }).catch(() => { fpPathPending.delete(path); });
+  });
+}
+
 // Delegated on tableRows (not per-span) because renderVisibleRows rebuilds
 // every row's DOM on each render — a listener on the span itself would be
 // gone the next tick (see CLAUDE.md's "DOM identity across clicks" gotcha).
+// Verification already happened at render time, so hovering only ever
+// opens the popup from the cache — no IPC call, no debounce, no dependency
+// on how long the cursor lingers.
 tableRows.addEventListener("mouseover", ev => {
   const span = ev.target.closest(".fp-candidate");
   if (!span) return;
   cancelFpHide();
   if (span === fpHoverEl) return;
   fpHoverEl = span;
-  clearTimeout(fpHoverTimer);
-  if (!window.philogg || typeof window.philogg.pathExists !== "function") return;
   const path = span.dataset.fp;
-  // Debounced: a fast mouse pass over several candidates shouldn't fire one
-  // IPC round-trip per span it merely crossed.
-  fpHoverTimer = setTimeout(() => {
-    if (fpHoverEl !== span) return;
-    window.philogg.pathExists(path).then(exists => {
-      if (fpHoverEl !== span) return;
-      if (exists) {
-        span.classList.add("fp-verified");
-        openFpPathMenu(span, path);
-      }
-    }).catch(() => {});
-  }, 180);
+  if (fpPathCache.get(path) === true) openFpPathMenu(span, path);
 });
 tableRows.addEventListener("mouseout", ev => {
   if (ev.target.closest(".fp-candidate")) scheduleFpHide();
