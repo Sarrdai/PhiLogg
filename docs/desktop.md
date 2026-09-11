@@ -346,17 +346,29 @@ the first space. `FILE_PATH_RE` now tries, in order: a path wrapped in `'...'`, 
 (matched via its escaped `&quot;` form — `linkifyPaths` runs on already-HTML-escaped text,
 so a raw `"`/`'` never appears) or `` `...` `` — an unambiguous boundary, so the inner path
 may contain spaces freely, captured lazily up to the closing quote; then a bare (unquoted)
-Windows/UNC path that allows spaces only when the match can anchor on a trailing `.ext`
-(each segment capped to 60 chars, so a lazy "look ahead for any later dot" can't run away
-into unrelated trailing sentence text — `"C:\My Program\config.xml for details"` still
-stops right after `.xml`); then the original no-space, no-extension-required alternative
-as a fallback for a bare directory path like `C:\Windows\System32` that the extension
-anchor can't bound. `linkifyPaths`' replacer keeps a quote's characters *outside* the
-`<span>` (plain surrounding punctuation) rather than swallowing them into the link.
+Windows/UNC path where each **directory** segment (terminated by its own `\`) may contain
+spaces (`Program Files`, `My Program`), but the **final** segment (the filename) does not
+— reusing the exact same no-space class that alternative always had, so it needs no
+"where does an unquoted path end" heuristic at all: a space still ends the match exactly
+like it always did (`"C:\My Program\config.xml for details"` stops right after `.xml`
+because a space follows, not because of any extension logic); then the original Unix
+alternative, unchanged.
 
-Two accepted, still-open limitations: an unquoted path with spaces **and** no file
-extension can't be anchored at all (quoting it at the source is the fix); a compound
-extension (`archive.tar.gz`) only matches through the first dot-run (`archive.tar`).
+An earlier version of the unquoted alternative anchored the final segment on a *lazy*
+`.ext` search instead of just reusing the no-space class — meant to bound where an
+unquoted path stops, but "lazy" stops at the *first* dot-shaped thing found, which silently
+truncated any filename with more than one dot: `C:\eula.1028.txt` → only `C:\eula.1028`;
+a dotted .NET assembly name like `MyCompany.App.Program.exe` → only
+`...MyCompany.App`. Both were real person-reported examples, not the rare
+`archive.tar.gz`-shaped edge case that anchor's own docs once dismissed as low-impact —
+multi-dot filenames are the norm for versioned files and .NET-style dotted assembly names.
+Dropping the extension-anchor idea entirely (directory segments carry the "spaces are OK"
+allowance instead) fixes all of it, `archive.tar.gz` included, with no anchor logic left to
+mis-truncate anything.
+
+One remaining accepted, open limitation: an unquoted path where the *filename itself* (not
+a directory) contains a space still isn't detected — quoting it at the source is the fix
+for that case, same as it always was.
 
 **Every** `.fp-candidate` gets a dim, muted dotted underline immediately on render, in
 every build, regardless of whether it's ever verified. This exists specifically so the

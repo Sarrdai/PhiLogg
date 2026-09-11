@@ -8533,25 +8533,28 @@ function markFieldHtml(mm, text, columnKey) {
 // Person-reported (this session, follow-up): real log lines often have
 // spaces in the path itself ("C:\My Program\config.xml") and are
 // inconsistently quoted by whatever wrote them — sometimes 'like this',
-// sometimes bare. Six alternatives, tried in this order:
+// sometimes bare. Five alternatives, tried in this order:
 //   1-3. A path wrapped in '...', "..." (escaped &#39;/&quot;) or `...` — an
-//        UNQUAMBIGUOUS boundary, so the inner path may contain spaces freely,
+//        UNAMBIGUOUS boundary, so the inner path may contain spaces freely,
 //        matched lazily up to the closing quote (own capture group each, so
 //        linkifyPaths can keep the quote chars outside the <span>).
-//   4-5. An UNQUOTED Windows/UNC path allowed to contain spaces, bounded by
-//        requiring the match to end at a plausible ".ext" (also capping each
-//        segment to 60 chars) — without a quote to mark the end, a bare
-//        "…\Foo Bar.txt and then more sentence" has to stop *somewhere*, and
-//        "ends at a recognizable extension" is that anchor. A compound
-//        extension (archive.tar.gz) only matches through the first dot-run
-//        (archive.tar) — accepted, rare, low-impact.
-//   6-8. The original no-space Windows/UNC/Unix alternatives, kept as a
-//        fallback for an unquoted, space-free, extension-less path (e.g. a
-//        bare directory like C:\Windows\System32) that 4-5 can't anchor.
+//   4. An UNQUOTED Windows/UNC path: each DIRECTORY segment (terminated by
+//      its own "\") may contain spaces ("Program Files", "My Program"), but
+//      the FINAL segment (the filename) does not — reusing the original
+//      no-space class there needs no "where does an unquoted path end"
+//      heuristic at all, since a space still ends the match exactly like it
+//      always did. This also means a filename with more than one dot
+//      (eula.1028.txt, a dotted .NET assembly name like
+//      MyCompany.App.Program.exe) is captured in full — an earlier version
+//      of this alternative anchored the final segment on a lazy ".ext"
+//      search instead, which stopped at the FIRST dot in a multi-dot
+//      filename and silently truncated both of those real examples.
+//   5. The original Unix alternative, unchanged — spaces are rare/less
+//      idiomatic there, and neither report involved one.
 // The negative lookbehind on the Unix alternative rejects a match starting
 // right after a word character, ":" or "/" — without it "https://host/path"
 // would linkify as "//host/path" from the URL's own double slash.
-const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&quot;|`((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)`|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)*[^\\/:*?"<>|\r\n\t]{0,60}?\.[A-Za-z0-9]{1,10}\b|\\\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)+[^\\/:*?"<>|\r\n\t]{0,60}?\.[A-Za-z0-9]{1,10}\b|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\s]+\\)*[^\\/:*?"<>|\r\n\s]+|\\\\[^\\/:*?"<>|\r\n\s]+(?:\\[^\\/:*?"<>|\r\n\s]+)+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
+const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&quot;|`((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)`|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)*[^\\/:*?"<>|\r\n\s]+|\\\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)+[^\\/:*?"<>|\r\n\s]+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
 
 // Wraps every detected path candidate in a span the hover popup (see
 // openFpPathMenu) can key off. The path text (whichever of FILE_PATH_RE's

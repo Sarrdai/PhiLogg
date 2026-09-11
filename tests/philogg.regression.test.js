@@ -21777,6 +21777,25 @@ await withApp(async (w, d, T) => {
   const bareDir = w.linkifyPaths(w.escapeHtml('path C:\\Windows\\System32 is bare'));
   assert(bareDir.includes('<span class="fp-candidate" data-fp="C:\\Windows\\System32">C:\\Windows\\System32</span>'),
     "regression: a space-free, extension-less directory path still matches via the original fallback, got " + bareDir);
+
+  // Second follow-up (person-reported): a filename with MORE THAN ONE dot
+  // (very common — versioned files, dotted .NET assembly names) used to
+  // truncate at the first dot once an extension-anchor heuristic was
+  // introduced for the spaced case above. Fixed by never requiring an
+  // extension at all: only directory segments (each terminated by "\") may
+  // contain spaces, the final segment stays exactly as space-free as it
+  // always was, so it naturally runs to the next real space with no
+  // "where's the extension" guessing.
+  const multiDotSimple = w.linkifyPaths(w.escapeHtml('Filtered C:\\eula.1028.txt'));
+  assert(multiDotSimple.includes('<span class="fp-candidate" data-fp="C:\\eula.1028.txt">C:\\eula.1028.txt</span>'),
+    "a space-free filename with two dots is captured in full, not truncated at the first one, got " + multiDotSimple);
+
+  const multiDotSpaced = w.linkifyPaths(w.escapeHtml(
+    'Create catalog entry for assembly: C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe'));
+  assert(multiDotSpaced.includes(
+    '<span class="fp-candidate" data-fp="C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe">' +
+    'C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe</span>'),
+    "spaced directory segments AND a three-dot filename together are captured in full, got " + multiDotSpaced);
 });
 
 await withApp(async (w, d, T) => {
@@ -24776,4 +24795,24 @@ process.exitCode = failed ? 1 : 0;
       with trailing sentence text (still stops right after the extension),
       all three quote forms, and the space-free/extension-less fallback
       case (regression check).
+   Third follow-up (same session, 2026-09-11, person found this on their
+      own too, in two real log lines): the second follow-up's bounded
+      unquoted alternative anchored on a LAZY ".ext" search — "lazy" stops
+      at the FIRST dot-shaped thing it finds, which truncated any filename
+      with more than one dot ("C:\eula.1028.txt" -> only "C:\eula.1028";
+      "MyCompany.App.Program.exe" -> only "...MyCompany.App"). Far from
+      the rare "archive.tar.gz" edge case the second follow-up's docs
+      dismissed as low-impact — multi-dot filenames are the norm for
+      versioned files and (as in the person's own examples) dotted .NET
+      assembly names. Replaced the whole extension-anchor idea: the
+      unquoted Windows/UNC alternative now lets only DIRECTORY segments
+      (each terminated by its own "\") contain spaces; the FINAL segment
+      (the filename) stays exactly as space-free as the very first version
+      of this regex — needing no "where does it end" heuristic at all,
+      since a space still ends the match exactly like it always did. This
+      captures a multi-dot filename in full with no extension-guessing,
+      and fixes the previously-documented tar.gz limitation as a side
+      effect. 199a extended with the person's two exact examples (one
+      space-free two-dot filename, one with both spaced directories and a
+      three-dot filename).
    ============================================================ */
