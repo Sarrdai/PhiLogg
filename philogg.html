@@ -3012,6 +3012,26 @@
   }
   #treeCtxInfoMenu.hidden{display:none;}
 
+  /* Clickable local file paths (desktop build only for the actual link —
+     see verifyVisibleFpCandidates/openFpPathMenu). EVERY detected candidate
+     gets this dim dotted underline immediately on render, in every build —
+     person-reported: with no visible cue at all before verification, a
+     detected path was indistinguishable from plain text, so there was no
+     way to tell "nothing was detected here" apart from "verification
+     silently failed". .fp-verified (added once window.philogg.pathExists
+     confirms the file is actually there) upgrades it to the real link
+     look — accent color, solid cursor. Same popup shape as
+     #addToSelectionMenu/#treeCtxInfoMenu, reusing .ctx-item/.ctx-sep. */
+  .fp-candidate{text-decoration:underline dotted; text-decoration-color:var(--border-soft);}
+  .fp-candidate.fp-verified{text-decoration-color:var(--text-tertiary); cursor:pointer;}
+  .fp-candidate.fp-verified:hover{color:var(--accent-strong); text-decoration-color:var(--accent-strong);}
+  #fpPathMenu{
+    position:fixed; z-index:51; background:var(--bg-elevated);
+    border:1px solid var(--border); border-radius:8px; padding:5px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:320px;
+  }
+  #fpPathMenu.hidden{display:none;}
+
   /* ---------- Highlight-colour picker (tree swatch) ---------- */
   #colorPickerPopup{
     position:fixed; z-index:55; width:176px; background:var(--bg-elevated);
@@ -3541,6 +3561,7 @@
               <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
               <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
               <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
+              <button type="button" class="toolbar-icon-btn toggle-filepaths" title="Clickable file paths"></button>
             </div>
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
@@ -3591,6 +3612,7 @@
                 <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
                 <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
                 <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
+                <button type="button" class="toolbar-icon-btn toggle-filepaths" title="Clickable file paths"></button>
               </div>
               <span class="ctx-toolbar-sep"></span>
               <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
@@ -3849,6 +3871,7 @@
 
   <div id="addToSelectionMenu" class="hidden"></div>
   <div id="treeCtxInfoMenu" class="hidden"></div>
+  <div id="fpPathMenu" class="hidden"></div>
 
   <div id="treeContextMenu" class="hidden"></div>
 
@@ -4849,6 +4872,9 @@ const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="1
 // markCombinedHtml). Deliberately NOT another pen glyph — it has to read as
 // a different thing from ICON_TEXT_MATCH_HIGHLIGHT sitting right next to it.
 const ICON_HIGHLIGHT_MATCH_TEXT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3.2h8"/><path d="M8 3.2v6.4"/><path d="M2.5 12h11"/><path d="M2.5 14.3h11"/></svg>';
+// #btnFilePathLinks — a simple link/chain glyph, toggling the clickable
+// local-file-path feature (linkifyPaths) on/off (person-requested).
+const ICON_FILE_PATH_LINKS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.8 9.2 9.2 6.8"/><path d="M7.3 4.3 8.6 3a2.2 2.2 0 0 1 3.1 3.1l-1.3 1.3"/><path d="M8.7 11.7 7.4 13a2.2 2.2 0 0 1-3.1-3.1l1.3-1.3"/></svg>';
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
@@ -5772,6 +5798,17 @@ function initHighlightMatchTextSetting() {
 
 function updateHighlightMatchTextButton() {
   btnHighlightMatchText.forEach(b => b.classList.toggle("active", highlightMatchTextEnabled));
+}
+
+// Twin of the two functions above for the clickable-file-paths toggle.
+function initFilePathLinksSetting() {
+  const stored = localStorage.getItem(FILE_PATH_LINKS_KEY);
+  filePathLinksEnabled = stored === null ? true : stored === "1";
+  updateFilePathLinksButton();
+}
+
+function updateFilePathLinksButton() {
+  btnFilePathLinks.forEach(b => b.classList.toggle("active", filePathLinksEnabled));
 }
 
 document.getElementById("settingsTextMatchHighlightScope").addEventListener("change", ev => {
@@ -8356,6 +8393,13 @@ let textMatchHighlightInDetail = true;
 const HIGHLIGHT_MATCH_TEXT_KEY = "philogg-highlight-match-text";
 let highlightMatchTextEnabled = true;
 
+// Clickable local file paths (person-requested toggle, default ON): gates
+// linkifyPaths in both renderVisibleRows and renderHighlightVisibleRows —
+// off, a message field renders exactly as markFieldHtml alone would (no
+// .fp-candidate spans at all, so no underline/hover cost either).
+const FILE_PATH_LINKS_KEY = "philogg-file-path-links-enabled";
+let filePathLinksEnabled = true;
+
 /* Level bar / filter-tree mode (Settings -> Behavior, FEATURE_BACKLOG.md
    #10) — "auto" (default): clicking a level button upserts a real
    filterType:"level" node at the current tree position (see
@@ -8655,6 +8699,60 @@ function markFieldHtml(mm, text, columnKey) {
   return markCombinedHtml(text,
     matchRangesFor(text, columnKey, mm.nodes, mm.specs),
     highlightMatchRangesFor(text, columnKey, mm.hlNodes, mm.hlSpecs));
+}
+
+// Clickable local file paths (desktop build only — see openFpPathMenu):
+// detects absolute Windows/UNC/Unix paths inside a rendered field's HTML.
+// Runs on already-escaped HTML (markFieldHtml's output), not raw text, so it
+// has to skip existing tags (e.g. <mark> from match/highlight marking)
+// rather than run over the whole string — see linkifyPaths' tag split — and
+// match against escaped quote entities (&#39;/&quot;), not literal '/", when
+// a path is quoted in the source log line.
+//
+// Person-reported (this session, follow-up): real log lines often have
+// spaces in the path itself ("C:\My Program\config.xml") and are
+// inconsistently quoted by whatever wrote them — sometimes 'like this',
+// sometimes bare. Five alternatives, tried in this order:
+//   1-3. A path wrapped in '...', "..." (escaped &#39;/&quot;) or `...` — an
+//        UNAMBIGUOUS boundary, so the inner path may contain spaces freely,
+//        matched lazily up to the closing quote (own capture group each, so
+//        linkifyPaths can keep the quote chars outside the <span>).
+//   4. An UNQUOTED Windows/UNC path: each DIRECTORY segment (terminated by
+//      its own "\") may contain spaces ("Program Files", "My Program"), but
+//      the FINAL segment (the filename) does not — reusing the original
+//      no-space class there needs no "where does an unquoted path end"
+//      heuristic at all, since a space still ends the match exactly like it
+//      always did. This also means a filename with more than one dot
+//      (eula.1028.txt, a dotted .NET assembly name like
+//      MyCompany.App.Program.exe) is captured in full — an earlier version
+//      of this alternative anchored the final segment on a lazy ".ext"
+//      search instead, which stopped at the FIRST dot in a multi-dot
+//      filename and silently truncated both of those real examples.
+//   5. The original Unix alternative, unchanged — spaces are rare/less
+//      idiomatic there, and neither report involved one.
+// The negative lookbehind on the Unix alternative rejects a match starting
+// right after a word character, ":" or "/" — without it "https://host/path"
+// would linkify as "//host/path" from the URL's own double slash.
+const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&quot;|`((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)`|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)*[^\\/:*?"<>|\r\n\s]+|\\\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)+[^\\/:*?"<>|\r\n\s]+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
+
+// Wraps every detected path candidate in a span the hover popup (see
+// openFpPathMenu) can key off. The path text (whichever of FILE_PATH_RE's
+// quoted capture groups matched, or the whole match for an unquoted one) is
+// already HTML-escaped (it came out of an escaped token), so it's safe to
+// reuse verbatim both as the span's content and as its data-fp attribute
+// value — the HTML parser decodes entities in attributes the same way it
+// does in text. A quote match keeps its quote characters OUTSIDE the span
+// (plain punctuation around the link, not part of it).
+function linkifyPaths(html) {
+  if (!html) return html;
+  return html.split(/(<[^>]+>)/).map(part =>
+    part.charAt(0) === "<" ? part :
+      part.replace(FILE_PATH_RE, (m, sq, dq, bt) => {
+        const path = sq || dq || bt || m;
+        const quote = sq !== undefined ? "&#39;" : dq !== undefined ? "&quot;" : bt !== undefined ? "`" : "";
+        return quote + '<span class="fp-candidate" data-fp="' + path + '">' + path + '</span>' + quote;
+      })
+  ).join("");
 }
 
 // Filter results only ever change for a node when it (or an ancestor) gets
@@ -9516,6 +9614,7 @@ const highlightHeaderEl = el("#highlightHeader");
 const btnColumns = elAll(".toggle-columns");
 const btnTextMatchHighlight = elAll(".toggle-textmatch");
 const btnHighlightMatchText = elAll(".toggle-highlightmatch");
+const btnFilePathLinks = elAll(".toggle-filepaths");
 const columnsPanel = el("#columnsPanel");
 const btnResetColumns = el("#btnResetColumns");
 const columnToggleInputs = {
@@ -14773,7 +14872,8 @@ function renderVisibleRows() {
     const threadHtml = markFieldHtml(mm, e.thread, "thread");
     const locHtml = markFieldHtml(mm, e.locationShort, "location");
     const methodHtml = markFieldHtml(mm, e.method, "method");
-    const msgHtml = markFieldHtml(mm, e.message, "message");
+    const msgHtmlBase = markFieldHtml(mm, e.message, "message");
+    const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
     row.className = cls;
     row.style.height = baseRowHeightForEntry(e) + "px";
@@ -14797,6 +14897,7 @@ function renderVisibleRows() {
   }
   tableRows.innerHTML = "";
   tableRows.appendChild(frag);
+  verifyVisibleFpCandidates(tableRows);
   syncTableHeaderWidth();
 }
 
@@ -15817,6 +15918,8 @@ function renderHighlightVisibleRows() {
     // rule-marking toggle off), so this stays a plain escapeHtml call in the
     // common case — same shape as renderVisibleRows.
     const timeText = formatTime(e.ts);
+    const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message");
+    const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
     row.innerHTML =
       markerHtml +
       (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
@@ -15827,7 +15930,7 @@ function renderHighlightVisibleRows() {
       '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + markFieldHtml(mm, e.thread, "thread") + '</span>' +
       '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + markFieldHtml(mm, e.locationShort, "location") + '</span>' +
       '<span class="col-method" title="' + escapeHtml(e.method) + '">' + markFieldHtml(mm, e.method, "method") + '</span>' +
-      '<span class="col-msg">' + markFieldHtml(mm, e.message, "message") + '</span>';
+      '<span class="col-msg">' + hlMsgHtml + '</span>';
     // A PLAIN click is a jump to that match and gets the expansion treatment
     // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
     // gesture and must leave the row list alone, or the range the person is
@@ -15848,6 +15951,7 @@ function renderHighlightVisibleRows() {
   }
   highlightRows.innerHTML = "";
   highlightRows.appendChild(frag);
+  verifyVisibleFpCandidates(highlightRows);
   syncHighlightHeaderWidth();
 }
 
@@ -18230,6 +18334,18 @@ btnHighlightMatchText.forEach(b => b.addEventListener("click", () => {
   renderVisibleRows();
   renderHighlightVisibleRows();
   updateDetailPanel();
+}));
+
+// Twin handler for the clickable-file-paths toggle — re-renders both views
+// so a message field immediately picks up (or drops) its .fp-candidate
+// spans; no updateDetailPanel() call needed, the detail panel doesn't show
+// linkified paths.
+btnFilePathLinks.forEach(b => b.addEventListener("click", () => {
+  filePathLinksEnabled = !filePathLinksEnabled;
+  localStorage.setItem(FILE_PATH_LINKS_KEY, filePathLinksEnabled ? "1" : "0");
+  updateFilePathLinksButton();
+  renderVisibleRows();
+  renderHighlightVisibleRows();
 }));
 
 /* ===================== Log view column visibility / width (FEATURE_BACKLOG.md
@@ -22573,6 +22689,134 @@ treeContextMenu.addEventListener("mouseover", ev => {
 // already relies on (see CLAUDE.md's stopPropagation gotcha).
 treeCtxInfoMenu.addEventListener("click", ev => ev.stopPropagation());
 
+/* ===================== Clickable local file paths (desktop build only) =====================
+   linkifyPaths (see markFieldHtml) wraps every candidate absolute path found
+   in a rendered row's message field in a .fp-candidate span regardless of
+   build, styled with a dim "detected" underline immediately (see its CSS
+   comment) — so the same philogg.html looks identical in the browser build,
+   which has no way to check or open an arbitrary path, and a detected path
+   is never indistinguishable from plain text even before it's confirmed.
+   verifyVisibleFpCandidates(container), called from both renderVisibleRows
+   (tableRows) and renderHighlightVisibleRows (highlightRows), is the only
+   thing gated on window.philogg (desktop build): right after each render it
+   asks the Rust side (pathExists) whether every newly-seen candidate path
+   actually exists — once per unique path, cached in fpPathCache (shared
+   across both views, so a path already resolved for one view doesn't get
+   re-checked for the other), not once per hover or per occurrence (the
+   same path routinely repeats across many rows in one file). Only a path
+   that resolves true gets .fp-verified (the full link look) and offers
+   "Open file"/"Open containing folder" on hover (openPath/revealPath —
+   revealPath already exists for FEATURE_BACKLOG #52).
+   Originally this verification ran on hover itself (debounced); switched to
+   eager per-render verification after a person report ("hovered for a
+   while, nothing happened") that traced back to two compounding gaps: a
+   candidate had no visual cue at all before verification succeeded, so
+   there was no way to tell detection-not-running apart from
+   verification-silently-failing, and success depended on a single
+   hover-timing window instead of being decided once, up front.
+   The whole feature is gated on filePathLinksEnabled (person-requested
+   toggle, default on, #toggle-filepaths in both #contextToolbar and
+   #filteredToolbar) — off, linkifyPaths is never called at render time, so
+   no .fp-candidate spans exist for any of the code below to act on. */
+const fpPathMenu = el("#fpPathMenu");
+let fpHoverEl = null;
+let fpHideTimer = null;
+const fpPathCache = new Map(); // path -> true|false, resolved once per unique path
+const fpPathPending = new Set(); // paths with a pathExists() call in flight
+
+function closeFpPathMenu() { fpPathMenu.classList.add("hidden"); }
+
+function openFpPathMenu(anchorEl, path) {
+  fpPathMenu.innerHTML =
+    '<div class="ctx-item" data-fp-action="open">Open file</div>' +
+    '<div class="ctx-item" data-fp-action="reveal">Open containing folder</div>';
+  fpPathMenu.dataset.fp = path;
+  const r = anchorEl.getBoundingClientRect();
+  fpPathMenu.style.left = Math.min(r.left, window.innerWidth - 280) + "px";
+  fpPathMenu.style.top = Math.min(r.bottom + 2, window.innerHeight - 100) + "px";
+  fpPathMenu.classList.remove("hidden");
+}
+
+function scheduleFpHide() {
+  clearTimeout(fpHideTimer);
+  fpHideTimer = setTimeout(() => { fpHoverEl = null; closeFpPathMenu(); }, 200);
+}
+function cancelFpHide() { clearTimeout(fpHideTimer); }
+
+// Marks every currently-rendered occurrence of `path` as verified — not just
+// the span that triggered the pathExists() call, and not via the original
+// span reference either: by the time the async call resolves, a later
+// render may already have replaced that exact node (renderVisibleRows/
+// renderHighlightVisibleRows rebuild row DOM on scroll/tail ticks — see
+// CLAUDE.md's "DOM identity" gotcha), so the lookup is redone fresh against
+// whatever's in BOTH containers now — the split view can show the same
+// path in Table and Full at once, and both need to reflect one verification.
+function applyFpVerifiedClass(path) {
+  const escaped = (window.CSS && CSS.escape) ? CSS.escape(path) : path.replace(/"/g, '\\"');
+  const sel = '.fp-candidate[data-fp="' + escaped + '"]';
+  tableRows.querySelectorAll(sel).forEach(span => span.classList.add("fp-verified"));
+  highlightRows.querySelectorAll(sel).forEach(span => span.classList.add("fp-verified"));
+}
+
+// Called once per render pass of either view (not per hover): resolves every
+// newly-seen candidate path's existence exactly once, from the shared cache
+// thereafter, so a path that recurs across many rows — or in both views at
+// once — costs one IPC round-trip total rather than one per row/view/hover.
+function verifyVisibleFpCandidates(container) {
+  if (!window.philogg || typeof window.philogg.pathExists !== "function") return;
+  container.querySelectorAll(".fp-candidate").forEach(span => {
+    const path = span.dataset.fp;
+    if (fpPathCache.has(path)) {
+      if (fpPathCache.get(path)) span.classList.add("fp-verified");
+      return;
+    }
+    if (fpPathPending.has(path)) return;
+    fpPathPending.add(path);
+    window.philogg.pathExists(path).then(exists => {
+      fpPathCache.set(path, !!exists);
+      fpPathPending.delete(path);
+      if (exists) applyFpVerifiedClass(path);
+    }).catch(() => { fpPathPending.delete(path); });
+  });
+}
+
+// Delegated on each row container (not per-span) because both renderers
+// rebuild their row DOM on each render — a listener on the span itself would
+// be gone the next tick (see CLAUDE.md's "DOM identity across clicks"
+// gotcha). Verification already happened at render time, so hovering only
+// ever opens the popup from the cache — no IPC call, no debounce, no
+// dependency on how long the cursor lingers. Shared by both containers.
+function onFpRowsMouseover(ev) {
+  const span = ev.target.closest(".fp-candidate");
+  if (!span) return;
+  cancelFpHide();
+  if (span === fpHoverEl) return;
+  fpHoverEl = span;
+  const path = span.dataset.fp;
+  if (fpPathCache.get(path) === true) openFpPathMenu(span, path);
+}
+function onFpRowsMouseout(ev) {
+  if (ev.target.closest(".fp-candidate")) scheduleFpHide();
+}
+tableRows.addEventListener("mouseover", onFpRowsMouseover);
+tableRows.addEventListener("mouseout", onFpRowsMouseout);
+highlightRows.addEventListener("mouseover", onFpRowsMouseover);
+highlightRows.addEventListener("mouseout", onFpRowsMouseout);
+fpPathMenu.addEventListener("mouseenter", cancelFpHide);
+fpPathMenu.addEventListener("mouseleave", scheduleFpHide);
+// stopPropagation: same reasoning as treeCtxInfoMenu above — otherwise the
+// document-level "click outside closes the popup" listener would close this
+// before the click on one of its own items ever reaches it.
+fpPathMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest("[data-fp-action]");
+  if (!item || !window.philogg) return;
+  const path = fpPathMenu.dataset.fp;
+  if (item.dataset.fpAction === "open") window.philogg.openPath(path);
+  else if (item.dataset.fpAction === "reveal") window.philogg.revealPath(path);
+  closeFpPathMenu();
+});
+
 // Figures out which bulk actions the current multi-selection supports.
 // Shared by the right-click context menu and the always-visible action bar
 // above the tree, so both surfaces offer exactly the same logic/wording.
@@ -24937,6 +25181,7 @@ document.addEventListener("click", ev => {
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
+  if (!fpPathMenu.contains(ev.target) && !ev.target.closest(".fp-candidate")) closeFpPathMenu();
   // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
   // on a click anywhere outside the sidebar itself — a click ON a tree row is
   // deliberately NOT treated as "outside" (still navigating the tree).
@@ -26760,6 +27005,7 @@ detailFormatToggleBtn.innerHTML = ICON_FORMAT_HIGHLIGHT;
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
 btnHighlightMatchText.forEach(b => b.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT);
+btnFilePathLinks.forEach(b => b.innerHTML = ICON_FILE_PATH_LINKS);
 btnApplyLevelToTree.innerHTML = ICON_LEVEL;
 btnApplyLevelToTree.addEventListener("click", () => {
   const levels = canonicalLevelOrder([...state.levelFilter]);
@@ -26789,6 +27035,7 @@ initContextToolbar();
 initMinimapFullRangeSetting();
 initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
+initFilePathLinksSetting();
 initDetailFormatHighlightSetting();
 initLevelFilterTreeModeSettings();
 initTreeIndicatorModeSetting();

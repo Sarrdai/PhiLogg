@@ -242,6 +242,7 @@ async function withApp(run, opts = {}) {
       get textMatchHighlightInRows() { return textMatchHighlightInRows; },
       get textMatchHighlightInDetail() { return textMatchHighlightInDetail; },
       get highlightMatchTextEnabled() { return highlightMatchTextEnabled; },
+      get filePathLinksEnabled() { return filePathLinksEnabled; },
       get levelFilterTreeMode() { return levelFilterTreeMode; },
       set levelFilterTreeMode(v) { levelFilterTreeMode = v; },
       get tempAnchorMode() { return tempAnchorMode; },
@@ -3138,7 +3139,7 @@ group(29);
 await withApp(async (w, d) => {
   section("29b. Every icon button — header, Filter-Toolbar, and every view toolbar — shares .toolbar-icon-btn's 28x28 shape");
   const cs = w.getComputedStyle;
-  ["#btnUndo", "#btnRedo", ".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch"].forEach(sel => {
+  ["#btnUndo", "#btnRedo", ".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch", ".toggle-filepaths"].forEach(sel => {
     const btn = d.querySelector(sel);
     assert(btn !== null, "sanity: " + sel + " exists");
     const bcs = cs(btn);
@@ -21879,7 +21880,7 @@ group(199);
   });
 
   await withApp(async (w, d, T) => {
-    section("199b. extract() is lazy — only the entry actually called is ever inflated, and stored vs deflated both decode correctly");
+    section("201b. extract() is lazy — only the entry actually called is ever inflated, and stored vs deflated both decode correctly");
 
     w.Response = Response;
     let decompressCount = 0;
@@ -21904,7 +21905,7 @@ group(199);
   });
 
   await withApp(async (w, d, T) => {
-    section("199c. openZipSource adds a state.zips entry rendered without the folder-watch scanning indicator or settings gear");
+    section("201c. openZipSource adds a state.zips entry rendered without the folder-watch scanning indicator or settings gear");
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
@@ -21924,7 +21925,7 @@ group(199);
   });
 
   await withApp(async (w, d, T) => {
-    section("199d. double-clicking a zip entry row extracts just that entry and loads it as a static (non-tailable) file via loadFileDescriptors");
+    section("201d. double-clicking a zip entry row extracts just that entry and loads it as a static (non-tailable) file via loadFileDescriptors");
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
@@ -21952,7 +21953,7 @@ group(199);
   });
 
   await withApp(async (w, d, T) => {
-    section("199e. a nested-folder entry's full relative path is shown as the row's name and used as the loaded file's name (item 4)");
+    section("201e. a nested-folder entry's full relative path is shown as the row's name and used as the loaded file's name (item 4)");
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
@@ -22660,6 +22661,252 @@ group(199);
       "a normal cross-line selection (no container-level boundary) still works after the rewrite, got " + JSON.stringify(ev3.clipboardData.data["text/plain"]));
   });
 }
+
+/* ============================================================
+   GROUP 201 — Clickable local file paths (linkifyPaths, eager verification, the popup)
+   Origin: this session. Absolute Windows/Unix paths detected inside a
+   rendered message field get wrapped in a .fp-candidate span with a dim
+   "detected" underline regardless of build (so a browser build looks the
+   same, just never upgrades further) — only under a desktop wrapper
+   (window.philogg.pathExists) does verifyVisibleFpCandidates(), called once
+   per render, verify each newly-seen path and, only if it exists, upgrade
+   it to the full link look (.fp-verified) and offer "Open
+   file"/"Open containing folder" on hover (openPath/revealPath). A path
+   that doesn't exist never gets .fp-verified and never shows the popup.
+   Updated by this session's follow-up (person-reported: "hovered for a
+   while, nothing happened") to verify eagerly at render time, cached by
+   path, instead of on a hover debounce — 199c/199e cover that.
+   ============================================================ */
+group(201);
+await withApp(async (w, d, T) => {
+  section("201a. absolute path detection: positive and negative cases");
+
+  assert(w.linkifyPaths('plain text, no path here').indexOf("fp-candidate") === -1,
+    "no false positive on ordinary text");
+  assert(w.linkifyPaths(w.escapeHtml("ratio 3/4 and date 10/09/2026")).indexOf("fp-candidate") === -1,
+    "no false positive on a bare fraction or a mid-text date (not preceded by a path-safe boundary)");
+  const win = w.linkifyPaths(w.escapeHtml('see C:\\src\\Foo.cs for details'));
+  assert(win.includes('<span class="fp-candidate" data-fp="C:\\src\\Foo.cs">C:\\src\\Foo.cs</span>'),
+    "an absolute Windows path is wrapped, got " + win);
+  const unix = w.linkifyPaths(w.escapeHtml('see /var/log/app.log for details'));
+  assert(unix.includes('<span class="fp-candidate" data-fp="/var/log/app.log">/var/log/app.log</span>'),
+    "an absolute Unix path is wrapped, got " + unix);
+  const url = w.linkifyPaths(w.escapeHtml('fetched https://example.com/path/file failed'));
+  assert(!url.includes("fp-candidate"), "a URL's own \"//\" is not mistaken for an absolute Unix path, got " + url);
+  const tagged = w.linkifyPaths('<mark class="hl">/etc/passwd</mark> plain');
+  assert(tagged === '<mark class="hl"><span class="fp-candidate" data-fp="/etc/passwd">/etc/passwd</span></mark> plain',
+    "linkifyPaths skips existing tags themselves and only wraps text content, got " + tagged);
+
+  // Follow-up (person-reported root cause): real paths have spaces and are
+  // inconsistently quoted ("mal '' drumherum, mal gar nichts").
+  const bareSpaced = w.linkifyPaths(w.escapeHtml('Saved to C:\\My Program\\config.xml'));
+  assert(bareSpaced.includes('<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>'),
+    "an unquoted Windows path with a space in a segment is still detected when it ends in a recognizable extension, got " + bareSpaced);
+
+  const bareSpacedTrailing = w.linkifyPaths(w.escapeHtml('C:\\My Program\\config.xml for details'));
+  assert(bareSpacedTrailing.includes('<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>') &&
+    bareSpacedTrailing.endsWith('span> for details'),
+    "...and still stops right after the extension, not swallowing the rest of the sentence, got " + bareSpacedTrailing);
+
+  const singleQuoted = w.linkifyPaths(w.escapeHtml("see 'C:\\My Program\\config.xml' done"));
+  assert(singleQuoted.includes('&#39;<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>&#39;'),
+    "a single-quoted path (spaces included) is detected, with the quote marks left outside the span, got " + singleQuoted);
+
+  const doubleQuoted = w.linkifyPaths(w.escapeHtml('see "C:\\My Program\\config.xml" done'));
+  assert(doubleQuoted.includes('&quot;<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>&quot;'),
+    "a double-quoted path is detected through its escaped &quot; boundary, got " + doubleQuoted);
+
+  const backtickQuoted = w.linkifyPaths(w.escapeHtml('see `C:\\My Program\\config.xml` done'));
+  assert(backtickQuoted.includes('`<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>`'),
+    "a backtick-quoted path is detected too, got " + backtickQuoted);
+
+  const bareDir = w.linkifyPaths(w.escapeHtml('path C:\\Windows\\System32 is bare'));
+  assert(bareDir.includes('<span class="fp-candidate" data-fp="C:\\Windows\\System32">C:\\Windows\\System32</span>'),
+    "regression: a space-free, extension-less directory path still matches via the original fallback, got " + bareDir);
+
+  // Second follow-up (person-reported): a filename with MORE THAN ONE dot
+  // (very common — versioned files, dotted .NET assembly names) used to
+  // truncate at the first dot once an extension-anchor heuristic was
+  // introduced for the spaced case above. Fixed by never requiring an
+  // extension at all: only directory segments (each terminated by "\") may
+  // contain spaces, the final segment stays exactly as space-free as it
+  // always was, so it naturally runs to the next real space with no
+  // "where's the extension" guessing.
+  const multiDotSimple = w.linkifyPaths(w.escapeHtml('Filtered C:\\eula.1028.txt'));
+  assert(multiDotSimple.includes('<span class="fp-candidate" data-fp="C:\\eula.1028.txt">C:\\eula.1028.txt</span>'),
+    "a space-free filename with two dots is captured in full, not truncated at the first one, got " + multiDotSimple);
+
+  const multiDotSpaced = w.linkifyPaths(w.escapeHtml(
+    'Create catalog entry for assembly: C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe'));
+  assert(multiDotSpaced.includes(
+    '<span class="fp-candidate" data-fp="C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe">' +
+    'C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe</span>'),
+    "spaced directory segments AND a three-dot filename together are captured in full, got " + multiDotSpaced);
+});
+
+await withApp(async (w, d, T) => {
+  section("201b. rendered rows: a candidate always gets its dim \"detected\" underline, but the popup never opens without window.philogg (browser build)");
+
+  const cs = w.getComputedStyle;
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+
+  const span = d.querySelector(".fp-candidate");
+  assert(span && span.dataset.fp === "/var/log/app.log", "the rendered row wraps the detected path, got " + (span && span.dataset.fp));
+  assert(cs(span).textDecoration.includes("underline"),
+    "every detected candidate gets a visible underline immediately on render, before any verification — person-reported: with no cue at all, a detected path looked identical to plain text");
+  assert(!span.classList.contains("fp-verified"), "...but not the stronger .fp-verified look, since no window.philogg exists here to confirm it");
+
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  await new Promise(r => setTimeout(r, 50));
+  assert(d.querySelector("#fpPathMenu").classList.contains("hidden"),
+    "no window.philogg in this build, so hovering never opens the popup or verifies the path");
+});
+
+await withApp(async (w, d, T) => {
+  section("201c. desktop build: a candidate verifies itself right at render time, no hover needed — hovering only opens the popup from the cache");
+
+  let pathExistsCalls = 0;
+  let openedPath = null;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
+  w.philogg.openPath = p => { openedPath = p; };
+
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0)); // let the pathExists() promise settle
+
+  const span = d.querySelector(".fp-candidate");
+  assert(span.classList.contains("fp-verified"),
+    "an existing path is already marked verified right after render — no mouseover was dispatched here at all");
+  assert(pathExistsCalls === 1, "verified via exactly one pathExists() call, got " + pathExistsCalls);
+
+  const menu = d.querySelector("#fpPathMenu");
+  assert(menu.classList.contains("hidden"), "...but the popup itself still only opens on an actual hover");
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  assert(!menu.classList.contains("hidden"), "hovering an already-verified span opens the popup immediately — no debounce, no new IPC call needed");
+  assert(pathExistsCalls === 1, "...confirmed: still exactly one pathExists() call after hovering, got " + pathExistsCalls);
+
+  const items = [...menu.querySelectorAll("[data-fp-action]")].map(i => i.dataset.fpAction);
+  assert(items.includes("open") && items.includes("reveal"), "both actions are offered, got " + JSON.stringify(items));
+  fireClick(menu.querySelector('[data-fp-action="open"]'), w);
+  assert(openedPath === "/var/log/app.log", "\"Open file\" calls window.philogg.openPath with the path, got " + openedPath);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true), openPath: () => {} } });
+
+await withApp(async (w, d, T) => {
+  section("201d. two rows sharing the same path only trigger one pathExists() call (per-path cache/dedupe)");
+
+  let pathExistsCalls = 0;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
+
+  await w.addFile("a.log", makeLog(0, 5, { msgPrefix: "wrote to /var/log/shared.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0));
+
+  const spans = [...d.querySelectorAll(".fp-candidate")];
+  assert(spans.length >= 2, "sanity: more than one row rendered the same repeated path, got " + spans.length);
+  assert(spans.every(s => s.classList.contains("fp-verified")), "every occurrence of the same path gets verified, not just the first one rendered");
+  assert(pathExistsCalls === 1, "the repeated path is only checked once across all rows/renders, got " + pathExistsCalls + " call(s)");
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true) } });
+
+await withApp(async (w, d, T) => {
+  section("201e. desktop build: a nonexistent path never gets verified or opens the popup");
+
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/gone.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0));
+
+  const span = d.querySelector(".fp-candidate");
+  assert(!span.classList.contains("fp-verified"), "a nonexistent path is never marked verified");
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  assert(d.querySelector("#fpPathMenu").classList.contains("hidden"), "...and the popup never opens for it");
+}, { philogg: {
+  getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
+  pathExists: () => Promise.resolve(false),
+} });
+
+/* ============================================================
+   GROUP 202 — Clickable file paths: on/off toggle (.toggle-filepaths),
+   and extending the feature to the Full/Context view
+   Origin: this session, person-requested. A settings button in both view
+   toolbars (#contextToolbar and #filteredToolbar — same shared .toggle-X
+   convention every other display toggle already uses) turns linkifyPaths
+   on/off, default ON, persisted like every other toggle
+   (localStorage["philogg-file-path-links-enabled"]). Since both toolbars
+   already offer identical toggles for every other display feature (notes,
+   multiline, columns, textmatch, highlightmatch) and both affect their own
+   view, this session also wired linkifyPaths into
+   renderHighlightVisibleRows() (the Full/Context view) — previously it
+   only ran in renderVisibleRows() (Table/Filtered) — so the new button
+   actually controls something in the toolbar it sits in.
+   ============================================================ */
+group(202);
+await withApp(async (w, d, T) => {
+  section("202a. .toggle-filepaths: exists in both toolbars, defaults ON, persists across a click");
+
+  const btns = [...d.querySelectorAll(".toggle-filepaths")];
+  assert(btns.length === 2, "one copy in #contextToolbar, one in #filteredToolbar, got " + btns.length);
+  assert(btns.every(b => isVisible(b, w)), "both are visible");
+  assert(btns.every(b => b.classList.contains("active")) && T.filePathLinksEnabled === true,
+    "clickable file paths default ON");
+  assert(btns.every(b => b.innerHTML.includes("<svg")), "each carries an icon of its own");
+
+  fireClick(btns[0], w);
+  assert(!T.filePathLinksEnabled && btns.every(b => !b.classList.contains("active")),
+    "clicking either copy flips the shared state and updates BOTH buttons");
+  assert(w.localStorage.getItem("philogg-file-path-links-enabled") === "0", "state persisted as off");
+
+  fireClick(btns[1], w);
+  assert(T.filePathLinksEnabled && btns.every(b => b.classList.contains("active")), "clicking the other copy turns it back on");
+  assert(w.localStorage.getItem("philogg-file-path-links-enabled") === "1", "...persisted as on again");
+});
+
+await withApp(async (w, d, T) => {
+  section("202b. the toggle actually gates rendering in BOTH the Table and the Full/Context view");
+
+  const f = await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  assert(d.querySelector("#tableRows .fp-candidate"), "Table view: a candidate renders while the toggle is on");
+  assert(d.querySelector("#highlightRows .fp-candidate"),
+    "Full/Context view: a candidate renders there too — this session wired linkifyPaths into renderHighlightVisibleRows");
+
+  fireClick(d.querySelector(".toggle-filepaths"), w);
+  assert(!d.querySelector("#tableRows .fp-candidate"), "off: no candidate spans in the Table view — plain markFieldHtml output only");
+  assert(!d.querySelector("#highlightRows .fp-candidate"), "off: none in the Full/Context view either");
+  assert(d.querySelector("#tableRows .col-msg").textContent.includes("/var/log/app.log"),
+    "...the path text itself is still there, just not wrapped/linkified");
+
+  fireClick(d.querySelector(".toggle-filepaths"), w);
+  assert(d.querySelector("#tableRows .fp-candidate") && d.querySelector("#highlightRows .fp-candidate"),
+    "turning it back on restores candidates in both views");
+});
+
+await withApp(async (w, d, T) => {
+  section("202c. desktop build: verification/caching is shared across both views — a path seen in both costs one pathExists() call");
+
+  let pathExistsCalls = 0;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
+
+  const f = await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0));
+
+  const tableSpan = d.querySelector("#tableRows .fp-candidate");
+  const fullSpan = d.querySelector("#highlightRows .fp-candidate");
+  assert(tableSpan.classList.contains("fp-verified") && fullSpan.classList.contains("fp-verified"),
+    "the same path renders verified in both views");
+  assert(pathExistsCalls === 1, "...from a single shared pathExists() call, not one per view, got " + pathExistsCalls);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true) } });
 
 /* ============================================================
    Summary
@@ -25548,4 +25795,108 @@ process.exitCode = failed ? 1 : 0;
       (window.philogg.openExtractedEntry present) hands the entry's name
       and extracted bytes to that bridge call instead, and never falls back
       to window.open().
+   ============================================================ */
+
+/* ============================================================
+   Group 201 — this session (2026-09-10), person-requested: clickable local
+      file paths. linkifyPaths (extracted next to markFieldHtml) detects
+      absolute Windows/UNC/Unix paths in a rendered message field's HTML and
+      wraps them in a .fp-candidate span in EVERY build (201a covers the
+      regex itself — Windows/Unix positives, a fraction/date/URL negative,
+      and that it skips existing tags like <mark> rather than matching
+      across them). Only under a desktop wrapper does the path actually
+      verify (window.philogg.pathExists) and, if it exists, get the full
+      link look (fp-verified) plus a popup offering "Open file"/"Open
+      containing folder" (openPath/revealPath — the latter already existed
+      for #52).
+   Follow-up (same session, 2026-09-11, person-reported after building a
+      portable installer from this branch and hovering a real path for
+      over a second: nothing happened). Code review found no functional
+      bug, but a real design gap: a .fp-candidate had ZERO CSS before
+      verification succeeded — indistinguishable from plain text — and the
+      whole feature depended on a single hover-timing window (180ms
+      debounce) succeeding silently, with no way to tell "nothing
+      detected" apart from "verification silently failed". Fixed two ways:
+      (1) every .fp-candidate now gets a dim "detected" underline
+      immediately on render, regardless of build/verification — 201b
+      pins this via computed style, and that hovering still never opens
+      the popup with no window.philogg. (2) verification moved from
+      hover-triggered to eager: verifyVisibleFpCandidates(), called once
+      at the end of renderVisibleRows(), resolves every newly-seen path
+      exactly once (cached in fpPathCache, keyed by path) — hovering now
+      only ever opens the popup from that cache, no IPC call, no
+      debounce. 201c: a path verifies right after render with no
+      mouseover dispatched at all, exactly one pathExists() call total,
+      and hovering the already-verified span opens the popup immediately
+      without a second call. 201d: two rows sharing the same path (the
+      common case — a path recurring across many log lines) still cost
+      exactly one pathExists() call. 201e (was 201d): a nonexistent path
+      never gets verified or opens the popup.
+   Second follow-up (same session, 2026-09-11, person found the actual root
+      cause themselves after the hover-eagerness fix didn't help): real log
+      lines have spaces inside the path itself ("C:\My Program\config.xml")
+      and are inconsistently quoted by whatever wrote them — sometimes
+      'like this', sometimes bare — while FILE_PATH_RE excluded \s from
+      every Windows/UNC segment, so detection stopped dead at the first
+      space. Fixed with three quoted alternatives (single/double/backtick —
+      double matched via its escaped &quot; form, since linkifyPaths runs on
+      already-escaped HTML) that allow spaces freely inside an unambiguous
+      quote boundary, plus a bounded unquoted alternative that allows
+      spaces only when the match can anchor on a trailing ".ext" (capped
+      segment length so a lazy "look for any later dot" can't run into
+      unrelated trailing text) — the original no-space/no-extension
+      alternative stays as a fallback for a bare directory path like
+      C:\Windows\System32. linkifyPaths' replacer reworked to keep quote
+      characters outside the <span> rather than swallowing them into the
+      link. 201a extended: the person's exact unquoted example, the same
+      with trailing sentence text (still stops right after the extension),
+      all three quote forms, and the space-free/extension-less fallback
+      case (regression check).
+   Third follow-up (same session, 2026-09-11, person found this on their
+      own too, in two real log lines): the second follow-up's bounded
+      unquoted alternative anchored on a LAZY ".ext" search — "lazy" stops
+      at the FIRST dot-shaped thing it finds, which truncated any filename
+      with more than one dot ("C:\eula.1028.txt" -> only "C:\eula.1028";
+      "MyCompany.App.Program.exe" -> only "...MyCompany.App"). Far from
+      the rare "archive.tar.gz" edge case the second follow-up's docs
+      dismissed as low-impact — multi-dot filenames are the norm for
+      versioned files and (as in the person's own examples) dotted .NET
+      assembly names. Replaced the whole extension-anchor idea: the
+      unquoted Windows/UNC alternative now lets only DIRECTORY segments
+      (each terminated by its own "\") contain spaces; the FINAL segment
+      (the filename) stays exactly as space-free as the very first version
+      of this regex — needing no "where does it end" heuristic at all,
+      since a space still ends the match exactly like it always did. This
+      captures a multi-dot filename in full with no extension-guessing,
+      and fixes the previously-documented tar.gz limitation as a side
+      effect. 201a extended with the person's two exact examples (one
+      space-free two-dot filename, one with both spaced directories and a
+      three-dot filename).
+   ============================================================ */
+
+/* ============================================================
+   Group 202 — this session (2026-09-11), person-requested: an on/off
+      toggle for clickable file paths (default ON), a ".toggle-filepaths"
+      button in both #contextToolbar and #filteredToolbar following the
+      exact shared-class convention every other display toggle already
+      uses (toggle-notes/multiline/columns/textmatch/highlightmatch).
+      filePathLinksEnabled (localStorage "philogg-file-path-links-enabled")
+      gates the linkifyPaths call in both renderers; off, a message field
+      renders exactly as plain markFieldHtml output, no .fp-candidate spans
+      at all. Since the Context toolbar's copy would otherwise control
+      nothing (linkifyPaths only ever ran in renderVisibleRows/Table, never
+      in renderHighlightVisibleRows/Full), this session also wired it into
+      the Full/Context view — verifyVisibleFpCandidates now takes a
+      container argument (tableRows or highlightRows), applyFpVerifiedClass
+      updates BOTH containers for a path (the split view can show the same
+      path in both at once), and the hover mouseover/mouseout listeners are
+      shared functions attached to both row containers instead of being
+      tableRows-only. fpPathCache/fpPathPending stay single shared maps, so
+      a path seen in both views still costs exactly one pathExists() call.
+      202a: both button copies exist/are visible, default on, a click on
+      either flips and persists the shared state and updates both. 202b:
+      the toggle actually gates .fp-candidate rendering in both #tableRows
+      and #highlightRows (off: plain text, path content still present).
+      202c: a path appearing in both views resolves via one shared
+      pathExists() call, not one per view.
    ============================================================ */
