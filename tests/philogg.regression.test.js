@@ -242,6 +242,7 @@ async function withApp(run, opts = {}) {
       get textMatchHighlightInRows() { return textMatchHighlightInRows; },
       get textMatchHighlightInDetail() { return textMatchHighlightInDetail; },
       get highlightMatchTextEnabled() { return highlightMatchTextEnabled; },
+      get filePathLinksEnabled() { return filePathLinksEnabled; },
       get levelFilterTreeMode() { return levelFilterTreeMode; },
       set levelFilterTreeMode(v) { levelFilterTreeMode = v; },
       get tempAnchorMode() { return tempAnchorMode; },
@@ -3138,7 +3139,7 @@ group(29);
 await withApp(async (w, d) => {
   section("29b. Every icon button — header, Filter-Toolbar, and every view toolbar — shares .toolbar-icon-btn's 28x28 shape");
   const cs = w.getComputedStyle;
-  ["#btnUndo", "#btnRedo", ".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch"].forEach(sel => {
+  ["#btnUndo", "#btnRedo", ".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch", ".toggle-filepaths"].forEach(sel => {
     const btn = d.querySelector(sel);
     assert(btn !== null, "sanity: " + sel + " exists");
     const bcs = cs(btn);
@@ -21887,6 +21888,82 @@ await withApp(async (w, d, T) => {
 } });
 
 /* ============================================================
+   GROUP 200 — Clickable file paths: on/off toggle (.toggle-filepaths),
+   and extending the feature to the Full/Context view
+   Origin: this session, person-requested. A settings button in both view
+   toolbars (#contextToolbar and #filteredToolbar — same shared .toggle-X
+   convention every other display toggle already uses) turns linkifyPaths
+   on/off, default ON, persisted like every other toggle
+   (localStorage["philogg-file-path-links-enabled"]). Since both toolbars
+   already offer identical toggles for every other display feature (notes,
+   multiline, columns, textmatch, highlightmatch) and both affect their own
+   view, this session also wired linkifyPaths into
+   renderHighlightVisibleRows() (the Full/Context view) — previously it
+   only ran in renderVisibleRows() (Table/Filtered) — so the new button
+   actually controls something in the toolbar it sits in.
+   ============================================================ */
+group(200);
+await withApp(async (w, d, T) => {
+  section("200a. .toggle-filepaths: exists in both toolbars, defaults ON, persists across a click");
+
+  const btns = [...d.querySelectorAll(".toggle-filepaths")];
+  assert(btns.length === 2, "one copy in #contextToolbar, one in #filteredToolbar, got " + btns.length);
+  assert(btns.every(b => isVisible(b, w)), "both are visible");
+  assert(btns.every(b => b.classList.contains("active")) && T.filePathLinksEnabled === true,
+    "clickable file paths default ON");
+  assert(btns.every(b => b.innerHTML.includes("<svg")), "each carries an icon of its own");
+
+  fireClick(btns[0], w);
+  assert(!T.filePathLinksEnabled && btns.every(b => !b.classList.contains("active")),
+    "clicking either copy flips the shared state and updates BOTH buttons");
+  assert(w.localStorage.getItem("philogg-file-path-links-enabled") === "0", "state persisted as off");
+
+  fireClick(btns[1], w);
+  assert(T.filePathLinksEnabled && btns.every(b => b.classList.contains("active")), "clicking the other copy turns it back on");
+  assert(w.localStorage.getItem("philogg-file-path-links-enabled") === "1", "...persisted as on again");
+});
+
+await withApp(async (w, d, T) => {
+  section("200b. the toggle actually gates rendering in BOTH the Table and the Full/Context view");
+
+  const f = await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  assert(d.querySelector("#tableRows .fp-candidate"), "Table view: a candidate renders while the toggle is on");
+  assert(d.querySelector("#highlightRows .fp-candidate"),
+    "Full/Context view: a candidate renders there too — this session wired linkifyPaths into renderHighlightVisibleRows");
+
+  fireClick(d.querySelector(".toggle-filepaths"), w);
+  assert(!d.querySelector("#tableRows .fp-candidate"), "off: no candidate spans in the Table view — plain markFieldHtml output only");
+  assert(!d.querySelector("#highlightRows .fp-candidate"), "off: none in the Full/Context view either");
+  assert(d.querySelector("#tableRows .col-msg").textContent.includes("/var/log/app.log"),
+    "...the path text itself is still there, just not wrapped/linkified");
+
+  fireClick(d.querySelector(".toggle-filepaths"), w);
+  assert(d.querySelector("#tableRows .fp-candidate") && d.querySelector("#highlightRows .fp-candidate"),
+    "turning it back on restores candidates in both views");
+});
+
+await withApp(async (w, d, T) => {
+  section("200c. desktop build: verification/caching is shared across both views — a path seen in both costs one pathExists() call");
+
+  let pathExistsCalls = 0;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
+
+  const f = await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0));
+
+  const tableSpan = d.querySelector("#tableRows .fp-candidate");
+  const fullSpan = d.querySelector("#highlightRows .fp-candidate");
+  assert(tableSpan.classList.contains("fp-verified") && fullSpan.classList.contains("fp-verified"),
+    "the same path renders verified in both views");
+  assert(pathExistsCalls === 1, "...from a single shared pathExists() call, not one per view, got " + pathExistsCalls);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true) } });
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -24815,4 +24892,31 @@ process.exitCode = failed ? 1 : 0;
       effect. 199a extended with the person's two exact examples (one
       space-free two-dot filename, one with both spaced directories and a
       three-dot filename).
+   ============================================================ */
+
+/* ============================================================
+   Group 200 — this session (2026-09-11), person-requested: an on/off
+      toggle for clickable file paths (default ON), a ".toggle-filepaths"
+      button in both #contextToolbar and #filteredToolbar following the
+      exact shared-class convention every other display toggle already
+      uses (toggle-notes/multiline/columns/textmatch/highlightmatch).
+      filePathLinksEnabled (localStorage "philogg-file-path-links-enabled")
+      gates the linkifyPaths call in both renderers; off, a message field
+      renders exactly as plain markFieldHtml output, no .fp-candidate spans
+      at all. Since the Context toolbar's copy would otherwise control
+      nothing (linkifyPaths only ever ran in renderVisibleRows/Table, never
+      in renderHighlightVisibleRows/Full), this session also wired it into
+      the Full/Context view — verifyVisibleFpCandidates now takes a
+      container argument (tableRows or highlightRows), applyFpVerifiedClass
+      updates BOTH containers for a path (the split view can show the same
+      path in both at once), and the hover mouseover/mouseout listeners are
+      shared functions attached to both row containers instead of being
+      tableRows-only. fpPathCache/fpPathPending stay single shared maps, so
+      a path seen in both views still costs exactly one pathExists() call.
+      200a: both button copies exist/are visible, default on, a click on
+      either flips and persists the shared state and updates both. 200b:
+      the toggle actually gates .fp-candidate rendering in both #tableRows
+      and #highlightRows (off: plain text, path content still present).
+      200c: a path appearing in both views resolves via one shared
+      pathExists() call, not one per view.
    ============================================================ */
