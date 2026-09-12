@@ -22135,7 +22135,9 @@ group(199);
     assert(typeof T.state.inlineViewer.dataUrl === "string" && T.state.inlineViewer.dataUrl.startsWith("data:"), "the extracted bytes are turned into a data: URL, got " + (T.state.inlineViewer && T.state.inlineViewer.dataUrl));
     assert(!windowOpenCalled && !extractedCalled, "a .png entry no longer falls through to either external-open route");
     assert(d.querySelector("#inlineImageViewer").classList.contains("active"), "the inline image viewer is the active sub-view");
-    assert(!!d.querySelector("#imgViewerToolbar"), "the image viewer's zoom/pan/reset toolbar is present");
+    assert(!d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "the unified viewer toolbar is shown for an image");
+    assert(!d.querySelector('#inlineViewerToolbar [data-toolbar-group="controls"]').classList.contains("hidden"), "...with its zoom/pan/reset Controls group visible");
+    assert(!!d.querySelector("#imgZoomInBtn") && !!d.querySelector("#imgZoomOutBtn") && !!d.querySelector("#imgZoomResetBtn"), "the zoom/reset buttons are present");
   });
 
   await withApp(async (w, d, T) => {
@@ -22695,13 +22697,17 @@ group(199);
     const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
     const prettyBtn = d.querySelector("#itvPrettyPrintBtn");
 
+    const settingsGroup = d.querySelector('#inlineViewerToolbar [data-toolbar-group="settings"]');
+
     rows().find(r => r.textContent.includes("plain.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "plain.txt");
-    assert(prettyBtn.classList.contains("hidden"), "the button is hidden for a non-JSON file");
+    assert(settingsGroup.classList.contains("hidden"), "the Settings group (holding Pretty Print) is hidden for a non-JSON file");
+    assert(d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "the whole toolbar hides too, since nothing else is shown for a plain .txt file");
 
     rows().find(r => r.textContent.includes("compact.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "compact.json");
-    assert(!prettyBtn.classList.contains("hidden"), "the button is visible for a .json file");
+    assert(!settingsGroup.classList.contains("hidden"), "the Settings group is visible for a .json file");
+    assert(!d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "...so the toolbar itself is shown");
     assert(!prettyBtn.classList.contains("active"), "starts off");
 
     const originalText = d.querySelector("#inlineTextViewer").textContent;
@@ -22728,6 +22734,65 @@ group(199);
     assert(T.state.inlineViewer.prettyPrint === false, "invalid JSON never turns prettyPrint on");
     const toast = d.querySelector("#copyToast");
     assert(toast && toast.textContent.includes("broken.json"), "a toast explains why, naming the file, got " + (toast && toast.textContent));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199ae. person-requested: the \"…\" a collapsed fold shows is shifted right to align with the line-number column, instead of sitting flush-left under the fold arrows");
+
+    assert(!/\.itv-fold-ellipsis\{[^}]*padding-left:0/.test(html), "the ellipsis no longer sits flush at column 0 (under the toggle arrows)");
+    const ellipsisMatch = html.match(/\.itv-fold-ellipsis\{([^}]*)\}/);
+    assert(ellipsisMatch && /padding-left:1\.3em/.test(ellipsisMatch[1]), "it's padded in by the same 1.3em .itv-line::before (the line-number counter) uses, got " + (ellipsisMatch && ellipsisMatch[1]));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199af. bugfix (person-reported: the previously-open XML's fold arrows/text still showed \"behind\"/around a newly opened image): #inlineTextViewer now has its own .hidden{display:none} rule, so only the actually-selected viewer (per state.inlineViewer) ever renders");
+
+    assert(/#inlineTextViewer\.hidden\{display:none;?\}/.test(html), "#inlineTextViewer.hidden actually maps to display:none now");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    const zipBuf = buildZipFixture([
+      { name: "notes.xml", data: "<root>\n  <a>x</a>\n</root>", method: 0 },
+      { name: "shot.png", data: pngBytes, method: 0 },
+    ]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
+
+    rows().find(r => r.textContent.includes("notes.xml")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "notes.xml");
+    assert(d.querySelector("#inlineTextViewer").children.length > 0, "sanity: the XML actually rendered some lines");
+
+    rows().find(r => r.textContent.includes("shot.png")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "shot.png");
+    assert(d.querySelector("#inlineTextViewer").classList.contains("hidden"), "switching to the image marks the text viewer hidden");
+    assert(d.querySelector("#inlineImageViewer").classList.contains("active"), "...and the image viewer active — only one of the two is ever the shown one");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199ag. bugfix (person-reported: drag-to-zoom on an image was imprecise): imgAspectFit expands whichever side of a selection is proportionally too small for the viewport's own aspect ratio, centered on the selection's own center, instead of cropping or leaving the browser's own independent preserveAspectRatio fitting to silently skew the pixel<->data mapping");
+
+    assert(/preserveAspectRatio="none"/.test(html), "#imgViewerSvg opts out of its own independent aspect-fit — no second, unaccounted-for letterbox on top of imgAspectFit's own");
+
+    // Selection wider (relative to target aspect) than the viewport: height
+    // is the limiting/expanded side, width stays exactly as selected.
+    let fit = w.imgAspectFit(50, 50, 100, 20, 2); // target aspect 2:1
+    assert(fit.x1 - fit.x0 === 100, "width is unchanged (it was already the limiting side), got " + (fit.x1 - fit.x0));
+    assert(Math.abs((fit.y1 - fit.y0) - 50) < 1e-9, "height is expanded to 100/2=50 to match the target aspect, got " + (fit.y1 - fit.y0));
+    assert(fit.x0 === 0 && fit.x1 === 100, "the full selected width is still fully contained, got [" + fit.x0 + "," + fit.x1 + "]");
+    assert(fit.y0 <= 40 && fit.y1 >= 60, "the full selected height (40..60) is still fully contained within the expanded range, got [" + fit.y0 + "," + fit.y1 + "]");
+    assert(Math.abs((fit.y0 + fit.y1) / 2 - 50) < 1e-9, "the selection's own center (y=50) is preserved as the new domain's center");
+
+    // Selection taller than target: width is the expanded side this time.
+    fit = w.imgAspectFit(10, 10, 20, 100, 2);
+    assert(Math.abs((fit.x1 - fit.x0) - 200) < 1e-9, "width is expanded to 100*2=200, got " + (fit.x1 - fit.x0));
+    assert(fit.y1 - fit.y0 === 100, "height is unchanged, got " + (fit.y1 - fit.y0));
+    assert(Math.abs((fit.x0 + fit.x1) / 2 - 10) < 1e-9, "the selection's own center (x=10) is preserved");
+
+    // Selection already matching the target aspect: unchanged either way.
+    fit = w.imgAspectFit(0, 0, 40, 20, 2);
+    assert(Math.abs((fit.x1 - fit.x0) - 40) < 1e-9 && Math.abs((fit.y1 - fit.y0) - 20) < 1e-9,
+      "an already-matching aspect ratio passes through unchanged, got " + JSON.stringify({ w: fit.x1 - fit.x0, h: fit.y1 - fit.y0 }));
   });
 }
 
