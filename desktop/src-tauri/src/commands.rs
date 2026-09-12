@@ -9,7 +9,7 @@
 //! plus the few window actions a webview has no native say over (maximize,
 //! minimize, close, and the injected window controls).
 use std::collections::BTreeMap;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tauri::{AppHandle, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
@@ -261,6 +261,55 @@ pub fn reveal_local_url(app: AppHandle, url: String) {
     if let Some(path) = state.local_file_for_url(&url) {
         let _ = app.opener().reveal_item_in_dir(path.to_string_lossy().to_string());
     }
+}
+
+/// ZIP-sources refinement (item 3, this session): a non-log entry extracted
+/// from an opened ZIP (philogg.html's openZipEntryExternally) has only its
+/// bytes in memory — extract() never writes to disk — so this writes them
+/// to a fresh temp file and hands that path to `tauri-plugin-opener`'s
+/// `open_path`, the same plugin `reveal_path`/`reveal_local_url` above
+/// already depend on (no new crate needed). The temp file keeps the entry's
+/// own basename (not its full in-archive relative path, and sanitized down
+/// to just the basename so a malicious/unusual entry name can't escape the
+/// per-call temp subdirectory) so the OS's extension-based app resolution
+/// still works, and lives under a subdirectory unique per call (process id +
+/// a monotonic counter, no random/uuid dependency needed) so two same-named
+/// entries opened back to back — or from two different archives — never
+/// collide. Deliberately left behind afterward: the OS app that opens it may
+/// still be reading long after this command returns, same lifetime
+/// tradeoff every other use of `std::env::temp_dir()` in this file accepts.
+static OPEN_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+#[tauri::command]
+pub fn open_extracted_entry(app: AppHandle, name: String, bytes: Vec<u8>) -> Result<(), String> {
+    let basename = std::path::Path::new(&name)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "file".to_string());
+    let id = OPEN_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("philogg-zip-open-{}-{}", std::process::id(), id));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(basename);
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    app.opener()
+        .open_path(path.to_string_lossy().to_string(), None::<String>)
+        .map_err(|e| e.to_string())
+}
+
+/// Clickable-local-path feature: checks whether an absolute path the page
+/// found in a log line actually exists on this machine before offering it
+/// as a link. `std::fs::metadata` is a single syscall — safe to call on
+/// hover with no debounce concerns on the Rust side.
+#[tauri::command]
+pub fn path_exists(path: String) -> bool {
+    std::fs::metadata(&path).is_ok()
+}
+
+/// Clickable-local-path feature's "Open file" action — the file-itself
+/// counterpart of `reveal_path`'s "Open containing folder".
+#[tauri::command]
+pub fn open_path(app: AppHandle, path: String) -> Result<(), String> {
+    app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

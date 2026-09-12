@@ -636,6 +636,30 @@
   .folder-watch-note{
     padding:7px 10px; font-size:10.8px; color:var(--text-tertiary); font-style:italic;
   }
+  /* ZIP source sections (renderZipSection, near renderFolderSection): same
+     box-per-source look as folder watch (.folder-watch, .folder-watch-file,
+     .folder-watch-file-name reused directly), but with no scanning-ping
+     indicator and no settings gear — a ZIP is a one-shot listing, nothing is
+     polled and there are no auto-load rules to configure. See #zipList. */
+  #zipList{flex:0 0 auto;}
+  .zip-source-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
+  .zip-source-file{opacity:.7;}
+  /* Non-log inline-viewer lifecycle (this session, lifecycle unification):
+     a non-log entry's own row now carries the same "closed = grayed,
+     opened = normal" distinction a log file's real .tree-row already has
+     (grayed .folder-watch-file/.zip-source-file above vs. an opened file's
+     plain, non-dimmed .tree-row) plus the same accent highlight
+     .tree-row.active uses for whichever one is the currently DISPLAYED
+     entry — see renderZipEntryRow. */
+  /* color, not just opacity (bugfix, person-reported): .folder-watch-file's
+     own base rule also sets color:var(--text-tertiary) (a dim gray) for the
+     "not yet opened" look — without overriding it here too, an opened-but-
+     not-active row stayed at opacity:1 (fixed) but still LOOKED grayed out
+     because the text itself was still the dim tertiary color, unlike an
+     opened log file's real .tree-row (default color:var(--text-secondary),
+     see near .tree-row above) which this is meant to match. */
+  .zip-source-file.zip-entry-opened{opacity:1; color:var(--text-secondary);}
+  .zip-source-file.zip-entry-active{background:var(--accent-soft); color:var(--text-primary);}
   #treeActionBar{
     flex:0 0 auto; display:none; align-items:center; gap:6px; flex-wrap:wrap;
     padding:9px 12px; border-bottom:1px solid var(--border-soft); background:var(--bg-elevated);
@@ -1809,6 +1833,78 @@
     gap:10px; color:var(--text-tertiary); text-align:center; padding:40px;
   }
   #emptyState .empty-icon{color:var(--text-tertiary); opacity:.6;}
+
+  /* Inline viewers (ZIP feature, this session): a non-log ZIP entry of a
+     common type (.txt/.xml/.json, .jpg/.jpeg/.png/.tiff/.tif) renders here,
+     in the main content area, instead of being handed off to
+     openZipEntryExternally — see openZipEntryExternally's own comment for
+     which entries still go external. Sits alongside #emptyState/#tableWrap/
+     etc., shown/hidden by renderMainView the same way. */
+  #inlineViewerWrap{display:none; flex-direction:column; height:100%; min-height:0;}
+  #inlineViewerHeader{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 14px;
+    background:var(--bg-panel); border-bottom:1px solid var(--border);
+  }
+  #inlineViewerName{font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto;}
+  /* No close button here any more (this session, lifecycle unification) —
+     closing a non-log zip entry now happens through its own row in the ZIP
+     section (the same .tree-del ✕ a log file's row already uses), not a
+     separate control living on the viewer itself. See renderZipEntryRow. */
+  #inlineViewerBody{flex:1 1 auto; min-height:0; overflow:auto; position:relative;}
+  #inlineTextViewer{
+    margin:0; padding:12px 0; font-family:var(--font-mono); font-size:12px; line-height:1.6;
+    color:var(--text-primary);
+  }
+  /* Line-number gutter (this session): mirrors the app's own line-oriented
+     row look (.log-row's left gutter markers — see near .tree-row above)
+     rather than inventing a new visual language, since the main log view
+     itself has no literal "line number" column to copy (it's a
+     field-column table: time/level/thread/.../message, not line-numbered
+     text) — this is a small, new, consistently-styled addition, per the
+     plan's fallback instruction. Two-column flex row (gutter + text)
+     rather than interleaving numbers into the text nodes, so a text
+     selection/copy in the content column never includes the numbers —
+     .itv-line-num is also `user-select:none` as a second,
+     belt-and-suspenders guard (matching the pattern already used for other
+     non-selectable row chrome in this file, e.g. .th-sortable just above).
+     Hover-only reading aid (a later same-day revert of an earlier
+     click-to-highlight/select experiment, which interfered with plain
+     drag-selection — see the removed .itv-line-selected class and click
+     listener in the changelog): pure CSS :hover, no JS/state involved, no
+     `cursor:pointer` (this is plain selectable text, not a clickable row). */
+  .itv-line{display:flex; align-items:flex-start; padding:0 16px; line-height:1.6;}
+  .itv-line:hover{background:var(--bg-elevated);}
+  .itv-line-num{
+    flex:0 0 auto; min-width:3.4em; padding-right:12px; text-align:right;
+    color:var(--text-tertiary); user-select:none;
+  }
+  .itv-line-content{flex:1 1 auto; min-width:0; white-space:pre-wrap; word-break:break-word;}
+  /* Reuses the same JSON/XML token classes highlightLogMessage's own markup
+     already defines colors for elsewhere in the app (see renderHighlightView/
+     the message-highlighting section) is a log-line concept, not a generic
+     text-syntax one — there was nothing to literally reuse for JSON/XML, so
+     these are new, minimal, regex-based tokenizers (highlightJsonText/
+     highlightXmlText) using the app's own existing color tokens so a
+     JSON/XML preview reads consistently with the rest of the UI. */
+  .tok-key{color:var(--accent);}
+  .tok-string{color:#3fa860;}
+  .tok-number{color:#c98a3e;}
+  .tok-bool, .tok-null{color:#b06bcf;}
+  .tok-punct{color:var(--text-tertiary);}
+  .tok-tag{color:var(--accent);}
+  .tok-attr{color:#c98a3e;}
+  .tok-comment{color:var(--text-tertiary); font-style:italic;}
+  #inlineImageViewer{position:absolute; inset:0; display:none;}
+  #inlineImageViewer.active{display:block;}
+  #imgViewerToolbar{
+    position:absolute; top:8px; left:8px; z-index:5; display:flex; align-items:center; gap:4px;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:7px; padding:3px;
+  }
+  #imgViewerToolbar button{font-size:10.5px; padding:5px 8px;}
+  #imgViewerZoomLevel{
+    font-family:var(--font-mono); font-size:10.5px; color:var(--text-secondary); min-width:40px; text-align:center;
+  }
+  #imgViewerSvg{width:100%; height:100%; cursor:crosshair; touch-action:none;}
   #emptyState h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0;}
   #emptyState p{font-size:12px; margin:0; max-width:320px; line-height:1.6;}
 
@@ -2705,11 +2801,16 @@
     color:var(--text-secondary); cursor:pointer; transition:background .12s, color .12s;
   }
   #plotFullscreenCloseBtn:hover{background:var(--bg-elevated-3, var(--bg-elevated-2)); color:var(--text-primary);}
-  #plotDragRect{
+  /* .plot-drag-rect: the rectangle-drag-to-zoom overlay's visual, shared
+     between Plot View's own #plotDragRect and the inline image viewer's
+     #imgViewerDragRect (see "Inline viewers" below) — same look, same
+     "drag a rect, zoom to it" gesture, genuinely the same CSS rather than a
+     copy-pasted duplicate. */
+  .plot-drag-rect{
     position:absolute; border:1px solid var(--accent); background:var(--accent-soft); opacity:.55;
     pointer-events:none; z-index:4;
   }
-  #plotDragRect.hidden{display:none;}
+  .plot-drag-rect.hidden{display:none;}
   #plotTooltip{
     position:absolute; padding:4px 8px; background:var(--bg-elevated-2); border:1px solid var(--border);
     border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
@@ -2910,6 +3011,26 @@
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
   }
   #treeCtxInfoMenu.hidden{display:none;}
+
+  /* Clickable local file paths (desktop build only for the actual link —
+     see verifyVisibleFpCandidates/openFpPathMenu). EVERY detected candidate
+     gets this dim dotted underline immediately on render, in every build —
+     person-reported: with no visible cue at all before verification, a
+     detected path was indistinguishable from plain text, so there was no
+     way to tell "nothing was detected here" apart from "verification
+     silently failed". .fp-verified (added once window.philogg.pathExists
+     confirms the file is actually there) upgrades it to the real link
+     look — accent color, solid cursor. Same popup shape as
+     #addToSelectionMenu/#treeCtxInfoMenu, reusing .ctx-item/.ctx-sep. */
+  .fp-candidate{text-decoration:underline dotted; text-decoration-color:var(--border-soft);}
+  .fp-candidate.fp-verified{text-decoration-color:var(--text-tertiary); cursor:pointer;}
+  .fp-candidate.fp-verified:hover{color:var(--accent-strong); text-decoration-color:var(--accent-strong);}
+  #fpPathMenu{
+    position:fixed; z-index:51; background:var(--bg-elevated);
+    border:1px solid var(--border); border-radius:8px; padding:5px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:320px;
+  }
+  #fpPathMenu.hidden{display:none;}
 
   /* ---------- Highlight-colour picker (tree swatch) ---------- */
   #colorPickerPopup{
@@ -3180,6 +3301,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
+      <input type="file" id="zipInput" hidden accept=".zip,application/zip">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
       <input type="file" id="themeFileInput" hidden accept=".json,application/json">
@@ -3205,6 +3327,10 @@
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>
               Folder…
             </div>
+            <div class="ctx-item" data-action="zip">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M7 6v1M7 8v1M7 10v1"/></svg>
+              ZIP…
+            </div>
             <div class="ctx-item" data-action="importSession">
               <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 2v8M8 10 5.4 7.4M8 10l2.6-2.6"/></svg>
               Import session…
@@ -3222,6 +3348,7 @@
             <span id="treeActionBarLabel"></span>
           </div>
           <div id="folderWatchList"></div>
+          <div id="zipList"></div>
           <div id="tree"></div>
         </div>
       </div>
@@ -3434,6 +3561,7 @@
               <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
               <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
               <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
+              <button type="button" class="toolbar-icon-btn toggle-filepaths" title="Clickable file paths"></button>
             </div>
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
@@ -3484,6 +3612,7 @@
                 <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
                 <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
                 <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
+                <button type="button" class="toolbar-icon-btn toggle-filepaths" title="Clickable file paths"></button>
               </div>
               <span class="ctx-toolbar-sep"></span>
               <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
@@ -3540,6 +3669,35 @@
         </div>
         <h2>No log file loaded yet</h2>
         <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>.</p>
+      </div>
+
+      <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
+           comment. #inlineImageViewer mirrors Plot View's own zoom/pan/
+           rect-select-zoom interaction model and toolbar (same shared
+           .plot-drag-rect overlay, same button classes) rather than being
+           spliced into #plotWrap itself — Plot View's rendering/state is
+           tightly coupled to the extraction-table data model (extractNodeId/
+           extractColumns/extractRowsData), so an image has its own small,
+           independent SVG + the same interaction functions/constants
+           (imgZoomAt/PLOT_ZOOM_WHEEL_FACTOR/PLOT_ZOOM_BUTTON_FACTOR/
+           PLOT_DRAG_THRESHOLD_PX) instead. -->
+      <div id="inlineViewerWrap">
+        <div id="inlineViewerHeader">
+          <span id="inlineViewerName"></span>
+        </div>
+        <div id="inlineViewerBody">
+          <pre id="inlineTextViewer" class="hidden"></pre>
+          <div id="inlineImageViewer">
+            <div id="imgViewerToolbar">
+              <button type="button" id="imgZoomOutBtn" title="Zoom out">−</button>
+              <span id="imgViewerZoomLevel">100%</span>
+              <button type="button" id="imgZoomInBtn" title="Zoom in">+</button>
+              <button type="button" id="imgZoomResetBtn" title="Reset zoom">Reset</button>
+            </div>
+            <svg id="imgViewerSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div id="imgViewerDragRect" class="plot-drag-rect hidden"></div>
+          </div>
+        </div>
       </div>
 
       <div id="extractWrap">
@@ -3636,7 +3794,7 @@
             <div id="plotChartArea">
               <svg id="plotSvg" xmlns="http://www.w3.org/2000/svg"></svg>
               <canvas id="plot3dCanvas" class="hidden"></canvas>
-              <div id="plotDragRect" class="hidden"></div>
+              <div id="plotDragRect" class="plot-drag-rect hidden"></div>
               <div id="plotTooltip" class="hidden"></div>
             </div>
           </div>
@@ -3713,6 +3871,7 @@
 
   <div id="addToSelectionMenu" class="hidden"></div>
   <div id="treeCtxInfoMenu" class="hidden"></div>
+  <div id="fpPathMenu" class="hidden"></div>
 
   <div id="treeContextMenu" class="hidden"></div>
 
@@ -4635,6 +4794,11 @@ const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" s
 // that was opened automatically by a rule, not by hand.
 const ICON_FILE_AUTO = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>';
 const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>';
+// ZIP source header icon (renderZipSection) — same viewBox/stroke
+// conventions as ICON_FOLDER above (its container's own icon, which this
+// replaces): an archive box with a "zipper" strip down the middle, so a ZIP
+// source reads as visually distinct from a watched folder at a glance.
+const ICON_ZIP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.2" width="12.4" height="11.6" rx="1.2"/><path d="M8 2.2v1.6M8 5.4v1.6M8 8.6v1.6"/><rect x="6.9" y="9.6" width="2.2" height="2.2" rx="0.4"/></svg>';
 const ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
 const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
@@ -4708,6 +4872,9 @@ const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="1
 // markCombinedHtml). Deliberately NOT another pen glyph — it has to read as
 // a different thing from ICON_TEXT_MATCH_HIGHLIGHT sitting right next to it.
 const ICON_HIGHLIGHT_MATCH_TEXT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3.2h8"/><path d="M8 3.2v6.4"/><path d="M2.5 12h11"/><path d="M2.5 14.3h11"/></svg>';
+// #btnFilePathLinks — a simple link/chain glyph, toggling the clickable
+// local-file-path feature (linkifyPaths) on/off (person-requested).
+const ICON_FILE_PATH_LINKS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.8 9.2 9.2 6.8"/><path d="M7.3 4.3 8.6 3a2.2 2.2 0 0 1 3.1 3.1l-1.3 1.3"/><path d="M8.7 11.7 7.4 13a2.2 2.2 0 0 1-3.1-3.1l1.3-1.3"/></svg>';
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
@@ -5633,6 +5800,17 @@ function updateHighlightMatchTextButton() {
   btnHighlightMatchText.forEach(b => b.classList.toggle("active", highlightMatchTextEnabled));
 }
 
+// Twin of the two functions above for the clickable-file-paths toggle.
+function initFilePathLinksSetting() {
+  const stored = localStorage.getItem(FILE_PATH_LINKS_KEY);
+  filePathLinksEnabled = stored === null ? true : stored === "1";
+  updateFilePathLinksButton();
+}
+
+function updateFilePathLinksButton() {
+  btnFilePathLinks.forEach(b => b.classList.toggle("active", filePathLinksEnabled));
+}
+
 document.getElementById("settingsTextMatchHighlightScope").addEventListener("change", ev => {
   textMatchHighlightScope = ev.target.value;
   localStorage.setItem(TEXT_MATCH_HIGHLIGHT_SCOPE_KEY, textMatchHighlightScope);
@@ -5967,6 +6145,21 @@ const state = {
   //   session restore, before the person clicks "Reconnect" — see
   //   restoreWatchedFolders/reconnectFolder.
   folders: [],
+
+  // Opened ZIP sources (readZipEntries/openZipSource, near loadFileDescriptors).
+  // Each entry: { id, name, entries: [{ name, size, compressionMethod,
+  // extract(): Promise<Uint8Array> }] }. Unlike state.folders this is never
+  // persisted/restored and never polled — a ZIP is immutable once opened, so
+  // there's nothing to watch and nothing to reconnect after a reload; closing
+  // the tab drops it, exactly like a plain <input type=file> pick would.
+  zips: [],
+
+  // Inline viewer (ZIP feature): a non-log ZIP entry of a common type
+  // (text-ish or image, see INLINE_VIEWER_EXTENSIONS) shown in the main
+  // content area instead of being handed to openZipEntryExternally.
+  // { kind: "text"|"image", name, text (kind "text") or dataUrl (kind
+  // "image") } or null. Ephemeral like state.zips itself — never persisted.
+  inlineViewer: null,
 
   // Log format definitions + filename-pattern rules (Settings -> Format
   // Manager, see "Log format definitions"). Loaded once at boot via
@@ -8200,6 +8393,13 @@ let textMatchHighlightInDetail = true;
 const HIGHLIGHT_MATCH_TEXT_KEY = "philogg-highlight-match-text";
 let highlightMatchTextEnabled = true;
 
+// Clickable local file paths (person-requested toggle, default ON): gates
+// linkifyPaths in both renderVisibleRows and renderHighlightVisibleRows —
+// off, a message field renders exactly as markFieldHtml alone would (no
+// .fp-candidate spans at all, so no underline/hover cost either).
+const FILE_PATH_LINKS_KEY = "philogg-file-path-links-enabled";
+let filePathLinksEnabled = true;
+
 /* Level bar / filter-tree mode (Settings -> Behavior, FEATURE_BACKLOG.md
    #10) — "auto" (default): clicking a level button upserts a real
    filterType:"level" node at the current tree position (see
@@ -8499,6 +8699,60 @@ function markFieldHtml(mm, text, columnKey) {
   return markCombinedHtml(text,
     matchRangesFor(text, columnKey, mm.nodes, mm.specs),
     highlightMatchRangesFor(text, columnKey, mm.hlNodes, mm.hlSpecs));
+}
+
+// Clickable local file paths (desktop build only — see openFpPathMenu):
+// detects absolute Windows/UNC/Unix paths inside a rendered field's HTML.
+// Runs on already-escaped HTML (markFieldHtml's output), not raw text, so it
+// has to skip existing tags (e.g. <mark> from match/highlight marking)
+// rather than run over the whole string — see linkifyPaths' tag split — and
+// match against escaped quote entities (&#39;/&quot;), not literal '/", when
+// a path is quoted in the source log line.
+//
+// Person-reported (this session, follow-up): real log lines often have
+// spaces in the path itself ("C:\My Program\config.xml") and are
+// inconsistently quoted by whatever wrote them — sometimes 'like this',
+// sometimes bare. Five alternatives, tried in this order:
+//   1-3. A path wrapped in '...', "..." (escaped &#39;/&quot;) or `...` — an
+//        UNAMBIGUOUS boundary, so the inner path may contain spaces freely,
+//        matched lazily up to the closing quote (own capture group each, so
+//        linkifyPaths can keep the quote chars outside the <span>).
+//   4. An UNQUOTED Windows/UNC path: each DIRECTORY segment (terminated by
+//      its own "\") may contain spaces ("Program Files", "My Program"), but
+//      the FINAL segment (the filename) does not — reusing the original
+//      no-space class there needs no "where does an unquoted path end"
+//      heuristic at all, since a space still ends the match exactly like it
+//      always did. This also means a filename with more than one dot
+//      (eula.1028.txt, a dotted .NET assembly name like
+//      MyCompany.App.Program.exe) is captured in full — an earlier version
+//      of this alternative anchored the final segment on a lazy ".ext"
+//      search instead, which stopped at the FIRST dot in a multi-dot
+//      filename and silently truncated both of those real examples.
+//   5. The original Unix alternative, unchanged — spaces are rare/less
+//      idiomatic there, and neither report involved one.
+// The negative lookbehind on the Unix alternative rejects a match starting
+// right after a word character, ":" or "/" — without it "https://host/path"
+// would linkify as "//host/path" from the URL's own double slash.
+const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&quot;|`((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)`|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)*[^\\/:*?"<>|\r\n\s]+|\\\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)+[^\\/:*?"<>|\r\n\s]+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
+
+// Wraps every detected path candidate in a span the hover popup (see
+// openFpPathMenu) can key off. The path text (whichever of FILE_PATH_RE's
+// quoted capture groups matched, or the whole match for an unquoted one) is
+// already HTML-escaped (it came out of an escaped token), so it's safe to
+// reuse verbatim both as the span's content and as its data-fp attribute
+// value — the HTML parser decodes entities in attributes the same way it
+// does in text. A quote match keeps its quote characters OUTSIDE the span
+// (plain punctuation around the link, not part of it).
+function linkifyPaths(html) {
+  if (!html) return html;
+  return html.split(/(<[^>]+>)/).map(part =>
+    part.charAt(0) === "<" ? part :
+      part.replace(FILE_PATH_RE, (m, sq, dq, bt) => {
+        const path = sq || dq || bt || m;
+        const quote = sq !== undefined ? "&#39;" : dq !== undefined ? "&quot;" : bt !== undefined ? "`" : "";
+        return quote + '<span class="fp-candidate" data-fp="' + path + '">' + path + '</span>' + quote;
+      })
+  ).join("");
 }
 
 // Filter results only ever change for a node when it (or an ancestor) gets
@@ -9291,6 +9545,7 @@ const el = sel => document.querySelector(sel);
 const elAll = sel => [...document.querySelectorAll(sel)];
 const treeEl = el("#tree");
 const breadcrumbEl = el("#breadcrumb");
+const breadcrumbBarEl = el("#breadcrumbBar");
 const levelBarEl = el("#levelBar");
 const btnApplyLevelToTree = el("#btnApplyLevelToTree");
 const tableBody = el("#tableBody");
@@ -9359,6 +9614,7 @@ const highlightHeaderEl = el("#highlightHeader");
 const btnColumns = elAll(".toggle-columns");
 const btnTextMatchHighlight = elAll(".toggle-textmatch");
 const btnHighlightMatchText = elAll(".toggle-highlightmatch");
+const btnFilePathLinks = elAll(".toggle-filepaths");
 const columnsPanel = el("#columnsPanel");
 const btnResetColumns = el("#btnResetColumns");
 const columnToggleInputs = {
@@ -10154,6 +10410,45 @@ function render() {
 // for why).
 function renderMainView() {
   const hasFiles = state.rootIds.length > 0;
+  // Tab bar (#breadcrumbBar) UI fix, this session: hidden whenever the
+  // active/displayed content isn't a log tab — nothing loaded at all, or a
+  // non-log inline viewer (image/syntax-highlighted text) is the active
+  // content instead, since breadcrumb chips are a log-filter-tree concept
+  // with nothing meaningful to show either way. Set here (not left to
+  // renderBreadcrumb itself) since both conditions this checks — hasFiles,
+  // state.inlineViewer — are exactly renderMainView's own inputs below.
+  breadcrumbBarEl.style.display = (hasFiles && !state.inlineViewer) ? "" : "none";
+  if (state.inlineViewer) {
+    // Bug 3 fix (person-reported): the minimap is a log-view-only concept
+    // (see timelineMinimapEl's other gating below, all keyed on a log node
+    // actually being the active content) — this early-return branch never
+    // touched it at all, so whatever visibility it had before switching to
+    // a non-log entry just stuck, including staying visible after the
+    // underlying log file was closed entirely while this non-log viewer
+    // stayed open (this branch returns before the `!hasFiles` block further
+    // down ever runs). Same condition as breadcrumbBarEl right above.
+    timelineMinimapEl.classList.add("hidden");
+    emptyState.style.display = "none";
+    viewBarEl.style.display = "none";
+    tableWrap.style.display = "none";
+    extractWrap.style.display = "none";
+    linkWrap.style.display = "none";
+    fhTabs.style.display = "none";
+    fhSplit.style.display = "none";
+    // Bug 1 fix (person-reported): Entry Detail is a log-row concept (its
+    // other two gates, 10402 and 18564, both key off hasFiles/an actual log
+    // node) — this early-return branch never touched it either, same class
+    // of oversight as the minimap fix right above it.
+    detailPanel.style.display = "none";
+    detailResizer.style.display = "none";
+    inlineViewerWrap.style.display = "flex";
+    inlineViewerNameEl.textContent = state.inlineViewer.name;
+    inlineViewerNameEl.title = state.inlineViewer.name;
+    if (state.inlineViewer.kind === "text") renderInlineTextViewer(state.inlineViewer);
+    else renderInlineImageViewer(state.inlineViewer);
+    return;
+  }
+  inlineViewerWrap.style.display = "none";
   emptyState.style.display = hasFiles ? "none" : "flex";
   // #viewBar has nothing meaningful to show with zero files loaded —
   // person-requested (predates this rework): only #emptyState's centered
@@ -10356,13 +10651,16 @@ function buildLevelNodeLabelContent(node) {
 
 function renderTree() {
   renderFolderWatchList();
+  renderZipList();
   treeEl.innerHTML = "";
   // A file loaded from a watched folder renders inside its folder's own
   // section (renderFolderSection, above) instead of here, so its position
   // in the folder's file order stays visible — skip it in this plain list.
+  // Same idea for a file opened from a ZIP source (node.zipId) — it renders
+  // nested inside its zip's own renderZipSection container instead.
   state.rootIds.forEach(id => {
     const node = state.nodes[id];
-    if (node && node.folderId) return;
+    if (node && (node.folderId || node.zipId)) return;
     treeEl.appendChild(renderNode(id, 0));
   });
   renderTreeActionBar();
@@ -10375,9 +10673,24 @@ function renderTree() {
 // top-to-bottom layout (renderNode walks state.rootIds/children the same
 // way) — the order arrow-key tree navigation (moveTreeSelection) steps
 // through.
+// Virtual nav-id for an opened non-log zip entry (bugfix, person-reported):
+// these never get a real state.nodes entry (renderZipEntryRow's own
+// comment explains why — there's no filter tree to hang off a plain text/
+// image viewer), so Alt+Up/Down had nothing to land on for them at all.
+// Tagged distinctly from real node ids (which are plain numbers/strings
+// from newCacheKey) so moveTreeSelection can tell them apart without
+// touching state.nodes.
+function zipViewerNavId(zipId, entryName) { return "zipviewer:" + zipId + ":" + entryName; }
+function isZipViewerNavId(id) { return typeof id === "string" && id.startsWith("zipviewer:"); }
+function parseZipViewerNavId(id) {
+  const rest = id.slice("zipviewer:".length);
+  const sep = rest.indexOf(":");
+  return { zipId: rest.slice(0, sep), entryName: rest.slice(sep + 1) };
+}
+
 function flattenTreeIds() {
   const ids = [];
-  (function walk(list) {
+  function walk(list) {
     list.forEach(id => {
       const node = state.nodes[id];
       // A queued placeholder (see createQueuedFileNode) has nothing to
@@ -10390,7 +10703,39 @@ function flattenTreeIds() {
       // renderNode's own row-recursion follows.
       if (node && !node.collapsed) walk(node.children);
     });
-  })(state.rootIds);
+  }
+  // Main tree: a node with node.zipId never renders here (renderTree skips
+  // it — it nests inside its own zip's renderZipSection container instead),
+  // so it's excluded from this top-level walk too and picked up below, in
+  // its actual visual position within its zip's entry list.
+  walk(state.rootIds.filter(id => {
+    const node = state.nodes[id];
+    return !(node && node.zipId);
+  }));
+  // ZIP sections (bugfix, person-reported: nav order didn't match the
+  // visual order — every opened non-log entry was being tacked on as one
+  // block AFTER the whole main tree, regardless of where its zip container
+  // actually sits, and even within one zip a real tree node for an opened
+  // log entry landed wherever it happened to sit in state.rootIds — usually
+  // "whenever it was opened" — instead of its zip's alphabetical listing
+  // position). Mirrors renderZipSection's own walk EXACTLY: per zip (in
+  // state.zips order, matching renderZipList), per zip.entries order (the
+  // alphabetical listing order the container actually renders), either the
+  // real open tree node — found the same way renderZipSection looks it up,
+  // by node.zipId + node.name — and its children, or (for a non-log entry
+  // with no real node) the virtual stand-in id, but only once it's actually
+  // been opened (an unopened placeholder row has nothing to select/copy and
+  // stays unreachable by design, same as before this fix).
+  state.zips.forEach(zip => {
+    zip.entries.forEach(entry => {
+      const openId = state.rootIds.find(id => {
+        const n = state.nodes[id];
+        return n && n.zipId === zip.id && n.name === entry.name;
+      });
+      if (openId) walk([openId]);
+      else if (zip.inlineViewers.has(entry.name)) ids.push(zipViewerNavId(zip.id, entry.name));
+    });
+  });
   return ids;
 }
 
@@ -10432,10 +10777,19 @@ function moveTreeSelection(key) {
   const ids = flattenTreeIds();
   if (ids.length === 0) return;
   const node = state.nodes[state.activeId];
+  // Bugfix (person-reported): when a non-log zip entry's inline viewer is
+  // the thing currently shown, "where we are" in the nav list isn't
+  // state.activeId (that still points at whatever real tree node was
+  // active before the viewer opened) — it's the entry's own virtual id,
+  // so Up/Down steps relative to IT instead of jumping back to the stale
+  // real-node position.
+  const currentId = (state.inlineViewer && state.inlineViewer.zipId)
+    ? zipViewerNavId(state.inlineViewer.zipId, state.inlineViewer.entryName)
+    : state.activeId;
 
   let targetId = null;
   if (key === "ArrowDown" || key === "ArrowUp") {
-    const idx = node ? ids.indexOf(state.activeId) : -1;
+    const idx = ids.indexOf(currentId);
     const delta = key === "ArrowDown" ? 1 : -1;
     const nextIdx = idx === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, idx + delta));
     targetId = ids[nextIdx];
@@ -10446,6 +10800,20 @@ function moveTreeSelection(key) {
   }
   if (!targetId) return;
 
+  if (isZipViewerNavId(targetId)) {
+    const { zipId, entryName } = parseZipViewerNavId(targetId);
+    const zip = state.zips.find(z => z.id === zipId);
+    const viewer = zip && zip.inlineViewers.get(entryName);
+    if (!viewer) return;
+    activateInlineViewer(viewer);
+    render();
+    return;
+  }
+
+  // Landing on a real tree node always hides a non-log viewer — same rule
+  // a plain tree-row click and a brand-new zip log entry open already
+  // follow (see renderNode's click handler / openZipEntry's own comment).
+  state.inlineViewer = null;
   applyTempAnchorOnActiveNodeSwitch(targetId);
   state.multiSelect = new Set([targetId]);
   state.activeId = targetId;
@@ -10919,6 +11287,12 @@ function renderNode(id, depth, opts) {
     }
     applyTempAnchorOnActiveNodeSwitch(id);
     state.activeId = id;
+    // Selecting a real tree row (a log file or a filter) always hides any
+    // currently-shown non-log inline viewer (this session, lifecycle
+    // unification) — matches "only one log's content shows at a time",
+    // now extended to "or one non-log entry's content". Harmless no-op
+    // when nothing was open.
+    state.inlineViewer = null;
     // Same choice as Alt+Arrow tree nav (see the keydown handler's comment):
     // a mouse click on a filter switches the active filter but should not
     // steal arrow-key focus away from the log — leave focusRegion as
@@ -14498,7 +14872,8 @@ function renderVisibleRows() {
     const threadHtml = markFieldHtml(mm, e.thread, "thread");
     const locHtml = markFieldHtml(mm, e.locationShort, "location");
     const methodHtml = markFieldHtml(mm, e.method, "method");
-    const msgHtml = markFieldHtml(mm, e.message, "message");
+    const msgHtmlBase = markFieldHtml(mm, e.message, "message");
+    const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
     row.className = cls;
     row.style.height = baseRowHeightForEntry(e) + "px";
@@ -14522,6 +14897,7 @@ function renderVisibleRows() {
   }
   tableRows.innerHTML = "";
   tableRows.appendChild(frag);
+  verifyVisibleFpCandidates(tableRows);
   syncTableHeaderWidth();
 }
 
@@ -15542,6 +15918,8 @@ function renderHighlightVisibleRows() {
     // rule-marking toggle off), so this stays a plain escapeHtml call in the
     // common case — same shape as renderVisibleRows.
     const timeText = formatTime(e.ts);
+    const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message");
+    const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
     row.innerHTML =
       markerHtml +
       (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
@@ -15552,7 +15930,7 @@ function renderHighlightVisibleRows() {
       '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + markFieldHtml(mm, e.thread, "thread") + '</span>' +
       '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + markFieldHtml(mm, e.locationShort, "location") + '</span>' +
       '<span class="col-method" title="' + escapeHtml(e.method) + '">' + markFieldHtml(mm, e.method, "method") + '</span>' +
-      '<span class="col-msg">' + markFieldHtml(mm, e.message, "message") + '</span>';
+      '<span class="col-msg">' + hlMsgHtml + '</span>';
     // A PLAIN click is a jump to that match and gets the expansion treatment
     // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
     // gesture and must leave the row list alone, or the range the person is
@@ -15573,6 +15951,7 @@ function renderHighlightVisibleRows() {
   }
   highlightRows.innerHTML = "";
   highlightRows.appendChild(frag);
+  verifyVisibleFpCandidates(highlightRows);
   syncHighlightHeaderWidth();
 }
 
@@ -17957,6 +18336,18 @@ btnHighlightMatchText.forEach(b => b.addEventListener("click", () => {
   updateDetailPanel();
 }));
 
+// Twin handler for the clickable-file-paths toggle — re-renders both views
+// so a message field immediately picks up (or drops) its .fp-candidate
+// spans; no updateDetailPanel() call needed, the detail panel doesn't show
+// linkified paths.
+btnFilePathLinks.forEach(b => b.addEventListener("click", () => {
+  filePathLinksEnabled = !filePathLinksEnabled;
+  localStorage.setItem(FILE_PATH_LINKS_KEY, filePathLinksEnabled ? "1" : "0");
+  updateFilePathLinksButton();
+  renderVisibleRows();
+  renderHighlightVisibleRows();
+}));
+
 /* ===================== Log view column visibility / width (FEATURE_BACKLOG.md
    "Column visibility / width persistence in the log view") =====================
    Applied entirely through the --row-grid CSS custom property (already the
@@ -18498,8 +18889,839 @@ openMenu.addEventListener("click", ev => {
   closeOpenMenu();
   if (item.dataset.action === "files") openFilesPicker();
   else if (item.dataset.action === "folder") openFolderPickerFlow();
+  else if (item.dataset.action === "zip") openZipPickerFlow();
   else if (item.dataset.action === "importSession") importSessionFromFile();
 });
+
+/* ===================== ZIP sources (open a .zip as a log source) =====================
+   Distinct from folder watch (state.folders): a ZIP is immutable once
+   opened, so there's no scanning/polling/auto-rule machinery here at all —
+   just a one-shot read of the ZIP's central directory to list entries
+   (readZipEntries), then a lazy per-entry inflate on double-click
+   (extract(), via the native DecompressionStream('deflate-raw') Web API —
+   no unzip library, works identically in the browser build and the Tauri
+   desktop build since both webviews implement it). Nothing is extracted in
+   bulk and nothing is written to disk (an "open externally" target gets a
+   throwaway OS temp file, on the desktop build only — see
+   openZipEntryExternally); only the entry a person actually opens gets
+   read+inflated. See PROJECT.md's file-loading section and
+   docs/persistence-and-sync.md for the full picture.
+
+   Every entry is listed and openable, not just recognized log files
+   (isLogZipEntry, reusing folder watch's own FOLDER_WATCH_EXTENSIONS
+   notion of "log file"): double-clicking a log entry loads it into a tab
+   via loadFileDescriptors, same as any other route; double-clicking
+   anything else (openZipEntryExternally) hands the extracted bytes to the
+   OS's default app under the desktop wrapper, or opens a Blob-URL browser
+   tab otherwise. Same double-click interaction either way, matching folder
+   watch's own renderInactiveFileRow -> loadFolderFile pattern exactly.
+
+   ZIP layout this reads (ZIP64 not implemented — not needed for the log
+   files this app targets, which are far below the 4GB/65535-entry
+   thresholds ZIP64 exists for; a ZIP requiring it fails to parse with a
+   toast rather than silently producing a truncated listing):
+     End Of Central Directory (EOCD), signature 0x06054b50, found by
+       scanning backward from the file's tail (it's followed only by an
+       optional comment, at most 65535 bytes) — gives the central
+       directory's offset/size and total entry count.
+     Central Directory File Headers, signature 0x02014b50, one per entry,
+       read as a single contiguous block — name, compression method,
+       compressed/uncompressed size, and the entry's Local File Header
+       offset. No CRC check (per the plan: these files are always complete,
+       integrity checking isn't a real problem here).
+     Local File Header, signature 0x04034b50, read lazily inside extract()
+       — its name/extra field lengths can differ from the central
+       directory's own copy, so the actual compressed-data offset has to be
+       computed from THIS header, not assumed from the central one. */
+
+const ZIP_EOCD_SIG = 0x06054b50;
+const ZIP_CENTRAL_SIG = 0x02014b50;
+const ZIP_LOCAL_SIG = 0x04034b50;
+const ZIP_EOCD_MIN_SIZE = 22;
+const ZIP_EOCD_MAX_COMMENT = 65535;
+
+// Reads only the EOCD + central directory (never the file data itself) and
+// returns [{ name, size, compressionMethod, extract() }]. `source` is
+// anything Blob-shaped (File, or a Blob built from raw bytes in tests) —
+// read via .slice()/.arrayBuffer() the same way tailing already reads File
+// byte ranges (see loadOneFileIntoTree/urlTailHandle), so this works
+// unchanged whether the ZIP came from a picker, a drop, or (in tests) an
+// in-memory Blob.
+async function readZipEntries(source) {
+  const fileSize = source.size;
+  if (fileSize < ZIP_EOCD_MIN_SIZE) throw new Error("Not a ZIP file (too small)");
+  const tailSize = Math.min(fileSize, ZIP_EOCD_MIN_SIZE + ZIP_EOCD_MAX_COMMENT);
+  const tailBuf = await source.slice(fileSize - tailSize, fileSize).arrayBuffer();
+  const tailView = new DataView(tailBuf);
+  let eocdPos = -1;
+  for (let i = tailBuf.byteLength - ZIP_EOCD_MIN_SIZE; i >= 0; i--) {
+    if (tailView.getUint32(i, true) === ZIP_EOCD_SIG) { eocdPos = i; break; }
+  }
+  if (eocdPos < 0) throw new Error("Not a ZIP file (no end-of-central-directory record found)");
+  const totalEntries = tailView.getUint16(eocdPos + 10, true);
+  const cdSize = tailView.getUint32(eocdPos + 12, true);
+  const cdOffset = tailView.getUint32(eocdPos + 16, true);
+  // ZIP64 tell: a plain EOCD stores these as 0xFFFF/0xFFFFFFFF when the
+  // real values need the ZIP64 extension this reader doesn't implement.
+  if (totalEntries === 0xffff || cdOffset === 0xffffffff || cdSize === 0xffffffff) {
+    throw new Error("This ZIP uses the ZIP64 format, which isn't supported");
+  }
+
+  const cdBuf = await source.slice(cdOffset, cdOffset + cdSize).arrayBuffer();
+  const cdView = new DataView(cdBuf);
+  const cdBytes = new Uint8Array(cdBuf);
+  const decoder = new TextDecoder();
+  const entries = [];
+  let pos = 0;
+  for (let i = 0; i < totalEntries; i++) {
+    if (pos + 46 > cdBuf.byteLength || cdView.getUint32(pos, true) !== ZIP_CENTRAL_SIG) {
+      throw new Error("Malformed ZIP central directory");
+    }
+    const compressionMethod = cdView.getUint16(pos + 10, true);
+    const compressedSize = cdView.getUint32(pos + 20, true);
+    const uncompressedSize = cdView.getUint32(pos + 24, true);
+    const nameLen = cdView.getUint16(pos + 28, true);
+    const extraLen = cdView.getUint16(pos + 30, true);
+    const commentLen = cdView.getUint16(pos + 32, true);
+    const localHeaderOffset = cdView.getUint32(pos + 42, true);
+    const nameBytes = cdBytes.subarray(pos + 46, pos + 46 + nameLen);
+    const name = decoder.decode(nameBytes);
+    pos += 46 + nameLen + extraLen + commentLen;
+    // Directory entries (name ends in "/") carry no data of their own —
+    // skip them, there's nothing a double-click could ever extract.
+    if (name.endsWith("/")) continue;
+    entries.push({
+      name,
+      size: uncompressedSize,
+      compressionMethod,
+      compressedSize,
+      localHeaderOffset,
+      // Lazy: reads and inflates ONLY this entry's bytes, only when called.
+      // The plan's key constraint — double-clicking one row must never
+      // touch any other entry's data.
+      async extract() {
+        const headBuf = await source.slice(localHeaderOffset, localHeaderOffset + 30).arrayBuffer();
+        const headView = new DataView(headBuf);
+        if (headView.getUint32(0, true) !== ZIP_LOCAL_SIG) throw new Error("Malformed ZIP local file header");
+        const localNameLen = headView.getUint16(26, true);
+        const localExtraLen = headView.getUint16(28, true);
+        const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
+        const compressedBuf = await source.slice(dataStart, dataStart + compressedSize).arrayBuffer();
+        if (compressionMethod === 0) return new Uint8Array(compressedBuf); // stored, no compression
+        if (compressionMethod === 8) {
+          const ds = new DecompressionStream("deflate-raw");
+          const writer = ds.writable.getWriter();
+          writer.write(new Uint8Array(compressedBuf));
+          writer.close();
+          const inflatedBuf = await new Response(ds.readable).arrayBuffer();
+          return new Uint8Array(inflatedBuf);
+        }
+        throw new Error(`Unsupported ZIP compression method (${compressionMethod}) for "${name}"`);
+      },
+    });
+  }
+  return entries;
+}
+
+// Opens `source` (a File, or anything Blob-shaped) as a new ZIP source:
+// reads the central directory once (fast — no inflate) and adds it to
+// state.zips, parallel to but independent from state.folders (see its own
+// comment) — never persisted/restored, since re-opening after a reload
+// would need the actual file picked again anyway (no live handle to a ZIP
+// on disk, same as a plain <input type=file> pick).
+async function openZipSource(source, name) {
+  let entries;
+  try {
+    entries = await readZipEntries(source);
+  } catch (err) {
+    showCopyToast(`Couldn't open "${name}" as a ZIP (${err.message})`);
+    return null;
+  }
+  // inlineViewers (this session): name -> cached inline-viewer object for
+  // every non-log entry that has been opened at least once, so its row can
+  // toggle back to "active"/re-show its content on a plain click without
+  // re-extracting/re-decoding the entry (see renderZipEntryRow). Not
+  // persisted, same as the zip source itself.
+  const zip = { id: newCacheKey(), name, entries, inlineViewers: new Map() };
+  state.zips.push(zip);
+  render();
+  return zip;
+}
+
+function removeZipSource(zipId) {
+  if (state.inlineViewer && state.inlineViewer.zipId === zipId) state.inlineViewer = null;
+  state.zips = state.zips.filter(z => z.id !== zipId);
+  render();
+}
+
+// Mirrors openFilesPicker/openFolderPickerFlow's shape, but deliberately
+// uses the plain <input type=file> uniformly for both the browser build and
+// the Tauri desktop build (per the plan: this doesn't need to be Tauri-
+// exclusive — the Tauri bridge has no native zip-filtered picker, and a
+// plain <input> works fine inside its webview too), rather than branching
+// on window.philogg like openFilesPicker/openFolderPickerFlow do.
+const zipInput = el("#zipInput");
+function openZipPickerFlow() { zipInput.click(); }
+zipInput.addEventListener("change", ev => {
+  const file = ev.target.files[0];
+  zipInput.value = "";
+  if (file) openZipSource(file, file.name);
+});
+
+const zipListEl = el("#zipList");
+function renderZipList() {
+  zipListEl.innerHTML = "";
+  state.zips.forEach(zip => zipListEl.appendChild(renderZipSection(zip)));
+}
+
+// Visually a folder-watch box (reuses .folder-watch/-header/-name/-close/
+// -files/-file/-file-name/-note directly), but WITHOUT the two pieces of
+// chrome that only make sense for something being actively watched: no
+// scanning-ping indicator (.folder-watch-icon.scanning — nothing here is
+// polled) and no settings gear (no auto-open/auto-close rules apply to an
+// immutable ZIP). Rows are inert until double-clicked.
+function renderZipSection(zip) {
+  const box = document.createElement("div");
+  box.className = "folder-watch";
+
+  const header = document.createElement("div");
+  header.className = "folder-watch-header";
+  const icon = document.createElement("span");
+  icon.className = "folder-watch-icon zip-source-icon";
+  icon.innerHTML = ICON_ZIP;
+  icon.title = "ZIP archive (opened read-only, not watched)";
+  header.appendChild(icon);
+  const nameEl = document.createElement("span");
+  nameEl.className = "folder-watch-name";
+  nameEl.textContent = zip.name;
+  nameEl.title = zip.name;
+  header.appendChild(nameEl);
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "folder-watch-close";
+  closeBtn.innerHTML = ICON_CLOSE;
+  closeBtn.title = "Remove this ZIP from the list";
+  closeBtn.addEventListener("click", () => removeZipSource(zip.id));
+  header.appendChild(closeBtn);
+  box.appendChild(header);
+
+  if (zip.entries.length) {
+    const list = document.createElement("div");
+    list.className = "folder-watch-files";
+    // Mixes real tree rows (renderNode, for an already-opened entry) with
+    // inert placeholder rows (renderZipEntryRow) for everything not opened
+    // yet — same "opened files stay visible in their container's own order"
+    // idea as renderFolderSection above. A zip entry has no persisted
+    // "files" record to carry a nodeId the way folder.files does (see
+    // openZipEntry's own comment on why: zip sources are never persisted),
+    // so instead this looks the open node up directly by node.zipId +
+    // node.name, which openZipEntry/loadFileDescriptors tag on the node
+    // from the very first (queued-placeholder) render.
+    zip.entries.forEach(entry => {
+      const openId = state.rootIds.find(id => {
+        const n = state.nodes[id];
+        return n && n.zipId === zip.id && n.name === entry.name;
+      });
+      if (openId) list.appendChild(renderNode(openId, 0, { folderTopLevelNoChevron: true }));
+      else list.appendChild(renderZipEntryRow(zip, entry));
+    });
+    box.appendChild(list);
+  } else {
+    const note = document.createElement("div");
+    note.className = "folder-watch-note";
+    note.textContent = "No files in this archive";
+    box.appendChild(note);
+  }
+  return box;
+}
+
+// Non-log, inline-viewable entries (.txt/.xml/.json, .jpg/.png/... — see
+// inlineViewableKind) get the SAME open/select/close lifecycle a log
+// entry's own real .tree-row already has once opened (renderNode's
+// click-to-select + hover .tree-del ✕ — see that function above), applied
+// here to this placeholder row instead, since a non-log entry never
+// becomes a real tree node: `zip.inlineViewers` (name -> cached viewer
+// object) is this row's stand-in for "does state.nodes have an open node
+// for this entry", so a plain click can re-select an already-opened entry
+// without re-extracting it, and the row's own ✕ (reusing .tree-del as-is)
+// closes it — no separate close button on the viewer itself any more (see
+// #inlineViewerHeader's own comment). A log entry, or a non-log entry of a
+// type with no inline viewer (still routed through openZipEntryExternally),
+// keeps the original dblclick-only, no-persistent-row-state behavior.
+function renderZipEntryRow(zip, entry) {
+  const kind = inlineViewableKind(entry.name);
+  const cachedViewer = kind ? zip.inlineViewers.get(entry.name) : null;
+  const isActive = !!cachedViewer && state.inlineViewer &&
+    state.inlineViewer.zipId === zip.id && state.inlineViewer.entryName === entry.name;
+
+  const row = document.createElement("div");
+  row.className = "folder-watch-file zip-source-file" +
+    (cachedViewer ? " zip-entry-opened" : "") + (isActive ? " zip-entry-active" : "");
+  row.title = cachedViewer ? `Click to view "${entry.name}"` : `Double-click to open "${entry.name}"`;
+  const icon = document.createElement("span");
+  icon.className = "tree-icon";
+  icon.innerHTML = ICON_FILE;
+  row.appendChild(icon);
+  const label = document.createElement("span");
+  label.className = "folder-watch-file-name";
+  label.textContent = entry.name;
+  row.appendChild(label);
+
+  if (cachedViewer) {
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "tree-del";
+    del.innerHTML = ICON_CLOSE;
+    del.title = "Close";
+    del.addEventListener("click", ev => {
+      ev.stopPropagation();
+      zip.inlineViewers.delete(entry.name);
+      if (isActive) state.inlineViewer = null;
+      render();
+    });
+    row.appendChild(del);
+  }
+
+  row.addEventListener("click", () => {
+    // Only an already-opened entry responds to a plain click (matching a
+    // real tree row's click-to-select) — opening for the first time is
+    // still a double-click, same convention every zip entry row already
+    // uses (see the row's own title above).
+    if (!cachedViewer) return;
+    activateInlineViewer(cachedViewer);
+    render();
+  });
+  row.addEventListener("dblclick", () => openZipEntry(entry, zip));
+  return row;
+}
+
+// Same "is this a log file?" question folder watch's scan filter already
+// answers (FOLDER_WATCH_EXTENSIONS/isCompatibleFolderFile, above) — reused
+// as-is rather than inventing a second notion of "log file", per the plan.
+// `entry.name` is the ZIP entry's full relative path (e.g. "sub/app.log"),
+// but only the extension matters here, same as isCompatibleFolderFile itself.
+function isLogZipEntry(entry) { return isCompatibleFolderFile(entry.name); }
+
+// Minimal extension -> MIME map for the "open externally" path (item 3):
+// only needs to be good enough for a browser tab (img/video/audio render
+// inline, text/pdf/xml preview, anything else downloads) and for
+// tauri-plugin-opener's open_path, which resolves the OS app from the
+// temp file's own extension and ignores this value entirely. Not a general
+// mime-sniffing utility — deliberately small, extend if a real gap shows up.
+const ZIP_EXTRA_MIME_TYPES = {
+  txt: "text/plain", md: "text/markdown", csv: "text/csv", json: "application/json",
+  xml: "application/xml", html: "text/html", htm: "text/html", css: "text/css", js: "text/javascript",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", svg: "image/svg+xml",
+  webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon",
+  pdf: "application/pdf", zip: "application/zip",
+  mp3: "audio/mpeg", wav: "audio/wav", mp4: "video/mp4", webm: "video/webm",
+};
+function guessZipEntryMimeType(name) {
+  const dot = name.lastIndexOf(".");
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return ZIP_EXTRA_MIME_TYPES[ext] || "application/octet-stream";
+}
+
+// Item 3 (FEATURE_BACKLOG-adjacent refinement, this session): a non-log
+// entry (a .txt/.png/whatever else lives in the archive) is extracted the
+// same lazy way as a log entry, then handed off to a VIEWER instead of
+// philogg's own ingestion path — either the OS's default app for it (via
+// window.philogg.openExtractedEntry under the desktop wrapper — see
+// desktop/src-tauri/src/commands.rs::open_extracted_entry, which writes the
+// bytes to a temp file and calls tauri-plugin-opener's open_path, the same
+// plugin reveal_path/revealLocalUrl already depend on) or, in the plain
+// browser build where there's no OS-level "open with" available at all, a
+// new tab on a Blob URL (works fine for images/text/PDF/XML, per the plan) —
+// revoked after a delay generous enough for the browser to have actually
+// loaded it.
+const ZIP_BLOB_URL_REVOKE_MS = 60000;
+async function openZipEntryExternally(entry, zip) {
+  let bytes;
+  try {
+    bytes = await entry.extract();
+  } catch (err) {
+    showCopyToast(`Couldn't open "${entry.name}" (${err.message})`);
+    return;
+  }
+  // This session: a common text-ish or image type gets a richer in-app
+  // viewer instead of external-open/browser-tab — see inlineViewableKind
+  // and openInlineViewer below. Everything else keeps the pre-existing
+  // external-open behavior unchanged (the check below is zip-specific,
+  // same as this whole function — see openInlineViewer's own comment on
+  // why that's fine and not a generalized "open any file" system).
+  const kind = inlineViewableKind(entry.name);
+  if (kind) return openInlineViewer(entry.name, bytes, kind, zip);
+  if (window.philogg && window.philogg.openExtractedEntry) {
+    try {
+      await window.philogg.openExtractedEntry(entry.name, bytes);
+    } catch (err) {
+      showCopyToast(`Couldn't open "${entry.name}" (${err.message})`);
+    }
+    return;
+  }
+  const blob = new Blob([bytes], { type: guessZipEntryMimeType(entry.name) });
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), ZIP_BLOB_URL_REVOKE_MS);
+}
+
+// --- Inline viewers (this session) ------------------------------------
+// A non-log ZIP entry of one of these extensions renders in the main
+// content area instead of going to openZipEntryExternally's OS-open/
+// browser-tab fallback. Deliberately zip-specific, matching
+// openZipEntryExternally's own scope — checked, per the plan, whether any
+// OTHER route in this app hands a non-log file to that function (folder
+// watch, plain drag/drop): it doesn't — FOLDER_WATCH_EXTENSIONS/
+// isCompatibleFolderFile only ever lists .log for folder watch, and a
+// dropped non-log file simply fails to parse as a log via the ordinary
+// loadFileDescriptors path (see docs/persistence-and-sync.md). So there is
+// no existing "open any file" mechanism elsewhere to generalize this into.
+const INLINE_TEXT_EXTENSIONS = ["txt", "xml", "json"];
+const INLINE_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "tiff", "tif"];
+function inlineViewableKind(name) {
+  const dot = name.lastIndexOf(".");
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+  if (INLINE_TEXT_EXTENSIONS.includes(ext)) return "text";
+  if (INLINE_IMAGE_EXTENSIONS.includes(ext)) return "image";
+  return null;
+}
+
+const inlineViewerWrap = el("#inlineViewerWrap");
+const inlineViewerNameEl = el("#inlineViewerName");
+const inlineTextViewerEl = el("#inlineTextViewer");
+const inlineImageViewerEl = el("#inlineImageViewer");
+const imgViewerSvg = el("#imgViewerSvg");
+
+// Bug 2/3 fix (person-reported): the single shared "a non-log entry becomes
+// the active content" transition — every call site that sets
+// state.inlineViewer to make a viewer the one currently shown (first open,
+// re-selecting an already-opened entry, Alt+Up/Down nav landing on one)
+// goes through this instead of assigning state.inlineViewer directly, so
+// none of them can again forget the other half of the transition a
+// log-to-log switch already gets for free: clearing state.activeId. Two
+// things read state.activeId downstream and both broke without this —
+// renderNode's tree-row "active" class (Bug 2: the previously-active log's
+// row stayed visually selected) and renderMainView's minimap gating, which
+// keys off there being no active log content (Bug 3).
+function activateInlineViewer(viewer) {
+  state.activeId = null;
+  state.inlineViewer = viewer;
+}
+
+async function openInlineViewer(name, bytes, kind, zip) {
+  let viewer;
+  if (kind === "text") {
+    const text = new TextDecoder().decode(bytes);
+    const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+    viewer = { kind, name, text, ext };
+  } else {
+    const blob = new Blob([bytes], { type: guessZipEntryMimeType(name) });
+    const dataUrl = await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+    viewer = { kind, name, dataUrl };
+    imgZoom = null; // fresh image starts at its home (fit) view
+  }
+  // zipId/entryName (this session): identifies which row this viewer
+  // belongs to, so renderZipEntryRow can tell "opened" (cached) apart from
+  // "active" (the one currently shown) and so a click on a real log tree
+  // row / a different zip entry's row can tell it should clear this one
+  // (see the tree row click handler's own comment on state.inlineViewer).
+  if (zip) {
+    viewer.zipId = zip.id;
+    viewer.entryName = name;
+    zip.inlineViewers.set(name, viewer);
+  }
+  activateInlineViewer(viewer);
+  render();
+}
+// No longer wired to a header button (this session, lifecycle unification —
+// see #inlineViewerHeader's own comment); kept as a plain function since
+// nothing else calls it internally any more, but harmless/still correct if
+// something needs to force-clear the viewer later.
+function closeInlineViewer() {
+  state.inlineViewer = null;
+  render();
+}
+
+// No dedicated syntax highlighter exists anywhere else in philogg.html to
+// reuse for JSON/XML (checked, per the plan — message highlighting
+// elsewhere in the app only ever colors whole log LINES by level/search
+// match, never tokenizes structured text) — these are small, regex-based
+// tokenizers, using the app's own existing color tokens (see .tok-* CSS
+// near #inlineViewerWrap) so a preview reads consistently with the rest of
+// the UI rather than introducing a new palette.
+function highlightJsonText(text) {
+  // Tokenizes the RAW text first (quotes/angle-brackets intact) and escapes
+  // each piece as it's emitted — escaping the whole string upfront (as
+  // highlightXmlText does below) would turn every `"` into `&quot;` before
+  // this regex ever saw a real quote to match against.
+  const re = /("(?:\\.|[^"\\])*")(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+  let out = "", last = 0, m;
+  while ((m = re.exec(text))) {
+    out += escapeHtml(text.slice(last, m.index));
+    const tok = m[0];
+    const cls = m[1] ? (m[2] ? "tok-key" : "tok-string")
+      : (tok === "true" || tok === "false") ? "tok-bool"
+      : tok === "null" ? "tok-null" : "tok-number";
+    out += '<span class="' + cls + '">' + escapeHtml(tok) + '</span>';
+    last = re.lastIndex;
+  }
+  return out + escapeHtml(text.slice(last));
+}
+function highlightXmlText(text) {
+  return escapeHtml(text).replace(
+    /(&lt;!--[\s\S]*?--&gt;)|(&lt;\/?[a-zA-Z_][\w:.-]*)|([a-zA-Z_][\w:.-]*)(=)(&quot;[^&]*?&quot;|&#39;[^&#]*?&#39;)|(\/?&gt;)/g,
+    (m, comment, tagOpen, attrName, eq, attrVal, tagClose) => {
+      if (comment) return `<span class="tok-comment">${comment}</span>`;
+      if (tagOpen) return `<span class="tok-tag">${tagOpen}</span>`;
+      if (attrName) return `<span class="tok-attr">${attrName}</span>${eq}<span class="tok-string">${attrVal}</span>`;
+      if (tagClose) return `<span class="tok-tag">${tagClose}</span>`;
+      return m;
+    }
+  );
+}
+
+// Line-number gutter (this session): tokenizing is done PER LINE (splitting
+// v.text first, then running highlightJsonText/highlightXmlText on each
+// line individually) rather than on the whole text followed by splitting
+// the highlighted HTML on "\n" — a match that spans a raw newline (e.g. a
+// literal newline inside a JSON string) would otherwise leave an unclosed
+// <span> dangling into the next line's HTML. The small cost is a
+// multi-line string/comment losing its highlighting past its first line,
+// an accepted edge case for these regex tokenizers.
+// No click-to-highlight any more (person-reported, same day): an earlier
+// version of this feature also let a click toggle a persisted
+// .itv-line-selected state, which turned out to interfere with plain
+// drag-to-select (its delegated click listener fired after every
+// drag-selection's mouseup, in the middle of the user just trying to
+// re-select text) — removed outright in favor of the plain CSS :hover
+// already on .itv-line above, which needs no listener and no state at all.
+function renderInlineTextViewer(v) {
+  inlineTextViewerEl.classList.remove("hidden");
+  inlineImageViewerEl.classList.remove("active");
+  const tokenize = v.ext === "json" ? highlightJsonText : v.ext === "xml" ? highlightXmlText : escapeHtml;
+  const lines = v.text.split("\n");
+  inlineTextViewerEl.innerHTML = lines.map((line, i) =>
+    '<div class="itv-line" data-line="' + i + '">' +
+      '<span class="itv-line-num">' + (i + 1) + '</span>' +
+      '<span class="itv-line-content">' + tokenize(line) + '</span>' +
+    '</div>'
+  ).join("");
+}
+
+// Copy fix (Bug 3, person-reported): each line is its own block-level
+// .itv-line div (needed for the gutter layout), and a block-element
+// boundary makes browsers insert a line break into a copied selection's
+// plain-text serialization at each one — usually fine (that's exactly the
+// one-break-per-line the original text has), but real browsers are
+// inconsistent about it at the FIRST/LAST partially-selected line and
+// around genuinely empty lines, producing extra blank lines on paste that
+// aren't in the source file. Rather than fight that per-browser DOM->text
+// serialization, this intercepts `copy` and writes the plain text straight
+// from the ORIGINAL source string (state.inlineViewer.text), sliced to the
+// exact line/character range the selection covers — always byte-identical
+// to the source, regardless of how any browser would have serialized the
+// DOM. Only engages for a selection that's actually inside this viewer;
+// anything else (e.g. copying from a different part of the page) is left
+// to the browser's own default copy behavior untouched.
+// Character offset of a Range boundary (container, offset) within a given
+// line's .itv-line-content text, using Range#toString() so it's correct
+// regardless of how many nested tokenizer <span>s sit between the content
+// column and the text node. Works whether `container` sits inside, above
+// (an ancestor, e.g. the .itv-line DIV, or #inlineTextViewer itself), or
+// beside contentEl (e.g. the gutter) — Range#setEnd repositions the boundary
+// correctly in all of those cases, no manual walking or special-casing
+// needed. Clamped to [0, fullText.length] since a boundary reported outside
+// this specific line (see the Bug 2 fix below, where a touched-lines list is
+// built from Range#intersectsNode rather than from this boundary's own
+// closest .itv-line) can otherwise yield an offset larger than the line
+// actually has.
+function itvContentOffset(container, offset, lineEl, fullText) {
+  const contentEl = lineEl.querySelector(".itv-line-content");
+  if (!contentEl) return 0;
+  const r = document.createRange();
+  r.selectNodeContents(contentEl);
+  r.setEnd(container, offset);
+  return Math.max(0, Math.min(r.toString().length, fullText.length));
+}
+// Bugfix (Bug 3, person-reported): re-selecting text that overlaps (or
+// starts right next to) an EXISTING selection was being hijacked into the
+// browser's own native "drag the currently-selected text" gesture (the same
+// affordance that lets you drag a text selection into another input) instead
+// of starting a plain new drag-select — every browser makes text inside an
+// active selection natively draggable by default, no app code required to
+// opt in. That explains both halves of the report: the "drag element"
+// feel near/inside the selected region, AND the leading-whitespace loss —
+// when the native drag hijacks the gesture, mouseup never produces a fresh
+// Range at all, so the OLD selection (whatever it was before, generally not
+// starting at column 0) is still what's active when Ctrl+C fires, silently
+// dropping the leading run of whitespace the person thought they'd just
+// re-selected. There is no per-app "selectable text" concept to preserve —
+// this viewer is meant to behave like a plain read-only text pane — so the
+// fix is simply to opt out of the browser's native drag-a-selection feature
+// entirely for this element, restoring ordinary click/drag == select.
+inlineTextViewerEl.addEventListener("dragstart", ev => ev.preventDefault());
+// Copy fix (Bug 2, person-reported, supersedes the 13efc9b attempt): that
+// version found each touched line via `boundary.closest(".itv-line")`. A
+// real drag that starts before the first line's text (e.g. from column 0 of
+// a selection "from the very start") or ends past the last line commonly
+// reports the boundary's container as #inlineTextViewer itself — an
+// ancestor of every .itv-line, so `.closest(".itv-line")` returns null and
+// the whole handler silently bailed, leaving the browser's own inconsistent
+// block-serialization copy in place (the extra/missing line breaks this was
+// meant to fix in the first place). Range#intersectsNode doesn't have that
+// gap: it only needs the CONTAINER (#inlineTextViewer) as the range's common
+// ancestor to already be established by the bail-out check below, and
+// correctly reports every .itv-line the selection touches regardless of
+// where its boundaries actually resolved to. Only the first and last touched
+// line need a partial-offset lookup (itvContentOffset, clamped there to each
+// line's own length); every line strictly between them is taken whole,
+// straight from the source text.
+inlineTextViewerEl.addEventListener("copy", ev => {
+  if (!state.inlineViewer || state.inlineViewer.kind !== "text") return;
+  const sel = window.getSelection && window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  if (!inlineTextViewerEl.contains(range.commonAncestorContainer)) return;
+  const lineEls = Array.from(inlineTextViewerEl.querySelectorAll(".itv-line"))
+    .filter(lineEl => range.intersectsNode(lineEl));
+  if (!lineEls.length) return;
+  const lines = state.inlineViewer.text.split("\n");
+  const picked = lineEls.map((lineEl, i) => {
+    const fullText = lines[Number(lineEl.dataset.line)] || "";
+    const isFirst = i === 0;
+    const isLast = i === lineEls.length - 1;
+    if (!isFirst && !isLast) return fullText;
+    const startOffset = isFirst ? itvContentOffset(range.startContainer, range.startOffset, lineEl, fullText) : 0;
+    const endOffset = isLast ? itvContentOffset(range.endContainer, range.endOffset, lineEl, fullText) : fullText.length;
+    return fullText.slice(startOffset, Math.max(startOffset, endOffset));
+  });
+  ev.clipboardData.setData("text/plain", picked.join("\n"));
+  ev.preventDefault();
+});
+
+// --- Inline image viewer: zoom/pan/reset/rect-select-zoom -------------
+// Genuinely reuses Plot View's own interaction MODEL and constants
+// (PLOT_ZOOM_WHEEL_FACTOR/PLOT_ZOOM_BUTTON_FACTOR/PLOT_DRAG_THRESHOLD_PX,
+// same .plot-drag-rect overlay) — wheel-zoom anchored at the cursor,
+// left-drag-to-select-a-region-then-zoom, middle-drag pan, a Reset button.
+// Not spliced into #plotSvg/renderPlotChart itself: that code's domain math
+// is built entirely around extractRowsData/extractColumns (a log
+// extraction's numeric columns), and threading an "image mode" through it
+// would mean guarding every one of its data-plot branches for no shared
+// benefit, since none of that data-specific logic (series/columns/hover-by-
+// row-value) applies to a bitmap. imgZoom plays the exact same role
+// plotZoom does (a {x0,x1,y0,y1} domain override, null = home/fit view),
+// just in image-PIXEL space instead of data space, and imgLastRender plays
+// plotLastRender's role (the last render's geometry, read back by the
+// interaction handlers below) — same shape, same names, so the two stay
+// easy to compare line-for-line.
+let imgZoom = null;
+let imgLastRender = null; // { W, H, imgW, imgH, xDomainMin, xDomainMax, yDomainMin, yDomainMax }
+let imgNaturalSize = null; // { w, h } of the currently-loaded image, set once on load
+
+function imgHomeDomain() {
+  const w = imgNaturalSize ? imgNaturalSize.w : 1;
+  const h = imgNaturalSize ? imgNaturalSize.h : 1;
+  return { xDomainMin: 0, xDomainMax: w, yDomainMin: 0, yDomainMax: h };
+}
+// Same clamp-to-home idea as Plot View's clampZoomAxis (below, private to
+// this section — no shared helper existed at the right granularity to
+// import) — zooming in stays unlimited, zooming out/panning can never
+// escape the home (fully-fit) view.
+function imgClampAxis(homeLo, homeHi, lo, hi) {
+  const homeSpan = homeHi - homeLo, span = Math.min(hi - lo, homeSpan);
+  let clampedLo = lo, clampedHi = lo + span;
+  if (clampedLo < homeLo) { clampedLo = homeLo; clampedHi = homeLo + span; }
+  if (clampedHi > homeHi) { clampedHi = homeHi; clampedLo = homeHi - span; }
+  return [clampedLo, clampedHi];
+}
+
+function renderInlineImageViewer(v) {
+  inlineTextViewerEl.classList.add("hidden");
+  inlineImageViewerEl.classList.add("active");
+  const area = inlineImageViewerEl;
+  const W = Math.max(100, area.clientWidth || 600), H = Math.max(100, area.clientHeight || 400);
+  const load = () => {
+    const home = imgHomeDomain();
+    let [xDomainMin, xDomainMax] = [home.xDomainMin, home.xDomainMax];
+    let [yDomainMin, yDomainMax] = [home.yDomainMin, home.yDomainMax];
+    if (imgZoom) {
+      [xDomainMin, xDomainMax] = imgClampAxis(home.xDomainMin, home.xDomainMax, imgZoom.x0, imgZoom.x1);
+      [yDomainMin, yDomainMax] = imgClampAxis(home.yDomainMin, home.yDomainMax, imgZoom.y0, imgZoom.y1);
+    }
+    // Fit the home domain (the whole image) into the viewport, letterboxed,
+    // so aspect ratio is never distorted; the zoomed domain then just picks
+    // a sub-rectangle of that same fitted space via the SVG viewBox.
+    const scale = Math.min(W / home.xDomainMax, H / home.yDomainMax) || 1;
+    imgViewerSvg.setAttribute("viewBox",
+      (xDomainMin * scale) + " " + ((home.yDomainMax - yDomainMax) * scale) + " " +
+      ((xDomainMax - xDomainMin) * scale) + " " + ((yDomainMax - yDomainMin) * scale));
+    imgViewerSvg.innerHTML = '<image href="' + v.dataUrl + '" x="0" y="0" width="' +
+      (home.xDomainMax * scale) + '" height="' + (home.yDomainMax * scale) + '" preserveAspectRatio="none"></image>';
+    imgLastRender = { W, H, xDomainMin, xDomainMax, yDomainMin, yDomainMax, left: 0, top: 0, plotW: W, plotH: H };
+    const zoomPct = Math.round((home.xDomainMax - home.xDomainMin) / (xDomainMax - xDomainMin) * 100);
+    el("#imgViewerZoomLevel").textContent = zoomPct + "%";
+  };
+  if (imgNaturalSize) { load(); return; }
+  const probe = new Image();
+  probe.onload = () => { imgNaturalSize = { w: probe.naturalWidth || 1, h: probe.naturalHeight || 1 }; load(); };
+  probe.onerror = () => { imgNaturalSize = { w: 1, h: 1 }; load(); };
+  probe.src = v.dataUrl;
+}
+
+function imgSvgPointFromEvent(ev) {
+  if (!imgLastRender) return null;
+  const rect = imgViewerSvg.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return null;
+  const r = imgLastRender;
+  return {
+    x: r.xDomainMin + (ev.clientX - rect.left) / rect.width * (r.xDomainMax - r.xDomainMin),
+    y: r.yDomainMin + (rect.bottom - ev.clientY) / rect.height * (r.yDomainMax - r.yDomainMin),
+  };
+}
+function imgZoomAt(dataX, dataY, factor) {
+  if (!imgLastRender) return;
+  const r = imgLastRender;
+  imgZoom = {
+    x0: dataX - (dataX - r.xDomainMin) * factor, x1: dataX + (r.xDomainMax - dataX) * factor,
+    y0: dataY - (dataY - r.yDomainMin) * factor, y1: dataY + (r.yDomainMax - dataY) * factor,
+  };
+  renderInlineImageViewer(state.inlineViewer);
+}
+el("#imgZoomInBtn").addEventListener("click", () => {
+  if (!imgLastRender) return;
+  const r = imgLastRender;
+  imgZoomAt((r.xDomainMin + r.xDomainMax) / 2, (r.yDomainMin + r.yDomainMax) / 2, PLOT_ZOOM_BUTTON_FACTOR);
+});
+el("#imgZoomOutBtn").addEventListener("click", () => {
+  if (!imgLastRender) return;
+  const r = imgLastRender;
+  imgZoomAt((r.xDomainMin + r.xDomainMax) / 2, (r.yDomainMin + r.yDomainMax) / 2, 1 / PLOT_ZOOM_BUTTON_FACTOR);
+});
+el("#imgZoomResetBtn").addEventListener("click", () => { imgZoom = null; renderInlineImageViewer(state.inlineViewer); });
+
+imgViewerSvg.addEventListener("wheel", ev => {
+  if (!imgLastRender) return;
+  ev.preventDefault();
+  const pt = imgSvgPointFromEvent(ev);
+  if (!pt) return;
+  imgZoomAt(pt.x, pt.y, ev.deltaY < 0 ? PLOT_ZOOM_WHEEL_FACTOR : 1 / PLOT_ZOOM_WHEEL_FACTOR);
+}, { passive: false });
+
+const imgViewerDragRect = el("#imgViewerDragRect");
+let imgPanActive = false, imgPanStartClient = null, imgPanStartDomain = null;
+let imgDragActive = false, imgDragStartSvg = null, imgDragStartClient = null, imgDragMoved = false;
+
+imgViewerSvg.addEventListener("mousedown", ev => {
+  if (!imgLastRender) return;
+  if (ev.button === 1) {
+    ev.preventDefault();
+    imgPanActive = true;
+    imgPanStartClient = { x: ev.clientX, y: ev.clientY };
+    imgPanStartDomain = { xDomainMin: imgLastRender.xDomainMin, xDomainMax: imgLastRender.xDomainMax, yDomainMin: imgLastRender.yDomainMin, yDomainMax: imgLastRender.yDomainMax };
+    document.body.style.userSelect = "none";
+  } else if (ev.button === 0) {
+    imgDragActive = true;
+    imgDragMoved = false;
+    imgDragStartSvg = imgSvgPointFromEvent(ev);
+    const rect = imgViewerSvg.getBoundingClientRect();
+    imgDragStartClient = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  }
+});
+window.addEventListener("mousemove", ev => {
+  if (imgPanActive) {
+    const rect = imgViewerSvg.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const r = imgPanStartDomain;
+    const dxData = (ev.clientX - imgPanStartClient.x) / rect.width * (r.xDomainMax - r.xDomainMin);
+    const dyData = (ev.clientY - imgPanStartClient.y) / rect.height * (r.yDomainMax - r.yDomainMin);
+    imgZoom = { x0: r.xDomainMin - dxData, x1: r.xDomainMax - dxData, y0: r.yDomainMin + dyData, y1: r.yDomainMax + dyData };
+    renderInlineImageViewer(state.inlineViewer);
+    return;
+  }
+  if (imgDragActive) {
+    const rect = imgViewerSvg.getBoundingClientRect();
+    const cur = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+    if (!imgDragMoved && Math.hypot(cur.x - imgDragStartClient.x, cur.y - imgDragStartClient.y) < PLOT_DRAG_THRESHOLD_PX) return;
+    imgDragMoved = true;
+    const lo = { x: Math.min(imgDragStartClient.x, cur.x), y: Math.min(imgDragStartClient.y, cur.y) };
+    const hi = { x: Math.max(imgDragStartClient.x, cur.x), y: Math.max(imgDragStartClient.y, cur.y) };
+    imgViewerDragRect.style.left = lo.x.toFixed(1) + "px";
+    imgViewerDragRect.style.top = lo.y.toFixed(1) + "px";
+    imgViewerDragRect.style.width = Math.max(1, hi.x - lo.x).toFixed(1) + "px";
+    imgViewerDragRect.style.height = Math.max(1, hi.y - lo.y).toFixed(1) + "px";
+    imgViewerDragRect.classList.remove("hidden");
+  }
+});
+window.addEventListener("mouseup", ev => {
+  if (imgPanActive && ev.button === 1) { imgPanActive = false; document.body.style.userSelect = ""; }
+  if (imgDragActive && ev.button === 0) {
+    imgDragActive = false;
+    imgViewerDragRect.classList.add("hidden");
+    if (imgDragMoved && imgLastRender) {
+      const endSvg = imgSvgPointFromEvent(ev) || imgDragStartSvg;
+      imgZoom = {
+        x0: Math.min(imgDragStartSvg.x, endSvg.x), x1: Math.max(imgDragStartSvg.x, endSvg.x),
+        y0: Math.min(imgDragStartSvg.y, endSvg.y), y1: Math.max(imgDragStartSvg.y, endSvg.y),
+      };
+      renderInlineImageViewer(state.inlineViewer);
+    }
+  }
+});
+
+// Same interaction as folder watch's own renderInactiveFileRow -> dblclick
+// -> loadFolderFile (double-click, exact same DOM event, same resulting UI
+// state for a log file: loaded as an ordinary active tab via the shared
+// loadFileDescriptors path). What happens on that double-click now branches
+// on isLogZipEntry: a recognized log entry inflates (or, for a stored/
+// method-0 entry, just reads) and feeds into loadFileDescriptors — the same
+// path every other loading route (file picker, drop, folder watch's "load
+// this file") ultimately funnels through. No `handle` is passed, so the
+// resulting node gets no `node.tail` (see loadOneFileIntoTree: tailing is
+// only wired up `if (handle)`) — a static, non-tailable row exactly like a
+// plain <input type=file> pick, which is what a one-shot ZIP entry should
+// be: tailTick/folderScanTick never see it since neither iterates
+// state.nodes directly, only state.folders and live tail handles. Any OTHER
+// entry (item 3) goes to openZipEntryExternally instead — same double-click,
+// different destination.
+// Bugfix (person-reported): an opened log entry used to land as a plain
+// top-level file, detached from its zip's own renderZipSection container —
+// folder watch's equivalent (loadFolderFile) tags the node with
+// node.folderId so renderFolderSection/renderTree keep it nested inside the
+// folder's box instead. The zip entry point (loadFileDescriptors) had no
+// such tagging at all. Fixed the same way, but under its OWN field
+// (node.zipId, set via the `zipId` descriptor field below — see
+// loadFileDescriptors) rather than reusing node.folderId itself: every
+// consumer of node.folderId (closeFolderFile, restoreWatchedFolders,
+// persistFileNode's cache record, nodeDisplayName, ...) assumes a real,
+// possibly-reconnectable state.folders entry exists for it, and a zip
+// source is deliberately never persisted (see its own "Data model" comment
+// near state.zips) — reusing folderId would either need every one of those
+// call sites defensively guarded, or leave a stale folderId surviving a
+// reload pointing at a zip that no longer exists, making the node invisible
+// (renderTree skips any node.folderId row unconditionally, but there'd be
+// no surviving zip section left to render it into either). node.zipId is
+// intentionally NOT written into persistFileNode's cache record, so a
+// session-restored zip-opened file simply becomes an ordinary top-level
+// file on the next reload — correct, since there's no live zip source left
+// to nest it back into.
+function openZipEntry(entry, zip) {
+  if (!isLogZipEntry(entry)) return openZipEntryExternally(entry, zip);
+  // A brand-new log file entering the tree for the first time never goes
+  // through the plain tree-row click handler above (it doesn't have a real
+  // row to click yet) — clear any currently-shown non-log inline viewer
+  // here too, same reasoning as that handler's own comment.
+  state.inlineViewer = null;
+  loadFileDescriptors([{
+    name: entry.name,
+    zipId: zip.id,
+    openFile: async () => new File([await entry.extract()], entry.name),
+  }]);
+}
 
 // "Save" now covers session export only (FEATURE_BACKLOG.md #56) — a single
 // icon button, no dropdown, since there's only the one action. Session
@@ -18659,7 +19881,16 @@ el("#mergeLoadDialogNo").addEventListener("click", () => closeMergeLoadDialog(fa
 async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
 
-  const queuedNodes = descs.map(d => createQueuedFileNode(d.file ? d.file.name : d.name));
+  const queuedNodes = descs.map(d => {
+    const n = createQueuedFileNode(d.file ? d.file.name : d.name);
+    // Tags a zip-sourced entry from the very first (queued-placeholder)
+    // render, same as node.folderId does for a watched-folder file (see
+    // createFileNode) — this is what lets renderZipSection nest it inside
+    // its zip's own container instead of it appearing detached. See
+    // openZipEntry's comment for why this is its own field, not folderId.
+    if (d.zipId) n.zipId = d.zipId;
+    return n;
+  });
   render();
 
   const mergeAfter = descs.length > 1 ? await confirmMergeOnLoad(queuedNodes.map(n => n.name)) : false;
@@ -18947,7 +20178,24 @@ async function loadDesktopLocalFiles({ files, folders } = {}) {
       showCopyToast("Dropping a folder can't start a folder watch here — use Open… → Folder…");
     }
   }
-  const descs = (files || []).map(f => ({
+  // A single dropped/picked .zip is a ZIP source, not a plain log file —
+  // detected before the normal descs mapping below so it never enters the
+  // regular ingestion path. Only handled when it's the sole file in the
+  // batch: a zip mixed into a multi-file drop falls through and loads (and
+  // fails to parse) as an ordinary file instead, same as the browser drop
+  // handler below.
+  const fileList = files || [];
+  if (fileList.length === 1 && /\.zip$/i.test(fileList[0].name)) {
+    const f = fileList[0];
+    const res = await fetch(f.url);
+    if (res.ok) {
+      await openZipSource(await res.blob(), f.name);
+      return;
+    }
+    showCopyToast(`Couldn't open "${f.name}" (HTTP ${res.status})`);
+    return;
+  }
+  const descs = fileList.map(f => ({
     name: f.name,
     openFile: async () => {
       // arrayBuffer(), not blob() — see this const's own comment above and
@@ -19053,6 +20301,17 @@ window.addEventListener("drop", ev => {
   // DataTransfer contents are gone once the handler returns.
   const plainFiles = dt.files ? Array.from(dt.files) : [];
   const items = dt.items ? Array.from(dt.items) : [];
+
+  // A single dropped .zip is a ZIP source, not a plain log file — checked
+  // before the FileSystemHandle/plain-file branches below so it never falls
+  // into the regular multi-file ingestion path. Only when it's the sole
+  // file dropped; a zip mixed into a larger drop loads (and fails to
+  // parse) as an ordinary file instead, same as loadDesktopLocalFiles.
+  if (plainFiles.length === 1 && /\.zip$/i.test(plainFiles[0].name)) {
+    openZipSource(plainFiles[0], plainFiles[0].name);
+    return;
+  }
+
   if (FOLDER_WATCH_SUPPORTED && items.length && typeof items[0].getAsFileSystemHandle === "function") {
     const handlePromises = items.filter(it => it.kind === "file").map(it => it.getAsFileSystemHandle());
     Promise.all(handlePromises).then(async handles => {
@@ -21430,6 +22689,134 @@ treeContextMenu.addEventListener("mouseover", ev => {
 // already relies on (see CLAUDE.md's stopPropagation gotcha).
 treeCtxInfoMenu.addEventListener("click", ev => ev.stopPropagation());
 
+/* ===================== Clickable local file paths (desktop build only) =====================
+   linkifyPaths (see markFieldHtml) wraps every candidate absolute path found
+   in a rendered row's message field in a .fp-candidate span regardless of
+   build, styled with a dim "detected" underline immediately (see its CSS
+   comment) — so the same philogg.html looks identical in the browser build,
+   which has no way to check or open an arbitrary path, and a detected path
+   is never indistinguishable from plain text even before it's confirmed.
+   verifyVisibleFpCandidates(container), called from both renderVisibleRows
+   (tableRows) and renderHighlightVisibleRows (highlightRows), is the only
+   thing gated on window.philogg (desktop build): right after each render it
+   asks the Rust side (pathExists) whether every newly-seen candidate path
+   actually exists — once per unique path, cached in fpPathCache (shared
+   across both views, so a path already resolved for one view doesn't get
+   re-checked for the other), not once per hover or per occurrence (the
+   same path routinely repeats across many rows in one file). Only a path
+   that resolves true gets .fp-verified (the full link look) and offers
+   "Open file"/"Open containing folder" on hover (openPath/revealPath —
+   revealPath already exists for FEATURE_BACKLOG #52).
+   Originally this verification ran on hover itself (debounced); switched to
+   eager per-render verification after a person report ("hovered for a
+   while, nothing happened") that traced back to two compounding gaps: a
+   candidate had no visual cue at all before verification succeeded, so
+   there was no way to tell detection-not-running apart from
+   verification-silently-failing, and success depended on a single
+   hover-timing window instead of being decided once, up front.
+   The whole feature is gated on filePathLinksEnabled (person-requested
+   toggle, default on, #toggle-filepaths in both #contextToolbar and
+   #filteredToolbar) — off, linkifyPaths is never called at render time, so
+   no .fp-candidate spans exist for any of the code below to act on. */
+const fpPathMenu = el("#fpPathMenu");
+let fpHoverEl = null;
+let fpHideTimer = null;
+const fpPathCache = new Map(); // path -> true|false, resolved once per unique path
+const fpPathPending = new Set(); // paths with a pathExists() call in flight
+
+function closeFpPathMenu() { fpPathMenu.classList.add("hidden"); }
+
+function openFpPathMenu(anchorEl, path) {
+  fpPathMenu.innerHTML =
+    '<div class="ctx-item" data-fp-action="open">Open file</div>' +
+    '<div class="ctx-item" data-fp-action="reveal">Open containing folder</div>';
+  fpPathMenu.dataset.fp = path;
+  const r = anchorEl.getBoundingClientRect();
+  fpPathMenu.style.left = Math.min(r.left, window.innerWidth - 280) + "px";
+  fpPathMenu.style.top = Math.min(r.bottom + 2, window.innerHeight - 100) + "px";
+  fpPathMenu.classList.remove("hidden");
+}
+
+function scheduleFpHide() {
+  clearTimeout(fpHideTimer);
+  fpHideTimer = setTimeout(() => { fpHoverEl = null; closeFpPathMenu(); }, 200);
+}
+function cancelFpHide() { clearTimeout(fpHideTimer); }
+
+// Marks every currently-rendered occurrence of `path` as verified — not just
+// the span that triggered the pathExists() call, and not via the original
+// span reference either: by the time the async call resolves, a later
+// render may already have replaced that exact node (renderVisibleRows/
+// renderHighlightVisibleRows rebuild row DOM on scroll/tail ticks — see
+// CLAUDE.md's "DOM identity" gotcha), so the lookup is redone fresh against
+// whatever's in BOTH containers now — the split view can show the same
+// path in Table and Full at once, and both need to reflect one verification.
+function applyFpVerifiedClass(path) {
+  const escaped = (window.CSS && CSS.escape) ? CSS.escape(path) : path.replace(/"/g, '\\"');
+  const sel = '.fp-candidate[data-fp="' + escaped + '"]';
+  tableRows.querySelectorAll(sel).forEach(span => span.classList.add("fp-verified"));
+  highlightRows.querySelectorAll(sel).forEach(span => span.classList.add("fp-verified"));
+}
+
+// Called once per render pass of either view (not per hover): resolves every
+// newly-seen candidate path's existence exactly once, from the shared cache
+// thereafter, so a path that recurs across many rows — or in both views at
+// once — costs one IPC round-trip total rather than one per row/view/hover.
+function verifyVisibleFpCandidates(container) {
+  if (!window.philogg || typeof window.philogg.pathExists !== "function") return;
+  container.querySelectorAll(".fp-candidate").forEach(span => {
+    const path = span.dataset.fp;
+    if (fpPathCache.has(path)) {
+      if (fpPathCache.get(path)) span.classList.add("fp-verified");
+      return;
+    }
+    if (fpPathPending.has(path)) return;
+    fpPathPending.add(path);
+    window.philogg.pathExists(path).then(exists => {
+      fpPathCache.set(path, !!exists);
+      fpPathPending.delete(path);
+      if (exists) applyFpVerifiedClass(path);
+    }).catch(() => { fpPathPending.delete(path); });
+  });
+}
+
+// Delegated on each row container (not per-span) because both renderers
+// rebuild their row DOM on each render — a listener on the span itself would
+// be gone the next tick (see CLAUDE.md's "DOM identity across clicks"
+// gotcha). Verification already happened at render time, so hovering only
+// ever opens the popup from the cache — no IPC call, no debounce, no
+// dependency on how long the cursor lingers. Shared by both containers.
+function onFpRowsMouseover(ev) {
+  const span = ev.target.closest(".fp-candidate");
+  if (!span) return;
+  cancelFpHide();
+  if (span === fpHoverEl) return;
+  fpHoverEl = span;
+  const path = span.dataset.fp;
+  if (fpPathCache.get(path) === true) openFpPathMenu(span, path);
+}
+function onFpRowsMouseout(ev) {
+  if (ev.target.closest(".fp-candidate")) scheduleFpHide();
+}
+tableRows.addEventListener("mouseover", onFpRowsMouseover);
+tableRows.addEventListener("mouseout", onFpRowsMouseout);
+highlightRows.addEventListener("mouseover", onFpRowsMouseover);
+highlightRows.addEventListener("mouseout", onFpRowsMouseout);
+fpPathMenu.addEventListener("mouseenter", cancelFpHide);
+fpPathMenu.addEventListener("mouseleave", scheduleFpHide);
+// stopPropagation: same reasoning as treeCtxInfoMenu above — otherwise the
+// document-level "click outside closes the popup" listener would close this
+// before the click on one of its own items ever reaches it.
+fpPathMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest("[data-fp-action]");
+  if (!item || !window.philogg) return;
+  const path = fpPathMenu.dataset.fp;
+  if (item.dataset.fpAction === "open") window.philogg.openPath(path);
+  else if (item.dataset.fpAction === "reveal") window.philogg.revealPath(path);
+  closeFpPathMenu();
+});
+
 // Figures out which bulk actions the current multi-selection supports.
 // Shared by the right-click context menu and the always-visible action bar
 // above the tree, so both surfaces offer exactly the same logic/wording.
@@ -23794,6 +25181,7 @@ document.addEventListener("click", ev => {
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
+  if (!fpPathMenu.contains(ev.target) && !ev.target.closest(".fp-candidate")) closeFpPathMenu();
   // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
   // on a click anywhere outside the sidebar itself — a click ON a tree row is
   // deliberately NOT treated as "outside" (still navigating the tree).
@@ -24126,12 +25514,20 @@ document.addEventListener("keydown", ev => {
     // in preference to the tree's own filter-node copy/paste clipboard below
     // (state.clipboard), which only makes sense while focusRegion is "tree".
     // Exception: if the person has selected text inside the Entry Detail
-    // panel (e.g. to grab a substring of a long message), let the browser's
+    // panel (e.g. to grab a substring of a long message) or inside an open
+    // ZIP inline text viewer (bugfix, person-reported: a background log-row
+    // selection was winning over an actual, active text selection made
+    // inside the viewer — e.g. selecting text within an opened XML — because
+    // this handler fires on keydown and calls copyLogSelectionToClipboard()
+    // directly, pre-empting the native `copy` event entirely, including the
+    // inline viewer's own `copy` listener near inlineTextViewerEl's
+    // definition, which never got a chance to run), let the browser's
     // native copy handle that selection instead of overriding it with the
     // full raw line.
     if (state.focusRegion === "entries" && state.selectedId) {
       const sel = window.getSelection();
-      if (sel && sel.toString().length && detailPanel.contains(sel.anchorNode)) return;
+      if (sel && sel.toString().length &&
+          (detailPanel.contains(sel.anchorNode) || inlineTextViewerEl.contains(sel.anchorNode))) return;
       ev.preventDefault();
       copyLogSelectionToClipboard();
       return;
@@ -25609,6 +27005,7 @@ detailFormatToggleBtn.innerHTML = ICON_FORMAT_HIGHLIGHT;
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
 btnHighlightMatchText.forEach(b => b.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT);
+btnFilePathLinks.forEach(b => b.innerHTML = ICON_FILE_PATH_LINKS);
 btnApplyLevelToTree.innerHTML = ICON_LEVEL;
 btnApplyLevelToTree.addEventListener("click", () => {
   const levels = canonicalLevelOrder([...state.levelFilter]);
@@ -25638,6 +27035,7 @@ initContextToolbar();
 initMinimapFullRangeSetting();
 initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
+initFilePathLinksSetting();
 initDetailFormatHighlightSetting();
 initLevelFilterTreeModeSettings();
 initTreeIndicatorModeSetting();

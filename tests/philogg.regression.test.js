@@ -242,6 +242,7 @@ async function withApp(run, opts = {}) {
       get textMatchHighlightInRows() { return textMatchHighlightInRows; },
       get textMatchHighlightInDetail() { return textMatchHighlightInDetail; },
       get highlightMatchTextEnabled() { return highlightMatchTextEnabled; },
+      get filePathLinksEnabled() { return filePathLinksEnabled; },
       get levelFilterTreeMode() { return levelFilterTreeMode; },
       set levelFilterTreeMode(v) { levelFilterTreeMode = v; },
       get tempAnchorMode() { return tempAnchorMode; },
@@ -1919,8 +1920,8 @@ group(21);
     fireClick(btnOpenSess, w);
     assert(!openMenuSess.classList.contains("hidden"), "clicking \"Open\" reveals the dropdown");
     const openActions = [...openMenuSess.querySelectorAll("[data-action]")].map(i => i.dataset.action);
-    assert(openActions.join(",") === "files,folder,importSession",
-      "open menu offers File(s)…/Folder…/Import session…, got " + openActions.join(","));
+    assert(openActions.join(",") === "files,folder,zip,importSession",
+      "open menu offers File(s)…/Folder…/ZIP…/Import session…, got " + openActions.join(","));
     fireClick(d.body, w);
     assert(openMenuSess.classList.contains("hidden"), "clicking outside the open menu closes it");
     assert(!!d.querySelector("#btnSave"), "\"Save\" button (session export) exists");
@@ -3138,7 +3139,7 @@ group(29);
 await withApp(async (w, d) => {
   section("29b. Every icon button — header, Filter-Toolbar, and every view toolbar — shares .toolbar-icon-btn's 28x28 shape");
   const cs = w.getComputedStyle;
-  ["#btnUndo", "#btnRedo", ".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch"].forEach(sel => {
+  ["#btnUndo", "#btnRedo", ".toggle-pin", ".toggle-notes", ".toggle-multiline", ".toggle-columns", ".toggle-textmatch", ".toggle-highlightmatch", ".toggle-filepaths"].forEach(sel => {
     const btn = d.querySelector(sel);
     assert(btn !== null, "sanity: " + sel + " exists");
     const bcs = cs(btn);
@@ -21717,6 +21718,1197 @@ await withApp(async (w, d, T) => {
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) } });
 
 /* ============================================================
+   GROUP 199 — ZIP files as a log source (this session, 2026-09-11, later
+   extended same-day with four refinements — see 199e-199g below):
+   readZipEntries (EOCD + central directory parsing, no bulk extraction),
+   per-entry lazy extract() via DecompressionStream('deflate-raw')/
+   passthrough for stored entries, and the double-click -> loadFileDescriptors
+   ingestion wiring producing a static (non-tailable) node. The synthetic ZIP
+   fixture is hand-built here (buildZipFixture, using Node's zlib.
+   deflateRawSync) purely as test-fixture tooling — philogg.html's own ZIP
+   reader stays dependency-free at runtime, per CLAUDE.md's "no new runtime
+   dependencies" constraint; only this test file requires "zlib".
+
+   199e-199g (refinements, same day): a nested-folder entry's full relative
+   path is both displayed and used as the loaded name (199e — was already
+   correct, verified rather than fixed); a non-log entry double-clicked
+   (isLogZipEntry, reusing folder watch's own FOLDER_WATCH_EXTENSIONS) opens
+   a Blob-URL browser tab in the plain build (199f) or is handed to
+   window.philogg.openExtractedEntry under the desktop wrapper (199g),
+   instead of going through loadFileDescriptors either way. The archive-icon
+   swap (ICON_ZIP) and the double-click interaction itself (already matching
+   folder watch's renderInactiveFileRow -> loadFolderFile before this
+   refinement) have no dedicated assertions here — the icon is a pure visual
+   swap with no behavioral surface, and the interaction match is exercised
+   implicitly by every dblclick-driven assertion in this group.
+
+   199k-199m (further refinements, same day, two asks): (1) the inline
+   text viewer (.txt/.xml/.json) now renders a line-number gutter — a new,
+   small, consistently-styled addition (renderInlineTextViewer/.itv-line*),
+   since the main log view has no literal per-line-number column to copy
+   (it's a field-column table, not line-numbered text) — numbers live in
+   their own non-selectable .itv-line-num column, never interleaved into
+   the copyable .itv-line-content text. (2) a non-log entry's row
+   (renderZipEntryRow) now carries the same grayed/opened/active lifecycle
+   a log file's own real tree row already had (.zip-entry-opened/
+   .zip-entry-active, zip.inlineViewers cache keyed by entry name) with its
+   own .tree-del ✕ to close it — #inlineViewerCloseBtn is gone, closing/
+   reselecting only ever happens through the row now.
+
+   199n-199p (bugfix session, three person-reported issues + one UX ask):
+   199k/m's own click-to-highlight-a-line experiment (a delegated click
+   listener toggling .itv-line-selected, tracked on
+   state.inlineViewer.selectedLine) is REMOVED outright — it interfered
+   with plain drag-to-select (the listener's click handler fired on every
+   drag-selection's mouseup) and the person asked for hover-only anyway
+   (pure CSS .itv-line:hover, no JS/state) — so the 199l tests that
+   exercised it are gone, replaced by 199n below. 199o covers the actual
+   root cause of "opened non-log entries still look grayed": the
+   .zip-entry-opened class fixed opacity but never reset the dimmed
+   color:var(--text-tertiary) .folder-watch-file's base rule sets, unlike a
+   real opened .tree-row (default color:var(--text-secondary)) it's meant
+   to match — plus flattenTreeIds/moveTreeSelection now give an opened
+   non-log entry a virtual nav id (zipViewerNavId) so Alt+Up/Down actually
+   reaches it, which it never did before (only real state.nodes entries
+   were ever walked). 199p covers the copy-introduces-extra-line-breaks fix:
+   a `copy` listener on #inlineTextViewer now writes plain text straight
+   from state.inlineViewer.text (sliced to the selected line/char range)
+   instead of trusting the browser's own block-per-line DOM-to-text
+   serialization.
+   ============================================================ */
+group(199);
+{
+  const zlib = require("zlib");
+  // Hand-builds a minimal, valid ZIP (local file headers + central
+  // directory + EOCD) from raw entries — test-fixture tooling only, not a
+  // stand-in for philogg.html's own reader. `entries`: [{ name, data:
+  // string|Buffer, method: 0|8 (default 8) }]. No CRC written (0) — the
+  // app's reader intentionally doesn't check it either, see readZipEntries.
+  function buildZipFixture(entries) {
+    let offset = 0;
+    const localBufs = [];
+    const centralBufs = [];
+    for (const e of entries) {
+      const nameBuf = Buffer.from(e.name, "utf8");
+      const uncompressed = Buffer.isBuffer(e.data) ? e.data : Buffer.from(e.data, "utf8");
+      const method = e.method === undefined ? 8 : e.method;
+      const compressed = method === 8 ? zlib.deflateRawSync(uncompressed) : uncompressed;
+
+      const localHeader = Buffer.alloc(30);
+      localHeader.writeUInt32LE(0x04034b50, 0);
+      localHeader.writeUInt16LE(20, 4);       // version needed
+      localHeader.writeUInt16LE(0, 6);        // flags
+      localHeader.writeUInt16LE(method, 8);
+      localHeader.writeUInt16LE(0, 10);       // mod time
+      localHeader.writeUInt16LE(0, 12);       // mod date
+      localHeader.writeUInt32LE(0, 14);       // crc32 (unused by the reader)
+      localHeader.writeUInt32LE(compressed.length, 18);
+      localHeader.writeUInt32LE(uncompressed.length, 22);
+      localHeader.writeUInt16LE(nameBuf.length, 26);
+      localHeader.writeUInt16LE(0, 28);       // extra field length
+      const localOffset = offset;
+      const localRecord = Buffer.concat([localHeader, nameBuf, compressed]);
+      localBufs.push(localRecord);
+      offset += localRecord.length;
+
+      const centralHeader = Buffer.alloc(46);
+      centralHeader.writeUInt32LE(0x02014b50, 0);
+      centralHeader.writeUInt16LE(20, 4);     // version made by
+      centralHeader.writeUInt16LE(20, 6);     // version needed
+      centralHeader.writeUInt16LE(0, 8);      // flags
+      centralHeader.writeUInt16LE(method, 10);
+      centralHeader.writeUInt16LE(0, 12);
+      centralHeader.writeUInt16LE(0, 14);
+      centralHeader.writeUInt32LE(0, 16);     // crc32
+      centralHeader.writeUInt32LE(compressed.length, 20);
+      centralHeader.writeUInt32LE(uncompressed.length, 24);
+      centralHeader.writeUInt16LE(nameBuf.length, 28);
+      centralHeader.writeUInt16LE(0, 30);     // extra field length
+      centralHeader.writeUInt16LE(0, 32);     // comment length
+      centralHeader.writeUInt16LE(0, 34);     // disk number start
+      centralHeader.writeUInt16LE(0, 36);     // internal attrs
+      centralHeader.writeUInt32LE(0, 38);     // external attrs
+      centralHeader.writeUInt32LE(localOffset, 42);
+      centralBufs.push(Buffer.concat([centralHeader, nameBuf]));
+    }
+    const localSection = Buffer.concat(localBufs);
+    const centralSection = Buffer.concat(centralBufs);
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(0, 4);                 // disk number
+    eocd.writeUInt16LE(0, 6);                 // disk with CD start
+    eocd.writeUInt16LE(entries.length, 8);    // entries on this disk
+    eocd.writeUInt16LE(entries.length, 10);   // total entries
+    eocd.writeUInt32LE(centralSection.length, 12);
+    eocd.writeUInt32LE(localSection.length, 16); // CD offset = end of local section
+    eocd.writeUInt16LE(0, 20);                // comment length
+    return Buffer.concat([localSection, centralSection, eocd]);
+  }
+
+  const ENTRY_A_TEXT = makeLog(0, 3, { msgPrefix: "stored" });   // method 0
+  const ENTRY_B_TEXT = makeLog(0, 4, { msgPrefix: "deflated" }); // method 8
+
+  await withApp(async (w, d, T) => {
+    section("199a. readZipEntries parses the central directory (name/size/compressionMethod) without inflating anything");
+
+    // Neither Response nor DecompressionStream exist on a jsdom window —
+    // philogg.html's extract() needs both, so this and every other group
+    // below hands the real Node ones in, exactly as opts.indexedDB does for
+    // fake-indexeddb elsewhere in this suite.
+    w.Response = Response;
+    let decompressCount = 0;
+    class CountingDecompressionStream extends DecompressionStream {
+      constructor(...args) { super(...args); decompressCount++; }
+    }
+    w.DecompressionStream = CountingDecompressionStream;
+
+    const zipBuf = buildZipFixture([
+      { name: "a-stored.log", data: ENTRY_A_TEXT, method: 0 },
+      { name: "b-deflated.log", data: ENTRY_B_TEXT, method: 8 },
+    ]);
+    const zipFile = new w.File([zipBuf], "logs.zip");
+
+    const entries = await w.readZipEntries(zipFile);
+    assert(entries.length === 2, "both entries are listed, got " + entries.length);
+    assert(entries[0].name === "a-stored.log" && entries[1].name === "b-deflated.log",
+      "names come out in archive order, got " + entries.map(e => e.name).join(","));
+    assert(entries[0].compressionMethod === 0 && entries[1].compressionMethod === 8,
+      "compression methods are read correctly, got " + entries.map(e => e.compressionMethod).join(","));
+    assert(entries[0].size === Buffer.byteLength(ENTRY_A_TEXT) && entries[1].size === Buffer.byteLength(ENTRY_B_TEXT),
+      "uncompressed sizes are read correctly, got " + entries.map(e => e.size).join(","));
+    assert(decompressCount === 0, "listing the central directory must never inflate anything, got " + decompressCount + " DecompressionStream construction(s)");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("201b. extract() is lazy — only the entry actually called is ever inflated, and stored vs deflated both decode correctly");
+
+    w.Response = Response;
+    let decompressCount = 0;
+    class CountingDecompressionStream extends DecompressionStream {
+      constructor(...args) { super(...args); decompressCount++; }
+    }
+    w.DecompressionStream = CountingDecompressionStream;
+
+    const zipBuf = buildZipFixture([
+      { name: "a-stored.log", data: ENTRY_A_TEXT, method: 0 },
+      { name: "b-deflated.log", data: ENTRY_B_TEXT, method: 8 },
+    ]);
+    const entries = await w.readZipEntries(new w.File([zipBuf], "logs.zip"));
+
+    const storedBytes = await entries[0].extract();
+    assert(new w.TextDecoder().decode(storedBytes) === ENTRY_A_TEXT, "stored (method 0) entry round-trips byte-for-byte untouched");
+    assert(decompressCount === 0, "a stored entry must never touch DecompressionStream, got " + decompressCount);
+
+    const deflatedBytes = await entries[1].extract();
+    assert(new w.TextDecoder().decode(deflatedBytes) === ENTRY_B_TEXT, "deflated (method 8) entry inflates back to the original text");
+    assert(decompressCount === 1, "only the ONE entry actually extracted was ever inflated, got " + decompressCount);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("201c. openZipSource adds a state.zips entry rendered without the folder-watch scanning indicator or settings gear");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "only.log", data: ENTRY_A_TEXT, method: 0 }]);
+    const zip = await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    assert(T.state.zips.length === 1 && T.state.zips[0] === zip, "the zip is added to state.zips");
+    assert(zip.entries.length === 1 && zip.entries[0].name === "only.log", "its entry list is populated from the central directory");
+
+    const box = d.querySelector("#zipList .folder-watch");
+    assert(!!box, "a folder-watch-styled box is rendered for the zip source");
+    assert(!box.querySelector(".folder-watch-icon.scanning"), "unlike folder watch, a zip source's icon never carries the scanning-ping class — nothing here is polled");
+    assert(!box.querySelector(".folder-watch-settings"), "unlike folder watch, a zip source has no settings gear — no auto-load rules apply to an immutable zip");
+    assert(!!box.querySelector(".folder-watch-close"), "a zip source still has a close affordance, same as a watched folder");
+    const row = box.querySelector(".folder-watch-file");
+    assert(!!row && row.textContent.includes("only.log"), "the entry row shows the entry name, got " + (row && row.textContent));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("201d. double-clicking a zip entry row extracts just that entry and loads it as a static (non-tailable) file via loadFileDescriptors");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([
+      { name: "a-stored.log", data: ENTRY_A_TEXT, method: 0 },
+      { name: "b-deflated.log", data: ENTRY_B_TEXT, method: 8 },
+    ]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    let loadFileDescriptorsCalls = 0;
+    const originalLFD = w.loadFileDescriptors;
+    w.loadFileDescriptors = (...args) => { loadFileDescriptorsCalls++; return originalLFD.apply(w, args); };
+
+    const rows = d.querySelectorAll("#zipList .folder-watch-file");
+    assert(rows.length === 2, "both entries render as inert rows, got " + rows.length);
+    rows[1].dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]] && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+
+    assert(loadFileDescriptorsCalls === 1, "double-click routes through the shared loadFileDescriptors ingestion path, got " + loadFileDescriptorsCalls + " call(s)");
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(node && node.name === "b-deflated.log", "the loaded node is the double-clicked entry, got " + (node && node.name));
+    assert(node.entries.length === 4, "the entry's inflated content was parsed into log entries, got " + (node && node.entries.length));
+    assert(!node.tail, "a zip entry has no live source to poll — no `handle` is passed, so the node gets no `.tail` and stays non-tailable, got " + JSON.stringify(node.tail));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("201e. a nested-folder entry's full relative path is shown as the row's name and used as the loaded file's name (item 4)");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "subfolder/app.log", data: ENTRY_A_TEXT, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    assert(row && row.textContent.includes("subfolder/app.log"),
+      "the row displays the entry's full relative path, not just its basename, got " + (row && row.textContent));
+
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]] && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(node.name === "subfolder/app.log", "the loaded node keeps the full relative path as its name, got " + (node && node.name));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199f. a non-log, non-inline-viewable entry (item 3) double-clicked in the plain browser build opens a Blob-URL tab instead of loading into the tree — updated this session to a .mp3 fixture: .png now gets the inline image viewer instead (see 199i)");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const mp3Bytes = Buffer.from([0xff, 0xfb, 1, 2, 3, 4]);
+    const zipBuf = buildZipFixture([{ name: "clip.mp3", data: mp3Bytes, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    let loadFileDescriptorsCalls = 0;
+    const originalLFD = w.loadFileDescriptors;
+    w.loadFileDescriptors = (...args) => { loadFileDescriptorsCalls++; return originalLFD.apply(w, args); };
+
+    let openedUrl = null;
+    w.URL.createObjectURL = blob => { openedUrl = blob; return "blob:fake-url"; };
+    w.URL.revokeObjectURL = () => {};
+    let windowOpenUrl = null;
+    w.open = url => { windowOpenUrl = url; };
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => windowOpenUrl !== null);
+
+    assert(loadFileDescriptorsCalls === 0, "a non-log entry never goes through the log ingestion path, got " + loadFileDescriptorsCalls + " call(s)");
+    assert(windowOpenUrl === "blob:fake-url", "window.open() is called with the created Blob URL, got " + windowOpenUrl);
+    assert(openedUrl instanceof w.Blob, "a Blob was actually constructed from the extracted bytes");
+    assert(T.state.rootIds.length === 0, "no tree node is created for a non-log entry opened this way");
+  });
+
+  {
+    let openedName = null, openedBytes = null;
+    await withApp(async (w, d, T) => {
+      section("199g. a non-log, non-inline-viewable entry double-clicked under the desktop wrapper hands the extracted bytes to window.philogg.openExtractedEntry instead of opening a browser tab — updated this session to a .pdf fixture: .txt now gets the inline text viewer instead (see 199h)");
+
+      w.Response = Response;
+      w.DecompressionStream = DecompressionStream;
+      const zipBuf = buildZipFixture([{ name: "manual.pdf", data: "%PDF-1.4 fake", method: 0 }]);
+      await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+      let windowOpenCalled = false;
+      w.open = () => { windowOpenCalled = true; };
+
+      const row = d.querySelector("#zipList .folder-watch-file");
+      row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+      await waitFor(() => openedName !== null);
+
+      assert(openedName === "manual.pdf", "the entry's name is passed through, got " + openedName);
+      assert(Buffer.from(openedBytes).toString("utf8") === "%PDF-1.4 fake", "the extracted bytes are passed through correctly, got " + Buffer.from(openedBytes || []).toString("utf8"));
+      assert(!windowOpenCalled, "the browser-tab fallback is never used when window.philogg.openExtractedEntry exists");
+      assert(T.state.rootIds.length === 0, "no tree node is created for a non-log entry opened this way");
+    }, { philogg: {
+      getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
+      openExtractedEntry: (name, bytes) => { openedName = name; openedBytes = bytes; return Promise.resolve(); },
+    } });
+  }
+
+  await withApp(async (w, d, T) => {
+    section("199h. bugfix (this session): an opened zip log entry nests inside its zip's own renderZipSection container (node.zipId) instead of appearing as a detached top-level file");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "a.log", data: ENTRY_A_TEXT, method: 0 }]);
+    const zip = await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]] && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(node.zipId === zip.id, "the loaded node is tagged with the zip's id, got " + node.zipId);
+
+    assert(!d.querySelector("#tree [data-node-id='" + node.id + "']"), "the opened file does NOT render as a detached row in the plain #tree list");
+    const nestedRow = d.querySelector("#zipList [data-node-id='" + node.id + "']");
+    assert(!!nestedRow, "the opened file DOES render nested inside its zip's own #zipList container");
+    assert(d.querySelector("#zipList .folder-watch-file") === null, "the now-opened entry no longer shows its inert placeholder row alongside the real one");
+
+    // Closing it (same ✕/delete path any ordinary file uses) drops it back
+    // to being an inert, unopened listing row again — the zip's own entries
+    // list is the source of truth, unlike folder watch's persisted `files`
+    // records, so this falls out of the node.zipId lookup in
+    // renderZipSection for free.
+    w.deleteFilterNodeWithUndo(node.id);
+    w.render(); // deleteFilterNodeWithUndo itself doesn't render — its callers (tree-row ✕ button etc.) do
+    await waitFor(() => T.state.rootIds.length === 0);
+    assert(!!d.querySelector("#zipList .folder-watch-file"), "closing the opened file returns it to an inert placeholder row in the zip section, got " + d.querySelector("#zipList").innerHTML);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199i. a .txt zip entry (item 3, this session's inline-viewer extension) opens the inline text viewer in the main content area, hiding the tab bar");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    let windowOpenCalled = false;
+    w.open = () => { windowOpenCalled = true; };
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    assert(T.state.inlineViewer.kind === "text", "state.inlineViewer is set to the text kind, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.kind));
+    assert(T.state.inlineViewer.text === "hello world", "the extracted text content is stored, got " + (T.state.inlineViewer && T.state.inlineViewer.text));
+    assert(!windowOpenCalled, "a .txt entry no longer falls through to the browser-tab fallback");
+    assert(T.state.rootIds.length === 0, "no tree/log node is created for an inline-viewed entry");
+    assert(d.querySelector("#inlineViewerWrap").style.display === "flex", "the inline viewer wrap is shown");
+    // Note: the CONTENT column, not the whole viewer's textContent — that
+    // would also pick up the line-number gutter's "1" (see GROUP 199k-199n
+    // below for the gutter itself).
+    assert(d.querySelector("#inlineTextViewer .itv-line-content").textContent === "hello world", "the text viewer renders the extracted content");
+    assert(d.querySelector("#breadcrumbBar").style.display === "none", "the tab bar (#breadcrumbBar) is hidden while a non-log inline viewer is active");
+
+    w.closeInlineViewer();
+    assert(T.state.inlineViewer === null, "closing the inline viewer clears state.inlineViewer");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199i-2. .json/.xml zip entries get JSON/XML token highlighting (highlightJsonText/highlightXmlText) in the inline text viewer");
+
+    assert(w.highlightJsonText('{"a":1}').includes('class="tok-key"'), "JSON object keys are tokenized");
+    assert(w.highlightJsonText('{"a":1}').includes('class="tok-number"'), "JSON numbers are tokenized");
+    assert(w.highlightXmlText('<a b="c"/>').includes('class="tok-tag"'), "XML tags are tokenized");
+    assert(w.highlightXmlText('<a b="c"/>').includes('class="tok-attr"'), "XML attributes are tokenized");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199j. a .png zip entry (item 3) opens the inline image viewer instead of the browser-tab/external-open fallback");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    const zipBuf = buildZipFixture([{ name: "shot.png", data: pngBytes, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    let windowOpenCalled = false;
+    w.open = () => { windowOpenCalled = true; };
+    let extractedCalled = false;
+    if (w.philogg) w.philogg.openExtractedEntry = () => { extractedCalled = true; return Promise.resolve(); };
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    assert(T.state.inlineViewer.kind === "image", "state.inlineViewer is set to the image kind, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.kind));
+    assert(typeof T.state.inlineViewer.dataUrl === "string" && T.state.inlineViewer.dataUrl.startsWith("data:"), "the extracted bytes are turned into a data: URL, got " + (T.state.inlineViewer && T.state.inlineViewer.dataUrl));
+    assert(!windowOpenCalled && !extractedCalled, "a .png entry no longer falls through to either external-open route");
+    assert(d.querySelector("#inlineImageViewer").classList.contains("active"), "the inline image viewer is the active sub-view");
+    assert(!!d.querySelector("#imgViewerToolbar"), "the image viewer's zoom/pan/reset toolbar is present");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199k. inline text viewer: line-number gutter renders one .itv-line per line, numbers live in a separate non-selectable column from the copyable text");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "first\nsecond\nthird", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
+    assert(lines.length === 3, "one .itv-line per source line, got " + lines.length);
+    const nums = Array.from(lines).map(l => l.querySelector(".itv-line-num").textContent);
+    assert(nums.join(",") === "1,2,3", "line numbers are 1-based and in order, got " + nums.join(","));
+    const contents = Array.from(lines).map(l => l.querySelector(".itv-line-content").textContent);
+    assert(contents.join("|") === "first|second|third", "each line's own text lives in its .itv-line-content, got " + contents.join("|"));
+
+    // Non-selectable via CSS (jsdom doesn't compute layout/selection, so the
+    // only thing assertable here is the class carrying the user-select:none
+    // rule, per docs/testing-and-limitations.md's jsdom blind spots).
+    const numEl = lines[0].querySelector(".itv-line-num");
+    assert(numEl.className === "itv-line-num", "the gutter number is its own element/class (user-select:none in CSS), not interleaved into .itv-line-content's text");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199n. inline text viewer: hover-only line highlight — pure CSS :hover, no click handler, no selectedLine state (click-to-highlight removed, person-reported interference with drag-to-select)");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "alpha\nbeta\ngamma", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    // No click-driven state or class exists any more.
+    assert(T.state.inlineViewer.selectedLine === undefined, "state.inlineViewer no longer carries a selectedLine field");
+    const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
+    lines[1].dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(!lines[1].classList.contains("itv-line-selected"), "a click on a line does nothing any more — no .itv-line-selected class exists");
+    assert(!/\.itv-line-selected\{/.test(html), "the .itv-line-selected CSS rule itself is gone from the stylesheet, not just unused");
+
+    // Hover is pure CSS (:hover on .itv-line, always active, no listener) —
+    // jsdom doesn't run :hover, so what's assertable here is that the CSS
+    // source carries the rule and that .itv-line has no click affordance
+    // left (no inline "cursor:pointer" tied to a now-removed click target).
+    assert(/\.itv-line:hover\{background:var\(--bg-elevated\);\}/.test(html), "the plain CSS :hover rule for a line is present");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199m. lifecycle unification: a non-log zip entry's row toggles the same grayed/opened/active look and ✕-to-close a log file's own tree row uses, instead of a separate close button on the viewer");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    assert(!d.querySelector("#inlineViewerCloseBtn"), "the viewer's own separate close button is gone");
+
+    let row = d.querySelector("#zipList .folder-watch-file");
+    assert(!row.classList.contains("zip-entry-opened"), "an unopened entry's row is still grayed (no zip-entry-opened class)");
+
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+    row = d.querySelector("#zipList .folder-watch-file");
+    assert(row.classList.contains("zip-entry-opened"), "once opened, the row is no longer grayed");
+    assert(row.classList.contains("zip-entry-active"), "and, being the currently-shown content, is also marked active");
+    const closeBtn = row.querySelector(".tree-del");
+    assert(!!closeBtn, "the row itself now carries a close ✕ — the same .tree-del class/icon a log file's own tree row uses");
+
+    // Clicking elsewhere (a real tree row) hides it, matching "only one
+    // log's content shows at a time" extended to non-log entries.
+    const zipBuf2 = buildZipFixture([{ name: "app.log", data: makeLog(0, 2), method: 0 }]);
+    // (reuse the same zip list — open a second, log-shaped source instead,
+    // simpler than reaching into an unrelated fixture's internals)
+    await w.openZipSource(new w.File([zipBuf2], "second.zip"), "second.zip");
+    const logRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("app.log"));
+    logRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+    assert(T.state.inlineViewer === null, "opening a log entry from the zip clears the previously-open non-log inline viewer, got " + JSON.stringify(T.state.inlineViewer));
+
+    // The notes.txt row is still "opened" (grayed-off) but no longer
+    // "active" (not currently shown) — same as an open-but-not-selected
+    // log file's own tree row.
+    const txtRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    assert(txtRow.classList.contains("zip-entry-opened") && !txtRow.classList.contains("zip-entry-active"),
+      "the notes.txt row stays opened (not grayed) but is no longer active, got " + txtRow.className);
+
+    // A plain click on that still-opened row re-selects/re-shows it,
+    // without needing to re-extract it (no fresh dblclick needed) —
+    // mirroring a plain click on an already-open log file's tree row.
+    txtRow.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.txt", "a plain click on an opened non-log row re-selects it, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.name));
+
+    // And the row's own ✕ closes it — the row goes back to being grayed,
+    // and state.inlineViewer clears, exactly like closing a log file.
+    const reRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    reRow.querySelector(".tree-del").dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.inlineViewer === null, "closing via the row's own ✕ clears state.inlineViewer");
+    const finalRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    assert(!finalRow.classList.contains("zip-entry-opened"), "...and the row goes back to its grayed, unopened look");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199o. bugfix: an opened non-log entry's row is no longer left LOOKING grayed (color, not just opacity), and Alt+Up/Down now reaches it");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    // Root cause: .zip-entry-opened used to only reset opacity, leaving
+    // .folder-watch-file's own dim color:var(--text-tertiary) in place —
+    // jsdom doesn't resolve CSS custom properties through the cascade, so
+    // the assertable proxy is the stylesheet rule itself carrying the color
+    // override, matching a real opened .tree-row's non-dimmed look.
+    assert(/\.zip-source-file\.zip-entry-opened\{[^}]*color:var\(--text-secondary\)/.test(html),
+      "the opened-row CSS rule also resets color (not just opacity), matching an opened .tree-row's default color");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    // Alt+Up/Down (moveTreeSelection) used to only ever walk real
+    // state.nodes entries (flattenTreeIds) — an opened non-log entry had no
+    // node at all, so it was silently skipped by the cycle no matter what.
+    const zip = T.state.zips[0];
+    assert(zip.inlineViewers.has("notes.txt"), "sanity: the entry is cached as opened");
+
+    // From nothing active, Alt+Down should land straight on the (only)
+    // opened non-log entry.
+    T.state.activeId = null;
+    w.moveTreeSelection("ArrowDown");
+    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.txt",
+      "Alt+Down reaches the opened non-log entry, got " + JSON.stringify(T.state.inlineViewer));
+
+    // Open a second, real log entry from a second zip so there's something
+    // else in the nav cycle to move to/from.
+    const zipBuf2 = buildZipFixture([{ name: "app.log", data: makeLog(0, 2), method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf2], "second.zip"), "second.zip");
+    const logRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("app.log"));
+    logRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
+    assert(T.state.inlineViewer === null, "opening the log entry cleared the non-log viewer (existing behavior)");
+
+    // Nav order now follows each zip's own on-screen position (Bug 1 fix,
+    // see flattenTreeIds/GROUP 199q below), not "real tree nodes first, then
+    // every zip-viewer virtual id appended afterwards": "logs.zip" (holding
+    // notes.txt) renders above "second.zip" (holding app.log) in #zipList,
+    // since it was opened first, so notes.txt's virtual nav id precedes
+    // app.log's real node in the flattened order. From nothing active,
+    // Alt+Down already landed on notes.txt above; from there Alt+Down is the
+    // step that reaches app.log's real node.
+    w.moveTreeSelection("ArrowDown");
+    assert(T.state.inlineViewer === null && T.state.activeId === T.state.rootIds[0],
+      "Alt+Down from the non-log entry steps to the real log node (its zip renders below), got inlineViewer=" +
+      JSON.stringify(T.state.inlineViewer) + " activeId=" + T.state.activeId);
+
+    // And Alt+Up from there returns to the still-opened non-log entry.
+    w.moveTreeSelection("ArrowUp");
+    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.txt",
+      "Alt+Up from the real log node moves back to the non-log entry above it, got " + JSON.stringify(T.state.inlineViewer));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199p. bugfix: copying a text-viewer selection produces exactly the original line breaks, no extra ones (copy event, not the DOM's own block-per-line serialization)");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const original = "first line\nsecond line\nthird line\n\nfifth line";
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: original, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    const lines = inlineTextViewerEl.querySelectorAll(".itv-line-content");
+
+    function fireCopy(range) {
+      const sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+      ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+      inlineTextViewerEl.dispatchEvent(ev);
+      return ev;
+    }
+
+    // Partial selection spanning three lines (mid line 0 through mid line 2).
+    let range = w.document.createRange();
+    range.setStart(lines[0].firstChild, 6);  // "line" (from "first line")
+    range.setEnd(lines[2].firstChild, 5);    // "third"
+    let ev = fireCopy(range);
+    assert(ev.defaultPrevented, "the copy event is intercepted (preventDefault)");
+    assert(ev.clipboardData.data["text/plain"] === "line\nsecond line\nthird",
+      "exactly the source's own line breaks, no extras, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // A selection that includes the genuinely empty line (index 3) — the
+    // known extra-blank-line edge case this bug report called out.
+    range = w.document.createRange();
+    range.setStart(lines[2].firstChild, 0);
+    range.setEnd(lines[4].firstChild, 5);
+    ev = fireCopy(range);
+    assert(ev.clipboardData.data["text/plain"] === "third line\n\nfifth",
+      "an empty line in the middle produces exactly one blank line, not two, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // A collapsed (empty) selection is left alone — nothing to copy, so the
+    // handler must not touch clipboardData or call preventDefault.
+    range = w.document.createRange();
+    range.setStart(lines[0].firstChild, 3);
+    range.setEnd(lines[0].firstChild, 3);
+    ev = fireCopy(range);
+    assert(!ev.defaultPrevented && ev.clipboardData.data["text/plain"] === undefined,
+      "a collapsed selection is left to the browser's default (no-op) copy behavior");
+
+  });
+
+  section("199q. bugfix (Bug 1, person-reported): Alt+Up/Down nav order now matches the zip container's rendered top-to-bottom order (alphabetical, log and non-log entries interleaved) instead of tacking every opened non-log entry on as one block after the whole tree");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    // Alphabetical listing per the report's own example: a.png above b.txt
+    // above c.log — a real tree node for the opened log entry (node.zipId)
+    // should land BETWEEN the two opened non-log virtual nav ids, not after
+    // both of them.
+    const zipBuf = buildZipFixture([
+      { name: "a.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47]), method: 0 },
+      { name: "b.txt", data: "hello", method: 0 },
+      { name: "c.log", data: makeLog(0, 2), method: 0 },
+    ]);
+    await w.openZipSource(new w.File([zipBuf], "assets.zip"), "assets.zip");
+    const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
+    // Open all three, in a DELIBERATELY non-alphabetical order (c.log first,
+    // then a.png, then b.txt) — flattenTreeIds must ignore this open order
+    // and reflect only the alphabetical RENDER order.
+    rows().find(r => r.title.includes("c.log")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => d.querySelectorAll("#zipList .folder-watch-file, #zipList .tree-row").length >= 1 &&
+      T.state.rootIds.some(id => T.state.nodes[id] && T.state.nodes[id].zipId));
+    rows().find(r => r.title.includes("a.png")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.entryName === "a.png");
+    rows().find(r => r.title.includes("b.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.entryName === "b.txt");
+
+    const zip = T.state.zips[0];
+    const logNode = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n && n.zipId === zip.id);
+    const ids = w.flattenTreeIds();
+    const idxPng = ids.indexOf(w.zipViewerNavId(zip.id, "a.png"));
+    const idxLog = ids.indexOf(logNode.id);
+    const idxTxt = ids.indexOf(w.zipViewerNavId(zip.id, "b.txt"));
+    assert(idxPng !== -1 && idxLog !== -1 && idxTxt !== -1, "all three entries have a nav slot");
+    // Alphabetical render order is a.png, b.txt, c.log — the real c.log tree
+    // node must land LAST despite being opened FIRST (open order must not
+    // matter, only render order does).
+    assert(idxPng < idxTxt && idxTxt < idxLog,
+      "nav order follows the zip's alphabetical render order (a.png, b.txt, then the real c.log tree node) — got png@" +
+      idxPng + " txt@" + idxTxt + " log@" + idxLog);
+  });
+
+  section("199r. bugfix (Bug 2, person-reported): Ctrl+C with a selected log row in the background AND an active text-viewer selection copies the text-viewer's selection, not the log row");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const log = makeLog(0, 3, { msgPrefix: "row" });
+    const file = new w.File([log], "app.log", { type: "text/plain" });
+    const donePromise = w.loadFileDescriptors([{ file, handle: null }]);
+    await donePromise;
+    await waitFor(() => d.querySelector(".log-row"));
+    const firstRow = d.querySelector(".log-row");
+    firstRow.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.focusRegion === "entries" && T.state.selectedId, "a log row is selected (background selection)");
+
+    const zipBuf = buildZipFixture([{ name: "notes.xml", data: "<a>hello world</a>", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "docs.zip"), "docs.zip");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+    // Opening the viewer leaves focusRegion/selectedId exactly as before
+    // (see the tree-row click handler's own comment) — the log row stays
+    // "selected in the background" while the viewer is what's actually shown.
+    assert(T.state.focusRegion === "entries" && T.state.selectedId, "the log row selection is still there in the background");
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    const contentEl = inlineTextViewerEl.querySelector(".itv-line-content");
+    const range = w.document.createRange();
+    range.selectNodeContents(contentEl);
+    const sel = w.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    assert(sel.toString().length > 0, "a genuine text selection exists inside the inline viewer");
+
+    const ev = new w.KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true });
+    d.dispatchEvent(ev);
+    assert(!ev.defaultPrevented, "the global Ctrl+C handler yields — does not preventDefault — when a real text selection exists in the inline viewer");
+  });
+
+  section("199s. bugfix (Bug 3, person-reported): leading whitespace on a line is preserved in a copied text-viewer selection, and the viewer opts out of the browser's native drag-the-selection gesture");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "indented.json", data: '{\n  "a": 1,\n  "b": 2\n}', method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    const lines = inlineTextViewerEl.querySelectorAll(".itv-line-content");
+    function fireCopy(range) {
+      const sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+      ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+      inlineTextViewerEl.dispatchEvent(ev);
+      return ev;
+    }
+    // Selecting the whole of line 1 ('  "a": 1,') — starting exactly at the
+    // leading-whitespace text node — must keep the two leading spaces.
+    const range = w.document.createRange();
+    range.setStart(lines[1].firstChild, 0);
+    range.setEnd(lines[1].lastChild, lines[1].lastChild.textContent.length);
+    const ev = fireCopy(range);
+    assert(ev.clipboardData.data["text/plain"] === '  "a": 1,',
+      "leading whitespace is preserved in the copied text, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // The viewer opts out of the browser's native "drag the current
+    // selection" affordance (Bug 3's other half) — dragstart is prevented.
+    const dragEv = new w.Event("dragstart", { bubbles: true, cancelable: true });
+    inlineTextViewerEl.dispatchEvent(dragEv);
+    assert(dragEv.defaultPrevented, "dragstart on the text viewer is prevented, so clicking/dragging over an existing selection re-selects instead of native-dragging it");
+  });
+
+  section("199t. bugfix (Bug 1, person-reported): a multi-line copy is correct even when a Range boundary resolves past the last character of a line — i.e. to the .itv-line DIV itself (an ANCESTOR of .itv-line-content), which a real drag commonly produces when the drag point is past a line's rendered text");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    // Nested <span> tokenizer wrappers (highlightXmlText) on every line,
+    // closing tags each on their own line — matches the person's report
+    // (</Value>, </ConfigItem>, </ConfigItems>, tab-indented).
+    const original = "<ConfigItems>\n\t<ConfigItem>\n\t\t<Value>\n\t\t\t1\n\t\t</Value>\n\t</ConfigItem>\n</ConfigItems>";
+    const zipBuf = buildZipFixture([{ name: "notes.xml", data: original, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    const lineEls = inlineTextViewerEl.querySelectorAll(".itv-line");
+    function fireCopy(range) {
+      const sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+      ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+      inlineTextViewerEl.dispatchEvent(ev);
+      return ev;
+    }
+
+    // Select the three closing-tag lines top-to-bottom: </Value> (idx 4)
+    // through </ConfigItems> (idx 6), ending at the .itv-line DIV itself
+    // (offset = childNodes.length), exactly what a real browser reports for
+    // a drag that ends past the end of the last selected line's text.
+    const startContent = lineEls[4].querySelector(".itv-line-content");
+    const endLineDiv = lineEls[6];
+    let range = w.document.createRange();
+    range.setStart(startContent, 0);
+    range.setEnd(endLineDiv, endLineDiv.childNodes.length);
+    let ev = fireCopy(range);
+    assert(ev.clipboardData.data["text/plain"] === "\t\t</Value>\n\t</ConfigItem>\n</ConfigItems>",
+      "top-to-bottom drag ending past the last line's text still copies the full last line, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // Same selection, bottom-to-top drag direction (anchor at the end,
+    // focus at the start) — Selection normalizes start/end regardless, but
+    // exercised explicitly since drag direction was called out in the report.
+    const sel = w.getSelection();
+    sel.removeAllRanges();
+    sel.setBaseAndExtent(endLineDiv, endLineDiv.childNodes.length, startContent, 0);
+    const ev2 = new w.Event("copy", { bubbles: true, cancelable: true });
+    ev2.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+    inlineTextViewerEl.dispatchEvent(ev2);
+    assert(ev2.clipboardData.data["text/plain"] === "\t\t</Value>\n\t</ConfigItem>\n</ConfigItems>",
+      "bottom-to-top drag direction produces the identical result, got " + JSON.stringify(ev2.clipboardData.data["text/plain"]));
+  });
+
+  section("199u. bugfix (Bug 2, person-reported): opening/selecting a non-log inline-viewer entry clears the previously-active log file's tree-row 'active' styling, the same state.activeId-clearing transition a log-to-log switch already gets");
+  await withApp(async (w, d, T) => {
+    const log = makeLog(0, 2);
+    const file = new w.File([log], "app.log", { type: "text/plain" });
+    await w.loadFileDescriptors([{ file, handle: null }]);
+    await waitFor(() => T.state.activeId && T.state.nodes[T.state.activeId]);
+    const logNodeId = T.state.activeId;
+    let logRow = d.querySelector('.tree-row[data-node-id="' + logNodeId + '"]');
+    assert(logRow && logRow.classList.contains("active"), "the log file's tree row starts out active");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const zipRow = d.querySelector("#zipList .folder-watch-file");
+    zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    assert(T.state.activeId === null, "state.activeId is cleared once a non-log entry becomes the active content, got " + JSON.stringify(T.state.activeId));
+    logRow = d.querySelector('.tree-row[data-node-id="' + logNodeId + '"]');
+    assert(logRow && !logRow.classList.contains("active"), "the log file's tree row no longer carries the active class");
+
+    // Re-clicking the already-opened non-log entry (the plain-click path,
+    // not dblclick) goes through the same transition.
+    T.state.activeId = logNodeId;
+    w.render();
+    const zipRow2 = d.querySelector("#zipList .folder-watch-file");
+    zipRow2.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.activeId === null, "re-selecting the already-opened non-log entry via plain click also clears state.activeId");
+
+    // Third path: Alt+Up/Down tree nav (moveTreeSelection) landing on a
+    // non-log entry's virtual nav id goes through the same transition.
+    T.state.activeId = logNodeId;
+    T.state.inlineViewer = null;
+    w.render();
+    w.moveTreeSelection("ArrowDown");
+    assert(T.state.inlineViewer !== null && T.state.activeId === null,
+      "Alt+Down landing on the non-log entry also clears state.activeId, got activeId=" + JSON.stringify(T.state.activeId));
+    logRow = d.querySelector('.tree-row[data-node-id="' + logNodeId + '"]');
+    assert(logRow && !logRow.classList.contains("active"), "the log file's tree row is not active after Alt+Down lands on the non-log entry");
+  });
+
+  section("199v. bugfix (Bug 3, person-reported): the minimap hides whenever a non-log entry is the active content, including after the log file open before the switch is closed entirely");
+  await withApp(async (w, d, T) => {
+    const log = makeLog(0, 3);
+    const file = new w.File([log], "app.log", { type: "text/plain" });
+    await w.loadFileDescriptors([{ file, handle: null }]);
+    await waitFor(() => T.state.activeId && T.state.nodes[T.state.activeId]);
+    const logNodeId = T.state.activeId;
+    const minimapEl = d.querySelector("#timelineMinimap");
+    assert(!minimapEl.classList.contains("hidden"), "the minimap is shown while a log file is active");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const zipRow = d.querySelector("#zipList .folder-watch-file");
+    zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+    assert(minimapEl.classList.contains("hidden"), "switching to the non-log entry hides the minimap");
+
+    // Close the log file that was open before the switch, while the non-log
+    // viewer stays active — the minimap must stay hidden (this is the
+    // specific trigger the report called out, distinct from the plain
+    // switch above: renderMainView's state.inlineViewer branch returns
+    // before ever reaching the !hasFiles branch that would otherwise hide it).
+    delete T.state.nodes[logNodeId];
+    T.state.rootIds = T.state.rootIds.filter(id => id !== logNodeId);
+    w.render();
+    assert(T.state.rootIds.length === 0, "the log file is now fully closed");
+    assert(T.state.inlineViewer !== null, "the non-log viewer is still active");
+    assert(minimapEl.classList.contains("hidden"), "the minimap stays hidden after closing the log file while the non-log viewer is active");
+  });
+
+  section("199w. bugfix (Bug 1, person-reported, this session): Entry Detail hides whenever a non-log entry is the active content, matching the tab bar and minimap's own gating");
+  await withApp(async (w, d, T) => {
+    const log = makeLog(0, 3);
+    const file = new w.File([log], "app.log", { type: "text/plain" });
+    await w.loadFileDescriptors([{ file, handle: null }]);
+    await waitFor(() => d.querySelector(".log-row"));
+    d.querySelector(".log-row").dispatchEvent(new w.Event("click", { bubbles: true }));
+    const detailPanel = d.querySelector("#detailPanel");
+    assert(detailPanel.style.display === "flex", "Entry Detail is shown once a log row is selected");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const zipRow = d.querySelector("#zipList .folder-watch-file");
+    zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+    assert(detailPanel.style.display === "none", "Entry Detail hides once a non-log entry becomes the active content, got " + detailPanel.style.display);
+    const detailResizer = d.querySelector("#detailResizer");
+    assert(detailResizer.style.display === "none", "the detail resizer handle hides along with the panel");
+  });
+
+  section("199x. bugfix (Bug 2, person-reported, this session — supersedes 199t's closest()-based lookup): multi-line copy is correct even when a selection boundary's container is #inlineTextViewer itself (a real drag \"from the very start\"/past the very end commonly reports this), not just a .itv-line ancestor");
+  await withApp(async (w, d, T) => {
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const original = "<ConfigItems>\n\t<ConfigItem>\n\t\t<Value>\n\t\t\t1\n\t\t</Value>\n\t</ConfigItem>\n</ConfigItems>";
+    const zipBuf = buildZipFixture([{ name: "notes.xml", data: original, method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer !== null);
+
+    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
+    function fireCopy(range) {
+      const sel = w.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+      ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
+      inlineTextViewerEl.dispatchEvent(ev);
+      return ev;
+    }
+
+    // "Select all lines from the very start": start boundary's container is
+    // the viewer element itself (offset 0, before its first child) — exactly
+    // what a real drag that begins above/before the first line's rendered
+    // text produces, and what 199t's closest()-based lookup could not
+    // resolve to any line at all. End boundary similarly the viewer element
+    // itself, past its last child, for a drag ending below the last line.
+    const range = w.document.createRange();
+    range.setStart(inlineTextViewerEl, 0);
+    range.setEnd(inlineTextViewerEl, inlineTextViewerEl.childNodes.length);
+    const ev = fireCopy(range);
+    assert(ev.clipboardData.data["text/plain"] === original,
+      "a container-level start AND end boundary still copies the entire original text, got " + JSON.stringify(ev.clipboardData.data["text/plain"]));
+
+    // Single line, container-level end boundary only (start still resolves
+    // inside the line's own content) — the other half of "ends past a line".
+    const lineEls = inlineTextViewerEl.querySelectorAll(".itv-line");
+    const oneLineRange = w.document.createRange();
+    oneLineRange.setStart(lineEls[1].querySelector(".itv-line-content").firstChild, 0);
+    oneLineRange.setEnd(inlineTextViewerEl, 2);
+    const ev2 = fireCopy(oneLineRange);
+    assert(ev2.clipboardData.data["text/plain"] === "\t<ConfigItem>",
+      "a single line's own text is captured even when the end boundary resolves to the container, got " + JSON.stringify(ev2.clipboardData.data["text/plain"]));
+
+    // Column-0 mid-file start (exactly at a line's own leading tab, not the
+    // container) through a normal in-line end — leading whitespace preserved.
+    const midRange = w.document.createRange();
+    midRange.setStart(lineEls[2].querySelector(".itv-line-content").firstChild, 0);
+    midRange.setEnd(lineEls[3].querySelector(".itv-line-content").lastChild, lineEls[3].querySelector(".itv-line-content").lastChild.textContent.length);
+    const ev3 = fireCopy(midRange);
+    assert(ev3.clipboardData.data["text/plain"] === "\t\t<Value>\n\t\t\t1",
+      "a normal cross-line selection (no container-level boundary) still works after the rewrite, got " + JSON.stringify(ev3.clipboardData.data["text/plain"]));
+  });
+}
+
+/* ============================================================
+   GROUP 201 — Clickable local file paths (linkifyPaths, eager verification, the popup)
+   Origin: this session. Absolute Windows/Unix paths detected inside a
+   rendered message field get wrapped in a .fp-candidate span with a dim
+   "detected" underline regardless of build (so a browser build looks the
+   same, just never upgrades further) — only under a desktop wrapper
+   (window.philogg.pathExists) does verifyVisibleFpCandidates(), called once
+   per render, verify each newly-seen path and, only if it exists, upgrade
+   it to the full link look (.fp-verified) and offer "Open
+   file"/"Open containing folder" on hover (openPath/revealPath). A path
+   that doesn't exist never gets .fp-verified and never shows the popup.
+   Updated by this session's follow-up (person-reported: "hovered for a
+   while, nothing happened") to verify eagerly at render time, cached by
+   path, instead of on a hover debounce — 199c/199e cover that.
+   ============================================================ */
+group(201);
+await withApp(async (w, d, T) => {
+  section("201a. absolute path detection: positive and negative cases");
+
+  assert(w.linkifyPaths('plain text, no path here').indexOf("fp-candidate") === -1,
+    "no false positive on ordinary text");
+  assert(w.linkifyPaths(w.escapeHtml("ratio 3/4 and date 10/09/2026")).indexOf("fp-candidate") === -1,
+    "no false positive on a bare fraction or a mid-text date (not preceded by a path-safe boundary)");
+  const win = w.linkifyPaths(w.escapeHtml('see C:\\src\\Foo.cs for details'));
+  assert(win.includes('<span class="fp-candidate" data-fp="C:\\src\\Foo.cs">C:\\src\\Foo.cs</span>'),
+    "an absolute Windows path is wrapped, got " + win);
+  const unix = w.linkifyPaths(w.escapeHtml('see /var/log/app.log for details'));
+  assert(unix.includes('<span class="fp-candidate" data-fp="/var/log/app.log">/var/log/app.log</span>'),
+    "an absolute Unix path is wrapped, got " + unix);
+  const url = w.linkifyPaths(w.escapeHtml('fetched https://example.com/path/file failed'));
+  assert(!url.includes("fp-candidate"), "a URL's own \"//\" is not mistaken for an absolute Unix path, got " + url);
+  const tagged = w.linkifyPaths('<mark class="hl">/etc/passwd</mark> plain');
+  assert(tagged === '<mark class="hl"><span class="fp-candidate" data-fp="/etc/passwd">/etc/passwd</span></mark> plain',
+    "linkifyPaths skips existing tags themselves and only wraps text content, got " + tagged);
+
+  // Follow-up (person-reported root cause): real paths have spaces and are
+  // inconsistently quoted ("mal '' drumherum, mal gar nichts").
+  const bareSpaced = w.linkifyPaths(w.escapeHtml('Saved to C:\\My Program\\config.xml'));
+  assert(bareSpaced.includes('<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>'),
+    "an unquoted Windows path with a space in a segment is still detected when it ends in a recognizable extension, got " + bareSpaced);
+
+  const bareSpacedTrailing = w.linkifyPaths(w.escapeHtml('C:\\My Program\\config.xml for details'));
+  assert(bareSpacedTrailing.includes('<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>') &&
+    bareSpacedTrailing.endsWith('span> for details'),
+    "...and still stops right after the extension, not swallowing the rest of the sentence, got " + bareSpacedTrailing);
+
+  const singleQuoted = w.linkifyPaths(w.escapeHtml("see 'C:\\My Program\\config.xml' done"));
+  assert(singleQuoted.includes('&#39;<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>&#39;'),
+    "a single-quoted path (spaces included) is detected, with the quote marks left outside the span, got " + singleQuoted);
+
+  const doubleQuoted = w.linkifyPaths(w.escapeHtml('see "C:\\My Program\\config.xml" done'));
+  assert(doubleQuoted.includes('&quot;<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>&quot;'),
+    "a double-quoted path is detected through its escaped &quot; boundary, got " + doubleQuoted);
+
+  const backtickQuoted = w.linkifyPaths(w.escapeHtml('see `C:\\My Program\\config.xml` done'));
+  assert(backtickQuoted.includes('`<span class="fp-candidate" data-fp="C:\\My Program\\config.xml">C:\\My Program\\config.xml</span>`'),
+    "a backtick-quoted path is detected too, got " + backtickQuoted);
+
+  const bareDir = w.linkifyPaths(w.escapeHtml('path C:\\Windows\\System32 is bare'));
+  assert(bareDir.includes('<span class="fp-candidate" data-fp="C:\\Windows\\System32">C:\\Windows\\System32</span>'),
+    "regression: a space-free, extension-less directory path still matches via the original fallback, got " + bareDir);
+
+  // Second follow-up (person-reported): a filename with MORE THAN ONE dot
+  // (very common — versioned files, dotted .NET assembly names) used to
+  // truncate at the first dot once an extension-anchor heuristic was
+  // introduced for the spaced case above. Fixed by never requiring an
+  // extension at all: only directory segments (each terminated by "\") may
+  // contain spaces, the final segment stays exactly as space-free as it
+  // always was, so it naturally runs to the next real space with no
+  // "where's the extension" guessing.
+  const multiDotSimple = w.linkifyPaths(w.escapeHtml('Filtered C:\\eula.1028.txt'));
+  assert(multiDotSimple.includes('<span class="fp-candidate" data-fp="C:\\eula.1028.txt">C:\\eula.1028.txt</span>'),
+    "a space-free filename with two dots is captured in full, not truncated at the first one, got " + multiDotSimple);
+
+  const multiDotSpaced = w.linkifyPaths(w.escapeHtml(
+    'Create catalog entry for assembly: C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe'));
+  assert(multiDotSpaced.includes(
+    '<span class="fp-candidate" data-fp="C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe">' +
+    'C:\\Program Files\\MyCompany\\My Program\\MyCompany.App.Program.exe</span>'),
+    "spaced directory segments AND a three-dot filename together are captured in full, got " + multiDotSpaced);
+});
+
+await withApp(async (w, d, T) => {
+  section("201b. rendered rows: a candidate always gets its dim \"detected\" underline, but the popup never opens without window.philogg (browser build)");
+
+  const cs = w.getComputedStyle;
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+
+  const span = d.querySelector(".fp-candidate");
+  assert(span && span.dataset.fp === "/var/log/app.log", "the rendered row wraps the detected path, got " + (span && span.dataset.fp));
+  assert(cs(span).textDecoration.includes("underline"),
+    "every detected candidate gets a visible underline immediately on render, before any verification — person-reported: with no cue at all, a detected path looked identical to plain text");
+  assert(!span.classList.contains("fp-verified"), "...but not the stronger .fp-verified look, since no window.philogg exists here to confirm it");
+
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  await new Promise(r => setTimeout(r, 50));
+  assert(d.querySelector("#fpPathMenu").classList.contains("hidden"),
+    "no window.philogg in this build, so hovering never opens the popup or verifies the path");
+});
+
+await withApp(async (w, d, T) => {
+  section("201c. desktop build: a candidate verifies itself right at render time, no hover needed — hovering only opens the popup from the cache");
+
+  let pathExistsCalls = 0;
+  let openedPath = null;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
+  w.philogg.openPath = p => { openedPath = p; };
+
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0)); // let the pathExists() promise settle
+
+  const span = d.querySelector(".fp-candidate");
+  assert(span.classList.contains("fp-verified"),
+    "an existing path is already marked verified right after render — no mouseover was dispatched here at all");
+  assert(pathExistsCalls === 1, "verified via exactly one pathExists() call, got " + pathExistsCalls);
+
+  const menu = d.querySelector("#fpPathMenu");
+  assert(menu.classList.contains("hidden"), "...but the popup itself still only opens on an actual hover");
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  assert(!menu.classList.contains("hidden"), "hovering an already-verified span opens the popup immediately — no debounce, no new IPC call needed");
+  assert(pathExistsCalls === 1, "...confirmed: still exactly one pathExists() call after hovering, got " + pathExistsCalls);
+
+  const items = [...menu.querySelectorAll("[data-fp-action]")].map(i => i.dataset.fpAction);
+  assert(items.includes("open") && items.includes("reveal"), "both actions are offered, got " + JSON.stringify(items));
+  fireClick(menu.querySelector('[data-fp-action="open"]'), w);
+  assert(openedPath === "/var/log/app.log", "\"Open file\" calls window.philogg.openPath with the path, got " + openedPath);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true), openPath: () => {} } });
+
+await withApp(async (w, d, T) => {
+  section("201d. two rows sharing the same path only trigger one pathExists() call (per-path cache/dedupe)");
+
+  let pathExistsCalls = 0;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
+
+  await w.addFile("a.log", makeLog(0, 5, { msgPrefix: "wrote to /var/log/shared.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0));
+
+  const spans = [...d.querySelectorAll(".fp-candidate")];
+  assert(spans.length >= 2, "sanity: more than one row rendered the same repeated path, got " + spans.length);
+  assert(spans.every(s => s.classList.contains("fp-verified")), "every occurrence of the same path gets verified, not just the first one rendered");
+  assert(pathExistsCalls === 1, "the repeated path is only checked once across all rows/renders, got " + pathExistsCalls + " call(s)");
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true) } });
+
+await withApp(async (w, d, T) => {
+  section("201e. desktop build: a nonexistent path never gets verified or opens the popup");
+
+  await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/gone.log ok" }), () => {});
+  const node = T.state.nodes[T.state.rootIds[0]];
+  T.state.activeId = node.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0));
+
+  const span = d.querySelector(".fp-candidate");
+  assert(!span.classList.contains("fp-verified"), "a nonexistent path is never marked verified");
+  span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
+  assert(d.querySelector("#fpPathMenu").classList.contains("hidden"), "...and the popup never opens for it");
+}, { philogg: {
+  getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
+  pathExists: () => Promise.resolve(false),
+} });
+
+/* ============================================================
+   GROUP 202 — Clickable file paths: on/off toggle (.toggle-filepaths),
+   and extending the feature to the Full/Context view
+   Origin: this session, person-requested. A settings button in both view
+   toolbars (#contextToolbar and #filteredToolbar — same shared .toggle-X
+   convention every other display toggle already uses) turns linkifyPaths
+   on/off, default ON, persisted like every other toggle
+   (localStorage["philogg-file-path-links-enabled"]). Since both toolbars
+   already offer identical toggles for every other display feature (notes,
+   multiline, columns, textmatch, highlightmatch) and both affect their own
+   view, this session also wired linkifyPaths into
+   renderHighlightVisibleRows() (the Full/Context view) — previously it
+   only ran in renderVisibleRows() (Table/Filtered) — so the new button
+   actually controls something in the toolbar it sits in.
+   ============================================================ */
+group(202);
+await withApp(async (w, d, T) => {
+  section("202a. .toggle-filepaths: exists in both toolbars, defaults ON, persists across a click");
+
+  const btns = [...d.querySelectorAll(".toggle-filepaths")];
+  assert(btns.length === 2, "one copy in #contextToolbar, one in #filteredToolbar, got " + btns.length);
+  assert(btns.every(b => isVisible(b, w)), "both are visible");
+  assert(btns.every(b => b.classList.contains("active")) && T.filePathLinksEnabled === true,
+    "clickable file paths default ON");
+  assert(btns.every(b => b.innerHTML.includes("<svg")), "each carries an icon of its own");
+
+  fireClick(btns[0], w);
+  assert(!T.filePathLinksEnabled && btns.every(b => !b.classList.contains("active")),
+    "clicking either copy flips the shared state and updates BOTH buttons");
+  assert(w.localStorage.getItem("philogg-file-path-links-enabled") === "0", "state persisted as off");
+
+  fireClick(btns[1], w);
+  assert(T.filePathLinksEnabled && btns.every(b => b.classList.contains("active")), "clicking the other copy turns it back on");
+  assert(w.localStorage.getItem("philogg-file-path-links-enabled") === "1", "...persisted as on again");
+});
+
+await withApp(async (w, d, T) => {
+  section("202b. the toggle actually gates rendering in BOTH the Table and the Full/Context view");
+
+  const f = await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  assert(d.querySelector("#tableRows .fp-candidate"), "Table view: a candidate renders while the toggle is on");
+  assert(d.querySelector("#highlightRows .fp-candidate"),
+    "Full/Context view: a candidate renders there too — this session wired linkifyPaths into renderHighlightVisibleRows");
+
+  fireClick(d.querySelector(".toggle-filepaths"), w);
+  assert(!d.querySelector("#tableRows .fp-candidate"), "off: no candidate spans in the Table view — plain markFieldHtml output only");
+  assert(!d.querySelector("#highlightRows .fp-candidate"), "off: none in the Full/Context view either");
+  assert(d.querySelector("#tableRows .col-msg").textContent.includes("/var/log/app.log"),
+    "...the path text itself is still there, just not wrapped/linkified");
+
+  fireClick(d.querySelector(".toggle-filepaths"), w);
+  assert(d.querySelector("#tableRows .fp-candidate") && d.querySelector("#highlightRows .fp-candidate"),
+    "turning it back on restores candidates in both views");
+});
+
+await withApp(async (w, d, T) => {
+  section("202c. desktop build: verification/caching is shared across both views — a path seen in both costs one pathExists() call");
+
+  let pathExistsCalls = 0;
+  w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
+
+  const f = await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  await new Promise(r => setTimeout(r, 0));
+
+  const tableSpan = d.querySelector("#tableRows .fp-candidate");
+  const fullSpan = d.querySelector("#highlightRows .fp-candidate");
+  assert(tableSpan.classList.contains("fp-verified") && fullSpan.classList.contains("fp-verified"),
+    "the same path renders verified in both views");
+  assert(pathExistsCalls === 1, "...from a single shared pathExists() call, not one per view, got " + pathExistsCalls);
+}, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true) } });
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -24571,4 +25763,140 @@ process.exitCode = failed ? 1 : 0;
       that implements ONLY arrayBuffer() (no blob() at all) — pins the fix
       and fails loudly (blob is not a function) on any regression back to
       res.blob().
+   Group 199 — this session (2026-09-11): ZIP files as a log source
+      (readZipEntries central-directory parsing, lazy per-entry extract()
+      via DecompressionStream, and the double-click -> loadFileDescriptors
+      ingestion wiring producing a static non-tailable node). 199a: parsing
+      the central directory lists both entries with correct name/size/
+      compressionMethod and never touches DecompressionStream. 199b:
+      extract() is lazy — a stored (method 0) entry round-trips untouched
+      and never invokes DecompressionStream, a deflated (method 8) entry
+      inflates correctly, and only the entry actually called is ever
+      inflated. 199c: openZipSource adds a state.zips entry rendered as a
+      folder-watch-styled box with neither the scanning-ping indicator nor
+      the settings gear (both folder-watch-only, since nothing here is
+      polled and no auto-load rules apply to an immutable zip). 199d:
+      double-clicking one entry row extracts only that entry, routes
+      through the shared loadFileDescriptors path, and the resulting node
+      has no `.tail` (no `handle` passed in, so it's non-tailable, matching
+      how a handle-less descriptor is already treated everywhere else).
+      Extended same day with 199e-199g (four refinements: match folder
+      watch's own open interaction exactly, an archive icon instead of the
+      generic file icon, non-log entries openable too, relative paths
+      shown/used for nested entries). 199e: a "subfolder/app.log" entry's
+      full relative path is both the displayed row name and the loaded
+      node's name (readZipEntries already carried the full central-
+      directory name — this was verification, not a fix). 199f: a non-log
+      entry (isLogZipEntry, reusing folder watch's own
+      FOLDER_WATCH_EXTENSIONS notion of "log file") double-clicked in the
+      plain browser build never reaches loadFileDescriptors, instead
+      building a Blob from the extracted bytes and calling window.open()
+      with its URL. 199g: the same double-click under the desktop wrapper
+      (window.philogg.openExtractedEntry present) hands the entry's name
+      and extracted bytes to that bridge call instead, and never falls back
+      to window.open().
+   ============================================================ */
+
+/* ============================================================
+   Group 201 — this session (2026-09-10), person-requested: clickable local
+      file paths. linkifyPaths (extracted next to markFieldHtml) detects
+      absolute Windows/UNC/Unix paths in a rendered message field's HTML and
+      wraps them in a .fp-candidate span in EVERY build (201a covers the
+      regex itself — Windows/Unix positives, a fraction/date/URL negative,
+      and that it skips existing tags like <mark> rather than matching
+      across them). Only under a desktop wrapper does the path actually
+      verify (window.philogg.pathExists) and, if it exists, get the full
+      link look (fp-verified) plus a popup offering "Open file"/"Open
+      containing folder" (openPath/revealPath — the latter already existed
+      for #52).
+   Follow-up (same session, 2026-09-11, person-reported after building a
+      portable installer from this branch and hovering a real path for
+      over a second: nothing happened). Code review found no functional
+      bug, but a real design gap: a .fp-candidate had ZERO CSS before
+      verification succeeded — indistinguishable from plain text — and the
+      whole feature depended on a single hover-timing window (180ms
+      debounce) succeeding silently, with no way to tell "nothing
+      detected" apart from "verification silently failed". Fixed two ways:
+      (1) every .fp-candidate now gets a dim "detected" underline
+      immediately on render, regardless of build/verification — 201b
+      pins this via computed style, and that hovering still never opens
+      the popup with no window.philogg. (2) verification moved from
+      hover-triggered to eager: verifyVisibleFpCandidates(), called once
+      at the end of renderVisibleRows(), resolves every newly-seen path
+      exactly once (cached in fpPathCache, keyed by path) — hovering now
+      only ever opens the popup from that cache, no IPC call, no
+      debounce. 201c: a path verifies right after render with no
+      mouseover dispatched at all, exactly one pathExists() call total,
+      and hovering the already-verified span opens the popup immediately
+      without a second call. 201d: two rows sharing the same path (the
+      common case — a path recurring across many log lines) still cost
+      exactly one pathExists() call. 201e (was 201d): a nonexistent path
+      never gets verified or opens the popup.
+   Second follow-up (same session, 2026-09-11, person found the actual root
+      cause themselves after the hover-eagerness fix didn't help): real log
+      lines have spaces inside the path itself ("C:\My Program\config.xml")
+      and are inconsistently quoted by whatever wrote them — sometimes
+      'like this', sometimes bare — while FILE_PATH_RE excluded \s from
+      every Windows/UNC segment, so detection stopped dead at the first
+      space. Fixed with three quoted alternatives (single/double/backtick —
+      double matched via its escaped &quot; form, since linkifyPaths runs on
+      already-escaped HTML) that allow spaces freely inside an unambiguous
+      quote boundary, plus a bounded unquoted alternative that allows
+      spaces only when the match can anchor on a trailing ".ext" (capped
+      segment length so a lazy "look for any later dot" can't run into
+      unrelated trailing text) — the original no-space/no-extension
+      alternative stays as a fallback for a bare directory path like
+      C:\Windows\System32. linkifyPaths' replacer reworked to keep quote
+      characters outside the <span> rather than swallowing them into the
+      link. 201a extended: the person's exact unquoted example, the same
+      with trailing sentence text (still stops right after the extension),
+      all three quote forms, and the space-free/extension-less fallback
+      case (regression check).
+   Third follow-up (same session, 2026-09-11, person found this on their
+      own too, in two real log lines): the second follow-up's bounded
+      unquoted alternative anchored on a LAZY ".ext" search — "lazy" stops
+      at the FIRST dot-shaped thing it finds, which truncated any filename
+      with more than one dot ("C:\eula.1028.txt" -> only "C:\eula.1028";
+      "MyCompany.App.Program.exe" -> only "...MyCompany.App"). Far from
+      the rare "archive.tar.gz" edge case the second follow-up's docs
+      dismissed as low-impact — multi-dot filenames are the norm for
+      versioned files and (as in the person's own examples) dotted .NET
+      assembly names. Replaced the whole extension-anchor idea: the
+      unquoted Windows/UNC alternative now lets only DIRECTORY segments
+      (each terminated by its own "\") contain spaces; the FINAL segment
+      (the filename) stays exactly as space-free as the very first version
+      of this regex — needing no "where does it end" heuristic at all,
+      since a space still ends the match exactly like it always did. This
+      captures a multi-dot filename in full with no extension-guessing,
+      and fixes the previously-documented tar.gz limitation as a side
+      effect. 201a extended with the person's two exact examples (one
+      space-free two-dot filename, one with both spaced directories and a
+      three-dot filename).
+   ============================================================ */
+
+/* ============================================================
+   Group 202 — this session (2026-09-11), person-requested: an on/off
+      toggle for clickable file paths (default ON), a ".toggle-filepaths"
+      button in both #contextToolbar and #filteredToolbar following the
+      exact shared-class convention every other display toggle already
+      uses (toggle-notes/multiline/columns/textmatch/highlightmatch).
+      filePathLinksEnabled (localStorage "philogg-file-path-links-enabled")
+      gates the linkifyPaths call in both renderers; off, a message field
+      renders exactly as plain markFieldHtml output, no .fp-candidate spans
+      at all. Since the Context toolbar's copy would otherwise control
+      nothing (linkifyPaths only ever ran in renderVisibleRows/Table, never
+      in renderHighlightVisibleRows/Full), this session also wired it into
+      the Full/Context view — verifyVisibleFpCandidates now takes a
+      container argument (tableRows or highlightRows), applyFpVerifiedClass
+      updates BOTH containers for a path (the split view can show the same
+      path in both at once), and the hover mouseover/mouseout listeners are
+      shared functions attached to both row containers instead of being
+      tableRows-only. fpPathCache/fpPathPending stay single shared maps, so
+      a path seen in both views still costs exactly one pathExists() call.
+      202a: both button copies exist/are visible, default on, a click on
+      either flips and persists the shared state and updates both. 202b:
+      the toggle actually gates .fp-candidate rendering in both #tableRows
+      and #highlightRows (off: plain text, path content still present).
+      202c: a path appearing in both views resolves via one shared
+      pathExists() call, not one per view.
    ============================================================ */
