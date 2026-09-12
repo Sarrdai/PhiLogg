@@ -78,6 +78,8 @@ fn main() {
             commands::list_folder,
             commands::list_subfolders,
             commands::path_for_local_url,
+            commands::path_exists,
+            commands::open_path,
             commands::list_system_fonts,
             commands::window_minimize,
             commands::window_toggle_maximize,

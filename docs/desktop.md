@@ -319,6 +319,128 @@ of silently vanishing after a refresh even though the file is still the same one
 outcomes, plus "absent without `window.philogg`") and the cache round-trip, via a stub
 `window.philogg` — jsdom can't run a real webview host.
 
+## Clickable local file paths in log lines
+
+Person-requested: an absolute path a log line happens to mention (e.g. a file the logged
+process touched) can be opened directly from the log view, but only when it can be
+trusted to refer to *this* machine's filesystem — which only holds when the log is being
+read on the machine that wrote it, and only the desktop build can act on it at all.
+
+`linkifyPaths` (`philogg.html`, next to `markFieldHtml`) runs in every build, in BOTH log
+views — `renderVisibleRows` (Table/Filtered) and `renderHighlightVisibleRows`
+(Full/Context; wired in this session, see "On/off toggle" below): it scans a rendered
+message field's HTML for absolute Windows (`C:\…`), UNC (`\\server\share\…`) and Unix
+(`/…`) paths via `FILE_PATH_RE` and wraps each match in
+`<span class="fp-candidate" data-fp="…">` — skipping existing tags (e.g. a `<mark>` from
+match/highlight marking) rather than matching across them, since the input is already
+HTML, not raw text. This runs identically in the browser build, so a candidate span
+appears there too — it just never becomes fully clickable (see below). No relative-path
+support yet; a bare filename or a relative path is too ambiguous to resolve against (which
+directory? the log's own location isn't tracked generically enough — see `PROJECT.md`'s
+gotchas), and absolute paths cover the common case (stack traces, file-not-found
+messages) without that ambiguity.
+
+**Spaces and quoting.** Person-reported (this session): real log lines routinely have
+spaces inside the path itself (`C:\My Program\config.xml`) and are inconsistently quoted
+by whatever wrote them — sometimes `'like this'`, sometimes bare — while the original
+regex excluded `\s` from every Windows/UNC segment entirely, so detection stopped dead at
+the first space. `FILE_PATH_RE` now tries, in order: a path wrapped in `'...'`, `"..."`
+(matched via its escaped `&quot;` form — `linkifyPaths` runs on already-HTML-escaped text,
+so a raw `"`/`'` never appears) or `` `...` `` — an unambiguous boundary, so the inner path
+may contain spaces freely, captured lazily up to the closing quote; then a bare (unquoted)
+Windows/UNC path where each **directory** segment (terminated by its own `\`) may contain
+spaces (`Program Files`, `My Program`), but the **final** segment (the filename) does not
+— reusing the exact same no-space class that alternative always had, so it needs no
+"where does an unquoted path end" heuristic at all: a space still ends the match exactly
+like it always did (`"C:\My Program\config.xml for details"` stops right after `.xml`
+because a space follows, not because of any extension logic); then the original Unix
+alternative, unchanged.
+
+An earlier version of the unquoted alternative anchored the final segment on a *lazy*
+`.ext` search instead of just reusing the no-space class — meant to bound where an
+unquoted path stops, but "lazy" stops at the *first* dot-shaped thing found, which silently
+truncated any filename with more than one dot: `C:\eula.1028.txt` → only `C:\eula.1028`;
+a dotted .NET assembly name like `MyCompany.App.Program.exe` → only
+`...MyCompany.App`. Both were real person-reported examples, not the rare
+`archive.tar.gz`-shaped edge case that anchor's own docs once dismissed as low-impact —
+multi-dot filenames are the norm for versioned files and .NET-style dotted assembly names.
+Dropping the extension-anchor idea entirely (directory segments carry the "spaces are OK"
+allowance instead) fixes all of it, `archive.tar.gz` included, with no anchor logic left to
+mis-truncate anything.
+
+One remaining accepted, open limitation: an unquoted path where the *filename itself* (not
+a directory) contains a space still isn't detected — quoting it at the source is the fix
+for that case, same as it always was.
+
+**Every** `.fp-candidate` gets a dim, muted dotted underline immediately on render, in
+every build, regardless of whether it's ever verified. This exists specifically so the
+feature is self-diagnosing: person-reported (this session, after building a portable
+installer from this branch) that a hovered path did nothing at all, and code review found
+no functional bug but a real gap — a candidate had *zero* CSS before verification
+succeeded, making it indistinguishable from plain text, so there was no way to tell
+"nothing was detected here" apart from "verification silently failed" apart from "the
+path genuinely doesn't exist." Now: no underline anywhere → detection itself isn't
+running (a build/packaging problem). A dim underline that never upgrades → detection
+works, verification is the broken half (the Tauri bridge, or the path really doesn't
+exist on disk). Full accent-colored underline + popup on hover → working as intended.
+
+Verification itself is **eager and cached**, not hover-triggered:
+`verifyVisibleFpCandidates(container)` runs once at the end of every `renderVisibleRows()`
+(passing `tableRows`) and every `renderHighlightVisibleRows()` (passing `highlightRows`),
+gated on `window.philogg` existing (desktop build only, same as before) — it walks the
+just-rendered `.fp-candidate` spans in that container, dedupes by path (`fpPathCache`,
+plus `fpPathPending` so an in-flight check for the same path is never started twice, both
+shared across the two views), and calls the new `window.philogg.pathExists(path)` exactly
+once per unique path ever seen across BOTH views combined, backed by `path_exists`
+(`commands.rs`, `std::fs::metadata(&path).is_ok()` — a single syscall, no new plugin
+needed). This was originally hover-triggered (a 180ms debounce, one IPC call per hover) —
+moved to eager per-render checking because success shouldn't depend on how long the cursor
+happens to sit still, and because the same path routinely recurs across many rows in one
+file (a config path logged on every save, say) — now also across both views at once, if
+the split layout shows the same path in Table and Full simultaneously: eager+cached checks
+it once total instead of once per hover per view. Only when `pathExists` resolves `true`
+does every currently-rendered occurrence of that path, in EITHER container (looked up
+fresh via `tableRows.querySelectorAll`/`highlightRows.querySelectorAll`, not the original
+span reference — a later render may have already replaced it), get `.fp-verified` — the
+full link look. Hovering a verified span in either view now just opens the popup
+(`#fpPathMenu`, same shape/CSS as `#addToSelectionMenu`/`#treeCtxInfoMenu` above) straight
+from the cache, no IPC call — the mouseover/mouseout handling is two shared functions
+(`onFpRowsMouseover`/`onFpRowsMouseout`) attached to both `tableRows` and `highlightRows`,
+offering two actions:
+
+- **Open file** — `philogg.openPath` → new `open_path` command, `app.opener().open_path(…)`
+  (same `tauri_plugin_opener::OpenerExt` the reveal commands already use).
+- **Open containing folder** — `philogg.revealPath`, the same command "Open File Location"
+  above already uses.
+
+A path that doesn't exist stays exactly as `linkifyPaths` rendered it (dim underline, no
+popup) — it is checked once and never re-checked on a later hover.
+
+**On/off toggle.** Person-requested: a `.toggle-filepaths` icon button in both
+`#contextToolbar` and `#filteredToolbar` — the exact shared-class convention every other
+display toggle already uses (`.toggle-notes`/`.toggle-multiline`/`.toggle-columns`/
+`.toggle-textmatch`/`.toggle-highlightmatch`; one button element per toolbar, one shared
+state, see `updateHighlightMatchTextButton`'s twin `updateFilePathLinksButton` for the
+identical read/write/reflect shape). `filePathLinksEnabled`
+(`localStorage["philogg-file-path-links-enabled"]`, default **on**) gates the
+`linkifyPaths` call in both renderers — off, a message field renders exactly as plain
+`markFieldHtml` output: no `.fp-candidate` spans, no underline, no hover listener match,
+no verification IPC calls at all. This is also the reason the Full/Context view got wired
+up to `linkifyPaths` in the first place this session (see above) — the Context toolbar's
+copy of the toggle would otherwise control nothing there.
+
+`tests/philogg.regression.test.js` Group 199 covers the detection regex (including that it
+must not mistake a URL's own `//` for an absolute Unix path, or a bare fraction/date for
+one; a spaced path both quoted in all three forms and bare-with-an-extension; and the
+space-free/extension-less fallback case), the always-on underline with no
+`window.philogg`, eager verification with zero `mouseover` dispatched and exactly one
+`pathExists()` call (including after a later hover), the per-path dedupe across multiple
+rows sharing one path, and a nonexistent path never getting styled or opening anything.
+Group 200 covers the toggle itself (both button copies, default on, a click flipping and
+persisting the shared state and updating both copies), that it actually gates rendering in
+both `#tableRows` and `#highlightRows`, and that a path appearing in both views still
+resolves through one shared `pathExists()` call.
+
 ## System font list for the UI font and Log font pickers
 
 A native process has no browser-style permission gate on enumerating installed fonts, so

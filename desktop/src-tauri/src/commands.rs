@@ -296,6 +296,22 @@ pub fn open_extracted_entry(app: AppHandle, name: String, bytes: Vec<u8>) -> Res
         .map_err(|e| e.to_string())
 }
 
+/// Clickable-local-path feature: checks whether an absolute path the page
+/// found in a log line actually exists on this machine before offering it
+/// as a link. `std::fs::metadata` is a single syscall — safe to call on
+/// hover with no debounce concerns on the Rust side.
+#[tauri::command]
+pub fn path_exists(path: String) -> bool {
+    std::fs::metadata(&path).is_ok()
+}
+
+/// Clickable-local-path feature's "Open file" action — the file-itself
+/// counterpart of `reveal_path`'s "Open containing folder".
+#[tauri::command]
+pub fn open_path(app: AppHandle, path: String) -> Result<(), String> {
+    app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn list_system_fonts(state: State<'_, AppState>) -> Vec<String> {
     let mut cache = state.fonts.lock().expect("fonts poisoned");
