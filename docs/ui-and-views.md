@@ -499,6 +499,10 @@ shape:
 
 **Log view and link view are both "Filter view" flavors**, each paired with a **Context view** — see the dedicated section below.
 
+## Folder-watch minimap (a fourth "special content area", alongside the inline viewer)
+
+Clicking a watched folder's own title (`.folder-watch-name`, `selectFolderContainer`) shows a per-file time-range timeline for that folder in the main content area **instead of** any of the three node views above — `state.folderView` set instead of picking a node's `filterType`, dispatched by its own early branch in `renderMainView` (hides the log/extraction/link views, the detail panel, and the log minimap; shows `#folderMinimapWrap`) the same way `state.inlineViewer`'s branch already does for a non-log ZIP/folder entry — the two are mutually exclusive special views, each clearing the other. One horizontal bar per file in `folder.files` on a shared time axis (stacking where spans overlap); multi-select individual bars or drag a time window, then **Load**. See `docs/persistence-and-sync.md` → "Folder-watch minimap for picking which files to load/merge" for the full mechanism (probing, caching, the Load button's two modes) — folder-only, not available for a ZIP source (see that doc's own note on why).
+
 ## Context view (Context/Filtered split)
 
 Two views of the same file, introduced together as `#fhSplit`. The **Filter view** (UI label "Filtered") is the pre-existing log/link view, narrowed by the active filter-tree node. The **Context view** (UI label "Context") shows **the active node's own result with the log around it**: the matches, and everything the filter rejected collapsed into expandable gap strips between them. Internally every identifier still says "Highlight" (`renderHighlightView`, `#highlightWrap`, `highlightColorMap`, `fhLayout`, `fhActiveTab === "highlight"`, …) — the same naming compromise the earlier "Full" rename made, for the same reason: a full internal rename is a much bigger, riskier diff than the UI change it would serve. Context-view-specific identifiers added since do use a `context*` prefix (`buildContextView`, `contextGaps`, `contextStrips`, …).
