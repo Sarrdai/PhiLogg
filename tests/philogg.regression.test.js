@@ -4232,7 +4232,7 @@ await withApp(async (w, d, T) => {
   const fileMap = {
     "a.log": makeLog(0, 5),
     "b.log": makeLog(100, 3),
-    "notes.txt": "not a compatible extension",
+    "notes.pdf": "not a compatible/viewable extension",
   };
   const dir = fakeDirHandle("logs", fileMap);
   await w.addWatchedFolder(dir);
@@ -16092,7 +16092,7 @@ function nativeFolderBridge(dirs, idBase = 1, mtimes = {}) {
   return bridge;
 }
 
-const dirsA = { "/home/user/Desktop": { "a.log": makeLog(0, 5), "b.log": makeLog(100, 3), "notes.txt": "not compatible" } };
+const dirsA = { "/home/user/Desktop": { "a.log": makeLog(0, 5), "b.log": makeLog(100, 3), "notes.pdf": "not compatible/viewable" } };
 const bridgeA = nativeFolderBridge(dirsA);
 bridgeA.picked = { path: "/home/user/Desktop", name: "Desktop" };
 
@@ -22369,9 +22369,9 @@ group(199);
     const zip = T.state.zips[0];
     const logNode = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n && n.zipId === zip.id);
     const ids = w.flattenTreeIds();
-    const idxPng = ids.indexOf(w.zipViewerNavId(zip.id, "a.png"));
+    const idxPng = ids.indexOf(w.viewerNavId("zip", zip.id, "a.png"));
     const idxLog = ids.indexOf(logNode.id);
-    const idxTxt = ids.indexOf(w.zipViewerNavId(zip.id, "b.txt"));
+    const idxTxt = ids.indexOf(w.viewerNavId("zip", zip.id, "b.txt"));
     assert(idxPng !== -1 && idxLog !== -1 && idxTxt !== -1, "all three entries have a nav slot");
     // Alphabetical render order is a.png, b.txt, c.log — the real c.log tree
     // node must land LAST despite being opened FIRST (open order must not
@@ -22575,6 +22575,159 @@ group(199);
     const xmlFolds = d.querySelectorAll("#inlineTextViewer .itv-fold");
     // <root>...</root> (0-6) and <c>...</c> (3-5); <a/> and <b>x</b> don't fold.
     assert(xmlFolds.length === 2, "exactly the two genuinely multi-line elements get a fold, got " + xmlFolds.length);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199z. bugfix (person-reported: no visible/clickable fold-toggle glyph at all): .itv-fold-toggle no longer sits at a negative `left`, which put it outside .itv-line's own box (and #inlineTextViewer's clipped content) entirely — it now has its own non-negative slot inside the gutter, left of the ::before line-number counter");
+
+    assert(!/\.itv-fold-toggle\{[^}]*left:-/.test(html), "no negative `left` on .itv-fold-toggle any more");
+    const toggleMatch = html.match(/\.itv-fold-toggle\{([^}]*)\}/);
+    assert(toggleMatch, "the .itv-fold-toggle rule exists");
+    assert(/left:0\b/.test(toggleMatch[1]), "the toggle sits at left:0 of its own .itv-line box, got " + toggleMatch[1]);
+    const beforeMatch = html.match(/\.itv-line::before\{([^}]*)\}/);
+    assert(beforeMatch && /left:1\.3em/.test(beforeMatch[1]), "the line-number counter is shifted right of the toggle's own slot, got " + (beforeMatch && beforeMatch[1]));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199aa. bugfix (person-reported: couldn't close an opened non-log ZIP entry at all): the .tree-del close button is now visible/clickable on a zip-entry row too (was scoped to .tree-row only), and clicking it (or middle-click) actually removes the entry and clears the active viewer");
+
+    assert(/\.folder-watch-file:hover \.tree-del\{opacity:1;\}/.test(html), "a zip/folder-watch entry row's own class chain now also reveals .tree-del on hover, not just .tree-row's");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([{ name: "a.json", data: "{}", method: 0 }, { name: "b.txt", data: "hi", method: 0 }]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
+    rows().find(r => r.textContent.includes("a.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "a.json");
+    rows().find(r => r.textContent.includes("b.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "b.txt");
+
+    const zip = T.state.zips[0];
+    assert(zip.inlineViewers.size === 2, "both entries are cached as opened, got " + zip.inlineViewers.size);
+
+    // Close the currently-INACTIVE one (a.json) via its ✕.
+    const aRow = rows().find(r => r.textContent.includes("a.json"));
+    aRow.querySelector(".tree-del").dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(!zip.inlineViewers.has("a.json"), "a.json is removed from zip.inlineViewers");
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "b.txt", "closing the inactive entry leaves the active one (b.txt) untouched");
+
+    // Close the currently-ACTIVE one (b.txt) via middle-click (auxclick).
+    const bRow = rows().find(r => r.textContent.includes("b.txt"));
+    bRow.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    assert(!zip.inlineViewers.has("b.txt"), "b.txt is removed from zip.inlineViewers via middle-click");
+    assert(T.state.inlineViewer === null, "closing the active entry also clears state.inlineViewer");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199ab. general file support: a non-log inline-viewable file (.json) in a watched folder is now listed (was filtered out entirely before this session), opens via the inline viewer instead of the log parser, and is closable via its own row's ✕ — a genuinely incompatible file (.pdf) still isn't listed");
+
+    function fakeFileHandle(name, text) {
+      return {
+        kind: "file", name,
+        async getFile() {
+          const blob = new w.Blob([text]);
+          Object.defineProperty(blob, "name", { value: name, configurable: true });
+          blob.text = async () => text;
+          blob.arrayBuffer = async () => new w.TextEncoder().encode(text).buffer;
+          return blob;
+        },
+      };
+    }
+    function fakeDirHandle(name, fileMap) {
+      return { kind: "directory", name, async *values() { for (const f of Object.keys(fileMap)) yield fakeFileHandle(f, fileMap[f]); } };
+    }
+    const fileMap = { "app.log": makeLog(0, 2), "data.json": '{"x":1}', "skip.pdf": "not listed" };
+    await w.addWatchedFolder(fakeDirHandle("logs", fileMap));
+
+    const folder = T.state.folders[0];
+    assert(folder.files.map(f => f.name).sort().join(",") === "app.log,data.json",
+      "the .json is now listed alongside the .log; the .pdf still isn't, got " + folder.files.map(f => f.name).sort().join(","));
+
+    const jsonRow = Array.from(d.querySelectorAll(".folder-watch-file")).find(r => r.textContent.includes("data.json"));
+    assert(!!jsonRow, "the .json file gets a row");
+    jsonRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "data.json");
+    assert(T.state.inlineViewer.text === '{"x":1}', "it opens through the inline viewer with its exact text, got " + JSON.stringify(T.state.inlineViewer.text));
+    assert(T.state.rootIds.length === 0, "it never becomes a real log tree node");
+    assert(folder.inlineViewers.has("data.json"), "cached as opened on the folder, same role zip.inlineViewers plays for a ZIP");
+
+    const jsonRow2 = Array.from(d.querySelectorAll(".folder-watch-file")).find(r => r.textContent.includes("data.json"));
+    const del = jsonRow2.querySelector(".tree-del");
+    assert(!!del, "the opened entry's row carries a close button");
+    del.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(!folder.inlineViewers.has("data.json"), "closing it removes it from folder.inlineViewers");
+    assert(T.state.inlineViewer === null, "and clears the active viewer");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199ac. general file support: a directly opened/dropped non-log file (.png) gets its own top-level closable tree row (state.looseInlineViewers) instead of failing to parse as a log");
+
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    const file = new w.File([pngBytes], "shot.png", { type: "image/png" });
+    await w.loadFileDescriptors([{ file, handle: null }]);
+
+    assert(T.state.looseInlineViewers.size === 1, "the file is registered as a loose inline viewer, got " + T.state.looseInlineViewers.size);
+    assert(T.state.inlineViewer && T.state.inlineViewer.kind === "image" && T.state.inlineViewer.name === "shot.png",
+      "it opens through the inline image viewer, got " + JSON.stringify(T.state.inlineViewer && { kind: T.state.inlineViewer.kind, name: T.state.inlineViewer.name }));
+    assert(T.state.rootIds.length === 0, "it never becomes a real log tree node / queued placeholder");
+
+    const looseRow = Array.from(d.querySelectorAll("#tree .folder-watch-file")).find(r => r.textContent.includes("shot.png"));
+    assert(!!looseRow, "it renders as its own top-level row in the main tree");
+    const del = looseRow.querySelector(".tree-del");
+    assert(!!del, "with a close button");
+    del.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.looseInlineViewers.size === 0, "closing it removes it from state.looseInlineViewers");
+    assert(T.state.inlineViewer === null, "and clears the active viewer");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("199ad. JSON Pretty Print toggle: #itvPrettyPrintBtn appears only for .json, reformats compact JSON without mutating the underlying source text, and refuses (with a toast) to turn on for invalid JSON");
+
+    w.Response = Response;
+    w.DecompressionStream = DecompressionStream;
+    const zipBuf = buildZipFixture([
+      { name: "compact.json", data: '{"a":1,"b":[1,2]}', method: 0 },
+      { name: "plain.txt", data: "hello", method: 0 },
+      { name: "broken.json", data: "{not valid", method: 0 },
+    ]);
+    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
+    const prettyBtn = d.querySelector("#itvPrettyPrintBtn");
+
+    rows().find(r => r.textContent.includes("plain.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "plain.txt");
+    assert(prettyBtn.classList.contains("hidden"), "the button is hidden for a non-JSON file");
+
+    rows().find(r => r.textContent.includes("compact.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "compact.json");
+    assert(!prettyBtn.classList.contains("hidden"), "the button is visible for a .json file");
+    assert(!prettyBtn.classList.contains("active"), "starts off");
+
+    const originalText = d.querySelector("#inlineTextViewer").textContent;
+    assert(originalText.replace(/\s+/g, "") === '{"a":1,"b":[1,2]}', "starts showing the raw compact text");
+
+    prettyBtn.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.inlineViewer.prettyPrint === true, "toggling sets prettyPrint on the viewer object");
+    assert(T.state.inlineViewer.text === '{"a":1,"b":[1,2]}', "the underlying source text itself is never mutated, got " + JSON.stringify(T.state.inlineViewer.text));
+    const prettyText = d.querySelector("#inlineTextViewer").textContent;
+    assert(prettyText.includes("\n") === false, "textContent itself has no literal newlines (line breaks are separate .itv-line elements)");
+    const lineCount = d.querySelectorAll("#inlineTextViewer .itv-line").length;
+    assert(lineCount > 1, "pretty-printing produces multiple lines where the compact form had one, got " + lineCount);
+    assert(prettyBtn.classList.contains("active"), "the button shows its own on state");
+
+    prettyBtn.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.inlineViewer.prettyPrint === false, "toggling again turns it back off");
+    assert(d.querySelectorAll("#inlineTextViewer .itv-line").length === 1, "back to the original single-line compact rendering");
+
+    // Invalid JSON: turning pretty-print ON is refused with a toast, state
+    // untouched.
+    rows().find(r => r.textContent.includes("broken.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "broken.json");
+    prettyBtn.dispatchEvent(new w.Event("click", { bubbles: true }));
+    assert(T.state.inlineViewer.prettyPrint === false, "invalid JSON never turns prettyPrint on");
+    const toast = d.querySelector("#copyToast");
+    assert(toast && toast.textContent.includes("broken.json"), "a toast explains why, naming the file, got " + (toast && toast.textContent));
   });
 }
 
@@ -25711,6 +25864,29 @@ process.exitCode = failed ? 1 : 0;
       (window.philogg.openExtractedEntry present) hands the entry's name
       and extracted bytes to that bridge call instead, and never falls back
       to window.open().
+   Later same day: 199k-199y add the inline text/image viewer (line-number
+      gutter, hover highlight, JSON/XML syntax highlighting, copy fixes) —
+      see the comment block right above `group(199);` for that whole
+      thread's own history.
+   Follow-up (later session, 2026-09-12, four person-reported/requested
+      items after testing the rearchitecture above): 199z fixes the
+      fold-toggle glyph being invisible (a CSS `left:-1.5em` bug — see
+      .itv-fold-toggle's own comment). 199aa fixes the .tree-del close
+      button being invisible/inert on every non-log entry row (zip AND, as
+      of the same follow-up, folder-watch) — its visibility CSS was scoped
+      to `.tree-row`, which these placeholder rows never carry (see
+      renderInlineViewerEntryRow's own comment); also adds middle-click
+      close to match a real tree row. 199ab-199ac generalize inline-viewer
+      support beyond ZIP-only to folder-watch (scanFolderHandle/
+      loadFolderFile, folder.inlineViewers) and direct-open/drag-drop
+      (loadFileDescriptors, state.looseInlineViewers, rendered as top-level
+      tree rows) — see openInlineViewer's own comment on the generalized
+      ownerKind/ownerId/mapKey scheme replacing the old zip-only
+      viewer.zipId field, and viewerNavId replacing zipViewerNavId.
+      199ad covers the new JSON Pretty Print toggle (#itvPrettyPrintBtn,
+      viewer.prettyPrint) — reformats without mutating the underlying
+      source text, and refuses with a toast rather than silently no-op-ing
+      on invalid JSON.
    ============================================================ */
 
 /* ============================================================
