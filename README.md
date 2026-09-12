@@ -134,7 +134,9 @@ open it in a browser to view it.
   and load it like any other, staying nested in the zip's own listing while
   open. Double-click a common text or image file (`.txt`/`.xml`/`.json`,
   `.jpg`/`.jpeg`/`.png`/`.tiff`/`.tif`) to view it right in the app — JSON/XML
-  get syntax highlighting, images get pan/zoom/reset (drag-to-select a
+  get syntax highlighting with collapsible multi-line sections, and text
+  selection/copy behaves like a normal read-only text pane (leading
+  whitespace/tabs included); images get pan/zoom/reset (drag-to-select a
   region to zoom, same as Plot View). Anything else opens with the OS's
   default app for it (or a browser tab in the plain-browser build) — no
   watching/polling (a ZIP is immutable once opened), and no extra library:
