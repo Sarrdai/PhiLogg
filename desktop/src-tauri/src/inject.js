@@ -132,6 +132,22 @@
     revealLocalUrl: function (url) {
       return invoke("reveal_local_url", { url: url });
     },
+    // ZIP sources, item 3 (this session): a non-log entry extracted from an
+    // opened ZIP has only its bytes in hand (see philogg.html's
+    // openZipEntryExternally) — this writes them to a temp file and opens it
+    // with the OS's default app for its type. See commands.rs::open_extracted_entry.
+    openExtractedEntry: function (name, bytes) {
+      return invoke("open_extracted_entry", { name: name, bytes: Array.from(bytes) });
+    },
+    // Clickable-local-path feature: pathExists gates the hover popup,
+    // openPath is its "Open file" action (revealPath above already covers
+    // "Open containing folder"). See commands.rs.
+    pathExists: function (path) {
+      return invoke("path_exists", { path: path });
+    },
+    openPath: function (path) {
+      return invoke("open_path", { path: path });
+    },
     listSystemFonts: function () {
       return invoke("list_system_fonts").catch(function () {
         return [];
