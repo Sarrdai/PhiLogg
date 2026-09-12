@@ -1863,6 +1863,16 @@
     color:var(--text-primary); white-space:pre-wrap; word-break:break-word;
     counter-reset:itv-line;
   }
+  /* Bugfix (person-reported: the previously-open XML's fold arrows/text
+     still visibly showed "behind"/around a newly opened image): every
+     other `.hidden`-toggled element in this file gets its OWN `#id.hidden`
+     rule (there is deliberately no bare `.hidden{display:none}` — see the
+     stylesheet-audit comment near #sidebarResizer.hidden) — #inlineTextViewer
+     never had one, so the JS toggling its `hidden` class (renderInlineImageViewer/
+     renderInlineTextViewer) did nothing visually at all: the `<pre>` stayed
+     in normal flow, rendering underneath/around #inlineImageViewer's own
+     `position:absolute` box instead of actually disappearing. */
+  #inlineTextViewer.hidden{display:none;}
   /* Line-number gutter, rearchitected (this session, person-reported copy/
      select bug): numbers used to be a separate `.itv-line-num` SPAN sitting
      next to `.itv-line-content` inside a block-level DIV per line, with a
@@ -1912,7 +1922,15 @@
   }
   .itv-fold-toggle:hover{color:var(--text-primary);}
   .itv-fold.collapsed > :not(:first-child):not(.itv-fold-ellipsis){display:none;}
-  .itv-fold-ellipsis{display:none; color:var(--text-tertiary); user-select:none;}
+  /* Bugfix (person-requested): this used to sit flush at the fold's own
+     left edge (column 0) — the SAME column the (non-pseudo, real-DOM)
+     .itv-fold-toggle glyph occupies, since the ellipsis is a plain inline
+     element after the block-level opening .itv-line, not a descendant of
+     it, so it starts a fresh line back at the container's own left edge.
+     Shifted right by the same 1.3em .itv-line::before uses, so "…" reads
+     as a line-number PLACEHOLDER for the collapsed range (where a number
+     would be) instead of sitting under the fold arrow. */
+  .itv-fold-ellipsis{display:none; color:var(--text-tertiary); user-select:none; padding-left:1.3em;}
   .itv-fold.collapsed > .itv-fold-ellipsis{display:inline;}
   /* Reuses the same JSON/XML token classes highlightLogMessage's own markup
      already defines colors for elsewhere in the app (see renderHighlightView/
@@ -1929,15 +1947,38 @@
   .tok-tag{color:var(--accent);}
   .tok-attr{color:#c98a3e;}
   .tok-comment{color:var(--text-tertiary); font-style:italic;}
+  /* Bugfix (person-reported, same root cause as #inlineTextViewer.hidden
+     above): #inlineImageViewer's OWN show/hide already had a real
+     `.active` rule (unlike #inlineTextViewer's missing `.hidden` one), so
+     this half worked — kept as-is. */
   #inlineImageViewer{position:absolute; inset:0; display:none;}
   #inlineImageViewer.active{display:block;}
-  #imgViewerToolbar{
-    position:absolute; top:8px; left:8px; z-index:5; display:flex; align-items:center; gap:4px;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:7px; padding:3px;
+  /* Unified viewer toolbar (person-requested): replaces the image viewer's
+     own floating overlay pill (#imgViewerToolbar, removed) with a real
+     toolbar row above the content — same Controls | Settings grouping and
+     button styling #contextToolbar/#plotToolbar already establish, reused
+     here rather than inventing a third visual language for "a small
+     toolbar with grouped buttons". Shared by BOTH sub-viewers (image zoom
+     controls, JSON Pretty Print) — see updateInlineViewerToolbar. */
+  #inlineViewerToolbar{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:6px 14px;
+    background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
-  #imgViewerToolbar button{font-size:10.5px; padding:5px 8px;}
+  #inlineViewerToolbar.hidden{display:none;}
+  #inlineViewerToolbar .toolbar-group{display:flex; align-items:center; gap:4px;}
+  #inlineViewerToolbar .toolbar-group.hidden, #itvToolbarSep.hidden{display:none;}
+  /* Same non-icon button look #plotToolbar's own zoom controls use (see
+     that selector's own comment) — the {-,+,Reset} buttons aren't square
+     icon glyphs, so they stay off the 28x28 .toolbar-icon-btn shape. */
+  #inlineViewerToolbar button:not(.toolbar-icon-btn){
+    background:transparent; border:none; color:var(--text-secondary); cursor:pointer; border-radius:5px;
+    font-family:var(--font-mono); font-size:12px; font-weight:650; line-height:1; padding:5px 7px;
+    transition:background .12s, color .12s;
+  }
+  #inlineViewerToolbar button:not(.toolbar-icon-btn):hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #imgZoomResetBtn{font-size:10px; padding:5px 8px;}
   #imgViewerZoomLevel{
-    font-family:var(--font-mono); font-size:10.5px; color:var(--text-secondary); min-width:40px; text-align:center;
+    font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); min-width:40px; text-align:center;
   }
   #imgViewerSvg{width:100%; height:100%; cursor:crosshair; touch-action:none;}
   #emptyState h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0;}
@@ -3719,18 +3760,34 @@
       <div id="inlineViewerWrap">
         <div id="inlineViewerHeader">
           <span id="inlineViewerName"></span>
-          <button type="button" id="itvPrettyPrintBtn" class="toolbar-icon-btn hidden" title="Pretty-print this JSON">{ }</button>
+        </div>
+        <!-- Unified toolbar (person-requested): same Controls | Settings
+             grouping convention as #contextToolbar/#plotToolbar above,
+             instead of the image viewer's own floating overlay pill. One
+             row for BOTH sub-viewers (text and image), not two separate
+             ones — Controls (image zoom, hidden for a text file) and
+             Settings (JSON Pretty Print, hidden for anything but .json)
+             each show/hide their own group depending on state.inlineViewer,
+             same idea as #plot2dToolsGroup's own conditional visibility;
+             updateInlineViewerToolbar (near openInlineViewer) does that
+             gating and hides the whole row when neither group has anything
+             to show (a plain .txt/.xml file). -->
+        <div id="inlineViewerToolbar" class="hidden">
+          <div class="toolbar-group" data-toolbar-group="controls">
+            <button type="button" id="imgZoomOutBtn" title="Zoom out">−</button>
+            <span id="imgViewerZoomLevel">100%</span>
+            <button type="button" id="imgZoomInBtn" title="Zoom in">+</button>
+            <button type="button" id="imgZoomResetBtn" title="Reset zoom">Reset</button>
+          </div>
+          <span id="itvToolbarSep" class="ctx-toolbar-sep hidden"></span>
+          <div class="toolbar-group" data-toolbar-group="settings">
+            <button type="button" id="itvPrettyPrintBtn" class="toolbar-icon-btn" title="Pretty-print this JSON">{ }</button>
+          </div>
         </div>
         <div id="inlineViewerBody">
           <pre id="inlineTextViewer" class="hidden"></pre>
           <div id="inlineImageViewer">
-            <div id="imgViewerToolbar">
-              <button type="button" id="imgZoomOutBtn" title="Zoom out">−</button>
-              <span id="imgViewerZoomLevel">100%</span>
-              <button type="button" id="imgZoomInBtn" title="Zoom in">+</button>
-              <button type="button" id="imgZoomResetBtn" title="Reset zoom">Reset</button>
-            </div>
-            <svg id="imgViewerSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+            <svg id="imgViewerSvg" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"></svg>
             <div id="imgViewerDragRect" class="plot-drag-rect hidden"></div>
           </div>
         </div>
@@ -19414,6 +19471,25 @@ const inlineViewerNameEl = el("#inlineViewerName");
 const inlineTextViewerEl = el("#inlineTextViewer");
 const inlineImageViewerEl = el("#inlineImageViewer");
 const imgViewerSvg = el("#imgViewerSvg");
+const inlineViewerToolbar = el("#inlineViewerToolbar");
+const itvControlsGroup = inlineViewerToolbar.querySelector('[data-toolbar-group="controls"]');
+const itvSettingsGroup = inlineViewerToolbar.querySelector('[data-toolbar-group="settings"]');
+const itvToolbarSep = el("#itvToolbarSep");
+// Unified toolbar (person-requested): one row, shared by the text and
+// image sub-viewers, instead of the image viewer's own floating overlay —
+// Controls (zoom) only makes sense for an image, Settings (Pretty Print)
+// only for JSON, so each group shows/hides independently per viewer, and
+// the whole row (plus its separator, only needed between two VISIBLE
+// groups) hides entirely once neither has anything to show — e.g. a plain
+// .txt file.
+function updateInlineViewerToolbar(v) {
+  const showControls = v.kind === "image";
+  const showSettings = v.kind === "text" && v.ext === "json";
+  itvControlsGroup.classList.toggle("hidden", !showControls);
+  itvSettingsGroup.classList.toggle("hidden", !showSettings);
+  itvToolbarSep.classList.toggle("hidden", !(showControls && showSettings));
+  inlineViewerToolbar.classList.toggle("hidden", !(showControls || showSettings));
+}
 
 // Bug 2/3 fix (person-reported): the single shared "a non-log entry becomes
 // the active content" transition — every call site that sets
@@ -19657,8 +19733,8 @@ function prettyPrintedJsonOrNull(text) {
 function renderInlineTextViewer(v) {
   inlineTextViewerEl.classList.remove("hidden");
   inlineImageViewerEl.classList.remove("active");
+  updateInlineViewerToolbar(v);
   const showPrettyBtn = v.ext === "json";
-  itvPrettyPrintBtn.classList.toggle("hidden", !showPrettyBtn);
   itvPrettyPrintBtn.classList.toggle("active", showPrettyBtn && !!v.prettyPrint);
   const pretty = showPrettyBtn && v.prettyPrint ? prettyPrintedJsonOrNull(v.text) : null;
   const text = pretty !== null ? pretty : v.text;
@@ -19722,7 +19798,7 @@ inlineTextViewerEl.addEventListener("dragstart", ev => ev.preventDefault());
 // interaction handlers below) — same shape, same names, so the two stay
 // easy to compare line-for-line.
 let imgZoom = null;
-let imgLastRender = null; // { W, H, imgW, imgH, xDomainMin, xDomainMax, yDomainMin, yDomainMax }
+let imgLastRender = null; // { W, H, xDomainMin, xDomainMax, yDomainMin, yDomainMax }
 let imgNaturalSize = null; // { w, h } of the currently-loaded image, set once on load
 
 function imgHomeDomain() {
@@ -19741,31 +19817,65 @@ function imgClampAxis(homeLo, homeHi, lo, hi) {
   if (clampedHi > homeHi) { clampedHi = homeHi; clampedLo = homeHi - span; }
   return [clampedLo, clampedHi];
 }
+// Bugfix (person-reported: drag-to-zoom was imprecise — the selection
+// wasn't fully shown, its center didn't land at screen center). Root
+// cause: the viewBox used to be built from the RAW selection/zoom span at
+// whatever aspect ratio it happened to have, then left to the SVG's own
+// default `preserveAspectRatio` ("xMidYMid meet") to fit that into the
+// viewport without distortion — which silently adds ITS OWN extra
+// letterbox bars whenever the span's aspect doesn't match the viewport's,
+// on top of the pixel<->data scale this code already computes. Every
+// pointer-to-data mapping below (imgSvgPointFromEvent) assumes the
+// viewport's full clientWidth/clientHeight maps 1:1 to the current domain
+// span — true only when there is NO such extra letterbox, i.e. when the
+// domain's own aspect ratio already equals the viewport's. This function
+// is what guarantees that: given a requested center+span, it expands
+// whichever axis is proportionally too small (never crops) so the result
+// always has exactly `aspectWH`'s aspect ratio — the "letterbox" then
+// lives in DATA space (extra domain around the content) instead of being a
+// second, unaccounted-for transform the SVG applies on its own. Paired
+// with `preserveAspectRatio="none"` on #imgViewerSvg (stretch exactly,
+// no independent fitting) and viewBox units now being raw image-pixel
+// units directly (the old separate `scale` factor is gone — redundant
+// once every domain already has the viewport's own aspect ratio).
+function imgAspectFit(centerX, centerY, spanX, spanY, aspectWH) {
+  spanX = Math.max(spanX, 1e-6);
+  spanY = Math.max(spanY, 1e-6);
+  if (spanX / spanY > aspectWH) spanY = spanX / aspectWH;
+  else spanX = spanY * aspectWH;
+  return { x0: centerX - spanX / 2, x1: centerX + spanX / 2, y0: centerY - spanY / 2, y1: centerY + spanY / 2 };
+}
 
 function renderInlineImageViewer(v) {
   inlineTextViewerEl.classList.add("hidden");
   inlineImageViewerEl.classList.add("active");
+  updateInlineViewerToolbar(v);
   const area = inlineImageViewerEl;
   const W = Math.max(100, area.clientWidth || 600), H = Math.max(100, area.clientHeight || 400);
   const load = () => {
     const home = imgHomeDomain();
-    let [xDomainMin, xDomainMax] = [home.xDomainMin, home.xDomainMax];
-    let [yDomainMin, yDomainMax] = [home.yDomainMin, home.yDomainMax];
+    const aspectWH = W / H;
+    // The full "zoomed all the way out" view: the whole image, expanded
+    // (never cropped) to the viewport's own aspect ratio — everything else
+    // below clamps against THIS, not the raw image domain, so "Reset"/
+    // wheel-zoom-out/pan can never go further out than this.
+    const homeFit = imgAspectFit(
+      (home.xDomainMin + home.xDomainMax) / 2, (home.yDomainMin + home.yDomainMax) / 2,
+      home.xDomainMax - home.xDomainMin, home.yDomainMax - home.yDomainMin, aspectWH);
+    let xDomainMin, xDomainMax, yDomainMin, yDomainMax;
     if (imgZoom) {
-      [xDomainMin, xDomainMax] = imgClampAxis(home.xDomainMin, home.xDomainMax, imgZoom.x0, imgZoom.x1);
-      [yDomainMin, yDomainMax] = imgClampAxis(home.yDomainMin, home.yDomainMax, imgZoom.y0, imgZoom.y1);
+      [xDomainMin, xDomainMax] = imgClampAxis(homeFit.x0, homeFit.x1, imgZoom.x0, imgZoom.x1);
+      [yDomainMin, yDomainMax] = imgClampAxis(homeFit.y0, homeFit.y1, imgZoom.y0, imgZoom.y1);
+    } else {
+      ({ x0: xDomainMin, x1: xDomainMax, y0: yDomainMin, y1: yDomainMax } = homeFit);
     }
-    // Fit the home domain (the whole image) into the viewport, letterboxed,
-    // so aspect ratio is never distorted; the zoomed domain then just picks
-    // a sub-rectangle of that same fitted space via the SVG viewBox.
-    const scale = Math.min(W / home.xDomainMax, H / home.yDomainMax) || 1;
     imgViewerSvg.setAttribute("viewBox",
-      (xDomainMin * scale) + " " + ((home.yDomainMax - yDomainMax) * scale) + " " +
-      ((xDomainMax - xDomainMin) * scale) + " " + ((yDomainMax - yDomainMin) * scale));
+      xDomainMin + " " + (home.yDomainMax - yDomainMax) + " " +
+      (xDomainMax - xDomainMin) + " " + (yDomainMax - yDomainMin));
     imgViewerSvg.innerHTML = '<image href="' + v.dataUrl + '" x="0" y="0" width="' +
-      (home.xDomainMax * scale) + '" height="' + (home.yDomainMax * scale) + '" preserveAspectRatio="none"></image>';
-    imgLastRender = { W, H, xDomainMin, xDomainMax, yDomainMin, yDomainMax, left: 0, top: 0, plotW: W, plotH: H };
-    const zoomPct = Math.round((home.xDomainMax - home.xDomainMin) / (xDomainMax - xDomainMin) * 100);
+      home.xDomainMax + '" height="' + home.yDomainMax + '" preserveAspectRatio="none"></image>';
+    imgLastRender = { W, H, xDomainMin, xDomainMax, yDomainMin, yDomainMax };
+    const zoomPct = Math.round((homeFit.x1 - homeFit.x0) / (xDomainMax - xDomainMin) * 100);
     el("#imgViewerZoomLevel").textContent = zoomPct + "%";
   };
   if (imgNaturalSize) { load(); return; }
@@ -19866,11 +19976,29 @@ window.addEventListener("mouseup", ev => {
     imgViewerDragRect.classList.add("hidden");
     if (imgDragMoved && imgLastRender) {
       const endSvg = imgSvgPointFromEvent(ev) || imgDragStartSvg;
-      imgZoom = {
-        x0: Math.min(imgDragStartSvg.x, endSvg.x), x1: Math.max(imgDragStartSvg.x, endSvg.x),
-        y0: Math.min(imgDragStartSvg.y, endSvg.y), y1: Math.max(imgDragStartSvg.y, endSvg.y),
-      };
-      renderInlineImageViewer(state.inlineViewer);
+      const rawX0 = Math.min(imgDragStartSvg.x, endSvg.x), rawX1 = Math.max(imgDragStartSvg.x, endSvg.x);
+      const rawY0 = Math.min(imgDragStartSvg.y, endSvg.y), rawY1 = Math.max(imgDragStartSvg.y, endSvg.y);
+      // Bugfix (person-reported): clip the dragged rectangle to the actual
+      // image bounds FIRST — a drag that extends past the edge of the
+      // image (into the letterbox margin) used to zoom to that whole
+      // over-wide/over-tall rectangle, which is not what "zoom to what I
+      // selected" means; only the part that actually intersects the image
+      // should count.
+      const home = imgHomeDomain();
+      const clipX0 = Math.max(rawX0, home.xDomainMin), clipX1 = Math.min(rawX1, home.xDomainMax);
+      const clipY0 = Math.max(rawY0, home.yDomainMin), clipY1 = Math.min(rawY1, home.yDomainMax);
+      if (clipX1 > clipX0 && clipY1 > clipY0) {
+        // Expand the shorter side to match the viewport's own aspect ratio
+        // (imgAspectFit, see its own comment) so the ENTIRE clipped
+        // selection ends up visible and its center lands at the viewport's
+        // center — "may show more than the selection" happens only on
+        // whichever axis isn't already the limiting one, never by cropping
+        // what was selected.
+        const fit = imgAspectFit((clipX0 + clipX1) / 2, (clipY0 + clipY1) / 2,
+          clipX1 - clipX0, clipY1 - clipY0, imgLastRender.W / imgLastRender.H);
+        imgZoom = fit;
+        renderInlineImageViewer(state.inlineViewer);
+      }
     }
   }
 });
