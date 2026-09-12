@@ -127,6 +127,11 @@ open it in a browser to view it.
   configures filename patterns (e.g. `App*.log`, `Input*.log`, each with its
   own auto-open-newest-file / auto-close-keep-N-open / show-M-newest-files
   rules), plus include-subfolders and show-relative-path.
+- **Folder-watch minimap** — click a watched folder's own title to see a
+  time-range timeline of its files (one bar per file, no files opened yet)
+  instead of the normal log view. Multi-select individual bars and Load to
+  open just those, or drag a time window to load and merge everything that
+  overlaps it, with a matching time filter already applied to the result.
 - **Open a `.zip` file as a log source** — pick or drop a `.zip` and get a
   read-only listing of what's inside, full relative paths included for
   nested entries (only the archive's central directory is read, nothing is

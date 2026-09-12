@@ -1981,6 +1981,35 @@
     font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); min-width:40px; text-align:center;
   }
   #imgViewerSvg{width:100%; height:100%; cursor:crosshair; touch-action:none;}
+
+  /* Folder-watch minimap (FEATURE_BACKLOG.md "Folder-watch minimap for
+     picking which files to load/merge") — shown instead of the normal log
+     views (same "special content area" as #inlineViewerWrap just above)
+     when a folder's own title is clicked. See renderFolderMinimap. */
+  #folderMinimapWrap{display:none; flex-direction:column; height:100%; min-height:0;}
+  #folderMinimapHeader{
+    flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:8px 14px;
+    background:var(--bg-panel); border-bottom:1px solid var(--border);
+  }
+  #folderMinimapName{font-size:12px; font-weight:600; color:var(--text-primary); flex:0 0 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #folderMinimapSelectionInfo{font-size:11px; color:var(--text-tertiary); flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #folderMinimapLoadBtn{
+    flex:0 0 auto; background:var(--accent); color:#fff; border:none; border-radius:5px;
+    padding:5px 14px; font-size:12px; font-weight:650; cursor:pointer;
+  }
+  #folderMinimapLoadBtn:hover:not(:disabled){filter:brightness(1.1);}
+  #folderMinimapLoadBtn:disabled{background:var(--bg-elevated-2); color:var(--text-tertiary); cursor:default;}
+  #folderMinimapBody{flex:1 1 auto; min-height:0; overflow:auto; padding:10px 14px;}
+  #folderMinimapSvg{display:block; width:100%; user-select:none;}
+  .fm-row-label{font-size:10.5px; fill:var(--text-secondary); dominant-baseline:middle;}
+  .fm-bar{fill:var(--accent); opacity:.65; cursor:pointer;}
+  .fm-bar:hover{opacity:.85;}
+  .fm-bar.selected{opacity:1; stroke:var(--accent-strong); stroke-width:1.5;}
+  .fm-bar.unranged{fill:var(--text-tertiary); opacity:.3; cursor:pointer;}
+  .fm-axis-line{stroke:var(--border-soft); stroke-width:1;}
+  .fm-drag-window{fill:var(--accent); opacity:.15; stroke:var(--accent); stroke-width:1; stroke-dasharray:3 2; pointer-events:none;}
+  .fm-drag-window.hidden{display:none;}
+
   #emptyState h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0;}
   #emptyState p{font-size:12px; margin:0; max-width:320px; line-height:1.6;}
 
@@ -3790,6 +3819,25 @@
             <svg id="imgViewerSvg" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"></svg>
             <div id="imgViewerDragRect" class="plot-drag-rect hidden"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Folder-watch minimap (FEATURE_BACKLOG.md "Folder-watch minimap
+           for picking which files to load/merge"): a per-file time-range
+           timeline for one watched folder, shown instead of the normal
+           log views when that folder's own title is clicked (see
+           selectFolderContainer/renderMainView/renderFolderMinimap, near
+           the folder-watch section). Folder-only — a ZIP source's entries
+           are deflate-compressed and can't be cheaply time-range-probed,
+           see the backlog for the deferred ZIP variant. -->
+      <div id="folderMinimapWrap">
+        <div id="folderMinimapHeader">
+          <span id="folderMinimapName"></span>
+          <span id="folderMinimapSelectionInfo"></span>
+          <button type="button" id="folderMinimapLoadBtn" disabled>Load</button>
+        </div>
+        <div id="folderMinimapBody">
+          <svg id="folderMinimapSvg" xmlns="http://www.w3.org/2000/svg"></svg>
         </div>
       </div>
 
@@ -6257,6 +6305,15 @@ const state = {
   // never persisted.
   inlineViewer: null,
 
+  // Folder id whose title was clicked (selectFolderContainer), or null.
+  // Same "special content instead of a real node's log view" idea as
+  // inlineViewer above — see renderMainView's own branch and
+  // renderFolderMinimap (near the folder-watch section) — showing a
+  // time-range minimap over that folder's currently-listed files instead
+  // of any single node. Never persisted; cleared whenever a real node (or
+  // an inline viewer) is activated instead.
+  folderView: null,
+
   // Directly opened/dropped non-log inline-viewable files (this session):
   // no owning zip/folder container, so each gets its own entry here, keyed
   // by a synthetic id (see loadFileDescriptors), and renders as its own
@@ -7011,6 +7068,10 @@ function createFileNode(name, folderId) {
   if (openScrollPosition === "end") node._openScrollToEnd = true;
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
+  // A freshly created file node is a real node's log view — same rule as
+  // any other real-node activation: leave the folder-minimap special view
+  // (see state.folderView) if it was showing.
+  state.folderView = null;
   // NOT during a session/cache restore (see restoreSessionFromCache): that
   // function calls addFile()/createFileNode() once per restored file in a
   // loop, and every call used to hijack state.activeId — the tree's
@@ -7514,6 +7575,7 @@ function timeRangeFilterName(value) {
 function activateNewNode(node) {
   state.activeId = node.id;
   state.multiSelect = new Set();
+  state.folderView = null; // see createFileNode's own comment
   return node;
 }
 
@@ -10602,7 +10664,7 @@ function renderMainView() {
   // with nothing meaningful to show either way. Set here (not left to
   // renderBreadcrumb itself) since both conditions this checks — hasFiles,
   // state.inlineViewer — are exactly renderMainView's own inputs below.
-  breadcrumbBarEl.style.display = (hasFiles && !state.inlineViewer) ? "" : "none";
+  breadcrumbBarEl.style.display = (hasFiles && !state.inlineViewer && !state.folderView) ? "" : "none";
   if (state.inlineViewer) {
     // Bug 3 fix (person-reported): the minimap is a log-view-only concept
     // (see timelineMinimapEl's other gating below, all keyed on a log node
@@ -10626,6 +10688,7 @@ function renderMainView() {
     // of oversight as the minimap fix right above it.
     detailPanel.style.display = "none";
     detailResizer.style.display = "none";
+    folderMinimapWrap.style.display = "none";
     inlineViewerWrap.style.display = "flex";
     inlineViewerNameEl.textContent = state.inlineViewer.name;
     inlineViewerNameEl.title = state.inlineViewer.name;
@@ -10634,6 +10697,37 @@ function renderMainView() {
     return;
   }
   inlineViewerWrap.style.display = "none";
+
+  // Folder-watch minimap (FEATURE_BACKLOG.md "Folder-watch minimap for
+  // picking which files to load/merge"): clicking a folder's own title
+  // (selectFolderContainer) selects the whole container instead of a real
+  // node, same "special content area" idea as state.inlineViewer right
+  // above — this branch mirrors its shape (hide every log/extract/link/
+  // detail surface, show one dedicated wrap, early-return) rather than
+  // being folded into the hasFiles dispatch below, since a folder can have
+  // zero opened files (hasFiles false) and still have files worth showing
+  // a minimap over. A folder can also vanish (closed, or permission lost)
+  // while its minimap is showing — falls through to the normal dispatch
+  // below instead of rendering a wrap for a folder that's gone.
+  const folderViewTarget = state.folderView && state.folders.find(f => f.id === state.folderView);
+  if (state.folderView && !folderViewTarget) state.folderView = null;
+  if (folderViewTarget) {
+    emptyState.style.display = "none";
+    viewBarEl.style.display = "none";
+    tableWrap.style.display = "none";
+    extractWrap.style.display = "none";
+    linkWrap.style.display = "none";
+    fhTabs.style.display = "none";
+    fhSplit.style.display = "none";
+    detailPanel.style.display = "none";
+    detailResizer.style.display = "none";
+    timelineMinimapEl.classList.add("hidden");
+    folderMinimapWrap.style.display = "flex";
+    renderFolderMinimap(folderViewTarget);
+    return;
+  }
+  folderMinimapWrap.style.display = "none";
+
   emptyState.style.display = hasFiles ? "none" : "flex";
   // #viewBar has nothing meaningful to show with zero files loaded —
   // person-requested (predates this rework): only #emptyState's centered
@@ -10650,6 +10744,7 @@ function renderMainView() {
     detailResizer.style.display = "none";
     detailPanel.style.display = "none";
     timelineMinimapEl.classList.add("hidden");
+    folderMinimapWrap.style.display = "none";
     currentViewEntries = [];
     tableRows.innerHTML = "";
     tableSpacer.style.height = "0px";
@@ -11047,6 +11142,7 @@ function moveTreeSelection(key) {
   // a plain tree-row click and a brand-new zip log entry open already
   // follow (see renderNode's click handler / openZipEntry's own comment).
   state.inlineViewer = null;
+  state.folderView = null;
   applyTempAnchorOnActiveNodeSwitch(targetId);
   state.multiSelect = new Set([targetId]);
   state.activeId = targetId;
@@ -11526,6 +11622,7 @@ function renderNode(id, depth, opts) {
     // now extended to "or one non-log entry's content". Harmless no-op
     // when nothing was open.
     state.inlineViewer = null;
+    state.folderView = null;
     // Same choice as Alt+Arrow tree nav (see the keydown handler's comment):
     // a mouse click on a filter switches the active filter but should not
     // steal arrow-key focus away from the log — leave focusRegion as
@@ -19585,6 +19682,7 @@ function updateInlineViewerToolbar(v) {
 function activateInlineViewer(viewer) {
   state.activeId = null;
   state.inlineViewer = viewer;
+  state.folderView = null; // mutually exclusive "special content area" views — see its own comment
 }
 
 // `owner`, generalized this session (was zip-specific — a plain zip
@@ -21233,7 +21331,14 @@ async function mergeScannedFiles(folder, scanned) {
     if (existing) {
       existing.handle = s.handle;
       existing.relPath = s.relPath;
-      if (typeof s.mtime === "number") existing.mtime = s.mtime;
+      if (typeof s.mtime === "number") {
+        // A changed mtime means the file's content may have changed too —
+        // drop any cached folder-minimap time range (rec._range, see
+        // probeFolderFileRange) so it gets re-probed instead of showing a
+        // now-possibly-wrong bar.
+        if (existing.mtime !== s.mtime) existing._range = undefined;
+        existing.mtime = s.mtime;
+      }
       // A natively listed folder re-registers its files on every scan, and
       // the URL/path that yields are the only location an open file from it
       // has — refreshed here so a session restored from cache picks up this
@@ -21574,7 +21679,14 @@ function renderFolderSection(folder) {
   const name = document.createElement("span");
   name.className = "folder-watch-name";
   name.textContent = folder.name;
-  name.title = folder.name;
+  name.title = folder.name + " — click for a time-range minimap of this folder's files";
+  name.style.cursor = "pointer";
+  // Clicking the folder's own title selects the whole container (see
+  // selectFolderContainer/renderMainView) instead of any single file —
+  // the folder-watch minimap feature. No stopPropagation needed: unlike
+  // the popup-opening buttons in this header, nothing else here listens
+  // for a click on the header itself.
+  name.addEventListener("click", () => selectFolderContainer(folder.id));
   header.appendChild(name);
   if (folder.needsPermission) {
     const reconnectBtn = document.createElement("button");
@@ -21684,6 +21796,306 @@ function openFolderFileContextMenu(ev, folder, rec) {
   treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
   treeContextMenu.classList.remove("hidden");
+}
+
+/* ===================== Folder-watch minimap: per-file time-range
+   timeline for one watched folder (FEATURE_BACKLOG.md "Folder-watch
+   minimap for picking which files to load/merge"). Folder only — a ZIP
+   source's entries are deflate-compressed and can't be head/tail-probed
+   like a folder file's real bytes (see probeFileTimeRange), so getting a
+   ZIP entry's range would mean fully inflating every entry; deliberately
+   deferred (kept as its own backlog entry) rather than done here.
+
+   Selecting a folder's own title (.folder-watch-name, see
+   renderFolderSection/selectFolderContainer) switches the main content
+   area to this view instead of any single node's log/filter content —
+   the same "special content, not a real node" idea as state.inlineViewer,
+   and renderMainView's own branch for it mirrors that one's shape.
+
+   The minimap shows exactly the files folder.files currently lists — no
+   separate "visible subset" step needed: mergeScannedFiles/
+   applyFolderAutoRules are already the one place that decides what's
+   listed (glob patterns, "show newest M", …), so this view and
+   renderFolderSection can never disagree about which files show.
+
+   Each file's time range comes from probeFileTimeRange (a cheap head+tail
+   read — see its own definition, near tailTick) for a file that isn't
+   open yet, or fileEntryTimeRange(node.entries) for one already loaded —
+   never a full parse just to draw a bar. A probed range is cached on the
+   folder's own file record as rec._range ({first,last}, or null for "no
+   range found") so re-opening the minimap doesn't re-probe every file
+   again; mergeScannedFiles drops that cache whenever a file's mtime
+   changes underneath it (see its own comment). ===================== */
+const folderMinimapWrap = el("#folderMinimapWrap");
+const folderMinimapName = el("#folderMinimapName");
+const folderMinimapSelectionInfo = el("#folderMinimapSelectionInfo");
+const folderMinimapLoadBtn = el("#folderMinimapLoadBtn");
+const folderMinimapSvg = el("#folderMinimapSvg");
+
+const FM_ROW_HEIGHT = 20;
+const FM_ROW_GAP = 5;
+const FM_LABEL_WIDTH = 150;
+const FM_AXIS_HEIGHT = 20;
+const FM_DRAG_THRESHOLD_PX = 4;
+
+// Selection state for the currently-shown folder minimap — module-local,
+// like the log minimap's own drag state (minimapDragging etc.), reset
+// whenever a different folder is selected (see renderFolderMinimap).
+// Bar-selection and a dragged window are mutually exclusive: whichever
+// happens second clears the other (see the mousedown/click handlers
+// below).
+let fmFolderId = null;
+let fmSelectedRecKeys = new Set(); // folderFileKey(rec) of individually-picked bars
+let fmSelectedWindow = null;       // { from, to } from a drag, or null
+let fmAxis = null;      // { min, max } from the last render, used by the drag/click coordinate math
+let fmPlotLeft = 0;
+let fmPlotWidth = 1;
+let fmDragging = false;
+let fmDragStartTs = 0;
+let fmDragSvgRect = null;
+let fmDragMoved = false;
+
+function fmXToTs(x) {
+  if (!fmAxis || fmAxis.max <= fmAxis.min) return fmAxis ? fmAxis.min : 0;
+  const u = Math.min(1, Math.max(0, (x - fmPlotLeft) / fmPlotWidth));
+  return fmAxis.min + u * (fmAxis.max - fmAxis.min);
+}
+function fmTsToX(ts) {
+  if (!fmAxis || fmAxis.max <= fmAxis.min) return 0;
+  return ((ts - fmAxis.min) / (fmAxis.max - fmAxis.min)) * fmPlotWidth;
+}
+function fmRangeOverlapsWindow(range, win) {
+  return range.first <= win.to && range.last >= win.from;
+}
+
+async function probeFolderFileRange(folder, rec) {
+  if (rec._range !== undefined) return rec._range; // cached (including a cached null)
+  let file;
+  try { file = await rec.handle.getFile(); }
+  catch { return (rec._range = null); }
+  // Same per-filename format resolution loadOneFileIntoTree itself uses —
+  // folders have no separate per-folder format setting.
+  const formatId = resolveFormatIdForFilename(rec.name);
+  return (rec._range = await probeFileTimeRange(file, formatId));
+}
+
+// undefined = not probed yet (a probe should be kicked off for it); null =
+// probed, no range found (unrecognized format, or an empty file); an
+// object = the real range.
+function folderFileTimeRange(rec) {
+  if (rec.nodeId && state.nodes[rec.nodeId]) {
+    const r = fileEntryTimeRange(state.nodes[rec.nodeId].entries);
+    return r ? { first: r.min, last: r.max } : null;
+  }
+  return rec._range !== undefined ? rec._range : undefined;
+}
+
+// Selecting a folder's title (see renderFolderSection) — the only entry
+// point into this view.
+function selectFolderContainer(folderId) {
+  state.folderView = folderId;
+  state.inlineViewer = null; // mutually exclusive "special content area" views
+  render();
+}
+
+function renderFolderMinimap(folder) {
+  if (fmFolderId !== folder.id) {
+    fmFolderId = folder.id;
+    fmSelectedRecKeys = new Set();
+    fmSelectedWindow = null;
+  }
+  folderMinimapName.textContent = folder.name;
+
+  const files = folder.files;
+  // Kick off probing for anything not yet resolved, then re-render this
+  // same view once they land — calling renderFolderMinimap directly
+  // (not render()) avoids rebuilding the tree/log views for no reason,
+  // same "only re-render what changed" discipline the rest of the app's
+  // load-tick code follows.
+  const pending = files.filter(rec => folderFileTimeRange(rec) === undefined);
+  if (pending.length) {
+    Promise.all(pending.map(rec => probeFolderFileRange(folder, rec))).then(() => {
+      if (state.folderView === folder.id) renderFolderMinimap(folder);
+    });
+  }
+
+  const rows = files.map(rec => ({ rec, range: folderFileTimeRange(rec) }));
+  const ranged = rows.filter(r => r.range);
+  fmAxis = ranged.length
+    ? { min: Math.min(...ranged.map(r => r.range.first)), max: Math.max(...ranged.map(r => r.range.last)) }
+    : null;
+
+  renderFolderMinimapSvg(folder, rows);
+  updateFolderMinimapToolbar(rows);
+}
+
+function renderFolderMinimapSvg(folder, rows) {
+  const container = folderMinimapWrap.querySelector("#folderMinimapBody");
+  const W = Math.max(320, (container && container.clientWidth) || 600);
+  const plotW = Math.max(60, W - FM_LABEL_WIDTH - 12);
+  const H = Math.max(FM_ROW_HEIGHT, rows.length * (FM_ROW_HEIGHT + FM_ROW_GAP)) + FM_AXIS_HEIGHT + 16;
+  folderMinimapSvg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  folderMinimapSvg.setAttribute("height", H);
+  fmPlotLeft = FM_LABEL_WIDTH;
+  fmPlotWidth = plotW;
+
+  const showRelPath = folder.settings && folder.settings.includeSubfolders && folder.settings.showRelativePath;
+  const axis = fmAxis;
+  const parts = [];
+  rows.forEach((r, i) => {
+    const y = i * (FM_ROW_HEIGHT + FM_ROW_GAP);
+    const label = showRelPath && r.rec.relPath ? r.rec.relPath : r.rec.name;
+    const shortLabel = label.length > 24 ? "…" + label.slice(-23) : label;
+    parts.push('<text class="fm-row-label" x="0" y="' + (y + FM_ROW_HEIGHT / 2) + '">' + escapeHtml(shortLabel) + '</text>');
+    const key = folderFileKey(r.rec);
+    const selected = fmSelectedRecKeys.has(key) || (fmSelectedWindow && r.range && fmRangeOverlapsWindow(r.range, fmSelectedWindow));
+    if (r.range && axis) {
+      const x1 = fmPlotLeft + fmTsToX(r.range.first);
+      const x2 = fmPlotLeft + fmTsToX(r.range.last);
+      parts.push('<rect class="fm-bar' + (selected ? ' selected' : '') + '" data-key="' + escapeHtml(key) + '" x="' + x1.toFixed(1) +
+        '" y="' + y + '" width="' + Math.max(2, x2 - x1).toFixed(1) + '" height="' + FM_ROW_HEIGHT + '" rx="3"><title>' + escapeHtml(label) + '</title></rect>');
+    } else {
+      // Unranged (still probing, or no recognizable timestamp in this
+      // file's format) — a thin placeholder spanning the whole axis, still
+      // individually selectable/loadable but excluded from window-overlap math.
+      parts.push('<rect class="fm-bar unranged" data-key="' + escapeHtml(key) + '" x="' + fmPlotLeft + '" y="' + (y + FM_ROW_HEIGHT * 0.3) +
+        '" width="' + plotW + '" height="' + (FM_ROW_HEIGHT * 0.4) + '" rx="2"><title>' + escapeHtml(label) + ' — range unknown</title></rect>');
+    }
+  });
+  const axisY = Math.max(FM_ROW_HEIGHT, rows.length * (FM_ROW_HEIGHT + FM_ROW_GAP)) + 6;
+  parts.push('<line class="fm-axis-line" x1="' + fmPlotLeft + '" y1="' + axisY + '" x2="' + (fmPlotLeft + plotW) + '" y2="' + axisY + '"/>');
+  if (axis) {
+    parts.push('<text class="fm-row-label" x="' + fmPlotLeft + '" y="' + (axisY + 13) + '">' + escapeHtml(formatTime(axis.min)) + '</text>');
+    parts.push('<text class="fm-row-label" x="' + (fmPlotLeft + plotW) + '" y="' + (axisY + 13) + '" text-anchor="end">' + escapeHtml(formatTime(axis.max)) + '</text>');
+  }
+  // Fixed-position drag overlay, updated directly (not through a full
+  // re-render) on every mousemove while dragging — see the mousemove
+  // listener below.
+  parts.push('<rect id="fmDragOverlayRect" class="fm-drag-window hidden" x="0" y="0" width="0" height="' + H + '"/>');
+  folderMinimapSvg.innerHTML = parts.join("");
+}
+
+function updateFolderMinimapToolbar(rows) {
+  const n = fmSelectedWindow
+    ? rows.filter(r => r.range && fmRangeOverlapsWindow(r.range, fmSelectedWindow)).length
+    : fmSelectedRecKeys.size;
+  folderMinimapSelectionInfo.textContent = fmSelectedWindow
+    ? (n + " file" + (n === 1 ? "" : "s") + " in window — Load merges them, with this time range applied")
+    : n ? (n + " file" + (n === 1 ? "" : "s") + " selected — Load opens them individually")
+    : "Click a bar to select, or drag a time window";
+  folderMinimapLoadBtn.disabled = n === 0;
+}
+
+function fmDragOverlayEl() { return folderMinimapSvg.querySelector("#fmDragOverlayRect"); }
+function showFmDragOverlay(startTs, curTs) {
+  const overlay = fmDragOverlayEl();
+  if (!overlay) return;
+  const x1 = fmTsToX(Math.min(startTs, curTs)), x2 = fmTsToX(Math.max(startTs, curTs));
+  overlay.setAttribute("x", (fmPlotLeft + x1).toFixed(1));
+  overlay.setAttribute("width", Math.max(0, x2 - x1).toFixed(1));
+  overlay.classList.remove("hidden");
+}
+function hideFmDragOverlay() {
+  const overlay = fmDragOverlayEl();
+  if (overlay) overlay.classList.add("hidden");
+}
+
+folderMinimapSvg.addEventListener("mousedown", ev => {
+  if (ev.button !== 0 || !fmAxis) return;
+  fmDragSvgRect = folderMinimapSvg.getBoundingClientRect();
+  const scaleX = folderMinimapSvg.viewBox.baseVal.width / fmDragSvgRect.width || 1;
+  fmDragStartTs = fmXToTs((ev.clientX - fmDragSvgRect.left) * scaleX);
+  fmDragging = true;
+  fmDragMoved = false;
+});
+window.addEventListener("mousemove", ev => {
+  if (!fmDragging) return;
+  const scaleX = folderMinimapSvg.viewBox.baseVal.width / fmDragSvgRect.width || 1;
+  const x = (ev.clientX - fmDragSvgRect.left) * scaleX;
+  if (!fmDragMoved && Math.abs(x - (fmPlotLeft + fmTsToX(fmDragStartTs))) < FM_DRAG_THRESHOLD_PX) return;
+  fmDragMoved = true;
+  showFmDragOverlay(fmDragStartTs, fmXToTs(x));
+});
+window.addEventListener("mouseup", ev => {
+  if (!fmDragging) return;
+  fmDragging = false;
+  hideFmDragOverlay();
+  if (!fmDragMoved) return; // a plain click — the SVG's own "click" listener below handles bar toggling
+  const scaleX = folderMinimapSvg.viewBox.baseVal.width / fmDragSvgRect.width || 1;
+  const curTs = fmXToTs((ev.clientX - fmDragSvgRect.left) * scaleX);
+  const from = Math.round(Math.min(fmDragStartTs, curTs)), to = Math.round(Math.max(fmDragStartTs, curTs));
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (to > from && folder) {
+    fmSelectedWindow = { from, to };
+    fmSelectedRecKeys = new Set();
+    renderFolderMinimap(folder);
+  }
+});
+folderMinimapSvg.addEventListener("click", ev => {
+  if (fmDragMoved) { fmDragMoved = false; return; } // a drag just ended here — don't also toggle a bar
+  const bar = ev.target.closest(".fm-bar");
+  if (!bar) return;
+  const key = bar.getAttribute("data-key");
+  if (fmSelectedRecKeys.has(key)) fmSelectedRecKeys.delete(key); else fmSelectedRecKeys.add(key);
+  fmSelectedWindow = null;
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) renderFolderMinimap(folder);
+});
+folderMinimapLoadBtn.addEventListener("click", () => {
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) loadFolderMinimapSelection(folder);
+});
+window.addEventListener("resize", () => {
+  if (!state.folderView) return;
+  const folder = state.folders.find(f => f.id === state.folderView);
+  if (folder) renderFolderMinimap(folder);
+});
+
+// The Load button's actual effect — see its own toolbar text
+// (updateFolderMinimapToolbar) for what each mode does. Individually
+// selected bars load each file with no merge; a dragged window loads
+// every overlapping file, merges them all, and applies a "timerange"
+// filter for the exact dragged window on the result (createFilterNode,
+// same call createTimeRangeFilterFromDrag makes for the log minimap's own
+// drag-select) — so the merge lands already filtered to what was drawn.
+async function loadFolderMinimapSelection(folder) {
+  const win = fmSelectedWindow;
+  const keys = fmSelectedRecKeys;
+  if (!win && keys.size === 0) return;
+
+  if (win) {
+    const targets = folder.files.filter(rec => {
+      const r = folderFileTimeRange(rec);
+      return r && fmRangeOverlapsWindow(r, win);
+    });
+    const nodeIds = [];
+    for (const rec of targets) {
+      await loadFolderFile(folder, rec);
+      if (rec.nodeId) nodeIds.push(rec.nodeId);
+    }
+    let resultId = null;
+    if (nodeIds.length >= 2) {
+      const merged = await mergeFiles(nodeIds);
+      resultId = merged && merged.id;
+    } else if (nodeIds.length === 1) {
+      resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
+    }
+    if (resultId) createFilterNode(resultId, "timerange", { from: win.from, to: win.to });
+  } else {
+    // Individually-picked bars: load each, no merge — the last one loaded
+    // ends up active (same as opening several folder files by hand in
+    // sequence — see loadFolderFile/createFileNode).
+    const recsByKey = new Map(folder.files.map(rec => [folderFileKey(rec), rec]));
+    for (const key of keys) {
+      const rec = recsByKey.get(key);
+      if (rec) await loadFolderFile(folder, rec);
+    }
+  }
+
+  fmSelectedRecKeys = new Set();
+  fmSelectedWindow = null;
+  state.folderView = null;
+  render();
 }
 
 /* ===================== Folder watch settings dialog (gear icon on a
