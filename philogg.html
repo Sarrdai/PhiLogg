@@ -6685,6 +6685,52 @@ function getCompiledFormat(formatId) {
   return c;
 }
 
+// Reads only a file's first and last log entry to learn its covered time
+// range, without loading or parsing the file in full — cost stays near-
+// constant regardless of file size. Intended for a folder scan that wants
+// to show many files' time ranges cheaply (e.g. a folder-watch minimap)
+// before any of them are actually opened.
+// Returns { first, last } (timestamps in ms) or null if no valid header
+// line could be found (empty file, or no line matches formatId's format).
+const PROBE_HEAD_BYTES = 8192;
+const PROBE_TAIL_START_BYTES = 8192;
+const PROBE_TAIL_MAX_BYTES = 1024 * 1024; // give up if no header found within ~1MB of EOF
+
+async function probeFileTimeRange(file, formatId) {
+  if (!file || file.size === 0) return null;
+  const compiled = getCompiledFormat(formatId || DEFAULT_FORMAT_ID);
+
+  const headText = await file.slice(0, Math.min(PROBE_HEAD_BYTES, file.size)).text();
+  let first = null;
+  for (const line of headText.split(/\r?\n/)) {
+    if (compiled.isHeaderLine(line)) {
+      const ts = compiled.parseHeader(line).ts;
+      if (!isNaN(ts)) { first = ts; break; }
+    }
+  }
+  if (first == null) return null;
+
+  let last = null;
+  for (let bytes = Math.min(PROBE_TAIL_START_BYTES, file.size); ; bytes *= 4) {
+    const start = Math.max(0, file.size - bytes);
+    const tailLines = (await file.slice(start, file.size).text()).split(/\r?\n/);
+    // A chunk that doesn't start at byte 0 may have its first line cut off
+    // mid-entry (the slice boundary landed inside a line) — skip it unless
+    // it's all we have, in which case the next, bigger iteration covers it.
+    const usable = start > 0 && tailLines.length > 1 ? tailLines.slice(1) : tailLines;
+    for (let i = usable.length - 1; i >= 0; i--) {
+      if (compiled.isHeaderLine(usable[i])) {
+        const ts = compiled.parseHeader(usable[i]).ts;
+        if (!isNaN(ts)) { last = ts; break; }
+      }
+    }
+    if (last != null || start === 0 || bytes >= PROBE_TAIL_MAX_BYTES) break;
+  }
+  if (last == null) return null;
+
+  return { first, last };
+}
+
 /* ===================== Off-main-thread parsing =====================
    The chunked loop in parseLogTextAsync only ever yields between chunks
    (setTimeout(…, 0)) — it never runs two files' parsing at the same time,
@@ -7654,6 +7700,21 @@ function createAndOrNode(idA, idB, mode) {
 const MERGE_CHUNK_ENTRIES = 20000;
 const MERGE_COPY_WEIGHT = 0.6;
 const MERGE_SORT_WEIGHT = 0.4;
+// Min/max timestamp of a (possibly unsorted) entries array, in one linear
+// pass — null for an empty array. Used by mergeFiles' quick-merge check;
+// deliberately doesn't assume entries[0]/entries[last] are the extremes,
+// since per-file chronological order isn't a guaranteed invariant.
+function fileEntryTimeRange(entries) {
+  if (entries.length === 0) return null;
+  let min = entries[0].ts, max = entries[0].ts;
+  for (let i = 1; i < entries.length; i++) {
+    const ts = entries[i].ts;
+    if (ts < min) min = ts;
+    if (ts > max) max = ts;
+  }
+  return { min, max };
+}
+
 async function mergeFiles(fileIds) {
   const files = fileIds.map(id => state.nodes[id]).filter(n => n && n.type === "file");
   if (files.length < 2) return null;
@@ -7674,20 +7735,39 @@ async function mergeFiles(fileIds) {
   flushLoadRender();
 
   const total = files.reduce((sum, f) => sum + f.entries.length, 0);
-  let copied = 0;
-  for (const f of files) {
-    for (let i = 0; i < f.entries.length; i += MERGE_CHUNK_ENTRIES) {
-      node.entries.push(...f.entries.slice(i, i + MERGE_CHUNK_ENTRIES));
-      copied += Math.min(MERGE_CHUNK_ENTRIES, f.entries.length - i);
-      node.loadFraction = MERGE_COPY_WEIGHT * (total ? copied / total : 1);
-      scheduleLoadRender(node.id);
-      await new Promise(r => setTimeout(r, 0));
-    }
-  }
-  if (state.nodes[node.id] !== node) return node; // removed mid-merge (by the person, or a race)
 
-  node.entries.sort((a, b) => a.ts - b.ts);
-  invalidateOrderIndexMap(node.id); // in-place reorder: same array, same length
+  // Quick merge: if the sources' time ranges don't overlap at all, the
+  // union is already sorted once the sources are concatenated in
+  // chronological order — no need for the chunked copy-with-yield or the
+  // O(n log n) sort below. Files with zero entries are ignored for the
+  // overlap check (an empty concat contributes nothing either way).
+  const nonEmpty = files
+    .map((f, i) => ({ f, i, range: fileEntryTimeRange(f.entries) }))
+    .filter(x => x.range)
+    .sort((a, b) => a.range.min - b.range.min);
+  const isDisjoint = nonEmpty.every((x, k) => k === 0 || nonEmpty[k - 1].range.max < x.range.min);
+
+  if (isDisjoint) {
+    for (const x of nonEmpty) node.entries.push(...x.f.entries);
+    node.loadFraction = 1;
+    scheduleLoadRender(node.id);
+  } else {
+    let copied = 0;
+    for (const f of files) {
+      for (let i = 0; i < f.entries.length; i += MERGE_CHUNK_ENTRIES) {
+        node.entries.push(...f.entries.slice(i, i + MERGE_CHUNK_ENTRIES));
+        copied += Math.min(MERGE_CHUNK_ENTRIES, f.entries.length - i);
+        node.loadFraction = MERGE_COPY_WEIGHT * (total ? copied / total : 1);
+        scheduleLoadRender(node.id);
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    if (state.nodes[node.id] !== node) return node; // removed mid-merge (by the person, or a race)
+
+    node.entries.sort((a, b) => a.ts - b.ts);
+    invalidateOrderIndexMap(node.id); // in-place reorder: same array, same length
+  }
+
   delete node.loadFraction;
   flushLoadRender(node.id);
   persistFileNode(node); // fire-and-forget; cached as its own text snapshot (see "Session cache")
