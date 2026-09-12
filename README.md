@@ -132,16 +132,21 @@ open it in a browser to view it.
   nested entries (only the archive's central directory is read, nothing is
   extracted in bulk). Double-click a log file to inflate just that one entry
   and load it like any other, staying nested in the zip's own listing while
-  open. Double-click a common text or image file (`.txt`/`.xml`/`.json`,
-  `.jpg`/`.jpeg`/`.png`/`.tiff`/`.tif`) to view it right in the app — JSON/XML
-  get syntax highlighting with collapsible multi-line sections, and text
-  selection/copy behaves like a normal read-only text pane (leading
-  whitespace/tabs included); images get pan/zoom/reset (drag-to-select a
-  region to zoom, same as Plot View). Anything else opens with the OS's
-  default app for it (or a browser tab in the plain-browser build) — no
-  watching/polling (a ZIP is immutable once opened), and no extra library:
-  uses the browser's native `DecompressionStream` Web API, identically in
-  the plain-browser build and the desktop build.
+  open. Anything else opens with the OS's default app for it (or a browser
+  tab in the plain-browser build) — no watching/polling (a ZIP is immutable
+  once opened), and no extra library: uses the browser's native
+  `DecompressionStream` Web API, identically in the plain-browser build and
+  the desktop build.
+- **View common text/image files right in the app** — `.txt`/`.xml`/`.json`
+  and `.jpg`/`.jpeg`/`.png`/`.tiff`/`.tif`, however they're opened: a ZIP
+  entry, a watched folder, or a direct open/drag-drop, all the same. JSON/XML
+  get syntax highlighting with collapsible multi-line sections (click the
+  small toggle next to a line number), JSON also gets an optional Pretty
+  Print button in the viewer's own header; text selection/copy behaves like
+  a normal read-only text pane (leading whitespace/tabs included); images
+  get pan/zoom/reset (drag-to-select a region to zoom, same as Plot View).
+  Every opened one is closable the same way a log file is (✕ or middle-click
+  its row).
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
