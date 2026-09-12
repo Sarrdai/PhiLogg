@@ -326,9 +326,11 @@ process touched) can be opened directly from the log view, but only when it can 
 trusted to refer to *this* machine's filesystem — which only holds when the log is being
 read on the machine that wrote it, and only the desktop build can act on it at all.
 
-`linkifyPaths` (`philogg.html`, next to `markFieldHtml`) runs in every build: it scans a
-rendered message field's HTML for absolute Windows (`C:\…`), UNC (`\\server\share\…`) and
-Unix (`/…`) paths via `FILE_PATH_RE` and wraps each match in
+`linkifyPaths` (`philogg.html`, next to `markFieldHtml`) runs in every build, in BOTH log
+views — `renderVisibleRows` (Table/Filtered) and `renderHighlightVisibleRows`
+(Full/Context; wired in this session, see "On/off toggle" below): it scans a rendered
+message field's HTML for absolute Windows (`C:\…`), UNC (`\\server\share\…`) and Unix
+(`/…`) paths via `FILE_PATH_RE` and wraps each match in
 `<span class="fp-candidate" data-fp="…">` — skipping existing tags (e.g. a `<mark>` from
 match/highlight marking) rather than matching across them, since the input is already
 HTML, not raw text. This runs identically in the browser build, so a candidate span
@@ -382,23 +384,29 @@ running (a build/packaging problem). A dim underline that never upgrades → det
 works, verification is the broken half (the Tauri bridge, or the path really doesn't
 exist on disk). Full accent-colored underline + popup on hover → working as intended.
 
-Verification itself is **eager and cached**, not hover-triggered: `verifyVisibleFpCandidates()`
-runs once at the end of every `renderVisibleRows()`, gated on `window.philogg` existing
-(desktop build only, same as before) — it walks the just-rendered `.fp-candidate` spans,
-dedupes by path (`fpPathCache`, plus `fpPathPending` so an in-flight check for the same
-path is never started twice), and calls the new `window.philogg.pathExists(path)` exactly
-once per unique path ever seen, backed by `path_exists` (`commands.rs`,
-`std::fs::metadata(&path).is_ok()` — a single syscall, no new plugin needed). This was
-originally hover-triggered (a 180ms debounce, one IPC call per hover) — moved to eager
-per-render checking because success shouldn't depend on how long the cursor happens to
-sit still, and because the same path routinely recurs across many rows in one file (a
-config path logged on every save, say): eager+cached checks it once total instead of once
-per hover. Only when `pathExists` resolves `true` does every currently-rendered occurrence
-of that path (looked up fresh via `tableRows.querySelectorAll`, not the original span
-reference — a later render may have already replaced it) get `.fp-verified` — the full
-link look. Hovering a verified span now just opens the popup (`#fpPathMenu`, same
-shape/CSS as `#addToSelectionMenu`/`#treeCtxInfoMenu` above) straight from the cache, no
-IPC call, offering two actions:
+Verification itself is **eager and cached**, not hover-triggered:
+`verifyVisibleFpCandidates(container)` runs once at the end of every `renderVisibleRows()`
+(passing `tableRows`) and every `renderHighlightVisibleRows()` (passing `highlightRows`),
+gated on `window.philogg` existing (desktop build only, same as before) — it walks the
+just-rendered `.fp-candidate` spans in that container, dedupes by path (`fpPathCache`,
+plus `fpPathPending` so an in-flight check for the same path is never started twice, both
+shared across the two views), and calls the new `window.philogg.pathExists(path)` exactly
+once per unique path ever seen across BOTH views combined, backed by `path_exists`
+(`commands.rs`, `std::fs::metadata(&path).is_ok()` — a single syscall, no new plugin
+needed). This was originally hover-triggered (a 180ms debounce, one IPC call per hover) —
+moved to eager per-render checking because success shouldn't depend on how long the cursor
+happens to sit still, and because the same path routinely recurs across many rows in one
+file (a config path logged on every save, say) — now also across both views at once, if
+the split layout shows the same path in Table and Full simultaneously: eager+cached checks
+it once total instead of once per hover per view. Only when `pathExists` resolves `true`
+does every currently-rendered occurrence of that path, in EITHER container (looked up
+fresh via `tableRows.querySelectorAll`/`highlightRows.querySelectorAll`, not the original
+span reference — a later render may have already replaced it), get `.fp-verified` — the
+full link look. Hovering a verified span in either view now just opens the popup
+(`#fpPathMenu`, same shape/CSS as `#addToSelectionMenu`/`#treeCtxInfoMenu` above) straight
+from the cache, no IPC call — the mouseover/mouseout handling is two shared functions
+(`onFpRowsMouseover`/`onFpRowsMouseout`) attached to both `tableRows` and `highlightRows`,
+offering two actions:
 
 - **Open file** — `philogg.openPath` → new `open_path` command, `app.opener().open_path(…)`
   (same `tauri_plugin_opener::OpenerExt` the reveal commands already use).
@@ -407,6 +415,20 @@ IPC call, offering two actions:
 
 A path that doesn't exist stays exactly as `linkifyPaths` rendered it (dim underline, no
 popup) — it is checked once and never re-checked on a later hover.
+
+**On/off toggle.** Person-requested: a `.toggle-filepaths` icon button in both
+`#contextToolbar` and `#filteredToolbar` — the exact shared-class convention every other
+display toggle already uses (`.toggle-notes`/`.toggle-multiline`/`.toggle-columns`/
+`.toggle-textmatch`/`.toggle-highlightmatch`; one button element per toolbar, one shared
+state, see `updateHighlightMatchTextButton`'s twin `updateFilePathLinksButton` for the
+identical read/write/reflect shape). `filePathLinksEnabled`
+(`localStorage["philogg-file-path-links-enabled"]`, default **on**) gates the
+`linkifyPaths` call in both renderers — off, a message field renders exactly as plain
+`markFieldHtml` output: no `.fp-candidate` spans, no underline, no hover listener match,
+no verification IPC calls at all. This is also the reason the Full/Context view got wired
+up to `linkifyPaths` in the first place this session (see above) — the Context toolbar's
+copy of the toggle would otherwise control nothing there.
+
 `tests/philogg.regression.test.js` Group 199 covers the detection regex (including that it
 must not mistake a URL's own `//` for an absolute Unix path, or a bare fraction/date for
 one; a spaced path both quoted in all three forms and bare-with-an-extension; and the
@@ -414,6 +436,10 @@ space-free/extension-less fallback case), the always-on underline with no
 `window.philogg`, eager verification with zero `mouseover` dispatched and exactly one
 `pathExists()` call (including after a later hover), the per-path dedupe across multiple
 rows sharing one path, and a nonexistent path never getting styled or opening anything.
+Group 200 covers the toggle itself (both button copies, default on, a click flipping and
+persisting the shared state and updating both copies), that it actually gates rendering in
+both `#tableRows` and `#highlightRows`, and that a path appearing in both views still
+resolves through one shared `pathExists()` call.
 
 ## System font list for the UI font and Log font pickers
 
