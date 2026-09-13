@@ -266,6 +266,15 @@ async function withApp(run, opts = {}) {
       get filterToolbarLabels() { return filterToolbarLabels; },
       get viewToolbarLabels() { return viewToolbarLabels; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
+      // Folder-watch minimap selection state (GROUP 204) — tests set these
+      // directly instead of simulating real SVG mouse drags (jsdom has no
+      // layout, see that group's own comment).
+      get fmSelectedRecKeys() { return fmSelectedRecKeys; },
+      set fmSelectedRecKeys(v) { fmSelectedRecKeys = v; },
+      get fmSelectedWindow() { return fmSelectedWindow; },
+      set fmSelectedWindow(v) { fmSelectedWindow = v; },
+      get fmFolderId() { return fmFolderId; },
+      set fmFolderId(v) { fmFolderId = v; },
     };
   `;
   document.body.appendChild(bridge);
@@ -23130,6 +23139,587 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 204 — Folder-watch minimap for picking which files to load/merge
+   (FEATURE_BACKLOG.md, folder-only — see the entry's own comment for why
+   ZIP was deferred). Folder objects are seeded directly into
+   state.folders rather than routed through addWatchedFolder/
+   scanFolderHandle: scanning itself is already covered by Groups
+   37/38/145/164/195, so this only exercises the new pieces —
+   probeFolderFileRange's caching/invalidation, the folderView main-view
+   dispatch, and the Load button's two selection modes (individual bars,
+   no merge; a dragged window, full merge + a "timerange" filter matching
+   it). Drag/click pixel math on the SVG itself is NOT covered here — jsdom
+   has no real layout, and the bridge exposes fmSelectedRecKeys/
+   fmSelectedWindow directly so tests can set the outcome of a drag/click
+   instead of simulating raw mouse coordinates over an un-laid-out SVG.
+   ============================================================ */
+group(204);
+await withApp(async (w, d, T) => {
+  section("204a. probeFolderFileRange: probes and caches a range, invalidated by mergeScannedFiles on mtime change");
+
+  function fakeProbeFileHandle(text) {
+    return {
+      async getFile() {
+        return {
+          size: text.length,
+          async text() { return text; },
+          slice(start, end) {
+            const sliced = text.slice(start, end === undefined ? text.length : end);
+            return { text: async () => sliced };
+          },
+        };
+      },
+    };
+  }
+
+  const log = makeLog(0, 3); // 10:00:00 .. 10:00:02
+  const expectedFirst = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+  const rec = { name: "a.log", relPath: "a.log", handle: fakeProbeFileHandle(log), nodeId: null, mtime: 111 };
+  const folder = { id: "fm-folder-a", name: "watched", files: [rec] };
+
+  const range = await w.probeFolderFileRange(folder, rec);
+  assert(range && range.first === expectedFirst, "probeFolderFileRange finds the file's first timestamp");
+  assert(rec._range === range, "the resolved range is cached on the record as rec._range");
+
+  // A second call must reuse the cache, not re-probe — swap in a handle
+  // that throws if it's ever actually opened again.
+  rec.handle = { async getFile() { throw new Error("should not be called — a cached range must not be re-probed"); } };
+  const cached = await w.probeFolderFileRange(folder, rec);
+  assert(cached === range, "a cached range is reused instead of re-probing");
+
+  // mergeScannedFiles drops the cache once the file's mtime changes
+  // underneath it (see that function's own comment).
+  await w.mergeScannedFiles(folder, [{ name: "a.log", relPath: "a.log", handle: rec.handle, mtime: 222 }]);
+  assert(rec._range === undefined, "mergeScannedFiles clears the cached range once the file's mtime changes");
+});
+
+await withApp(async (w, d, T) => {
+  section("204b. folderFileTimeRange: an already-opened file's range comes from its real entries, not a re-probe");
+
+  const fa = await w.addFile("a.log", makeLog(0, 3), () => {}); // 10:00:00-02
+  const rec = { name: "a.log", relPath: "a.log", nodeId: fa.id, handle: { async getFile() { throw new Error("must not be probed — already open"); } } };
+  const r = w.folderFileTimeRange(rec);
+  assert(r && r.first === fa.entries[0].ts && r.last === fa.entries[fa.entries.length - 1].ts,
+    "an opened file's range is read from its real entries (fileEntryTimeRange), never re-probed");
+});
+
+await withApp(async (w, d, T) => {
+  section("204c. selectFolderContainer: switches the main view to the folder minimap, and back on a real node click");
+
+  const rec = { name: "a.log", relPath: "a.log", nodeId: null, handle: { async getFile() { return { size: 0, async text() { return ""; }, slice: () => ({ text: async () => "" }) }; } } };
+  const folder = { id: "fm-folder-c", name: "watched-c", files: [rec] };
+  T.state.folders.push(folder);
+  w.render();
+
+  const titleEl = d.querySelector(".folder-watch-name");
+  assert(titleEl !== null, "the folder's title renders as .folder-watch-name");
+  fireClick(titleEl, w);
+  assert(T.state.folderView === folder.id, "clicking the folder title sets state.folderView to that folder");
+  assert(d.querySelector("#folderMinimapWrap").style.display !== "none", "the folder minimap wrap is shown");
+  assert(d.querySelector("#tableWrap").style.display === "none", "the normal log table view is hidden while the minimap is showing");
+
+  // Loading a real file (any normal node activation) leaves the special view.
+  const fb = await w.addFile("b.log", makeLog(0, 1), () => {});
+  assert(T.state.folderView === null, "activating a real node (loading a file) clears state.folderView");
+  assert(T.state.activeId === fb.id, "the newly loaded file is the active node");
+
+  // Re-select the folder (still in state.folders from the top of this
+  // test), then remove it entirely — renderMainView must fall back to the
+  // normal dispatch instead of rendering a wrap for a folder that's gone.
+  w.selectFolderContainer(folder.id);
+  T.state.folders = T.state.folders.filter(f => f.id !== folder.id);
+  w.render();
+  assert(T.state.folderView === null, "renderMainView clears state.folderView once its target folder is gone");
+});
+
+await withApp(async (w, d, T) => {
+  section("204d. Actions: folderMinimapLoadIndividually loads picked bars with no merge; folderMinimapMergeWindow merges the drawn window's overlap and applies a matching timerange filter");
+
+  // Unlike 204a/204b's plain-object fixture (probeFileTimeRange-only, never
+  // read via FileReader), this one is also loaded for real by
+  // loadFolderFile -> loadOneFileIntoTree -> readFileWithProgress, which
+  // calls FileReader.readAsText(file) directly and needs a genuine Blob —
+  // same real-w.Blob-plus-overridden-.slice/.text shape Group 164's own
+  // fakeFileHandle uses.
+  function fakeProbeFileHandle(text) {
+    return {
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start, end) => {
+          const sliced = text.slice(start, end === undefined ? text.length : end);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, handle: fakeProbeFileHandle(makeLog(0, 3)) };            // 10:00:00-02
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, handle: fakeProbeFileHandle(makeLog(2, 3, { msgPrefix: "b" })) }; // 10:00:02-04, overlaps recA
+  const recC = { name: "c.log", relPath: "c.log", nodeId: null, handle: fakeProbeFileHandle(makeLog(100, 3, { msgPrefix: "c" }))  }; // 10:01:40-42, far outside the window below
+  const folder = { id: "fm-folder-d", name: "watched-d", files: [recA, recB, recC] };
+  T.state.folders.push(folder);
+  // Normally renderFolderMinimap kicks off probing as a side effect of
+  // being shown; probe directly here since this test drives the actions
+  // without ever rendering the minimap itself.
+  await Promise.all(folder.files.map(rec => w.probeFolderFileRange(folder, rec)));
+
+  // --- Individual selection: pick just recC, load it individually — no merge, no filter.
+  T.fmFolderId = folder.id;
+  T.fmSelectedRecKeys = new Set(["c.log"]);
+  T.fmSelectedWindow = null;
+  await w.folderMinimapLoadIndividually(folder);
+  assert(recC.nodeId && T.state.nodes[recC.nodeId], "the individually-selected file (c.log) got loaded");
+  assert(!recA.nodeId && !recB.nodeId, "individually selecting one bar does not load the others");
+  assert(T.state.nodes[recC.nodeId].entries.length === 3 && !T.state.nodes[recC.nodeId].merged, "the loaded node is the plain file, not a merge");
+  assert(T.state.folderView === null, "the action leaves the folder-minimap view");
+
+  // --- Window selection: draw a window covering recA/recB (which overlap
+  // each other) but not recC — "merge only the window" merges recA+recB
+  // and applies a "timerange" filter for exactly the drawn window.
+  w.selectFolderContainer(folder.id);
+  const winFrom = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+  const winTo = new Date(2024, 0, 15, 10, 0, 4, 0).getTime();
+  T.fmFolderId = folder.id;
+  T.fmSelectedRecKeys = new Set();
+  T.fmSelectedWindow = { from: winFrom, to: winTo };
+  await w.folderMinimapMergeWindow(folder);
+
+  assert(recA.nodeId && recB.nodeId, "both overlapping files (a.log, b.log) got loaded by the windowed merge");
+  const mergedId = T.state.activeId && T.state.nodes[T.state.activeId] && T.state.nodes[T.state.activeId].parentId;
+  const merged = mergedId ? T.state.nodes[mergedId] : null;
+  assert(merged && merged.merged === true, "a merged node was created from the overlapping files");
+  assert(merged.entries.length === 6, "the merge combines both overlapping files' entries, got " + (merged && merged.entries.length));
+  const activeNode = T.state.nodes[T.state.activeId];
+  assert(activeNode && activeNode.filterType === "timerange" && activeNode.value.from === winFrom && activeNode.value.to === winTo,
+    "the active node after Load is a \"timerange\" filter matching the exact dragged window");
+  assert(merged.name.includes("a.log") && merged.name.includes("b.log"), "the merged node covers exactly the two overlapping files, got " + merged.name);
+});
+
+/* ============================================================
+   GROUP 205 — Windowed/partial file load for the folder-watch minimap's
+   dragged-window Load (person-requested feasibility follow-up to the
+   folder-watch minimap, GROUP 204): instead of reading a whole large file
+   just to hide everything outside the drawn window behind a "timerange"
+   filter, findWindowStartOffset binary-searches for (approximately) where
+   the window starts and parseFileWindow reads/parses forward only until it
+   ends — loadFolderFileWindowed wires this into loadFolderMinimapSelection,
+   falling back to a normal full loadFolderFile below a size threshold, when
+   the file's range isn't known yet, or when the file doesn't look safely
+   sorted. Resulting nodes are tagged node.partial = { from, to }, threaded
+   through snapshotSubtree/restoreSubtree and persistFileNode (same class of
+   field node.formatId/node.merged already are).
+   ============================================================ */
+group(205);
+await withApp(async (w, d, T) => {
+  section("205a. findWindowStartOffset + parseFileWindow: jump to (approximately) where a time window starts and read/parse only that far, not the whole file");
+
+  // 1400 one-second-apart entries, each padded well past its natural size
+  // so the fixture is comfortably larger than WINDOW_READ_CHUNK_BYTES
+  // (2MB) — otherwise the forward read's single chunk could cover most or
+  // all of a too-small fixture on its own, making the byte-savings
+  // assertion below meaningless regardless of whether the optimization
+  // actually did anything.
+  const N = 1400;
+  const filler = "X".repeat(14000);
+  function makeSortedLog(n) {
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+      const ss = i % 60, mm = Math.floor(i / 60) % 60, hh = 10 + Math.floor(i / 3600);
+      lines.push(`2024-01-15 ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"message ${i} ${filler}"`);
+    }
+    return lines.join("\n") + "\n";
+  }
+  const text = makeSortedLog(N);
+  assert(text.length > 16 * 1024 * 1024, "sanity: the fixture is comfortably larger than one forward-read chunk, got " + text.length);
+  const anchor = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+  const tsAt = i => anchor + i * 1000;
+
+  // Minimal file-like fixture (.size + .slice(start,end).text(), the only
+  // members findWindowStartOffset/parseFileWindow ever touch — no FileReader
+  // involved on this path, unlike loadFolderFile's own full-read path) that
+  // also counts how many bytes were actually requested via slice(), to pin
+  // down the actual performance claim: a narrow window reads far less than
+  // the whole file, not just "returns the right entries".
+  let bytesRequested = 0;
+  const file = {
+    get size() { return text.length; }, // pure-ASCII fixture: string length === byte length
+    slice(start, end) {
+      const e = end === undefined ? text.length : end;
+      bytesRequested += Math.max(0, e - start);
+      const sliced = text.slice(start, e);
+      return { text: async () => sliced };
+    },
+  };
+
+  const targetIdx = 700; // well into the middle of the file
+  const { offset, consistent } = await w.findWindowStartOffset(file, undefined, tsAt(targetIdx)); // no formatId -> DEFAULT_FORMAT_ID, same as parseFileWindow's own default
+  assert(consistent, "a properly sorted file is reported consistent");
+  assert(offset <= text.indexOf(`line ${targetIdx}\t`), "the found offset is at or before the target entry's own line — never starts after it");
+
+  const node = { entries: [] }; // formatId omitted on purpose: parseFileWindow falls back to DEFAULT_FORMAT_ID itself
+  const ok = await w.parseFileWindow(file, node, tsAt(targetIdx), tsAt(targetIdx + 9), () => {});
+  assert(ok, "parseFileWindow succeeds on a sorted file");
+  const gotIndices = new Set(node.entries.map(e => Number(e.message.split(" ")[1])));
+  for (let i = targetIdx; i <= targetIdx + 9; i++) assert(gotIndices.has(i), `window includes entry ${i}`);
+  assert(node.entries.length < N / 4, "far fewer entries were parsed than the whole file, got " + node.entries.length + " of " + N);
+  assert(bytesRequested < text.length / 4, "far fewer bytes were requested than the whole file's size, got " + bytesRequested + " of " + text.length);
+});
+
+await withApp(async (w, d, T) => {
+  section("205b. loadFolderFileWindowed: below the size threshold, or with no known range yet, falls back to a normal full load (no node.partial)");
+
+  function fakeFileHandle(text) {
+    return {
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start, end) => {
+          const sliced = text.slice(start, end === undefined ? text.length : end);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+
+  const smallText = makeLog(0, 5); // a few hundred bytes — nowhere near WINDOWED_LOAD_MIN_FILE_SIZE
+  const folder = { id: "fm-w-folder-1", name: "w1", files: [] };
+  const rec1 = { name: "small.log", relPath: "small.log", nodeId: null, handle: fakeFileHandle(smallText), _range: { first: 0, last: 4000 } };
+  folder.files.push(rec1);
+  await w.loadFolderFileWindowed(folder, rec1, 0, 4000);
+  assert(rec1.nodeId && T.state.nodes[rec1.nodeId], "a node was loaded");
+  assert(T.state.nodes[rec1.nodeId].entries.length === 5, "the small file falls back to a full load — all 5 entries present, got " + T.state.nodes[rec1.nodeId].entries.length);
+  assert(!T.state.nodes[rec1.nodeId].partial, "a fallback full load is NOT flagged node.partial");
+
+  const rec2 = { name: "norange.log", relPath: "norange.log", nodeId: null, handle: fakeFileHandle(smallText) }; // no _range at all
+  await w.loadFolderFileWindowed(folder, rec2, 0, 4000);
+  assert(rec2.nodeId && T.state.nodes[rec2.nodeId].entries.length === 5, "no known range also falls back to a full load, got " + (T.state.nodes[rec2.nodeId] && T.state.nodes[rec2.nodeId].entries.length));
+});
+
+await withApp(async (w, d, T) => {
+  section("205c. loadFolderFileWindowed: a large file above the threshold gets only its window read, flagged node.partial, and an already-open file is never re-read");
+
+  // 600 entries, one second apart, each padded well past normal size so the
+  // whole file safely exceeds WINDOWED_LOAD_MIN_FILE_SIZE (8MB) without
+  // needing hundreds of thousands of real entries (keeps this test's own
+  // parse work small even though the FILE itself is big — which is exactly
+  // the point of the feature under test).
+  const N = 600;
+  const filler = "X".repeat(14000);
+  function makeBigLog(n) {
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+      lines.push(`2024-01-15 10:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"message ${i} ${filler}"`);
+    }
+    return lines.join("\n") + "\n";
+  }
+  const bigText = makeBigLog(N);
+  assert(bigText.length > 8 * 1024 * 1024, "sanity: the fixture is actually above the 8MB threshold, got " + bigText.length);
+  const anchor = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+  const tsAt = i => anchor + i * 1000;
+
+  function fakeFileHandle(text) {
+    return {
+      async getFile() {
+        return {
+          size: text.length,
+          slice(start, end) {
+            const e = end === undefined ? text.length : end;
+            const sliced = text.slice(start, e);
+            return { text: async () => sliced };
+          },
+        };
+      },
+    };
+  }
+
+  const folder = { id: "fm-w-folder-2", name: "w2", files: [] };
+  const from = tsAt(250), to = tsAt(259);
+  const rec = { name: "big.log", relPath: "big.log", nodeId: null, handle: fakeFileHandle(bigText), _range: { first: tsAt(0), last: tsAt(N - 1) } };
+  folder.files.push(rec);
+
+  await w.loadFolderFileWindowed(folder, rec, from, to);
+  assert(rec.nodeId && T.state.nodes[rec.nodeId], "a node was loaded");
+  const node = T.state.nodes[rec.nodeId];
+  assert(node.partial && node.partial.from === from && node.partial.to === to, "the node is flagged partial with the requested window");
+  const gotIndices = new Set(node.entries.map(e => Number(e.message.split(" ")[1])));
+  for (let i = 250; i <= 259; i++) assert(gotIndices.has(i), `window includes entry ${i}`);
+  assert(node.entries.length < N / 3, "far fewer than all " + N + " entries were parsed, got " + node.entries.length);
+
+  // Already open: a second call must not re-read the file at all.
+  rec.handle = { async getFile() { throw new Error("should not be called — the file is already open"); } };
+  await w.loadFolderFileWindowed(folder, rec, from, to);
+  assert(node.entries.length < N / 3, "re-calling on an already-open partial node does not trigger another read");
+});
+
+await withApp(async (w, d, T) => {
+  section("205d. loadFolderFileWindowed: a file that isn't chronologically sorted falls back to a full load instead of silently returning wrong/missing entries");
+
+  const N = 600;
+  const filler = "X".repeat(14000);
+  // Strictly DESCENDING timestamps end to end — a clean, unambiguous
+  // violation of the "sorted start to end" assumption findWindowStartOffset
+  // depends on. findWindowStartOffset's own cheap head/tail bookend check
+  // (compares the file's very first and very last entries before bisecting
+  // at all) reliably catches exactly this shape; the bisection loop's own
+  // local monotonicity check is best-effort and doesn't by itself guarantee
+  // catching every possible non-monotonic arrangement, so this test targets
+  // the case that IS guaranteed to be caught.
+  function makeReversedLog(n) {
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+      const sec = n - 1 - i;
+      lines.push(`2024-01-15 10:${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"message ${i} ${filler}"`);
+    }
+    return lines.join("\n") + "\n";
+  }
+  const text = makeReversedLog(N);
+  assert(text.length > 8 * 1024 * 1024, "sanity: fixture is above the 8MB threshold");
+  const anchor = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+
+  // Unlike 205c's plain-object fixture (windowed reads only, never
+  // FileReader), this one must ALSO survive the full-load fallback this
+  // test expects (readFileWithProgress -> FileReader.readAsText, which
+  // needs a genuine Blob) — same real-w.Blob-plus-overridden-.slice/.text
+  // shape earlier groups' own fakeFileHandle fixtures use.
+  function fakeFileHandle(txt) {
+    return {
+      async getFile() {
+        const blob = new w.Blob([txt]);
+        Object.defineProperty(blob, "size", { get: () => txt.length, configurable: true });
+        blob.text = async () => txt;
+        blob.slice = (start, end) => {
+          const e = end === undefined ? txt.length : end;
+          const sliced = txt.slice(start, e);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  const folder = { id: "fm-w-folder-3", name: "w3", files: [] };
+  const rec = { name: "unsorted.log", relPath: "unsorted.log", nodeId: null, handle: fakeFileHandle(text), _range: { first: anchor, last: anchor + (N - 1) * 1000 } };
+  folder.files.push(rec);
+
+  await w.loadFolderFileWindowed(folder, rec, anchor + 250 * 1000, anchor + 259 * 1000);
+  assert(rec.nodeId && T.state.nodes[rec.nodeId], "a node was loaded (via the fallback, not left empty)");
+  const node = T.state.nodes[rec.nodeId];
+  assert(!node.partial, "an unsafely-sorted file falls back to a full load, not a (possibly wrong) partial one");
+  assert(node.entries.length === N, "the fallback full load parsed every entry, got " + node.entries.length + " of " + N);
+});
+
+await withApp(async (w, d, T) => {
+  section("205e. node.partial survives close+undo, and folderMinimapMergeWindow unions two partial sources' ranges on merge");
+
+  const N = 600;
+  const filler = "X".repeat(14000);
+  function makeBigLog(n, msgPrefix) {
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+      lines.push(`2024-01-15 10:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"${msgPrefix} ${i} ${filler}"`);
+    }
+    return lines.join("\n") + "\n";
+  }
+  const anchor = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+  const tsAt = i => anchor + i * 1000;
+
+  function fakeFileHandle(text) {
+    return { async getFile() { return { size: text.length, slice(start, end) { const e = end === undefined ? text.length : end; const s = text.slice(start, e); return { text: async () => s }; } }; } };
+  }
+
+  // Two large, overlapping files, both windowed-loaded and merged via
+  // folderMinimapMergeWindow, end up with a UNIONED node.partial. The
+  // merge RESULT (unlike either folder-owned source file) has no folderId
+  // of its own (see mergeFiles) — closing it goes through the real
+  // deleteFile-with-undo path (deleteFilterNodeWithUndo's plain node.type
+  // === "file" branch, snapshotSubtree/pushUndo/restoreSubtree), unlike a
+  // folder-owned file's own close (closeFolderFile — no undo snapshot at
+  // all, just returns to the grayed listing), so this is also where
+  // node.partial surviving close+undo is actually exercised.
+  const folder2 = { id: "fm-w-folder-5", name: "w5", files: [], inlineViewers: new Map() };
+  const recX = { name: "x.log", relPath: "x.log", nodeId: null, handle: fakeFileHandle(makeBigLog(N, "x")), _range: { first: tsAt(0), last: tsAt(N - 1) } };
+  const recY = { name: "y.log", relPath: "y.log", nodeId: null, handle: fakeFileHandle(makeBigLog(N, "y")), _range: { first: tsAt(0), last: tsAt(N - 1) } };
+  folder2.files.push(recX, recY);
+  T.state.folders.push(folder2);
+  T.fmFolderId = folder2.id;
+  T.fmSelectedRecKeys = new Set();
+  T.fmSelectedWindow = { from: tsAt(100), to: tsAt(120) };
+  await w.folderMinimapMergeWindow(folder2);
+
+  assert(recX.nodeId && T.state.nodes[recX.nodeId].partial, "source x.log was windowed-loaded and flagged partial");
+  assert(recY.nodeId && T.state.nodes[recY.nodeId].partial, "source y.log was windowed-loaded and flagged partial");
+  const mergedId = T.state.nodes[T.state.activeId].parentId; // active node is the timerange filter created on top of the merge
+  const merged = T.state.nodes[mergedId];
+  assert(merged && merged.merged === true, "a merged node was created from the two windowed sources");
+  assert(merged.partial && merged.partial.from === tsAt(100) && merged.partial.to === tsAt(120),
+    "the merged node's own partial range is the union of both sources' windows, got " + JSON.stringify(merged.partial));
+
+  w.deleteFilterNodeWithUndo(mergedId);
+  assert(!T.state.nodes[mergedId], "the merged node is gone after closing it");
+  w.undo();
+  assert(T.state.nodes[mergedId] && T.state.nodes[mergedId].partial, "node.partial survives close+undo (snapshotSubtree/restoreSubtree)");
+  assert(T.state.nodes[mergedId].partial.from === tsAt(100) && T.state.nodes[mergedId].partial.to === tsAt(120),
+    "the restored partial range still matches exactly what was originally merged");
+});
+
+/* ============================================================
+   GROUP 206 — Folder minimap: hover crosshair + drag label, and three
+   explicit actions (load individually / merge full / merge only the
+   window) replacing the old single inferred Load button (person-
+   requested). resolveFolderMinimapTargets is the one place both the
+   toolbar's enable/disable logic and all three actions read "which files
+   are relevant" from. folderMinimapMergeFull is the one new behavior:
+   merges targets in full with NO timerange filter attached, even when
+   reached via a drawn window (person-decided — that button means
+   "everything, unfiltered"; only folderMinimapMergeWindow, unchanged from
+   Group 204/205, still attaches the filter). folderMinimapMergeWindow
+   stays disabled without an actual drawn window even if bars are picked
+   (person-decided — no implied window from the selected bars' own
+   ranges). The hover/drag DOM elements (#folderMinimapHoverLine/
+   Tooltip/DragRect/DragLabel) are plain siblings of the SVG, not SVG
+   children — same reasoning, and same real dispatched-mouse-event test
+   technique, as the log minimap's own #timelineMinimapDragRect/
+   DragLabel (see that group's own drag test) — jsdom's stubbed
+   getBoundingClientRect/clientWidth plus real viewBox.baseVal support
+   make this genuinely exercisable, not just state manipulation.
+   ============================================================ */
+group(206);
+await withApp(async (w, d, T) => {
+  section("206a. Toolbar buttons: enablement matches the selection — merge-window needs an actual drawn window, even with bars picked");
+
+  function fakeFileHandle(text) {
+    return { async getFile() { return { size: text.length, slice(s, e) { const ee = e === undefined ? text.length : e; const sl = text.slice(s, ee); return { text: async () => sl }; } }; } };
+  }
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 2)), _range: { first: 0, last: 1000 } };
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 2)), _range: { first: 5000, last: 6000 } };
+  const folder = { id: "fm-206-folder-1", name: "f206a", files: [recA, recB] };
+  T.state.folders.push(folder);
+  w.selectFolderContainer(folder.id);
+
+  const loadEachBtn = d.querySelector("#folderMinimapLoadEachBtn");
+  const mergeFullBtn = d.querySelector("#folderMinimapMergeFullBtn");
+  const mergeWindowBtn = d.querySelector("#folderMinimapMergeWindowBtn");
+  assert(loadEachBtn && mergeFullBtn && mergeWindowBtn, "all three action buttons render in the toolbar");
+  assert(loadEachBtn.disabled && mergeFullBtn.disabled && mergeWindowBtn.disabled, "no selection: all three actions disabled");
+
+  T.fmSelectedRecKeys = new Set(["a.log"]);
+  T.fmSelectedWindow = null;
+  w.renderFolderMinimap(folder);
+  assert(!loadEachBtn.disabled && !mergeFullBtn.disabled, "bars picked: load-individually and merge-full enabled");
+  assert(mergeWindowBtn.disabled, "bars picked but no window drawn: merge-window stays disabled");
+
+  T.fmSelectedRecKeys = new Set();
+  T.fmSelectedWindow = { from: -500, to: -100 }; // covers neither file's range
+  w.renderFolderMinimap(folder);
+  assert(loadEachBtn.disabled && mergeFullBtn.disabled && mergeWindowBtn.disabled, "a window covering zero files: all three disabled");
+
+  T.fmSelectedWindow = { from: 0, to: 1000 }; // covers recA only
+  w.renderFolderMinimap(folder);
+  assert(!loadEachBtn.disabled && !mergeFullBtn.disabled && !mergeWindowBtn.disabled, "a window covering at least one file: all three enabled");
+});
+
+await withApp(async (w, d, T) => {
+  section("206b. folderMinimapMergeFull: merges targets in full with no timerange filter, even when reached via a drawn window");
+
+  function fakeFileHandle(text) {
+    return {
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (s, e) => { const ee = e === undefined ? text.length : e; const sl = text.slice(s, ee); const b = new w.Blob([sl]); b.text = async () => sl; return b; };
+        return blob;
+      },
+    };
+  }
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 3)) };
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, handle: fakeFileHandle(makeLog(2, 3, { msgPrefix: "b" })) };
+  const folder = { id: "fm-206-folder-2", name: "f206b", files: [recA, recB] };
+  T.state.folders.push(folder);
+  await Promise.all(folder.files.map(rec => w.probeFolderFileRange(folder, rec)));
+
+  T.fmFolderId = folder.id;
+  T.fmSelectedRecKeys = new Set();
+  T.fmSelectedWindow = { from: new Date(2024, 0, 15, 10, 0, 0, 0).getTime(), to: new Date(2024, 0, 15, 10, 0, 4, 0).getTime() };
+  await w.folderMinimapMergeFull(folder);
+
+  assert(recA.nodeId && recB.nodeId, "both target files (window-selected) got loaded");
+  const merged = T.state.nodes[T.state.activeId];
+  assert(merged && merged.merged === true, "a merged node was created and is the active node");
+  assert(merged.entries.length === 6, "merge combines both files' full entries, got " + merged.entries.length);
+  assert(merged.children.length === 0, "merge-full attaches NO timerange filter, got " + merged.children.length + " children");
+});
+
+await withApp(async (w, d, T) => {
+  section("206c. resolveFolderMinimapTargets: the same file resolves whether reached via a bar pick or an equivalent window");
+
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, _range: { first: 1000, last: 2000 } };
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, _range: { first: 9000, last: 9500 } };
+  const folder = { id: "fm-206-folder-3", name: "f206c", files: [recA, recB] };
+
+  T.fmSelectedRecKeys = new Set(["a.log"]);
+  T.fmSelectedWindow = null;
+  assert(w.resolveFolderMinimapTargets(folder).map(r => r.name).join(",") === "a.log", "bar pick resolves to exactly a.log");
+
+  T.fmSelectedRecKeys = new Set();
+  T.fmSelectedWindow = { from: 500, to: 2500 }; // covers only recA
+  assert(w.resolveFolderMinimapTargets(folder).map(r => r.name).join(",") === "a.log", "an equivalent window resolves to the same file");
+});
+
+await withApp(async (w, d, T) => {
+  section("206d. Hover crosshair + drag label appear/disappear on real mouse events, mirroring the log minimap's own drag aid");
+
+  function fakeFileHandle(text) {
+    return { async getFile() { return { size: text.length, slice(s, e) { const ee = e === undefined ? text.length : e; const sl = text.slice(s, ee); return { text: async () => sl }; } }; } };
+  }
+  const recA = {
+    name: "a.log", relPath: "a.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 3)),
+    _range: { first: new Date(2024, 0, 15, 10, 0, 0, 0).getTime(), last: new Date(2024, 0, 15, 10, 0, 2, 0).getTime() },
+  };
+  const folder = { id: "fm-206-folder-4", name: "f206d", files: [recA] };
+  T.state.folders.push(folder);
+  w.selectFolderContainer(folder.id);
+
+  const svg = d.querySelector("#folderMinimapSvg");
+  const hoverLine = d.querySelector("#folderMinimapHoverLine");
+  const tooltip = d.querySelector("#folderMinimapTooltip");
+  const dragRect = d.querySelector("#folderMinimapDragRect");
+  const dragLabel = d.querySelector("#folderMinimapDragLabel");
+
+  assert(hoverLine.classList.contains("hidden") && tooltip.classList.contains("hidden"), "hover aids start hidden");
+
+  svg.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 400, clientY: 10 }));
+  assert(!hoverLine.classList.contains("hidden") && !tooltip.classList.contains("hidden"), "hovering shows the crosshair line and the time tooltip");
+  assert(tooltip.textContent.length > 0, "tooltip shows a formatted time, got " + JSON.stringify(tooltip.textContent));
+
+  svg.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: true }));
+  assert(hoverLine.classList.contains("hidden") && tooltip.classList.contains("hidden"), "leaving the minimap hides the hover aids again");
+
+  // Drag from clientX 200 to 500 — past the click threshold (same
+  // dispatched-event technique the real log minimap's own drag test uses).
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: 200, clientY: 10 }));
+  assert(dragRect.classList.contains("hidden"), "drag overlay stays hidden until the pointer moves past the click threshold");
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 500, clientY: 10 }));
+  assert(!dragRect.classList.contains("hidden") && !dragLabel.classList.contains("hidden"), "drag band + label appear once past the threshold");
+  assert(dragLabel.textContent.includes("→"), "drag label shows a from → to readout, got " + JSON.stringify(dragLabel.textContent));
+  assert(hoverLine.classList.contains("hidden") && tooltip.classList.contains("hidden"), "the drag overlay hides the plain hover aids while dragging");
+
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: 500, clientY: 10 }));
+  assert(dragRect.classList.contains("hidden") && dragLabel.classList.contains("hidden"), "drag band + label hide again after mouseup");
+  assert(T.fmSelectedWindow && T.fmSelectedWindow.to > T.fmSelectedWindow.from, "the drag set a real selected window");
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -26168,4 +26758,95 @@ process.exitCode = failed ? 1 : 0;
       normal file, a single-entry file, an empty file (returns null), and
       a file whose last line is a timestamp-less continuation line (falls
       back to the last real header line).
+   ============================================================ */
+
+/* ============================================================
+   Group 204 — this session (2026-09-14), implements FEATURE_BACKLOG.md #64:
+      a folder-watch minimap for picking which files to load/merge. Folder
+      only — a ZIP source's entries can't be head/tail-probed (deflate),
+      so getting a ZIP entry's range would mean fully inflating it; kept as
+      its own backlog entry (#65) rather than done here. Clicking a
+      folder's own title sets state.folderView, a fourth "special content
+      area" alongside state.inlineViewer, dispatched by its own branch in
+      renderMainView; each real node activation clears it. The minimap
+      shows one bar per file in folder.files on a shared time axis, its
+      range from probeFileTimeRange (added last session) for an unopened
+      file or fileEntryTimeRange for an opened one, cached on the record as
+      rec._range (invalidated by mergeScannedFiles on an mtime change).
+      Multi-selecting bars loads them individually; dragging a time window
+      loads the overlap, merges it (mergeFiles), and attaches a matching
+      "timerange" filter to the result. 204a: probeFolderFileRange probes,
+      caches, and the cache is invalidated on an mtime change. 204b: an
+      already-opened file's range comes from its real entries, never a
+      re-probe. 204c: selectFolderContainer's renderMainView dispatch —
+      shown on a title click, cleared by a real node activation, falls back
+      when the folder is removed while showing. 204d: the Load button's two
+      modes — individual bars (no merge) and a dragged window (merge the
+      overlap + a matching timerange filter, a non-overlapping file
+      excluded).
+   ============================================================ */
+
+/* ============================================================
+   Group 205 — this session (2026-09-14), person-requested feasibility
+      follow-up to Group 204's folder-watch minimap: windowed/partial file
+      load for the dragged-window Load. findWindowStartOffset binary-
+      searches (via probeTsAtOffset, small growing chunks — the same trick
+      probeFileTimeRange's own tail read uses) for approximately where a
+      target timestamp starts, assuming the file is chronologically sorted
+      (same assumption mergeFiles' quick-merge and live tailing already
+      make); parseFileWindow reads/parses forward from there only until the
+      window's end, never the whole file. loadFolderFileWindowed wires this
+      into loadFolderMinimapSelection's window branch, falling back to a
+      plain full loadFolderFile below WINDOWED_LOAD_MIN_FILE_SIZE (8MB),
+      when a file's range isn't known yet, or when the sortedness
+      assumption looks violated. Resulting nodes get node.partial =
+      { from, to }, threaded through snapshotSubtree/restoreSubtree and
+      persistFileNode the same way node.merged/node.formatId already are;
+      renderNode/nodeIconHTML get a new ICON_FILE_PARTIAL badge + tooltip.
+      205a: findWindowStartOffset+parseFileWindow directly, on a mid-size
+      sorted fixture — correctness (only the requested window's entries)
+      AND the actual performance claim (bytes requested and entries parsed
+      are a small fraction of the whole file, via an instrumented .slice()
+      counter). 205b: below the size threshold, or with no known range yet,
+      falls back to a full load (no node.partial). 205c: a file above the
+      threshold gets only its window read and is flagged partial; an
+      already-open file is never re-read. 205d: a file that isn't actually
+      chronologically sorted falls back to a full load instead of silently
+      returning wrong/missing entries. 205e: node.partial survives a
+      close+undo round trip, and merging two windowed sources (via what was
+      then loadFolderMinimapSelection, since renamed to
+      folderMinimapMergeWindow — see Group 206) unions their ranges into
+      the merged node's own node.partial.
+   ============================================================ */
+
+/* ============================================================
+   Group 206 — this session (2026-09-14), person-requested: a hover
+      crosshair + "from → to" drag label on the folder minimap (it never
+      had one, unlike the real log minimap), and three explicit action
+      buttons (load individually / merge full / merge only the dragged
+      window) replacing the old single Load button whose effect used to be
+      inferred from how you selected files. loadFolderMinimapSelection was
+      split into resolveFolderMinimapTargets (the one place "which files
+      are relevant" is decided, for both the toolbar and all three
+      actions) plus folderMinimapLoadIndividually/MergeFull/MergeWindow.
+      folderMinimapMergeFull is the one new behavior: merges in full with
+      NO timerange filter (person-decided — "everything, unfiltered"),
+      even when reached via a drawn window; folderMinimapMergeWindow is
+      unchanged from Group 204/205's own window-merge behavior. The hover/
+      drag DOM elements (#folderMinimapHoverLine/Tooltip/DragRect/
+      DragLabel) are plain siblings of the SVG, mirroring
+      #timelineMinimapDragRect/DragLabel (same "an unrelated SVG rebuild
+      must never wipe an in-progress gesture" reasoning) — replacing the
+      previous session's SVG-internal #fmDragOverlayRect. 206a: the three
+      buttons' enablement — none selected disables all three; bars picked
+      enables load-individually/merge-full but NOT merge-window (no drawn
+      window); a window covering zero files disables all three; a window
+      covering ≥1 file enables all three. 206b: folderMinimapMergeFull
+      produces a merged node with zero filter children. 206c:
+      resolveFolderMinimapTargets resolves to the same file via a bar pick
+      or an equivalent window. 206d: real dispatched mousemove/mousedown/
+      mouseup events (same technique the log minimap's own drag test uses)
+      show the hover crosshair+tooltip on hover, hide them during a drag in
+      favor of the drag band+label, and restore a real fmSelectedWindow on
+      mouseup.
    ============================================================ */
