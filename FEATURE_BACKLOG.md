@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 65
+LAST_ID: 74
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation. Numbers are unique, permanent IDs, not a sort order —
@@ -58,7 +58,7 @@ this point.
 
 38. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
 40. **Fix Settings view scroll performance** — currently noticeably janky.
-49. **Respect OS default window behavior** — audit that the app's own shortcuts/mechanics never shadow or override the operating system's default window behavior (e.g. window management shortcuts).
+49. **Check for collisions with OS default shortcuts** — audit that the app's own keyboard shortcuts never shadow or override the operating system's default shortcuts (e.g. window-management / browser shortcuts).
 
 ### Log formats & parsing
 
@@ -68,7 +68,7 @@ this point.
 ### Navigation & reading
 
 5. **Δt between two rows** — mark a row, shift-click a second, get the gap in the status strip. The extraction table already answers this (`t(ms)`), the log view doesn't.
-57. **Folder view with a timeline**, to make orienting among multiple opened files/folders easier.
+68. **Word wrap in the views (log view and text view)** — a toggle to soft-wrap long lines instead of horizontal scrolling, in both the log rows and the inline text viewer. Distinct from the existing multiline-message toggle, which is about multi-line entries, not wrapping a single long line.
 
 ### Filter tree workflow
 
@@ -80,11 +80,14 @@ this point.
 
 21. **Warn/migrate when an extraction pattern edit shifts columns** — assertions and ignored-columns are index-based and silently point at the wrong column otherwise.
 25. **Derived extraction columns** — an expression column over other extracted columns (`c3 - c2`, unit conversion), plottable and assertable like any captured column. Open question: expression syntax, and how a derived column indexes against the index-based assertions/ignored-columns.
+73. **Custom plots — a script window as a Plot variant** — a small script/expression window that produces a user-defined chart from the extracted data, alongside the built-in Plot tab. Open question: scripting surface (which data it gets, sandboxing) given the dependency-free/offline constraint.
+74. **Configure a plot by drag & drop from the overview** — build/adjust a plot by dragging extracted columns/values from the extraction table onto the plot's axes, instead of only the current toolbar controls.
 
 ### Multi-file & correlation
 
 27. **Drop a non-log file (e.g. TIFF) → jump to matching log entry** by the file's CreationDate. Open question: TIFF files carry a trailing XML block (after the image data) with its own CreationDate, which may be more accurate than the filesystem timestamp. Needs scoping before implementation.
 29. **Per-file clock offset** — a manual `± N ms` correction applied to a file's timestamps before merge or sync. Device clocks drift, and today the only fix is to not compare.
+71. **Extend folder auto-open with configurable start filters** — when a watched/auto-opened folder loads on startup, apply a preconfigured set of filters automatically. Builds on the existing folder auto-open.
 65. **Folder-watch minimap, ZIP variant** — the folder-watch minimap (implemented this session: a folder's title selects it, showing a per-file time-range timeline in the main content area — drag a window to load+merge the overlap with a matching `timerange` filter, or multi-select bars to load them individually) deliberately covers folders only. A ZIP source's entries are deflate-compressed, so there's no cheap `file.slice()` head/tail read the way `probeFileTimeRange` does for a real folder file — getting a ZIP entry's time range means fully inflating it via `entry.extract()`. Open question: inflate every entry up front (with a progress bar) when the ZIP's minimap is opened, or probe lazily/in the background and show "range unknown" bars until each entry resolves.
 
 ### Sharing & output
@@ -94,8 +97,18 @@ this point.
 
 ### Settings & UI polish
 
-41. **Syntax highlighting for structured messages, behind a toggle** — when an entry's message body is itself structured (JSON, XML, ...), colorize it instead of showing it as flat text. Open question: where this renders (Entry Detail only, or also inline in the log rows), and how detection works (sniff the message content vs. a per-format setting).
-45. **Theme should be able to follow the OS/system light-dark state** — auto light/dark switching based on system preference, as an alternative to the existing manual toggle.
+45. **Theme should be able to follow the OS/system light-dark state** — a live "follow system" mode as an alternative to the manual toggle. Today `prefers-color-scheme` is only read once as the default on first start (no stored theme), not tracked afterwards.
+66. **Fullscreen focus mode on the content** — a distraction-free mode that hides the surrounding chrome (sidebar, panels, toolbars) and maximizes the active log/extraction view. (This is what the old, poorly-worded "F11 / window behavior" item was actually asking for.)
+67. **Separately configurable theme for syntax highlighting** — let the embedded-XML/JSON syntax-highlight colors be picked/switched independently of the main app theme; today they can only ride along optionally inside a theme's `syntaxColors` block (see `#detailFormatToggle`).
+69. **Audit all dialogs for a consistent UI** — sweep every popup/dialog (filter popup, Settings, Format Manager, link dialog, ...) for a uniform look-and-feel: spacing, header style, button placement and labelling.
+
+### LLM / AI
+
+70. **LLM integration with a chat window** — connect an LLM to ask questions about the loaded log(s) via an in-app chat panel. Open questions: which provider/endpoint (local vs. remote API), how much log context to send, and how to reconcile this with the local-first/offline, dependency-free design constraint (a remote call breaks "no server, no external calls").
+
+### Build & release
+
+72. **New versioning scheme with real version numbers** — replace the current commit-short-SHA stamp (`PHILOGG_VERSION` → `.brand-version`) with proper, human-readable release version numbers.
 
 ## Wiedervorlage
 
