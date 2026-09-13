@@ -1987,19 +1987,21 @@
      views (same "special content area" as #inlineViewerWrap just above)
      when a folder's own title is clicked. See renderFolderMinimap. */
   #folderMinimapWrap{display:none; flex-direction:column; height:100%; min-height:0;}
+  /* Same container recipe #contextToolbar/#tableToolbar use (see CLAUDE.md's
+     styling note) — 36px row, 10px side padding, 10px gap between the
+     name/info text and the actions group. */
   #folderMinimapHeader{
-    flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:8px 14px;
+    flex:0 0 auto; box-sizing:border-box; height:36px;
+    display:flex; align-items:center; gap:10px; padding:0 10px;
     background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #folderMinimapName{font-size:12px; font-weight:600; color:var(--text-primary); flex:0 0 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   #folderMinimapSelectionInfo{font-size:11px; color:var(--text-tertiary); flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  #folderMinimapLoadBtn{
-    flex:0 0 auto; background:var(--accent); color:#fff; border:none; border-radius:5px;
-    padding:5px 14px; font-size:12px; font-weight:650; cursor:pointer;
-  }
-  #folderMinimapLoadBtn:hover:not(:disabled){filter:brightness(1.1);}
-  #folderMinimapLoadBtn:disabled{background:var(--bg-elevated-2); color:var(--text-tertiary); cursor:default;}
-  #folderMinimapBody{flex:1 1 auto; min-height:0; overflow:auto; padding:10px 14px;}
+  #folderMinimapHeader [data-toolbar-group="actions"]{margin-left:auto;}
+  /* SVG bars scroll (many-row folders can be tall); the hover/drag overlay
+     divs below are positioned absolutely against THIS element, so it needs
+     to be the positioned ancestor. */
+  #folderMinimapBody{flex:1 1 auto; min-height:0; overflow:auto; padding:10px 14px; position:relative;}
   #folderMinimapSvg{display:block; width:100%; user-select:none;}
   .fm-row-label{font-size:10.5px; fill:var(--text-secondary); dominant-baseline:middle;}
   .fm-bar{fill:var(--accent); opacity:.65; cursor:pointer;}
@@ -2007,8 +2009,33 @@
   .fm-bar.selected{opacity:1; stroke:var(--accent-strong); stroke-width:1.5;}
   .fm-bar.unranged{fill:var(--text-tertiary); opacity:.3; cursor:pointer;}
   .fm-axis-line{stroke:var(--border-soft); stroke-width:1;}
-  .fm-drag-window{fill:var(--accent); opacity:.15; stroke:var(--accent); stroke-width:1; stroke-dasharray:3 2; pointer-events:none;}
-  .fm-drag-window.hidden{display:none;}
+  /* Hover crosshair + tooltip, and drag band + label — plain siblings of
+     the SVG (see the markup's own comment for why), styled after
+     #timelineMinimapTooltip/#timelineMinimapDragRect/#timelineMinimapDragLabel.
+     Unlike that single-row minimap, this one can have many stacked file
+     rows, so a full-height vertical line (not just a floating box) is
+     worth the extra element — it shows which bars a given moment crosses. */
+  #folderMinimapHoverLine{position:absolute; top:0; width:1px; background:var(--text-tertiary); opacity:.6; pointer-events:none; z-index:5;}
+  #folderMinimapHoverLine.hidden{display:none;}
+  #folderMinimapTooltip{
+    position:absolute; top:2px; transform:translateX(-50%);
+    padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--border);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:10;
+  }
+  #folderMinimapTooltip.hidden{display:none;}
+  #folderMinimapDragRect{
+    position:absolute; top:0; background:var(--accent-soft); border:1px solid var(--accent);
+    opacity:.7; pointer-events:none; z-index:6;
+  }
+  #folderMinimapDragRect.hidden{display:none;}
+  #folderMinimapDragLabel{
+    position:absolute; top:2px; transform:translateX(-50%);
+    padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:11;
+  }
+  #folderMinimapDragLabel.hidden{display:none;}
 
   #emptyState h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0;}
   #emptyState p{font-size:12px; margin:0; max-width:320px; line-height:1.6;}
@@ -3834,10 +3861,29 @@
         <div id="folderMinimapHeader">
           <span id="folderMinimapName"></span>
           <span id="folderMinimapSelectionInfo"></span>
-          <button type="button" id="folderMinimapLoadBtn" disabled>Load</button>
+          <!-- Same Controls/Settings/Actions toolbar language as
+               #contextToolbar/#tableToolbar (see CLAUDE.md's styling note) —
+               one-off icon buttons, no shared data-row-actions template
+               (these three are unique to this view). Wired/enabled by
+               updateFolderMinimapToolbar; each action reads its target file
+               set from resolveFolderMinimapTargets. -->
+          <div class="toolbar-group" data-toolbar-group="actions">
+            <button type="button" id="folderMinimapLoadEachBtn" class="toolbar-icon-btn" title="Load selected files individually (no merge)" disabled></button>
+            <button type="button" id="folderMinimapMergeFullBtn" class="toolbar-icon-btn" title="Merge selected files in full — no time filter" disabled></button>
+            <button type="button" id="folderMinimapMergeWindowBtn" class="toolbar-icon-btn" title="Merge only the dragged time window" disabled></button>
+          </div>
         </div>
         <div id="folderMinimapBody">
           <svg id="folderMinimapSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+          <!-- Hover/drag aids as plain sibling divs, not SVG children — same
+               reasoning as #timelineMinimapTooltip/#timelineMinimapDragRect
+               (see their own comment): an unrelated full SVG rebuild
+               (folderScanTick's poll can fire while this view is showing)
+               must never wipe an in-progress hover/drag gesture. -->
+          <div id="folderMinimapHoverLine" class="hidden"></div>
+          <div id="folderMinimapTooltip" class="hidden"></div>
+          <div id="folderMinimapDragRect" class="hidden"></div>
+          <div id="folderMinimapDragLabel" class="hidden"></div>
         </div>
       </div>
 
@@ -4986,6 +5032,14 @@ const ICON_DISK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" s
 // Open book — the Filter-Toolbar's "Library" button.
 const ICON_BOOK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.3 5.3 3 3.5 3H2v9h1.5c1.8 0 3.3.3 4.5 1.2"/><path d="M8 4.2C9.2 3.3 10.7 3 12.5 3H14v9h-1.5c-1.8 0-3.3.3-4.5 1.2z"/><path d="M8 4.2v9"/></svg>';
 const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2.2v4.3c0 2 1.8 3 3.6 3M12 2.2v4.3c0 2-1.8 3-3.6 3v3.3"/><circle cx="4" cy="2.2" r="1.2"/><circle cx="12" cy="2.2" r="1.2"/><circle cx="8.4" cy="13.8" r="1.2"/></svg>';
+// Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
+// MergeWindow's three explicit actions): two overlapping file glyphs for
+// "load individually" (no
+// merge), and ICON_MERGE with a small circled "W" badge (same idiom as
+// ICON_FILE_AUTO/ICON_FILE_PARTIAL's own circled letter) for "merge only
+// the dragged Window".
+const ICON_FILES_SEPARATE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h5l2 2v8H3z"/><path d="M8 2v2h2"/><path d="M7.4 6.2h5L14.4 8v6H9.4v-2.2"/><path d="M12.4 6.2v2h2"/></svg>';
+const ICON_MERGE_WINDOW = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 2v4c0 1.8 1.6 2.7 3.2 2.7M11.6 2v4c0 1.8-1.6 2.7-3.2 2.7v3"/><circle cx="3.6" cy="2" r="1.1"/><circle cx="11.6" cy="2" r="1.1"/><circle cx="8.4" cy="13" r="1.1"/><circle cx="13" cy="3.4" r="2.6" fill="var(--bg-panel)" stroke-width="0.9"/><text x="13" y="4.5" font-size="3.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">W</text></svg>';
 const ICON_COMBINE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6.2" cy="8" r="4.3"/><circle cx="9.8" cy="8" r="4.3"/></svg>';
 const ICON_LINK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6.3 9.7 9.7 6.3"/><path d="M6.7 6.9 4.9 8.7a2 2 0 0 0 2.8 2.8l1.8-1.8"/><path d="M9.3 9.1l1.8-1.8a2 2 0 0 0-2.8-2.8L6.5 6.3"/></svg>';
 const ICON_CONTEXT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2"/><path d="M10 3h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2"/></svg>';
@@ -6910,8 +6964,8 @@ async function probeFileTimeRange(file, formatId) {
    a violation and the caller (loadFolderFileWindowed) falls back to a
    normal full load rather than risk silently dropping real entries.
 
-   Only ever used for the minimap's dragged-window Load (see
-   loadFolderMinimapSelection) — picking individual files with no window
+   Only ever used for the minimap's "merge only the window" action (see
+   folderMinimapMergeWindow) — picking individual files with no window
    still does a normal full loadFolderFile, and a file that's genuinely
    small isn't worth the extra round trips this needs (see
    WINDOWED_LOAD_MIN_FILE_SIZE below). ===================== */
@@ -7039,8 +7093,8 @@ async function parseFileWindow(file, node, from, to, onProgress) {
   return true;
 }
 
-// Folder-minimap counterpart to loadFolderFile, used only for a dragged-
-// window Load (see loadFolderMinimapSelection): reads only rec's
+// Folder-minimap counterpart to loadFolderFile, used only by the "merge
+// only the window" action (see folderMinimapMergeWindow): reads only rec's
 // [from, to] slice via parseFileWindow instead of the whole file, when
 // that's actually worth it — falls back to a plain full loadFolderFile
 // whenever the file is already open (its entries already cover any window),
@@ -22043,8 +22097,18 @@ function openFolderFileContextMenu(ev, folder, rec) {
 const folderMinimapWrap = el("#folderMinimapWrap");
 const folderMinimapName = el("#folderMinimapName");
 const folderMinimapSelectionInfo = el("#folderMinimapSelectionInfo");
-const folderMinimapLoadBtn = el("#folderMinimapLoadBtn");
+const folderMinimapBody = el("#folderMinimapBody");
 const folderMinimapSvg = el("#folderMinimapSvg");
+const folderMinimapHoverLine = el("#folderMinimapHoverLine");
+const folderMinimapTooltip = el("#folderMinimapTooltip");
+const folderMinimapDragRect = el("#folderMinimapDragRect");
+const folderMinimapDragLabel = el("#folderMinimapDragLabel");
+const folderMinimapLoadEachBtn = el("#folderMinimapLoadEachBtn");
+const folderMinimapMergeFullBtn = el("#folderMinimapMergeFullBtn");
+const folderMinimapMergeWindowBtn = el("#folderMinimapMergeWindowBtn");
+folderMinimapLoadEachBtn.innerHTML = ICON_FILES_SEPARATE;
+folderMinimapMergeFullBtn.innerHTML = ICON_MERGE;
+folderMinimapMergeWindowBtn.innerHTML = ICON_MERGE_WINDOW;
 
 const FM_ROW_HEIGHT = 20;
 const FM_ROW_GAP = 5;
@@ -22182,37 +22246,105 @@ function renderFolderMinimapSvg(folder, rows) {
     parts.push('<text class="fm-row-label" x="' + fmPlotLeft + '" y="' + (axisY + 13) + '">' + escapeHtml(formatTime(axis.min)) + '</text>');
     parts.push('<text class="fm-row-label" x="' + (fmPlotLeft + plotW) + '" y="' + (axisY + 13) + '" text-anchor="end">' + escapeHtml(formatTime(axis.max)) + '</text>');
   }
-  // Fixed-position drag overlay, updated directly (not through a full
-  // re-render) on every mousemove while dragging — see the mousemove
-  // listener below.
-  parts.push('<rect id="fmDragOverlayRect" class="fm-drag-window hidden" x="0" y="0" width="0" height="' + H + '"/>');
   folderMinimapSvg.innerHTML = parts.join("");
 }
 
-function updateFolderMinimapToolbar(rows) {
-  const n = fmSelectedWindow
-    ? rows.filter(r => r.range && fmRangeOverlapsWindow(r.range, fmSelectedWindow)).length
-    : fmSelectedRecKeys.size;
-  folderMinimapSelectionInfo.textContent = fmSelectedWindow
-    ? (n + " file" + (n === 1 ? "" : "s") + " in window — Load merges them, with this time range applied")
-    : n ? (n + " file" + (n === 1 ? "" : "s") + " selected — Load opens them individually")
-    : "Click a bar to select, or drag a time window";
-  folderMinimapLoadBtn.disabled = n === 0;
+// Files relevant to whatever's currently selected — the one place both the
+// toolbar's enable/disable logic and all three actions below read from, so
+// they can never disagree about "what am I about to act on". A dragged
+// window wins over a bar selection (they're mutually exclusive — see the
+// mousedown/click handlers): files whose range overlaps it. Otherwise, the
+// individually-picked bars.
+function resolveFolderMinimapTargets(folder) {
+  if (fmSelectedWindow) {
+    return folder.files.filter(rec => {
+      const r = folderFileTimeRange(rec);
+      return r && fmRangeOverlapsWindow(r, fmSelectedWindow);
+    });
+  }
+  return folder.files.filter(rec => fmSelectedRecKeys.has(folderFileKey(rec)));
 }
 
-function fmDragOverlayEl() { return folderMinimapSvg.querySelector("#fmDragOverlayRect"); }
+function updateFolderMinimapToolbar(rows) {
+  const hasWindow = !!fmSelectedWindow;
+  const targetCount = hasWindow
+    ? rows.filter(r => r.range && fmRangeOverlapsWindow(r.range, fmSelectedWindow)).length
+    : fmSelectedRecKeys.size;
+  folderMinimapSelectionInfo.textContent = hasWindow
+    ? (targetCount + " file" + (targetCount === 1 ? "" : "s") + " in window")
+    : targetCount ? (targetCount + " file" + (targetCount === 1 ? "" : "s") + " selected")
+    : "Click a bar to select, or drag a time window";
+  folderMinimapLoadEachBtn.disabled = targetCount === 0;
+  folderMinimapMergeFullBtn.disabled = targetCount === 0;
+  // Merging "only the window" needs an actual drawn window to bound the
+  // read — stays disabled for a plain bar selection even if bars happen to
+  // be picked (person-decided: no implied window from the selected bars'
+  // own ranges).
+  folderMinimapMergeWindowBtn.disabled = !hasWindow || targetCount === 0;
+}
+
+// Converts a folderMinimapSvg-local viewBox x (as fmTsToX/fmXToTs use) into
+// a real CSS pixel position relative to #folderMinimapBody — the
+// positioned ancestor the hover/drag divs below are placed against. Needed
+// because those divs are plain HTML (not scaled by the SVG's viewBox) while
+// fmTsToX/fmXToTs work in viewBox units.
+function fmViewBoxXToBodyPx(viewBoxX, svgRect, bodyRect) {
+  const scale = svgRect.width / (folderMinimapSvg.viewBox.baseVal.width || 1);
+  return (svgRect.left - bodyRect.left) + viewBoxX * scale;
+}
+
+function hideFmHoverIndicator() {
+  folderMinimapHoverLine.classList.add("hidden");
+  folderMinimapTooltip.classList.add("hidden");
+}
+function updateFmHoverIndicator(ev) {
+  if (!fmAxis) return;
+  const svgRect = folderMinimapSvg.getBoundingClientRect();
+  const bodyRect = folderMinimapBody.getBoundingClientRect();
+  const scaleX = folderMinimapSvg.viewBox.baseVal.width / svgRect.width || 1;
+  const viewBoxX = (ev.clientX - svgRect.left) * scaleX;
+  const ts = fmXToTs(viewBoxX);
+  const px = fmViewBoxXToBodyPx(viewBoxX, svgRect, bodyRect);
+  folderMinimapHoverLine.style.left = px.toFixed(1) + "px";
+  folderMinimapHoverLine.style.top = (folderMinimapSvg.offsetTop) + "px";
+  folderMinimapHoverLine.style.height = folderMinimapSvg.offsetHeight + "px";
+  folderMinimapHoverLine.classList.remove("hidden");
+  folderMinimapTooltip.textContent = formatTime(ts);
+  folderMinimapTooltip.style.left = px.toFixed(1) + "px";
+  folderMinimapTooltip.classList.remove("hidden");
+}
+
+// Drag overlay (band + "from → to · duration" label) — plain sibling divs
+// of the SVG, not SVG children (see the markup's own comment for why),
+// styled/positioned after showMinimapDragOverlay/hideMinimapDragOverlay
+// (the real log minimap's own drag aid, near renderTimelineMinimap).
 function showFmDragOverlay(startTs, curTs) {
-  const overlay = fmDragOverlayEl();
-  if (!overlay) return;
-  const x1 = fmTsToX(Math.min(startTs, curTs)), x2 = fmTsToX(Math.max(startTs, curTs));
-  overlay.setAttribute("x", (fmPlotLeft + x1).toFixed(1));
-  overlay.setAttribute("width", Math.max(0, x2 - x1).toFixed(1));
-  overlay.classList.remove("hidden");
+  const svgRect = folderMinimapSvg.getBoundingClientRect();
+  const bodyRect = folderMinimapBody.getBoundingClientRect();
+  const fromTs = Math.min(startTs, curTs), toTs = Math.max(startTs, curTs);
+  const x1 = fmViewBoxXToBodyPx(fmPlotLeft + fmTsToX(fromTs), svgRect, bodyRect);
+  const x2 = fmViewBoxXToBodyPx(fmPlotLeft + fmTsToX(toTs), svgRect, bodyRect);
+  folderMinimapDragRect.style.left = x1.toFixed(1) + "px";
+  folderMinimapDragRect.style.width = Math.max(1, x2 - x1).toFixed(1) + "px";
+  folderMinimapDragRect.style.top = folderMinimapSvg.offsetTop + "px";
+  folderMinimapDragRect.style.height = folderMinimapSvg.offsetHeight + "px";
+  folderMinimapDragRect.classList.remove("hidden");
+
+  folderMinimapDragLabel.textContent = formatTime(fromTs) + " → " + formatTime(toTs) + " · " + formatMs(Math.max(0, toTs - fromTs));
+  folderMinimapDragLabel.style.left = ((x1 + x2) / 2).toFixed(1) + "px";
+  folderMinimapDragLabel.classList.remove("hidden");
+  hideFmHoverIndicator(); // drag overlay/label own this space now — see updateFmHoverIndicator's own mousemove guard
 }
 function hideFmDragOverlay() {
-  const overlay = fmDragOverlayEl();
-  if (overlay) overlay.classList.add("hidden");
+  folderMinimapDragRect.classList.add("hidden");
+  folderMinimapDragLabel.classList.add("hidden");
 }
+
+folderMinimapSvg.addEventListener("mousemove", ev => {
+  if (fmDragging) return; // the drag overlay/label own this space right now
+  updateFmHoverIndicator(ev);
+});
+folderMinimapSvg.addEventListener("mouseleave", () => { if (!fmDragging) hideFmHoverIndicator(); });
 
 folderMinimapSvg.addEventListener("mousedown", ev => {
   if (ev.button !== 0 || !fmAxis) return;
@@ -22221,6 +22353,7 @@ folderMinimapSvg.addEventListener("mousedown", ev => {
   fmDragStartTs = fmXToTs((ev.clientX - fmDragSvgRect.left) * scaleX);
   fmDragging = true;
   fmDragMoved = false;
+  hideFmHoverIndicator();
 });
 window.addEventListener("mousemove", ev => {
   if (!fmDragging) return;
@@ -22255,78 +22388,101 @@ folderMinimapSvg.addEventListener("click", ev => {
   const folder = state.folders.find(f => f.id === fmFolderId);
   if (folder) renderFolderMinimap(folder);
 });
-folderMinimapLoadBtn.addEventListener("click", () => {
-  const folder = state.folders.find(f => f.id === fmFolderId);
-  if (folder) loadFolderMinimapSelection(folder);
-});
 window.addEventListener("resize", () => {
   if (!state.folderView) return;
   const folder = state.folders.find(f => f.id === state.folderView);
   if (folder) renderFolderMinimap(folder);
 });
 
-// The Load button's actual effect — see its own toolbar text
-// (updateFolderMinimapToolbar) for what each mode does. Individually
-// selected bars load each file with no merge; a dragged window loads
-// every overlapping file, merges them all, and applies a "timerange"
-// filter for the exact dragged window on the result (createFilterNode,
-// same call createTimeRangeFilterFromDrag makes for the log minimap's own
-// drag-select) — so the merge lands already filtered to what was drawn.
-async function loadFolderMinimapSelection(folder) {
-  const win = fmSelectedWindow;
-  const keys = fmSelectedRecKeys;
-  if (!win && keys.size === 0) return;
-
-  if (win) {
-    const targets = folder.files.filter(rec => {
-      const r = folderFileTimeRange(rec);
-      return r && fmRangeOverlapsWindow(r, win);
-    });
-    const nodeIds = [];
-    for (const rec of targets) {
-      // Windowed load (see "Windowed/partial file load" below): a large
-      // file not already open gets only its [win.from, win.to] slice read
-      // and parsed, not the whole file — loadFolderFileWindowed falls back
-      // to a normal full loadFolderFile itself whenever that isn't worth it
-      // or isn't safe (small file, unknown range, non-monotonic timestamps).
-      await loadFolderFileWindowed(folder, rec, win.from, win.to);
-      if (rec.nodeId) nodeIds.push(rec.nodeId);
-    }
-    let resultId = null;
-    if (nodeIds.length >= 2) {
-      const merged = await mergeFiles(nodeIds);
-      resultId = merged && merged.id;
-      // If any source was only partially read (see loadFolderFileWindowed),
-      // the merge result covers no more than the union of what was actually
-      // read — flag it the same way, so it reads (and persists/undoes) as
-      // visibly incomplete too, same as any source it was built from.
-      const partialSources = merged ? nodeIds.map(id => state.nodes[id]).filter(n => n && n.partial) : [];
-      if (partialSources.length) {
-        merged.partial = {
-          from: Math.min(...partialSources.map(n => n.partial.from)),
-          to: Math.max(...partialSources.map(n => n.partial.to)),
-        };
-      }
-    } else if (nodeIds.length === 1) {
-      resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
-    }
-    if (resultId) createFilterNode(resultId, "timerange", { from: win.from, to: win.to });
-  } else {
-    // Individually-picked bars: load each, no merge — the last one loaded
-    // ends up active (same as opening several folder files by hand in
-    // sequence — see loadFolderFile/createFileNode).
-    const recsByKey = new Map(folder.files.map(rec => [folderFileKey(rec), rec]));
-    for (const key of keys) {
-      const rec = recsByKey.get(key);
-      if (rec) await loadFolderFile(folder, rec);
-    }
-  }
-
+// The three explicit actions (folderMinimapLoadEachBtn/MergeFullBtn/
+// MergeWindowBtn) — see updateFolderMinimapToolbar for when each is
+// enabled. All three read their target files from
+// resolveFolderMinimapTargets and end with finishFolderMinimapAction.
+function finishFolderMinimapAction() {
   fmSelectedRecKeys = new Set();
   fmSelectedWindow = null;
   state.folderView = null;
   render();
 }
+
+// Load each target file individually — no merge, no filter. The last one
+// loaded ends up active (same as opening several folder files by hand in
+// sequence — see loadFolderFile/createFileNode).
+async function folderMinimapLoadIndividually(folder) {
+  const targets = resolveFolderMinimapTargets(folder);
+  for (const rec of targets) await loadFolderFile(folder, rec);
+  finishFolderMinimapAction();
+}
+
+// Merge every target file IN FULL — no windowed/partial read, and
+// (person-decided) no "timerange" filter attached even if a window was
+// drawn: this button means "everything, unfiltered". A dragged window here
+// only ever decided WHICH files are relevant, same as
+// resolveFolderMinimapTargets does for the other two actions.
+async function folderMinimapMergeFull(folder) {
+  const targets = resolveFolderMinimapTargets(folder);
+  const nodeIds = [];
+  for (const rec of targets) {
+    await loadFolderFile(folder, rec);
+    if (rec.nodeId) nodeIds.push(rec.nodeId);
+  }
+  if (nodeIds.length >= 2) await mergeFiles(nodeIds);
+  // A single target file needs no merge step — loadFolderFile already
+  // activated it.
+  finishFolderMinimapAction();
+}
+
+// Merge only the dragged time window: each target file gets only its
+// [win.from, win.to] slice read (loadFolderFileWindowed — falls back to a
+// normal full load itself whenever windowed reading isn't worth it or
+// isn't safe), then merged, then a "timerange" filter for the EXACT dragged
+// window is attached to the result (createFilterNode, same call
+// createTimeRangeFilterFromDrag makes for the log minimap's own drag-
+// select) — so the merge lands already filtered to what was drawn. Only
+// reachable when a window was actually drawn (see updateFolderMinimapToolbar).
+async function folderMinimapMergeWindow(folder) {
+  const win = fmSelectedWindow;
+  if (!win) return;
+  const targets = resolveFolderMinimapTargets(folder);
+  const nodeIds = [];
+  for (const rec of targets) {
+    await loadFolderFileWindowed(folder, rec, win.from, win.to);
+    if (rec.nodeId) nodeIds.push(rec.nodeId);
+  }
+  let resultId = null;
+  if (nodeIds.length >= 2) {
+    const merged = await mergeFiles(nodeIds);
+    resultId = merged && merged.id;
+    // If any source was only partially read, the merge result covers no
+    // more than the union of what was actually read — flag it the same
+    // way, so it reads (and persists/undoes) as visibly incomplete too,
+    // same as any source it was built from.
+    const partialSources = merged ? nodeIds.map(id => state.nodes[id]).filter(n => n && n.partial) : [];
+    if (partialSources.length) {
+      merged.partial = {
+        from: Math.min(...partialSources.map(n => n.partial.from)),
+        to: Math.max(...partialSources.map(n => n.partial.to)),
+      };
+    }
+  } else if (nodeIds.length === 1) {
+    resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
+  }
+  if (resultId) createFilterNode(resultId, "timerange", { from: win.from, to: win.to });
+  finishFolderMinimapAction();
+}
+
+folderMinimapLoadEachBtn.addEventListener("click", () => {
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) folderMinimapLoadIndividually(folder);
+});
+folderMinimapMergeFullBtn.addEventListener("click", () => {
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) folderMinimapMergeFull(folder);
+});
+folderMinimapMergeWindowBtn.addEventListener("click", () => {
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) folderMinimapMergeWindow(folder);
+});
 
 /* ===================== Folder watch settings dialog (gear icon on a
    .folder-watch-header) — per-folder: include-subfolders/show-relative-path,
