@@ -48,6 +48,52 @@ Version display: `const PHILOGG_VERSION = "dev";`, declared once near the top of
 
 **No-file-loaded state: one hint, not three (this session, 2026-08-18, person-requested)**. With zero files loaded, `#emptyState`'s centered "No log file loaded yet" message (unchanged) is now the **only** such hint — two duplicates were removed outright: `#dropHint`, a dashed-border "Drag & drop log files… or use Open…" box that used to render directly in the tree sidebar (`renderTree()`'s own visibility toggle, condition `state.rootIds.length === 0 && state.folders.length === 0`) whenever the tree was empty; and the header's `#statusText`, which used to read the literal string `"No files loaded"` (`renderStatus()`) — it's now just an empty string in that state, only ever populated with the real "N files · M entries" count once something's loaded. Both were pure UI trims with no behavior behind them to preserve (the `#dropOverlay` drag-over overlay, shown transiently while a drag is in progress over the window, is unrelated and untouched). See "`#viewBar`" above for the third piece of the same request (hiding the toolbar row itself, not just its hints).
 
+### Fullscreen Focus Mode (FEATURE_BACKLOG.md #66)
+
+A distraction-free, fullscreen mode, toggled by `toggleFocusMode(on)` (a
+body-level `body.focus-mode` class flip — one toggle, so it never rebuilds
+the tree; see the render-scope gotcha in `PROJECT.md`). It is desktop-only in
+practice, because entering it also requires **real OS fullscreen**, which is a
+Tauri-only capability (see `docs/desktop.md` → "F11 and Focus Mode").
+
+What it does on enter:
+- The header (`#toolbar`) is **removed entirely** — a single CSS rule
+  `body.focus-mode #toolbar { display:none !important; }`, no hover reveal.
+- The **Files & Filters** sidebar and the **Entry Detail** panel are
+  **force-collapsed** to their edge-hover overlays, and their hover-reveal is
+  **forced on regardless of the user's normal Settings** (`hoverExpandSidebar`/
+  `hoverExpandDetail`). This deliberately **reuses the existing** collapse +
+  hover-peek mechanism — `toggleSidebarCollapsed`/`toggleDetailCollapsed` and
+  the `hoverExpand*` flags described under "Collapsible sidebar / detail
+  panel" — rather than a second mechanism. The `hoverExpand*` flags are set in
+  memory only (never written to `localStorage`), so the person's saved "open
+  on hover" preference is untouched.
+- `#breadcrumbBar`, `#viewBar` and the timeline minimap stay visible, and the
+  active log/extraction view takes the freed space through the normal flex
+  layout (no special maximize logic needed).
+
+On enter `toggleFocusMode` records the prior state — each panel's collapsed
+flag and both `hoverExpand*` flags — in `focusModePrevState`; on exit it
+restores **exactly** what it captured (a sidebar that was already collapsed
+before entering stays collapsed; a `hoverExpand*` that was off goes back off),
+clears `focusModePrevState`, and removes the class.
+
+**Exit paths**: F11 again (primary), or **Esc** (secondary). Esc's exit is
+guarded by `anyEscapeOverlayOpen()` — captured at the top of the global Escape
+handler *before* its own closes run — so a single Esc closes an open popup/
+menu/dialog first and only leaves Focus Mode when nothing else is consuming
+that Esc, never both at once.
+
+**The F11 shortcut is rebindable** in the Shortcut Manager (new `toggleFocus`
+action in `SHORTCUT_ACTIONS`, default `F11`), but it is only ever **handled**
+under the desktop wrapper: the main keydown handler gates it on
+`!!window.philogg`, so in the plain browser build F11 is not bound at all and
+the browser's own F11 keeps priority. Entering/leaving asks the wrapper for
+real OS fullscreen via `setDesktopFullscreen()` →
+`window.philogg.setFullscreen(on)` (absent in the browser build, so that half
+is simply a no-op there). Covered by `tests/philogg.regression.test.js`
+Group 208 (page side; the desktop/Rust half isn't jsdom-testable).
+
 ### Unified toolbar: Context/Filtered/Table/Plot as one tab group (this session, `docs/ui-implementation-plan.md`)
 
 `#fhTabs` now covers four tabs instead of three, rendered dynamically by
