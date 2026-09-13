@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 74
+LAST_ID: 75
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation.
@@ -54,6 +54,7 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | 72 | New versioning scheme with real version numbers | Replace the current commit-short-SHA stamp (`PHILOGG_VERSION` → `.brand-version`) with proper, human-readable release version numbers. | 2 |
 | 73 | Custom plots — a script window as a Plot variant | A small script/expression window that produces a user-defined chart from the extracted data, alongside the built-in Plot tab. Open question: scripting surface (which data it gets, sandboxing) given the dependency-free/offline constraint. | 2 |
 | 74 | Configure a plot by drag & drop from the overview | Build/adjust a plot by dragging extracted columns/values from the extraction table onto the plot's axes, instead of only the current toolbar controls. | 2 |
+| 75 | Strict Content-Security-Policy as defense-in-depth | A browser-enforced `<meta http-equiv="Content-Security-Policy">` allowlist to cap the blast radius of any future DOM-XSS. Biggest concrete win here is `connect-src 'none'`: the app makes zero network calls, so this blocks all exfiltration of `localStorage` (sessions/filters/themes) even if injected script somehow runs. Add `object-src`/`base-uri`/`form-action 'none'` to close side channels. **Caveat**: the single-file inline `<script>`/`<style>` architecture forces `script-src`/`style-src 'unsafe-inline'` (a nonce/hash would need build tooling, against the no-build-step rule), so CSP here limits *impact*, not inline-script execution. Must keep `img-src data: blob:` and `worker-src blob:` (image viewer data-URLs, log-parse worker, SVG export) or the app breaks — introduce with regression coverage. `frame-ancestors` (clickjacking) needs an HTTP header, unavailable from `file://`/meta. Align with the desktop build's own CSP in `desktop/src-tauri` config. Complementary to the sandbox-iframe note in `docs/persistence-and-sync.md` → "Any other entry". | 2 |
 | 2 | Minimap: line-based instead of time-based | Show position/density by line count rather than by timestamp span. First draft wasn't liked — reconsider approach before retrying. | |
 | 3 | Incremental find inside the current view (`Ctrl+G`/`F3`) | Next/prev, highlight-as-you-type. Today `Ctrl+F` always creates a filter node, so "just look for this string once" costs a tree node you then delete. Non-destructive search would be its own, lighter interaction on top of the existing views. | |
 | 6 | Relative-time display toggle | Show timestamps as offsets from a chosen zero row (selected or bookmarked) instead of absolute time, same reasoning that made extraction's `t(ms)` cumulative-from-first. | |
