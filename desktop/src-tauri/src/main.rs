@@ -83,6 +83,7 @@ fn main() {
             commands::list_system_fonts,
             commands::window_minimize,
             commands::window_toggle_maximize,
+            commands::window_set_fullscreen,
             commands::window_close,
             commands::app_ready,
             commands::pip_exit,

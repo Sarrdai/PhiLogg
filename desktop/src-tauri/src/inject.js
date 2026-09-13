@@ -160,6 +160,13 @@
     exitPip: function () {
       return invoke("pip_exit");
     },
+    // Focus Mode (FEATURE_BACKLOG.md #66): real OS fullscreen, a Tauri-only
+    // capability. philogg.html's toggleFocusMode() calls this when entering/
+    // leaving its distraction-free mode; the plain browser build has no
+    // window.philogg at all, so it never fullscreens (and never binds F11).
+    setFullscreen: function (enabled) {
+      return invoke("window_set_fullscreen", { enabled: enabled });
+    },
   };
 
   // ------------------------------------------------------------ frameless
@@ -328,23 +335,13 @@
     markDragRegion(pipBar);
   }
 
-  // FEATURE_BACKLOG.md #31: F11 is equivalent to the injected maximize
-  // control (both toggle the same native maximize state, so a maximized
-  // window restores under the cursor the same way however it was entered).
-  // A Tauri webview has no backend-side input hook, so it is a capture-phase
-  // listener here, routed to window_toggle_maximize.
-  function setUpShortcuts() {
-    window.addEventListener(
-      "keydown",
-      function (event) {
-        if (event.key === "F11") {
-          event.preventDefault();
-          invoke("window_toggle_maximize");
-        }
-      },
-      true
-    );
-  }
+  // FEATURE_BACKLOG.md #66: F11 no longer toggles plain OS maximize here.
+  // It now toggles philogg.html's Focus Mode, which is owned by the page so
+  // the shortcut stays rebindable in its Shortcut Manager. The page handles
+  // the key itself (its keydown handler, gated on window.philogg) and calls
+  // window.philogg.setFullscreen() to enter/leave real OS fullscreen — so
+  // there is deliberately no key listener injected here any more. The window
+  // controls' maximize button (window_toggle_maximize) is unchanged.
 
   // FEATURE_BACKLOG.md #33, write half. Same shape as desktop/main.js's
   // watchSettings(): ~1x/second, diffed before crossing the process boundary,
@@ -384,7 +381,6 @@
 
   ready(function () {
     setUpChrome();
-    setUpShortcuts();
     setUpSettingsMirror();
     // FEATURE_BACKLOG.md #51: dismisses the splash. Deliberately two nested
     // frames after DOMContentLoaded rather than on the event itself — the
