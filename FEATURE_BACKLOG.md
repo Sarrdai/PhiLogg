@@ -56,8 +56,7 @@ this point.
 
 ### Settings & UI polish
 
-38. **Fix the level-filter icon** (three bars) — currently rendered wrong/inconsistent.
-40. **Fix Settings view scroll performance** — currently noticeably janky.
+38. **Replace the level-filter icon** (three bars) — not a bug; the current icon just isn't expressive enough. Wants a clearer/more meaningful glyph for the level filter.
 49. **Check for collisions with OS default shortcuts** — audit that the app's own keyboard shortcuts never shadow or override the operating system's default shortcuts (e.g. window-management / browser shortcuts).
 
 ### Log formats & parsing
