@@ -1981,6 +1981,62 @@
     font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); min-width:40px; text-align:center;
   }
   #imgViewerSvg{width:100%; height:100%; cursor:crosshair; touch-action:none;}
+
+  /* Folder-watch minimap (FEATURE_BACKLOG.md "Folder-watch minimap for
+     picking which files to load/merge") — shown instead of the normal log
+     views (same "special content area" as #inlineViewerWrap just above)
+     when a folder's own title is clicked. See renderFolderMinimap. */
+  #folderMinimapWrap{display:none; flex-direction:column; height:100%; min-height:0;}
+  /* Same container recipe #contextToolbar/#tableToolbar use (see CLAUDE.md's
+     styling note) — 36px row, 10px side padding, 10px gap between the
+     name/info text and the actions group. */
+  #folderMinimapHeader{
+    flex:0 0 auto; box-sizing:border-box; height:36px;
+    display:flex; align-items:center; gap:10px; padding:0 10px;
+    background:var(--bg-panel); border-bottom:1px solid var(--border);
+  }
+  #folderMinimapName{font-size:12px; font-weight:600; color:var(--text-primary); flex:0 0 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #folderMinimapSelectionInfo{font-size:11px; color:var(--text-tertiary); flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #folderMinimapHeader [data-toolbar-group="actions"]{margin-left:auto;}
+  /* SVG bars scroll (many-row folders can be tall); the hover/drag overlay
+     divs below are positioned absolutely against THIS element, so it needs
+     to be the positioned ancestor. */
+  #folderMinimapBody{flex:1 1 auto; min-height:0; overflow:auto; padding:10px 14px; position:relative;}
+  #folderMinimapSvg{display:block; width:100%; user-select:none;}
+  .fm-row-label{font-size:10.5px; fill:var(--text-secondary); dominant-baseline:middle;}
+  .fm-bar{fill:var(--accent); opacity:.65; cursor:pointer;}
+  .fm-bar:hover{opacity:.85;}
+  .fm-bar.selected{opacity:1; stroke:var(--accent-strong); stroke-width:1.5;}
+  .fm-bar.unranged{fill:var(--text-tertiary); opacity:.3; cursor:pointer;}
+  .fm-axis-line{stroke:var(--border-soft); stroke-width:1;}
+  /* Hover crosshair + tooltip, and drag band + label — plain siblings of
+     the SVG (see the markup's own comment for why), styled after
+     #timelineMinimapTooltip/#timelineMinimapDragRect/#timelineMinimapDragLabel.
+     Unlike that single-row minimap, this one can have many stacked file
+     rows, so a full-height vertical line (not just a floating box) is
+     worth the extra element — it shows which bars a given moment crosses. */
+  #folderMinimapHoverLine{position:absolute; top:0; width:1px; background:var(--text-tertiary); opacity:.6; pointer-events:none; z-index:5;}
+  #folderMinimapHoverLine.hidden{display:none;}
+  #folderMinimapTooltip{
+    position:absolute; top:2px; transform:translateX(-50%);
+    padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--border);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:10;
+  }
+  #folderMinimapTooltip.hidden{display:none;}
+  #folderMinimapDragRect{
+    position:absolute; top:0; background:var(--accent-soft); border:1px solid var(--accent);
+    opacity:.7; pointer-events:none; z-index:6;
+  }
+  #folderMinimapDragRect.hidden{display:none;}
+  #folderMinimapDragLabel{
+    position:absolute; top:2px; transform:translateX(-50%);
+    padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:11;
+  }
+  #folderMinimapDragLabel.hidden{display:none;}
+
   #emptyState h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0;}
   #emptyState p{font-size:12px; margin:0; max-width:320px; line-height:1.6;}
 
@@ -3793,6 +3849,44 @@
         </div>
       </div>
 
+      <!-- Folder-watch minimap (FEATURE_BACKLOG.md "Folder-watch minimap
+           for picking which files to load/merge"): a per-file time-range
+           timeline for one watched folder, shown instead of the normal
+           log views when that folder's own title is clicked (see
+           selectFolderContainer/renderMainView/renderFolderMinimap, near
+           the folder-watch section). Folder-only — a ZIP source's entries
+           are deflate-compressed and can't be cheaply time-range-probed,
+           see the backlog for the deferred ZIP variant. -->
+      <div id="folderMinimapWrap">
+        <div id="folderMinimapHeader">
+          <span id="folderMinimapName"></span>
+          <span id="folderMinimapSelectionInfo"></span>
+          <!-- Same Controls/Settings/Actions toolbar language as
+               #contextToolbar/#tableToolbar (see CLAUDE.md's styling note) —
+               one-off icon buttons, no shared data-row-actions template
+               (these three are unique to this view). Wired/enabled by
+               updateFolderMinimapToolbar; each action reads its target file
+               set from resolveFolderMinimapTargets. -->
+          <div class="toolbar-group" data-toolbar-group="actions">
+            <button type="button" id="folderMinimapLoadEachBtn" class="toolbar-icon-btn" title="Load selected files individually (no merge)" disabled></button>
+            <button type="button" id="folderMinimapMergeFullBtn" class="toolbar-icon-btn" title="Merge selected files in full — no time filter" disabled></button>
+            <button type="button" id="folderMinimapMergeWindowBtn" class="toolbar-icon-btn" title="Merge only the dragged time window" disabled></button>
+          </div>
+        </div>
+        <div id="folderMinimapBody">
+          <svg id="folderMinimapSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+          <!-- Hover/drag aids as plain sibling divs, not SVG children — same
+               reasoning as #timelineMinimapTooltip/#timelineMinimapDragRect
+               (see their own comment): an unrelated full SVG rebuild
+               (folderScanTick's poll can fire while this view is showing)
+               must never wipe an in-progress hover/drag gesture. -->
+          <div id="folderMinimapHoverLine" class="hidden"></div>
+          <div id="folderMinimapTooltip" class="hidden"></div>
+          <div id="folderMinimapDragRect" class="hidden"></div>
+          <div id="folderMinimapDragLabel" class="hidden"></div>
+        </div>
+      </div>
+
       <div id="extractWrap">
         <!-- Table view's own toolbar — same pattern as #plotToolbar right
              below it (see that div's own comment): a real row directly under
@@ -4886,6 +4980,10 @@ const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" s
 // requested — see renderNode's autoOpened opt) — marks a folder-watch file
 // that was opened automatically by a rule, not by hand.
 const ICON_FILE_AUTO = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>';
+// Same file glyph, plus a small circled "P" badge (Partial — a windowed
+// load, see loadFolderFileWindowed/node.partial) — same visual idiom as
+// ICON_FILE_AUTO's circled "A" right above.
+const ICON_FILE_PARTIAL = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">P</text></svg>';
 const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>';
 // ZIP source header icon (renderZipSection) — same viewBox/stroke
 // conventions as ICON_FOLDER above (its container's own icon, which this
@@ -4934,6 +5032,14 @@ const ICON_DISK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" s
 // Open book — the Filter-Toolbar's "Library" button.
 const ICON_BOOK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.3 5.3 3 3.5 3H2v9h1.5c1.8 0 3.3.3 4.5 1.2"/><path d="M8 4.2C9.2 3.3 10.7 3 12.5 3H14v9h-1.5c-1.8 0-3.3.3-4.5 1.2z"/><path d="M8 4.2v9"/></svg>';
 const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2.2v4.3c0 2 1.8 3 3.6 3M12 2.2v4.3c0 2-1.8 3-3.6 3v3.3"/><circle cx="4" cy="2.2" r="1.2"/><circle cx="12" cy="2.2" r="1.2"/><circle cx="8.4" cy="13.8" r="1.2"/></svg>';
+// Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
+// MergeWindow's three explicit actions): two overlapping file glyphs for
+// "load individually" (no
+// merge), and ICON_MERGE with a small circled "W" badge (same idiom as
+// ICON_FILE_AUTO/ICON_FILE_PARTIAL's own circled letter) for "merge only
+// the dragged Window".
+const ICON_FILES_SEPARATE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h5l2 2v8H3z"/><path d="M8 2v2h2"/><path d="M7.4 6.2h5L14.4 8v6H9.4v-2.2"/><path d="M12.4 6.2v2h2"/></svg>';
+const ICON_MERGE_WINDOW = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 2v4c0 1.8 1.6 2.7 3.2 2.7M11.6 2v4c0 1.8-1.6 2.7-3.2 2.7v3"/><circle cx="3.6" cy="2" r="1.1"/><circle cx="11.6" cy="2" r="1.1"/><circle cx="8.4" cy="13" r="1.1"/><circle cx="13" cy="3.4" r="2.6" fill="var(--bg-panel)" stroke-width="0.9"/><text x="13" y="4.5" font-size="3.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">W</text></svg>';
 const ICON_COMBINE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6.2" cy="8" r="4.3"/><circle cx="9.8" cy="8" r="4.3"/></svg>';
 const ICON_LINK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6.3 9.7 9.7 6.3"/><path d="M6.7 6.9 4.9 8.7a2 2 0 0 0 2.8 2.8l1.8-1.8"/><path d="M9.3 9.1l1.8-1.8a2 2 0 0 0-2.8-2.8L6.5 6.3"/></svg>';
 const ICON_CONTEXT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2"/><path d="M10 3h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2"/></svg>';
@@ -6257,6 +6363,15 @@ const state = {
   // never persisted.
   inlineViewer: null,
 
+  // Folder id whose title was clicked (selectFolderContainer), or null.
+  // Same "special content instead of a real node's log view" idea as
+  // inlineViewer above — see renderMainView's own branch and
+  // renderFolderMinimap (near the folder-watch section) — showing a
+  // time-range minimap over that folder's currently-listed files instead
+  // of any single node. Never persisted; cleared whenever a real node (or
+  // an inline viewer) is activated instead.
+  folderView: null,
+
   // Directly opened/dropped non-log inline-viewable files (this session):
   // no owning zip/folder container, so each gets its own entry here, keyed
   // by a synthetic id (see loadFileDescriptors), and renders as its own
@@ -6836,6 +6951,204 @@ async function probeFileTimeRange(file, formatId) {
   return { first, last };
 }
 
+/* ===================== Windowed/partial file load =====================
+   Extends probeFileTimeRange's own trick (learn a file's time range from
+   only a head+tail chunk, never a full read) to the folder-watch minimap's
+   drag-a-time-window Load: instead of reading a whole 200MB file just to
+   then hide everything outside the drawn window behind a "timerange"
+   filter, jump straight to (approximately) where the window starts via a
+   byte-offset binary search, then read/parse forward only until the window
+   ends. Requires the file to be chronologically sorted start to end — the
+   same assumption mergeFiles' own quick-merge disjoint-check and live
+   tailing already make elsewhere; findWindowStartOffset best-effort detects
+   a violation and the caller (loadFolderFileWindowed) falls back to a
+   normal full load rather than risk silently dropping real entries.
+
+   Only ever used for the minimap's "merge only the window" action (see
+   folderMinimapMergeWindow) — picking individual files with no window
+   still does a normal full loadFolderFile, and a file that's genuinely
+   small isn't worth the extra round trips this needs (see
+   WINDOWED_LOAD_MIN_FILE_SIZE below). ===================== */
+const WINDOWED_LOAD_MIN_FILE_SIZE = 8 * 1024 * 1024; // below this, a plain full load is simpler and fast enough
+const WINDOW_PROBE_CHUNK_BYTES = 8192;                // same size as probeFileTimeRange's own head/tail chunks
+const WINDOW_READ_CHUNK_BYTES = 2 * 1024 * 1024;      // forward sequential read chunk size once the window's start is found
+const WINDOW_BISECT_MAX_ITER = 32;                    // hard cap — converges well before this for any realistic file size
+
+// Reads a (possibly growing, see probeFileTimeRange's own tail read) chunk
+// starting at `offset` and returns the timestamp of the first COMPLETE
+// header line found at or after it, or null if none turns up before
+// PROBE_TAIL_MAX_BYTES/EOF. `offset` need not land on a line boundary — a
+// chunk that doesn't start at byte 0 has its first (possibly cut) line
+// dropped, same rule probeFileTimeRange's tail read uses. Only ever used to
+// compare against a binary search's target — never to consume real
+// entries — so approximate byte positions are fine throughout; nothing
+// here ever converts a decoded string's length back into a byte offset
+// (which would be wrong for non-ASCII text — a JS string's .length counts
+// UTF-16 code units, not the file's real bytes).
+async function probeTsAtOffset(file, compiled, offset) {
+  if (offset >= file.size) return null;
+  for (let bytes = WINDOW_PROBE_CHUNK_BYTES; ; bytes *= 4) {
+    const end = Math.min(file.size, offset + bytes);
+    const text = await file.slice(offset, end).text();
+    const lines = text.split(/\r?\n/);
+    const usable = offset > 0 && lines.length > 1 ? lines.slice(1) : lines;
+    for (const line of usable) {
+      if (compiled.isHeaderLine(line)) {
+        const ts = compiled.parseHeader(line).ts;
+        if (!isNaN(ts)) return ts;
+      }
+    }
+    if (end >= file.size || bytes >= PROBE_TAIL_MAX_BYTES) return null;
+  }
+}
+
+// Binary search for a byte offset at/before the file's real entry whose
+// timestamp is the smallest one >= targetTs ("lower bound"), assuming the
+// file is chronologically sorted. Returns { offset, consistent }: offset is
+// intentionally a little conservative (stepped back one probe-chunk) so
+// parseFileWindow starting there is guaranteed not to start AFTER the real
+// window start; consistent is false the moment two probes disagree with
+// the sorted-order assumption, telling the caller not to trust this result.
+async function findWindowStartOffset(file, formatId, targetTs) {
+  // Cheap global bookend check before bisecting at all, reusing
+  // probeFileTimeRange's own (already correct) head+tail read: if the
+  // file's very first entry's timestamp is already greater than its very
+  // last entry's, it's definitely not ascending-sorted as assumed —
+  // bisection below could easily converge on a plausible-looking but wrong
+  // offset in that case (e.g. a fully time-reversed file), which the
+  // bisection loop's own local monotonicity check doesn't reliably catch by
+  // itself (it only ever compares probes it actually happens to make).
+  // Deliberately NOT probeTsAtOffset(file, compiled, file.size - a fixed
+  // chunk) for the tail side — that scans FORWARD from a fixed offset near
+  // EOF, which finds nothing at all whenever a single line is longer than
+  // the probe chunk (a real risk: log messages vary a lot in length).
+  // probeFileTimeRange's own tail read grows backward from EOF and scans
+  // for the LAST header line instead, exactly the right tool here.
+  const range = await probeFileTimeRange(file, formatId);
+  if (range && range.first > range.last) return { offset: 0, consistent: false };
+
+  const compiled = getCompiledFormat(formatId || DEFAULT_FORMAT_ID);
+  let lo = 0, hi = file.size;
+  let consistent = true;
+  let lastLoTs = -Infinity;
+  for (let i = 0; i < WINDOW_BISECT_MAX_ITER && hi - lo > WINDOW_PROBE_CHUNK_BYTES; i++) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    const ts = await probeTsAtOffset(file, compiled, mid);
+    if (ts == null) { hi = mid; continue; } // nothing at/after mid — the target must be at or before it
+    if (ts < lastLoTs) consistent = false;  // moved backward vs. an earlier lower-bound probe — not sorted as expected
+    if (ts >= targetTs) hi = mid; else { lo = mid; lastLoTs = ts; }
+  }
+  return { offset: Math.max(0, lo - WINDOW_PROBE_CHUNK_BYTES), consistent };
+}
+
+// Reads and parses only file[from..to] (by timestamp, approximately by
+// byte range) directly into node.entries/entryIndex — the same per-line
+// header/continuation loop parseLogTextAsync's plain-loop fallback uses,
+// just fed chunk-by-chunk from a byte offset instead of one in-memory
+// string, and stopped the moment an entry's ts exceeds `to` instead of
+// running to EOF. Returns false (nothing is left appended — caller should
+// discard the node and fall back to a full load) if the sortedness
+// assumption looked violated; true otherwise (node.entries may still end
+// up empty if the file genuinely has nothing in [from, to]).
+async function parseFileWindow(file, node, from, to, onProgress) {
+  const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const compiled = getCompiledFormat(formatId);
+  const { offset: startOffset, consistent } = await findWindowStartOffset(file, formatId, from);
+  if (!consistent) return false;
+
+  let pos = startOffset;
+  let current = null;
+  let carry = "";       // a line the previous chunk may have cut off, prepended to the next
+  let firstChunk = true;
+  let stopped = false;
+
+  while (pos < file.size && !stopped) {
+    const end = Math.min(file.size, pos + WINDOW_READ_CHUNK_BYTES);
+    const text = carry + await file.slice(pos, end).text();
+    carry = "";
+    const atRealEOF = end >= file.size;
+    const lines = text.split(/\r?\n/);
+    if (!atRealEOF) carry = lines.pop(); // may be a genuine full line — re-parsed whole once the next chunk's read completes it
+    // The very first chunk may itself start mid-line (startOffset is only
+    // approximate) — drop it unless we're genuinely at the file's own start.
+    const usable = firstChunk && startOffset > 0 ? lines.slice(1) : lines;
+    firstChunk = false;
+
+    for (const line of usable) {
+      if (compiled.isHeaderLine(line)) {
+        if (current) { entryIndex[current.id] = current; node.entries.push(current); }
+        current = compiled.parseHeader(line);
+        current.formatId = formatId;
+        if (current.ts > to) { current = null; stopped = true; break; } // past the window — nothing further is needed
+      } else if (current && line !== "") {
+        current.message += "\n" + line;
+        current.raw += "\n" + line;
+      }
+    }
+    pos = end;
+    if (onProgress) onProgress(pos - startOffset, Math.max(1, file.size - startOffset));
+    await new Promise(r => setTimeout(r, 0)); // yield a tick, same as parseLogTextAsync's own loop
+  }
+  if (current) { entryIndex[current.id] = current; node.entries.push(current); }
+  return true;
+}
+
+// Folder-minimap counterpart to loadFolderFile, used only by the "merge
+// only the window" action (see folderMinimapMergeWindow): reads only rec's
+// [from, to] slice via parseFileWindow instead of the whole file, when
+// that's actually worth it — falls back to a plain full loadFolderFile
+// whenever the file is already open (its entries already cover any window),
+// too small to bother (WINDOWED_LOAD_MIN_FILE_SIZE), its time range isn't
+// known yet, or parseFileWindow itself gives up (non-monotonic timestamps).
+// The resulting node is tagged node.partial = { from, to } so it renders,
+// persists, and undoes as visibly incomplete — see renderNode's own
+// partial-node badge, and the "partial" field threaded through
+// persistFileNode/restoreSessionFromCache and snapshotSubtree/
+// restoreSubtree the same way node.merged/node.formatId already are.
+async function loadFolderFileWindowed(folder, rec, from, to) {
+  if (rec.nodeId && state.nodes[rec.nodeId]) {
+    state.activeId = rec.nodeId;
+    return;
+  }
+  let file;
+  try { file = await rec.handle.getFile(); }
+  catch (err) {
+    showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
+    return;
+  }
+  if (file.size < WINDOWED_LOAD_MIN_FILE_SIZE || !rec._range) {
+    await loadFolderFile(folder, rec);
+    return;
+  }
+
+  const node = createFileNode(rec.name, folder.id);
+  node.formatId = resolveFormatIdForFilename(rec.name);
+
+  let ok = false;
+  try {
+    ok = await parseFileWindow(file, node, from, to, (done, total) => {
+      node.loadFraction = Math.min(0.98, done / total);
+      scheduleLoadRender(node.id);
+    });
+  } catch (err) { ok = false; }
+
+  if (!ok) {
+    // Not safely windowable (or something else went wrong) — drop the
+    // half-built node and fall back to reading the whole file instead of
+    // leaving a misleadingly partial one behind.
+    deleteNode(node.id);
+    await loadFolderFile(folder, rec);
+    return;
+  }
+
+  delete node.loadFraction;
+  node.partial = { from, to };
+  rec.nodeId = node.id;
+  flushLoadRender(node.id);
+  persistFileNode(node); // fire-and-forget, same first persist loadOneFileIntoTree's own path does
+  if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
+}
+
 /* ===================== Off-main-thread parsing =====================
    The chunked loop in parseLogTextAsync only ever yields between chunks
    (setTimeout(…, 0)) — it never runs two files' parsing at the same time,
@@ -7011,6 +7324,10 @@ function createFileNode(name, folderId) {
   if (openScrollPosition === "end") node._openScrollToEnd = true;
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
+  // A freshly created file node is a real node's log view — same rule as
+  // any other real-node activation: leave the folder-minimap special view
+  // (see state.folderView) if it was showing.
+  state.folderView = null;
   // NOT during a session/cache restore (see restoreSessionFromCache): that
   // function calls addFile()/createFileNode() once per restored file in a
   // loop, and every call used to hijack state.activeId — the tree's
@@ -7514,6 +7831,7 @@ function timeRangeFilterName(value) {
 function activateNewNode(node) {
   state.activeId = node.id;
   state.multiSelect = new Set();
+  state.folderView = null; // see createFileNode's own comment
   return node;
 }
 
@@ -9419,6 +9737,11 @@ function snapshotSubtree(nodeId) {
     // shouldn't be the thing that makes that true).
     if (node.formatId) copy.formatId = node.formatId;
     if (node.folderId) copy.folderId = node.folderId;
+    // Windowed/partial load (see loadFolderFileWindowed): losing this across
+    // an undo would make a deliberately-incomplete node look like a normal
+    // full file again, same class of bug node.formatId's own comment above
+    // describes.
+    if (node.partial) copy.partial = node.partial;
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
@@ -9456,6 +9779,7 @@ function restoreSubtree(snap) {
     if (snap.tail) node.tail = snap.tail;
     if (snap.formatId) node.formatId = snap.formatId;
     if (snap.folderId) node.folderId = snap.folderId;
+    if (snap.partial) node.partial = snap.partial;
     state.nodes[node.id] = node;
     node.entries.forEach(e => { entryIndex[e.id] = e; });
     node.children = snap.children.map(c => restoreSubtree(c).id);
@@ -10602,7 +10926,7 @@ function renderMainView() {
   // with nothing meaningful to show either way. Set here (not left to
   // renderBreadcrumb itself) since both conditions this checks — hasFiles,
   // state.inlineViewer — are exactly renderMainView's own inputs below.
-  breadcrumbBarEl.style.display = (hasFiles && !state.inlineViewer) ? "" : "none";
+  breadcrumbBarEl.style.display = (hasFiles && !state.inlineViewer && !state.folderView) ? "" : "none";
   if (state.inlineViewer) {
     // Bug 3 fix (person-reported): the minimap is a log-view-only concept
     // (see timelineMinimapEl's other gating below, all keyed on a log node
@@ -10626,6 +10950,7 @@ function renderMainView() {
     // of oversight as the minimap fix right above it.
     detailPanel.style.display = "none";
     detailResizer.style.display = "none";
+    folderMinimapWrap.style.display = "none";
     inlineViewerWrap.style.display = "flex";
     inlineViewerNameEl.textContent = state.inlineViewer.name;
     inlineViewerNameEl.title = state.inlineViewer.name;
@@ -10634,6 +10959,37 @@ function renderMainView() {
     return;
   }
   inlineViewerWrap.style.display = "none";
+
+  // Folder-watch minimap (FEATURE_BACKLOG.md "Folder-watch minimap for
+  // picking which files to load/merge"): clicking a folder's own title
+  // (selectFolderContainer) selects the whole container instead of a real
+  // node, same "special content area" idea as state.inlineViewer right
+  // above — this branch mirrors its shape (hide every log/extract/link/
+  // detail surface, show one dedicated wrap, early-return) rather than
+  // being folded into the hasFiles dispatch below, since a folder can have
+  // zero opened files (hasFiles false) and still have files worth showing
+  // a minimap over. A folder can also vanish (closed, or permission lost)
+  // while its minimap is showing — falls through to the normal dispatch
+  // below instead of rendering a wrap for a folder that's gone.
+  const folderViewTarget = state.folderView && state.folders.find(f => f.id === state.folderView);
+  if (state.folderView && !folderViewTarget) state.folderView = null;
+  if (folderViewTarget) {
+    emptyState.style.display = "none";
+    viewBarEl.style.display = "none";
+    tableWrap.style.display = "none";
+    extractWrap.style.display = "none";
+    linkWrap.style.display = "none";
+    fhTabs.style.display = "none";
+    fhSplit.style.display = "none";
+    detailPanel.style.display = "none";
+    detailResizer.style.display = "none";
+    timelineMinimapEl.classList.add("hidden");
+    folderMinimapWrap.style.display = "flex";
+    renderFolderMinimap(folderViewTarget);
+    return;
+  }
+  folderMinimapWrap.style.display = "none";
+
   emptyState.style.display = hasFiles ? "none" : "flex";
   // #viewBar has nothing meaningful to show with zero files loaded —
   // person-requested (predates this rework): only #emptyState's centered
@@ -10650,6 +11006,7 @@ function renderMainView() {
     detailResizer.style.display = "none";
     detailPanel.style.display = "none";
     timelineMinimapEl.classList.add("hidden");
+    folderMinimapWrap.style.display = "none";
     currentViewEntries = [];
     tableRows.innerHTML = "";
     tableSpacer.style.height = "0px";
@@ -10791,7 +11148,7 @@ function timeFilterIcon(node) {
 
 // Icon lookup for a tree row (renderNode).
 function nodeIconHTML(node) {
-  return node.type === "file" ? (node.merged ? ICON_MERGE : ICON_FILE)
+  return node.type === "file" ? (node.partial ? ICON_FILE_PARTIAL : node.merged ? ICON_MERGE : ICON_FILE)
     // A "text" node with extractable wildcards gets the table icon, same as
     // the retired dedicated "extract" filterType used to.
     : (node.filterType === "text" && nodeHasExtractableWildcards(node)) ? ICON_TABLE
@@ -11047,6 +11404,7 @@ function moveTreeSelection(key) {
   // a plain tree-row click and a brand-new zip log entry open already
   // follow (see renderNode's click handler / openZipEntry's own comment).
   state.inlineViewer = null;
+  state.folderView = null;
   applyTempAnchorOnActiveNodeSwitch(targetId);
   state.multiSelect = new Set([targetId]);
   state.activeId = targetId;
@@ -11435,6 +11793,12 @@ function renderNode(id, depth, opts) {
   const titleParts = [];
   if (iconIsLive) titleParts.push("Live: file is being tailed for new entries");
   if (opts && opts.autoOpened) titleParts.push("Opened automatically by a folder watch rule");
+  // Windowed/partial load (see loadFolderFileWindowed): only the drawn time
+  // window was actually read from disk, not the whole file — the icon
+  // badge alone (ICON_FILE_PARTIAL) wouldn't say what window, so it's
+  // spelled out here instead of changing the tree label itself (which
+  // ripples into breadcrumbs/rail markers/etc. — see nodeDisplayName).
+  if (node.partial) titleParts.push(`Partial load: only ${formatTime(node.partial.from)} – ${formatTime(node.partial.to)} was read from disk`);
   if (titleParts.length) icon.title = titleParts.join(" — ");
   row.appendChild(icon);
 
@@ -11526,6 +11890,7 @@ function renderNode(id, depth, opts) {
     // now extended to "or one non-log entry's content". Harmless no-op
     // when nothing was open.
     state.inlineViewer = null;
+    state.folderView = null;
     // Same choice as Alt+Arrow tree nav (see the keydown handler's comment):
     // a mouse click on a filter switches the active filter but should not
     // steal arrow-key focus away from the log — leave focusRegion as
@@ -16519,7 +16884,7 @@ function renderSidebarRail() {
       btn.className = "sidebar-rail-marker" + (node.id === state.activeId ? " active" : "");
       btn.title = nodeDisplayName(node) + " — " + getEntries(node.id).length.toLocaleString("de-DE");
       if (node.type === "file") {
-        btn.innerHTML = node.merged ? ICON_MERGE : ICON_FILE;
+        btn.innerHTML = node.partial ? ICON_FILE_PARTIAL : node.merged ? ICON_MERGE : ICON_FILE;
       } else {
         const dot = document.createElement("span");
         dot.className = "sidebar-rail-marker-dot";
@@ -19585,6 +19950,7 @@ function updateInlineViewerToolbar(v) {
 function activateInlineViewer(viewer) {
   state.activeId = null;
   state.inlineViewer = viewer;
+  state.folderView = null; // mutually exclusive "special content area" views — see its own comment
 }
 
 // `owner`, generalized this session (was zip-specific — a plain zip
@@ -21233,7 +21599,14 @@ async function mergeScannedFiles(folder, scanned) {
     if (existing) {
       existing.handle = s.handle;
       existing.relPath = s.relPath;
-      if (typeof s.mtime === "number") existing.mtime = s.mtime;
+      if (typeof s.mtime === "number") {
+        // A changed mtime means the file's content may have changed too —
+        // drop any cached folder-minimap time range (rec._range, see
+        // probeFolderFileRange) so it gets re-probed instead of showing a
+        // now-possibly-wrong bar.
+        if (existing.mtime !== s.mtime) existing._range = undefined;
+        existing.mtime = s.mtime;
+      }
       // A natively listed folder re-registers its files on every scan, and
       // the URL/path that yields are the only location an open file from it
       // has — refreshed here so a session restored from cache picks up this
@@ -21574,7 +21947,14 @@ function renderFolderSection(folder) {
   const name = document.createElement("span");
   name.className = "folder-watch-name";
   name.textContent = folder.name;
-  name.title = folder.name;
+  name.title = folder.name + " — click for a time-range minimap of this folder's files";
+  name.style.cursor = "pointer";
+  // Clicking the folder's own title selects the whole container (see
+  // selectFolderContainer/renderMainView) instead of any single file —
+  // the folder-watch minimap feature. No stopPropagation needed: unlike
+  // the popup-opening buttons in this header, nothing else here listens
+  // for a click on the header itself.
+  name.addEventListener("click", () => selectFolderContainer(folder.id));
   header.appendChild(name);
   if (folder.needsPermission) {
     const reconnectBtn = document.createElement("button");
@@ -21685,6 +22065,424 @@ function openFolderFileContextMenu(ev, folder, rec) {
   treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
   treeContextMenu.classList.remove("hidden");
 }
+
+/* ===================== Folder-watch minimap: per-file time-range
+   timeline for one watched folder (FEATURE_BACKLOG.md "Folder-watch
+   minimap for picking which files to load/merge"). Folder only — a ZIP
+   source's entries are deflate-compressed and can't be head/tail-probed
+   like a folder file's real bytes (see probeFileTimeRange), so getting a
+   ZIP entry's range would mean fully inflating every entry; deliberately
+   deferred (kept as its own backlog entry) rather than done here.
+
+   Selecting a folder's own title (.folder-watch-name, see
+   renderFolderSection/selectFolderContainer) switches the main content
+   area to this view instead of any single node's log/filter content —
+   the same "special content, not a real node" idea as state.inlineViewer,
+   and renderMainView's own branch for it mirrors that one's shape.
+
+   The minimap shows exactly the files folder.files currently lists — no
+   separate "visible subset" step needed: mergeScannedFiles/
+   applyFolderAutoRules are already the one place that decides what's
+   listed (glob patterns, "show newest M", …), so this view and
+   renderFolderSection can never disagree about which files show.
+
+   Each file's time range comes from probeFileTimeRange (a cheap head+tail
+   read — see its own definition, near tailTick) for a file that isn't
+   open yet, or fileEntryTimeRange(node.entries) for one already loaded —
+   never a full parse just to draw a bar. A probed range is cached on the
+   folder's own file record as rec._range ({first,last}, or null for "no
+   range found") so re-opening the minimap doesn't re-probe every file
+   again; mergeScannedFiles drops that cache whenever a file's mtime
+   changes underneath it (see its own comment). ===================== */
+const folderMinimapWrap = el("#folderMinimapWrap");
+const folderMinimapName = el("#folderMinimapName");
+const folderMinimapSelectionInfo = el("#folderMinimapSelectionInfo");
+const folderMinimapBody = el("#folderMinimapBody");
+const folderMinimapSvg = el("#folderMinimapSvg");
+const folderMinimapHoverLine = el("#folderMinimapHoverLine");
+const folderMinimapTooltip = el("#folderMinimapTooltip");
+const folderMinimapDragRect = el("#folderMinimapDragRect");
+const folderMinimapDragLabel = el("#folderMinimapDragLabel");
+const folderMinimapLoadEachBtn = el("#folderMinimapLoadEachBtn");
+const folderMinimapMergeFullBtn = el("#folderMinimapMergeFullBtn");
+const folderMinimapMergeWindowBtn = el("#folderMinimapMergeWindowBtn");
+folderMinimapLoadEachBtn.innerHTML = ICON_FILES_SEPARATE;
+folderMinimapMergeFullBtn.innerHTML = ICON_MERGE;
+folderMinimapMergeWindowBtn.innerHTML = ICON_MERGE_WINDOW;
+
+const FM_ROW_HEIGHT = 20;
+const FM_ROW_GAP = 5;
+const FM_LABEL_WIDTH = 150;
+const FM_AXIS_HEIGHT = 20;
+const FM_DRAG_THRESHOLD_PX = 4;
+
+// Selection state for the currently-shown folder minimap — module-local,
+// like the log minimap's own drag state (minimapDragging etc.), reset
+// whenever a different folder is selected (see renderFolderMinimap).
+// Bar-selection and a dragged window are mutually exclusive: whichever
+// happens second clears the other (see the mousedown/click handlers
+// below).
+let fmFolderId = null;
+let fmSelectedRecKeys = new Set(); // folderFileKey(rec) of individually-picked bars
+let fmSelectedWindow = null;       // { from, to } from a drag, or null
+let fmAxis = null;      // { min, max } from the last render, used by the drag/click coordinate math
+let fmPlotLeft = 0;
+let fmPlotWidth = 1;
+let fmDragging = false;
+let fmDragStartTs = 0;
+let fmDragSvgRect = null;
+let fmDragMoved = false;
+
+function fmXToTs(x) {
+  if (!fmAxis || fmAxis.max <= fmAxis.min) return fmAxis ? fmAxis.min : 0;
+  const u = Math.min(1, Math.max(0, (x - fmPlotLeft) / fmPlotWidth));
+  return fmAxis.min + u * (fmAxis.max - fmAxis.min);
+}
+function fmTsToX(ts) {
+  if (!fmAxis || fmAxis.max <= fmAxis.min) return 0;
+  return ((ts - fmAxis.min) / (fmAxis.max - fmAxis.min)) * fmPlotWidth;
+}
+function fmRangeOverlapsWindow(range, win) {
+  return range.first <= win.to && range.last >= win.from;
+}
+
+async function probeFolderFileRange(folder, rec) {
+  if (rec._range !== undefined) return rec._range; // cached (including a cached null)
+  let file;
+  try { file = await rec.handle.getFile(); }
+  catch { return (rec._range = null); }
+  // Same per-filename format resolution loadOneFileIntoTree itself uses —
+  // folders have no separate per-folder format setting.
+  const formatId = resolveFormatIdForFilename(rec.name);
+  return (rec._range = await probeFileTimeRange(file, formatId));
+}
+
+// undefined = not probed yet (a probe should be kicked off for it); null =
+// probed, no range found (unrecognized format, or an empty file); an
+// object = the real range.
+function folderFileTimeRange(rec) {
+  if (rec.nodeId && state.nodes[rec.nodeId]) {
+    const r = fileEntryTimeRange(state.nodes[rec.nodeId].entries);
+    return r ? { first: r.min, last: r.max } : null;
+  }
+  return rec._range !== undefined ? rec._range : undefined;
+}
+
+// Selecting a folder's title (see renderFolderSection) — the only entry
+// point into this view.
+function selectFolderContainer(folderId) {
+  state.folderView = folderId;
+  state.inlineViewer = null; // mutually exclusive "special content area" views
+  render();
+}
+
+function renderFolderMinimap(folder) {
+  if (fmFolderId !== folder.id) {
+    fmFolderId = folder.id;
+    fmSelectedRecKeys = new Set();
+    fmSelectedWindow = null;
+  }
+  folderMinimapName.textContent = folder.name;
+
+  const files = folder.files;
+  // Kick off probing for anything not yet resolved, then re-render this
+  // same view once they land — calling renderFolderMinimap directly
+  // (not render()) avoids rebuilding the tree/log views for no reason,
+  // same "only re-render what changed" discipline the rest of the app's
+  // load-tick code follows.
+  const pending = files.filter(rec => folderFileTimeRange(rec) === undefined);
+  if (pending.length) {
+    Promise.all(pending.map(rec => probeFolderFileRange(folder, rec))).then(() => {
+      if (state.folderView === folder.id) renderFolderMinimap(folder);
+    });
+  }
+
+  const rows = files.map(rec => ({ rec, range: folderFileTimeRange(rec) }));
+  const ranged = rows.filter(r => r.range);
+  fmAxis = ranged.length
+    ? { min: Math.min(...ranged.map(r => r.range.first)), max: Math.max(...ranged.map(r => r.range.last)) }
+    : null;
+
+  renderFolderMinimapSvg(folder, rows);
+  updateFolderMinimapToolbar(rows);
+}
+
+function renderFolderMinimapSvg(folder, rows) {
+  const container = folderMinimapWrap.querySelector("#folderMinimapBody");
+  const W = Math.max(320, (container && container.clientWidth) || 600);
+  const plotW = Math.max(60, W - FM_LABEL_WIDTH - 12);
+  const H = Math.max(FM_ROW_HEIGHT, rows.length * (FM_ROW_HEIGHT + FM_ROW_GAP)) + FM_AXIS_HEIGHT + 16;
+  folderMinimapSvg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  folderMinimapSvg.setAttribute("height", H);
+  fmPlotLeft = FM_LABEL_WIDTH;
+  fmPlotWidth = plotW;
+
+  const showRelPath = folder.settings && folder.settings.includeSubfolders && folder.settings.showRelativePath;
+  const axis = fmAxis;
+  const parts = [];
+  rows.forEach((r, i) => {
+    const y = i * (FM_ROW_HEIGHT + FM_ROW_GAP);
+    const label = showRelPath && r.rec.relPath ? r.rec.relPath : r.rec.name;
+    const shortLabel = label.length > 24 ? "…" + label.slice(-23) : label;
+    parts.push('<text class="fm-row-label" x="0" y="' + (y + FM_ROW_HEIGHT / 2) + '">' + escapeHtml(shortLabel) + '</text>');
+    const key = folderFileKey(r.rec);
+    const selected = fmSelectedRecKeys.has(key) || (fmSelectedWindow && r.range && fmRangeOverlapsWindow(r.range, fmSelectedWindow));
+    if (r.range && axis) {
+      const x1 = fmPlotLeft + fmTsToX(r.range.first);
+      const x2 = fmPlotLeft + fmTsToX(r.range.last);
+      parts.push('<rect class="fm-bar' + (selected ? ' selected' : '') + '" data-key="' + escapeHtml(key) + '" x="' + x1.toFixed(1) +
+        '" y="' + y + '" width="' + Math.max(2, x2 - x1).toFixed(1) + '" height="' + FM_ROW_HEIGHT + '" rx="3"><title>' + escapeHtml(label) + '</title></rect>');
+    } else {
+      // Unranged (still probing, or no recognizable timestamp in this
+      // file's format) — a thin placeholder spanning the whole axis, still
+      // individually selectable/loadable but excluded from window-overlap math.
+      parts.push('<rect class="fm-bar unranged" data-key="' + escapeHtml(key) + '" x="' + fmPlotLeft + '" y="' + (y + FM_ROW_HEIGHT * 0.3) +
+        '" width="' + plotW + '" height="' + (FM_ROW_HEIGHT * 0.4) + '" rx="2"><title>' + escapeHtml(label) + ' — range unknown</title></rect>');
+    }
+  });
+  const axisY = Math.max(FM_ROW_HEIGHT, rows.length * (FM_ROW_HEIGHT + FM_ROW_GAP)) + 6;
+  parts.push('<line class="fm-axis-line" x1="' + fmPlotLeft + '" y1="' + axisY + '" x2="' + (fmPlotLeft + plotW) + '" y2="' + axisY + '"/>');
+  if (axis) {
+    parts.push('<text class="fm-row-label" x="' + fmPlotLeft + '" y="' + (axisY + 13) + '">' + escapeHtml(formatTime(axis.min)) + '</text>');
+    parts.push('<text class="fm-row-label" x="' + (fmPlotLeft + plotW) + '" y="' + (axisY + 13) + '" text-anchor="end">' + escapeHtml(formatTime(axis.max)) + '</text>');
+  }
+  folderMinimapSvg.innerHTML = parts.join("");
+}
+
+// Files relevant to whatever's currently selected — the one place both the
+// toolbar's enable/disable logic and all three actions below read from, so
+// they can never disagree about "what am I about to act on". A dragged
+// window wins over a bar selection (they're mutually exclusive — see the
+// mousedown/click handlers): files whose range overlaps it. Otherwise, the
+// individually-picked bars.
+function resolveFolderMinimapTargets(folder) {
+  if (fmSelectedWindow) {
+    return folder.files.filter(rec => {
+      const r = folderFileTimeRange(rec);
+      return r && fmRangeOverlapsWindow(r, fmSelectedWindow);
+    });
+  }
+  return folder.files.filter(rec => fmSelectedRecKeys.has(folderFileKey(rec)));
+}
+
+function updateFolderMinimapToolbar(rows) {
+  const hasWindow = !!fmSelectedWindow;
+  const targetCount = hasWindow
+    ? rows.filter(r => r.range && fmRangeOverlapsWindow(r.range, fmSelectedWindow)).length
+    : fmSelectedRecKeys.size;
+  folderMinimapSelectionInfo.textContent = hasWindow
+    ? (targetCount + " file" + (targetCount === 1 ? "" : "s") + " in window")
+    : targetCount ? (targetCount + " file" + (targetCount === 1 ? "" : "s") + " selected")
+    : "Click a bar to select, or drag a time window";
+  folderMinimapLoadEachBtn.disabled = targetCount === 0;
+  folderMinimapMergeFullBtn.disabled = targetCount === 0;
+  // Merging "only the window" needs an actual drawn window to bound the
+  // read — stays disabled for a plain bar selection even if bars happen to
+  // be picked (person-decided: no implied window from the selected bars'
+  // own ranges).
+  folderMinimapMergeWindowBtn.disabled = !hasWindow || targetCount === 0;
+}
+
+// Converts a folderMinimapSvg-local viewBox x (as fmTsToX/fmXToTs use) into
+// a real CSS pixel position relative to #folderMinimapBody — the
+// positioned ancestor the hover/drag divs below are placed against. Needed
+// because those divs are plain HTML (not scaled by the SVG's viewBox) while
+// fmTsToX/fmXToTs work in viewBox units.
+function fmViewBoxXToBodyPx(viewBoxX, svgRect, bodyRect) {
+  const scale = svgRect.width / (folderMinimapSvg.viewBox.baseVal.width || 1);
+  return (svgRect.left - bodyRect.left) + viewBoxX * scale;
+}
+
+function hideFmHoverIndicator() {
+  folderMinimapHoverLine.classList.add("hidden");
+  folderMinimapTooltip.classList.add("hidden");
+}
+function updateFmHoverIndicator(ev) {
+  if (!fmAxis) return;
+  const svgRect = folderMinimapSvg.getBoundingClientRect();
+  const bodyRect = folderMinimapBody.getBoundingClientRect();
+  const scaleX = folderMinimapSvg.viewBox.baseVal.width / svgRect.width || 1;
+  const viewBoxX = (ev.clientX - svgRect.left) * scaleX;
+  const ts = fmXToTs(viewBoxX);
+  const px = fmViewBoxXToBodyPx(viewBoxX, svgRect, bodyRect);
+  folderMinimapHoverLine.style.left = px.toFixed(1) + "px";
+  folderMinimapHoverLine.style.top = (folderMinimapSvg.offsetTop) + "px";
+  folderMinimapHoverLine.style.height = folderMinimapSvg.offsetHeight + "px";
+  folderMinimapHoverLine.classList.remove("hidden");
+  folderMinimapTooltip.textContent = formatTime(ts);
+  folderMinimapTooltip.style.left = px.toFixed(1) + "px";
+  folderMinimapTooltip.classList.remove("hidden");
+}
+
+// Drag overlay (band + "from → to · duration" label) — plain sibling divs
+// of the SVG, not SVG children (see the markup's own comment for why),
+// styled/positioned after showMinimapDragOverlay/hideMinimapDragOverlay
+// (the real log minimap's own drag aid, near renderTimelineMinimap).
+function showFmDragOverlay(startTs, curTs) {
+  const svgRect = folderMinimapSvg.getBoundingClientRect();
+  const bodyRect = folderMinimapBody.getBoundingClientRect();
+  const fromTs = Math.min(startTs, curTs), toTs = Math.max(startTs, curTs);
+  const x1 = fmViewBoxXToBodyPx(fmPlotLeft + fmTsToX(fromTs), svgRect, bodyRect);
+  const x2 = fmViewBoxXToBodyPx(fmPlotLeft + fmTsToX(toTs), svgRect, bodyRect);
+  folderMinimapDragRect.style.left = x1.toFixed(1) + "px";
+  folderMinimapDragRect.style.width = Math.max(1, x2 - x1).toFixed(1) + "px";
+  folderMinimapDragRect.style.top = folderMinimapSvg.offsetTop + "px";
+  folderMinimapDragRect.style.height = folderMinimapSvg.offsetHeight + "px";
+  folderMinimapDragRect.classList.remove("hidden");
+
+  folderMinimapDragLabel.textContent = formatTime(fromTs) + " → " + formatTime(toTs) + " · " + formatMs(Math.max(0, toTs - fromTs));
+  folderMinimapDragLabel.style.left = ((x1 + x2) / 2).toFixed(1) + "px";
+  folderMinimapDragLabel.classList.remove("hidden");
+  hideFmHoverIndicator(); // drag overlay/label own this space now — see updateFmHoverIndicator's own mousemove guard
+}
+function hideFmDragOverlay() {
+  folderMinimapDragRect.classList.add("hidden");
+  folderMinimapDragLabel.classList.add("hidden");
+}
+
+folderMinimapSvg.addEventListener("mousemove", ev => {
+  if (fmDragging) return; // the drag overlay/label own this space right now
+  updateFmHoverIndicator(ev);
+});
+folderMinimapSvg.addEventListener("mouseleave", () => { if (!fmDragging) hideFmHoverIndicator(); });
+
+folderMinimapSvg.addEventListener("mousedown", ev => {
+  if (ev.button !== 0 || !fmAxis) return;
+  fmDragSvgRect = folderMinimapSvg.getBoundingClientRect();
+  const scaleX = folderMinimapSvg.viewBox.baseVal.width / fmDragSvgRect.width || 1;
+  fmDragStartTs = fmXToTs((ev.clientX - fmDragSvgRect.left) * scaleX);
+  fmDragging = true;
+  fmDragMoved = false;
+  hideFmHoverIndicator();
+});
+window.addEventListener("mousemove", ev => {
+  if (!fmDragging) return;
+  const scaleX = folderMinimapSvg.viewBox.baseVal.width / fmDragSvgRect.width || 1;
+  const x = (ev.clientX - fmDragSvgRect.left) * scaleX;
+  if (!fmDragMoved && Math.abs(x - (fmPlotLeft + fmTsToX(fmDragStartTs))) < FM_DRAG_THRESHOLD_PX) return;
+  fmDragMoved = true;
+  showFmDragOverlay(fmDragStartTs, fmXToTs(x));
+});
+window.addEventListener("mouseup", ev => {
+  if (!fmDragging) return;
+  fmDragging = false;
+  hideFmDragOverlay();
+  if (!fmDragMoved) return; // a plain click — the SVG's own "click" listener below handles bar toggling
+  const scaleX = folderMinimapSvg.viewBox.baseVal.width / fmDragSvgRect.width || 1;
+  const curTs = fmXToTs((ev.clientX - fmDragSvgRect.left) * scaleX);
+  const from = Math.round(Math.min(fmDragStartTs, curTs)), to = Math.round(Math.max(fmDragStartTs, curTs));
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (to > from && folder) {
+    fmSelectedWindow = { from, to };
+    fmSelectedRecKeys = new Set();
+    renderFolderMinimap(folder);
+  }
+});
+folderMinimapSvg.addEventListener("click", ev => {
+  if (fmDragMoved) { fmDragMoved = false; return; } // a drag just ended here — don't also toggle a bar
+  const bar = ev.target.closest(".fm-bar");
+  if (!bar) return;
+  const key = bar.getAttribute("data-key");
+  if (fmSelectedRecKeys.has(key)) fmSelectedRecKeys.delete(key); else fmSelectedRecKeys.add(key);
+  fmSelectedWindow = null;
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) renderFolderMinimap(folder);
+});
+window.addEventListener("resize", () => {
+  if (!state.folderView) return;
+  const folder = state.folders.find(f => f.id === state.folderView);
+  if (folder) renderFolderMinimap(folder);
+});
+
+// The three explicit actions (folderMinimapLoadEachBtn/MergeFullBtn/
+// MergeWindowBtn) — see updateFolderMinimapToolbar for when each is
+// enabled. All three read their target files from
+// resolveFolderMinimapTargets and end with finishFolderMinimapAction.
+function finishFolderMinimapAction() {
+  fmSelectedRecKeys = new Set();
+  fmSelectedWindow = null;
+  state.folderView = null;
+  render();
+}
+
+// Load each target file individually — no merge, no filter. The last one
+// loaded ends up active (same as opening several folder files by hand in
+// sequence — see loadFolderFile/createFileNode).
+async function folderMinimapLoadIndividually(folder) {
+  const targets = resolveFolderMinimapTargets(folder);
+  for (const rec of targets) await loadFolderFile(folder, rec);
+  finishFolderMinimapAction();
+}
+
+// Merge every target file IN FULL — no windowed/partial read, and
+// (person-decided) no "timerange" filter attached even if a window was
+// drawn: this button means "everything, unfiltered". A dragged window here
+// only ever decided WHICH files are relevant, same as
+// resolveFolderMinimapTargets does for the other two actions.
+async function folderMinimapMergeFull(folder) {
+  const targets = resolveFolderMinimapTargets(folder);
+  const nodeIds = [];
+  for (const rec of targets) {
+    await loadFolderFile(folder, rec);
+    if (rec.nodeId) nodeIds.push(rec.nodeId);
+  }
+  if (nodeIds.length >= 2) await mergeFiles(nodeIds);
+  // A single target file needs no merge step — loadFolderFile already
+  // activated it.
+  finishFolderMinimapAction();
+}
+
+// Merge only the dragged time window: each target file gets only its
+// [win.from, win.to] slice read (loadFolderFileWindowed — falls back to a
+// normal full load itself whenever windowed reading isn't worth it or
+// isn't safe), then merged, then a "timerange" filter for the EXACT dragged
+// window is attached to the result (createFilterNode, same call
+// createTimeRangeFilterFromDrag makes for the log minimap's own drag-
+// select) — so the merge lands already filtered to what was drawn. Only
+// reachable when a window was actually drawn (see updateFolderMinimapToolbar).
+async function folderMinimapMergeWindow(folder) {
+  const win = fmSelectedWindow;
+  if (!win) return;
+  const targets = resolveFolderMinimapTargets(folder);
+  const nodeIds = [];
+  for (const rec of targets) {
+    await loadFolderFileWindowed(folder, rec, win.from, win.to);
+    if (rec.nodeId) nodeIds.push(rec.nodeId);
+  }
+  let resultId = null;
+  if (nodeIds.length >= 2) {
+    const merged = await mergeFiles(nodeIds);
+    resultId = merged && merged.id;
+    // If any source was only partially read, the merge result covers no
+    // more than the union of what was actually read — flag it the same
+    // way, so it reads (and persists/undoes) as visibly incomplete too,
+    // same as any source it was built from.
+    const partialSources = merged ? nodeIds.map(id => state.nodes[id]).filter(n => n && n.partial) : [];
+    if (partialSources.length) {
+      merged.partial = {
+        from: Math.min(...partialSources.map(n => n.partial.from)),
+        to: Math.max(...partialSources.map(n => n.partial.to)),
+      };
+    }
+  } else if (nodeIds.length === 1) {
+    resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
+  }
+  if (resultId) createFilterNode(resultId, "timerange", { from: win.from, to: win.to });
+  finishFolderMinimapAction();
+}
+
+folderMinimapLoadEachBtn.addEventListener("click", () => {
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) folderMinimapLoadIndividually(folder);
+});
+folderMinimapMergeFullBtn.addEventListener("click", () => {
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) folderMinimapMergeFull(folder);
+});
+folderMinimapMergeWindowBtn.addEventListener("click", () => {
+  const folder = state.folders.find(f => f.id === fmFolderId);
+  if (folder) folderMinimapMergeWindow(folder);
+});
 
 /* ===================== Folder watch settings dialog (gear icon on a
    .folder-watch-header) — per-folder: include-subfolders/show-relative-path,
@@ -26180,6 +26978,13 @@ async function persistFileNode(node) {
     // still the same one on disk / at that URL.
     localPath: node.localPath || null,
     sourceUrl: node.sourceUrl || null,
+    // Windowed/partial load (see loadFolderFileWindowed): `text` above is
+    // already just the read slice (rebuildFileText only ever sees this
+    // node's own real entries), so restoring it needs no special handling
+    // by itself — but without this flag surviving the round trip, a
+    // restored session would show a deliberately-incomplete node as if it
+    // were the file's normal full content.
+    partial: node.partial || null,
     savedAt: Date.now(),
   }));
 }
@@ -26544,6 +27349,11 @@ async function restoreSessionFromCache() {
       // filename rules have since changed — see "Log format definitions".
       const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
       if (rec.merged) node.merged = true;
+      // Windowed/partial load (see loadFolderFileWindowed): rec.text is
+      // already just the slice that was actually read, so reparsing it here
+      // is correct as-is — only the visible "this is incomplete" marker
+      // needs restoring.
+      if (rec.partial) node.partial = rec.partial;
       // Re-links this node to its watched folder, if it had one — the
       // folder record itself (including its handle) comes back separately
       // via restoreWatchedFolders, called right after this function returns.

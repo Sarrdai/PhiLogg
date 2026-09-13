@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 64
+LAST_ID: 65
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation. Numbers are unique, permanent IDs, not a sort order —
@@ -85,7 +85,7 @@ this point.
 
 27. **Drop a non-log file (e.g. TIFF) → jump to matching log entry** by the file's CreationDate. Open question: TIFF files carry a trailing XML block (after the image data) with its own CreationDate, which may be more accurate than the filesystem timestamp. Needs scoping before implementation.
 29. **Per-file clock offset** — a manual `± N ms` correction applied to a file's timestamps before merge or sync. Device clocks drift, and today the only fix is to not compare.
-64. **Folder-watch minimap for picking which files to load/merge** — a lightweight timeline over an entire watched folder showing each file's covered time range (bars from first- to last-entry timestamp, no entries loaded), so a person can see at a glance where in time a folder's files sit before opening any of them. Dragging/selecting a time window on it would load only the files overlapping that window and merge them (quick merge from disjoint-range sources, full copy+sort otherwise — see `mergeFiles`/`fileEntryTimeRange`). `probeFileTimeRange(file, formatId)` (added this session, `philogg.html`) already provides the cheap per-file time-range probe this needs, reading only a head and a tail chunk instead of the whole file — the missing pieces are the minimap rendering variant (existing `renderTimelineMinimap` works over one file's entry density, not per-file ranges across a folder) and the selection → filtered-load/merge wiring. Related to/overlaps with 57 ("Folder view with a timeline").
+65. **Folder-watch minimap, ZIP variant** — the folder-watch minimap (implemented this session: a folder's title selects it, showing a per-file time-range timeline in the main content area — drag a window to load+merge the overlap with a matching `timerange` filter, or multi-select bars to load them individually) deliberately covers folders only. A ZIP source's entries are deflate-compressed, so there's no cheap `file.slice()` head/tail read the way `probeFileTimeRange` does for a real folder file — getting a ZIP entry's time range means fully inflating it via `entry.extract()`. Open question: inflate every entry up front (with a progress bar) when the ZIP's minimap is opened, or probe lazily/in the background and show "range unknown" bars until each entry resolves.
 
 ### Sharing & output
 
