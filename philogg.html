@@ -19846,6 +19846,24 @@ function guessZipEntryMimeType(name) {
   return ZIP_EXTRA_MIME_TYPES[ext] || "application/octet-stream";
 }
 
+// A Blob: URL opened via window.open() inherits PhiLogg's OWN origin, so a
+// browsing context that EXECUTES markup — HTML/XHTML/SVG — would run the
+// archived file's scripts with access to PhiLogg's localStorage (persisted
+// sessions, filters, themes). Only the plain-browser fallback in
+// openZipEntryExternally hits this path: the desktop wrapper hands the bytes
+// to the OS via openExtractedEntry and never builds a Blob tab. Serve those
+// active-content types as text/plain so the tab shows inert source instead of
+// executing it; every other type keeps its real MIME (images/PDF/text render
+// inline, unknown types download). Images route to the in-app inline viewer
+// well before here, and .svg is deliberately not among the inline image
+// extensions, so neutralizing it costs no legitimate rendering.
+const SCRIPT_CAPABLE_TAB_EXTENSIONS = ["html", "htm", "xhtml", "xht", "svg"];
+function safeTabBlobMimeType(name) {
+  const dot = name.lastIndexOf(".");
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return SCRIPT_CAPABLE_TAB_EXTENSIONS.includes(ext) ? "text/plain" : guessZipEntryMimeType(name);
+}
+
 // Item 3 (FEATURE_BACKLOG-adjacent refinement, this session): a non-log
 // entry (a .txt/.png/whatever else lives in the archive) is extracted the
 // same lazy way as a log entry, then handed off to a VIEWER instead of
@@ -19884,7 +19902,7 @@ async function openZipEntryExternally(entry, zip) {
     }
     return;
   }
-  const blob = new Blob([bytes], { type: guessZipEntryMimeType(entry.name) });
+  const blob = new Blob([bytes], { type: safeTabBlobMimeType(entry.name) });
   const url = URL.createObjectURL(blob);
   window.open(url, "_blank");
   setTimeout(() => URL.revokeObjectURL(url), ZIP_BLOB_URL_REVOKE_MS);
