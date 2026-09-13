@@ -27917,6 +27917,10 @@ function buildSessionExport(fileIds, embedTextIds) {
       filters: roots,
       bookmarks: [],
       notes: [],
+      // Per-file clock offset (FEATURE_BACKLOG.md #29): travels with the
+      // export so the correction survives the round-trip. Re-applied to the
+      // resolved importer file's entries on import (see applyImportedClockOffset).
+      clockOffset: node.clockOffset || 0,
     };
     if (embedTextIds && embedTextIds.has(id)) rec.text = rebuildFileText(node);
     files.push(rec);
@@ -28092,9 +28096,26 @@ function matchExportedFile(rec, rootIds) {
 
 /* ---------- Applying one export entry ---------- */
 
+// Per-file clock offset (FEATURE_BACKLOG.md #29): re-apply the exported offset
+// to the resolved importer file so its timestamps match what was exported.
+// Applied as the DIFFERENCE from the target's current offset (idempotent — a
+// re-import onto an already-adjusted file doesn't double it) and BEFORE any
+// timestamp-based bookmark/note re-anchoring, so the exported b.ts/n.ts land in
+// the same ts space as the shifted importer entries. A merged target always
+// carries offset 0 on both sides (applyClockOffset refuses merged files), so
+// this is a no-op there. Called at the top of both apply paths below.
+function applyImportedClockOffset(rec, fileNode) {
+  const target = +rec.clockOffset || 0;
+  const current = fileNode.clockOffset || 0;
+  const delta = target - current;
+  if (delta) { shiftFileEntriesTs(fileNode, delta); invalidateAllCaches(); }
+  if (target) fileNode.clockOffset = target; else delete fileNode.clockOffset;
+}
+
 // Tier 1/2 (and embedded-log) path: the target is provably identical inside
 // the exported window, so every bookmark's stored ordinal is valid outright.
 function applySessionEntryByOrdinal(rec, fileNode) {
+  applyImportedClockOffset(rec, fileNode);
   const refMap = materializeCachedFilters(fileNode, Array.isArray(rec.filters) ? rec.filters : []);
   let placed = 0, total = 0;
   (rec.bookmarks || []).forEach(b => {
@@ -28126,6 +28147,7 @@ function applySessionEntryByOrdinal(rec, fileNode) {
 // small insertions/deletions elsewhere in the file. Unconfirmed bookmarks
 // are dropped and show up in the summary as unplaced.
 function applySessionEntryByContent(rec, fileNode) {
+  applyImportedClockOffset(rec, fileNode); // shift ts into the exported space BEFORE the by-ts re-anchor below
   const refMap = materializeCachedFilters(fileNode, Array.isArray(rec.filters) ? rec.filters : []);
   let placed = 0, total = 0;
   (rec.bookmarks || []).forEach(b => {
