@@ -23932,6 +23932,34 @@ await withApp(async (w, d, T) => {
   }, { indexedDB: factory });
 }
 
+// --- 208f: the applied offset travels with session export/import ---
+{
+  let exportedJson = null, expFirst = null, expLast = null;
+  await withApp(async (w, d, T) => {
+    const f = await w.addFile("clock.log", makeLog(0, 8), () => {});
+    w.applyClockOffset(f.id, 7000);
+    expFirst = f.entries[0].ts;
+    expLast = f.entries[f.entries.length - 1].ts;
+    exportedJson = JSON.stringify(w.buildSessionExport([f.id], new Set()));
+    assert(JSON.parse(exportedJson).files[0].clockOffset === 7000, "export: clockOffset written into the file record");
+  });
+
+  await withApp(async (w, d, T) => {
+    // Byte-identical content (original raw timestamps) → tier-1 fullHash match,
+    // even though this copy carries no offset of its own yet.
+    const f = await w.addFile("their-copy.log", makeLog(0, 8), () => {});
+    w.render();
+    assert((f.clockOffset || 0) === 0, "import: the importer's own copy starts with no offset");
+    w.importSessionJson(exportedJson);
+    await sleep(80);
+    assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"),
+      "import: byte-identical content auto-matches (fullHash is offset-independent)");
+    assert(f.clockOffset === 7000, "import: the exported clockOffset is re-applied to the matched file");
+    assert(f.entries[0].ts === expFirst && f.entries[f.entries.length - 1].ts === expLast,
+      "import: first + last timestamps match what was exported");
+  });
+}
+
 /* ============================================================
    Summary
    ============================================================ */
@@ -27091,5 +27119,9 @@ process.exitCode = failed ? 1 : 0;
       invalidateOrderIndexMap), and merged files are refused outright; 208e:
       node.clockOffset survives the session cache (persistFileNode /
       restoreSessionFromCache re-applies it to the re-parsed entries, since
-      the cached text keeps the original raw timestamps).
+      the cached text keeps the original raw timestamps); 208f: the offset
+      also travels with session export/import (buildSessionExport writes it,
+      applyImportedClockOffset re-applies it to the tier-matched importer file
+      so first+last timestamps match what was exported). GROUP 60b updated for
+      the file-node menu's new "Adjust clock…" edit item.
    ============================================================ */
