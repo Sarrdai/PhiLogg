@@ -210,6 +210,13 @@ open it in a browser to view it.
   window, looking exactly like the expanded panel), without losing your
   place — two independent Settings → Behavior toggles let you turn this
   off per panel if you'd rather only expand one or both by clicking.
+- **Fullscreen focus mode** (desktop app) — `F11` (rebindable) drops into a
+  distraction-free fullscreen: the header disappears, the sidebar and detail
+  panel collapse to edge-hover overlays, and the active log/extraction view
+  takes the whole window; the tabs, level bar, breadcrumb and minimap stay.
+  `F11` again or `Esc` leaves it. Real OS fullscreen is desktop-only, so the
+  shortcut is bound only in the desktop app — a plain browser keeps its own
+  `F11`.
 
 See [`homepage/index.html`](homepage/index.html) for the full, illustrated
 feature list, and `PROJECT.md` for how each of these actually works

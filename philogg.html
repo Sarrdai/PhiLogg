@@ -3385,6 +3385,18 @@
     z-index: 101;
     margin: 0;
   }
+
+  /* ---------- Fullscreen Focus Mode (FEATURE_BACKLOG.md #66) ----------
+     A distraction-free, fullscreen mode toggled by toggleFocusMode() — bound
+     to F11 under the desktop wrapper only (real OS fullscreen is a Tauri-only
+     capability). The header (#toolbar) is removed outright, with no hover
+     reveal. The Files & Filters sidebar and the Entry Detail panel are
+     force-collapsed to their edge-hover overlays through the EXISTING
+     collapse+peek mechanism (see toggleFocusMode), so nothing extra is needed
+     for them here. #breadcrumbBar, #viewBar, the timeline minimap and the
+     active view all stay visible and take the freed space via the normal flex
+     layout. */
+  body.focus-mode #toolbar { display: none !important; }
 </style>
 </head>
 <body>
@@ -17103,6 +17115,85 @@ function initDetailCollapsed() {
   if (localStorage.getItem(DETAIL_COLLAPSED_KEY) === "1") toggleDetailCollapsed(true);
 }
 
+/* ===================== Fullscreen Focus Mode (FEATURE_BACKLOG.md #66) =====================
+   A distraction-free mode: the header is removed outright, the Files &
+   Filters sidebar and the Entry Detail panel are force-collapsed to their
+   edge-hover overlays, and the active log/extraction view takes the freed
+   space — with #breadcrumbBar, #viewBar and the timeline minimap left
+   visible. Real OS fullscreen is a Tauri-only capability, so entering focus
+   mode also asks the desktop wrapper to go fullscreen (window.philogg
+   .setFullscreen); in the plain browser build that half is simply absent and
+   the F11 shortcut isn't bound at all (see the main keydown handler), leaving
+   the browser's own F11 in charge.
+
+   It reuses the EXISTING collapse + hover-peek mechanism (toggleSidebar/
+   DetailCollapsed and the hoverExpand* flags) rather than inventing a new one:
+   on enter it records the prior collapse states and hoverExpand flags, forces
+   both panels collapsed and forces hover-reveal on regardless of the user's
+   normal settings; on exit it restores exactly what it captured. The
+   hoverExpand* flags are toggled in memory only (never persisted), so a
+   person's saved "open on hover" preference is untouched. Body-level toggle
+   (one class flip), so it never rebuilds the tree — see the render-scope
+   gotcha in PROJECT.md. */
+let focusModePrevState = null;
+function isFocusMode() { return document.body.classList.contains("focus-mode"); }
+function setDesktopFullscreen(on) {
+  if (window.philogg && typeof window.philogg.setFullscreen === "function") {
+    try { window.philogg.setFullscreen(on); } catch (err) { /* wrapper gone — page stays in focus mode regardless */ }
+  }
+}
+function toggleFocusMode(on) {
+  if (on === undefined) on = !isFocusMode();
+  if (on === isFocusMode()) return; // already in the requested state
+  if (on) {
+    focusModePrevState = {
+      sidebarCollapsed: isSidebarCollapsed(),
+      detailCollapsed: isDetailCollapsed(),
+      hoverExpandSidebar: hoverExpandSidebar,
+      hoverExpandDetail: hoverExpandDetail,
+    };
+    document.body.classList.add("focus-mode");
+    // Force hover-reveal on regardless of the user's normal settings, so the
+    // collapsed panels are still reachable by an edge hover in focus mode.
+    // In-memory only — the saved preference (and its localStorage key) is
+    // left alone and restored verbatim on exit.
+    hoverExpandSidebar = true;
+    hoverExpandDetail = true;
+    if (!isSidebarCollapsed()) toggleSidebarCollapsed(true);
+    if (!isDetailCollapsed()) toggleDetailCollapsed(true);
+    setDesktopFullscreen(true);
+  } else {
+    document.body.classList.remove("focus-mode");
+    const prev = focusModePrevState || { sidebarCollapsed: false, detailCollapsed: true, hoverExpandSidebar: true, hoverExpandDetail: true };
+    if (isSidebarCollapsed() !== prev.sidebarCollapsed) toggleSidebarCollapsed(prev.sidebarCollapsed);
+    if (isDetailCollapsed() !== prev.detailCollapsed) toggleDetailCollapsed(prev.detailCollapsed);
+    hoverExpandSidebar = prev.hoverExpandSidebar;
+    hoverExpandDetail = prev.hoverExpandDetail;
+    focusModePrevState = null;
+    setDesktopFullscreen(false);
+  }
+}
+// Whether any popup/menu/dialog is currently open — used so Esc's secondary
+// "exit Focus Mode" path only fires when nothing else is consuming that Esc
+// (an open overlay closes first; a single Esc never both closes it AND drops
+// out of focus mode). Mirrors the set of overlays the global Escape handler
+// itself closes.
+function anyEscapeOverlayOpen() {
+  const overlayIds = [
+    "filterPopup", "settingsDialog", "folderWatchSettingsDialog", "linkDialog",
+    "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
+    "csvExportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
+    "filterLibraryDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
+    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay",
+  ];
+  for (let i = 0; i < overlayIds.length; i++) {
+    const e = document.getElementById(overlayIds[i]);
+    if (e && !e.classList.contains("hidden")) return true;
+  }
+  if (sessionMatchResolver || mergeLoadResolver) return true;
+  return false;
+}
+
 // Statistics panel: same collapsed/peeking pin-or-hover mechanism as
 // #detailPanel above (isDetailCollapsed/isDetailPeeking/toggleDetailCollapsed
 // and their listeners just above), applied to #statsPanel instead — see its
@@ -25672,6 +25763,7 @@ const SHORTCUT_ACTIONS = [
   { id: "viewTab4",      label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
+  { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
 ];
 
 // Fixed shortcuts (mouse-driven or otherwise not a single rebindable combo)
@@ -25724,7 +25816,7 @@ function matchesShortcut(ev, actionId) {
 }
 // Keys whose ev.key value doesn't read well verbatim in the Shortcut Manager.
 const SHORTCUT_KEY_LABELS = {
-  f2: "F2", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
+  f2: "F2", f11: "F11", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
 };
 function comboLabelParts(combo) {
   const parts = [];
@@ -26498,6 +26590,11 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (ev.key === "Escape") {
+    // Esc is a secondary exit from Focus Mode (FEATURE_BACKLOG.md #66), but
+    // only when nothing else is consuming this Esc — captured before the
+    // closes below run, so an open overlay closes first and a single Esc never
+    // both closes it AND leaves focus mode.
+    const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
     closePlotFullscreen();
     closeSettingsDialog();
     closeFilterPopup();
@@ -26523,6 +26620,7 @@ document.addEventListener("keydown", ev => {
     if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
     if (state.multiSelect.size) { state.multiSelect = new Set(); needsRender = true; }
     if (needsRender) render();
+    if (escExitsFocus) toggleFocusMode(false);
     return;
   }
   if (inInput) return; // let normal copy/paste and text-cursor movement happen inside text inputs
@@ -26771,6 +26869,17 @@ document.addEventListener("keydown", ev => {
   if (matchesShortcut(ev, "toggleDetail")) {
     ev.preventDefault();
     toggleDetailCollapsed();
+    return;
+  }
+
+  // FEATURE_BACKLOG.md #66: Focus Mode (fullscreen). Bound to F11 by default
+  // and rebindable in the Shortcut Manager, but only ever HANDLED under the
+  // desktop wrapper — real OS fullscreen is a Tauri-only capability, so in the
+  // plain browser build this branch is skipped entirely (window.philogg
+  // absent) and the browser's own F11 keeps priority. See toggleFocusMode.
+  if (!!window.philogg && matchesShortcut(ev, "toggleFocus")) {
+    ev.preventDefault();
+    toggleFocusMode();
     return;
   }
 
