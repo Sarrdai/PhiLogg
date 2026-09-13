@@ -4934,6 +4934,10 @@ const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" s
 // requested — see renderNode's autoOpened opt) — marks a folder-watch file
 // that was opened automatically by a rule, not by hand.
 const ICON_FILE_AUTO = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>';
+// Same file glyph, plus a small circled "P" badge (Partial — a windowed
+// load, see loadFolderFileWindowed/node.partial) — same visual idiom as
+// ICON_FILE_AUTO's circled "A" right above.
+const ICON_FILE_PARTIAL = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">P</text></svg>';
 const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>';
 // ZIP source header icon (renderZipSection) — same viewBox/stroke
 // conventions as ICON_FOLDER above (its container's own icon, which this
@@ -6891,6 +6895,204 @@ async function probeFileTimeRange(file, formatId) {
   if (last == null) return null;
 
   return { first, last };
+}
+
+/* ===================== Windowed/partial file load =====================
+   Extends probeFileTimeRange's own trick (learn a file's time range from
+   only a head+tail chunk, never a full read) to the folder-watch minimap's
+   drag-a-time-window Load: instead of reading a whole 200MB file just to
+   then hide everything outside the drawn window behind a "timerange"
+   filter, jump straight to (approximately) where the window starts via a
+   byte-offset binary search, then read/parse forward only until the window
+   ends. Requires the file to be chronologically sorted start to end — the
+   same assumption mergeFiles' own quick-merge disjoint-check and live
+   tailing already make elsewhere; findWindowStartOffset best-effort detects
+   a violation and the caller (loadFolderFileWindowed) falls back to a
+   normal full load rather than risk silently dropping real entries.
+
+   Only ever used for the minimap's dragged-window Load (see
+   loadFolderMinimapSelection) — picking individual files with no window
+   still does a normal full loadFolderFile, and a file that's genuinely
+   small isn't worth the extra round trips this needs (see
+   WINDOWED_LOAD_MIN_FILE_SIZE below). ===================== */
+const WINDOWED_LOAD_MIN_FILE_SIZE = 8 * 1024 * 1024; // below this, a plain full load is simpler and fast enough
+const WINDOW_PROBE_CHUNK_BYTES = 8192;                // same size as probeFileTimeRange's own head/tail chunks
+const WINDOW_READ_CHUNK_BYTES = 2 * 1024 * 1024;      // forward sequential read chunk size once the window's start is found
+const WINDOW_BISECT_MAX_ITER = 32;                    // hard cap — converges well before this for any realistic file size
+
+// Reads a (possibly growing, see probeFileTimeRange's own tail read) chunk
+// starting at `offset` and returns the timestamp of the first COMPLETE
+// header line found at or after it, or null if none turns up before
+// PROBE_TAIL_MAX_BYTES/EOF. `offset` need not land on a line boundary — a
+// chunk that doesn't start at byte 0 has its first (possibly cut) line
+// dropped, same rule probeFileTimeRange's tail read uses. Only ever used to
+// compare against a binary search's target — never to consume real
+// entries — so approximate byte positions are fine throughout; nothing
+// here ever converts a decoded string's length back into a byte offset
+// (which would be wrong for non-ASCII text — a JS string's .length counts
+// UTF-16 code units, not the file's real bytes).
+async function probeTsAtOffset(file, compiled, offset) {
+  if (offset >= file.size) return null;
+  for (let bytes = WINDOW_PROBE_CHUNK_BYTES; ; bytes *= 4) {
+    const end = Math.min(file.size, offset + bytes);
+    const text = await file.slice(offset, end).text();
+    const lines = text.split(/\r?\n/);
+    const usable = offset > 0 && lines.length > 1 ? lines.slice(1) : lines;
+    for (const line of usable) {
+      if (compiled.isHeaderLine(line)) {
+        const ts = compiled.parseHeader(line).ts;
+        if (!isNaN(ts)) return ts;
+      }
+    }
+    if (end >= file.size || bytes >= PROBE_TAIL_MAX_BYTES) return null;
+  }
+}
+
+// Binary search for a byte offset at/before the file's real entry whose
+// timestamp is the smallest one >= targetTs ("lower bound"), assuming the
+// file is chronologically sorted. Returns { offset, consistent }: offset is
+// intentionally a little conservative (stepped back one probe-chunk) so
+// parseFileWindow starting there is guaranteed not to start AFTER the real
+// window start; consistent is false the moment two probes disagree with
+// the sorted-order assumption, telling the caller not to trust this result.
+async function findWindowStartOffset(file, formatId, targetTs) {
+  // Cheap global bookend check before bisecting at all, reusing
+  // probeFileTimeRange's own (already correct) head+tail read: if the
+  // file's very first entry's timestamp is already greater than its very
+  // last entry's, it's definitely not ascending-sorted as assumed —
+  // bisection below could easily converge on a plausible-looking but wrong
+  // offset in that case (e.g. a fully time-reversed file), which the
+  // bisection loop's own local monotonicity check doesn't reliably catch by
+  // itself (it only ever compares probes it actually happens to make).
+  // Deliberately NOT probeTsAtOffset(file, compiled, file.size - a fixed
+  // chunk) for the tail side — that scans FORWARD from a fixed offset near
+  // EOF, which finds nothing at all whenever a single line is longer than
+  // the probe chunk (a real risk: log messages vary a lot in length).
+  // probeFileTimeRange's own tail read grows backward from EOF and scans
+  // for the LAST header line instead, exactly the right tool here.
+  const range = await probeFileTimeRange(file, formatId);
+  if (range && range.first > range.last) return { offset: 0, consistent: false };
+
+  const compiled = getCompiledFormat(formatId || DEFAULT_FORMAT_ID);
+  let lo = 0, hi = file.size;
+  let consistent = true;
+  let lastLoTs = -Infinity;
+  for (let i = 0; i < WINDOW_BISECT_MAX_ITER && hi - lo > WINDOW_PROBE_CHUNK_BYTES; i++) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    const ts = await probeTsAtOffset(file, compiled, mid);
+    if (ts == null) { hi = mid; continue; } // nothing at/after mid — the target must be at or before it
+    if (ts < lastLoTs) consistent = false;  // moved backward vs. an earlier lower-bound probe — not sorted as expected
+    if (ts >= targetTs) hi = mid; else { lo = mid; lastLoTs = ts; }
+  }
+  return { offset: Math.max(0, lo - WINDOW_PROBE_CHUNK_BYTES), consistent };
+}
+
+// Reads and parses only file[from..to] (by timestamp, approximately by
+// byte range) directly into node.entries/entryIndex — the same per-line
+// header/continuation loop parseLogTextAsync's plain-loop fallback uses,
+// just fed chunk-by-chunk from a byte offset instead of one in-memory
+// string, and stopped the moment an entry's ts exceeds `to` instead of
+// running to EOF. Returns false (nothing is left appended — caller should
+// discard the node and fall back to a full load) if the sortedness
+// assumption looked violated; true otherwise (node.entries may still end
+// up empty if the file genuinely has nothing in [from, to]).
+async function parseFileWindow(file, node, from, to, onProgress) {
+  const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const compiled = getCompiledFormat(formatId);
+  const { offset: startOffset, consistent } = await findWindowStartOffset(file, formatId, from);
+  if (!consistent) return false;
+
+  let pos = startOffset;
+  let current = null;
+  let carry = "";       // a line the previous chunk may have cut off, prepended to the next
+  let firstChunk = true;
+  let stopped = false;
+
+  while (pos < file.size && !stopped) {
+    const end = Math.min(file.size, pos + WINDOW_READ_CHUNK_BYTES);
+    const text = carry + await file.slice(pos, end).text();
+    carry = "";
+    const atRealEOF = end >= file.size;
+    const lines = text.split(/\r?\n/);
+    if (!atRealEOF) carry = lines.pop(); // may be a genuine full line — re-parsed whole once the next chunk's read completes it
+    // The very first chunk may itself start mid-line (startOffset is only
+    // approximate) — drop it unless we're genuinely at the file's own start.
+    const usable = firstChunk && startOffset > 0 ? lines.slice(1) : lines;
+    firstChunk = false;
+
+    for (const line of usable) {
+      if (compiled.isHeaderLine(line)) {
+        if (current) { entryIndex[current.id] = current; node.entries.push(current); }
+        current = compiled.parseHeader(line);
+        current.formatId = formatId;
+        if (current.ts > to) { current = null; stopped = true; break; } // past the window — nothing further is needed
+      } else if (current && line !== "") {
+        current.message += "\n" + line;
+        current.raw += "\n" + line;
+      }
+    }
+    pos = end;
+    if (onProgress) onProgress(pos - startOffset, Math.max(1, file.size - startOffset));
+    await new Promise(r => setTimeout(r, 0)); // yield a tick, same as parseLogTextAsync's own loop
+  }
+  if (current) { entryIndex[current.id] = current; node.entries.push(current); }
+  return true;
+}
+
+// Folder-minimap counterpart to loadFolderFile, used only for a dragged-
+// window Load (see loadFolderMinimapSelection): reads only rec's
+// [from, to] slice via parseFileWindow instead of the whole file, when
+// that's actually worth it — falls back to a plain full loadFolderFile
+// whenever the file is already open (its entries already cover any window),
+// too small to bother (WINDOWED_LOAD_MIN_FILE_SIZE), its time range isn't
+// known yet, or parseFileWindow itself gives up (non-monotonic timestamps).
+// The resulting node is tagged node.partial = { from, to } so it renders,
+// persists, and undoes as visibly incomplete — see renderNode's own
+// partial-node badge, and the "partial" field threaded through
+// persistFileNode/restoreSessionFromCache and snapshotSubtree/
+// restoreSubtree the same way node.merged/node.formatId already are.
+async function loadFolderFileWindowed(folder, rec, from, to) {
+  if (rec.nodeId && state.nodes[rec.nodeId]) {
+    state.activeId = rec.nodeId;
+    return;
+  }
+  let file;
+  try { file = await rec.handle.getFile(); }
+  catch (err) {
+    showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
+    return;
+  }
+  if (file.size < WINDOWED_LOAD_MIN_FILE_SIZE || !rec._range) {
+    await loadFolderFile(folder, rec);
+    return;
+  }
+
+  const node = createFileNode(rec.name, folder.id);
+  node.formatId = resolveFormatIdForFilename(rec.name);
+
+  let ok = false;
+  try {
+    ok = await parseFileWindow(file, node, from, to, (done, total) => {
+      node.loadFraction = Math.min(0.98, done / total);
+      scheduleLoadRender(node.id);
+    });
+  } catch (err) { ok = false; }
+
+  if (!ok) {
+    // Not safely windowable (or something else went wrong) — drop the
+    // half-built node and fall back to reading the whole file instead of
+    // leaving a misleadingly partial one behind.
+    deleteNode(node.id);
+    await loadFolderFile(folder, rec);
+    return;
+  }
+
+  delete node.loadFraction;
+  node.partial = { from, to };
+  rec.nodeId = node.id;
+  flushLoadRender(node.id);
+  persistFileNode(node); // fire-and-forget, same first persist loadOneFileIntoTree's own path does
+  if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
 }
 
 /* ===================== Off-main-thread parsing =====================
@@ -9481,6 +9683,11 @@ function snapshotSubtree(nodeId) {
     // shouldn't be the thing that makes that true).
     if (node.formatId) copy.formatId = node.formatId;
     if (node.folderId) copy.folderId = node.folderId;
+    // Windowed/partial load (see loadFolderFileWindowed): losing this across
+    // an undo would make a deliberately-incomplete node look like a normal
+    // full file again, same class of bug node.formatId's own comment above
+    // describes.
+    if (node.partial) copy.partial = node.partial;
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
@@ -9518,6 +9725,7 @@ function restoreSubtree(snap) {
     if (snap.tail) node.tail = snap.tail;
     if (snap.formatId) node.formatId = snap.formatId;
     if (snap.folderId) node.folderId = snap.folderId;
+    if (snap.partial) node.partial = snap.partial;
     state.nodes[node.id] = node;
     node.entries.forEach(e => { entryIndex[e.id] = e; });
     node.children = snap.children.map(c => restoreSubtree(c).id);
@@ -10886,7 +11094,7 @@ function timeFilterIcon(node) {
 
 // Icon lookup for a tree row (renderNode).
 function nodeIconHTML(node) {
-  return node.type === "file" ? (node.merged ? ICON_MERGE : ICON_FILE)
+  return node.type === "file" ? (node.partial ? ICON_FILE_PARTIAL : node.merged ? ICON_MERGE : ICON_FILE)
     // A "text" node with extractable wildcards gets the table icon, same as
     // the retired dedicated "extract" filterType used to.
     : (node.filterType === "text" && nodeHasExtractableWildcards(node)) ? ICON_TABLE
@@ -11531,6 +11739,12 @@ function renderNode(id, depth, opts) {
   const titleParts = [];
   if (iconIsLive) titleParts.push("Live: file is being tailed for new entries");
   if (opts && opts.autoOpened) titleParts.push("Opened automatically by a folder watch rule");
+  // Windowed/partial load (see loadFolderFileWindowed): only the drawn time
+  // window was actually read from disk, not the whole file — the icon
+  // badge alone (ICON_FILE_PARTIAL) wouldn't say what window, so it's
+  // spelled out here instead of changing the tree label itself (which
+  // ripples into breadcrumbs/rail markers/etc. — see nodeDisplayName).
+  if (node.partial) titleParts.push(`Partial load: only ${formatTime(node.partial.from)} – ${formatTime(node.partial.to)} was read from disk`);
   if (titleParts.length) icon.title = titleParts.join(" — ");
   row.appendChild(icon);
 
@@ -16616,7 +16830,7 @@ function renderSidebarRail() {
       btn.className = "sidebar-rail-marker" + (node.id === state.activeId ? " active" : "");
       btn.title = nodeDisplayName(node) + " — " + getEntries(node.id).length.toLocaleString("de-DE");
       if (node.type === "file") {
-        btn.innerHTML = node.merged ? ICON_MERGE : ICON_FILE;
+        btn.innerHTML = node.partial ? ICON_FILE_PARTIAL : node.merged ? ICON_MERGE : ICON_FILE;
       } else {
         const dot = document.createElement("span");
         dot.className = "sidebar-rail-marker-dot";
@@ -22070,13 +22284,29 @@ async function loadFolderMinimapSelection(folder) {
     });
     const nodeIds = [];
     for (const rec of targets) {
-      await loadFolderFile(folder, rec);
+      // Windowed load (see "Windowed/partial file load" below): a large
+      // file not already open gets only its [win.from, win.to] slice read
+      // and parsed, not the whole file — loadFolderFileWindowed falls back
+      // to a normal full loadFolderFile itself whenever that isn't worth it
+      // or isn't safe (small file, unknown range, non-monotonic timestamps).
+      await loadFolderFileWindowed(folder, rec, win.from, win.to);
       if (rec.nodeId) nodeIds.push(rec.nodeId);
     }
     let resultId = null;
     if (nodeIds.length >= 2) {
       const merged = await mergeFiles(nodeIds);
       resultId = merged && merged.id;
+      // If any source was only partially read (see loadFolderFileWindowed),
+      // the merge result covers no more than the union of what was actually
+      // read — flag it the same way, so it reads (and persists/undoes) as
+      // visibly incomplete too, same as any source it was built from.
+      const partialSources = merged ? nodeIds.map(id => state.nodes[id]).filter(n => n && n.partial) : [];
+      if (partialSources.length) {
+        merged.partial = {
+          from: Math.min(...partialSources.map(n => n.partial.from)),
+          to: Math.max(...partialSources.map(n => n.partial.to)),
+        };
+      }
     } else if (nodeIds.length === 1) {
       resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
     }
@@ -26592,6 +26822,13 @@ async function persistFileNode(node) {
     // still the same one on disk / at that URL.
     localPath: node.localPath || null,
     sourceUrl: node.sourceUrl || null,
+    // Windowed/partial load (see loadFolderFileWindowed): `text` above is
+    // already just the read slice (rebuildFileText only ever sees this
+    // node's own real entries), so restoring it needs no special handling
+    // by itself — but without this flag surviving the round trip, a
+    // restored session would show a deliberately-incomplete node as if it
+    // were the file's normal full content.
+    partial: node.partial || null,
     savedAt: Date.now(),
   }));
 }
@@ -26956,6 +27193,11 @@ async function restoreSessionFromCache() {
       // filename rules have since changed — see "Log format definitions".
       const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
       if (rec.merged) node.merged = true;
+      // Windowed/partial load (see loadFolderFileWindowed): rec.text is
+      // already just the slice that was actually read, so reparsing it here
+      // is correct as-is — only the visible "this is incomplete" marker
+      // needs restoring.
+      if (rec.partial) node.partial = rec.partial;
       // Re-links this node to its watched folder, if it had one — the
       // folder record itself (including its handle) comes back separately
       // via restoreWatchedFolders, called right after this function returns.
