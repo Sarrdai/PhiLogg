@@ -3,145 +3,74 @@
 LAST_ID: 74
 
 Raw ideas only, not yet elaborated. Pick items up individually before
-implementation. Numbers are unique, permanent IDs, not a sort order —
-grouped by theme; when adding a new item, read `LAST_ID` above, add 1, use
-that value as the new entry's ID, then update `LAST_ID` to the same value.
-Removing/moving an entry never changes its ID (removing an item, e.g.
-because it was implemented, does not change `LAST_ID` either — its ID is
-simply retired, never reused).
+implementation.
 
-Split into four lists (2026-08-24, person-requested):
+**IDs (`Nr`) are unique and permanent, not a sort order.** When adding a new
+item, read `LAST_ID` above, add 1, use that value as the new entry's `Nr`,
+then update `LAST_ID` to the same value — regardless of the priority you give
+it. Removing or moving an entry never changes its `Nr`; removing an item
+(e.g. because it was implemented) does not change `LAST_ID` either — its ID
+is simply retired, never reused.
 
-- **Road to 1.0** — features wanted for a first official release.
-- **Backlog** — still wanted, not yet planned for 1.0.
-- **Wiedervorlage** — parked, not implementing now, not permanently
-  rejected either; revisit later.
-- **Verworfen** — rejected, kept here for documentation with the reason.
-  Adding an entry here requires a stated reason.
+**Priority (`Prio`) — the rightmost column:**
 
-Within each list, entries stay grouped/organized by theme as before.
+- **1** — done soon / quick to implement.
+- **2** — mid-term.
+- **3** — long-term.
+- **(empty)** — not planned, but not permanently rejected either; revisit later.
+- **verworfen** — rejected, kept for documentation with the reason stated in
+  `Details`. Adding a rejected entry requires a stated reason.
 
-Renumbered once, uniquely and permanently (2026-08-24, person-requested):
-switched from "resequence 1..N on every reorg" to stable, append-only IDs
-via `LAST_ID`. Every remaining item below was given a fresh, permanent ID
-in top-to-bottom order as part of this one-time migration; from this point
-on IDs are never reassigned.
+**Sorting:** by `Prio` (1, 2, 3, empty, then verworfen), then by `Nr` within
+each priority. Re-sort after changing any priority.
 
-Reorganized and renumbered from scratch (2026-08-23, person-requested):
-previously two separate lists (an original ungrouped one plus an "unvetted
-suggestions" batch added 2026-08-18) with items in implementation order.
-Completed items were dropped entirely rather than kept struck-through — each
-one is already fully documented in `PROJECT.md`'s own changelog, so keeping
-a second copy here was pure redundancy. What's left is only open, unpicked
-ideas, grouped by theme instead of by when/how they were added.
+Switched from four themed lists to this single priority-sorted table
+(2026-09-13, person-requested): the old `Road to 1.0` / `Backlog` /
+`Wiedervorlage` / `Verworfen` split and the per-theme subheadings were
+replaced by the `Prio` column above (Road to 1.0 → 1, Backlog → 2,
+Wiedervorlage → empty, Verworfen → verworfen).
 
-Renumbered top-to-bottom, sequentially (2026-08-23, person-requested):
-the ID gaps left by the reorg above (retired numbers from dropped completed
-items) made the list read as if some numbers were reused/inconsistent —
-resequenced every remaining item 1..N in its current top-to-bottom order.
-The "leave retired numbers" policy above still applies going forward from
-this point.
-
-## Road to 1.0
-
-### Navigation & reading
-
-### Filter tree workflow
-
-54. **"Prune" action when a filter and a file are both selected** — discards everything from memory/view that isn't part of the filter's result set, not just hides it. Especially useful for time filters (throw away everything outside the range) but not restricted to that case. Where content was pruned, insert a placeholder in its place (at least in the Context view, whose gap strips are the natural home for it) so the cut is visible rather than silently making rows disappear.
-
-### Desktop wrapper
-
-35. **"Restore last session on startup" setting is desktop-only in practice** — the plain `.html` build already needs to survive a page refresh regardless of this setting (existing cache behavior), so the toggle really only has meaning in the desktop build; consider hiding/disabling it outside that build.
-
-### Settings & UI polish
-
-38. **Replace the level-filter icon** (three bars) — not a bug; the current icon just isn't expressive enough. Wants a clearer/more meaningful glyph for the level filter.
-49. **Check for collisions with OS default shortcuts** — audit that the app's own keyboard shortcuts never shadow or override the operating system's default shortcuts (e.g. window-management / browser shortcuts).
-
-### Log formats & parsing
-
-
-## Backlog
-
-### Navigation & reading
-
-5. **Δt between two rows** — mark a row, shift-click a second, get the gap in the status strip. The extraction table already answers this (`t(ms)`), the log view doesn't.
-68. **Word wrap in the views (log view and text view)** — a toggle to soft-wrap long lines instead of horizontal scrolling, in both the log rows and the inline text viewer. Distinct from the existing multiline-message toggle, which is about multi-line entries, not wrapping a single long line.
-
-### Filter tree workflow
-
-58. **Inline editing of an AND/OR/LINK node's `bakedA`/`bakedB`** — today the only way to change what a combiner matches is Unpack (which materializes its two baked sides as visible sibling filters, leaving the combiner itself unchanged — so a real edit still means delete-and-recreate) or delete-and-recreate outright; a dedicated small dialog to re-bake `bakedA`/`bakedB` directly would be more direct for a person who just wants to swap one side.
-59. **Memoize each baked condition's own result inside an AND/OR/LINK node** — `getEntriesFromBaked` re-evaluates `bakedA` and `bakedB` in full on every recompute of the combiner, where the old node-id model got two already-cached filter results for free. Since a new combiner is placed as a top-level child of its root file by default, that means two full-file scans per recompute, on every tail tick for that file and after every structural change. The self-contained model is not up for renegotiation (see `docs/filters.md`) — the fix would be a per-side result cache hanging off the node (`node._bakedCacheA`/`_bakedCacheB`), cleared in exactly the same places `node._cache` is. Not urgent: only worth doing if combiners on very large files start feeling slow, and worth measuring first — the two scans may well be cheaper than the bookkeeping.
-19. **File-independent (universal) cache for the `.html` build** — today the cache appears to be keyed per filename; a shared/universal cache would keep working across renamed or re-opened files. Open question: how to handle a cached payload left over from an incompatible older/newer app version (versioning or invalidation needed).
-
-### Value extraction & aggregation
-
-21. **Warn/migrate when an extraction pattern edit shifts columns** — assertions and ignored-columns are index-based and silently point at the wrong column otherwise.
-25. **Derived extraction columns** — an expression column over other extracted columns (`c3 - c2`, unit conversion), plottable and assertable like any captured column. Open question: expression syntax, and how a derived column indexes against the index-based assertions/ignored-columns.
-73. **Custom plots — a script window as a Plot variant** — a small script/expression window that produces a user-defined chart from the extracted data, alongside the built-in Plot tab. Open question: scripting surface (which data it gets, sandboxing) given the dependency-free/offline constraint.
-74. **Configure a plot by drag & drop from the overview** — build/adjust a plot by dragging extracted columns/values from the extraction table onto the plot's axes, instead of only the current toolbar controls.
-
-### Multi-file & correlation
-
-27. **Drop a non-log file (e.g. TIFF) → jump to matching log entry** by the file's CreationDate. Open question: TIFF files carry a trailing XML block (after the image data) with its own CreationDate, which may be more accurate than the filesystem timestamp. Needs scoping before implementation.
-29. **Per-file clock offset** — a manual `± N ms` correction applied to a file's timestamps before merge or sync. Device clocks drift, and today the only fix is to not compare.
-71. **Extend folder auto-open with configurable start filters** — when a watched/auto-opened folder loads on startup, apply a preconfigured set of filters automatically. Builds on the existing folder auto-open.
-65. **Folder-watch minimap, ZIP variant** — the folder-watch minimap (implemented this session: a folder's title selects it, showing a per-file time-range timeline in the main content area — drag a window to load+merge the overlap with a matching `timerange` filter, or multi-select bars to load them individually) deliberately covers folders only. A ZIP source's entries are deflate-compressed, so there's no cheap `file.slice()` head/tail read the way `probeFileTimeRange` does for a real folder file — getting a ZIP entry's time range means fully inflating it via `entry.extract()`. Open question: inflate every entry up front (with a progress bar) when the ZIP's minimap is opened, or probe lazily/in the background and show "range unknown" bars until each entry resolves.
-
-### Sharing & output
-
-31. **Export the current view** — the filtered result as `.log`/`.csv`/`.tsv`. Only the extraction table can leave the app as text today; session export is JSON for PhiLogg users, not data for Excel or a ticket. Copying selected log rows as raw text via Ctrl+C (Ctrl/Shift-click multi-select + `copyLogSelectionToClipboard`) already exists — column-wise copy and whole-view file export are still open.
-32. **Findings report export** — a standalone HTML/Markdown report carrying the filter chain, bookmark notes, and the matching entries, readable by someone who has neither PhiLogg nor the log file. Different audience than session export (which assumes both).
-
-### Settings & UI polish
-
-45. **Theme should be able to follow the OS/system light-dark state** — a live "follow system" mode as an alternative to the manual toggle. Today `prefers-color-scheme` is only read once as the default on first start (no stored theme), not tracked afterwards.
-66. **Fullscreen focus mode on the content** — a distraction-free mode that hides the surrounding chrome (sidebar, panels, toolbars) and maximizes the active log/extraction view. (This is what the old, poorly-worded "F11 / window behavior" item was actually asking for.)
-67. **Separately configurable theme for syntax highlighting** — let the embedded-XML/JSON syntax-highlight colors be picked/switched independently of the main app theme; today they can only ride along optionally inside a theme's `syntaxColors` block (see `#detailFormatToggle`).
-69. **Audit all dialogs for a consistent UI** — sweep every popup/dialog (filter popup, Settings, Format Manager, link dialog, ...) for a uniform look-and-feel: spacing, header style, button placement and labelling.
-
-### LLM / AI
-
-70. **LLM integration with a chat window** — connect an LLM to ask questions about the loaded log(s) via an in-app chat panel. Open questions: which provider/endpoint (local vs. remote API), how much log context to send, and how to reconcile this with the local-first/offline, dependency-free design constraint (a remote call breaks "no server, no external calls").
-
-### Build & release
-
-72. **New versioning scheme with real version numbers** — replace the current commit-short-SHA stamp (`PHILOGG_VERSION` → `.brand-version`) with proper, human-readable release version numbers.
-
-## Wiedervorlage
-
-### Known issues
-
-1. **Bugfix**: view sometimes doesn't refresh when a new filter is created. Needs repro/root cause. (Long unobserved — may already be fixed; re-check before picking up.)
-
-### Navigation & reading
-
-2. **Minimap: line-based instead of time-based** — show position/density by line count rather than by timestamp span. (First draft wasn't liked — reconsider approach before retrying.)
-3. **Incremental find inside the current view** (`Ctrl+G`/`F3` for next/prev, highlight-as-you-type) — today `Ctrl+F` always *creates a filter node*, so "just look for this string once" costs a tree node you then delete. Non-destructive search would be its own, lighter interaction on top of the existing views.
-4. **Jump to next/previous problem row** (`n`/`N`) — hop to the next ERROR/WARN entry in whichever view has focus, using the level bar's current selection as the target set. Cheap on top of the existing `jumpToEntry`.
-6. **Relative-time display toggle** — show timestamps as offsets from a chosen zero row (selected or bookmarked) instead of absolute time, same reasoning that made extraction's `t(ms)` cumulative-from-first.
-7. **Collapse consecutive duplicate messages** into one row with an ×N badge — noise control for spam loops. Open question: what counts as "duplicate" (raw line, message column, or message-with-numbers-normalized — see message-pattern grouping below).
-
-### Filter tree workflow
-
-12. **Dedup check on "Load filter…" / session import** — prevents duplicate branches when the same filter (tree) is loaded/imported again.
-13. **Autocomplete suggestions from recently used filter values/search terms** in the filter popup.
-14. **Mute (disable) a filter node instead of deleting it** — a muted node is skipped in the chain (its children evaluate against its parent) but stays in the tree with its colour, assertions, and children intact. Faster than delete+undo for "does this step matter?". Needs the flag threaded through every persistence carrier (see `CLAUDE.md`'s gotcha list).
-15. **"Why is this row here?" explain popup** — for the selected entry, show which node of the active chain matched it; for a context row in the Context view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the existing "view sometimes doesn't refresh" class of confusion (see Known issues above).
-
-### Value extraction & aggregation
-
-22. **Diff view between two filter results** — e.g. comparing two runs of the same log.
-23. **Message-pattern grouping ("log clustering")** — normalize numbers/GUIDs/paths in the message to placeholders, group identical shapes, list the top N with counts. Probably the single fastest way into an unfamiliar log; one click on a group turns it into a text filter. Scoping question: normalization rules, and whether it's a view or a filter type.
-24. **Gap / stall filter** — match entries whose distance to the previous entry exceeds X ms. Finds hangs without extracting a value first; sits next to the existing wildcard value-condition filtering (`[*:float>=10]` etc.).
-26. **Group-by in the extraction table** — collapse rows by one column and show count/min/max/mean per group, extending the stats bar from "per column, whole table" to "per column, per group".
-
-### Multi-file & correlation
-
-28. **Time sync between two open files** — selecting an entry in one file scrolls a second, side-by-side file to the nearest timestamp (device log vs. application log), without the destructive `mergeFiles` step. Would need a second file pane; the Filter/Highlight split is the closest existing precedent.
-30. **Cross-file search (read-only)** — one term, hit counts per loaded file, click to jump. Stays inside the "no cross-file filter nodes" design rule precisely by not creating nodes.
-
-## Verworfen
-
-39. **Breadcrumb hover should also work on nodes further back in the current chain**, not just the current/active one, so a new branch can be picked from there too. — The feature this depended on (hovering the active breadcrumb chip to reveal a child-filter flyout) was itself removed 2026-08-25, superseded by Alt+Arrow tree navigation; nothing left to extend.
+| Nr | Kurzbeschreibung | Details | Prio |
+|---|---|---|---|
+| 35 | "Restore last session on startup" is desktop-only in practice | The plain `.html` build already survives a page refresh regardless of this setting (existing cache behavior), so the toggle only has meaning in the desktop build; consider hiding/disabling it outside that build. | 1 |
+| 38 | Replace the level-filter icon (three bars) | Not a bug; the current icon just isn't expressive enough. Wants a clearer/more meaningful glyph for the level filter. | 1 |
+| 49 | Check for collisions with OS default shortcuts | Audit that the app's own keyboard shortcuts never shadow or override the operating system's default shortcuts (e.g. window-management / browser shortcuts). | 1 |
+| 54 | "Prune" action when a filter and a file are both selected | Discards everything from memory/view that isn't part of the filter's result set, not just hides it. Especially useful for time filters (throw away everything outside the range) but not restricted to that case. Where content was pruned, insert a placeholder (at least in the Context view, whose gap strips are the natural home for it) so the cut is visible rather than silently making rows disappear. | 1 |
+| 5 | Δt between two rows | Mark a row, shift-click a second, get the gap in the status strip. The extraction table already answers this (`t(ms)`), the log view doesn't. | 2 |
+| 19 | File-independent (universal) cache for the `.html` build | Today the cache appears keyed per filename; a shared/universal cache would keep working across renamed or re-opened files. Open question: how to handle a cached payload left over from an incompatible older/newer app version (versioning or invalidation needed). | 2 |
+| 21 | Warn/migrate when an extraction pattern edit shifts columns | Assertions and ignored-columns are index-based and silently point at the wrong column otherwise. | 2 |
+| 25 | Derived extraction columns | An expression column over other extracted columns (`c3 - c2`, unit conversion), plottable and assertable like any captured column. Open question: expression syntax, and how a derived column indexes against the index-based assertions/ignored-columns. | 2 |
+| 27 | Drop a non-log file (e.g. TIFF) → jump to matching log entry | Match by the file's CreationDate. Open question: TIFF files carry a trailing XML block (after the image data) with its own CreationDate, which may be more accurate than the filesystem timestamp. Needs scoping before implementation. | 2 |
+| 29 | Per-file clock offset | A manual `± N ms` correction applied to a file's timestamps before merge or sync. Device clocks drift, and today the only fix is to not compare. | 2 |
+| 31 | Export the current view | The filtered result as `.log`/`.csv`/`.tsv`. Only the extraction table can leave the app as text today; session export is JSON for PhiLogg users, not data for Excel or a ticket. Copying selected log rows as raw text via Ctrl+C (multi-select + `copyLogSelectionToClipboard`) already exists — column-wise copy and whole-view file export are still open. | 2 |
+| 32 | Findings report export | A standalone HTML/Markdown report carrying the filter chain, bookmark notes, and the matching entries, readable by someone who has neither PhiLogg nor the log file. Different audience than session export (which assumes both). | 2 |
+| 45 | Theme should be able to follow the OS/system light-dark state | A live "follow system" mode as an alternative to the manual toggle. Today `prefers-color-scheme` is only read once as the default on first start (no stored theme), not tracked afterwards. | 2 |
+| 58 | Inline editing of an AND/OR/LINK node's `bakedA`/`bakedB` | Today the only way to change what a combiner matches is Unpack (materializes its two baked sides as visible sibling filters, leaving the combiner itself unchanged — so a real edit still means delete-and-recreate) or delete-and-recreate outright; a dedicated small dialog to re-bake `bakedA`/`bakedB` directly would be more direct for swapping one side. | 2 |
+| 59 | Memoize each baked condition's own result inside an AND/OR/LINK node | `getEntriesFromBaked` re-evaluates `bakedA` and `bakedB` in full on every recompute; a new combiner sits as a top-level child of its root file, so that's two full-file scans per recompute, on every tail tick for that file and after every structural change. Fix: a per-side result cache (`node._bakedCacheA`/`_bakedCacheB`), cleared in the same places `node._cache` is. Not urgent — only worth doing if combiners on very large files feel slow, and worth measuring first (the two scans may be cheaper than the bookkeeping). | 2 |
+| 65 | Folder-watch minimap, ZIP variant | The folder-watch minimap (per-file time-range timeline in the main content area — drag a window to load+merge the overlap with a matching `timerange` filter, or multi-select bars to load them individually) deliberately covers folders only. A ZIP source's entries are deflate-compressed, so there's no cheap `file.slice()` head/tail read the way `probeFileTimeRange` does for a real folder file — a ZIP entry's time range needs full inflate via `entry.extract()`. Open question: inflate every entry up front (with a progress bar) when the ZIP minimap opens, or probe lazily and show "range unknown" bars until each resolves. | 2 |
+| 66 | Fullscreen focus mode on the content | A distraction-free mode that hides the surrounding chrome (sidebar, panels, toolbars) and maximizes the active log/extraction view. (This is what the old, poorly-worded "F11 / window behavior" item was actually asking for.) | 2 |
+| 67 | Separately configurable theme for syntax highlighting | Let the embedded-XML/JSON syntax-highlight colors be picked/switched independently of the main app theme; today they can only ride along optionally inside a theme's `syntaxColors` block (see `#detailFormatToggle`). | 2 |
+| 68 | Word wrap in the views (log view and text view) | A toggle to soft-wrap long lines instead of horizontal scrolling, in both the log rows and the inline text viewer. Distinct from the existing multiline-message toggle, which is about multi-line entries, not wrapping a single long line. | 2 |
+| 69 | Audit all dialogs for a consistent UI | Sweep every popup/dialog (filter popup, Settings, Format Manager, link dialog, ...) for a uniform look-and-feel: spacing, header style, button placement and labelling. | 2 |
+| 70 | LLM integration with a chat window | Connect an LLM to ask questions about the loaded log(s) via an in-app chat panel. Open questions: which provider/endpoint (local vs. remote API), how much log context to send, and how to reconcile this with the local-first/offline, dependency-free design constraint (a remote call breaks "no server, no external calls"). | 2 |
+| 71 | Extend folder auto-open with configurable start filters | When a watched/auto-opened folder loads on startup, apply a preconfigured set of filters automatically. Builds on the existing folder auto-open. | 2 |
+| 72 | New versioning scheme with real version numbers | Replace the current commit-short-SHA stamp (`PHILOGG_VERSION` → `.brand-version`) with proper, human-readable release version numbers. | 2 |
+| 73 | Custom plots — a script window as a Plot variant | A small script/expression window that produces a user-defined chart from the extracted data, alongside the built-in Plot tab. Open question: scripting surface (which data it gets, sandboxing) given the dependency-free/offline constraint. | 2 |
+| 74 | Configure a plot by drag & drop from the overview | Build/adjust a plot by dragging extracted columns/values from the extraction table onto the plot's axes, instead of only the current toolbar controls. | 2 |
+| 1 | View sometimes doesn't refresh when a new filter is created | Bugfix; needs repro/root cause. Long unobserved — may already be fixed; re-check before picking up. | |
+| 2 | Minimap: line-based instead of time-based | Show position/density by line count rather than by timestamp span. First draft wasn't liked — reconsider approach before retrying. | |
+| 3 | Incremental find inside the current view (`Ctrl+G`/`F3`) | Next/prev, highlight-as-you-type. Today `Ctrl+F` always creates a filter node, so "just look for this string once" costs a tree node you then delete. Non-destructive search would be its own, lighter interaction on top of the existing views. | |
+| 4 | Jump to next/previous problem row (`n`/`N`) | Hop to the next ERROR/WARN entry in whichever view has focus, using the level bar's current selection as the target set. Cheap on top of the existing `jumpToEntry`. | |
+| 6 | Relative-time display toggle | Show timestamps as offsets from a chosen zero row (selected or bookmarked) instead of absolute time, same reasoning that made extraction's `t(ms)` cumulative-from-first. | |
+| 7 | Collapse consecutive duplicate messages into one row with an ×N badge | Noise control for spam loops. Open question: what counts as "duplicate" (raw line, message column, or message-with-numbers-normalized — see #23). | |
+| 12 | Dedup check on "Load filter…" / session import | Prevents duplicate branches when the same filter (tree) is loaded/imported again. | |
+| 13 | Autocomplete suggestions from recently used filter values/search terms | In the filter popup. | |
+| 14 | Mute (disable) a filter node instead of deleting it | A muted node is skipped in the chain (its children evaluate against its parent) but stays in the tree with its colour, assertions, and children intact. Faster than delete+undo for "does this step matter?". Needs the flag threaded through every persistence carrier (see `CLAUDE.md`'s gotcha list). | |
+| 15 | "Why is this row here?" explain popup | For the selected entry, show which node of the active chain matched it; for a context row in the Context view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the "view sometimes doesn't refresh" class of confusion (see #1). | |
+| 22 | Diff view between two filter results | E.g. comparing two runs of the same log. | |
+| 23 | Message-pattern grouping ("log clustering") | Normalize numbers/GUIDs/paths in the message to placeholders, group identical shapes, list the top N with counts. Probably the single fastest way into an unfamiliar log; one click on a group turns it into a text filter. Scoping question: normalization rules, and whether it's a view or a filter type. | |
+| 24 | Gap / stall filter | Match entries whose distance to the previous entry exceeds X ms. Finds hangs without extracting a value first; sits next to the existing wildcard value-condition filtering (`[*:float>=10]` etc.). | |
+| 26 | Group-by in the extraction table | Collapse rows by one column and show count/min/max/mean per group, extending the stats bar from "per column, whole table" to "per column, per group". | |
+| 28 | Time sync between two open files | Selecting an entry in one file scrolls a second, side-by-side file to the nearest timestamp (device log vs. application log), without the destructive `mergeFiles` step. Would need a second file pane; the Filter/Highlight split is the closest existing precedent. | |
+| 30 | Cross-file search (read-only) | One term, hit counts per loaded file, click to jump. Stays inside the "no cross-file filter nodes" design rule precisely by not creating nodes. | |
+| 39 | Breadcrumb hover on earlier nodes in the chain | So a new branch can be picked from a node further back, not just the current/active one. Verworfen: the feature it depended on (hovering the active breadcrumb chip to reveal a child-filter flyout) was removed 2026-08-25, superseded by Alt+Arrow tree navigation; nothing left to extend. | verworfen |
