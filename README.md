@@ -176,6 +176,12 @@ open it in a browser to view it.
   because it is the thing that opens them. A plain `http(s)` deep-linked
   file offers "Copy URL" instead, since there's no local folder to reveal.
 - **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with drag-to-select.**
+- **Per-file clock offset** — a file's tree context menu ("Adjust clock…")
+  applies a manual clock correction to one file's timestamps, for when one
+  device's log is skewed relative to another's before you compare or merge.
+  Enter it as a signed delta (`+1500` ms, `-2s`, `±HH:MM:SS.mmm`) or by setting
+  the desired absolute time of the file's first line, with a live before→after
+  preview; it's undoable and survives a reload.
 - **Session cache** — reload the browser tab and get your files, filters,
   and settings back.
 - **Filter save/load** (`.json`) and a **reusable filter library** for

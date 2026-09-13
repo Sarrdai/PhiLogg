@@ -2463,6 +2463,35 @@
   }
   .assert-mode-btn.active{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
 
+  /* ---------- Per-file clock offset dialog (FEATURE_BACKLOG.md #29 — see
+     openClockOffsetDialog / applyClockOffset). Follows docs/ui-standard.md:
+     segmented .assert-mode-btn mode toggle, .settings-row rows, one-line
+     hints, .btn-mini-secondary/.btn-mini footer (secondary -> primary). ---------- */
+  #clockOffsetDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
+  }
+  #clockOffsetDialog.hidden{display:none;}
+  #clockOffsetDialog .link-dialog-card{width:min(480px, 92%);}
+  #clockOffsetDialog .settings-row{padding:12px 2px; gap:16px; border-bottom:1px solid var(--border-soft);}
+  #clockOffsetDialog .settings-row:last-of-type{border-bottom:none;}
+  #clockDiffRow.hidden, #clockStartRow.hidden{display:none;}
+  #clockDiffInput{width:170px; box-sizing:border-box; text-align:right;}
+  #clockStartInput{width:100%; box-sizing:border-box;}
+  .clock-offset-current{font-size:11px; color:var(--text-tertiary); margin:12px 0 0;}
+  .clock-offset-preview{
+    margin-top:12px; padding:10px 12px; background:var(--bg-app); border:1px solid var(--border);
+    border-radius:8px; font-family:var(--font-mono); font-size:11px; color:var(--text-secondary);
+    line-height:1.8; overflow-x:auto; white-space:nowrap;
+  }
+  .clock-offset-preview .clock-preview-label{color:var(--text-tertiary); display:inline-block; min-width:38px;}
+  .clock-offset-preview .clock-preview-old{color:var(--text-tertiary);}
+  .clock-offset-preview .clock-preview-arrow{color:var(--text-tertiary); padding:0 6px;}
+  .clock-offset-preview .clock-preview-new{color:var(--accent-strong);}
+  .clock-offset-error{font-size:11px; color:var(--warn); margin-top:8px;}
+  .clock-offset-error.hidden{display:none;}
+
   /* ---------- Session export / import dialogs (+ the multi-file-load merge
      prompt, which shares the same plain centered-overlay look) ---------- */
   #sessionExportDialog, #sessionMatchDialog, #mergeLoadDialog{
@@ -4256,6 +4285,47 @@
       <div class="link-dialog-actions">
         <button type="button" id="timeRangeDialogCancel" class="btn-mini-outline">Cancel</button>
         <button type="button" id="timeRangeDialogSubmit" class="btn-mini">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="clockOffsetDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Adjust clock — <span id="clockOffsetFileLabel" class="link-target-label"></span></div>
+      <div class="settings-row">
+        <div class="settings-row-text">
+          <span class="settings-row-label">Mode</span>
+          <span class="settings-row-hint">Shift by a signed delta, or set the first line's absolute time.</span>
+        </div>
+        <div class="settings-row-control assert-mode-row">
+          <button type="button" class="assert-mode-btn active" id="clockModeDiff" data-clock-mode="diff">Difference</button>
+          <button type="button" class="assert-mode-btn" id="clockModeStart" data-clock-mode="start">Start time</button>
+        </div>
+      </div>
+      <div class="settings-row" id="clockDiffRow">
+        <div class="settings-row-text">
+          <span class="settings-row-label">Delta</span>
+          <span class="settings-row-hint">+1500 (ms), -2s, or ±HH:MM:SS.mmm like +00:01:30.500</span>
+        </div>
+        <div class="settings-row-control">
+          <input type="text" id="clockDiffInput" placeholder="+0" autocomplete="off">
+        </div>
+      </div>
+      <div class="settings-row hidden" id="clockStartRow">
+        <div class="settings-row-text">
+          <span class="settings-row-label">First line at</span>
+          <span class="settings-row-hint">Desired timestamp of the file's first log line.</span>
+        </div>
+        <div class="settings-row-control">
+          <input type="datetime-local" id="clockStartInput" step="0.001">
+        </div>
+      </div>
+      <div class="clock-offset-current" id="clockOffsetCurrent"></div>
+      <div class="clock-offset-preview" id="clockOffsetPreview"></div>
+      <div class="clock-offset-error hidden" id="clockOffsetError">Enter a valid, non-zero adjustment.</div>
+      <div class="link-dialog-actions">
+        <button type="button" id="clockOffsetCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="clockOffsetApply" class="btn-mini">Apply</button>
       </div>
     </div>
   </div>
@@ -8308,6 +8378,67 @@ function invalidateOrderIndexMap(fileId) {
   if (file) file._orderIndexMap = null;
 }
 
+/* ===================== Per-file clock offset (FEATURE_BACKLOG.md #29) =====================
+   A manual clock correction for a single (non-merged) source file. Approach
+   (a): the offset is BAKED into every entry.ts of that file — not applied
+   lazily at read time — and the cumulative signed-ms amount is stored on the
+   file node as node.clockOffset (default 0) so it can be shown, re-edited and
+   undone. entry.raw / entry.tsRaw are deliberately left untouched: the session
+   cache rebuilds a file's text from entry.raw and re-parses it, which would
+   re-derive the ORIGINAL ts — so node.clockOffset is persisted separately and
+   re-applied to the freshly-parsed entries on restore (see
+   restoreSessionFromCache). Every place that shows a time reads formatTime(e.ts)
+   (both log-row renderers, the Δt column, the minimap), so shifting ts alone
+   updates the whole UI.
+
+   Merged-file gotcha: mergeFiles reuses a source file's entry OBJECTS by
+   reference, so shifting the source's entry.ts also moves those entries inside
+   any merged file that contains them — leaving that merged file's entries array
+   (and its _orderIndexMap) mis-sorted. shiftFileEntriesTs therefore re-sorts
+   every merged root file after a shift and drops its order map. A uniform shift
+   preserves the SOURCE file's own order, so its own array/_orderIndexMap stay
+   valid untouched (same array, same length, unchanged positions). */
+
+// Re-sorts every merged root file's entries by ts and drops its order-index
+// map. Called after a source file's entry.ts values are shifted, since a merged
+// file reuses those same entry objects by reference (mergeFiles) and so becomes
+// mis-sorted. Re-sorting a merged file that doesn't actually contain the
+// shifted entries is a harmless no-op (it was already sorted), so we don't
+// bother tracking which merged files share which source — merges are rare.
+function resortMergedFilesAfterShift() {
+  for (const rid of state.rootIds) {
+    const f = state.nodes[rid];
+    if (f && f.type === "file" && f.merged && Array.isArray(f.entries)) {
+      f.entries.sort((a, b) => a.ts - b.ts);
+      invalidateOrderIndexMap(rid); // in-place reorder: same array, same length
+    }
+  }
+}
+
+// Adds deltaMs to every entry.ts of a non-merged file and re-sorts any merged
+// file that reuses those entries. Does NOT touch node.clockOffset or the undo
+// stack — callers (applyClockOffset, undo/redo) manage those.
+function shiftFileEntriesTs(node, deltaMs) {
+  if (!node || !Array.isArray(node.entries) || !deltaMs) return;
+  for (const e of node.entries) e.ts += deltaMs;
+  resortMergedFilesAfterShift();
+}
+
+// Applies a signed-ms clock adjustment to a file, pushing an undoable action.
+// Returns true if applied. Refused for a merged file (its entries are shared
+// references — shifting them would silently move the source files' clocks too).
+function applyClockOffset(fileId, deltaMs) {
+  const node = fileId && state.nodes[fileId];
+  if (!node || node.type !== "file" || node.merged) return false;
+  if (!deltaMs || !Number.isFinite(deltaMs)) return false;
+  shiftFileEntriesTs(node, deltaMs);
+  node.clockOffset = (node.clockOffset || 0) + deltaMs;
+  invalidateAllCaches(); // structural-equivalent change: every filter chain under this file (and any merged view) is now stale
+  pushUndo({ kind: "clockOffset", nodeId: fileId, delta: deltaMs });
+  persistFileNode(node); // clockOffset is now part of the file's cache record
+  return true;
+}
+
 /* ===================== Time context filter: window around reference entries ===================== */
 
 // Creates a time-context filter: for every entry of the parent (reference)
@@ -9742,6 +9873,11 @@ function snapshotSubtree(nodeId) {
     // full file again, same class of bug node.formatId's own comment above
     // describes.
     if (node.partial) copy.partial = node.partial;
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): entries are kept by
+    // reference above, so their ALREADY-shifted ts come back on undo intact —
+    // this just preserves the cumulative amount so the file can still be
+    // re-edited/undone after a delete+restore round-trip.
+    if (node.clockOffset) copy.clockOffset = node.clockOffset;
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
@@ -9780,6 +9916,7 @@ function restoreSubtree(snap) {
     if (snap.formatId) node.formatId = snap.formatId;
     if (snap.folderId) node.folderId = snap.folderId;
     if (snap.partial) node.partial = snap.partial;
+    if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
     state.nodes[node.id] = node;
     node.entries.forEach(e => { entryIndex[e.id] = e; });
     node.children = snap.children.map(c => restoreSubtree(c).id);
@@ -9967,6 +10104,7 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
+  clockOffset: "clock adjust",
 };
 
 function undo() {
@@ -9994,6 +10132,16 @@ function undo() {
   } else if (action.kind === "edit") {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.before); state.activeId = action.nodeId; }
+  } else if (action.kind === "clockOffset") {
+    // Re-apply the INVERSE shift — snapshotSubtree keeps entries by reference,
+    // so the "before" ts can't be captured; we undo the mutation instead.
+    const node = state.nodes[action.nodeId];
+    if (node) {
+      shiftFileEntriesTs(node, -action.delta);
+      node.clockOffset = (node.clockOffset || 0) - action.delta;
+      persistFileNode(node);
+      state.activeId = action.nodeId;
+    }
   }
   redoStack.push(action);
   updateUndoRedoButtons();
@@ -10020,6 +10168,14 @@ function redo() {
   } else if (action.kind === "edit") {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.after); state.activeId = action.nodeId; }
+  } else if (action.kind === "clockOffset") {
+    const node = state.nodes[action.nodeId];
+    if (node) {
+      shiftFileEntriesTs(node, action.delta);
+      node.clockOffset = (node.clockOffset || 0) + action.delta;
+      persistFileNode(node);
+      state.activeId = action.nodeId;
+    }
   }
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
@@ -24235,6 +24391,13 @@ function openTreeContextMenu(ev, clickedId) {
     if (node.type === "file" && node.sourceUrl && !isDesktopLocalUrl(node.sourceUrl)) {
       buckets.edit.push({ action: "copyUrl", label: "Copy URL", icon: ICON_COPY });
     }
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): only on a real
+    // (non-merged) file with entries to shift — a merged file reuses its
+    // sources' entry objects by reference, so shifting it would silently move
+    // the source files' clocks too (see applyClockOffset's own guard).
+    if (node.type === "file" && !node.merged && node.entries && node.entries.length) {
+      buckets.edit.push({ action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK });
+    }
     if (node.type === "filter" && node.locked) {
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
     } else if (node.type === "filter") {
@@ -24395,6 +24558,10 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "edit") {
     if (treeCtxId) editFilterNode(treeCtxId);
+    return;
+  }
+  if (action === "clockOffset") {
+    if (treeCtxId && state.nodes[treeCtxId]) openClockOffsetDialog(treeCtxId);
     return;
   }
   if (action === "copy" || action === "cut") {
@@ -24747,6 +24914,151 @@ timeRangeDialogSubmit.addEventListener("click", () => {
   closeTimeRangeDialog();
   revealFilteredView();
   render();
+});
+
+/* ===================== Per-file clock offset dialog (FEATURE_BACKLOG.md #29) =====================
+   Reachable only from a file node's context menu ("Adjust clock…"). Two
+   interpretation modes via a segmented .assert-mode-btn control:
+     - Difference: a signed delta, applied additively to every entry.ts.
+     - Start time: the desired absolute timestamp of the file's FIRST log line;
+       effective delta = desiredStart − currentFirstTs.
+   A live preview shows the first and last log line each as old → new. The
+   actual mutation + persistence + undo lives in applyClockOffset (see the
+   "Per-file clock offset" block near invalidateOrderIndexMap). */
+
+const clockOffsetDialog = el("#clockOffsetDialog");
+let clockOffsetFileId = null;
+let clockOffsetMode = "diff"; // "diff" | "start"
+
+function clockOffsetFile() { return clockOffsetFileId ? state.nodes[clockOffsetFileId] : null; }
+
+// Forgiving signed-delta parser for the Difference mode input. Accepts:
+//   +1500 / -1500      → milliseconds (default unit)
+//   +2s / 500ms / 3m / 1h → number with an explicit unit
+//   ±[HH:]MM:SS[.mmm]  → colon time form (hours optional)
+// Returns the signed millisecond amount, or null if the text isn't a valid,
+// parseable delta. A leading "+", "-" or "−" (unicode minus) sets the sign.
+function parseClockDelta(raw) {
+  if (raw == null) return null;
+  let s = String(raw).trim();
+  if (!s) return null;
+  let sign = 1;
+  if (s[0] === "+") s = s.slice(1);
+  else if (s[0] === "-" || s[0] === "−") { sign = -1; s = s.slice(1); }
+  s = s.trim();
+  if (!s) return null;
+  let magnitude;
+  if (s.includes(":")) {
+    const parts = s.split(":");
+    if (parts.length < 2 || parts.length > 3) return null;
+    let h = "0", m, secStr;
+    if (parts.length === 3) { h = parts[0]; m = parts[1]; secStr = parts[2]; }
+    else { m = parts[0]; secStr = parts[1]; }
+    if (!/^\d+$/.test(h) || !/^\d+$/.test(m) || !/^\d+(\.\d+)?$/.test(secStr)) return null;
+    magnitude = ((parseInt(h, 10) * 60 + parseInt(m, 10)) * 60 + parseFloat(secStr)) * 1000;
+  } else {
+    const mUnit = s.match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h)?$/i);
+    if (!mUnit) return null;
+    const val = parseFloat(mUnit[1]);
+    const unit = (mUnit[2] || "ms").toLowerCase();
+    const factor = unit === "h" ? 3600000 : unit === "m" ? 60000 : unit === "s" ? 1000 : 1;
+    magnitude = val * factor;
+  }
+  if (!Number.isFinite(magnitude)) return null;
+  return Math.round(sign * magnitude);
+}
+
+// The effective signed-ms delta implied by the current mode + inputs, or null
+// if the input is empty/invalid (Start mode: desired first-line time minus the
+// file's current first-line ts).
+function computeClockDelta() {
+  const node = clockOffsetFile();
+  if (!node) return null;
+  if (clockOffsetMode === "diff") return parseClockDelta(el("#clockDiffInput").value);
+  const desired = localInputValueToTs(el("#clockStartInput").value);
+  if (desired == null) return null;
+  const first = node.entries[0];
+  if (!first || isNaN(first.ts)) return null;
+  return Math.round(desired - first.ts);
+}
+
+function updateClockModeUI() {
+  el("#clockModeDiff").classList.toggle("active", clockOffsetMode === "diff");
+  el("#clockModeStart").classList.toggle("active", clockOffsetMode === "start");
+  el("#clockDiffRow").classList.toggle("hidden", clockOffsetMode !== "diff");
+  el("#clockStartRow").classList.toggle("hidden", clockOffsetMode !== "start");
+}
+
+function updateClockOffsetPreview() {
+  const node = clockOffsetFile();
+  const box = el("#clockOffsetPreview");
+  if (!node) { box.innerHTML = ""; return; }
+  const delta = computeClockDelta();
+  const first = node.entries[0];
+  const last = node.entries[node.entries.length - 1];
+  const line = (label, e) => {
+    if (!e) return "";
+    const newT = delta == null ? "—" : formatTime(e.ts + delta);
+    return '<div><span class="clock-preview-label">' + label + '</span>' +
+      '<span class="clock-preview-old">' + escapeHtml(formatTime(e.ts)) + '</span>' +
+      '<span class="clock-preview-arrow">→</span>' +
+      '<span class="clock-preview-new">' + escapeHtml(newT) + '</span></div>';
+  };
+  const deltaRow = delta == null ? "" :
+    '<div><span class="clock-preview-label">Δ</span><span class="clock-preview-new">' + escapeHtml(formatDelta(delta)) + '</span></div>';
+  box.innerHTML = line("First", first) + line("Last", last) + deltaRow;
+}
+
+function openClockOffsetDialog(fileId) {
+  const node = state.nodes[fileId];
+  if (!node || node.type !== "file" || node.merged || !node.entries || !node.entries.length) return;
+  clockOffsetFileId = fileId;
+  clockOffsetMode = "diff";
+  el("#clockOffsetFileLabel").textContent = node.name;
+  el("#clockDiffInput").value = "";
+  const first = node.entries[0];
+  el("#clockStartInput").value = tsToLocalInputValue(first ? first.ts : null);
+  const cur = node.clockOffset || 0;
+  el("#clockOffsetCurrent").textContent = cur ? ("Current offset: " + formatDelta(cur)) : "No offset applied yet.";
+  el("#clockOffsetError").classList.add("hidden");
+  updateClockModeUI();
+  updateClockOffsetPreview();
+  clockOffsetDialog.classList.remove("hidden");
+  el("#clockDiffInput").focus();
+}
+function closeClockOffsetDialog() { clockOffsetDialog.classList.add("hidden"); clockOffsetFileId = null; }
+
+el("#clockModeDiff").addEventListener("click", () => {
+  clockOffsetMode = "diff"; updateClockModeUI(); el("#clockOffsetError").classList.add("hidden");
+  updateClockOffsetPreview(); el("#clockDiffInput").focus();
+});
+el("#clockModeStart").addEventListener("click", () => {
+  clockOffsetMode = "start"; updateClockModeUI(); el("#clockOffsetError").classList.add("hidden");
+  updateClockOffsetPreview(); el("#clockStartInput").focus();
+});
+el("#clockDiffInput").addEventListener("input", () => { el("#clockOffsetError").classList.add("hidden"); updateClockOffsetPreview(); });
+el("#clockStartInput").addEventListener("input", () => { el("#clockOffsetError").classList.add("hidden"); updateClockOffsetPreview(); });
+el("#clockDiffInput").addEventListener("keydown", ev => {
+  ev.stopPropagation(); // don't let Enter/Delete reach the tree's global keydown handler while typing
+  if (ev.key === "Enter") { ev.preventDefault(); el("#clockOffsetApply").click(); }
+});
+el("#clockStartInput").addEventListener("keydown", ev => {
+  ev.stopPropagation();
+  if (ev.key === "Enter") { ev.preventDefault(); el("#clockOffsetApply").click(); }
+});
+clockOffsetDialog.addEventListener("click", ev => { if (ev.target === clockOffsetDialog) closeClockOffsetDialog(); });
+el("#clockOffsetCancel").addEventListener("click", closeClockOffsetDialog);
+el("#clockOffsetApply").addEventListener("click", () => {
+  const fileId = clockOffsetFileId;
+  const delta = computeClockDelta();
+  if (!delta) { el("#clockOffsetError").classList.remove("hidden"); return; } // null or 0 — nothing to apply
+  if (applyClockOffset(fileId, delta)) {
+    closeClockOffsetDialog();
+    render();
+    showCopyToast("Clock adjusted (" + formatDelta(delta) + ")");
+  } else {
+    el("#clockOffsetError").classList.remove("hidden");
+  }
 });
 
 /* ===================== Notes =====================
@@ -26509,6 +26821,7 @@ document.addEventListener("keydown", ev => {
     closeContextDialog();
     closeTimeRangeDialog();
     closeAssertDialog();
+    closeClockOffsetDialog();
     closeNoteDialog();
     closeColumnsPanel();
     closeColorPicker();
@@ -27003,6 +27316,11 @@ async function persistFileNode(node) {
     // restored session would show a deliberately-incomplete node as if it
     // were the file's normal full content.
     partial: node.partial || null,
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): `text` above is rebuilt
+    // from entry.raw (the ORIGINAL, unshifted timestamps), so this signed-ms
+    // amount is what restoreSessionFromCache re-applies to the freshly-parsed
+    // entries to reinstate the correction. Never set on a merged file.
+    clockOffset: node.clockOffset || 0,
     savedAt: Date.now(),
   }));
 }
@@ -27372,6 +27690,14 @@ async function restoreSessionFromCache() {
       // is correct as-is — only the visible "this is incomplete" marker
       // needs restoring.
       if (rec.partial) node.partial = rec.partial;
+      // Per-file clock offset (FEATURE_BACKLOG.md #29): rec.text was rebuilt
+      // from the ORIGINAL raw lines, so the just-parsed entries carry the
+      // unshifted ts — re-apply the stored correction to bake it back in.
+      // Never stored for a merged file (applyClockOffset refuses those).
+      if (rec.clockOffset && !node.merged) {
+        node.clockOffset = rec.clockOffset;
+        for (const e of node.entries) e.ts += rec.clockOffset;
+      }
       // Re-links this node to its watched folder, if it had one — the
       // folder record itself (including its handle) comes back separately
       // via restoreWatchedFolders, called right after this function returns.
