@@ -23233,7 +23233,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("204d. Load button: individually-selected bars load with no merge; a dragged window loads+merges the overlap and applies a matching timerange filter");
+  section("204d. Actions: folderMinimapLoadIndividually loads picked bars with no merge; folderMinimapMergeWindow merges the drawn window's overlap and applies a matching timerange filter");
 
   // Unlike 204a/204b's plain-object fixture (probeFileTimeRange-only, never
   // read via FileReader), this one is also loaded for real by
@@ -23264,32 +23264,32 @@ await withApp(async (w, d, T) => {
   const folder = { id: "fm-folder-d", name: "watched-d", files: [recA, recB, recC] };
   T.state.folders.push(folder);
   // Normally renderFolderMinimap kicks off probing as a side effect of
-  // being shown; probe directly here since this test drives
-  // loadFolderMinimapSelection without ever rendering the minimap itself.
+  // being shown; probe directly here since this test drives the actions
+  // without ever rendering the minimap itself.
   await Promise.all(folder.files.map(rec => w.probeFolderFileRange(folder, rec)));
 
-  // --- Individual selection: pick just recC, Load it — no merge, no filter.
+  // --- Individual selection: pick just recC, load it individually — no merge, no filter.
   T.fmFolderId = folder.id;
   T.fmSelectedRecKeys = new Set(["c.log"]);
   T.fmSelectedWindow = null;
-  await w.loadFolderMinimapSelection(folder);
+  await w.folderMinimapLoadIndividually(folder);
   assert(recC.nodeId && T.state.nodes[recC.nodeId], "the individually-selected file (c.log) got loaded");
   assert(!recA.nodeId && !recB.nodeId, "individually selecting one bar does not load the others");
   assert(T.state.nodes[recC.nodeId].entries.length === 3 && !T.state.nodes[recC.nodeId].merged, "the loaded node is the plain file, not a merge");
-  assert(T.state.folderView === null, "the Load action leaves the folder-minimap view");
+  assert(T.state.folderView === null, "the action leaves the folder-minimap view");
 
   // --- Window selection: draw a window covering recA/recB (which overlap
-  // each other) but not recC — Load merges recA+recB and applies a
-  // "timerange" filter for exactly the drawn window.
+  // each other) but not recC — "merge only the window" merges recA+recB
+  // and applies a "timerange" filter for exactly the drawn window.
   w.selectFolderContainer(folder.id);
   const winFrom = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
   const winTo = new Date(2024, 0, 15, 10, 0, 4, 0).getTime();
   T.fmFolderId = folder.id;
   T.fmSelectedRecKeys = new Set();
   T.fmSelectedWindow = { from: winFrom, to: winTo };
-  await w.loadFolderMinimapSelection(folder);
+  await w.folderMinimapMergeWindow(folder);
 
-  assert(recA.nodeId && recB.nodeId, "both overlapping files (a.log, b.log) got loaded by the window Load");
+  assert(recA.nodeId && recB.nodeId, "both overlapping files (a.log, b.log) got loaded by the windowed merge");
   const mergedId = T.state.activeId && T.state.nodes[T.state.activeId] && T.state.nodes[T.state.activeId].parentId;
   const merged = mergedId ? T.state.nodes[mergedId] : null;
   assert(merged && merged.merged === true, "a merged node was created from the overlapping files");
@@ -23519,7 +23519,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("205e. node.partial survives close+undo, and loadFolderMinimapSelection unions two partial sources' ranges on merge");
+  section("205e. node.partial survives close+undo, and folderMinimapMergeWindow unions two partial sources' ranges on merge");
 
   const N = 600;
   const filler = "X".repeat(14000);
@@ -23538,7 +23538,7 @@ await withApp(async (w, d, T) => {
   }
 
   // Two large, overlapping files, both windowed-loaded and merged via
-  // loadFolderMinimapSelection, end up with a UNIONED node.partial. The
+  // folderMinimapMergeWindow, end up with a UNIONED node.partial. The
   // merge RESULT (unlike either folder-owned source file) has no folderId
   // of its own (see mergeFiles) — closing it goes through the real
   // deleteFile-with-undo path (deleteFilterNodeWithUndo's plain node.type
@@ -23554,7 +23554,7 @@ await withApp(async (w, d, T) => {
   T.fmFolderId = folder2.id;
   T.fmSelectedRecKeys = new Set();
   T.fmSelectedWindow = { from: tsAt(100), to: tsAt(120) };
-  await w.loadFolderMinimapSelection(folder2);
+  await w.folderMinimapMergeWindow(folder2);
 
   assert(recX.nodeId && T.state.nodes[recX.nodeId].partial, "source x.log was windowed-loaded and flagged partial");
   assert(recY.nodeId && T.state.nodes[recY.nodeId].partial, "source y.log was windowed-loaded and flagged partial");
@@ -23570,6 +23570,153 @@ await withApp(async (w, d, T) => {
   assert(T.state.nodes[mergedId] && T.state.nodes[mergedId].partial, "node.partial survives close+undo (snapshotSubtree/restoreSubtree)");
   assert(T.state.nodes[mergedId].partial.from === tsAt(100) && T.state.nodes[mergedId].partial.to === tsAt(120),
     "the restored partial range still matches exactly what was originally merged");
+});
+
+/* ============================================================
+   GROUP 206 — Folder minimap: hover crosshair + drag label, and three
+   explicit actions (load individually / merge full / merge only the
+   window) replacing the old single inferred Load button (person-
+   requested). resolveFolderMinimapTargets is the one place both the
+   toolbar's enable/disable logic and all three actions read "which files
+   are relevant" from. folderMinimapMergeFull is the one new behavior:
+   merges targets in full with NO timerange filter attached, even when
+   reached via a drawn window (person-decided — that button means
+   "everything, unfiltered"; only folderMinimapMergeWindow, unchanged from
+   Group 204/205, still attaches the filter). folderMinimapMergeWindow
+   stays disabled without an actual drawn window even if bars are picked
+   (person-decided — no implied window from the selected bars' own
+   ranges). The hover/drag DOM elements (#folderMinimapHoverLine/
+   Tooltip/DragRect/DragLabel) are plain siblings of the SVG, not SVG
+   children — same reasoning, and same real dispatched-mouse-event test
+   technique, as the log minimap's own #timelineMinimapDragRect/
+   DragLabel (see that group's own drag test) — jsdom's stubbed
+   getBoundingClientRect/clientWidth plus real viewBox.baseVal support
+   make this genuinely exercisable, not just state manipulation.
+   ============================================================ */
+group(206);
+await withApp(async (w, d, T) => {
+  section("206a. Toolbar buttons: enablement matches the selection — merge-window needs an actual drawn window, even with bars picked");
+
+  function fakeFileHandle(text) {
+    return { async getFile() { return { size: text.length, slice(s, e) { const ee = e === undefined ? text.length : e; const sl = text.slice(s, ee); return { text: async () => sl }; } }; } };
+  }
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 2)), _range: { first: 0, last: 1000 } };
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 2)), _range: { first: 5000, last: 6000 } };
+  const folder = { id: "fm-206-folder-1", name: "f206a", files: [recA, recB] };
+  T.state.folders.push(folder);
+  w.selectFolderContainer(folder.id);
+
+  const loadEachBtn = d.querySelector("#folderMinimapLoadEachBtn");
+  const mergeFullBtn = d.querySelector("#folderMinimapMergeFullBtn");
+  const mergeWindowBtn = d.querySelector("#folderMinimapMergeWindowBtn");
+  assert(loadEachBtn && mergeFullBtn && mergeWindowBtn, "all three action buttons render in the toolbar");
+  assert(loadEachBtn.disabled && mergeFullBtn.disabled && mergeWindowBtn.disabled, "no selection: all three actions disabled");
+
+  T.fmSelectedRecKeys = new Set(["a.log"]);
+  T.fmSelectedWindow = null;
+  w.renderFolderMinimap(folder);
+  assert(!loadEachBtn.disabled && !mergeFullBtn.disabled, "bars picked: load-individually and merge-full enabled");
+  assert(mergeWindowBtn.disabled, "bars picked but no window drawn: merge-window stays disabled");
+
+  T.fmSelectedRecKeys = new Set();
+  T.fmSelectedWindow = { from: -500, to: -100 }; // covers neither file's range
+  w.renderFolderMinimap(folder);
+  assert(loadEachBtn.disabled && mergeFullBtn.disabled && mergeWindowBtn.disabled, "a window covering zero files: all three disabled");
+
+  T.fmSelectedWindow = { from: 0, to: 1000 }; // covers recA only
+  w.renderFolderMinimap(folder);
+  assert(!loadEachBtn.disabled && !mergeFullBtn.disabled && !mergeWindowBtn.disabled, "a window covering at least one file: all three enabled");
+});
+
+await withApp(async (w, d, T) => {
+  section("206b. folderMinimapMergeFull: merges targets in full with no timerange filter, even when reached via a drawn window");
+
+  function fakeFileHandle(text) {
+    return {
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (s, e) => { const ee = e === undefined ? text.length : e; const sl = text.slice(s, ee); const b = new w.Blob([sl]); b.text = async () => sl; return b; };
+        return blob;
+      },
+    };
+  }
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 3)) };
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, handle: fakeFileHandle(makeLog(2, 3, { msgPrefix: "b" })) };
+  const folder = { id: "fm-206-folder-2", name: "f206b", files: [recA, recB] };
+  T.state.folders.push(folder);
+  await Promise.all(folder.files.map(rec => w.probeFolderFileRange(folder, rec)));
+
+  T.fmFolderId = folder.id;
+  T.fmSelectedRecKeys = new Set();
+  T.fmSelectedWindow = { from: new Date(2024, 0, 15, 10, 0, 0, 0).getTime(), to: new Date(2024, 0, 15, 10, 0, 4, 0).getTime() };
+  await w.folderMinimapMergeFull(folder);
+
+  assert(recA.nodeId && recB.nodeId, "both target files (window-selected) got loaded");
+  const merged = T.state.nodes[T.state.activeId];
+  assert(merged && merged.merged === true, "a merged node was created and is the active node");
+  assert(merged.entries.length === 6, "merge combines both files' full entries, got " + merged.entries.length);
+  assert(merged.children.length === 0, "merge-full attaches NO timerange filter, got " + merged.children.length + " children");
+});
+
+await withApp(async (w, d, T) => {
+  section("206c. resolveFolderMinimapTargets: the same file resolves whether reached via a bar pick or an equivalent window");
+
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, _range: { first: 1000, last: 2000 } };
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, _range: { first: 9000, last: 9500 } };
+  const folder = { id: "fm-206-folder-3", name: "f206c", files: [recA, recB] };
+
+  T.fmSelectedRecKeys = new Set(["a.log"]);
+  T.fmSelectedWindow = null;
+  assert(w.resolveFolderMinimapTargets(folder).map(r => r.name).join(",") === "a.log", "bar pick resolves to exactly a.log");
+
+  T.fmSelectedRecKeys = new Set();
+  T.fmSelectedWindow = { from: 500, to: 2500 }; // covers only recA
+  assert(w.resolveFolderMinimapTargets(folder).map(r => r.name).join(",") === "a.log", "an equivalent window resolves to the same file");
+});
+
+await withApp(async (w, d, T) => {
+  section("206d. Hover crosshair + drag label appear/disappear on real mouse events, mirroring the log minimap's own drag aid");
+
+  function fakeFileHandle(text) {
+    return { async getFile() { return { size: text.length, slice(s, e) { const ee = e === undefined ? text.length : e; const sl = text.slice(s, ee); return { text: async () => sl }; } }; } };
+  }
+  const recA = {
+    name: "a.log", relPath: "a.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 3)),
+    _range: { first: new Date(2024, 0, 15, 10, 0, 0, 0).getTime(), last: new Date(2024, 0, 15, 10, 0, 2, 0).getTime() },
+  };
+  const folder = { id: "fm-206-folder-4", name: "f206d", files: [recA] };
+  T.state.folders.push(folder);
+  w.selectFolderContainer(folder.id);
+
+  const svg = d.querySelector("#folderMinimapSvg");
+  const hoverLine = d.querySelector("#folderMinimapHoverLine");
+  const tooltip = d.querySelector("#folderMinimapTooltip");
+  const dragRect = d.querySelector("#folderMinimapDragRect");
+  const dragLabel = d.querySelector("#folderMinimapDragLabel");
+
+  assert(hoverLine.classList.contains("hidden") && tooltip.classList.contains("hidden"), "hover aids start hidden");
+
+  svg.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 400, clientY: 10 }));
+  assert(!hoverLine.classList.contains("hidden") && !tooltip.classList.contains("hidden"), "hovering shows the crosshair line and the time tooltip");
+  assert(tooltip.textContent.length > 0, "tooltip shows a formatted time, got " + JSON.stringify(tooltip.textContent));
+
+  svg.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: true }));
+  assert(hoverLine.classList.contains("hidden") && tooltip.classList.contains("hidden"), "leaving the minimap hides the hover aids again");
+
+  // Drag from clientX 200 to 500 — past the click threshold (same
+  // dispatched-event technique the real log minimap's own drag test uses).
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: 200, clientY: 10 }));
+  assert(dragRect.classList.contains("hidden"), "drag overlay stays hidden until the pointer moves past the click threshold");
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 500, clientY: 10 }));
+  assert(!dragRect.classList.contains("hidden") && !dragLabel.classList.contains("hidden"), "drag band + label appear once past the threshold");
+  assert(dragLabel.textContent.includes("→"), "drag label shows a from → to readout, got " + JSON.stringify(dragLabel.textContent));
+  assert(hoverLine.classList.contains("hidden") && tooltip.classList.contains("hidden"), "the drag overlay hides the plain hover aids while dragging");
+
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: 500, clientY: 10 }));
+  assert(dragRect.classList.contains("hidden") && dragLabel.classList.contains("hidden"), "drag band + label hide again after mouseup");
+  assert(T.fmSelectedWindow && T.fmSelectedWindow.to > T.fmSelectedWindow.from, "the drag set a real selected window");
 });
 
 /* ============================================================
@@ -26666,7 +26813,40 @@ process.exitCode = failed ? 1 : 0;
       already-open file is never re-read. 205d: a file that isn't actually
       chronologically sorted falls back to a full load instead of silently
       returning wrong/missing entries. 205e: node.partial survives a
-      close+undo round trip, and loadFolderMinimapSelection's merge of two
-      windowed sources unions their ranges into the merged node's own
-      node.partial.
+      close+undo round trip, and merging two windowed sources (via what was
+      then loadFolderMinimapSelection, since renamed to
+      folderMinimapMergeWindow — see Group 206) unions their ranges into
+      the merged node's own node.partial.
+   ============================================================ */
+
+/* ============================================================
+   Group 206 — this session (2026-09-14), person-requested: a hover
+      crosshair + "from → to" drag label on the folder minimap (it never
+      had one, unlike the real log minimap), and three explicit action
+      buttons (load individually / merge full / merge only the dragged
+      window) replacing the old single Load button whose effect used to be
+      inferred from how you selected files. loadFolderMinimapSelection was
+      split into resolveFolderMinimapTargets (the one place "which files
+      are relevant" is decided, for both the toolbar and all three
+      actions) plus folderMinimapLoadIndividually/MergeFull/MergeWindow.
+      folderMinimapMergeFull is the one new behavior: merges in full with
+      NO timerange filter (person-decided — "everything, unfiltered"),
+      even when reached via a drawn window; folderMinimapMergeWindow is
+      unchanged from Group 204/205's own window-merge behavior. The hover/
+      drag DOM elements (#folderMinimapHoverLine/Tooltip/DragRect/
+      DragLabel) are plain siblings of the SVG, mirroring
+      #timelineMinimapDragRect/DragLabel (same "an unrelated SVG rebuild
+      must never wipe an in-progress gesture" reasoning) — replacing the
+      previous session's SVG-internal #fmDragOverlayRect. 206a: the three
+      buttons' enablement — none selected disables all three; bars picked
+      enables load-individually/merge-full but NOT merge-window (no drawn
+      window); a window covering zero files disables all three; a window
+      covering ≥1 file enables all three. 206b: folderMinimapMergeFull
+      produces a merged node with zero filter children. 206c:
+      resolveFolderMinimapTargets resolves to the same file via a bar pick
+      or an equivalent window. 206d: real dispatched mousemove/mousedown/
+      mouseup events (same technique the log minimap's own drag test uses)
+      show the hover crosshair+tooltip on hover, hide them during a drag in
+      favor of the drag band+label, and restore a real fmSelectedWindow on
+      mouseup.
    ============================================================ */
