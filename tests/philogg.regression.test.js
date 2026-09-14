@@ -22725,12 +22725,19 @@ group(199);
 
     rows().find(r => r.textContent.includes("plain.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "plain.txt");
-    assert(settingsGroup.classList.contains("hidden"), "the Settings group (holding Pretty Print) is hidden for a non-JSON file");
-    assert(d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "the whole toolbar hides too, since nothing else is shown for a plain .txt file");
+    // Since FEATURE_BACKLOG.md #68 (word wrap) the Settings group shows for ANY
+    // text file (it now holds the Text-View word-wrap toggle too), so the group
+    // and the toolbar are visible even for a plain .txt — but Pretty Print
+    // itself stays hidden for a non-JSON file.
+    assert(!settingsGroup.classList.contains("hidden"), "the Settings group is visible for a plain .txt file (it holds the word-wrap toggle)");
+    assert(!d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "the toolbar is shown for a plain .txt file (word-wrap toggle present)");
+    assert(prettyBtn.classList.contains("hidden"), "Pretty Print itself stays hidden for a non-JSON file");
+    assert(!d.querySelector("#itvWrapBtn").classList.contains("hidden"), "the word-wrap toggle is shown for a plain .txt file");
 
     rows().find(r => r.textContent.includes("compact.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "compact.json");
     assert(!settingsGroup.classList.contains("hidden"), "the Settings group is visible for a .json file");
+    assert(!prettyBtn.classList.contains("hidden"), "Pretty Print is shown for a .json file");
     assert(!d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "...so the toolbar itself is shown");
     assert(!prettyBtn.classList.contains("active"), "starts off");
 
@@ -24244,6 +24251,108 @@ await withApp(async (w, d, T) => {
   w.initSyntaxScheme();
   assert(T.syntaxSchemeChoice === "follow-theme", "resolveSyntaxSchemeId falls back to follow-theme for an unknown id, got " + T.syntaxSchemeChoice);
 });
+
+/* ============================================================
+   GROUP 211 — Word wrap in the views (FEATURE_BACKLOG.md #68)
+   Origin: this session (2026-09-14). Two independent, session-cache-persisted
+   toggles: one in the log-view toolbars (state.wrapMessages, also governs the
+   Entry Detail message), one in the Text-View toolbar (state.wrapTextView).
+   Both DISTINCT from the multiline toggle (multiline = literal "\n" breaks;
+   wrap = soft-wrapping a single long line). See docs/ui-and-views.md and
+   docs/persistence-and-sync.md.
+   ============================================================ */
+group(211);
+await withApp(async (w, d, T) => {
+  section("211a. Log-view word-wrap toggle: flips state + body class, wraps long rows, independent of multiline, persists");
+  // Long single-line messages so a wrapped row is measurably taller than one
+  // ROW_HEIGHT (jsdom stubs clientWidth to 800; measureMsgWidth falls back to
+  // the monospace char-width constant, so wrapColsForBody yields a real count).
+  const fa = await w.addFile("a.log", makeLog(0, 6, { suffix: () => "y".repeat(240) }), () => {});
+  T.state.activeId = fa.id;
+  // The default fixed columns total wider than withApp's stubbed 800px body,
+  // leaving no message track; give #tableBody a realistically wide viewport so
+  // wrapColsForBody yields a positive character capacity (real browsers are).
+  Object.defineProperty(d.querySelector("#tableBody"), "clientWidth", { value: 2000, configurable: true });
+  w.render();
+
+  const btnWrap = d.querySelector("#filteredToolbar .toggle-wrap");
+  const btnWrapCtx = d.querySelector("#contextToolbar .toggle-wrap");
+  assert(btnWrap && btnWrapCtx, "a word-wrap toggle exists in BOTH log toolbars (Filtered + Context)");
+  assert(!T.state.wrapMessages, "wrapMessages off by default");
+  assert(!btnWrap.classList.contains("active"), "log word-wrap button starts inactive");
+  assert(!d.body.classList.contains("wrap-messages"), "no .wrap-messages body class by default");
+
+  fireClick(btnWrap, w);
+  assert(T.state.wrapMessages === true, "click flips state.wrapMessages on");
+  assert(d.body.classList.contains("wrap-messages"), "body gains .wrap-messages");
+  assert(btnWrap.classList.contains("active") && btnWrapCtx.classList.contains("active"), "both toolbars' wrap buttons show active (shared .toggle-wrap)");
+  assert(w.needsRowOffsets() === true, "wrap forces the variable-height offsets virtualization path");
+
+  w.render();
+  const longRow = d.querySelector('#tableRows [data-entry-id="' + fa.entries[0].id + '"]');
+  assert(longRow, "the long-message row is rendered");
+  assert(parseInt(longRow.style.height, 10) > T.ROW_HEIGHT,
+    "with wrap on the long-message row is taller than a single ROW_HEIGHT (soft-wrapped to several lines), got " + longRow.style.height);
+
+  // Independent of the multiline toggle — both can be on at once.
+  const btnMulti = d.querySelector("#filteredToolbar .toggle-multiline");
+  fireClick(btnMulti, w);
+  assert(T.state.wrapMessages === true && T.state.multilineMessages === true, "wrap and multiline are independently on");
+  assert(d.body.classList.contains("wrap-messages") && d.body.classList.contains("multiline-messages"), "both body classes present together");
+  fireClick(btnWrap, w);
+  assert(T.state.wrapMessages === false && T.state.multilineMessages === true, "turning wrap off leaves multiline untouched (independent flags)");
+  fireClick(btnMulti, w); // back to a clean baseline
+
+  w.render();
+  const shortAgain = d.querySelector('#tableRows [data-entry-id="' + fa.entries[0].id + '"]');
+  assert(parseInt(shortAgain.style.height, 10) === T.ROW_HEIGHT, "with wrap (and multiline) off the row is back to one ROW_HEIGHT, got " + shortAgain.style.height);
+
+  // Session-cache round-trip of BOTH flags (same tier as multilineMessages).
+  T.state.wrapMessages = true;
+  T.state.wrapTextView = true;
+  w.updateWrapMsgButton();
+  w.updateWrapTextViewButton();
+  await w.persistMetaNow();
+  const meta = await w.cacheStoreOp("meta", "readonly", s => s.get("session"));
+  assert(meta && meta.settings.wrapMessages === true, "cache: wrapMessages written to meta.settings");
+  assert(meta && meta.settings.wrapTextView === true, "cache: wrapTextView written to meta.settings");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("211b. Text-View word-wrap toggle: soft-wraps WITHOUT changing the logical line number, separate from the log toggle");
+  // A four-logical-line text file whose 2nd line is very long (would wrap).
+  const text = "line zero\n" + "z".repeat(300) + "\nline two\nline three";
+  const logicalLines = text.split("\n").length; // 4
+  const v = { kind: "text", name: "sample.txt", text, ext: "txt", prettyPrint: false };
+  T.state.inlineViewer = v;
+  w.renderInlineTextViewer(v);
+
+  const viewerEl = d.querySelector("#inlineTextViewer");
+  assert(d.querySelectorAll("#inlineTextViewer .itv-line").length === logicalLines,
+    "one .itv-line (one line number) per LOGICAL source line (" + logicalLines + "), off by default");
+
+  const btn = d.querySelector("#itvWrapBtn");
+  assert(btn && !btn.classList.contains("hidden"), "Text-View toolbar shows the word-wrap button for a .txt file");
+  assert(!T.state.wrapTextView, "wrapTextView off by default");
+  assert(!d.body.classList.contains("textview-wrap"), "no .textview-wrap body class by default");
+
+  fireClick(btn, w);
+  assert(T.state.wrapTextView === true, "click flips state.wrapTextView on");
+  assert(d.body.classList.contains("textview-wrap"), "body gains .textview-wrap");
+  assert(btn.classList.contains("active"), "Text-View wrap button shows active");
+  assert(!d.body.classList.contains("wrap-messages"), "Text-View wrap is independent of the log-view wrap (no .wrap-messages)");
+
+  // A wrapped display line must NOT get its own line number: the count of
+  // numbered .itv-line elements is unchanged across a re-render with wrap on.
+  w.renderInlineTextViewer(v);
+  assert(d.querySelectorAll("#inlineTextViewer .itv-line").length === logicalLines,
+    "with wrap ON the logical line count is unchanged (" + logicalLines + ") — a wrapped continuation shares its line's number, does not add one");
+
+  // The line number is a CSS ::before counter on .itv-line, so the long
+  // (wrapping) line is still a single .itv-line element carrying one number.
+  const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
+  assert(lines[1] && lines[1].textContent.length >= 300, "the long line is still ONE .itv-line element (its whole text in a single numbered line)");
+}, { indexedDB: new IDBFactory() });
 
 /* ============================================================
    Summary
@@ -27154,7 +27263,10 @@ process.exitCode = failed ? 1 : 0;
       199ad covers the new JSON Pretty Print toggle (#itvPrettyPrintBtn,
       viewer.prettyPrint) — reformats without mutating the underlying
       source text, and refuses with a toast rather than silently no-op-ing
-      on invalid JSON.
+      on invalid JSON. (Updated 2026-09-14 for FEATURE_BACKLOG.md #68: the
+      Settings group + toolbar now show for ANY text file since they hold the
+      Text-View word-wrap toggle too; Pretty Print itself still hides for a
+      non-JSON file — see Group 211.)
    ============================================================ */
 
 /* ============================================================
@@ -27434,4 +27546,16 @@ process.exitCode = failed ? 1 : 0;
       philogg-custom-syntax-schemes, list/select rendering, delete → fall back
       to follow-theme). 210d: a stale scheme id in localStorage falls back to
       follow-theme on init.
+   Group 211 — this session (2026-09-14), FEATURE_BACKLOG.md #68 (word wrap):
+      two independent, session-cache-persisted soft-wrap toggles, distinct
+      from the multiline toggle. 211a: the log-view toggle (.toggle-wrap in
+      both log toolbars) flips state.wrapMessages + the body .wrap-messages
+      class, makes a long-message row taller than one ROW_HEIGHT (folded into
+      the same variable-height offsets virtualization multiline uses), is
+      independent of multilineMessages, and round-trips (with wrapTextView)
+      through the session cache's meta.settings. 211b: the Text-View toggle
+      (#itvWrapBtn) flips state.wrapTextView + body .textview-wrap without
+      changing the number of numbered .itv-line elements — a wrapped display
+      line shares its logical line's number rather than adding one — and is
+      independent of the log-view toggle.
    ============================================================ */

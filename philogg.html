@@ -1789,6 +1789,35 @@
      toggle covers — without touching the Extraction/Link views, which don't
      use this class at all. */
   .multiline-messages .col-msg{white-space:pre; text-overflow:clip; line-height:15px;}
+  /* Word-wrap message display (state.wrapMessages, toggled via the log
+     toolbars' .toggle-wrap button — FEATURE_BACKLOG.md #68). DISTINCT from
+     the multiline toggle above: multiline renders literal "\n" breaks that
+     are already in e.message; word-wrap SOFT-wraps a single long line so it
+     no longer needs horizontal scrolling. The two are independent and
+     combine. `word-break:break-all` (rather than break-word / normal word
+     wrapping) is deliberate and load-bearing: it packs every visual line to
+     exactly the message track's character capacity, so a row's wrapped line
+     count is EXACTLY ceil(chars / columns) — computable from data alone
+     (messageWrapLines/wrapColsForBody), which is what keeps the offsets-array
+     virtualization exact, the same invariant the multiline comment above
+     depends on. A true (word-boundary) wrap would make a row's height depend
+     on where words happen to fall, which the windowing math can't predict
+     without measuring every row's DOM — the exact trade-off the multiline
+     feature already refused. line-height matches MULTILINE_LINE_HEIGHT for
+     the same reason. Wrap-only (multiline off) uses white-space:normal so
+     literal "\n"s collapse just as they do in the default nowrap view;
+     wrap+multiline uses pre-wrap so those breaks are kept and each resulting
+     line then soft-wraps. Applied via a body-level class so it reaches both
+     #tableRows and #highlightRows, exactly like .multiline-messages. */
+  .wrap-messages:not(.multiline-messages) .col-msg{white-space:normal; word-break:break-all; text-overflow:clip; line-height:15px;}
+  .wrap-messages.multiline-messages .col-msg{white-space:pre-wrap; word-break:break-all; text-overflow:clip; line-height:15px;}
+  /* With wrap on, the message track must be free to shrink and wrap rather
+     than being forced to its widest line's width — that forced width is what
+     drives the horizontal scrollbar in the non-wrap views (see the
+     #tableRows/#highlightRows .col-msg min-width:max-content rule above and
+     syncTableRowsWidth/syncHighlightRowsWidth, both short-circuited when
+     wrap is on). */
+  .wrap-messages #tableRows .col-msg, .wrap-messages #highlightRows .col-msg{min-width:0;}
 
   .lvl-error .col-bar{background:var(--level-error);}
   .lvl-error .level-badge{color:var(--level-error); background:color-mix(in srgb, var(--level-error) 28%, transparent);}
@@ -1862,11 +1891,21 @@
      section (the same .tree-del ✕ a log file's row already uses), not a
      separate control living on the viewer itself. See renderZipEntryRow. */
   #inlineViewerBody{flex:1 1 auto; min-height:0; overflow:auto; position:relative;}
+  /* Inline Text View. Its OWN word-wrap toggle (state.wrapTextView /
+     body.textview-wrap, the #itvWrapBtn in the Text-View toolbar —
+     FEATURE_BACKLOG.md #68), separate from the log view's toggle. Off
+     (default) = white-space:pre, long lines scroll horizontally
+     (#inlineViewerBody overflow:auto); on = pre-wrap, they soft-wrap.
+     CRITICAL: the line number is a CSS ::before counter on each `.itv-line`
+     (one per LOGICAL source line — see the gutter comment below), so a
+     wrapped continuation stays inside the same `.itv-line` and does NOT get
+     its own number; wrapping never shifts the numbering. */
   #inlineTextViewer{
     margin:0; padding:12px 0; font-family:var(--font-mono); font-size:12px; line-height:1.6;
-    color:var(--text-primary); white-space:pre-wrap; word-break:break-word;
+    color:var(--text-primary); white-space:pre; word-break:normal;
     counter-reset:itv-line;
   }
+  .textview-wrap #inlineTextViewer{white-space:pre-wrap; word-break:break-word;}
   /* Bugfix (person-reported: the previously-open XML's fold arrows/text
      still visibly showed "behind"/around a newly opened image): every
      other `.hidden`-toggled element in this file gets its OWN `#id.hidden`
@@ -1971,6 +2010,11 @@
   #inlineViewerToolbar.hidden{display:none;}
   #inlineViewerToolbar .toolbar-group{display:flex; align-items:center; gap:4px;}
   #inlineViewerToolbar .toolbar-group.hidden, #itvToolbarSep.hidden{display:none;}
+  /* Individual settings-group buttons hide independently now: the Settings
+     group shows for ANY text file (so #itvWrapBtn, the Text-View word-wrap
+     toggle, is available on .txt/.xml/.json), but Pretty Print stays
+     JSON-only — see updateInlineViewerToolbar. */
+  #itvWrapBtn.hidden, #itvPrettyPrintBtn.hidden{display:none;}
   /* Same non-icon button look #plotToolbar's own zoom controls use (see
      that selector's own comment) — the {-,+,Reset} buttons aren't square
      icon glyphs, so they stay off the 28x28 .toolbar-icon-btn shape. */
@@ -2146,15 +2190,23 @@
     font-family:var(--font-mono); font-size:11px; color:var(--text-secondary);
   }
 
-  #detailBody{flex:1 1 auto; overflow-y:auto; padding:12px 16px;}
+  #detailBody{flex:1 1 auto; overflow:auto; padding:12px 16px;}
   #detailPlaceholder{
     display:none; height:100%; align-items:center; justify-content:center;
     color:var(--text-tertiary); font-size:12px; text-align:center;
   }
+  /* Entry Detail message. Governed by the LOG-view word-wrap toggle
+     (state.wrapMessages / body.wrap-messages) — the detail panel shows the
+     selected LOG entry, so the same toggle that wraps its row wraps its
+     detail (FEATURE_BACKLOG.md #68; the inline Text View has its OWN toggle,
+     see #inlineTextViewer). Off (default) = no wrap, the panel scrolls
+     horizontally (#detailBody overflow:auto), matching the log rows' own
+     off-state; on = soft-wrap. */
   #detailMessage{
     display:none; margin:0; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); line-height:1.65;
-    color:var(--text-primary); white-space:pre-wrap; word-break:break-word;
+    color:var(--text-primary); white-space:pre; word-break:normal;
   }
+  .wrap-messages #detailMessage{white-space:pre-wrap; word-break:break-word;}
   #detailPanel.empty #detailPlaceholder{display:flex;}
   #detailPanel.empty #detailMessage{display:none;}
   #detailPanel:not(.empty) #detailPlaceholder{display:none;}
@@ -3736,6 +3788,7 @@
             <div class="toolbar-group" data-toolbar-group="settings">
               <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
               <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line messages"></button>
+              <button type="button" class="toolbar-icon-btn toggle-wrap" title="Word wrap"></button>
               <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
               <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
               <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
@@ -3787,6 +3840,7 @@
                 <button type="button" class="toolbar-icon-btn toggle-pin" title="Pin bookmarks"></button>
                 <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
                 <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line messages"></button>
+                <button type="button" class="toolbar-icon-btn toggle-wrap" title="Word wrap"></button>
                 <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
                 <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
                 <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
@@ -3883,6 +3937,7 @@
           </div>
           <span id="itvToolbarSep" class="ctx-toolbar-sep hidden"></span>
           <div class="toolbar-group" data-toolbar-group="settings">
+            <button type="button" id="itvWrapBtn" class="toolbar-icon-btn" title="Word wrap"></button>
             <button type="button" id="itvPrettyPrintBtn" class="toolbar-icon-btn" title="Pretty-print this JSON">{ }</button>
           </div>
         </div>
@@ -5165,6 +5220,11 @@ const ICON_NOTE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" s
 // in for "multi-line text" the same way ICON_PIN's thumbtack stands in for
 // "pin". See PROJECT.md "Multiline message display toggle".
 const ICON_MULTILINE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
+// Word-wrap toggle (.toggle-wrap in the log toolbars, #itvWrapBtn in the
+// Text-View toolbar — FEATURE_BACKLOG.md #68): a line that runs right, then
+// curls back down and left to a return arrowhead, standing in for "this line
+// wraps back". Distinct from ICON_MULTILINE's plain stacked lines.
+const ICON_WRAP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.7h11"/><path d="M2.5 8h9a2.3 2.3 0 0 1 0 4.6H7.5"/><path d="M9.3 10.6 7.2 12.3l2.1 1.7"/><path d="M2.5 12.6h2.6"/></svg>';
 const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="1.3"/><path d="M6 2.7v10.6M10.3 2.7v10.6"/></svg>';
 // Highlighter-pen glyph for #btnTextMatchHighlight — a pen tip drawing an
 // underline stroke, standing in for "mark/highlight" the same way
@@ -6700,6 +6760,11 @@ const state = {
                            // a person actually has notes they want to see inline.
   pinBookmarksInFilteredView: false, // see PROJECT.md "Pin bookmarks into the Filtered View"
   multilineMessages: false, // see PROJECT.md "Multiline message display toggle"; global, session-cache-persisted
+  wrapMessages: false,      // Word-wrap the log message column (#68). Global, session-cache-persisted. Independent
+                            // of multilineMessages (both can be on). Also governs the Entry Detail message wrap,
+                            // since the detail panel shows the selected log entry — see docs/ui-and-views.md.
+  wrapTextView: false,      // Word-wrap the inline Text View (#68). Global, session-cache-persisted, separate from
+                            // wrapMessages. Line numbers stay per LOGICAL line (CSS ::before counter on .itv-line).
   // Log view column visibility/width (FEATURE_BACKLOG.md "Column visibility
   // / width persistence in the log view"). Time/Level/Message are always
   // shown (no visibility entry); Message has no width of its own (1fr, the
@@ -10551,6 +10616,7 @@ const extractStatsContent = el("#extractStatsContent");
 const btnPinBookmarks = elAll(".toggle-pin");
 const btnNotes = elAll(".toggle-notes");
 const btnMultilineMsg = elAll(".toggle-multiline");
+const btnWrapMsg = elAll(".toggle-wrap");
 const btnUndo = el("#btnUndo");
 const btnRedo = el("#btnRedo");
 const extractPatternEl = el("#extractPatternView");
@@ -15547,13 +15613,64 @@ function noteHeightForEntry(e) {
   if (!note) return 0;
   return messageLineCount(note) * NOTE_LINE_HEIGHT + NOTE_ROW_VPAD;
 }
+/* ---------- Word-wrap message height support (state.wrapMessages) ----------
+   Word-wrap is folded into the exact-height virtualization the multiline
+   feature already established: a wrapped row's height is ROW_HEIGHT plus one
+   MULTILINE_LINE_HEIGHT per EXTRA visual line, so tableRowOffsets/
+   highlightRowOffsets keep summing exact heights. The one thing that must be
+   exact is the visual line count, and the .wrap-messages CSS uses
+   word-break:break-all precisely so each visual line holds exactly the track's
+   character capacity — making the count ceil(chars / columns), computable here
+   from data alone (no per-row DOM measurement). The two views can be different
+   widths (Stacked shows both at once), so each stores its own column count,
+   set when its offsets are built and reused by its render pass. */
+let tableWrapCols = 0;      // Filtered view's message-track char capacity when wrap on (0 = wrap off / unmeasurable)
+let highlightWrapCols = 0;  // Context view's, same contract
+// One real measurement of a 10-char monospace run (the log font is monospace),
+// divided back out to a single character's advance width. Cheap enough to run
+// once per offsets build; not cached, so it follows a log-text-scale change.
+function msgCharWidth() {
+  const w = measureMsgWidth("0000000000") / 10;
+  return w > 0 ? w : MONO_CHAR_WIDTH_FALLBACK;
+}
+// Character capacity of the message track in a given scroll body. Biased one
+// character narrower than the true width so the char-count line estimate can
+// only ever OVER-allocate a row (at worst a hair of trailing blank space),
+// never UNDER-allocate it (which would clip the last wrapped line). Returns 0
+// when wrap is off or the body isn't measurable yet (e.g. jsdom, clientWidth
+// 0) — callers then fall back to the plain non-wrapped ROW_HEIGHT.
+function wrapColsForBody(bodyEl) {
+  if (!state.wrapMessages) return 0;
+  const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - lastColumnEdgeX - COLUMN_GRID_GAP;
+  if (!(track > 0)) return 0;
+  const cw = msgCharWidth();
+  return Math.max(1, Math.floor((track - cw) / cw));
+}
+// Visual line count for a message soft-wrapped into `cols` columns. Exact for
+// the .wrap-messages CSS (break-all packs each line to `cols` chars). Honors
+// multiline: with it on, literal "\n"s split first and each part wraps; with
+// it off, runs of whitespace collapse to single spaces exactly as
+// white-space:normal renders them.
+function messageWrapLines(message, cols) {
+  if (cols < 1) return 1;
+  if (state.multilineMessages) {
+    let total = 0;
+    const parts = message ? message.split("\n") : [""];
+    for (const p of parts) total += Math.max(1, Math.ceil(p.length / cols));
+    return total;
+  }
+  const collapsed = message ? message.replace(/\s+/g, " ").trim() : "";
+  return Math.max(1, Math.ceil(collapsed.length / cols));
+}
 // The entry's OWN row height, excluding any note-row rendered as its sibling
 // right below it (used for the .log-row element's own style.height — the
 // note-row gets its own separate height, see renderVisibleRows/
-// renderHighlightVisibleRows).
-function baseRowHeightForEntry(e) {
-  if (!state.multilineMessages) return ROW_HEIGHT;
-  const n = messageLineCount(e.message);
+// renderHighlightVisibleRows). `cols` is the wrapping view's char capacity
+// (tableWrapCols/highlightWrapCols); 0/absent = no word-wrap.
+function baseRowHeightForEntry(e, cols) {
+  const wrapOn = state.wrapMessages && cols >= 1;
+  if (!state.multilineMessages && !wrapOn) return ROW_HEIGHT;
+  const n = wrapOn ? messageWrapLines(e.message, cols) : messageLineCount(e.message);
   return n > 1 ? ROW_HEIGHT + (n - 1) * MULTILINE_LINE_HEIGHT : ROW_HEIGHT;
 }
 // A row's TOTAL height in either virtualized view: the entry's own line(s)
@@ -15561,22 +15678,27 @@ function baseRowHeightForEntry(e) {
 // forces the offsets-array virtualization path exactly like multiline
 // messages already do, since a note-bearing row is no longer a fixed
 // ROW_HEIGHT even with state.multilineMessages off). This is what
-// buildRowOffsets sums over — it MUST equal baseRowHeightForEntry(e) +
+// buildRowOffsets sums over — it MUST equal baseRowHeightForEntry(e, cols) +
 // noteHeightForEntry(e) exactly, or the two DOM elements' real heights drift
 // out of sync with the virtualization math.
-function rowHeightForEntry(e) {
-  return baseRowHeightForEntry(e) + noteHeightForEntry(e);
+function rowHeightForEntry(e, cols) {
+  return baseRowHeightForEntry(e, cols) + noteHeightForEntry(e);
 }
 // Whether the offsets-array virtualization path (tableRowOffsets/
 // highlightRowOffsets, built via buildRowOffsets) is needed instead of the
 // plain `index * ROW_HEIGHT` arithmetic — true whenever ANY row's height can
-// differ from the fixed ROW_HEIGHT default: multiline messages, or notes
-// being shown at all (cheaper to always build the array while notes are on
-// than to track "does any currently-loaded entry actually have a note").
-function needsRowOffsets() { return state.multilineMessages || state.showNotes; }
+// differ from the fixed ROW_HEIGHT default: multiline messages, word-wrap, or
+// notes being shown at all (cheaper to always build the array while notes are
+// on than to track "does any currently-loaded entry actually have a note").
+function needsRowOffsets() { return state.multilineMessages || state.showNotes || state.wrapMessages; }
 function buildRowOffsets(entries) {
+  // Recompute (and cache) the Filtered view's wrap column count here so the
+  // heights summed below and the per-row heights renderVisibleRows sets from
+  // tableWrapCols come from the SAME value — no drift between offsets and rows.
+  tableWrapCols = wrapColsForBody(tableBody);
+  const cols = tableWrapCols;
   const offsets = new Float64Array(entries.length + 1);
-  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i]);
+  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols);
   return offsets;
 }
 // Largest i such that offsets[i] <= y, clamped to a valid row index (offsets
@@ -15941,7 +16063,7 @@ function renderVisibleRows() {
     const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
     row.className = cls;
-    row.style.height = baseRowHeightForEntry(e) + "px";
+    row.style.height = baseRowHeightForEntry(e, tableWrapCols) + "px";
     row.dataset.entryId = e.id;
     row.innerHTML =
       bracketHtml +
@@ -16398,6 +16520,11 @@ function buildContextView(rootId) {
 // topVisibleEntryId/captureViewAnchor/restoreViewAnchor/minimapRenderedSpan
 // keep working on this array unchanged.
 function buildContextRowOffsets(entries, strips) {
+  // Same reasoning as buildRowOffsets: cache this view's own wrap column count
+  // (its body can be a different width than the Filtered view's in Stacked)
+  // so offsets and renderHighlightVisibleRows' per-row heights agree.
+  highlightWrapCols = wrapColsForBody(highlightBody);
+  const cols = highlightWrapCols;
   const fillerH = key => {
     const arr = strips.get(key);
     return arr ? arr.length * CONTEXT_STRIP_HEIGHT : 0;
@@ -16405,7 +16532,7 @@ function buildContextRowOffsets(entries, strips) {
   const offsets = new Float64Array(entries.length + 1);
   offsets[0] = fillerH(-1);
   for (let i = 0; i < entries.length; i++) {
-    offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i]) + fillerH(i);
+    offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols) + fillerH(i);
   }
   return offsets;
 }
@@ -16421,6 +16548,8 @@ function buildContextRowOffsets(entries, strips) {
    than a constant that silently drifts out of sync with the CSS. */
 let cachedMaxHighlightMsgPixelWidth = 0;
 function syncHighlightRowsWidth() {
+  // See syncTableRowsWidth: wrap on -> no horizontal overflow to scroll to.
+  if (state.wrapMessages) { highlightRows.style.width = ""; return; }
   const cs = getComputedStyle(highlightRows);
   const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
   const contentW = cachedMaxHighlightMsgPixelWidth > 0
@@ -16976,7 +17105,7 @@ function renderHighlightVisibleRows() {
     const deltaMs = prevE ? (e.ts - prevE.ts) : null;
 
     row.className = cls;
-    row.style.height = baseRowHeightForEntry(e) + "px";
+    row.style.height = baseRowHeightForEntry(e, highlightWrapCols) + "px";
     row.dataset.entryId = e.id;
     // markFieldHtml short-circuits to a plain escapeHtml before any range
     // search when nothing can contribute a mark (no coloured rules, or the
@@ -19405,6 +19534,15 @@ function updateMultilineMsgButton() {
   document.body.classList.toggle("multiline-messages", state.multilineMessages);
 }
 
+// Reflects state.wrapMessages on the log toolbars' word-wrap buttons and on
+// the body-level class the .wrap-messages CSS keys off (log rows AND the Entry
+// Detail message) — same pattern as updateMultilineMsgButton. Called after
+// every toggle and after session restore.
+function updateWrapMsgButton() {
+  btnWrapMsg.forEach(b => b.classList.toggle("active", state.wrapMessages));
+  document.body.classList.toggle("wrap-messages", state.wrapMessages);
+}
+
 // A plain persistent toggle, not a popup — full render() (rather than the
 // targeted renderMainView() the level-filter pills use) is simplest here
 // and correctness matters more than the render cost for a rare click: it
@@ -19445,6 +19583,17 @@ btnMultilineMsg.forEach(b => b.addEventListener("click", () => {
   // a hidden #tableBody — nothing stale to guard against).
   state.multilineMessages = !state.multilineMessages;
   updateMultilineMsgButton();
+  render();
+}));
+
+// Word-wrap toggle (FEATURE_BACKLOG.md #68) — same plain-persistent-toggle
+// shape as #btnMultilineMsg above: row heights change (baseRowHeightForEntry
+// now folds wrapped-line count in), so a full render() rebuilds the offsets
+// and both views' visible windows, and flows through schedulePersistMeta() so
+// the flag survives reload. Independent of multiline — both can be on.
+btnWrapMsg.forEach(b => b.addEventListener("click", () => {
+  state.wrapMessages = !state.wrapMessages;
+  updateWrapMsgButton();
   render();
 }));
 
@@ -19616,7 +19765,13 @@ function measureMsgWidth(text) {
     // overflow:visible cancels .col-msg's own overflow:hidden/ellipsis,
     // neither of which should clip an unconstrained shrink-to-fit box
     // anyway, but this keeps the intent explicit.
-    msgMeasureEl.style.cssText = "position:absolute; visibility:hidden; left:-99999px; top:0; overflow:visible; width:auto;";
+    // white-space:nowrap is explicit here (not just inherited from .col-msg's
+    // own base rule): with word-wrap on, body.wrap-messages otherwise reaches
+    // this element too (it carries class .col-msg) and would switch it to
+    // normal/pre-wrap, so a shrink-to-fit box would wrap to its longest WORD
+    // instead of reporting the full line's natural width. Pinning nowrap keeps
+    // measureMsgWidth (and msgCharWidth, one word anyway) correct in every mode.
+    msgMeasureEl.style.cssText = "position:absolute; visibility:hidden; left:-99999px; top:0; overflow:visible; width:auto; white-space:nowrap;";
     document.body.appendChild(msgMeasureEl);
   }
   msgMeasureEl.textContent = text;
@@ -19663,6 +19818,10 @@ function computeMaxMessageWidth(entries) {
 // .style.width here is the OUTER (border-box) size.
 const TABLE_ROWS_H_PADDING = 14 + 16;
 function syncTableRowsWidth() {
+  // Word-wrap on: the message wraps within the viewport, so there is nothing
+  // to scroll to horizontally — clear any forced width and let #tableRows
+  // stretch-fill (left:0;right:0), same as a short-message file.
+  if (state.wrapMessages) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
     ? lastColumnEdgeX + COLUMN_GRID_GAP + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
     : 0;
@@ -20484,6 +20643,7 @@ const inlineViewerToolbar = el("#inlineViewerToolbar");
 const itvControlsGroup = inlineViewerToolbar.querySelector('[data-toolbar-group="controls"]');
 const itvSettingsGroup = inlineViewerToolbar.querySelector('[data-toolbar-group="settings"]');
 const itvToolbarSep = el("#itvToolbarSep");
+const itvWrapBtn = el("#itvWrapBtn");
 // Unified toolbar (person-requested): one row, shared by the text and
 // image sub-viewers, instead of the image viewer's own floating overlay —
 // Controls (zoom) only makes sense for an image, Settings (Pretty Print)
@@ -20493,12 +20653,33 @@ const itvToolbarSep = el("#itvToolbarSep");
 // .txt file.
 function updateInlineViewerToolbar(v) {
   const showControls = v.kind === "image";
-  const showSettings = v.kind === "text" && v.ext === "json";
+  const isText = v.kind === "text";
+  // Settings group shows for ANY text file so the word-wrap toggle (#itvWrapBtn,
+  // FEATURE_BACKLOG.md #68) is reachable on .txt/.xml/.json; Pretty Print stays
+  // JSON-only and hides itself for the rest.
+  const showSettings = isText;
+  itvWrapBtn.classList.toggle("hidden", !isText);
+  itvWrapBtn.classList.toggle("active", state.wrapTextView);
+  itvPrettyPrintBtn.classList.toggle("hidden", !(isText && v.ext === "json"));
   itvControlsGroup.classList.toggle("hidden", !showControls);
   itvSettingsGroup.classList.toggle("hidden", !showSettings);
   itvToolbarSep.classList.toggle("hidden", !(showControls && showSettings));
   inlineViewerToolbar.classList.toggle("hidden", !(showControls || showSettings));
 }
+
+// Reflects state.wrapTextView on the body-level class the .textview-wrap CSS
+// keys off and on the toolbar button. A pure CSS switch (no innerHTML rebuild),
+// so unlike the Pretty Print toggle it doesn't re-render the viewer — the text
+// stays put, only its wrapping changes.
+function updateWrapTextViewButton() {
+  document.body.classList.toggle("textview-wrap", state.wrapTextView);
+  itvWrapBtn.classList.toggle("active", state.wrapTextView);
+}
+itvWrapBtn.addEventListener("click", () => {
+  state.wrapTextView = !state.wrapTextView;
+  updateWrapTextViewButton();
+  schedulePersistMeta();
+});
 
 // Bug 2/3 fix (person-reported): the single shared "a non-log entry becomes
 // the active content" transition — every call site that sets
@@ -27911,6 +28092,8 @@ function buildCacheMeta() {
       sortDir: state.sortDir,
       pinBookmarksInFilteredView: state.pinBookmarksInFilteredView,
       multilineMessages: state.multilineMessages,
+      wrapMessages: state.wrapMessages,
+      wrapTextView: state.wrapTextView,
       showNotes: state.showNotes,
       columnVisible: { ...state.columnVisible },
       columnWidths: { ...state.columnWidths },
@@ -28161,6 +28344,8 @@ async function restoreSessionFromCache() {
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
     state.multilineMessages = !!s.multilineMessages;
+    state.wrapMessages = !!s.wrapMessages;
+    state.wrapTextView = !!s.wrapTextView;
     state.showNotes = !!s.showNotes;
     if (s.columnVisible && typeof s.columnVisible === "object") {
       HIDEABLE_COLUMNS.forEach(key => { if (typeof s.columnVisible[key] === "boolean") state.columnVisible[key] = s.columnVisible[key]; });
@@ -28192,6 +28377,8 @@ async function restoreSessionFromCache() {
     updatePinBookmarksButton();
     updateNotesButton();
     updateMultilineMsgButton();
+    updateWrapMsgButton();
+    updateWrapTextViewButton();
     applyRowGrid();
     render();
   }
@@ -29063,6 +29250,8 @@ btnRedo.innerHTML = ICON_REDO;
 btnPinBookmarks.forEach(b => b.innerHTML = ICON_PIN);
 btnNotes.forEach(b => b.innerHTML = ICON_NOTE);
 btnMultilineMsg.forEach(b => b.innerHTML = ICON_MULTILINE);
+btnWrapMsg.forEach(b => b.innerHTML = ICON_WRAP);
+itvWrapBtn.innerHTML = ICON_WRAP;
 detailFormatToggleBtn.innerHTML = ICON_FORMAT_HIGHLIGHT;
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
@@ -29082,6 +29271,8 @@ updateUndoRedoButtons();
 updatePinBookmarksButton();
 updateNotesButton();
 updateMultilineMsgButton();
+updateWrapMsgButton();
+updateWrapTextViewButton();
 applyRowGrid();
 initTheme();
 initUiFont();
