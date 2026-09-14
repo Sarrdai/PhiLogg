@@ -2606,8 +2606,20 @@
   .filter-library-icon-grid button:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .filter-library-icon-grid button.active{color:var(--accent-strong); border-color:var(--accent-strong); background:var(--accent-soft);}
   .filter-library-icon-sep{width:100%; height:1px; margin:4px 0; background:var(--border-soft);}
-  .filter-library-icon-grid button.filter-library-icon-emoji,
-  .filter-library-row-icon.filter-library-icon-emoji{font-size:15px; line-height:1;}
+  /* Emoji icons (person-reported: not centered) — an explicit line-height
+     matching each button's own content-box height centers a single-line
+     glyph more reliably across color-emoji fonts/platforms than relying on
+     flex align-items alone (font ascent/descent metrics for an emoji glyph
+     don't always match the surrounding text font's). .row-action-hit needs
+     its own font-size too — unlike the fixed-viewBox SVG icons, a plain
+     emoji character otherwise inherits the toolbar's smaller ambient size. */
+  .filter-library-icon-grid button.filter-library-icon-emoji{
+    font-size:15px; line-height:24px; text-align:center;
+  }
+  .filter-library-row-icon.filter-library-icon-emoji,
+  .row-action-hit.filter-library-icon-emoji{
+    font-size:15px; line-height:26px; text-align:center;
+  }
   .filter-library-icon-freeinput{
     width:100%; margin-top:4px; height:26px; border:1px solid var(--border); border-radius:7px;
     background:transparent; color:var(--text-primary); font-size:13px; padding:0 8px;
