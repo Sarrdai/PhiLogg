@@ -125,7 +125,11 @@
        These can also be overridden independently of the app theme by a
        chosen syntax scheme (FEATURE_BACKLOG.md #67, applySyntaxScheme() sets
        them inline); "Follow app theme" (the default) leaves this cascade
-       untouched. */
+       untouched for a custom app theme, but for a BUILT-IN one (Catppuccin
+       included) applySyntaxScheme() sets them inline too, from that theme's
+       own BUILTIN_SYNTAX_SCHEMES pendant — needed because only Dark/Light
+       get their own --syntax-* block below, so the cascade alone can't tell
+       the four Catppuccin flavors apart. */
     --syntax-tag:#e8a94a;
     --syntax-attr-name:#8bd17c;
     --syntax-attr-value:#6fa8ff;
@@ -5327,12 +5331,17 @@ const BUILTIN_THEMES = [
    scheme be picked INDEPENDENTLY of the app theme instead: a chosen scheme
    overrides the --syntax-* vars inline via applySyntaxScheme(), on top of
    whatever applyTheme() set. The default choice, "Follow app theme"
-   (FOLLOW_THEME_SYNTAX_ID), is a no-op — it preserves the pre-#67 behaviour
-   exactly, including any custom theme's own syntaxColors block. Built-in
-   schemes are one curated pendant per built-in app theme; custom schemes
-   are user-imported JSON (our own format, see importSyntaxSchemeJson),
-   persisted to localStorage like customThemes. Persisted on the same tier
-   as the theme/accent choices. */
+   (FOLLOW_THEME_SYNTAX_ID), tracks the ACTIVE app theme: for a built-in app
+   theme it re-applies that theme's own BUILTIN_SYNTAX_SCHEMES pendant (the
+   CSS cascade alone can't do this — only Dark/Light declare their own
+   --syntax-* block in CSS, so the four Catppuccin flavors would otherwise
+   all silently fall back to Dark's colors and never visibly change); for a
+   custom app theme it's a no-op, preserving the pre-#67 behaviour (its own
+   optional syntaxColors block, else the :root CSS-cascade defaults). See
+   applySyntaxScheme(). Built-in schemes are one curated pendant per
+   built-in app theme; custom schemes are user-imported JSON (our own
+   format, see importSyntaxSchemeJson), persisted to localStorage like
+   customThemes. Persisted on the same tier as the theme/accent choices. */
 const SYNTAX_SCHEME_STORAGE_KEY = "philogg-syntax-scheme";
 const CUSTOM_SYNTAX_SCHEMES_STORAGE_KEY = "philogg-custom-syntax-schemes";
 const SYNTAX_SCHEME_FILE_FORMAT = "philogg-syntax-scheme";
@@ -5394,7 +5403,7 @@ function applyTheme(themeId) {
     if (custom.activeTextLight) THEME_ON_KEYS.forEach(k => style.setProperty("--" + k, "#fff"));
     if (custom.syntaxColors) SYNTAX_COLOR_KEYS.forEach(k => { if (custom.syntaxColors[k]) style.setProperty("--" + k, custom.syntaxColors[k]); });
   }
-  applySyntaxScheme(); // a chosen syntax scheme overrides the --syntax-* vars set above; "Follow app theme" is a no-op (see #67)
+  applySyntaxScheme(); // a chosen syntax scheme (or "Follow app theme"'s own built-in pendant) overrides the --syntax-* vars set above (see #67)
   applyAccentChoice(themeId); // re-picked --accent (if any) for THIS theme, on top of its defaults above
   const select = document.getElementById("settingsThemeSelect");
   if (select && select.value !== themeId) select.value = themeId;
@@ -5890,10 +5899,19 @@ function resolveSyntaxSchemeId(id) {
 
 // Called from inside applyTheme(), after the theme's own colors/syntaxColors
 // are in place: a specific scheme overrides the eight --syntax-* vars inline
-// (decoupling highlight colors from the app theme); "Follow app theme"
-// leaves them exactly as applyTheme() set them (pre-#67 behaviour).
+// (decoupling highlight colors from the app theme). "Follow app theme" falls
+// back to the BUILTIN_SYNTAX_SCHEMES entry matching the now-active theme id,
+// if one exists — Dark/Light already get their own --syntax-* block from the
+// CSS cascade alone, but the four Catppuccin flavors don't (only custom
+// themes get an inline syntaxColors override from applyTheme()), so without
+// this they'd all silently keep showing Dark's colors, the display never
+// visibly following the theme switch. No match (a custom app theme, or one
+// with no pendant) leaves the vars exactly as applyTheme() set them — its
+// own syntaxColors block, or the :root CSS-cascade defaults — same as before
+// #67 introduced this override step.
 function applySyntaxScheme() {
-  const scheme = resolveSyntaxScheme(syntaxSchemeChoice);
+  const scheme = resolveSyntaxScheme(syntaxSchemeChoice) ||
+    (syntaxSchemeChoice === FOLLOW_THEME_SYNTAX_ID ? BUILTIN_SYNTAX_SCHEMES.find(s => s.id === currentThemeId()) : null);
   if (scheme) {
     const style = document.documentElement.style;
     SYNTAX_COLOR_KEYS.forEach(k => { if (scheme.colors[k]) style.setProperty("--" + k, scheme.colors[k]); });
