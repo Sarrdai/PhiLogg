@@ -210,6 +210,11 @@ open it in a browser to view it.
   and the log/text content size. Resizable/toggleable columns, multiline
   message display, multi-row select + copy, and a horizontal scrollbar in
   the Filter view for reading long messages in full.
+- **Word wrap** — a soft-wrap toggle in each log toolbar wraps long messages
+  instead of scrolling sideways (it also wraps the Entry Detail message), and
+  a separate toggle in the Text-View toolbar wraps a plain text file. Both are
+  distinct from multiline display, remembered across reloads, and off by
+  default.
 - **"On open, scroll log to"** (Settings → Behavior) — start at the top
   (default) or jump straight to the bottom, continuing to follow live
   updates from there if Tailing is on.
