@@ -121,7 +121,11 @@
        its own via an optional "syntaxHighlightColors" block, applied inline
        by applyTheme() the same optional way as THEME_COLOR_KEYS; when a
        theme doesn't, these :root values are what the cascade falls back to,
-       so they double as the default for every theme that has no opinion. */
+       so they double as the default for every theme that has no opinion.
+       These can also be overridden independently of the app theme by a
+       chosen syntax scheme (FEATURE_BACKLOG.md #67, applySyntaxScheme() sets
+       them inline); "Follow app theme" (the default) leaves this cascade
+       untouched. */
     --syntax-tag:#e8a94a;
     --syntax-attr-name:#8bd17c;
     --syntax-attr-value:#6fa8ff;
@@ -3478,6 +3482,7 @@
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
       <input type="file" id="themeFileInput" hidden accept=".json,application/json">
+      <input type="file" id="syntaxSchemeFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,text/plain">
     </div>
   </header>
@@ -4521,6 +4526,15 @@
                 <select id="settingsLogFontSelect"></select>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Syntax highlighting</div>
+                <div class="settings-row-hint">Colors for highlighted XML/JSON in the entry detail — pick a scheme or follow the app theme.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsSyntaxSchemeSelect"></select>
+              </div>
+            </div>
             <div class="settings-row hidden" id="settingsAccentRow">
               <div class="settings-row-text">
                 <div class="settings-row-label">Accent color</div>
@@ -4564,6 +4578,15 @@
             <div class="settings-card-footer theme-footer">
               <button type="button" class="btn-mini-outline" id="btnThemeTemplate">Download template…</button>
               <button type="button" class="btn-mini-dashed" id="btnThemeImport">+ Import theme…</button>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Custom syntax schemes — import your own highlight colors as JSON</div>
+          <div class="settings-card" id="customSyntaxSchemeListCard">
+            <div id="customSyntaxSchemeList"></div>
+            <div class="settings-card-footer theme-footer">
+              <button type="button" class="btn-mini-outline" id="btnSyntaxTemplate">Download template…</button>
+              <button type="button" class="btn-mini-dashed" id="btnSyntaxImport">+ Import scheme…</button>
             </div>
           </div>
         </section>
@@ -5260,7 +5283,55 @@ const BUILTIN_THEMES = [
   },
 ];
 
+/* ---- Syntax highlight scheme (FEATURE_BACKLOG.md #67) ----
+   The eight SYNTAX_COLOR_KEYS are, by default, driven by the ACTIVE app
+   theme (its own optional syntaxColors block, else the CSS-cascade
+   defaults in :root / :root[data-theme="light"]). This lets the syntax
+   scheme be picked INDEPENDENTLY of the app theme instead: a chosen scheme
+   overrides the --syntax-* vars inline via applySyntaxScheme(), on top of
+   whatever applyTheme() set. The default choice, "Follow app theme"
+   (FOLLOW_THEME_SYNTAX_ID), is a no-op — it preserves the pre-#67 behaviour
+   exactly, including any custom theme's own syntaxColors block. Built-in
+   schemes are one curated pendant per built-in app theme; custom schemes
+   are user-imported JSON (our own format, see importSyntaxSchemeJson),
+   persisted to localStorage like customThemes. Persisted on the same tier
+   as the theme/accent choices. */
+const SYNTAX_SCHEME_STORAGE_KEY = "philogg-syntax-scheme";
+const CUSTOM_SYNTAX_SCHEMES_STORAGE_KEY = "philogg-custom-syntax-schemes";
+const SYNTAX_SCHEME_FILE_FORMAT = "philogg-syntax-scheme";
+const SYNTAX_SCHEME_FILE_VERSION = 1;
+const FOLLOW_THEME_SYNTAX_ID = "follow-theme";
+
+// One built-in syntax scheme per built-in app theme. Dark/Light reproduce
+// the fixed :root / [data-theme="light"] defaults verbatim; the four
+// Catppuccin flavors get curated palettes drawn from each flavor's own
+// named colors (https://catppuccin.com/palette/) — tags/keys=Blue,
+// attr-name=Yellow, attr-value/string=Green, number=Peach,
+// boolean-null=Mauve, punct=Subtext0. Every scheme defines all eight keys.
+const BUILTIN_SYNTAX_SCHEMES = [
+  { id: "dark", name: "Dark", colors: {
+    "syntax-tag": "#e8a94a", "syntax-attr-name": "#8bd17c", "syntax-attr-value": "#6fa8ff", "syntax-string": "#6fa8ff",
+    "syntax-number": "#c792ea", "syntax-key": "#4fc7c3", "syntax-boolean-null": "#c792ea", "syntax-punct": "#8a92a8" } },
+  { id: "light", name: "Light", colors: {
+    "syntax-tag": "#a06a1c", "syntax-attr-name": "#4a8f3c", "syntax-attr-value": "#1f5fbf", "syntax-string": "#1f5fbf",
+    "syntax-number": "#8e44ad", "syntax-key": "#1b8f8a", "syntax-boolean-null": "#8e44ad", "syntax-punct": "#5b6474" } },
+  { id: "catppuccin-latte", name: "Catppuccin Latte", colors: {
+    "syntax-tag": "#1e66f5", "syntax-attr-name": "#df8e1d", "syntax-attr-value": "#40a02b", "syntax-string": "#40a02b",
+    "syntax-number": "#fe640b", "syntax-key": "#1e66f5", "syntax-boolean-null": "#8839ef", "syntax-punct": "#6c6f85" } },
+  { id: "catppuccin-frappe", name: "Catppuccin Frappé", colors: {
+    "syntax-tag": "#8caaee", "syntax-attr-name": "#e5c890", "syntax-attr-value": "#a6d189", "syntax-string": "#a6d189",
+    "syntax-number": "#ef9f76", "syntax-key": "#8caaee", "syntax-boolean-null": "#ca9ee6", "syntax-punct": "#a5adce" } },
+  { id: "catppuccin-macchiato", name: "Catppuccin Macchiato", colors: {
+    "syntax-tag": "#8aadf4", "syntax-attr-name": "#eed49f", "syntax-attr-value": "#a6da95", "syntax-string": "#a6da95",
+    "syntax-number": "#f5a97f", "syntax-key": "#8aadf4", "syntax-boolean-null": "#c6a0f6", "syntax-punct": "#a5adcb" } },
+  { id: "catppuccin-mocha", name: "Catppuccin Mocha", colors: {
+    "syntax-tag": "#89b4fa", "syntax-attr-name": "#f9e2af", "syntax-attr-value": "#a6e3a1", "syntax-string": "#a6e3a1",
+    "syntax-number": "#fab387", "syntax-key": "#89b4fa", "syntax-boolean-null": "#cba6f7", "syntax-punct": "#a6adc8" } },
+];
+
 let customThemes = [];
+let customSyntaxSchemes = [];              // user-imported syntax schemes: {id, name, colors:{...SYNTAX_COLOR_KEYS}}
+let syntaxSchemeChoice = FOLLOW_THEME_SYNTAX_ID; // "follow-theme" | a built-in/custom scheme id
 
 function loadCustomThemes() {
   let stored = null;
@@ -5286,6 +5357,7 @@ function applyTheme(themeId) {
     if (custom.activeTextLight) THEME_ON_KEYS.forEach(k => style.setProperty("--" + k, "#fff"));
     if (custom.syntaxColors) SYNTAX_COLOR_KEYS.forEach(k => { if (custom.syntaxColors[k]) style.setProperty("--" + k, custom.syntaxColors[k]); });
   }
+  applySyntaxScheme(); // a chosen syntax scheme overrides the --syntax-* vars set above; "Follow app theme" is a no-op (see #67)
   applyAccentChoice(themeId); // re-picked --accent (if any) for THIS theme, on top of its defaults above
   const select = document.getElementById("settingsThemeSelect");
   if (select && select.value !== themeId) select.value = themeId;
@@ -5449,6 +5521,7 @@ function populateThemeSelect() {
 function initTheme() {
   loadCustomThemes();
   loadAccentChoices();
+  initSyntaxScheme(); // before the first applyTheme() below, which reads syntaxSchemeChoice/customSyntaxSchemes
   populateThemeSelect();
   renderCustomThemeList();
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -5745,6 +5818,232 @@ themeFileInput.addEventListener("change", ev => {
 });
 document.getElementById("btnThemeImport").addEventListener("click", () => loadThemeFromFile());
 document.getElementById("btnThemeTemplate").addEventListener("click", () => downloadThemeTemplate());
+
+/* ===================== Syntax highlight scheme (FEATURE_BACKLOG.md #67) =====================
+   Mirrors the custom-theme machinery just above, but for the eight
+   SYNTAX_COLOR_KEYS only, and decoupled from the app theme. See the
+   BUILTIN_SYNTAX_SCHEMES / syntaxSchemeChoice declarations near
+   BUILTIN_THEMES for the model. */
+function loadCustomSyntaxSchemes() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(CUSTOM_SYNTAX_SCHEMES_STORAGE_KEY) || "[]"); } catch { /* corrupt value, fall through to [] */ }
+  customSyntaxSchemes = Array.isArray(stored) ? stored : [];
+}
+
+function saveCustomSyntaxSchemes() {
+  localStorage.setItem(CUSTOM_SYNTAX_SCHEMES_STORAGE_KEY, JSON.stringify(customSyntaxSchemes));
+}
+
+// The scheme object for a chosen id, or null for "Follow app theme" (the
+// default) and any unknown/stale id — in which case applySyntaxScheme()
+// leaves the --syntax-* vars to whatever applyTheme() set (the theme's own
+// syntaxColors block or the CSS-cascade defaults).
+function resolveSyntaxScheme(id) {
+  if (!id || id === FOLLOW_THEME_SYNTAX_ID) return null;
+  return BUILTIN_SYNTAX_SCHEMES.find(s => s.id === id) || customSyntaxSchemes.find(s => s.id === id) || null;
+}
+
+// A stored/imported scheme id can go stale (its custom scheme was deleted,
+// e.g. localStorage edited by hand) — fall back to "Follow app theme".
+function resolveSyntaxSchemeId(id) {
+  if (id === FOLLOW_THEME_SYNTAX_ID) return id;
+  if (BUILTIN_SYNTAX_SCHEMES.some(s => s.id === id) || customSyntaxSchemes.some(s => s.id === id)) return id;
+  return FOLLOW_THEME_SYNTAX_ID;
+}
+
+// Called from inside applyTheme(), after the theme's own colors/syntaxColors
+// are in place: a specific scheme overrides the eight --syntax-* vars inline
+// (decoupling highlight colors from the app theme); "Follow app theme"
+// leaves them exactly as applyTheme() set them (pre-#67 behaviour).
+function applySyntaxScheme() {
+  const scheme = resolveSyntaxScheme(syntaxSchemeChoice);
+  if (scheme) {
+    const style = document.documentElement.style;
+    SYNTAX_COLOR_KEYS.forEach(k => { if (scheme.colors[k]) style.setProperty("--" + k, scheme.colors[k]); });
+  }
+  const select = document.getElementById("settingsSyntaxSchemeSelect");
+  if (select && select.value !== syntaxSchemeChoice) select.value = syntaxSchemeChoice;
+}
+
+function setSyntaxScheme(schemeId) {
+  syntaxSchemeChoice = schemeId;
+  localStorage.setItem(SYNTAX_SCHEME_STORAGE_KEY, schemeId);
+  applyTheme(currentThemeId()); // re-clears + re-applies theme colors, then applySyntaxScheme()
+}
+
+function populateSyntaxSchemeSelect() {
+  const select = document.getElementById("settingsSyntaxSchemeSelect");
+  if (!select) return;
+  select.innerHTML = "";
+  const follow = document.createElement("option");
+  follow.value = FOLLOW_THEME_SYNTAX_ID; follow.textContent = "Follow app theme";
+  select.appendChild(follow);
+  const builtinGroup = document.createElement("optgroup");
+  builtinGroup.label = "Built-in";
+  BUILTIN_SYNTAX_SCHEMES.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.id; opt.textContent = s.name;
+    builtinGroup.appendChild(opt);
+  });
+  select.appendChild(builtinGroup);
+  if (customSyntaxSchemes.length) {
+    const customGroup = document.createElement("optgroup");
+    customGroup.label = "Custom";
+    customSyntaxSchemes.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s.id; opt.textContent = s.name;
+      customGroup.appendChild(opt);
+    });
+    select.appendChild(customGroup);
+  }
+  select.value = syntaxSchemeChoice;
+}
+
+function initSyntaxScheme() {
+  loadCustomSyntaxSchemes();
+  syntaxSchemeChoice = resolveSyntaxSchemeId(localStorage.getItem(SYNTAX_SCHEME_STORAGE_KEY) || FOLLOW_THEME_SYNTAX_ID);
+  populateSyntaxSchemeSelect();
+  renderCustomSyntaxSchemeList();
+}
+
+// A 5-stripe swatch built from the scheme's own token colors, so a row in
+// the Custom syntax schemes list previews it at a glance.
+function syntaxSwatchStyle(colors) {
+  return "background:linear-gradient(90deg," + colors["syntax-tag"] + " 0 20%," + colors["syntax-string"] + " 20% 40%," +
+    colors["syntax-number"] + " 40% 60%," + colors["syntax-key"] + " 60% 80%," + colors["syntax-boolean-null"] + " 80% 100%)";
+}
+
+function renderCustomSyntaxSchemeList() {
+  const container = document.getElementById("customSyntaxSchemeList");
+  if (!container) return;
+  container.innerHTML = "";
+  if (!customSyntaxSchemes.length) {
+    container.innerHTML = '<div class="filter-library-empty">No custom syntax schemes yet — download a template below, fill in your colors, and import it.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  customSyntaxSchemes.forEach(scheme => {
+    const row = document.createElement("div");
+    row.className = "filter-library-row";
+    row.style.cursor = "pointer";
+    row.title = "Use this syntax scheme";
+    row.addEventListener("click", () => setSyntaxScheme(scheme.id));
+
+    const main = document.createElement("div");
+    main.className = "filter-library-row-main theme-row-main";
+    main.innerHTML =
+      '<span class="theme-swatch" style="' + syntaxSwatchStyle(scheme.colors) + '"></span>' +
+      '<span class="filter-library-row-name">' + escapeHtml(scheme.name) + '</span>';
+    row.appendChild(main);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "filter-library-row-del";
+    delBtn.title = "Delete syntax scheme";
+    delBtn.innerHTML = ICON_CLOSE;
+    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeCustomSyntaxScheme(scheme.id); });
+    row.appendChild(delBtn);
+
+    frag.appendChild(row);
+  });
+  container.appendChild(frag);
+}
+
+function removeCustomSyntaxScheme(id) {
+  customSyntaxSchemes = customSyntaxSchemes.filter(s => s.id !== id);
+  saveCustomSyntaxSchemes();
+  populateSyntaxSchemeSelect();
+  renderCustomSyntaxSchemeList();
+  if (syntaxSchemeChoice === id) setSyntaxScheme(FOLLOW_THEME_SYNTAX_ID); // the deleted scheme was active — fall back
+}
+
+// Seeds the template from the CURRENTLY ACTIVE --syntax-* computed values
+// (whatever theme/scheme is in effect), so "download a template" always
+// hands back a valid, ready-to-tweak starting point — same idea as
+// buildThemeTemplateJson().
+function buildSyntaxSchemeTemplateJson() {
+  const cs = getComputedStyle(document.documentElement);
+  const colors = {};
+  SYNTAX_COLOR_KEYS.forEach(k => { colors[k] = cs.getPropertyValue("--" + k).trim(); });
+  return JSON.stringify({
+    format: SYNTAX_SCHEME_FILE_FORMAT,
+    version: SYNTAX_SCHEME_FILE_VERSION,
+    name: "My Syntax Scheme",
+    colors,
+  }, null, 2);
+}
+
+async function downloadSyntaxSchemeTemplate() {
+  const json = buildSyntaxSchemeTemplateJson();
+  const suggested = "philogg-syntax-scheme-template.json";
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "PhiLogg syntax scheme", accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err && err.name === "AbortError") return; // user cancelled the picker
+      downloadJsonFallback(json, suggested); // API present but unusable in this context
+      return;
+    }
+  }
+  downloadJsonFallback(json, suggested); // Firefox / legacy: plain download
+}
+
+function importSyntaxSchemeJson(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
+  if (!data || data.format !== SYNTAX_SCHEME_FILE_FORMAT || !data.colors || typeof data.colors !== "object") {
+    showCopyToast("Not a PhiLogg syntax scheme file");
+    return;
+  }
+  if (data.version > SYNTAX_SCHEME_FILE_VERSION) { showCopyToast("Syntax scheme file was saved by a newer version"); return; }
+  const missing = SYNTAX_COLOR_KEYS.filter(k => typeof data.colors[k] !== "string" || !data.colors[k].trim());
+  if (missing.length) { showCopyToast("Syntax scheme file is missing: " + missing.join(", ")); return; }
+
+  const colors = {};
+  SYNTAX_COLOR_KEYS.forEach(k => { colors[k] = data.colors[k].trim(); });
+  const name = (typeof data.name === "string" && data.name.trim()) ? data.name.trim().slice(0, 80) : "Custom syntax scheme";
+  const id = "syntax:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  customSyntaxSchemes.push({ id, name, colors });
+  saveCustomSyntaxSchemes();
+  populateSyntaxSchemeSelect();
+  renderCustomSyntaxSchemeList();
+  setSyntaxScheme(id); // switch to it immediately, like importThemeJson does
+  showCopyToast("Syntax scheme imported: " + name);
+}
+
+const syntaxSchemeFileInput = document.getElementById("syntaxSchemeFileInput");
+
+async function loadSyntaxSchemeFromFile() {
+  if (!window.showOpenFilePicker) { syntaxSchemeFileInput.click(); return; }
+  let handles;
+  try {
+    handles = await window.showOpenFilePicker({
+      multiple: false,
+      types: [{ description: "PhiLogg syntax scheme", accept: { "application/json": [".json"] } }],
+    });
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    syntaxSchemeFileInput.click();
+    return;
+  }
+  importSyntaxSchemeJson(await (await handles[0].getFile()).text());
+}
+
+syntaxSchemeFileInput.addEventListener("change", ev => {
+  const file = ev.target.files[0];
+  if (file) file.text().then(importSyntaxSchemeJson).catch(() => showCopyToast("Could not read syntax scheme file"));
+  syntaxSchemeFileInput.value = "";
+});
+document.getElementById("btnSyntaxImport").addEventListener("click", () => loadSyntaxSchemeFromFile());
+document.getElementById("btnSyntaxTemplate").addEventListener("click", () => downloadSyntaxSchemeTemplate());
+document.getElementById("settingsSyntaxSchemeSelect").addEventListener("change", ev => setSyntaxScheme(ev.target.value));
 
 /* ===================== Font size (FEATURE_BACKLOG.md "Configurable font
    size", later split into independent "UI scale" / "Log text size" —
