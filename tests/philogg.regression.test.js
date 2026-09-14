@@ -313,6 +313,12 @@ function fireContextMenu(el, w, x = 50, y = 50) { el.dispatchEvent(new w.MouseEv
 function fireDblClick(el, w) { el.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true, cancelable: true })); }
 function fireInput(el, w) { el.dispatchEvent(new w.Event("input", { bubbles: true })); }
 function fireSubmit(el, w) { el.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); }
+// Boolean pill toggles (docs/ui-standard.md #69) are <button role="switch"
+// aria-checked>, not native checkboxes: read state with pillChecked(), and
+// set it directly (no change event, mirroring the old `.checked =`) with
+// setPill(). To simulate a user toggling one, fireClick() it (or its label).
+function pillChecked(el) { return el.getAttribute("aria-checked") === "true"; }
+function setPill(el, on) { const v = !!on; el.setAttribute("aria-checked", v ? "true" : "false"); el.classList.toggle("on", v); }
 function fireKeydown(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts })); }
 function fireKeyup(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keyup", { key, bubbles: true, cancelable: true, ...opts })); }
 // Checks ACTUAL resolved CSS (getComputedStyle), not just whether the
@@ -1519,10 +1525,10 @@ await withApp(async (w, d, T) => {
   w.render();
   w.openFilterPopup();
   d.querySelector("#filterInput").value = "message 2";
-  d.querySelector("#filterInvertCheckbox").checked = true;
+  setPill(d.querySelector("#filterInvertCheckbox"), true);
   fireSubmit(d.querySelector("#filterForm"), w);
   const created = T.state.nodes[T.state.activeId];
-  assert(created.inverted === true, "NOT checkbox in the filter popup sets inverted:true at creation");
+  assert(created.inverted === true, "NOT toggle in the filter popup sets inverted:true at creation");
 
   // Right-click toggle after the fact
   w.render();
@@ -1579,7 +1585,7 @@ await withApp(async (w, d, T) => {
   w.openFilterPopup();
   const filterInput = d.querySelector("#filterInput");
   const invertCb = d.querySelector("#filterInvertCheckbox");
-  invertCb.checked = true;
+  setPill(invertCb, true);
   filterInput.value = "[*:int]";
   fireInput(filterInput, w);
   assert(invertCb.disabled === false, "typing a wildcard pattern leaves NOT available");
@@ -3990,7 +3996,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
-  assert(d.querySelector("#filterCaseCheckbox").checked === false, "case-sensitive checkbox defaults to UNCHECKED, as required");
+  assert(pillChecked(d.querySelector("#filterCaseCheckbox")) === false, "case-sensitive toggle defaults to OFF, as required");
   assert([...d.querySelectorAll(".column-chip")].every(c => !c.classList.contains("active")), "no column chip is pre-selected when opening the popup fresh");
 
   const filterInput = d.querySelector("#filterInput");
@@ -4023,7 +4029,7 @@ await withApp(async (w, d, T) => {
   // --- Edit mode: popup pre-fills existing caseSensitive/columns, and edits apply ---
   const editNode = w.createFilterNode(f.id, "text", "TOKEN", false, null, true, ["message"]);
   w.openEditFilterPopup(editNode.id);
-  assert(d.querySelector("#filterCaseCheckbox").checked === true, "editing a filter pre-fills the case-sensitive checkbox from the node");
+  assert(pillChecked(d.querySelector("#filterCaseCheckbox")) === true, "editing a filter pre-fills the case-sensitive toggle from the node");
   assert(d.querySelector('.column-chip[data-col="message"]').classList.contains("active") && !d.querySelector('.column-chip[data-col="thread"]').classList.contains("active"),
     "editing a filter pre-fills the column chips from the node's existing restriction");
   fireClick(d.querySelector('.column-chip[data-col="message"]'), w); // deselect message
@@ -6134,10 +6140,9 @@ await withApp(async (w, d, T) => {
   assert(Math.abs(before.x - before.y) > 1, "sanity: without axis-equal, X and Y pixels-per-unit differ substantially (708x332 chart area, same 0..20 data range on both axes), got x=" + before.x.toFixed(3) + " y=" + before.y.toFixed(3));
 
   const axisCb = d.querySelector("#plotAxisEqual");
-  assert(axisCb !== null, "'Equal axis scale' checkbox is offered for a non-bar chart type (scatter)");
-  axisCb.checked = true;
-  axisCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(T.plotConfig.axisEqual === true, "checking the box flips plotConfig.axisEqual");
+  assert(axisCb !== null, "'Equal axis scale' toggle is offered for a non-bar chart type (scatter)");
+  fireClick(axisCb, w);
+  assert(T.plotConfig.axisEqual === true, "toggling the pill flips plotConfig.axisEqual");
 
   const after = pxPerUnit();
   // Small epsilon: cx/cy are serialized via toFixed(1) in the SVG markup, so
@@ -8397,7 +8402,7 @@ await withApp(async (w, d, T) => {
   assert(defaultRow().querySelector(".filter-library-row-del") === null, "the builtin default row has no Delete button");
   const resetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
   assert(resetBtn(), "...and has a Reset button in its place");
-  assert(resetBtn().className === "btn-mini-outline", "Reset uses the same secondary-button style as Cancel elsewhere, got " + resetBtn().className);
+  assert(resetBtn().className === "btn-mini-outline", "Reset is a lightweight .btn-mini-outline list-row action, got " + resetBtn().className);
 
   // Sanity: an unedited default parses a normal log4net-shaped file correctly.
   const before = await w.addFile("before.log", makeLog(0, 3), () => {});
@@ -8947,7 +8952,7 @@ await withApp(async (w, d, T) => {
   section("76. Settings: \"Closing the last log file quits the app\" (default off)");
 
   const checkbox = d.getElementById("settingsQuitOnLastClose");
-  assert(checkbox.checked === false, "off by default");
+  assert(pillChecked(checkbox) === false, "off by default");
 
   const originalClose = w.close;
   let closeCalls = 0;
@@ -8961,9 +8966,8 @@ await withApp(async (w, d, T) => {
     assert(closeCalls === 0, "closing the last file does nothing extra while the setting is off");
     assert(w.localStorage.getItem("philogg-quit-on-last-close") === null, "nothing persisted yet — setting untouched");
 
-    checkbox.checked = true;
-    checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
-    assert(w.localStorage.getItem("philogg-quit-on-last-close") === "1", "enabling the checkbox persists it");
+    fireClick(checkbox, w);
+    assert(w.localStorage.getItem("philogg-quit-on-last-close") === "1", "enabling the toggle persists it");
 
     const f2 = await w.addFile("b.log", makeLog(0, 3), () => {});
     const other = await w.addFile("c.log", makeLog(0, 3), () => {});
@@ -9158,12 +9162,12 @@ await withApp(async (w, d, T) => {
   assert(appearanceRows.length === 7, "Theme + UI font + Log font + Syntax highlighting + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
-  // Boolean row: rendered as a switch (input + adjacent track element),
-  // still the same real checkbox underneath (see GROUP 76 for its behavior).
+  // Boolean row: rendered as a .pill-toggle (docs/ui-standard.md #69) — a
+  // role=switch button with aria-checked state (see GROUP 76 for its behavior).
   const quitCheckbox = d.getElementById("settingsQuitOnLastClose");
-  assert(quitCheckbox.closest(".settings-switch"), "the boolean checkbox is wrapped in .settings-switch");
-  assert(quitCheckbox.nextElementSibling && quitCheckbox.nextElementSibling.classList.contains("settings-switch-track"),
-    "...with a switch-track element right next to it for the on/off visual");
+  assert(quitCheckbox.tagName === "BUTTON" && quitCheckbox.classList.contains("pill-toggle"), "the boolean setting is a .pill-toggle button");
+  assert(quitCheckbox.getAttribute("role") === "switch" && quitCheckbox.hasAttribute("aria-checked"),
+    "...a role=switch carrying aria-checked for the on/off state");
 
   // Button hierarchy: the filled accent (.btn-mini) button is reserved for
   // the primary action (Save) — list-row actions (Edit/Reset) are outline,
@@ -9950,7 +9954,7 @@ await withApp(async (w, d, T) => {
   const detailCb = d.querySelector("#settingsHoverExpandDetail");
 
   // --- Both default to on ---
-  assert(sidebarCb.checked === true && detailCb.checked === true, "both hover-expand settings default to ON");
+  assert(pillChecked(sidebarCb) === true && pillChecked(detailCb) === true, "both hover-expand settings default to ON");
 
   // A selected entry so the header meta line has real content to check.
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
@@ -10048,8 +10052,7 @@ await withApp(async (w, d, T) => {
     "#detailPanel's min-height:0 comes AFTER min-height:80px in the same rule (so it's the one that actually wins) — without it the 80px floor clamps the collapsed 34px height, leaving an empty gap below the header, got " + (detailPanelRule && detailPanelRule[0]));
 
   // --- Each panel's setting independently gates only that panel's hover ---
-  detailCb.checked = false;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   assert(w.localStorage.getItem("philogg-hover-expand-detail") === "0", "unchecking the detail setting persists it as off");
   assert(w.localStorage.getItem("philogg-hover-expand-sidebar") !== "0", "...without touching the sidebar's own setting");
 
@@ -10068,13 +10071,11 @@ await withApp(async (w, d, T) => {
 
   // Toggling a panel to peeking, THEN turning its own setting off, drops it
   // out of peek immediately instead of leaving it stuck open.
-  detailCb.checked = true;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   w.toggleDetailCollapsed(true);
   detailPanel.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
   assert(detailPanel.classList.contains("peeking"), "sanity: detail panel peeks again once its setting is back on");
-  detailCb.checked = false;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   assert(!detailPanel.classList.contains("peeking"), "turning the detail setting off mid-peek exits peek state immediately");
 
   // --- Persisted flags honored on (re-)init, same path real boot uses,
@@ -10082,7 +10083,7 @@ await withApp(async (w, d, T) => {
   w.localStorage.setItem("philogg-hover-expand-sidebar", "0");
   w.localStorage.setItem("philogg-hover-expand-detail", "1");
   w.initHoverExpandSettings();
-  assert(sidebarCb.checked === false && detailCb.checked === true,
+  assert(pillChecked(sidebarCb) === false && pillChecked(detailCb) === true,
     "initHoverExpandSettings re-applies persisted flags independently per panel, same as at boot");
   w.toggleSidebarCollapsed(true);
   sidebarEl.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
@@ -10093,7 +10094,7 @@ await withApp(async (w, d, T) => {
 
   w.localStorage.setItem("philogg-hover-expand-sidebar", "1");
   w.initHoverExpandSettings();
-  assert(sidebarCb.checked === true, "...and a persisted on flag");
+  assert(pillChecked(sidebarCb) === true, "...and a persisted on flag");
   sidebarEl.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
   assert(sidebarEl.classList.contains("peeking"), "...re-enabling the sidebar's hover behavior too");
 });
@@ -10126,8 +10127,8 @@ await withApp(async (w, d, T) => {
   // --- Defaults ---
   assert(btn.classList.contains("active") && T.textMatchHighlightEnabled === true, "master view-bar button defaults ON");
   assert(scopeSelect.value === "last" && T.textMatchHighlightScope === "last", "settings scope defaults to 'last'");
-  assert(rowsCb.checked === true && T.textMatchHighlightInRows === true, "'show in rows' defaults ON");
-  assert(detailCb.checked === true && T.textMatchHighlightInDetail === true, "'show in entry detail' defaults ON");
+  assert(pillChecked(rowsCb) === true && T.textMatchHighlightInRows === true, "'show in rows' defaults ON");
+  assert(pillChecked(detailCb) === true && T.textMatchHighlightInDetail === true, "'show in entry detail' defaults ON");
   assert(isVisible(scopeSelect, w) && isVisible(rowsCb, w) && isVisible(detailCb, w), "all three settings controls are visible");
 
   // --- Clicking the master button off does NOT hide/disable the Settings
@@ -10209,8 +10210,7 @@ await withApp(async (w, d, T) => {
   //     independent and keeps working ---
   T.state.activeId = nodeB.id;
   w.render();
-  rowsCb.checked = false;
-  rowsCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(rowsCb, w);
   assert(w.localStorage.getItem("philogg-text-match-highlight-rows") === "0", "'show in rows' persisted off");
   msgEl = d.querySelector("#tableRows .log-row .col-msg");
   assert(!/<mark/.test(msgEl.innerHTML), "turning off 'show in rows' removes row marks immediately");
@@ -10220,8 +10220,7 @@ await withApp(async (w, d, T) => {
   const detailMsgEl = d.querySelector("#detailMessage");
   assert(/<mark class="text-match-mark">1<\/mark>/.test(detailMsgEl.innerHTML), "entry-detail message still marks matches while row-highlighting is off (independent toggle)");
 
-  detailCb.checked = false;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   assert(w.localStorage.getItem("philogg-text-match-highlight-detail") === "0", "'show in entry detail' persisted off");
   w.updateDetailPanel();
   assert(!/<mark/.test(d.querySelector("#detailMessage").innerHTML), "turning off 'show in entry detail' removes detail-panel marks immediately");
@@ -10230,10 +10229,8 @@ await withApp(async (w, d, T) => {
   // --- The master button (not the settings rows) is what actually gates
   //     everything: turning it off suppresses matches even with scope="any"
   //     and both 'where' toggles back on ---
-  rowsCb.checked = true;
-  rowsCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  detailCb.checked = true;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(rowsCb, w);
+  fireClick(detailCb, w);
   fireClick(btn, w);
   msgEl = d.querySelector("#tableRows .log-row .col-msg");
   assert(!/<mark/.test(msgEl.innerHTML), "master button off suppresses row marks regardless of the 'where' toggles");
@@ -10262,7 +10259,7 @@ await withApp(async (w, d, T) => {
   w.initTextMatchHighlightSettings();
   assert(!T.textMatchHighlightEnabled && !btn.classList.contains("active"), "initTextMatchHighlightSettings re-applies the persisted master state to the button");
   assert(T.textMatchHighlightScope === "any" && scopeSelect.value === "any", "...and re-applies the persisted scope");
-  assert(rowsCb.checked === true && detailCb.checked === true, "...and re-applies both persisted 'where' toggles");
+  assert(pillChecked(rowsCb) === true && pillChecked(detailCb) === true, "...and re-applies both persisted 'where' toggles");
 });
 
 /* ============================================================
@@ -10800,9 +10797,9 @@ await withApp(async (w, d, T) => {
   // (behavior itself is covered by GROUPs 91/92/93/94 — this just confirms
   // the move didn't detach anything from the live DOM/listeners).
   const quitCb = d.getElementById("settingsQuitOnLastClose");
-  const before = quitCb.checked;
+  const before = pillChecked(quitCb);
   fireClick(quitCb, w);
-  assert(quitCb.checked === !before, "the relocated quit-on-close switch still toggles");
+  assert(pillChecked(quitCb) === !before, "the relocated quit-on-close toggle still toggles");
   fireClick(quitCb, w); // restore
 });
 
@@ -11551,15 +11548,13 @@ await withApp(async (w, d, T) => {
   section("107. Settings: \"Close to system tray\" (default on)");
 
   const checkbox = d.getElementById("settingsCloseToTray");
-  assert(checkbox.checked === true, "on by default");
+  assert(pillChecked(checkbox) === true, "on by default");
   assert(w.localStorage.getItem("philogg-close-to-tray") === null, "nothing persisted yet — default comes from the null->true fallback, not a stored value");
 
-  checkbox.checked = false;
-  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.localStorage.getItem("philogg-close-to-tray") === "0", "disabling the checkbox persists it");
+  fireClick(checkbox, w);
+  assert(w.localStorage.getItem("philogg-close-to-tray") === "0", "disabling the toggle persists it");
 
-  checkbox.checked = true;
-  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(checkbox, w);
   assert(w.localStorage.getItem("philogg-close-to-tray") === "1", "re-enabling persists back to \"1\"");
 });
 
@@ -11799,7 +11794,7 @@ await withApp(async (w, d, T) => {
 
   const checkbox = d.querySelector("#settingsTempAnchorAcrossFiles");
   assert(checkbox, "the new checkbox exists in the settings panel");
-  assert(checkbox.checked === true, "default is ON (checked) — matches the pre-existing cross-file behavior");
+  assert(pillChecked(checkbox) === true, "default is ON — matches the pre-existing cross-file behavior");
   assert(T.temporaryAnchorAcrossFiles === true, "default is ON at the state level too");
 
   const fileA = await w.addFile("a.log", makeLog(0, 3, { suffix: () => "match" }), () => {});
@@ -11826,8 +11821,7 @@ await withApp(async (w, d, T) => {
     "cross-file ON: the anchor is still shown even though filterB belongs to a different file than the selected row");
 
   // Turn the setting off, persisted to localStorage.
-  checkbox.checked = false;
-  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(checkbox, w);
   assert(T.temporaryAnchorAcrossFiles === false, "unchecking flips the state flag");
   assert(w.localStorage.getItem("philogg-temp-anchor-across-files") === "0", "...and persists it to localStorage");
 
@@ -11851,8 +11845,7 @@ await withApp(async (w, d, T) => {
     "cross-file OFF: switching between two filters of the SAME file still shows the anchor normally");
 
   // Re-enabling restores the cross-file behavior.
-  checkbox.checked = true;
-  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(checkbox, w);
   assert(T.temporaryAnchorAcrossFiles === true && w.localStorage.getItem("philogg-temp-anchor-across-files") === "1",
     "re-checking flips the flag back on and persists \"1\"");
 });
@@ -13140,7 +13133,7 @@ await withApp(async (w, d, T) => {
 
   const cb = d.querySelector("#settingsHideMinimapFullRangeInFullView");
   assert(cb, "sanity: the new settings checkbox exists");
-  assert(cb.checked === false, "defaults to OFF — an opt-out of existing behavior, not a bugfix");
+  assert(pillChecked(cb) === false, "defaults to OFF — an opt-out of existing behavior, not a bugfix");
 
   const f = await w.addFile("a.log", makeLog(0, 30), () => {});
   T.state.activeId = f.id;
@@ -13153,8 +13146,7 @@ await withApp(async (w, d, T) => {
   w.applyFhView("highlight");
   assert(!fullRect.classList.contains("hidden"), "toggle is off: Box #1 stays visible in the Full tab too");
 
-  cb.checked = true;
-  cb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(cb, w);
   assert(fullRect.classList.contains("hidden"),
     "turning the toggle on while the Full tab is already active hides Box #1 immediately, with no extra render/scroll needed");
 
@@ -13172,13 +13164,13 @@ await withApp(async (w, d, T) => {
   // --- Persisted flag honored on (re-)init, same path real boot uses ---
   w.localStorage.setItem("philogg-hide-minimap-full-range-in-full-view", "0");
   w.initMinimapFullRangeSetting();
-  assert(cb.checked === false, "initMinimapFullRangeSetting re-applies a persisted OFF flag");
+  assert(pillChecked(cb) === false, "initMinimapFullRangeSetting re-applies a persisted OFF flag");
   w.applyFhView("highlight");
   assert(!fullRect.classList.contains("hidden"), "...and Box #1 stays visible in the Full tab once the persisted flag is off");
 
   w.localStorage.setItem("philogg-hide-minimap-full-range-in-full-view", "1");
   w.initMinimapFullRangeSetting();
-  assert(cb.checked === true, "...and a persisted ON flag");
+  assert(pillChecked(cb) === true, "...and a persisted ON flag");
   w.updateMinimapFullRange();
   assert(fullRect.classList.contains("hidden"), "...re-hides Box #1 while the Full tab is still active");
 });
@@ -13488,7 +13480,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
-  assert(d.querySelector("#filterRegexCheckbox").checked === false, "regex checkbox defaults to UNCHECKED, same as case/NOT");
+  assert(pillChecked(d.querySelector("#filterRegexCheckbox")) === false, "regex toggle defaults to OFF, same as case/NOT");
   assert(isVisible(d.querySelector("#filterTokenChips"), w), "sanity: token chips visible before regex mode is toggled on");
 
   fireClick(d.querySelector("#filterRegexCheckbox"), w);
@@ -14917,14 +14909,12 @@ await withApp(async (w, d, T) => {
   //     filter-path marking's own "show in entry detail" toggle ---
   T.state.selectedId = f.entries[1].id;
   const detailCb = d.querySelector("#settingsTextMatchHighlightDetail");
-  detailCb.checked = false;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   const detailHtml = () => d.querySelector("#detailMessage").innerHTML;
   assert(/<mark class="hl-match-mark mark-seg"[^>]*#ff0000[^>]*>beta<\/mark>/.test(detailHtml()),
     "entry detail shows rule stripes even with the filter-path 'show in entry detail' toggle off");
   assert(!/text-match-mark/.test(detailHtml()), "...and that toggle still suppresses the filter-path mark itself");
-  detailCb.checked = true;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
 
   // --- A coloured NON-text node contributes nothing (nothing to underline) ---
   const levelRule = w.createFilterNode(f.id, "level", ["ERROR"]);
@@ -16823,17 +16813,16 @@ await withApp(async (w, d, T) => {
   w.openFilterPopup();
   const wholeWordCheckbox = d.querySelector("#filterWholeWordCheckbox");
   const wholeWordRow = d.querySelector("#filterWholeWordRow");
-  assert(wholeWordCheckbox && wholeWordCheckbox.checked === false, "the \"Match whole word\" toggle defaults to UNCHECKED (person-specified default)");
+  assert(wholeWordCheckbox && pillChecked(wholeWordCheckbox) === false, "the \"Match whole word\" toggle defaults to OFF (person-specified default)");
   assert(!wholeWordCheckbox.disabled && !wholeWordRow.classList.contains("disabled"),
     "it starts out enabled for the empty (literal) input");
 
-  // Every boolean in the popup renders as the Settings on/off switch now.
+  // Every boolean in the popup is a .pill-toggle (docs/ui-standard.md #69) now.
   ["filterRegexCheckbox", "filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
     const box = d.querySelector("#" + id);
-    const switchLabel = box.closest(".settings-switch");
-    assert(switchLabel && switchLabel.querySelector(".settings-switch-track"),
-      "#" + id + " is wrapped in the Settings-style .settings-switch (unified checkbox presentation)");
-    assert(switchLabel.classList.contains("settings-switch-sm"), "#" + id + " uses the popup's compact switch size");
+    assert(box.tagName === "BUTTON" && box.classList.contains("pill-toggle") && box.getAttribute("role") === "switch",
+      "#" + id + " is a role=switch .pill-toggle button (unified boolean control)");
+    assert(box.hasAttribute("aria-checked"), "#" + id + " carries aria-checked state");
   });
 
   // Live-match count reflects the toggle.
@@ -16874,7 +16863,7 @@ await withApp(async (w, d, T) => {
 
   // A regex filter never stores the flag, even with the box left checked.
   w.openFilterPopup();
-  d.querySelector("#filterWholeWordCheckbox").checked = true;
+  setPill(d.querySelector("#filterWholeWordCheckbox"), true);
   fireClick(d.querySelector("#filterRegexCheckbox"), w);
   d.querySelector("#filterInput").value = "Test";
   fireInput(d.querySelector("#filterInput"), w);
@@ -16885,8 +16874,8 @@ await withApp(async (w, d, T) => {
 
   // Edit mode pre-fills the toggle from the node, and clearing it sticks.
   w.openEditFilterPopup(uiCreated.id);
-  assert(d.querySelector("#filterWholeWordCheckbox").checked === true, "edit mode pre-fills \"Match whole word\" from the node");
-  d.querySelector("#filterWholeWordCheckbox").checked = false;
+  assert(pillChecked(d.querySelector("#filterWholeWordCheckbox")) === true, "edit mode pre-fills \"Match whole word\" from the node");
+  setPill(d.querySelector("#filterWholeWordCheckbox"), false);
   fireSubmit(d.querySelector("#filterForm"), w);
   assert(uiCreated.wholeWord === undefined, "saving an edit with the toggle cleared removes the flag from the node");
 
@@ -17365,7 +17354,7 @@ await withApp(async (w, d, T) => {
   assert(!dialog.classList.contains("hidden"), "'Export as CSV…' opens #csvExportDialog");
   assert(d.querySelector("#csvExportDecimalSelect").value === ",", "decimal separator select defaults to the (stubbed) system separator");
   assert(d.querySelector("#csvExportDelimiterSelect").value === ";", "comma-decimal locale defaults the column delimiter to semicolon (Excel convention)");
-  assert(d.querySelector("#csvExportHeadersInput").checked === true, "include-headers defaults to checked");
+  assert(pillChecked(d.querySelector("#csvExportHeadersInput")) === true, "include-headers defaults to on");
 
   let saved = null;
   w.downloadCsvFallback = (text, name) => { saved = { text, name }; };
@@ -17390,7 +17379,7 @@ await withApp(async (w, d, T) => {
   // Unchecking "include headers" drops the header line.
   fireContextMenu(body, w, 50, 50);
   fireClick(d.querySelector("#ctxExportCsv"), w);
-  d.querySelector("#csvExportHeadersInput").checked = false;
+  setPill(d.querySelector("#csvExportHeadersInput"), false);
   fireClick(d.querySelector("#csvExportConfirm"), w);
   const bodyOnlyLines = saved.text.split("\r\n");
   assert(bodyOnlyLines.length === 2, "unchecking 'include header row' exports only the 2 data rows, got " + bodyOnlyLines.length);
@@ -18548,13 +18537,11 @@ await withApp(async (w, d, T) => {
   w.render();
   fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
   const subfoldersCb = d.querySelector("#fwSettingsSubfolders");
-  subfoldersCb.checked = true;
-  subfoldersCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(subfoldersCb, w);
   await waitFor(() => sFolder.settings.includeSubfolders === true);
   assert(!d.querySelector("#fwSettingsRelPathRow").classList.contains("hidden"), "\"show relative path\" row appears once subfolders are included");
   const relPathCb = d.querySelector("#fwSettingsShowRelPath");
-  relPathCb.checked = true;
-  relPathCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(relPathCb, w);
   await waitFor(() => sFolder.settings.showRelativePath === true && sFolder.files.length === 2);
   fireClick(d.querySelector("#fwSettingsClose"), w);
   assert(sFolder.files.length === 2, "with \"include subfolders\" on, the nested file is now listed too, got " + sFolder.files.length);
@@ -18582,8 +18569,7 @@ await withApp(async (w, d, T) => {
   // its shown name immediately too.
   fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
   const relPathCb2 = d.querySelector("#fwSettingsShowRelPath");
-  relPathCb2.checked = false;
-  relPathCb2.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(relPathCb2, w);
   await waitFor(() => sFolder.settings.showRelativePath === false);
   fireClick(d.querySelector("#fwSettingsClose"), w);
   w.render();
@@ -18591,8 +18577,7 @@ await withApp(async (w, d, T) => {
     "turning \"show relative path\" back OFF while the file stays open reverts its shown name to the bare filename");
   fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
   const relPathCb3 = d.querySelector("#fwSettingsShowRelPath");
-  relPathCb3.checked = true;
-  relPathCb3.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(relPathCb3, w);
   await waitFor(() => sFolder.settings.showRelativePath === true);
   fireClick(d.querySelector("#fwSettingsClose"), w);
   w.render();
@@ -19480,7 +19465,7 @@ await withApp(async (w, d, T) => {
   const body = d.querySelector("#extractBody");
   fireContextMenu(body, w, 50, 50);
   fireClick(d.querySelector("#ctxExportCsv"), w);
-  assert(d.querySelector("#csvExportFullEntryInput").checked === false, "the checkbox defaults to unchecked");
+  assert(pillChecked(d.querySelector("#csvExportFullEntryInput")) === false, "the toggle defaults to off");
 
   let saved = null;
   w.downloadCsvFallback = (text, name) => { saved = { text, name }; };
@@ -19498,7 +19483,7 @@ await withApp(async (w, d, T) => {
   fireContextMenu(body, w, 50, 50);
   fireClick(d.querySelector("#ctxExportCsv"), w);
   d.querySelector("#csvExportDelimiterSelect").value = ",";
-  d.querySelector("#csvExportFullEntryInput").checked = true;
+  setPill(d.querySelector("#csvExportFullEntryInput"), true);
   fireClick(d.querySelector("#csvExportConfirm"), w);
   const fullEntryLines = saved.text.split("\r\n");
   assert(fullEntryLines[0].split(",").pop() === "Log entry", "header row gets an appended 'Log entry' column when the checkbox is on, got " + JSON.stringify(fullEntryLines[0]));
@@ -21054,11 +21039,11 @@ group(190);
 
     // Check it, then switch back to a single (same) direction -> auto
     // hidden AND unchecked, no stale checked-but-hidden state.
-    checkbox.checked = true;
+    setPill(checkbox, true);
     hopRows[1].querySelector(".link-hop-dir").value = "after";
     hopRows[1].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
     assert(row.classList.contains("hidden"), "reverting to same direction while checked: row becomes hidden again");
-    assert(checkbox.checked === false, "reverting to same direction while checked: checkbox is auto-unchecked, not left stale");
+    assert(pillChecked(checkbox) === false, "reverting to same direction while on: toggle is auto-cleared, not left stale");
   });
 }
 
@@ -21573,7 +21558,7 @@ await withApp(async (w, d, T) => {
   d.querySelector("#plotXSelect").value = "0"; d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
   fireClick(d.querySelector('#plotYList input[data-col="1"]'), w); // add column 1 alongside the default (column 0) -> yCols = [0,1]
   const eqCb = d.querySelector("#plotAxisEqual");
-  eqCb.checked = true; eqCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(eqCb, w);
   assert(extractNode.plotConfig.xCol === 0 && extractNode.plotConfig.yCols.length === 2 && extractNode.plotConfig.axisEqual === true,
     "sanity: extraction node's own plot is configured, got " + JSON.stringify(extractNode.plotConfig));
 
@@ -24353,6 +24338,108 @@ await withApp(async (w, d, T) => {
   const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
   assert(lines[1] && lines[1].textContent.length >= 300, "the long line is still ONE .itv-line element (its whole text in a single numbered line)");
 }, { indexedDB: new IDBFactory() });
+
+/* ============================================================
+   GROUP 212 — Boolean pill toggle (.pill-toggle), the docs/ui-standard.md #69
+   consistency-sweep replacement for single-boolean checkboxes across every
+   dialog. Origin: this session (2026-09-14, FEATURE_BACKLOG.md #69). Covers
+   the component contract: a role=switch button whose state lives in
+   aria-checked (+ an `.on` class), flips on a direct click AND on a click of
+   its associated <label for=…> (browser-forwarded), reads back correctly, and
+   drives the app via a dispatched `change` event. Also spot-checks that a
+   representative converted control in each family (filter popup, Settings,
+   CSV export, plot) is now a pill and still behaves.
+   ============================================================ */
+group(212);
+await withApp(async (w, d, T) => {
+  section("212a. .pill-toggle component: click + label-click flip aria-checked/.on, read back via aria-checked");
+
+  T.state.activeId = null;
+  w.openFilterPopup();
+  const pill = d.querySelector("#filterRegexCheckbox");
+  assert(pill.tagName === "BUTTON" && pill.getAttribute("role") === "switch" && pill.classList.contains("pill-toggle"),
+    "a converted boolean is a <button role=switch class=pill-toggle>, not a native checkbox");
+  assert(pill.getAttribute("aria-checked") === "false" && !pill.classList.contains("on"),
+    "it starts off (aria-checked=false, no .on class)");
+  assert(pill.checked === undefined, "a pill has no .checked property (it's a button, not an input)");
+
+  // Direct click flips it on: aria-checked + .on class, readable via aria.
+  fireClick(pill, w);
+  assert(pill.getAttribute("aria-checked") === "true" && pill.classList.contains("on") && pillChecked(pill),
+    "a direct click flips aria-checked to true and adds .on");
+  fireClick(pill, w);
+  assert(pill.getAttribute("aria-checked") === "false" && !pill.classList.contains("on") && !pillChecked(pill),
+    "a second click flips it back off");
+
+  // Clicking the associated <label for=…> toggles it too (browser forwards
+  // the click to the labelled button, which the delegated handler catches).
+  const label = d.querySelector('label[for="filterRegexCheckbox"]');
+  assert(label, "the pill has an adjacent <label for> wiring the text to it");
+  fireClick(label, w);
+  assert(pillChecked(pill), "clicking the label toggles the pill on");
+  fireClick(label, w);
+  assert(!pillChecked(pill), "clicking the label again toggles it back off");
+
+  // A toggle dispatches a real `change` event, so change-driven app logic
+  // keeps working: turning regex mode on hides the pattern-token chips.
+  assert(!d.querySelector("#filterTokenChips").classList.contains("hidden"), "token chips visible while regex mode is off");
+  fireClick(pill, w);
+  assert(d.querySelector("#filterTokenChips").classList.contains("hidden"),
+    "toggling the regex pill fired change -> updateRegexModeUI hid the token chips");
+  fireClick(pill, w);
+
+  // pillGet/pillSet round-trip (the app's own helpers, exposed as functions):
+  // pillSet(el,true) with no fireChange flag mirrors the old `.checked =` and
+  // does NOT dispatch change.
+  if (typeof w.pillSet === "function" && typeof w.pillGet === "function") {
+    let changes = 0;
+    pill.addEventListener("change", () => changes++);
+    w.pillSet(pill, true);
+    assert(w.pillGet(pill) === true && pill.getAttribute("aria-checked") === "true", "pillSet(el,true) sets state, pillGet reads it back");
+    assert(changes === 0, "pillSet without the fireChange flag does not dispatch a change event");
+    w.pillSet(pill, true, true);
+    assert(changes === 1, "pillSet(el,on,true) DOES dispatch a change event");
+    w.pillSet(pill, false);
+  }
+  w.closeFilterPopup();
+});
+
+await withApp(async (w, d, T) => {
+  section("212b. Converted controls across dialogs are pills and still drive their state");
+
+  // Settings boolean.
+  const quit = d.getElementById("settingsQuitOnLastClose");
+  assert(quit.classList.contains("pill-toggle") && quit.getAttribute("role") === "switch", "a Settings boolean is a pill");
+  assert(w.localStorage.getItem("philogg-quit-on-last-close") === null, "nothing persisted yet");
+  fireClick(quit, w);
+  assert(w.localStorage.getItem("philogg-quit-on-last-close") === "1", "clicking the Settings pill persists via its change handler");
+
+  // Every listed single-boolean id is now a role=switch pill (and none of the
+  // deliberately-untouched multi-select checkbox lists were converted).
+  const pillIds = ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox",
+    "settingsCloseToTray", "settingsHoverExpandSidebar", "settingsHoverExpandDetail",
+    "settingsHideMinimapFullRangeInFullView", "settingsTempAnchorAcrossFiles",
+    "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail"];
+  pillIds.forEach(id => {
+    const p = d.getElementById(id);
+    assert(p && p.tagName === "BUTTON" && p.classList.contains("pill-toggle") && p.getAttribute("role") === "switch",
+      "#" + id + " is a .pill-toggle button");
+  });
+
+  // The multi-select column-visibility list stays native checkboxes.
+  ["colToggleDelta", "colToggleThread", "colToggleLoc", "colToggleMethod"].forEach(id => {
+    const c = d.getElementById(id);
+    assert(c && c.tagName === "INPUT" && c.type === "checkbox",
+      "#" + id + " (a set-selection list item) stays a native checkbox, not a pill");
+  });
+
+  // Session-export per-file toggles stay native checkboxes too.
+  const f = await w.addFile("a.log", makeLog(0, 3), () => {});
+  w.render();
+  await w.openSessionExportDialog();
+  const inc = d.querySelector(".session-include");
+  assert(inc && inc.tagName === "INPUT" && inc.type === "checkbox", "session-export per-file 'include' stays a native checkbox (multi-select)");
+});
 
 /* ============================================================
    Summary

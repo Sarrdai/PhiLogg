@@ -7,6 +7,14 @@ follows this file rather than inventing its own look. It describes the
 *current, agreed* target state; where the existing code already matches, it
 documents the reusable class to reach for instead of a new one.
 
+**Applied (2026-09-14, #69).** The sweep is complete — this is now the *live*
+state, not a target: the `.pill-toggle` component below exists and every listed
+single-boolean checkbox was converted to it, buttons collapsed to the
+`.btn-mini` / `.btn-mini-secondary` pair with footer order secondary→primary,
+and every overlong `.settings-row-hint` trimmed to one ≤~90-char line. Keep new
+dialogs conforming to it. See `CHANGELOG.md` (2026-09-14) and
+`docs/ui-and-views.md` → "Boolean pill toggle & the dialog consistency sweep".
+
 PhiLogg is one self-contained `philogg.html` with inline `<style>` — there
 is no component framework, so "component" here means *a documented CSS class
 + markup shape to copy*, not an abstraction. Reuse the class; don't clone its
