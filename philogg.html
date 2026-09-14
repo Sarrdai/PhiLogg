@@ -24156,6 +24156,19 @@ function singleMessageActionEntry() {
   // row — both buttons are hidden there anyway (updateViewBarRowActions).
   if (fhActiveTab === "table" || fhActiveTab === "plot") return null;
   if (state.logMultiSelect.size >= 2) return null;
+  // Link view: target the selected pair/tuple as a whole — same object the
+  // brace's own right-click -> "Filter for this message" and Alt+Enter
+  // already pass into openFilterForEntryColumn (see that keydown handler),
+  // not whichever single real entry state.selectedId happens to still hold
+  // from an earlier row dblclick. Person-reported: the toolbar's "Message"/
+  // "Extract" buttons (handleRowActionClick) went through
+  // currentRowActionEntry() unconditionally, so selecting a pair block in
+  // the Link view and clicking "Extract" wildcarded only whichever single
+  // entry was last dblclicked, not the whole tuple.
+  if (state.entriesView === "filter" && linkWrap.style.display !== "none" &&
+      linkSelectedPairIndex != null && linkPairsData[linkSelectedPairIndex]) {
+    return linkPairsData[linkSelectedPairIndex].pair;
+  }
   return currentRowActionEntry();
 }
 
