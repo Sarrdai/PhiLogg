@@ -2605,6 +2605,25 @@
   }
   .filter-library-icon-grid button:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .filter-library-icon-grid button.active{color:var(--accent-strong); border-color:var(--accent-strong); background:var(--accent-soft);}
+  .filter-library-icon-sep{width:100%; height:1px; margin:4px 0; background:var(--border-soft);}
+  /* Emoji icons (person-reported: not centered) — an explicit line-height
+     matching each button's own content-box height centers a single-line
+     glyph more reliably across color-emoji fonts/platforms than relying on
+     flex align-items alone (font ascent/descent metrics for an emoji glyph
+     don't always match the surrounding text font's). .row-action-hit needs
+     its own font-size too — unlike the fixed-viewBox SVG icons, a plain
+     emoji character otherwise inherits the toolbar's smaller ambient size. */
+  .filter-library-icon-grid button.filter-library-icon-emoji{
+    font-size:15px; line-height:24px; text-align:center;
+  }
+  .filter-library-row-icon.filter-library-icon-emoji,
+  .row-action-hit.filter-library-icon-emoji{
+    font-size:15px; line-height:26px; text-align:center;
+  }
+  .filter-library-icon-freeinput{
+    width:100%; margin-top:4px; height:26px; border:1px solid var(--border); border-radius:7px;
+    background:transparent; color:var(--text-primary); font-size:13px; padding:0 8px;
+  }
   .filter-library-pin{
     flex:0 0 auto; height:28px; display:flex; align-items:center; gap:7px; font-size:10.5px; color:var(--text-tertiary);
     user-select:none; white-space:nowrap;
@@ -26201,8 +26220,28 @@ const LIBRARY_ICON_SET = [
   { name: "checklist", svg: ICON_CHECKLIST },
 ];
 function libraryIconSvg(name) {
+  if (typeof name === "string" && name.startsWith("svg:")) name = name.slice(4);
   const entry = LIBRARY_ICON_SET.find(i => i.name === name);
   return entry ? entry.svg : ICON_FILTER;
+}
+
+// Emoji alternative to LIBRARY_ICON_SET (person-requested): native Unicode
+// characters, no image assets — rendered via the OS's own color emoji font
+// (same in-browser and in the Tauri desktop build, since Tauri just wraps
+// the OS webview). A preset's icon field distinguishes the two sets via a
+// "emoji:<char>" prefix; a bare/legacy name (no prefix) still resolves
+// through libraryIconSvg above, so existing saved records keep working.
+const LIBRARY_EMOJI_SET = [
+  "🔥", "⭐", "📌", "🔒", "🔑", "📁", "📂", "🏷️", "✅", "❌",
+  "⚠️", "🚫", "🔍", "📊", "📈", "📉", "🧪", "🐛", "🚀", "⚡",
+  "🎯", "🕒", "📅", "📋", "📝", "🔗", "🧩", "📦", "🚨", "🔔",
+  "👀", "🛠️", "⚙️", "🌐", "🧾", "🖥️", "▶️", "⏸️", "🔁", "💬",
+];
+function isEmojiIcon(icon) {
+  return typeof icon === "string" && icon.startsWith("emoji:");
+}
+function libraryIconEmojiChar(icon) {
+  return icon.slice(6);
 }
 
 async function saveFilterToLibrary(nodeId, name) {
@@ -26354,7 +26393,12 @@ async function renderFilterLibraryDialog() {
     iconBtn.type = "button";
     iconBtn.className = "filter-library-row-icon" + (rec.icon ? " active" : "");
     iconBtn.title = "Choose icon";
-    iconBtn.innerHTML = libraryIconSvg(rec.icon);
+    if (isEmojiIcon(rec.icon)) {
+      iconBtn.classList.add("filter-library-icon-emoji");
+      iconBtn.textContent = libraryIconEmojiChar(rec.icon);
+    } else {
+      iconBtn.innerHTML = libraryIconSvg(rec.icon);
+    }
     iconBtn.addEventListener("click", ev => {
       ev.stopPropagation();
       filterLibraryIconOpenKey = filterLibraryIconOpenKey === rec.key ? null : rec.key;
@@ -26428,6 +26472,36 @@ async function renderFilterLibraryDialog() {
         });
         grid.appendChild(b);
       });
+      const sep = document.createElement("div");
+      sep.className = "filter-library-icon-sep";
+      grid.appendChild(sep);
+      LIBRARY_EMOJI_SET.forEach(ch => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "filter-library-icon-emoji" + (rec.icon === "emoji:" + ch ? " active" : "");
+        b.textContent = ch;
+        b.addEventListener("click", () => {
+          const next = rec.icon === "emoji:" + ch ? null : "emoji:" + ch;
+          filterLibraryIconOpenKey = null;
+          updateFilterLibraryEntry(rec.key, { icon: next }).then(renderFilterLibraryDialog);
+        });
+        grid.appendChild(b);
+      });
+      // Free-text fallback for an emoji not in the curated set above.
+      const freeInput = document.createElement("input");
+      freeInput.type = "text";
+      freeInput.maxLength = 8;
+      freeInput.className = "filter-library-icon-freeinput";
+      freeInput.placeholder = "or type an emoji…";
+      const applyFreeInput = () => {
+        const value = freeInput.value.trim();
+        if ([...value].length !== 1) return;
+        filterLibraryIconOpenKey = null;
+        updateFilterLibraryEntry(rec.key, { icon: "emoji:" + value }).then(renderFilterLibraryDialog);
+      };
+      freeInput.addEventListener("change", applyFreeInput);
+      freeInput.addEventListener("keydown", ev => { if (ev.key === "Enter") applyFreeInput(); });
+      grid.appendChild(freeInput);
       frag.appendChild(grid);
     }
   });
@@ -26479,8 +26553,10 @@ async function renderLibraryToolbarPresets() {
     btn.className = "toolbar-icon-btn row-action-btn";
     btn.dataset.libKey = rec.key;
     btn.title = "Apply preset: " + rec.name;
-    btn.innerHTML =
-      '<span class="row-action-hit">' + libraryIconSvg(rec.icon) + '</span>' +
+    const iconHtml = isEmojiIcon(rec.icon)
+      ? '<span class="row-action-hit filter-library-icon-emoji">' + escapeHtml(libraryIconEmojiChar(rec.icon)) + '</span>'
+      : '<span class="row-action-hit">' + libraryIconSvg(rec.icon) + '</span>';
+    btn.innerHTML = iconHtml +
       '<span class="row-action-label">' + escapeHtml(rec.name) + '</span>';
     btn.addEventListener("click", () => {
       if (state.activeId && state.nodes[state.activeId]) applyFilterFromLibrary(state.activeId, rec);
