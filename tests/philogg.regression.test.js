@@ -24110,6 +24110,18 @@ await withApp(async (w, d, T) => {
    applyTheme() calls applySyntaxScheme() after the theme's own colors are in
    place, so a chosen scheme overrides --syntax-* inline regardless of the
    active app theme.
+   Updated this session (2026-09-14, person-reported bugfix): "Follow app
+   theme" didn't visibly change when switching to/between the four Catppuccin
+   flavors — only Dark/Light declare their own [data-theme] --syntax-* CSS
+   block, so every other built-in theme silently cascaded to Dark's colors
+   and never looked different. applySyntaxScheme() now falls back to the
+   BUILTIN_SYNTAX_SCHEMES entry matching the active theme id for follow-theme
+   on a built-in app theme, applied inline like a chosen scheme; a custom app
+   theme (no matching id) is unaffected, still just the CSS cascade / its own
+   optional syntaxColors block. 210a's old "cascades to the :root default"
+   assertion for Mocha (the bug, previously asserted as correct) is replaced
+   below with an assertion that every Catppuccin flavor gets its OWN pendant
+   colors and that switching between two of them actually changes --syntax-*.
    ============================================================ */
 group(210);
 await withApp(async (w, d, T) => {
@@ -24139,11 +24151,28 @@ await withApp(async (w, d, T) => {
   const lightScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "light");
   assert(csLight.getPropertyValue("--syntax-tag").trim() === lightScheme.colors["syntax-tag"],
     "follow-theme follows the app theme: Light's --syntax-tag applies, got " + csLight.getPropertyValue("--syntax-tag"));
-  // A theme with no --syntax-* block (Catppuccin Mocha) cascades to the :root
-  // (dark) defaults under follow-theme — the documented behaviour.
+  // A built-in theme with no CSS [data-theme] --syntax-* block of its own
+  // (the four Catppuccin flavors) still gets its OWN pendant colors under
+  // follow-theme, applied inline by applySyntaxScheme() from
+  // BUILTIN_SYNTAX_SCHEMES — NOT a silent cascade to Dark's colors (that was
+  // the bug: "Follow app theme" never visibly changed across Catppuccin
+  // flavors because none of them override --syntax-* in CSS).
+  ["catppuccin-latte", "catppuccin-frappe", "catppuccin-macchiato", "catppuccin-mocha"].forEach(themeId => {
+    w.setTheme(themeId);
+    const pendant = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === themeId);
+    const cs = w.getComputedStyle(d.documentElement);
+    T.SYNTAX_COLOR_KEYS.forEach(k => {
+      assert(cs.getPropertyValue("--" + k).trim() === pendant.colors[k],
+        "follow-theme on " + themeId + ": --" + k + " is that flavor's own pendant (" + pendant.colors[k] + "), got " + cs.getPropertyValue("--" + k));
+    });
+  });
+  // The actual reported symptom: switching between two Catppuccin flavors
+  // with follow-theme active must visibly change the syntax colors.
   w.setTheme("catppuccin-mocha");
-  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--syntax-tag").trim() === darkScheme.colors["syntax-tag"],
-    "follow-theme on a theme with no syntax block cascades to the :root default");
+  const mochaTag = w.getComputedStyle(d.documentElement).getPropertyValue("--syntax-tag").trim();
+  w.setTheme("catppuccin-latte");
+  const latteTag = w.getComputedStyle(d.documentElement).getPropertyValue("--syntax-tag").trim();
+  assert(mochaTag !== latteTag, "follow-theme: --syntax-tag actually changes when switching from Mocha to Latte (" + mochaTag + " vs " + latteTag + ")");
   assert(w.localStorage.getItem("philogg-syntax-scheme") === null || w.localStorage.getItem("philogg-syntax-scheme") === "follow-theme",
     "follow-theme is not written to localStorage unless explicitly chosen");
 });
@@ -27727,7 +27756,13 @@ process.exitCode = failed ? 1 : 0;
       (validation, template round-trip, apply + persist to
       philogg-custom-syntax-schemes, list/select rendering, delete → fall back
       to follow-theme). 210d: a stale scheme id in localStorage falls back to
-      follow-theme on init.
+      follow-theme on init. UPDATED same session, later (2026-09-14,
+      person-reported bugfix): 210a's assertion that a theme with no CSS
+      --syntax-* block (Catppuccin) "cascades to the :root default" encoded
+      the actual bug — Follow app theme never visibly changed across the four
+      Catppuccin flavors. Replaced with: every Catppuccin flavor resolves to
+      its own BUILTIN_SYNTAX_SCHEMES pendant under follow-theme, and switching
+      Mocha → Latte actually changes --syntax-tag.
    Group 211 — this session (2026-09-14), FEATURE_BACKLOG.md #68 (word wrap):
       two independent, session-cache-persisted soft-wrap toggles, distinct
       from the multiline toggle. 211a: the log-view toggle (.toggle-wrap in
