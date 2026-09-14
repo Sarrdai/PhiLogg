@@ -195,12 +195,24 @@ deliberately **not** part of `core:window`'s default permission set (unlike
 no console error, no invoke failure visible from the page — clicking empty toolbar
 space is silently a no-op and the window cannot be moved.
 
-**F11** (`FEATURE_BACKLOG.md` #31). A Tauri webview has no main-process input hook, so
-the key is caught in the page (capture phase) and routed to the `window_toggle_maximize`
-command — the exact same native maximize/restore the injected rectangle window-control
-button uses. F11, the rectangle button, and a double-click on the toolbar's drag region
-are all equivalent: they toggle the SAME native maximize state, so a maximized window
-restores under the cursor the same way whichever trigger entered it.
+**F11 and Focus Mode** (`FEATURE_BACKLOG.md` #66, superseding the earlier #31
+F11→maximize binding). F11 now toggles `philogg.html`'s **Focus Mode** (a
+distraction-free fullscreen state — see `docs/ui-and-views.md` → "Fullscreen
+Focus Mode"), not plain OS maximize. The key is owned by the **page**, not the
+wrapper: it lives in `SHORTCUT_ACTIONS` (`toggleFocus`, default F11) so it stays
+rebindable in the Shortcut Manager, and the page's main keydown handler gates it
+on `!!window.philogg` — so it's only ever handled under this wrapper, leaving the
+plain browser build's own F11 untouched. `inject.js` therefore no longer injects
+any F11 key listener at all (the old capture-phase listener that called
+`window_toggle_maximize` is gone).
+
+Real OS fullscreen is the Tauri-only half Focus Mode needs: `toggleFocusMode()`
+calls `window.philogg.setFullscreen(on)` (a new bridge method) which invokes the
+new `window_set_fullscreen` command (`window.set_fullscreen(enabled)`). This is a
+true borderless fullscreen, deliberately distinct from `window_toggle_maximize`
+(a maximized *decorated* window). The rectangle window-control button and a
+double-click on the toolbar's drag region still toggle plain native maximize via
+`window_toggle_maximize` — unchanged; only F11's meaning moved.
 
 ## Folder watch without the File System Access API
 
