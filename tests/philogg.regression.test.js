@@ -21213,6 +21213,12 @@ await withApp(async (w, d, T) => {
    library-RECORD fields (showInToolbar/icon), not filter-node fields, so no
    persistence carrier threading is involved. The manage dialog gained the pin
    toggle (a .settings-switch pill) and an inline icon grid per row.
+   Icon grid extended (this session, person-requested): a LIBRARY_EMOJI_SET
+   section (native Unicode, no image assets — same rendering in-browser and
+   under the Tauri desktop wrapper, both just OS webviews) alongside the
+   original SVG set, plus a free-text fallback input for any emoji outside
+   the curated list. icon is tagged "emoji:<char>" vs. a bare/"svg:"-prefixed
+   SVG-set name; legacy bare names still resolve (backward compat).
    ============================================================ */
 group(193);
 await withApp(async (w, d, T) => {
@@ -21304,8 +21310,57 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#filterLibraryList .filter-library-row-icon"), w);
   await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-icon-grid"));
   // 12 = current LIBRARY_ICON_SET size (curated subset of ICON_*, extended later).
-  assert(d.querySelectorAll("#filterLibraryList .filter-library-icon-grid button").length === 12,
-    "the inline icon grid offers one button per LIBRARY_ICON_SET entry (12 today)");
+  assert(d.querySelectorAll("#filterLibraryList .filter-library-icon-grid button:not(.filter-library-icon-emoji)").length === 12,
+    "the inline icon grid offers one SVG button per LIBRARY_ICON_SET entry (12 today)");
+  // 40 = current LIBRARY_EMOJI_SET size (native-Unicode alternative, no assets).
+  assert(d.querySelectorAll("#filterLibraryList .filter-library-icon-grid button.filter-library-icon-emoji").length === 40,
+    "the inline icon grid also offers one emoji button per LIBRARY_EMOJI_SET entry (40 today)");
+
+  // Picking an emoji tags the record as "emoji:<char>" and renders it as text
+  // (not SVG markup) on both the row's leading icon button and the pill.
+  const emojiBtn = d.querySelector("#filterLibraryList .filter-library-icon-grid button.filter-library-icon-emoji");
+  const chosenEmoji = emojiBtn.textContent;
+  fireClick(emojiBtn, w);
+  await waitFor(async () => (await w.listFilterLibrary())[0].icon === "emoji:" + chosenEmoji);
+  const recAfterEmoji = (await w.listFilterLibrary())[0];
+  assert(recAfterEmoji.icon === "emoji:" + chosenEmoji, "clicking an emoji button persists icon as \"emoji:<char>\"");
+  await waitFor(() => {
+    const p = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
+    return !!p && p.querySelector(".row-action-hit").textContent === chosenEmoji;
+  });
+  const pillAfterEmoji = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
+  assert(pillAfterEmoji.querySelector(".row-action-hit").classList.contains("filter-library-icon-emoji"),
+    "the pill renders an emoji icon via plain text, tagged with .filter-library-icon-emoji, not SVG markup");
+  assert(!d.querySelector("#filterLibraryList .filter-library-row-icon").innerHTML.includes("<svg"),
+    "the row's leading icon button also switches to plain emoji text, dropping the SVG markup");
+
+  // A legacy bare-name icon (pre-existing records, no "svg:"/"emoji:" prefix)
+  // still resolves through the same picker/pill machinery (backward compat).
+  await w.updateFilterLibraryEntry(key, { icon: "clock" });
+  await waitFor(async () => (await w.listFilterLibrary())[0].icon === "clock");
+  await waitFor(() => {
+    const p = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
+    return !!p && p.querySelector(".row-action-hit").innerHTML.includes("<circle");
+  });
+
+  // Free-text fallback: typing a single emoji applies it; multi-character
+  // input is rejected (icon left unchanged).
+  fireClick(d.querySelector("#filterLibraryList .filter-library-row-icon"), w);
+  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-icon-freeinput"));
+  const freeInput = d.querySelector("#filterLibraryList .filter-library-icon-freeinput");
+  freeInput.value = "🍕";
+  freeInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await waitFor(async () => (await w.listFilterLibrary())[0].icon === "emoji:🍕");
+  assert((await w.listFilterLibrary())[0].icon === "emoji:🍕", "the free-text input accepts a single emoji not in the curated grid");
+
+  fireClick(d.querySelector("#filterLibraryList .filter-library-row-icon"), w);
+  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-icon-freeinput"));
+  const freeInput2 = d.querySelector("#filterLibraryList .filter-library-icon-freeinput");
+  freeInput2.value = "abc";
+  freeInput2.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await new Promise(r => setTimeout(r, 0));
+  assert((await w.listFilterLibrary())[0].icon === "emoji:🍕", "multi-character free-text input is rejected; the icon stays unchanged");
+
   w.closeFilterLibraryDialog();
 
   // Unpin → pill disappears.
@@ -27302,7 +27357,12 @@ process.exitCode = failed ? 1 : 0;
       manage dialog gained a per-row pin toggle and an inline icon grid. Save
       moved off the tree context menu onto the toolbar "+ Add to Library"
       button (Group 59a rewritten accordingly; Group 60b's ordering assertion
-      updated — "Apply from library…" stays in the context menu).
+      updated — "Apply from library…" stays in the context menu). Updated this
+      session (2026-09-14), person-requested: the icon grid gained a
+      LIBRARY_EMOJI_SET section (native Unicode, no image assets) alongside the
+      SVG set, plus a free-text fallback input; icon is now "emoji:<char>" vs.
+      a bare/"svg:"-prefixed SVG-set name, with legacy bare names still
+      resolving unchanged.
    Group 194 — this session (2026-09-08), person-requested Filter-Toolbar
       refinements: (a) Table/Plot view tabs are now always present but rendered
       `disabled` when the node has no extractable wildcards, instead of being
