@@ -233,6 +233,9 @@ async function withApp(run, opts = {}) {
       get THEME_COLOR_KEYS() { return THEME_COLOR_KEYS; },
       get SYNTAX_COLOR_KEYS() { return SYNTAX_COLOR_KEYS; },
       get BUILTIN_THEMES() { return BUILTIN_THEMES; },
+      get BUILTIN_SYNTAX_SCHEMES() { return BUILTIN_SYNTAX_SCHEMES; },
+      get customSyntaxSchemes() { return customSyntaxSchemes; },
+      get syntaxSchemeChoice() { return syntaxSchemeChoice; },
       get detailFormatHighlightEnabled() { return detailFormatHighlightEnabled; },
       get colorPickerMode() { return colorPickerMode; },
       get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },
@@ -9148,10 +9151,11 @@ await withApp(async (w, d, T) => {
   const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
   assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
   const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
-  // Theme + UI font (GROUP 111f) + Log font (this session) + Accent color
+  // Theme + UI font (GROUP 111f) + Log font (this session) + Syntax
+  // highlighting (GROUP 210, FEATURE_BACKLOG.md #67) + Accent color
   // (hidden on Dark, no highlightPalette — see GROUP 87) + UI scale +
   // Log text size (split from the old single Font size row — see GROUP 111e).
-  assert(appearanceRows.length === 6, "Theme + UI font + Log font + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
+  assert(appearanceRows.length === 7, "Theme + UI font + Log font + Syntax highlighting + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
   // Boolean row: rendered as a switch (input + adjacent track element),
@@ -24103,6 +24107,145 @@ await withApp(async (w, d, T) => {
 }
 
 /* ============================================================
+   GROUP 210 — Separately configurable syntax-highlight scheme
+   (FEATURE_BACKLOG.md #67)
+   Origin: this session. The eight SYNTAX_COLOR_KEYS can now be driven by a
+   scheme picked independently of the app theme (#settingsSyntaxSchemeSelect):
+   "Follow app theme" (default, preserves the pre-#67 behaviour), one built-in
+   pendant per built-in app theme (BUILTIN_SYNTAX_SCHEMES), or a user-imported
+   custom scheme (our own JSON format, customSyntaxSchemes in localStorage
+   philogg-custom-syntax-schemes; the choice itself in philogg-syntax-scheme).
+   applyTheme() calls applySyntaxScheme() after the theme's own colors are in
+   place, so a chosen scheme overrides --syntax-* inline regardless of the
+   active app theme.
+   ============================================================ */
+group(210);
+await withApp(async (w, d, T) => {
+  section("210a. Default 'Follow app theme' preserves current --syntax-* behaviour");
+  assert(T.syntaxSchemeChoice === "follow-theme", "the default scheme choice is 'follow-theme', got " + T.syntaxSchemeChoice);
+  const select = d.querySelector("#settingsSyntaxSchemeSelect");
+  assert(select, "the syntax scheme <select> exists in Settings → Appearance");
+  assert([...select.options].map(o => o.value).includes("follow-theme"), "a 'Follow app theme' option is offered");
+  assert(select.value === "follow-theme", "the select reflects the default choice");
+  T.BUILTIN_SYNTAX_SCHEMES.forEach(s => {
+    assert([...select.querySelectorAll("option")].some(o => o.value === s.id), "built-in syntax scheme " + s.id + " is offered");
+  });
+
+  // Under Dark (the default), the eight --syntax-* vars resolve to the :root
+  // defaults — which the built-in "dark" scheme reproduces verbatim.
+  const csDark = w.getComputedStyle(d.documentElement);
+  const darkScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "dark");
+  T.SYNTAX_COLOR_KEYS.forEach(k => {
+    assert(csDark.getPropertyValue("--" + k).trim() === darkScheme.colors[k],
+      "follow-theme on Dark: --" + k + " resolves to the :root default (" + darkScheme.colors[k] + "), got " + csDark.getPropertyValue("--" + k));
+  });
+
+  // Switching the APP THEME with follow-theme active moves the syntax colors
+  // with it: Light has its own [data-theme=light] --syntax-* block.
+  w.setTheme("light");
+  const csLight = w.getComputedStyle(d.documentElement);
+  const lightScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "light");
+  assert(csLight.getPropertyValue("--syntax-tag").trim() === lightScheme.colors["syntax-tag"],
+    "follow-theme follows the app theme: Light's --syntax-tag applies, got " + csLight.getPropertyValue("--syntax-tag"));
+  // A theme with no --syntax-* block (Catppuccin Mocha) cascades to the :root
+  // (dark) defaults under follow-theme — the documented behaviour.
+  w.setTheme("catppuccin-mocha");
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--syntax-tag").trim() === darkScheme.colors["syntax-tag"],
+    "follow-theme on a theme with no syntax block cascades to the :root default");
+  assert(w.localStorage.getItem("philogg-syntax-scheme") === null || w.localStorage.getItem("philogg-syntax-scheme") === "follow-theme",
+    "follow-theme is not written to localStorage unless explicitly chosen");
+});
+
+await withApp(async (w, d, T) => {
+  section("210b. A built-in syntax scheme overrides --syntax-* independently of the app theme");
+  // App theme Light, syntax scheme Mocha — the syntax colors must be Mocha's,
+  // not Light's, proving the two are decoupled.
+  w.setTheme("light");
+  const mochaScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "catppuccin-mocha");
+  w.setSyntaxScheme("catppuccin-mocha");
+  assert(T.syntaxSchemeChoice === "catppuccin-mocha", "the scheme choice updates");
+  assert(w.localStorage.getItem("philogg-syntax-scheme") === "catppuccin-mocha", "the scheme choice persists to localStorage");
+  let cs = w.getComputedStyle(d.documentElement);
+  T.SYNTAX_COLOR_KEYS.forEach(k => {
+    assert(cs.getPropertyValue("--" + k).trim() === mochaScheme.colors[k],
+      "scheme override: --" + k + " is Mocha's (" + mochaScheme.colors[k] + ") under the Light app theme, got " + cs.getPropertyValue("--" + k));
+  });
+  assert(d.documentElement.getAttribute("data-theme") === "light", "the app theme is untouched by the syntax scheme choice");
+
+  // Switching the app theme to Dark keeps the chosen syntax scheme (Mocha).
+  w.setTheme("dark");
+  cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--syntax-tag").trim() === mochaScheme.colors["syntax-tag"],
+    "the chosen syntax scheme survives an app-theme switch, got " + cs.getPropertyValue("--syntax-tag"));
+
+  // Back to follow-theme clears the inline override; --syntax-* resolve to
+  // Dark's :root defaults again.
+  w.setSyntaxScheme("follow-theme");
+  cs = w.getComputedStyle(d.documentElement);
+  const darkScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "dark");
+  assert(cs.getPropertyValue("--syntax-tag").trim() === darkScheme.colors["syntax-tag"],
+    "returning to follow-theme clears the scheme override, got " + cs.getPropertyValue("--syntax-tag"));
+});
+
+await withApp(async (w, d, T) => {
+  section("210c. Importing a custom syntax scheme: validation, template round-trip, apply + persist, delete");
+  fireClick(d.querySelector("#btnSettings"), w);
+  assert(d.querySelector("#customSyntaxSchemeList .filter-library-empty"), "the custom syntax scheme list starts empty");
+
+  w.importSyntaxSchemeJson("{not json");
+  assert(T.customSyntaxSchemes.length === 0, "malformed JSON is rejected");
+  w.importSyntaxSchemeJson(JSON.stringify({ name: "No tag", colors: {} }));
+  assert(T.customSyntaxSchemes.length === 0, "a JSON file without the philogg-syntax-scheme format tag is rejected");
+  w.importSyntaxSchemeJson(JSON.stringify({ format: "philogg-syntax-scheme", version: 1, name: "Incomplete", colors: { "syntax-tag": "#111111" } }));
+  assert(T.customSyntaxSchemes.length === 0, "a scheme file missing required keys is rejected");
+
+  // Template round trip: template out -> tweak -> import back in.
+  const template = JSON.parse(w.buildSyntaxSchemeTemplateJson());
+  assert(template.format === "philogg-syntax-scheme" && typeof template.colors === "object", "buildSyntaxSchemeTemplateJson seeds a valid template");
+  assert(T.SYNTAX_COLOR_KEYS.every(k => typeof template.colors[k] === "string" && template.colors[k].length > 0),
+    "the template includes every SYNTAX_COLOR_KEYS entry with a non-empty value");
+  template.name = "My Neon Syntax";
+  template.colors["syntax-tag"] = "#ff00aa";
+  template.colors["syntax-string"] = "#00ffcc";
+  w.importSyntaxSchemeJson(JSON.stringify(template));
+
+  assert(T.customSyntaxSchemes.length === 1, "a valid scheme file is accepted and added");
+  const imported = T.customSyntaxSchemes[0];
+  assert(imported.name === "My Neon Syntax", "the imported scheme name is preserved");
+  assert(imported.colors["syntax-tag"] === "#ff00aa", "imported colors are preserved");
+  assert(JSON.parse(w.localStorage.getItem("philogg-custom-syntax-schemes"))[0].name === "My Neon Syntax", "custom schemes persist to localStorage");
+
+  assert(T.syntaxSchemeChoice === imported.id, "importing a scheme switches to it immediately");
+  let cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--syntax-tag").trim() === "#ff00aa", "the custom scheme's colors are applied inline, got " + cs.getPropertyValue("--syntax-tag"));
+  assert(cs.getPropertyValue("--syntax-string").trim() === "#00ffcc", "...for every key, got " + cs.getPropertyValue("--syntax-string"));
+
+  const select = d.querySelector("#settingsSyntaxSchemeSelect");
+  assert([...select.options].some(o => o.value === imported.id && o.textContent === "My Neon Syntax"), "the imported scheme appears in the dropdown");
+  assert(select.value === imported.id, "the dropdown reflects the newly-active custom scheme");
+  const listRow = d.querySelector("#customSyntaxSchemeList .filter-library-row");
+  assert(listRow && listRow.textContent.includes("My Neon Syntax"), "the imported scheme is listed in the card");
+
+  // Deleting the active custom scheme removes it everywhere and falls back to
+  // follow-theme (which restores the app theme's own --syntax-* defaults).
+  d.querySelector("#customSyntaxSchemeList .filter-library-row-del").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+  assert(T.customSyntaxSchemes.length === 0, "deleting the scheme removes it from customSyntaxSchemes");
+  assert(JSON.parse(w.localStorage.getItem("philogg-custom-syntax-schemes")).length === 0, "...and from localStorage");
+  assert(T.syntaxSchemeChoice === "follow-theme", "deleting the ACTIVE custom scheme falls back to follow-theme");
+  const darkScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "dark");
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--syntax-tag").trim() === darkScheme.colors["syntax-tag"],
+    "...and the app theme's default --syntax-* colors are restored");
+  assert(d.querySelector("#customSyntaxSchemeList .filter-library-empty"), "the list shows the empty state again");
+});
+
+await withApp(async (w, d, T) => {
+  section("210d. A stale/deleted syntax scheme id in localStorage falls back to follow-theme on init");
+  w.localStorage.setItem("philogg-syntax-scheme", "syntax:does-not-exist");
+  w.initSyntaxScheme();
+  assert(T.syntaxSchemeChoice === "follow-theme", "resolveSyntaxSchemeId falls back to follow-theme for an unknown id, got " + T.syntaxSchemeChoice);
+});
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -27280,4 +27423,15 @@ process.exitCode = failed ? 1 : 0;
       applyImportedClockOffset re-applies it to the tier-matched importer file
       so first+last timestamps match what was exported). GROUP 60b updated for
       the file-node menu's new "Adjust clock…" edit item.
+   Group 210 — this session, FEATURE_BACKLOG.md #67: the syntax-highlight
+      scheme (the eight SYNTAX_COLOR_KEYS) is now selectable independently of
+      the app theme via #settingsSyntaxSchemeSelect. 210a: default "Follow app
+      theme" preserves the pre-#67 behaviour (--syntax-* track the active
+      theme's own block / :root cascade). 210b: a built-in scheme overrides
+      --syntax-* independently of the app theme and survives an app-theme
+      switch; back to follow-theme clears it. 210c: custom-scheme JSON import
+      (validation, template round-trip, apply + persist to
+      philogg-custom-syntax-schemes, list/select rendering, delete → fall back
+      to follow-theme). 210d: a stale scheme id in localStorage falls back to
+      follow-theme on init.
    ============================================================ */

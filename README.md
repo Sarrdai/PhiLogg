@@ -199,7 +199,11 @@ open it in a browser to view it.
   quick-filter bar shows for files using it; anything else falls into OTHER.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
   Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
-  JSON (download a template, fill in your colors, import it back). Pick a
+  JSON (download a template, fill in your colors, import it back).
+  **Syntax-highlight colors** for embedded XML/JSON in the entry detail are
+  separately configurable: follow the app theme (default), pick a built-in
+  scheme, or import your own as JSON — independent of which app theme is
+  active. Pick a
   system-installed UI font family (the desktop wrapper additionally offers
   every font actually installed on your machine, e.g. Fira Code or
   Iosevka), and independently scale the overall UI
