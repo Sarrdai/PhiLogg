@@ -339,6 +339,18 @@ pub fn window_toggle_maximize(window: Window) {
     }
 }
 
+/// Focus Mode's fullscreen half (`FEATURE_BACKLOG.md` #66). Real OS
+/// fullscreen is a Tauri-only capability — the plain browser build has no
+/// `window.philogg` and never reaches this — driven from the page's
+/// `toggleFocusMode()` through `window.philogg.setFullscreen`. Deliberately
+/// distinct from `window_toggle_maximize` (F11's previous meaning): Focus Mode
+/// wants true borderless fullscreen, and the page owns the enter/leave
+/// decision so the shortcut stays rebindable in its Shortcut Manager.
+#[tauri::command]
+pub fn window_set_fullscreen(window: Window, enabled: bool) {
+    let _ = window.set_fullscreen(enabled);
+}
+
 /// Goes through the window's own close request rather than hiding directly,
 /// so the injected close button lands on exactly the same close-to-tray
 /// decision as the OS's own close would (see `main.rs`).

@@ -176,6 +176,12 @@ open it in a browser to view it.
   because it is the thing that opens them. A plain `http(s)` deep-linked
   file offers "Copy URL" instead, since there's no local folder to reveal.
 - **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with drag-to-select.**
+- **Per-file clock offset** — a file's tree context menu ("Adjust clock…")
+  applies a manual clock correction to one file's timestamps, for when one
+  device's log is skewed relative to another's before you compare or merge.
+  Enter it as a signed delta (`+1500` ms, `-2s`, `±HH:MM:SS.mmm`) or by setting
+  the desired absolute time of the file's first line, with a live before→after
+  preview; it's undoable and survives a reload.
 - **Session cache** — reload the browser tab and get your files, filters,
   and settings back.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
@@ -193,13 +199,22 @@ open it in a browser to view it.
   quick-filter bar shows for files using it; anything else falls into OTHER.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
   Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
-  JSON (download a template, fill in your colors, import it back). Pick a
+  JSON (download a template, fill in your colors, import it back).
+  **Syntax-highlight colors** for embedded XML/JSON in the entry detail are
+  separately configurable: follow the app theme (default), pick a built-in
+  scheme, or import your own as JSON — independent of which app theme is
+  active. Pick a
   system-installed UI font family (the desktop wrapper additionally offers
   every font actually installed on your machine, e.g. Fira Code or
   Iosevka), and independently scale the overall UI
   and the log/text content size. Resizable/toggleable columns, multiline
   message display, multi-row select + copy, and a horizontal scrollbar in
   the Filter view for reading long messages in full.
+- **Word wrap** — a soft-wrap toggle in each log toolbar wraps long messages
+  instead of scrolling sideways (it also wraps the Entry Detail message), and
+  a separate toggle in the Text-View toolbar wraps a plain text file. Both are
+  distinct from multiline display, remembered across reloads, and off by
+  default.
 - **"On open, scroll log to"** (Settings → Behavior) — start at the top
   (default) or jump straight to the bottom, continuing to follow live
   updates from there if Tailing is on.
@@ -210,6 +225,13 @@ open it in a browser to view it.
   window, looking exactly like the expanded panel), without losing your
   place — two independent Settings → Behavior toggles let you turn this
   off per panel if you'd rather only expand one or both by clicking.
+- **Fullscreen focus mode** (desktop app) — `F11` (rebindable) drops into a
+  distraction-free fullscreen: the header disappears, the sidebar and detail
+  panel collapse to edge-hover overlays, and the active log/extraction view
+  takes the whole window; the tabs, level bar, breadcrumb and minimap stay.
+  `F11` again or `Esc` leaves it. Real OS fullscreen is desktop-only, so the
+  shortcut is bound only in the desktop app — a plain browser keeps its own
+  `F11`.
 
 See [`homepage/index.html`](homepage/index.html) for the full, illustrated
 feature list, and `PROJECT.md` for how each of these actually works

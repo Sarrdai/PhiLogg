@@ -121,7 +121,11 @@
        its own via an optional "syntaxHighlightColors" block, applied inline
        by applyTheme() the same optional way as THEME_COLOR_KEYS; when a
        theme doesn't, these :root values are what the cascade falls back to,
-       so they double as the default for every theme that has no opinion. */
+       so they double as the default for every theme that has no opinion.
+       These can also be overridden independently of the app theme by a
+       chosen syntax scheme (FEATURE_BACKLOG.md #67, applySyntaxScheme() sets
+       them inline); "Follow app theme" (the default) leaves this cascade
+       untouched. */
     --syntax-tag:#e8a94a;
     --syntax-attr-name:#8bd17c;
     --syntax-attr-value:#6fa8ff;
@@ -1785,6 +1789,35 @@
      toggle covers — without touching the Extraction/Link views, which don't
      use this class at all. */
   .multiline-messages .col-msg{white-space:pre; text-overflow:clip; line-height:15px;}
+  /* Word-wrap message display (state.wrapMessages, toggled via the log
+     toolbars' .toggle-wrap button — FEATURE_BACKLOG.md #68). DISTINCT from
+     the multiline toggle above: multiline renders literal "\n" breaks that
+     are already in e.message; word-wrap SOFT-wraps a single long line so it
+     no longer needs horizontal scrolling. The two are independent and
+     combine. `word-break:break-all` (rather than break-word / normal word
+     wrapping) is deliberate and load-bearing: it packs every visual line to
+     exactly the message track's character capacity, so a row's wrapped line
+     count is EXACTLY ceil(chars / columns) — computable from data alone
+     (messageWrapLines/wrapColsForBody), which is what keeps the offsets-array
+     virtualization exact, the same invariant the multiline comment above
+     depends on. A true (word-boundary) wrap would make a row's height depend
+     on where words happen to fall, which the windowing math can't predict
+     without measuring every row's DOM — the exact trade-off the multiline
+     feature already refused. line-height matches MULTILINE_LINE_HEIGHT for
+     the same reason. Wrap-only (multiline off) uses white-space:normal so
+     literal "\n"s collapse just as they do in the default nowrap view;
+     wrap+multiline uses pre-wrap so those breaks are kept and each resulting
+     line then soft-wraps. Applied via a body-level class so it reaches both
+     #tableRows and #highlightRows, exactly like .multiline-messages. */
+  .wrap-messages:not(.multiline-messages) .col-msg{white-space:normal; word-break:break-all; text-overflow:clip; line-height:15px;}
+  .wrap-messages.multiline-messages .col-msg{white-space:pre-wrap; word-break:break-all; text-overflow:clip; line-height:15px;}
+  /* With wrap on, the message track must be free to shrink and wrap rather
+     than being forced to its widest line's width — that forced width is what
+     drives the horizontal scrollbar in the non-wrap views (see the
+     #tableRows/#highlightRows .col-msg min-width:max-content rule above and
+     syncTableRowsWidth/syncHighlightRowsWidth, both short-circuited when
+     wrap is on). */
+  .wrap-messages #tableRows .col-msg, .wrap-messages #highlightRows .col-msg{min-width:0;}
 
   .lvl-error .col-bar{background:var(--level-error);}
   .lvl-error .level-badge{color:var(--level-error); background:color-mix(in srgb, var(--level-error) 28%, transparent);}
@@ -1858,11 +1891,21 @@
      section (the same .tree-del ✕ a log file's row already uses), not a
      separate control living on the viewer itself. See renderZipEntryRow. */
   #inlineViewerBody{flex:1 1 auto; min-height:0; overflow:auto; position:relative;}
+  /* Inline Text View. Its OWN word-wrap toggle (state.wrapTextView /
+     body.textview-wrap, the #itvWrapBtn in the Text-View toolbar —
+     FEATURE_BACKLOG.md #68), separate from the log view's toggle. Off
+     (default) = white-space:pre, long lines scroll horizontally
+     (#inlineViewerBody overflow:auto); on = pre-wrap, they soft-wrap.
+     CRITICAL: the line number is a CSS ::before counter on each `.itv-line`
+     (one per LOGICAL source line — see the gutter comment below), so a
+     wrapped continuation stays inside the same `.itv-line` and does NOT get
+     its own number; wrapping never shifts the numbering. */
   #inlineTextViewer{
     margin:0; padding:12px 0; font-family:var(--font-mono); font-size:12px; line-height:1.6;
-    color:var(--text-primary); white-space:pre-wrap; word-break:break-word;
+    color:var(--text-primary); white-space:pre; word-break:normal;
     counter-reset:itv-line;
   }
+  .textview-wrap #inlineTextViewer{white-space:pre-wrap; word-break:break-word;}
   /* Bugfix (person-reported: the previously-open XML's fold arrows/text
      still visibly showed "behind"/around a newly opened image): every
      other `.hidden`-toggled element in this file gets its OWN `#id.hidden`
@@ -1967,6 +2010,11 @@
   #inlineViewerToolbar.hidden{display:none;}
   #inlineViewerToolbar .toolbar-group{display:flex; align-items:center; gap:4px;}
   #inlineViewerToolbar .toolbar-group.hidden, #itvToolbarSep.hidden{display:none;}
+  /* Individual settings-group buttons hide independently now: the Settings
+     group shows for ANY text file (so #itvWrapBtn, the Text-View word-wrap
+     toggle, is available on .txt/.xml/.json), but Pretty Print stays
+     JSON-only — see updateInlineViewerToolbar. */
+  #itvWrapBtn.hidden, #itvPrettyPrintBtn.hidden{display:none;}
   /* Same non-icon button look #plotToolbar's own zoom controls use (see
      that selector's own comment) — the {-,+,Reset} buttons aren't square
      icon glyphs, so they stay off the 28x28 .toolbar-icon-btn shape. */
@@ -2142,15 +2190,23 @@
     font-family:var(--font-mono); font-size:11px; color:var(--text-secondary);
   }
 
-  #detailBody{flex:1 1 auto; overflow-y:auto; padding:12px 16px;}
+  #detailBody{flex:1 1 auto; overflow:auto; padding:12px 16px;}
   #detailPlaceholder{
     display:none; height:100%; align-items:center; justify-content:center;
     color:var(--text-tertiary); font-size:12px; text-align:center;
   }
+  /* Entry Detail message. Governed by the LOG-view word-wrap toggle
+     (state.wrapMessages / body.wrap-messages) — the detail panel shows the
+     selected LOG entry, so the same toggle that wraps its row wraps its
+     detail (FEATURE_BACKLOG.md #68; the inline Text View has its OWN toggle,
+     see #inlineTextViewer). Off (default) = no wrap, the panel scrolls
+     horizontally (#detailBody overflow:auto), matching the log rows' own
+     off-state; on = soft-wrap. */
   #detailMessage{
     display:none; margin:0; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); line-height:1.65;
-    color:var(--text-primary); white-space:pre-wrap; word-break:break-word;
+    color:var(--text-primary); white-space:pre; word-break:normal;
   }
+  .wrap-messages #detailMessage{white-space:pre-wrap; word-break:break-word;}
   #detailPanel.empty #detailPlaceholder{display:flex;}
   #detailPanel.empty #detailMessage{display:none;}
   #detailPanel:not(.empty) #detailPlaceholder{display:none;}
@@ -2463,6 +2519,35 @@
   }
   .assert-mode-btn.active{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
 
+  /* ---------- Per-file clock offset dialog (FEATURE_BACKLOG.md #29 — see
+     openClockOffsetDialog / applyClockOffset). Follows docs/ui-standard.md:
+     segmented .assert-mode-btn mode toggle, .settings-row rows, one-line
+     hints, .btn-mini-secondary/.btn-mini footer (secondary -> primary). ---------- */
+  #clockOffsetDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
+  }
+  #clockOffsetDialog.hidden{display:none;}
+  #clockOffsetDialog .link-dialog-card{width:min(480px, 92%);}
+  #clockOffsetDialog .settings-row{padding:12px 2px; gap:16px; border-bottom:1px solid var(--border-soft);}
+  #clockOffsetDialog .settings-row:last-of-type{border-bottom:none;}
+  #clockDiffRow.hidden, #clockStartRow.hidden{display:none;}
+  #clockDiffInput{width:170px; box-sizing:border-box; text-align:right;}
+  #clockStartInput{width:100%; box-sizing:border-box;}
+  .clock-offset-current{font-size:11px; color:var(--text-tertiary); margin:12px 0 0;}
+  .clock-offset-preview{
+    margin-top:12px; padding:10px 12px; background:var(--bg-app); border:1px solid var(--border);
+    border-radius:8px; font-family:var(--font-mono); font-size:11px; color:var(--text-secondary);
+    line-height:1.8; overflow-x:auto; white-space:nowrap;
+  }
+  .clock-offset-preview .clock-preview-label{color:var(--text-tertiary); display:inline-block; min-width:38px;}
+  .clock-offset-preview .clock-preview-old{color:var(--text-tertiary);}
+  .clock-offset-preview .clock-preview-arrow{color:var(--text-tertiary); padding:0 6px;}
+  .clock-offset-preview .clock-preview-new{color:var(--accent-strong);}
+  .clock-offset-error{font-size:11px; color:var(--warn); margin-top:8px;}
+  .clock-offset-error.hidden{display:none;}
+
   /* ---------- Session export / import dialogs (+ the multi-file-load merge
      prompt, which shares the same plain centered-overlay look) ---------- */
   #sessionExportDialog, #sessionMatchDialog, #mergeLoadDialog{
@@ -2717,6 +2802,24 @@
   .settings-switch.settings-switch-sm .settings-switch-track{border-radius:9px;}
   .settings-switch.settings-switch-sm .settings-switch-track::after{width:14px; height:14px; border-radius:7px;}
   .settings-switch.settings-switch-sm input:checked + .settings-switch-track::after{left:14px;}
+  /* Boolean pill toggle (docs/ui-standard.md #69) — the standard on/off
+     control for a single boolean, replacing the native-checkbox switches
+     above across every dialog. A real <button role="switch" aria-checked>
+     (see pillGet/pillSet + the delegated click handler), theme vars only:
+     ~34x20 track, sliding knob, accent fill when on. */
+  .pill-toggle{
+    position:relative; flex:0 0 auto; width:34px; height:20px; padding:0; margin:0;
+    border-radius:10px; border:1px solid var(--border); background:transparent;
+    cursor:pointer; transition:background .15s, border-color .15s;
+  }
+  .pill-toggle::after{
+    content:""; position:absolute; top:2px; left:2px; width:14px; height:14px;
+    border-radius:50%; background:var(--text-tertiary); transition:transform .15s, background .15s;
+  }
+  .pill-toggle[aria-checked="true"]{background:var(--accent); border-color:var(--accent);}
+  .pill-toggle[aria-checked="true"]::after{transform:translateX(14px); background:var(--accent-on);}
+  .pill-toggle:disabled{opacity:.4; cursor:default;}
+  .pill-toggle:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px;}
   .settings-inline-panel{
     margin-top:10px; padding:16px 16px 14px; border-radius:10px;
     background:var(--accent-soft); border:1px solid var(--accent);
@@ -2837,6 +2940,7 @@
   .plot-range-row input{width:0; flex:1 1 auto;}
   .plot-checkbox-row{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
   .plot-checkbox-row input{accent-color:var(--accent);}
+  .plot-checkbox-row label{cursor:pointer;}
   .plot-note{font-size:10.5px; color:var(--text-tertiary); line-height:1.5;}
   #plotChartArea{flex:1 1 auto; min-width:0; display:flex; align-items:stretch; justify-content:stretch; padding:14px; position:relative;}
   #plotSvg{width:100%; height:100%; overflow:visible; touch-action:none; cursor:crosshair;}
@@ -3024,17 +3128,17 @@
     user-select:none; white-space:nowrap;
   }
   .filter-toggle-label{cursor:pointer;}
-  .filter-toggle:has(input:checked){color:var(--accent-strong);}
+  .filter-toggle:has(.pill-toggle[aria-checked="true"]){color:var(--accent-strong);}
   /* NOT keeps its own red accent — the one option in the popup that removes
-     rows rather than narrowing them. */
-  .filter-toggle-danger:has(input:checked){color:var(--level-error);}
-  .filter-toggle-danger input:checked + .settings-switch-track{background:color-mix(in srgb, var(--level-error) 30%, transparent);}
-  .filter-toggle-danger input:checked + .settings-switch-track::after{background:var(--level-error);}
+     rows rather than narrowing them (its pill's track/knob turn red when on). */
+  .filter-toggle-danger:has(.pill-toggle[aria-checked="true"]){color:var(--level-error);}
+  .filter-toggle-danger .pill-toggle[aria-checked="true"]{background:color-mix(in srgb, var(--level-error) 30%, transparent); border-color:var(--level-error);}
+  .filter-toggle-danger .pill-toggle[aria-checked="true"]::after{background:var(--level-error);}
   /* "Match whole word" is only meaningful for a plain literal search — see
      updateWholeWordAvailability(); greyed out rather than hidden so it
      doesn't shift the row's layout as the input is typed into. */
   .filter-toggle.disabled{opacity:.4;}
-  .filter-toggle.disabled .filter-toggle-label, .filter-toggle.disabled .settings-switch, .filter-toggle.disabled .settings-switch input{cursor:not-allowed;}
+  .filter-toggle.disabled .filter-toggle-label, .filter-toggle.disabled .pill-toggle{cursor:not-allowed;}
   #filterInput.input-regex-error{border-color:var(--level-error);}
   .filter-column-chips{
     display:flex; align-items:center; gap:5px; flex-wrap:wrap;
@@ -3086,11 +3190,17 @@
     padding:8px 12px; font-size:12px; font-weight:650; cursor:pointer;
   }
   .btn-mini:disabled{opacity:.4; cursor:default;}
-  /* .btn-mini-secondary: a plain secondary button, bordered/transparent
-     instead of accent-filled, for any .btn-mini that isn't the primary
-     action in its group. */
-  .btn-mini-secondary{background:transparent; color:var(--text-secondary); border:1px solid var(--border);}
-  .btn-mini-secondary:hover:not(:disabled){filter:brightness(1.25);}
+  /* .btn-mini-secondary: the standard secondary button (docs/ui-standard.md).
+     Self-contained — same box as .btn-mini (one size scale, one shape) but
+     bordered/transparent instead of accent-filled, for any non-primary button
+     in a group (Cancel, and other secondary actions). Used standalone, it
+     needs the full box so a footer's secondary and primary match in size. */
+  .btn-mini-secondary{
+    background:transparent; color:var(--text-secondary); border:1px solid var(--border);
+    border-radius:6px; padding:8px 12px; font-size:12px; font-weight:650; cursor:pointer;
+  }
+  .btn-mini-secondary:hover:not(:disabled){border-color:var(--accent); color:var(--accent-strong);}
+  .btn-mini-secondary:disabled{opacity:.4; cursor:default;}
   .btn-icon{background:none; border:none; color:var(--text-tertiary); cursor:pointer; display:flex; padding:6px; border-radius:6px;}
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
@@ -3385,6 +3495,18 @@
     z-index: 101;
     margin: 0;
   }
+
+  /* ---------- Fullscreen Focus Mode (FEATURE_BACKLOG.md #66) ----------
+     A distraction-free, fullscreen mode toggled by toggleFocusMode() — bound
+     to F11 under the desktop wrapper only (real OS fullscreen is a Tauri-only
+     capability). The header (#toolbar) is removed outright, with no hover
+     reveal. The Files & Filters sidebar and the Entry Detail panel are
+     force-collapsed to their edge-hover overlays through the EXISTING
+     collapse+peek mechanism (see toggleFocusMode), so nothing extra is needed
+     for them here. #breadcrumbBar, #viewBar, the timeline minimap and the
+     active view all stay visible and take the freed space via the normal flex
+     layout. */
+  body.focus-mode #toolbar { display: none !important; }
 </style>
 </head>
 <body>
@@ -3437,6 +3559,7 @@
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
       <input type="file" id="themeFileInput" hidden accept=".json,application/json">
+      <input type="file" id="syntaxSchemeFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,text/plain">
     </div>
   </header>
@@ -3501,10 +3624,7 @@
         </div>
         <form id="filterForm">
           <div class="filter-toggle" id="filterRegexRow" title="Use RegExp">
-            <label class="settings-switch settings-switch-sm">
-              <input type="checkbox" id="filterRegexCheckbox">
-              <span class="settings-switch-track"></span>
-            </label>
+            <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterRegexCheckbox"></button>
             <label class="filter-toggle-label" for="filterRegexCheckbox">Interpret input as regex</label>
           </div>
           <div class="filter-input-section">
@@ -3521,24 +3641,15 @@
           </div>
           <div class="filter-settings-row">
             <div class="filter-toggle" title="Case sensitive">
-              <label class="settings-switch settings-switch-sm">
-                <input type="checkbox" id="filterCaseCheckbox">
-                <span class="settings-switch-track"></span>
-              </label>
+              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterCaseCheckbox"></button>
               <label class="filter-toggle-label" for="filterCaseCheckbox">Aa</label>
             </div>
             <div class="filter-toggle" id="filterWholeWordRow">
-              <label class="settings-switch settings-switch-sm">
-                <input type="checkbox" id="filterWholeWordCheckbox">
-                <span class="settings-switch-track"></span>
-              </label>
+              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterWholeWordCheckbox"></button>
               <label class="filter-toggle-label" for="filterWholeWordCheckbox">Match whole word</label>
             </div>
             <div class="filter-toggle filter-toggle-danger" title="Invert">
-              <label class="settings-switch settings-switch-sm">
-                <input type="checkbox" id="filterInvertCheckbox">
-                <span class="settings-switch-track"></span>
-              </label>
+              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterInvertCheckbox"></button>
               <label class="filter-toggle-label" for="filterInvertCheckbox">NOT</label>
             </div>
           </div>
@@ -3690,6 +3801,7 @@
             <div class="toolbar-group" data-toolbar-group="settings">
               <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
               <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line messages"></button>
+              <button type="button" class="toolbar-icon-btn toggle-wrap" title="Word wrap"></button>
               <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
               <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
               <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
@@ -3741,6 +3853,7 @@
                 <button type="button" class="toolbar-icon-btn toggle-pin" title="Pin bookmarks"></button>
                 <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
                 <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line messages"></button>
+                <button type="button" class="toolbar-icon-btn toggle-wrap" title="Word wrap"></button>
                 <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
                 <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
                 <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
@@ -3837,6 +3950,7 @@
           </div>
           <span id="itvToolbarSep" class="ctx-toolbar-sep hidden"></span>
           <div class="toolbar-group" data-toolbar-group="settings">
+            <button type="button" id="itvWrapBtn" class="toolbar-icon-btn" title="Word wrap"></button>
             <button type="button" id="itvPrettyPrintBtn" class="toolbar-icon-btn" title="Pretty-print this JSON">{ }</button>
           </div>
         </div>
@@ -4111,22 +4225,16 @@
       </div>
       <div class="link-field">
         <div class="link-toggle-row">
-          <label class="link-toggle-label" for="linkExclusiveInput">Exclusive matches (don't reuse a target entry once it's matched)</label>
-          <label class="settings-switch settings-switch-sm">
-            <input type="checkbox" id="linkExclusiveInput">
-            <span class="settings-switch-track"></span>
-          </label>
+          <label class="link-toggle-label" for="linkExclusiveInput">Don't reuse a target entry once it's matched</label>
+          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkExclusiveInput"></button>
         </div>
         <div class="link-toggle-row" id="linkOrderEnforceRow">
-          <label class="link-toggle-label" for="linkOrderEnforceInput">Enforce chronological order (drop tuples where a hop lands before the previous match)</label>
-          <label class="settings-switch settings-switch-sm">
-            <input type="checkbox" id="linkOrderEnforceInput">
-            <span class="settings-switch-track"></span>
-          </label>
+          <label class="link-toggle-label" for="linkOrderEnforceInput">Enforce chronological order across hops</label>
+          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkOrderEnforceInput"></button>
         </div>
       </div>
       <div class="link-dialog-actions">
-        <button type="button" id="linkDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="linkDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="linkDialogCreate" class="btn-mini">Create</button>
       </div>
     </div>
@@ -4151,7 +4259,7 @@
         </div>
       </div>
       <div class="link-dialog-actions">
-        <button type="button" id="contextDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="contextDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="contextDialogCreate" class="btn-mini">Create</button>
       </div>
     </div>
@@ -4164,7 +4272,7 @@
         <label>Save just this filter, or include its ancestor chain?</label>
       </div>
       <div class="link-dialog-actions">
-        <button type="button" id="exportScopeJustThis" class="btn-mini-outline">Just this filter</button>
+        <button type="button" id="exportScopeJustThis" class="btn-mini-secondary">Just this filter</button>
         <button type="button" id="exportScopeWithChain" class="btn-mini">Include ancestor chain</button>
       </div>
     </div>
@@ -4194,13 +4302,13 @@
         </div>
       </div>
       <div class="link-field">
-        <label class="plot-checkbox-row"><input type="checkbox" id="csvExportHeadersInput" checked> Include header row</label>
+        <div class="plot-checkbox-row"><button type="button" role="switch" aria-checked="true" class="pill-toggle" id="csvExportHeadersInput"></button><label for="csvExportHeadersInput">Include header row</label></div>
       </div>
       <div class="link-field">
-        <label class="plot-checkbox-row"><input type="checkbox" id="csvExportFullEntryInput"> Include full log entry column</label>
+        <div class="plot-checkbox-row"><button type="button" role="switch" aria-checked="false" class="pill-toggle" id="csvExportFullEntryInput"></button><label for="csvExportFullEntryInput">Include full log entry column</label></div>
       </div>
       <div class="link-dialog-actions">
-        <button type="button" id="csvExportCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="csvExportCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="csvExportConfirm" class="btn-mini">Export</button>
       </div>
     </div>
@@ -4225,7 +4333,7 @@
         </div>
       </div>
       <div class="link-dialog-actions">
-        <button type="button" id="countContextDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="countContextDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="countContextDialogCreate" class="btn-mini">Create</button>
       </div>
     </div>
@@ -4254,8 +4362,49 @@
       </div>
       <div class="time-range-error hidden" id="timeRangeDialogError">Set at least one of From / To.</div>
       <div class="link-dialog-actions">
-        <button type="button" id="timeRangeDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="timeRangeDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="timeRangeDialogSubmit" class="btn-mini">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="clockOffsetDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Adjust clock — <span id="clockOffsetFileLabel" class="link-target-label"></span></div>
+      <div class="settings-row">
+        <div class="settings-row-text">
+          <span class="settings-row-label">Mode</span>
+          <span class="settings-row-hint">Shift by a signed delta, or set the first line's absolute time.</span>
+        </div>
+        <div class="settings-row-control assert-mode-row">
+          <button type="button" class="assert-mode-btn active" id="clockModeDiff" data-clock-mode="diff">Difference</button>
+          <button type="button" class="assert-mode-btn" id="clockModeStart" data-clock-mode="start">Start time</button>
+        </div>
+      </div>
+      <div class="settings-row" id="clockDiffRow">
+        <div class="settings-row-text">
+          <span class="settings-row-label">Delta</span>
+          <span class="settings-row-hint">+1500 (ms), -2s, or ±HH:MM:SS.mmm like +00:01:30.500</span>
+        </div>
+        <div class="settings-row-control">
+          <input type="text" id="clockDiffInput" placeholder="+0" autocomplete="off">
+        </div>
+      </div>
+      <div class="settings-row hidden" id="clockStartRow">
+        <div class="settings-row-text">
+          <span class="settings-row-label">First line at</span>
+          <span class="settings-row-hint">Desired timestamp of the file's first log line.</span>
+        </div>
+        <div class="settings-row-control">
+          <input type="datetime-local" id="clockStartInput" step="0.001">
+        </div>
+      </div>
+      <div class="clock-offset-current" id="clockOffsetCurrent"></div>
+      <div class="clock-offset-preview" id="clockOffsetPreview"></div>
+      <div class="clock-offset-error hidden" id="clockOffsetError">Enter a valid, non-zero adjustment.</div>
+      <div class="link-dialog-actions">
+        <button type="button" id="clockOffsetCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="clockOffsetApply" class="btn-mini">Apply</button>
       </div>
     </div>
   </div>
@@ -4287,7 +4436,7 @@
       </div>
       <div class="link-dialog-actions">
         <button type="button" id="assertDialogClear" class="btn-mini-outline assert-dialog-clear">Clear</button>
-        <button type="button" id="assertDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="assertDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="assertDialogSave" class="btn-mini">Save</button>
       </div>
     </div>
@@ -4299,7 +4448,7 @@
       <div id="sessionExportRows"></div>
       <div class="session-dialog-note">Embedding the log text makes the export self-contained (the importer can re-create the file with one click), but it includes the raw log content and can make the export large.</div>
       <div class="link-dialog-actions">
-        <button type="button" id="sessionExportCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="sessionExportCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="sessionExportConfirm" class="btn-mini">Export</button>
       </div>
     </div>
@@ -4314,7 +4463,7 @@
         <div id="sessionMatchOptions"></div>
       </div>
       <div class="link-dialog-actions">
-        <button type="button" id="sessionMatchCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="sessionMatchCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="sessionMatchApply" class="btn-mini">Apply</button>
       </div>
     </div>
@@ -4330,7 +4479,7 @@
       <div class="link-dialog-title">Merge these files?</div>
       <div class="session-dialog-note" id="mergeLoadDialogNote"></div>
       <div class="link-dialog-actions">
-        <button type="button" id="mergeLoadDialogNo" class="btn-mini-outline">No (Esc)</button>
+        <button type="button" id="mergeLoadDialogNo" class="btn-mini-secondary">No (Esc)</button>
         <button type="button" id="mergeLoadDialogYes" class="btn-mini">Merge (Enter)</button>
       </div>
     </div>
@@ -4347,7 +4496,7 @@
         <input type="text" id="filterLibraryNameInput" placeholder="e.g. Startup errors" maxlength="80" autocomplete="off">
       </div>
       <div class="link-dialog-actions">
-        <button type="button" id="filterLibrarySaveCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="filterLibrarySaveCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="filterLibrarySaveConfirm" class="btn-mini">Save</button>
       </div>
     </div>
@@ -4364,7 +4513,7 @@
       <div class="link-dialog-title">Apply from filter library</div>
       <div id="filterLibraryList"></div>
       <div class="link-dialog-actions">
-        <button type="button" id="filterLibraryDialogClose" class="btn-mini-outline">Close</button>
+        <button type="button" id="filterLibraryDialogClose" class="btn-mini-secondary">Close</button>
       </div>
     </div>
   </div>
@@ -4433,16 +4582,25 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Log font</div>
-                <div class="settings-row-hint">Table rows, extraction table, entry detail and link/pair views — independent of the UI font above.</div>
+                <div class="settings-row-hint">Scales log/text content (rows, tables, entry detail), independent of the UI font.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsLogFontSelect"></select>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Syntax highlighting</div>
+                <div class="settings-row-hint">Colors for highlighted XML/JSON in the entry detail — pick a scheme or follow the app theme.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsSyntaxSchemeSelect"></select>
+              </div>
+            </div>
             <div class="settings-row hidden" id="settingsAccentRow">
               <div class="settings-row-text">
                 <div class="settings-row-label">Accent color</div>
-                <div class="settings-row-hint">Re-pick the theme's accent — used on buttons, the breadcrumb, and the minimap's range highlight — from this theme's own palette.</div>
+                <div class="settings-row-hint">Re-pick the theme's accent colour from its own palette.</div>
               </div>
               <div class="settings-row-control accent-picker" id="settingsAccentPicker"></div>
             </div>
@@ -4463,7 +4621,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Log text size</div>
-                <div class="settings-row-hint">Scales only log/text content — log rows, extraction table, entry detail — 70–160%, independently of UI scale.</div>
+                <div class="settings-row-hint">Scales only log/text content (70–160%), independently of the UI scale.</div>
               </div>
               <div class="settings-row-control font-scale-row">
                 <div class="font-scale-stepper">
@@ -4484,6 +4642,15 @@
               <button type="button" class="btn-mini-dashed" id="btnThemeImport">+ Import theme…</button>
             </div>
           </div>
+
+          <div class="settings-subsection-title">Custom syntax schemes — import your own highlight colors as JSON</div>
+          <div class="settings-card" id="customSyntaxSchemeListCard">
+            <div id="customSyntaxSchemeList"></div>
+            <div class="settings-card-footer theme-footer">
+              <button type="button" class="btn-mini-outline" id="btnSyntaxTemplate">Download template…</button>
+              <button type="button" class="btn-mini-dashed" id="btnSyntaxImport">+ Import scheme…</button>
+            </div>
+          </div>
         </section>
 
         <section class="settings-section" id="settingsSectionBehavior">
@@ -4492,7 +4659,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsFhLayout">Context/Filtered display</label>
-                <div class="settings-row-hint">"Separate" shows Context and Filtered as two tabs you switch between. "Stacked" shows both at once, split top/bottom, as a single "Stacked" tab alongside Table/Plot.</div>
+                <div class="settings-row-hint">Show Context and Filtered as two separate tabs, or stacked together in one split pane.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsFhLayout">
@@ -4504,7 +4671,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsFilterToolbarLabels">Filter-Toolbar button labels</label>
-                <div class="settings-row-hint">Whether the row-action buttons next to the level filter (Filter after this, Add to selection, …) show their name. "On hover" (default) reveals it only while pointing at one, expanding it into a pill. "Never" keeps them plain icons (still explained by their tooltip); "Always" keeps every label expanded permanently.</div>
+                <div class="settings-row-hint">When the filter-bar action buttons show their label: on hover, never, or always.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsFilterToolbarLabels">
@@ -4517,7 +4684,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsViewToolbarLabels">View Toolbar button labels</label>
-                <div class="settings-row-hint">Same idea, for the buttons in each view's own toolbar (Context/Filtered/Table/Plot) — these expand into a rounded rectangle rather than a pill. Set independently from the Filter-Toolbar above.</div>
+                <div class="settings-row-hint">When each view toolbar's action buttons show their label: on hover, never, or always.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsViewToolbarLabels">
@@ -4530,7 +4697,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsFilterActivationView">When switching to a filter</label>
-                <div class="settings-row-hint">A filter you've never viewed before always opens to Filtered. For one you've already viewed, "Remember last view" (default) reopens whichever tab — Context, Filtered, Table, or Plot — you left it on. "Always Filtered" reopens it to Filtered every time instead.</div>
+                <div class="settings-row-hint">Reopen a filter on its last-used tab, or always on Filtered (new filters open Filtered).</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsFilterActivationView">
@@ -4542,7 +4709,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsOpenScrollPosition">On open, scroll log to</label>
-                <div class="settings-row-hint">"Start" stays at the top (default). "End" scrolls to and stays at the bottom — with Tailing on, following begins immediately from there.</div>
+                <div class="settings-row-hint">Whether opening a file lands at the top (Start) or the bottom (End).</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsOpenScrollPosition">
@@ -4557,28 +4724,22 @@
                 <div class="settings-row-hint">Only effective in the desktop build.</div>
               </div>
               <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsQuitOnLastClose">
-                  <span class="settings-switch-track"></span>
-                </label>
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsQuitOnLastClose"></button>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsCloseToTray">Close to system tray</label>
-                <div class="settings-row-hint">Only effective in the desktop build. The window's close button hides it to the tray instead of quitting; right-click the tray icon to quit for real.</div>
+                <div class="settings-row-hint">Desktop build only: the close button hides the window to the tray instead of quitting.</div>
               </div>
               <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsCloseToTray">
-                  <span class="settings-switch-track"></span>
-                </label>
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsCloseToTray"></button>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsClipboardDecimalSelect">Decimal separator for copy/export</label>
-                <div class="settings-row-hint">Used when copying extraction table cells (Ctrl+C) or exporting as CSV. "Auto" guesses from the browser's language, which doesn't always match what your spreadsheet app expects — pick one explicitly if pasted numbers come out wrong.</div>
+                <div class="settings-row-hint">Decimal separator used when copying extraction cells or exporting CSV.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsClipboardDecimalSelect">
@@ -4595,25 +4756,19 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsHoverExpandSidebar">Open Files &amp; Filters on hover</label>
-                <div class="settings-row-hint">Hovering the collapsed sidebar temporarily expands it. Turn off to expand it only by clicking.</div>
+                <div class="settings-row-hint">Hovering the collapsed sidebar temporarily expands it; off = expand only by clicking.</div>
               </div>
               <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsHoverExpandSidebar">
-                  <span class="settings-switch-track"></span>
-                </label>
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsHoverExpandSidebar"></button>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsHoverExpandDetail">Open Entry Detail on hover</label>
-                <div class="settings-row-hint">Hovering the collapsed entry detail panel temporarily expands it. Turn off to expand it only by clicking.</div>
+                <div class="settings-row-hint">Hovering the collapsed entry-detail panel temporarily expands it; off = click to expand.</div>
               </div>
               <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsHoverExpandDetail">
-                  <span class="settings-switch-track"></span>
-                </label>
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsHoverExpandDetail"></button>
               </div>
             </div>
           </div>
@@ -4623,7 +4778,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsContextInitialExpansion">Context view starts out</label>
-                <div class="settings-row-hint">The Context view shows the active filter's matches with everything it rejected hidden between them. "Auto expand around the selected row" (the default) keeps the rest hidden but reveals a few lines above and below whatever row you land on — double-clicking or pressing Enter on a row in the Filtered view, walking match to match with the ‹ / › arrows, or simply clicking another match — and hides the ones the previous jump revealed again, so the context follows you instead of piling up. Lines you reveal or collapse by hand are left alone by that and keep the state you gave them. "Collapsed" reveals nothing until you ask for it; "Expanded" starts with the whole file shown, still collapsible run by run. A jump to a row that isn't a match always reveals it, whichever option is picked — otherwise it would have nowhere to be shown. The Stacked layout always starts fully expanded regardless of this setting (its Context pane sits right next to the plain Filtered result, so there's less need to hide anything there) — this only governs the Context tab in Tabs layout.</div>
+                <div class="settings-row-hint">How the Context view starts out: auto-expanded around the selection, collapsed, or expanded.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsContextInitialExpansion">
@@ -4636,7 +4791,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsContextExpandStep">Lines revealed per step</label>
-                <div class="settings-row-hint">How many hidden lines one expansion step reveals in each direction — so the default 10 gives you 10 lines above and 10 below the row you land on. The same number is what a "Show more (+n)" row adds to a run that is already open; the "… N lines" row above/below it always reveals everything that is left in one go. The two directions of a hidden stretch are operated separately: revealing more above never also reveals more below.</div>
+                <div class="settings-row-hint">How many hidden lines one expansion step reveals in each direction (above and below).</div>
               </div>
               <div class="settings-row-control">
                 <input type="number" id="settingsContextExpandStep" min="1" max="1000" step="1" value="10">
@@ -4649,13 +4804,10 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsHideMinimapFullRangeInFullView">Hide minimap's covered-timespan box in Context view</label>
-                <div class="settings-row-hint">Turn this on to hide the minimap's outer "covered timespan" box while the Context view is the one showing — the inner "currently rendered" box stays visible and tracks that view's own scroll position instead. Both boxes keep their normal behavior in the Filtered and Stacked views. (Off by default. This dates from when that view always showed the whole file, which made the outer box meaningless there; now that it shows the active filter's own result, the box is informative again — kept as an opt-out for anyone who prefers the quieter minimap.)</div>
+                <div class="settings-row-hint">Hide the minimap's outer covered-timespan box while the Context view is showing.</div>
               </div>
               <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsHideMinimapFullRangeInFullView">
-                  <span class="settings-switch-track"></span>
-                </label>
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsHideMinimapFullRangeInFullView"></button>
               </div>
             </div>
           </div>
@@ -4665,7 +4817,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsLevelFilterTreeMode">Level bar creates filter tree nodes</label>
-                <div class="settings-row-hint">"Automatic" — clicking a level button writes a real, visible/undoable filter node into the tree at the current position. "Manual" — the level bar keeps its original quick, tree-independent toggle, with a separate "Add to tree" button to push the current selection in on demand.</div>
+                <div class="settings-row-hint">Clicking a level button writes a real filter node (Automatic) or just quick-toggles (Manual).</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsLevelFilterTreeMode">
@@ -4677,7 +4829,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTempAnchorMode">Show temporary anchor after a no-match filter switch</label>
-                <div class="settings-row-hint">Switching the active filter (tree click or Alt+Arrow) while the current row doesn't match it shows that row at its would-be position as a temporary anchor, not a real bookmark. "Off" never draws it (Up/Down still remembers its position). "Persistent" keeps it shown until a different row is selected. "Fade" shows it briefly, then removes it after the configured duration.</div>
+                <div class="settings-row-hint">Show the current row at its would-be spot when you switch to a filter it doesn't match.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsTempAnchorMode">
@@ -4690,13 +4842,10 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTempAnchorAcrossFiles">Show temporary anchor across files</label>
-                <div class="settings-row-hint">When the active filter switches to one belonging to a different file than the currently selected row, still show that row as a temporary anchor. Turn off to only show the anchor when switching filters within the same file.</div>
+                <div class="settings-row-hint">Also show the temporary anchor when the new filter belongs to a different file than the row.</div>
               </div>
               <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsTempAnchorAcrossFiles">
-                  <span class="settings-switch-track"></span>
-                </label>
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsTempAnchorAcrossFiles"></button>
               </div>
             </div>
             <div class="settings-row" id="settingsTempAnchorFadeRow">
@@ -4719,7 +4868,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightScope">Which filters to mark</label>
-                <div class="settings-row-hint">Your standing preference for text-filter match highlighting — always editable here regardless of the view bar's on/off button, which just quickly toggles whatever is configured below.</div>
+                <div class="settings-row-hint">Your standing preference for which text filters get their matches highlighted.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsTextMatchHighlightScope">
@@ -4731,31 +4880,25 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightRows">Show matches in log rows</label>
-                <div class="settings-row-hint">Marks matches inline in the log rows themselves, in both the Filtered and the Context view — in Stacked layout the same entry is on screen in both panes at once, so marking it in only one of them read as two different rows.</div>
+                <div class="settings-row-hint">Mark matches inline in the log rows, in both the Filtered and Context views.</div>
               </div>
               <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsTextMatchHighlightRows">
-                  <span class="settings-switch-track"></span>
-                </label>
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsTextMatchHighlightRows"></button>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTextMatchHighlightDetail">Show matches in entry detail</label>
-                <div class="settings-row-hint">Marks matches in the bottom entry-detail panel. Independent of the row toggle above — turn both on for both.</div>
+                <div class="settings-row-hint">Mark matches in the entry-detail panel (independent of the row toggle above).</div>
               </div>
               <div class="settings-row-control">
-                <label class="settings-switch">
-                  <input type="checkbox" id="settingsTextMatchHighlightDetail">
-                  <span class="settings-switch-track"></span>
-                </label>
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsTextMatchHighlightDetail"></button>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTreeIndicatorMode">Tree row type indicator</label>
-                <div class="settings-row-hint">The icon and the TXT/LNK/... abbreviation both say the same thing about a filter's type — pick which one shows, at the icon's own position, instead of both.</div>
+                <div class="settings-row-hint">Show a filter's type as an icon or a TXT/LNK abbreviation, not both.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsTreeIndicatorMode">
@@ -4822,7 +4965,7 @@
             </div>
             <div class="time-range-error hidden" id="formatEditError"></div>
             <div class="link-dialog-actions">
-              <button type="button" id="formatEditCancel" class="btn-mini-outline">Cancel</button>
+              <button type="button" id="formatEditCancel" class="btn-mini-secondary">Cancel</button>
               <button type="button" id="formatEditSave" class="btn-mini">Save</button>
             </div>
           </div>
@@ -4843,7 +4986,7 @@
               <select id="formatRuleFormatSelect"></select>
             </div>
             <div class="link-dialog-actions">
-              <button type="button" id="formatRuleEditCancel" class="btn-mini-outline">Cancel</button>
+              <button type="button" id="formatRuleEditCancel" class="btn-mini-secondary">Cancel</button>
               <button type="button" id="formatRuleEditSave" class="btn-mini">Save</button>
             </div>
           </div>
@@ -4901,22 +5044,16 @@
               <div class="settings-row-hint">Also list compatible files from this folder's subfolders, not just its own entries.</div>
             </div>
             <div class="settings-row-control">
-              <label class="settings-switch">
-                <input type="checkbox" id="fwSettingsSubfolders">
-                <span class="settings-switch-track"></span>
-              </label>
+              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="fwSettingsSubfolders"></button>
             </div>
           </div>
           <div class="settings-row" id="fwSettingsRelPathRow">
             <div class="settings-row-text">
               <div class="settings-row-label">Show relative path</div>
-              <div class="settings-row-hint">Show each file's path under this folder (e.g. "in/a/subfolder/App.log") instead of just its filename.</div>
+              <div class="settings-row-hint">Show each file's path under the folder instead of just its filename.</div>
             </div>
             <div class="settings-row-control">
-              <label class="settings-switch">
-                <input type="checkbox" id="fwSettingsShowRelPath">
-                <span class="settings-switch-track"></span>
-              </label>
+              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="fwSettingsShowRelPath"></button>
             </div>
           </div>
         </div>
@@ -4939,7 +5076,7 @@
       <textarea id="noteDialogInput" rows="6" placeholder="Note text…"></textarea>
       <div class="link-dialog-actions">
         <button type="button" id="noteDialogDelete" class="btn-mini-outline assert-dialog-clear">Delete</button>
-        <button type="button" id="noteDialogCancel" class="btn-mini-outline">Cancel</button>
+        <button type="button" id="noteDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="noteDialogSave" class="btn-mini">Save</button>
       </div>
     </div>
@@ -5060,6 +5197,11 @@ const ICON_NOTE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" s
 // in for "multi-line text" the same way ICON_PIN's thumbtack stands in for
 // "pin". See PROJECT.md "Multiline message display toggle".
 const ICON_MULTILINE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
+// Word-wrap toggle (.toggle-wrap in the log toolbars, #itvWrapBtn in the
+// Text-View toolbar — FEATURE_BACKLOG.md #68): a line that runs right, then
+// curls back down and left to a return arrowhead, standing in for "this line
+// wraps back". Distinct from ICON_MULTILINE's plain stacked lines.
+const ICON_WRAP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.7h11"/><path d="M2.5 8h9a2.3 2.3 0 0 1 0 4.6H7.5"/><path d="M9.3 10.6 7.2 12.3l2.1 1.7"/><path d="M2.5 12.6h2.6"/></svg>';
 const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="1.3"/><path d="M6 2.7v10.6M10.3 2.7v10.6"/></svg>';
 // Highlighter-pen glyph for #btnTextMatchHighlight — a pen tip drawing an
 // underline stroke, standing in for "mark/highlight" the same way
@@ -5178,7 +5320,55 @@ const BUILTIN_THEMES = [
   },
 ];
 
+/* ---- Syntax highlight scheme (FEATURE_BACKLOG.md #67) ----
+   The eight SYNTAX_COLOR_KEYS are, by default, driven by the ACTIVE app
+   theme (its own optional syntaxColors block, else the CSS-cascade
+   defaults in :root / :root[data-theme="light"]). This lets the syntax
+   scheme be picked INDEPENDENTLY of the app theme instead: a chosen scheme
+   overrides the --syntax-* vars inline via applySyntaxScheme(), on top of
+   whatever applyTheme() set. The default choice, "Follow app theme"
+   (FOLLOW_THEME_SYNTAX_ID), is a no-op — it preserves the pre-#67 behaviour
+   exactly, including any custom theme's own syntaxColors block. Built-in
+   schemes are one curated pendant per built-in app theme; custom schemes
+   are user-imported JSON (our own format, see importSyntaxSchemeJson),
+   persisted to localStorage like customThemes. Persisted on the same tier
+   as the theme/accent choices. */
+const SYNTAX_SCHEME_STORAGE_KEY = "philogg-syntax-scheme";
+const CUSTOM_SYNTAX_SCHEMES_STORAGE_KEY = "philogg-custom-syntax-schemes";
+const SYNTAX_SCHEME_FILE_FORMAT = "philogg-syntax-scheme";
+const SYNTAX_SCHEME_FILE_VERSION = 1;
+const FOLLOW_THEME_SYNTAX_ID = "follow-theme";
+
+// One built-in syntax scheme per built-in app theme. Dark/Light reproduce
+// the fixed :root / [data-theme="light"] defaults verbatim; the four
+// Catppuccin flavors get curated palettes drawn from each flavor's own
+// named colors (https://catppuccin.com/palette/) — tags/keys=Blue,
+// attr-name=Yellow, attr-value/string=Green, number=Peach,
+// boolean-null=Mauve, punct=Subtext0. Every scheme defines all eight keys.
+const BUILTIN_SYNTAX_SCHEMES = [
+  { id: "dark", name: "Dark", colors: {
+    "syntax-tag": "#e8a94a", "syntax-attr-name": "#8bd17c", "syntax-attr-value": "#6fa8ff", "syntax-string": "#6fa8ff",
+    "syntax-number": "#c792ea", "syntax-key": "#4fc7c3", "syntax-boolean-null": "#c792ea", "syntax-punct": "#8a92a8" } },
+  { id: "light", name: "Light", colors: {
+    "syntax-tag": "#a06a1c", "syntax-attr-name": "#4a8f3c", "syntax-attr-value": "#1f5fbf", "syntax-string": "#1f5fbf",
+    "syntax-number": "#8e44ad", "syntax-key": "#1b8f8a", "syntax-boolean-null": "#8e44ad", "syntax-punct": "#5b6474" } },
+  { id: "catppuccin-latte", name: "Catppuccin Latte", colors: {
+    "syntax-tag": "#1e66f5", "syntax-attr-name": "#df8e1d", "syntax-attr-value": "#40a02b", "syntax-string": "#40a02b",
+    "syntax-number": "#fe640b", "syntax-key": "#1e66f5", "syntax-boolean-null": "#8839ef", "syntax-punct": "#6c6f85" } },
+  { id: "catppuccin-frappe", name: "Catppuccin Frappé", colors: {
+    "syntax-tag": "#8caaee", "syntax-attr-name": "#e5c890", "syntax-attr-value": "#a6d189", "syntax-string": "#a6d189",
+    "syntax-number": "#ef9f76", "syntax-key": "#8caaee", "syntax-boolean-null": "#ca9ee6", "syntax-punct": "#a5adce" } },
+  { id: "catppuccin-macchiato", name: "Catppuccin Macchiato", colors: {
+    "syntax-tag": "#8aadf4", "syntax-attr-name": "#eed49f", "syntax-attr-value": "#a6da95", "syntax-string": "#a6da95",
+    "syntax-number": "#f5a97f", "syntax-key": "#8aadf4", "syntax-boolean-null": "#c6a0f6", "syntax-punct": "#a5adcb" } },
+  { id: "catppuccin-mocha", name: "Catppuccin Mocha", colors: {
+    "syntax-tag": "#89b4fa", "syntax-attr-name": "#f9e2af", "syntax-attr-value": "#a6e3a1", "syntax-string": "#a6e3a1",
+    "syntax-number": "#fab387", "syntax-key": "#89b4fa", "syntax-boolean-null": "#cba6f7", "syntax-punct": "#a6adc8" } },
+];
+
 let customThemes = [];
+let customSyntaxSchemes = [];              // user-imported syntax schemes: {id, name, colors:{...SYNTAX_COLOR_KEYS}}
+let syntaxSchemeChoice = FOLLOW_THEME_SYNTAX_ID; // "follow-theme" | a built-in/custom scheme id
 
 function loadCustomThemes() {
   let stored = null;
@@ -5204,6 +5394,7 @@ function applyTheme(themeId) {
     if (custom.activeTextLight) THEME_ON_KEYS.forEach(k => style.setProperty("--" + k, "#fff"));
     if (custom.syntaxColors) SYNTAX_COLOR_KEYS.forEach(k => { if (custom.syntaxColors[k]) style.setProperty("--" + k, custom.syntaxColors[k]); });
   }
+  applySyntaxScheme(); // a chosen syntax scheme overrides the --syntax-* vars set above; "Follow app theme" is a no-op (see #67)
   applyAccentChoice(themeId); // re-picked --accent (if any) for THIS theme, on top of its defaults above
   const select = document.getElementById("settingsThemeSelect");
   if (select && select.value !== themeId) select.value = themeId;
@@ -5367,6 +5558,7 @@ function populateThemeSelect() {
 function initTheme() {
   loadCustomThemes();
   loadAccentChoices();
+  initSyntaxScheme(); // before the first applyTheme() below, which reads syntaxSchemeChoice/customSyntaxSchemes
   populateThemeSelect();
   renderCustomThemeList();
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -5664,6 +5856,232 @@ themeFileInput.addEventListener("change", ev => {
 document.getElementById("btnThemeImport").addEventListener("click", () => loadThemeFromFile());
 document.getElementById("btnThemeTemplate").addEventListener("click", () => downloadThemeTemplate());
 
+/* ===================== Syntax highlight scheme (FEATURE_BACKLOG.md #67) =====================
+   Mirrors the custom-theme machinery just above, but for the eight
+   SYNTAX_COLOR_KEYS only, and decoupled from the app theme. See the
+   BUILTIN_SYNTAX_SCHEMES / syntaxSchemeChoice declarations near
+   BUILTIN_THEMES for the model. */
+function loadCustomSyntaxSchemes() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem(CUSTOM_SYNTAX_SCHEMES_STORAGE_KEY) || "[]"); } catch { /* corrupt value, fall through to [] */ }
+  customSyntaxSchemes = Array.isArray(stored) ? stored : [];
+}
+
+function saveCustomSyntaxSchemes() {
+  localStorage.setItem(CUSTOM_SYNTAX_SCHEMES_STORAGE_KEY, JSON.stringify(customSyntaxSchemes));
+}
+
+// The scheme object for a chosen id, or null for "Follow app theme" (the
+// default) and any unknown/stale id — in which case applySyntaxScheme()
+// leaves the --syntax-* vars to whatever applyTheme() set (the theme's own
+// syntaxColors block or the CSS-cascade defaults).
+function resolveSyntaxScheme(id) {
+  if (!id || id === FOLLOW_THEME_SYNTAX_ID) return null;
+  return BUILTIN_SYNTAX_SCHEMES.find(s => s.id === id) || customSyntaxSchemes.find(s => s.id === id) || null;
+}
+
+// A stored/imported scheme id can go stale (its custom scheme was deleted,
+// e.g. localStorage edited by hand) — fall back to "Follow app theme".
+function resolveSyntaxSchemeId(id) {
+  if (id === FOLLOW_THEME_SYNTAX_ID) return id;
+  if (BUILTIN_SYNTAX_SCHEMES.some(s => s.id === id) || customSyntaxSchemes.some(s => s.id === id)) return id;
+  return FOLLOW_THEME_SYNTAX_ID;
+}
+
+// Called from inside applyTheme(), after the theme's own colors/syntaxColors
+// are in place: a specific scheme overrides the eight --syntax-* vars inline
+// (decoupling highlight colors from the app theme); "Follow app theme"
+// leaves them exactly as applyTheme() set them (pre-#67 behaviour).
+function applySyntaxScheme() {
+  const scheme = resolveSyntaxScheme(syntaxSchemeChoice);
+  if (scheme) {
+    const style = document.documentElement.style;
+    SYNTAX_COLOR_KEYS.forEach(k => { if (scheme.colors[k]) style.setProperty("--" + k, scheme.colors[k]); });
+  }
+  const select = document.getElementById("settingsSyntaxSchemeSelect");
+  if (select && select.value !== syntaxSchemeChoice) select.value = syntaxSchemeChoice;
+}
+
+function setSyntaxScheme(schemeId) {
+  syntaxSchemeChoice = schemeId;
+  localStorage.setItem(SYNTAX_SCHEME_STORAGE_KEY, schemeId);
+  applyTheme(currentThemeId()); // re-clears + re-applies theme colors, then applySyntaxScheme()
+}
+
+function populateSyntaxSchemeSelect() {
+  const select = document.getElementById("settingsSyntaxSchemeSelect");
+  if (!select) return;
+  select.innerHTML = "";
+  const follow = document.createElement("option");
+  follow.value = FOLLOW_THEME_SYNTAX_ID; follow.textContent = "Follow app theme";
+  select.appendChild(follow);
+  const builtinGroup = document.createElement("optgroup");
+  builtinGroup.label = "Built-in";
+  BUILTIN_SYNTAX_SCHEMES.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.id; opt.textContent = s.name;
+    builtinGroup.appendChild(opt);
+  });
+  select.appendChild(builtinGroup);
+  if (customSyntaxSchemes.length) {
+    const customGroup = document.createElement("optgroup");
+    customGroup.label = "Custom";
+    customSyntaxSchemes.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s.id; opt.textContent = s.name;
+      customGroup.appendChild(opt);
+    });
+    select.appendChild(customGroup);
+  }
+  select.value = syntaxSchemeChoice;
+}
+
+function initSyntaxScheme() {
+  loadCustomSyntaxSchemes();
+  syntaxSchemeChoice = resolveSyntaxSchemeId(localStorage.getItem(SYNTAX_SCHEME_STORAGE_KEY) || FOLLOW_THEME_SYNTAX_ID);
+  populateSyntaxSchemeSelect();
+  renderCustomSyntaxSchemeList();
+}
+
+// A 5-stripe swatch built from the scheme's own token colors, so a row in
+// the Custom syntax schemes list previews it at a glance.
+function syntaxSwatchStyle(colors) {
+  return "background:linear-gradient(90deg," + colors["syntax-tag"] + " 0 20%," + colors["syntax-string"] + " 20% 40%," +
+    colors["syntax-number"] + " 40% 60%," + colors["syntax-key"] + " 60% 80%," + colors["syntax-boolean-null"] + " 80% 100%)";
+}
+
+function renderCustomSyntaxSchemeList() {
+  const container = document.getElementById("customSyntaxSchemeList");
+  if (!container) return;
+  container.innerHTML = "";
+  if (!customSyntaxSchemes.length) {
+    container.innerHTML = '<div class="filter-library-empty">No custom syntax schemes yet — download a template below, fill in your colors, and import it.</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  customSyntaxSchemes.forEach(scheme => {
+    const row = document.createElement("div");
+    row.className = "filter-library-row";
+    row.style.cursor = "pointer";
+    row.title = "Use this syntax scheme";
+    row.addEventListener("click", () => setSyntaxScheme(scheme.id));
+
+    const main = document.createElement("div");
+    main.className = "filter-library-row-main theme-row-main";
+    main.innerHTML =
+      '<span class="theme-swatch" style="' + syntaxSwatchStyle(scheme.colors) + '"></span>' +
+      '<span class="filter-library-row-name">' + escapeHtml(scheme.name) + '</span>';
+    row.appendChild(main);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "filter-library-row-del";
+    delBtn.title = "Delete syntax scheme";
+    delBtn.innerHTML = ICON_CLOSE;
+    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeCustomSyntaxScheme(scheme.id); });
+    row.appendChild(delBtn);
+
+    frag.appendChild(row);
+  });
+  container.appendChild(frag);
+}
+
+function removeCustomSyntaxScheme(id) {
+  customSyntaxSchemes = customSyntaxSchemes.filter(s => s.id !== id);
+  saveCustomSyntaxSchemes();
+  populateSyntaxSchemeSelect();
+  renderCustomSyntaxSchemeList();
+  if (syntaxSchemeChoice === id) setSyntaxScheme(FOLLOW_THEME_SYNTAX_ID); // the deleted scheme was active — fall back
+}
+
+// Seeds the template from the CURRENTLY ACTIVE --syntax-* computed values
+// (whatever theme/scheme is in effect), so "download a template" always
+// hands back a valid, ready-to-tweak starting point — same idea as
+// buildThemeTemplateJson().
+function buildSyntaxSchemeTemplateJson() {
+  const cs = getComputedStyle(document.documentElement);
+  const colors = {};
+  SYNTAX_COLOR_KEYS.forEach(k => { colors[k] = cs.getPropertyValue("--" + k).trim(); });
+  return JSON.stringify({
+    format: SYNTAX_SCHEME_FILE_FORMAT,
+    version: SYNTAX_SCHEME_FILE_VERSION,
+    name: "My Syntax Scheme",
+    colors,
+  }, null, 2);
+}
+
+async function downloadSyntaxSchemeTemplate() {
+  const json = buildSyntaxSchemeTemplateJson();
+  const suggested = "philogg-syntax-scheme-template.json";
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "PhiLogg syntax scheme", accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return;
+    } catch (err) {
+      if (err && err.name === "AbortError") return; // user cancelled the picker
+      downloadJsonFallback(json, suggested); // API present but unusable in this context
+      return;
+    }
+  }
+  downloadJsonFallback(json, suggested); // Firefox / legacy: plain download
+}
+
+function importSyntaxSchemeJson(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
+  if (!data || data.format !== SYNTAX_SCHEME_FILE_FORMAT || !data.colors || typeof data.colors !== "object") {
+    showCopyToast("Not a PhiLogg syntax scheme file");
+    return;
+  }
+  if (data.version > SYNTAX_SCHEME_FILE_VERSION) { showCopyToast("Syntax scheme file was saved by a newer version"); return; }
+  const missing = SYNTAX_COLOR_KEYS.filter(k => typeof data.colors[k] !== "string" || !data.colors[k].trim());
+  if (missing.length) { showCopyToast("Syntax scheme file is missing: " + missing.join(", ")); return; }
+
+  const colors = {};
+  SYNTAX_COLOR_KEYS.forEach(k => { colors[k] = data.colors[k].trim(); });
+  const name = (typeof data.name === "string" && data.name.trim()) ? data.name.trim().slice(0, 80) : "Custom syntax scheme";
+  const id = "syntax:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  customSyntaxSchemes.push({ id, name, colors });
+  saveCustomSyntaxSchemes();
+  populateSyntaxSchemeSelect();
+  renderCustomSyntaxSchemeList();
+  setSyntaxScheme(id); // switch to it immediately, like importThemeJson does
+  showCopyToast("Syntax scheme imported: " + name);
+}
+
+const syntaxSchemeFileInput = document.getElementById("syntaxSchemeFileInput");
+
+async function loadSyntaxSchemeFromFile() {
+  if (!window.showOpenFilePicker) { syntaxSchemeFileInput.click(); return; }
+  let handles;
+  try {
+    handles = await window.showOpenFilePicker({
+      multiple: false,
+      types: [{ description: "PhiLogg syntax scheme", accept: { "application/json": [".json"] } }],
+    });
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    syntaxSchemeFileInput.click();
+    return;
+  }
+  importSyntaxSchemeJson(await (await handles[0].getFile()).text());
+}
+
+syntaxSchemeFileInput.addEventListener("change", ev => {
+  const file = ev.target.files[0];
+  if (file) file.text().then(importSyntaxSchemeJson).catch(() => showCopyToast("Could not read syntax scheme file"));
+  syntaxSchemeFileInput.value = "";
+});
+document.getElementById("btnSyntaxImport").addEventListener("click", () => loadSyntaxSchemeFromFile());
+document.getElementById("btnSyntaxTemplate").addEventListener("click", () => downloadSyntaxSchemeTemplate());
+document.getElementById("settingsSyntaxSchemeSelect").addEventListener("change", ev => setSyntaxScheme(ev.target.value));
+
 /* ===================== Font size (FEATURE_BACKLOG.md "Configurable font
    size", later split into independent "UI scale" / "Log text size" —
    backlog #42+44) ===================== */
@@ -5762,11 +6180,11 @@ let quitOnLastFileClose = false;
 function initQuitOnLastClose() {
   quitOnLastFileClose = localStorage.getItem(QUIT_ON_LAST_CLOSE_KEY) === "1";
   const cb = document.getElementById("settingsQuitOnLastClose");
-  if (cb) cb.checked = quitOnLastFileClose;
+  if (cb) pillSet(cb, quitOnLastFileClose);
 }
 
 document.getElementById("settingsQuitOnLastClose").addEventListener("change", ev => {
-  quitOnLastFileClose = ev.target.checked;
+  quitOnLastFileClose = pillGet(ev.target);
   localStorage.setItem(QUIT_ON_LAST_CLOSE_KEY, quitOnLastFileClose ? "1" : "0");
 });
 
@@ -5785,11 +6203,11 @@ function initCloseToTray() {
   const stored = localStorage.getItem(CLOSE_TO_TRAY_KEY);
   const closeToTray = stored === null ? true : stored === "1";
   const cb = document.getElementById("settingsCloseToTray");
-  if (cb) cb.checked = closeToTray;
+  if (cb) pillSet(cb, closeToTray);
 }
 
 document.getElementById("settingsCloseToTray").addEventListener("change", ev => {
-  localStorage.setItem(CLOSE_TO_TRAY_KEY, ev.target.checked ? "1" : "0");
+  localStorage.setItem(CLOSE_TO_TRAY_KEY, pillGet(ev.target) ? "1" : "0");
 });
 
 /* ===================== "Decimal separator for copy/export" ===================== */
@@ -5828,16 +6246,16 @@ function initHoverExpandSettings() {
   const sidebarStored = localStorage.getItem(HOVER_EXPAND_SIDEBAR_KEY);
   hoverExpandSidebar = sidebarStored === null ? true : sidebarStored === "1";
   const sidebarCb = document.getElementById("settingsHoverExpandSidebar");
-  if (sidebarCb) sidebarCb.checked = hoverExpandSidebar;
+  if (sidebarCb) pillSet(sidebarCb, hoverExpandSidebar);
 
   const detailStored = localStorage.getItem(HOVER_EXPAND_DETAIL_KEY);
   hoverExpandDetail = detailStored === null ? true : detailStored === "1";
   const detailCb = document.getElementById("settingsHoverExpandDetail");
-  if (detailCb) detailCb.checked = hoverExpandDetail;
+  if (detailCb) pillSet(detailCb, hoverExpandDetail);
 }
 
 document.getElementById("settingsHoverExpandSidebar").addEventListener("change", ev => {
-  hoverExpandSidebar = ev.target.checked;
+  hoverExpandSidebar = pillGet(ev.target);
   localStorage.setItem(HOVER_EXPAND_SIDEBAR_KEY, hoverExpandSidebar ? "1" : "0");
   // Turning it off while the sidebar happens to be mid-peek would otherwise
   // leave it stuck open until the next mouseleave — drop out immediately.
@@ -5848,7 +6266,7 @@ document.getElementById("settingsHoverExpandSidebar").addEventListener("change",
 });
 
 document.getElementById("settingsHoverExpandDetail").addEventListener("change", ev => {
-  hoverExpandDetail = ev.target.checked;
+  hoverExpandDetail = pillGet(ev.target);
   localStorage.setItem(HOVER_EXPAND_DETAIL_KEY, hoverExpandDetail ? "1" : "0");
   if (!hoverExpandDetail && detailPanel.classList.contains("peeking")) {
     detailPanel.classList.remove("peeking");
@@ -5900,7 +6318,7 @@ function initContextExpandStepSetting() {
 function initMinimapFullRangeSetting() {
   hideMinimapFullRangeInFullView = localStorage.getItem(HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY) === "1";
   const cb = document.getElementById("settingsHideMinimapFullRangeInFullView");
-  if (cb) cb.checked = hideMinimapFullRangeInFullView;
+  if (cb) pillSet(cb, hideMinimapFullRangeInFullView);
 }
 
 document.getElementById("settingsContextInitialExpansion").addEventListener("change", ev => {
@@ -5925,7 +6343,7 @@ document.getElementById("settingsContextExpandStep").addEventListener("change", 
 });
 
 document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListener("change", ev => {
-  hideMinimapFullRangeInFullView = ev.target.checked;
+  hideMinimapFullRangeInFullView = pillGet(ev.target);
   localStorage.setItem(HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY, hideMinimapFullRangeInFullView ? "1" : "0");
   // Re-evaluate immediately — without this, flipping the toggle while the
   // Full tab is already showing would leave the box exactly as it was until
@@ -5967,12 +6385,12 @@ function initTextMatchHighlightSettings() {
   const rowsStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_ROWS_KEY);
   textMatchHighlightInRows = rowsStored === null ? true : rowsStored === "1";
   const rowsCb = document.getElementById("settingsTextMatchHighlightRows");
-  if (rowsCb) rowsCb.checked = textMatchHighlightInRows;
+  if (rowsCb) pillSet(rowsCb, textMatchHighlightInRows);
 
   const detailStored = localStorage.getItem(TEXT_MATCH_HIGHLIGHT_DETAIL_KEY);
   textMatchHighlightInDetail = detailStored === null ? true : detailStored === "1";
   const detailCb = document.getElementById("settingsTextMatchHighlightDetail");
-  if (detailCb) detailCb.checked = textMatchHighlightInDetail;
+  if (detailCb) pillSet(detailCb, textMatchHighlightInDetail);
 }
 
 // Reflects textMatchHighlightEnabled on the view-bar toggle button — called
@@ -6018,13 +6436,13 @@ document.getElementById("settingsTextMatchHighlightScope").addEventListener("cha
 });
 
 document.getElementById("settingsTextMatchHighlightRows").addEventListener("change", ev => {
-  textMatchHighlightInRows = ev.target.checked;
+  textMatchHighlightInRows = pillGet(ev.target);
   localStorage.setItem(TEXT_MATCH_HIGHLIGHT_ROWS_KEY, textMatchHighlightInRows ? "1" : "0");
   renderVisibleRows();
 });
 
 document.getElementById("settingsTextMatchHighlightDetail").addEventListener("change", ev => {
-  textMatchHighlightInDetail = ev.target.checked;
+  textMatchHighlightInDetail = pillGet(ev.target);
   localStorage.setItem(TEXT_MATCH_HIGHLIGHT_DETAIL_KEY, textMatchHighlightInDetail ? "1" : "0");
   updateDetailPanel();
 });
@@ -6234,7 +6652,7 @@ function initTempAnchorSettings() {
   const acrossStored = localStorage.getItem(TEMP_ANCHOR_ACROSS_FILES_KEY);
   temporaryAnchorAcrossFiles = acrossStored === null ? true : acrossStored === "1";
   const acrossCheckbox = document.getElementById("settingsTempAnchorAcrossFiles");
-  if (acrossCheckbox) acrossCheckbox.checked = temporaryAnchorAcrossFiles;
+  if (acrossCheckbox) pillSet(acrossCheckbox, temporaryAnchorAcrossFiles);
 }
 
 document.getElementById("settingsTempAnchorMode").addEventListener("change", ev => {
@@ -6246,7 +6664,7 @@ document.getElementById("settingsTempAnchorMode").addEventListener("change", ev 
 });
 
 document.getElementById("settingsTempAnchorAcrossFiles").addEventListener("change", ev => {
-  temporaryAnchorAcrossFiles = ev.target.checked;
+  temporaryAnchorAcrossFiles = pillGet(ev.target);
   localStorage.setItem(TEMP_ANCHOR_ACROSS_FILES_KEY, temporaryAnchorAcrossFiles ? "1" : "0");
 });
 
@@ -6319,6 +6737,11 @@ const state = {
                            // a person actually has notes they want to see inline.
   pinBookmarksInFilteredView: false, // see PROJECT.md "Pin bookmarks into the Filtered View"
   multilineMessages: false, // see PROJECT.md "Multiline message display toggle"; global, session-cache-persisted
+  wrapMessages: false,      // Word-wrap the log message column (#68). Global, session-cache-persisted. Independent
+                            // of multilineMessages (both can be on). Also governs the Entry Detail message wrap,
+                            // since the detail panel shows the selected log entry — see docs/ui-and-views.md.
+  wrapTextView: false,      // Word-wrap the inline Text View (#68). Global, session-cache-persisted, separate from
+                            // wrapMessages. Line numbers stay per LOGICAL line (CSS ::before counter on .itv-line).
   // Log view column visibility/width (FEATURE_BACKLOG.md "Column visibility
   // / width persistence in the log view"). Time/Level/Message are always
   // shown (no visibility entry); Message has no width of its own (1fr, the
@@ -8308,6 +8731,67 @@ function invalidateOrderIndexMap(fileId) {
   if (file) file._orderIndexMap = null;
 }
 
+/* ===================== Per-file clock offset (FEATURE_BACKLOG.md #29) =====================
+   A manual clock correction for a single (non-merged) source file. Approach
+   (a): the offset is BAKED into every entry.ts of that file — not applied
+   lazily at read time — and the cumulative signed-ms amount is stored on the
+   file node as node.clockOffset (default 0) so it can be shown, re-edited and
+   undone. entry.raw / entry.tsRaw are deliberately left untouched: the session
+   cache rebuilds a file's text from entry.raw and re-parses it, which would
+   re-derive the ORIGINAL ts — so node.clockOffset is persisted separately and
+   re-applied to the freshly-parsed entries on restore (see
+   restoreSessionFromCache). Every place that shows a time reads formatTime(e.ts)
+   (both log-row renderers, the Δt column, the minimap), so shifting ts alone
+   updates the whole UI.
+
+   Merged-file gotcha: mergeFiles reuses a source file's entry OBJECTS by
+   reference, so shifting the source's entry.ts also moves those entries inside
+   any merged file that contains them — leaving that merged file's entries array
+   (and its _orderIndexMap) mis-sorted. shiftFileEntriesTs therefore re-sorts
+   every merged root file after a shift and drops its order map. A uniform shift
+   preserves the SOURCE file's own order, so its own array/_orderIndexMap stay
+   valid untouched (same array, same length, unchanged positions). */
+
+// Re-sorts every merged root file's entries by ts and drops its order-index
+// map. Called after a source file's entry.ts values are shifted, since a merged
+// file reuses those same entry objects by reference (mergeFiles) and so becomes
+// mis-sorted. Re-sorting a merged file that doesn't actually contain the
+// shifted entries is a harmless no-op (it was already sorted), so we don't
+// bother tracking which merged files share which source — merges are rare.
+function resortMergedFilesAfterShift() {
+  for (const rid of state.rootIds) {
+    const f = state.nodes[rid];
+    if (f && f.type === "file" && f.merged && Array.isArray(f.entries)) {
+      f.entries.sort((a, b) => a.ts - b.ts);
+      invalidateOrderIndexMap(rid); // in-place reorder: same array, same length
+    }
+  }
+}
+
+// Adds deltaMs to every entry.ts of a non-merged file and re-sorts any merged
+// file that reuses those entries. Does NOT touch node.clockOffset or the undo
+// stack — callers (applyClockOffset, undo/redo) manage those.
+function shiftFileEntriesTs(node, deltaMs) {
+  if (!node || !Array.isArray(node.entries) || !deltaMs) return;
+  for (const e of node.entries) e.ts += deltaMs;
+  resortMergedFilesAfterShift();
+}
+
+// Applies a signed-ms clock adjustment to a file, pushing an undoable action.
+// Returns true if applied. Refused for a merged file (its entries are shared
+// references — shifting them would silently move the source files' clocks too).
+function applyClockOffset(fileId, deltaMs) {
+  const node = fileId && state.nodes[fileId];
+  if (!node || node.type !== "file" || node.merged) return false;
+  if (!deltaMs || !Number.isFinite(deltaMs)) return false;
+  shiftFileEntriesTs(node, deltaMs);
+  node.clockOffset = (node.clockOffset || 0) + deltaMs;
+  invalidateAllCaches(); // structural-equivalent change: every filter chain under this file (and any merged view) is now stale
+  pushUndo({ kind: "clockOffset", nodeId: fileId, delta: deltaMs });
+  persistFileNode(node); // clockOffset is now part of the file's cache record
+  return true;
+}
+
 /* ===================== Time context filter: window around reference entries ===================== */
 
 // Creates a time-context filter: for every entry of the parent (reference)
@@ -9742,6 +10226,11 @@ function snapshotSubtree(nodeId) {
     // full file again, same class of bug node.formatId's own comment above
     // describes.
     if (node.partial) copy.partial = node.partial;
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): entries are kept by
+    // reference above, so their ALREADY-shifted ts come back on undo intact —
+    // this just preserves the cumulative amount so the file can still be
+    // re-edited/undone after a delete+restore round-trip.
+    if (node.clockOffset) copy.clockOffset = node.clockOffset;
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
@@ -9780,6 +10269,7 @@ function restoreSubtree(snap) {
     if (snap.formatId) node.formatId = snap.formatId;
     if (snap.folderId) node.folderId = snap.folderId;
     if (snap.partial) node.partial = snap.partial;
+    if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
     state.nodes[node.id] = node;
     node.entries.forEach(e => { entryIndex[e.id] = e; });
     node.children = snap.children.map(c => restoreSubtree(c).id);
@@ -9967,6 +10457,7 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
+  clockOffset: "clock adjust",
 };
 
 function undo() {
@@ -9994,6 +10485,16 @@ function undo() {
   } else if (action.kind === "edit") {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.before); state.activeId = action.nodeId; }
+  } else if (action.kind === "clockOffset") {
+    // Re-apply the INVERSE shift — snapshotSubtree keeps entries by reference,
+    // so the "before" ts can't be captured; we undo the mutation instead.
+    const node = state.nodes[action.nodeId];
+    if (node) {
+      shiftFileEntriesTs(node, -action.delta);
+      node.clockOffset = (node.clockOffset || 0) - action.delta;
+      persistFileNode(node);
+      state.activeId = action.nodeId;
+    }
   }
   redoStack.push(action);
   updateUndoRedoButtons();
@@ -10020,6 +10521,14 @@ function redo() {
   } else if (action.kind === "edit") {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.after); state.activeId = action.nodeId; }
+  } else if (action.kind === "clockOffset") {
+    const node = state.nodes[action.nodeId];
+    if (node) {
+      shiftFileEntriesTs(node, action.delta);
+      node.clockOffset = (node.clockOffset || 0) + action.delta;
+      persistFileNode(node);
+      state.activeId = action.nodeId;
+    }
   }
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
@@ -10052,6 +10561,30 @@ function getChain(id) {
 
 const el = sel => document.querySelector(sel);
 const elAll = sel => [...document.querySelectorAll(sel)];
+
+// --- Boolean pill toggle (docs/ui-standard.md #69) -------------------------
+// A single on/off option is a <button role="switch" class="pill-toggle"
+// aria-checked>, NOT a native checkbox. State lives in aria-checked (+ an
+// `.on` class mirror); always read it with pillGet(), set it with pillSet().
+// Never touch a pill's `.checked` property — a <button> has none.
+function pillGet(elm) { return !!(elm && elm.getAttribute("aria-checked") === "true"); }
+function pillSet(elm, on, fireChange) {
+  if (!elm) return;
+  on = !!on;
+  elm.setAttribute("aria-checked", on ? "true" : "false");
+  elm.classList.toggle("on", on);
+  if (fireChange) elm.dispatchEvent(new Event("change", { bubbles: true }));
+}
+// One delegated handler toggles every pill-toggle, present or added later
+// (e.g. the plot controls rebuild theirs on each render). A click on a
+// <label for="<pillId>"> is forwarded by the browser to the button, which
+// bubbles here, so label clicks toggle it too without extra wiring. Toggling
+// dispatches a `change` event, so existing change listeners keep working.
+document.addEventListener("click", ev => {
+  const pill = ev.target.closest && ev.target.closest(".pill-toggle");
+  if (!pill || pill.disabled) return;
+  pillSet(pill, !pillGet(pill), true);
+});
 const treeEl = el("#tree");
 const breadcrumbEl = el("#breadcrumb");
 const breadcrumbBarEl = el("#breadcrumbBar");
@@ -10084,6 +10617,7 @@ const extractStatsContent = el("#extractStatsContent");
 const btnPinBookmarks = elAll(".toggle-pin");
 const btnNotes = elAll(".toggle-notes");
 const btnMultilineMsg = elAll(".toggle-multiline");
+const btnWrapMsg = elAll(".toggle-wrap");
 const btnUndo = el("#btnUndo");
 const btnRedo = el("#btnRedo");
 const extractPatternEl = el("#extractPatternView");
@@ -13677,7 +14211,7 @@ function renderPlotControls() {
         '<span class="plot-y-swatch" style="background:' + columnColor(c.index) + '"></span>' + escapeHtml(c.name) + '</label>'
       ).join("") + '</div></div>';
     if (plottable.length > 2) {
-      html += '<label class="plot-checkbox-row"><input type="checkbox" id="plotNormalize"' + (plotConfig.normalize ? " checked" : "") + '> Normalize each series (0\u20131)</label>';
+      html += '<div class="plot-checkbox-row"><button type="button" role="switch" aria-checked="' + (plotConfig.normalize ? "true" : "false") + '" class="pill-toggle" id="plotNormalize"></button><label for="plotNormalize">Normalize each series (0\u20131)</label></div>';
     }
   }
   // Equal axis scale ("axis equal"): meaningful for a real X/Y position
@@ -13686,7 +14220,7 @@ function renderPlotControls() {
   // continuous axis a pixel-per-unit ratio applies to. 3D scatter has its
   // own axisEqual3d select above instead.
   if (plotConfig.type !== "bar" && plotConfig.type !== "3d") {
-    html += '<label class="plot-checkbox-row"><input type="checkbox" id="plotAxisEqual"' + (plotConfig.axisEqual ? " checked" : "") + '> Equal axis scale (1:1)</label>';
+    html += '<div class="plot-checkbox-row"><button type="button" role="switch" aria-checked="' + (plotConfig.axisEqual ? "true" : "false") + '" class="pill-toggle" id="plotAxisEqual"></button><label for="plotAxisEqual">Equal axis scale (1:1)</label></div>';
   }
 
   if (plotConfig.type !== "3d") {
@@ -13765,11 +14299,11 @@ function renderPlotControls() {
       });
     });
     const normCb = el("#plotNormalize");
-    if (normCb) normCb.addEventListener("change", () => { plotConfig.normalize = normCb.checked; plotZoom = null; renderPlotChart(); });
+    if (normCb) normCb.addEventListener("change", () => { plotConfig.normalize = pillGet(normCb); plotZoom = null; renderPlotChart(); });
   }
 
   const axisEqCb = el("#plotAxisEqual");
-  if (axisEqCb) axisEqCb.addEventListener("change", () => { plotConfig.axisEqual = axisEqCb.checked; renderPlotChart(); });
+  if (axisEqCb) axisEqCb.addEventListener("change", () => { plotConfig.axisEqual = pillGet(axisEqCb); renderPlotChart(); });
 
   const rangeIds = ["plotXMin", "plotXMax", "plotYMin", "plotYMax"];
   if (plotConfig.type === "3d") rangeIds.push("plotZMin", "plotZMax");
@@ -15080,13 +15614,64 @@ function noteHeightForEntry(e) {
   if (!note) return 0;
   return messageLineCount(note) * NOTE_LINE_HEIGHT + NOTE_ROW_VPAD;
 }
+/* ---------- Word-wrap message height support (state.wrapMessages) ----------
+   Word-wrap is folded into the exact-height virtualization the multiline
+   feature already established: a wrapped row's height is ROW_HEIGHT plus one
+   MULTILINE_LINE_HEIGHT per EXTRA visual line, so tableRowOffsets/
+   highlightRowOffsets keep summing exact heights. The one thing that must be
+   exact is the visual line count, and the .wrap-messages CSS uses
+   word-break:break-all precisely so each visual line holds exactly the track's
+   character capacity — making the count ceil(chars / columns), computable here
+   from data alone (no per-row DOM measurement). The two views can be different
+   widths (Stacked shows both at once), so each stores its own column count,
+   set when its offsets are built and reused by its render pass. */
+let tableWrapCols = 0;      // Filtered view's message-track char capacity when wrap on (0 = wrap off / unmeasurable)
+let highlightWrapCols = 0;  // Context view's, same contract
+// One real measurement of a 10-char monospace run (the log font is monospace),
+// divided back out to a single character's advance width. Cheap enough to run
+// once per offsets build; not cached, so it follows a log-text-scale change.
+function msgCharWidth() {
+  const w = measureMsgWidth("0000000000") / 10;
+  return w > 0 ? w : MONO_CHAR_WIDTH_FALLBACK;
+}
+// Character capacity of the message track in a given scroll body. Biased one
+// character narrower than the true width so the char-count line estimate can
+// only ever OVER-allocate a row (at worst a hair of trailing blank space),
+// never UNDER-allocate it (which would clip the last wrapped line). Returns 0
+// when wrap is off or the body isn't measurable yet (e.g. jsdom, clientWidth
+// 0) — callers then fall back to the plain non-wrapped ROW_HEIGHT.
+function wrapColsForBody(bodyEl) {
+  if (!state.wrapMessages) return 0;
+  const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - lastColumnEdgeX - COLUMN_GRID_GAP;
+  if (!(track > 0)) return 0;
+  const cw = msgCharWidth();
+  return Math.max(1, Math.floor((track - cw) / cw));
+}
+// Visual line count for a message soft-wrapped into `cols` columns. Exact for
+// the .wrap-messages CSS (break-all packs each line to `cols` chars). Honors
+// multiline: with it on, literal "\n"s split first and each part wraps; with
+// it off, runs of whitespace collapse to single spaces exactly as
+// white-space:normal renders them.
+function messageWrapLines(message, cols) {
+  if (cols < 1) return 1;
+  if (state.multilineMessages) {
+    let total = 0;
+    const parts = message ? message.split("\n") : [""];
+    for (const p of parts) total += Math.max(1, Math.ceil(p.length / cols));
+    return total;
+  }
+  const collapsed = message ? message.replace(/\s+/g, " ").trim() : "";
+  return Math.max(1, Math.ceil(collapsed.length / cols));
+}
 // The entry's OWN row height, excluding any note-row rendered as its sibling
 // right below it (used for the .log-row element's own style.height — the
 // note-row gets its own separate height, see renderVisibleRows/
-// renderHighlightVisibleRows).
-function baseRowHeightForEntry(e) {
-  if (!state.multilineMessages) return ROW_HEIGHT;
-  const n = messageLineCount(e.message);
+// renderHighlightVisibleRows). `cols` is the wrapping view's char capacity
+// (tableWrapCols/highlightWrapCols); 0/absent = no word-wrap.
+function baseRowHeightForEntry(e, cols) {
+  const wrapOn = state.wrapMessages && cols >= 1;
+  if (!state.multilineMessages && !wrapOn) return ROW_HEIGHT;
+  const n = wrapOn ? messageWrapLines(e.message, cols) : messageLineCount(e.message);
   return n > 1 ? ROW_HEIGHT + (n - 1) * MULTILINE_LINE_HEIGHT : ROW_HEIGHT;
 }
 // A row's TOTAL height in either virtualized view: the entry's own line(s)
@@ -15094,22 +15679,27 @@ function baseRowHeightForEntry(e) {
 // forces the offsets-array virtualization path exactly like multiline
 // messages already do, since a note-bearing row is no longer a fixed
 // ROW_HEIGHT even with state.multilineMessages off). This is what
-// buildRowOffsets sums over — it MUST equal baseRowHeightForEntry(e) +
+// buildRowOffsets sums over — it MUST equal baseRowHeightForEntry(e, cols) +
 // noteHeightForEntry(e) exactly, or the two DOM elements' real heights drift
 // out of sync with the virtualization math.
-function rowHeightForEntry(e) {
-  return baseRowHeightForEntry(e) + noteHeightForEntry(e);
+function rowHeightForEntry(e, cols) {
+  return baseRowHeightForEntry(e, cols) + noteHeightForEntry(e);
 }
 // Whether the offsets-array virtualization path (tableRowOffsets/
 // highlightRowOffsets, built via buildRowOffsets) is needed instead of the
 // plain `index * ROW_HEIGHT` arithmetic — true whenever ANY row's height can
-// differ from the fixed ROW_HEIGHT default: multiline messages, or notes
-// being shown at all (cheaper to always build the array while notes are on
-// than to track "does any currently-loaded entry actually have a note").
-function needsRowOffsets() { return state.multilineMessages || state.showNotes; }
+// differ from the fixed ROW_HEIGHT default: multiline messages, word-wrap, or
+// notes being shown at all (cheaper to always build the array while notes are
+// on than to track "does any currently-loaded entry actually have a note").
+function needsRowOffsets() { return state.multilineMessages || state.showNotes || state.wrapMessages; }
 function buildRowOffsets(entries) {
+  // Recompute (and cache) the Filtered view's wrap column count here so the
+  // heights summed below and the per-row heights renderVisibleRows sets from
+  // tableWrapCols come from the SAME value — no drift between offsets and rows.
+  tableWrapCols = wrapColsForBody(tableBody);
+  const cols = tableWrapCols;
   const offsets = new Float64Array(entries.length + 1);
-  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i]);
+  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols);
   return offsets;
 }
 // Largest i such that offsets[i] <= y, clamped to a valid row index (offsets
@@ -15474,7 +16064,7 @@ function renderVisibleRows() {
     const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
     row.className = cls;
-    row.style.height = baseRowHeightForEntry(e) + "px";
+    row.style.height = baseRowHeightForEntry(e, tableWrapCols) + "px";
     row.dataset.entryId = e.id;
     row.innerHTML =
       bracketHtml +
@@ -15931,6 +16521,11 @@ function buildContextView(rootId) {
 // topVisibleEntryId/captureViewAnchor/restoreViewAnchor/minimapRenderedSpan
 // keep working on this array unchanged.
 function buildContextRowOffsets(entries, strips) {
+  // Same reasoning as buildRowOffsets: cache this view's own wrap column count
+  // (its body can be a different width than the Filtered view's in Stacked)
+  // so offsets and renderHighlightVisibleRows' per-row heights agree.
+  highlightWrapCols = wrapColsForBody(highlightBody);
+  const cols = highlightWrapCols;
   const fillerH = key => {
     const arr = strips.get(key);
     return arr ? arr.length * CONTEXT_STRIP_HEIGHT : 0;
@@ -15938,7 +16533,7 @@ function buildContextRowOffsets(entries, strips) {
   const offsets = new Float64Array(entries.length + 1);
   offsets[0] = fillerH(-1);
   for (let i = 0; i < entries.length; i++) {
-    offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i]) + fillerH(i);
+    offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols) + fillerH(i);
   }
   return offsets;
 }
@@ -15954,6 +16549,8 @@ function buildContextRowOffsets(entries, strips) {
    than a constant that silently drifts out of sync with the CSS. */
 let cachedMaxHighlightMsgPixelWidth = 0;
 function syncHighlightRowsWidth() {
+  // See syncTableRowsWidth: wrap on -> no horizontal overflow to scroll to.
+  if (state.wrapMessages) { highlightRows.style.width = ""; return; }
   const cs = getComputedStyle(highlightRows);
   const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
   const contentW = cachedMaxHighlightMsgPixelWidth > 0
@@ -16509,7 +17106,7 @@ function renderHighlightVisibleRows() {
     const deltaMs = prevE ? (e.ts - prevE.ts) : null;
 
     row.className = cls;
-    row.style.height = baseRowHeightForEntry(e) + "px";
+    row.style.height = baseRowHeightForEntry(e, highlightWrapCols) + "px";
     row.dataset.entryId = e.id;
     // markFieldHtml short-circuits to a plain escapeHtml before any range
     // search when nothing can contribute a mark (no coloured rules, or the
@@ -17101,6 +17698,85 @@ detailResizer.addEventListener("dblclick", () => toggleDetailCollapsed());
 
 function initDetailCollapsed() {
   if (localStorage.getItem(DETAIL_COLLAPSED_KEY) === "1") toggleDetailCollapsed(true);
+}
+
+/* ===================== Fullscreen Focus Mode (FEATURE_BACKLOG.md #66) =====================
+   A distraction-free mode: the header is removed outright, the Files &
+   Filters sidebar and the Entry Detail panel are force-collapsed to their
+   edge-hover overlays, and the active log/extraction view takes the freed
+   space — with #breadcrumbBar, #viewBar and the timeline minimap left
+   visible. Real OS fullscreen is a Tauri-only capability, so entering focus
+   mode also asks the desktop wrapper to go fullscreen (window.philogg
+   .setFullscreen); in the plain browser build that half is simply absent and
+   the F11 shortcut isn't bound at all (see the main keydown handler), leaving
+   the browser's own F11 in charge.
+
+   It reuses the EXISTING collapse + hover-peek mechanism (toggleSidebar/
+   DetailCollapsed and the hoverExpand* flags) rather than inventing a new one:
+   on enter it records the prior collapse states and hoverExpand flags, forces
+   both panels collapsed and forces hover-reveal on regardless of the user's
+   normal settings; on exit it restores exactly what it captured. The
+   hoverExpand* flags are toggled in memory only (never persisted), so a
+   person's saved "open on hover" preference is untouched. Body-level toggle
+   (one class flip), so it never rebuilds the tree — see the render-scope
+   gotcha in PROJECT.md. */
+let focusModePrevState = null;
+function isFocusMode() { return document.body.classList.contains("focus-mode"); }
+function setDesktopFullscreen(on) {
+  if (window.philogg && typeof window.philogg.setFullscreen === "function") {
+    try { window.philogg.setFullscreen(on); } catch (err) { /* wrapper gone — page stays in focus mode regardless */ }
+  }
+}
+function toggleFocusMode(on) {
+  if (on === undefined) on = !isFocusMode();
+  if (on === isFocusMode()) return; // already in the requested state
+  if (on) {
+    focusModePrevState = {
+      sidebarCollapsed: isSidebarCollapsed(),
+      detailCollapsed: isDetailCollapsed(),
+      hoverExpandSidebar: hoverExpandSidebar,
+      hoverExpandDetail: hoverExpandDetail,
+    };
+    document.body.classList.add("focus-mode");
+    // Force hover-reveal on regardless of the user's normal settings, so the
+    // collapsed panels are still reachable by an edge hover in focus mode.
+    // In-memory only — the saved preference (and its localStorage key) is
+    // left alone and restored verbatim on exit.
+    hoverExpandSidebar = true;
+    hoverExpandDetail = true;
+    if (!isSidebarCollapsed()) toggleSidebarCollapsed(true);
+    if (!isDetailCollapsed()) toggleDetailCollapsed(true);
+    setDesktopFullscreen(true);
+  } else {
+    document.body.classList.remove("focus-mode");
+    const prev = focusModePrevState || { sidebarCollapsed: false, detailCollapsed: true, hoverExpandSidebar: true, hoverExpandDetail: true };
+    if (isSidebarCollapsed() !== prev.sidebarCollapsed) toggleSidebarCollapsed(prev.sidebarCollapsed);
+    if (isDetailCollapsed() !== prev.detailCollapsed) toggleDetailCollapsed(prev.detailCollapsed);
+    hoverExpandSidebar = prev.hoverExpandSidebar;
+    hoverExpandDetail = prev.hoverExpandDetail;
+    focusModePrevState = null;
+    setDesktopFullscreen(false);
+  }
+}
+// Whether any popup/menu/dialog is currently open — used so Esc's secondary
+// "exit Focus Mode" path only fires when nothing else is consuming that Esc
+// (an open overlay closes first; a single Esc never both closes it AND drops
+// out of focus mode). Mirrors the set of overlays the global Escape handler
+// itself closes.
+function anyEscapeOverlayOpen() {
+  const overlayIds = [
+    "filterPopup", "settingsDialog", "folderWatchSettingsDialog", "linkDialog",
+    "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
+    "csvExportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
+    "filterLibraryDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
+    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay",
+  ];
+  for (let i = 0; i < overlayIds.length; i++) {
+    const e = document.getElementById(overlayIds[i]);
+    if (e && !e.classList.contains("hidden")) return true;
+  }
+  if (sessionMatchResolver || mergeLoadResolver) return true;
+  return false;
 }
 
 // Statistics panel: same collapsed/peeking pin-or-hover mechanism as
@@ -18859,6 +19535,15 @@ function updateMultilineMsgButton() {
   document.body.classList.toggle("multiline-messages", state.multilineMessages);
 }
 
+// Reflects state.wrapMessages on the log toolbars' word-wrap buttons and on
+// the body-level class the .wrap-messages CSS keys off (log rows AND the Entry
+// Detail message) — same pattern as updateMultilineMsgButton. Called after
+// every toggle and after session restore.
+function updateWrapMsgButton() {
+  btnWrapMsg.forEach(b => b.classList.toggle("active", state.wrapMessages));
+  document.body.classList.toggle("wrap-messages", state.wrapMessages);
+}
+
 // A plain persistent toggle, not a popup — full render() (rather than the
 // targeted renderMainView() the level-filter pills use) is simplest here
 // and correctness matters more than the render cost for a rare click: it
@@ -18899,6 +19584,17 @@ btnMultilineMsg.forEach(b => b.addEventListener("click", () => {
   // a hidden #tableBody — nothing stale to guard against).
   state.multilineMessages = !state.multilineMessages;
   updateMultilineMsgButton();
+  render();
+}));
+
+// Word-wrap toggle (FEATURE_BACKLOG.md #68) — same plain-persistent-toggle
+// shape as #btnMultilineMsg above: row heights change (baseRowHeightForEntry
+// now folds wrapped-line count in), so a full render() rebuilds the offsets
+// and both views' visible windows, and flows through schedulePersistMeta() so
+// the flag survives reload. Independent of multiline — both can be on.
+btnWrapMsg.forEach(b => b.addEventListener("click", () => {
+  state.wrapMessages = !state.wrapMessages;
+  updateWrapMsgButton();
   render();
 }));
 
@@ -19070,7 +19766,13 @@ function measureMsgWidth(text) {
     // overflow:visible cancels .col-msg's own overflow:hidden/ellipsis,
     // neither of which should clip an unconstrained shrink-to-fit box
     // anyway, but this keeps the intent explicit.
-    msgMeasureEl.style.cssText = "position:absolute; visibility:hidden; left:-99999px; top:0; overflow:visible; width:auto;";
+    // white-space:nowrap is explicit here (not just inherited from .col-msg's
+    // own base rule): with word-wrap on, body.wrap-messages otherwise reaches
+    // this element too (it carries class .col-msg) and would switch it to
+    // normal/pre-wrap, so a shrink-to-fit box would wrap to its longest WORD
+    // instead of reporting the full line's natural width. Pinning nowrap keeps
+    // measureMsgWidth (and msgCharWidth, one word anyway) correct in every mode.
+    msgMeasureEl.style.cssText = "position:absolute; visibility:hidden; left:-99999px; top:0; overflow:visible; width:auto; white-space:nowrap;";
     document.body.appendChild(msgMeasureEl);
   }
   msgMeasureEl.textContent = text;
@@ -19117,6 +19819,10 @@ function computeMaxMessageWidth(entries) {
 // .style.width here is the OUTER (border-box) size.
 const TABLE_ROWS_H_PADDING = 14 + 16;
 function syncTableRowsWidth() {
+  // Word-wrap on: the message wraps within the viewport, so there is nothing
+  // to scroll to horizontally — clear any forced width and let #tableRows
+  // stretch-fill (left:0;right:0), same as a short-message file.
+  if (state.wrapMessages) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
     ? lastColumnEdgeX + COLUMN_GRID_GAP + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
     : 0;
@@ -19938,6 +20644,7 @@ const inlineViewerToolbar = el("#inlineViewerToolbar");
 const itvControlsGroup = inlineViewerToolbar.querySelector('[data-toolbar-group="controls"]');
 const itvSettingsGroup = inlineViewerToolbar.querySelector('[data-toolbar-group="settings"]');
 const itvToolbarSep = el("#itvToolbarSep");
+const itvWrapBtn = el("#itvWrapBtn");
 // Unified toolbar (person-requested): one row, shared by the text and
 // image sub-viewers, instead of the image viewer's own floating overlay —
 // Controls (zoom) only makes sense for an image, Settings (Pretty Print)
@@ -19947,12 +20654,33 @@ const itvToolbarSep = el("#itvToolbarSep");
 // .txt file.
 function updateInlineViewerToolbar(v) {
   const showControls = v.kind === "image";
-  const showSettings = v.kind === "text" && v.ext === "json";
+  const isText = v.kind === "text";
+  // Settings group shows for ANY text file so the word-wrap toggle (#itvWrapBtn,
+  // FEATURE_BACKLOG.md #68) is reachable on .txt/.xml/.json; Pretty Print stays
+  // JSON-only and hides itself for the rest.
+  const showSettings = isText;
+  itvWrapBtn.classList.toggle("hidden", !isText);
+  itvWrapBtn.classList.toggle("active", state.wrapTextView);
+  itvPrettyPrintBtn.classList.toggle("hidden", !(isText && v.ext === "json"));
   itvControlsGroup.classList.toggle("hidden", !showControls);
   itvSettingsGroup.classList.toggle("hidden", !showSettings);
   itvToolbarSep.classList.toggle("hidden", !(showControls && showSettings));
   inlineViewerToolbar.classList.toggle("hidden", !(showControls || showSettings));
 }
+
+// Reflects state.wrapTextView on the body-level class the .textview-wrap CSS
+// keys off and on the toolbar button. A pure CSS switch (no innerHTML rebuild),
+// so unlike the Pretty Print toggle it doesn't re-render the viewer — the text
+// stays put, only its wrapping changes.
+function updateWrapTextViewButton() {
+  document.body.classList.toggle("textview-wrap", state.wrapTextView);
+  itvWrapBtn.classList.toggle("active", state.wrapTextView);
+}
+itvWrapBtn.addEventListener("click", () => {
+  state.wrapTextView = !state.wrapTextView;
+  updateWrapTextViewButton();
+  schedulePersistMeta();
+});
 
 // Bug 2/3 fix (person-reported): the single shared "a non-log entry becomes
 // the active content" transition — every call site that sets
@@ -22525,8 +23253,8 @@ function openFolderWatchSettingsDialog(folder) {
   fwSettingsFolder = folder;
   if (!folder.settings) folder.settings = defaultFolderSettings();
   fwSettingsFolderName.textContent = folder.name;
-  fwSettingsSubfolders.checked = !!folder.settings.includeSubfolders;
-  fwSettingsShowRelPath.checked = !!folder.settings.showRelativePath;
+  pillSet(fwSettingsSubfolders, !!folder.settings.includeSubfolders);
+  pillSet(fwSettingsShowRelPath, !!folder.settings.showRelativePath);
   fwSettingsRelPathRow.classList.toggle("hidden", !folder.settings.includeSubfolders);
   renderFwPatternList();
   folderWatchSettingsDialog.classList.remove("hidden");
@@ -22544,13 +23272,13 @@ async function commitFolderWatchSettings() {
 
 fwSettingsSubfolders.addEventListener("change", () => {
   if (!fwSettingsFolder) return;
-  fwSettingsFolder.settings.includeSubfolders = fwSettingsSubfolders.checked;
+  fwSettingsFolder.settings.includeSubfolders = pillGet(fwSettingsSubfolders);
   fwSettingsRelPathRow.classList.toggle("hidden", !fwSettingsFolder.settings.includeSubfolders);
   commitFolderWatchSettings();
 });
 fwSettingsShowRelPath.addEventListener("change", () => {
   if (!fwSettingsFolder) return;
-  fwSettingsFolder.settings.showRelativePath = fwSettingsShowRelPath.checked;
+  fwSettingsFolder.settings.showRelativePath = pillGet(fwSettingsShowRelPath);
   commitFolderWatchSettings();
 });
 fwBtnAddPattern.addEventListener("click", () => {
@@ -22751,10 +23479,10 @@ function openFilterPopup() {
   renderFilterTargetChain();
   filterSubmitBtn.textContent = "Add filter";
   filterInput.value = "";
-  filterInvertCheckbox.checked = false;
-  filterCaseCheckbox.checked = false;
-  filterRegexCheckbox.checked = false;
-  filterWholeWordCheckbox.checked = false; // person-specified default: off
+  pillSet(filterInvertCheckbox, false);
+  pillSet(filterCaseCheckbox, false);
+  pillSet(filterRegexCheckbox, false);
+  pillSet(filterWholeWordCheckbox, false); // person-specified default: off
   updateRegexModeUI();
   renderFilterColumnChips();
   updateFilterAvailability();
@@ -22786,10 +23514,10 @@ function openEditFilterPopup(nodeId) {
   renderFilterTargetChain();
   filterSubmitBtn.textContent = "Save";
   filterInput.value = node.value;
-  filterInvertCheckbox.checked = !!node.inverted;
-  filterCaseCheckbox.checked = node.filterType === "text" && !!node.caseSensitive;
-  filterRegexCheckbox.checked = node.filterType === "text" && !!node.isRegex;
-  filterWholeWordCheckbox.checked = node.filterType === "text" && !!node.wholeWord;
+  pillSet(filterInvertCheckbox, !!node.inverted);
+  pillSet(filterCaseCheckbox, node.filterType === "text" && !!node.caseSensitive);
+  pillSet(filterRegexCheckbox, node.filterType === "text" && !!node.isRegex);
+  pillSet(filterWholeWordCheckbox, node.filterType === "text" && !!node.wholeWord);
   updateRegexModeUI();
   renderFilterColumnChips();
   updateFilterAvailability();
@@ -22850,7 +23578,7 @@ filterTokenChips.addEventListener("click", ev => {
 // Everything else (live match count, case-sensitivity, NOT, column
 // restriction, target chain) stays visible/usable in both modes.
 function updateRegexModeUI() {
-  const isRegex = filterRegexCheckbox.checked;
+  const isRegex = pillGet(filterRegexCheckbox);
   filterTokenChips.classList.toggle("hidden", isRegex);
   if (isRegex) {
     filterPatternPreview.classList.add("hidden");
@@ -22891,11 +23619,11 @@ function evaluateLiveMatch() {
       return;
     }
     const baseEntries = applyLevelFilter(getEntries(filterPopupBaseId));
-    const inverted = filterInvertCheckbox.checked;
-    const caseSensitive = filterCaseCheckbox.checked;
+    const inverted = pillGet(filterInvertCheckbox);
+    const caseSensitive = pillGet(filterCaseCheckbox);
     const columns = [...filterPopupColumns];
 
-    if (filterRegexCheckbox.checked) {
+    if (pillGet(filterRegexCheckbox)) {
       // Regex mode has no wildcard-token pattern preview to show — the
       // preview box stays hidden the whole time (see updateRegexModeUI).
       filterPatternPreview.classList.add("hidden");
@@ -22922,7 +23650,7 @@ function evaluateLiveMatch() {
     }
     // wholeWord only reaches the literal branch of textFilterMatches — a
     // wildcard pattern disables the toggle anyway (updateWholeWordAvailability).
-    const wholeWord = filterWholeWordCheckbox.checked && !filterWholeWordCheckbox.disabled;
+    const wholeWord = pillGet(filterWholeWordCheckbox) && !filterWholeWordCheckbox.disabled;
     let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, wildcardRegex, wildcardColumns, null, wholeWord) ? 1 : 0), 0);
     if (inverted) matches = baseEntries.length - matches;
     const label = inverted ? "Kept (NOT): " : "Matches: ";
@@ -23029,7 +23757,7 @@ function updateFilterPatternPreview(val, baseEntries) {
 const WHOLE_WORD_TITLE = "Only match the input as a whole word — “Test” matches “Test is active” but not “Testing activated”";
 const WHOLE_WORD_TITLE_NA = "Not applicable to a regex or a wildcard-token pattern — those express their own boundaries (\\b, [*:word], …)";
 function updateWholeWordAvailability() {
-  const inapplicable = filterRegexCheckbox.checked || isExtractPattern(filterInput.value);
+  const inapplicable = pillGet(filterRegexCheckbox) || isExtractPattern(filterInput.value);
   filterWholeWordCheckbox.disabled = inapplicable;
   filterWholeWordRow.classList.toggle("disabled", inapplicable);
   filterWholeWordRow.title = inapplicable ? WHOLE_WORD_TITLE_NA : WHOLE_WORD_TITLE;
@@ -23062,10 +23790,10 @@ filterWholeWordCheckbox.addEventListener("change", evaluateLiveMatch);
 function commitFilter() {
   const val = filterInput.value.trim();
   if (!val || !filterPopupBaseId) { closeFilterPopup(); return; }
-  const isRegex = filterRegexCheckbox.checked;
+  const isRegex = pillGet(filterRegexCheckbox);
 
   if (isRegex) {
-    if (!compileRegexFilter(val, filterCaseCheckbox.checked)) {
+    if (!compileRegexFilter(val, pillGet(filterCaseCheckbox))) {
       filterInput.classList.remove("input-regex-error");
       void filterInput.offsetWidth;
       filterInput.classList.add("input-regex-error");
@@ -23077,16 +23805,16 @@ function commitFilter() {
     filterInput.classList.add("input-error");
     return; // keep the popup open so the pattern can be fixed
   }
-  const caseSensitive = filterCaseCheckbox.checked;
+  const caseSensitive = pillGet(filterCaseCheckbox);
   const columns = [...filterPopupColumns];
   const ignoredArr = [...filterPopupIgnored];
   // Never stored on a node whose value the flag couldn't affect (a regex
   // or a wildcard pattern) — the toggle is greyed out for those, and a node
   // carrying a flag that does nothing would be a lie in every persistence
   // carrier it travels through.
-  const wholeWord = filterWholeWordCheckbox.checked && !isRegex && !isExtractPattern(val);
-  if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, filterInvertCheckbox.checked, ignoredArr, caseSensitive, columns, isRegex, wholeWord);
-  else createFilterNode(filterPopupBaseId, "text", val, filterInvertCheckbox.checked, ignoredArr, caseSensitive, columns, isRegex, wholeWord);
+  const wholeWord = pillGet(filterWholeWordCheckbox) && !isRegex && !isExtractPattern(val);
+  if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
+  else createFilterNode(filterPopupBaseId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
   closeFilterPopup();
   revealFilteredView(); // a new/edited filter's result lives in the Filtered view
   render();
@@ -23428,6 +24156,19 @@ function singleMessageActionEntry() {
   // row — both buttons are hidden there anyway (updateViewBarRowActions).
   if (fhActiveTab === "table" || fhActiveTab === "plot") return null;
   if (state.logMultiSelect.size >= 2) return null;
+  // Link view: target the selected pair/tuple as a whole — same object the
+  // brace's own right-click -> "Filter for this message" and Alt+Enter
+  // already pass into openFilterForEntryColumn (see that keydown handler),
+  // not whichever single real entry state.selectedId happens to still hold
+  // from an earlier row dblclick. Person-reported: the toolbar's "Message"/
+  // "Extract" buttons (handleRowActionClick) went through
+  // currentRowActionEntry() unconditionally, so selecting a pair block in
+  // the Link view and clicking "Extract" wildcarded only whichever single
+  // entry was last dblclicked, not the whole tuple.
+  if (state.entriesView === "filter" && linkWrap.style.display !== "none" &&
+      linkSelectedPairIndex != null && linkPairsData[linkSelectedPairIndex]) {
+    return linkPairsData[linkSelectedPairIndex].pair;
+  }
   return currentRowActionEntry();
 }
 
@@ -24235,6 +24976,13 @@ function openTreeContextMenu(ev, clickedId) {
     if (node.type === "file" && node.sourceUrl && !isDesktopLocalUrl(node.sourceUrl)) {
       buckets.edit.push({ action: "copyUrl", label: "Copy URL", icon: ICON_COPY });
     }
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): only on a real
+    // (non-merged) file with entries to shift — a merged file reuses its
+    // sources' entry objects by reference, so shifting it would silently move
+    // the source files' clocks too (see applyClockOffset's own guard).
+    if (node.type === "file" && !node.merged && node.entries && node.entries.length) {
+      buckets.edit.push({ action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK });
+    }
     if (node.type === "filter" && node.locked) {
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
     } else if (node.type === "filter") {
@@ -24397,6 +25145,10 @@ treeContextMenu.addEventListener("click", ev => {
     if (treeCtxId) editFilterNode(treeCtxId);
     return;
   }
+  if (action === "clockOffset") {
+    if (treeCtxId && state.nodes[treeCtxId]) openClockOffsetDialog(treeCtxId);
+    return;
+  }
   if (action === "copy" || action === "cut") {
     if (treeCtxId && state.nodes[treeCtxId]) {
       state.activeId = treeCtxId;
@@ -24509,8 +25261,8 @@ function openLinkDialog(ids) {
   if (nodes.length < 2) return;
   linkDialogIds = nodes.map(n => n.id);
   linkRefSelect.innerHTML = nodes.map(n => '<option value="' + n.id + '">' + escapeHtml(nodeDisplayName(n)) + "</option>").join("");
-  linkOrderEnforceInput.checked = false;
-  linkExclusiveInput.checked = false;
+  pillSet(linkOrderEnforceInput, false);
+  pillSet(linkExclusiveInput, false);
   renderLinkHops();
   linkDialog.classList.remove("hidden");
 }
@@ -24558,15 +25310,15 @@ function renderLinkHops() {
 function updateLinkOrderEnforceAvailability() {
   const dirs = linkHopRows.map(h => h.dirSelect.value);
   const diverse = dirs.length >= 2 && new Set(dirs).size > 1;
-  if (!diverse) linkOrderEnforceInput.checked = false;
+  if (!diverse) pillSet(linkOrderEnforceInput, false);
   linkOrderEnforceRow.classList.toggle("hidden", !diverse);
 }
 linkRefSelect.addEventListener("change", renderLinkHops);
 linkDialog.addEventListener("click", ev => { if (ev.target === linkDialog) closeLinkDialog(); });
 el("#linkDialogCancel").addEventListener("click", closeLinkDialog);
 el("#linkDialogCreate").addEventListener("click", () => {
-  const orderEnforced = linkOrderEnforceInput.checked;
-  const exclusive = linkExclusiveInput.checked;
+  const orderEnforced = pillGet(linkOrderEnforceInput);
+  const exclusive = pillGet(linkExclusiveInput);
   let curRefId = linkRefSelect.value;
   let lastNode = null;
   let ok = !!curRefId && linkHopRows.length > 0;
@@ -24621,8 +25373,8 @@ function openCsvExportDialog() {
   // Comma-decimal locales conventionally use semicolon as the CSV field
   // delimiter (so Excel doesn't mistake a decimal comma for a new column).
   csvExportDelimiterSelect.value = decimalSep === "," ? ";" : ",";
-  csvExportHeadersInput.checked = true;
-  csvExportFullEntryInput.checked = false;
+  pillSet(csvExportHeadersInput, true);
+  pillSet(csvExportFullEntryInput, false);
   csvExportDialog.classList.remove("hidden");
 }
 el("#ctxExportCsv").addEventListener("click", () => {
@@ -24636,7 +25388,7 @@ el("#csvExportCancel").addEventListener("click", closeCsvExportDialog);
 el("#csvExportConfirm").addEventListener("click", async () => {
   if (!extractRowsData.length) { closeCsvExportDialog(); return; }
   const delimiter = csvExportDelimiterSelect.value === "\\t" ? "\t" : csvExportDelimiterSelect.value;
-  const csvText = buildExtractCsv(delimiter, csvExportDecimalSelect.value, csvExportHeadersInput.checked, csvExportFullEntryInput.checked);
+  const csvText = buildExtractCsv(delimiter, csvExportDecimalSelect.value, pillGet(csvExportHeadersInput), pillGet(csvExportFullEntryInput));
   closeCsvExportDialog();
   await saveCsvToFile(csvText);
 });
@@ -24747,6 +25499,151 @@ timeRangeDialogSubmit.addEventListener("click", () => {
   closeTimeRangeDialog();
   revealFilteredView();
   render();
+});
+
+/* ===================== Per-file clock offset dialog (FEATURE_BACKLOG.md #29) =====================
+   Reachable only from a file node's context menu ("Adjust clock…"). Two
+   interpretation modes via a segmented .assert-mode-btn control:
+     - Difference: a signed delta, applied additively to every entry.ts.
+     - Start time: the desired absolute timestamp of the file's FIRST log line;
+       effective delta = desiredStart − currentFirstTs.
+   A live preview shows the first and last log line each as old → new. The
+   actual mutation + persistence + undo lives in applyClockOffset (see the
+   "Per-file clock offset" block near invalidateOrderIndexMap). */
+
+const clockOffsetDialog = el("#clockOffsetDialog");
+let clockOffsetFileId = null;
+let clockOffsetMode = "diff"; // "diff" | "start"
+
+function clockOffsetFile() { return clockOffsetFileId ? state.nodes[clockOffsetFileId] : null; }
+
+// Forgiving signed-delta parser for the Difference mode input. Accepts:
+//   +1500 / -1500      → milliseconds (default unit)
+//   +2s / 500ms / 3m / 1h → number with an explicit unit
+//   ±[HH:]MM:SS[.mmm]  → colon time form (hours optional)
+// Returns the signed millisecond amount, or null if the text isn't a valid,
+// parseable delta. A leading "+", "-" or "−" (unicode minus) sets the sign.
+function parseClockDelta(raw) {
+  if (raw == null) return null;
+  let s = String(raw).trim();
+  if (!s) return null;
+  let sign = 1;
+  if (s[0] === "+") s = s.slice(1);
+  else if (s[0] === "-" || s[0] === "−") { sign = -1; s = s.slice(1); }
+  s = s.trim();
+  if (!s) return null;
+  let magnitude;
+  if (s.includes(":")) {
+    const parts = s.split(":");
+    if (parts.length < 2 || parts.length > 3) return null;
+    let h = "0", m, secStr;
+    if (parts.length === 3) { h = parts[0]; m = parts[1]; secStr = parts[2]; }
+    else { m = parts[0]; secStr = parts[1]; }
+    if (!/^\d+$/.test(h) || !/^\d+$/.test(m) || !/^\d+(\.\d+)?$/.test(secStr)) return null;
+    magnitude = ((parseInt(h, 10) * 60 + parseInt(m, 10)) * 60 + parseFloat(secStr)) * 1000;
+  } else {
+    const mUnit = s.match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h)?$/i);
+    if (!mUnit) return null;
+    const val = parseFloat(mUnit[1]);
+    const unit = (mUnit[2] || "ms").toLowerCase();
+    const factor = unit === "h" ? 3600000 : unit === "m" ? 60000 : unit === "s" ? 1000 : 1;
+    magnitude = val * factor;
+  }
+  if (!Number.isFinite(magnitude)) return null;
+  return Math.round(sign * magnitude);
+}
+
+// The effective signed-ms delta implied by the current mode + inputs, or null
+// if the input is empty/invalid (Start mode: desired first-line time minus the
+// file's current first-line ts).
+function computeClockDelta() {
+  const node = clockOffsetFile();
+  if (!node) return null;
+  if (clockOffsetMode === "diff") return parseClockDelta(el("#clockDiffInput").value);
+  const desired = localInputValueToTs(el("#clockStartInput").value);
+  if (desired == null) return null;
+  const first = node.entries[0];
+  if (!first || isNaN(first.ts)) return null;
+  return Math.round(desired - first.ts);
+}
+
+function updateClockModeUI() {
+  el("#clockModeDiff").classList.toggle("active", clockOffsetMode === "diff");
+  el("#clockModeStart").classList.toggle("active", clockOffsetMode === "start");
+  el("#clockDiffRow").classList.toggle("hidden", clockOffsetMode !== "diff");
+  el("#clockStartRow").classList.toggle("hidden", clockOffsetMode !== "start");
+}
+
+function updateClockOffsetPreview() {
+  const node = clockOffsetFile();
+  const box = el("#clockOffsetPreview");
+  if (!node) { box.innerHTML = ""; return; }
+  const delta = computeClockDelta();
+  const first = node.entries[0];
+  const last = node.entries[node.entries.length - 1];
+  const line = (label, e) => {
+    if (!e) return "";
+    const newT = delta == null ? "—" : formatTime(e.ts + delta);
+    return '<div><span class="clock-preview-label">' + label + '</span>' +
+      '<span class="clock-preview-old">' + escapeHtml(formatTime(e.ts)) + '</span>' +
+      '<span class="clock-preview-arrow">→</span>' +
+      '<span class="clock-preview-new">' + escapeHtml(newT) + '</span></div>';
+  };
+  const deltaRow = delta == null ? "" :
+    '<div><span class="clock-preview-label">Δ</span><span class="clock-preview-new">' + escapeHtml(formatDelta(delta)) + '</span></div>';
+  box.innerHTML = line("First", first) + line("Last", last) + deltaRow;
+}
+
+function openClockOffsetDialog(fileId) {
+  const node = state.nodes[fileId];
+  if (!node || node.type !== "file" || node.merged || !node.entries || !node.entries.length) return;
+  clockOffsetFileId = fileId;
+  clockOffsetMode = "diff";
+  el("#clockOffsetFileLabel").textContent = node.name;
+  el("#clockDiffInput").value = "";
+  const first = node.entries[0];
+  el("#clockStartInput").value = tsToLocalInputValue(first ? first.ts : null);
+  const cur = node.clockOffset || 0;
+  el("#clockOffsetCurrent").textContent = cur ? ("Current offset: " + formatDelta(cur)) : "No offset applied yet.";
+  el("#clockOffsetError").classList.add("hidden");
+  updateClockModeUI();
+  updateClockOffsetPreview();
+  clockOffsetDialog.classList.remove("hidden");
+  el("#clockDiffInput").focus();
+}
+function closeClockOffsetDialog() { clockOffsetDialog.classList.add("hidden"); clockOffsetFileId = null; }
+
+el("#clockModeDiff").addEventListener("click", () => {
+  clockOffsetMode = "diff"; updateClockModeUI(); el("#clockOffsetError").classList.add("hidden");
+  updateClockOffsetPreview(); el("#clockDiffInput").focus();
+});
+el("#clockModeStart").addEventListener("click", () => {
+  clockOffsetMode = "start"; updateClockModeUI(); el("#clockOffsetError").classList.add("hidden");
+  updateClockOffsetPreview(); el("#clockStartInput").focus();
+});
+el("#clockDiffInput").addEventListener("input", () => { el("#clockOffsetError").classList.add("hidden"); updateClockOffsetPreview(); });
+el("#clockStartInput").addEventListener("input", () => { el("#clockOffsetError").classList.add("hidden"); updateClockOffsetPreview(); });
+el("#clockDiffInput").addEventListener("keydown", ev => {
+  ev.stopPropagation(); // don't let Enter/Delete reach the tree's global keydown handler while typing
+  if (ev.key === "Enter") { ev.preventDefault(); el("#clockOffsetApply").click(); }
+});
+el("#clockStartInput").addEventListener("keydown", ev => {
+  ev.stopPropagation();
+  if (ev.key === "Enter") { ev.preventDefault(); el("#clockOffsetApply").click(); }
+});
+clockOffsetDialog.addEventListener("click", ev => { if (ev.target === clockOffsetDialog) closeClockOffsetDialog(); });
+el("#clockOffsetCancel").addEventListener("click", closeClockOffsetDialog);
+el("#clockOffsetApply").addEventListener("click", () => {
+  const fileId = clockOffsetFileId;
+  const delta = computeClockDelta();
+  if (!delta) { el("#clockOffsetError").classList.remove("hidden"); return; } // null or 0 — nothing to apply
+  if (applyClockOffset(fileId, delta)) {
+    closeClockOffsetDialog();
+    render();
+    showCopyToast("Clock adjusted (" + formatDelta(delta) + ")");
+  } else {
+    el("#clockOffsetError").classList.remove("hidden");
+  }
 });
 
 /* ===================== Notes =====================
@@ -25672,6 +26569,7 @@ const SHORTCUT_ACTIONS = [
   { id: "viewTab4",      label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
+  { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
 ];
 
 // Fixed shortcuts (mouse-driven or otherwise not a single rebindable combo)
@@ -25724,7 +26622,7 @@ function matchesShortcut(ev, actionId) {
 }
 // Keys whose ev.key value doesn't read well verbatim in the Shortcut Manager.
 const SHORTCUT_KEY_LABELS = {
-  f2: "F2", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
+  f2: "F2", f11: "F11", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
 };
 function comboLabelParts(combo) {
   const parts = [];
@@ -26498,6 +27396,11 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (ev.key === "Escape") {
+    // Esc is a secondary exit from Focus Mode (FEATURE_BACKLOG.md #66), but
+    // only when nothing else is consuming this Esc — captured before the
+    // closes below run, so an open overlay closes first and a single Esc never
+    // both closes it AND leaves focus mode.
+    const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
     closePlotFullscreen();
     closeSettingsDialog();
     closeFilterPopup();
@@ -26509,6 +27412,7 @@ document.addEventListener("keydown", ev => {
     closeContextDialog();
     closeTimeRangeDialog();
     closeAssertDialog();
+    closeClockOffsetDialog();
     closeNoteDialog();
     closeColumnsPanel();
     closeColorPicker();
@@ -26523,6 +27427,7 @@ document.addEventListener("keydown", ev => {
     if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
     if (state.multiSelect.size) { state.multiSelect = new Set(); needsRender = true; }
     if (needsRender) render();
+    if (escExitsFocus) toggleFocusMode(false);
     return;
   }
   if (inInput) return; // let normal copy/paste and text-cursor movement happen inside text inputs
@@ -26774,6 +27679,17 @@ document.addEventListener("keydown", ev => {
     return;
   }
 
+  // FEATURE_BACKLOG.md #66: Focus Mode (fullscreen). Bound to F11 by default
+  // and rebindable in the Shortcut Manager, but only ever HANDLED under the
+  // desktop wrapper — real OS fullscreen is a Tauri-only capability, so in the
+  // plain browser build this branch is skipped entirely (window.philogg
+  // absent) and the browser's own F11 keeps priority. See toggleFocusMode.
+  if (!!window.philogg && matchesShortcut(ev, "toggleFocus")) {
+    ev.preventDefault();
+    toggleFocusMode();
+    return;
+  }
+
   if (matchesShortcut(ev, "redo")) {
     ev.preventDefault();
     redo();
@@ -27003,6 +27919,11 @@ async function persistFileNode(node) {
     // restored session would show a deliberately-incomplete node as if it
     // were the file's normal full content.
     partial: node.partial || null,
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): `text` above is rebuilt
+    // from entry.raw (the ORIGINAL, unshifted timestamps), so this signed-ms
+    // amount is what restoreSessionFromCache re-applies to the freshly-parsed
+    // entries to reinstate the correction. Never set on a merged file.
+    clockOffset: node.clockOffset || 0,
     savedAt: Date.now(),
   }));
 }
@@ -27185,6 +28106,8 @@ function buildCacheMeta() {
       sortDir: state.sortDir,
       pinBookmarksInFilteredView: state.pinBookmarksInFilteredView,
       multilineMessages: state.multilineMessages,
+      wrapMessages: state.wrapMessages,
+      wrapTextView: state.wrapTextView,
       showNotes: state.showNotes,
       columnVisible: { ...state.columnVisible },
       columnWidths: { ...state.columnWidths },
@@ -27372,6 +28295,14 @@ async function restoreSessionFromCache() {
       // is correct as-is — only the visible "this is incomplete" marker
       // needs restoring.
       if (rec.partial) node.partial = rec.partial;
+      // Per-file clock offset (FEATURE_BACKLOG.md #29): rec.text was rebuilt
+      // from the ORIGINAL raw lines, so the just-parsed entries carry the
+      // unshifted ts — re-apply the stored correction to bake it back in.
+      // Never stored for a merged file (applyClockOffset refuses those).
+      if (rec.clockOffset && !node.merged) {
+        node.clockOffset = rec.clockOffset;
+        for (const e of node.entries) e.ts += rec.clockOffset;
+      }
       // Re-links this node to its watched folder, if it had one — the
       // folder record itself (including its handle) comes back separately
       // via restoreWatchedFolders, called right after this function returns.
@@ -27427,6 +28358,8 @@ async function restoreSessionFromCache() {
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
     state.multilineMessages = !!s.multilineMessages;
+    state.wrapMessages = !!s.wrapMessages;
+    state.wrapTextView = !!s.wrapTextView;
     state.showNotes = !!s.showNotes;
     if (s.columnVisible && typeof s.columnVisible === "object") {
       HIDEABLE_COLUMNS.forEach(key => { if (typeof s.columnVisible[key] === "boolean") state.columnVisible[key] = s.columnVisible[key]; });
@@ -27458,6 +28391,8 @@ async function restoreSessionFromCache() {
     updatePinBookmarksButton();
     updateNotesButton();
     updateMultilineMsgButton();
+    updateWrapMsgButton();
+    updateWrapTextViewButton();
     applyRowGrid();
     render();
   }
@@ -27591,6 +28526,10 @@ function buildSessionExport(fileIds, embedTextIds) {
       filters: roots,
       bookmarks: [],
       notes: [],
+      // Per-file clock offset (FEATURE_BACKLOG.md #29): travels with the
+      // export so the correction survives the round-trip. Re-applied to the
+      // resolved importer file's entries on import (see applyImportedClockOffset).
+      clockOffset: node.clockOffset || 0,
     };
     if (embedTextIds && embedTextIds.has(id)) rec.text = rebuildFileText(node);
     files.push(rec);
@@ -27766,9 +28705,26 @@ function matchExportedFile(rec, rootIds) {
 
 /* ---------- Applying one export entry ---------- */
 
+// Per-file clock offset (FEATURE_BACKLOG.md #29): re-apply the exported offset
+// to the resolved importer file so its timestamps match what was exported.
+// Applied as the DIFFERENCE from the target's current offset (idempotent — a
+// re-import onto an already-adjusted file doesn't double it) and BEFORE any
+// timestamp-based bookmark/note re-anchoring, so the exported b.ts/n.ts land in
+// the same ts space as the shifted importer entries. A merged target always
+// carries offset 0 on both sides (applyClockOffset refuses merged files), so
+// this is a no-op there. Called at the top of both apply paths below.
+function applyImportedClockOffset(rec, fileNode) {
+  const target = +rec.clockOffset || 0;
+  const current = fileNode.clockOffset || 0;
+  const delta = target - current;
+  if (delta) { shiftFileEntriesTs(fileNode, delta); invalidateAllCaches(); }
+  if (target) fileNode.clockOffset = target; else delete fileNode.clockOffset;
+}
+
 // Tier 1/2 (and embedded-log) path: the target is provably identical inside
 // the exported window, so every bookmark's stored ordinal is valid outright.
 function applySessionEntryByOrdinal(rec, fileNode) {
+  applyImportedClockOffset(rec, fileNode);
   const refMap = materializeCachedFilters(fileNode, Array.isArray(rec.filters) ? rec.filters : []);
   let placed = 0, total = 0;
   (rec.bookmarks || []).forEach(b => {
@@ -27800,6 +28756,7 @@ function applySessionEntryByOrdinal(rec, fileNode) {
 // small insertions/deletions elsewhere in the file. Unconfirmed bookmarks
 // are dropped and show up in the summary as unplaced.
 function applySessionEntryByContent(rec, fileNode) {
+  applyImportedClockOffset(rec, fileNode); // shift ts into the exported space BEFORE the by-ts re-anchor below
   const refMap = materializeCachedFilters(fileNode, Array.isArray(rec.filters) ? rec.filters : []);
   let placed = 0, total = 0;
   (rec.bookmarks || []).forEach(b => {
@@ -28307,6 +29264,8 @@ btnRedo.innerHTML = ICON_REDO;
 btnPinBookmarks.forEach(b => b.innerHTML = ICON_PIN);
 btnNotes.forEach(b => b.innerHTML = ICON_NOTE);
 btnMultilineMsg.forEach(b => b.innerHTML = ICON_MULTILINE);
+btnWrapMsg.forEach(b => b.innerHTML = ICON_WRAP);
+itvWrapBtn.innerHTML = ICON_WRAP;
 detailFormatToggleBtn.innerHTML = ICON_FORMAT_HIGHLIGHT;
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
@@ -28326,6 +29285,8 @@ updateUndoRedoButtons();
 updatePinBookmarksButton();
 updateNotesButton();
 updateMultilineMsgButton();
+updateWrapMsgButton();
+updateWrapTextViewButton();
 applyRowGrid();
 initTheme();
 initUiFont();

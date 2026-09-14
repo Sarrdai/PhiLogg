@@ -233,6 +233,9 @@ async function withApp(run, opts = {}) {
       get THEME_COLOR_KEYS() { return THEME_COLOR_KEYS; },
       get SYNTAX_COLOR_KEYS() { return SYNTAX_COLOR_KEYS; },
       get BUILTIN_THEMES() { return BUILTIN_THEMES; },
+      get BUILTIN_SYNTAX_SCHEMES() { return BUILTIN_SYNTAX_SCHEMES; },
+      get customSyntaxSchemes() { return customSyntaxSchemes; },
+      get syntaxSchemeChoice() { return syntaxSchemeChoice; },
       get detailFormatHighlightEnabled() { return detailFormatHighlightEnabled; },
       get colorPickerMode() { return colorPickerMode; },
       get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },
@@ -250,6 +253,11 @@ async function withApp(run, opts = {}) {
       get temporaryAnchorAcrossFiles() { return temporaryAnchorAcrossFiles; },
       get sidebarForcedPeek() { return sidebarForcedPeek; },
       get sidebarAltPeek() { return sidebarAltPeek; },
+      get hoverExpandSidebar() { return hoverExpandSidebar; },
+      set hoverExpandSidebar(v) { hoverExpandSidebar = v; },
+      get hoverExpandDetail() { return hoverExpandDetail; },
+      set hoverExpandDetail(v) { hoverExpandDetail = v; },
+      get focusModePrevState() { return focusModePrevState; },
       get ROW_HEIGHT() { return ROW_HEIGHT; },
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
@@ -305,6 +313,12 @@ function fireContextMenu(el, w, x = 50, y = 50) { el.dispatchEvent(new w.MouseEv
 function fireDblClick(el, w) { el.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true, cancelable: true })); }
 function fireInput(el, w) { el.dispatchEvent(new w.Event("input", { bubbles: true })); }
 function fireSubmit(el, w) { el.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); }
+// Boolean pill toggles (docs/ui-standard.md #69) are <button role="switch"
+// aria-checked>, not native checkboxes: read state with pillChecked(), and
+// set it directly (no change event, mirroring the old `.checked =`) with
+// setPill(). To simulate a user toggling one, fireClick() it (or its label).
+function pillChecked(el) { return el.getAttribute("aria-checked") === "true"; }
+function setPill(el, on) { const v = !!on; el.setAttribute("aria-checked", v ? "true" : "false"); el.classList.toggle("on", v); }
 function fireKeydown(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...opts })); }
 function fireKeyup(d, w, key, opts = {}) { d.dispatchEvent(new w.KeyboardEvent("keyup", { key, bubbles: true, cancelable: true, ...opts })); }
 // Checks ACTUAL resolved CSS (getComputedStyle), not just whether the
@@ -1511,10 +1525,10 @@ await withApp(async (w, d, T) => {
   w.render();
   w.openFilterPopup();
   d.querySelector("#filterInput").value = "message 2";
-  d.querySelector("#filterInvertCheckbox").checked = true;
+  setPill(d.querySelector("#filterInvertCheckbox"), true);
   fireSubmit(d.querySelector("#filterForm"), w);
   const created = T.state.nodes[T.state.activeId];
-  assert(created.inverted === true, "NOT checkbox in the filter popup sets inverted:true at creation");
+  assert(created.inverted === true, "NOT toggle in the filter popup sets inverted:true at creation");
 
   // Right-click toggle after the fact
   w.render();
@@ -1571,7 +1585,7 @@ await withApp(async (w, d, T) => {
   w.openFilterPopup();
   const filterInput = d.querySelector("#filterInput");
   const invertCb = d.querySelector("#filterInvertCheckbox");
-  invertCb.checked = true;
+  setPill(invertCb, true);
   filterInput.value = "[*:int]";
   fireInput(filterInput, w);
   assert(invertCb.disabled === false, "typing a wildcard pattern leaves NOT available");
@@ -3982,7 +3996,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
-  assert(d.querySelector("#filterCaseCheckbox").checked === false, "case-sensitive checkbox defaults to UNCHECKED, as required");
+  assert(pillChecked(d.querySelector("#filterCaseCheckbox")) === false, "case-sensitive toggle defaults to OFF, as required");
   assert([...d.querySelectorAll(".column-chip")].every(c => !c.classList.contains("active")), "no column chip is pre-selected when opening the popup fresh");
 
   const filterInput = d.querySelector("#filterInput");
@@ -4015,7 +4029,7 @@ await withApp(async (w, d, T) => {
   // --- Edit mode: popup pre-fills existing caseSensitive/columns, and edits apply ---
   const editNode = w.createFilterNode(f.id, "text", "TOKEN", false, null, true, ["message"]);
   w.openEditFilterPopup(editNode.id);
-  assert(d.querySelector("#filterCaseCheckbox").checked === true, "editing a filter pre-fills the case-sensitive checkbox from the node");
+  assert(pillChecked(d.querySelector("#filterCaseCheckbox")) === true, "editing a filter pre-fills the case-sensitive toggle from the node");
   assert(d.querySelector('.column-chip[data-col="message"]').classList.contains("active") && !d.querySelector('.column-chip[data-col="thread"]').classList.contains("active"),
     "editing a filter pre-fills the column chips from the node's existing restriction");
   fireClick(d.querySelector('.column-chip[data-col="message"]'), w); // deselect message
@@ -6126,10 +6140,9 @@ await withApp(async (w, d, T) => {
   assert(Math.abs(before.x - before.y) > 1, "sanity: without axis-equal, X and Y pixels-per-unit differ substantially (708x332 chart area, same 0..20 data range on both axes), got x=" + before.x.toFixed(3) + " y=" + before.y.toFixed(3));
 
   const axisCb = d.querySelector("#plotAxisEqual");
-  assert(axisCb !== null, "'Equal axis scale' checkbox is offered for a non-bar chart type (scatter)");
-  axisCb.checked = true;
-  axisCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(T.plotConfig.axisEqual === true, "checking the box flips plotConfig.axisEqual");
+  assert(axisCb !== null, "'Equal axis scale' toggle is offered for a non-bar chart type (scatter)");
+  fireClick(axisCb, w);
+  assert(T.plotConfig.axisEqual === true, "toggling the pill flips plotConfig.axisEqual");
 
   const after = pxPerUnit();
   // Small epsilon: cx/cy are serialized via toFixed(1) in the SVG markup, so
@@ -7218,16 +7231,19 @@ await withApp(async (w, d, T) => {
 
   w.closeTreeContextMenu();
 
-  // A plain file node (no filter-specific groups) still groups cleanly:
-  // library items, a separator, then the danger item — no empty/dangling
-  // leading separator for the groups that have nothing in them.
+  // A plain (non-merged, entries-bearing) file node groups cleanly: the edit
+  // group (just "Adjust clock…", FEATURE_BACKLOG.md #29), then the library
+  // group, then the danger item — no empty/dangling leading separator for the
+  // groups that have nothing in them.
   fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
   const fileChildren = [...d.querySelector("#treeContextMenu").children];
   const fileIndexOf = action => fileChildren.findIndex(c => c.dataset && c.dataset.action === action);
+  assert(fileIndexOf("clockOffset") >= 0 && fileIndexOf("clockOffset") < fileIndexOf("loadFilter"),
+    "a file node's context menu offers 'Adjust clock…' in the edit group, before the library items");
   assert(fileIndexOf("loadFilter") < fileIndexOf("applyFromLibrary") && fileIndexOf("applyFromLibrary") < fileIndexOf("delete"),
     "a file node's context menu still groups library items before the danger (remove file) item");
   const libSep = fileChildren.filter(c => c.classList.contains("ctx-sep")).length;
-  assert(libSep === 2, "file node menu has exactly 2 separators (meta, then one between the library group and the danger group), got " + libSep);
+  assert(libSep === 3, "file node menu has 3 separators (meta, edit->library, library->danger), got " + libSep);
 });
 
 await withApp(async (w, d, T) => {
@@ -8386,7 +8402,7 @@ await withApp(async (w, d, T) => {
   assert(defaultRow().querySelector(".filter-library-row-del") === null, "the builtin default row has no Delete button");
   const resetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
   assert(resetBtn(), "...and has a Reset button in its place");
-  assert(resetBtn().className === "btn-mini-outline", "Reset uses the same secondary-button style as Cancel elsewhere, got " + resetBtn().className);
+  assert(resetBtn().className === "btn-mini-outline", "Reset is a lightweight .btn-mini-outline list-row action, got " + resetBtn().className);
 
   // Sanity: an unedited default parses a normal log4net-shaped file correctly.
   const before = await w.addFile("before.log", makeLog(0, 3), () => {});
@@ -8936,7 +8952,7 @@ await withApp(async (w, d, T) => {
   section("76. Settings: \"Closing the last log file quits the app\" (default off)");
 
   const checkbox = d.getElementById("settingsQuitOnLastClose");
-  assert(checkbox.checked === false, "off by default");
+  assert(pillChecked(checkbox) === false, "off by default");
 
   const originalClose = w.close;
   let closeCalls = 0;
@@ -8950,9 +8966,8 @@ await withApp(async (w, d, T) => {
     assert(closeCalls === 0, "closing the last file does nothing extra while the setting is off");
     assert(w.localStorage.getItem("philogg-quit-on-last-close") === null, "nothing persisted yet — setting untouched");
 
-    checkbox.checked = true;
-    checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
-    assert(w.localStorage.getItem("philogg-quit-on-last-close") === "1", "enabling the checkbox persists it");
+    fireClick(checkbox, w);
+    assert(w.localStorage.getItem("philogg-quit-on-last-close") === "1", "enabling the toggle persists it");
 
     const f2 = await w.addFile("b.log", makeLog(0, 3), () => {});
     const other = await w.addFile("c.log", makeLog(0, 3), () => {});
@@ -9140,18 +9155,19 @@ await withApp(async (w, d, T) => {
   const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
   assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
   const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
-  // Theme + UI font (GROUP 111f) + Log font (this session) + Accent color
+  // Theme + UI font (GROUP 111f) + Log font (this session) + Syntax
+  // highlighting (GROUP 210, FEATURE_BACKLOG.md #67) + Accent color
   // (hidden on Dark, no highlightPalette — see GROUP 87) + UI scale +
   // Log text size (split from the old single Font size row — see GROUP 111e).
-  assert(appearanceRows.length === 6, "Theme + UI font + Log font + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
+  assert(appearanceRows.length === 7, "Theme + UI font + Log font + Syntax highlighting + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
-  // Boolean row: rendered as a switch (input + adjacent track element),
-  // still the same real checkbox underneath (see GROUP 76 for its behavior).
+  // Boolean row: rendered as a .pill-toggle (docs/ui-standard.md #69) — a
+  // role=switch button with aria-checked state (see GROUP 76 for its behavior).
   const quitCheckbox = d.getElementById("settingsQuitOnLastClose");
-  assert(quitCheckbox.closest(".settings-switch"), "the boolean checkbox is wrapped in .settings-switch");
-  assert(quitCheckbox.nextElementSibling && quitCheckbox.nextElementSibling.classList.contains("settings-switch-track"),
-    "...with a switch-track element right next to it for the on/off visual");
+  assert(quitCheckbox.tagName === "BUTTON" && quitCheckbox.classList.contains("pill-toggle"), "the boolean setting is a .pill-toggle button");
+  assert(quitCheckbox.getAttribute("role") === "switch" && quitCheckbox.hasAttribute("aria-checked"),
+    "...a role=switch carrying aria-checked for the on/off state");
 
   // Button hierarchy: the filled accent (.btn-mini) button is reserved for
   // the primary action (Save) — list-row actions (Edit/Reset) are outline,
@@ -9938,7 +9954,7 @@ await withApp(async (w, d, T) => {
   const detailCb = d.querySelector("#settingsHoverExpandDetail");
 
   // --- Both default to on ---
-  assert(sidebarCb.checked === true && detailCb.checked === true, "both hover-expand settings default to ON");
+  assert(pillChecked(sidebarCb) === true && pillChecked(detailCb) === true, "both hover-expand settings default to ON");
 
   // A selected entry so the header meta line has real content to check.
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
@@ -10036,8 +10052,7 @@ await withApp(async (w, d, T) => {
     "#detailPanel's min-height:0 comes AFTER min-height:80px in the same rule (so it's the one that actually wins) — without it the 80px floor clamps the collapsed 34px height, leaving an empty gap below the header, got " + (detailPanelRule && detailPanelRule[0]));
 
   // --- Each panel's setting independently gates only that panel's hover ---
-  detailCb.checked = false;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   assert(w.localStorage.getItem("philogg-hover-expand-detail") === "0", "unchecking the detail setting persists it as off");
   assert(w.localStorage.getItem("philogg-hover-expand-sidebar") !== "0", "...without touching the sidebar's own setting");
 
@@ -10056,13 +10071,11 @@ await withApp(async (w, d, T) => {
 
   // Toggling a panel to peeking, THEN turning its own setting off, drops it
   // out of peek immediately instead of leaving it stuck open.
-  detailCb.checked = true;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   w.toggleDetailCollapsed(true);
   detailPanel.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
   assert(detailPanel.classList.contains("peeking"), "sanity: detail panel peeks again once its setting is back on");
-  detailCb.checked = false;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   assert(!detailPanel.classList.contains("peeking"), "turning the detail setting off mid-peek exits peek state immediately");
 
   // --- Persisted flags honored on (re-)init, same path real boot uses,
@@ -10070,7 +10083,7 @@ await withApp(async (w, d, T) => {
   w.localStorage.setItem("philogg-hover-expand-sidebar", "0");
   w.localStorage.setItem("philogg-hover-expand-detail", "1");
   w.initHoverExpandSettings();
-  assert(sidebarCb.checked === false && detailCb.checked === true,
+  assert(pillChecked(sidebarCb) === false && pillChecked(detailCb) === true,
     "initHoverExpandSettings re-applies persisted flags independently per panel, same as at boot");
   w.toggleSidebarCollapsed(true);
   sidebarEl.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
@@ -10081,7 +10094,7 @@ await withApp(async (w, d, T) => {
 
   w.localStorage.setItem("philogg-hover-expand-sidebar", "1");
   w.initHoverExpandSettings();
-  assert(sidebarCb.checked === true, "...and a persisted on flag");
+  assert(pillChecked(sidebarCb) === true, "...and a persisted on flag");
   sidebarEl.dispatchEvent(new w.MouseEvent("mouseenter", { bubbles: false }));
   assert(sidebarEl.classList.contains("peeking"), "...re-enabling the sidebar's hover behavior too");
 });
@@ -10114,8 +10127,8 @@ await withApp(async (w, d, T) => {
   // --- Defaults ---
   assert(btn.classList.contains("active") && T.textMatchHighlightEnabled === true, "master view-bar button defaults ON");
   assert(scopeSelect.value === "last" && T.textMatchHighlightScope === "last", "settings scope defaults to 'last'");
-  assert(rowsCb.checked === true && T.textMatchHighlightInRows === true, "'show in rows' defaults ON");
-  assert(detailCb.checked === true && T.textMatchHighlightInDetail === true, "'show in entry detail' defaults ON");
+  assert(pillChecked(rowsCb) === true && T.textMatchHighlightInRows === true, "'show in rows' defaults ON");
+  assert(pillChecked(detailCb) === true && T.textMatchHighlightInDetail === true, "'show in entry detail' defaults ON");
   assert(isVisible(scopeSelect, w) && isVisible(rowsCb, w) && isVisible(detailCb, w), "all three settings controls are visible");
 
   // --- Clicking the master button off does NOT hide/disable the Settings
@@ -10197,8 +10210,7 @@ await withApp(async (w, d, T) => {
   //     independent and keeps working ---
   T.state.activeId = nodeB.id;
   w.render();
-  rowsCb.checked = false;
-  rowsCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(rowsCb, w);
   assert(w.localStorage.getItem("philogg-text-match-highlight-rows") === "0", "'show in rows' persisted off");
   msgEl = d.querySelector("#tableRows .log-row .col-msg");
   assert(!/<mark/.test(msgEl.innerHTML), "turning off 'show in rows' removes row marks immediately");
@@ -10208,8 +10220,7 @@ await withApp(async (w, d, T) => {
   const detailMsgEl = d.querySelector("#detailMessage");
   assert(/<mark class="text-match-mark">1<\/mark>/.test(detailMsgEl.innerHTML), "entry-detail message still marks matches while row-highlighting is off (independent toggle)");
 
-  detailCb.checked = false;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   assert(w.localStorage.getItem("philogg-text-match-highlight-detail") === "0", "'show in entry detail' persisted off");
   w.updateDetailPanel();
   assert(!/<mark/.test(d.querySelector("#detailMessage").innerHTML), "turning off 'show in entry detail' removes detail-panel marks immediately");
@@ -10218,10 +10229,8 @@ await withApp(async (w, d, T) => {
   // --- The master button (not the settings rows) is what actually gates
   //     everything: turning it off suppresses matches even with scope="any"
   //     and both 'where' toggles back on ---
-  rowsCb.checked = true;
-  rowsCb.dispatchEvent(new w.Event("change", { bubbles: true }));
-  detailCb.checked = true;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(rowsCb, w);
+  fireClick(detailCb, w);
   fireClick(btn, w);
   msgEl = d.querySelector("#tableRows .log-row .col-msg");
   assert(!/<mark/.test(msgEl.innerHTML), "master button off suppresses row marks regardless of the 'where' toggles");
@@ -10250,7 +10259,7 @@ await withApp(async (w, d, T) => {
   w.initTextMatchHighlightSettings();
   assert(!T.textMatchHighlightEnabled && !btn.classList.contains("active"), "initTextMatchHighlightSettings re-applies the persisted master state to the button");
   assert(T.textMatchHighlightScope === "any" && scopeSelect.value === "any", "...and re-applies the persisted scope");
-  assert(rowsCb.checked === true && detailCb.checked === true, "...and re-applies both persisted 'where' toggles");
+  assert(pillChecked(rowsCb) === true && pillChecked(detailCb) === true, "...and re-applies both persisted 'where' toggles");
 });
 
 /* ============================================================
@@ -10788,9 +10797,9 @@ await withApp(async (w, d, T) => {
   // (behavior itself is covered by GROUPs 91/92/93/94 — this just confirms
   // the move didn't detach anything from the live DOM/listeners).
   const quitCb = d.getElementById("settingsQuitOnLastClose");
-  const before = quitCb.checked;
+  const before = pillChecked(quitCb);
   fireClick(quitCb, w);
-  assert(quitCb.checked === !before, "the relocated quit-on-close switch still toggles");
+  assert(pillChecked(quitCb) === !before, "the relocated quit-on-close toggle still toggles");
   fireClick(quitCb, w); // restore
 });
 
@@ -11539,15 +11548,13 @@ await withApp(async (w, d, T) => {
   section("107. Settings: \"Close to system tray\" (default on)");
 
   const checkbox = d.getElementById("settingsCloseToTray");
-  assert(checkbox.checked === true, "on by default");
+  assert(pillChecked(checkbox) === true, "on by default");
   assert(w.localStorage.getItem("philogg-close-to-tray") === null, "nothing persisted yet — default comes from the null->true fallback, not a stored value");
 
-  checkbox.checked = false;
-  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(w.localStorage.getItem("philogg-close-to-tray") === "0", "disabling the checkbox persists it");
+  fireClick(checkbox, w);
+  assert(w.localStorage.getItem("philogg-close-to-tray") === "0", "disabling the toggle persists it");
 
-  checkbox.checked = true;
-  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(checkbox, w);
   assert(w.localStorage.getItem("philogg-close-to-tray") === "1", "re-enabling persists back to \"1\"");
 });
 
@@ -11787,7 +11794,7 @@ await withApp(async (w, d, T) => {
 
   const checkbox = d.querySelector("#settingsTempAnchorAcrossFiles");
   assert(checkbox, "the new checkbox exists in the settings panel");
-  assert(checkbox.checked === true, "default is ON (checked) — matches the pre-existing cross-file behavior");
+  assert(pillChecked(checkbox) === true, "default is ON — matches the pre-existing cross-file behavior");
   assert(T.temporaryAnchorAcrossFiles === true, "default is ON at the state level too");
 
   const fileA = await w.addFile("a.log", makeLog(0, 3, { suffix: () => "match" }), () => {});
@@ -11814,8 +11821,7 @@ await withApp(async (w, d, T) => {
     "cross-file ON: the anchor is still shown even though filterB belongs to a different file than the selected row");
 
   // Turn the setting off, persisted to localStorage.
-  checkbox.checked = false;
-  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(checkbox, w);
   assert(T.temporaryAnchorAcrossFiles === false, "unchecking flips the state flag");
   assert(w.localStorage.getItem("philogg-temp-anchor-across-files") === "0", "...and persists it to localStorage");
 
@@ -11839,8 +11845,7 @@ await withApp(async (w, d, T) => {
     "cross-file OFF: switching between two filters of the SAME file still shows the anchor normally");
 
   // Re-enabling restores the cross-file behavior.
-  checkbox.checked = true;
-  checkbox.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(checkbox, w);
   assert(T.temporaryAnchorAcrossFiles === true && w.localStorage.getItem("philogg-temp-anchor-across-files") === "1",
     "re-checking flips the flag back on and persists \"1\"");
 });
@@ -12258,7 +12263,7 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
   assert(!d.querySelector("#settingsSectionShortcuts .settings-section-desc"), "the usage-instruction prose under the section title is gone");
   const rebindableRows = d.querySelectorAll("#shortcutBindingsList > div[data-action-id]");
-  assert(rebindableRows.length === 19, "the rebindable-actions rows render one per registered action");
+  assert(rebindableRows.length === 20, "the rebindable-actions rows render one per registered action");
   const fixedRows = d.querySelectorAll("#shortcutBindingsList > div.shortcut-row-fixed");
   assert(fixedRows.length > 0, "fixed (non-rebindable) shortcuts are listed too, so the list stays complete");
   fixedRows.forEach(row => {
@@ -13128,7 +13133,7 @@ await withApp(async (w, d, T) => {
 
   const cb = d.querySelector("#settingsHideMinimapFullRangeInFullView");
   assert(cb, "sanity: the new settings checkbox exists");
-  assert(cb.checked === false, "defaults to OFF — an opt-out of existing behavior, not a bugfix");
+  assert(pillChecked(cb) === false, "defaults to OFF — an opt-out of existing behavior, not a bugfix");
 
   const f = await w.addFile("a.log", makeLog(0, 30), () => {});
   T.state.activeId = f.id;
@@ -13141,8 +13146,7 @@ await withApp(async (w, d, T) => {
   w.applyFhView("highlight");
   assert(!fullRect.classList.contains("hidden"), "toggle is off: Box #1 stays visible in the Full tab too");
 
-  cb.checked = true;
-  cb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(cb, w);
   assert(fullRect.classList.contains("hidden"),
     "turning the toggle on while the Full tab is already active hides Box #1 immediately, with no extra render/scroll needed");
 
@@ -13160,13 +13164,13 @@ await withApp(async (w, d, T) => {
   // --- Persisted flag honored on (re-)init, same path real boot uses ---
   w.localStorage.setItem("philogg-hide-minimap-full-range-in-full-view", "0");
   w.initMinimapFullRangeSetting();
-  assert(cb.checked === false, "initMinimapFullRangeSetting re-applies a persisted OFF flag");
+  assert(pillChecked(cb) === false, "initMinimapFullRangeSetting re-applies a persisted OFF flag");
   w.applyFhView("highlight");
   assert(!fullRect.classList.contains("hidden"), "...and Box #1 stays visible in the Full tab once the persisted flag is off");
 
   w.localStorage.setItem("philogg-hide-minimap-full-range-in-full-view", "1");
   w.initMinimapFullRangeSetting();
-  assert(cb.checked === true, "...and a persisted ON flag");
+  assert(pillChecked(cb) === true, "...and a persisted ON flag");
   w.updateMinimapFullRange();
   assert(fullRect.classList.contains("hidden"), "...re-hides Box #1 while the Full tab is still active");
 });
@@ -13476,7 +13480,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
-  assert(d.querySelector("#filterRegexCheckbox").checked === false, "regex checkbox defaults to UNCHECKED, same as case/NOT");
+  assert(pillChecked(d.querySelector("#filterRegexCheckbox")) === false, "regex toggle defaults to OFF, same as case/NOT");
   assert(isVisible(d.querySelector("#filterTokenChips"), w), "sanity: token chips visible before regex mode is toggled on");
 
   fireClick(d.querySelector("#filterRegexCheckbox"), w);
@@ -14905,14 +14909,12 @@ await withApp(async (w, d, T) => {
   //     filter-path marking's own "show in entry detail" toggle ---
   T.state.selectedId = f.entries[1].id;
   const detailCb = d.querySelector("#settingsTextMatchHighlightDetail");
-  detailCb.checked = false;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
   const detailHtml = () => d.querySelector("#detailMessage").innerHTML;
   assert(/<mark class="hl-match-mark mark-seg"[^>]*#ff0000[^>]*>beta<\/mark>/.test(detailHtml()),
     "entry detail shows rule stripes even with the filter-path 'show in entry detail' toggle off");
   assert(!/text-match-mark/.test(detailHtml()), "...and that toggle still suppresses the filter-path mark itself");
-  detailCb.checked = true;
-  detailCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(detailCb, w);
 
   // --- A coloured NON-text node contributes nothing (nothing to underline) ---
   const levelRule = w.createFilterNode(f.id, "level", ["ERROR"]);
@@ -16811,17 +16813,16 @@ await withApp(async (w, d, T) => {
   w.openFilterPopup();
   const wholeWordCheckbox = d.querySelector("#filterWholeWordCheckbox");
   const wholeWordRow = d.querySelector("#filterWholeWordRow");
-  assert(wholeWordCheckbox && wholeWordCheckbox.checked === false, "the \"Match whole word\" toggle defaults to UNCHECKED (person-specified default)");
+  assert(wholeWordCheckbox && pillChecked(wholeWordCheckbox) === false, "the \"Match whole word\" toggle defaults to OFF (person-specified default)");
   assert(!wholeWordCheckbox.disabled && !wholeWordRow.classList.contains("disabled"),
     "it starts out enabled for the empty (literal) input");
 
-  // Every boolean in the popup renders as the Settings on/off switch now.
+  // Every boolean in the popup is a .pill-toggle (docs/ui-standard.md #69) now.
   ["filterRegexCheckbox", "filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
     const box = d.querySelector("#" + id);
-    const switchLabel = box.closest(".settings-switch");
-    assert(switchLabel && switchLabel.querySelector(".settings-switch-track"),
-      "#" + id + " is wrapped in the Settings-style .settings-switch (unified checkbox presentation)");
-    assert(switchLabel.classList.contains("settings-switch-sm"), "#" + id + " uses the popup's compact switch size");
+    assert(box.tagName === "BUTTON" && box.classList.contains("pill-toggle") && box.getAttribute("role") === "switch",
+      "#" + id + " is a role=switch .pill-toggle button (unified boolean control)");
+    assert(box.hasAttribute("aria-checked"), "#" + id + " carries aria-checked state");
   });
 
   // Live-match count reflects the toggle.
@@ -16862,7 +16863,7 @@ await withApp(async (w, d, T) => {
 
   // A regex filter never stores the flag, even with the box left checked.
   w.openFilterPopup();
-  d.querySelector("#filterWholeWordCheckbox").checked = true;
+  setPill(d.querySelector("#filterWholeWordCheckbox"), true);
   fireClick(d.querySelector("#filterRegexCheckbox"), w);
   d.querySelector("#filterInput").value = "Test";
   fireInput(d.querySelector("#filterInput"), w);
@@ -16873,8 +16874,8 @@ await withApp(async (w, d, T) => {
 
   // Edit mode pre-fills the toggle from the node, and clearing it sticks.
   w.openEditFilterPopup(uiCreated.id);
-  assert(d.querySelector("#filterWholeWordCheckbox").checked === true, "edit mode pre-fills \"Match whole word\" from the node");
-  d.querySelector("#filterWholeWordCheckbox").checked = false;
+  assert(pillChecked(d.querySelector("#filterWholeWordCheckbox")) === true, "edit mode pre-fills \"Match whole word\" from the node");
+  setPill(d.querySelector("#filterWholeWordCheckbox"), false);
   fireSubmit(d.querySelector("#filterForm"), w);
   assert(uiCreated.wholeWord === undefined, "saving an edit with the toggle cleared removes the flag from the node");
 
@@ -17353,7 +17354,7 @@ await withApp(async (w, d, T) => {
   assert(!dialog.classList.contains("hidden"), "'Export as CSV…' opens #csvExportDialog");
   assert(d.querySelector("#csvExportDecimalSelect").value === ",", "decimal separator select defaults to the (stubbed) system separator");
   assert(d.querySelector("#csvExportDelimiterSelect").value === ";", "comma-decimal locale defaults the column delimiter to semicolon (Excel convention)");
-  assert(d.querySelector("#csvExportHeadersInput").checked === true, "include-headers defaults to checked");
+  assert(pillChecked(d.querySelector("#csvExportHeadersInput")) === true, "include-headers defaults to on");
 
   let saved = null;
   w.downloadCsvFallback = (text, name) => { saved = { text, name }; };
@@ -17378,7 +17379,7 @@ await withApp(async (w, d, T) => {
   // Unchecking "include headers" drops the header line.
   fireContextMenu(body, w, 50, 50);
   fireClick(d.querySelector("#ctxExportCsv"), w);
-  d.querySelector("#csvExportHeadersInput").checked = false;
+  setPill(d.querySelector("#csvExportHeadersInput"), false);
   fireClick(d.querySelector("#csvExportConfirm"), w);
   const bodyOnlyLines = saved.text.split("\r\n");
   assert(bodyOnlyLines.length === 2, "unchecking 'include header row' exports only the 2 data rows, got " + bodyOnlyLines.length);
@@ -18536,13 +18537,11 @@ await withApp(async (w, d, T) => {
   w.render();
   fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
   const subfoldersCb = d.querySelector("#fwSettingsSubfolders");
-  subfoldersCb.checked = true;
-  subfoldersCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(subfoldersCb, w);
   await waitFor(() => sFolder.settings.includeSubfolders === true);
   assert(!d.querySelector("#fwSettingsRelPathRow").classList.contains("hidden"), "\"show relative path\" row appears once subfolders are included");
   const relPathCb = d.querySelector("#fwSettingsShowRelPath");
-  relPathCb.checked = true;
-  relPathCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(relPathCb, w);
   await waitFor(() => sFolder.settings.showRelativePath === true && sFolder.files.length === 2);
   fireClick(d.querySelector("#fwSettingsClose"), w);
   assert(sFolder.files.length === 2, "with \"include subfolders\" on, the nested file is now listed too, got " + sFolder.files.length);
@@ -18570,8 +18569,7 @@ await withApp(async (w, d, T) => {
   // its shown name immediately too.
   fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
   const relPathCb2 = d.querySelector("#fwSettingsShowRelPath");
-  relPathCb2.checked = false;
-  relPathCb2.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(relPathCb2, w);
   await waitFor(() => sFolder.settings.showRelativePath === false);
   fireClick(d.querySelector("#fwSettingsClose"), w);
   w.render();
@@ -18579,8 +18577,7 @@ await withApp(async (w, d, T) => {
     "turning \"show relative path\" back OFF while the file stays open reverts its shown name to the bare filename");
   fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
   const relPathCb3 = d.querySelector("#fwSettingsShowRelPath");
-  relPathCb3.checked = true;
-  relPathCb3.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(relPathCb3, w);
   await waitFor(() => sFolder.settings.showRelativePath === true);
   fireClick(d.querySelector("#fwSettingsClose"), w);
   w.render();
@@ -19468,7 +19465,7 @@ await withApp(async (w, d, T) => {
   const body = d.querySelector("#extractBody");
   fireContextMenu(body, w, 50, 50);
   fireClick(d.querySelector("#ctxExportCsv"), w);
-  assert(d.querySelector("#csvExportFullEntryInput").checked === false, "the checkbox defaults to unchecked");
+  assert(pillChecked(d.querySelector("#csvExportFullEntryInput")) === false, "the toggle defaults to off");
 
   let saved = null;
   w.downloadCsvFallback = (text, name) => { saved = { text, name }; };
@@ -19486,7 +19483,7 @@ await withApp(async (w, d, T) => {
   fireContextMenu(body, w, 50, 50);
   fireClick(d.querySelector("#ctxExportCsv"), w);
   d.querySelector("#csvExportDelimiterSelect").value = ",";
-  d.querySelector("#csvExportFullEntryInput").checked = true;
+  setPill(d.querySelector("#csvExportFullEntryInput"), true);
   fireClick(d.querySelector("#csvExportConfirm"), w);
   const fullEntryLines = saved.text.split("\r\n");
   assert(fullEntryLines[0].split(",").pop() === "Log entry", "header row gets an appended 'Log entry' column when the checkbox is on, got " + JSON.stringify(fullEntryLines[0]));
@@ -21042,11 +21039,11 @@ group(190);
 
     // Check it, then switch back to a single (same) direction -> auto
     // hidden AND unchecked, no stale checked-but-hidden state.
-    checkbox.checked = true;
+    setPill(checkbox, true);
     hopRows[1].querySelector(".link-hop-dir").value = "after";
     hopRows[1].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
     assert(row.classList.contains("hidden"), "reverting to same direction while checked: row becomes hidden again");
-    assert(checkbox.checked === false, "reverting to same direction while checked: checkbox is auto-unchecked, not left stale");
+    assert(pillChecked(checkbox) === false, "reverting to same direction while on: toggle is auto-cleared, not left stale");
   });
 }
 
@@ -21561,7 +21558,7 @@ await withApp(async (w, d, T) => {
   d.querySelector("#plotXSelect").value = "0"; d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
   fireClick(d.querySelector('#plotYList input[data-col="1"]'), w); // add column 1 alongside the default (column 0) -> yCols = [0,1]
   const eqCb = d.querySelector("#plotAxisEqual");
-  eqCb.checked = true; eqCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  fireClick(eqCb, w);
   assert(extractNode.plotConfig.xCol === 0 && extractNode.plotConfig.yCols.length === 2 && extractNode.plotConfig.axisEqual === true,
     "sanity: extraction node's own plot is configured, got " + JSON.stringify(extractNode.plotConfig));
 
@@ -22713,12 +22710,19 @@ group(199);
 
     rows().find(r => r.textContent.includes("plain.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "plain.txt");
-    assert(settingsGroup.classList.contains("hidden"), "the Settings group (holding Pretty Print) is hidden for a non-JSON file");
-    assert(d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "the whole toolbar hides too, since nothing else is shown for a plain .txt file");
+    // Since FEATURE_BACKLOG.md #68 (word wrap) the Settings group shows for ANY
+    // text file (it now holds the Text-View word-wrap toggle too), so the group
+    // and the toolbar are visible even for a plain .txt — but Pretty Print
+    // itself stays hidden for a non-JSON file.
+    assert(!settingsGroup.classList.contains("hidden"), "the Settings group is visible for a plain .txt file (it holds the word-wrap toggle)");
+    assert(!d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "the toolbar is shown for a plain .txt file (word-wrap toggle present)");
+    assert(prettyBtn.classList.contains("hidden"), "Pretty Print itself stays hidden for a non-JSON file");
+    assert(!d.querySelector("#itvWrapBtn").classList.contains("hidden"), "the word-wrap toggle is shown for a plain .txt file");
 
     rows().find(r => r.textContent.includes("compact.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "compact.json");
     assert(!settingsGroup.classList.contains("hidden"), "the Settings group is visible for a .json file");
+    assert(!prettyBtn.classList.contains("hidden"), "Pretty Print is shown for a .json file");
     assert(!d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "...so the toolbar itself is shown");
     assert(!prettyBtn.classList.contains("active"), "starts off");
 
@@ -23771,6 +23775,765 @@ await withApp(async (w, d, T) => {
   assert(capturedBlob.type === "text/plain", "the .svg entry's Blob is neutralized to text/plain, not image/svg+xml, got " + capturedBlob.type);
   assert(w.__pwned === undefined, "the archived <svg><script> never executed against PhiLogg's origin");
   assert(T.state.rootIds.length === 0, "external-open still creates no tree node for a non-log entry");
+});
+
+/* ============================================================
+   GROUP 208 — Fullscreen Focus Mode (FEATURE_BACKLOG.md #66)
+   Origin: this session. A distraction-free mode (toggleFocusMode): removes
+   the header outright, force-collapses the Files & Filters sidebar and the
+   Entry Detail panel to their edge-hover overlays (reusing the existing
+   collapse + hoverExpand mechanism), keeps #viewBar and the timeline minimap
+   visible, and restores the prior collapse/hover state on exit. Real OS
+   fullscreen is a Tauri-only capability, so the F11 shortcut (rebindable) is
+   only HANDLED under the desktop wrapper (window.philogg present) and the page
+   asks window.philogg.setFullscreen to go fullscreen; the plain browser build
+   never binds F11. Esc is a secondary exit, but only when no overlay is open.
+   Desktop/Rust side (window_set_fullscreen, inject.js) is not jsdom-testable —
+   verified by code review + `cd desktop && npm run build`.
+   ============================================================ */
+group(208);
+await withApp(async (w, d, T) => {
+  section("208a. Enter Focus Mode: header removed, sidebar+detail force-collapsed & hover forced, viewBar/minimap kept");
+
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  // Prior state: both panels expanded, hover-reveal OFF for both (a
+  // non-default value, so the restore test below is meaningful).
+  T.hoverExpandSidebar = false;
+  T.hoverExpandDetail = false;
+  assert(!w.isSidebarCollapsed(), "precondition: sidebar starts expanded");
+  assert(!w.isDetailCollapsed(), "precondition: detail starts expanded");
+  assert(isVisible(d.getElementById("toolbar"), w), "precondition: header visible");
+  const minimapDisplayBefore = w.getComputedStyle(d.getElementById("timelineMinimap")).display;
+
+  let fsCalls = [];
+  w.philogg = { setFullscreen: on => { fsCalls.push(on); } };
+
+  w.toggleFocusMode();
+
+  assert(w.isFocusMode(), "toggleFocusMode() turns Focus Mode on");
+  assert(d.body.classList.contains("focus-mode"), "body carries the focus-mode class");
+  assert(!isVisible(d.getElementById("toolbar"), w), "header (#toolbar) is removed in Focus Mode");
+  assert(w.isSidebarCollapsed(), "sidebar force-collapsed in Focus Mode");
+  assert(w.isDetailCollapsed(), "Entry Detail force-collapsed in Focus Mode");
+  assert(T.hoverExpandSidebar === true, "sidebar hover-reveal forced on regardless of the user's setting");
+  assert(T.hoverExpandDetail === true, "detail hover-reveal forced on regardless of the user's setting");
+  assert(isVisible(d.getElementById("viewBar"), w), "#viewBar stays visible in Focus Mode");
+  assert(w.getComputedStyle(d.getElementById("timelineMinimap")).display === minimapDisplayBefore,
+    "Focus Mode does not change the timeline minimap's visibility");
+  assert(fsCalls.length === 1 && fsCalls[0] === true, "entering asks the desktop wrapper for real OS fullscreen (setFullscreen(true))");
+  assert(T.focusModePrevState && T.focusModePrevState.sidebarCollapsed === false && T.focusModePrevState.hoverExpandSidebar === false,
+    "prior state captured for restore on exit");
+});
+
+await withApp(async (w, d, T) => {
+  section("208b. Exit Focus Mode restores the exact prior collapse + hover state");
+
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  T.hoverExpandSidebar = false;
+  T.hoverExpandDetail = false;
+
+  let fsCalls = [];
+  w.philogg = { setFullscreen: on => { fsCalls.push(on); } };
+
+  w.toggleFocusMode(); // on
+  w.toggleFocusMode(); // off
+
+  assert(!w.isFocusMode(), "second toggle turns Focus Mode off");
+  assert(!d.body.classList.contains("focus-mode"), "focus-mode class removed on exit");
+  assert(isVisible(d.getElementById("toolbar"), w), "header restored on exit");
+  assert(!w.isSidebarCollapsed(), "sidebar restored to its prior (expanded) state");
+  assert(!w.isDetailCollapsed(), "Entry Detail restored to its prior (expanded) state");
+  assert(T.hoverExpandSidebar === false, "sidebar hover-reveal restored to the user's prior setting");
+  assert(T.hoverExpandDetail === false, "detail hover-reveal restored to the user's prior setting");
+  assert(fsCalls.length === 2 && fsCalls[1] === false, "exiting asks the wrapper to leave fullscreen (setFullscreen(false))");
+  assert(T.focusModePrevState === null, "captured prior-state cleared after restore");
+});
+
+await withApp(async (w, d, T) => {
+  section("208c. A sidebar collapsed BEFORE Focus Mode stays collapsed on exit");
+
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.toggleSidebarCollapsed(true); // user already had the sidebar collapsed
+  assert(w.isSidebarCollapsed(), "precondition: sidebar collapsed before entering");
+
+  w.philogg = { setFullscreen: () => {} };
+  w.toggleFocusMode(); // on — still collapsed
+  assert(w.isSidebarCollapsed(), "sidebar stays collapsed in Focus Mode");
+  w.toggleFocusMode(); // off — must NOT expand it, since it was collapsed before
+  assert(w.isSidebarCollapsed(), "sidebar remains collapsed after exit (prior state honoured, not blindly expanded)");
+});
+
+await withApp(async (w, d, T) => {
+  section("208d. F11 shortcut is guarded to the desktop wrapper (window.philogg present)");
+
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  // Plain browser build: no window.philogg. F11 must NOT toggle Focus Mode —
+  // the browser's own F11 keeps priority.
+  assert(!w.philogg, "precondition: no desktop wrapper");
+  fireKeydown(d, w, "F11");
+  assert(!w.isFocusMode(), "F11 is a no-op in the plain browser build (not bound)");
+
+  // Desktop wrapper: window.philogg present. F11 now toggles Focus Mode.
+  w.philogg = { setFullscreen: () => {} };
+  fireKeydown(d, w, "F11");
+  assert(w.isFocusMode(), "F11 toggles Focus Mode on under the desktop wrapper");
+  fireKeydown(d, w, "F11");
+  assert(!w.isFocusMode(), "F11 again toggles Focus Mode back off");
+});
+
+await withApp(async (w, d, T) => {
+  section("208e. Esc exits Focus Mode, but only when no overlay is open");
+
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.philogg = { setFullscreen: () => {} };
+  w.toggleFocusMode();
+  assert(w.isFocusMode(), "precondition: in Focus Mode");
+
+  // An open popup: Esc closes it and leaves Focus Mode intact (single Esc must
+  // never both close the overlay AND drop out of Focus Mode).
+  w.openFilterPopup();
+  assert(!d.getElementById("filterPopup").classList.contains("hidden"), "precondition: filter popup open");
+  fireKeydown(d, w, "Escape");
+  assert(d.getElementById("filterPopup").classList.contains("hidden"), "Esc closes the open popup");
+  assert(w.isFocusMode(), "Esc did NOT also exit Focus Mode while an overlay was open");
+
+  // Nothing open now: Esc exits Focus Mode.
+  fireKeydown(d, w, "Escape");
+  assert(!w.isFocusMode(), "Esc exits Focus Mode when no overlay is open");
+});
+
+/* ============================================================
+   GROUP 209 — Per-file clock offset (FEATURE_BACKLOG.md #29)
+   Diagnose-before-implement note: mergeFiles reuses a source file's entry
+   OBJECTS by reference, so baking an offset into a source's entry.ts also
+   moves those entries inside any merged file that contains them — the merged
+   file's entries array (and its _orderIndexMap) then go stale. applyClockOffset
+   re-sorts every merged root file and drops its order map for exactly this.
+   Also: node.clockOffset is persisted separately from the file text (which is
+   rebuilt from the ORIGINAL raw lines) and re-applied on session-cache restore.
+   ============================================================ */
+group(209);
+section("209. Per-file clock offset: difference / start-time / undo / merge / persistence");
+
+// --- 209a: parseClockDelta forms + the context-menu item + difference mode ---
+await withApp(async (w, d, T) => {
+  // Signed-delta parser: ms default, unit suffixes, colon time form, signs.
+  assert(w.parseClockDelta("+1500") === 1500, "parseClockDelta: bare number is milliseconds");
+  assert(w.parseClockDelta("-1500") === -1500, "parseClockDelta: leading minus");
+  assert(w.parseClockDelta("−2s") === -2000, "parseClockDelta: unicode minus + seconds unit");
+  assert(w.parseClockDelta("500ms") === 500, "parseClockDelta: explicit ms unit");
+  assert(w.parseClockDelta("3m") === 180000, "parseClockDelta: minutes unit");
+  assert(w.parseClockDelta("+00:01:30.500") === 90500, "parseClockDelta: HH:MM:SS.mmm colon form");
+  assert(w.parseClockDelta("-01:30") === -90000, "parseClockDelta: MM:SS colon form");
+  assert(w.parseClockDelta("") === null && w.parseClockDelta("abc") === null && w.parseClockDelta("1:2:3:4") === null,
+    "parseClockDelta: empty/garbage/too-many-parts return null");
+
+  const f = await w.addFile("clock.log", makeLog(0, 5), () => {});
+  w.render();
+  const firstTs0 = f.entries[0].ts, lastTs0 = f.entries[4].ts;
+
+  // Context-menu item appears only on a real file node.
+  w.openTreeContextMenu({ clientX: 10, clientY: 10, preventDefault() {} }, f.id);
+  assert(d.querySelector('#treeContextMenu [data-action="clockOffset"]'),
+    "context menu offers 'Adjust clock…' on a file node");
+  w.closeTreeContextMenu();
+
+  // Difference mode through the real dialog: +2s applied additively.
+  w.openClockOffsetDialog(f.id);
+  assert(isVisible(d.querySelector("#clockOffsetDialog"), w), "clock dialog opens");
+  assert(isVisible(d.querySelector("#clockDiffRow"), w) && !isVisible(d.querySelector("#clockStartRow"), w),
+    "difference mode is the default: diff row shown, start row hidden");
+  d.querySelector("#clockDiffInput").value = "+2s";
+  d.querySelector("#clockDiffInput").dispatchEvent(new w.Event("input", { bubbles: true }));
+  // Live preview shows old -> new for both first and last line.
+  const previewHtml = d.querySelector("#clockOffsetPreview").innerHTML;
+  assert(previewHtml.includes("clock-preview-new") && previewHtml.includes(w.formatTime(firstTs0 + 2000)),
+    "preview shows the first line's new (shifted) time");
+  fireClick(d.querySelector("#clockOffsetApply"), w);
+  assert(!isVisible(d.querySelector("#clockOffsetDialog"), w), "dialog closes after Apply");
+  assert(f.entries[0].ts === firstTs0 + 2000 && f.entries[4].ts === lastTs0 + 2000,
+    "difference mode: +2s baked into every entry.ts");
+  assert(f.clockOffset === 2000, "node.clockOffset accumulates the applied delta");
+  // Uniform shift preserves the file's own order + order-index map.
+  const oim = w.buildOrderIndexMap(f.id);
+  assert(oim.get(f.entries[0].id) === 0 && oim.get(f.entries[4].id) === 4,
+    "a uniform shift keeps the file's own order (and its _orderIndexMap) valid");
+
+  // Applying a second offset accumulates on top of the first.
+  w.openClockOffsetDialog(f.id);
+  assert(d.querySelector("#clockOffsetCurrent").textContent.includes("+2"), "dialog shows the current cumulative offset");
+  d.querySelector("#clockDiffInput").value = "-500";
+  fireClick(d.querySelector("#clockOffsetApply"), w);
+  assert(f.clockOffset === 1500, "a second adjustment accumulates (2000 - 500)");
+  assert(f.entries[0].ts === firstTs0 + 1500, "entries reflect the accumulated offset");
+});
+
+// --- 209b: start-time mode ---
+await withApp(async (w, d, T) => {
+  const f = await w.addFile("clock.log", makeLog(0, 5), () => {});
+  w.render();
+  const span = f.entries[4].ts - f.entries[0].ts; // preserved by a uniform shift
+  const desiredTs = new Date("2030-06-01T09:00:00.000").getTime();
+  w.openClockOffsetDialog(f.id);
+  fireClick(d.querySelector("#clockModeStart"), w);
+  assert(!isVisible(d.querySelector("#clockDiffRow"), w) && isVisible(d.querySelector("#clockStartRow"), w),
+    "start mode: diff row hidden, start row shown");
+  d.querySelector("#clockStartInput").value = w.tsToLocalInputValue(desiredTs);
+  d.querySelector("#clockStartInput").dispatchEvent(new w.Event("input", { bubbles: true }));
+  fireClick(d.querySelector("#clockOffsetApply"), w);
+  assert(f.entries[0].ts === desiredTs, "start mode: first line lands exactly on the desired timestamp");
+  assert(f.entries[4].ts - f.entries[0].ts === span, "start mode: the shift is uniform (span preserved)");
+});
+
+// --- 209c: undo / redo round-trips the timestamp shift exactly ---
+await withApp(async (w, d, T) => {
+  const f = await w.addFile("clock.log", makeLog(0, 5), () => {});
+  w.render();
+  const before = f.entries.map(e => e.ts);
+  assert(w.applyClockOffset(f.id, 3600000), "applyClockOffset returns true for a real file");
+  assert(f.entries[0].ts === before[0] + 3600000, "apply shifted ts");
+  assert(f.clockOffset === 3600000, "clockOffset set");
+  w.undo();
+  assert(f.entries.every((e, i) => e.ts === before[i]), "undo restores every entry.ts exactly");
+  assert((f.clockOffset || 0) === 0, "undo restores clockOffset to 0");
+  w.redo();
+  assert(f.entries.every((e, i) => e.ts === before[i] + 3600000), "redo re-applies the shift exactly");
+  assert(f.clockOffset === 3600000, "redo restores clockOffset");
+});
+
+// --- 209d: a merged view stays correctly sorted after an offset on one source ---
+await withApp(async (w, d, T) => {
+  // Two sources over the SAME timestamp window -> merge takes the copy+sort
+  // (overlapping) path and interleaves them by ts.
+  const fa = await w.addFile("src-a.log", makeLog(0, 5), () => {});
+  const fb = await w.addFile("src-b.log", makeLog(0, 5, { msgPrefix: "other" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.entries.length === 10, "merged file has both sources' entries");
+  const sorted = arr => arr.every((e, i) => i === 0 || arr[i - 1].ts <= e.ts);
+  assert(sorted(merged.entries), "merged file is sorted by ts before any offset");
+
+  // Merged files are refused (their entries are shared references).
+  assert(w.applyClockOffset(merged.id, 1000) === false, "applyClockOffset refuses a merged file");
+  w.openTreeContextMenu({ clientX: 10, clientY: 10, preventDefault() {} }, merged.id);
+  assert(!d.querySelector('#treeContextMenu [data-action="clockOffset"]'),
+    "context menu hides 'Adjust clock…' on a merged file");
+  w.closeTreeContextMenu();
+
+  // Shift source A an hour into the future — A's entries now sort AFTER all of
+  // B's. The merged view must re-sort to stay chronological.
+  assert(w.applyClockOffset(fa.id, 3600000), "offset applied to source A");
+  assert(sorted(merged.entries), "merged file re-sorted correctly after the source offset");
+  // All B entries (msgPrefix 'other') now come before all shifted A entries.
+  const firstA = merged.entries.findIndex(e => e.message.startsWith("message"));
+  const lastB = merged.entries.map(e => e.message.startsWith("other")).lastIndexOf(true);
+  assert(lastB < firstA, "shifted source-A entries now sort after every source-B entry");
+  // The merged file's order-index map reflects the new order (was invalidated).
+  const moim = w.buildOrderIndexMap(merged.id);
+  assert(moim.get(merged.entries[0].id) === 0 && moim.get(merged.entries[9].id) === 9,
+    "merged file's _orderIndexMap re-derived after the re-sort");
+});
+
+// --- 209e: node.clockOffset survives the session cache round-trip ---
+{
+  const factory = new IDBFactory();
+  let firstTsAfter = null;
+  await withApp(async (w, d, T) => {
+    const f = await w.addFile("clock.log", makeLog(0, 8), () => {});
+    w.applyClockOffset(f.id, 5000);
+    firstTsAfter = f.entries[0].ts;
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    assert(rec && rec.clockOffset === 5000, "cache: clockOffset persisted on the file record");
+    // Text is rebuilt from the ORIGINAL raw lines (offset NOT baked into raw).
+    assert(!rec.text.includes(w.formatTime(f.entries[0].ts)), "cache: file text keeps the original raw timestamps");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    await T.bootRestore;
+    assert(T.state.rootIds.length === 1, "restore: file came back");
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f.clockOffset === 5000, "restore: clockOffset came back on the file node");
+    assert(f.entries[0].ts === firstTsAfter, "restore: the offset was re-applied to the re-parsed entries (ts matches pre-reload)");
+  }, { indexedDB: factory });
+}
+
+// --- 209f: the applied offset travels with session export/import ---
+{
+  let exportedJson = null, expFirst = null, expLast = null;
+  await withApp(async (w, d, T) => {
+    const f = await w.addFile("clock.log", makeLog(0, 8), () => {});
+    w.applyClockOffset(f.id, 7000);
+    expFirst = f.entries[0].ts;
+    expLast = f.entries[f.entries.length - 1].ts;
+    exportedJson = JSON.stringify(w.buildSessionExport([f.id], new Set()));
+    assert(JSON.parse(exportedJson).files[0].clockOffset === 7000, "export: clockOffset written into the file record");
+  });
+
+  await withApp(async (w, d, T) => {
+    // Byte-identical content (original raw timestamps) → tier-1 fullHash match,
+    // even though this copy carries no offset of its own yet.
+    const f = await w.addFile("their-copy.log", makeLog(0, 8), () => {});
+    w.render();
+    assert((f.clockOffset || 0) === 0, "import: the importer's own copy starts with no offset");
+    w.importSessionJson(exportedJson);
+    await sleep(80);
+    assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"),
+      "import: byte-identical content auto-matches (fullHash is offset-independent)");
+    assert(f.clockOffset === 7000, "import: the exported clockOffset is re-applied to the matched file");
+    assert(f.entries[0].ts === expFirst && f.entries[f.entries.length - 1].ts === expLast,
+      "import: first + last timestamps match what was exported");
+  });
+}
+
+/* ============================================================
+   GROUP 210 — Separately configurable syntax-highlight scheme
+   (FEATURE_BACKLOG.md #67)
+   Origin: this session. The eight SYNTAX_COLOR_KEYS can now be driven by a
+   scheme picked independently of the app theme (#settingsSyntaxSchemeSelect):
+   "Follow app theme" (default, preserves the pre-#67 behaviour), one built-in
+   pendant per built-in app theme (BUILTIN_SYNTAX_SCHEMES), or a user-imported
+   custom scheme (our own JSON format, customSyntaxSchemes in localStorage
+   philogg-custom-syntax-schemes; the choice itself in philogg-syntax-scheme).
+   applyTheme() calls applySyntaxScheme() after the theme's own colors are in
+   place, so a chosen scheme overrides --syntax-* inline regardless of the
+   active app theme.
+   ============================================================ */
+group(210);
+await withApp(async (w, d, T) => {
+  section("210a. Default 'Follow app theme' preserves current --syntax-* behaviour");
+  assert(T.syntaxSchemeChoice === "follow-theme", "the default scheme choice is 'follow-theme', got " + T.syntaxSchemeChoice);
+  const select = d.querySelector("#settingsSyntaxSchemeSelect");
+  assert(select, "the syntax scheme <select> exists in Settings → Appearance");
+  assert([...select.options].map(o => o.value).includes("follow-theme"), "a 'Follow app theme' option is offered");
+  assert(select.value === "follow-theme", "the select reflects the default choice");
+  T.BUILTIN_SYNTAX_SCHEMES.forEach(s => {
+    assert([...select.querySelectorAll("option")].some(o => o.value === s.id), "built-in syntax scheme " + s.id + " is offered");
+  });
+
+  // Under Dark (the default), the eight --syntax-* vars resolve to the :root
+  // defaults — which the built-in "dark" scheme reproduces verbatim.
+  const csDark = w.getComputedStyle(d.documentElement);
+  const darkScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "dark");
+  T.SYNTAX_COLOR_KEYS.forEach(k => {
+    assert(csDark.getPropertyValue("--" + k).trim() === darkScheme.colors[k],
+      "follow-theme on Dark: --" + k + " resolves to the :root default (" + darkScheme.colors[k] + "), got " + csDark.getPropertyValue("--" + k));
+  });
+
+  // Switching the APP THEME with follow-theme active moves the syntax colors
+  // with it: Light has its own [data-theme=light] --syntax-* block.
+  w.setTheme("light");
+  const csLight = w.getComputedStyle(d.documentElement);
+  const lightScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "light");
+  assert(csLight.getPropertyValue("--syntax-tag").trim() === lightScheme.colors["syntax-tag"],
+    "follow-theme follows the app theme: Light's --syntax-tag applies, got " + csLight.getPropertyValue("--syntax-tag"));
+  // A theme with no --syntax-* block (Catppuccin Mocha) cascades to the :root
+  // (dark) defaults under follow-theme — the documented behaviour.
+  w.setTheme("catppuccin-mocha");
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--syntax-tag").trim() === darkScheme.colors["syntax-tag"],
+    "follow-theme on a theme with no syntax block cascades to the :root default");
+  assert(w.localStorage.getItem("philogg-syntax-scheme") === null || w.localStorage.getItem("philogg-syntax-scheme") === "follow-theme",
+    "follow-theme is not written to localStorage unless explicitly chosen");
+});
+
+await withApp(async (w, d, T) => {
+  section("210b. A built-in syntax scheme overrides --syntax-* independently of the app theme");
+  // App theme Light, syntax scheme Mocha — the syntax colors must be Mocha's,
+  // not Light's, proving the two are decoupled.
+  w.setTheme("light");
+  const mochaScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "catppuccin-mocha");
+  w.setSyntaxScheme("catppuccin-mocha");
+  assert(T.syntaxSchemeChoice === "catppuccin-mocha", "the scheme choice updates");
+  assert(w.localStorage.getItem("philogg-syntax-scheme") === "catppuccin-mocha", "the scheme choice persists to localStorage");
+  let cs = w.getComputedStyle(d.documentElement);
+  T.SYNTAX_COLOR_KEYS.forEach(k => {
+    assert(cs.getPropertyValue("--" + k).trim() === mochaScheme.colors[k],
+      "scheme override: --" + k + " is Mocha's (" + mochaScheme.colors[k] + ") under the Light app theme, got " + cs.getPropertyValue("--" + k));
+  });
+  assert(d.documentElement.getAttribute("data-theme") === "light", "the app theme is untouched by the syntax scheme choice");
+
+  // Switching the app theme to Dark keeps the chosen syntax scheme (Mocha).
+  w.setTheme("dark");
+  cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--syntax-tag").trim() === mochaScheme.colors["syntax-tag"],
+    "the chosen syntax scheme survives an app-theme switch, got " + cs.getPropertyValue("--syntax-tag"));
+
+  // Back to follow-theme clears the inline override; --syntax-* resolve to
+  // Dark's :root defaults again.
+  w.setSyntaxScheme("follow-theme");
+  cs = w.getComputedStyle(d.documentElement);
+  const darkScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "dark");
+  assert(cs.getPropertyValue("--syntax-tag").trim() === darkScheme.colors["syntax-tag"],
+    "returning to follow-theme clears the scheme override, got " + cs.getPropertyValue("--syntax-tag"));
+});
+
+await withApp(async (w, d, T) => {
+  section("210c. Importing a custom syntax scheme: validation, template round-trip, apply + persist, delete");
+  fireClick(d.querySelector("#btnSettings"), w);
+  assert(d.querySelector("#customSyntaxSchemeList .filter-library-empty"), "the custom syntax scheme list starts empty");
+
+  w.importSyntaxSchemeJson("{not json");
+  assert(T.customSyntaxSchemes.length === 0, "malformed JSON is rejected");
+  w.importSyntaxSchemeJson(JSON.stringify({ name: "No tag", colors: {} }));
+  assert(T.customSyntaxSchemes.length === 0, "a JSON file without the philogg-syntax-scheme format tag is rejected");
+  w.importSyntaxSchemeJson(JSON.stringify({ format: "philogg-syntax-scheme", version: 1, name: "Incomplete", colors: { "syntax-tag": "#111111" } }));
+  assert(T.customSyntaxSchemes.length === 0, "a scheme file missing required keys is rejected");
+
+  // Template round trip: template out -> tweak -> import back in.
+  const template = JSON.parse(w.buildSyntaxSchemeTemplateJson());
+  assert(template.format === "philogg-syntax-scheme" && typeof template.colors === "object", "buildSyntaxSchemeTemplateJson seeds a valid template");
+  assert(T.SYNTAX_COLOR_KEYS.every(k => typeof template.colors[k] === "string" && template.colors[k].length > 0),
+    "the template includes every SYNTAX_COLOR_KEYS entry with a non-empty value");
+  template.name = "My Neon Syntax";
+  template.colors["syntax-tag"] = "#ff00aa";
+  template.colors["syntax-string"] = "#00ffcc";
+  w.importSyntaxSchemeJson(JSON.stringify(template));
+
+  assert(T.customSyntaxSchemes.length === 1, "a valid scheme file is accepted and added");
+  const imported = T.customSyntaxSchemes[0];
+  assert(imported.name === "My Neon Syntax", "the imported scheme name is preserved");
+  assert(imported.colors["syntax-tag"] === "#ff00aa", "imported colors are preserved");
+  assert(JSON.parse(w.localStorage.getItem("philogg-custom-syntax-schemes"))[0].name === "My Neon Syntax", "custom schemes persist to localStorage");
+
+  assert(T.syntaxSchemeChoice === imported.id, "importing a scheme switches to it immediately");
+  let cs = w.getComputedStyle(d.documentElement);
+  assert(cs.getPropertyValue("--syntax-tag").trim() === "#ff00aa", "the custom scheme's colors are applied inline, got " + cs.getPropertyValue("--syntax-tag"));
+  assert(cs.getPropertyValue("--syntax-string").trim() === "#00ffcc", "...for every key, got " + cs.getPropertyValue("--syntax-string"));
+
+  const select = d.querySelector("#settingsSyntaxSchemeSelect");
+  assert([...select.options].some(o => o.value === imported.id && o.textContent === "My Neon Syntax"), "the imported scheme appears in the dropdown");
+  assert(select.value === imported.id, "the dropdown reflects the newly-active custom scheme");
+  const listRow = d.querySelector("#customSyntaxSchemeList .filter-library-row");
+  assert(listRow && listRow.textContent.includes("My Neon Syntax"), "the imported scheme is listed in the card");
+
+  // Deleting the active custom scheme removes it everywhere and falls back to
+  // follow-theme (which restores the app theme's own --syntax-* defaults).
+  d.querySelector("#customSyntaxSchemeList .filter-library-row-del").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+  assert(T.customSyntaxSchemes.length === 0, "deleting the scheme removes it from customSyntaxSchemes");
+  assert(JSON.parse(w.localStorage.getItem("philogg-custom-syntax-schemes")).length === 0, "...and from localStorage");
+  assert(T.syntaxSchemeChoice === "follow-theme", "deleting the ACTIVE custom scheme falls back to follow-theme");
+  const darkScheme = T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "dark");
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--syntax-tag").trim() === darkScheme.colors["syntax-tag"],
+    "...and the app theme's default --syntax-* colors are restored");
+  assert(d.querySelector("#customSyntaxSchemeList .filter-library-empty"), "the list shows the empty state again");
+});
+
+await withApp(async (w, d, T) => {
+  section("210d. A stale/deleted syntax scheme id in localStorage falls back to follow-theme on init");
+  w.localStorage.setItem("philogg-syntax-scheme", "syntax:does-not-exist");
+  w.initSyntaxScheme();
+  assert(T.syntaxSchemeChoice === "follow-theme", "resolveSyntaxSchemeId falls back to follow-theme for an unknown id, got " + T.syntaxSchemeChoice);
+});
+
+/* ============================================================
+   GROUP 211 — Word wrap in the views (FEATURE_BACKLOG.md #68)
+   Origin: this session (2026-09-14). Two independent, session-cache-persisted
+   toggles: one in the log-view toolbars (state.wrapMessages, also governs the
+   Entry Detail message), one in the Text-View toolbar (state.wrapTextView).
+   Both DISTINCT from the multiline toggle (multiline = literal "\n" breaks;
+   wrap = soft-wrapping a single long line). See docs/ui-and-views.md and
+   docs/persistence-and-sync.md.
+   ============================================================ */
+group(211);
+await withApp(async (w, d, T) => {
+  section("211a. Log-view word-wrap toggle: flips state + body class, wraps long rows, independent of multiline, persists");
+  // Long single-line messages so a wrapped row is measurably taller than one
+  // ROW_HEIGHT (jsdom stubs clientWidth to 800; measureMsgWidth falls back to
+  // the monospace char-width constant, so wrapColsForBody yields a real count).
+  const fa = await w.addFile("a.log", makeLog(0, 6, { suffix: () => "y".repeat(240) }), () => {});
+  T.state.activeId = fa.id;
+  // The default fixed columns total wider than withApp's stubbed 800px body,
+  // leaving no message track; give #tableBody a realistically wide viewport so
+  // wrapColsForBody yields a positive character capacity (real browsers are).
+  Object.defineProperty(d.querySelector("#tableBody"), "clientWidth", { value: 2000, configurable: true });
+  w.render();
+
+  const btnWrap = d.querySelector("#filteredToolbar .toggle-wrap");
+  const btnWrapCtx = d.querySelector("#contextToolbar .toggle-wrap");
+  assert(btnWrap && btnWrapCtx, "a word-wrap toggle exists in BOTH log toolbars (Filtered + Context)");
+  assert(!T.state.wrapMessages, "wrapMessages off by default");
+  assert(!btnWrap.classList.contains("active"), "log word-wrap button starts inactive");
+  assert(!d.body.classList.contains("wrap-messages"), "no .wrap-messages body class by default");
+
+  fireClick(btnWrap, w);
+  assert(T.state.wrapMessages === true, "click flips state.wrapMessages on");
+  assert(d.body.classList.contains("wrap-messages"), "body gains .wrap-messages");
+  assert(btnWrap.classList.contains("active") && btnWrapCtx.classList.contains("active"), "both toolbars' wrap buttons show active (shared .toggle-wrap)");
+  assert(w.needsRowOffsets() === true, "wrap forces the variable-height offsets virtualization path");
+
+  w.render();
+  const longRow = d.querySelector('#tableRows [data-entry-id="' + fa.entries[0].id + '"]');
+  assert(longRow, "the long-message row is rendered");
+  assert(parseInt(longRow.style.height, 10) > T.ROW_HEIGHT,
+    "with wrap on the long-message row is taller than a single ROW_HEIGHT (soft-wrapped to several lines), got " + longRow.style.height);
+
+  // Independent of the multiline toggle — both can be on at once.
+  const btnMulti = d.querySelector("#filteredToolbar .toggle-multiline");
+  fireClick(btnMulti, w);
+  assert(T.state.wrapMessages === true && T.state.multilineMessages === true, "wrap and multiline are independently on");
+  assert(d.body.classList.contains("wrap-messages") && d.body.classList.contains("multiline-messages"), "both body classes present together");
+  fireClick(btnWrap, w);
+  assert(T.state.wrapMessages === false && T.state.multilineMessages === true, "turning wrap off leaves multiline untouched (independent flags)");
+  fireClick(btnMulti, w); // back to a clean baseline
+
+  w.render();
+  const shortAgain = d.querySelector('#tableRows [data-entry-id="' + fa.entries[0].id + '"]');
+  assert(parseInt(shortAgain.style.height, 10) === T.ROW_HEIGHT, "with wrap (and multiline) off the row is back to one ROW_HEIGHT, got " + shortAgain.style.height);
+
+  // Session-cache round-trip of BOTH flags (same tier as multilineMessages).
+  T.state.wrapMessages = true;
+  T.state.wrapTextView = true;
+  w.updateWrapMsgButton();
+  w.updateWrapTextViewButton();
+  await w.persistMetaNow();
+  const meta = await w.cacheStoreOp("meta", "readonly", s => s.get("session"));
+  assert(meta && meta.settings.wrapMessages === true, "cache: wrapMessages written to meta.settings");
+  assert(meta && meta.settings.wrapTextView === true, "cache: wrapTextView written to meta.settings");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("211b. Text-View word-wrap toggle: soft-wraps WITHOUT changing the logical line number, separate from the log toggle");
+  // A four-logical-line text file whose 2nd line is very long (would wrap).
+  const text = "line zero\n" + "z".repeat(300) + "\nline two\nline three";
+  const logicalLines = text.split("\n").length; // 4
+  const v = { kind: "text", name: "sample.txt", text, ext: "txt", prettyPrint: false };
+  T.state.inlineViewer = v;
+  w.renderInlineTextViewer(v);
+
+  const viewerEl = d.querySelector("#inlineTextViewer");
+  assert(d.querySelectorAll("#inlineTextViewer .itv-line").length === logicalLines,
+    "one .itv-line (one line number) per LOGICAL source line (" + logicalLines + "), off by default");
+
+  const btn = d.querySelector("#itvWrapBtn");
+  assert(btn && !btn.classList.contains("hidden"), "Text-View toolbar shows the word-wrap button for a .txt file");
+  assert(!T.state.wrapTextView, "wrapTextView off by default");
+  assert(!d.body.classList.contains("textview-wrap"), "no .textview-wrap body class by default");
+
+  fireClick(btn, w);
+  assert(T.state.wrapTextView === true, "click flips state.wrapTextView on");
+  assert(d.body.classList.contains("textview-wrap"), "body gains .textview-wrap");
+  assert(btn.classList.contains("active"), "Text-View wrap button shows active");
+  assert(!d.body.classList.contains("wrap-messages"), "Text-View wrap is independent of the log-view wrap (no .wrap-messages)");
+
+  // A wrapped display line must NOT get its own line number: the count of
+  // numbered .itv-line elements is unchanged across a re-render with wrap on.
+  w.renderInlineTextViewer(v);
+  assert(d.querySelectorAll("#inlineTextViewer .itv-line").length === logicalLines,
+    "with wrap ON the logical line count is unchanged (" + logicalLines + ") — a wrapped continuation shares its line's number, does not add one");
+
+  // The line number is a CSS ::before counter on .itv-line, so the long
+  // (wrapping) line is still a single .itv-line element carrying one number.
+  const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
+  assert(lines[1] && lines[1].textContent.length >= 300, "the long line is still ONE .itv-line element (its whole text in a single numbered line)");
+}, { indexedDB: new IDBFactory() });
+
+/* ============================================================
+   GROUP 212 — Boolean pill toggle (.pill-toggle), the docs/ui-standard.md #69
+   consistency-sweep replacement for single-boolean checkboxes across every
+   dialog. Origin: this session (2026-09-14, FEATURE_BACKLOG.md #69). Covers
+   the component contract: a role=switch button whose state lives in
+   aria-checked (+ an `.on` class), flips on a direct click AND on a click of
+   its associated <label for=…> (browser-forwarded), reads back correctly, and
+   drives the app via a dispatched `change` event. Also spot-checks that a
+   representative converted control in each family (filter popup, Settings,
+   CSV export, plot) is now a pill and still behaves.
+   ============================================================ */
+group(212);
+await withApp(async (w, d, T) => {
+  section("212a. .pill-toggle component: click + label-click flip aria-checked/.on, read back via aria-checked");
+
+  T.state.activeId = null;
+  w.openFilterPopup();
+  const pill = d.querySelector("#filterRegexCheckbox");
+  assert(pill.tagName === "BUTTON" && pill.getAttribute("role") === "switch" && pill.classList.contains("pill-toggle"),
+    "a converted boolean is a <button role=switch class=pill-toggle>, not a native checkbox");
+  assert(pill.getAttribute("aria-checked") === "false" && !pill.classList.contains("on"),
+    "it starts off (aria-checked=false, no .on class)");
+  assert(pill.checked === undefined, "a pill has no .checked property (it's a button, not an input)");
+
+  // Direct click flips it on: aria-checked + .on class, readable via aria.
+  fireClick(pill, w);
+  assert(pill.getAttribute("aria-checked") === "true" && pill.classList.contains("on") && pillChecked(pill),
+    "a direct click flips aria-checked to true and adds .on");
+  fireClick(pill, w);
+  assert(pill.getAttribute("aria-checked") === "false" && !pill.classList.contains("on") && !pillChecked(pill),
+    "a second click flips it back off");
+
+  // Clicking the associated <label for=…> toggles it too (browser forwards
+  // the click to the labelled button, which the delegated handler catches).
+  const label = d.querySelector('label[for="filterRegexCheckbox"]');
+  assert(label, "the pill has an adjacent <label for> wiring the text to it");
+  fireClick(label, w);
+  assert(pillChecked(pill), "clicking the label toggles the pill on");
+  fireClick(label, w);
+  assert(!pillChecked(pill), "clicking the label again toggles it back off");
+
+  // A toggle dispatches a real `change` event, so change-driven app logic
+  // keeps working: turning regex mode on hides the pattern-token chips.
+  assert(!d.querySelector("#filterTokenChips").classList.contains("hidden"), "token chips visible while regex mode is off");
+  fireClick(pill, w);
+  assert(d.querySelector("#filterTokenChips").classList.contains("hidden"),
+    "toggling the regex pill fired change -> updateRegexModeUI hid the token chips");
+  fireClick(pill, w);
+
+  // pillGet/pillSet round-trip (the app's own helpers, exposed as functions):
+  // pillSet(el,true) with no fireChange flag mirrors the old `.checked =` and
+  // does NOT dispatch change.
+  if (typeof w.pillSet === "function" && typeof w.pillGet === "function") {
+    let changes = 0;
+    pill.addEventListener("change", () => changes++);
+    w.pillSet(pill, true);
+    assert(w.pillGet(pill) === true && pill.getAttribute("aria-checked") === "true", "pillSet(el,true) sets state, pillGet reads it back");
+    assert(changes === 0, "pillSet without the fireChange flag does not dispatch a change event");
+    w.pillSet(pill, true, true);
+    assert(changes === 1, "pillSet(el,on,true) DOES dispatch a change event");
+    w.pillSet(pill, false);
+  }
+  w.closeFilterPopup();
+});
+
+await withApp(async (w, d, T) => {
+  section("212b. Converted controls across dialogs are pills and still drive their state");
+
+  // Settings boolean.
+  const quit = d.getElementById("settingsQuitOnLastClose");
+  assert(quit.classList.contains("pill-toggle") && quit.getAttribute("role") === "switch", "a Settings boolean is a pill");
+  assert(w.localStorage.getItem("philogg-quit-on-last-close") === null, "nothing persisted yet");
+  fireClick(quit, w);
+  assert(w.localStorage.getItem("philogg-quit-on-last-close") === "1", "clicking the Settings pill persists via its change handler");
+
+  // Every listed single-boolean id is now a role=switch pill (and none of the
+  // deliberately-untouched multi-select checkbox lists were converted).
+  const pillIds = ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox",
+    "settingsCloseToTray", "settingsHoverExpandSidebar", "settingsHoverExpandDetail",
+    "settingsHideMinimapFullRangeInFullView", "settingsTempAnchorAcrossFiles",
+    "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail"];
+  pillIds.forEach(id => {
+    const p = d.getElementById(id);
+    assert(p && p.tagName === "BUTTON" && p.classList.contains("pill-toggle") && p.getAttribute("role") === "switch",
+      "#" + id + " is a .pill-toggle button");
+  });
+
+  // The multi-select column-visibility list stays native checkboxes.
+  ["colToggleDelta", "colToggleThread", "colToggleLoc", "colToggleMethod"].forEach(id => {
+    const c = d.getElementById(id);
+    assert(c && c.tagName === "INPUT" && c.type === "checkbox",
+      "#" + id + " (a set-selection list item) stays a native checkbox, not a pill");
+  });
+
+  // Session-export per-file toggles stay native checkboxes too.
+  const f = await w.addFile("a.log", makeLog(0, 3), () => {});
+  w.render();
+  await w.openSessionExportDialog();
+  const inc = d.querySelector(".session-include");
+  assert(inc && inc.tagName === "INPUT" && inc.type === "checkbox", "session-export per-file 'include' stays a native checkbox (multi-select)");
+});
+
+/* ============================================================
+   GROUP 213 — Link view: the viewBar toolbar's "Message"/"Extract" row-action
+   buttons now target the selected PAIR, not a stale single-entry selection
+   (person-reported, this session: "I select a message in the Link view —
+   both parts of the link are shown selected — but clicking the 'Extract'
+   filter button only extracts values from one of the two messages in the
+   tuple"). Root cause: selecting a pair block in the Link view (a plain
+   click, see Group 168) only ever sets linkSelectedPairIndex, never
+   state.selectedId — so singleMessageActionEntry() (the toolbar's
+   "Message"/"Extract" buttons, handleRowActionClick's "filterForMessage"/
+   "extractMessage" cases) fell through to currentRowActionEntry(), which
+   resolves state.selectedId. Whatever single real entry a PRIOR row
+   dblclick had left there (possibly not even part of the currently
+   selected pair) got used instead of the whole tuple — Alt+Enter and the
+   brace's own right-click "Filter for this message" already special-cased
+   this (Group 168) but the toolbar buttons, added after, were never taught
+   the same rule. Fixed by giving singleMessageActionEntry() the identical
+   Link-view pair check.
+   ============================================================ */
+group(213);
+await withApp(async (w, d, T) => {
+  section("213. Toolbar Extract/Message buttons wildcard the WHOLE selected Link pair");
+
+  const lines = [
+    `2024-01-15 10:00:00,000\tINFO\t"main"\tFoo.cs\tline 0\t[DoWork]\t"Value A: 10"`,
+    `2024-01-15 10:00:01,000\tINFO\t"main"\tFoo.cs\tline 1\t[DoWork]\t"Value B: 20"`,
+    `2024-01-15 10:00:02,000\tINFO\t"main"\tFoo.cs\tline 2\t[DoWork]\t"Value A: 11"`,
+    `2024-01-15 10:00:03,000\tINFO\t"main"\tFoo.cs\tline 3\t[DoWork]\t"Value B: 21"`,
+  ];
+  const f = await w.addFile("linked.log", lines.join("\n") + "\n", () => {});
+  const refNode = w.createFilterNode(f.id, "text", "Value A");
+  const targetNode = w.createFilterNode(f.id, "text", "Value B");
+  const linkNode = w.createLinkNode(refNode.id, targetNode.id, "after", 1);
+  T.state.activeId = linkNode.id;
+  T.state.entriesView = "filter";
+  T.state.focusRegion = "entries";
+  w.render();
+
+  // Simulate a stale single-entry selection left over from an earlier row
+  // dblclick elsewhere (revealInHighlightView sets state.selectedId).
+  T.state.selectedId = f.entries[0].id; // "Value A: 10" — the REF side only
+  w.updateRowActionButtons();
+
+  // Selecting a pair block in the Link view (Group 168): sets
+  // linkSelectedPairIndex, deliberately does NOT touch state.selectedId.
+  const firstRow = d.querySelector(".pair-block").querySelector(".pair-row");
+  fireClick(firstRow, w);
+  assert(T.linkSelectedPairIndex === 0, "sanity: the pair block is selected");
+  assert(T.state.selectedId === f.entries[0].id, "sanity: the stale single-entry selection is still sitting in state.selectedId");
+
+  const extractBtn = d.querySelector('[data-row-action="extractMessage"]');
+  assert(!extractBtn.disabled, "the Extract button is enabled once a Link-view pair is selected");
+  fireClick(extractBtn, w);
+
+  const created = T.state.nodes[linkNode.children[0]];
+  assert(created && created.filterType === "text", "Extract created a new text/wildcard filter node under the link");
+  assert(created.value.includes("Value A") && created.value.includes("Value B"),
+    "the extracted pattern covers BOTH sides of the tuple, not just the stale single entry, got \"" + created.value + "\"");
+  assert(created.value.includes("[*:int]"), "numeric content on both sides was wildcarded, got \"" + created.value + "\"");
+  // createFilterNode activates the new node (activateNewNode) — deleting it
+  // hands state.activeId back to the link node (deleteNode's own fallback),
+  // and the tree's own delete affordances always re-render right after.
+  w.deleteFilterNodeWithUndo(created.id);
+  w.render();
+
+  // Same bug, same fix, for "Filter for this message" (filterForMessage).
+  // The pair block selection itself (linkSelectedPairIndex) is untouched by
+  // any of the above — only reset when the Link view's OWN active node
+  // changes (renderLinkView), which it didn't (we're back on linkNode).
+  assert(T.linkSelectedPairIndex === 0, "sanity: pair still selected after deleting the sibling extraction node");
+  const filterForMsgBtn = d.querySelector('[data-row-action="filterForMessage"]');
+  fireClick(filterForMsgBtn, w);
+  assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "\"Filter for this message\" opens the popup");
+  const popupPattern = d.querySelector("#filterInput").value;
+  assert(popupPattern.includes("Value A") && popupPattern.includes("Value B"),
+    "\"Filter for this message\" also prefills from the WHOLE pair, got \"" + popupPattern + "\"");
+  w.closeFilterPopup();
+
+  // Regression guard for the person's follow-up report (Plot view getting
+  // "stuck", not independently reproducible — but a real full-pair
+  // extraction viewed on Table/Plot must still let every other navigation
+  // path switch away cleanly).
+  const fullPair = w.createFilterNode(linkNode.id, "text", "Value A: [*:int] ⟶ Value B: [*:int]", false, [], false, ["message"], false, false);
+  T.state.activeId = fullPair.id;
+  w.render();
+  fireClick(d.querySelector('.view-tab[data-fh-tab="plot"]'), w);
+  assert(T.fhActiveTab === "plot", "sanity: Plot tab is active for the extraction");
+  const refRow = d.querySelector('.tree-row[data-node-id="' + refNode.id + '"]');
+  fireClick(refRow, w);
+  assert(T.state.activeId === refNode.id, "clicking a different tree node while on Plot switches the active node");
+  assert(T.fhActiveTab === "filter", "…and falls back to the Filtered tab since the new node has nothing to plot");
+  assert(d.querySelector("#fhSplit").style.display === "flex" && d.querySelector("#extractWrap").style.display === "none",
+    "the log view (not the Plot/Table pane) is actually the one visible afterward");
 });
 
 /* ============================================================
@@ -26682,7 +27445,10 @@ process.exitCode = failed ? 1 : 0;
       199ad covers the new JSON Pretty Print toggle (#itvPrettyPrintBtn,
       viewer.prettyPrint) — reformats without mutating the underlying
       source text, and refuses with a toast rather than silently no-op-ing
-      on invalid JSON.
+      on invalid JSON. (Updated 2026-09-14 for FEATURE_BACKLOG.md #68: the
+      Settings group + toolbar now show for ANY text file since they hold the
+      Text-View word-wrap toggle too; Pretty Print itself still hides for a
+      non-JSON file — see Group 211.)
    ============================================================ */
 
 /* ============================================================
@@ -26915,4 +27681,77 @@ process.exitCode = failed ? 1 : 0;
       the MIME mapping; 207b drives a .svg entry through the real dblclick →
       Blob fallback (window.philogg absent) and asserts the Blob is
       text/plain and the embedded <script> never executed.
+   Group 208 — this session (2026-09-13), FEATURE_BACKLOG.md #66: Fullscreen
+      Focus Mode (toggleFocusMode). 208a enters and asserts the header is
+      removed, the sidebar + Entry Detail are force-collapsed and their
+      hover-reveal forced on regardless of the user's setting, #viewBar and the
+      timeline minimap stay visible, the desktop wrapper is asked for real OS
+      fullscreen (stub window.philogg.setFullscreen(true)), and the prior state
+      is captured. 208b exits and asserts the exact prior collapse + hover
+      state is restored and setFullscreen(false) is sent. 208c: a sidebar
+      collapsed before entering stays collapsed on exit (prior state honoured).
+      208d: the F11 shortcut is a no-op without window.philogg and toggles
+      Focus Mode with it (guarded to the desktop wrapper). 208e: Esc is a
+      secondary exit but closes an open overlay first (single Esc never does
+      both). Desktop/Rust half (window_set_fullscreen, inject.js's F11 removal
+      + setFullscreen bridge) is not jsdom-testable — code review + npm build.
+   Group 209 — this session (2026-09-13), implements FEATURE_BACKLOG.md #29:
+      per-file clock offset. A manual clock correction reachable from a
+      (non-merged) file node's context menu ("Adjust clock…"). Approach (a):
+      the signed-ms delta is baked into every entry.ts and the cumulative
+      amount stored on node.clockOffset. Two dialog modes (Difference /
+      Start-time) via a segmented .assert-mode-btn control, with a live
+      first/last old->new preview. 209a: parseClockDelta forms, the menu item,
+      and difference mode end-to-end incl. accumulation + order-index-map
+      validity; 209b: start-time mode (first line lands on the desired ts,
+      span preserved); 209c: undo/redo round-trips the ts shift exactly
+      (snapshotSubtree copies entries by reference, so undo re-applies the
+      inverse delta rather than restoring a captured ts); 209d: a merged view
+      reusing a source's entry objects re-sorts correctly after an offset on
+      that source (applyClockOffset re-sorts every merged file +
+      invalidateOrderIndexMap), and merged files are refused outright; 209e:
+      node.clockOffset survives the session cache (persistFileNode /
+      restoreSessionFromCache re-applies it to the re-parsed entries, since
+      the cached text keeps the original raw timestamps); 209f: the offset
+      also travels with session export/import (buildSessionExport writes it,
+      applyImportedClockOffset re-applies it to the tier-matched importer file
+      so first+last timestamps match what was exported). GROUP 60b updated for
+      the file-node menu's new "Adjust clock…" edit item.
+   Group 210 — this session, FEATURE_BACKLOG.md #67: the syntax-highlight
+      scheme (the eight SYNTAX_COLOR_KEYS) is now selectable independently of
+      the app theme via #settingsSyntaxSchemeSelect. 210a: default "Follow app
+      theme" preserves the pre-#67 behaviour (--syntax-* track the active
+      theme's own block / :root cascade). 210b: a built-in scheme overrides
+      --syntax-* independently of the app theme and survives an app-theme
+      switch; back to follow-theme clears it. 210c: custom-scheme JSON import
+      (validation, template round-trip, apply + persist to
+      philogg-custom-syntax-schemes, list/select rendering, delete → fall back
+      to follow-theme). 210d: a stale scheme id in localStorage falls back to
+      follow-theme on init.
+   Group 211 — this session (2026-09-14), FEATURE_BACKLOG.md #68 (word wrap):
+      two independent, session-cache-persisted soft-wrap toggles, distinct
+      from the multiline toggle. 211a: the log-view toggle (.toggle-wrap in
+      both log toolbars) flips state.wrapMessages + the body .wrap-messages
+      class, makes a long-message row taller than one ROW_HEIGHT (folded into
+      the same variable-height offsets virtualization multiline uses), is
+      independent of multilineMessages, and round-trips (with wrapTextView)
+      through the session cache's meta.settings. 211b: the Text-View toggle
+      (#itvWrapBtn) flips state.wrapTextView + body .textview-wrap without
+      changing the number of numbered .itv-line elements — a wrapped display
+      line shares its logical line's number rather than adding one — and is
+      independent of the log-view toggle.
+   Group 213 — this session (2026-09-14), person-reported bugfix: the
+      viewBar toolbar's "Message"/"Extract" row-action buttons
+      (handleRowActionClick's "filterForMessage"/"extractMessage", via
+      singleMessageActionEntry) resolved a Link-view pair selection through
+      state.selectedId — which a plain pair-block click never touches (only
+      linkSelectedPairIndex, see Group 168) — so a stale single-entry
+      selection left over from an earlier row dblclick got wildcarded
+      instead of the whole selected tuple. Fixed by giving
+      singleMessageActionEntry() the same Link-view pair check Alt+Enter and
+      the brace's right-click already had. Also includes a regression guard
+      for the person's separate, not-independently-reproducible follow-up
+      report of the Plot view getting "stuck": a real full-pair extraction
+      viewed on Plot still lets a tree click switch the active node and fall
+      back to the Filtered tab cleanly.
    ============================================================ */
