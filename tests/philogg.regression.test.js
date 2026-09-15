@@ -974,10 +974,17 @@ await withApp(async (w, d, T) => {
   selectCol(0);
   assert(!assertBtn.disabled, "button enables once a plottable column is fully selected");
 
-  // Range mode via the real dialog.
+  // Range mode via the real dialog. Bugfix regression guard: only the mode
+  // actually selected above shows its own fields — classList.toggle("hidden",
+  // ...) on #assertRangeFields/#assertTargetFields used to have no matching
+  // CSS rule at all (same no-bare-.hidden scoping every other .hidden usage
+  // needs, see isVisible's own comment / Group 70e), so both stayed visible
+  // regardless of the mode toggle above them.
   fireClick(assertBtn, w);
   assert(!d.querySelector("#assertDialog").classList.contains("hidden"), "clicking the toolbar button opens the assertion dialog");
   assert(d.querySelector("#assertColLabel").textContent === w.findExtractColumn(0).name, "single-column selection labels the dialog with that column's name");
+  assert(isVisible(d.querySelector("#assertRangeFields"), w) && !isVisible(d.querySelector("#assertTargetFields"), w),
+    "Range mode (the default) shows only the min/max fields, not target/tolerance");
   d.querySelector("#assertMinInput").value = "3";
   d.querySelector("#assertMaxInput").value = "6";
   fireClick(d.querySelector("#assertDialogSave"), w);
@@ -992,6 +999,8 @@ await withApp(async (w, d, T) => {
   selectCol(0);
   fireClick(assertBtn, w);
   fireClick(d.querySelector("#assertModeTarget"), w);
+  assert(!isVisible(d.querySelector("#assertRangeFields"), w) && isVisible(d.querySelector("#assertTargetFields"), w),
+    "switching to Target ± tolerance mode swaps which fields are shown, not just which button looks active");
   d.querySelector("#assertTargetInput").value = "5";
   d.querySelector("#assertToleranceInput").value = "1";
   fireClick(d.querySelector("#assertDialogSave"), w);
