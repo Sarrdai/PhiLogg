@@ -342,21 +342,25 @@ Project documentation is split by audience:
 ## Versioning & releases
 
 PhiLogg follows [semantic versioning](https://semver.org/) and stays under
-`1.0.0` while it's in testing. The toolbar shows the real app version (e.g.
-`0.1.0`); Settings → License additionally shows the exact build's short
-commit hash, useful when reporting a bug. The version is bumped
-automatically from commit history (via
-[release-please](https://github.com/googleapis/release-please)) — a new
-feature bumps the minor number, a bugfix bumps the patch number.
+`1.0.0` while it's in testing (starting at `0.1.x`, bugfix releases only,
+until a deliberate decision to open up `0.2.0`). The toolbar shows the real
+app version (e.g. `0.1.0`); Settings → License additionally shows the exact
+build's short commit hash, useful when reporting a bug.
 
-Two manual GitHub Actions, both with checkboxes for which variants to build
-(HTML, Windows, Windows portable, macOS, Linux), stamp a checked-out
-commit's short SHA into a copy of each selected file — the tracked files in
-this repo are never modified by either: **"Build Tester Files"**
-(`.github/workflows/build-tester-files.yml`) uploads the results as
-downloadable workflow run artifacts, while **"Build Release"**
-(`.github/workflows/build-release.yml`) additionally publishes them
-together as a single GitHub Release.
+A real, versioned release is never triggered by an ordinary code change —
+it's an explicit, two-step action: someone runs the **"Release Please"**
+GitHub Action by hand to propose the next version (computed from commit
+history via [release-please](https://github.com/googleapis/release-please)
+— a new feature bumps the minor number, a bugfix bumps the patch number),
+reviews the proposed release PR, and merges it when ready. That merge
+automatically tags the release, publishes a GitHub Release, and builds
+every variant (HTML, Windows, Windows portable, macOS, Linux) onto it.
+
+Separately, **"Build Tester Files"**
+(`.github/workflows/build-tester-files.yml`) is a manual, unversioned path
+for handing testers an ad-hoc build (with its own checkboxes for which
+variants to build) without cutting a real release — it uploads downloadable
+workflow run artifacts, no GitHub Release involved.
 
 ## License
 
