@@ -76,17 +76,17 @@ jobs:
         with:
           node-version: 22
 
-      - name: Stamp version and strip comments
+      - name: Stamp build hash and strip comments
         env:
           SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
         run: |
           COMMIT_DATE=$(git show -s --format=%cd --date=format:%Y-%m-%d HEAD)
-          sed -i "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
-          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          sed -i "s/const PHILOGG_BUILD = \"dev\";/const PHILOGG_BUILD = \"${SHORT_SHA}\";/" philogg.html
+          grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" philogg.html
           ASSET_NAME="philogg-${COMMIT_DATE}-${SHORT_SHA}.html"
           cp philogg.html "${ASSET_NAME}"
           node scripts/strip-comments.js "${ASSET_NAME}"
-          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" "${ASSET_NAME}"
+          grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" "${ASSET_NAME}"
           echo "ASSET_NAME=${ASSET_NAME}" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
@@ -139,16 +139,16 @@ jobs:
       # later, so the packaged philogg.html matches the standalone HTML
       # build. `sed -i.bak` because BSD sed (macOS runner) requires an
       # argument to -i.
-      - name: Stamp version and strip comments
+      - name: Stamp build hash and strip comments
         shell: bash
         env:
           SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
         run: |
-          sed -i.bak "s/const PHILOGG_VERSION = \"dev\";/const PHILOGG_VERSION = \"${SHORT_SHA}\";/" philogg.html
+          sed -i.bak "s/const PHILOGG_BUILD = \"dev\";/const PHILOGG_BUILD = \"${SHORT_SHA}\";/" philogg.html
           rm -f philogg.html.bak
-          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" philogg.html
           node scripts/strip-comments.js philogg.html
-          grep -q "const PHILOGG_VERSION = \"${SHORT_SHA}\";" philogg.html
+          grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" philogg.html
 
       - name: Build installer
         working-directory: desktop

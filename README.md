@@ -341,15 +341,22 @@ Project documentation is split by audience:
 
 ## Versioning & releases
 
-`philogg.html` carries a `PHILOGG_VERSION` constant, which stays the literal
-string `"dev"` in source control. Two manual GitHub Actions, both with
-checkboxes for which variants to build (HTML, Windows, Windows portable,
-macOS, Linux), stamp a checked-out commit's short SHA into a copy of each
-selected file — the tracked files in this repo are never modified by
-either: **"Build Tester Files"** (`.github/workflows/build-tester-files.yml`)
-uploads the results as downloadable workflow run artifacts, while
-**"Build Release"** (`.github/workflows/build-release.yml`) additionally
-publishes them together as a single GitHub Release.
+PhiLogg follows [semantic versioning](https://semver.org/) and stays under
+`1.0.0` while it's in testing. The toolbar shows the real app version (e.g.
+`0.1.0`); Settings → License additionally shows the exact build's short
+commit hash, useful when reporting a bug. The version is bumped
+automatically from commit history (via
+[release-please](https://github.com/googleapis/release-please)) — a new
+feature bumps the minor number, a bugfix bumps the patch number.
+
+Two manual GitHub Actions, both with checkboxes for which variants to build
+(HTML, Windows, Windows portable, macOS, Linux), stamp a checked-out
+commit's short SHA into a copy of each selected file — the tracked files in
+this repo are never modified by either: **"Build Tester Files"**
+(`.github/workflows/build-tester-files.yml`) uploads the results as
+downloadable workflow run artifacts, while **"Build Release"**
+(`.github/workflows/build-release.yml`) additionally publishes them
+together as a single GitHub Release.
 
 ## License
 
