@@ -719,20 +719,27 @@
      see near .tree-row above) which this is meant to match. */
   .zip-source-file.zip-entry-opened{opacity:1; color:var(--text-secondary);}
   .zip-source-file.zip-entry-active{background:var(--accent-soft); color:var(--text-primary);}
-  #treeActionBar{
-    flex:0 0 auto; display:none; align-items:center; gap:6px; flex-wrap:wrap;
-    padding:9px 12px; border-bottom:1px solid var(--border-soft); background:var(--bg-elevated);
+  /* Files & Filters sidebar toolbar (FEATURE_BACKLOG.md #77) — same icon+
+     hover-label button concept as #viewBar/the per-view toolbars
+     (.row-action-btn/.row-action-hit/.row-action-label, see their own CSS
+     comments), not the plain-labeled .tree-action-btn this replaces (see
+     TEST PROVENANCE / CHANGELOG.md for the retired
+     #treeActionBar/renderTreeActionBar it supersedes). Uses the "rect"
+     shape (.row-action-btn.rect — the per-view toolbars' own look, person-
+     requested review: the pill-shaped ".row-action-btn:not(.rect)" circle
+     stays #viewBar's own primary-toolbar weight, this bar reads as a
+     secondary/contextual one), so it also follows the "View Toolbar button
+     labels" Settings toggle rather than "Filter-Toolbar button labels" —
+     see renderSidebarToolbar's own buildRowActionsHtml call. Always visible
+     once a file is loaded (renderSidebarToolbar toggles style.display,
+     mirroring #viewBar's own hasFiles gating) — sits between #sidebarHeader
+     and the scrollable #sidebarScroll so it never scrolls away with the
+     tree, unlike #treeActionBar which used to live inside #sidebarScroll. */
+  #sidebarToolbar{
+    flex:0 0 auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
+    padding:6px 8px; border-bottom:1px solid var(--border-soft); background:var(--bg-elevated);
+    min-height:28px;
   }
-  #treeActionBar.visible{display:flex;}
-  #treeActionBarLabel{font-size:10.5px; color:var(--text-tertiary); width:100%;}
-  .tree-action-btn{
-    display:flex; align-items:center; gap:5px;
-    background:var(--bg-panel); color:var(--text-secondary); border:1px solid var(--border);
-    border-radius:6px; padding:5px 9px; font-size:11px; font-weight:600; cursor:pointer;
-    transition:border-color .12s, color .12s;
-  }
-  .tree-action-btn:hover{border-color:var(--accent); color:var(--accent-strong);}
-  .tree-action-btn svg{flex:0 0 auto;}
 
   /* tree rows */
   .tree-row{
@@ -1184,17 +1191,16 @@
   .row-action-btn.expanded .row-action-label, .row-action-btn:focus-visible .row-action-label{
     opacity:1; transform:translateX(-50%) translateY(0);
   }
-  /* Library preset pills (#libraryPresetBar) + the management buttons
-     (#libraryManageBar) drive the floating label off plain :hover instead of
-     the JS setupHitExpandGroups mechanism — the label floats (position:absolute)
-     and shifts no siblings, so the flicker-avoidance that motivated the JS path
-     doesn't apply here, and a CSS :hover survives the container's dynamic
-     re-render without re-wiring. */
-  #libraryPresetBar .row-action-btn:hover .row-action-label,
-  #libraryManageBar .row-action-btn:hover .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
-  /* Management group (Add to Library / Library) pinned to the far right of
-     #viewBar. Two ids so it beats `#viewBar .row-actions{float:left}`. */
-  #viewBar #libraryManageBar{float:right; margin:0;}
+  /* Library preset pills (#libraryPresetBar) drive the floating label off
+     plain :hover instead of the JS setupHitExpandGroups mechanism — the
+     label floats (position:absolute) and shifts no siblings, so the
+     flicker-avoidance that motivated the JS path doesn't apply here, and a
+     CSS :hover survives the container's dynamic re-render without
+     re-wiring. (The management buttons that used to sit alongside this in
+     #libraryManageBar — Add to Library/Library — were removed this session,
+     relocated into #sidebarToolbar's "Add to library…"/"Apply from
+     library…" actions; see describeSidebarToolbarActions' own comment.) */
+  #libraryPresetBar .row-action-btn:hover .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
   /* The "Library Filter" group and its leading "|" collapse out entirely when
      nothing is pinned (id+[hidden] beats the .row-actions flex display). */
   #libraryPresetBar[hidden], #libraryPresetSep[hidden]{display:none;}
@@ -3693,7 +3699,6 @@
   html.pip-mode #contextToolbar,
   html.pip-mode #filteredToolbar,
   html.pip-mode #linkToolbar,
-  html.pip-mode #treeActionBar,
   html.pip-mode #detailPanel,
   html.pip-mode #detailResizer,
   html.pip-mode #timelineMinimap,
@@ -3825,10 +3830,8 @@
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4 5.5 8l4 4"/><path d="M12.5 3.5v9"/></svg>
           </button>
         </div>
+        <div id="sidebarToolbar"></div>
         <div id="sidebarScroll">
-          <div id="treeActionBar">
-            <span id="treeActionBarLabel"></span>
-          </div>
           <div id="folderWatchList"></div>
           <div id="zipList"></div>
           <div id="tree"></div>
@@ -3990,17 +3993,13 @@
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
         <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
-        <!-- Library management, pinned to the far right (float:right):
-             "Add to Library" (saves the active filter) then "Library" (opens
-             the manage dialog). -->
-        <div class="toolbar-group row-actions" id="libraryManageBar">
-          <button type="button" id="btnAddToLibrary" class="toolbar-icon-btn row-action-btn" title="Add active filter to library">
-            <span class="row-action-hit"></span><span class="row-action-label">Add to Library</span>
-          </button>
-          <button type="button" id="btnOpenLibrary" class="toolbar-icon-btn row-action-btn" title="Open filter library">
-            <span class="row-action-hit"></span><span class="row-action-label">Library</span>
-          </button>
-        </div>
+        <!-- The library management group (#libraryManageBar: "Add to
+             Library"/"Library", pinned far-right) that used to live here is
+             removed (this session, project-owner review) — its two actions
+             moved into the Files & Filters sidebar toolbar instead
+             (#sidebarToolbar's "Add to library…"/"Apply from library…",
+             see describeSidebarToolbarActions), now targeting the specific
+             selected tree node rather than always the active filter. -->
       </div>
 
       <div id="fhSplit">
@@ -4390,6 +4389,15 @@
   <div id="contextMenu" class="hidden">
     <div class="ctx-meta" id="ctxMeta"></div>
     <div class="ctx-sep"></div>
+    <div class="ctx-item" id="ctxFilterForColumn">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
+      <span id="ctxFilterForColumnLabel">Filter for this message</span>
+    </div>
+    <div class="ctx-item" id="ctxExtractMessage">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>
+      Extract
+    </div>
+    <div class="ctx-sep"></div>
     <div class="ctx-item" id="ctxAfter">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 3v10M8 3l-3 3M8 3l3 3"/></svg>
       Filter after this (incl.)
@@ -4411,16 +4419,15 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 2.5h9v11l-2.5-1.8H3.5z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg>
       <span id="ctxNoteLabel">Add note</span>
     </div>
-    <div class="ctx-sep"></div>
-    <div class="ctx-item" id="ctxFilterForColumn">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
-      <span id="ctxFilterForColumnLabel">Filter for this message</span>
-    </div>
-    <div class="ctx-sep"></div>
     <div class="ctx-item" id="ctxAddToSelection">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
       <span id="ctxAddToSelectionLabel">Add to selection</span>
       <svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+    </div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" id="ctxCopy">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>
+      Copy
     </div>
   </div>
 
@@ -5467,10 +5474,12 @@ const ICON_CHECKLIST = '<svg viewBox="0 0 16 16" width="11" height="11" fill="no
 // Single checkmark — used for the selection-filter (idset) tree node icon
 // (person-requested: a plain "selected" tick instead of the multi-line list).
 const ICON_CHECK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.3 3.5L13 4.5"/></svg>';
-// Floppy-disk "save" — the Filter-Toolbar's "Add to Library" button (a disk,
-// distinct from ICON_SAVE's download-to-tray arrow used by "Save filter…").
+// Floppy-disk "save" — the Files & Filters sidebar toolbar's "Add to
+// library…" action (a disk, distinct from ICON_SAVE's download-to-tray
+// arrow used by "Save filter…").
 const ICON_DISK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5 2.5v3.5h5V2.5"/><rect x="5" y="9" width="6" height="4.5"/></svg>';
-// Open book — the Filter-Toolbar's "Library" button.
+// Open book — the "Apply from library…" action (sidebar toolbar + tree
+// context menu).
 const ICON_BOOK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.3 5.3 3 3.5 3H2v9h1.5c1.8 0 3.3.3 4.5 1.2"/><path d="M8 4.2C9.2 3.3 10.7 3 12.5 3H14v9h-1.5c-1.8 0-3.3.3-4.5 1.2z"/><path d="M8 4.2v9"/></svg>';
 const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2.2v4.3c0 2 1.8 3 3.6 3M12 2.2v4.3c0 2-1.8 3-3.6 3v3.3"/><circle cx="4" cy="2.2" r="1.2"/><circle cx="12" cy="2.2" r="1.2"/><circle cx="8.4" cy="13.8" r="1.2"/></svg>';
 // Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
@@ -12125,7 +12134,7 @@ function renderTree() {
       render();
     }));
   });
-  renderTreeActionBar();
+  renderSidebarToolbar();
   // Keep the collapsed rail's markers (active-node ancestor chain) in sync
   // with the full tree.
   if (isSidebarCollapsed()) renderSidebarRail();
@@ -19122,11 +19131,19 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
 // of click order. Looked up via the global entryIndex rather than
 // currentViewEntries/currentHighlightViewEntries so it works the same
 // whichever of the two Log views the selection was made in.
+// Shared by copyLogSelectionToClipboard and the row context menu's own
+// "Copy" item (#ctxCopy's click handler, near openContextMenu) — the exact
+// same raw-line, newline-joined formatting either path commits to the
+// clipboard, so a single right-clicked row and a full multi-selection can
+// never format differently.
+function formatEntriesForClipboard(entries) {
+  return entries.map(e => e.raw).join("\n");
+}
 function copyLogSelectionToClipboard() {
   const ids = state.logMultiSelect.size ? [...state.logMultiSelect] : (state.selectedId ? [state.selectedId] : []);
   const entries = ids.map(id => entryIndex[id]).filter(Boolean).sort((a, b) => a.ts - b.ts);
   if (!entries.length) return;
-  copyTextToClipboard(entries.map(e => e.raw).join("\n"));
+  copyTextToClipboard(formatEntriesForClipboard(entries));
   showCopyToast(entries.length === 1 ? "Line copied" : entries.length + " lines copied");
 }
 
@@ -24292,6 +24309,7 @@ const ctxBookmarkLabel = el("#ctxBookmarkLabel");
 const ctxNote = el("#ctxNote");
 const ctxNoteLabel = el("#ctxNoteLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
+const ctxExtractMessage = el("#ctxExtractMessage");
 const ctxAddToSelection = el("#ctxAddToSelection");
 const addToSelectionMenu = el("#addToSelectionMenu");
 const ctxTimeRangeFromSelection = el("#ctxTimeRangeFromSelection");
@@ -24340,6 +24358,14 @@ function openContextMenu(ev, entry) {
   // "Filter from selection" only makes sense with an actual multi-selection
   // (2+ rows) — a single row is already covered by "Filter for this ___".
   ctxTimeRangeFromSelection.style.display = state.logMultiSelect.size >= 2 ? "" : "none";
+  // "Extract" mirrors the #viewBar row-action's own gate (updateRowActionButtons'
+  // extractActionEnabled) — only shown when the right-clicked entry's message
+  // actually has numeric/time content to wildcard; a message with none would
+  // just produce a literal-text node indistinguishable from "Filter for this
+  // message" (buildNumericExtractPattern is the exact same check that button
+  // uses, and extractMessageFilter below is the exact same function it calls).
+  ctxExtractMessage.style.display =
+    buildNumericExtractPattern(textColumnValue(entry, "message")) !== null ? "" : "none";
   contextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   contextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 170) + "px";
   contextMenu.classList.remove("hidden");
@@ -24384,6 +24410,25 @@ el("#ctxBookmark").addEventListener("click", () => {
 el("#ctxNote").addEventListener("click", () => {
   if (ctxEntry && entryIndex[ctxEntry.id]) openNoteEditor(ctxEntry.id);
   closeContextMenu();
+});
+
+// "Copy" (bottom of the menu, FEATURE_BACKLOG.md #78) — NOT a plain call to
+// copyLogSelectionToClipboard(), which reads whatever state.logMultiSelect/
+// state.selectedId currently holds regardless of which row was actually
+// right-clicked. Person-confirmed semantics: copy the right-clicked row,
+// UNLESS it's already part of the current multi-selection, in which case
+// copy the whole selection instead (right-clicking inside an existing
+// selection is "act on the selection"; right-clicking outside it, or with
+// nothing selected at all, is "act on just this row"). Both paths share
+// formatEntriesForClipboard so a single row and a full selection can never
+// format differently.
+el("#ctxCopy").addEventListener("click", () => {
+  const entry = ctxEntry;
+  closeContextMenu();
+  if (!entry) return;
+  if (state.logMultiSelect.has(entry.id)) { copyLogSelectionToClipboard(); return; }
+  copyTextToClipboard(formatEntriesForClipboard([entry]));
+  showCopyToast("Line copied");
 });
 
 // Scans a column's text for numbers and replaces each with a typed
@@ -24492,6 +24537,17 @@ el("#ctxFilterForColumn").addEventListener("click", ev => {
   const column = ctxFilterColumn;
   closeContextMenu();
   openFilterForEntryColumn(entry, column);
+});
+
+// "Extract" — one-click version of "Filter for this message" that commits
+// straight to a new filter node, same primitive the #viewBar row-action
+// button uses (see extractMessageFilter above); only shown when there's
+// something extractable (see openContextMenu's ctxExtractMessage gate).
+ctxExtractMessage.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  extractMessageFilter(entry);
 });
 
 // "Add to selection" — turns the right-clicked row (or the full
@@ -24809,8 +24865,17 @@ const VIEWBAR_NEW_ROW_ACTION = [
 // the rest of that toolbar's plain .toolbar-icon-btn shape; person-
 // requested, 2026-09-05: "gleiches Konzept, nur Rechteck statt Pille in den
 // View Toolbars, Pille bleibt bei den Filtern").
-function buildRowActionsHtml(list, shape) {
+// hitClass (FEATURE_BACKLOG.md #77): an extra class appended onto
+// .row-action-hit, letting a caller whose button SET is rebuilt on every
+// render (the sidebar toolbar, see renderSidebarToolbar) scope its own
+// setupHitExpandGroups() call to just its own hit elements
+// (".sidebar-toolbar-hit") instead of the generic ".row-action-hit" every
+// static, render-once toolbar already answers to — see setupHitExpandGroups'
+// own comment for why re-scanning the whole page on every rebuild would be
+// wrong. Every existing caller omits it, so this is a no-op for them.
+function buildRowActionsHtml(list, shape, hitClass) {
   const shapeClass = shape === "rect" ? " rect" : "";
+  const hitClassAttr = hitClass ? " " + hitClass : "";
   return list.map(a =>
     // .row-action-hit is the fixed-size circle/square (icon centered
     // inside it) — the actual mouseenter/mouseleave target (see the
@@ -24818,10 +24883,23 @@ function buildRowActionsHtml(list, shape) {
     // shrinks the button's own (now variable) width. An entry flagged
     // separator:true gets a thin divider rendered immediately before it
     // (see .row-action-separator) — used to set "New" apart from the
-    // row-scoped filter actions preceding it.
+    // row-scoped filter actions preceding it. An entry may supply either
+    // {svg, strokeWidth} (every pre-existing caller — wrapped in a fresh
+    // <svg> below) OR a pre-rendered {icon} (a full ICON_* constant, already
+    // its own complete <svg>...</svg> — used by the sidebar toolbar so it
+    // can reuse the exact same icon constants the tree context menu already
+    // draws its own items from, instead of re-deriving raw path/strokeWidth
+    // pairs for icons that already exist). `disabled: true` renders the
+    // native disabled attribute directly, since this list is rebuilt fresh
+    // on every sidebar-toolbar render rather than toggled after the fact
+    // the way updateRowActionButtons() does for every static caller.
     (a.separator ? '<span class="row-action-separator"></span>' : '') +
-    '<button type="button" class="toolbar-icon-btn row-action-btn' + shapeClass + '" data-row-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' +
-      '<span class="row-action-hit"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg></span>' +
+    '<button type="button" class="toolbar-icon-btn row-action-btn' + shapeClass + '" data-row-action="' + a.action + '"' +
+      (a.disabled ? ' disabled' : '') +
+      ' title="' + escapeHtml(a.label) + '">' +
+      '<span class="row-action-hit' + hitClassAttr + '">' +
+        (a.icon ? a.icon : '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg>') +
+      '</span>' +
       '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
     '</button>'
   ).join("");
@@ -24868,8 +24946,52 @@ elAll('[data-row-actions="viewbar-new"]').forEach(container => { container.inner
 // of geometry that's shifting mid-animation because a neighboring button is
 // growing/shrinking — that shifting geometry is what caused the flicker/
 // stuck-mid-animation bug this replaces (person-reported, 2026-09-05).
+// Idempotency guard (FEATURE_BACKLOG.md #77): every caller above renders its
+// buttons ONCE at boot and only ever toggles disabled/.active afterward, so
+// binding a container here exactly once was always enough. The sidebar
+// toolbar (renderSidebarToolbar) is the first caller whose button SET is
+// rebuilt on every render (the tree selection changes what it shows) and
+// must call this again after each rebuild — without a guard, a naive re-call
+// would attach a SECOND, stacking mousemove/mouseleave listener onto the
+// SAME container every time (and, since a container is found by scanning
+// `hitSelector` document-wide, a broad enough selector could even re-bind
+// OTHER, unrelated already-bound containers like #viewBar). `container
+// .dataset.hitExpandBound` marks a container as already wired, so a repeat
+// call skips it outright; what makes skipping safe is that the listener
+// itself re-queries the container's CURRENT children on every event
+// (liveEntries(), below) instead of closing over the entries captured at
+// bind time — so an already-bound container's one listener keeps reflecting
+// freshly rebuilt buttons with no new wiring needed. This is a pure internal
+// implementation change: a container whose children never change (every
+// pre-existing caller) sees liveEntries() return the same set every time, so
+// behavior is byte-identical to the old cached-array version for them.
+// Pure math for the edge-of-viewport label clamp below (person-reported,
+// this session: #sidebarToolbar sits at the app's LEFT edge — a narrow
+// column — so a button near that edge floated its `.row-action-label`
+// pill (centered via `left:50%; transform:translateX(-50%)`, see that
+// CSS comment) partway or fully past the browser window's left edge; the
+// same thing happens symmetrically at any toolbar's right edge). Given the
+// label's OWN rendered rect (already reflecting the default centering
+// transform) and the viewport width, returns the extra px to shift it by
+// (added to the existing `translateX(-50%)`, not replacing it — so the
+// pill still visually points back at the button it belongs to instead of
+// snapping to a hard edge with no relation to the trigger) — 0 when it
+// already fits. Kept side-effect-free and viewport-width/rect-only (no
+// DOM/`window` reads inside) specifically so it's unit-testable under
+// jsdom, which has no real layout engine and always reports zeroed
+// `getBoundingClientRect()` results (see tests/README.md) — the actual
+// measuring (`getBoundingClientRect`/`window.innerWidth`) stays in
+// setupHitExpandGroups below, which is what's real-DOM/layout-dependent
+// and therefore NOT covered by the regression suite, same as every other
+// entry in that "no layout engine" gap.
+function clampLabelOffset(rect, viewportWidth) {
+  const EDGE_MARGIN = 4; // small breathing room, matching the row's own 4px button gap
+  if (rect.left < EDGE_MARGIN) return EDGE_MARGIN - rect.left; // overflowing the left edge -> shift right
+  if (rect.right > viewportWidth - EDGE_MARGIN) return (viewportWidth - EDGE_MARGIN) - rect.right; // overflowing the right edge -> shift left
+  return 0; // already fits, no correction needed
+}
 function setupHitExpandGroups(hitSelector) {
-  const groups = new Map(); // container element -> [{hit, btn}, ...]
+  const groups = new Map(); // container element -> [{hit, btn}, ...] (first-seen membership, just to find containers)
   elAll(hitSelector).forEach(hit => {
     const btn = hit.closest(".toolbar-icon-btn");
     if (!btn) return;
@@ -24877,17 +24999,50 @@ function setupHitExpandGroups(hitSelector) {
     if (!groups.has(container)) groups.set(container, []);
     groups.get(container).push({ hit, btn });
   });
-  groups.forEach((entries, container) => {
+  groups.forEach((_initialEntries, container) => {
+    if (container.dataset.hitExpandBound) return;
+    container.dataset.hitExpandBound = "1";
     let restRects = null; // Array<{btn, rect}>, measured only while collapsed
-    const anyExpanded = () => entries.some(e => e.btn.classList.contains("expanded"));
-    const collapseAll = () => entries.forEach(e => e.btn.classList.remove("expanded"));
+    const liveEntries = () => [...container.querySelectorAll(hitSelector)]
+      .map(hit => ({ hit, btn: hit.closest(".toolbar-icon-btn") }))
+      .filter(e => e.btn);
+    const collapseAll = entries => entries.forEach(e => e.btn.classList.remove("expanded"));
+    // Clears a button's inline clamp override (see below) so it never leaks
+    // into the next hover at a different position — the CSS class-driven
+    // `translateX(-50%)` (unexpanded) or (via .expanded) `translateX(-50%)
+    // translateY(0)` takes back over once the inline style is cleared.
+    const resetLabelClamp = btn => {
+      const label = btn.querySelector(".row-action-label");
+      if (label && label.style.transform) label.style.transform = "";
+    };
     container.addEventListener("mousemove", ev => {
-      if (!anyExpanded()) restRects = entries.map(e => ({ btn: e.btn, rect: e.hit.getBoundingClientRect() }));
+      const entries = liveEntries();
+      if (!entries.some(e => e.btn.classList.contains("expanded"))) {
+        restRects = entries.map(e => ({ btn: e.btn, rect: e.hit.getBoundingClientRect() }));
+      }
       const { clientX: x, clientY: y } = ev;
       const hovered = restRects.find(r => x >= r.rect.left && x <= r.rect.right && y >= r.rect.top && y <= r.rect.bottom);
-      entries.forEach(e => e.btn.classList.toggle("expanded", !!hovered && e.btn === hovered.btn));
+      entries.forEach(e => {
+        const isExpanded = !!hovered && e.btn === hovered.btn;
+        e.btn.classList.toggle("expanded", isExpanded);
+        if (!isExpanded) { resetLabelClamp(e.btn); return; }
+        // Just expanded (or already was, re-measured every move — cheap
+        // relative to the getBoundingClientRect() calls above it, and
+        // idempotent either way): measure the label AS RENDERED (already
+        // reflecting the default centering transform) and nudge it back
+        // within the viewport if it overflows either edge.
+        const label = e.btn.querySelector(".row-action-label");
+        if (!label) return;
+        const shift = clampLabelOffset(label.getBoundingClientRect(), window.innerWidth);
+        label.style.transform = shift ? "translateX(calc(-50% + " + shift + "px)) translateY(0)" : "";
+      });
     });
-    container.addEventListener("mouseleave", () => { collapseAll(); restRects = null; });
+    container.addEventListener("mouseleave", () => {
+      const entries = liveEntries();
+      collapseAll(entries);
+      entries.forEach(e => resetLabelClamp(e.btn));
+      restRects = null;
+    });
   });
 }
 setupHitExpandGroups(".row-action-hit");
@@ -24955,10 +25110,6 @@ function updateRowActionButtons() {
   // "New" needs no selected row at all — just an active filter tree to add
   // to (same guard openFilterPopup itself applies).
   elAll('[data-row-action="newFilter"]').forEach(b => { b.disabled = !state.activeId; });
-  // "+ Add to Library" needs an active FILTER node (a file/folder has nothing
-  // to serialize into a preset) — same guard saveFilterToLibrary itself applies.
-  const addLibBtn = document.getElementById("btnAddToLibrary");
-  if (addLibBtn) addLibBtn.disabled = !state.activeId || (state.nodes[state.activeId] || {}).type !== "filter";
   elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !selectEnabled; });
 }
 
@@ -25347,7 +25498,8 @@ function describeBulkActions(nodes) {
   return { actions: [], note: "Select either files (to merge) or filters (to combine) — not both at once." };
 }
 
-// Runs a bulk action (shared by the context menu and the action bar).
+// Runs a bulk action (shared by the context menu and the sidebar toolbar —
+// see describeSidebarToolbarActions/handleSidebarToolbarActionClick below).
 function performBulkAction(action, ids) {
   if (action === "link") {
     state.multiSelect = new Set();
@@ -25364,15 +25516,198 @@ function performBulkAction(action, ids) {
   render();
 }
 
+// ===================== Sidebar toolbar (FEATURE_BACKLOG.md #77) =====================
+// Files & Filters gets its own always-visible toolbar (#sidebarToolbar, see
+// renderSidebarToolbar further down) using the same icon+hover-label
+// button concept as #viewBar/the per-view toolbars, instead of the old
+// tree-row icons/right-click-only actions. Its button SET depends entirely
+// on the current tree selection (state.multiSelect/state.activeId) —
+// describeSidebarToolbarActions below decides which buttons show,
+// handleSidebarToolbarActionClick runs whichever was clicked. Zero
+// duplicated business logic: every action here is a thin call into a
+// function that already existed for the tree context menu (startRenameNode,
+// editFilterNode, toggleInvertWithUndo, openClockOffsetDialog,
+// openFilterLibrarySaveDialog, openFilterLibraryDialog) or
+// performBulkAction/describeBulkActions for the 2+ selection cases.
+//
+// AND/OR/Link… move EXCLUSIVELY here (person-confirmed): removed from the
+// old #treeActionBar (retired outright, folding its Merge case into this
+// toolbar's own "2+ files -> Merge") and from openTreeContextMenu's own
+// bulk-action rendering (Merge stays there, unaffected — see that
+// function's filter of describeBulkActions' output).
+//
+// Revised per project-owner review (still unshipped at the time, same
+// session): the button set is now always at most two `|`-separated groups
+// — a "what does this node ITSELF look like" group, then a "library"
+// group — rather than one long undifferentiated row:
+//  - 1 filter (unlocked): Rename/Edit/Invert | Add to library…/Apply from
+//    library… (Edit/Invert still conditionally present per filterType).
+//  - 1 filter (locked, the auto-managed "Bookmarks" node): nothing in group
+//    1 any more (Copy removed, see below) — just Apply from library…,
+//    disabled (same locked gate it already had).
+//  - 1 file: Adjust clock… | Apply from library… (omitted/disabled the same
+//    way as before).
+//  - 2+ files: Merge | Apply from library… (targeting state.activeId — a
+//    2+ selection has no single applicable node, same fallback the toolbar
+//    always used for this action).
+//  - 2+ filters (same root): AND/OR/Link…, unchanged — no library group
+//    here, same as before this revision.
+//  - anything unsupported (different roots / mixed types): the existing
+//    describeBulkActions() note, no actions.
+// `copy`/`cut`/`saveFilter` (Save filter…, file-based)/`loadFilter` (Load
+// filter…, file-based) are REMOVED from the toolbar entirely, for every
+// selection shape — still reachable exactly as before via the tree's
+// right-click context menu (openTreeContextMenu), unaffected here.
+// `context`/`countContext` (Time context…/Count context…) are removed from
+// here too, and — unlike the other four — also from the context menu (see
+// openTreeContextMenu's own comment): there is deliberately no user-facing
+// way left to CREATE a new one, for now (FEATURE_BACKLOG.md #79). Existing
+// context/countContext nodes are entirely unaffected — this only touches
+// the two menu items that used to create a fresh one.
+//
+// "Add to library…" (new, `addToLibrary`) and "Apply from library…"
+// (pre-existing) replace the dedicated `#btnAddToLibrary`/`#btnOpenLibrary`
+// buttons that used to sit in #viewBar's own #libraryManageBar group
+// (removed outright, see the CSS/markup near #libraryPresetBar) — same
+// dialogs (openFilterLibrarySaveDialog/openFilterLibraryDialog), same
+// icons (ICON_DISK/ICON_BOOK), but now targeting the SPECIFIC selected
+// node rather than always state.activeId, more precise than the buttons
+// they replace.
+//
+// Every action listed here stays ADDITIVE where it already had another
+// entry point: its pre-existing right-click menu entry point is untouched,
+// this toolbar is a second entry point, not a replacement.
+//
+// Returns { actions: [{action, label, icon, target, disabled?, separator?}],
+// note } — same "note instead of a silent no-op" convention
+// describeBulkActions itself uses. `target` is the node id (or, for a bulk
+// action, the array of selected ids) handleSidebarToolbarActionClick should
+// act on.
+function describeSidebarToolbarActions() {
+  const selectedIds = [...state.multiSelect];
+  const nodes = selectedIds.map(id => state.nodes[id]).filter(Boolean);
+  const actions = [];
+  let note;
+
+  // "Apply from library…" target resolution (shared by every selection
+  // shape below): the single selected node when there is exactly one, else
+  // state.activeId (0 or 2+ selected — no single applicable target) — same
+  // fallback this action has always used. Disabled with no active id or a
+  // locked target, same gate openTreeContextMenu's own `if (!node.locked)`
+  // already applies.
+  const applyLibTargetId = nodes.length === 1 ? nodes[0].id : state.activeId;
+  const applyLibTargetNode = applyLibTargetId ? state.nodes[applyLibTargetId] : null;
+  const applyLibDisabled = !applyLibTargetNode || !!applyLibTargetNode.locked;
+  const applyFromLibraryAction = (extra) => Object.assign({
+    action: "applyFromLibrary", label: "Apply from library…", icon: ICON_BOOK,
+    target: applyLibTargetId, disabled: applyLibDisabled,
+  }, extra);
+
+  if (nodes.length === 1) {
+    const node = nodes[0];
+    if (node.type === "file") {
+      // Same guard openClockOffsetDialog itself enforces (merged/empty file
+      // — see its own early return) — omitted rather than disabled, same
+      // convention the context menu's own clockOffset item already uses.
+      if (!node.merged && node.entries && node.entries.length) {
+        actions.push({ action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK, target: node.id });
+      }
+      // Group 2: Apply from library… only — a raw file has nothing to
+      // serialize into a preset, so no "Add to library…" here. Presets are
+      // file-agnostic on purpose (openTreeContextMenu's own comment), so
+      // applying one onto a file node makes sense same as onto a filter.
+      actions.push(applyFromLibraryAction({ separator: actions.length > 0 }));
+    } else if (node.type === "filter") {
+      if (node.locked) {
+        // Restricted node (the auto-managed "Bookmarks" filter) — Copy
+        // used to be the only thing offered here; now that Copy is gone
+        // from the toolbar entirely (see module comment), there's nothing
+        // left for group 1 at all — just the (disabled) library group.
+        actions.push(applyFromLibraryAction());
+      } else {
+        actions.push({ action: "rename", label: "Rename…", icon: ICON_RENAME, target: node.id });
+        // Edit/Invert conditionally present per filterType, same guards
+        // openTreeContextMenu's own single-node branch already applies.
+        if (node.filterType === "text" || isTimeFilterType(node.filterType)) {
+          actions.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT, target: node.id });
+        }
+        if (node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
+          actions.push({
+            action: "invert",
+            label: node.inverted ? "Remove NOT" : "Invert (NOT)",
+            icon: ICON_INVERT,
+            target: node.id,
+          });
+        }
+        // Group 2: library actions, targeting THIS node specifically. "Add
+        // to library…" needs a real FILTER node (same guard
+        // openFilterLibrarySaveDialog/saveFilterToLibrary itself applies) —
+        // always true in this branch.
+        actions.push({ action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target: node.id, separator: true });
+        actions.push(applyFromLibraryAction({ target: node.id }));
+      }
+    }
+  } else if (nodes.length >= 2) {
+    // Reuses describeBulkActions unchanged — this is the one place AND/OR/
+    // Link (and Merge) still come from.
+    const bulk = describeBulkActions(nodes);
+    bulk.actions.forEach(a => actions.push(Object.assign({}, a, { target: selectedIds })));
+    note = bulk.note;
+    // A files-only 2+ selection additionally gets the library group
+    // (targeting the state.activeId fallback above — there's no single
+    // selected node to target more precisely than that). A 2+ FILTER
+    // selection (AND/OR/Link) or a mixed/different-root selection does
+    // NOT — unchanged from before this revision, person-confirmed scope.
+    if (nodes.every(n => n.type === "file")) {
+      actions.push(applyFromLibraryAction({ separator: actions.length > 0 }));
+    }
+  } else {
+    // 0 selected: same state.activeId fallback, so the toolbar isn't
+    // completely empty right after e.g. a delete leaves nothing selected.
+    actions.push(applyFromLibraryAction());
+  }
+
+  return { actions, note };
+}
+
+// Dispatches a sidebar-toolbar click to the underlying function/dialog —
+// re-derives the current action list rather than trusting anything cached
+// on the clicked button, so a selection change between render and click
+// can never act on a stale target. Every branch is an unmodified call to a
+// pre-existing function (see the module comment above); only Invert's
+// follow-up render() is inlined, exactly mirroring openTreeContextMenu's
+// own handling of it.
+function handleSidebarToolbarActionClick(action) {
+  const entry = describeSidebarToolbarActions().actions.find(a => a.action === action);
+  if (!entry || entry.disabled) return;
+  const target = entry.target;
+  switch (action) {
+    case "clockOffset": openClockOffsetDialog(target); return;
+    case "rename": startRenameNode(target); return;
+    case "edit": editFilterNode(target); return;
+    case "invert": toggleInvertWithUndo(target); render(); return;
+    case "addToLibrary": openFilterLibrarySaveDialog(target); return;
+    case "applyFromLibrary": openFilterLibraryDialog(target); return;
+    case "merge":
+    case "and":
+    case "or":
+    case "link":
+      performBulkAction(action, target);
+      return;
+  }
+}
+
 // The node the single-node context menu (copy/cut/paste/delete) was opened
 // for — distinct from state.multiSelect, which only matters for the
 // bulk-action menu below.
 let treeCtxId = null;
 
 // Right-click on a node that's part of an existing 2+ multi-selection shows
-// the bulk-action menu (merge/AND/OR/Link, same as before). Any other
+// the bulk-action menu (Merge only, as of FEATURE_BACKLOG.md #77 — AND/OR/
+// Link… moved exclusively to the sidebar toolbar, see
+// describeSidebarToolbarActions above; person-confirmed). Any other
 // right-click — a single node, or one outside the current multi-selection —
-// now shows a single-node menu instead of doing nothing.
+// shows a single-node menu instead.
 function openTreeContextMenu(ev, clickedId) {
   const node = state.nodes[clickedId];
   if (!node) return;
@@ -25382,7 +25717,11 @@ function openTreeContextMenu(ev, clickedId) {
   let html;
   if (state.multiSelect.has(clickedId) && state.multiSelect.size >= 2) {
     const nodes = [...state.multiSelect].map(id => state.nodes[id]).filter(Boolean);
-    const { actions, note } = describeBulkActions(nodes);
+    const { actions: bulkActions, note } = describeBulkActions(nodes);
+    // AND/OR/Link… deliberately excluded here — see the function comment
+    // above and describeSidebarToolbarActions, which is now their only
+    // entry point. Merge is unaffected (not in this exclusion list).
+    const actions = bulkActions.filter(a => a.action !== "and" && a.action !== "or" && a.action !== "link");
     html = '<div class="ctx-meta">' + nodes.length + " selected</div><div class=\"ctx-sep\"></div>";
     html += actions.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join("");
     if (note) html += '<div class="ctx-note">' + note + "</div>";
@@ -25472,15 +25811,28 @@ function openTreeContextMenu(ev, clickedId) {
           icon: ICON_INVERT,
         });
       }
-      buckets.edit.push({ action: "context", label: "Time context…", icon: ICON_CONTEXT });
-      buckets.edit.push({ action: "countContext", label: "Count context…", icon: ICON_CONTEXT });
+      // "Time context…"/"Count context…" — CREATION menu items removed
+      // (FEATURE_BACKLOG.md #79, person-confirmed, this session): there is
+      // now no user-facing way to create a fresh context/countContext node,
+      // neither here nor on the sidebar toolbar (describeSidebarToolbarActions'
+      // own comment has the full reasoning/pointer). This ONLY removes these
+      // two menu-item pushes — openContextDialog/openCountContextDialog, the
+      // dialogs themselves, and every context/countContext filterType branch
+      // elsewhere (getEntries, rendering, all persistence carriers) are
+      // untouched and fully functional; an existing node of either type still
+      // loads, renders, evaluates, and can be renamed/deleted/copied/cut
+      // exactly as before. Leaving openContextDialog/openCountContextDialog
+      // now unreferenced by any menu item is expected, not dead code to clean
+      // up — see FEATURE_BACKLOG.md #79 for the planned replacement.
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
       buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
       // "Save to library…" moved out of the context menu (person-requested):
-      // it's now the "+ Add to Library" button in the Filter-Toolbar, acting on
-      // the active filter. "Apply from library…" (below) stays here — it targets
-      // the right-clicked node, which the toolbar can't address arbitrarily.
+      // it's now "Add to library…" on the Files & Filters sidebar toolbar
+      // (#sidebarToolbar, describeSidebarToolbarActions), acting on the
+      // specific selected node rather than always the active filter.
+      // "Apply from library…" (below) stays here — it targets the right-
+      // clicked node, which the toolbar can't address arbitrarily.
       // "Unpack" (and/or/link only): materializes the node's two baked
       // inputs as real, visible sibling filters next to it — the node
       // itself is untouched — see unpackAndOrLinkNode.
@@ -25666,28 +26018,47 @@ treeContextMenu.addEventListener("click", ev => {
   performBulkAction(action, [...state.multiSelect]);
 });
 
-/* ===================== Tree action bar (always-visible alternative to the context menu) ===================== */
+/* ===================== Sidebar toolbar rendering (FEATURE_BACKLOG.md #77) =====================
+   Retires the old always-visible #treeActionBar (which only ever appeared
+   at 2+ selected and only ever offered Merge/AND/OR/Link) in favor of this
+   icon+hover-label toolbar, visible any time a file is loaded, whose button
+   SET tracks the full selection-dependent rules in
+   describeSidebarToolbarActions above. */
 
-const treeActionBar = el("#treeActionBar");
+const sidebarToolbarEl = el("#sidebarToolbar");
 
-function renderTreeActionBar() {
-  if (state.multiSelect.size < 2) { treeActionBar.classList.remove("visible"); return; }
-  const nodes = [...state.multiSelect].map(id => state.nodes[id]).filter(Boolean);
-  if (nodes.length < 2) { treeActionBar.classList.remove("visible"); return; }
+function renderSidebarToolbar() {
+  const hasFiles = state.rootIds.length > 0;
+  // "" restores the CSS class's own display:flex rather than hardcoding a
+  // value — same convention #viewBar's own hasFiles gating uses.
+  sidebarToolbarEl.style.display = hasFiles ? "" : "none";
+  if (!hasFiles) { sidebarToolbarEl.innerHTML = ""; return; }
 
-  const { actions, note } = describeBulkActions(nodes);
-  const buttonsHtml = actions.map(a =>
-    '<button type="button" class="tree-action-btn" data-action="' + a.action + '">' + a.icon + "<span>" + a.label + "</span></button>"
-  ).join("") + (note ? '<span class="ctx-note" style="padding:0;">' + note + "</span>" : "");
-
-  treeActionBar.innerHTML = '<span id="treeActionBarLabel">' + nodes.length + " selected</span>" + buttonsHtml;
-  treeActionBar.classList.add("visible");
+  const { actions, note } = describeSidebarToolbarActions();
+  sidebarToolbarEl.innerHTML = buildRowActionsHtml(actions, "rect", "sidebar-toolbar-hit") +
+    (note ? '<span class="ctx-note" style="padding:0;">' + note + "</span>" : "");
+  // Scoped to ".sidebar-toolbar-hit" (not the generic ".row-action-hit"
+  // every static toolbar answers to) so this repeated call — the button set
+  // is rebuilt on every render, unlike every other setupHitExpandGroups
+  // caller — never re-scans #viewBar/the per-view toolbars' own hit
+  // elements; its own idempotency guard makes calling it again here safe
+  // regardless (see that function's comment).
+  setupHitExpandGroups(".sidebar-toolbar-hit");
 }
 
-treeActionBar.addEventListener("click", ev => {
-  const btn = ev.target.closest("[data-action]");
-  if (!btn) return;
-  performBulkAction(btn.dataset.action, [...state.multiSelect]);
+sidebarToolbarEl.addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-row-action]");
+  if (!btn || btn.disabled) return;
+  // Same CLAUDE.md "stopPropagation on any click handler that opens a
+  // popup" gotcha the [data-row-actions] delegated listener above already
+  // observes: without this, the SAME click bubbles up to the document-level
+  // listener that closes #filterPopup on an outside click (see that
+  // listener's own `!filterPopup.contains(ev.target)` check) — which fires
+  // right after "Edit filter…" (editFilterNode -> openEditFilterPopup) just
+  // opened it, silently closing it again in the same tick. Bug reported:
+  // clicking "Edit filter…" in the sidebar toolbar visibly did nothing.
+  ev.stopPropagation();
+  handleSidebarToolbarActionClick(btn.dataset.rowAction);
 });
 
 /* ===================== Link dialog (reference + N ordered hops) =====================
@@ -26608,9 +26979,11 @@ function importFilterJson(text) {
 
 /* ===================== Reusable filter library (FEATURE_BACKLOG.md
    "Reusable filter library") =====================
-   Named presets, saved from the Filter-Toolbar's "+ Add to Library" button
-   (acting on the active filter) and applied to ANY node (file or filter, any
-   file) via a pinned toolbar pill or the "Apply from library…" context action — the global counterpart to the per-file filter
+   Named presets, saved from the Files & Filters sidebar toolbar's "Add to
+   library…" action (acting on the specific selected filter node) and applied
+   to ANY node (file or filter, any file) via a pinned toolbar pill, the
+   sidebar toolbar's own "Apply from library…" action, or the tree context
+   menu's "Apply from library…" item — the global counterpart to the per-file filter
    history (see "File filter history" further below): that one auto-offers
    a ghost preview keyed by CONTENT FINGERPRINT (ambient, one file, no
    naming); this one is explicit, named, and file-agnostic on purpose — the
@@ -26808,7 +27181,7 @@ let filterLibraryIconOpenKey = null;
 async function renderFilterLibraryDialog() {
   const records = await listFilterLibrary();
   if (!records.length) {
-    filterLibraryList.innerHTML = '<div class="filter-library-empty">No saved filters yet. Activate a filter and use the "+ Add to Library" button in the Filter-Toolbar.</div>';
+    filterLibraryList.innerHTML = '<div class="filter-library-empty">No saved filters yet. Select a filter and use "Add to library…" in the Files &amp; Filters sidebar toolbar.</div>';
     return;
   }
   filterLibraryList.innerHTML = "";
@@ -26950,21 +27323,14 @@ el("#filterLibraryDialogClose").addEventListener("click", closeFilterLibraryDial
    the filter-creation buttons, in their own group (#libraryPresetBar, "Library
    Filter"); clicking one applies that preset onto the currently active node
    (state.activeId), the same target and mechanism as the manage dialog's
-   "Apply". The two management buttons (Add / Library) live in a separate,
-   right-aligned group (#libraryManageBar) and are wired once here; the pills
-   are rebuilt on every library change by renderLibraryToolbarPresets. */
+   "Apply". (The two management buttons, Add to Library/Library, used to live
+   in a separate right-aligned #libraryManageBar group wired here — removed
+   this session, relocated into #sidebarToolbar as "Add to library…"/"Apply
+   from library…", now targeting the specific selected node — see
+   describeSidebarToolbarActions.) The pills are rebuilt on every library
+   change by renderLibraryToolbarPresets. */
 const libraryPresetBar = el("#libraryPresetBar");
 const libraryPresetSep = el("#libraryPresetSep");
-const btnAddToLibrary = el("#btnAddToLibrary");
-const btnOpenLibrary = el("#btnOpenLibrary");
-btnAddToLibrary.querySelector(".row-action-hit").innerHTML = ICON_DISK;
-btnOpenLibrary.querySelector(".row-action-hit").innerHTML = ICON_BOOK;
-btnAddToLibrary.addEventListener("click", () => {
-  const node = state.activeId ? state.nodes[state.activeId] : null;
-  if (!node || node.type !== "filter") return; // guarded, and disabled below
-  openFilterLibrarySaveDialog(state.activeId);
-});
-btnOpenLibrary.addEventListener("click", () => { openFilterLibraryDialog(state.activeId); });
 
 async function renderLibraryToolbarPresets() {
   if (!libraryPresetBar) return;
