@@ -5279,12 +5279,14 @@
 // merging a release-please-authored release PR (.github/workflows/
 // release-please.yml, release-please-config.json); never hand-edited
 // outside that PR (or the one-time 0.1.0 cutover). See CLAUDE.md's commit
-// convention (feat:/fix: prefixes) for what drives a bump. The marker
-// comment below is release-please's "generic" extra-file anchor — it scans
-// for this exact comment and replaces only the version literal on the next
-// line, not every "X.Y.Z"-shaped string in this 29k-line file.
-// x-release-please-version
-const PHILOGG_VERSION = "0.1.0";
+// convention (feat:/fix: prefixes) for what drives a bump. The trailing
+// "x-release-please-version" comment is release-please's "generic"
+// extra-file anchor — it replaces only the version literal on THIS line
+// (the marker must be on the same line as the value, not above it, or
+// release-please silently finds nothing to replace — see FEATURE_BACKLOG
+// history / CHANGELOG for the 0.1.0 release this bit), not every
+// "X.Y.Z"-shaped string in this 29k-line file.
+const PHILOGG_VERSION = "0.1.0"; // x-release-please-version
 
 // Build identifier shown only in the License panel — the short hash of the
 // commit this file was built from. Stays "dev" for a plain checkout/local
