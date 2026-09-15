@@ -26528,6 +26528,9 @@ el("#noteDialogCancel").addEventListener("click", closeNoteDialog);
 function setNoteAndRepaint(entryId, text) {
   const trimmed = (text || "").replace(/\s+$/, ""); // trailing whitespace/newlines only — leading/internal formatting is the person's own
   if (trimmed) state.notes.set(entryId, trimmed); else state.notes.delete(entryId);
+  // A note that was just created/edited should actually be visible (FEATURE_BACKLOG.md #76)
+  // rather than silently sitting hidden behind an off "Show Notes" toggle.
+  if (trimmed && !state.showNotes) { state.showNotes = true; updateNotesButton(); }
   const rootId = findRootIdForEntry(entryId);
   if (rootId) syncNotesFilterNode(rootId);
   renderTree(); // repaint the sidebar in case the auto "Notes" node just appeared/disappeared
