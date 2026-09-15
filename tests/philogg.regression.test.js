@@ -2884,14 +2884,14 @@ await withApp(async (w, d, T) => {
   T.state.activeId = textNode.id;
   w.render();
 
-  // --- Breadcrumb follow-up (person-requested, this session): same height/
-  // text size as the level filter pills, and clickable chips select that
-  // ancestor node in the filter tree. ---
+  // --- Breadcrumb follow-up (person-requested, this session): same overall
+  // height as the level filter row (level buttons became solid-color 28x28
+  // circles with no visible text of their own in a later session — see
+  // Group 214 — so text-size/padding parity no longer applies, only the
+  // shared 28px height does), and clickable chips select that ancestor node
+  // in the filter tree. ---
   const crumbEl = d.querySelector("#breadcrumb .crumb");
   const levelBtnEl = d.querySelector("#levelBar .level-btn");
-  assert(cs(crumbEl).fontSize === cs(levelBtnEl).fontSize, "breadcrumb chips use the same text size as the level filter pills");
-  assert(cs(crumbEl).paddingTop === cs(levelBtnEl).paddingTop && cs(crumbEl).paddingBottom === cs(levelBtnEl).paddingBottom,
-    "breadcrumb chips use the same vertical padding as the level filter pills (same overall height)");
   // Regression guard, superseded/simplified this session ("Main window
   // visual consistency fix"): the row used to chase height parity via
   // per-element line-height/padding arithmetic (three rounds of it, see git
@@ -6036,7 +6036,7 @@ await withApp(async (w, d, T) => {
   // learned the hard way.
   const errBtnBefore = d.querySelector('.level-btn[data-level="ERROR"]');
   assert(errBtnBefore !== null, "sanity: the ERROR level button exists");
-  const shownAtStart = parseInt(errBtnBefore.querySelector(".cnt").textContent.replace(/\./g, ""), 10);
+  const shownAtStart = parseInt(errBtnBefore.title.match(/[\d.]+$/)[0].replace(/\./g, ""), 10);
   w.__renderLevelBarCalls = 0;
 
   for (let i = 0; i < 3 && node.entries.length < 60000; i++) await new Promise(r => setTimeout(r, 0));
@@ -6045,7 +6045,7 @@ await withApp(async (w, d, T) => {
 
   const errBtnAfter = d.querySelector('.level-btn[data-level="ERROR"]');
   assert(errBtnAfter === errBtnBefore, "the ERROR level button survives parse ticks as the exact same DOM element (identity preserved)");
-  const shownErr = parseInt(errBtnAfter.querySelector(".cnt").textContent.replace(/\./g, ""), 10);
+  const shownErr = parseInt(errBtnAfter.title.match(/[\d.]+$/)[0].replace(/\./g, ""), 10);
   assert(shownErr === shownAtStart, "the ERROR button's own displayed count does NOT auto-update during ticks anymore (updateLevelBarCounts was removed outright) — still " + shownErr + ", though the file's real ERROR count has grown well past it by now");
 
   // The real proof: a click on the reference held throughout the ticks
@@ -6057,7 +6057,7 @@ await withApp(async (w, d, T) => {
   // DOES pick up the true current count — same "explicit render still
   // shows live state" rule Group 49/50 establish elsewhere.
   const errBtnAfterClick = d.querySelector('.level-btn[data-level="ERROR"]');
-  const shownAfterClick = parseInt(errBtnAfterClick.querySelector(".cnt").textContent.replace(/\./g, ""), 10);
+  const shownAfterClick = parseInt(errBtnAfterClick.title.match(/[\d.]+$/)[0].replace(/\./g, ""), 10);
   assert(shownAfterClick > shownErr, "a real render (triggered by the click itself) DOES show the level bar's true current count, proving the earlier staleness was specifically about automatic per-tick updates — got " + shownAfterClick + " (was stuck at " + shownErr + ")");
   fireClick(d.querySelector('.level-btn[data-level="ERROR"]'), w);
   assert(!T.state.levelFilter.has("ERROR"), "sanity: toggled back off, state left clean for what follows");
@@ -9882,8 +9882,8 @@ await withApp(async (w, d) => {
   ["#sidebarResizer", "#fhSplitResizer", "#detailResizer"].forEach(sel => {
     const ruleMatch = css.match(new RegExp(sel + "::after\\{[^}]*\\}"));
     assert(ruleMatch, sel + "::after rule exists");
-    assert(ruleMatch && ruleMatch[0].includes("background:var(--border)"),
-      sel + "::after has a permanent var(--border) grip background at rest, not transparent, got " + (ruleMatch && ruleMatch[0]));
+    assert(ruleMatch && ruleMatch[0].includes("background:var(--border-hover)"),
+      sel + "::after has a permanent var(--border-hover) grip background at rest, not transparent, got " + (ruleMatch && ruleMatch[0]));
     assert(ruleMatch && !ruleMatch[0].includes("background:transparent"),
       sel + "::after no longer starts fully transparent (was the 'stray dark seam' bug)");
     // Hover/drag brightening to --accent is pre-existing behavior, unchanged by this session.
@@ -9891,13 +9891,23 @@ await withApp(async (w, d) => {
       sel + " still brightens to var(--accent) on hover/drag");
   });
 
+  // --- Problem 2 (follow-up, this session): .col-resize-handle gets the same
+  // resting-visibility treatment as the three panel resizers above, since it
+  // had NO background at all at rest (fully invisible until hover/drag). ---
+  const colHandleRule = css.match(/\.col-resize-handle\{[^}]*\}/);
+  assert(colHandleRule && /background:[^;]*--border-hover/.test(colHandleRule[0]),
+    ".col-resize-handle now has a non-transparent resting background derived from --border-hover, got " + (colHandleRule && colHandleRule[0]));
+
   // --- Problem 2: sidebar/minimap seam now agrees on the same border token ---
   const minimapRule = css.match(/#timelineMinimap\{[^}]*\}/);
   assert(minimapRule && minimapRule[0].includes("border-bottom:1px solid var(--border)") && !minimapRule[0].includes("border-bottom:1px solid var(--border-soft)"),
-    "#timelineMinimap's border-bottom now uses --border (matching #sidebar's own border-right token at the same seam), not --border-soft, got " + (minimapRule && minimapRule[0]));
-  const sidebarRule = css.match(/#sidebar\{[^}]*\}/);
-  assert(sidebarRule && sidebarRule[0].includes("border-right:1px solid var(--border)"),
-    "sanity: #sidebar's own border-right is still var(--border)");
+    "#timelineMinimap's border-bottom now uses --border (matching the sidebar/content seam's own token, wherever it currently lives), not --border-soft, got " + (minimapRule && minimapRule[0]));
+  // #sidebar's own border-right moved to #sidebarResizer in a later session
+  // (see Group 217) — #sidebar.collapsed keeps a fallback for when the
+  // resizer is hidden, checked there instead.
+  const sidebarResizerRule = css.match(/#sidebarResizer\{[^}]*\}/);
+  assert(sidebarResizerRule && sidebarResizerRule[0].includes("border-right:1px solid var(--border)"),
+    "sanity: the sidebar/content seam's border-right is still var(--border), now carried by #sidebarResizer, got " + (sidebarResizerRule && sidebarResizerRule[0]));
 });
 
 /* ============================================================
@@ -11220,6 +11230,14 @@ await withApp(async (w, d, T) => {
    just extends the SAME dynamic top-left line no matter how many buttons
    end up on it — scales to future buttons in that row without further
    layout work.
+   UPDATED a later session (UI overhaul, person-requested: a dividing line
+   between the level filter and the standard filters, uniform spacing for
+   the whole row): #btnApplyLevelToTree's own margin dropped to 0 — the gap
+   to the standard-filters group now comes from a `.row-action-separator`
+   placed right after it, same mechanism the other group boundaries in
+   #viewBar already used, rather than a bespoke blank-gap margin. The
+   float:left half of this fix (staying on the line, not dropping below it)
+   is unchanged and still what this group covers.
    ============================================================ */
 group(102);
 await withApp(async (w, d, T) => {
@@ -11237,8 +11255,8 @@ await withApp(async (w, d, T) => {
 
   const cs = w.getComputedStyle;
   assert(cs(applyBtn).float === "left", "#btnApplyLevelToTree floats left, joining #fhTabs/#levelBar's pinned top-left line");
-  assert(cs(applyBtn).marginRight === "14px" && cs(applyBtn).marginBottom === "0px",
-    "...with the SAME 14px/0px margin as its sibling toolbar-icon-btns, so it doesn't sit any differently on the line");
+  assert(cs(applyBtn).marginRight === "0px" && cs(applyBtn).marginBottom === "0px",
+    "...with zero own margin (UI-overhaul session: the gap to the standard filters now comes from the .row-action-separator right after it, not a bespoke margin), so it doesn't sit any differently on the line");
 });
 
 /* ============================================================
@@ -12678,7 +12696,7 @@ await withApp(async (w, d, T) => {
     "the bar shows exactly that format's levels, in its order (DEBUG dropped, TRACE added), got " + barLevels().join(","));
   const traceBtn = d.querySelector('.level-btn[data-level="TRACE"]');
   assert(traceBtn && traceBtn.classList.contains("lvl-trace"), "the TRACE button carries its own lvl-trace class");
-  assert(Number(traceBtn.querySelector(".cnt").textContent) === 2, "the TRACE button counts its entries, got " + traceBtn.querySelector(".cnt").textContent);
+  assert(Number(traceBtn.title.match(/[\d.]+$/)[0]) === 2, "the TRACE button counts its entries, got " + traceBtn.title);
 
   // Second file, different format: the bar becomes the union, first file first.
   const b = await w.addFile("b.log", makeLog(0, 4, { levels: ["INFO"] }), () => {}, "fmt-terse");
@@ -12856,9 +12874,9 @@ await withApp(async (w, d, T) => {
   const btn = lvl => d.querySelector('.level-btn[data-level="' + lvl + '"]');
   assert(btn("NOTICE").classList.contains("lvl-custom-1"), "the NOTICE button carries its palette class");
   assert(btn("VERBOSE").classList.contains("lvl-custom-2"), "...and the second custom name gets a DIFFERENT slot");
-  assert(Number(btn("NOTICE").querySelector(".cnt").textContent) === 2,
+  assert(Number(btn("NOTICE").title.match(/[\d.]+$/)[0]) === 2,
     "getLevelCounts counts the custom bucket (it keys off each entry's computed bucket, not a fixed name list), got " +
-    btn("NOTICE").querySelector(".cnt").textContent);
+    btn("NOTICE").title);
 
   // Rows carry the same class, so the palette color reaches the table too.
   const rowCls = [...d.querySelectorAll("#tableRows .log-row")].map(r => r.className);
@@ -21459,7 +21477,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("194e. Layout order: filter groups first, then the level bar, then the right-aligned management group");
+  section("194e. Layout order: level bar first (after the view selector), then the filter groups, then the right-aligned management group");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.activeId = f.id;
@@ -21472,12 +21490,21 @@ await withApp(async (w, d, T) => {
   const iLevel = kids.indexOf("levelBar");
   const iManage = kids.indexOf("libraryManageBar");
   assert(iTabs === 0, "view selector (#fhTabs) is first");
-  assert(iTabs < iFilters && iFilters < iNew, "the standard filter group and New come right after the view selector");
-  assert(iNew < iLevel, "the level bar now sits AFTER the filter groups (so changing pill widths never shifts the filters)");
+  assert(iTabs < iLevel, "the level bar comes right after the view selector (person-requested, this session: moved from after the filter groups to before them)");
+  assert(iLevel < iFilters && iFilters < iNew, "the standard filter group and New come right after the level bar");
   assert(iManage === kids.length - 1, "the management group is last (floated right)");
-  // Both group separators are DIRECT children of #viewBar (not inside a flex group).
-  assert([...d.querySelectorAll("#viewBar > .row-action-separator")].length >= 1,
-    "the group-dividing separators are direct #viewBar children");
+  // All group separators are DIRECT children of #viewBar (not inside a flex group).
+  const seps = [...d.querySelectorAll("#viewBar > .row-action-separator")];
+  assert(seps.length === 3,
+    "three group-dividing separators now: level-filter|standard-filters, standard-filters|presets, presets|New — one consistent divider rhythm for the whole row (person-requested, this session), got " + seps.length);
+  // --- Dividing line between the level filter and the standard filters (person-requested, this session) ---
+  const iBtnApply = kids.indexOf("btnApplyLevelToTree");
+  assert(iLevel < iBtnApply && iBtnApply < iFilters, "sanity: #btnApplyLevelToTree still sits between #levelBar and the standard filters");
+  assert(kids[iBtnApply + 1] === "row-action-separator" && iFilters === iBtnApply + 2,
+    "a separator sits directly between #btnApplyLevelToTree and the standard-filters group, exactly like the divider between the standard filters and the library-presets group, got " + kids.join(","));
+  const cs = w.getComputedStyle;
+  assert(cs(d.querySelector("#levelBar")).marginRight === "4px",
+    "#levelBar's own trailing margin is the row's ordinary 4px button gap (grouping it with #btnApplyLevelToTree), not a bespoke wider gap any more");
 });
 
 group(196);
@@ -24620,6 +24647,227 @@ await withApp(async (w, d, T) => {
     "the log view (not the Plot/Table pane) is actually the one visible afterward");
 });
 
+group(214);
+await withApp(async (w, d, T) => {
+  section("214. Level-bar redesign: circular ring/fill buttons matching the filter-creation buttons, name+count moved into the hover label");
+  // Pinned to "explicit" mode so a click toggles state.levelFilter directly
+  // (default "auto" mode instead edits a tree node — see Group 94) — same
+  // pin Group 52 uses for the same reason.
+  T.levelFilterTreeMode = "explicit";
+
+  const f = await w.addFile("a.log", makeLog(0, 8, { levels: ["ERROR", "ERROR", "WARN", "INFO", "INFO", "INFO", "DEBUG", "DEBUG"] }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const errBtn = d.querySelector('.level-btn[data-level="ERROR"]');
+  assert(errBtn !== null, "sanity: the ERROR level button exists");
+
+  // --- Shape: reuses .row-action-btn (circle + hover-hit + hover-label), NOT .toolbar-icon-btn ---
+  assert(errBtn.classList.contains("row-action-btn"), "level buttons carry .row-action-btn (same circle/hover-label mechanism as Before/After/Time range/...)");
+  assert(!errBtn.classList.contains("toolbar-icon-btn"), "level buttons deliberately do NOT carry .toolbar-icon-btn (would fight the always-solid .level-btn.lvl-* background on a specificity tie)");
+  assert(errBtn.querySelector(".row-action-hit") !== null, "has the fixed-size .row-action-hit span");
+  assert(errBtn.querySelector(".dot") === null && errBtn.querySelector(".cnt") === null,
+    "no more .dot/.cnt children — the button's own ring/fill IS the content now");
+
+  // --- Name+count moved into the hover label, matching the button's title ---
+  const label = errBtn.querySelector(".row-action-label");
+  assert(label !== null, "has a .row-action-label span");
+  assert(label.textContent === "ERROR 2", "label reads \"{LEVEL} {count}\", got \"" + label.textContent + "\"");
+  assert(errBtn.title === label.textContent, "title (accessible name) matches the hover label exactly, since the button itself has no visible text");
+
+  // --- Unchecked = full-strength colored ring; checked = solid fill (person-requested follow-up) ---
+  const css = d.querySelector("style").textContent;
+  const ruleFor = sel => { const m = css.match(new RegExp(sel.replace(/[.:#()]/g, "\\$&") + "\\{[^}]*\\}")); return m && m[0]; };
+  assert((ruleFor(".level-btn.lvl-error") || "").includes("border-color:var(--level-error)"),
+    ".level-btn.lvl-error sets the ring color regardless of .active, got " + ruleFor(".level-btn.lvl-error"));
+  assert(!/\.level-btn\.lvl-error\{[^}]*background/.test(css),
+    "unchecked .level-btn.lvl-error has no background set (transparent ring, not a dimmed fill)");
+  assert((ruleFor(".level-btn.active.lvl-error") || "").includes("background:var(--level-error)"),
+    ".level-btn.active.lvl-error fills the ring's own color solid once checked, got " + ruleFor(".level-btn.active.lvl-error"));
+  assert((ruleFor(".level-btn") || "").includes("border:2px solid transparent") && (ruleFor(".level-btn") || "").includes("box-sizing:border-box"),
+    ".level-btn reserves a 2px ring inside its own box (box-sizing:border-box, so the ring never grows the 28x28 footprint)");
+
+  // --- Hover label picks up the level's own color instead of the neutral default (regardless of checked state) ---
+  assert((ruleFor(".level-btn.lvl-error .row-action-label") || "").includes("background:var(--level-error)"),
+    "the ERROR button's own .row-action-label is colored like the button, not the neutral --bg-elevated-2 default");
+
+  assert(!errBtn.classList.contains("active"), "sanity: ERROR starts unchecked");
+
+  // --- #levelBar drives the label reveal via plain :hover (same fix as #libraryPresetBar — the
+  //     JS setupHitExpandGroups binding runs once at boot against a container that's still empty then) ---
+  assert(css.includes('#levelBar .level-btn:hover:not(:disabled) .row-action-label{opacity:1'),
+    "#levelBar's own :hover rule reveals the label (setupHitExpandGroups would never reach a dynamically-rebuilt container)");
+
+  // --- Layout: #levelBar now sits BEFORE the filter-creation group (reversing the earlier right-side placement) ---
+  const viewBarKids = [...d.querySelector("#viewBar").children].map(c => c.id || c.dataset.rowActions);
+  assert(viewBarKids.indexOf("levelBar") < viewBarKids.indexOf("viewbar"),
+    "#levelBar precedes [data-row-actions=\"viewbar\"] in DOM order, got " + viewBarKids.join(","));
+
+  // --- Click-to-toggle behavior is unchanged: still flips state.levelFilter + re-renders with .active flipped ---
+  const wasInFilter = T.state.levelFilter.has("ERROR");
+  const wasActive = errBtn.classList.contains("active");
+  fireClick(errBtn, w);
+  assert(T.state.levelFilter.has("ERROR") !== wasInFilter, "clicking flips ERROR's membership in state.levelFilter");
+  const errBtnAfter = d.querySelector('.level-btn[data-level="ERROR"]');
+  assert(errBtnAfter.classList.contains("active") !== wasActive, "…and the re-rendered button's .active flips accordingly");
+  fireClick(errBtnAfter, w);
+  assert(T.state.levelFilter.has("ERROR") === wasInFilter, "sanity: toggled back, state.levelFilter left clean");
+  assert(d.querySelector('.level-btn[data-level="ERROR"]').classList.contains("active") === wasActive, "sanity: .active toggled back too");
+});
+
+group(215);
+await withApp(async (w, d, T) => {
+  section("215. Toggle buttons (Notes/Multiline/Wrap/Columns/TextMatch/HighlightMatch/FilePaths/Pin + Text-View Wrap/Pretty-print): no button chrome, accent icon + status-bar LED");
+
+  await w.addFile("a.log", makeLog(0, 5, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
+  w.render();
+
+  const toggles = [...d.querySelectorAll(".icon-toggle")];
+  assert(toggles.length === 17,
+    "exactly 17 .icon-toggle instances (7 log-display toggles x2 toolbars + toggle-pin + itvWrapBtn + itvPrettyPrintBtn), got " + toggles.length);
+  toggles.forEach(t => assert(t.classList.contains("toolbar-icon-btn"), t.className + " still carries the base .toolbar-icon-btn class (28x28 footprint, flex-centering)"));
+
+  // A plain (non-toggle) .toolbar-icon-btn in the same toolbar area must NOT get the class.
+  const applyLevelBtn = d.querySelector("#btnApplyLevelToTree");
+  assert(applyLevelBtn && applyLevelBtn.classList.contains("toolbar-icon-btn") && !applyLevelBtn.classList.contains("icon-toggle"),
+    "a plain action button (#btnApplyLevelToTree) is untouched — .icon-toggle is scoped to genuine on/off toggles only");
+
+  // --- CSS: no chrome at rest/active, accent-strong icon color when active, status-bar bar ---
+  const css = d.querySelector("style").textContent;
+  const ruleFor = sel => { const m = css.match(new RegExp(sel.replace(/[.:]/g, "\\$&") + "\\{[^}]*\\}")); return m && m[0]; };
+  const base = ruleFor(".toolbar-icon-btn.icon-toggle");
+  assert(base && base.includes("background:none") && base.includes("border:none"), ".icon-toggle has no background/border at rest, got " + base);
+  const active = ruleFor(".toolbar-icon-btn.icon-toggle.active");
+  assert(active && active.includes("color:var(--accent-strong)") && active.includes("background:none"),
+    ".icon-toggle.active stays chrome-free but recolors the icon to --accent-strong, got " + active);
+  const hover = ruleFor(".toolbar-icon-btn.icon-toggle:hover");
+  assert(hover && !hover.includes("color"), ".icon-toggle:hover deliberately sets no color (avoids a hovered ACTIVE toggle losing its accent color), got " + hover);
+  const barRest = css.match(/\.toolbar-icon-btn\.icon-toggle::after\{[^}]*\}/);
+  assert(barRest && barRest[0].includes("background:transparent"), "the status-bar ::after is transparent at rest, got " + (barRest && barRest[0]));
+  assert(css.includes(".toolbar-icon-btn.icon-toggle.active::after{background:var(--accent-strong);}"),
+    "the status-bar ::after turns var(--accent-strong) once .active");
+
+  // --- Functional: click still toggles .active (unchanged click wiring) ---
+  const notesBtn = d.querySelector(".toggle-notes");
+  const wasActive = notesBtn.classList.contains("active");
+  fireClick(notesBtn, w);
+  assert(notesBtn.classList.contains("active") !== wasActive, "clicking a toggle still flips its .active class");
+  fireClick(notesBtn, w);
+  assert(notesBtn.classList.contains("active") === wasActive, "sanity: toggled back, state left clean");
+});
+
+group(216);
+await withApp(async (w, d, T) => {
+  section("216. Minimap header: per-level entry counts appended after Duration, showing the whole file's global totals");
+
+  const f = await w.addFile("a.log", makeLog(0, 6, { levels: ["ERROR", "ERROR", "WARN", "INFO", "INFO", "INFO"] }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const order = w.activeLevelOrder();
+  assert(order.length > 0, "sanity: there's a level order to compare against");
+  const spans = () => [...d.querySelectorAll("#timelineMinimapMeta .minimap-meta-level")];
+  assert(spans().length === order.length, "one .minimap-meta-level span per entry in activeLevelOrder(), got " + spans().length + " vs " + order.length);
+  assert(spans().map(s => s.dataset.level).join(",") === order.join(","),
+    "spans appear in the exact same order as activeLevelOrder() (same order the level-bar buttons use), got " + spans().map(s => s.dataset.level).join(","));
+
+  const fileTotals = w.getLevelCounts(f.id) || {};
+  spans().forEach(s => {
+    const lvl = s.dataset.level;
+    assert(Number(s.textContent.replace(/\./g, "")) === (fileTotals[lvl] || 0),
+      "span for " + lvl + " shows the whole file's raw total (" + (fileTotals[lvl] || 0) + "), got " + s.textContent);
+    const expectedColor = w.levelColorVar(lvl) || "var(--text-secondary)";
+    assert(s.getAttribute("style").includes("color:" + expectedColor),
+      "span for " + lvl + " is colored via levelColorVar(), got " + s.getAttribute("style"));
+  });
+
+  // No label text (e.g. "Error") alongside the number — just the digits.
+  assert(!spans().some(s => /[A-Za-z]/.test(s.textContent)), "level segments show only the number, no level-name label");
+
+  // --- Follow-up, person-requested: the whole meta line is "global state" (Start/End/
+  // Duration always describe the WHOLE file), so the level counts must too — they must
+  // NOT shrink to match a narrower active filter, unlike the level-bar's own counts. ---
+  const errSpanTextBefore = spans().find(s => s.dataset.level === "ERROR").textContent;
+  const narrowNode = w.createFilterNode(f.id, "text", "message"); // matches every entry, still narrows the node itself
+  T.state.activeId = narrowNode.id;
+  w.render();
+  assert(spans().find(s => s.dataset.level === "ERROR").textContent === errSpanTextBefore,
+    "counts stay the file's global totals even once a narrower filter node is active, unlike the level bar's own context-dependent counts");
+
+  // --- Follow-up, person-requested: clicking a count attaches/reveals a level filter
+  // for that level directly under the ROOT FILE (not under whatever node is active). ---
+  T.state.activeId = narrowNode.id; // stay on the unrelated narrower node
+  w.render();
+  const childCountBefore = f.children.length;
+  fireClick(spans().find(s => s.dataset.level === "ERROR"), w);
+  assert(f.children.length === childCountBefore + 1, "clicking ERROR's count adds exactly one new child directly under the root file, got " + f.children.length + " (was " + childCountBefore + ")");
+  const errFilterNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(errFilterNode.type === "filter" && errFilterNode.filterType === "level" && JSON.stringify(errFilterNode.value) === JSON.stringify(["ERROR"]),
+    "the new child is a level filter for exactly [\"ERROR\"], got " + JSON.stringify(errFilterNode && errFilterNode.value));
+  assert(errFilterNode.parentId === f.id, "the new level filter's parent is the root file, not the previously-active narrower node");
+  assert(T.state.activeId === errFilterNode.id, "the new level filter is shown active immediately");
+
+  // Clicking the SAME level's count again reuses the existing node instead of duplicating it.
+  T.state.activeId = narrowNode.id; // move away, then click again
+  w.render();
+  const childCountAfterFirst = f.children.length;
+  fireClick(spans().find(s => s.dataset.level === "ERROR"), w);
+  assert(f.children.length === childCountAfterFirst, "clicking ERROR's count again does NOT create a duplicate node, still " + f.children.length + " children");
+  assert(T.state.activeId === errFilterNode.id, "…it just re-activates the existing ERROR level filter");
+
+  // A different level's count creates its own separate node.
+  fireClick(spans().find(s => s.dataset.level === "WARN"), w);
+  const warnFilterNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(warnFilterNode.id !== errFilterNode.id && JSON.stringify(warnFilterNode.value) === JSON.stringify(["WARN"]),
+    "clicking a different level's count creates its own distinct level filter, got " + JSON.stringify(warnFilterNode && warnFilterNode.value));
+  assert(T.state.activeId === warnFilterNode.id, "the WARN level filter is shown active immediately");
+
+  // Truncation/no-data path untouched: still starts with "Start"/"Duration" and clears on <2 entries.
+  assert(d.querySelector("#timelineMinimapMeta").textContent.includes("Start") &&
+    d.querySelector("#timelineMinimapMeta").textContent.includes("Duration"),
+    "Start/.../Duration text is still present ahead of the new level segments");
+});
+
+group(217);
+await withApp(async (w, d, T) => {
+  section("217. Resizer/panel seam: the sidebar and detail-panel border moved onto the resizer itself, closing the bare-gap look between panels");
+
+  const css = d.querySelector("style").textContent;
+  const ruleFor = re => { const m = css.match(re); return m && m[0]; };
+
+  // --- Sidebar seam: #sidebarResizer now carries the panel's own background + border ---
+  const sidebarResizerRule = ruleFor(/#sidebarResizer\{[^}]*\}/);
+  assert(sidebarResizerRule && sidebarResizerRule.includes("background:var(--bg-panel)"),
+    "#sidebarResizer's own background now continues #sidebar's --bg-panel through the full drag-handle strip, got " + sidebarResizerRule);
+  assert(sidebarResizerRule && sidebarResizerRule.includes("border-right:1px solid var(--border)"),
+    "#sidebarResizer carries the seam border at its own far edge (touching #content), got " + sidebarResizerRule);
+  const sidebarBaseRule = ruleFor(/#sidebar\{[^}]*\}/);
+  assert(sidebarBaseRule && !/border-right\s*:/.test(sidebarBaseRule),
+    "#sidebar's own (expanded-state) rule no longer DECLARES border-right itself (its own explanatory comment may still mention the word) — no double border with #sidebarResizer's, got " + sidebarBaseRule);
+  const sidebarCollapsedRule = ruleFor(/#sidebar\.collapsed\{[^}]*\}/);
+  assert(sidebarCollapsedRule && sidebarCollapsedRule.includes("border-right:1px solid var(--border)"),
+    "#sidebar.collapsed restores its own border-right as a fallback, since #sidebarResizer (and the border it now carries) is hidden entirely while collapsed, got " + sidebarCollapsedRule);
+
+  // --- Detail-panel seam: #detailResizer now carries the panel's own background + border ---
+  const detailResizerRule = ruleFor(/#detailResizer\{[^}]*\}/);
+  assert(detailResizerRule && detailResizerRule.includes("background:var(--bg-panel)"),
+    "#detailResizer's own background now continues #detailPanel's --bg-panel through the full drag-handle strip, got " + detailResizerRule);
+  assert(detailResizerRule && detailResizerRule.includes("border-top:1px solid var(--border)"),
+    "#detailResizer carries the seam border at its own far edge (touching #content), got " + detailResizerRule);
+  const detailPanelBaseRule = ruleFor(/#detailPanel\{[^}]*\}/);
+  assert(detailPanelBaseRule && !/border-top\s*:/.test(detailPanelBaseRule),
+    "#detailPanel's own (expanded-state) rule no longer DECLARES border-top itself (its own explanatory comment may still mention the word) — no double border with #detailResizer's, got " + detailPanelBaseRule);
+  const detailPanelCollapsedRule = ruleFor(/#detailPanel\.collapsed\{[^}]*\}/);
+  assert(detailPanelCollapsedRule && detailPanelCollapsedRule.includes("border-top:1px solid var(--border)"),
+    "#detailPanel.collapsed restores its own border-top as a fallback, since #detailResizer (and the border it now carries) is hidden entirely while collapsed, got " + detailPanelCollapsedRule);
+
+  // --- Sanity: the resizers still keep their own accent-colored grip on hover/drag (unrelated to this fix, untouched) ---
+  assert(css.includes("#sidebarResizer:hover::after, #sidebarResizer.dragging::after{ background:var(--accent); }"),
+    "sanity: #sidebarResizer's grip still brightens on hover/drag, unaffected by this session's seam fix");
+  assert(css.includes("#detailResizer:hover::after, #detailResizer.dragging::after{ background:var(--accent); }"),
+    "sanity: #detailResizer's grip still brightens on hover/drag, unaffected by this session's seam fix");
+});
+
 /* ============================================================
    Summary
    ============================================================ */
@@ -25991,6 +26239,15 @@ process.exitCode = failed ? 1 : 0;
               pill/view-tab groups, and none of these three sit in a row
               that needs cross-control height alignment the way #viewBar's
               controls do.
+              UPDATED a later session (UI overhaul, person-reported: the grip
+              bars were still too low-contrast against the content background
+              to notice): the three resizers' resting grip color changed from
+              var(--border) to var(--border-hover) (one step more visible,
+              already used elsewhere for resting-but-interactive affordances);
+              .col-resize-handle (previously fully invisible at rest) got a
+              matching background too. This group's assertion at ~"::after
+              has a permanent ... grip background at rest" updated to expect
+              var(--border-hover) instead of var(--border).
    Group 91  — this session (2026-08-22), person-requested: Entry Detail
               gets the sidebar's hover-peek behavior (Group 80) while
               collapsed, expanding upward instead of rightward. Both
@@ -27384,6 +27641,22 @@ process.exitCode = failed ? 1 : 0;
       .settings-switch pill and row controls share a 28px height. (e)
       #breadcrumbBar flex-centered and shrunk (44→36px) so its chips sit
       centered.
+      UPDATED a later session (UI overhaul: resizer/level-bar/toggle/minimap
+      redesign): the level bar moved back to the LEFT of the standard filter
+      group — its buttons are now fixed 28x28 circles (see Group 214), so the
+      "pill-width changes shift the filters" risk this right-side placement
+      guarded against no longer exists. 194e's assertions updated in place
+      for the new order (level bar right after #fhTabs).
+      UPDATED again, same UI-overhaul effort (person-requested follow-up: a
+      dividing line between the level filter and the standard filters,
+      "analogous to" the existing standard-filters|library-presets divider,
+      so the whole row reads as one consistent group-separator rhythm
+      instead of the level filter's own bespoke blank-gap spacing): a third
+      `.row-action-separator` now sits directly after #btnApplyLevelToTree,
+      and #levelBar/#btnApplyLevelToTree's own margins dropped from the old
+      14px blank gap to 4px/0px (the row's ordinary button-gap value) —
+      Group 102's margin assertion and 194e's separator-count/order
+      assertions updated accordingly.
    Group 195 — this session (2026-09-09), person-reported bugfix: "Show M
       newest files" (a per-folder auto rule added in the same session as
       Group 164) made folderScanTick's own "did anything change" check
@@ -27849,4 +28122,86 @@ process.exitCode = failed ? 1 : 0;
       report of the Plot view getting "stuck": a real full-pair extraction
       viewed on Plot still lets a tree click switch the active node and fall
       back to the Filtered tab cleanly.
+   Group 214 — this session, UI overhaul (design review, person-requested):
+      the level-bar buttons became circular icon buttons matching the
+      filter-creation buttons' own .row-action-btn shape (circle + hover-
+      revealed .row-action-label), instead of the previous always-visible
+      outline/solid pill with dot+name+count drawn inline. Name+count moved
+      into the hover label ("Error 69"), whose own background/border now
+      matches the level's color instead of the neutral --bg-elevated-2
+      default. #levelBar also moved back to the LEFT of the standard
+      filter-creation group (reversing Group 194e's earlier move to the
+      right) — level buttons are fixed 28x28 circles now, so the width-shift
+      risk that right-side placement guarded against no longer exists;
+      194e's own assertions were updated in place for the new order. Existing
+      Groups 52/116/117 (read the level bar's displayed count via `.cnt`)
+      updated to read it from the button's `title` instead.
+      UPDATED same session, follow-up (person-reported: an opacity-dimmed
+      solid fill for "unchecked" read too similar across levels to tell
+      apart at a glance): unchecked is now a full-strength colored RING
+      (`border:2px solid var(--level-*)`, transparent fill,
+      `box-sizing:border-box` so the ring stays inside the 28x28 box) and
+      checked fills that same color in solid — this group's CSS-audit
+      assertions replaced the opacity-based ones with ring/fill checks
+      accordingly.
+   Group 215 — this session, UI overhaul (design review, person-requested):
+      the log-display/Text-View toggle buttons (Notes/Multiline/Wrap/
+      Columns/TextMatch/HighlightMatch/FilePaths/Pin + the Text-View's Wrap/
+      Pretty-print — 17 instances) lost their .toolbar-icon-btn frame/fill in
+      both active and inactive state (person-reported: indistinguishable from
+      plain action buttons at rest) — a new `.icon-toggle` class, scoped to
+      exactly these 17 buttons, drives icon-only styling: no border/
+      background, --accent-strong icon color when .active, plus a thin
+      accent-colored bar under the icon (a `::after`, absolutely positioned
+      so it doesn't disturb the icon's own centering on the full 28x28 box)
+      acting as an on/off status light.
+   Group 216 — this session, UI overhaul (design review, person-requested):
+      the timeline minimap's "Start … End … Duration" meta line gained one
+      more `·`-separated segment per active level (activeLevelOrder(), same
+      order the level-bar buttons use), showing only the count (no level-name
+      label) colored via levelColorVar(). Counts originally came from
+      getLevelCounts(levelBarCountsBaseId()) — the SAME source the level-bar
+      buttons themselves use, deliberately not getLevelCounts(rootId) — so
+      the two rows could never disagree.
+      UPDATED same UI-overhaul effort, follow-up (person-requested: the rest
+      of the line — Start/End/Duration — already describes the file's global
+      state regardless of the active filter, so the level counts should too,
+      instead of silently narrowing with whatever node is active): counts now
+      come from getLevelCounts(rootId) — the whole file's raw, unfiltered
+      totals — reversing the earlier "same source as the level bar" choice.
+      Also, same follow-up: each count is now CLICKABLE
+      (applyLevelFilterUnderRootFile) — attaches (or, on a repeat click,
+      re-activates) a single-level filter node directly under the ROOT FILE,
+      regardless of whatever node currently happens to be active, and shows
+      it active immediately. This group's assertions were rewritten to check
+      the new global-totals source (including a fixture that activates a
+      narrower child node and confirms the counts do NOT shrink to match it)
+      and the new click-to-filter behavior (creates exactly one child per
+      level, reuses it on repeat clicks instead of duplicating, and a
+      different level's click creates its own distinct node).
+   Group 217 — this session, UI overhaul (design review, person-reported via
+      screenshot with annotated arrows: the panel resizers still looked like
+      a bare, seam-less GAP between the sidebar/content and content/detail-
+      panel, not a divider — the earlier Group 90/91-era fix only brightened
+      a short 30px grip bar centered in the resizer's own transparent 7px
+      hit area, so most of that strip still showed #content's plain
+      --bg-app punched between the neighboring panel's --bg-panel and its
+      own 1px border, which used to sit flush against the PANEL's own edge
+      rather than at the resizer's far edge). Fixed by moving each border
+      onto the resizer itself and giving the resizer the neighboring panel's
+      own --bg-panel background: #sidebar's border-right moved to
+      #sidebarResizer (and #detailPanel's border-top to #detailResizer),
+      each now also carrying --bg-panel so the panel's background continues
+      seamlessly through the full drag-handle strip, with a single clean
+      border line exactly at the resizer's own far edge (touching #content)
+      instead of a punched-out gap — the grip overlays this instead of
+      floating in an unstyled void. Since #sidebarResizer/#detailResizer are
+      hidden entirely while their panel is collapsed (no manual resize then),
+      #sidebar.collapsed/#detailPanel.collapsed each restore their own
+      fallback border so the collapsed rail/bar still has a visible seam.
+      Group 90's own sanity assertion (that #sidebar's rule carries the
+      border) moved to check #sidebarResizer instead. New Group 217 checks
+      both moved borders/backgrounds, that the base (expanded) panel rules
+      no longer declare the border themselves (no double border), and that
+      each `.collapsed` fallback is in place.
    ============================================================ */
