@@ -507,7 +507,12 @@ shape:
     `#filteredToolbar`), Table's Export-as-CSV, Plot's Save-as-image
     (`#plotSaveImageBtn`, moved out of Plot's Controls group on
     2026-09-05, person-requested — it's a one-off action, not a
-    persistent view control). **Add to selection ("Select") also lives in
+    persistent view control). **Table's Value assertion button
+    (`#tableAssertBtn`, 2026-09-15, person-requested)** joined this group
+    the same way — it used to be a small per-column header button, easy to
+    miss; disabled until one or more whole columns are selected in the
+    extraction table, see "Value assertions" in
+    `docs/extraction-and-plotting.md`. **Add to selection ("Select") also lives in
     Table's and Plot's own Actions groups now (person-requested,
     2026-09-07 — unify the Table/Plot filters)**: a lone
     `[data-row-actions="select-action"]` span in each toolbar's markup
