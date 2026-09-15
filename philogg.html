@@ -46,11 +46,13 @@
     --level-custom-6:#d0b45a;
     --level-custom-on:#0d1016;
     --warn:#e8a94a;
-    /* Text color for the four ACTIVE level-quick-filter buttons (see
-       .level-btn.active.lvl-* below) — sits on top of the level color
-       itself, so it needs to flip per-theme rather than being a fixed
-       shade. Themeable like every other var here: see THEME_COLOR_KEYS /
-       THEME_ON_KEYS and applyTheme() in the Theme script section. */
+    /* Text/label color for the level-quick-filter buttons (see
+       .level-btn.active.lvl-* below — checked/solid-filled only; unchecked
+       is an unfilled ring, so this only matters once a level is on) — sits
+       on top of the level color itself, so it needs to flip per-theme
+       rather than being a fixed shade. Themeable like every other var here:
+       see THEME_COLOR_KEYS / THEME_ON_KEYS and applyTheme() in the Theme
+       script section. */
     --level-error-on:#2a0a0a;
     --level-warn-on:#2a1c04;
     --level-info-on:#04122a;
@@ -446,8 +448,9 @@
      the one shared "icon button" shape (28x28, border-radius:7px,
      flex-centered) — reused as-is by the log-display toggles
      (.toggle-pin/.toggle-notes/etc., now inside #contextToolbar/
-     #filteredToolbar rather than the view bar), and by .level-btn/.crumb's
-     own 28px pill shape further down — one height, one centering mechanism,
+     #filteredToolbar rather than the view bar), and by .crumb's own 28px
+     pill shape further down (.level-btn shares the same 28px height as a
+     circle instead, see its own CSS comment) — one height, one centering mechanism,
      shared by role instead of each control's own hand-tuned padding/
      line-height arithmetic (see the removed "height-parity bugfix" comment
      history on .crumb/.level-btn/.toggle-pin this replaces). #btnOpen/
@@ -463,9 +466,33 @@
   .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
   .toolbar-icon-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
   /* Toggled state for icon buttons that are persistent on/off switches
-     rather than popup triggers (currently just #btnPinBookmarks) — reuses
-     the accent colors already used for the breadcrumb's ".crumb.current". */
+     rather than popup triggers — reuses the accent colors already used for
+     the breadcrumb's ".crumb.current". Superseded by .icon-toggle below for
+     the 17 buttons that are genuinely persistent toggles (person-reported:
+     this frame+fill treatment made them indistinguishable from plain action
+     buttons in their inactive state); this rule stays as the fallback for
+     any other .toolbar-icon-btn.active use (e.g. popup-trigger buttons that
+     stay visually "pressed" while their popup is open). */
   .toolbar-icon-btn.active{background:var(--accent-soft); border-color:var(--accent-strong); color:var(--accent-strong);}
+  /* Persistent on/off toggles (Notes/Multiline/Wrap/Columns/TextMatch/
+     HighlightMatch/FilePaths/Pin in #contextToolbar+#filteredToolbar, plus
+     the Text-View's Wrap/Pretty-print) — person-requested, this session: no
+     visible button chrome in either state, only the icon's own color
+     (--accent-strong when active, matching every other "active foreground"
+     use in the app) plus a thin accent-colored bar under the icon acting as
+     an on/off "status light". The bar is a `::after` pseudo-element (taken
+     out of flex flow via position:absolute) specifically so it can sit
+     inside the existing 28x28 footprint without disturbing the icon's own
+     centering — .toolbar-icon-btn's flex-centering already centers on the
+     WHOLE 28x28 box once the bar no longer participates in that layout. */
+  .toolbar-icon-btn.icon-toggle{background:none; border:none; color:var(--text-secondary);}
+  .toolbar-icon-btn.icon-toggle:hover{background:var(--bg-elevated-2);}
+  .toolbar-icon-btn.icon-toggle.active{background:none; border-color:transparent; color:var(--accent-strong);}
+  .toolbar-icon-btn.icon-toggle::after{
+    content:""; position:absolute; left:50%; bottom:3px; transform:translateX(-50%);
+    width:60%; height:2px; border-radius:1px; background:transparent; transition:background .12s;
+  }
+  .toolbar-icon-btn.icon-toggle.active::after{background:var(--accent-strong);}
   .toolbar-badge{
     position:absolute; top:-5px; right:-5px; min-width:15px; height:15px; padding:0 3px;
     border-radius:8px; background:var(--accent); color:var(--accent-on);
@@ -496,15 +523,24 @@
   #sidebar{
     width:270px; flex:0 0 auto;
     background:var(--bg-panel);
-    border-right:1px solid var(--border);
+    /* No border-right here any more — #sidebarResizer (right after this in
+       the DOM, see its own comment) now carries it, since the resizer's own
+       --bg-panel background already continues this panel's background
+       through the full drag-handle strip. #sidebar.collapsed below restores
+       its OWN border-right for when the resizer is hidden entirely
+       (collapsed — there is then no resizer to carry it). */
     display:flex; flex-direction:column; min-height:0; position:relative;
   }
   /* Collapsed width (40px) is set directly on #sidebar.style.width from JS
      (toggleSidebarCollapsed), same mechanism as the manual drag-resize below
      — no competing CSS width rule needed. While collapsed, #sidebar stays
      overflow:visible so the hover-peek overlay (#sidebarNormalContent while
-     .peeking) can render past the 40px box without reflowing #content. */
-  #sidebar.collapsed{overflow:visible;}
+     .peeking) can render past the 40px box without reflowing #content.
+     border-right restores the seam #sidebarResizer normally carries (see
+     its own comment) — #sidebarResizer.hidden below removes it entirely
+     while collapsed (a collapsed sidebar isn't manually resizable), so the
+     40px rail needs its own border against #content. */
+  #sidebar.collapsed{overflow:visible; border-right:1px solid var(--border);}
   #sidebarHeader{
     flex:0 0 auto; height:34px; display:flex; align-items:center; gap:8px;
     padding:0 8px 0 14px; border-bottom:1px solid var(--border-soft);
@@ -557,6 +593,21 @@
      #detailResizer below (drag to resize, accent-colored on hover/drag). */
   #sidebarResizer{
     flex:0 0 auto; width:7px; cursor:col-resize; position:relative; touch-action:none;
+    /* Follow-up (person-reported, this session — a screenshot still showed
+       what read as a bare gap here): the resizer's own hit area used to be
+       fully transparent except for the small grip bar, so #sidebar's own
+       border-right (which used to live on #sidebar itself) sat flush
+       against the SIDEBAR's edge, 7px away from where the visual boundary
+       against #content actually looks like it should be — the whole 7px
+       strip in between showed #content's plain --bg-app through, a stark,
+       seam-less gap against #sidebar's --bg-panel on the other side. Giving
+       the resizer ITSELF --bg-panel + the border (moved here from #sidebar,
+       which no longer sets its own — see #sidebar's own comment) extends
+       the sidebar's background seamlessly through the full resizer width,
+       with a single clean border line exactly at the resizer's own far
+       edge (touching #content) — the grip overlays this, instead of
+       floating in an unstyled void. */
+    background:var(--bg-panel); border-right:1px solid var(--border);
   }
   /* Permanent grip affordance, not just an on-hover reveal (this session):
      a bare transparent hit area read as a stray dark seam at rest (this
@@ -568,7 +619,7 @@
   #sidebarResizer::after{
     content:""; position:absolute; left:2px; width:3px; top:50%; height:30px;
     transform:translateY(-50%); border-radius:2px;
-    background:var(--border); transition:background .12s;
+    background:var(--border-hover); transition:background .12s;
   }
   #sidebarResizer:hover::after, #sidebarResizer.dragging::after{ background:var(--accent); }
   /* Hidden outright while the sidebar is collapsed (toggleSidebarCollapsed):
@@ -889,12 +940,16 @@
   /* #btnApplyLevelToTree ("Add to tree", Settings → Behavior: Manual mode
      only) sits after #levelBar in the same float flow. It's toggled via
      display:none/"" by JS (see updateLevelBarVisibility/similar), not
-     removed from the DOM, so it must carry the SAME float:left + margin
-     as #fhTabs/#levelBar — otherwise, being an unfloated block sibling of
+     removed from the DOM, so it must carry the SAME float:left as
+     #fhTabs/#levelBar — otherwise, being an unfloated block sibling of
      floats, it drops below the #levelBar float instead of continuing the
      line. Floating it keeps the row's line-length dynamic no matter how
-     many buttons this line ends up with. */
-  #btnApplyLevelToTree{float:left; margin:0 14px 0 0;}
+     many buttons this line ends up with. Margin is 0 (not the old bespoke
+     14px gap) — the `.row-action-separator` right after it now provides the
+     gap to the standard filters group, same as every other group boundary
+     in this row (person-requested, this session: one consistent divider
+     rhythm instead of #levelBar's own special-cased blank gap). */
+  #btnApplyLevelToTree{float:left; margin:0;}
   /* The row-actions group (Bookmark/Note/Filter after/before/for this
      message/Time filter from selection/Add to selection — person-requested
      "Filter-Toolbar" placement, right of the level filter) is #viewBar's
@@ -975,9 +1030,9 @@
   #breadcrumb .crumb-sep{margin:10px 3px 10px;}
   .crumb{
     /* Shared 28px pill shape (this session — see "Main window visual
-       consistency fix"), same box model as .level-btn right below: a fixed
-       height plus flex-centering instead of the line-height/padding
-       arithmetic three earlier rounds hand-tuned to coincidentally match
+       consistency fix"): a fixed height plus flex-centering instead of the
+       line-height/padding arithmetic three earlier rounds hand-tuned to
+       coincidentally match
        #fhTabs (that history — chasing padding/line-height/vertical-align
        parity pixel by pixel — is in git blame, not worth keeping alive as
        a comment now that the arithmetic itself is gone). inline-flex (not
@@ -1037,22 +1092,38 @@
 
   /* ---------- Level filter bar ---------- */
   #levelBar{
-    /* Sits right of the filter groups now (person-requested) with a fixed
-       ~3-button gap to their left, so changing pill numbers never shift the
-       filter buttons. 84px ≈ three 28px buttons. */
-    float:left; margin:0 14px 0 84px;
+    /* Sits left of the filter-creation actions (Before/After/Time range/...
+       group), person-requested (this session, reversing an earlier
+       right-of-the-filter-group placement). The buttons below are fixed
+       28x28 circles now, not variable-width pills, so there's no width-
+       shift risk left to guard against with a wide reserved margin — the
+       4px trailing margin here is just the row's ordinary button-to-button
+       gap (matching `.row-actions{gap:4px}`), grouping #levelBar tightly
+       with #btnApplyLevelToTree right after it; the boundary to the
+       standard filters is the `.row-action-separator` that follows THAT
+       button, not a bigger blank gap here (person-requested, this session:
+       no bespoke spacing for the level filter any more — same divider
+       rhythm as every other group boundary in the row). */
+    float:left; margin:0 4px 0 0;
     display:flex; align-items:center; gap:6px; flex-wrap:wrap;
   }
   .level-btn{
-    /* Same shared 28px pill shape as .crumb above. */
-    display:flex; align-items:center; justify-content:center; gap:6px; user-select:none;
-    font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
-    height:28px; padding:0 9px; border-radius:20px; cursor:pointer;
-    background:transparent;
-    border:1px solid var(--border); transition:background .12s, border-color .12s, color .12s, filter .12s;
+    /* Circular icon-button matching .row-action-btn's own 28x28 shape
+       (border-radius:50%/position:relative come from .row-action-btn,
+       applied via that shared class below). Unchecked = a full-strength
+       colored RING (border-color per level, transparent fill); checked =
+       that same color fills the whole circle solid (person-requested: a
+       dimmed-opacity fill for "unchecked" read too similar across levels to
+       tell apart at a glance — a ring vs. a solid disc is unambiguous even
+       at a glance). `box-sizing:border-box` keeps the 2px ring inside the
+       28x28 box instead of growing it. Name+count live in the hover-
+       revealed .row-action-label instead of being drawn inline
+       (person-requested, earlier session). */
+    display:flex; align-items:center; justify-content:center;
+    width:28px; height:28px; flex:0 0 auto; padding:0; box-sizing:border-box;
+    border:2px solid transparent; background:transparent;
+    cursor:pointer; user-select:none; transition:background .12s, border-color .12s, filter .12s;
   }
-  .level-btn .dot{width:6px; height:6px; border-radius:50%; background:currentColor; flex:0 0 auto;}
-  .level-btn .cnt{font-variant-numeric:tabular-nums; opacity:.75;}
   .level-btn:hover{filter:brightness(1.25);}
 
   /* Row-action buttons (the Filter-Toolbar's Bookmark/Note/Filter-after/
@@ -1178,19 +1249,19 @@
     position:static; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
-  .level-btn.lvl-error{color:var(--level-error); border-color:color-mix(in srgb, var(--level-error) 35%, transparent);}
-  .level-btn.lvl-warn{color:var(--level-warn); border-color:color-mix(in srgb, var(--level-warn) 35%, transparent);}
-  .level-btn.lvl-info{color:var(--level-info); border-color:color-mix(in srgb, var(--level-info) 35%, transparent);}
-  .level-btn.lvl-debug{color:var(--level-debug); border-color:color-mix(in srgb, var(--level-debug) 40%, transparent);}
-  .level-btn.lvl-trace{color:var(--level-trace); border-color:color-mix(in srgb, var(--level-trace) 40%, transparent);}
+  .level-btn.lvl-error{border-color:var(--level-error);}
+  .level-btn.lvl-warn{border-color:var(--level-warn);}
+  .level-btn.lvl-info{border-color:var(--level-info);}
+  .level-btn.lvl-debug{border-color:var(--level-debug);}
+  .level-btn.lvl-trace{border-color:var(--level-trace);}
   /* Custom level names (see --level-custom-* above). */
-  .level-btn.lvl-custom-1{color:var(--level-custom-1); border-color:color-mix(in srgb, var(--level-custom-1) 35%, transparent);}
-  .level-btn.lvl-custom-2{color:var(--level-custom-2); border-color:color-mix(in srgb, var(--level-custom-2) 35%, transparent);}
-  .level-btn.lvl-custom-3{color:var(--level-custom-3); border-color:color-mix(in srgb, var(--level-custom-3) 35%, transparent);}
-  .level-btn.lvl-custom-4{color:var(--level-custom-4); border-color:color-mix(in srgb, var(--level-custom-4) 35%, transparent);}
-  .level-btn.lvl-custom-5{color:var(--level-custom-5); border-color:color-mix(in srgb, var(--level-custom-5) 35%, transparent);}
-  .level-btn.lvl-custom-6{color:var(--level-custom-6); border-color:color-mix(in srgb, var(--level-custom-6) 35%, transparent);}
-  .level-btn.active{border-color:transparent;}
+  .level-btn.lvl-custom-1{border-color:var(--level-custom-1);}
+  .level-btn.lvl-custom-2{border-color:var(--level-custom-2);}
+  .level-btn.lvl-custom-3{border-color:var(--level-custom-3);}
+  .level-btn.lvl-custom-4{border-color:var(--level-custom-4);}
+  .level-btn.lvl-custom-5{border-color:var(--level-custom-5);}
+  .level-btn.lvl-custom-6{border-color:var(--level-custom-6);}
+  /* Checked: the ring's own color fills the whole circle solid. */
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
   .level-btn.active.lvl-warn{background:var(--level-warn); color:var(--level-warn-on);}
   .level-btn.active.lvl-info{background:var(--level-info); color:var(--level-info-on);}
@@ -1202,6 +1273,27 @@
   .level-btn.active.lvl-custom-4{background:var(--level-custom-4); color:var(--level-custom-on);}
   .level-btn.active.lvl-custom-5{background:var(--level-custom-5); color:var(--level-custom-on);}
   .level-btn.active.lvl-custom-6{background:var(--level-custom-6); color:var(--level-custom-on);}
+  /* The hover-revealed label (see .row-action-label above) picks up the
+     same level color instead of the neutral --bg-elevated-2 default, so the
+     floating "Error 69" pill visually matches the button it belongs to. */
+  .level-btn.lvl-error .row-action-label{background:var(--level-error); color:var(--level-error-on); border-color:transparent;}
+  .level-btn.lvl-warn .row-action-label{background:var(--level-warn); color:var(--level-warn-on); border-color:transparent;}
+  .level-btn.lvl-info .row-action-label{background:var(--level-info); color:var(--level-info-on); border-color:transparent;}
+  .level-btn.lvl-debug .row-action-label{background:var(--level-debug); color:var(--level-debug-on); border-color:transparent;}
+  .level-btn.lvl-trace .row-action-label{background:var(--level-trace); color:var(--level-trace-on); border-color:transparent;}
+  .level-btn.lvl-custom-1 .row-action-label{background:var(--level-custom-1); color:var(--level-custom-on); border-color:transparent;}
+  .level-btn.lvl-custom-2 .row-action-label{background:var(--level-custom-2); color:var(--level-custom-on); border-color:transparent;}
+  .level-btn.lvl-custom-3 .row-action-label{background:var(--level-custom-3); color:var(--level-custom-on); border-color:transparent;}
+  .level-btn.lvl-custom-4 .row-action-label{background:var(--level-custom-4); color:var(--level-custom-on); border-color:transparent;}
+  .level-btn.lvl-custom-5 .row-action-label{background:var(--level-custom-5); color:var(--level-custom-on); border-color:transparent;}
+  .level-btn.lvl-custom-6 .row-action-label{background:var(--level-custom-6); color:var(--level-custom-on); border-color:transparent;}
+  /* #levelBar is rebuilt on every level toggle/file change (renderLevelBar),
+     so the JS setupHitExpandGroups binding (done once at boot, against
+     elements that don't exist yet) never reaches these buttons — reveal the
+     label via plain :hover instead, same fix already used for
+     #libraryPresetBar above. :focus-visible keyboard support still comes
+     from the generic .row-action-btn:focus-visible rule above. */
+  #levelBar .level-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
 
   /* ---------- Filter/Highlight split ---------- */
   #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
@@ -1227,7 +1319,7 @@
   #fhSplitResizer::after{
     content:""; position:absolute; left:50%; top:2px; width:30px; height:3px;
     transform:translateX(-50%); border-radius:2px;
-    background:var(--border); transition:background .12s;
+    background:var(--border-hover); transition:background .12s;
   }
   #fhSplitResizer:hover::after, #fhSplitResizer.dragging::after{ background:var(--accent); }
   #filterSlot{position:relative;} /* #tableWrap/#linkWrap toggle display:flex/none inside here, same as before */
@@ -1328,6 +1420,7 @@
   .col-resize-handle{
     position:absolute; top:0; bottom:0; width:8px; transform:translateX(-4px);
     cursor:col-resize; z-index:3; border-radius:2px;
+    background:color-mix(in srgb, var(--border-hover) 60%, transparent);
   }
   .col-resize-handle:hover, .col-resize-handle.dragging{background:var(--accent-soft);}
 
@@ -1353,6 +1446,15 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   #timelineMinimapMeta b{color:var(--text-secondary); font-weight:650;}
+  /* Per-level count segments appended after Duration (person-requested,
+     this session) — color comes from an inline style (levelColorVar()) set
+     in JS, this just matches the bold weight #timelineMinimapMeta b uses.
+     Clickable (follow-up, same session, see timelineMinimapMetaEl's own
+     click listener) — cursor+hover brightening are the only affordance
+     needed, same "filled colored control brightens on hover" convention
+     `.level-btn`/`.crumb`/etc. already use elsewhere in this file. */
+  .minimap-meta-level{font-weight:650; cursor:pointer; transition:filter .12s;}
+  .minimap-meta-level:hover{filter:brightness(1.35);}
   #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block;}
   .minimap-bg-bar{fill:var(--text-tertiary); opacity:.3;}
   .minimap-ov-bar{opacity:.95;}
@@ -2095,6 +2197,20 @@
   /* ---------- Detail panel (full selected entry) + resizer ---------- */
   #detailResizer{
     flex:0 0 auto; height:7px; cursor:row-resize; position:relative; touch-action:none;
+    /* Follow-up (person-reported, this session — a screenshot showed what
+       still read as a bare gap between the log view and the panel below):
+       the resizer's own hit area used to be fully transparent except for
+       the small grip bar, so #detailPanel's border-top (further down) sat
+       flush against ITS OWN top edge, 7px below where the visual boundary
+       actually looked like it should be — the whole 7px strip in between
+       showed #content's plain --bg-app through, a stark, seam-less gap
+       against #detailPanel's --bg-panel on one side. Giving the resizer
+       ITSELF --bg-panel + the border (moved here from #detailPanel, which
+       no longer sets its own) extends the panel's background seamlessly
+       through the full resizer height, with a single clean border line
+       exactly at the resizer's own far edge (touching #content) — the grip
+       overlays this, instead of floating in an unstyled void. */
+    background:var(--bg-panel); border-top:1px solid var(--border);
   }
   /* Permanent grip bar — same treatment/reasoning as #fhSplitResizer's own
      comment just above and #sidebarResizer's (see "Main window visual
@@ -2102,13 +2218,19 @@
   #detailResizer::after{
     content:""; position:absolute; left:50%; top:2px; width:30px; height:3px;
     transform:translateX(-50%); border-radius:2px;
-    background:var(--border); transition:background .12s;
+    background:var(--border-hover); transition:background .12s;
   }
   #detailResizer:hover::after, #detailResizer.dragging::after{ background:var(--accent); }
 
   #detailPanel{
     flex:0 0 auto; height:190px; min-height:80px; position:relative;
-    background:var(--bg-panel); border-top:1px solid var(--border);
+    /* No border-top here any more — #detailResizer (right above, see its
+       own comment) now carries it, since the resizer's own --bg-panel
+       background already continues this panel's background upward through
+       the full drag-handle strip. #detailPanel.collapsed below restores its
+       OWN border-top for when the resizer is hidden entirely (collapsed —
+       there is then no resizer to carry it). */
+    background:var(--bg-panel);
     /* flex-direction:column (not display:flex — that's set as an inline
        style from JS, "flex"/"none", to show/hide the whole panel based on
        whether any file is loaded; see renderMainView/renderTable). Without
@@ -2161,7 +2283,12 @@
      collapsed panel lets it render past the 34px box without reflowing
      #fhSplit/#extractWrap above it. See "Open collapsed views on hover" in
      PROJECT.md. */
-  #detailPanel.collapsed{overflow:visible;}
+  /* #detailResizer is hidden entirely while collapsed (updateDetailResizerVisibility
+     — a collapsed panel isn't manually resizable), so its border-top (see
+     #detailResizer's own comment) disappears along with it; restore the
+     panel's own border-top here so the collapsed 34px bar still has a
+     visible top seam against #content. */
+  #detailPanel.collapsed{overflow:visible; border-top:1px solid var(--border);}
   #detailPanel.collapsed.peeking #detailPanelInner{
     position:absolute; left:0; right:0; bottom:0; z-index:30;
     height:auto; max-height:50vh;
@@ -3451,6 +3578,14 @@
   @media (max-width:760px){
     #main{flex-direction:column;}
     #sidebar{width:100%; max-height:38vh; border-right:none; border-bottom:1px solid var(--border);}
+    /* #sidebarResizer stays a fixed 7px COLUMN-resize strip even here (a
+       pre-existing quirk, not something this session's fix changes) — its
+       own new background/border-right (see its own comment) would show as
+       a small stray colored box unrelated to the now-horizontal
+       sidebar/content seam #sidebar's border-bottom above already carries,
+       so neutralize just that, same as #sidebar's own border-right:none
+       right above. */
+    #sidebarResizer{background:none; border-right:none;}
     /* Thread/Location/Method's hide-on-narrow-viewport behavior moved into
        applyRowGrid() (see its own comment) — it now shares the same 0px-
        track mechanism as the column-visibility toggle instead of a separate
@@ -3722,7 +3857,9 @@
            #viewBar is the "Filter-Toolbar" (person-requested naming) — the
            universal, ALWAYS identical row across every tab (Context/
            Filtered/Table/Plot/Stacked): view toggle, level quick-filter,
-           and — right of the level filter — the filter-CREATING actions.
+           and — right of the level filter — the filter-CREATING actions
+           (level filter moved to sit left of the filter-creating group this
+           session; see #levelBar's own comment below).
            After/Before/Message key off a log-row selection, which Table/
            Plot have none of, so they hide there — leaving only "Time
            range", which is context-aware now (person-requested, this
@@ -3752,10 +3889,24 @@
              wildcards (see renderViewTabs's own comment), so the rest of
              the tab group never jumps sideways once they're added. -->
         <div class="view-tabs" id="fhTabs"></div>
+        <!-- Level quick-filter — sits LEFT of the filter-creation actions
+             (person-requested, this session; reverses an earlier session's
+             move to the right of that group). Buttons are fixed 28x28
+             circles (see .level-btn CSS): a colored ring when unchecked,
+             filled solid in the level's own color once checked; name+count
+             only appear in the hover-revealed label, so there's no variable
+             pill width left to guard against. -->
+        <div id="levelBar"></div>
+        <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
+        <!-- Dividing "|" (person-requested, this session): the level filter
+             is its own conceptual group same as the three below it, so it
+             gets the exact same #viewBar > .row-action-separator treatment
+             separating it from the standard filters — no bespoke blank-gap
+             margin any more, one consistent divider rhythm for the whole
+             row. -->
+        <span class="row-action-separator"></span>
         <!-- Group 1: standard filter-creation actions (Before/After/Time
-             range/Message/Extract) — directly right of the view selector so
-             they never shift when the level pills' numbers change width (the
-             level filter now sits to their RIGHT, person-requested). -->
+             range/Message/Extract) — directly right of the level filter. -->
         <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
         <!-- Group 2: pinned library presets (person-requested). Rendered
              dynamically by renderLibraryToolbarPresets; the group and its
@@ -3770,12 +3921,6 @@
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
         <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
-        <!-- Level quick-filter — sits RIGHT of the filter groups now
-             (person-requested), a fixed ~3-button gap away (#levelBar's
-             margin-left), so changing pill numbers never push the filter
-             buttons sideways. -->
-        <div id="levelBar"></div>
-        <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
         <!-- Library management, pinned to the far right (float:right):
              "Add to Library" (saves the active filter) then "Library" (opens
              the manage dialog). -->
@@ -3822,13 +3967,13 @@
             </div>
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="settings">
-              <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
-              <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line messages"></button>
-              <button type="button" class="toolbar-icon-btn toggle-wrap" title="Word wrap"></button>
-              <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
-              <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
-              <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
-              <button type="button" class="toolbar-icon-btn toggle-filepaths" title="Clickable file paths"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-notes" title="Show/hide notes"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" title="Multi-line messages"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-columns" title="Columns"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" title="Underline highlights"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" title="Clickable file paths"></button>
             </div>
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
@@ -3873,14 +4018,14 @@
                  #contextToolbar's own comment for why. -->
             <div id="filteredToolbar">
               <div class="toolbar-group" data-toolbar-group="settings">
-                <button type="button" class="toolbar-icon-btn toggle-pin" title="Pin bookmarks"></button>
-                <button type="button" class="toolbar-icon-btn toggle-notes" title="Show/hide notes"></button>
-                <button type="button" class="toolbar-icon-btn toggle-multiline" title="Multi-line messages"></button>
-                <button type="button" class="toolbar-icon-btn toggle-wrap" title="Word wrap"></button>
-                <button type="button" class="toolbar-icon-btn toggle-columns" title="Columns"></button>
-                <button type="button" class="toolbar-icon-btn toggle-textmatch" title="Show matches"></button>
-                <button type="button" class="toolbar-icon-btn toggle-highlightmatch" title="Underline highlights"></button>
-                <button type="button" class="toolbar-icon-btn toggle-filepaths" title="Clickable file paths"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-pin" title="Pin bookmarks"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-notes" title="Show/hide notes"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" title="Multi-line messages"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-columns" title="Columns"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" title="Underline highlights"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" title="Clickable file paths"></button>
               </div>
               <span class="ctx-toolbar-sep"></span>
               <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
@@ -3973,8 +4118,8 @@
           </div>
           <span id="itvToolbarSep" class="ctx-toolbar-sep hidden"></span>
           <div class="toolbar-group" data-toolbar-group="settings">
-            <button type="button" id="itvWrapBtn" class="toolbar-icon-btn" title="Word wrap"></button>
-            <button type="button" id="itvPrettyPrintBtn" class="toolbar-icon-btn" title="Pretty-print this JSON">{ }</button>
+            <button type="button" id="itvWrapBtn" class="toolbar-icon-btn icon-toggle" title="Word wrap"></button>
+            <button type="button" id="itvPrettyPrintBtn" class="toolbar-icon-btn icon-toggle" title="Pretty-print this JSON">{ }</button>
           </div>
         </div>
         <div id="inlineViewerBody">
@@ -5286,8 +5431,9 @@ const THEME_COLOR_KEYS = [
   "level-trace", "level-trace-soft",
   "warn",
 ];
-// Text color for the four ACTIVE level-quick-filter buttons (see
-// .level-btn.active.lvl-* in the stylesheet) plus anything sitting on a
+// Text color for the level-quick-filter buttons (see
+// .level-btn.active.lvl-* in the stylesheet — checked/solid-filled state
+// only) plus anything sitting on a
 // solid var(--accent) surface (brand mark, Save button, active chips —
 // see --accent-on's comment in :root) — controlled by a theme's
 // "activeTextLight" flag rather than exposed as individual JSON keys,
@@ -12627,6 +12773,26 @@ function applyLevelSelectionToTree(levels) {
   render();
 }
 
+// Clicking a level's count in the timeline minimap's header line
+// (person-requested, this session) — unlike applyLevelSelectionToTree above
+// (which edits/creates a level node at the CURRENT tree position), this
+// always targets the ROOT FILE directly, regardless of where state.activeId
+// currently sits, since the minimap's counts are the file's own global
+// totals, not scoped to the active node. Reuses an existing single-level
+// child of the root (same level, and only that level) instead of creating a
+// duplicate on repeated clicks — just re-activates it.
+function applyLevelFilterUnderRootFile(rootId, level) {
+  const root = state.nodes[rootId];
+  if (!root) return;
+  const existing = root.children
+    .map(id => state.nodes[id])
+    .find(n => n && n.type === "filter" && n.filterType === "level" && n.value.length === 1 && n.value[0] === level);
+  if (existing) activateNewNode(existing);
+  else createFilterNode(rootId, "level", [level]);
+  revealFilteredView(); // same reasoning as applyLevelSelectionToTree above
+  render();
+}
+
 function renderLevelBar() {
   levelBarEl.innerHTML = "";
   const counts = getLevelCounts(levelBarCountsBaseId()) || {};
@@ -12635,11 +12801,17 @@ function renderLevelBar() {
   activeLevelOrder().forEach(lvl => {
     const btn = document.createElement("button");
     const isActive = activeLevels.has(lvl);
-    btn.className = "level-btn " + levelClass(lvl) + (isActive ? " active" : "");
+    // No .toolbar-icon-btn here (unlike every other .row-action-btn) — the
+    // button is a colored ring (unchecked) or a solid fill (checked) in the
+    // level's own color (see .level-btn CSS), which would otherwise fight
+    // .toolbar-icon-btn's own background/border rules on a same-specificity
+    // tie.
+    btn.className = "level-btn row-action-btn " + levelClass(lvl) + (isActive ? " active" : "");
     btn.type = "button";
     btn.dataset.level = lvl; // queried directly by name elsewhere (tests, format editor rows) without needing a rebuild
-    btn.innerHTML =
-      '<span class="dot"></span>' + lvl + ' <span class="cnt">' + (counts[lvl] || 0).toLocaleString("de-DE") + '</span>';
+    const label = lvl + " " + (counts[lvl] || 0).toLocaleString("de-DE");
+    btn.title = label; // accessible name, since the button itself carries no visible text
+    btn.innerHTML = '<span class="row-action-hit"></span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => {
       if (levelFilterTreeMode === "auto") {
         const current = currentTreeLevelSelection();
@@ -18014,8 +18186,29 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // last entry give the file's real time span directly, no scan needed.
   minimapTMin = rootEntries[0].ts;
   minimapTMax = rootEntries[rootEntries.length - 1].ts;
-  timelineMinimapMetaEl.innerHTML = "Start <b>" + escapeHtml(formatTime(minimapTMin)) + "</b> · End <b>" +
-    escapeHtml(formatTime(minimapTMax)) + "</b> · Duration <b>" + escapeHtml(formatMs(minimapTMax - minimapTMin)) + "</b>";
+  const minimapMeta = ["Start <b>" + escapeHtml(formatTime(minimapTMin)) + "</b>",
+    "End <b>" + escapeHtml(formatTime(minimapTMax)) + "</b>",
+    "Duration <b>" + escapeHtml(formatMs(minimapTMax - minimapTMin)) + "</b>"];
+  // Per-level entry counts, one number-only segment per active level in the
+  // same order/color as #levelBar's own buttons (activeLevelOrder()) —
+  // person-requested, this session. Counts the whole ROOT FILE (rootId), not
+  // levelBarCountsBaseId() (the level bar's own "preview" counts, which
+  // track whatever the currently active node/filter narrows to) — follow-up,
+  // person-requested: the rest of this line (Start/End/Duration) already
+  // describes the file's global time span regardless of the active filter,
+  // so the level counts should match that same "whole file" scope instead of
+  // silently changing meaning with the active node.
+  const minimapLvlCounts = getLevelCounts(rootId) || {};
+  activeLevelOrder().forEach(lvl => {
+    const colorVar = levelColorVar(lvl) || "var(--text-secondary)";
+    // Clickable (person-requested, this session): attaches/reveals a
+    // single-level filter node for this level directly under the ROOT file
+    // — see the delegated click listener on timelineMinimapMetaEl below.
+    minimapMeta.push('<span class="minimap-meta-level" data-level="' + escapeHtml(lvl) + '" style="color:' + colorVar +
+      '" title="' + escapeHtml(lvl) + ': add/show a level filter for this file">' +
+      (minimapLvlCounts[lvl] || 0).toLocaleString("de-DE") + '</span>');
+  });
+  timelineMinimapMetaEl.innerHTML = minimapMeta.join(" · ");
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
 
@@ -18336,6 +18529,19 @@ function updateMinimapSelectionMarkers() {
       '<path class="minimap-marker-flag" d="M ' + (x - 4).toFixed(1) + ' 0 L ' + (x + 4).toFixed(1) + ' 0 L ' + x.toFixed(1) + ' 6 Z"/>';
   }).join("");
 }
+
+// Clicking a per-level count in the meta line (person-requested, this
+// session) attaches/reveals a level filter for that level directly under
+// the file — see applyLevelFilterUnderRootFile's own comment. Delegated
+// (the meta line's innerHTML is fully rebuilt on every renderTimelineMinimap
+// call, so a per-span listener would need re-wiring each time) and reads
+// minimapLastRootId rather than a closed-over rootId, since it must resolve
+// to whichever file the CURRENTLY rendered meta line actually belongs to.
+timelineMinimapMetaEl.addEventListener("click", ev => {
+  const span = ev.target.closest(".minimap-meta-level");
+  if (!span || !minimapLastRootId) return;
+  applyLevelFilterUnderRootFile(minimapLastRootId, span.dataset.level);
+});
 
 // Click-to-jump: nearest entry in time, same "select + scroll + flash"
 // path a row double-click uses elsewhere. Withheld during a column sort —
@@ -24320,7 +24526,7 @@ addToSelectionMenu.addEventListener("click", ev => {
    Toolbar"): the context-menu row actions above ALSO get a permanently
    visible, selection-dependent icon button group — same actions, same
    underlying functions, just reached without a right-click and disabled
-   instead of hidden when not applicable. Lives in #viewBar itself, right of
+   instead of hidden when not applicable. Lives in #viewBar itself, next to
    the level filter (`[data-row-actions="viewbar"]`, see that div's own HTML
    comment) rather than inside #contextToolbar/#filteredToolbar: these are
    filter-CREATING controls, universal across every tab the same way the
@@ -24336,8 +24542,8 @@ addToSelectionMenu.addEventListener("click", ev => {
 // native `title` tooltip are the exact same string, from one place, rather
 // than two copies that could drift. `.row-action-btn` (see its own CSS
 // comment near .level-btn) renders each button as a plain, FIXED-SIZE
-// circle — same 28px height/radius as the level-filter pills right next to
-// it, radius exactly matching their rounded end-caps — with only the icon
+// circle — same 28px circle shape the level-filter buttons themselves now
+// use (`.level-btn`, immediately to the left of this group) — with only the icon
 // visible; hovering the circle specifically (or keyboard-focusing the whole
 // button) grows a pill-shaped label out of it, person-requested to read
 // like "which pill would this become" rather than needing the title
