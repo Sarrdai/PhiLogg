@@ -60,8 +60,12 @@ fn main() {
         // opening another one — the same fix `desktop/main.js` applies in
         // its own "second-instance" handler.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            match windows::file_arg(argv) {
-                Some(path) => windows::open_file(app, &path),
+            match windows::classify_launch(argv) {
+                Some(windows::LaunchArg::LogFile(path)) => windows::open_file(app, &path),
+                Some(windows::LaunchArg::LocalTarget(path)) if path.is_dir() => {
+                    windows::open_local(app, vec![], vec![path])
+                }
+                Some(windows::LaunchArg::LocalTarget(path)) => windows::open_local(app, vec![path], vec![]),
                 None => windows::focus_main(app),
             }
         }))
@@ -106,7 +110,14 @@ fn main() {
 
             tray::create(&handle)?;
             windows::create_splash(&handle);
-            windows::create_main(&handle, windows::file_arg(std::env::args()));
+            match windows::classify_launch(std::env::args()) {
+                Some(windows::LaunchArg::LogFile(path)) => windows::create_main(&handle, Some(path)),
+                Some(windows::LaunchArg::LocalTarget(path)) if path.is_dir() => {
+                    windows::open_local(&handle, vec![], vec![path])
+                }
+                Some(windows::LaunchArg::LocalTarget(path)) => windows::open_local(&handle, vec![path], vec![]),
+                None => windows::create_main(&handle, None),
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

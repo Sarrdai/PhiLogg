@@ -72,6 +72,13 @@ pub struct AppState {
     /// Last `philogg-*` dump written to disk, so an unchanged poll doesn't
     /// touch the file at all.
     pub last_settings: Mutex<Option<String>>,
+    /// A `{files, folders}` `philoggLoadLocalFiles` payload `windows::open_local`
+    /// couldn't eval yet because the very first launch was a `.zip`/folder
+    /// Explorer verb and no window (and so no loaded page) existed to eval
+    /// into — see `open_local`'s doc comment. Flushed by
+    /// `windows::flush_pending_local`, called once `commands::app_ready`
+    /// reports the page's first paint.
+    pub pending_local_load: Mutex<Option<serde_json::Value>>,
 }
 
 impl AppState {
@@ -93,6 +100,7 @@ impl AppState {
                 .map(|d| d.as_nanos().to_string())
                 .unwrap_or_else(|_| "0".to_string()),
             last_settings: Mutex::new(None),
+            pending_local_load: Mutex::new(None),
         }
     }
 
