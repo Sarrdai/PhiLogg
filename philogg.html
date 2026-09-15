@@ -2421,8 +2421,8 @@
   }
   .extract-col-rename-input:focus{outline:none;}
   .extract-sort-btn{
-    float:right; background:none; border:none; cursor:pointer; padding:0 0 0 6px;
-    font-size:10px; color:var(--text-tertiary); line-height:1;
+    float:right; background:none; border:none; cursor:pointer; padding:1px 0 1px 7px;
+    font-size:13px; color:var(--text-tertiary); line-height:1;
   }
   .extract-sort-btn:hover{color:var(--text-primary);}
   .extract-sort-btn.active{color:var(--accent-strong);}
@@ -2436,13 +2436,9 @@
   #extractTable td.col-hover, #extractTable th.col-hover{background:var(--bg-elevated-2);}
   .extract-col-float, .extract-col-int, .extract-col-hex{text-align:right; font-variant-numeric:tabular-nums;}
 
-  /* ---------- Value assertions (per-column min/max or target±tolerance) ---------- */
-  .extract-assert-btn{
-    float:right; background:none; border:none; cursor:pointer; padding:0 0 0 5px;
-    color:var(--text-tertiary); line-height:1; display:inline-flex; align-items:center;
-  }
-  .extract-assert-btn:hover{color:var(--text-primary);}
-  .extract-assert-btn.active{color:var(--warn);}
+  /* ---------- Value assertions (per-column min/max or target±tolerance) ----------
+     Set/edited via the Table toolbar's Value assertion button (#tableAssertBtn),
+     not a per-column header button anymore — see assertableSelectedColumns. ---------- */
   .assert-badge{
     display:block; font-size:9px; font-weight:650; margin-top:2px;
     color:var(--text-tertiary); font-variant-numeric:tabular-nums;
@@ -4179,12 +4175,23 @@
              (person-requested — it used to sit between the pattern view and
              the extraction table, same "toolbar directly under the filter
              bar" fix applied to #contextToolbar/#filteredToolbar). Actions-
-             only: "Export as CSV…", which also remains reachable via
-             #extractContextMenu. -->
+             only: "Export as CSV…" (also reachable via #extractContextMenu),
+             "Value assertion…", and "Select". -->
         <div id="tableToolbar">
           <div class="toolbar-group" data-toolbar-group="actions">
             <button type="button" id="tableExportCsvBtn" class="toolbar-icon-btn" title="Export as CSV…">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v8M8 9.5L5 6.5M8 9.5l3-3"/><path d="M2.5 11v2.5h11V11"/></svg>
+            </button>
+            <!-- Value assertion, moved here from a small per-column header
+                 button (person-requested — it was barely visible). Disabled
+                 until one or more whole columns are selected in the table
+                 (see assertableSelectedColumns/updateTableAssertButton);
+                 selecting several columns and clicking this once opens the
+                 dialog for all of them together, so the same range/target
+                 rule can be set on every selected column in one pass instead
+                 of one dialog per column. -->
+            <button type="button" id="tableAssertBtn" class="toolbar-icon-btn" title="Value assertion…" disabled>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.2"/></svg>
             </button>
             <!-- "Select" (Add to selection) action, person-requested this
                  session — the Filtered view's Select action now also lives in
@@ -11829,6 +11836,7 @@ function renderMainView() {
   } else {
     linkWrap.style.display = "none";
     state.tableSelection = null;
+    updateTableAssertButton();
     tableWrap.style.display = "flex";
     timelineMinimapEl.classList.remove("hidden");
     renderTable();
@@ -13154,6 +13162,7 @@ function selectCells(cells) {
   state.tableSelection = new Set(cells.map(([r, c]) => cellKey(r, c)));
   applyExtractSelectionClasses();
   updateRowActionButtons();
+  updateTableAssertButton();
 }
 // Toggles these cells in/out of the current selection (Ctrl+click), preserving
 // whatever else was already selected.
@@ -13164,6 +13173,7 @@ function toggleCells(cells) {
   state.tableSelection = set.size ? set : null;
   applyExtractSelectionClasses();
   updateRowActionButtons();
+  updateTableAssertButton();
 }
 function isColumnFullySelected(col) {
   const s = state.tableSelection;
@@ -13181,6 +13191,30 @@ function getSingleSelectedColumn() {
   if (!isColumnFullySelected(col)) return null;
   if (state.tableSelection.size !== extractRowsData.length) return null; // more than just this column is selected
   return col;
+}
+// Every column that's ENTIRELY selected right now (one column via a plain
+// header click, several via Ctrl+click/Shift+click-range) — unlike
+// getSingleSelectedColumn above, this allows more than one and doesn't care
+// whether anything else is selected alongside them. Input for the Table
+// toolbar's Value assertion action (see assertableSelectedColumns), which
+// can set the same rule on every selected column in one pass.
+function getSelectedColumns() {
+  if (!state.tableSelection || extractRowsData.length === 0) return [];
+  return extractColumns.filter(c => isColumnFullySelected(c.colIndex)).map(c => c.colIndex);
+}
+// Selected columns an assertion can actually apply to (isPlottableType) — a
+// non-numeric column among the selection is simply left out, same as it
+// never got an assert button in the header before this moved into the
+// toolbar.
+function assertableSelectedColumns() {
+  return getSelectedColumns().filter(ci => isPlottableType(findExtractColumn(ci).type));
+}
+// Keeps the Table toolbar's Value assertion button's disabled state in sync
+// with the current column selection — called from selectCells/toggleCells
+// and at the end of renderExtractTable (node switch, sort, tail tick, ...).
+function updateTableAssertButton() {
+  const btn = el("#tableAssertBtn");
+  if (btn) btn.disabled = assertableSelectedColumns().length === 0;
 }
 
 let selectionAnchor = null; // {row, col} last click origin, used for shift-click range extension
@@ -15286,15 +15320,22 @@ function assertionSummary(node, colIndex) {
 
 const assertDialog = el("#assertDialog");
 let assertDialogNodeId = null;
-let assertDialogCol = null;
+let assertDialogCols = []; // one or more colIndex values this dialog targets
 let assertDialogMode = "range";
 
-function openAssertDialog(node, colIndex) {
+// cols: one or more colIndex values (see the Table toolbar's Value
+// assertion action, gated on assertableSelectedColumns()). A single column
+// pre-fills its existing assertion (or blank) and shows its name; 2+
+// columns may already differ from each other, so the dialog opens blank
+// and shows a count instead — Save then writes the one configured rule to
+// every column in `cols`, letting the whole selection be set in one pass.
+function openAssertDialog(node, cols) {
   assertDialogNodeId = node.id;
-  assertDialogCol = colIndex;
-  const existing = node.assertions && node.assertions[colIndex];
+  assertDialogCols = cols;
+  const single = cols.length === 1 ? cols[0] : null;
+  const existing = single != null && node.assertions ? node.assertions[single] : null;
   assertDialogMode = existing ? existing.mode : "range";
-  el("#assertColLabel").textContent = findExtractColumn(colIndex).name;
+  el("#assertColLabel").textContent = single != null ? findExtractColumn(single).name : cols.length + " columns selected";
   el("#assertMinInput").value = existing && existing.mode === "range" && Number.isFinite(existing.min) ? existing.min : "";
   el("#assertMaxInput").value = existing && existing.mode === "range" && Number.isFinite(existing.max) ? existing.max : "";
   el("#assertTargetInput").value = existing && existing.mode === "target" && Number.isFinite(existing.target) ? existing.target : "";
@@ -15302,7 +15343,7 @@ function openAssertDialog(node, colIndex) {
   updateAssertModeUI();
   assertDialog.classList.remove("hidden");
 }
-function closeAssertDialog() { assertDialog.classList.add("hidden"); assertDialogNodeId = null; assertDialogCol = null; }
+function closeAssertDialog() { assertDialog.classList.add("hidden"); assertDialogNodeId = null; assertDialogCols = []; }
 function updateAssertModeUI() {
   el("#assertModeRange").classList.toggle("active", assertDialogMode === "range");
   el("#assertModeTarget").classList.toggle("active", assertDialogMode === "target");
@@ -15315,9 +15356,9 @@ assertDialog.addEventListener("click", ev => { if (ev.target === assertDialog) c
 el("#assertDialogCancel").addEventListener("click", closeAssertDialog);
 el("#assertDialogClear").addEventListener("click", () => {
   const node = state.nodes[assertDialogNodeId];
-  const col = assertDialogCol;
-  if (node && node.assertions && node.assertions[col] !== undefined) {
-    withFieldEditUndo(node.id, n => { delete n.assertions[col]; });
+  const cols = assertDialogCols;
+  if (node && node.assertions && cols.some(col => node.assertions[col] !== undefined)) {
+    withFieldEditUndo(node.id, n => { cols.forEach(col => { if (n.assertions) delete n.assertions[col]; }); });
   }
   closeAssertDialog();
   if (node) renderExtractTable(node);
@@ -15337,10 +15378,10 @@ el("#assertDialogSave").addEventListener("click", () => {
     if (!Number.isFinite(target)) { closeAssertDialog(); return; } // target is required for this mode
     assertion = { mode: "target", target, tolerance: Number.isFinite(tolerance) ? Math.abs(tolerance) : 0 };
   }
-  const col = assertDialogCol;
+  const cols = assertDialogCols;
   withFieldEditUndo(node.id, n => {
     if (!n.assertions) n.assertions = {};
-    n.assertions[col] = assertion;
+    cols.forEach(col => { n.assertions[col] = assertion; });
   });
   closeAssertDialog();
   renderExtractTable(node);
@@ -15440,7 +15481,7 @@ function renderExtractTable(node) {
   // (see isColumnIgnored comment). extractColumns, by contrast, is the
   // FILTERED, currently-visible subset actually rendered/exported below;
   // each surviving column keeps its original .colIndex as its stable
-  // identity (that's what data-col/data-sort-col/data-assert-col carry, and
+  // identity (that's what data-col/data-sort-col carry, and
   // what assertions/plot config/sort state are keyed by — see
   // findExtractColumn) since positions shift as columns are ignored/
   // un-ignored but that identity must not.
@@ -15489,9 +15530,10 @@ function renderExtractTable(node) {
   // REQUIREMENTS-extract-preview-and-ignore.md). Each header also carries a
   // small sort button — a separate control rather than making the whole
   // <th> clickable, since the <th> click/drag already drives column
-  // selection (see the mousedown handler below). Numeric columns
-  // additionally get a value-assertion (target icon) button; once a column
-  // has an assertion configured, a small "N of M outside range" badge
+  // selection (see the mousedown handler below). Once a numeric column has
+  // an assertion configured (set via the Table toolbar's Value assertion
+  // action, gated on that column being selected — see
+  // assertableSelectedColumns), a small "N of M outside range" badge
   // appears under its name (see assertionSummary).
   // A tail tick (onTailChange -> render()) calls renderExtractTable on every
   // new chunk of a live-tailed file, purely to refresh the row data below —
@@ -15519,9 +15561,6 @@ function renderExtractTable(node) {
     const arrow = extractSortCol === i ? (extractSortDir === "asc" ? "▲" : "▼") : "⇅";
     const hasAssertion = !!(node.assertions && node.assertions[i]);
     const summary = hasAssertion ? assertionSummary(node, i) : null;
-    const assertBtn = isPlottableType(c.type)
-      ? '<button type="button" class="extract-assert-btn' + (hasAssertion ? " active" : "") + '" data-assert-col="' + i + '" title="' + (hasAssertion ? "Edit assertion" : "Set assertion") + '">' + ICON_TARGET + "</button>"
-      : "";
     const badge = summary
       ? '<span class="assert-badge' + (summary.violations > 0 ? " has-violations" : "") + '">' + summary.violations + " of " + summary.total + " outside range</span>"
       : "";
@@ -15542,7 +15581,7 @@ function renderExtractTable(node) {
       '<th data-col="' + i + '" title="Select column · Ctrl+click add · Shift+click extend · F2 rename">' +
       numBadge + nameHtml +
       '<button type="button" class="extract-sort-btn' + (extractSortCol === i ? " active" : "") + '" data-sort-col="' + i + '" title="Sort">' + arrow + "</button>" +
-      assertBtn + badge + "</th>";
+      badge + "</th>";
   });
   headHtml += "</tr>";
   extractHead.innerHTML = headHtml;
@@ -15591,18 +15630,9 @@ function renderExtractTable(node) {
       renderExtractTable(node);
     });
   });
-  // Same stopPropagation reasoning as the sort button above — opening the
-  // assertion dialog shouldn't also select the column.
-  extractHead.querySelectorAll(".extract-assert-btn").forEach(btn => {
-    btn.addEventListener("mousedown", ev => ev.stopPropagation());
-    btn.addEventListener("click", ev => {
-      ev.stopPropagation();
-      openAssertDialog(node, +btn.dataset.assertCol);
-    });
-  });
-
   renderExtractVisibleRows();
   updateTableFilterInfo();
+  updateTableAssertButton();
 
   if (extractView === "plot") {
     renderPlotControls(); renderPlotChart(); // renderPlotChart() does its own minimap sync (Plot branch)
@@ -25642,6 +25672,12 @@ el("#ctxExportCsv").addEventListener("click", () => {
   openCsvExportDialog();
 });
 el("#tableExportCsvBtn").addEventListener("click", openCsvExportDialog);
+el("#tableAssertBtn").addEventListener("click", () => {
+  const node = state.nodes[extractNodeId];
+  const cols = assertableSelectedColumns();
+  if (node && cols.length) openAssertDialog(node, cols);
+});
+updateTableAssertButton(); // initial disabled state, before any column is selected
 function closeCsvExportDialog() { csvExportDialog.classList.add("hidden"); }
 csvExportDialog.addEventListener("click", ev => { if (ev.target === csvExportDialog) closeCsvExportDialog(); });
 el("#csvExportCancel").addEventListener("click", closeCsvExportDialog);
@@ -27740,7 +27776,7 @@ document.addEventListener("keydown", ev => {
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
     if (state.clipboard) { state.clipboard = null; needsRender = true; }
-    if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); }
+    if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); updateTableAssertButton(); }
     if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
     if (state.multiSelect.size) { state.multiSelect = new Set(); needsRender = true; }
     if (needsRender) render();
