@@ -2645,6 +2645,13 @@
     border-radius:6px; padding:6px 8px; font-size:11.5px; cursor:pointer;
   }
   .assert-mode-btn.active{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
+  /* Bugfix: updateAssertModeUI() already toggled this class on
+     #assertRangeFields/#assertTargetFields, but no rule targeted it — same
+     no-bare-.hidden scoping every other .hidden usage in this stylesheet
+     needs (see the #viewBar .row-actions.hidden comment) — so both field
+     groups stayed visible under the mode toggle regardless of which mode
+     was active. */
+  #assertRangeFields.hidden, #assertTargetFields.hidden{display:none;}
 
   /* ---------- Per-file clock offset dialog (FEATURE_BACKLOG.md #29 — see
      openClockOffsetDialog / applyClockOffset). Follows docs/ui-standard.md:
