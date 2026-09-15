@@ -1,4 +1,45 @@
-# PhiLogg — Changelog
+# Changelog
+
+## [0.2.0](https://github.com/Sarrdai/PhiLogg/compare/v0.1.0...v0.2.0) (2026-09-15)
+
+
+### Features
+
+* real semantic versioning (PHILOGG_VERSION/PHILOGG_BUILD split, release-please) ([a869194](https://github.com/Sarrdai/PhiLogg/commit/a869194e4bcae23a5347bcca0863ceb4be6e17d4))
+* real semantic versioning (PHILOGG_VERSION/PHILOGG_BUILD split, release-please) ([a8bd4ae](https://github.com/Sarrdai/PhiLogg/commit/a8bd4ae80d889f9e11153fe9888a10dafe901b4a))
+
+
+### Bug Fixes
+
+* "Include subfolders" was a no-op under the Tauri desktop wrapper ([0b627c3](https://github.com/Sarrdai/PhiLogg/commit/0b627c3635392815c409315516bc772c260eff6b))
+* "Show M newest files" caused an unbounded merge+render loop every poll ([e3378c3](https://github.com/Sarrdai/PhiLogg/commit/e3378c387e78cd8205e108986f52c496e66e88f3))
+* 10 again: use inset box-shadow instead of border-bottom for the drag line ([fa00b8a](https://github.com/Sarrdai/PhiLogg/commit/fa00b8aaa48f94e0905d9d6ee4ee3502f311a4a7))
+* 10 for real (final): revert drag-select line to the original, confirmed-visible styling ([11137d2](https://github.com/Sarrdai/PhiLogg/commit/11137d2944e2cbebd944d0980fe2a7ad96dda84c))
+* 10 for real: move the drag-select boundary LINE to the bottom, not the label ([a4ea164](https://github.com/Sarrdai/PhiLogg/commit/a4ea164cd4c6f7aa544dac8f02eb2b62b13089c8))
+* a Detach copy node can now actually be moved ([ceb959d](https://github.com/Sarrdai/PhiLogg/commit/ceb959dd8e681a856cec65a943ff3a5b7177e560))
+* arrow keys drove the hidden pane, so the table stopped scrolling ([03242fe](https://github.com/Sarrdai/PhiLogg/commit/03242fe19f6453f426a07870972ec0379895d020))
+* exclude the temp anchor from the minimap's rendered-range box too ([a822bc6](https://github.com/Sarrdai/PhiLogg/commit/a822bc6cfc4bc3c1ef1cef846928edf929318b89))
+* extraction column rename gets cancelled instantly while file is tailed ([c3935a0](https://github.com/Sarrdai/PhiLogg/commit/c3935a01cf166d937c6fe36d949d2aa41e9a6076))
+* give the auto Bookmarks filter node its own icon, not the clock icon ([3b80e0e](https://github.com/Sarrdai/PhiLogg/commit/3b80e0e0f929dfc649bec71415d2da735a32d5d6))
+* individual files could fail to load under the Tauri desktop wrapper ([395b916](https://github.com/Sarrdai/PhiLogg/commit/395b916a8e76304e344c24dcdc6a11a9e27ea03e))
+* live tail dot never expired for a file that stopped growing ([9b6c5ca](https://github.com/Sarrdai/PhiLogg/commit/9b6c5ca5fa3eb57d5c019aee0f4d44f090e87aaa))
+* Log font no longer reformats unrelated UI chrome ([9e53be9](https://github.com/Sarrdai/PhiLogg/commit/9e53be9754711640cdf1aec83d3941049060d8b8))
+* log rows could render narrower than the view, cutting off the selected-row outline ([fab6bbd](https://github.com/Sarrdai/PhiLogg/commit/fab6bbd1ad312f039bba5dfc1020cab270904ebc))
+* log-simulator wrote corrupted files under concurrent writes ([948cc33](https://github.com/Sarrdai/PhiLogg/commit/948cc3392a0c1fb137cf855bf0368af910188042))
+* minimap selection pin hides when nothing is actually marked ([c54ddb7](https://github.com/Sarrdai/PhiLogg/commit/c54ddb72601bedb2184d331f74083ce5a55b1173))
+* native "keep N newest" picked stale subfolder files; make subfolder scans faster ([6b14614](https://github.com/Sarrdai/PhiLogg/commit/6b146145bfe87efadf40e7df2da7ae3ffca45141))
+* re-clicking already-active filter now reveals Filtered view ([ddf9c61](https://github.com/Sarrdai/PhiLogg/commit/ddf9c616d5cb980afdd7e8bb666846e72ea490a3))
+* Settings inline panels/toggle were always visible (missing CSS rules) ([9f6e256](https://github.com/Sarrdai/PhiLogg/commit/9f6e2567931c70129f8c0033f5572e819ff49e52))
+* syntax highlighting didn't follow app theme across Catppuccin flavors ([481db35](https://github.com/Sarrdai/PhiLogg/commit/481db3591c4b955bfea2aa3421c224bcc009b8e2))
+* temp anchor no longer skews the timeline minimap's time range ([812d4b7](https://github.com/Sarrdai/PhiLogg/commit/812d4b7e987a46768b7dd82e520d68aaeb7e9868))
+* View Toolbar icons shifted right at rest ([025aa89](https://github.com/Sarrdai/PhiLogg/commit/025aa89e0edf240ab9084df18a7e9b2a02ddcd57))
+
+
+### Performance Improvements
+
+* rAF-batch the panel-resizer drag handlers ([4d8f0e7](https://github.com/Sarrdai/PhiLogg/commit/4d8f0e7b2b0e3d1a094e62e1c6c80fbf44201509))
+
+## PhiLogg — Changelog
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
