@@ -1,0 +1,25 @@
+name: Release Please
+
+# Automatic — runs on every push to main. Maintains a standing "release PR"
+# that accumulates Conventional-Commit-tagged changes (feat:/fix:, see
+# CLAUDE.md's commit convention) and, once that PR is merged, bumps
+# PHILOGG_VERSION in philogg.html plus the desktop package/Tauri/Cargo
+# version fields (release-please-config.json's extra-files), tags the
+# commit, and publishes a GitHub Release. Does not touch CHANGELOG.md —
+# that stays hand-written; release notes live on the GitHub Release itself.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

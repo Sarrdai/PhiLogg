@@ -1327,13 +1327,19 @@ await withApp(async (w, d, T) => {
    session (FEATURE_BACKLOG.md #48 follow-up): License is now its own
    Settings section (GROUP 115 covers Settings' own section list/order),
    reached only through Settings, with no direct header shortcut to it.
-   Also a short commit-hash "version" shown both next to the product name
-   and inside the license section — PHILOGG_VERSION defaults to the
-   literal "dev" in source control; only the "Build Tester Files" / "Build
-   Release" GitHub Actions (.github/workflows/build-tester-files.yml,
-   build-release.yml) stamp it to a real short SHA, in a build artifact
-   that's never committed back. This suite runs against
-   the literal source file, so it always sees "dev".
+   UPDATED this session (2026-09-15, person-requested: real semantic
+   versioning, FEATURE_BACKLOG.md #72): the single "version" constant
+   split in two. `PHILOGG_VERSION` is now a real, committed semver (e.g.
+   "0.1.0"), bumped only by a merged release-please PR — shown next to the
+   product name, no "v" prefix, and repeated in the License section. The
+   short commit hash moved to its own `PHILOGG_BUILD` constant, shown only
+   in the License section (never the toolbar) — it still defaults to the
+   literal "dev" in source control and is stamped to a real short SHA only
+   by the "Build Tester Files" / "Build Release" GitHub Actions
+   (.github/workflows/build-tester-files.yml, build-release.yml), in a
+   build artifact never committed back. This suite runs against the
+   literal source file, so PHILOGG_VERSION is whatever real version is
+   currently committed and PHILOGG_BUILD always reads "dev".
    ============================================================ */
 group(65);
 await withApp(async (w, d, T) => {
@@ -1342,13 +1348,15 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#btnShortcuts"), "the header help button is gone (FEATURE_BACKLOG.md #48 follow-up)");
   assert(!d.querySelector("#btnLicense"), "the header license button is gone (moved into Settings)");
 
-  // --- Version display (unstamped source -> literal "dev") ---
-  assert(d.querySelector("#brandVersion").textContent === "dev", "brand-name version tag shows PHILOGG_VERSION verbatim, no \"v\" prefix");
+  // --- Version display: real committed semver, no "v" prefix ---
+  const brandVersion = d.querySelector("#brandVersion").textContent;
+  assert(/^\d+\.\d+\.\d+$/.test(brandVersion), "brand-name version tag shows PHILOGG_VERSION verbatim as a bare semver (no \"v\" prefix), got " + JSON.stringify(brandVersion));
 
   w.openSettingsDialog();
   const licenseSection = d.querySelector("#settingsSectionLicense");
   assert(licenseSection, "a dedicated License section exists in Settings");
-  assert(d.querySelector("#licenseVersion").textContent === "Version: dev", "the section's own version line shows the same PHILOGG_VERSION");
+  assert(d.querySelector("#licenseVersion").textContent === "Version: " + brandVersion, "the section's own version line shows the same PHILOGG_VERSION as the toolbar");
+  assert(d.querySelector("#licenseBuild").textContent === "Build: dev", "the section's build line shows PHILOGG_BUILD, unstamped source -> literal \"dev\"");
   const licenseText = licenseSection.textContent;
   assert(licenseText.includes("Philipp Klein"), "License section names the rights holder");
   assert(licenseText.includes("philogg@kleinphilipp.de"), "License section shows the contact address");
@@ -16413,8 +16421,8 @@ if (groupSelected()) { // the one group with no withApp of its own to gate it
   assert(!stripped.includes("<!--"), "no HTML comment marker survives outside script/style");
   assert(strip.stripDocument(stripped) === stripped,
     "stripping is idempotent — a second pass changes nothing");
-  assert(/const PHILOGG_VERSION = "[^"]*";/.test(stripped),
-    "the version line both release workflows grep for after stripping is still there");
+  assert(/const PHILOGG_BUILD = "[^"]*";/.test(stripped),
+    "the build-hash line both release workflows grep for after stripping is still there");
 
   // Every character of the output must appear in the input in the same
   // order, minus the separators the stripper is allowed to insert. Cheap,
@@ -24869,6 +24877,37 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 218 — PHILOGG_VERSION / PHILOGG_BUILD literal shape
+   Origin: this session (2026-09-15, person-requested: real semantic
+   versioning, FEATURE_BACKLOG.md #72). Companion to GROUP 65 (which checks
+   the DOM-rendered values) and GROUP 146 (which checks the same
+   PHILOGG_BUILD line survives comment-stripping): this group pins the
+   exact literal shape in the SOURCE file that both the release workflows'
+   `sed` and release-please's "generic" extra-file marker
+   (`x-release-please-version`) depend on, so a future refactor can't
+   silently break either replace target. Top-level `const` isn't exposed
+   on the jsdom bridge (see withApp's own comment / GROUP 91's provenance
+   note), so this reads philogg.html's raw text directly instead — no
+   window needed, like GROUP 146.
+   ============================================================ */
+group(218);
+if (groupSelected()) { // no jsdom window needed, like GROUP 146
+  section("218. Exact literal shape both the build sed and release-please's marker depend on");
+  const fs = require("fs");
+  const path = require("path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "philogg.html"), "utf8");
+
+  assert(/const PHILOGG_VERSION = "\d+\.\d+\.\d+";/.test(src),
+    "philogg.html contains the exact `const PHILOGG_VERSION = \"X.Y.Z\";` literal release-please's extra-file rewrites");
+  assert(src.includes('// x-release-please-version\nconst PHILOGG_VERSION'),
+    "the x-release-please-version marker comment sits directly above the PHILOGG_VERSION literal, so release-please's \"generic\" updater only touches this one line, not every X.Y.Z-shaped string in the file");
+  assert(/const PHILOGG_BUILD = "[^"]*";/.test(src),
+    "philogg.html contains the exact `const PHILOGG_BUILD = \"...\";` literal the two manual build workflows' sed step rewrites");
+  assert(!/const PHILOGG_VERSION = "dev";/.test(src),
+    "PHILOGG_VERSION is never left at the old placeholder literal — it is always a real, committed semver");
+}
+
+/* ============================================================
    Summary
    ============================================================ */
 console.log("\n" + "=".repeat(60));
@@ -25890,6 +25929,14 @@ process.exitCode = failed ? 1 : 0;
               short-commit-hash "version" (`PHILOGG_VERSION`, literal "dev"
               in source, stamped only by the release GitHub Action) shown
               next to the product name and inside the license popup.
+              UPDATED 2026-09-15, person-requested: real semantic
+              versioning (FEATURE_BACKLOG.md #72). The one constant split
+              in two — `PHILOGG_VERSION` is now a real, committed semver
+              bumped only via a merged release-please PR, shown next to the
+              product name and in the License section; the short commit
+              hash moved to a new `PHILOGG_BUILD` constant, shown only in
+              the License section (new #licenseBuild line). See Group 218
+              for the source-literal-shape coverage this split needs.
    Group 66  — this session (2026-08-20), person-requested: philogg.html
               ?url=<encoded-url> fetches and opens a log at boot — the
               shared loading mechanism for CI/report deep-links to a log
@@ -26998,6 +27045,13 @@ process.exitCode = failed ? 1 : 0;
               then the real philogg.html end to end — idempotent, a
               subsequence of the original, version line intact, and still
               parseable as JavaScript.
+              UPDATED 2026-09-15, person-requested: real semantic
+              versioning (FEATURE_BACKLOG.md #72) split the old single
+              version constant in two — the "version line" this group
+              checks survives stripping is now `PHILOGG_BUILD` (the short
+              commit hash, still stamped by the release workflows), not
+              `PHILOGG_VERSION` (now a real, committed semver the release
+              workflows no longer touch). See Group 218.
 
    Group 147 — this session (2026-09-01), person-requested follow-up to
               Group 138: the "Collapsed, opened around a jump" setting only
@@ -28204,4 +28258,15 @@ process.exitCode = failed ? 1 : 0;
       both moved borders/backgrounds, that the base (expanded) panel rules
       no longer declare the border themselves (no double border), and that
       each `.collapsed` fallback is in place.
+   Group 218 — this session (2026-09-15), person-requested: real semantic
+      versioning (FEATURE_BACKLOG.md #72), companion to the Group 65
+      update. Pins the exact literal shape in philogg.html's SOURCE that
+      both the two manual build workflows' `sed` step and release-please's
+      "generic" extra-file marker (`x-release-please-version`) depend on:
+      `const PHILOGG_VERSION = "X.Y.Z";` preceded by the marker comment,
+      `const PHILOGG_BUILD = "...";` on its own, and that PHILOGG_VERSION
+      is never left at the old "dev" placeholder. No jsdom window needed,
+      same reasoning as Group 146 (also updated this session: its own
+      stripped-file assertion now greps for PHILOGG_BUILD, since that is
+      what the build workflows stamp post-split, not PHILOGG_VERSION).
    ============================================================ */

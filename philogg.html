@@ -3539,6 +3539,9 @@
     padding-top:8px; border-top:1px solid var(--border-soft);
     color:var(--text-tertiary); font-size:10.5px; font-family:var(--font-mono);
   }
+  .license-build{
+    color:var(--text-tertiary); font-size:10.5px; font-family:var(--font-mono);
+  }
 
   /* ---------- Drop overlay ---------- */
   #dropOverlay{
@@ -5183,6 +5186,7 @@
               <li><strong>Rückruf:</strong> Der Rechteinhaber kann die Nutzung jederzeit ohne Angabe von Gründen untersagen.</li>
             </ol>
             <div class="license-version" id="licenseVersion"></div>
+            <div class="license-build" id="licenseBuild"></div>
           </div>
         </section>
 
@@ -5271,13 +5275,24 @@
 <script>
 "use strict";
 
-// Build identifier shown next to the product name and in the License panel —
-// the short hash of the commit this file was built from. Stays "dev" for a
-// plain checkout/local edit; stamped to a real short SHA only by the
-// "Build Tester Files" / "Build Release" GitHub Actions
-// (.github/workflows/build-tester-files.yml, build-release.yml), which
-// replace this exact literal via sed and never touch source control.
-const PHILOGG_VERSION = "dev";
+// Real, committed semver — shown next to the product name. Bumped only by
+// merging a release-please-authored release PR (.github/workflows/
+// release-please.yml, release-please-config.json); never hand-edited
+// outside that PR (or the one-time 0.1.0 cutover). See CLAUDE.md's commit
+// convention (feat:/fix: prefixes) for what drives a bump. The marker
+// comment below is release-please's "generic" extra-file anchor — it scans
+// for this exact comment and replaces only the version literal on the next
+// line, not every "X.Y.Z"-shaped string in this 29k-line file.
+// x-release-please-version
+const PHILOGG_VERSION = "0.1.0";
+
+// Build identifier shown only in the License panel — the short hash of the
+// commit this file was built from. Stays "dev" for a plain checkout/local
+// edit; stamped to a real short SHA only by the "Build Tester Files" /
+// "Build Release" GitHub Actions (.github/workflows/build-tester-files.yml,
+// build-release.yml), which replace this exact literal via sed and never
+// touch source control.
+const PHILOGG_BUILD = "dev";
 
 /* ===================== Icons ===================== */
 const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>';
@@ -29579,6 +29594,7 @@ btnApplyLevelToTree.addEventListener("click", () => {
 });
 el("#brandVersion").textContent = PHILOGG_VERSION;
 el("#licenseVersion").textContent = "Version: " + PHILOGG_VERSION;
+el("#licenseBuild").textContent = "Build: " + PHILOGG_BUILD;
 btnUndo.addEventListener("click", undo);
 btnRedo.addEventListener("click", redo);
 updateUndoRedoButtons();
