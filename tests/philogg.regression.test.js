@@ -24889,6 +24889,14 @@ await withApp(async (w, d, T) => {
    on the jsdom bridge (see withApp's own comment / GROUP 91's provenance
    note), so this reads philogg.html's raw text directly instead — no
    window needed, like GROUP 146.
+   UPDATED same day, same session, bug found via the actual release-please
+   run: the marker MUST be a trailing comment on the SAME line as the
+   value — release-please's generic updater "replaces the value on that
+   line only" (its own docs' wording), so a marker on the line ABOVE finds
+   no version-shaped token on its own line and silently rewrites nothing.
+   The first live run proved this: PHILOGG_VERSION stayed stuck at 0.1.0
+   in philogg.html while the manifest/desktop files correctly advanced to
+   0.2.0. Assertion below updated to match the corrected same-line form.
    ============================================================ */
 group(218);
 if (groupSelected()) { // no jsdom window needed, like GROUP 146
@@ -24897,10 +24905,8 @@ if (groupSelected()) { // no jsdom window needed, like GROUP 146
   const path = require("path");
   const src = fs.readFileSync(path.join(__dirname, "..", "philogg.html"), "utf8");
 
-  assert(/const PHILOGG_VERSION = "\d+\.\d+\.\d+";/.test(src),
-    "philogg.html contains the exact `const PHILOGG_VERSION = \"X.Y.Z\";` literal release-please's extra-file rewrites");
-  assert(src.includes('// x-release-please-version\nconst PHILOGG_VERSION'),
-    "the x-release-please-version marker comment sits directly above the PHILOGG_VERSION literal, so release-please's \"generic\" updater only touches this one line, not every X.Y.Z-shaped string in the file");
+  assert(/const PHILOGG_VERSION = "\d+\.\d+\.\d+"; \/\/ x-release-please-version/.test(src),
+    "philogg.html contains the exact `const PHILOGG_VERSION = \"X.Y.Z\"; // x-release-please-version` literal, marker TRAILING on the same line — release-please's generic updater only replaces the value on the marker's own line");
   assert(/const PHILOGG_BUILD = "[^"]*";/.test(src),
     "philogg.html contains the exact `const PHILOGG_BUILD = \"...\";` literal the two manual build workflows' sed step rewrites");
   assert(!/const PHILOGG_VERSION = "dev";/.test(src),
@@ -28263,10 +28269,17 @@ process.exitCode = failed ? 1 : 0;
       update. Pins the exact literal shape in philogg.html's SOURCE that
       both the two manual build workflows' `sed` step and release-please's
       "generic" extra-file marker (`x-release-please-version`) depend on:
-      `const PHILOGG_VERSION = "X.Y.Z";` preceded by the marker comment,
-      `const PHILOGG_BUILD = "...";` on its own, and that PHILOGG_VERSION
-      is never left at the old "dev" placeholder. No jsdom window needed,
-      same reasoning as Group 146 (also updated this session: its own
-      stripped-file assertion now greps for PHILOGG_BUILD, since that is
-      what the build workflows stamp post-split, not PHILOGG_VERSION).
+      `const PHILOGG_VERSION = "X.Y.Z";` and `const PHILOGG_BUILD =
+      "...";` on its own line. No jsdom window needed, same reasoning as
+      Group 146 (also updated this session: its own stripped-file
+      assertion now greps for PHILOGG_BUILD, since that is what the build
+      workflows stamp post-split, not PHILOGG_VERSION).
+      UPDATED same day: the FIRST live release-please run proved the
+      marker must be a TRAILING same-line comment
+      (`const PHILOGG_VERSION = "0.1.0"; // x-release-please-version`),
+      not a comment on the line above — release-please's generic updater
+      only replaces a value on the marker's own line, so the original
+      above-the-line placement silently rewrote nothing (the run bumped
+      the manifest/desktop files to 0.2.0 but left philogg.html's
+      PHILOGG_VERSION stuck at 0.1.0). Assertion corrected to match.
    ============================================================ */
