@@ -374,11 +374,20 @@ shape:
   against each hit-zone's rect — see its own code comment for why (a fix for
   flickering/freezing hover state, person-reported 2026-09-05, that predates
   this redesign and still applies since hit-zones are still fixed-size).
-  `updateRowActionButtons()` also force-clears a stuck `.expanded` if a
-  button becomes disabled while the mouse happens to be sitting over it,
-  e.g. the selection changed via keyboard rather than the mouse actually
-  leaving. Keyboard focus uses a plain `.row-action-btn:focus-visible` CSS
-  rule (not the JS listeners) to reveal the same floating label. The label
+  **A disabled button's rect stays in the hit-test** (person-reported,
+  2026-09-15: a grayed-out button like the Table toolbar's Value assertion
+  gave no clue what it did or how to enable it) — hovering a disabled
+  button expands it and reveals its label exactly like an enabled one;
+  `updateRowActionButtons()`/`updateContextToolbar()` no longer force-clear
+  `.expanded` when a button becomes disabled while the mouse happens to be
+  sitting over it, since staying expanded is now the desired outcome, not a
+  stuck-state bug. The generic `.toolbar-icon-btn:disabled{opacity:.32}`
+  dimming is scoped down to just the icon (`.row-action-hit`/`.tb-hit`) for
+  buttons with a hit/label split, so the revealed label itself stays fully
+  legible instead of fading with the icon. Keyboard focus uses a plain
+  `.row-action-btn:focus-visible` CSS rule (not the JS listeners) to reveal
+  the same floating label — disabled buttons are never focusable, so this
+  path doesn't need the same treatment. The label
   text is the exact same string as the button's `title` (e.g. "Filter after
   this (incl.)") — both come from one `ROW_ACTIONS` data array (`{action,
   label, svg, strokeWidth}`) that builds `ROW_ACTIONS_HTML`, so the two
