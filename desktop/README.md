@@ -65,8 +65,12 @@ Quit, "close to system tray", picture-in-picture (a diagonal `<->` window
 button shrinks the window to a small always-on-top content view; its own
 strip offers return-to-full and a minimize back to the taskbar),
 `settings.json` mirroring of the `philogg-*` settings, "Open File Location" /
-"Copy Path", the system font list for the UI font picker, and a folder watch
-that does not go through the browser's File System Access API (see below).
+"Copy Path", the system font list for the UI font picker, a folder watch
+that does not go through the browser's File System Access API (see below),
+and — Windows only, an optional installer component — Explorer right-click
+entries: "Open in PhiLogg" on a `.log`/`.zip` file and "Watch this Folder"
+on a folder, cleanly removed on uninstall (see `docs/desktop.md` → "Windows
+Explorer context-menu integration").
 
 ## Persistent data
 

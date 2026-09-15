@@ -15,14 +15,42 @@ pub const SPLASH: &str = "splash";
 pub const PIP_W: f64 = 420.0;
 pub const PIP_H: f64 = 320.0;
 
-/// Windows/Linux: a `.log` file association relaunches the app with the path
-/// as a plain argv entry. macOS never does this — it delivers the path
-/// through `RunEvent::Opened` instead, even on a cold launch.
-pub fn file_arg<I: IntoIterator<Item = String>>(argv: I) -> Option<PathBuf> {
-    argv.into_iter()
-        .skip(1)
-        .find(|a| a.to_lowercase().ends_with(".log"))
-        .map(PathBuf::from)
+/// Windows/Linux: a `.log`/`.zip` file association or Explorer context-menu
+/// verb (see `desktop/src-tauri/windows/installer.nsi`) relaunches the app
+/// with the path as a plain argv entry — a folder-watch launch the same way,
+/// with a directory path instead of a file. macOS never does this — it
+/// delivers a path through `RunEvent::Opened` instead, even on a cold
+/// launch, and has none of the new verbs to begin with (they're
+/// Windows-only).
+///
+/// `.log` keeps going through the existing single-URL route (`LogFile`):
+/// both the file association and the new "Open in PhiLogg" verb invoke this
+/// app the exact same way (`"<exe>" "%1"`), so there is nothing new to
+/// distinguish. A `.zip` or a directory needs `LocalTarget` instead —
+/// `loadUrlIntoTree` (`LogFile`'s route, see `open_file`) has no ZIP
+/// awareness at all, that lives only in `loadDesktopLocalFiles`
+/// (`philogg.html`), and there is no single-URL equivalent of a folder
+/// watch to begin with.
+pub enum LaunchArg {
+    LogFile(PathBuf),
+    LocalTarget(PathBuf),
+}
+
+pub fn classify_launch<I: IntoIterator<Item = String>>(argv: I) -> Option<LaunchArg> {
+    for arg in argv.into_iter().skip(1) {
+        let lower = arg.to_lowercase();
+        if lower.ends_with(".log") {
+            return Some(LaunchArg::LogFile(PathBuf::from(arg)));
+        }
+        if lower.ends_with(".zip") {
+            return Some(LaunchArg::LocalTarget(PathBuf::from(arg)));
+        }
+        let path = PathBuf::from(&arg);
+        if path.is_dir() {
+            return Some(LaunchArg::LocalTarget(path));
+        }
+    }
+    None
 }
 
 /// `FEATURE_BACKLOG.md` #51: shown immediately so the seconds before
@@ -386,4 +414,58 @@ pub fn open_file(app: &AppHandle, path: &Path) {
     );
     let _ = window.eval(&js);
     focus_main(app);
+}
+
+fn eval_load_local(window: &WebviewWindow, payload: &serde_json::Value) {
+    let js = format!(
+        "window.philoggLoadLocalFiles && window.philoggLoadLocalFiles({})",
+        serde_json::to_string(payload).unwrap_or_else(|_| "{}".to_string())
+    );
+    let _ = window.eval(&js);
+}
+
+/// The Explorer-context-menu route for a `.zip` file or a watched folder
+/// (`LaunchArg::LocalTarget`, see `classify_launch`) — the same
+/// `philoggLoadLocalFiles` call `register_dropped` + `handle_drag_drop`
+/// already make for a native drop, reused here for a launch instead of a
+/// drag, so a zip opens (via `loadDesktopLocalFiles`'s existing zip
+/// special-case) and a folder starts a watch exactly like a dropped one
+/// would.
+///
+/// An already-running window gets the eval immediately, mirroring
+/// `open_file`. A cold launch (no window yet) has no page loaded to eval
+/// into, so the window is created plain (`create_main(app, None)`, same as
+/// a launch with nothing to open) and the payload waits in
+/// `AppState.pending_local_load` until `flush_pending_local` runs it —
+/// called from `commands::app_ready`, the same "first paint" signal that
+/// already dismisses the splash.
+pub fn open_local(app: &AppHandle, files: Vec<PathBuf>, folders: Vec<PathBuf>) {
+    let state = app.state::<AppState>();
+    let local_files: Vec<commands::LocalFile> =
+        files.iter().map(|p| commands::LocalFile::register(&state, p)).collect();
+    let folder_strs: Vec<String> = folders.iter().map(|p| p.to_string_lossy().to_string()).collect();
+    let payload = serde_json::json!({ "files": local_files, "folders": folder_strs });
+
+    if let Some(window) = app.get_webview_window(MAIN) {
+        eval_load_local(&window, &payload);
+        focus_main(app);
+    } else {
+        *state.pending_local_load.lock().expect("pending_local_load poisoned") = Some(payload);
+        create_main(app, None);
+    }
+}
+
+/// See `open_local`'s doc comment: runs a payload that had to wait for the
+/// window to exist. A no-op when there is nothing pending (the common case —
+/// every launch that isn't a cold `.zip`/folder Explorer-verb open).
+pub fn flush_pending_local(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let pending = state
+        .pending_local_load
+        .lock()
+        .expect("pending_local_load poisoned")
+        .take();
+    let Some(payload) = pending else { return };
+    let Some(window) = app.get_webview_window(MAIN) else { return };
+    eval_load_local(&window, &payload);
 }

@@ -365,6 +365,7 @@ pub fn window_close(window: Window) {
 #[tauri::command]
 pub fn app_ready(app: AppHandle) {
     windows::dismiss_splash(&app);
+    windows::flush_pending_local(&app);
 }
 
 /// The page's exit half of PiP (see philogg.html's `jumpAfterPip`): restores
