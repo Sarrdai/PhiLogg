@@ -11360,6 +11360,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.activeId = f.id;
   w.render();
+  assert(T.state.showNotes === false, "sanity: notes hidden by default, before any note exists");
 
   // Alt+N on a selected entry with no note yet -> opens empty, Add-mode dialog
   w.selectEntry(f.entries[1].id);
@@ -11371,6 +11372,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#noteDialogSave"), w);
   assert(d.querySelector("#noteDialog").classList.contains("hidden"), "Save closes the dialog");
   assert(T.state.notes.get(f.entries[1].id) === "line one\nline two", "note text saved to state.notes, newlines preserved");
+  assert(T.state.showNotes === true, "creating the first note auto-enables Show Notes (FEATURE_BACKLOG.md #76, see Group 224)");
 
   // Alt+N again on the SAME entry -> now prefilled, Edit-mode dialog (no separate F2 binding)
   fireKeydown(d, w, "n", { altKey: true });
@@ -11396,13 +11398,10 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#noteDialogDelete"), w);
   assert(!T.state.notes.has(f.entries[2].id), "Delete button removes the note");
 
-  // Rendering: a note-row appears below its entry's row when Show Notes is on (default off)
-  assert(T.state.showNotes === false, "sanity: notes hidden by default");
+  // Rendering: a note-row appears below its entry's row now that Show Notes
+  // was auto-enabled by creating the first note above.
   const btnNotes = d.querySelector(".toggle-notes");
-  assert(!btnNotes.classList.contains("active"), "Show/Hide Notes button starts inactive");
-  fireClick(btnNotes, w);
-  assert(T.state.showNotes === true, "clicking #btnNotes turns notes on");
-  assert(btnNotes.classList.contains("active"), "#btnNotes reflects the active state");
+  assert(btnNotes.classList.contains("active"), "#btnNotes already reflects the auto-enabled state");
   let noteRow = [...d.querySelectorAll("#tableRows .note-row")].find(r => r.dataset.entryId === f.entries[1].id);
   assert(noteRow && noteRow.textContent === "line one\nline two", "note-row renders below its entry with the full note text");
   assert(!noteRow.className.includes("row-grid") && !noteRow.querySelector(".col-bar"), "note-row is a plain block, not part of .row-grid, no level marker");
@@ -21236,6 +21235,9 @@ await withApp(async (w, d, T) => {
   // Selecting the "Notes" node force-enables Show Notes even if it was off;
   // leaving it restores whatever Show Notes was set to before.
   w.setNoteAndRepaint(fa.entries[3].id, "third note");
+  assert(T.state.showNotes === true, "creating a note auto-enables Show Notes (FEATURE_BACKLOG.md #76, see Group 224) — already true here from the very first note set above");
+  const btnNotes = d.querySelector(".toggle-notes");
+  fireClick(btnNotes, w); // person turns Show Notes back off after seeing the note, to set up the "was off" case below
   T.state.activeId = fa.id;
   assert(T.state.showNotes === false, "sanity: Show Notes is off before standing on the 'Notes' node");
   T.state.activeId = notesNode().id;
@@ -21247,7 +21249,6 @@ await withApp(async (w, d, T) => {
 
   // Same round trip, but Show Notes was already ON before entering — must
   // stay ON, not get toggled off by mistake, either while active or after leaving.
-  const btnNotes = d.querySelector(".toggle-notes");
   fireClick(btnNotes, w);
   assert(T.state.showNotes === true, "sanity: Show Notes turned on manually");
   T.state.activeId = notesNode().id;
@@ -25731,6 +25732,58 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#filterSubmitBtn").textContent === "Save", "...in edit mode (submit button reads 'Save', not 'Add filter')");
 });
 
+/* ============================================================
+   GROUP 224 — FEATURE_BACKLOG.md #76 (person-reported): creating a note on a
+   log entry now auto-enables the "Show Notes" toggle (.toggle-notes) when it
+   was off, so the just-created note is actually visible instead of silently
+   sitting hidden. setNoteAndRepaint only turns the toggle ON when a note ends
+   up non-empty; it never turns it back OFF on delete, and never touches it
+   when it's already on.
+   ============================================================ */
+group(224);
+await withApp(async (w, d, T) => {
+  section("224. Creating a note auto-enables Show Notes; deleting one leaves it as-is");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const btnNotes = d.querySelector(".toggle-notes");
+  assert(T.state.showNotes === false, "sanity: Show Notes off by default");
+
+  // Creating a note while Show Notes is off turns it on, and the note-row
+  // is immediately visible without a separate manual toggle click.
+  w.setNoteAndRepaint(f.entries[0].id, "hello");
+  assert(T.state.showNotes === true, "creating a note auto-enables Show Notes");
+  assert(btnNotes.classList.contains("active"), "#btnNotes reflects the auto-enabled state");
+  let noteRow = [...d.querySelectorAll("#tableRows .note-row")].find(r => r.dataset.entryId === f.entries[0].id);
+  assert(noteRow && noteRow.textContent === "hello", "the just-created note is actually rendered, not hidden behind the toggle");
+
+  // Deleting a note does NOT flip Show Notes back off — that's a separate,
+  // person-controlled setting once it's on.
+  fireClick(btnNotes, w);
+  assert(T.state.showNotes === false, "person manually turns Show Notes back off");
+  w.setNoteAndRepaint(f.entries[0].id, "");
+  assert(!T.state.notes.has(f.entries[0].id), "sanity: note deleted");
+  assert(T.state.showNotes === false, "deleting a note leaves Show Notes exactly as it was (does not toggle it)");
+
+  // Creating a note again while off re-enables it.
+  w.setNoteAndRepaint(f.entries[1].id, "second note");
+  assert(T.state.showNotes === true, "creating another note while Show Notes is off re-enables it");
+
+  // Editing an existing note while Show Notes is already on is a no-op on the toggle.
+  w.setNoteAndRepaint(f.entries[1].id, "second note, edited");
+  assert(T.state.showNotes === true, "editing a note while Show Notes is already on leaves it on (idempotent)");
+
+  // The same auto-enable fires through the real UI path (Alt+N -> dialog -> Save), not just the direct API.
+  fireClick(btnNotes, w);
+  assert(T.state.showNotes === false, "reset: Show Notes off again");
+  w.selectEntry(f.entries[2].id);
+  fireKeydown(d, w, "n", { altKey: true });
+  d.querySelector("#noteDialogInput").value = "via dialog";
+  fireClick(d.querySelector("#noteDialogSave"), w);
+  assert(T.state.notes.get(f.entries[2].id) === "via dialog", "sanity: note saved via the Alt+N dialog");
+  assert(T.state.showNotes === true, "saving a new note through the note dialog also auto-enables Show Notes");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -29261,4 +29314,10 @@ process.exitCode = failed ? 1 : 0;
       differently). Covers the DOM reorder, the Extract item's visibility
       gate + outcome, Copy's three selection cases, and a regression guard
       that the pre-existing items still work in their new positions.
+   Group 224 — this session, FEATURE_BACKLOG.md #76: setNoteAndRepaint now
+      auto-enables Show Notes (state.showNotes) the moment a note ends up
+      non-empty, if it wasn't already on, so a newly created note is actually
+      visible instead of hidden behind an off toggle; deleting a note never
+      flips the toggle back off. Groups 104 and 191 updated to match (both
+      used to assert Show Notes stayed off across note creation).
    ============================================================ */
