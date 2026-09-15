@@ -68,13 +68,13 @@ and a frameless window around the unmodified `philogg.html` — see
   (new capability → MINOR) or `fix: ...` (bug fix → PATCH) when it should
   count toward the next release; anything else (`docs:`, `chore:`,
   `refactor:`, `test:`, unprefixed) is fine as-is and simply doesn't move
-  the version. `release-please` (`.github/workflows/release-please.yml`,
-  `release-please-config.json`) reads these on every push to `main` to
-  maintain a standing release PR; merging it bumps `PHILOGG_VERSION` in
-  `philogg.html` (plus the `desktop/` version fields) and tags the release.
-  **Never write a `!` suffix, a `BREAKING CHANGE:` footer, or a
-  `Release-As:` footer unless the user explicitly asks for a major-version
-  bump** — this project stays under `1.0.0` by design.
+  the version. Cutting a release is an **explicit, manual** action, never
+  automatic on a feature-PR merge — see `PROJECT.md` → "Release builds" for
+  the two-stage `release-please.yml` trigger (`propose-release` via
+  `workflow_dispatch`, then merging that PR tags + builds via
+  `cut-release`). **Never write a `!` suffix, a `BREAKING CHANGE:`
+  footer, or a `Release-As:` footer unless the user explicitly asks for a
+  major-version bump** — this project stays under `1.0.0` by design.
 - **No backward-compatibility/migration work required below `1.0.0`.**
   While the major version stays `0`, a session may change a persistence
   format, storage key, or in-app data shape (session cache, filter-library
