@@ -1190,8 +1190,8 @@
      and shifts no siblings, so the flicker-avoidance that motivated the JS path
      doesn't apply here, and a CSS :hover survives the container's dynamic
      re-render without re-wiring. */
-  #libraryPresetBar .row-action-btn:hover:not(:disabled) .row-action-label,
-  #libraryManageBar .row-action-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
+  #libraryPresetBar .row-action-btn:hover .row-action-label,
+  #libraryManageBar .row-action-btn:hover .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
   /* Management group (Add to Library / Library) pinned to the far right of
      #viewBar. Two ids so it beats `#viewBar .row-actions{float:left}`. */
   #viewBar #libraryManageBar{float:right; margin:0;}
@@ -1249,6 +1249,19 @@
     position:static; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
+  /* person-reported, 2026-09-15: a disabled button's label is the only
+     thing that explains WHY it's grayed out / what would enable it (e.g.
+     Table toolbar's "Value assertion" needs a column selected first) — so
+     it must stay readable while disabled, not fade with the icon. The
+     generic `.toolbar-icon-btn:disabled{opacity:.32}` above dims the whole
+     button including the label; these two selectors win on specificity and
+     restore full opacity on the button itself, pushing the dimming down
+     onto just the icon (.row-action-hit/.tb-hit), which is the part that's
+     actually supposed to look disabled. The label's own opacity (0 at
+     rest, 1 once .expanded — see setupHitExpandGroups, which now includes
+     disabled buttons in its hover hit-test) is unaffected either way. */
+  .row-action-btn:disabled, .toolbar-icon-btn:has(.tb-hit):disabled{opacity:1;}
+  .row-action-btn:disabled .row-action-hit, .toolbar-icon-btn:has(.tb-hit):disabled .tb-hit{opacity:.32;}
   .level-btn.lvl-error{border-color:var(--level-error);}
   .level-btn.lvl-warn{border-color:var(--level-warn);}
   .level-btn.lvl-info{border-color:var(--level-info);}
@@ -17177,10 +17190,6 @@ function updateContextToolbar() {
   const anyRevealed = contextGaps.some(g => contextRevealedCount(g.start) > 0);
   ctxExpandAll.disabled = !hiddenLeft;
   ctxCollapseAll.disabled = !anyRevealed;
-  // Same stuck-open guard as updateRowActionButtons() (see its own comment):
-  // a button that just became disabled while the mouse happened to be
-  // sitting over it never gets its own mouseleave.
-  elAll("#contextToolbar .toolbar-icon-btn:disabled.expanded").forEach(b => b.classList.remove("expanded"));
 }
 
 // The bar sits in #highlightWrap's flex column, so showing it takes
@@ -24694,8 +24703,13 @@ elAll('[data-row-actions="viewbar-new"]').forEach(container => { container.inner
 // again until the group is fully collapsed), so the decision never sees the
 // animating, currently-shifting geometry — only the stable at-rest layout.
 // (pointer-events:none on a disabled button — see .toolbar-icon-btn:disabled
-// — already stops these from firing on its children, so no disabled check
-// needed here.)
+// — already stops these from firing on its children, but that only matters
+// for real per-hit listeners; this is a container-level mousemove doing its
+// own rect math, so it's unaffected either way. A disabled button's rect
+// stays IN the hit-test below on purpose — person-reported, 2026-09-15: a
+// grayed-out button (e.g. Table toolbar's "Value assertion" with no column
+// selected) is unrecognizable without its label, so hovering it must still
+// reveal what it does / what would enable it, same as any enabled button.)
 // Groups hit-zones by their shared parent container (the toolbar/group div
 // they were rendered into) and drives .expanded off mousemove instead of
 // per-hit mouseenter/mouseleave: rects are measured and cached only while
@@ -24720,7 +24734,7 @@ function setupHitExpandGroups(hitSelector) {
     container.addEventListener("mousemove", ev => {
       if (!anyExpanded()) restRects = entries.map(e => ({ btn: e.btn, rect: e.hit.getBoundingClientRect() }));
       const { clientX: x, clientY: y } = ev;
-      const hovered = restRects.find(r => !r.btn.disabled && x >= r.rect.left && x <= r.rect.right && y >= r.rect.top && y <= r.rect.bottom);
+      const hovered = restRects.find(r => x >= r.rect.left && x <= r.rect.right && y >= r.rect.top && y <= r.rect.bottom);
       entries.forEach(e => e.btn.classList.toggle("expanded", !!hovered && e.btn === hovered.btn));
     });
     container.addEventListener("mouseleave", () => { collapseAll(); restRects = null; });
@@ -24796,11 +24810,6 @@ function updateRowActionButtons() {
   const addLibBtn = document.getElementById("btnAddToLibrary");
   if (addLibBtn) addLibBtn.disabled = !state.activeId || (state.nodes[state.activeId] || {}).type !== "filter";
   elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !selectEnabled; });
-  // A button that just became disabled while the mouse happened to be
-  // sitting over its circle (e.g. the selection changed via keyboard, not
-  // by the mouse actually leaving) never gets its own `mouseleave` — drop
-  // its expanded pill explicitly instead of leaving it stuck open.
-  elAll(".row-action-btn:disabled.expanded").forEach(b => b.classList.remove("expanded"));
 }
 
 // Dispatches a toolbar row-action click by name — shares the exact same
