@@ -2134,19 +2134,18 @@
      toggle, is available on .txt/.xml/.json), but Pretty Print stays
      JSON-only — see updateInlineViewerToolbar. */
   #itvWrapBtn.hidden, #itvPrettyPrintBtn.hidden{display:none;}
-  /* Same non-icon button look #plotToolbar's own zoom controls use (see
-     that selector's own comment) — the {-,+,Reset} buttons aren't square
-     icon glyphs, so they stay off the 28x28 .toolbar-icon-btn shape. */
-  #inlineViewerToolbar button:not(.toolbar-icon-btn){
+  /* Same non-icon button look #plotToolbar's own Reset button uses (see
+     that selector's own comment) — Reset isn't part of the zoom pill (see
+     .stepper's own comment above), so it stays its own plain flat button.
+     :not(.stepper-btn) excludes the zoom pill's own −/+ buttons, which get
+     their look from .stepper .stepper-btn instead. */
+  #inlineViewerToolbar button:not(.toolbar-icon-btn):not(.stepper-btn){
     background:transparent; border:none; color:var(--text-secondary); cursor:pointer; border-radius:5px;
     font-family:var(--font-mono); font-size:12px; font-weight:650; line-height:1; padding:5px 7px;
     transition:background .12s, color .12s;
   }
-  #inlineViewerToolbar button:not(.toolbar-icon-btn):hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #inlineViewerToolbar button:not(.toolbar-icon-btn):not(.stepper-btn):hover{background:var(--bg-elevated-2); color:var(--text-primary);}
   #imgZoomResetBtn{font-size:10px; padding:5px 8px;}
-  #imgViewerZoomLevel{
-    font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); min-width:40px; text-align:center;
-  }
   #imgViewerSvg{width:100%; height:100%; cursor:crosshair; touch-action:none;}
 
   /* Folder-watch minimap (FEATURE_BACKLOG.md "Folder-watch minimap for
@@ -2562,14 +2561,18 @@
   .link-field{margin-bottom:14px;}
   .link-field label{display:block; font-size:11px; color:var(--text-tertiary); margin-bottom:6px;}
   .link-field-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  /* Editable .stepper fields (Value assertion, Time/Count context) share a
+     row evenly instead of each keeping a fixed width — see .stepper's own
+     CSS comment for the shared control this and the other dialogs below
+     build on. */
+  .link-field-row .stepper{flex:1 1 0; min-width:0;}
   .link-target-label{font-size:12px; color:var(--text-secondary); font-family:var(--font-mono); margin-left:2px;}
-  .link-dialog-card select, .link-dialog-card input[type="number"], .link-dialog-card input[type="datetime-local"], .link-dialog-card input[type="text"]{
+  .link-dialog-card select, .link-dialog-card input[type="number"], .link-dialog-card input[type="datetime-local"], .link-dialog-card input[type="text"]:not(.stepper-value){
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 8px; font-family:var(--font-mono); font-size:12px;
   }
   .link-dialog-card select#linkRefSelect{width:100%;}
-  .link-dialog-card input[type="number"]{width:56px;}
-  .link-dialog-card input[type="text"]{width:100%; box-sizing:border-box;}
+  .link-dialog-card input[type="text"]:not(.stepper-value){width:100%; box-sizing:border-box;}
   .link-dialog-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:16px;}
   .link-dialog-card-wide{width:min(460px, 92%);}
   .link-hops-hint{font-weight:400; text-transform:none; letter-spacing:0; color:var(--text-tertiary);}
@@ -2870,13 +2873,6 @@
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
   }
-  /* Same box as the selects above, minus the pointer cursor (it's typed into,
-     not picked from) — one control look per settings row, see the card
-     comment. */
-  .settings-row-control input[type="number"]{
-    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
-    border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; width:74px;
-  }
   #settingsThemeSelect{min-width:190px;}
   /* Accent-color re-pick row (Settings -> Appearance) — only shown for a
      theme with its own highlightPalette, see renderAccentPicker(). Reuses
@@ -2912,36 +2908,77 @@
   .settings-row-control.assert-mode-row{margin-bottom:0; width:auto;}
   .settings-row-control .assert-mode-btn{flex:0 0 auto; padding:6px 18px; height:30px;}
   .font-scale-row{display:flex; align-items:center; gap:8px;}
-  /* One seamless bordered pill for −/value/+ (no gaps inside it), Reset
-     sits beside it as its own separate outline button. */
-  .font-scale-stepper{
-    display:flex; align-items:center; height:30px;
-    background:var(--bg-app); border:1px solid var(--border); border-radius:8px; overflow:hidden;
-  }
-  .font-scale-stepper #fontScaleValue{
-    font-size:12.5px; font-variant-numeric:tabular-nums; min-width:44px; text-align:center; color:var(--text-primary);
-  }
-  .font-scale-stepper .btn-icon{
-    width:32px; height:30px; border:none; font-size:15px; line-height:1; padding:0; border-radius:0;
-    align-items:center; justify-content:center;
-  }
-  /* Same −/value/+ stepper shape as .font-scale-stepper above (FEATURE_BACKLOG
-     #18, person-requested: "orientiere dich an der Einstellung der Font Size,
-     nur eben ohne %") — kept as its own class rather than reusing
-     .font-scale-stepper directly, since that name is specifically about font
-     scaling elsewhere in the file. */
   .temp-anchor-fade-row{display:flex; align-items:center; gap:8px;}
-  .temp-anchor-fade-stepper{
-    display:flex; align-items:center; height:30px;
+  /* ---------- Shared "stepper" control ----------
+     One visual/interaction pattern for every place in the app where a
+     value sits between a decrement/increment (or prev/next) pair of
+     buttons that clearly belong to it: a single seamless bordered pill,
+     no gap between the value and its flanking buttons (person-requested —
+     harmonize the native number-spinner inputs in the Value assertion
+     dialog / Plot settings / Settings dialog, Plot view's own zoom
+     control, the inline image viewer's zoom control, and the Context
+     view's match navigator into one shared look, on one shared bit of
+     CSS+JS, instead of each growing its own one-off styling). The value
+     area is either non-interactive — a plain step-through readout (UI
+     scale, Log text size, Anchor fade duration, image-viewer zoom level,
+     Context match position) — or a real editable <input> the person can
+     type straight into (Plot zoom level, Value assertion's four fields,
+     Plot axis range, "Lines revealed per step", the Time/Count context
+     dialogs): same box, `.stepper-value` on a <span> vs an <input>. See
+     initNumberStepper() further down for the click-to-nudge wiring every
+     editable instance shares. `.stepper-compact` is the same pill sized
+     to sit inside a 36px toolbar row next to the app's other 28px
+     .toolbar-icon-btn controls (Plot/Image zoom, Context match nav)
+     instead of a 30px settings/dialog row. */
+  .stepper{
+    display:flex; align-items:center; height:30px; flex:0 0 auto;
     background:var(--bg-app); border:1px solid var(--border); border-radius:8px; overflow:hidden;
   }
-  .temp-anchor-fade-stepper #tempAnchorFadeValue{
-    font-size:12.5px; font-variant-numeric:tabular-nums; min-width:34px; text-align:center; color:var(--text-primary);
+  .stepper:focus-within{border-color:var(--accent);}
+  .stepper .stepper-value{
+    flex:1 1 auto; min-width:44px; padding:0 2px;
+    font-size:12.5px; font-variant-numeric:tabular-nums; text-align:center; color:var(--text-primary);
   }
-  .temp-anchor-fade-stepper .btn-icon{
-    width:32px; height:30px; border:none; font-size:15px; line-height:1; padding:0; border-radius:0;
-    align-items:center; justify-content:center;
+  input.stepper-value{
+    border:none; background:transparent; outline:none; font-family:inherit; -moz-appearance:textfield;
+    /* A bare <input> has no intrinsic content-based width the way a <span>
+       does — with no width set here, the flex-basis:auto default falls
+       back to the browser's native ~20-character text-input width (visibly
+       oversized, since nothing then constrains it back down unless the
+       surrounding row happens to be narrow enough to force a flex-shrink —
+       true in a fixed-width sidebar row like .plot-range-row, false in a
+       free-width settings row or toolbar group, where the pill ballooned
+       person-reported). This width becomes the flex-basis (flex:1 1 auto
+       above still lets it grow/shrink around it — .plot-range-row's own
+       .stepper-value override below asks for exactly that, to fill its row
+       evenly instead of sticking to this default). */
+    width:44px;
   }
+  input.stepper-value::-webkit-outer-spin-button, input.stepper-value::-webkit-inner-spin-button{
+    -webkit-appearance:none; margin:0;
+  }
+  .stepper .stepper-btn{
+    flex:0 0 auto; width:32px; height:30px; border:none; border-radius:0; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    background:transparent; color:var(--text-secondary); cursor:pointer;
+    font-size:15px; line-height:1; transition:background .12s, color .12s;
+  }
+  .stepper .stepper-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  .stepper .stepper-btn:disabled{opacity:.35; cursor:default; pointer-events:none;}
+  .stepper.stepper-compact{height:28px;}
+  .stepper.stepper-compact .stepper-value{min-width:38px; font-size:11px; font-family:var(--font-mono);}
+  .stepper.stepper-compact input.stepper-value{width:38px;}
+  .stepper.stepper-compact .stepper-btn{width:26px; height:28px; font-size:13px;}
+  /* Context match nav reuses the toolbar's own .toolbar-icon-btn buttons
+     as its dec/inc pair (rather than .stepper-btn) so they still count as
+     one of the app's icon buttons — see that class's own comment — and
+     keep the hover-reveal-label mechanic makeToolbarBtnExpandable wraps
+     every toolbar button with; only their box (border/corners/fixed size)
+     is folded into the seamless pill here, the icon/hover-label behaviour
+     underneath is untouched. */
+  .stepper.stepper-nav .toolbar-icon-btn{border:none; background:transparent; border-radius:0; width:26px; height:28px;}
+  .stepper.stepper-nav .toolbar-icon-btn:hover{background:var(--bg-elevated-2);}
+  .stepper.stepper-nav .toolbar-icon-btn:disabled{background:transparent;}
   .settings-row-label[for]{cursor:pointer;}
   /* Boolean settings render as an on/off switch (#settingsQuitOnLastClose)
      rather than the plain accent-colored checkbox used for filter/plot
@@ -3081,20 +3118,26 @@
   #extractScroll.hidden{display:none;}
   #plotBody{flex:1 1 auto; display:flex; min-height:0;}
   #plotControls{
-    flex:0 0 220px; overflow-y:auto; padding:14px 14px 20px; border-right:1px solid var(--border);
+    flex:0 0 250px; overflow-y:auto; padding:14px 14px 20px; border-right:1px solid var(--border);
     background:var(--bg-panel); display:flex; flex-direction:column; gap:14px;
   }
   .plot-field{display:flex; flex-direction:column; gap:5px;}
   .plot-field label{font-size:10.5px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:.4px; font-weight:650;}
   .plot-type-row{display:flex; gap:5px;}
+  /* flex:1 1 0 (not the "auto" every other row uses) so all four buttons
+     split the row exactly evenly regardless of label length — person-
+     reported: "Scatter" is nearly 3x "3D"'s character count, so with the
+     usual auto flex-basis (sized off each button's own content) they
+     visibly differed; ignoring content width via a zero basis is what
+     actually makes four unrelated-length labels render as one uniform grid. */
   .plot-type-btn{
-    flex:1 1 auto; display:flex; flex-direction:column; align-items:center; gap:4px;
+    flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; gap:4px;
     background:var(--bg-app); border:1px solid var(--border); border-radius:7px; color:var(--text-tertiary);
     padding:8px 4px; cursor:pointer; font-size:9.5px; font-weight:600; transition:border-color .12s, color .12s;
   }
   .plot-type-btn:hover{color:var(--text-secondary);}
   .plot-type-btn.active{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
-  .plot-field select, .plot-field input[type="number"]{
+  .plot-field select{
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 8px; font-family:var(--font-mono); font-size:11.5px; width:100%;
   }
@@ -3103,7 +3146,16 @@
   .plot-y-item input{accent-color:var(--accent); flex:0 0 auto;}
   .plot-y-swatch{width:9px; height:9px; border-radius:2px; flex:0 0 auto;}
   .plot-range-row{display:flex; gap:6px;}
-  .plot-range-row input{width:0; flex:1 1 auto;}
+  /* .stepper-compact (built into the HTML via stepperInputHtml's compact
+     option — narrower buttons/value than the default 30px-row size, see
+     .stepper's own CSS comment): two full steppers side by side is the
+     tightest spot in the app this control sits in, so it gets the smaller
+     variant even outside a toolbar; the default size's fixed 44px value +
+     32px buttons per side literally didn't fit two of them in
+     #plotControls' old 220px width (person-reported: the second pill's own
+     +/- buttons were pushed off the visible edge). */
+  .plot-range-row .stepper{flex:1 1 0; min-width:0;}
+  .plot-range-row .stepper .stepper-value{font-family:var(--font-mono); font-size:11.5px;}
   .plot-checkbox-row{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
   .plot-checkbox-row input{accent-color:var(--accent);}
   .plot-checkbox-row label{cursor:pointer;}
@@ -3160,18 +3212,16 @@
      matching #viewBar's row-actions (the Filter-Toolbar) instead of
      reading smaller than it; both rows grew from 30px to 36px to keep
      comfortable padding around the now-bigger buttons. */
-  #plotToolbar button:not(.toolbar-icon-btn){
+  /* Reset isn't part of the zoom pill (see .stepper's own comment above),
+     so it stays its own plain flat button; :not(.stepper-btn) excludes the
+     pill's own −/+ buttons, styled by .stepper .stepper-btn instead. */
+  #plotToolbar button:not(.toolbar-icon-btn):not(.stepper-btn){
     background:transparent; border:none; color:var(--text-secondary); cursor:pointer; border-radius:5px;
     font-family:var(--font-mono); font-size:12px; font-weight:650; line-height:1; padding:5px 7px;
     transition:background .12s, color .12s;
   }
-  #plotToolbar button:not(.toolbar-icon-btn):hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #plotToolbar button:not(.toolbar-icon-btn):not(.stepper-btn):hover{background:var(--bg-elevated-2); color:var(--text-primary);}
   #plotZoomResetBtn{font-size:10px; padding:5px 8px;}
-  #plotZoomLevelInput{
-    width:44px; text-align:center; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
-    border-radius:5px; padding:5px 2px; font-family:var(--font-mono); font-size:11px;
-  }
-  #plotZoomLevelInput:focus{border-color:var(--accent); outline:none;}
 
   /* ---------- Plot fullscreen ---------- */
   /* An overlay outside #plotWrap (a sibling in the main layout, see its HTML
@@ -3978,9 +4028,11 @@
                rows, instead of the toolbar sitting between header and rows. -->
           <div id="contextToolbar" class="hidden">
             <div class="toolbar-group" data-toolbar-group="controls">
-              <button type="button" id="ctxPrevMatch" class="toolbar-icon-btn" title="Previous match"></button>
-              <span id="contextNavLabel" class="ctx-nav-label"></span>
-              <button type="button" id="ctxNextMatch" class="toolbar-icon-btn" title="Next match"></button>
+              <div class="stepper stepper-compact stepper-nav">
+                <button type="button" id="ctxPrevMatch" class="toolbar-icon-btn" title="Previous match"></button>
+                <span id="contextNavLabel" class="ctx-nav-label stepper-value"></span>
+                <button type="button" id="ctxNextMatch" class="toolbar-icon-btn" title="Next match"></button>
+              </div>
               <button type="button" id="ctxExpandAll" class="toolbar-icon-btn" title="Expand all"></button>
               <button type="button" id="ctxCollapseAll" class="toolbar-icon-btn" title="Collapse all"></button>
             </div>
@@ -4130,9 +4182,11 @@
              to show (a plain .txt/.xml file). -->
         <div id="inlineViewerToolbar" class="hidden">
           <div class="toolbar-group" data-toolbar-group="controls">
-            <button type="button" id="imgZoomOutBtn" title="Zoom out">−</button>
-            <span id="imgViewerZoomLevel">100%</span>
-            <button type="button" id="imgZoomInBtn" title="Zoom in">+</button>
+            <div class="stepper stepper-compact">
+              <button type="button" class="stepper-btn" id="imgZoomOutBtn" title="Zoom out">−</button>
+              <span id="imgViewerZoomLevel" class="stepper-value">100%</span>
+              <button type="button" class="stepper-btn" id="imgZoomInBtn" title="Zoom in">+</button>
+            </div>
             <button type="button" id="imgZoomResetBtn" title="Reset zoom">Reset</button>
           </div>
           <span id="itvToolbarSep" class="ctx-toolbar-sep hidden"></span>
@@ -4272,9 +4326,11 @@
           <div id="plotToolbar">
             <div class="toolbar-group" data-toolbar-group="controls">
               <div id="plot2dToolsGroup" class="hidden toolbar-group">
-                <button type="button" id="plotZoomOutBtn" title="Zoom out">−</button>
-                <input type="text" id="plotZoomLevelInput" inputmode="numeric" title="Zoom level">
-                <button type="button" id="plotZoomInBtn" title="Zoom in">+</button>
+                <div class="stepper stepper-compact">
+                  <button type="button" class="stepper-btn" id="plotZoomOutBtn" title="Zoom out">−</button>
+                  <input type="text" class="stepper-value" id="plotZoomLevelInput" inputmode="numeric" title="Zoom level">
+                  <button type="button" class="stepper-btn" id="plotZoomInBtn" title="Zoom in">+</button>
+                </div>
                 <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
               </div>
               <button type="button" id="plotFullscreenBtn" class="toolbar-icon-btn" title="Fullscreen"></button>
@@ -4447,13 +4503,21 @@
       <div class="link-field">
         <label for="contextBeforeInput">Milliseconds before</label>
         <div class="link-field-row">
-          <input type="number" id="contextBeforeInput" min="0" step="1" value="0">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="contextBeforeInputDec" title="Decrease">−</button>
+            <input type="text" inputmode="numeric" class="stepper-value" id="contextBeforeInput" value="0">
+            <button type="button" class="stepper-btn" id="contextBeforeInputInc" title="Increase">+</button>
+          </div>
         </div>
       </div>
       <div class="link-field">
         <label for="contextAfterInput">Milliseconds after</label>
         <div class="link-field-row">
-          <input type="number" id="contextAfterInput" min="0" step="1" value="0">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="contextAfterInputDec" title="Decrease">−</button>
+            <input type="text" inputmode="numeric" class="stepper-value" id="contextAfterInput" value="0">
+            <button type="button" class="stepper-btn" id="contextAfterInputInc" title="Increase">+</button>
+          </div>
         </div>
       </div>
       <div class="link-dialog-actions">
@@ -4521,13 +4585,21 @@
       <div class="link-field">
         <label for="countContextBeforeInput">Entries before</label>
         <div class="link-field-row">
-          <input type="number" id="countContextBeforeInput" min="0" step="1" value="0">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="countContextBeforeInputDec" title="Decrease">−</button>
+            <input type="text" inputmode="numeric" class="stepper-value" id="countContextBeforeInput" value="0">
+            <button type="button" class="stepper-btn" id="countContextBeforeInputInc" title="Increase">+</button>
+          </div>
         </div>
       </div>
       <div class="link-field">
         <label for="countContextAfterInput">Entries after</label>
         <div class="link-field-row">
-          <input type="number" id="countContextAfterInput" min="0" step="1" value="0">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="countContextAfterInputDec" title="Decrease">−</button>
+            <input type="text" inputmode="numeric" class="stepper-value" id="countContextAfterInput" value="0">
+            <button type="button" class="stepper-btn" id="countContextAfterInputInc" title="Increase">+</button>
+          </div>
         </div>
       </div>
       <div class="link-dialog-actions">
@@ -4619,17 +4691,33 @@
       <div class="link-field" id="assertRangeFields">
         <label>Allowed range</label>
         <div class="link-field-row">
-          <input type="number" id="assertMinInput" placeholder="min (optional)" step="any">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="assertMinInputDec" title="Decrease">−</button>
+            <input type="text" inputmode="decimal" class="stepper-value" id="assertMinInput" placeholder="min (optional)">
+            <button type="button" class="stepper-btn" id="assertMinInputInc" title="Increase">+</button>
+          </div>
           <span>–</span>
-          <input type="number" id="assertMaxInput" placeholder="max (optional)" step="any">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="assertMaxInputDec" title="Decrease">−</button>
+            <input type="text" inputmode="decimal" class="stepper-value" id="assertMaxInput" placeholder="max (optional)">
+            <button type="button" class="stepper-btn" id="assertMaxInputInc" title="Increase">+</button>
+          </div>
         </div>
       </div>
       <div class="link-field hidden" id="assertTargetFields">
         <label>Target value ± tolerance</label>
         <div class="link-field-row">
-          <input type="number" id="assertTargetInput" placeholder="target" step="any">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="assertTargetInputDec" title="Decrease">−</button>
+            <input type="text" inputmode="decimal" class="stepper-value" id="assertTargetInput" placeholder="target">
+            <button type="button" class="stepper-btn" id="assertTargetInputInc" title="Increase">+</button>
+          </div>
           <span>±</span>
-          <input type="number" id="assertToleranceInput" placeholder="tolerance" step="any" min="0">
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="assertToleranceInputDec" title="Decrease">−</button>
+            <input type="text" inputmode="decimal" class="stepper-value" id="assertToleranceInput" placeholder="tolerance">
+            <button type="button" class="stepper-btn" id="assertToleranceInputInc" title="Increase">+</button>
+          </div>
         </div>
       </div>
       <div class="link-dialog-actions">
@@ -4808,10 +4896,10 @@
                 <div class="settings-row-hint">Scales toolbars, panels and other interface chrome, 70–160%. Also via Ctrl+ / Ctrl−.</div>
               </div>
               <div class="settings-row-control font-scale-row">
-                <div class="font-scale-stepper">
-                  <button type="button" class="btn-icon" id="fontScaleDown" title="Decrease UI scale (Ctrl+-)">−</button>
-                  <span id="fontScaleValue">100%</span>
-                  <button type="button" class="btn-icon" id="fontScaleUp" title="Increase UI scale (Ctrl++)">+</button>
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease UI scale (Ctrl+-)">−</button>
+                  <span id="fontScaleValue" class="stepper-value">100%</span>
+                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase UI scale (Ctrl++)">+</button>
                 </div>
                 <button type="button" class="btn-mini-outline" id="fontScaleReset" title="Reset">Reset</button>
               </div>
@@ -4822,10 +4910,10 @@
                 <div class="settings-row-hint">Scales only log/text content (70–160%), independently of the UI scale.</div>
               </div>
               <div class="settings-row-control font-scale-row">
-                <div class="font-scale-stepper">
-                  <button type="button" class="btn-icon" id="logTextScaleDown" title="Decrease log text size">−</button>
-                  <span id="logTextScaleValue">100%</span>
-                  <button type="button" class="btn-icon" id="logTextScaleUp" title="Increase log text size">+</button>
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" id="logTextScaleDown" title="Decrease log text size">−</button>
+                  <span id="logTextScaleValue" class="stepper-value">100%</span>
+                  <button type="button" class="stepper-btn" id="logTextScaleUp" title="Increase log text size">+</button>
                 </div>
                 <button type="button" class="btn-mini-outline" id="logTextScaleReset" title="Reset">Reset</button>
               </div>
@@ -4992,7 +5080,11 @@
                 <div class="settings-row-hint">How many hidden lines one expansion step reveals in each direction (above and below).</div>
               </div>
               <div class="settings-row-control">
-                <input type="number" id="settingsContextExpandStep" min="1" max="1000" step="1" value="10">
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" id="settingsContextExpandStepDec" title="Decrease">−</button>
+                  <input type="text" inputmode="numeric" class="stepper-value" id="settingsContextExpandStep" value="10">
+                  <button type="button" class="stepper-btn" id="settingsContextExpandStepInc" title="Increase">+</button>
+                </div>
               </div>
             </div>
           </div>
@@ -5052,10 +5144,10 @@
                 <div class="settings-row-hint">How long the temporary anchor stays visible before it's removed.</div>
               </div>
               <div class="settings-row-control temp-anchor-fade-row">
-                <div class="temp-anchor-fade-stepper">
-                  <button type="button" class="btn-icon" id="tempAnchorFadeDown" title="Decrease duration">−</button>
-                  <span id="tempAnchorFadeValue">3s</span>
-                  <button type="button" class="btn-icon" id="tempAnchorFadeUp" title="Increase duration">+</button>
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" id="tempAnchorFadeDown" title="Decrease duration">−</button>
+                  <span id="tempAnchorFadeValue" class="stepper-value">3s</span>
+                  <button type="button" class="stepper-btn" id="tempAnchorFadeUp" title="Increase duration">+</button>
                 </div>
               </div>
             </div>
@@ -6568,6 +6660,7 @@ document.getElementById("settingsContextExpandStep").addEventListener("change", 
   contextExpansionsKey = null;
   render();
 });
+initNumberStepper("settingsContextExpandStep", { step: 1, min: 1, max: 1000 });
 
 document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListener("change", ev => {
   hideMinimapFullRangeInFullView = pillGet(ev.target);
@@ -6904,6 +6997,58 @@ function applyTempAnchorFadeSeconds(v) {
 }
 document.getElementById("tempAnchorFadeDown").addEventListener("click", () => applyTempAnchorFadeSeconds(tempAnchorFadeSeconds - TEMP_ANCHOR_FADE_STEP));
 document.getElementById("tempAnchorFadeUp").addEventListener("click", () => applyTempAnchorFadeSeconds(tempAnchorFadeSeconds + TEMP_ANCHOR_FADE_STEP));
+
+/* ===================== Shared editable-stepper wiring =====================
+   The click-to-nudge half of the .stepper control (see its own CSS comment)
+   for every EDITABLE instance in the app — Value assertion's four fields,
+   Plot axis range, "Lines revealed per step", and the Time/Count context
+   dialogs. Read-only instances (UI scale, Log text size, Anchor fade
+   duration, viewer zoom levels, Context match nav) keep their own bespoke
+   click handlers above/elsewhere, since each nudges different domain state
+   (percent scale, seconds, a zoom transform, a selection) — only the
+   free-typed number <input> case is generic enough to share one function.
+   By convention the dec/inc buttons sit right next to the input in the
+   HTML and are found as "<inputId>Dec"/"<inputId>Inc"; the input stays the
+   single source of truth (its .value, whatever already listens to its
+   "change" event) — the buttons just nudge .value by `step` and fire the
+   same native "change" a person typing + blurring would, so every existing
+   listener (validation, clamping, persistence) keeps working untouched. */
+function initNumberStepper(inputId, opts) {
+  opts = opts || {};
+  const step = opts.step || 1;
+  const input = document.getElementById(inputId);
+  const decBtn = document.getElementById(inputId + "Dec");
+  const incBtn = document.getElementById(inputId + "Inc");
+  if (!input || !decBtn || !incBtn) return;
+  const nudge = delta => {
+    const current = parseFloat(input.value);
+    let next = (Number.isFinite(current) ? current : (opts.emptyBase != null ? opts.emptyBase : 0)) + delta;
+    if (opts.min != null) next = Math.max(opts.min, next);
+    if (opts.max != null) next = Math.min(opts.max, next);
+    input.value = opts.decimals != null ? next.toFixed(opts.decimals) : String(next);
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  decBtn.addEventListener("click", () => nudge(-step));
+  incBtn.addEventListener("click", () => nudge(step));
+}
+
+// The HTML-building counterpart of initNumberStepper, for the one caller
+// that builds its editable stepper fields from a template string instead of
+// static markup (Plot settings' X/Y/Z range fields, rebuilt on every
+// renderPlotControls) — same "<inputId>Dec"/"<inputId>Inc" button-id
+// convention, so a plain initNumberStepper(id, opts) call after inserting
+// the HTML wires it up exactly like every static instance.
+function stepperInputHtml(id, opts) {
+  opts = opts || {};
+  const value = opts.value != null ? opts.value : "";
+  const placeholder = opts.placeholder ? ' placeholder="' + escapeHtml(opts.placeholder) + '"' : "";
+  const cls = opts.compact ? "stepper stepper-compact" : "stepper";
+  return '<div class="' + cls + '">' +
+    '<button type="button" class="stepper-btn" id="' + id + 'Dec" title="Decrease">−</button>' +
+    '<input type="text" inputmode="' + (opts.inputMode || "decimal") + '" class="stepper-value" id="' + id + '"' + placeholder + ' value="' + escapeHtml(String(value)) + '">' +
+    '<button type="button" class="stepper-btn" id="' + id + 'Inc" title="Increase">+</button>' +
+    '</div>';
+}
 
 // Called after any user-initiated file close (see deleteFilterNodeWithUndo)
 // — quits (closes the window) once no root files remain, if enabled.
@@ -14469,14 +14614,14 @@ function renderPlotControls() {
     // from (see renderPlot3D), same IDs as 2D's own X/Y range inputs since
     // the two chart types never render their controls at the same time.
     html += '<div class="plot-field"><label>X range</label><div class="plot-range-row">' +
-      '<input type="number" id="plotXMin" placeholder="auto" value="' + plotConfig.xMin + '">' +
-      '<input type="number" id="plotXMax" placeholder="auto" value="' + plotConfig.xMax + '"></div></div>';
+      stepperInputHtml("plotXMin", { placeholder: "auto", value: plotConfig.xMin, compact: true }) +
+      stepperInputHtml("plotXMax", { placeholder: "auto", value: plotConfig.xMax, compact: true }) + '</div></div>';
     html += '<div class="plot-field"><label>Y range</label><div class="plot-range-row">' +
-      '<input type="number" id="plotYMin" placeholder="auto" value="' + plotConfig.yMin + '">' +
-      '<input type="number" id="plotYMax" placeholder="auto" value="' + plotConfig.yMax + '"></div></div>';
+      stepperInputHtml("plotYMin", { placeholder: "auto", value: plotConfig.yMin, compact: true }) +
+      stepperInputHtml("plotYMax", { placeholder: "auto", value: plotConfig.yMax, compact: true }) + '</div></div>';
     html += '<div class="plot-field"><label>Z range</label><div class="plot-range-row">' +
-      '<input type="number" id="plotZMin" placeholder="auto" value="' + plotConfig.zMin + '">' +
-      '<input type="number" id="plotZMax" placeholder="auto" value="' + plotConfig.zMax + '"></div></div>';
+      stepperInputHtml("plotZMin", { placeholder: "auto", value: plotConfig.zMin, compact: true }) +
+      stepperInputHtml("plotZMax", { placeholder: "auto", value: plotConfig.zMax, compact: true }) + '</div></div>';
   } else {
     html += '<div class="plot-field"><label>X axis</label><select id="plotXSelect">' + colOptions + '</select></div>';
   }
@@ -14505,11 +14650,11 @@ function renderPlotControls() {
 
   if (plotConfig.type !== "3d") {
     html += '<div class="plot-field"><label>X range</label><div class="plot-range-row">' +
-      '<input type="number" id="plotXMin" placeholder="auto" value="' + plotConfig.xMin + '">' +
-      '<input type="number" id="plotXMax" placeholder="auto" value="' + plotConfig.xMax + '"></div></div>';
+      stepperInputHtml("plotXMin", { placeholder: "auto", value: plotConfig.xMin, compact: true }) +
+      stepperInputHtml("plotXMax", { placeholder: "auto", value: plotConfig.xMax, compact: true }) + '</div></div>';
     html += '<div class="plot-field"><label>Y range</label><div class="plot-range-row">' +
-      '<input type="number" id="plotYMin" placeholder="auto" value="' + plotConfig.yMin + '">' +
-      '<input type="number" id="plotYMax" placeholder="auto" value="' + plotConfig.yMax + '"></div></div>';
+      stepperInputHtml("plotYMin", { placeholder: "auto", value: plotConfig.yMin, compact: true }) +
+      stepperInputHtml("plotYMax", { placeholder: "auto", value: plotConfig.yMax, compact: true }) + '</div></div>';
   }
 
   // Bug (person-reported): while a file is being tailed, every incoming
@@ -14594,6 +14739,7 @@ function renderPlotControls() {
       plotZoom = null; // a new manual axis override redefines the home view itself (no-op for 3D, which has no plotZoom)
       renderPlotChart();
     });
+    initNumberStepper(id, { step: 1 });
   });
 }
 
@@ -15372,6 +15518,10 @@ function updateAssertModeUI() {
 }
 el("#assertModeRange").addEventListener("click", () => { assertDialogMode = "range"; updateAssertModeUI(); });
 el("#assertModeTarget").addEventListener("click", () => { assertDialogMode = "target"; updateAssertModeUI(); });
+initNumberStepper("assertMinInput", { step: 1 });
+initNumberStepper("assertMaxInput", { step: 1 });
+initNumberStepper("assertTargetInput", { step: 1 });
+initNumberStepper("assertToleranceInput", { step: 1, min: 0, emptyBase: 0 });
 assertDialog.addEventListener("click", ev => { if (ev.target === assertDialog) closeAssertDialog(); });
 el("#assertDialogCancel").addEventListener("click", closeAssertDialog);
 el("#assertDialogClear").addEventListener("click", () => {
@@ -25661,6 +25811,8 @@ function openContextDialog(refId) {
 }
 function closeContextDialog() { contextDialog.classList.add("hidden"); contextDialogRefId = null; }
 contextDialog.addEventListener("click", ev => { if (ev.target === contextDialog) closeContextDialog(); });
+initNumberStepper("contextBeforeInput", { step: 1, min: 0 });
+initNumberStepper("contextAfterInput", { step: 1, min: 0 });
 
 /* ===================== CSV export dialog (extraction table) ===================== */
 
@@ -25740,6 +25892,8 @@ function openCountContextDialog(refId) {
 }
 function closeCountContextDialog() { countContextDialog.classList.add("hidden"); countContextDialogRefId = null; }
 countContextDialog.addEventListener("click", ev => { if (ev.target === countContextDialog) closeCountContextDialog(); });
+initNumberStepper("countContextBeforeInput", { step: 1, min: 0 });
+initNumberStepper("countContextAfterInput", { step: 1, min: 0 });
 el("#countContextDialogCancel").addEventListener("click", closeCountContextDialog);
 el("#countContextDialogCreate").addEventListener("click", () => {
   const before = Math.max(0, Math.round(parseFloat(countContextBeforeInput.value) || 0));
