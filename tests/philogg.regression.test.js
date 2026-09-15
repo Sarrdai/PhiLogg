@@ -19847,11 +19847,16 @@ await withApp(async (w, d, T) => {
   assert(byAction("filterForMessage").disabled === true, "filterForMessage still needs exactly one reference entry — disabled with 2+ multi-selected");
   assert(byAction("extractMessage").disabled === true, "extractMessage still needs exactly one reference entry — disabled with 2+ multi-selected");
 
-  // --- A button that becomes disabled while its pill happens to be expanded
-  // (e.g. the selection changed via keyboard, not by the mouse leaving the
-  // circle) doesn't get stuck expanded — updateRowActionButtons() drops it.
-  // filterAfter no longer disables on 2+ multi-select, so use
-  // filterForMessage (still single-entry-only) to exercise this guard. ---
+  // --- A disabled button's label stays reachable on hover (person-reported,
+  // 2026-09-15): with no column/row context to explain a grayed-out icon,
+  // hovering it is the only way to learn what it does or what would enable
+  // it, so setupHitExpandGroups's hit-test no longer excludes disabled
+  // buttons — hovering one expands it exactly like an enabled one, and a
+  // button that becomes disabled while already expanded (e.g. the selection
+  // changed via keyboard, not by the mouse leaving the circle) simply stays
+  // expanded instead of being force-collapsed. filterAfter no longer
+  // disables on 2+ multi-select, so use filterForMessage (still
+  // single-entry-only) to exercise both. ---
   T.state.logMultiSelect = new Set();
   w.selectEntry(f.entries[3].id);
   const filterForMessageBtn = byAction("filterForMessage");
@@ -19859,7 +19864,17 @@ await withApp(async (w, d, T) => {
   T.state.logMultiSelect = new Set([f.entries[1].id, f.entries[4].id]); // disables filterForMessage again
   w.updateRowActionButtons();
   assert(filterForMessageBtn.disabled === true, "sanity: disabled again");
-  assert(!filterForMessageBtn.classList.contains("expanded"), "a newly-disabled button's stuck-open pill is force-collapsed");
+  assert(filterForMessageBtn.classList.contains("expanded"), "a newly-disabled button's pill is left open, not force-collapsed, so its label stays discoverable");
+
+  // Reuses the same group + the distinct non-overlapping stub rects the
+  // earlier filterAfter check installed on every sibling .row-action-hit.
+  filterForMessageBtn.classList.remove("expanded");
+  group.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false })); // clear restRects so it's remeasured collapsed
+  const filterForMessageRect = filterForMessageBtn.querySelector(".row-action-hit").getBoundingClientRect();
+  const ffmMidX = (filterForMessageRect.left + filterForMessageRect.right) / 2;
+  group.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: false, clientX: ffmMidX, clientY: 10 }));
+  assert(filterForMessageBtn.classList.contains("expanded"), "hovering a DISABLED button's hit-zone still expands it and reveals its label");
+  group.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
 
   // --- Stays visible/functional on Table too (Table/Plot presence — see Group 26/158a) ---
   // NOTE: on Table/Plot, After/Before/Extract/Time range are all now
@@ -27619,6 +27634,17 @@ process.exitCode = failed ? 1 : 0;
      `updateRowActionButtons()`. 176a extended again: asserts the
      `.row-action-hit` wrapper, that `mouseenter`/`mouseleave` on it
      toggles `.expanded`, and the disabled-clears-stuck-expanded case.
+     REVERSED 2026-09-15, person-reported (disabled buttons like the Table
+     toolbar's Value assertion gave no clue what they did or how to enable
+     them): setupHitExpandGroups' hit-test no longer excludes disabled
+     buttons, so hovering one now expands it and reveals its label same as
+     an enabled button; updateRowActionButtons()/updateContextToolbar() no
+     longer force-clear `.expanded` on a newly-disabled button either — the
+     old "stuck-open guard" behavior 176a asserted is gone, replaced by an
+     assertion that a disabled button's pill stays open and that hovering a
+     disabled hit-zone expands it. See also the matching CSS fix (disabled
+     opacity moved from the whole button onto just its icon span, so the
+     revealed label isn't dimmed to unreadability).
 
    Group 177 — this session (2026-09-04), person-requested, three related
      toolbar follow-ups: (1) Table/Plot tabs hidden entirely (not just
