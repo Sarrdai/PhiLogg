@@ -34,6 +34,11 @@
         "role": "Viewer",
         "mimeType": "text/plain"
       }
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "template": "windows/installer.nsi"
+      }
+    }
   }
 }

@@ -295,6 +295,120 @@ Two details that are easy to get wrong:
 
 Covered by test **Group 145**.
 
+## Windows Explorer context-menu integration
+
+Windows-only. Three right-click verbs, added by the installer as an
+*optional* component and cleanly removed on uninstall: **"Open in
+PhiLogg"** on a single `.log` or `.zip` file, and **"Watch this Folder"**
+on a folder.
+
+**Multi-selecting several `.log` files was deliberately dropped.** Windows
+cannot hand multiple selected paths to one process launch through a plain
+registry verb — getting all of them into one call needs a full COM
+shell-extension DLL (`IExplorerCommand`), a disproportionate maintenance
+surface for this project. Left unrestricted, Explorer's own default
+behavior for a plain verb — launch the target once per selected item — still
+degrades acceptably without one: several `.log` files selected each become
+their own single-instance relaunch through the *existing*, unchanged
+`open_file` route, adding one file to the tree per launch with no merge
+prompt (not a designed "batch open" feature, just what falls out of not
+filtering); several folders each start their own independent watch (folders
+don't need "merging", so "watch all of these" is exactly the useful
+behavior); several zips each launch with exactly one file, which is exactly
+the shape `loadDesktopLocalFiles`'s zip special-case already requires. None
+of the three verbs need Explorer's `AppliesTo` selection-count filtering as
+a result.
+
+**Rust-side routing.** `windows.rs`'s old `file_arg(argv) -> Option<PathBuf>`
+(`.log`-suffix only) is now `classify_launch(argv) -> Option<LaunchArg>`,
+returning which of two routes a launch needs:
+
+- `LaunchArg::LogFile` — a `.log` argv entry. Routes through the
+  **existing, unchanged** `open_file`/`create_main(..., Some(path))` →
+  `window.philoggLoadUrl` (`loadUrlIntoTree` in `philogg.html`) single-URL
+  path. The file-association double-click launch and the new "Open in
+  PhiLogg" verb invoke the exe identically (`"<exe>" "%1"`), so there is
+  nothing to distinguish and nothing new needed here.
+- `LaunchArg::LocalTarget` — a `.zip` argv entry, or one that `is_dir()`.
+  `loadUrlIntoTree` has no ZIP awareness at all (it always does
+  `addFile(name, text)` on whatever bytes it fetches) — that only exists in
+  `loadDesktopLocalFiles` (`window.philoggLoadLocalFiles`), the same
+  function drag-drop and the native folder watch already use — so this
+  needs a different route: the new `windows::open_local(app, files,
+  folders)`. It registers each file via `commands::LocalFile::register`
+  (exactly like `register_dropped` does for a native drop), builds the same
+  `{files, folders}` JSON payload, and either `eval()`s
+  `philoggLoadLocalFiles` straight into the already-running main window
+  (mirroring `open_file`), or — on a cold launch, where there is no window
+  and so no loaded page to eval into yet — creates the window plain
+  (`create_main(app, None)`) and stashes the payload in a new
+  `AppState.pending_local_load`. `commands::app_ready` (already the exact
+  "page reported its first paint" signal used to dismiss the splash) calls
+  the new `windows::flush_pending_local`, which runs the stashed payload
+  once the page actually exists to receive it, then clears it.
+
+Both `main.rs` call sites (the cold-launch `setup` and the
+`tauri-plugin-single-instance` callback) match on `classify_launch`'s result
+instead of the old `Option<PathBuf>`.
+
+**Registry shape.** Verbs register under
+`HKCU\Software\Classes\SystemFileAssociations\<ext>\shell\PhiLoggOpen` and
+`HKCU\Software\Classes\Directory\shell\PhiLoggWatch` — never a new ProgID —
+so a context-menu entry is added to any matching file/folder without
+touching whichever app is currently the *default* handler for `.log`/`.zip`.
+`HKCU` (via the template's own `SHCTX`, not a hardcoded literal), not
+`HKCR`/`HKLM`: the installer's default `installMode` is `currentUser`
+(unset in `tauri.conf.json` → Tauri's own default), which needs no admin
+elevation and writes under `%LOCALAPPDATA%`/`HKCU` — `HKCU\Software\Classes`
+is the per-user equivalent Explorer already merges into its effective view,
+consistent with how the rest of the install already works.
+
+**Why a forked installer template, not `installerHooks`.** Tauri's NSIS
+`installerHooks` (`NSIS_HOOK_{PRE,POST}{INSTALL,UNINSTALL}`) only inject
+code at four fixed points *inside* the existing single install/uninstall
+section — none of them can add a whole new wizard **page**, which is what an
+actual checkbox needs (a `MUI_PAGE_COMPONENTS` page listing an optional
+`Section`). Getting one meant forking the whole generated template instead:
+`desktop/src-tauri/windows/installer.nsi`, referenced via `tauri.conf.json`
+→ `bundle.windows.nsis.template`, pulled verbatim from `tauri-bundler`'s
+generated template at `@tauri-apps/cli` **2.11.4** (the version
+`desktop/package-lock.json` resolves to) with every divergence marked
+`; PHILOGG:` inline. On top of the stock flow: a `MUI_PAGE_COMPONENTS` page
+inserted right before the directory-choice page; the three previously
+plain-named core sections (`EarlyChecks`/`WebView2`/`Install`) renamed with
+a leading `-` (NSIS's "hidden section" convention) so a components page
+doesn't also list them as separate, individually-uncheckable rows — only
+the real optional one, `"Explorer context menu"`, is meant to be a visible
+row; and, in `Section Uninstall`, three unconditional `DeleteRegKey` calls
+for the same three keys (a no-op if the component was never installed) —
+this is what makes "removed on uninstall" hold no matter whether the box
+was ever ticked. Default is checked (opt-out, not opt-in).
+
+**This fork needs revisiting on a future Tauri upgrade.** If
+`@tauri-apps/cli` moves past `2.11.4` and Tauri's own generated
+`installer.nsi` changes (a new hook point, a security fix, a WebView2
+install-flow change), this file won't pick it up automatically — re-diff
+against the new stock template and reapply the `; PHILOGG:`-marked edits
+rather than assuming this fork silently tracks upstream.
+
+**Adding a future extension.** Not built as a generic system now — nothing
+asked for one, and two extensions don't justify one — but the actual
+touch points, if a new log format ever wants its own context-menu verb
+(say `.trace`):
+
+1. `desktop/src-tauri/windows/installer.nsi` — one
+   `!insertmacro PhiLoggContextMenuVerb ".trace" "..."` line (install) and
+   one matching `DeleteRegKey` line (uninstall).
+2. `tauri.conf.json` → `bundle.fileAssociations` — only if it should also be
+   a double-click default, not just a context-menu verb.
+3. `FOLDER_WATCH_EXTENSIONS` (`philogg.html`) — for folder-watch auto-pickup.
+4. The `accept=".log,.txt,..."` attributes (`philogg.html`) — for the plain
+   `<input>` file-picker fallback.
+
+Log *format* parsing (the glob → `LogFormat` Format Manager) is already
+fully decoupled from file extension, so none of the above touches parsing
+itself.
+
 ## "Open File Location" and "Copy Path"
 
 `FEATURE_BACKLOG.md` #52, implemented deliberately generic rather than tied to any one
