@@ -7055,10 +7055,15 @@ section("58c. Column visibility/width persist through the session cache (global 
    content-fingerprint matching, unlike the per-file filter history).
    Applying reuses importFilterJson() unchanged, so it re-evaluates the
    filter LOGIC against whatever file it lands on, never a stale result.
+   UPDATED, same session: "Add to Library" moved off #viewBar's dedicated
+   #btnAddToLibrary button (removed outright, see GROUP 220/221) onto the
+   Files & Filters sidebar toolbar's "Add to library…" action, targeting
+   the specific selected filter node rather than always state.activeId —
+   59a rewritten accordingly.
    ============================================================ */
 group(59);
 await withApp(async (w, d, T) => {
-  section("59a. Add to Library (Filter-Toolbar '+' button) + name dialog");
+  section("59a. Add to library… (Files & Filters sidebar toolbar) + name dialog");
   // Needs a real (fake-indexeddb) IndexedDB — unlike state.multilineMessages
   // et al., the library has no in-memory fallback; cacheStoreOp silently
   // no-ops without one (same graceful-degradation jsdom sees in every OTHER
@@ -7067,21 +7072,21 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   w.render();
   const textNode = w.createFilterNode(f.id, "text", "message 1");
+  T.state.multiSelect = new Set([textNode.id]);
   T.state.activeId = textNode.id;
   w.render();
 
-  // Saving moved off the context menu onto the Filter-Toolbar's "+ Add to
-  // Library" button (person-requested), acting on the ACTIVE filter node.
-  const addBtn = d.querySelector("#btnAddToLibrary");
-  assert(addBtn, "the '+ Add to Library' button exists in the Filter-Toolbar");
-  w.updateRowActionButtons();
-  assert(!addBtn.disabled, "the button is enabled while the active node is a filter");
-  fireClick(addBtn, w);
+  // Saving lives on the sidebar toolbar's "Add to library…" action
+  // (person-requested), acting on the SPECIFIC selected filter node.
+  let { actions } = w.describeSidebarToolbarActions();
+  assert(actions.some(a => a.action === "addToLibrary" && a.target === textNode.id),
+    "'Add to library…' is offered, targeting the selected filter node");
+  w.handleSidebarToolbarActionClick("addToLibrary");
 
   const saveDialog = d.querySelector("#filterLibrarySaveDialog");
   assert(!saveDialog.classList.contains("hidden"), "the naming dialog opens");
   const nameInput = d.querySelector("#filterLibraryNameInput");
-  assert(nameInput.value === textNode.name, "name input pre-fills with the active filter node's own name");
+  assert(nameInput.value === textNode.name, "name input pre-fills with the selected filter node's own name");
 
   nameInput.value = "My saved filter";
   fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
@@ -7106,18 +7111,21 @@ await withApp(async (w, d, T) => {
   assert(records[0].showInToolbar === false && records[0].icon === null,
     "new records default to showInToolbar:false / icon:null (unpinned, no icon)");
 
-  // The button is disabled when the active node is NOT a filter (a file/folder
-  // has nothing to serialize) — same guard saveFilterToLibrary itself applies.
+  // "Add to library…" is OMITTED (not just disabled) when the selected node
+  // is a plain file, not a filter — a file/folder has nothing to serialize
+  // into a preset, same guard openFilterLibrarySaveDialog's own caller
+  // (saveFilterToLibrary) applies.
+  T.state.multiSelect = new Set([f.id]);
   T.state.activeId = f.id;
   w.render();
-  w.updateRowActionButtons();
-  assert(addBtn.disabled, "the '+ Add to Library' button is disabled when the active node is a plain file, not a filter");
+  ({ actions } = w.describeSidebarToolbarActions());
+  assert(!actions.some(a => a.action === "addToLibrary"), "'Add to library…' is not offered for a plain file selection");
 
   // Blank name is a no-op (dialog stays open, nothing saved)
+  T.state.multiSelect = new Set([textNode.id]);
   T.state.activeId = textNode.id;
   w.render();
-  w.updateRowActionButtons();
-  fireClick(addBtn, w);
+  w.handleSidebarToolbarActionClick("addToLibrary");
   d.querySelector("#filterLibraryNameInput").value = "   ";
   fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
   assert(!d.querySelector("#filterLibrarySaveDialog").classList.contains("hidden"), "a blank/whitespace-only name does not save or close the dialog");
@@ -7221,6 +7229,12 @@ section("59c. Filter library persists across a simulated reload (separate Indexe
    list (11 items on a filter node) is now built into GROUP_ORDER buckets
    (edit/clipboard/library/danger) joined by .ctx-sep, the same grouping
    convention #contextMenu (the log-row menu) already established.
+   UPDATED, same-day later session: "Time context…"/"Count context…" removed
+   from the edit bucket entirely (FEATURE_BACKLOG.md #79) — there is no
+   longer any user-facing way to create a fresh context/countContext node.
+   60b's ordering assertions updated (edit group is now just edit/invert)
+   and extended with an explicit absence guard plus a link-node regression
+   check (see GROUP 220/221 for the sidebar toolbar's own side of this).
    ============================================================ */
 group(60);
 await withApp(async (w, d, T) => {
@@ -7258,29 +7272,49 @@ await withApp(async (w, d, T) => {
   const seps = children.filter(c => c.classList.contains("ctx-sep")).length;
   assert(seps >= 4, "a filter node's context menu has at least 4 separators (meta + 3 group boundaries among edit/clipboard/library/danger), got " + seps);
 
-  // Group order: edit (edit/invert/context/countContext) before clipboard
-  // (copy/cut) before library (saveFilter/loadFilter/applyFromLibrary) before
-  // danger (delete) — verify relative order via each action's index.
-  // ("Save to library…" moved out of this menu onto the Filter-Toolbar's
-  // "+ Add to Library" button; "Apply from library…" stays here.)
+  // Group order: edit (edit/invert) before clipboard (copy/cut) before
+  // library (saveFilter/loadFilter/applyFromLibrary) before danger (delete)
+  // — verify relative order via each action's index.
+  // ("Save to library…" moved out of this menu onto the sidebar toolbar's
+  // "Add to library…" action; "Apply from library…" stays here. "Time
+  // context…"/"Count context…" were REMOVED from this menu entirely, this
+  // session — FEATURE_BACKLOG.md #79 — so the edit group is now just
+  // edit/invert; see the regression guard right below for their absence.)
   const indexOf = action => children.findIndex(c => c.dataset && c.dataset.action === action);
-  assert(indexOf("edit") < indexOf("invert") && indexOf("invert") < indexOf("context") && indexOf("context") < indexOf("countContext"),
-    "edit group stays together and in order: edit, invert, time context, count context");
-  assert(indexOf("countContext") < indexOf("copy") && indexOf("copy") < indexOf("cut"), "clipboard group (copy, cut) comes after the edit group");
+  assert(indexOf("context") === -1 && indexOf("countContext") === -1,
+    "'Time context…'/'Count context…' no longer appear on a filter node's context menu — there is no user-facing way left to create a fresh one (FEATURE_BACKLOG.md #79)");
+  assert(indexOf("edit") < indexOf("invert"), "edit group stays together and in order: edit, invert");
+  assert(indexOf("invert") < indexOf("copy") && indexOf("copy") < indexOf("cut"), "clipboard group (copy, cut) comes after the edit group");
   assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("loadFilter") &&
     indexOf("loadFilter") < indexOf("applyFromLibrary"),
     "library group (save filter, load filter, apply from library) comes after clipboard, in order");
-  assert(indexOf("saveToLibrary") === -1, "'Save to library…' is no longer a context-menu action (moved to the toolbar '+' button)");
+  assert(indexOf("saveToLibrary") === -1, "'Save to library…' is no longer a context-menu action (moved to the sidebar toolbar's 'Add to library…')");
   assert(indexOf("applyFromLibrary") < indexOf("delete"), "danger group (remove filter) comes last");
 
   // A .ctx-sep must actually separate the edit and clipboard groups (not
-  // just "somewhere in the menu") — the item right after "countContext"
-  // (edit group's now-last item) up to "copy" (clipboard's first) is
-  // exactly one sep.
-  const countContextIdx = indexOf("countContext");
-  assert(children[countContextIdx + 1].classList.contains("ctx-sep") && children[countContextIdx + 2].dataset.action === "copy",
+  // just "somewhere in the menu") — the item right after "invert" (edit
+  // group's now-last item) up to "copy" (clipboard's first) is exactly one sep.
+  const invertIdx = indexOf("invert");
+  assert(children[invertIdx + 1].classList.contains("ctx-sep") && children[invertIdx + 2].dataset.action === "copy",
     "a .ctx-sep sits directly between the edit group's last item and the clipboard group's first");
 
+  w.closeTreeContextMenu();
+
+  // A link filter (Invert excluded) still groups cleanly with just "edit"
+  // (Rename) in the edit group — regression guard that removing
+  // context/countContext didn't leave a dangling empty-group separator for
+  // a filterType that also excludes invert.
+  const f2 = await w.addFile("b.log", makeLog(0, 20, { msgPrefix: "other" }), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f2.id, "text", "message 1");
+  const linkNode = w.createLinkNode(t1.id, t2.id, "after", 1);
+  w.render();
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + linkNode.id + '"]'), w);
+  const linkChildren = [...d.querySelector("#treeContextMenu").children];
+  const linkIndexOf = action => linkChildren.findIndex(c => c.dataset && c.dataset.action === action);
+  assert(linkIndexOf("context") === -1 && linkIndexOf("countContext") === -1 && linkIndexOf("invert") === -1,
+    "a link node's context menu offers none of invert/context/countContext");
+  assert(linkIndexOf("rename") < linkIndexOf("copy"), "rename (edit group) still precedes copy (clipboard group) for a link node");
   w.closeTreeContextMenu();
 
   // A plain (non-merged, entries-bearing) file node groups cleanly: the edit
@@ -20371,12 +20405,17 @@ await withApp(async (w, d, T) => {
   // Each of these ids must stay a chrome element the wrapper's PiP hides —
   // silently renaming one would break PiP's content-only view with nothing
   // failing here. (The list is deliberately a strict set: content view
-  // chrome like .tail-jump-btn is NOT hidden.)
+  // chrome like .tail-jump-btn is NOT hidden.) #treeActionBar dropped this
+  // session (FEATURE_BACKLOG.md #77, retired outright in favor of
+  // #sidebarToolbar) — no replacement entry needed, #sidebarToolbar is a
+  // descendant of #sidebar, already covered by that entry.
   for (const id of ["#toolbar", "#sidebar", "#breadcrumbBar", "#extractToolbar", "#tableToolbar",
     "#plotToolbar", "#plotControls", "#contextToolbar", "#filteredToolbar", "#linkToolbar",
-    "#treeActionBar", "#detailPanel", "#detailResizer", "#timelineMinimap", "#emptyState"]) {
+    "#detailPanel", "#detailResizer", "#timelineMinimap", "#emptyState"]) {
     assert(css.includes("html.pip-mode " + id), "html.pip-mode hides " + id);
   }
+  assert(!css.includes("html.pip-mode #treeActionBar"),
+    "#treeActionBar is retired (FEATURE_BACKLOG.md #77) — no stray rule targeting it should remain");
 
   // #viewBar is not hidden wholesale — it collapses and hides everything but
   // #fhTabs, which is surfaced into the mini strip (position:fixed above the
@@ -21291,19 +21330,25 @@ await withApp(async (w, d, T) => {
    Origin: this session, person-requested. The filter library gained a
    Filter-Toolbar section: a preset flagged showInToolbar renders as a
    circle-pill .row-action-btn in the "Library Filter" group (#libraryPresetBar),
-   clicking it applies the preset onto the active node. The management buttons
-   (Add to Library / Library) live in a separate right-aligned group
-   (#libraryManageBar). Each preset can be assigned an icon (LIBRARY_ICON_SET)
-   shown in its pill, falling back to ICON_FILTER when unset. Pin + icon are
-   library-RECORD fields (showInToolbar/icon), not filter-node fields, so no
-   persistence carrier threading is involved. The manage dialog gained the pin
-   toggle (a .settings-switch pill) and an inline icon grid per row.
+   clicking it applies the preset onto the active node. Each preset can be
+   assigned an icon (LIBRARY_ICON_SET) shown in its pill, falling back to
+   ICON_FILTER when unset. Pin + icon are library-RECORD fields
+   (showInToolbar/icon), not filter-node fields, so no persistence carrier
+   threading is involved. The manage dialog gained the pin toggle (a
+   .settings-switch pill) and an inline icon grid per row.
    Icon grid extended (this session, person-requested): a LIBRARY_EMOJI_SET
    section (native Unicode, no image assets — same rendering in-browser and
    under the Tauri desktop wrapper, both just OS webviews) alongside the
    original SVG set, plus a free-text fallback input for any emoji outside
    the curated list. icon is tagged "emoji:<char>" vs. a bare/"svg:"-prefixed
    SVG-set name; legacy bare names still resolve (backward compat).
+   UPDATED, same-day later session: the management buttons (Add to Library /
+   Library) that used to live in a separate right-aligned #libraryManageBar
+   group alongside #libraryPresetBar are REMOVED from #viewBar entirely —
+   relocated into the Files & Filters sidebar toolbar (see GROUP 220/221).
+   193a's assertions about #libraryManageBar/#btnAddToLibrary/#btnOpenLibrary
+   are removed accordingly; #libraryPresetBar's own pinned-presets behavior
+   (everything else in this group) is unaffected and still passes unchanged.
    ============================================================ */
 group(193);
 await withApp(async (w, d, T) => {
@@ -21340,13 +21385,10 @@ await withApp(async (w, d, T) => {
   assert(pill.querySelector(".row-action-label").textContent === "toolbar preset", "the pill carries the preset name as its label");
   // No icon assigned yet → ICON_FILTER fallback (funnel path, not a circle).
   assert(pill.querySelector(".row-action-hit").innerHTML.includes("M2 3h12"), "with no icon assigned the pill shows the ICON_FILTER fallback");
-  // Pills live in the "Library Filter" group (#libraryPresetBar); the
-  // management buttons live in a separate right-aligned group (#libraryManageBar).
-  assert(d.querySelector("#libraryManageBar").contains(d.querySelector("#btnAddToLibrary")) &&
-    d.querySelector("#libraryManageBar").contains(d.querySelector("#btnOpenLibrary")),
-    "Add to Library + Library buttons live in #libraryManageBar, not in the pills group");
-  assert(!d.querySelector("#libraryPresetBar").contains(d.querySelector("#btnAddToLibrary")),
-    "the pills group holds only pills, not the management buttons");
+  // Pills live in the "Library Filter" group (#libraryPresetBar) — the old
+  // management buttons that used to sit alongside it in #libraryManageBar
+  // are gone from #viewBar entirely (see GROUP 220/221's own regression
+  // guard for their absence).
   assert(!d.querySelector("#libraryPresetBar").hidden, "the Library Filter group is shown while a preset is pinned");
 
   // Close dialog, switch active node to a fresh file, click the pill → the
@@ -21465,6 +21507,12 @@ await withApp(async (w, d, T) => {
    Library" (dashed placeholder outline) and a book "Library". Selection-filter
    (idset) tree nodes now show a single check (ICON_CHECK) instead of the
    multi-line checklist. Ctrl+1-4 still skips a disabled Table/Plot slot.
+   UPDATED, same-day later session: #libraryManageBar (and the "Add to
+   Library"/"Library" buttons inside it) removed from #viewBar entirely —
+   relocated into the Files & Filters sidebar toolbar (GROUP 220/221). 194b
+   rewritten from "buttons look right" into a regression guard that they're
+   gone; 194e's management-group assertions dropped (nothing left at that
+   position to assert about).
    ============================================================ */
 group(194);
 await withApp(async (w, d, T) => {
@@ -21488,24 +21536,19 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("194b. Management buttons: floppy-disk Add + book Library, right-aligned (no dashed outline)");
+  section("194b. Management buttons removed from #viewBar entirely (relocated into the sidebar toolbar, GROUP 220/221)");
 
-  const addBtn = d.querySelector("#btnAddToLibrary");
-  const openBtn = d.querySelector("#btnOpenLibrary");
-  // (Border shorthand isn't reliably expanded by jsdom's getComputedStyle, so
-  // assert the placeholder CLASS is applied rather than the resolved border.)
-  // Add (disk) and Library (book) carry distinct, non-empty icons; the dashed
-  // placeholder outline was dropped (person-requested).
-  assert(!addBtn.classList.contains("lib-add-placeholder"), "Add to Library no longer carries the dashed-placeholder class");
-  assert(addBtn.querySelector(".row-action-hit").innerHTML.length > 0 &&
-    openBtn.querySelector(".row-action-hit").innerHTML !== addBtn.querySelector(".row-action-hit").innerHTML,
-    "Add (disk) and Library (book) carry distinct icons");
-  // Right-alignment is float:right in CSS (jsdom has no layout engine to
-  // resolve the visual position) — assert the structural precondition instead:
-  // the management group is the last element in #viewBar, floated right.
-  const viewBarKids = [...d.querySelector("#viewBar").children];
-  assert(viewBarKids[viewBarKids.length - 1].id === "libraryManageBar",
-    "the management group is the last child of #viewBar (pinned right via float:right)");
+  // #libraryManageBar/#btnAddToLibrary/#btnOpenLibrary used to live here —
+  // removed outright this session (project-owner review), replaced by the
+  // Files & Filters sidebar toolbar's "Add to library…"/"Apply from
+  // library…" actions (targeting the specific selected node instead of
+  // always state.activeId — see describeSidebarToolbarActions).
+  assert(d.querySelector("#libraryManageBar") === null, "#libraryManageBar no longer exists anywhere in the document");
+  assert(d.querySelector("#btnAddToLibrary") === null, "#btnAddToLibrary no longer exists anywhere in the document");
+  assert(d.querySelector("#btnOpenLibrary") === null, "#btnOpenLibrary no longer exists anywhere in the document");
+  // #libraryPresetBar (the pinned-preset pills) is untouched — only the
+  // management buttons moved, not the whole library-toolbar section.
+  assert(d.querySelector("#libraryPresetBar"), "#libraryPresetBar (pinned presets) is still present in #viewBar");
 });
 
 await withApp(async (w, d, T) => {
@@ -21544,7 +21587,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("194e. Layout order: level bar first (after the view selector), then the filter groups, then the right-aligned management group");
+  section("194e. Layout order: level bar first (after the view selector), then the filter groups");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.activeId = f.id;
@@ -21555,11 +21598,13 @@ await withApp(async (w, d, T) => {
   const iFilters = idxOf(k => k === "viewbar");
   const iNew = kids.indexOf("viewbarNew");
   const iLevel = kids.indexOf("levelBar");
-  const iManage = kids.indexOf("libraryManageBar");
   assert(iTabs === 0, "view selector (#fhTabs) is first");
   assert(iTabs < iLevel, "the level bar comes right after the view selector (person-requested, this session: moved from after the filter groups to before them)");
   assert(iLevel < iFilters && iFilters < iNew, "the standard filter group and New come right after the level bar");
-  assert(iManage === kids.length - 1, "the management group is last (floated right)");
+  // No management group any more — #libraryManageBar was removed from
+  // #viewBar entirely this session (see GROUP 194b/220/221) — #viewbarNew
+  // is simply the last group now.
+  assert(iNew === kids.length - 1, "New (#viewbarNew) is the last child of #viewBar now that the management group is gone");
   // All group separators are DIRECT children of #viewBar (not inside a flex group).
   const seps = [...d.querySelectorAll("#viewBar > .row-action-separator")];
   assert(seps.length === 3,
@@ -25105,8 +25150,587 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   Summary
+   GROUP 223 — Complete the log-entry right-click context menu
+   (FEATURE_BACKLOG.md #78)
+   Origin: this session. Numbered 223, not 219, to avoid colliding with the
+   unrelated stepper-control GROUP 219 merged into main the same day.
+   Three changes to #contextMenu/openContextMenu:
+   (1) "Filter for this ___" (#ctxFilterForColumn) moved to the very top,
+   right under the timestamp meta row's separator, instead of being buried
+   below After/Before/Bookmark/Note. (2) A new "Extract" item
+   (#ctxExtractMessage) sits right next to it — a one-click version calling
+   the unchanged extractMessageFilter(entry), shown only when the entry's
+   message has something extractable (buildNumericExtractPattern !== null),
+   the exact same gate the #viewBar row-action's own "Extract" button
+   already uses for its disabled state. The rest of the menu is regrouped
+   by separators (meta -> Filter-for-this-___ + Extract -> After/Before/
+   Time filter from selection -> Bookmark/Note/Add to selection -> Copy)
+   but otherwise unchanged. (3) A new "Copy" item (#ctxCopy) at the very
+   bottom: NOT a plain copyLogSelectionToClipboard() call (which reads
+   whatever state.logMultiSelect/state.selectedId currently holds,
+   ignoring which row was actually right-clicked) — person-confirmed
+   semantics: copy the right-clicked row, UNLESS it's already part of the
+   current multi-selection, in which case copy the whole selection
+   (calling copyLogSelectionToClipboard() unmodified). Both paths share a
+   new formatEntriesForClipboard(entries), factored out of
+   copyLogSelectionToClipboard's own inline formatting, so a single row and
+   a full selection can never format differently.
    ============================================================ */
+group(223);
+await withApp(async (w, d, T) => {
+  section("223. Context menu: reorder, Extract item, selection-aware Copy");
+
+  // Two lines: one with numeric message content (extractable), one without.
+  const line1 = `2024-01-15 10:00:00,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 0\t[DoWork]\t"processed 42 items"\n`;
+  const line2 = `2024-01-15 10:00:01,000\tINFO\t"main"\tC:\\src\\Foo.cs\tline 1\t[DoWork]\t"no numeric content here"\n`;
+  const f = await w.addFile("ctx219.log", line1 + line2 + makeLog(2, 6), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  // --- (1) Reorder: "Filter for this ___" is the first actionable item,
+  // right after the meta row's own separator ---
+  const menuChildren = [...d.querySelector("#contextMenu").children];
+  assert(menuChildren[0].id === "ctxMeta", "sanity: the timestamp meta row is still the menu's first child");
+  assert(menuChildren[1].classList.contains("ctx-sep"), "sanity: a separator follows the meta row");
+  assert(menuChildren[2].id === "ctxFilterForColumn",
+    "'Filter for this ___' is the first actionable item, directly after the meta row's separator, got #" + menuChildren[2].id);
+  assert(menuChildren[3].id === "ctxExtractMessage", "'Extract' sits directly next to 'Filter for this ___', got #" + menuChildren[3].id);
+  assert(menuChildren[4].classList.contains("ctx-sep"), "a separator follows the Filter-for-this-___/Extract group");
+  // Regroup: After/Before/Time-range-from-selection, then a separator, then
+  // Bookmark/Note/Add-to-selection, then a separator, then Copy at the end.
+  const idsFrom = i => menuChildren.slice(i).map(c => c.id || (c.classList.contains("ctx-sep") ? "sep" : "?"));
+  assert(JSON.stringify(idsFrom(5)) === JSON.stringify(["ctxAfter", "ctxBefore", "ctxTimeRangeFromSelection", "sep", "ctxBookmark", "ctxNote", "ctxAddToSelection", "sep", "ctxCopy"]),
+    "menu regrouped as After/Before/TimeRange -> sep -> Bookmark/Note/AddToSelection -> sep -> Copy, got " + JSON.stringify(idsFrom(5)));
+
+  // --- (2) Extract item: visible + correct outcome for an extractable
+  // message, hidden for a message with nothing extractable ---
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[0]);
+  assert(isVisible(d.querySelector("#ctxExtractMessage"), w) === true, "Extract is shown for a message with numeric content");
+  const beforeChildren = f.children.slice();
+  fireClick(d.querySelector("#ctxExtractMessage"), w);
+  assert(f.children.length === beforeChildren.length + 1, "Extract creates exactly one new filter node");
+  const extractedId = f.children.find(id => !beforeChildren.includes(id));
+  const extracted = T.state.nodes[extractedId];
+  assert(extracted.filterType === "text" && extracted.value === "processed [*:int] items",
+    "Extract commits the same auto-extraction pattern extractMessageFilter/buildNumericExtractPattern would build, got " + JSON.stringify(extracted && extracted.value));
+  assert(JSON.stringify(extracted.columns) === JSON.stringify(["message"]), "the created node is restricted to the message column");
+  assert(T.state.activeId === extracted.id, "Extract reveals the created node as active, same as extractMessageFilter's own behavior");
+
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[1]);
+  assert(isVisible(d.querySelector("#ctxExtractMessage"), w) === false, "Extract is hidden for a message with nothing extractable ('no numeric content here')");
+  w.closeContextMenu();
+
+  // --- (3) Copy: selection-aware semantics ---
+  // The Extract action above left the extraction's own child node active
+  // (narrowing #tableRows to just its own match) — back to the file itself
+  // so every entry has a row to right-click again.
+  T.state.activeId = f.id;
+  w.render();
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+  const rowAt = i => d.querySelector('#tableRows [data-entry-id="' + f.entries[i].id + '"]');
+  const clickWith = (el, opts) => el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ...opts }));
+
+  // Nothing selected at all -> right-clicking a row copies just that row.
+  T.state.logMultiSelect.clear();
+  T.state.selectedId = null;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[3]);
+  fireClick(d.querySelector("#ctxCopy"), w);
+  assert(copied === f.entries[3].raw, "with nothing selected, Copy copies just the right-clicked row's raw text");
+
+  // Right-clicking a row that is NOT part of the current multi-selection ->
+  // copies just that row, ignoring the unrelated active selection.
+  clickWith(rowAt(2), {});
+  clickWith(rowAt(4), { ctrlKey: true });
+  assert(T.state.logMultiSelect.size === 2 && !T.state.logMultiSelect.has(f.entries[6].id), "sanity: a 2-row selection is active, not including entry 6");
+  copied = null;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[6]);
+  fireClick(d.querySelector("#ctxCopy"), w);
+  assert(copied === f.entries[6].raw, "right-clicking a row OUTSIDE the current selection copies just that row, not the unrelated selection");
+
+  // Right-clicking a row that IS part of an active 2+ multi-selection ->
+  // copies the whole selection, byte-identical to copyLogSelectionToClipboard().
+  copied = null;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[4]);
+  fireClick(d.querySelector("#ctxCopy"), w);
+  const expectedSelectionText = [2, 4].map(i => f.entries[i].raw).join("\n");
+  assert(copied === expectedSelectionText, "right-clicking a row INSIDE the current selection copies the whole selection, sorted chronologically");
+  copied = null;
+  w.copyLogSelectionToClipboard();
+  assert(copied === expectedSelectionText, "...byte-identical to calling copyLogSelectionToClipboard() directly");
+
+  // --- Regression guard: pre-existing items still work, just repositioned ---
+  // Extract (above) reveals the created node as active — reset back to the
+  // file itself so the actions below create their nodes as its children,
+  // same as every other assertion in this group.
+  T.state.activeId = f.id;
+  T.state.logMultiSelect.clear();
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[5]);
+  assert(isVisible(d.querySelector("#ctxBookmark"), w) === true, "Bookmark this row is still offered, just moved into the third group");
+  fireClick(d.querySelector("#ctxBookmark"), w);
+  assert(T.state.bookmarks.has(f.entries[5].id), "Bookmark this row still toggles a bookmark");
+
+  const beforeAfterChildren = f.children.slice();
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[5]);
+  fireClick(d.querySelector("#ctxAfter"), w);
+  const afterId = f.children.find(id => !beforeAfterChildren.includes(id));
+  assert(T.state.nodes[afterId].filterType === "timerange" && T.state.nodes[afterId].value.from === f.entries[5].ts && T.state.nodes[afterId].value.to === null,
+    "'Filter after this' still creates the expected timerange node, just repositioned in the menu");
+
+  // Back to the unfiltered file view so every entry has a row again (the
+  // "Filter after this" node above narrows #tableRows to entries 5+).
+  T.state.activeId = f.id;
+  w.render();
+  clickWith(rowAt(2), {});
+  clickWith(rowAt(4), { ctrlKey: true });
+  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[4]);
+  assert(isVisible(d.querySelector("#ctxTimeRangeFromSelection"), w) === true, "'Time filter from selection' still shows for a 2+ selection");
+  assert(isVisible(d.querySelector("#ctxAddToSelection"), w) === true, "'Add to selection' is still always offered");
+  w.closeContextMenu();
+});
+
+/* ============================================================
+   GROUP 220 — Files & Filters sidebar toolbar (FEATURE_BACKLOG.md #77)
+   Origin: this session (rewritten same session, after project-owner review
+   of an initial pass — see the retired GROUP 220 in TEST PROVENANCE for
+   what that first shape looked like). New #sidebarToolbar, same icon+
+   hover-label button concept as #viewBar/the per-view toolbars
+   (buildRowActionsHtml, "rect" shape — the per-view toolbars' own look, not
+   #viewBar's circle — /setupHitExpandGroups), replacing the tree's row
+   icons/right-click-only actions with a selection-dependent toolbar of at
+   most two `|`-separated groups. describeSidebarToolbarActions() decides
+   the button set for every selection shape (0/1/2+ selected, file vs.
+   filter, locked Bookmarks node, same-root vs. different-root/mixed
+   multi-selection); handleSidebarToolbarActionClick(action) dispatches to
+   the pre-existing function/dialog each action already had (zero
+   duplicated business logic). AND/OR/Link… move EXCLUSIVELY here (person-
+   confirmed): removed from the retired #treeActionBar (its Merge case
+   folds into this toolbar's own "2+ files" case) and from
+   openTreeContextMenu's own bulk-action rendering (Merge stays there, see
+   GROUP 221c). `copy`/`cut`/`saveFilter`/`loadFilter`/`context`/
+   `countContext` are removed from the toolbar entirely, for every
+   selection shape (220h is the dedicated absence guard) — the first four
+   stay on the tree's right-click menu unaffected, the last two are removed
+   from there too (FEATURE_BACKLOG.md #79, see GROUP 60b). "Add to
+   library…"/"Apply from library…" replace #viewBar's old dedicated
+   #btnAddToLibrary/#btnOpenLibrary buttons (removal regression-guarded in
+   GROUP 194b), now targeting the specific selected node. Covers every
+   selection shape
+   describeSidebarToolbarActions handles, plus a representative spread of
+   handleSidebarToolbarActionClick's dispatch targets.
+   ============================================================ */
+group(220);
+
+await withApp(async (w, d, T) => {
+  section("220a. describeSidebarToolbarActions: 0 selected -> Apply from library only, targeting state.activeId, disabled with no active id");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.multiSelect = new Set();
+  T.state.activeId = null;
+  let { actions, note } = w.describeSidebarToolbarActions();
+  assert(actions.length === 1 && actions[0].action === "applyFromLibrary",
+    "0 selected, no active id: only Apply from library…, got " + actions.map(a => a.action).join(","));
+  assert(actions[0].disabled === true, "...disabled with no active id");
+  assert(!note, "no explanatory note needed here");
+
+  T.state.activeId = f.id;
+  ({ actions } = w.describeSidebarToolbarActions());
+  assert(actions[0].disabled === false && actions[0].target === f.id, "0 selected but a real active id: Apply from library… enabled, targeting state.activeId");
+});
+
+await withApp(async (w, d, T) => {
+  section("220b. describeSidebarToolbarActions: 1 file selected -> Adjust clock | Apply from library, Adjust clock excluded for a merged or empty file");
+  const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
+  T.state.multiSelect = new Set([fa.id]);
+  T.state.activeId = fa.id;
+  let { actions } = w.describeSidebarToolbarActions();
+  assert(actions.map(a => a.action).join(",") === "clockOffset,applyFromLibrary",
+    "a real, non-merged, non-empty file: exactly Adjust clock… then Apply from library…, got " + actions.map(a => a.action).join(","));
+  assert(actions[0].target === fa.id && actions[1].target === fa.id, "both actions target the selected file itself");
+  assert(!actions[0].separator && actions[1].separator === true, "the `|` separator sits directly before the library group, not before Adjust clock…");
+
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.multiSelect = new Set([merged.id]);
+  T.state.activeId = merged.id;
+  ({ actions } = w.describeSidebarToolbarActions());
+  assert(!actions.some(a => a.action === "clockOffset"), "a merged file has no clock of its own to adjust — Adjust clock… is omitted entirely, not just disabled");
+  assert(actions.length === 1 && actions[0].action === "applyFromLibrary" && !actions[0].separator,
+    "with Adjust clock… omitted, Apply from library… is the only action and carries no leading separator");
+
+  const emptyFileId = "syntheticEmptyFile";
+  T.state.nodes[emptyFileId] = { id: emptyFileId, type: "file", merged: false, entries: [], children: [] };
+  T.state.multiSelect = new Set([emptyFileId]);
+  T.state.activeId = emptyFileId;
+  ({ actions } = w.describeSidebarToolbarActions());
+  assert(!actions.some(a => a.action === "clockOffset"), "an empty file (zero entries) also excludes Adjust clock…");
+});
+
+await withApp(async (w, d, T) => {
+  section("220c. describeSidebarToolbarActions: 2+ files selected -> Merge | Apply from library (state.activeId fallback), no AND/OR/Link");
+  const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
+  T.state.multiSelect = new Set([fa.id, fb.id]);
+  T.state.activeId = fa.id;
+  const { actions } = w.describeSidebarToolbarActions();
+  const mergeAction = actions.find(a => a.action === "merge");
+  assert(mergeAction && /Merge 2 files/.test(mergeAction.label), "2 files selected -> a Merge action with the expected label, got " + JSON.stringify(actions.map(a => a.action)));
+  assert(Array.isArray(mergeAction.target) && mergeAction.target.length === 2 &&
+    mergeAction.target.includes(fa.id) && mergeAction.target.includes(fb.id), "merge action's target is the array of selected file ids");
+  assert(!actions.some(a => a.action === "and" || a.action === "or" || a.action === "link"), "no AND/OR/Link for a files-only selection");
+  const applyLib = actions.find(a => a.action === "applyFromLibrary");
+  assert(applyLib && applyLib.separator === true, "Apply from library… is appended after Merge, with a leading separator");
+  assert(applyLib.target === fa.id, "with no single selected node, Apply from library… falls back to state.activeId (fa.id here)");
+  assert(applyLib.disabled === false, "...enabled since state.activeId is a valid, unlocked node");
+});
+
+await withApp(async (w, d, T) => {
+  section("220d. describeSidebarToolbarActions: 1 unlocked filter -> Rename/Edit/Invert | Add to library…/Apply from library…, Edit/Invert conditional per filterType");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  T.state.multiSelect = new Set([textNode.id]);
+  T.state.activeId = textNode.id;
+  const { actions } = w.describeSidebarToolbarActions();
+  const names = actions.map(a => a.action);
+  assert(names.join(",") === "rename,edit,invert,addToLibrary,applyFromLibrary",
+    "a plain text filter offers exactly rename, edit, invert | addToLibrary, applyFromLibrary, in order, got " + names.join(","));
+  assert(actions.every(a => a.target === textNode.id), "every action targets the selected filter node specifically");
+  const addLib = actions.find(a => a.action === "addToLibrary");
+  assert(addLib.separator === true, "the `|` separator sits directly before 'Add to library…', marking the group boundary");
+  assert(!actions.slice(0, 3).some(a => a.separator), "no separator inside the first group (rename/edit/invert)");
+
+  // Edit/Invert excluded for a filterType that doesn't support them (same
+  // guards openTreeContextMenu's own single-node branch applies) — a link
+  // node, via createLinkNode.
+  const f2 = await w.addFile("b.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f2.id, "text", "message 1");
+  const t2 = w.createFilterNode(f2.id, "text", "message 2");
+  const linkNode = w.createLinkNode(t1.id, t2.id, "after", 1);
+  T.state.multiSelect = new Set([linkNode.id]);
+  T.state.activeId = linkNode.id;
+  const { actions: linkActions } = w.describeSidebarToolbarActions();
+  const linkNames = linkActions.map(a => a.action);
+  assert(linkNames.join(",") === "rename,addToLibrary,applyFromLibrary",
+    "a link filter drops edit/invert but keeps rename | addToLibrary, applyFromLibrary, got " + linkNames.join(","));
+});
+
+await withApp(async (w, d, T) => {
+  section("220e. describeSidebarToolbarActions: the locked 'Bookmarks' node -> Apply from library only, disabled");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  w.toggleBookmark(f.entries[0].id);
+  const bmNode = Object.values(T.state.nodes).find(n => n.filterType === "bookmarks");
+  assert(bmNode && bmNode.locked, "sanity: the auto-managed Bookmarks node is locked");
+  T.state.multiSelect = new Set([bmNode.id]);
+  T.state.activeId = bmNode.id;
+  const { actions } = w.describeSidebarToolbarActions();
+  assert(actions.length === 1 && actions[0].action === "applyFromLibrary",
+    "the locked Bookmarks node offers only Apply from library… (Copy was the only thing shown here before this revision; it's gone from the toolbar entirely now), got " + actions.map(a => a.action).join(","));
+  assert(actions[0].disabled === true, "...disabled, same locked gate as always");
+  assert(actions[0].target === bmNode.id, "...still targeting the locked node itself, not falling back to state.activeId");
+});
+
+await withApp(async (w, d, T) => {
+  section("220f. describeSidebarToolbarActions: 2+ filters, same root -> AND/OR/Link only, no library group, with the 2-way vs. N-way Link label difference");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  T.state.multiSelect = new Set([t1.id, t2.id]);
+  T.state.activeId = t1.id;
+  let { actions } = w.describeSidebarToolbarActions();
+  assert(actions.map(a => a.action).join(",") === "and,or,link",
+    "2 filters, same root -> exactly AND, OR, Link… — no library group for a 2+ FILTER selection, got " + actions.map(a => a.action).join(","));
+  const link2 = actions.find(a => a.action === "link");
+  assert(link2 && !/-way/.test(link2.label), "2-filter Link… label has no N-way suffix, got " + (link2 && link2.label));
+  assert(Array.isArray(link2.target) && link2.target.length === 2, "link target is the 2-id selection array");
+
+  const t3 = w.createFilterNode(f.id, "text", "message 3");
+  T.state.multiSelect = new Set([t1.id, t2.id, t3.id]);
+  ({ actions } = w.describeSidebarToolbarActions());
+  const link3 = actions.find(a => a.action === "link");
+  assert(link3 && /3-way/.test(link3.label), "3-filter selection labels Link… as 3-way, got " + (link3 && link3.label));
+  assert(!actions.some(a => a.action === "and" || a.action === "or"), "AND/OR stay two-filter-only, same as describeBulkActions");
+  assert(!actions.some(a => a.action === "applyFromLibrary"), "still no library group for a 3-filter selection");
+});
+
+await withApp(async (w, d, T) => {
+  section("220g. describeSidebarToolbarActions: filters from different root files, and a mixed files+filters selection -> explanatory note, zero actions");
+  const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
+  const ta = w.createFilterNode(fa.id, "text", "message 1");
+  const tb = w.createFilterNode(fb.id, "text", "message 1");
+  T.state.multiSelect = new Set([ta.id, tb.id]);
+  T.state.activeId = ta.id;
+  let { actions, note } = w.describeSidebarToolbarActions();
+  assert(actions.length === 0, "filters from different root files offer zero actions, got " + actions.map(a => a.action).join(","));
+  assert(!!note, "...and an explanatory note instead of a silent no-op");
+
+  T.state.multiSelect = new Set([fa.id, ta.id]);
+  ({ actions, note } = w.describeSidebarToolbarActions());
+  assert(actions.length === 0 && !!note, "a mixed files+filters selection also gets a note, zero actions");
+});
+
+await withApp(async (w, d, T) => {
+  section("220h. describeSidebarToolbarActions: copy/cut/saveFilter/loadFilter/context/countContext never appear, for any selection shape");
+  const REMOVED = ["copy", "cut", "saveFilter", "loadFilter", "context", "countContext"];
+  const assertNoneRemoved = (actions, label) =>
+    REMOVED.forEach(a => assert(!actions.some(x => x.action === a), "'" + a + "' does not appear in " + label + ", got " + actions.map(x => x.action).join(",")));
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const fb = await w.addFile("b.log", makeLog(20, 20), () => {});
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  const textNode2 = w.createFilterNode(f.id, "text", "message 2");
+  w.toggleBookmark(f.entries[0].id);
+  const bmNode = Object.values(T.state.nodes).find(n => n.filterType === "bookmarks");
+
+  T.state.multiSelect = new Set(); T.state.activeId = textNode.id;
+  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "0 selected");
+
+  T.state.multiSelect = new Set([f.id]); T.state.activeId = f.id;
+  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "1 file selected");
+
+  T.state.multiSelect = new Set([f.id, fb.id]); T.state.activeId = f.id;
+  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "2+ files selected");
+
+  T.state.multiSelect = new Set([textNode.id]); T.state.activeId = textNode.id;
+  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "1 unlocked filter selected");
+
+  T.state.multiSelect = new Set([bmNode.id]); T.state.activeId = bmNode.id;
+  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "the locked Bookmarks node selected");
+
+  T.state.multiSelect = new Set([textNode.id, textNode2.id]); T.state.activeId = textNode.id;
+  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "2+ filters, same root, selected");
+});
+
+await withApp(async (w, d, T) => {
+  section("220i. handleSidebarToolbarActionClick: dispatches to the correct underlying function/dialog with the correct (per-selection) target");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+
+  let calls = [];
+  const spy = name => {
+    const orig = w[name];
+    w[name] = (...args) => { calls.push([name, args]); return orig.apply(w, args); };
+  };
+  spy("openClockOffsetDialog"); spy("startRenameNode"); spy("editFilterNode");
+  spy("toggleInvertWithUndo"); spy("openFilterLibrarySaveDialog"); spy("openFilterLibraryDialog");
+  spy("performBulkAction");
+
+  T.state.multiSelect = new Set([textNode.id]);
+  T.state.activeId = textNode.id;
+
+  w.handleSidebarToolbarActionClick("rename");
+  assert(calls.some(c => c[0] === "startRenameNode" && c[1][0] === textNode.id), "rename -> startRenameNode(target)");
+
+  w.handleSidebarToolbarActionClick("edit");
+  assert(calls.some(c => c[0] === "editFilterNode" && c[1][0] === textNode.id), "edit -> editFilterNode(target)");
+
+  w.handleSidebarToolbarActionClick("invert");
+  assert(calls.some(c => c[0] === "toggleInvertWithUndo" && c[1][0] === textNode.id), "invert -> toggleInvertWithUndo(target)");
+
+  w.handleSidebarToolbarActionClick("addToLibrary");
+  assert(calls.some(c => c[0] === "openFilterLibrarySaveDialog" && c[1][0] === textNode.id), "addToLibrary -> openFilterLibrarySaveDialog(target)");
+
+  w.handleSidebarToolbarActionClick("applyFromLibrary");
+  assert(calls.some(c => c[0] === "openFilterLibraryDialog" && c[1][0] === textNode.id), "applyFromLibrary -> openFilterLibraryDialog(target), targeting the specific selected node");
+
+  // These six no longer have a corresponding action entry at all — clicking
+  // them (e.g. a stale/cached button reference) is a silent no-op, same as
+  // any other disabled/nonexistent entry.
+  calls = [];
+  ["context", "countContext", "copy", "cut", "saveFilter", "loadFilter"].forEach(a => w.handleSidebarToolbarActionClick(a));
+  assert(calls.length === 0, "clicking a removed action name is a no-op — no underlying function is ever called");
+  assert(!T.state.clipboard, "...and Copy/Cut in particular do not fall through to setting state.clipboard any more");
+
+  // clockOffset needs a real file selected.
+  T.state.multiSelect = new Set([f.id]);
+  T.state.activeId = f.id;
+  w.handleSidebarToolbarActionClick("clockOffset");
+  assert(calls.some(c => c[0] === "openClockOffsetDialog" && c[1][0] === f.id), "clockOffset -> openClockOffsetDialog(target)");
+
+  // 0 selected -> applyFromLibrary falls back to state.activeId.
+  calls = [];
+  T.state.multiSelect = new Set();
+  T.state.activeId = textNode.id;
+  w.handleSidebarToolbarActionClick("applyFromLibrary");
+  assert(calls.some(c => c[0] === "openFilterLibraryDialog" && c[1][0] === textNode.id), "applyFromLibrary with 0 selected -> openFilterLibraryDialog(state.activeId)");
+
+  // Bulk action (merge) over a 2+ file selection.
+  const fb = await w.addFile("b.log", makeLog(30, 5), () => {});
+  T.state.multiSelect = new Set([f.id, fb.id]);
+  T.state.activeId = f.id;
+  w.handleSidebarToolbarActionClick("merge");
+  const mergeCall = calls.find(c => c[0] === "performBulkAction");
+  assert(mergeCall && mergeCall[1][0] === "merge" && Array.isArray(mergeCall[1][1]) &&
+    mergeCall[1][1].includes(f.id) && mergeCall[1][1].includes(fb.id),
+    "merge -> performBulkAction('merge', [selected file ids])");
+
+  // A disabled entry is a no-op — the underlying function is never called.
+  calls = [];
+  T.state.multiSelect = new Set();
+  T.state.activeId = null;
+  w.handleSidebarToolbarActionClick("applyFromLibrary");
+  assert(!calls.some(c => c[0] === "openFilterLibraryDialog"), "a disabled action (no active id) is a no-op — the underlying function is never called");
+});
+
+/* ============================================================
+   GROUP 221 — Sidebar toolbar visibility, the setupHitExpandGroups re-bind
+   guard, and the AND/OR/Link removal from the tree context menu
+   (FEATURE_BACKLOG.md #77)
+   Origin: this session. setupHitExpandGroups() used to be called exactly
+   once per container at boot by every existing caller (#viewBar/the per-
+   view toolbars); the new sidebar toolbar rebuilds its whole button set on
+   every render() and must call it again each time. Without an idempotency
+   guard that would attach a SECOND, stacking mousemove/mouseleave listener
+   onto the same container on every render. Group 221b is the regression
+   guard for that leak; 221a covers the toolbar's own hasFiles-driven
+   visibility; 221c proves AND/OR/Link actually stopped rendering in the
+   tree's own bulk-action context menu (not just that the new toolbar has
+   them — see GROUP 220f/c for that half).
+   UPDATED, same-day later session (project-owner review): 221d unit-tests
+   the new pure clampLabelOffset(rect, viewportWidth) function extracted for
+   the edge-of-viewport floating-label clamp inside setupHitExpandGroups —
+   the actual real-DOM measuring (getBoundingClientRect()/window.innerWidth)
+   is deliberately NOT tested here, same "no layout engine under jsdom" gap
+   as every other layout-dependent fix (see tests/README.md).
+   ============================================================ */
+group(221);
+
+await withApp(async (w, d, T) => {
+  section("221a. #sidebarToolbar visibility: hidden with zero files loaded, visible otherwise");
+  assert(T.state.rootIds.length === 0, "sanity: nothing loaded yet");
+  w.render();
+  assert(isVisible(d.querySelector("#sidebarToolbar"), w) === false, "#sidebarToolbar is hidden with zero files loaded");
+  await w.addFile("a.log", makeLog(0, 5), () => {});
+  assert(isVisible(d.querySelector("#sidebarToolbar"), w) === true, "#sidebarToolbar becomes visible once a file is loaded");
+});
+
+await withApp(async (w, d, T) => {
+  section("221b. setupHitExpandGroups: the idempotency guard prevents a stacking mousemove listener on a repeatedly-rebuilt container, and #viewBar's own hover-label mechanic still works");
+
+  // Spy installed BEFORE the first file loads (and therefore before
+  // #sidebarToolbar's very first bind), so the count below covers that
+  // first real bind too, not just the later, expected-to-be-skipped ones.
+  let mousemoveBinds = 0;
+  const origAdd = w.EventTarget.prototype.addEventListener;
+  w.EventTarget.prototype.addEventListener = function (type, ...rest) {
+    if (this.id === "sidebarToolbar" && type === "mousemove") mousemoveBinds++;
+    return origAdd.call(this, type, ...rest);
+  };
+
+  // Loading a file's own render() already rebuilds #sidebarToolbar's button
+  // set once (0 -> 1 files); a few explicit renders on top force several
+  // more rebuilds without changing anything else about the selection.
+  await w.addFile("a.log", makeLog(0, 5), () => {});
+  w.render();
+  w.render();
+  w.render();
+  assert(mousemoveBinds === 1, "a container whose button set is rebuilt on every render still gets exactly ONE mousemove listener, not one per render — got " + mousemoveBinds);
+
+  w.EventTarget.prototype.addEventListener = origAdd;
+
+  // #viewBar's own plain hover-label mechanic (bound once at boot, long
+  // before this session's guard existed) must still work correctly.
+  const viewBarGroup = d.querySelector('#viewBar [data-row-actions="viewbar"]');
+  const firstHit = viewBarGroup.querySelector(".row-action-hit");
+  const firstBtn = firstHit.closest(".row-action-btn");
+  assert(!firstBtn.classList.contains("expanded"), "sanity: not expanded before any hover");
+  viewBarGroup.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 10, clientY: 10 }));
+  assert(firstBtn.classList.contains("expanded"), "#viewBar's own hover-expand still works after the guard was added");
+  viewBarGroup.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
+  assert(!firstBtn.classList.contains("expanded"), "...and still collapses back on mouseleave");
+});
+
+await withApp(async (w, d, T) => {
+  section("221c. openTreeContextMenu: AND/OR/Link removed from the 2+ multi-select bulk menu (moved exclusively to the sidebar toolbar); Merge unaffected");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  T.state.multiSelect = new Set([t1.id, t2.id]);
+  w.openTreeContextMenu({ clientX: 10, clientY: 10, preventDefault() {}, stopPropagation() {} }, t1.id);
+  const items = [...d.querySelectorAll("#treeContextMenu [data-action]")].map(n => n.dataset.action);
+  assert(!items.includes("and") && !items.includes("or") && !items.includes("link"),
+    "the 2+ filter bulk-action context menu no longer offers AND/OR/Link, got " + items.join(","));
+
+  const fb = await w.addFile("b.log", makeLog(30, 5), () => {});
+  T.state.multiSelect = new Set([f.id, fb.id]);
+  w.openTreeContextMenu({ clientX: 10, clientY: 10, preventDefault() {}, stopPropagation() {} }, f.id);
+  const items2 = [...d.querySelectorAll("#treeContextMenu [data-action]")].map(n => n.dataset.action);
+  assert(items2.includes("merge"), "Merge stays offered for a 2+ file bulk selection — not part of the AND/OR/Link exclusion");
+
+  // The sidebar toolbar, meanwhile, is still the one place offering the full
+  // set including AND/OR/Link for the same 2-filter selection.
+  T.state.multiSelect = new Set([t1.id, t2.id]);
+  const { actions } = w.describeSidebarToolbarActions();
+  const toolbarNames = actions.map(a => a.action);
+  assert(toolbarNames.includes("and") && toolbarNames.includes("or") && toolbarNames.includes("link"),
+    "the sidebar toolbar is the sole remaining place AND/OR/Link are offered for a 2+ filter selection");
+});
+
+await withApp(async (w, d, T) => {
+  section("221d. clampLabelOffset(rect, viewportWidth): pure edge-clamp math for the floating .row-action-label");
+  const VW = 400; // a narrow-ish viewport, close to #sidebarToolbar's own real-world column width
+
+  // Fits comfortably within the viewport -> no correction needed.
+  assert(w.clampLabelOffset({ left: 100, right: 200 }, VW) === 0, "a label fully inside the viewport gets a 0 shift");
+
+  // Sits exactly at the margin boundary -> still 0 (not overflowing).
+  assert(w.clampLabelOffset({ left: 4, right: 200 }, VW) === 0, "a label sitting exactly at the left margin needs no shift");
+  assert(w.clampLabelOffset({ left: 200, right: VW - 4 }, VW) === 0, "a label sitting exactly at the right margin needs no shift");
+
+  // Overflowing the LEFT edge (e.g. a button near #sidebarToolbar's own left
+  // edge) -> positive shift (move right) that lands the label's left edge
+  // exactly on the 4px margin.
+  const leftShift = w.clampLabelOffset({ left: -20, right: 80 }, VW);
+  assert(leftShift === 24, "a label overflowing the left edge by 20px shifts right by exactly enough to sit at the 4px margin (24px), got " + leftShift);
+
+  // Overflowing the RIGHT edge (any toolbar's rightmost button) -> negative
+  // shift (move left) that lands the label's right edge exactly on the 4px
+  // margin from the right.
+  const rightShift = w.clampLabelOffset({ left: 350, right: 430 }, VW);
+  assert(rightShift === -34, "a label overflowing the right edge by 30px (past VW-4=396) shifts left by exactly enough to sit at the margin (-34px), got " + rightShift);
+
+  // A label wider than the viewport itself overflows both sides at once —
+  // the function still returns a single well-defined shift (left-edge rule
+  // wins since it's checked first), rather than throwing or returning NaN.
+  const bothShift = w.clampLabelOffset({ left: -50, right: 500 }, VW);
+  assert(Number.isFinite(bothShift) && bothShift === 54, "a label wider than the viewport still gets a finite, well-defined shift (left-edge rule), got " + bothShift);
+});
+
+/* ============================================================
+   GROUP 222 — Sidebar toolbar click must stopPropagation (person-reported:
+   "Edit filter…" did nothing)
+   ============================================================ */
+group(222);
+await withApp(async (w, d, T) => {
+  section("222. #sidebarToolbar's click listener stopPropagation()s, so opening a dialog/popup from it isn't immediately undone by the document-level 'click outside closes it' listener seeing the same bubbling click");
+  // Root cause (person-reported: clicking "Edit filter…" in the sidebar
+  // toolbar visibly did nothing): #sidebarToolbar's click listener called
+  // handleSidebarToolbarActionClick without ev.stopPropagation() first,
+  // unlike the pre-existing [data-row-actions] delegated listener (#viewBar/
+  // the per-view toolbars) which already does. The same click that opened
+  // #filterPopup then kept bubbling to the document-level listener
+  // (`!filterPopup.contains(ev.target) && !filterPopup.classList.contains
+  // ("hidden") -> closeFilterPopup()`), which saw a click outside the just-
+  // opened popup and closed it again in the same tick — CLAUDE.md's
+  // "stopPropagation on any click handler that opens a popup" gotcha,
+  // missed for this one new listener. `handleSidebarToolbarActionClick`
+  // called directly (as GROUP 220i does) can never catch this class of bug:
+  // it never bubbles, so the document-level listener never runs. Only a
+  // real, bubbling DOM click (`fireClick`) exercises the full path.
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  T.state.multiSelect = new Set([textNode.id]);
+  T.state.activeId = textNode.id;
+  w.render();
+
+  const editBtn = d.querySelector('#sidebarToolbar [data-row-action="edit"]');
+  assert(editBtn, "sanity: the Edit filter… button is present in the sidebar toolbar for a plain text filter");
+  fireClick(editBtn, w);
+  const filterPopup = d.querySelector("#filterPopup");
+  assert(!filterPopup.classList.contains("hidden"), "a real bubbling click on 'Edit filter…' opens #filterPopup and it STAYS open");
+  assert(d.querySelector("#filterInput").value === "message 1", "...pre-filled with the correct node's existing value, i.e. actually editing that node");
+  assert(d.querySelector("#filterSubmitBtn").textContent === "Save", "...in edit mode (submit button reads 'Save', not 'Add filter')");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -26031,6 +26655,13 @@ process.exitCode = failed ? 1 : 0;
               simulated reload — a SEPARATE store from the session cache's
               own meta record, readable with zero files loaded and no
               boot-time restore wait, unlike restoreSessionFromCache.
+              UPDATED a later session (FEATURE_BACKLOG.md #77, project-owner
+              review): "Add to library…" moved off #viewBar's dedicated
+              "+ Add to Library" button (removed outright) onto the Files &
+              Filters sidebar toolbar, targeting the specific selected
+              filter node rather than always state.activeId — 59a rewritten
+              to drive it via describeSidebarToolbarActions/
+              handleSidebarToolbarActionClick instead of a DOM button click.
    Group 60  — this session (2026-08-18), person-reported follow-up
               bugfixes to Groups 58/59. 60a: `.col-delta`/`.col-time` were
               missing `overflow:hidden` (unlike `.col-thread`/`.col-loc`/
@@ -26048,6 +26679,12 @@ process.exitCode = failed ? 1 : 0;
               groups (not just "somewhere in the menu"), and a plain file
               node (fewer groups populated) still grouping cleanly with no
               dangling empty separator.
+              UPDATED a later session (FEATURE_BACKLOG.md #79, project-owner
+              confirmed): "Time context…"/"Count context…" removed from the
+              edit bucket entirely — there is no longer any user-facing way
+              to create a fresh context/countContext node. 60b's ordering
+              assertions updated (edit group is now just edit/invert) and
+              extended with an absence guard plus a link-node check.
    Group 61  — this session (2026-08-19), person-requested generalization of
               the scroll-anchoring fix from Group 55d (previously multiline-
               toggle-only) into captureViewAnchor()/restoreViewAnchor(),
@@ -27882,6 +28519,13 @@ process.exitCode = failed ? 1 : 0;
       SVG set, plus a free-text fallback input; icon is now "emoji:<char>" vs.
       a bare/"svg:"-prefixed SVG-set name, with legacy bare names still
       resolving unchanged.
+      UPDATED a later session (FEATURE_BACKLOG.md #77, project-owner
+      review): the "+ Add to Library" button referenced above is gone —
+      #libraryManageBar removed from #viewBar entirely, its functionality
+      relocated into the Files & Filters sidebar toolbar (Group 220/221).
+      193a's assertions about #libraryManageBar/#btnAddToLibrary/
+      #btnOpenLibrary are removed; #libraryPresetBar's own pinned-presets
+      behavior (the rest of this group) is unaffected.
    Group 194 — this session (2026-09-08), person-requested Filter-Toolbar
       refinements: (a) Table/Plot view tabs are now always present but rendered
       `disabled` when the node has no extractable wildcards, instead of being
@@ -27919,6 +28563,13 @@ process.exitCode = failed ? 1 : 0;
       14px blank gap to 4px/0px (the row's ordinary button-gap value) —
       Group 102's margin assertion and 194e's separator-count/order
       assertions updated accordingly.
+      UPDATED again, a later session (FEATURE_BACKLOG.md #77, project-owner
+      review): #libraryManageBar (and "Add to Library"/"Library" inside it,
+      referenced in (b)/(c) above) removed from #viewBar entirely —
+      relocated into the sidebar toolbar (Group 220/221). 194b rewritten
+      from "buttons look right" into a regression guard that they're gone;
+      194e's management-group assertions dropped (#viewbarNew is simply the
+      last child of #viewBar now).
    Group 195 — this session (2026-09-09), person-reported bugfix: "Show M
       newest files" (a per-folder auto rule added in the same session as
       Group 164) made folderScanTick's own "did anything change" check
@@ -28503,4 +29154,111 @@ process.exitCode = failed ? 1 : 0;
       the fields' own pre-existing change-driven behavior was already
       covered elsewhere (Groups 1, 14, 71, 111e, 138, 151, the Plot-range/
       zoom assertions) and isn't re-tested here.
+   Group 220/221 — this session, FEATURE_BACKLOG.md #77: the Files & Filters
+      sidebar gets its own selection-dependent toolbar (`#sidebarToolbar`,
+      `describeSidebarToolbarActions`/`handleSidebarToolbarActionClick`),
+      same icon+hover-label concept as `#viewBar`/the per-view toolbars
+      ("rect" shape). Implemented, then REVISED in place the same session
+      per project-owner review before ever shipping — this entry (and
+      Group 220/221's own code) describes the FINAL shape directly; the
+      initial pass's one-long-list button set and circle shape never
+      existed in any committed revision.
+
+      Final shape: at most two `|`-separated groups per selection — Group
+      220 (220a-i) covers `describeSidebarToolbarActions()` for every
+      selection shape: 0 selected (Apply from library… only, targeting
+      `state.activeId`, disabled with no active id); 1 file (Adjust clock…
+      | Apply from library…, the former omitted for a merged or empty
+      file); 2+ files (Merge | Apply from library…, falling back to
+      `state.activeId` since there's no single node to target); 1 unlocked
+      filter (Rename/Edit/Invert | Add to library…/Apply from library…,
+      Edit/Invert conditionally omitted per filterType exactly like
+      `openTreeContextMenu`'s own guards — checked against a `link` node);
+      the locked "Bookmarks" node (Apply from library… only, disabled — no
+      group 1 at all now that Copy is gone from the toolbar); 2+ filters
+      same root (AND/OR/Link only, no library group — unchanged from the
+      initial pass — plus the pre-existing 2-way vs. N-way Link label
+      difference); filters from different roots / a mixed files+filters
+      selection (explanatory note, ZERO actions, not even the library
+      fallback); and 220h, a dedicated absence guard that `copy`/`cut`/
+      `saveFilter`/`loadFilter`/`context`/`countContext` never appear for
+      ANY selection shape — all six removed from the toolbar entirely.
+      220i covers `handleSidebarToolbarActionClick`'s dispatch to the
+      correct pre-existing function with the correct (per-selection, not
+      always `state.activeId`) target across a representative spread of
+      actions, including the new `addToLibrary` action (->
+      `openFilterLibrarySaveDialog`), the six removed action names being a
+      silent no-op, and a disabled action being a no-op.
+
+      Group 221 covers what `describeSidebarToolbarActions` itself can't:
+      221a `#sidebarToolbar`'s hasFiles-driven visibility; 221b the
+      idempotency guard inside `setupHitExpandGroups` (calling it again on
+      a container whose button set was just rebuilt — as the sidebar
+      toolbar does on every render — attaches exactly ONE mousemove
+      listener, not one per render, and `#viewBar`'s own pre-existing
+      hover-label mechanic is unaffected by the guard); 221c that AND/OR/
+      Link actually stopped rendering in `openTreeContextMenu`'s own 2+
+      multi-select bulk menu (Merge unaffected) now that they live
+      exclusively in the sidebar toolbar; 221d unit-tests the new pure
+      `clampLabelOffset(rect, viewportWidth)` function (edge-of-viewport
+      floating-label clamp, project-owner review) directly — fits/no-op,
+      left-edge overflow, right-edge overflow, and a label wider than the
+      viewport itself — deliberately NOT exercising the real
+      `getBoundingClientRect()`/`window.innerWidth` measuring inside
+      `setupHitExpandGroups`, which stays real-DOM/layout-dependent and
+      therefore untestable under jsdom (no layout engine).
+
+      Two more regression guards for this revision live in their more
+      natural home groups rather than duplicated here: `openTreeContextMenu`
+      no longer offering `context`/`countContext` for a filter node
+      (FEATURE_BACKLOG.md #79 — no user-facing way left to CREATE a fresh
+      one, existing nodes fully unaffected) is Group 60b's own absence
+      guard + a link-node check; `#libraryManageBar`/`#btnAddToLibrary`/
+      `#btnOpenLibrary` being gone from `#viewBar` entirely (their
+      "Add to library…"/"Apply from library…" functionality relocated into
+      `#sidebarToolbar`, now targeting the specific selected node) is
+      Group 194b, rewritten from "buttons look right" into an absence
+      guard; Group 193a's now-stale assertions about that same structure
+      were removed, and Group 194e's management-group layout assertions
+      dropped along with it.
+
+      Deliberately DROPPED this session:
+        - Group 182c's `#treeActionBar` entry in the PiP chrome-hides-list —
+          the old always-visible `#treeActionBar`/`renderTreeActionBar`
+          (Merge/AND/OR/Link only, shown at 2+ selected) is retired outright
+          in favor of `#sidebarToolbar`, which needs no PiP rule of its own
+          since it is a descendant of the already-hidden `#sidebar`. 182c
+          now also asserts no stray `html.pip-mode #treeActionBar` rule
+          remains, rather than just silently dropping the positive check.
+   Group 222 — this session, bugfix (person-reported, right after Group
+      220/221 landed: "Edit Filter Button löst aktuell keine Aktion aus" —
+      the Edit filter… button in the new sidebar toolbar visibly did
+      nothing). Root cause: #sidebarToolbar's click listener dispatched to
+      handleSidebarToolbarActionClick without ev.stopPropagation() first,
+      unlike the pre-existing [data-row-actions] delegated listener it was
+      modeled on. The same click kept bubbling to the document-level "click
+      outside #filterPopup closes it" listener, which immediately closed
+      the popup openEditFilterPopup had just opened, in the same tick — an
+      instance of CLAUDE.md's own "stopPropagation on any click handler
+      that opens a popup" gotcha. Group 220i's direct
+      handleSidebarToolbarActionClick(...) calls could never have caught
+      this (no bubbling happens outside a real DOM event); Group 222 uses a
+      real fireClick(...) on the actual button instead, confirming
+      #filterPopup stays open afterward. One-line fix: add
+      ev.stopPropagation() to #sidebarToolbar's click listener, matching
+      the established pattern.
+   Group 223 — this session, FEATURE_BACKLOG.md #78: completes the log-entry
+      right-click menu (#contextMenu/openContextMenu). Numbered 223, not
+      219, to avoid colliding with the unrelated stepper-control Group 219
+      merged into main the same day. "Filter for this ___" moved to the
+      very top, right under the timestamp meta row's separator; a new
+      one-click "Extract" item sits next to it (extractMessageFilter,
+      shown only when the message has something extractable); the rest
+      regrouped by separators; a new "Copy" item at the very bottom copies
+      the right-clicked row, or the whole current selection if that row is
+      already part of it (formatEntriesForClipboard, shared with
+      copyLogSelectionToClipboard so the two paths can't format
+      differently). Covers the DOM reorder, the Extract item's visibility
+      gate + outcome, Copy's three selection cases, and a regression guard
+      that the pre-existing items still work in their new positions.
    ============================================================ */

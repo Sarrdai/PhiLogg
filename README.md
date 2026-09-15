@@ -47,9 +47,17 @@ open it in a browser to view it.
 ## Key features
 
 - **Nested filter tree** — chain text, time-range, value-extraction, AND/OR,
-  nearest-neighbor link, time-context and count-context filters; each level
-  narrows/transforms the result of the one above it. Any node can be
-  **renamed** (`F2` or right-click → "Rename…") with a human-readable label
+  and nearest-neighbor link filters (time-context and count-context filters
+  also exist and fully work, but creating a new one is temporarily
+  unreachable — see `docs/filters.md`); each level narrows/transforms the
+  result of the one above it. The Files & Filters sidebar has its own icon
+  toolbar (same icon+hover-label style as the log view's own toolbars)
+  whose buttons change with the current selection — Adjust clock for a
+  file, Merge for 2+ files, Rename/Edit/Invert plus Add-to-library/Apply-
+  from-library for a filter, AND/OR/Link… for 2+ filters — alongside the
+  tree's existing right-click menu (Copy/Cut/Save filter…/Load filter… stay
+  there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
+  a human-readable label
   shown in the tree/breadcrumb instead of the raw pattern — handy for turning
   a chain into a readable narrative ("Step 3: calibration errors"). Editing a
   filter's actual value moved to `Ctrl+E`. A text filter can be
