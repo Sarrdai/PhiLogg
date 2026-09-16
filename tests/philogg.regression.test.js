@@ -9226,15 +9226,19 @@ await withApp(async (w, d, T) => {
 
   fireClick(d.querySelector("#btnSettings"), w);
 
-  // 5 sections: GROUP 114 added "Shortcuts", a later follow-up (removing the
-  // header's help/license buttons) added "License" as the last section.
+  // 6 sections: GROUP 114 added "Shortcuts", a later follow-up (removing the
+  // header's help/license buttons) added "License" as the last section, and
+  // GROUP 230 added "IDE Integration" between Behavior and Log Formats — its
+  // nav item/section stay in the DOM even without window.philogg (this
+  // suite's jsdom environment has none, same as a plain browser build), just
+  // hidden via .hidden (see initIdeIntegration), so it still counts here.
   const navItems = [...d.querySelectorAll("#settingsNav .settings-nav-item")];
-  assert(navItems.length === 5, "the section nav lists exactly the five sections, got " + navItems.length);
+  assert(navItems.length === 6, "the section nav lists exactly the six sections, got " + navItems.length);
   const targets = navItems.map(b => b.dataset.navTarget);
   assert(targets.includes("settingsSectionAppearance") && targets.includes("settingsSectionBehavior") &&
-    targets.includes("settingsSectionFormats") && targets.includes("settingsSectionShortcuts") &&
-    targets.includes("settingsSectionLicense"),
-    "nav items point at Appearance/Behavior/Log Formats/Shortcuts/License, got " + JSON.stringify(targets));
+    targets.includes("settingsSectionIde") && targets.includes("settingsSectionFormats") &&
+    targets.includes("settingsSectionShortcuts") && targets.includes("settingsSectionLicense"),
+    "nav items point at Appearance/Behavior/IDE Integration/Log Formats/Shortcuts/License, got " + JSON.stringify(targets));
   assert(targets[targets.length - 1] === "settingsSectionLicense", "License is always the last section in the list");
   targets.forEach(id => assert(d.getElementById(id), "every nav target id resolves to an actual section, missing " + id));
 
@@ -25205,12 +25209,16 @@ await withApp(async (w, d, T) => {
   assert(menuChildren[2].id === "ctxFilterForColumn",
     "'Filter for this ___' is the first actionable item, directly after the meta row's separator, got #" + menuChildren[2].id);
   assert(menuChildren[3].id === "ctxExtractMessage", "'Extract' sits directly next to 'Filter for this ___', got #" + menuChildren[3].id);
-  assert(menuChildren[4].classList.contains("ctx-sep"), "a separator follows the Filter-for-this-___/Extract group");
+  // GROUP 230 (IDE Integration) added two more items to this same
+  // "act on this entry's data" group, right after Extract.
+  assert(menuChildren[4].id === "ctxOpenInVs", "'Open in Visual Studio' sits directly after Extract, got #" + menuChildren[4].id);
+  assert(menuChildren[5].id === "ctxOpenInRider", "'Open in Rider' sits directly after 'Open in Visual Studio', got #" + menuChildren[5].id);
+  assert(menuChildren[6].classList.contains("ctx-sep"), "a separator follows the Filter-for-this-___/Extract/IDE-Integration group");
   // Regroup: After/Before/Time-range-from-selection, then a separator, then
   // Bookmark/Note/Add-to-selection, then a separator, then Copy at the end.
   const idsFrom = i => menuChildren.slice(i).map(c => c.id || (c.classList.contains("ctx-sep") ? "sep" : "?"));
-  assert(JSON.stringify(idsFrom(5)) === JSON.stringify(["ctxAfter", "ctxBefore", "ctxTimeRangeFromSelection", "sep", "ctxBookmark", "ctxNote", "ctxAddToSelection", "sep", "ctxCopy"]),
-    "menu regrouped as After/Before/TimeRange -> sep -> Bookmark/Note/AddToSelection -> sep -> Copy, got " + JSON.stringify(idsFrom(5)));
+  assert(JSON.stringify(idsFrom(7)) === JSON.stringify(["ctxAfter", "ctxBefore", "ctxTimeRangeFromSelection", "sep", "ctxBookmark", "ctxNote", "ctxAddToSelection", "sep", "ctxCopy"]),
+    "menu regrouped as After/Before/TimeRange -> sep -> Bookmark/Note/AddToSelection -> sep -> Copy, got " + JSON.stringify(idsFrom(7)));
 
   // --- (2) Extract item: visible + correct outcome for an extractable
   // message, hidden for a message with nothing extractable ---
@@ -26565,6 +26573,79 @@ await withApp(async (w, d, T) => {
   assert(rec.fillStyles.includes(w.plotColorScale(1, "turbo")), "the max-value point also switched to turbo");
   const [, , , legendHAfter] = rec.calls.fillRect[0];
   assert(legendHAfter === legendH, "the colorbar height itself is unaffected by which colormap is picked");
+});
+
+/* ============================================================
+   GROUP 230 — IDE Integration (this session): jump from a log entry's
+   Location straight into a running IDE. Covers only the pure, DOM/IPC-free
+   remap logic — parseIdeLocation, resolveIdeSourcePath (next to
+   formatLocation), and buildRiderUri (near the context-menu wiring). The
+   Visual Studio COM/PowerShell side (desktop/src-tauri/src/vs_integration.rs),
+   the Settings dialog's Connect flow, and the context-menu items' live
+   window.philogg-gated visibility are Windows-desktop-only and unreachable
+   under jsdom — see tests/README.md "Known gaps".
+   ============================================================ */
+group(230);
+await withApp(async (w) => {
+  section("230a. parseIdeLocation: raw path + line extraction");
+
+  const parsed = w.parseIdeLocation("C:\\src\\Foo.cs line 152");
+  assert(parsed && parsed.path === "C:\\src\\Foo.cs" && parsed.line === 152,
+    "well-formed \"path line N\" parses to the whole path + numeric line, got " + JSON.stringify(parsed));
+
+  assert(w.parseIdeLocation("C:\\src\\Foo.cs") === null, "a location with no \" line N\" suffix returns null");
+  assert(w.parseIdeLocation("") === null, "an empty location returns null");
+  assert(w.parseIdeLocation(null) === null, "a null/undefined location returns null rather than throwing");
+
+  const withLineWord = w.parseIdeLocation("C:\\src\\online\\Foo.cs line 9");
+  assert(withLineWord && withLineWord.path === "C:\\src\\online\\Foo.cs" && withLineWord.line === 9,
+    "a path containing the substring \"line\" earlier still resolves against the LAST \" line N\" suffix, got " + JSON.stringify(withLineWord));
+});
+
+await withApp(async (w) => {
+  section("230b. resolveIdeSourcePath: anchor-folder remap onto a local solution directory");
+
+  // The exact scenario from the feature's own motivating example: logged on
+  // one machine under C:\git\myProject\..., checked out locally under
+  // D:\dev\myProject\Code\ (the folder holding myProject.sln) — "Projects"
+  // is the shared anchor.
+  const logged = "C:\\git\\myProject\\Code\\Projects\\MyCompany.Core\\Notification\\NotificationService.cs line 152";
+  const resolved = w.resolveIdeSourcePath(logged, "Projects", "D:\\dev\\myProject\\Code");
+  assert(resolved.path === "D:\\dev\\myProject\\Code\\Projects\\MyCompany.Core\\Notification\\NotificationService.cs" && resolved.line === 152,
+    "resolves onto the local solution directory starting at the anchor folder, got " + JSON.stringify(resolved));
+
+  const caseInsensitive = w.resolveIdeSourcePath(logged, "projects", "D:\\dev\\myProject\\Code");
+  assert(caseInsensitive.path === resolved.path, "the anchor-folder match is case-insensitive (\"projects\" still matches \"Projects\")");
+
+  const missingAnchor = w.resolveIdeSourcePath(logged, "NoSuchFolder", "D:\\dev\\myProject\\Code");
+  assert(missingAnchor.error === "anchor-not-found", "an anchor folder absent from the path reports anchor-not-found, got " + JSON.stringify(missingAnchor));
+
+  const noLine = w.resolveIdeSourcePath("C:\\git\\myProject\\Code\\Projects\\Foo.cs", "Projects", "D:\\dev\\myProject\\Code");
+  assert(noLine.error === "no-location", "a location with no line number reports no-location, got " + JSON.stringify(noLine));
+
+  // The anchor folder name appears twice — the LAST occurrence wins, so a
+  // repo whose own top-level folder happens to share the anchor's name
+  // doesn't shadow the real (deeper, closer to the file) one.
+  const twice = "C:\\git\\myProject\\Projects\\Code\\Projects\\MyCompany.Core\\Foo.cs line 3";
+  const resolvedTwice = w.resolveIdeSourcePath(twice, "Projects", "D:\\dev\\myProject\\Code");
+  assert(resolvedTwice.path === "D:\\dev\\myProject\\Code\\Projects\\MyCompany.Core\\Foo.cs",
+    "when the anchor name appears more than once, the LAST (deepest) occurrence is used, got " + resolvedTwice.path);
+
+  // solutionDir with a trailing separator doesn't produce a doubled one.
+  const trailingSlash = w.resolveIdeSourcePath(logged, "Projects", "D:\\dev\\myProject\\Code\\");
+  assert(trailingSlash.path === resolved.path, "a trailing separator on solutionDir doesn't double up in the joined path, got " + trailingSlash.path);
+});
+
+await withApp(async (w) => {
+  section("230c. buildRiderUri: jetbrains:// deep-link construction, with encoding");
+
+  const uri = w.buildRiderUri("myProject", "MyCompany.Core/Notification/NotificationService.cs", 152);
+  assert(uri === "jetbrains://rider/navigate/reference?project=myProject&path=MyCompany.Core%2FNotification%2FNotificationService.cs:152",
+    "builds the documented jetbrains://rider/navigate/reference URI, with the path URL-encoded, got " + uri);
+
+  const withSpaces = w.buildRiderUri("My Project", "src/Weird Name.cs", 1);
+  assert(withSpaces.includes("project=My%20Project") && withSpaces.includes("path=src%2FWeird%20Name.cs:1"),
+    "a project name or path containing spaces is percent-encoded, got " + withSpaces);
 });
 
 console.log("\n" + "=".repeat(60));
@@ -30206,4 +30287,27 @@ process.exitCode = failed ? 1 : 0;
       colorbar and the max-value point's own fill switch together when the
       dropdown changes, while the colorbar's height itself stays unaffected
       by which colormap is picked.
+   Group 230 — this session (2026-09-16, person-requested discussion turned
+      into a plan then an implementation): IDE Integration — jump from a log
+      entry's Location straight into a running IDE. `parseIdeLocation`
+      (next to `formatLocation`) extracts the whole raw path + line number;
+      `resolveIdeSourcePath` remaps that path onto a local checkout by
+      anchoring on a shared, configurable folder name (e.g. "Projects") and
+      joining everything from there onward onto the connected IDE's
+      solution directory; `buildRiderUri` builds JetBrains' documented
+      jetbrains://rider/navigate/reference deep link. Only this pure,
+      DOM/IPC-free trio is covered here — the Visual Studio COM/PowerShell
+      side (`desktop/src-tauri/src/vs_integration.rs`, ROT enumeration +
+      `EnvDTE` automation), the Settings dialog's Connect/instance-picker
+      flow, and the context-menu items' live `window.philogg`-gated
+      visibility are Windows-desktop-only and unreachable under jsdom (see
+      "Known gaps" below). 230a covers parseIdeLocation's well-formed/
+      malformed/empty/null inputs and the "last ` line N` suffix wins" rule.
+      230b covers resolveIdeSourcePath's anchor-folder remap against the
+      feature's own motivating example (C:\git\myProject\Code\Projects\...
+      remapped onto D:\dev\myProject\Code), case-insensitive matching, a
+      missing anchor, a missing line number, the anchor name appearing
+      twice (last/deepest occurrence wins), and a trailing separator on the
+      solution directory not doubling up. 230c covers buildRiderUri's
+      percent-encoding of a project name/path containing spaces or slashes.
    ============================================================ */

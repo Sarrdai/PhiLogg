@@ -123,6 +123,12 @@ like any other.
   native drag-drop, native folder listing) and the path is known before the
   page ever sees them. Nothing user-visible is missing; it is only why the
   file-opening routes look the way they do.
+- **IDE Integration (Settings → IDE Integration, "jump from a log entry into
+  Visual Studio/Rider") is Windows-only** — hidden entirely on macOS/Linux
+  and in the plain browser build. See `docs/desktop.md` → "IDE Integration"
+  for the mechanism (Running Object Table enumeration + `EnvDTE` COM
+  automation for Visual Studio, a `jetbrains://` deep link for Rider). Not
+  yet run against a real Visual Studio/Rider install — see "Status" below.
 
 ## Status
 
@@ -158,6 +164,14 @@ uses. See `docs/desktop.md` for both.
 The native folder watch (2026-09-01) is verified by `cargo check` plus the
 jsdom suite's Group 145 only — the picker, the listing and a real Desktop
 folder still need a person on a real desktop session.
+
+IDE Integration (this session) is verified by the jsdom suite's Group 230
+only (the pure path-remap functions) plus manual code review — the sandbox
+this session ran in has no Windows toolchain and couldn't even build the
+Linux desktop wrapper (missing WebKitGTK dev packages, unrelated to this
+change), so `vs_integration.rs`'s PowerShell/COM script, the Settings
+dialog's Connect flow, and the Rider deep link all still need a person on a
+real Windows machine with Visual Studio and/or Rider installed.
 
 **Picture-in-picture (2026-09-07)** is verified by `cargo check` plus the
 jsdom suite's Group 182 only. The real `set_always_on_top`/`set_size`/

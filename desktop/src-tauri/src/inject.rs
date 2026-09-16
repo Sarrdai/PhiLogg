@@ -24,4 +24,5 @@ pub fn script(settings: &BTreeMap<String, String>, nonce: &str, base_url: &str) 
         .replace("__PHILOGG_NONCE__", nonce)
         .replace("__PHILOGG_BASE__", base_url)
         .replace("__PHILOGG_IS_MAC__", if cfg!(target_os = "macos") { "true" } else { "false" })
+        .replace("__PHILOGG_IS_WINDOWS__", if cfg!(target_os = "windows") { "true" } else { "false" })
 }

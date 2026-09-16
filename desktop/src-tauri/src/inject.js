@@ -9,6 +9,11 @@
   var NONCE = "__PHILOGG_NONCE__";
   var BASE = "__PHILOGG_BASE__";
   var IS_MAC = __PHILOGG_IS_MAC__;
+  // IDE Integration (Visual Studio jump-to-source) is Windows-only — VS
+  // itself doesn't exist elsewhere. Baked in at generation time, like
+  // IS_MAC, so philogg.html can decide at boot, synchronously, whether to
+  // show that Settings section/context-menu item at all.
+  var IS_WINDOWS = __PHILOGG_IS_WINDOWS__;
   var LOCAL_PREFIX = "philogg://local/";
 
   function invoke(cmd, args) {
@@ -152,6 +157,20 @@
       return invoke("list_system_fonts").catch(function () {
         return [];
       });
+    },
+    isWindows: IS_WINDOWS,
+    // IDE Integration: vsListInstances populates the Settings dialog's
+    // Connect picker (each running Visual Studio instance + whichever
+    // solution it has open); vsOpenFile is the "Open in Visual Studio"
+    // action, given the moniker of a previously-listed instance. Both are
+    // Windows-only — see vs_integration.rs.
+    vsListInstances: function () {
+      return invoke("vs_list_instances").catch(function () {
+        return [];
+      });
+    },
+    vsOpenFile: function (moniker, path, line) {
+      return invoke("vs_open_file", { moniker: moniker, path: path, line: line });
     },
     // PiP exit half: philogg.html's jumpAfterPip awaits this before running
     // a "jump to another view", so the reveal lands on the restored
