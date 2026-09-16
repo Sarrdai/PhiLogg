@@ -599,10 +599,22 @@ both.
 line number (`formatLocation`/`parseIdeLocation`), but the log's path is
 almost never the path on the machine reading it later (different drive,
 worktree, clone location). The Settings → IDE Integration section lets a
-person configure a shared "anchor folder" name (e.g. `Projects`) both paths
-are assumed to have in common; `resolveIdeSourcePath` strips everything
-before the LAST segment matching that name and joins the rest onto the
-target IDE's own project directory. Both halves of the feature share this
+person configure a shared **anchor pattern** (e.g. `Code\Projects`) both
+paths are assumed to have in common; `compileIdeAnchorPattern` compiles it
+using the exact same `*`/`?` convention `compileGlob` already uses for
+folder-watch's file-to-format matching (`*` = any run of characters, `?` =
+any one character, everything else literal, `\`/`/` matching either
+separator) — reused rather than inventing new syntax — but matched as a
+substring anywhere in the path rather than anchored to a whole filename.
+`resolveIdeSourcePath` finds the LAST (rightmost) match and joins
+everything AFTER it onto the target IDE's own project directory — the
+matched text itself is never part of the relative part, since that
+directory already IS the local anchor (a solution file sitting directly
+inside the folder the pattern matches, for instance). A multi-segment
+pattern lets a person disambiguate when the anchor's own plain name occurs
+more than once in the path — a single, bare folder name always resolves to
+its LAST occurrence, which is wrong exactly when an earlier, unrelated
+folder happens to share that name. Both halves of the feature share this
 one remap function — only how the target directory/instance is obtained
 differs.
 
@@ -668,6 +680,13 @@ Settings → IDE Integration's "Rider" group is just an enable toggle + the
 project name the link's `project=` parameter needs (not derivable from
 anything else PhiLogg knows) — no connection step, no instance picker: the
 IDE resolves that itself.
+
+The `path=file:LINE` segment's line number is **0-based** (person-confirmed:
+opening at "line 1" landed on line 2) — unlike `parseIdeLocation`'s own
+1-based line, and unlike Visual Studio's `Selection.GotoLine`, which is also
+1-based. `buildRiderUri` is the one place that difference is handled
+(`Math.max(0, line - 1)`), so every caller still deals in the same
+human-facing, 1-based line number the log itself reports.
 
 **Prerequisite PhiLogg can't do anything about**: the `jetbrains://` scheme
 has to actually be registered as a URI protocol handler in Windows for
