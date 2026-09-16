@@ -26230,6 +26230,126 @@ await withApp(async (w, d, T) => {
     "gapB's own auto-revealed window moved with the jump instead of piling up: the previous one (10-60) was taken back and replaced by the 11 entries within 500ms of the new target, got " + revealed(10));
 });
 
+/* ============================================================
+   GROUP 228 — Folder auto-open: configurable start filters, sourced from
+   the Filter Library (FEATURE_BACKLOG.md #71)
+   Origin: this session (2026-09-16), person-requested ("Quelle für die
+   Filterauswahl ist die Filter Library"). Adds `startFilterKey` to a
+   folder-watch pattern (defaultFolderPattern/applyFolderStartFilter,
+   philogg.html's "Folder watch" section): the key of a saved Filter
+   Library record (see GROUP 59) to apply the moment THIS PATTERN
+   auto-opens a file (auto-open-newest / auto-close keep-N-open) — never
+   for a file opened by hand, mirroring the existing rec.openedByAuto/
+   autoOpenFired "person vs. auto" distinction. Reuses
+   applyFilterFromLibrary unchanged, exactly like the "Apply from
+   library…" context-menu action — the filter re-evaluates against the
+   newly opened file's own entries, never a replayed result. UI: a new
+   per-pattern "Start filter" <select> in #fwPatternList
+   (renderFwPatternList, now async — fire-and-forget, same as
+   renderLibraryToolbarPresets — since it must await listFilterLibrary()).
+   ============================================================ */
+group(228);
+await withApp(async (w, d, T) => {
+  section("228a. defaultFolderPattern carries startFilterKey:null; the \"Start filter\" select lists the library");
+
+  function fakeFileHandle(name, text, lastModified) {
+    return {
+      kind: "file", name,
+      async getFile() {
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "name", { value: name, configurable: true });
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        if (typeof lastModified === "number") Object.defineProperty(blob, "lastModified", { value: lastModified, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start) => {
+          const sliced = text.slice(start);
+          const b = new w.Blob([sliced]);
+          b.text = async () => sliced;
+          return b;
+        };
+        return blob;
+      },
+    };
+  }
+  function fakeDirHandle(name, entries) {
+    return {
+      kind: "directory", name,
+      async *values() {
+        for (const key of Object.keys(entries)) {
+          const val = entries[key];
+          if (typeof val === "string") yield fakeFileHandle(key, val);
+          else if (Array.isArray(val)) yield fakeFileHandle(key, val[0], val[1]);
+          else yield fakeDirHandle(key, val);
+        }
+      },
+    };
+  }
+
+  // A saved preset to reference from a pattern's startFilterKey (same
+  // save flow as GROUP 59).
+  const src = await w.addFile("src.log", makeLog(0, 20), () => {});
+  w.render();
+  const textNode = w.createFilterNode(src.id, "text", "message 1");
+  const savePromise = w.saveFilterToLibrary(textNode.id, "Startup errors");
+  await new Promise(r => setTimeout(r, 0));
+  fireClick(d.querySelector("#exportScopeJustThis"), w);
+  await savePromise;
+  await waitFor(async () => (await w.listFilterLibrary()).length === 1);
+  const record = (await w.listFilterLibrary())[0];
+
+  await w.addWatchedFolder(fakeDirHandle("startlogs", { "A.log": makeLog(0, 5) }));
+  const folder = T.state.folders.find(f => f.name === "startlogs");
+  assert(folder.settings.patterns[0].startFilterKey === null, "defaultFolderPattern's \"*\" pattern defaults to no start filter");
+
+  w.render();
+  fireClick(d.querySelector(".folder-watch-settings"), w);
+  await waitFor(() => d.querySelectorAll("#fwPatternList select").length === 1);
+  const select = d.querySelector("#fwPatternList select");
+  const optLabels = [...select.options].map(o => o.textContent);
+  assert(optLabels[0] === "None" && optLabels.includes("Startup errors"),
+    "the \"Start filter\" select offers \"None\" plus every saved Filter Library preset, got " + JSON.stringify(optLabels));
+  assert(select.value === "", "starts on \"None\" (no start filter configured yet)");
+
+  select.value = record.key;
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await waitFor(() => folder.settings.patterns[0].startFilterKey === record.key);
+  fireClick(d.querySelector("#fwSettingsClose"), w);
+  assert(folder.settings.patterns[0].startFilterKey === record.key, "picking a preset from the real <select> persists it onto the pattern");
+
+  // Reopening the dialog reflects the persisted selection.
+  w.render();
+  fireClick(d.querySelector(".folder-watch-settings"), w);
+  await waitFor(() => d.querySelectorAll("#fwPatternList select").length === 1);
+  assert(d.querySelector("#fwPatternList select").value === record.key, "reopening the dialog shows the persisted start-filter selection");
+  fireClick(d.querySelector("#fwSettingsClose"), w);
+
+  section("228b. Auto-opened files get the start filter applied; manually opened ones don't");
+
+  assert(folder.files.every(f => !f.nodeId), "sanity: nothing in \"startlogs\" is open yet");
+  folder.settings.patterns[0].autoOpenNewest = true;
+  await w.rescanFolder(folder);
+  await waitFor(() => !!folder.files.find(f => f.name === "A.log").nodeId);
+  const aNode = T.state.nodes[folder.files.find(f => f.name === "A.log").nodeId];
+  assert(aNode.children.length === 1, "the auto-opened file got exactly one filter child, got " + aNode.children.length);
+  const appliedNode = T.state.nodes[aNode.children[0]];
+  assert(appliedNode.filterType === "text" && appliedNode.value === "message 1",
+    "the applied child carries the saved preset's own filter definition, got " + JSON.stringify(appliedNode && { filterType: appliedNode.filterType, value: appliedNode.value }));
+  assert(appliedNode.id !== textNode.id, "it's a fresh node (new id), not the library's original source node");
+
+  // A file matching the SAME pattern but opened BY HAND never gets the
+  // start filter — only an auto-open/auto-close rule's own opens do.
+  await w.addWatchedFolder(fakeDirHandle("manuallogs", { "M.log": makeLog(0, 5) }));
+  const mFolder = T.state.folders.find(f => f.name === "manuallogs");
+  mFolder.settings.patterns[0].startFilterKey = record.key;
+  w.render();
+  const mRow = [...d.querySelectorAll(".folder-watch")].find(box => box.querySelector(".folder-watch-name").textContent === "manuallogs")
+    .querySelector(".folder-watch-file");
+  fireDblClick(mRow, w);
+  await waitFor(() => !!mFolder.files.find(f => f.name === "M.log").nodeId);
+  const mNode = T.state.nodes[mFolder.files.find(f => f.name === "M.log").nodeId];
+  assert(mNode.children.length === 0, "a file opened by hand never gets the pattern's start filter applied, even with a startFilterKey configured, got " + mNode.children.length + " children");
+}, { indexedDB: new IDBFactory() });
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -29814,4 +29934,21 @@ process.exitCode = failed ? 1 : 0;
       and applyContextJumpExpansion's time-mode aroundJump window, whose
       contextAutoRanges take-back-the-previous-jump mechanism (GROUP 138o)
       is shown to still leave a hand-revealed range in another gap alone.
+
+   Group 228 — this session, FEATURE_BACKLOG.md #71 ("Extend folder
+      auto-open with configurable start filters"), scoped per the project
+      owner's note that the Filter Library (GROUP 59) is the source for the
+      filter selection: a folder-watch pattern's new startFilterKey names a
+      saved Filter Library record to apply (via the existing
+      applyFilterFromLibrary, unchanged) the moment that pattern auto-opens
+      a file — auto-open-newest or auto-close keep-N-open, never a file
+      opened by hand (applyFolderStartFilter, gated the same way
+      rec.openedByAuto/autoOpenFired already separate "person vs. auto").
+      Covers the new "Start filter" <select> in the folder watch settings
+      dialog (#fwPatternList, renderFwPatternList — now async to await
+      listFilterLibrary()) listing "None" plus every saved preset and
+      persisting a pick across a dialog close/reopen, an auto-opened file
+      ending up with a fresh filter child carrying the preset's own
+      definition, and a file matching the same pattern but opened by hand
+      getting no filter applied even with a startFilterKey configured.
    ============================================================ */

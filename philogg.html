@@ -23090,11 +23090,12 @@ function isCompatibleFolderFile(name) {
 
 // A pattern's fields double as the per-pattern "auto rules" (see
 // applyFolderAutoRules): autoOpenNewest (bool), autoCloseKeep/showNewest
-// (positive integer, or null for "no limit"). One folder without any
-// configured pattern behaves exactly as before this feature existed — "*"
-// matches every compatible file, all three rules off.
+// (positive integer, or null for "no limit"), startFilterKey (a filter
+// library record's key, or null — see applyFolderStartFilter). One folder
+// without any configured pattern behaves exactly as before this feature
+// existed — "*" matches every compatible file, all rules off.
 function defaultFolderPattern() {
-  return { pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: null };
+  return { pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: null, startFilterKey: null };
 }
 function defaultFolderSettings() {
   return { includeSubfolders: false, showRelativePath: false, patterns: [defaultFolderPattern()] };
@@ -23454,7 +23455,10 @@ async function loadFolderFile(folder, rec, auto) {
     const node = await loadOneFileIntoTree(rec.name, file, rec.handle, folder.id);
     rec.nodeId = node.id;
     rec.openedByAuto = !!auto;
-    if (auto) rec.autoOpenFired = true;
+    if (auto) {
+      rec.autoOpenFired = true;
+      await applyFolderStartFilter(folder, rec, node);
+    }
     // Under a wrapper that listed the folder natively the file's real path
     // and its philogg://local/… URL are both known, so a folder file gets
     // "Open File Location"/"Copy Path" like every other route there. Set
@@ -23464,6 +23468,23 @@ async function loadFolderFile(folder, rec, auto) {
   } finally {
     render();
   }
+}
+
+// FEATURE_BACKLOG.md #71: a pattern's configured startFilterKey (set in the
+// folder settings dialog, see renderFwPatternList) names a Filter Library
+// record (see the "Filter library" section further below) to apply the
+// moment this pattern auto-opens a file — never for a file a person opens
+// themselves (loadFolderFile's own `auto` param already draws that line for
+// rec.openedByAuto/autoOpenFired, mirrored here). Reuses
+// applyFilterFromLibrary unchanged, exactly like the "Apply from library…"
+// context-menu action — the filter logic re-evaluates against this file's
+// own entries, never a replayed result from wherever it was saved.
+async function applyFolderStartFilter(folder, rec, node) {
+  const pattern = matchFolderPattern(folder.settings, rec);
+  if (!pattern || !pattern.startFilterKey) return;
+  const records = await listFilterLibrary();
+  const record = records.find(r => r.key === pattern.startFilterKey);
+  if (record) applyFilterFromLibrary(node.id, record);
 }
 
 // Polls every actively-watched folder for newly appeared OR since-removed
@@ -24177,9 +24198,13 @@ folderWatchSettingsDialog.addEventListener("click", ev => {
 });
 
 // One .fw-pattern-card per pattern: an editable glob + remove button as its
-// header, then the three per-pattern rules as .settings-row's, matching the
-// app Settings' row/switch/number-input look throughout.
+// header, then the four per-pattern rules as .settings-row's, matching the
+// app Settings' row/switch/number-input look throughout. Stays synchronous
+// (the dialog has always opened and rendered its cards in one tick) by
+// reading the "Start filter" row's options off filterLibraryCache rather
+// than awaiting listFilterLibrary() directly.
 function renderFwPatternList() {
+  const libraryRecords = filterLibraryCache;
   fwPatternList.innerHTML = "";
   const patterns = fwSettingsFolder.settings.patterns;
   patterns.forEach((p, idx) => {
@@ -24226,6 +24251,11 @@ function renderFwPatternList() {
       "Show M newest files", "Files older than the M most recent matches are dropped from the listing entirely once closed. Empty = no limit.",
       numberControl(p.showNewest, v => { p.showNewest = v; commitFolderWatchSettings(); })
     ));
+    card.appendChild(fwPatternRuleRow(
+      "Start filter", "Applied automatically to a file this pattern opens on its own (auto-open newest / auto-close keep-N-open) — never for a file opened by hand. Sourced from the filter library (Files & Filters sidebar toolbar → \"Add to library…\").",
+      selectControl(p.startFilterKey || "", [{ value: "", label: "None" }].concat(libraryRecords.map(r => ({ value: r.key, label: r.name }))),
+        value => { p.startFilterKey = value || null; commitFolderWatchSettings(); })
+    ));
     fwPatternList.appendChild(card);
   });
 }
@@ -24265,6 +24295,18 @@ function numberControl(value, onChange) {
     onChange(Number.isFinite(n) && n > 0 ? n : null);
   });
   return input;
+}
+function selectControl(value, options, onChange) {
+  const select = document.createElement("select");
+  options.forEach(opt => {
+    const option = document.createElement("option");
+    option.value = opt.value;
+    option.textContent = opt.label;
+    select.appendChild(option);
+  });
+  select.value = value || "";
+  select.addEventListener("change", () => onChange(select.value || null));
+  return select;
 }
 
 /* ===================== Filter popup (Ctrl+F to create, F2/right-click "Edit filter…" to edit) ===================== */
@@ -27479,6 +27521,7 @@ async function saveFilterToLibrary(nodeId, name) {
     showInToolbar: false,
     icon: null,
   }));
+  await refreshFilterLibraryCache();
   showCopyToast("Saved to filter library");
   await renderLibraryToolbarPresets();
 }
@@ -27492,6 +27535,7 @@ async function updateFilterLibraryEntry(key, patch) {
   if (!rec) return;
   Object.assign(rec, patch);
   await cacheStoreOp("filterLibrary", "readwrite", store => store.put(rec));
+  await refreshFilterLibraryCache();
   await renderLibraryToolbarPresets();
 }
 
@@ -27502,7 +27546,22 @@ async function listFilterLibrary() {
 
 async function deleteFilterLibraryEntry(key) {
   await cacheStoreOp("filterLibrary", "readwrite", store => store.delete(key));
+  await refreshFilterLibraryCache();
   await renderLibraryToolbarPresets();
+}
+
+// Synchronous-read cache of the library's contents, for a UI spot that needs
+// the current list WITHOUT an async gap before it can render (renderFwPatternList's
+// "Start filter" select — the folder watch settings dialog has always opened
+// and rendered its pattern cards in one synchronous tick, and reading
+// listFilterLibrary() directly there would reopen that gap). Refreshed by every
+// mutator above (fire-and-forget elsewhere is fine; a stale cache only means a
+// preset saved/renamed/deleted a moment ago doesn't show until the next
+// mutation or reload) and once at boot, below.
+let filterLibraryCache = [];
+async function refreshFilterLibraryCache() {
+  filterLibraryCache = await listFilterLibrary();
+  return filterLibraryCache;
 }
 
 // Applies one saved record onto targetId — identical mechanism to Load
@@ -30658,8 +30717,10 @@ setupHitExpandGroups(".tb-hit");
 // specific case applies — see addFile's own comment.
 const formatConfigReady = loadFormatConfig();
 // Populate the Filter-Toolbar's pinned library presets once at boot (they're
-// global, not per-file — later changes re-render via the library mutators).
+// global, not per-file — later changes re-render via the library mutators),
+// and prime filterLibraryCache the same way (see its own comment).
 renderLibraryToolbarPresets();
+refreshFilterLibraryCache();
 // Deep-link ?url= load, fire-and-forget — independent of session restore
 // below (a link straight into a log doesn't need a prior cached session).
 loadFromUrlParam();
