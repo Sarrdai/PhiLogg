@@ -319,11 +319,14 @@ pub fn list_system_fonts(state: State<'_, AppState>) -> Vec<String> {
 }
 
 /// IDE Integration's "Connect" picker: every running Visual Studio instance
-/// found in the Running Object Table, with whichever solution each has open.
-/// See `vs_integration.rs`. `async` so a slow/hung `powershell` invocation
-/// can't stall the webview's IPC callback.
+/// found in the Running Object Table, with whichever solution each has open
+/// — plus a diagnostic message when the PowerShell/COM side itself failed,
+/// so the Settings dialog can show the real reason instead of a generic
+/// "none found" that's indistinguishable from "Visual Studio really isn't
+/// running." See `vs_integration.rs`. `async` so a slow/hung `powershell`
+/// invocation can't stall the webview's IPC callback.
 #[tauri::command]
-pub async fn vs_list_instances() -> Vec<crate::vs_integration::VsInstance> {
+pub async fn vs_list_instances() -> crate::vs_integration::VsListResult {
     crate::vs_integration::list_instances()
 }
 

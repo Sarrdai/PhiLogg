@@ -165,8 +165,8 @@
     // action, given the moniker of a previously-listed instance. Both are
     // Windows-only — see vs_integration.rs.
     vsListInstances: function () {
-      return invoke("vs_list_instances").catch(function () {
-        return [];
+      return invoke("vs_list_instances").catch(function (err) {
+        return { instances: [], error: String(err) };
       });
     },
     vsOpenFile: function (moniker, path, line) {
