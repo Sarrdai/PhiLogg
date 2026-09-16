@@ -2922,6 +2922,15 @@
      flex row instead of a fixed 6-column grid, since this sits inside a
      settings-row-control alongside its label instead of a narrow popup. */
   #settingsAccentRow.hidden{display:none;}
+  /* Context view settings (Settings -> Behavior): the entries-step row and
+     the time-step row are mutually exclusive — only one matches
+     contextExpandStepUnit at a time, see initContextExpandStepUnitSetting's
+     own "change" listener. Same no-bare-.hidden scoping every other
+     .hidden usage in this stylesheet needs (there is no generic
+     .hidden{display:none} rule — see the #viewBar .row-actions.hidden
+     comment); missing this would leave BOTH rows visible regardless of the
+     unit picked, same bug class as the #assertRangeFields one above. */
+  #settingsContextExpandStepRow.hidden, #settingsContextExpandStepMsRow.hidden{display:none;}
   .accent-picker{display:flex; flex-wrap:wrap; gap:6px; max-width:280px; justify-content:flex-end;}
   .accent-swatch{
     width:22px; height:22px; border-radius:50%; border:1px solid var(--border-soft);
@@ -5119,6 +5128,18 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsContextExpandStepUnit">Expand step counts in</label>
+                <div class="settings-row-hint">Whether one expansion step — a "Show more" click, and the auto-expand window around a jump — is measured in entries or in a fixed timespan.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsContextExpandStepUnit">
+                  <option value="entries">Entries</option>
+                  <option value="time">Time</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row" id="settingsContextExpandStepRow">
+              <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsContextExpandStep">Lines revealed per step</label>
                 <div class="settings-row-hint">How many hidden lines one expansion step reveals in each direction (above and below).</div>
               </div>
@@ -5127,6 +5148,19 @@
                   <button type="button" class="stepper-btn" id="settingsContextExpandStepDec" title="Decrease">−</button>
                   <input type="text" inputmode="numeric" class="stepper-value" id="settingsContextExpandStep" value="10">
                   <button type="button" class="stepper-btn" id="settingsContextExpandStepInc" title="Increase">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="settings-row" id="settingsContextExpandStepMsRow">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsContextExpandStepMs">Timespan revealed per step (ms)</label>
+                <div class="settings-row-hint">How much time one expansion step reveals in each direction (above and below) — the number of lines that falls within it varies with how dense the log is there.</div>
+              </div>
+              <div class="settings-row-control">
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" id="settingsContextExpandStepMsDec" title="Decrease">−</button>
+                  <input type="text" inputmode="numeric" class="stepper-value" id="settingsContextExpandStepMs" value="500">
+                  <button type="button" class="stepper-btn" id="settingsContextExpandStepMsInc" title="Increase">+</button>
                 </div>
               </div>
             </div>
@@ -5141,6 +5175,18 @@
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsHideMinimapFullRangeInFullView"></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsMinimapBinningMode">Minimap binning</label>
+                <div class="settings-row-hint">Time-based (default) positions bars by timestamp — a burst of fast activity compresses into a few pixels and idle stretches eat most of the width. Entry-based positions bars by line position in the file instead, spreading bursts out evenly; the grey background bars stop reflecting real density in this mode (every bucket covers the same fixed slice of the file's line count).</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsMinimapBinningMode">
+                  <option value="time">Time-based</option>
+                  <option value="entries">Entry-based</option>
+                </select>
               </div>
             </div>
           </div>
@@ -6679,10 +6725,58 @@ function initContextExpandStepSetting() {
   if (input) input.value = String(contextExpandStep);
 }
 
+// Shows exactly the one step-width row that matches contextExpandStepUnit,
+// hiding the other — the one place that decides it, called from both the
+// unit setting's init and its "change" listener so a fresh load and a live
+// toggle agree. Both ids carry their OWN scoped ".hidden{display:none}" CSS
+// rule (see the stylesheet near #settingsAccentRow.hidden) — this codebase
+// has no generic .hidden rule, so a row missing its own would silently stay
+// visible under the "wrong" unit, the same bug class #assertRangeFields hit.
+function updateContextExpandStepRowVisibility() {
+  const entriesRow = document.getElementById("settingsContextExpandStepRow");
+  const timeRow = document.getElementById("settingsContextExpandStepMsRow");
+  if (entriesRow) entriesRow.classList.toggle("hidden", contextExpandStepUnit === "time");
+  if (timeRow) timeRow.classList.toggle("hidden", contextExpandStepUnit !== "time");
+}
+
+/* Which unit contextExpandStep/contextExpandStepMs is measured in (see
+   contextExpandStepUnit's own module comment). Same plain-localStorage tier
+   as the settings above; default "entries" preserves today's behavior for
+   anyone who never touches this new setting. */
+function initContextExpandStepUnitSetting() {
+  const stored = localStorage.getItem(CONTEXT_EXPAND_STEP_UNIT_KEY);
+  contextExpandStepUnit = stored === "time" ? "time" : "entries";
+  const select = document.getElementById("settingsContextExpandStepUnit");
+  if (select) select.value = contextExpandStepUnit;
+  updateContextExpandStepRowVisibility();
+}
+
+/* The step width when contextExpandStepUnit is "time" (see
+   contextExpandStepMs's own module comment). Same plain-localStorage tier as
+   contextExpandStep itself. */
+function initContextExpandStepMsSetting() {
+  const stored = parseInt(localStorage.getItem(CONTEXT_EXPAND_STEP_MS_KEY), 10);
+  contextExpandStepMs = clampContextExpandStepMs(stored);
+  const input = document.getElementById("settingsContextExpandStepMs");
+  if (input) input.value = String(contextExpandStepMs);
+}
+
 function initMinimapFullRangeSetting() {
   hideMinimapFullRangeInFullView = localStorage.getItem(HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY) === "1";
   const cb = document.getElementById("settingsHideMinimapFullRangeInFullView");
   if (cb) pillSet(cb, hideMinimapFullRangeInFullView);
+}
+
+/* Minimap binning mode (see minimapBinningMode's own module comment, near
+   minimapTsToX, for the full "time" vs "entries" mechanism). Same plain-
+   localStorage-preference wiring as the toggle above; MINIMAP_BINNING_MODE_KEY
+   itself is declared alongside minimapBinningMode near the rest of the
+   minimap module's state, not here — this function only hydrates from it. */
+function initMinimapBinningModeSetting() {
+  const stored = localStorage.getItem(MINIMAP_BINNING_MODE_KEY);
+  minimapBinningMode = stored === "entries" ? "entries" : "time";
+  const select = document.getElementById("settingsMinimapBinningMode");
+  if (select) select.value = minimapBinningMode;
 }
 
 document.getElementById("settingsContextInitialExpansion").addEventListener("change", ev => {
@@ -6707,6 +6801,27 @@ document.getElementById("settingsContextExpandStep").addEventListener("change", 
 });
 initNumberStepper("settingsContextExpandStep", { step: 1, min: 1, max: 1000 });
 
+document.getElementById("settingsContextExpandStepUnit").addEventListener("change", ev => {
+  contextExpandStepUnit = ev.target.value === "time" ? "time" : "entries";
+  localStorage.setItem(CONTEXT_EXPAND_STEP_UNIT_KEY, contextExpandStepUnit);
+  updateContextExpandStepRowVisibility();
+  // Deliberately no forced render() here, unlike the step-value fields below:
+  // the unit alone doesn't change anything already revealed, only what the
+  // NEXT expansion action (a "Show more" click, or a jump) does with it.
+});
+
+document.getElementById("settingsContextExpandStepMs").addEventListener("change", ev => {
+  contextExpandStepMs = clampContextExpandStepMs(parseInt(ev.target.value, 10));
+  ev.target.value = String(contextExpandStepMs); // reflect the clamp back
+  localStorage.setItem(CONTEXT_EXPAND_STEP_MS_KEY, String(contextExpandStepMs));
+  // Mirrors #settingsContextExpandStep's own listener above: the timespan
+  // decides how many "Show more (+n)" rows exist and how wide an
+  // auto-expansion is, so what's on screen right now is already stale.
+  contextExpansionsKey = null;
+  render();
+});
+initNumberStepper("settingsContextExpandStepMs", { step: 100, min: 1 });
+
 document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListener("change", ev => {
   hideMinimapFullRangeInFullView = pillGet(ev.target);
   localStorage.setItem(HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY, hideMinimapFullRangeInFullView ? "1" : "0");
@@ -6714,6 +6829,21 @@ document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListen
   // Full tab is already showing would leave the box exactly as it was until
   // the next unrelated render/scroll happened to call updateMinimapFullRange.
   updateMinimapFullRange();
+});
+
+document.getElementById("settingsMinimapBinningMode").addEventListener("change", ev => {
+  minimapBinningMode = ev.target.value === "entries" ? "entries" : "time";
+  localStorage.setItem(MINIMAP_BINNING_MODE_KEY, minimapBinningMode);
+  // Re-render the minimap itself immediately, the same targeted re-render
+  // the window "resize" listener already uses (bucket geometry/bar
+  // positions depend on live state that handler also needs to refresh),
+  // rather than the heavier render()/renderTable() a full node switch would
+  // trigger — flipping this toggle doesn't change the active filter/view,
+  // only how the SAME viewEntries get laid out across the width.
+  if (!timelineMinimapEl.classList.contains("hidden")) {
+    renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+    updateMinimapRenderedRange();
+  }
 });
 
 /* ===================== Text-filter match highlighting settings (Settings ->
@@ -16773,6 +16903,38 @@ function clampContextExpandStep(n) {
   return Number.isFinite(n) ? Math.max(1, Math.min(1000, Math.round(n))) : 10;
 }
 
+// Settings -> Behavior: which UNIT contextExpandStep is measured in
+// (FEATURE_BACKLOG.md #79, narrowed scope — see CHANGELOG.md). "entries"
+// (default, unchanged from before this setting existed) keeps a step a
+// fixed root-file INDEX count, exactly as above. "time" instead makes a
+// step a fixed TIME SPAN (contextExpandStepMs below): the entry count one
+// step actually reveals then varies with how dense the log is at that
+// edge, which is the whole point — a fixed line count reveals wildly
+// different amounts of wall-clock time depending on how bursty the file
+// is around the spot you're looking at, while a fixed timespan reveals a
+// consistent "peek this far either way" regardless (person-requested).
+// Governs both mechanisms contextExpandStep already feeds: a "Show more
+// (+n)" row's own reveal size (buildContextView's addHidden) and the
+// aroundJump auto-expansion window (applyContextJumpExpansion) — nothing
+// else needs to know which unit is active except the filler label/tooltip
+// text (appendContextFillers), since the revealed range is always plain
+// root-file indices either way.
+const CONTEXT_EXPAND_STEP_UNIT_KEY = "philogg-context-expand-step-unit";
+let contextExpandStepUnit = "entries";
+
+// The step width when contextExpandStepUnit is "time": milliseconds
+// revealed per direction. Same clamp shape as clampContextExpandStep (min
+// 1, integral) but deliberately with NO upper cap — the Time-context-
+// filter dialog's own ms fields (#contextBeforeInput/#contextAfterInput)
+// have none either, and this sits right next to that same "a duration in
+// milliseconds" idea, so an arbitrary ceiling here would be an
+// inconsistency nothing else in this area asks for.
+const CONTEXT_EXPAND_STEP_MS_KEY = "philogg-context-expand-step-ms";
+let contextExpandStepMs = 500;
+function clampContextExpandStepMs(n) {
+  return Number.isFinite(n) ? Math.max(1, Math.round(n)) : 500;
+}
+
 /* ---------- The revealed-range list (contextExpansions) ------------------
    Three tiny writers, deliberately kept together: every mutation of a gap's
    revealed ranges goes through one of them, so "sorted, disjoint, merged" is
@@ -16948,12 +17110,46 @@ function buildContextView(rootId) {
   // Order matters: a step row sits BETWEEN its own run and the "… N lines"
   // row, so the two directions of one stretch stay separately operable
   // (person-requested) and each button is next to the rows it grows.
+  // contextExpandStepUnit branches only the WIDTH of a step and whether it's
+  // shown at all — never the filler shape itself (still plain root-file
+  // index ranges either way, see the module comment on the constant).
+  // "entries" mode below is byte-for-byte the pre-existing logic, unchanged.
+  // "time" mode computes two CANDIDATE boundaries first (topTo/bottomFrom)
+  // and derives both the clipped step AND whether to show it from those same
+  // two numbers, rather than a separately-computed "is there more than one
+  // step hidden" time check — deriving both from one pair of numbers is what
+  // keeps them from ever disagreeing at an edge (e.g. exactly one step's
+  // worth of time left in the stretch).
   const addHidden = (g, hs, he) => {
-    const step = contextExpandStep;
-    const stepped = (he - hs) > step;
-    if (hs > g.start && stepped) addFiller({ kind: "more", side: "top", gapStart: g.start, from: hs, to: hs + step });
+    let topTo, bottomFrom, topStepShown, bottomStepShown;
+    if (contextExpandStepUnit === "time") {
+      // Top candidate: measured FROM the last already-visible row above the
+      // stretch (only meaningful once hs > g.start, i.e. exactly when a top
+      // step could apply at all) — first index whose ts exceeds that row's
+      // ts + the configured span, clamped to reveal at least one entry and
+      // never cross past he.
+      const topAnchorTs = hs > g.start ? all[hs - 1].ts : null;
+      topTo = topAnchorTs === null ? hs
+        : Math.min(he, Math.max(hs + 1, upperBoundByTs(all, topAnchorTs + contextExpandStepMs)));
+      topStepShown = hs > g.start && topTo < he;
+      // Bottom candidate: measured FROM the row right below the stretch —
+      // first index whose ts is >= that row's ts minus the span, same
+      // at-least-one-entry / never-below-hs clamping.
+      const bottomAnchorTs = he < g.end ? all[he].ts : null;
+      bottomFrom = bottomAnchorTs === null ? he
+        : Math.max(hs, Math.min(he - 1, lowerBoundByTs(all, bottomAnchorTs - contextExpandStepMs)));
+      bottomStepShown = he < g.end && bottomFrom > hs;
+    } else {
+      const step = contextExpandStep;
+      const stepped = (he - hs) > step;
+      topTo = hs + step;
+      bottomFrom = he - step;
+      topStepShown = hs > g.start && stepped;
+      bottomStepShown = he < g.end && stepped;
+    }
+    if (topStepShown) addFiller({ kind: "more", side: "top", gapStart: g.start, from: hs, to: topTo });
     addFiller({ kind: "gap", gapStart: g.start, from: hs, to: he });
-    if (he < g.end && stepped) addFiller({ kind: "more", side: "bottom", gapStart: g.start, from: he - step, to: he });
+    if (bottomStepShown) addFiller({ kind: "more", side: "bottom", gapStart: g.start, from: bottomFrom, to: he });
   };
 
   let gi = 0;
@@ -17193,9 +17389,12 @@ function setAllGapsExpanded(expanded) {
 // gap it is buried in and nothing else.
 //
 // "aroundJump" instead reveals a contextExpandStep-wide window on either side
-// of the target (which is the "peek at this spot" reading of the setting, and
-// covers the target itself on the way), and — since that reading is about the
-// spot you are looking at RIGHT NOW — hides the PREVIOUS jump's own window
+// of the target — an index count in "entries" mode, a contextExpandStepMs
+// timespan (translated to indices via lowerBoundByTs/upperBoundByTs) in
+// "time" mode, see contextExpandStepUnit — (which is the "peek at this spot"
+// reading of the setting, and covers the target itself on the way), and —
+// since that reading is about the spot you are looking at RIGHT NOW — hides
+// the PREVIOUS jump's own window
 // again, so walking match to match carries one open window along the file
 // instead of accumulating every place you have been (person-requested). What
 // it may hide is exactly the ranges it revealed last time and nobody has
@@ -17204,7 +17403,8 @@ function setAllGapsExpanded(expanded) {
 // Returns true when anything actually changed.
 function applyContextJumpExpansion(entryId) {
   if (!contextActive || !contextGaps.length) return false;
-  const idx = buildOrderIndexMap(getRootFileId(state.activeId)).get(entryId);
+  const rootId = getRootFileId(state.activeId);
+  const idx = buildOrderIndexMap(rootId).get(entryId);
   if (idx === undefined) return false;
   const aroundJump = contextInitialExpansion === "aroundJump";
   const before = contextExpansionsSignature();
@@ -17214,8 +17414,21 @@ function applyContextJumpExpansion(entryId) {
   // nothing for the match's own index).
   const wanted = [];
   if (aroundJump) {
-    const lo = idx - contextExpandStep;
-    const hi = idx + contextExpandStep + 1;
+    let lo, hi;
+    if (contextExpandStepUnit === "time") {
+      // The same index-count -> timespan swap addHidden makes: a window of
+      // contextExpandStepMs on either side of the jump target's own
+      // timestamp, translated back to root-file indices via the same
+      // binary-search helpers used everywhere else in this file for "first
+      // index >=/> a given timestamp".
+      const all = state.nodes[rootId].entries;
+      const refTs = all[idx].ts;
+      lo = lowerBoundByTs(all, refTs - contextExpandStepMs);
+      hi = upperBoundByTs(all, refTs + contextExpandStepMs);
+    } else {
+      lo = idx - contextExpandStep;
+      hi = idx + contextExpandStep + 1;
+    }
     contextGaps.forEach(g => {
       const from = Math.max(g.start, lo);
       const to = Math.min(g.end, hi);
@@ -17654,8 +17867,9 @@ function makeContextRunHandle(run, isTop, isBottom) {
 
 // The filler rows standing in for a still-hidden stretch (see buildContextView's
 // addHidden for which ones exist where): a "gap" filler reveals everything
-// left in one click, a "more" filler reveals just the next contextExpandStep
-// lines against the run it sits beside. Neither is a real entry — the dimming
+// left in one click, a "more" filler reveals just the next step (an entry
+// count or a timespan, see contextExpandStepUnit) against the run it sits
+// beside. Neither is a real entry — the dimming
 // signals "this is a stand-in, click it", the opposite reasoning from why a
 // real context row is no longer dimmed. The whole row is the click target,
 // same as any other row-shaped control in this file (.tree-row, .crumb, …)
@@ -17664,13 +17878,25 @@ function makeContextRunHandle(run, isTop, isBottom) {
 // identity across renders is never assumed (see CLAUDE.md's
 // "renderVisibleRows() rebuilds nodes" gotcha).
 function appendContextFillers(frag, fillers, rowKey, viewportW) {
+  // Only a "more" filler's label/tooltip read contextExpandStepUnit — the
+  // "gap" ("… N lines") kind always reports the exact remaining entry count
+  // in both modes (person-requested, FEATURE_BACKLOG.md #79's narrowed
+  // scope: "if less than that is available just the '...n line' as by now"),
+  // since it reveals the whole stretch regardless of unit and a duration
+  // wouldn't say anything more useful than the count already does. A "more"
+  // filler in "time" mode instead shows the FIXED CONFIGURED DURATION
+  // (formatMs(contextExpandStepMs)), not the entry count it happens to
+  // reveal here — that count is exactly the point of time mode (it varies
+  // with local density), so showing it on the button would promise a
+  // precision the setting doesn't actually offer.
+  const timeMode = contextExpandStepUnit === "time";
   fillers.forEach(f => {
     const n = f.to - f.from;
     const row = document.createElement("div");
     row.className = "ctx-gap-placeholder" + (f.kind === "more" ? " ctx-show-more" : "");
     row.style.height = CONTEXT_STRIP_HEIGHT + "px";
     row.title = f.kind === "more"
-      ? "Click to reveal " + n.toLocaleString("de-DE") + " more " + (n === 1 ? "line" : "lines")
+      ? "Click to reveal " + (timeMode ? formatMs(contextExpandStepMs) + " more" : n.toLocaleString("de-DE") + " more " + (n === 1 ? "line" : "lines"))
       : "Click to reveal these lines";
     // The label lives in its own sticky box (see .ctx-filler-inner) so it
     // stays centred on what's visible however far the rows are scrolled
@@ -17679,7 +17905,7 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
     row.innerHTML = '<span class="ctx-filler-inner"' + (viewportW ? ' style="width:' + viewportW + 'px"' : '') + '>' +
       '<span class="ctx-gap-icon">' + (f.kind === "more" ? ICON_PLUS_SMALL : ICON_ELLIPSIS) + '</span><span>' +
       (f.kind === "more"
-        ? "Show more (+" + n.toLocaleString("de-DE") + ")"
+        ? "Show more (+" + (timeMode ? formatMs(contextExpandStepMs) : n.toLocaleString("de-DE")) + ")"
         : n.toLocaleString("de-DE") + (n === 1 ? " line" : " lines")) + '</span></span>';
     row.addEventListener("click", () => revealContextLines(f, rowKey));
     frag.appendChild(row);
@@ -18379,15 +18605,101 @@ let minimapLastViewEntries = [];
 // when flipping between filters on large files. Keyed on everything the pass
 // reads: root id, entry count (grows on tail append, resets on rotation),
 // time span, and bucket count (changes on resize).
-let minimapBgCache = null; // { rootId, entryCount, tMin, tMax, bucketCount, bgCounts, maxCount }
+let minimapBgCache = null; // { rootId, entryCount, tMin, tMax, bucketCount, binningMode, bgCounts, maxCount }
+
+/* ===================== Minimap binning mode (Settings -> Timeline minimap,
+   FEATURE_BACKLOG.md #2, person-approved design) =====================
+   Switches the minimap's BAR LAYOUT between two ways of mapping an entry to
+   an x position: "time" (the original/default behavior) proportions x by
+   the entry's timestamp within [minimapTMin, minimapTMax]; "entries"
+   instead proportions x by the entry's ORDINAL POSITION among the root
+   file's entries (0..entryCount-1) — a burst of fast activity spreads out
+   evenly across the width instead of compressing into a few pixels, and a
+   long idle stretch stops eating most of the width just because it covers a
+   lot of wall-clock time.
+   Scope is deliberately visualization-only: every INTERACTION (click-to-
+   jump, drag-select, the right-click dialog, the two range-indicator
+   rectangles, the hover tooltip, the selection marker) keeps working
+   completely unchanged, because none of them contain their own notion of
+   "where in time/space is this pixel" — they all route through
+   minimapTsToX/minimapXToTs/minimapBucketOf below, the ONLY three functions
+   this mode is ever branched on. A click that used to resolve to an
+   approximate interpolated time now resolves to a real entry's exact
+   timestamp instead (see minimapXToTs's own comment) — existing downstream
+   logic (lowerBoundByTs over currentViewEntries, building a "timerange"
+   filter from two such timestamps) already handles an exact real timestamp
+   correctly, so nothing above this conversion layer needed to change.
+   Plain localStorage UI preference (see initMinimapBinningModeSetting),
+   same tier as hideMinimapFullRangeInFullView/contextExpandStep — NOT a
+   filter-node field, so it needs no persistence-carrier threading (no
+   cloneSubtree/snapshotSubtree/serializeFilterBranch/session-cache work —
+   see CLAUDE.md's "Known gotchas"). */
+const MINIMAP_BINNING_MODE_KEY = "philogg-minimap-binning-mode";
+let minimapBinningMode = "time"; // "time" | "entries"
+// The active node's ROOT FILE's entries, in the same chronological order
+// renderTimelineMinimap already relies on for minimapTMin/minimapTMax (root
+// file entries are guaranteed chronological — see PROJECT.md) — set right
+// alongside those two there. Only read by the "entries" branch of
+// minimapTsToX/minimapXToTs/minimapBucketOf, to resolve a timestamp to/from
+// an ordinal INDEX rather than a point in the time span; kept as module
+// state (same tier as minimapTMin/minimapTMax/minimapWidth) so the click/
+// drag/hover handlers below don't need any root-id plumbing beyond what
+// they already have.
+let minimapRootEntries = [];
 
 function minimapTsToX(ts) {
+  if (minimapBinningMode === "entries") {
+    const len = minimapRootEntries.length;
+    if (len < 2) return 0; // mirrors the tMax<=tMin guard below: nothing to position against
+    // Binary search for the entry ts resolves to (first index with an equal
+    // or later timestamp), same lookup lowerBoundByTs already backs
+    // elsewhere in the file — clamped since a ts past the file's own last
+    // entry (e.g. the drag-anchor timestamp captured before a rotation
+    // trimmed the file) would otherwise search past the array's end.
+    const idx = Math.min(len - 1, Math.max(0, lowerBoundByTs(minimapRootEntries, ts)));
+    return (idx / (len - 1)) * minimapWidth;
+  }
   if (minimapTMax <= minimapTMin) return 0;
   return ((ts - minimapTMin) / (minimapTMax - minimapTMin)) * minimapWidth;
 }
 function minimapXToTs(x) {
+  if (minimapBinningMode === "entries") {
+    const len = minimapRootEntries.length;
+    if (len < 2) return minimapTMin;
+    const idx = Math.min(len - 1, Math.max(0, Math.round((x / minimapWidth) * (len - 1))));
+    // Returns the REAL timestamp of the entry that pixel resolves to, not an
+    // interpolated point in time — this is the crux of why every caller
+    // above this conversion layer (click-to-jump's lowerBoundByTs lookup,
+    // drag-select's "timerange" filter, the right-click dialog's prefill)
+    // needed zero changes of its own: they already handle "some entry's
+    // real ts" correctly, and used to just get a less exact one.
+    return minimapRootEntries[idx].ts;
+  }
   if (minimapTMax <= minimapTMin) return minimapTMin;
   return minimapTMin + (x / minimapWidth) * (minimapTMax - minimapTMin);
+}
+
+// Resolves a timestamp to the index of the density BUCKET it falls into —
+// mode-aware (mirrors minimapTsToX/minimapXToTs's own branch), and the
+// single shared home for that lookup: minimapBarSpan below (the two range-
+// indicator rectangles) and the hover tooltip both call this instead of
+// re-deriving either formula by hand, so none of them can ever disagree
+// with each other — or with renderTimelineMinimap's own bgCounts/ovCounts
+// passes, which mirror these exact formulas (see that function's own
+// comment for why it re-derives rather than calling this per-entry: an
+// O(file size) render pass calling this — a binary search per entry in
+// "entries" mode — would cost O(file size * log file size) instead of
+// O(file size)).
+function minimapBucketOf(ts) {
+  if (minimapBucketCount === 0) return 0;
+  if (minimapBinningMode === "entries") {
+    const len = minimapRootEntries.length;
+    if (len < 2) return 0;
+    const idx = Math.min(len - 1, Math.max(0, lowerBoundByTs(minimapRootEntries, ts)));
+    return Math.min(minimapBucketCount - 1, Math.max(0, Math.floor((idx / len) * minimapBucketCount)));
+  }
+  const span = Math.max(1, minimapTMax - minimapTMin);
+  return Math.min(minimapBucketCount - 1, Math.max(0, Math.floor(((ts - minimapTMin) / span) * minimapBucketCount)));
 }
 
 // Maps a timestamp to the horizontal span of the density BAR it falls into,
@@ -18399,13 +18711,12 @@ function minimapXToTs(x) {
 // sit well short of that bar's right edge; using it directly for a
 // rectangle's end used to make the last covered entry's bar visibly stick
 // out past the highlighted range (person-reported via screenshot — a shown
-// ERROR row's bar looked like it was outside the current view). Mirrors the
-// exact bucketOf() formula renderTimelineMinimap uses to build the bars
-// themselves, so the two always agree on which bucket a timestamp belongs to.
+// ERROR row's bar looked like it was outside the current view). Delegates
+// the actual bucket lookup to minimapBucketOf (mode-aware) so this and the
+// render pass always agree on which bucket a timestamp belongs to.
 function minimapBarSpan(ts) {
   if (minimapBucketCount === 0) { const x = minimapTsToX(ts); return { left: x, right: x }; }
-  const span = Math.max(1, minimapTMax - minimapTMin);
-  const bucket = Math.min(minimapBucketCount - 1, Math.max(0, Math.floor(((ts - minimapTMin) / span) * minimapBucketCount)));
+  const bucket = minimapBucketOf(ts);
   const barW = minimapWidth / minimapBucketCount;
   return { left: bucket * barW, right: (bucket + 1) * barW };
 }
@@ -18420,6 +18731,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   minimapLastViewEntries = viewEntries;
 
   const rootEntries = rootId ? state.nodes[rootId].entries : [];
+  minimapRootEntries = rootEntries; // feeds minimapTsToX/minimapXToTs/minimapBucketOf's "entries" branch — see minimapBinningMode's own module comment
   if (rootEntries.length < 2) {
     timelineMinimapSvg.innerHTML = "";
     timelineMinimapMetaEl.textContent = "";
@@ -18472,30 +18784,83 @@ function renderTimelineMinimap(rootId, viewEntries) {
 
   const bucketCount = Math.min(MINIMAP_MAX_BUCKETS, Math.max(MINIMAP_MIN_BUCKETS, Math.round(W / MINIMAP_BUCKET_PX)));
   minimapBucketCount = bucketCount;
+  // Bucket-index formulas for the two passes below — TIME mode buckets a
+  // timestamp by its position in [minimapTMin, minimapTMax] (bucketOfTime,
+  // the pre-existing formula); ENTRIES mode buckets by position in the root
+  // file's entry ORDER instead (see minimapBinningMode's own module
+  // comment). Both loops below inline their own index-based version of the
+  // entries-mode formula rather than calling minimapBucketOf per entry:
+  // they already have the index/ts they need for free from the iteration
+  // itself, whereas minimapBucketOf's entries branch does a binary search
+  // per call (the right tradeoff for the O(1)-ish click/hover/drag
+  // handlers, but calling it here would turn this hot render pass — it runs
+  // on every renderTable(), every node/filter switch, level toggle, tail
+  // tick — into O(file size * log file size) instead of O(file size)).
+  // minimapBucketOf mirrors these exact formulas, so the render pass and
+  // the interaction layer can never disagree on which bucket a ts belongs to.
   const span = Math.max(1, minimapTMax - minimapTMin);
-  const bucketOf = ts => Math.min(bucketCount - 1, Math.max(0, Math.floor(((ts - minimapTMin) / span) * bucketCount)));
+  const bucketOfTime = ts => Math.min(bucketCount - 1, Math.max(0, Math.floor(((ts - minimapTMin) / span) * bucketCount)));
+  const entriesMode = minimapBinningMode === "entries";
 
   let bgCounts, maxCount;
   const c = minimapBgCache;
   if (c && c.rootId === rootId && c.entryCount === rootEntries.length &&
-      c.tMin === minimapTMin && c.tMax === minimapTMax && c.bucketCount === bucketCount) {
+      c.tMin === minimapTMin && c.tMax === minimapTMax && c.bucketCount === bucketCount &&
+      c.binningMode === minimapBinningMode) {
     bgCounts = c.bgCounts;
     maxCount = c.maxCount;
   } else {
     bgCounts = new Array(bucketCount).fill(0);
-    for (const e of rootEntries) bgCounts[bucketOf(e.ts)]++;
+    if (entriesMode) {
+      // Entries mode slices the WHOLE root file into bucketCount equal-size
+      // INDEX ranges — every bucket ends up covering the same fixed slice of
+      // the file's line count, so the background bars render essentially
+      // flat/uniform regardless of the file's actual density. That's
+      // expected, not a bug (see docs/filters.md "Timeline minimap"): the
+      // background bars' whole purpose was showing TIME density, which by
+      // construction no longer varies bucket-to-bucket once binning is by
+      // index instead — the value in this mode is entirely in the overlay
+      // bars below, which still show where in the file's line ORDER the
+      // current filtered/leveled result concentrates.
+      const n = rootEntries.length;
+      for (let i = 0; i < n; i++) bgCounts[Math.min(bucketCount - 1, Math.floor((i / n) * bucketCount))]++;
+    } else {
+      for (const e of rootEntries) bgCounts[bucketOfTime(e.ts)]++;
+    }
     // Loop instead of Math.max(...spread): same call-stack-argument-ceiling
     // reasoning as computeColumnStats, and bucketCount can reach 400.
     maxCount = 1;
     for (const n of bgCounts) if (n > maxCount) maxCount = n;
-    minimapBgCache = { rootId, entryCount: rootEntries.length, tMin: minimapTMin, tMax: minimapTMax, bucketCount, bgCounts, maxCount };
+    minimapBgCache = { rootId, entryCount: rootEntries.length, tMin: minimapTMin, tMax: minimapTMax, bucketCount, binningMode: minimapBinningMode, bgCounts, maxCount };
   }
 
   const ovCounts = new Array(bucketCount).fill(0);
   const ovRank = new Array(bucketCount).fill(Infinity);
   const ovName = new Array(bucketCount).fill("");
+  // Entries mode needs each viewEntries entry's position WITHIN THE ROOT
+  // FILE, not within viewEntries itself — viewEntries is a filtered SUBSET,
+  // so its own array index would bucket by "Nth match" instead of "Nth line
+  // in the file", defeating the whole point of this mode (showing where in
+  // the file's line order the result concentrates). buildOrderIndexMap is
+  // already memoized per root file for exactly this shape of O(1)-per-entry
+  // lookup (see its own comment), so this stays a single O(viewEntries) pass
+  // here too, not the O(viewEntries * log rootEntries) a per-entry
+  // lowerBoundByTs call would cost.
+  const orderIndexMap = entriesMode ? buildOrderIndexMap(rootId) : null;
+  const rootCount = rootEntries.length;
   for (const e of viewEntries) {
-    const b = bucketOf(e.ts);
+    let b;
+    if (entriesMode) {
+      const idx = orderIndexMap.get(e.id);
+      // idx === undefined only for an entry that isn't actually a member of
+      // its claimed root file (shouldn't happen for real callers — see
+      // renderTimelineMinimap's own rootId/viewEntries contract above) —
+      // falls back to bucket 0 rather than throwing, same defensive spirit
+      // as buildOrderIndexMap's own "resolves undefined" fallback.
+      b = idx == null ? 0 : Math.min(bucketCount - 1, Math.floor((idx / rootCount) * bucketCount));
+    } else {
+      b = bucketOfTime(e.ts);
+    }
     ovCounts[b]++;
     const bucket = levelBucket(e.level, e.formatId);
     const rank = levelSortRank(bucket, e.formatId);
@@ -18841,8 +19206,18 @@ timelineMinimapSvg.addEventListener("mousemove", ev => {
   if (minimapBucketCount === 0) { timelineMinimapTooltip.classList.add("hidden"); return; }
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const localX = ev.clientX - rect.left;
-  const b = Math.min(minimapBucketCount - 1, Math.max(0, Math.floor((localX / rect.width) * minimapBucketCount)));
-  const bucketTs = minimapTMin + (b / minimapBucketCount) * (minimapTMax - minimapTMin);
+  // Routed through the shared minimapXToTs/minimapBucketOf conversion layer
+  // (see minimapBinningMode's own module comment) instead of re-deriving
+  // the time-proportion formula by hand — this used to compute
+  // `minimapTMin + (b / minimapBucketCount) * (minimapTMax - minimapTMin)`
+  // directly, a duplicate of minimapXToTs's own math that only ever stayed
+  // correct in time mode. Going through the shared functions makes the
+  // tooltip automatically correct in entries mode too (bucketTs becomes the
+  // REAL entry's timestamp the hovered pixel resolves to, same as every
+  // other caller of minimapXToTs), with no separate logic to keep in sync.
+  const unitX = (localX / rect.width) * minimapWidth;
+  const bucketTs = minimapXToTs(unitX);
+  const b = minimapBucketOf(bucketTs);
   const rank = minimapOvRank[b];
   const rankLabel = Number.isFinite(rank) && minimapOvName[b] ? " · " + minimapOvName[b] : "";
   timelineMinimapTooltip.textContent = formatTime(bucketTs) + " · " + minimapOvCounts[b] + "/" + minimapBgCounts[b] + rankLabel;
@@ -30227,8 +30602,11 @@ initCloseToTray();
 initHoverExpandSettings();
 initContextInitialExpansionSetting();
 initContextExpandStepSetting();
+initContextExpandStepUnitSetting();
+initContextExpandStepMsSetting();
 initContextToolbar();
 initMinimapFullRangeSetting();
+initMinimapBinningModeSetting();
 initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
 initFilePathLinksSetting();
