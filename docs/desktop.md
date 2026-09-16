@@ -5,8 +5,9 @@ The optional desktop wrapper around the **unmodified** `philogg.html`, in
 Rust backend (Tauri v2). It adds `.log` file associations, CLI-argument/double-click
 file opening, a frameless window with integrated window controls, a tray, a splash
 screen, `settings.json` mirroring, "Open File Location"/"Copy Path", a system font
-list for the UI font picker, and a folder watch that does not go through the
-browser's File System Access API.
+list for the UI font picker, a folder watch that does not go through the
+browser's File System Access API, and (Windows only) jumping from a log
+entry's Location straight into a running Visual Studio instance.
 
 `desktop/README.md` has the build/run steps, the prerequisites, and the
 current run status — this file covers the internal mechanism only.
@@ -35,6 +36,7 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 | `inject.rs` + `inject.js` | the injected script itself |
 | `state.rs` | the `localFiles` map, quit/close/PiP flags, caches |
 | `fonts.rs` | system font enumeration |
+| `vs_integration.rs` | Visual Studio COM automation (Running Object Table) |
 
 ## The `philogg://` scheme, and why there is a `fetch` shim
 
@@ -590,6 +592,80 @@ options-array entry per font. UI font drives `--font-ui`, Log font drives its ow
 `--font-log` (see `docs/ui-and-views.md` "Theming") — the plain HTML build (no
 `window.philogg`) is completely unaffected, same curated-list-only behavior as before for
 both.
+
+## IDE Integration: jump from a log entry into a running Visual Studio (Windows only), Rider fast-follow
+
+`philogg.html`'s Location/Method columns already carry a parsed file path +
+line number (`formatLocation`/`parseIdeLocation`), but the log's path is
+almost never the path on the machine reading it later (different drive,
+worktree, clone location). The Settings → IDE Integration section lets a
+person configure a shared "anchor folder" name (e.g. `Projects`) both paths
+are assumed to have in common; `resolveIdeSourcePath` strips everything
+before the LAST segment matching that name and joins the rest onto the
+target IDE's own project directory. Both halves of the feature share this
+one remap function — only how the target directory/instance is obtained
+differs.
+
+**Visual Studio** needs a real connection because there's no way to address
+"whichever VS window has this file open" without first knowing which running
+instance to ask. `vs_integration.rs` shells out to a small embedded
+PowerShell script (`list_instances`) that P/Invokes `ole32.dll`'s
+`GetRunningObjectTable`/`CreateBindCtx` (via `Add-Type -TypeDefinition`, the
+standard way to reach a Win32 API from PowerShell — there's no cmdlet for
+this) to enumerate the Running Object Table, filters monikers starting with
+`!VisualStudio.DTE.` (every running `devenv.exe` registers one), and for
+each reads `Solution.FullName`/`MainWindow.Caption` via
+`Marshal.BindToMoniker`. The Settings dialog's "Connect…" button calls this,
+lists each instance's open solution, and the chosen one's moniker + solution
+directory are kept in a **session-only** JS variable (`ideVsConnection`) —
+never persisted, since a PID/ROT moniker from a past run is meaningless
+after either process restarts. "Open in Visual Studio" (context menu, shown
+whenever `resolveIdeSourcePath` resolves against the connected instance's
+solution directory) shells a second script (`open_file`) that
+`BindToMoniker`s the same instance, calls `ItemOperations.OpenFile` +
+`Selection.GotoLine` + `MainWindow.Activate()`. Both scripts are fixed
+constants sent via `-EncodedCommand` (base64 of their UTF-16LE bytes, hand-
+rolled — one dependency-free function, the same "don't pull in a crate to
+re-derive a few lines" call `fonts.rs` already makes about font
+enumeration) purely to sidestep Windows command-line quoting for a script
+this shape (embedded C#, here-strings); the actual variable, log-derived
+input (moniker/path/line) travels separately through `PHILOGG_VS_*`
+environment variables on the spawned process, never interpolated into the
+script text. `Command::creation_flags(CREATE_NO_WINDOW)` keeps every call
+from flashing a console window, since — unlike the once-per-run, cached
+font enumeration — this runs on every click.
+
+Known, accepted limitation: `MainWindow.Activate()` from another process is
+subject to Windows' own foreground-window-stealing rules. It reliably moves
+the caret/active tab inside Visual Studio; whether the window itself jumps
+to the front or just flashes its taskbar icon depends on the OS's current
+focus-stealing state, and there is no legitimate workaround for that short
+of an admin-level trick this wrapper doesn't attempt.
+
+**Rider** needs none of this: JetBrains IDEs since 2020 or so resolve
+`jetbrains://<product>/navigate/reference?project=...&path=...:<line>` deep
+links themselves, focusing whichever running instance has the named project
+open (or launching one). `buildRiderUri` (`philogg.html`, next to the
+context-menu wiring) builds that URI from the same `resolveIdeSourcePath`
+result and hands it to the existing `window.philogg.openPath` bridge method
+— the same one the clickable-local-path feature already uses to open a
+plain file — which resolves an arbitrary registered URI scheme through the
+OS the same way a browser or `Win+R` would, no new Rust command needed.
+Settings → IDE Integration's "Rider" group is just an enable toggle + the
+project name the link's `project=` parameter needs (not derivable from
+anything else PhiLogg knows) — no connection step, no instance picker: the
+IDE resolves that itself.
+
+Both halves are gated on `window.philogg.isWindows` (baked in at generation
+time in `inject.rs`/`inject.js`, the same mechanism `IS_MAC` already uses) —
+Visual Studio only exists on Windows, and the feature's whole Rider half
+stayed in scope for Windows only too rather than doing the platform-specific
+work an actually cross-platform Rider path would need. The Settings section
+and its nav item, and both context-menu items, are hidden entirely (not just
+inert) outside a Windows desktop build — one of the few places this
+codebase hides rather than shows-but-disables a Settings row, because unlike
+(say) "Close to system tray", there is genuinely no path to make this useful
+on another platform or in the plain browser build.
 
 ## Settings: mirrored into a human-editable `settings.json`
 

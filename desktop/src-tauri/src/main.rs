@@ -19,6 +19,7 @@ mod protocol;
 mod settings;
 mod state;
 mod tray;
+mod vs_integration;
 mod windows;
 
 use std::path::PathBuf;
@@ -85,6 +86,8 @@ fn main() {
             commands::path_exists,
             commands::open_path,
             commands::list_system_fonts,
+            commands::vs_list_instances,
+            commands::vs_open_file,
             commands::window_minimize,
             commands::window_toggle_maximize,
             commands::window_set_fullscreen,

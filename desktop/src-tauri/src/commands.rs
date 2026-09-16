@@ -318,6 +318,23 @@ pub fn list_system_fonts(state: State<'_, AppState>) -> Vec<String> {
     cache.get_or_insert_with(crate::fonts::list).clone()
 }
 
+/// IDE Integration's "Connect" picker: every running Visual Studio instance
+/// found in the Running Object Table, with whichever solution each has open.
+/// See `vs_integration.rs`. `async` so a slow/hung `powershell` invocation
+/// can't stall the webview's IPC callback.
+#[tauri::command]
+pub async fn vs_list_instances() -> Vec<crate::vs_integration::VsInstance> {
+    crate::vs_integration::list_instances()
+}
+
+/// IDE Integration's "Open in Visual Studio" action: asks the connected
+/// instance (by the moniker `vs_list_instances` handed back) to open `path`
+/// at `line` and come to the foreground. See `vs_integration.rs`.
+#[tauri::command]
+pub async fn vs_open_file(moniker: String, path: String, line: u32) -> Result<(), String> {
+    crate::vs_integration::open_file(&moniker, &path, line)
+}
+
 #[tauri::command]
 pub fn window_minimize(window: Window) {
     let _ = window.minimize();
