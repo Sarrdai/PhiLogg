@@ -25784,6 +25784,83 @@ await withApp(async (w, d, T) => {
   assert(T.state.showNotes === true, "saving a new note through the note dialog also auto-enables Show Notes");
 });
 
+/* ============================================================
+   GROUP 225 — .crumb-sep (the separator between filter path pills, shared
+   by #breadcrumb and #filterTargetChain) redesigned as a distinct
+   connector element, in two rounds this session (person-reported both
+   times, screenshots). Numbered 225, not 224, to avoid colliding with the
+   unrelated Show-Notes-auto-enable Group 224 merged into main the same day.
+   Round 1: the bare "›" glyph read as small/lost/unaligned, especially
+   against --text-tertiary's low contrast against --bg-panel. Fixed with a
+   themed 18x18 bordered circle (--accent-strong) instead of plain inline
+   text sized/colored off the ambient font.
+   Round 2: with the circle in place, the "›" GLYPH ITSELF still looked
+   off-center inside it. Measured directly (Range.getBoundingClientRect()
+   on the text node): the glyph's own advance-width box WAS centered by
+   the container's flexbox, but "›"'s visible ink sits left-of-center
+   within that box (ordinary font right-side-bearing) — a font-metrics
+   quirk no container-level margin/padding can fix, since it's baked into
+   the glyph and varies by font/OS. Fixed by swapping the text glyph for
+   ICON_CARET_RIGHT (renderBreadcrumb/renderFilterTargetChain now set
+   .innerHTML, not .textContent) — the same hand-drawn SVG chevron already
+   used for the Context view's match nav, authored symmetric inside its
+   own viewBox and therefore centered by construction, independent of any
+   font.
+   jsdom's getComputedStyle can't resolve var() inside the
+   `background`/`border` SHORTHANDS used here (see tests/README.md "Known
+   gaps" — confirmed empirically: it falls back to initial values instead
+   of the declared var()), so the background/border assertions below check
+   the raw stylesheet source instead of computed style; the shape/layout
+   properties (declared as plain px/keyword values, no var()) resolve fine
+   via getComputedStyle.
+   ============================================================ */
+group(225);
+await withApp(async (w, d, T) => {
+  section("225. Breadcrumb/filter-target-chain separator is a bordered circle around a real (font-independent) SVG chevron, not a bare small glyph");
+
+  const cs = w.getComputedStyle;
+  const css = d.querySelector("style").textContent;
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const node = w.createFilterNode(f.id, "text", "msg");
+  T.state.activeId = node.id;
+  w.render();
+
+  const sep = d.querySelector("#breadcrumb .crumb-sep");
+  assert(sep, "sanity: the separator chip still renders between the file and filter pills");
+  assert(!sep.textContent.trim(), "the separator no longer relies on a text glyph at all (its font-metrics ink wasn't reliably centered in the circle — see the group banner), got textContent " + JSON.stringify(sep.textContent));
+  const svg = sep.querySelector("svg");
+  assert(svg, "the separator now hosts a real SVG icon instead of a text character");
+  assert(svg.querySelector('path[d="M6 4l4 4-4 4"]'), "it's specifically ICON_CARET_RIGHT — a plain caret authored symmetric inside its own viewBox, so it's centered by construction regardless of font/OS, got " + svg.outerHTML);
+  assert(svg.getAttribute("stroke") === "currentColor", "the icon inherits .crumb-sep's own color (currentColor) rather than hardcoding one");
+
+  assert(cs(sep).width === "18px" && cs(sep).height === "18px", "the separator is a fixed 18x18 box, got " + cs(sep).width + "/" + cs(sep).height);
+  assert(cs(sep).borderRadius === "50%", "the separator is a circle (border-radius:50%), giving it its own visible boundary instead of floating as bare text/an unbounded icon");
+  assert(cs(sep).display === "inline-flex" && cs(sep).alignItems === "center" && cs(sep).justifyContent === "center",
+    "the icon is centered inside that circle via flex");
+
+  // Two rules share the .crumb-sep selector (the base rule plus a
+  // #breadcrumb-scoped margin override for its different pill-center math
+  // — see the comments on both in the stylesheet), so this greps the base
+  // rule's specific declarations rather than regex-matching "the" rule.
+  assert(css.includes("color:var(--accent-strong)"), "the icon uses the stronger --accent-strong color, not the low-contrast --text-tertiary it used before");
+  assert(!/\.crumb-sep\{[^}]*--text-tertiary/.test(css), "the old low-contrast --text-tertiary color is gone from .crumb-sep's own rule");
+  assert(css.includes("background:var(--bg-elevated-2); border:1px solid var(--border-soft)"), "the circle has its own themed background/border");
+
+  // Same shared rule + markup powers the filter-target-chain popup's pill
+  // separator (GROUP 152's "pills are separated the same way #breadcrumb
+  // separates its chain") — spot-check it renders the same icon there too.
+  // Create mode's target chain runs down to state.activeId, so it needs
+  // the FILTER node active (not the file) to actually produce a 2-pill
+  // chain with a separator between them (see Group 39's own coverage of
+  // this popup's create-vs-edit chain shape).
+  T.state.activeId = node.id;
+  w.render();
+  w.openFilterPopup();
+  const chainSep = d.querySelector("#filterTargetChain .crumb-sep");
+  assert(chainSep && chainSep.querySelector("svg"), "the filter-target chain's separator is the same SVG-based chip, not a leftover text glyph");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -29314,10 +29391,25 @@ process.exitCode = failed ? 1 : 0;
       differently). Covers the DOM reorder, the Extract item's visibility
       gate + outcome, Copy's three selection cases, and a regression guard
       that the pre-existing items still work in their new positions.
+
    Group 224 — this session, FEATURE_BACKLOG.md #76: setNoteAndRepaint now
       auto-enables Show Notes (state.showNotes) the moment a note ends up
       non-empty, if it wasn't already on, so a newly created note is actually
       visible instead of hidden behind an off toggle; deleting a note never
       flips the toggle back off. Groups 104 and 191 updated to match (both
       used to assert Show Notes stayed off across note creation).
+
+   Group 225 — this session, person-reported (screenshot), two rounds: the
+      "›" .crumb-sep between #breadcrumb/#filterTargetChain pills looked
+      small/lost/unaligned — redesigned as a fixed 18x18 bordered circle in
+      --accent-strong instead of plain --text-tertiary inline text; then,
+      once in the circle, the glyph itself still looked off-center (a font
+      right-side-bearing quirk no container CSS could fix), so the text
+      glyph was swapped for ICON_CARET_RIGHT, a hand-drawn SVG caret
+      centered by construction. Numbered 225, not 224, to avoid colliding
+      with the unrelated Show-Notes-auto-enable Group 224 merged into main
+      the same day. Covers the shape/centering (computed style), the SVG
+      icon's presence/path/stroke, and the color/background/border change
+      (stylesheet-source check, since jsdom doesn't resolve var() inside
+      the background/border shorthands used here).
    ============================================================ */
