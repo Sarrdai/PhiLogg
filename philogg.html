@@ -14794,8 +14794,12 @@ function renderPlotControls() {
   const colOptions = plottable.map(c => '<option value="' + c.index + '">' + escapeHtml(c.name) + " (" + c.type + ")</option>").join("");
   // Colormap picker for the "color by value" dimension — shared markup for
   // both scatter and 3D, since both read plotConfig.colorMap through the
-  // same plotColorScale() (see renderPlotChart/renderPlot3D).
-  const colorMapField = '<div class="plot-field"><label>Colormap</label><select id="plotColorMapSelect">' +
+  // same plotColorScale() (see renderPlotChart/renderPlot3D). Only
+  // meaningful once a color-by column is actually picked (person-requested,
+  // 2026-09-16: shown only when "Color by" isn't "None"), so it's built as
+  // an empty string otherwise rather than an always-present field.
+  const colorMapField = plotConfig.colorCol == null ? "" :
+    '<div class="plot-field"><label>Colormap</label><select id="plotColorMapSelect">' +
     Object.keys(PLOT_COLOR_MAPS).map(id => '<option value="' + id + '"' + (plotConfig.colorMap === id ? " selected" : "") + '>' + escapeHtml(PLOT_COLOR_MAPS[id].label) + "</option>").join("") +
     '</select></div>';
 
@@ -14917,9 +14921,11 @@ function renderPlotControls() {
     el("#plotYSelectSingle").value = plotConfig.yCols[0];
     el("#plotYSelectSingle").addEventListener("change", ev => { plotConfig.yCols = [+ev.target.value]; plotZoom = null; renderPlotChart(); });
     el("#plotColorSelect").value = plotConfig.colorCol == null ? "" : plotConfig.colorCol;
-    el("#plotColorSelect").addEventListener("change", ev => { plotConfig.colorCol = ev.target.value === "" ? null : +ev.target.value; renderPlotChart(); });
-    el("#plotColorMapSelect").value = plotConfig.colorMap;
-    el("#plotColorMapSelect").addEventListener("change", ev => { plotConfig.colorMap = ev.target.value; renderPlotChart(); });
+    el("#plotColorSelect").addEventListener("change", ev => { plotConfig.colorCol = ev.target.value === "" ? null : +ev.target.value; renderPlotControls(); renderPlotChart(); });
+    if (plotConfig.colorCol != null) {
+      el("#plotColorMapSelect").value = plotConfig.colorMap;
+      el("#plotColorMapSelect").addEventListener("change", ev => { plotConfig.colorMap = ev.target.value; renderPlotChart(); });
+    }
   }
   if (plotConfig.type === "3d") {
     el("#plotZSelect").value = plotConfig.zCol;

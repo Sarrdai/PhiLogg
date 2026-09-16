@@ -26441,6 +26441,9 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
   d.querySelector("#plotXSelect").value = "0"; d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
   d.querySelector("#plotYSelectSingle").value = "1"; d.querySelector("#plotYSelectSingle").dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.plotConfig.colorCol === null, "sanity: \"Color by\" starts at None");
+  assert(d.querySelector("#plotColorMapSelect") === null, "the Colormap picker is NOT shown while \"Color by\" is None (person-requested, 2026-09-16)");
+
   d.querySelector("#plotColorSelect").value = "2"; d.querySelector("#plotColorSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(T.plotConfig.colorCol === 2, "sanity: color-by column set to the c=... extraction");
 
@@ -26477,6 +26480,14 @@ await withApp(async (w, d, T) => {
   assert(newTopFill === expectedTopFill("viridis") && newTopFill !== expectedTopFill("default"), "legend's top stop now follows the chosen colormap (viridis), and differs from the default scale's own color, got " + newTopFill);
   const newMarkRow2 = d.querySelector('#plotSvg circle.plot-mark[data-row="2"]').getAttribute("fill");
   assert(newMarkRow2 === w.plotColorScale(1, "viridis") && newMarkRow2 !== w.plotColorScale(1, "default"), "the max-value point's fill also switched to viridis");
+
+  // Reverting "Color by" back to None hides the picker again — the chosen
+  // colormap itself is left untouched underneath (matches every other
+  // plotConfig field, e.g. colorCol's own value stays remembered too).
+  d.querySelector("#plotColorSelect").value = ""; d.querySelector("#plotColorSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.plotConfig.colorCol === null, "sanity: Color by reset to None");
+  assert(d.querySelector("#plotColorMapSelect") === null, "the Colormap picker disappears again once Color by is reset to None");
+  assert(T.plotConfig.colorMap === "viridis", "the underlying colorMap choice itself isn't reset just because the picker is hidden");
 });
 
 await withApp(async (w, d, T) => {
@@ -26497,6 +26508,8 @@ await withApp(async (w, d, T) => {
   d.querySelector("#plotXSelect").value = "0"; d.querySelector("#plotXSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
   d.querySelector("#plotYSelectSingle").value = "1"; d.querySelector("#plotYSelectSingle").dispatchEvent(new w.Event("change", { bubbles: true }));
   d.querySelector("#plotZSelect").value = "2"; d.querySelector("#plotZSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#plotColorMapSelect") === null, "same for 3D: the Colormap picker is hidden while Color by is None");
+
   d.querySelector("#plotColorSelect").value = "3"; d.querySelector("#plotColorSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(T.plotConfig.colorCol === 3, "sanity: color-by column set to the c=... extraction");
 
