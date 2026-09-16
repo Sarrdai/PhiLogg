@@ -2846,6 +2846,20 @@
   }
   .fw-pattern-header .filter-library-row-del{flex:0 0 auto;}
   #fwBtnAddPattern.hidden{display:none;}
+  /* "Start filters" (FEATURE_BACKLOG.md #71) — a checkbox list of saved
+     Filter Library presets plus a "Primary" radio among the checked ones,
+     reusing .filter-library-row for each item's layout. */
+  .fw-startfilter-block{padding:12px 18px; border-bottom:1px solid var(--border-soft);}
+  .fw-startfilter-block:last-child{border-bottom:none;}
+  .fw-startfilter-list{margin-top:8px; max-height:180px; overflow-y:auto; border:1px solid var(--border-soft); border-radius:8px; padding:0 10px;}
+  .fw-startfilter-item{padding:7px 0;}
+  .fw-startfilter-item input[type="checkbox"]{flex:0 0 auto;}
+  .fw-startfilter-primary{
+    flex:0 0 auto; display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--text-tertiary);
+    user-select:none; white-space:nowrap; cursor:pointer;
+  }
+  .fw-startfilter-primary.active{color:var(--accent-strong);}
+  .fw-startfilter-primary input[disabled]{cursor:default;}
   .settings-page-card{
     width:min(1140px, 96vw); max-height:min(1080px, 92vh); display:flex; flex-direction:column;
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px;
@@ -23090,12 +23104,13 @@ function isCompatibleFolderFile(name) {
 
 // A pattern's fields double as the per-pattern "auto rules" (see
 // applyFolderAutoRules): autoOpenNewest (bool), autoCloseKeep/showNewest
-// (positive integer, or null for "no limit"), startFilterKey (a filter
-// library record's key, or null — see applyFolderStartFilter). One folder
-// without any configured pattern behaves exactly as before this feature
-// existed — "*" matches every compatible file, all rules off.
+// (positive integer, or null for "no limit"), startFilterKeys/
+// startPrimaryFilterKey (filter library record keys — see
+// applyFolderStartFilter). One folder without any configured pattern
+// behaves exactly as before this feature existed — "*" matches every
+// compatible file, all rules off.
 function defaultFolderPattern() {
-  return { pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: null, startFilterKey: null };
+  return { pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: null, startFilterKeys: [], startPrimaryFilterKey: null };
 }
 function defaultFolderSettings() {
   return { includeSubfolders: false, showRelativePath: false, patterns: [defaultFolderPattern()] };
@@ -23470,21 +23485,33 @@ async function loadFolderFile(folder, rec, auto) {
   }
 }
 
-// FEATURE_BACKLOG.md #71: a pattern's configured startFilterKey (set in the
-// folder settings dialog, see renderFwPatternList) names a Filter Library
-// record (see the "Filter library" section further below) to apply the
+// FEATURE_BACKLOG.md #71: a pattern's configured startFilterKeys (set in the
+// folder settings dialog, see renderFwPatternList) name Filter Library
+// records (see the "Filter library" section further below) to apply the
 // moment this pattern auto-opens a file — never for a file a person opens
 // themselves (loadFolderFile's own `auto` param already draws that line for
 // rec.openedByAuto/autoOpenFired, mirrored here). Reuses
 // applyFilterFromLibrary unchanged, exactly like the "Apply from library…"
 // context-menu action — the filter logic re-evaluates against this file's
 // own entries, never a replayed result from wherever it was saved.
+// Several presets can be selected; startPrimaryFilterKey (one of them, kept
+// in sync with the selection by the dialog) is applied LAST, so its own
+// applyFilterFromLibrary call is what ends up deciding state.activeId and
+// revealing the view (person-requested: "jump into" the primary filter)
+// rather than whichever preset happens to be applied last in list order.
 async function applyFolderStartFilter(folder, rec, node) {
   const pattern = matchFolderPattern(folder.settings, rec);
-  if (!pattern || !pattern.startFilterKey) return;
+  const keys = pattern && Array.isArray(pattern.startFilterKeys) ? pattern.startFilterKeys : [];
+  if (!keys.length) return;
   const records = await listFilterLibrary();
-  const record = records.find(r => r.key === pattern.startFilterKey);
-  if (record) applyFilterFromLibrary(node.id, record);
+  const byKey = new Map(records.map(r => [r.key, r]));
+  const primaryKey = pattern.startPrimaryFilterKey;
+  const ordered = keys.filter(k => k !== primaryKey);
+  if (primaryKey && keys.includes(primaryKey)) ordered.push(primaryKey);
+  ordered.forEach(k => {
+    const record = byKey.get(k);
+    if (record) applyFilterFromLibrary(node.id, record);
+  });
 }
 
 // Polls every actively-watched folder for newly appeared OR since-removed
@@ -24251,11 +24278,7 @@ function renderFwPatternList() {
       "Show M newest files", "Files older than the M most recent matches are dropped from the listing entirely once closed. Empty = no limit.",
       numberControl(p.showNewest, v => { p.showNewest = v; commitFolderWatchSettings(); })
     ));
-    card.appendChild(fwPatternRuleRow(
-      "Start filter", "Applied automatically to a file this pattern opens on its own (auto-open newest / auto-close keep-N-open) — never for a file opened by hand. Sourced from the filter library (Files & Filters sidebar toolbar → \"Add to library…\").",
-      selectControl(p.startFilterKey || "", [{ value: "", label: "None" }].concat(libraryRecords.map(r => ({ value: r.key, label: r.name }))),
-        value => { p.startFilterKey = value || null; commitFolderWatchSettings(); })
-    ));
+    card.appendChild(fwPatternStartFiltersBlock(p, idx, libraryRecords));
     fwPatternList.appendChild(card);
   });
 }
@@ -24296,17 +24319,67 @@ function numberControl(value, onChange) {
   });
   return input;
 }
-function selectControl(value, options, onChange) {
-  const select = document.createElement("select");
-  options.forEach(opt => {
-    const option = document.createElement("option");
-    option.value = opt.value;
-    option.textContent = opt.label;
-    select.appendChild(option);
-  });
-  select.value = value || "";
-  select.addEventListener("change", () => onChange(select.value || null));
-  return select;
+// "Start filters" (FEATURE_BACKLOG.md #71, person-requested multi-select
+// follow-up): a checkbox per saved Filter Library preset (p.startFilterKeys)
+// plus a "Primary" radio among the checked ones (p.startPrimaryFilterKey) —
+// the one applyFolderStartFilter applies LAST, so its own view/selection
+// is what a person lands in when the file opens ("jump into" it). The first
+// preset checked for a pattern becomes primary automatically; unchecking the
+// current primary auto-promotes another still-checked preset (or clears it
+// if none are left) so a non-empty selection always has exactly one primary.
+function fwPatternStartFiltersBlock(p, idx, libraryRecords) {
+  const wrap = document.createElement("div");
+  wrap.className = "fw-startfilter-block";
+  wrap.innerHTML = '<div class="settings-row-text"><div class="settings-row-label">Start filters</div>' +
+    '<div class="settings-row-hint">Applied automatically to a file this pattern opens on its own (auto-open newest / auto-close keep-N-open) — never for a file opened by hand. The view jumps into the Primary one. Sourced from the filter library (Files &amp; Filters sidebar toolbar → "Add to library…").</div></div>';
+  const list = document.createElement("div");
+  list.className = "fw-startfilter-list";
+  if (!libraryRecords.length) {
+    list.innerHTML = '<div class="filter-library-empty">No saved filters yet.</div>';
+  } else {
+    libraryRecords.forEach(r => {
+      const row = document.createElement("div");
+      row.className = "filter-library-row fw-startfilter-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = p.startFilterKeys.includes(r.key);
+      cb.addEventListener("change", () => {
+        if (cb.checked) {
+          if (!p.startFilterKeys.includes(r.key)) p.startFilterKeys.push(r.key);
+          if (!p.startPrimaryFilterKey) p.startPrimaryFilterKey = r.key;
+        } else {
+          p.startFilterKeys = p.startFilterKeys.filter(k => k !== r.key);
+          if (p.startPrimaryFilterKey === r.key) p.startPrimaryFilterKey = p.startFilterKeys[0] || null;
+        }
+        renderFwPatternList();
+        commitFolderWatchSettings();
+      });
+      row.appendChild(cb);
+      const main = document.createElement("span");
+      main.className = "filter-library-row-main filter-library-row-name";
+      main.textContent = r.name;
+      row.appendChild(main);
+      const primaryLabel = document.createElement("label");
+      primaryLabel.className = "fw-startfilter-primary" + (p.startPrimaryFilterKey === r.key ? " active" : "");
+      primaryLabel.title = "Jump into this filter when the file opens";
+      const primaryRadio = document.createElement("input");
+      primaryRadio.type = "radio";
+      primaryRadio.name = "fw-primary-" + idx;
+      primaryRadio.checked = p.startPrimaryFilterKey === r.key;
+      primaryRadio.disabled = !cb.checked;
+      primaryRadio.addEventListener("change", () => {
+        p.startPrimaryFilterKey = r.key;
+        renderFwPatternList();
+        commitFolderWatchSettings();
+      });
+      primaryLabel.appendChild(primaryRadio);
+      primaryLabel.appendChild(document.createTextNode("Primary"));
+      row.appendChild(primaryLabel);
+      list.appendChild(row);
+    });
+  }
+  wrap.appendChild(list);
+  return wrap;
 }
 
 /* ===================== Filter popup (Ctrl+F to create, F2/right-click "Edit filter…" to edit) ===================== */
