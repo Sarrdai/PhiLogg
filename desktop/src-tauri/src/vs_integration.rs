@@ -191,7 +191,15 @@ public static class PhiloggRot {
         if (hr != 0) throw new Exception("CreateBindCtx failed, HRESULT 0x" + hr.ToString("X8"));
 
         var results = new List<string>();
-        IEnumMoniker enumMoniker = rot.EnumRunning();
+        // Unlike GetRunningObjectTable/CreateBindCtx above (plain ole32.dll
+        // P/Invokes returning a raw HRESULT), EnumRunning is a COM-interop
+        // interface method with no [PreserveSig] — the CLR checks its
+        // HRESULT itself and throws a COMException on failure, so there is
+        // no int return value to check here at all (a genuine, verified
+        // signature difference; guessing this one wrong is exactly what
+        // produced the previous "no overload takes 0 arguments" error).
+        IEnumMoniker enumMoniker;
+        rot.EnumRunning(out enumMoniker);
         IMoniker[] monikers = new IMoniker[1];
         while (enumMoniker.Next(1, monikers, IntPtr.Zero) == 0) {
             string name = null;
