@@ -1034,7 +1034,13 @@
      new top values so the still-supported multi-line wrap case (a long filter
      chain) keeps a modest, even gap between lines instead of 0. */
   #breadcrumb .crumb{margin:2px 4px 2px 0;}
-  #breadcrumb .crumb-sep{margin:10px 3px 10px;}
+  /* .crumb-sep is a fixed 18x18 circle now (see its base rule below) — its
+     margin-top must re-center that circle on wherever THIS context's pill
+     center actually sits: #breadcrumb's .crumb has margin-top:2px, so its
+     28px pill spans 2..30, center 16 -> margin-top = 16 - 18/2 = 7.
+     Bottom mirrors top (7) since .crumb's own margin here is symmetric
+     (2/2), same reasoning as the base rule's asymmetric 6px bottom below. */
+  #breadcrumb .crumb-sep{margin:7px 4px 7px;}
   .crumb{
     /* Shared 28px pill shape (this session — see "Main window visual
        consistency fix"): a fixed height plus flex-centering instead of the
@@ -1092,10 +1098,40 @@
      it overflow un-clipped before), and carries the ellipsis trio itself. */
   .crumb-label{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .crumb.current{color:var(--accent-strong); border-color:color-mix(in srgb, var(--accent) 35%, transparent); background:var(--accent-soft);}
-  /* Separator glyph is plain inline text (no flex-centering box of its
-     own), so it still needs a top margin to center its ~12px glyph line
-     against the 28px pills either side: (28-12)/2 = 8px. */
-  .crumb-sep{display:inline-block; vertical-align:top; margin:8px 3px 6px; line-height:12px; color:var(--text-tertiary); font-size:11px;}
+  /* Separator between pills (person-reported, twice: first that the bare
+     "›" glyph read as small/lost/unaligned against --text-tertiary's low
+     contrast; then, after switching to a bigger/bolder "›" in a themed
+     circle, that the glyph itself still looked off-center INSIDE that
+     circle). Root cause of round two: a text glyph's layout box (what
+     centers via flex) and its actual visible ink aren't the same
+     rectangle — measured directly, "›"'s ink sat visibly left-of-center
+     within its own centered box, a font-metrics quirk (right-side
+     bearing) no amount of margin/padding tuning on the container can fix,
+     since it's baked into the glyph itself and varies by font. Swapped the
+     text glyph for ICON_CARET_RIGHT (renderBreadcrumb/
+     renderFilterTargetChain now set .innerHTML, not .textContent) — the
+     same hand-drawn SVG chevron already used for the Context view's match
+     nav, whose path is authored symmetric inside its own viewBox, so it's
+     geometrically centered by construction and renders identically
+     regardless of font/OS. `color` still drives it (the icon's
+     stroke="currentColor"), just no longer also a font-size/line-height/
+     font-weight for a text glyph that no longer exists here.
+     The circle itself is unchanged: a small filled/bordered connector
+     element with its own boundary, matching the pill's own rounded shape
+     language, instead of a stray glyph floating in the gap. Fixed 18x18
+     size: margin-top just needs to land this circle's own center on the
+     same y the flanking pill's center sits at. Base context (no
+     #breadcrumb override — see below): .crumb's margin-top is 0, so its
+     28px pill centers at 14 -> margin-top = 14 - 18/2 = 5. Bottom margin
+     mirrors .crumb's own asymmetric 6px bottom margin so wrapped
+     multi-line chains keep an even line gap. */
+  .crumb-sep{
+    display:inline-flex; align-items:center; justify-content:center;
+    vertical-align:top; box-sizing:border-box;
+    width:18px; height:18px; margin:5px 4px 6px;
+    border-radius:50%; background:var(--bg-elevated-2); border:1px solid var(--border-soft);
+    color:var(--accent-strong);
+  }
 
   /* ---------- Level filter bar ---------- */
   #levelBar{
@@ -12891,7 +12927,7 @@ function renderBreadcrumb() {
     if (i > 0) {
       const sep = document.createElement("span");
       sep.className = "crumb-sep";
-      sep.textContent = "›";
+      sep.innerHTML = ICON_CARET_RIGHT; // geometrically centered SVG, not a font glyph — see .crumb-sep's CSS comment
       breadcrumbEl.appendChild(sep);
     }
     const isCurrent = node.id === state.activeId;
@@ -23927,7 +23963,7 @@ function renderFilterTargetChain() {
     if (i > 0) {
       const sep = document.createElement("span");
       sep.className = "crumb-sep";
-      sep.textContent = "›";
+      sep.innerHTML = ICON_CARET_RIGHT; // geometrically centered SVG, not a font glyph — see .crumb-sep's CSS comment
       filterTargetChainEl.appendChild(sep);
     }
     const chip = document.createElement("span");
