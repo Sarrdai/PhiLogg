@@ -11,16 +11,25 @@
 //! than pulling in a COM-interop crate — the same tradeoff `fonts.rs` already
 //! makes for Windows font enumeration.
 //!
-//! One gotcha that isn't obvious from a C# reference implementation of this
-//! technique: PowerShell can only call methods on a COM object dynamically
-//! (`$obj.Method()`) when that object is Automation/`IDispatch`-compatible.
-//! The raw ROT interfaces (`IRunningObjectTable`/`IBindCtx`/`IEnumMoniker`/
-//! `IMoniker`) are NOT — walking the ROT itself has to happen inside the
-//! embedded, compile-time-typed C# class (`windows_impl::CS_SOURCE`), never
-//! in PowerShell script text directly. `EnvDTE.DTE` itself, and
-//! `[Marshal]::BindToMoniker` (a plain static .NET method, not a COM call),
-//! are both fine from PowerShell once a moniker string is in hand — see
-//! `CS_SOURCE`'s own doc comment for the full story.
+//! Two gotchas that aren't obvious from a C# reference implementation of
+//! this technique, both confirmed the hard way on a real machine:
+//! 1. PowerShell can only call methods on a COM object dynamically
+//!    (`$obj.Method()`) when that object is Automation/`IDispatch`-
+//!    compatible. The raw ROT interfaces (`IRunningObjectTable`/`IBindCtx`/
+//!    `IEnumMoniker`/`IMoniker`) are NOT — walking the ROT itself has to
+//!    happen inside the embedded, compile-time-typed C# class
+//!    (`windows_impl::CS_SOURCE`), never in PowerShell script text directly.
+//! 2. `[Marshal]::BindToMoniker(name)` — a plain static .NET method, so
+//!    PowerShell *can* call it — still isn't the way to turn a moniker
+//!    string back into its object here: it re-parses the string via
+//!    `MkParseDisplayName`, and a bare item-moniker fragment like
+//!    `!VisualStudio.DTE.17.0:1234` fails that parser with `MK_E_SYNTAX`.
+//!    The fix for both is the same: do the *entire* ROT walk in C#,
+//!    including `IRunningObjectTable.GetObject(moniker)` on the
+//!    already-enumerated `IMoniker` (no re-parse needed), and hand the
+//!    resulting `EnvDTE.DTE` object back to PowerShell — which, being
+//!    genuinely `IDispatch`-compatible, it can then use directly with no
+//!    further issue. See `CS_SOURCE`'s own doc comment for the full story.
 use serde::Serialize;
 
 /// One running Visual Studio instance, as the Settings dialog's instance
@@ -151,14 +160,16 @@ mod windows_impl {
         }
     }
 
-    /// Enumerates the ROT and filters monikers starting with
-    /// `!VisualStudio.DTE.` (every running `devenv.exe` registers one),
-    /// returning their moniker **strings** — nothing else. The whole walk
+    /// Enumerates the ROT, filters monikers starting with
+    /// `!VisualStudio.DTE.` (every running `devenv.exe` registers one), and
+    /// for each one retrieves its live object via
+    /// `IRunningObjectTable.GetObject` — bundled with the moniker string
+    /// into a plain `PhiloggVsHandle` carrier. The whole walk
     /// (`GetRunningObjectTable`/`CreateBindCtx`/`IRunningObjectTable.
-    /// EnumRunning`/`IEnumMoniker.Next`/`IMoniker.GetDisplayName`) happens
-    /// inside this embedded, compile-time-typed C# class rather than in
-    /// PowerShell script text, because it HAS to: PowerShell's own dynamic
-    /// (`$obj.Method()`) dispatch on a COM object only works for
+    /// EnumRunning`/`GetObject`/`IEnumMoniker.Next`/`IMoniker.GetDisplayName`)
+    /// happens inside this embedded, compile-time-typed C# class rather
+    /// than in PowerShell script text, because it HAS to: PowerShell's own
+    /// dynamic (`$obj.Method()`) dispatch on a COM object only works for
     /// Automation/`IDispatch`-compatible interfaces, and
     /// `IRunningObjectTable`/`IBindCtx`/`IEnumMoniker`/`IMoniker` are plain
     /// vtable-only interfaces with no `IDispatch` support at all — a COM
@@ -170,19 +181,36 @@ mod windows_impl {
     /// and failed with exactly "[System.__ComObject] does not contain a
     /// method named 'EnumRunning'".) None of this applies to compiled C#,
     /// where `.EnumRunning()` resolves at compile time against the
-    /// *declared* interface type and never needs reflection — which is
-    /// also why every reference example for this technique found online is
-    /// C#, not PowerShell, and doesn't translate over 1:1.
+    /// *declared* interface type and never needs reflection.
+    ///
+    /// `GetObject` here — not `[Marshal]::BindToMoniker(name)` from
+    /// PowerShell, which was the next thing tried — because
+    /// `BindToMoniker` re-parses the moniker from its display-name *string*
+    /// via `MkParseDisplayName`, and a bare item-moniker fragment like
+    /// `!VisualStudio.DTE.17.0:1234` (confirmed on a real machine) isn't
+    /// something that parser grammar understands standalone: it fails with
+    /// `MK_E_SYNTAX`. `GetObject` needs no re-parse at all — it hands back
+    /// the live object for the *already-enumerated* `IMoniker`, which is
+    /// exactly what was on hand. The returned `object` (the `EnvDTE.DTE`
+    /// instance itself) is genuinely Automation/`IDispatch`-compatible, so
+    /// PowerShell can call `.Solution.FullName`/`.MainWindow.Caption`/etc.
+    /// on it directly with no further issue.
     const CS_SOURCE: &str = r#"
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+
+public class PhiloggVsHandle {
+    public string Moniker;
+    public object Dte;
+}
+
 public static class PhiloggRot {
     [DllImport("ole32.dll")] private static extern int GetRunningObjectTable(int r, out IRunningObjectTable prot);
     [DllImport("ole32.dll")] private static extern int CreateBindCtx(int r, out IBindCtx ppbc);
 
-    public static string[] ListVsMonikers() {
+    public static PhiloggVsHandle[] ListVsInstances() {
         IRunningObjectTable rot;
         int hr = GetRunningObjectTable(0, out rot);
         if (hr != 0) throw new Exception("GetRunningObjectTable failed, HRESULT 0x" + hr.ToString("X8"));
@@ -190,43 +218,40 @@ public static class PhiloggRot {
         hr = CreateBindCtx(0, out ctx);
         if (hr != 0) throw new Exception("CreateBindCtx failed, HRESULT 0x" + hr.ToString("X8"));
 
-        var results = new List<string>();
-        // Unlike GetRunningObjectTable/CreateBindCtx above (plain ole32.dll
-        // P/Invokes returning a raw HRESULT), EnumRunning is a COM-interop
-        // interface method with no [PreserveSig] — the CLR checks its
-        // HRESULT itself and throws a COMException on failure, so there is
-        // no int return value to check here at all (a genuine, verified
-        // signature difference; guessing this one wrong is exactly what
-        // produced the previous "no overload takes 0 arguments" error).
+        var results = new List<PhiloggVsHandle>();
+        // EnumRunning is a COM-interop interface method with no
+        // [PreserveSig] (unlike the two plain ole32.dll P/Invokes above,
+        // which return a raw HRESULT) — the CLR checks its HRESULT itself
+        // and throws a COMException on failure, so there's no int return
+        // value to check here.
         IEnumMoniker enumMoniker;
         rot.EnumRunning(out enumMoniker);
         IMoniker[] monikers = new IMoniker[1];
         while (enumMoniker.Next(1, monikers, IntPtr.Zero) == 0) {
             string name = null;
             try { monikers[0].GetDisplayName(ctx, null, out name); } catch { continue; }
-            if (name != null && name.StartsWith("!VisualStudio.DTE.", StringComparison.OrdinalIgnoreCase)) {
-                results.Add(name);
-            }
+            if (name == null || !name.StartsWith("!VisualStudio.DTE.", StringComparison.OrdinalIgnoreCase)) continue;
+            try {
+                object dte;
+                int hr2 = rot.GetObject(monikers[0], out dte);
+                if (hr2 != 0) continue;
+                results.Add(new PhiloggVsHandle { Moniker = name, Dte = dte });
+            } catch { continue; }
         }
         return results.ToArray();
     }
 }
 "#;
 
-    /// Once a moniker *string* is in hand (from `ListVsMonikers` above, or
-    /// passed back in by the page), everything else is safe to do directly
-    /// from PowerShell: `[Marshal]::BindToMoniker` is a plain **static
-    /// method on an ordinary .NET class** (`Marshal` isn't a COM object, so
-    /// PowerShell's normal reflection handles it fine), and the resulting
-    /// `EnvDTE.DTE` is itself Automation/`IDispatch`-compatible by design
-    /// (that's the whole point of the DTE object model — cross-language
-    /// scripting access) — so `.Solution.FullName`/`.MainWindow.Caption`/
-    /// `.ItemOperations.OpenFile`/etc. all work as ordinary late-bound
-    /// property/method access. `Solution.FullName` is an empty string, not
-    /// an error, when no solution is open. The whole body is one top-level
-    /// `try`, so any failure (including inside `CS_SOURCE`) is reported on
-    /// stderr with exit code 1 instead of an unhandled exception's default
-    /// (opaque, and not guaranteed non-zero) behavior.
+    /// The `PhiloggVsHandle`s from `CS_SOURCE` carry a ready-to-use
+    /// `EnvDTE.DTE` object per instance — `.Solution.FullName`/
+    /// `.MainWindow.Caption` are ordinary late-bound property access from
+    /// here on, no further COM-interop concerns. `Solution.FullName` is an
+    /// empty string, not an error, when no solution is open. The whole
+    /// body is one top-level `try`, so any failure (including inside
+    /// `CS_SOURCE`) is reported on stderr with exit code 1 instead of an
+    /// unhandled exception's default (opaque, and not guaranteed
+    /// non-zero) behavior.
     const LIST_SCRIPT: &str = r#"
 try {
   $src = @"
@@ -235,13 +260,12 @@ __CS_SOURCE__
   Add-Type -TypeDefinition $src -ErrorAction Stop
 
   $results = @()
-  foreach ($moniker in [PhiloggRot]::ListVsMonikers()) {
+  foreach ($handle in [PhiloggRot]::ListVsInstances()) {
     try {
-      $dte = [Runtime.InteropServices.Marshal]::BindToMoniker($moniker)
-      $pidPart = $moniker.Substring($moniker.LastIndexOf(":") + 1)
-      $sol = $null; try { $sol = $dte.Solution.FullName } catch {}
-      $title = $null; try { $title = $dte.MainWindow.Caption } catch {}
-      $results += [PSCustomObject]@{ moniker = $moniker; pid = [int]$pidPart; solutionPath = $sol; title = $title }
+      $pidPart = $handle.Moniker.Substring($handle.Moniker.LastIndexOf(":") + 1)
+      $sol = $null; try { $sol = $handle.Dte.Solution.FullName } catch {}
+      $title = $null; try { $title = $handle.Dte.MainWindow.Caption } catch {}
+      $results += [PSCustomObject]@{ moniker = $handle.Moniker; pid = [int]$pidPart; solutionPath = $sol; title = $title }
     } catch { continue }
   }
   $results | ConvertTo-Json -Compress
@@ -290,23 +314,64 @@ __CS_SOURCE__
             .collect()
     }
 
-    /// No ROT walk needed here at all — the moniker string is already known
-    /// (returned by a prior `list_instances` call, round-tripped back in by
-    /// the page) — so this goes straight to the same plain, ordinary
-    /// `[Marshal]::BindToMoniker` + `IDispatch`-compatible DTE access
-    /// `LIST_SCRIPT` uses once it has a moniker string, with no C# needed at
-    /// all. The variable, log-derived `moniker`/`path`/`line` travel in via
+    /// Its own small embedded C# class — a fresh process, nothing from a
+    /// prior `list_instances` call survives between the two — with just
+    /// enough of `CS_SOURCE`'s logic to re-enumerate the ROT, match the
+    /// *given* moniker string by display name, and return that one
+    /// instance's live `EnvDTE.DTE` object via `GetObject` (see
+    /// `CS_SOURCE`'s own doc comment for why: PowerShell can't walk the ROT
+    /// directly, and `[Marshal]::BindToMoniker(name)` fails with
+    /// `MK_E_SYNTAX` on this exact moniker shape).
+    const OPEN_CS_SOURCE: &str = r#"
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+public static class PhiloggRot {
+    [DllImport("ole32.dll")] private static extern int GetRunningObjectTable(int r, out IRunningObjectTable prot);
+    [DllImport("ole32.dll")] private static extern int CreateBindCtx(int r, out IBindCtx ppbc);
+
+    public static object GetVsDte(string targetMoniker) {
+        IRunningObjectTable rot;
+        int hr = GetRunningObjectTable(0, out rot);
+        if (hr != 0) throw new Exception("GetRunningObjectTable failed, HRESULT 0x" + hr.ToString("X8"));
+        IBindCtx ctx;
+        hr = CreateBindCtx(0, out ctx);
+        if (hr != 0) throw new Exception("CreateBindCtx failed, HRESULT 0x" + hr.ToString("X8"));
+
+        IEnumMoniker enumMoniker;
+        rot.EnumRunning(out enumMoniker);
+        IMoniker[] monikers = new IMoniker[1];
+        while (enumMoniker.Next(1, monikers, IntPtr.Zero) == 0) {
+            string name = null;
+            try { monikers[0].GetDisplayName(ctx, null, out name); } catch { continue; }
+            if (!string.Equals(name, targetMoniker, StringComparison.Ordinal)) continue;
+            object dte;
+            int hr2 = rot.GetObject(monikers[0], out dte);
+            if (hr2 != 0) throw new Exception("GetObject failed, HRESULT 0x" + hr2.ToString("X8"));
+            return dte;
+        }
+        throw new Exception("That Visual Studio instance is no longer running (moniker: " + targetMoniker + ")");
+    }
+}
+"#;
+
+    /// The variable, log-derived `moniker`/`path`/`line` travel in via
     /// `PHILOGG_VS_*` environment variables (set by `open_file` below),
     /// never interpolated into this (fixed) script text. `GotoLine`'s
     /// second argument (`true`) also selects/centers the line, matching
     /// what a person doing this by hand in the IDE would expect.
     const OPEN_SCRIPT: &str = r#"
 try {
+  $src = @"
+__OPEN_CS_SOURCE__
+"@
+  Add-Type -TypeDefinition $src -ErrorAction Stop
+
   $moniker = $env:PHILOGG_VS_MONIKER
   $path = $env:PHILOGG_VS_PATH
   $line = [int]$env:PHILOGG_VS_LINE
 
-  $dte = [Runtime.InteropServices.Marshal]::BindToMoniker($moniker)
+  $dte = [PhiloggRot]::GetVsDte($moniker)
   $dte.ItemOperations.OpenFile($path) | Out-Null
   $dte.ActiveDocument.Selection.GotoLine($line, $true)
   $dte.MainWindow.Activate()
@@ -317,7 +382,8 @@ try {
 "#;
 
     pub fn open_file(moniker: &str, path: &str, line: u32) -> Result<(), String> {
-        let mut cmd = powershell(OPEN_SCRIPT);
+        let script = OPEN_SCRIPT.replace("__OPEN_CS_SOURCE__", OPEN_CS_SOURCE);
+        let mut cmd = powershell(&script);
         cmd.env("PHILOGG_VS_MONIKER", moniker)
             .env("PHILOGG_VS_PATH", path)
             .env("PHILOGG_VS_LINE", line.to_string());
