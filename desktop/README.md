@@ -197,6 +197,24 @@ session, not yet confirmed against this person's machine) is that the
 Toolbox App's `jetbrainsd` service, not by a standalone Rider install — see
 `docs/desktop.md` → "IDE Integration" for the Win+R self-test.
 
+**Rider confirmed working** on the same real machine, same session, once
+the path-remap fix below landed. **Visual Studio's "Connect" needed two more
+rounds**, each pinned down with a standalone `.ps1` script mirroring
+`vs_integration.rs`'s embedded logic 1:1 (run directly via `powershell
+-File`, no Tauri rebuild per attempt — much faster than round-tripping a
+real build for each fix): a C# compile error (`EnumRunning`'s actual
+signature is `void EnumRunning(out IEnumMoniker)`, not a method returning
+`IEnumMoniker`), then `MK_E_SYNTAX` from `[Marshal]::BindToMoniker` on
+Visual Studio's own moniker shape, fixed by moving `IRunningObjectTable.
+GetObject` into the C# side too (see `docs/desktop.md` → "IDE Integration"
+for the mechanism). **Both standalone scripts confirmed working against a
+real Visual Studio 2022 instance** — found the running instance, read its
+open solution, and opened a file at a specific line — before this got
+ported back into `vs_integration.rs`. The in-app path (same logic, now
+wrapped for `-EncodedCommand` delivery) still wants one more confirmation
+from an actual Tauri build, since porting code always risks a copy/paste
+slip even when the logic itself is proven.
+
 **Picture-in-picture (2026-09-07)** is verified by `cargo check` plus the
 jsdom suite's Group 182 only. The real `set_always_on_top`/`set_size`/
 `unminimize` transitions and the injected `<->`/X buttons still need a person
