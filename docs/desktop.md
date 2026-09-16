@@ -622,33 +622,46 @@ differs.
 "whichever VS window has this file open" without first knowing which running
 instance to ask. `vs_integration.rs` shells out to a small embedded
 PowerShell script (`list_instances`) that P/Invokes `ole32.dll`'s
-`GetRunningObjectTable`/`CreateBindCtx` (via `Add-Type -TypeDefinition`, the
-standard way to reach a Win32 API from PowerShell — there's no cmdlet for
-this) to enumerate the Running Object Table, filters monikers starting with
-`!VisualStudio.DTE.` (every running `devenv.exe` registers one), and for
-each reads `Solution.FullName`/`MainWindow.Caption` off the DTE object
-`IRunningObjectTable.GetObject(moniker)` hands back for the matched moniker
-directly — no separate re-parse of the display-name string. The Settings
-dialog's "Connect…" button calls this, lists each instance's open solution,
-and the chosen one's moniker + solution directory are kept in a
-**session-only** JS variable (`ideVsConnection`) — never persisted, since a
-PID/ROT moniker from a past run is meaningless after either process
-restarts. "Open in Visual Studio" (context menu, shown whenever
-`resolveIdeSourcePath` resolves against the connected instance's solution
-directory) shells a second script (`open_file`) that re-enumerates the ROT
-the same way, matches the given moniker string by display name, then calls
-`ItemOperations.OpenFile` + `Selection.GotoLine` + `MainWindow.Activate()`
-on the `GetObject`-retrieved DTE. Both scripts are fixed constants sent via
-`-EncodedCommand` (base64 of their UTF-16LE bytes, hand-rolled — one
-dependency-free function, the same "don't pull in a crate to re-derive a
-few lines" call `fonts.rs` already makes about font enumeration) purely to
-sidestep Windows command-line quoting for a script this shape (embedded C#,
-here-strings); the actual variable, log-derived input (moniker/path/line)
-travels separately through `PHILOGG_VS_*` environment variables on the
-spawned process, never interpolated into the script text.
-`Command::creation_flags(CREATE_NO_WINDOW)` keeps every call from flashing a
-console window, since — unlike the once-per-run, cached font enumeration —
-this runs on every click.
+`GetRunningObjectTable`/`CreateBindCtx` and walks the Running Object Table,
+filtering monikers starting with `!VisualStudio.DTE.` (every running
+`devenv.exe` registers one) — but the walk itself
+(`IRunningObjectTable.EnumRunning`/`IEnumMoniker.Next`/`IMoniker.
+GetDisplayName`) happens inside an embedded, compile-time-typed **C# class**
+(`Add-Type -TypeDefinition`, the standard way to reach a Win32 API from
+PowerShell — there's no cmdlet for this), not in PowerShell script text.
+That split is load-bearing, not stylistic: PowerShell's own dynamic
+(`$obj.Method()`) dispatch on a COM object only works for
+Automation/`IDispatch`-compatible interfaces, and `IRunningObjectTable`/
+`IBindCtx`/`IEnumMoniker`/`IMoniker` are plain vtable-only interfaces with
+none — a first attempt at calling `$rot.EnumRunning()`/`$rot.GetObject($m)`
+directly from PowerShell failed with exactly "[System.__ComObject] does not
+contain a method named 'EnumRunning'" on a real machine, confirming it the
+hard way. The C# side returns only plain moniker **strings**; PowerShell
+then binds each one to its DTE object via `[Marshal]::BindToMoniker` — a
+plain **static method on an ordinary .NET class**, not a COM call, so
+PowerShell handles it fine — and reads `Solution.FullName`/
+`MainWindow.Caption` on the result, which works because `EnvDTE.DTE` itself
+*is* Automation/`IDispatch`-compatible by design (the whole point of the DTE
+object model is cross-language scripting access). The Settings dialog's
+"Connect…" button calls this, lists each instance's open solution, and the
+chosen one's moniker + solution directory are kept in a **session-only** JS
+variable (`ideVsConnection`) — never persisted, since a PID/ROT moniker from
+a past run is meaningless after either process restarts. "Open in Visual
+Studio" (context menu, shown whenever `resolveIdeSourcePath` resolves
+against the connected instance's solution directory) shells a second,
+simpler script (`open_file`) that needs no C#/ROT walk at all — the moniker
+string is already known — and goes straight to `[Marshal]::BindToMoniker` +
+`ItemOperations.OpenFile` + `Selection.GotoLine` + `MainWindow.Activate()`.
+Both scripts are fixed constants sent via `-EncodedCommand` (base64 of their
+UTF-16LE bytes, hand-rolled — one dependency-free function, the same "don't
+pull in a crate to re-derive a few lines" call `fonts.rs` already makes
+about font enumeration) purely to sidestep Windows command-line quoting for
+a script this shape (embedded C#, here-strings); the actual variable,
+log-derived input (moniker/path/line) travels separately through
+`PHILOGG_VS_*` environment variables on the spawned process, never
+interpolated into the script text. `Command::creation_flags(CREATE_NO_WINDOW)`
+keeps every call from flashing a console window, since — unlike the
+once-per-run, cached font enumeration — this runs on every click.
 
 Both scripts wrap their whole body in one top-level `try`/`catch`
 (`[Console]::Error.WriteLine($_.Exception.Message)` + `exit 1` on any
