@@ -9,9 +9,7 @@
 //! route (the same one countless VS extensions and command-line tools use).
 //! Both operations shell out to a small embedded PowerShell script rather
 //! than pulling in a COM-interop crate — the same tradeoff `fonts.rs` already
-//! makes for Windows font enumeration — since PowerShell's own COM support
-//! (`[Runtime.InteropServices.Marshal]::BindToMoniker`) covers exactly what's
-//! needed with no new Cargo dependency.
+//! makes for Windows font enumeration.
 use serde::Serialize;
 
 /// One running Visual Studio instance, as the Settings dialog's instance
@@ -27,19 +25,28 @@ pub struct VsInstance {
     title: String,
 }
 
-/// Lists every running Visual Studio instance found in the ROT. Never fails
-/// outward: a spawn error, a parse error, or simply no Visual Studio running
-/// all come back as an empty list — matching `fonts.rs`'s own "no extra
-/// options show up" convention — since an empty picker is a normal,
-/// recoverable state the Settings UI already has to show.
-pub fn list_instances() -> Vec<VsInstance> {
+/// `list_instances`'s result: the (possibly empty) instance list, plus a
+/// human-readable diagnostic whenever the PowerShell/COM side itself failed
+/// — as opposed to a clean run that legitimately found zero instances. The
+/// two used to be indistinguishable (any problem at all came back as an
+/// empty `Vec`, by design, so a script bug and "VS really isn't running"
+/// looked identical to the Settings dialog); this carries the script's own
+/// error text through instead, so the "Connect…" button can show it.
+#[derive(Serialize)]
+pub struct VsListResult {
+    instances: Vec<VsInstance>,
+    error: Option<String>,
+}
+
+/// Lists every running Visual Studio instance found in the ROT.
+pub fn list_instances() -> VsListResult {
     #[cfg(windows)]
     {
         windows_impl::list_instances()
     }
     #[cfg(not(windows))]
     {
-        Vec::new()
+        VsListResult { instances: Vec::new(), error: None }
     }
 }
 
@@ -63,7 +70,7 @@ pub fn open_file(moniker: &str, path: &str, line: u32) -> Result<(), String> {
 
 #[cfg(windows)]
 mod windows_impl {
-    use super::VsInstance;
+    use super::{VsInstance, VsListResult};
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
@@ -112,14 +119,39 @@ mod windows_impl {
         out
     }
 
-    /// Enumerates the ROT via a small embedded C# snippet
-    /// (`Add-Type -TypeDefinition`, the standard way to P/Invoke from
-    /// PowerShell) — there is no PowerShell-native ROT API. Every VS
-    /// instance's moniker starts with `!VisualStudio.DTE.`;
-    /// `Marshal.BindToMoniker` on that moniker string hands back the
-    /// `EnvDTE.DTE` COM object directly. `Solution.FullName` is an empty
-    /// string, not an error, when no solution is open.
-    const LIST_SCRIPT: &str = r#"
+    /// Runs an already-configured `powershell(...)` command, returning
+    /// `Ok(stdout)` on a clean exit or `Err(message)` otherwise — a spawn
+    /// failure, or the script's own top-level `catch` (both scripts below
+    /// wrap their whole body in one and exit 1 after writing a clear message
+    /// to stderr, instead of letting an unhandled COM/.NET exception produce
+    /// an opaque result). Centralized here so `list_instances`/`open_file`
+    /// don't each re-derive the same spawn-error/exit-code/stderr plumbing.
+    fn run(mut cmd: Command) -> Result<String, String> {
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        } else {
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            Err(if stderr.is_empty() {
+                "The PowerShell script exited with an error (no message on stderr).".to_string()
+            } else {
+                stderr
+            })
+        }
+    }
+
+    /// Shared preamble for both scripts below: declares the `PhiloggRot`
+    /// P/Invoke class (`Add-Type -TypeDefinition`, the standard way to reach
+    /// a raw Win32 API from PowerShell — there's no cmdlet for the Running
+    /// Object Table) and binds `$rot`/`$ctx`, checking the HRESULT each
+    /// `ole32.dll` call returns instead of silently continuing with `$null`
+    /// on failure. `[System.Array]::CreateInstance(...)` (not `New-Object
+    /// Type[] n`, whose array-constructor handling is a PowerShell-version-
+    /// dependent special case) builds the `IMoniker[]` `EnumRunning`'s
+    /// `Next` writes into — an unambiguous, directly-documented .NET
+    /// reflection call. Every statement here can throw; the two scripts
+    /// below both run this inside their own top-level `try`.
+    const ROT_SETUP: &str = r#"
 $src = @"
 using System;
 using System.Runtime.InteropServices;
@@ -130,33 +162,59 @@ public static class PhiloggRot {
 }
 "@
 Add-Type -TypeDefinition $src -ErrorAction Stop
-$rot = $null; [PhiloggRot]::GetRunningObjectTable(0, [ref]$rot) | Out-Null
-$ctx = $null; [PhiloggRot]::CreateBindCtx(0, [ref]$ctx) | Out-Null
-$enumerator = $rot.EnumRunning()
-$monikers = New-Object System.Runtime.InteropServices.ComTypes.IMoniker[] 1
-$results = @()
-while ($enumerator.Next(1, $monikers, [IntPtr]::Zero) -eq 0) {
-  $m = $monikers[0]
-  $name = $null
-  try { $name = $m.GetDisplayName($ctx) } catch { continue }
-  if ($name -notlike "!VisualStudio.DTE.*") { continue }
-  try {
-    $dte = [Runtime.InteropServices.Marshal]::BindToMoniker($name)
-    $pidPart = $name.Substring($name.LastIndexOf(":") + 1)
-    $sol = $null; try { $sol = $dte.Solution.FullName } catch {}
-    $title = $null; try { $title = $dte.MainWindow.Caption } catch {}
-    $results += [PSCustomObject]@{ moniker = $name; pid = [int]$pidPart; solutionPath = $sol; title = $title }
-  } catch { continue }
-}
-$results | ConvertTo-Json -Compress
+
+$rot = $null
+$hr = [PhiloggRot]::GetRunningObjectTable(0, [ref]$rot)
+if ($hr -ne 0) { throw ("GetRunningObjectTable failed, HRESULT 0x{0:X8}" -f $hr) }
+
+$ctx = $null
+$hr = [PhiloggRot]::CreateBindCtx(0, [ref]$ctx)
+if ($hr -ne 0) { throw ("CreateBindCtx failed, HRESULT 0x{0:X8}" -f $hr) }
+
+$phEnum = $rot.EnumRunning()
+$phMonikers = [System.Array]::CreateInstance([System.Runtime.InteropServices.ComTypes.IMoniker], 1)
 "#;
 
-    pub fn list_instances() -> Vec<VsInstance> {
-        let Ok(out) = powershell(LIST_SCRIPT).output() else { return Vec::new() };
-        if !out.status.success() {
-            return Vec::new();
+    /// Enumerates the ROT (via `ROT_SETUP` above), filters monikers starting
+    /// with `!VisualStudio.DTE.` (every running `devenv.exe` registers one),
+    /// and for each reads `Solution.FullName`/`MainWindow.Caption` off the
+    /// DTE object `$rot.GetObject($m)` hands back directly for the matched
+    /// moniker — no separate re-parse of the display-name string needed.
+    /// `Solution.FullName` is an empty string, not an error, when no
+    /// solution is open. The whole body is one top-level `try`, so any
+    /// failure (including inside `ROT_SETUP`) is reported on stderr with
+    /// exit code 1 instead of an unhandled exception's default (opaque,
+    /// and not guaranteed non-zero) behavior.
+    const LIST_SCRIPT: &str = r#"
+try {
+__ROT_SETUP__
+  $results = @()
+  while ($phEnum.Next(1, $phMonikers, [IntPtr]::Zero) -eq 0) {
+    $m = $phMonikers[0]
+    $name = $null
+    try { $name = $m.GetDisplayName($ctx) } catch { continue }
+    if ($name -notlike "!VisualStudio.DTE.*") { continue }
+    try {
+      $dte = $rot.GetObject($m)
+      $pidPart = $name.Substring($name.LastIndexOf(":") + 1)
+      $sol = $null; try { $sol = $dte.Solution.FullName } catch {}
+      $title = $null; try { $title = $dte.MainWindow.Caption } catch {}
+      $results += [PSCustomObject]@{ moniker = $name; pid = [int]$pidPart; solutionPath = $sol; title = $title }
+    } catch { continue }
+  }
+  $results | ConvertTo-Json -Compress
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}
+"#;
+
+    pub fn list_instances() -> VsListResult {
+        let script = LIST_SCRIPT.replace("__ROT_SETUP__", ROT_SETUP);
+        match run(powershell(&script)) {
+            Ok(stdout) => VsListResult { instances: parse_instances(&stdout), error: None },
+            Err(error) => VsListResult { instances: Vec::new(), error: Some(error) },
         }
-        parse_instances(&String::from_utf8_lossy(&out.stdout))
     }
 
     #[derive(serde::Deserialize)]
@@ -190,37 +248,48 @@ $results | ConvertTo-Json -Compress
             .collect()
     }
 
-    /// Fixed script — the variable, log-derived `moniker`/`path`/`line`
-    /// travel in via `PHILOGG_VS_*` environment variables on the spawned
-    /// process (set below), never interpolated into the script text.
-    /// `GotoLine`'s second argument (`true`) also selects/centers the line,
-    /// matching what a person doing this by hand in the IDE would expect.
+    /// Re-enumerates the ROT the same way `LIST_SCRIPT` does (a fresh
+    /// process — nothing from a previous `list_instances` call survives
+    /// between the two), matches the given moniker *string* by display name,
+    /// and — once matched — retrieves the DTE object via `$rot.GetObject($m)`
+    /// directly, the same as `LIST_SCRIPT`, rather than re-parsing the
+    /// string with `[Marshal]::BindToMoniker`. The variable, log-derived
+    /// `moniker`/`path`/`line` travel in via `PHILOGG_VS_*` environment
+    /// variables (set by `open_file` below), never interpolated into this
+    /// (fixed) script text. `GotoLine`'s second argument (`true`) also
+    /// selects/centers the line, matching what a person doing this by hand
+    /// in the IDE would expect.
     const OPEN_SCRIPT: &str = r#"
-$moniker = $env:PHILOGG_VS_MONIKER
-$path = $env:PHILOGG_VS_PATH
-$line = [int]$env:PHILOGG_VS_LINE
-$dte = [Runtime.InteropServices.Marshal]::BindToMoniker($moniker)
-$dte.ItemOperations.OpenFile($path) | Out-Null
-$dte.ActiveDocument.Selection.GotoLine($line, $true)
-$dte.MainWindow.Activate()
+try {
+__ROT_SETUP__
+  $targetMoniker = $env:PHILOGG_VS_MONIKER
+  $path = $env:PHILOGG_VS_PATH
+  $line = [int]$env:PHILOGG_VS_LINE
+
+  $dte = $null
+  while ($phEnum.Next(1, $phMonikers, [IntPtr]::Zero) -eq 0) {
+    $m = $phMonikers[0]
+    $name = $null
+    try { $name = $m.GetDisplayName($ctx) } catch { continue }
+    if ($name -eq $targetMoniker) { $dte = $rot.GetObject($m); break }
+  }
+  if ($null -eq $dte) { throw "That Visual Studio instance is no longer running (moniker: $targetMoniker)" }
+
+  $dte.ItemOperations.OpenFile($path) | Out-Null
+  $dte.ActiveDocument.Selection.GotoLine($line, $true)
+  $dte.MainWindow.Activate()
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}
 "#;
 
     pub fn open_file(moniker: &str, path: &str, line: u32) -> Result<(), String> {
-        let out = powershell(OPEN_SCRIPT)
-            .env("PHILOGG_VS_MONIKER", moniker)
+        let script = OPEN_SCRIPT.replace("__ROT_SETUP__", ROT_SETUP);
+        let mut cmd = powershell(&script);
+        cmd.env("PHILOGG_VS_MONIKER", moniker)
             .env("PHILOGG_VS_PATH", path)
-            .env("PHILOGG_VS_LINE", line.to_string())
-            .output()
-            .map_err(|e| e.to_string())?;
-        if out.status.success() {
-            Ok(())
-        } else {
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            Err(if stderr.is_empty() {
-                "Visual Studio didn't respond — is the connected instance still running?".to_string()
-            } else {
-                stderr
-            })
-        }
+            .env("PHILOGG_VS_LINE", line.to_string());
+        run(cmd).map(|_| ())
     }
 }

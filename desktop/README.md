@@ -127,8 +127,9 @@ like any other.
   Visual Studio/Rider") is Windows-only** — hidden entirely on macOS/Linux
   and in the plain browser build. See `docs/desktop.md` → "IDE Integration"
   for the mechanism (Running Object Table enumeration + `EnvDTE` COM
-  automation for Visual Studio, a `jetbrains://` deep link for Rider). Not
-  yet run against a real Visual Studio/Rider install — see "Status" below.
+  automation for Visual Studio, a `jetbrains://` deep link for Rider).
+  First real-machine test surfaced issues on both sides, since fixed
+  (unverified on a real machine yet) — see "Status" below.
 
 ## Status
 
@@ -165,13 +166,36 @@ The native folder watch (2026-09-01) is verified by `cargo check` plus the
 jsdom suite's Group 145 only — the picker, the listing and a real Desktop
 folder still need a person on a real desktop session.
 
-IDE Integration (this session) is verified by the jsdom suite's Group 230
-only (the pure path-remap functions) plus manual code review — the sandbox
-this session ran in has no Windows toolchain and couldn't even build the
+IDE Integration (2026-09-16) is verified by the jsdom suite's Group 230 only
+(the pure path-remap functions) plus manual code review — the sandbox this
+feature was built in has no Windows toolchain and couldn't even build the
 Linux desktop wrapper (missing WebKitGTK dev packages, unrelated to this
 change), so `vs_integration.rs`'s PowerShell/COM script, the Settings
 dialog's Connect flow, and the Rider deep link all still need a person on a
 real Windows machine with Visual Studio and/or Rider installed.
+
+Real Windows run (2026-09-16, person-tested), first attempt: "Connect"
+reported no running Visual Studio instance despite one being open with a
+solution loaded, and "Open in Rider" did nothing. Neither failure mode had
+any diagnostic to go on — `vs_integration.rs`'s PowerShell script swallowed
+every failure into the same generic empty result, and `openPath`'s promise
+for the Rider link only reported a rejection, never a success, leaving
+"nothing happened" ambiguous. Follow-up fix, same day, still unverified on a
+real machine (same sandbox limitation as above): the PowerShell script now
+wraps its whole body in one top-level `try`/`catch` (checking the HRESULT
+of both `ole32.dll` P/Invoke calls explicitly, writing the real exception
+message to stderr and exiting non-zero on any failure instead of letting an
+unhandled exception produce an opaque result) and retrieves the DTE object
+via `IRunningObjectTable.GetObject(moniker)` on the matched moniker instead
+of re-parsing its display-name string with `Marshal.BindToMoniker` — the
+Settings dialog now shows that diagnostic text directly when "Connect…"
+finds zero instances, instead of a generic message indistinguishable from a
+script failure. For Rider, added a success toast so a person can at least
+tell PhiLogg's own side ran; the likely actual cause (research this
+session, not yet confirmed against this person's machine) is that the
+`jetbrains://` scheme's registration in Windows is owned by JetBrains
+Toolbox App's `jetbrainsd` service, not by a standalone Rider install — see
+`docs/desktop.md` → "IDE Integration" for the Win+R self-test.
 
 **Picture-in-picture (2026-09-07)** is verified by `cargo check` plus the
 jsdom suite's Group 182 only. The real `set_always_on_top`/`set_size`/

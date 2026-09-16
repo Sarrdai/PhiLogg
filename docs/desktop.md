@@ -614,26 +614,39 @@ PowerShell script (`list_instances`) that P/Invokes `ole32.dll`'s
 standard way to reach a Win32 API from PowerShell — there's no cmdlet for
 this) to enumerate the Running Object Table, filters monikers starting with
 `!VisualStudio.DTE.` (every running `devenv.exe` registers one), and for
-each reads `Solution.FullName`/`MainWindow.Caption` via
-`Marshal.BindToMoniker`. The Settings dialog's "Connect…" button calls this,
-lists each instance's open solution, and the chosen one's moniker + solution
-directory are kept in a **session-only** JS variable (`ideVsConnection`) —
-never persisted, since a PID/ROT moniker from a past run is meaningless
-after either process restarts. "Open in Visual Studio" (context menu, shown
-whenever `resolveIdeSourcePath` resolves against the connected instance's
-solution directory) shells a second script (`open_file`) that
-`BindToMoniker`s the same instance, calls `ItemOperations.OpenFile` +
-`Selection.GotoLine` + `MainWindow.Activate()`. Both scripts are fixed
-constants sent via `-EncodedCommand` (base64 of their UTF-16LE bytes, hand-
-rolled — one dependency-free function, the same "don't pull in a crate to
-re-derive a few lines" call `fonts.rs` already makes about font
-enumeration) purely to sidestep Windows command-line quoting for a script
-this shape (embedded C#, here-strings); the actual variable, log-derived
-input (moniker/path/line) travels separately through `PHILOGG_VS_*`
-environment variables on the spawned process, never interpolated into the
-script text. `Command::creation_flags(CREATE_NO_WINDOW)` keeps every call
-from flashing a console window, since — unlike the once-per-run, cached
-font enumeration — this runs on every click.
+each reads `Solution.FullName`/`MainWindow.Caption` off the DTE object
+`IRunningObjectTable.GetObject(moniker)` hands back for the matched moniker
+directly — no separate re-parse of the display-name string. The Settings
+dialog's "Connect…" button calls this, lists each instance's open solution,
+and the chosen one's moniker + solution directory are kept in a
+**session-only** JS variable (`ideVsConnection`) — never persisted, since a
+PID/ROT moniker from a past run is meaningless after either process
+restarts. "Open in Visual Studio" (context menu, shown whenever
+`resolveIdeSourcePath` resolves against the connected instance's solution
+directory) shells a second script (`open_file`) that re-enumerates the ROT
+the same way, matches the given moniker string by display name, then calls
+`ItemOperations.OpenFile` + `Selection.GotoLine` + `MainWindow.Activate()`
+on the `GetObject`-retrieved DTE. Both scripts are fixed constants sent via
+`-EncodedCommand` (base64 of their UTF-16LE bytes, hand-rolled — one
+dependency-free function, the same "don't pull in a crate to re-derive a
+few lines" call `fonts.rs` already makes about font enumeration) purely to
+sidestep Windows command-line quoting for a script this shape (embedded C#,
+here-strings); the actual variable, log-derived input (moniker/path/line)
+travels separately through `PHILOGG_VS_*` environment variables on the
+spawned process, never interpolated into the script text.
+`Command::creation_flags(CREATE_NO_WINDOW)` keeps every call from flashing a
+console window, since — unlike the once-per-run, cached font enumeration —
+this runs on every click.
+
+Both scripts wrap their whole body in one top-level `try`/`catch`
+(`[Console]::Error.WriteLine($_.Exception.Message)` + `exit 1` on any
+failure, including a non-zero HRESULT from either `ole32.dll` call, checked
+explicitly rather than continuing with `$null`), instead of letting an
+unhandled COM/.NET exception produce an opaque result — `list_instances`
+carries that message back to the page as `VsListResult { instances, error }`
+(not a bare `Vec`), so the Settings dialog can show *why* zero instances
+came back instead of a generic "none found" that used to be
+indistinguishable from a genuine script failure.
 
 Known, accepted limitation: `MainWindow.Activate()` from another process is
 subject to Windows' own foreground-window-stealing rules. It reliably moves
@@ -655,6 +668,19 @@ Settings → IDE Integration's "Rider" group is just an enable toggle + the
 project name the link's `project=` parameter needs (not derivable from
 anything else PhiLogg knows) — no connection step, no instance picker: the
 IDE resolves that itself.
+
+**Prerequisite PhiLogg can't do anything about**: the `jetbrains://` scheme
+has to actually be registered as a URI protocol handler in Windows for
+`openPath` to resolve it to anything. That registration is owned by
+JetBrains Toolbox App (its `jetbrainsd` background service, as of Toolbox
+App 3.3) — a Rider installed standalone, without Toolbox, may have no
+handler registered at all, in which case the OS silently has nothing to do
+with the link (no error PhiLogg's own code could surface — `openPath`'s
+promise resolves either way, since as far as it's concerned it successfully
+asked the OS to open something). The fastest way to tell which side a
+failure is on: Win+R → paste a `jetbrains://...` URI directly. If Windows
+itself can't resolve it either, install/run JetBrains Toolbox App — it's not
+a PhiLogg bug.
 
 Both halves are gated on `window.philogg.isWindows` (baked in at generation
 time in `inject.rs`/`inject.js`, the same mechanism `IS_MAC` already uses) —

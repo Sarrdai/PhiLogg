@@ -10151,11 +10151,14 @@ function initIdeIntegration() {
   if (connectBtn) {
     connectBtn.addEventListener("click", () => {
       connectBtn.disabled = true;
-      window.philogg.vsListInstances().then(instances => {
+      window.philogg.vsListInstances().then(result => {
         connectBtn.disabled = false;
-        if (!instances || instances.length === 0) {
+        const instances = (result && result.instances) || [];
+        if (instances.length === 0) {
           if (pickerRow) pickerRow.classList.add("hidden");
-          showCopyToast("No running Visual Studio instance found");
+          showCopyToast(result && result.error
+            ? "No running Visual Studio instance found — " + result.error
+            : "No running Visual Studio instance found");
           return;
         }
         pickerSelect.innerHTML = "";
@@ -25423,7 +25426,14 @@ function openEntryInRider(entry) {
   }
   if (target.error) return;
   const relativePath = target.path.replace(/^[\\/]+/, "").replace(/\\/g, "/");
-  window.philogg.openPath(buildRiderUri(ideRiderProject, relativePath, target.line)).catch(() => {
+  // Confirms PhiLogg's own part ran, regardless of outcome — the OS/Rider
+  // side of resolving a jetbrains:// link (a protocol handler needs to be
+  // registered, normally by JetBrains Toolbox App) is invisible from here;
+  // this at least tells a person "the link was sent" instead of leaving
+  // "nothing happened" ambiguous between that and "PhiLogg didn't even try."
+  window.philogg.openPath(buildRiderUri(ideRiderProject, relativePath, target.line)).then(() => {
+    showCopyToast("Opening in Rider…");
+  }).catch(() => {
     showCopyToast("Couldn't open Rider");
   });
 }
