@@ -193,6 +193,10 @@ async function withApp(run, opts = {}) {
       get fhLayout() { return fhLayout; },
       get fhActiveTab() { return fhActiveTab; },
       get minimapBgCache() { return minimapBgCache; },
+      get minimapBinningMode() { return minimapBinningMode; },
+      set minimapBinningMode(v) { minimapBinningMode = v; },
+      get minimapWidth() { return minimapWidth; },
+      get minimapBucketCount() { return minimapBucketCount; },
       get highlightColorMap() { return highlightColorMap; },
       get currentViewEntries() { return currentViewEntries; },
       get currentHighlightViewEntries() { return currentHighlightViewEntries; },
@@ -209,6 +213,10 @@ async function withApp(run, opts = {}) {
       set contextInitialExpansion(v) { contextInitialExpansion = v; },
       get contextExpandStep() { return contextExpandStep; },
       set contextExpandStep(v) { contextExpandStep = v; },
+      get contextExpandStepUnit() { return contextExpandStepUnit; },
+      set contextExpandStepUnit(v) { contextExpandStepUnit = v; },
+      get contextExpandStepMs() { return contextExpandStepMs; },
+      set contextExpandStepMs(v) { contextExpandStepMs = v; },
       get CONTEXT_STRIP_HEIGHT() { return CONTEXT_STRIP_HEIGHT; },
       get CONTEXT_TOOLBAR_HEIGHT() { return CONTEXT_TOOLBAR_HEIGHT; },
       get extractRowsData() { return extractRowsData; },
@@ -25861,6 +25869,367 @@ await withApp(async (w, d, T) => {
   assert(chainSep && chainSep.querySelector("svg"), "the filter-target chain's separator is the same SVG-based chip, not a leftover text glyph");
 });
 
+/* ============================================================
+   GROUP 226 — Minimap binning mode: entries-based bar layout (Settings ->
+   Timeline minimap, FEATURE_BACKLOG.md #2, person-approved design this
+   session: "Minimap: line-based instead of time-based"). A new
+   `minimapBinningMode` ("time" | "entries", default "time") switches the
+   minimap's bar LAYOUT between positioning bars by timestamp (existing
+   behavior — a bar's x is proportional to where its ts sits in
+   [minimapTMin, minimapTMax]) and positioning them by ENTRY INDEX among
+   the root file's entries instead (x proportional to position in
+   0..entryCount-1) — so a burst of fast activity spreads out evenly across
+   the width instead of compressing into a few pixels, and a long idle
+   stretch stops eating most of the width just because it covers a lot of
+   wall-clock time.
+   Deliberately visualization-only, confirmed by the project owner: every
+   INTERACTION (click-to-jump, drag-select, the range-indicator boxes, the
+   hover tooltip, the selection marker) keeps working completely unchanged,
+   because none of them contain their own notion of "where in time/space is
+   this pixel" — they all route through minimapTsToX/minimapXToTs/
+   minimapBucketOf, the only three functions this mode is ever branched on.
+   A click that used to resolve to an interpolated point in time now
+   resolves to a REAL entry's exact timestamp in entries mode (minimapXToTs
+   looks the index up in minimapRootEntries directly) — existing downstream
+   logic already handles a real timestamp correctly, so nothing above this
+   conversion layer needed a single line changed.
+   Covers: the Settings select persists to localStorage and drives
+   minimapBinningMode, and re-hydrates on (re-)init the same way
+   initMinimapFullRangeSetting's own coverage (Group 119a) does; with an
+   irregular-gap fixture (a 20-entry burst one millisecond apart, then a
+   20-minute idle gap, then 19 more entries a second apart) minimapTsToX
+   resolves the post-gap entry's x by TIME proportion (~98%, dominated by
+   the idle gap) in time mode and by INDEX proportion (~51%, entry 20 of
+   39) in entries mode — visibly different x positions for the exact same
+   entry, and the rendered SVG bar for a lone matched entry sits at the
+   same index-proportional bucket minimapBucketOf computes; click-to-jump,
+   drag-select (-> a real "timerange" filter from two real entries' own
+   timestamps), and the hover tooltip (-> the real hovered entry's own
+   formatTime) all still resolve correctly with entries mode active. Every
+   EXISTING minimap group (31/32/34/95/119/120/197/...) keeps passing
+   unchanged, since "time" stays the default and none of them touch the
+   new setting.
+   ============================================================ */
+group(226);
+await withApp(async (w, d, T) => {
+  section("226a. Settings toggle: minimapBinningMode persists to localStorage and re-hydrates on (re-)init");
+
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  assert(T.minimapBinningMode === "time", "sanity: default binning mode is \"time\"");
+  const select = d.querySelector("#settingsMinimapBinningMode");
+  assert(select && select.value === "time", "Settings select starts on \"Time-based\"");
+
+  select.value = "entries";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.minimapBinningMode === "entries", "changing the select drives minimapBinningMode");
+  assert(w.localStorage.getItem("philogg-minimap-binning-mode") === "entries", "...and persists it to localStorage under its own key");
+
+  // Persisted flag honored on (re-)init, same path real boot uses — same
+  // pattern initMinimapFullRangeSetting's own coverage (Group 119a) uses.
+  select.value = "time";
+  T.minimapBinningMode = "time";
+  w.localStorage.setItem("philogg-minimap-binning-mode", "entries");
+  w.initMinimapBinningModeSetting();
+  assert(T.minimapBinningMode === "entries", "re-hydrating from a persisted \"entries\" value restores it");
+  assert(select.value === "entries", "...and reflects it back into the select");
+
+  w.localStorage.setItem("philogg-minimap-binning-mode", "time");
+  w.initMinimapBinningModeSetting();
+  assert(T.minimapBinningMode === "time" && select.value === "time", "re-hydrating from a persisted \"time\" value restores the default");
+
+  // Restore the toggle itself back to the default via the real change path
+  // so the persisted value matches what the select shows.
+  select.value = "time";
+  select.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.minimapBinningMode === "time" && w.localStorage.getItem("philogg-minimap-binning-mode") === "time", "switching back to \"time\" persists too");
+});
+
+await withApp(async (w, d, T) => {
+  section("226b. Entries mode positions bars by ENTRY INDEX, not by timestamp — irregular-gap fixture, plus every interaction stays correct");
+
+  // Burst: 20 entries one millisecond apart (10:00:00,000 .. 10:00:00,019).
+  // Idle gap: entry 20 lands 20 minutes later (10:20:00,000). Tail: 19 more
+  // entries one second apart (10:20:01 .. 10:20:19). 40 entries total,
+  // indices 0..39 — deliberately lopsided in TIME (the 20-minute gap alone
+  // is ~98% of the file's whole time span) but perfectly even in INDEX.
+  const pad2 = v => String(v).padStart(2, "0");
+  const pad3 = v => String(v).padStart(3, "0");
+  const lines = [];
+  const push = (h, m, s, ms, msg) => lines.push(`2024-01-15 ${pad2(h)}:${pad2(m)}:${pad2(s)},${pad3(ms)}\tINFO\t"main"\tFoo.cs\tline 0\t[DoWork]\t"${msg}"`);
+  for (let i = 0; i < 20; i++) push(10, 0, 0, i, "burst " + i); // indices 0-19
+  push(10, 20, 0, 0, "post-gap 20"); // index 20 — first entry after the idle gap
+  for (let i = 1; i <= 19; i++) push(10, 20, i, 0, "tail " + i); // indices 21-39
+
+  const f = await w.addFile("gap.log", lines.join("\n") + "\n", () => {});
+  T.state.activeId = f.id;
+  T.state.sortColumn = null;
+  w.render();
+
+  assert(f.entries.length === 40, "sanity: fixture has 40 entries, got " + f.entries.length);
+  const target = f.entries[20]; // the first entry after the 20-minute idle gap
+
+  // --- Time mode (default): x is skewed hard toward the right, dominated
+  // by the idle gap's share of the file's whole time span. ---
+  const xTime = w.minimapTsToX(target.ts);
+  const expectedTimeFrac = (target.ts - f.entries[0].ts) / (f.entries[39].ts - f.entries[0].ts);
+  assert(expectedTimeFrac > 0.9, "sanity: the idle gap dominates the time span (fixture is genuinely lopsided in time), got fraction " + expectedTimeFrac);
+  assert(Math.abs(xTime - expectedTimeFrac * T.minimapWidth) < 0.5,
+    "time mode: x is proportional to the entry's TIME position, got " + xTime + " vs expected ~" + (expectedTimeFrac * T.minimapWidth));
+
+  // --- Entries mode: same entry now sits at ~51% width (index 20 of 39),
+  // regardless of the huge time gap. ---
+  d.querySelector("#settingsMinimapBinningMode").value = "entries";
+  d.querySelector("#settingsMinimapBinningMode").dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.minimapBinningMode === "entries", "sanity: switched to entries mode");
+
+  const xEntries = w.minimapTsToX(target.ts);
+  const expectedIdxFrac = 20 / 39;
+  assert(Math.abs(xEntries - expectedIdxFrac * T.minimapWidth) < 0.5,
+    "entries mode: x is proportional to the entry's INDEX position (20/39), got " + xEntries + " vs expected ~" + (expectedIdxFrac * T.minimapWidth));
+  assert(Math.abs(xEntries - xTime) > T.minimapWidth * 0.3,
+    "the exact same entry lands at a visibly different x in the two modes, got time=" + xTime + " entries=" + xEntries);
+
+  // minimapXToTs inverts an x back to the REAL entry's own timestamp (not an
+  // interpolated point) — the crux of why click/drag/etc. below need no
+  // changes of their own to work correctly in this mode.
+  assert(w.minimapXToTs(xEntries) === target.ts, "minimapXToTs resolves the x back to the exact real entry's timestamp in entries mode");
+
+  // --- The rendered SVG bar itself reflects the same index-proportional
+  // placement: the bucket a lone matched entry's overlay bar sits in must
+  // equal minimapBucketOf's own index-based formula, not the time-based one. ---
+  const soloFilter = w.createFilterNode(f.id, "text", "post-gap 20");
+  T.state.activeId = soloFilter.id;
+  w.render();
+  const ovBars = [...d.querySelectorAll("#timelineMinimapSvg .minimap-ov-bar")];
+  assert(ovBars.length === 1, "exactly one overlay bar for the single matched entry, got " + ovBars.length);
+  const barX = parseFloat(ovBars[0].getAttribute("x"));
+  const expectedBucket = Math.min(T.minimapBucketCount - 1, Math.floor((20 / 40) * T.minimapBucketCount));
+  const expectedBarX = expectedBucket * (T.minimapWidth / T.minimapBucketCount);
+  assert(Math.abs(barX - expectedBarX) < 0.5,
+    "the rendered overlay bar sits at the index-proportional bucket, got x=" + barX + " expected ~" + expectedBarX);
+
+  // --- Click-to-jump still selects the correct entry in entries mode
+  // (unchanged code — see the group banner's "conversion layer" note). ---
+  T.state.activeId = f.id;
+  T.state.selectedId = null;
+  w.render();
+  const svg = d.querySelector("#timelineMinimapSvg");
+  const jumpX = w.minimapTsToX(target.ts);
+  svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  assert(T.state.selectedId === target.id, "click-to-jump in entries mode still selects the correct entry (post-gap index 20), got selectedId " + T.state.selectedId);
+
+  // --- Drag-select still creates a correct "timerange" filter from two REAL
+  // timestamps (entries mode routes through the exact same handler, just
+  // with a mode-aware minimapXToTs/minimapTsToX underneath it). ---
+  const beforeChildCount = f.children.length;
+  const x1 = w.minimapTsToX(f.entries[5].ts), x2 = w.minimapTsToX(f.entries[25].ts);
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: x1, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: x2, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: x2, clientY: 10 }));
+  svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
+  assert(f.children.length === beforeChildCount + 1, "drag-select still creates exactly one new filter child in entries mode, got " + f.children.length);
+  const rangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
+  assert(rangeNode, "the created node has filterType \"timerange\"");
+  assert(rangeNode.value.from === f.entries[5].ts && rangeNode.value.to === f.entries[25].ts,
+    "the range's bounds are the two REAL dragged entries' own timestamps, got " + JSON.stringify(rangeNode.value));
+
+  // --- Hover tooltip resolves the correct bucket/entry in entries mode too
+  // (now routed through minimapXToTs/minimapBucketOf instead of a hand-
+  // rolled time-proportion formula — see the philogg.html comment). ---
+  T.state.activeId = f.id;
+  w.render();
+  const hoverX = w.minimapTsToX(target.ts);
+  svg.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: hoverX, clientY: 10 }));
+  const tooltipText = d.querySelector("#timelineMinimapTooltip").textContent;
+  assert(tooltipText.includes(w.formatTime(target.ts)), "hover tooltip in entries mode shows the real hovered entry's own time, got " + JSON.stringify(tooltipText));
+});
+
+/* ============================================================
+   GROUP 227 — Context view: TIME-based expansion step, an alternative unit
+   for the existing "Lines revealed per step" mechanism (FEATURE_BACKLOG.md
+   #79, narrowed scope — see CHANGELOG.md: the raw backlog idea sketched a
+   much broader "configurable Context view window" concept; the project
+   owner, asked to resolve its own open question, gave this narrower answer
+   instead — a unit toggle on the mechanism GROUP 138/151 already cover, not
+   a new view). contextExpandStepUnit ("entries" default | "time") governs
+   what a step MEANS for both consumers contextExpandStep already fed:
+   buildContextView's addHidden (a "Show more" row's own reveal size) and
+   applyContextJumpExpansion's aroundJump window. In "time" mode the step is
+   a fixed contextExpandStepMs duration instead of a fixed entry count, so
+   the entry COUNT one step actually reveals varies with how dense the log
+   is at that edge — demonstrated below with an irregular-gap fixture where
+   the SAME 500ms step reveals very different counts on two differently-
+   paced sides of one jump. The "… N lines" filler is deliberately
+   UNCHANGED in both modes (person-requested: "if less than that is
+   available just the '...n line' as by now") — always a plain entry count,
+   since it reveals the WHOLE remaining stretch regardless of unit.
+     a) the Settings row: the unit select shows/hides its two dependent step
+        rows and persists, in both directions, including re-hydration from
+        localStorage; the ms field's Dec/Inc/typed/clamp behavior mirrors
+        the entries field's own (GROUP 151f/219b).
+     b) buildContextView/addHidden in time mode, via a fixture with two
+        differently-paced stretches either side of one match: the aroundJump
+        window reveals a much larger count on the dense side than the
+        sparse side for the SAME configured timespan (the whole point of
+        time mode); the dense side's remaining stretch has its own step
+        correctly WITHHELD because one more step would reveal everything
+        left (only "… N lines" shows there); the sparse side gets a "Show
+        more" row labelled with the fixed configured duration (not a
+        count), which on click reveals only what the "reveal at least one
+        entry" clamp guarantees; the "… N lines" row stays a plain count.
+     c) applyContextJumpExpansion's aroundJump in time mode takes back
+        exactly the previous jump's own auto-revealed window on the next
+        jump (GROUP 138o's mechanism, unit-agnostic below "wanted"/"lo"/
+        "hi"), while a hand-revealed range in a DIFFERENT gap survives
+        untouched.
+   ============================================================ */
+group(227);
+await withApp(async (w, d, T) => {
+  section("227a. Settings: the unit select + its two dependent rows, and the ms field's stepper");
+
+  assert(T.contextExpandStepUnit === "entries", "sanity: default unit is \"entries\" (preserves today's behavior)");
+  assert(T.contextExpandStepMs === 500, "sanity: default timespan-per-step is 500ms");
+
+  const unitSelect = d.querySelector("#settingsContextExpandStepUnit");
+  const entriesRow = d.querySelector("#settingsContextExpandStepRow");
+  const msRow = d.querySelector("#settingsContextExpandStepMsRow");
+  assert(unitSelect && unitSelect.value === "entries", "Settings select starts on \"Entries\"");
+  assert(isVisible(entriesRow, w) && !isVisible(msRow, w),
+    "the entries-step row shows and the ms-step row hides by default");
+
+  unitSelect.value = "time";
+  unitSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.contextExpandStepUnit === "time", "changing the select drives contextExpandStepUnit");
+  assert(w.localStorage.getItem("philogg-context-expand-step-unit") === "time", "...and persists it under its own key");
+  assert(!isVisible(entriesRow, w) && isVisible(msRow, w),
+    "switching to \"time\" flips which of the two rows is visible");
+
+  unitSelect.value = "entries";
+  unitSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.contextExpandStepUnit === "entries" && w.localStorage.getItem("philogg-context-expand-step-unit") === "entries",
+    "switching back to \"entries\" persists too");
+  assert(isVisible(entriesRow, w) && !isVisible(msRow, w), "...and flips the rows back to their default visibility");
+
+  // Persisted flag honored on (re-)init, same path real boot uses — same
+  // pattern GROUP 226a's minimapBinningMode coverage uses.
+  w.localStorage.setItem("philogg-context-expand-step-unit", "time");
+  w.initContextExpandStepUnitSetting();
+  assert(T.contextExpandStepUnit === "time" && unitSelect.value === "time" && !isVisible(entriesRow, w) && isVisible(msRow, w),
+    "re-hydrating from a persisted \"time\" value restores the select, the state, and both rows' visibility");
+  w.localStorage.setItem("philogg-context-expand-step-unit", "entries");
+  w.initContextExpandStepUnitSetting();
+  assert(T.contextExpandStepUnit === "entries" && unitSelect.value === "entries" && isVisible(entriesRow, w) && !isVisible(msRow, w),
+    "...and re-hydrating back from a persisted \"entries\" value restores the default");
+
+  // --- the ms field: mirrors #settingsContextExpandStep's own Dec/Inc/typed/clamp coverage (GROUP 151f / 219b) ---
+  const msInput = d.querySelector("#settingsContextExpandStepMs");
+  assert(msInput.value === "500", "the ms field defaults to 500, got " + msInput.value);
+  fireClick(d.querySelector("#settingsContextExpandStepMsInc"), w);
+  assert(msInput.value === "600" && T.contextExpandStepMs === 600, "Inc nudges the field by its 100ms step AND drives contextExpandStepMs");
+  fireClick(d.querySelector("#settingsContextExpandStepMsDec"), w);
+  fireClick(d.querySelector("#settingsContextExpandStepMsDec"), w);
+  assert(msInput.value === "400" && T.contextExpandStepMs === 400, "Dec nudges back down, two clicks = two 100ms steps");
+  msInput.value = "1500";
+  msInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.contextExpandStepMs === 1500 && w.localStorage.getItem("philogg-context-expand-step-ms") === "1500",
+    "a typed value is applied and persisted");
+  msInput.value = "0";
+  msInput.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.contextExpandStepMs === 1 && msInput.value === "1",
+    "...and clamped to a minimum of 1 (no upper cap, same as the Time-context-filter dialog's own ms fields), with the clamp reflected back into the field, got " + T.contextExpandStepMs);
+});
+
+await withApp(async (w, d, T) => {
+  section("227b/c. buildContextView/addHidden and applyContextJumpExpansion in TIME mode — irregular-gap fixture");
+
+  // Three matches ("hit0"/"hit1"/"hit2"), two gaps either side of the
+  // middle one, deliberately built at DIFFERENT paces: gapA (indices 1-8)
+  // is sparse — 300ms apart, except its LAST entry is pulled in to 2900ms
+  // (900ms before "hit1") so a 500ms step still reaches exactly one of
+  // them; gapB (indices 10-69) is dense — 10ms apart, 60 entries. The SAME
+  // 500ms step (contextExpandStepMs) applied from the SAME jump target
+  // (the middle match) therefore reveals a single entry on the sparse side
+  // and fifty on the dense side — the "different entry count for a fixed
+  // timespan, depending on local density" behavior this feature exists for.
+  const pad2 = v => String(v).padStart(2, "0");
+  const pad3 = v => String(v).padStart(3, "0");
+  const lines = [];
+  const push = (h, m, s, ms, msg) => lines.push(`2024-01-15 ${pad2(h)}:${pad2(m)}:${pad2(s)},${pad3(ms)}\tINFO\t"main"\tFoo.cs\tline 0\t[DoWork]\t"${msg}"`);
+  const pushOffset = (offsetMs, msg) => push(10, 0, Math.floor(offsetMs / 1000), offsetMs % 1000, msg);
+
+  pushOffset(0, "hit0"); // index 0 — match
+  for (let i = 1; i <= 7; i++) pushOffset(300 * i, "gapA " + i); // indices 1-7: 300, 600, ..., 2100
+  pushOffset(2900, "gapA 8"); // index 8 — pulled in close to "hit1", unlike the rest of gapA
+  pushOffset(3200, "hit1"); // index 9 — match
+  for (let i = 1; i <= 60; i++) pushOffset(3200 + 10 * i, "gapB " + i); // indices 10-69: 3210, ..., 3800
+  pushOffset(4200, "hit2"); // index 70 — match
+
+  const f = await w.addFile("irregular.log", lines.join("\n") + "\n", () => {});
+  assert(f.entries.length === 71, "sanity: fixture has 71 entries, got " + f.entries.length);
+  const hitFilter = w.createFilterNode(f.id, "text", "hit"); // matches hit0/hit1/hit2 only
+  T.state.activeId = hitFilter.id;
+  T.contextExpandStepUnit = "time";
+  assert(T.contextExpandStepMs === 500, "sanity: default 500ms step, unchanged by this test");
+  const showContext = () => { w.render(); w.applyFhView("highlight"); };
+  showContext();
+
+  assert(T.contextGaps.length === 2 && T.contextGaps[0].start === 1 && T.contextGaps[0].end === 9 &&
+    T.contextGaps[1].start === 10 && T.contextGaps[1].end === 70,
+    "sanity: two gaps either side of the middle match, got " + JSON.stringify(T.contextGaps));
+
+  const fillers = () => [...d.querySelectorAll("#highlightRows .ctx-gap-placeholder")];
+  const moreRows = () => [...d.querySelectorAll("#highlightRows .ctx-show-more")];
+  const matchRow = id => d.querySelector('#highlightRows [data-entry-id="' + id + '"]');
+  const revealed = gapStart => (T.contextExpansions.get(gapStart) || []).map(r => r.from + "-" + r.to).join(",");
+  const stepFillers = () => [...T.contextStrips.values()].flat().filter(x => x.kind === "more");
+  const gapFillers = () => [...T.contextStrips.values()].flat().filter(x => x.kind === "gap");
+  const showTop = () => { w.setHighlightScroll(0); w.renderHighlightVisibleRows(); };
+
+  // --- (b) the middle jump's own window: variable count on each side ------
+  fireClick(matchRow(f.entries[9].id), w); // a plain click on "hit1" is a jump (aroundJump)
+  assert(revealed(1) === "8-9", "the sparse side (gapA) reveals just its one entry within 500ms of the target, got " + revealed(1));
+  assert(revealed(10) === "10-60", "the dense side (gapB) reveals fifty entries within the SAME 500ms, got " + revealed(10));
+  assert(T.currentHighlightViewEntries.length === 3 + 1 + 50,
+    "3 matches + gapA's 1 revealed entry + gapB's 50, got " + T.currentHighlightViewEntries.length);
+  assert(T.contextAutoRanges.length === 2, "sanity: one auto-tracked range per gap from this jump");
+
+  assert(stepFillers().length === 1 && stepFillers()[0].gapStart === 1 && stepFillers()[0].from === 7 && stepFillers()[0].to === 8,
+    "gapA gets exactly one 'Show more' step, revealing exactly 1 entry (clamped to at least one) — the sparse side's variable, data-dependent step size, got " + JSON.stringify(stepFillers()));
+  assert(gapFillers().some(x => x.gapStart === 1 && x.from === 1 && x.to === 8),
+    "gapA's own remaining stretch is 7 entries (1..8), tracked by the unit-agnostic '… N lines' row");
+  assert(gapFillers().some(x => x.gapStart === 10 && x.from === 60 && x.to === 70),
+    "gapB's remaining stretch is 10 entries (60..70) — its own step would reveal all of them, so it's correctly withheld, leaving only '… N lines' there");
+
+  // --- gapA's "Show more" row: labelled with the fixed duration, not a count ---
+  showTop(); // gapA's rows sit right after "hit0", near the top of the (still small) rendered window
+  const gapAMore = moreRows()[0];
+  assert(gapAMore && gapAMore.textContent.includes("500ms"),
+    "gapA's 'Show more' row is labelled with the configured DURATION, not the 1-entry count it happens to reveal here, got " + JSON.stringify(moreRows().map(e => e.textContent)));
+  assert(gapAMore.title.includes("500ms"), "...and its tooltip reads the duration too, got " + JSON.stringify(gapAMore.title));
+  const gapAGapRow = fillers().find(el => !el.classList.contains("ctx-show-more"));
+  assert(gapAGapRow && gapAGapRow.textContent.includes("7") && !gapAGapRow.textContent.includes("ms"),
+    "gapA's '… N lines' row is still a plain entry count in time mode, got " + JSON.stringify(gapAGapRow && gapAGapRow.textContent));
+
+  // --- clicking gapA's step reveals exactly the clamped-to-one-entry step -
+  fireClick(gapAMore, w);
+  assert(revealed(1) === "7-9",
+    "gapA's step reveals exactly one more entry — the raw 500ms boundary landed short of gapA's own remaining stretch, so the 'reveal at least one entry' clamp is what makes this step do anything at all, got " + revealed(1));
+
+  // --- (c) jumping again takes back the PREVIOUS jump's own window, but --
+  //     never a hand-revealed range sitting in a DIFFERENT gap ------------
+  const hit2Idx = T.currentHighlightViewEntries.findIndex(e => e.id === f.entries[70].id);
+  w.setHighlightScroll(T.highlightRowOffsets[hit2Idx]); // scroll "hit2" into the virtualized window
+  w.renderHighlightVisibleRows();
+  fireClick(matchRow(f.entries[70].id), w); // "hit2", the last entry: a one-sided jump
+  assert(revealed(1) === "7-9",
+    "gapA's HAND-revealed range survives the new jump untouched — forgetAutoRangesForGap made the whole gap hand-owned the moment its step was clicked, got " + revealed(1));
+  assert(revealed(10) === "59-70",
+    "gapB's own auto-revealed window moved with the jump instead of piling up: the previous one (10-60) was taken back and replaced by the 11 entries within 500ms of the new target, got " + revealed(10));
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -29412,4 +29781,37 @@ process.exitCode = failed ? 1 : 0;
       icon's presence/path/stroke, and the color/background/border change
       (stylesheet-source check, since jsdom doesn't resolve var() inside
       the background/border shorthands used here).
+
+   Group 226 — this session, FEATURE_BACKLOG.md #2, person-approved design:
+      minimap binning mode ("time" | "entries", default "time") switches the
+      minimap's bar layout between positioning by timestamp and positioning
+      by entry index among the root file's entries — visualization only,
+      every interaction routes through the now mode-aware minimapTsToX/
+      minimapXToTs/minimapBucketOf and needed no changes of its own. Covers
+      the Settings select's persistence/re-hydration, an irregular-gap
+      fixture (burst + long idle gap) proving entries mode is index- not
+      time-proportional both via the conversion functions and the actual
+      rendered SVG bar, and that click-to-jump/drag-select/hover-tooltip all
+      still resolve correctly with entries mode active.
+
+   Group 227 — this session, FEATURE_BACKLOG.md #79, scope narrowed by the
+      project owner from the raw backlog idea's own broader "make the whole
+      Context view window configurable" text down to a concrete unit toggle
+      on the EXISTING "Lines revealed per step" mechanism (GROUP 138/151):
+      contextExpandStepUnit ("entries" default | "time") switches whether a
+      Context-view expansion step (a "Show more" click, and the aroundJump
+      auto-expand window) is a fixed entry count or a fixed
+      contextExpandStepMs timespan; the "… N lines" filler stays an entry
+      count in both modes (person-requested — it reveals the whole
+      remaining stretch regardless of unit). Covers the Settings unit
+      select's row-visibility toggling and persistence/re-hydration in both
+      directions, the ms field's Dec/Inc/typed/clamp behavior, and — via a
+      71-entry fixture with a sparse stretch on one side of a jump target
+      and a dense one on the other (the SAME 500ms step reveals 1 entry on
+      the sparse side, 50 on the dense one) — buildContextView/addHidden's
+      time-mode step math (including the "reveal at least one entry" clamp
+      and a step correctly withheld when it would reveal everything left)
+      and applyContextJumpExpansion's time-mode aroundJump window, whose
+      contextAutoRanges take-back-the-previous-jump mechanism (GROUP 138o)
+      is shown to still leave a hand-revealed range in another gap alone.
    ============================================================ */
