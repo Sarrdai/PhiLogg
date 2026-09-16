@@ -26603,48 +26603,79 @@ await withApp(async (w) => {
 });
 
 await withApp(async (w) => {
-  section("230b. resolveIdeSourcePath: anchor-folder remap onto a local solution directory");
+  section("230b. resolveIdeSourcePath: pattern-based anchor remap, excluding the match itself");
 
-  // The exact scenario from the feature's own motivating example: logged on
-  // one machine under C:\git\myProject\..., checked out locally under
-  // D:\dev\myProject\Code\ (the folder holding myProject.sln) — "Projects"
-  // is the shared anchor.
+  // Corrected understanding of the feature's own motivating example
+  // (person-reported this session, via a real Visual Studio/Rider test):
+  // the anchor folder ("Projects") is the folder the solution/project sits
+  // DIRECTLY inside, not that folder's parent — so solutionDir itself ends
+  // in "...\Projects", and the relative part must NOT repeat it.
   const logged = "C:\\git\\myProject\\Code\\Projects\\MyCompany.Core\\Notification\\NotificationService.cs line 152";
-  const resolved = w.resolveIdeSourcePath(logged, "Projects", "D:\\dev\\myProject\\Code");
+  const solutionDir = "D:\\dev\\myProject\\Code\\Projects";
+  const resolved = w.resolveIdeSourcePath(logged, "Projects", solutionDir);
   assert(resolved.path === "D:\\dev\\myProject\\Code\\Projects\\MyCompany.Core\\Notification\\NotificationService.cs" && resolved.line === 152,
-    "resolves onto the local solution directory starting at the anchor folder, got " + JSON.stringify(resolved));
+    "resolves onto the local solution directory, joining only what comes AFTER the anchor match (not the match itself), got " + JSON.stringify(resolved));
+  assert(!resolved.path.includes("Projects\\Projects"), "sanity: the anchor segment is never duplicated in the resolved path");
 
-  const caseInsensitive = w.resolveIdeSourcePath(logged, "projects", "D:\\dev\\myProject\\Code");
-  assert(caseInsensitive.path === resolved.path, "the anchor-folder match is case-insensitive (\"projects\" still matches \"Projects\")");
+  const caseInsensitive = w.resolveIdeSourcePath(logged, "projects", solutionDir);
+  assert(caseInsensitive.path === resolved.path, "the anchor pattern match is case-insensitive (\"projects\" still matches \"Projects\")");
 
-  const missingAnchor = w.resolveIdeSourcePath(logged, "NoSuchFolder", "D:\\dev\\myProject\\Code");
-  assert(missingAnchor.error === "anchor-not-found", "an anchor folder absent from the path reports anchor-not-found, got " + JSON.stringify(missingAnchor));
+  const missingAnchor = w.resolveIdeSourcePath(logged, "NoSuchFolder", solutionDir);
+  assert(missingAnchor.error === "anchor-not-found", "an anchor pattern absent from the path reports anchor-not-found, got " + JSON.stringify(missingAnchor));
 
-  const noLine = w.resolveIdeSourcePath("C:\\git\\myProject\\Code\\Projects\\Foo.cs", "Projects", "D:\\dev\\myProject\\Code");
+  const noLine = w.resolveIdeSourcePath("C:\\git\\myProject\\Code\\Projects\\Foo.cs", "Projects", solutionDir);
   assert(noLine.error === "no-location", "a location with no line number reports no-location, got " + JSON.stringify(noLine));
 
-  // The anchor folder name appears twice — the LAST occurrence wins, so a
-  // repo whose own top-level folder happens to share the anchor's name
-  // doesn't shadow the real (deeper, closer to the file) one.
-  const twice = "C:\\git\\myProject\\Projects\\Code\\Projects\\MyCompany.Core\\Foo.cs line 3";
-  const resolvedTwice = w.resolveIdeSourcePath(twice, "Projects", "D:\\dev\\myProject\\Code");
-  assert(resolvedTwice.path === "D:\\dev\\myProject\\Code\\Projects\\MyCompany.Core\\Foo.cs",
-    "when the anchor name appears more than once, the LAST (deepest) occurrence is used, got " + resolvedTwice.path);
+  // The anchor's plain name occurs twice, and this time the LATER
+  // occurrence is a coincidental nested folder, not the real anchor — a
+  // bare, ambiguous pattern picks the wrong (deepest) one and loses
+  // "MyCompany.Core" from the relative path; a longer, multi-segment
+  // pattern (either slash style) disambiguates correctly. This is the
+  // concrete "Projects twice in the path" scenario the person raised.
+  const tricky = "C:\\git\\myProject\\Code\\Projects\\MyCompany.Core\\Projects\\Foo.cs line 3";
+  const bareAmbiguous = w.resolveIdeSourcePath(tricky, "Projects", solutionDir);
+  assert(bareAmbiguous.path === "D:\\dev\\myProject\\Code\\Projects\\Foo.cs",
+    "sanity: a bare, ambiguous anchor name resolves against the wrong (deepest, coincidental) occurrence here, got " + bareAmbiguous.path);
+  const disambiguated = w.resolveIdeSourcePath(tricky, "Code\\Projects", solutionDir);
+  assert(disambiguated.path === "D:\\dev\\myProject\\Code\\Projects\\MyCompany.Core\\Projects\\Foo.cs",
+    "a longer, multi-segment pattern matches only the real anchor and disambiguates correctly, got " + disambiguated.path);
+  const disambiguatedForwardSlash = w.resolveIdeSourcePath(tricky, "Code/Projects", solutionDir);
+  assert(disambiguatedForwardSlash.path === disambiguated.path,
+    "the pattern's own slash style doesn't matter — \"Code/Projects\" matches a backslash path the same way");
+
+  // '*' wildcard, same convention as compileGlob's file-pattern matching.
+  const wildcard = w.resolveIdeSourcePath(logged, "Pro*ts", solutionDir);
+  assert(wildcard.path === resolved.path, "a '*' wildcard inside the pattern matches like compileGlob's own '*' would, got " + wildcard.path);
 
   // solutionDir with a trailing separator doesn't produce a doubled one.
-  const trailingSlash = w.resolveIdeSourcePath(logged, "Projects", "D:\\dev\\myProject\\Code\\");
+  const trailingSlash = w.resolveIdeSourcePath(logged, "Projects", solutionDir + "\\");
   assert(trailingSlash.path === resolved.path, "a trailing separator on solutionDir doesn't double up in the joined path, got " + trailingSlash.path);
+
+  // The real-world report this fix is built on: Rider's case (solutionDir
+  // "", a plain project-relative path, no local join) must NOT include the
+  // anchor segment — confirmed against a real, working jetbrains:// link.
+  const riderLogged = "D:\\ThisUser\\dev\\myRepo\\Code\\Projects\\MyCompany.Controller.Scripting\\ScriptingService.cs line 1";
+  const riderResolved = w.resolveIdeSourcePath(riderLogged, "Projects", "");
+  assert(riderResolved.path === "MyCompany.Controller.Scripting\\ScriptingService.cs" && riderResolved.line === 1,
+    "Rider's project-relative path excludes the anchor segment itself, matching the confirmed-working real-world example, got " + JSON.stringify(riderResolved));
 });
 
 await withApp(async (w) => {
-  section("230c. buildRiderUri: jetbrains:// deep-link construction, with encoding");
+  section("230c. buildRiderUri: jetbrains:// deep-link construction, encoding, and the 0-based line number");
 
+  // Person-confirmed real-world bug: the protocol's own line number is
+  // 0-based (opening at the human-facing "line 1" landed on line 2), unlike
+  // parseIdeLocation's/Visual Studio's 1-based line — buildRiderUri is the
+  // one place that gets converted.
   const uri = w.buildRiderUri("myProject", "MyCompany.Core/Notification/NotificationService.cs", 152);
-  assert(uri === "jetbrains://rider/navigate/reference?project=myProject&path=MyCompany.Core%2FNotification%2FNotificationService.cs:152",
-    "builds the documented jetbrains://rider/navigate/reference URI, with the path URL-encoded, got " + uri);
+  assert(uri === "jetbrains://rider/navigate/reference?project=myProject&path=MyCompany.Core%2FNotification%2FNotificationService.cs:151",
+    "builds the documented jetbrains://rider/navigate/reference URI, with the path URL-encoded and the line converted to 0-based, got " + uri);
+
+  const lineOne = w.buildRiderUri("myProject", "Foo.cs", 1);
+  assert(lineOne.endsWith(":0"), "the exact reported bug: a human-facing \"line 1\" must produce the 0-based \":0\", not \":1\", got " + lineOne);
 
   const withSpaces = w.buildRiderUri("My Project", "src/Weird Name.cs", 1);
-  assert(withSpaces.includes("project=My%20Project") && withSpaces.includes("path=src%2FWeird%20Name.cs:1"),
+  assert(withSpaces.includes("project=My%20Project") && withSpaces.includes("path=src%2FWeird%20Name.cs:0"),
     "a project name or path containing spaces is percent-encoded, got " + withSpaces);
 });
 
@@ -30287,27 +30318,52 @@ process.exitCode = failed ? 1 : 0;
       colorbar and the max-value point's own fill switch together when the
       dropdown changes, while the colorbar's height itself stays unaffected
       by which colormap is picked.
-   Group 230 — this session (2026-09-16, person-requested discussion turned
-      into a plan then an implementation): IDE Integration — jump from a log
-      entry's Location straight into a running IDE. `parseIdeLocation`
-      (next to `formatLocation`) extracts the whole raw path + line number;
-      `resolveIdeSourcePath` remaps that path onto a local checkout by
-      anchoring on a shared, configurable folder name (e.g. "Projects") and
-      joining everything from there onward onto the connected IDE's
-      solution directory; `buildRiderUri` builds JetBrains' documented
-      jetbrains://rider/navigate/reference deep link. Only this pure,
-      DOM/IPC-free trio is covered here — the Visual Studio COM/PowerShell
-      side (`desktop/src-tauri/src/vs_integration.rs`, ROT enumeration +
-      `EnvDTE` automation), the Settings dialog's Connect/instance-picker
-      flow, and the context-menu items' live `window.philogg`-gated
-      visibility are Windows-desktop-only and unreachable under jsdom (see
-      "Known gaps" below). 230a covers parseIdeLocation's well-formed/
-      malformed/empty/null inputs and the "last ` line N` suffix wins" rule.
-      230b covers resolveIdeSourcePath's anchor-folder remap against the
-      feature's own motivating example (C:\git\myProject\Code\Projects\...
-      remapped onto D:\dev\myProject\Code), case-insensitive matching, a
-      missing anchor, a missing line number, the anchor name appearing
-      twice (last/deepest occurrence wins), and a trailing separator on the
-      solution directory not doubling up. 230c covers buildRiderUri's
-      percent-encoding of a project name/path containing spaces or slashes.
+   Group 230 — originating session (2026-09-16, person-requested discussion
+      turned into a plan then an implementation), rewritten in place a
+      session later the same day once the person's first real Visual
+      Studio/Rider test caught two bugs the original design got wrong:
+      IDE Integration — jump from a log entry's Location straight into a
+      running IDE. `parseIdeLocation` (next to `formatLocation`) extracts
+      the whole raw path + line number; `resolveIdeSourcePath` remaps that
+      path onto a local checkout by anchoring on a shared, configurable
+      **pattern** (same `*`/`?` convention as `compileGlob`'s file-pattern
+      matching, e.g. "Code\Projects") and joining everything AFTER that
+      match — never including it — onto the connected IDE's own project
+      directory; `buildRiderUri` builds JetBrains' documented
+      jetbrains://rider/navigate/reference deep link, converting the
+      human-facing 1-based line number to the protocol's own 0-based one.
+      Only this pure, DOM/IPC-free trio is covered here — the Visual Studio
+      COM/PowerShell side (`desktop/src-tauri/src/vs_integration.rs`, ROT
+      enumeration + `EnvDTE` automation), the Settings dialog's
+      Connect/instance-picker flow, and the context-menu items' live
+      `window.philogg`-gated visibility are Windows-desktop-only and
+      unreachable under jsdom (see "Known gaps" below).
+      **What the real-machine test caught**: (1) the original design
+      assumed the anchor folder was the solution directory's PARENT and
+      kept the anchor itself in the relative path — correct for Visual
+      Studio's join only by coincidence (same total string either way when
+      the anchor occurs exactly once), but wrong for Rider, whose confirmed
+      working link excluded the anchor segment entirely, and a real
+      duplicate-anchor bug for Visual Studio the original tests never
+      caught since VS's own Connect flow hadn't been reachable yet on a
+      real machine. (2) the anchor was matched as an exact, whole-segment
+      name with "last occurrence wins" — no way to disambiguate when that
+      name occurs twice for unrelated reasons, which the person explicitly
+      asked to fix with "an actual pattern like used in other places of the
+      app" (i.e. `compileGlob`'s own convention). 230a covers
+      `parseIdeLocation`'s well-formed/malformed/empty/null inputs and the
+      "last ` line N` suffix wins" rule (unchanged by this rework). 230b
+      covers `resolveIdeSourcePath`'s corrected anchor-pattern remap: the
+      feature's own motivating example with the fixed understanding
+      (solutionDir already ending in `...\Projects`), a sanity check the
+      anchor segment is never duplicated, case-insensitive matching, a
+      missing anchor, a missing line number, a "tricky" fixture where a
+      bare anchor name picks the WRONG (coincidental, deeper) occurrence and
+      a longer multi-segment pattern (either slash style) disambiguates
+      correctly, a `*` wildcard, a trailing separator on the solution
+      directory, and the exact real-world Rider case this rework is built
+      on (`ScriptingService.cs`) confirming the excluded-anchor path. 230c
+      covers `buildRiderUri`'s percent-encoding of a project name/path
+      containing spaces or slashes, and the person-confirmed 0-based line
+      conversion ("line 1" must produce `:0`, not `:1`).
    ============================================================ */
