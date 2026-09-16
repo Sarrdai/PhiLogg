@@ -199,12 +199,31 @@ shape:
   Fixed by making `#breadcrumb .crumb`'s margin **symmetric** (`2px` top/
   bottom, small enough that the row still shrinks — `min-height:40px`, down
   from the old `44px` — rather than growing) and re-deriving
-  `#breadcrumb .crumb-sep`'s top margin (`8px`→`10px`) to keep its glyph
-  centered against the chip's now-`2px`-margin-top box. Both overrides are
-  scoped to `#breadcrumb` (not the base `.crumb`/`.crumb-sep` rules) since
-  those classes are reused elsewhere (`.filter-target-chain` in the filter
-  popup, `#extractFilterChain`) with their own layout and aren't part of this
-  fix.
+  `#breadcrumb .crumb-sep`'s own margin to re-center it against the chip's
+  now-`2px`-margin-top box. Both overrides are scoped to `#breadcrumb` (not
+  the base `.crumb`/`.crumb-sep` rules) since those classes are reused
+  elsewhere (`#filterTargetChain` in the filter popup) with their own layout
+  and aren't part of this fix.
+  `.crumb-sep` itself (2026-09-16, person-reported: the bare "›" glyph read
+  as small/lost/unaligned against `.crumb`'s bigger pills) is now a fixed
+  18x18 bordered circle (`--bg-elevated-2` fill, `--border-soft` border,
+  `--accent-strong` icon color) instead of plain inline text sized off
+  `--text-tertiary`/an 11px font — a distinct connector element between two
+  pills rather than a stray character in the gap. Its own margin-top just
+  re-centers that fixed-size circle on wherever the flanking pill's center
+  sits in each context (`5px` base / `7px` inside `#breadcrumb`), no longer
+  tied to re-deriving a line-height-based glyph offset every time the pill's
+  own margin changes. **Follow-up, same session (person-reported: the glyph
+  still looked off-center once inside the circle)**: a text character's own
+  advance-width box centers fine via flex, but a glyph's visible INK doesn't
+  necessarily sit centered within that box — an ordinary font right-side-
+  bearing quirk that varies by font/OS and no container-level CSS can
+  correct. `renderBreadcrumb`/`renderFilterTargetChain` now fill the chip
+  with `ICON_CARET_RIGHT` (`.innerHTML`, not `.textContent`) — the same
+  hand-drawn SVG caret already used by the Context view's match nav,
+  authored symmetric inside its own viewBox and therefore centered by
+  construction regardless of font; `color` still drives it via the icon's
+  own `stroke="currentColor"`.
 - **`#viewBar`, the "Filter-Toolbar"** (Zeile 2) — everything floats left
   in DOM order (`#viewBar` is `display:flow-root`), except the management
   group which floats right. Order (updated in the UI-overhaul session,
