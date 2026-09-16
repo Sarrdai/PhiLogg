@@ -14051,7 +14051,7 @@ function defaultPlotConfig() {
   // Y series and so truncate yCols down to it, see the plot-type-btn click
   // handler below — doesn't lose the rest of it; switching back to Line/Bar
   // restores yCols from here instead of staying stuck on the single column.
-  return { type: "line", xCol: null, yCols: [], yColsMulti: [], zCol: null, colorCol: null, xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
+  return { type: "line", xCol: null, yCols: [], yColsMulti: [], zCol: null, colorCol: null, colorMap: "default", xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: false, axisEqual3d: "off", yColsInit: false };
 }
 const PLOT_CHART_TYPES = new Set(["line", "bar", "scatter", "3d"]);
 const PLOT_AXIS_EQUAL_3D_MODES = new Set(["off", "all", "xy", "xz", "yz"]);
@@ -14070,6 +14070,7 @@ function sanitizePlotConfig(raw) {
   if (Array.isArray(raw.yColsMulti)) cfg.yColsMulti = raw.yColsMulti.filter(Number.isInteger);
   if (raw.zCol === null || Number.isInteger(raw.zCol)) cfg.zCol = raw.zCol;
   if (raw.colorCol === null || Number.isInteger(raw.colorCol)) cfg.colorCol = raw.colorCol;
+  if (Object.prototype.hasOwnProperty.call(PLOT_COLOR_MAPS, raw.colorMap)) cfg.colorMap = raw.colorMap;
   ["xMin", "xMax", "yMin", "yMax", "zMin", "zMax"].forEach(k => { if (typeof raw[k] === "string") cfg[k] = raw[k]; });
   if (typeof raw.normalize === "boolean") cfg.normalize = raw.normalize;
   if (typeof raw.axisEqual === "boolean") cfg.axisEqual = raw.axisEqual;
@@ -14201,13 +14202,28 @@ function parseValueForPlot(raw, type) {
 }
 function isPlottableType(type) { return type === "float" || type === "int" || type === "hex" || type === "time"; }
 
-// --- Color scale for the optional 3rd ("color by value") scatter dimension ---
-const PLOT_COLOR_STOPS = [[59, 130, 196], [240, 196, 25], [224, 72, 62]]; // blue -> yellow -> red
-function plotColorScale(t) {
+// --- Color scale for the optional 3rd ("color by value") scatter/3D dimension ---
+// PLOT_COLOR_MAP_DEFAULT stays the pre-existing blue->yellow->red scale (the
+// only one before colormap selection was added), so any plotConfig saved
+// before this feature — no colorMap field at all — keeps rendering exactly
+// as before via sanitizePlotConfig's default.
+const PLOT_COLOR_MAPS = {
+  default: { label: "Blue – Yellow – Red (default)", stops: [[59, 130, 196], [240, 196, 25], [224, 72, 62]] },
+  viridis: { label: "Viridis", stops: [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]] },
+  plasma: { label: "Plasma", stops: [[13, 8, 135], [126, 3, 168], [204, 71, 120], [248, 149, 64], [240, 249, 33]] },
+  coolwarm: { label: "Cool – Warm", stops: [[59, 76, 192], [221, 221, 221], [180, 4, 38]] },
+  grayscale: { label: "Grayscale", stops: [[25, 25, 25], [235, 235, 235]] },
+  turbo: { label: "Turbo", stops: [[48, 18, 59], [70, 107, 227], [41, 187, 177], [159, 222, 44], [251, 180, 26], [122, 4, 3]] },
+};
+const PLOT_COLOR_MAP_DEFAULT = "default";
+function plotColorScale(t, mapId) {
+  const stops = (PLOT_COLOR_MAPS[mapId] || PLOT_COLOR_MAPS[PLOT_COLOR_MAP_DEFAULT]).stops;
   t = Math.max(0, Math.min(1, t));
-  const seg = t < 0.5 ? 0 : 1;
-  const localT = t < 0.5 ? t / 0.5 : (t - 0.5) / 0.5;
-  const c0 = PLOT_COLOR_STOPS[seg], c1 = PLOT_COLOR_STOPS[seg + 1];
+  const segCount = stops.length - 1;
+  const scaled = t * segCount;
+  const seg = Math.min(segCount - 1, Math.floor(scaled));
+  const localT = scaled - seg;
+  const c0 = stops[seg], c1 = stops[seg + 1];
   const r = Math.round(c0[0] + (c1[0] - c0[0]) * localT);
   const g = Math.round(c0[1] + (c1[1] - c0[1]) * localT);
   const b = Math.round(c0[2] + (c1[2] - c0[2]) * localT);
@@ -14776,6 +14792,16 @@ function renderPlotControls() {
   plotConfig.yCols = plotConfig.yCols.filter(i => plottable.some(c => c.index === i));
 
   const colOptions = plottable.map(c => '<option value="' + c.index + '">' + escapeHtml(c.name) + " (" + c.type + ")</option>").join("");
+  // Colormap picker for the "color by value" dimension — shared markup for
+  // both scatter and 3D, since both read plotConfig.colorMap through the
+  // same plotColorScale() (see renderPlotChart/renderPlot3D). Only
+  // meaningful once a color-by column is actually picked (person-requested,
+  // 2026-09-16: shown only when "Color by" isn't "None"), so it's built as
+  // an empty string otherwise rather than an always-present field.
+  const colorMapField = plotConfig.colorCol == null ? "" :
+    '<div class="plot-field"><label>Colormap</label><select id="plotColorMapSelect">' +
+    Object.keys(PLOT_COLOR_MAPS).map(id => '<option value="' + id + '"' + (plotConfig.colorMap === id ? " selected" : "") + '>' + escapeHtml(PLOT_COLOR_MAPS[id].label) + "</option>").join("") +
+    '</select></div>';
 
   let html = '<div class="plot-field"><label>Chart type</label><div class="plot-type-row" id="plotTypeRow">';
   html += ['line', 'bar', 'scatter', '3d'].map(t =>
@@ -14789,6 +14815,7 @@ function renderPlotControls() {
     html += '<div class="plot-field"><label>Y axis</label><select id="plotYSelectSingle">' + colOptions + '</select></div>';
     html += '<div class="plot-field"><label>Z axis</label><select id="plotZSelect">' + colOptions + '</select></div>';
     html += '<div class="plot-field"><label>Color by (optional)</label><select id="plotColorSelect"><option value="">None</option>' + colOptions + '</select></div>';
+    html += colorMapField;
     html += '<div class="plot-field"><label>Equal axis scale</label><select id="plotAxisEqual3d">' +
       '<option value="off"' + (plotConfig.axisEqual3d === "off" ? " selected" : "") + '>Off (each axis auto)</option>' +
       '<option value="all"' + (plotConfig.axisEqual3d === "all" ? " selected" : "") + '>All equal (X=Y=Z)</option>' +
@@ -14818,6 +14845,7 @@ function renderPlotControls() {
   if (plotConfig.type === "scatter") {
     html += '<div class="plot-field"><label>Y axis</label><select id="plotYSelectSingle">' + colOptions + '</select></div>';
     html += '<div class="plot-field"><label>Color by (optional)</label><select id="plotColorSelect"><option value="">None</option>' + colOptions + '</select></div>';
+    html += colorMapField;
   } else if (plotConfig.type !== "3d") {
     html += '<div class="plot-field"><label>Y axis (select one or more)</label><div class="plot-y-list" id="plotYList">' +
       plottable.filter(c => c.index !== plotConfig.xCol).map((c, i) =>
@@ -14893,7 +14921,11 @@ function renderPlotControls() {
     el("#plotYSelectSingle").value = plotConfig.yCols[0];
     el("#plotYSelectSingle").addEventListener("change", ev => { plotConfig.yCols = [+ev.target.value]; plotZoom = null; renderPlotChart(); });
     el("#plotColorSelect").value = plotConfig.colorCol == null ? "" : plotConfig.colorCol;
-    el("#plotColorSelect").addEventListener("change", ev => { plotConfig.colorCol = ev.target.value === "" ? null : +ev.target.value; renderPlotChart(); });
+    el("#plotColorSelect").addEventListener("change", ev => { plotConfig.colorCol = ev.target.value === "" ? null : +ev.target.value; renderPlotControls(); renderPlotChart(); });
+    if (plotConfig.colorCol != null) {
+      el("#plotColorMapSelect").value = plotConfig.colorMap;
+      el("#plotColorMapSelect").addEventListener("change", ev => { plotConfig.colorMap = ev.target.value; renderPlotChart(); });
+    }
   }
   if (plotConfig.type === "3d") {
     el("#plotZSelect").value = plotConfig.zCol;
@@ -14949,7 +14981,7 @@ const PLOT_MARGIN = { left: 72, right: 20, top: 16, bottom: 52 };
 // the person actually starts zooming or panning.
 const PLOT_ZOOM_OUT_BUFFER = 0.08;
 // Matches --level-error. Kept as a literal rather than var(--level-error)
-// since every other plot color (COLUMN_PALETTE, PLOT_COLOR_STOPS) is already
+// since every other plot color (COLUMN_PALETTE, PLOT_COLOR_MAPS) is already
 // a plain JS constant, not a CSS custom property — plot marks are built as
 // raw SVG attribute strings, so this stays consistent with that.
 const PLOT_ASSERT_COLOR = "#f16565";
@@ -15259,7 +15291,7 @@ function renderPlotChart() {
     }
     s.pts.forEach(p => {
       const px = xPix(p.x), py = yPix(p.y);
-      const fill = hasColorScale && p.colorVal != null ? plotColorScale((p.colorVal - scatterColorMin) / ((scatterColorMax - scatterColorMin) || 1)) : s.color;
+      const fill = hasColorScale && p.colorVal != null ? plotColorScale((p.colorVal - scatterColorMin) / ((scatterColorMax - scatterColorMin) || 1), plotConfig.colorMap) : s.color;
       parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="4" fill="' + fill + '" fill-opacity="0.85"/>');
       if (p.violated) parts.push('<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="6.5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
       plotHoverPoints.push({ kind: "point", px, py, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: s.col, colorCol: hasColorScale ? plotConfig.colorCol : null, seriesName: s.name, seriesColor: fill });
@@ -15273,7 +15305,7 @@ function renderPlotChart() {
     for (let i = 0; i < stops; i++) {
       const t0 = i / stops, t1 = (i + 1) / stops;
       const yTop = legendTop + legendH * (1 - t1), yBot = legendTop + legendH * (1 - t0);
-      parts.push('<rect x="' + legendX + '" y="' + yTop.toFixed(1) + '" width="12" height="' + (yBot - yTop + 0.5).toFixed(1) + '" fill="' + plotColorScale((t0 + t1) / 2) + '"/>');
+      parts.push('<rect x="' + legendX + '" y="' + yTop.toFixed(1) + '" width="12" height="' + (yBot - yTop + 0.5).toFixed(1) + '" fill="' + plotColorScale((t0 + t1) / 2, plotConfig.colorMap) + '"/>');
     }
     parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + 4) + '">' + formatAxisNumber(scatterColorMax) + "</text>");
     parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH) + '">' + formatAxisNumber(scatterColorMin) + "</text>");
@@ -15484,7 +15516,7 @@ function renderPlot3D() {
   projected.forEach(p => {
     let color;
     if (p.violated) color = PLOT_ASSERT_COLOR;
-    else if (hasColorScale && p.colorVal != null) color = plotColorScale(colorHi > colorLo ? (p.colorVal - colorLo) / (colorHi - colorLo) : 0.5);
+    else if (hasColorScale && p.colorVal != null) color = plotColorScale(colorHi > colorLo ? (p.colorVal - colorLo) / (colorHi - colorLo) : 0.5, plotConfig.colorMap);
     else color = accentColor;
     ctx.fillStyle = color;
     ctx.beginPath();
@@ -15494,11 +15526,18 @@ function renderPlot3D() {
     hoverPts.push({ px: p.sx, py: p.sy, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: plotConfig.yCols[0], zCol: plotConfig.zCol, colorCol: plotConfig.colorCol, seriesName: yCol.name });
   });
 
-  // Color-scale legend, same gradient strip as 2D scatter's.
+  // Color-scale legend, same gradient strip as 2D scatter's — sized to span
+  // the full chart height (minus the same 16px top/bottom margin) instead of
+  // capping out at 140px, so 3D's colorbar matches 2D's full-height one
+  // (person-requested, 2026-09-16).
   if (hasColorScale && colorVals.length) {
-    const legendX = cssW - 70, legendTop = 16, legendH = Math.min(140, cssH - 32);
+    const legendX = cssW - 70, legendTop = 16, legendH = Math.max(20, cssH - 32);
     const grad = ctx.createLinearGradient(0, legendTop, 0, legendTop + legendH);
-    grad.addColorStop(0, plotColorScale(1)); grad.addColorStop(0.5, plotColorScale(0.5)); grad.addColorStop(1, plotColorScale(0));
+    // More stops than 2D's 3 (0/0.5/1) since a colormap can have more than
+    // three stops of its own (e.g. viridis/turbo) — 10 keeps the canvas
+    // gradient a faithful read of plotColorScale's actual curve.
+    const gradSteps = 10;
+    for (let i = 0; i <= gradSteps; i++) grad.addColorStop(i / gradSteps, plotColorScale(1 - i / gradSteps, plotConfig.colorMap));
     ctx.fillStyle = grad;
     ctx.fillRect(legendX, legendTop, 14, legendH);
     ctx.strokeStyle = axisColor;
