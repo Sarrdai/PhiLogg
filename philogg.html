@@ -26285,8 +26285,12 @@ treeCtxInfoMenu.addEventListener("click", ev => ev.stopPropagation());
    re-checked for the other), not once per hover or per occurrence (the
    same path routinely repeats across many rows in one file). Only a path
    that resolves true gets .fp-verified (the full link look) and offers
-   "Open file"/"Open containing folder" on hover (openPath/revealPath —
-   revealPath already exists for FEATURE_BACKLOG #52).
+   "Open here"/"Open file"/"Open containing folder" on hover (openLocalPath/openPath/
+   revealPath — revealPath already exists for FEATURE_BACKLOG #52). "Open here" only
+   shows for a path whose extension PhiLogg itself can load (isCompatibleFolderFile,
+   the same "supported log format" check folder watch and ZIP entries already use) and
+   feeds it straight into loadDesktopLocalFiles — the exact route drag-drop/folder-watch
+   already use, just entered from a log line instead of a filesystem listing.
    Originally this verification ran on hover itself (debounced); switched to
    eager per-render verification after a person report ("hovered for a
    while, nothing happened") that traced back to two compounding gaps: a
@@ -26307,7 +26311,11 @@ const fpPathPending = new Set(); // paths with a pathExists() call in flight
 function closeFpPathMenu() { fpPathMenu.classList.add("hidden"); }
 
 function openFpPathMenu(anchorEl, path) {
+  const openHere = isCompatibleFolderFile(path)
+    ? '<div class="ctx-item" data-fp-action="open-here">Open here</div>'
+    : "";
   fpPathMenu.innerHTML =
+    openHere +
     '<div class="ctx-item" data-fp-action="open">Open file</div>' +
     '<div class="ctx-item" data-fp-action="reveal">Open containing folder</div>';
   fpPathMenu.dataset.fp = path;
@@ -26394,8 +26402,25 @@ fpPathMenu.addEventListener("click", ev => {
   const path = fpPathMenu.dataset.fp;
   if (item.dataset.fpAction === "open") window.philogg.openPath(path);
   else if (item.dataset.fpAction === "reveal") window.philogg.revealPath(path);
+  else if (item.dataset.fpAction === "open-here") openFpPathHere(path);
   closeFpPathMenu();
 });
+
+// "Open here": loads a detected path straight into PhiLogg itself instead of
+// handing it to the OS. openLocalPath (commands.rs) registers the path the
+// same way pickFiles/listFolder already do, handing back the philogg://local/…
+// URL loadDesktopLocalFiles needs; only reached for a path openFpPathMenu
+// already gated on isCompatibleFolderFile, but the file can still have been
+// deleted/moved since path_exists last checked it, hence the catch.
+async function openFpPathHere(path) {
+  if (!window.philogg || typeof window.philogg.openLocalPath !== "function") return;
+  try {
+    const file = await window.philogg.openLocalPath(path);
+    await loadDesktopLocalFiles({ files: [file] });
+  } catch {
+    showCopyToast('Couldn\'t open "' + path + '"');
+  }
+}
 
 // Figures out which bulk actions the current multi-selection supports.
 // Shared by the right-click context menu and the always-visible action bar

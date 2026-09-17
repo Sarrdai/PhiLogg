@@ -312,6 +312,23 @@ pub fn open_path(app: AppHandle, path: String) -> Result<(), String> {
     app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Clickable-local-path feature's "Open here" action: registers a path the
+/// page found in a log line the same way `pick_files`/`list_folder` register
+/// theirs, so the page can load it straight into the tree (via its own
+/// `loadDesktopLocalFiles`) instead of handing it to the OS opener. Only
+/// offered for a path `philogg.html` already considers a loadable log format
+/// (`isCompatibleFolderFile`), but `path_exists` may be stale by the time this
+/// runs, so it's re-checked here rather than trusted.
+#[tauri::command]
+pub fn open_local_path(app: AppHandle, path: String) -> Result<LocalFile, String> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.is_file() {
+        return Err(format!("\"{}\" no longer exists", path));
+    }
+    let state = app.state::<AppState>();
+    Ok(LocalFile::register(&state, &p))
+}
+
 #[tauri::command]
 pub fn list_system_fonts(state: State<'_, AppState>) -> Vec<String> {
     let mut cache = state.fonts.lock().expect("fonts poisoned");

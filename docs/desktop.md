@@ -534,8 +534,21 @@ full link look. Hovering a verified span in either view now just opens the popup
 (`#fpPathMenu`, same shape/CSS as `#addToSelectionMenu`/`#treeCtxInfoMenu` above) straight
 from the cache, no IPC call — the mouseover/mouseout handling is two shared functions
 (`onFpRowsMouseover`/`onFpRowsMouseout`) attached to both `tableRows` and `highlightRows`,
-offering two actions:
+offering up to three actions:
 
+- **Open here** (this session, person-requested) — shown FIRST, but only when the path's
+  extension is one PhiLogg itself can load (`isCompatibleFolderFile`, the same "supported
+  log format" check folder watch and ZIP entries already use — currently `.log` only).
+  `openFpPathHere` calls the new `philogg.openLocalPath(path)` bridge method into the new
+  `open_local_path` command (`commands.rs`), which re-checks the path still exists (it may
+  have moved or been deleted since `path_exists` last checked it — a stale popup is still
+  clickable) and registers it exactly like `pick_files`/`list_folder` already do, returning
+  the same `LocalFile` shape (`url`/`path`/`name`/`mtime`). The result is fed straight into
+  the page's own `loadDesktopLocalFiles` — the exact route drag-drop/pickFiles/folder-watch
+  already use to get a wrapper-known path into the tree — so the file loads with the usual
+  queued placeholder, tailing, and "Open File Location"/"Copy Path" treatment, no new
+  ingestion path needed. A rejected `openLocalPath()` (the re-check failing) surfaces a
+  toast naming the path instead of throwing or leaving anything stuck.
 - **Open file** — `philogg.openPath` → new `open_path` command, `app.opener().open_path(…)`
   (same `tauri_plugin_opener::OpenerExt` the reveal commands already use).
 - **Open containing folder** — `philogg.revealPath`, the same command "Open File Location"
