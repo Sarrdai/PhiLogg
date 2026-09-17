@@ -172,6 +172,14 @@ throwaway test from scratch. When a session adds a feature:
   a few other groups also touch via assertion checks. Still not covered:
   pure visual/paint correctness (jsdom has no real layout or rendering
   engine, same blind spot as everywhere else in this suite).
+- IDE Integration (Group 230) covers only the pure path-remap functions
+  (`parseIdeLocation`, `resolveIdeSourcePath`, `buildRiderUri`). The Visual
+  Studio side is Windows-desktop-only (COM automation via the Running Object
+  Table, shelled out from `desktop/src-tauri/src/vs_integration.rs`) — the
+  instance enumeration, the Settings dialog's Connect/instance-picker flow,
+  actually opening a file in a running Visual Studio, and the context-menu
+  items' live `window.philogg.isWindows`-gated visibility all need manual
+  verification on a real Windows machine. Covered by code review instead.
 - The `location.protocol === "file:"` guard in `loadFromUrlParam` (Group 66)
   isn't exercised: jsdom treats every `file:` URL as an opaque origin and
   throws on ANY `localStorage` access — which the app's own boot sequence

@@ -183,6 +183,14 @@ open it in a browser to view it.
   via the picker, drag-drop, folder watch or a `.log` file association,
   because it is the thing that opens them. A plain `http(s)` deep-linked
   file offers "Copy URL" instead, since there's no local folder to reveal.
+- **Jump from a log entry into a running IDE** (Settings → IDE Integration,
+  desktop app on Windows only) — a log entry's Location column carries a
+  file path + line number; configure a shared "anchor folder" name your
+  logged and local checkouts have in common (e.g. `Projects`), then
+  right-click a row for "Open in Visual Studio" (after connecting to one of
+  your currently running instances — the Settings dialog shows which
+  solution each has open) or "Open in Rider" (via a `jetbrains://` deep
+  link — no connection step, Rider resolves the right window itself).
 - **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with drag-to-select.**
 - **Per-file clock offset** — a file's tree context menu ("Adjust clock…")
   applies a manual clock correction to one file's timestamps, for when one

@@ -5,8 +5,9 @@ The optional desktop wrapper around the **unmodified** `philogg.html`, in
 Rust backend (Tauri v2). It adds `.log` file associations, CLI-argument/double-click
 file opening, a frameless window with integrated window controls, a tray, a splash
 screen, `settings.json` mirroring, "Open File Location"/"Copy Path", a system font
-list for the UI font picker, and a folder watch that does not go through the
-browser's File System Access API.
+list for the UI font picker, a folder watch that does not go through the
+browser's File System Access API, and (Windows only) jumping from a log
+entry's Location straight into a running Visual Studio instance.
 
 `desktop/README.md` has the build/run steps, the prerequisites, and the
 current run status — this file covers the internal mechanism only.
@@ -35,6 +36,7 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 | `inject.rs` + `inject.js` | the injected script itself |
 | `state.rs` | the `localFiles` map, quit/close/PiP flags, caches |
 | `fonts.rs` | system font enumeration |
+| `vs_integration.rs` | Visual Studio COM automation (Running Object Table) |
 
 ## The `philogg://` scheme, and why there is a `fetch` shim
 
@@ -590,6 +592,153 @@ options-array entry per font. UI font drives `--font-ui`, Log font drives its ow
 `--font-log` (see `docs/ui-and-views.md` "Theming") — the plain HTML build (no
 `window.philogg`) is completely unaffected, same curated-list-only behavior as before for
 both.
+
+## IDE Integration: jump from a log entry into a running Visual Studio (Windows only), Rider fast-follow
+
+`philogg.html`'s Location/Method columns already carry a parsed file path +
+line number (`formatLocation`/`parseIdeLocation`), but the log's path is
+almost never the path on the machine reading it later (different drive,
+worktree, clone location). The Settings → IDE Integration section lets a
+person configure a shared **anchor pattern** (e.g. `Code\Projects`) both
+paths are assumed to have in common; `compileIdeAnchorPattern` compiles it
+using the exact same `*`/`?` convention `compileGlob` already uses for
+folder-watch's file-to-format matching (`*` = any run of characters, `?` =
+any one character, everything else literal, `\`/`/` matching either
+separator) — reused rather than inventing new syntax — but matched as a
+substring anywhere in the path rather than anchored to a whole filename.
+`resolveIdeSourcePath` finds the LAST (rightmost) match and joins
+everything AFTER it onto the target IDE's own project directory — the
+matched text itself is never part of the relative part, since that
+directory already IS the local anchor (a solution file sitting directly
+inside the folder the pattern matches, for instance). A multi-segment
+pattern lets a person disambiguate when the anchor's own plain name occurs
+more than once in the path — a single, bare folder name always resolves to
+its LAST occurrence, which is wrong exactly when an earlier, unrelated
+folder happens to share that name. Both halves of the feature share this
+one remap function — only how the target directory/instance is obtained
+differs.
+
+**Visual Studio** needs a real connection because there's no way to address
+"whichever VS window has this file open" without first knowing which running
+instance to ask. `vs_integration.rs` shells out to a small embedded
+PowerShell script (`list_instances`) that P/Invokes `ole32.dll`'s
+`GetRunningObjectTable`/`CreateBindCtx` and walks the Running Object Table,
+filtering monikers starting with `!VisualStudio.DTE.` (every running
+`devenv.exe` registers one) — but the walk itself
+(`IRunningObjectTable.EnumRunning`/`IEnumMoniker.Next`/`IMoniker.
+GetDisplayName`) happens inside an embedded, compile-time-typed **C# class**
+(`Add-Type -TypeDefinition`, the standard way to reach a Win32 API from
+PowerShell — there's no cmdlet for this), not in PowerShell script text.
+That split is load-bearing, not stylistic, and was arrived at by hitting
+both of the alternatives' real failure modes on an actual machine:
+- PowerShell's own dynamic (`$obj.Method()`) dispatch on a COM object only
+  works for Automation/`IDispatch`-compatible interfaces, and
+  `IRunningObjectTable`/`IBindCtx`/`IEnumMoniker`/`IMoniker` are plain
+  vtable-only interfaces with none — calling `$rot.EnumRunning()` directly
+  from PowerShell failed with exactly "[System.__ComObject] does not
+  contain a method named 'EnumRunning'".
+- Once a moniker string is in hand, `[Marshal]::BindToMoniker(name)` *can*
+  be called from PowerShell (it's a plain static method on an ordinary .NET
+  class, not a COM call) — but it re-parses the string via
+  `MkParseDisplayName`, and a bare item-moniker fragment like
+  `!VisualStudio.DTE.17.0:1234` isn't something that parser grammar
+  understands standalone: it failed with `MK_E_SYNTAX`.
+
+So the whole walk, **including retrieving each instance's live object**,
+happens in C#: `ListVsInstances()` enumerates the ROT, and for each matched
+moniker calls `IRunningObjectTable.GetObject(moniker)` directly on the
+*already-enumerated* `IMoniker` (no re-parse needed at all), bundling the
+moniker string and the resulting `object` (the `EnvDTE.DTE` instance) into
+a plain `PhiloggVsHandle { Moniker, Dte }` carrier. PowerShell then reads
+`.Dte.Solution.FullName`/`.Dte.MainWindow.Caption` directly — ordinary
+late-bound property access, which works fine because `EnvDTE.DTE` itself
+*is* Automation/`IDispatch`-compatible by design (the whole point of the DTE
+object model is cross-language scripting access); only the ROT interfaces
+themselves were ever the problem. The Settings dialog's "Connect…" button
+calls this, lists each instance's open solution, and the chosen one's
+moniker + solution directory are kept in a **session-only** JS variable
+(`ideVsConnection`) — never persisted, since a PID/ROT moniker from a past
+run is meaningless after either process restarts. "Open in Visual Studio"
+(context menu, shown whenever `resolveIdeSourcePath` resolves against the
+connected instance's solution directory) shells a second script
+(`open_file`) with its own small embedded C# class — a fresh process, so
+nothing from a prior `list_instances` call carries over — that re-walks the
+ROT the same way, matches the *given* moniker string by display name, and
+returns that one instance's `EnvDTE.DTE` via the same `GetObject` call,
+before PowerShell drives `ItemOperations.OpenFile` + `Selection.GotoLine` +
+`MainWindow.Activate()` on it. Both scripts are fixed constants sent via
+`-EncodedCommand` (base64 of their UTF-16LE bytes, hand-rolled — one
+dependency-free function, the same "don't pull in a crate to re-derive a
+few lines" call `fonts.rs` already makes about font enumeration) purely to
+sidestep Windows command-line quoting for a script this shape (embedded C#,
+here-strings); the actual variable, log-derived input (moniker/path/line)
+travels separately through `PHILOGG_VS_*` environment variables on the
+spawned process, never interpolated into the script text.
+`Command::creation_flags(CREATE_NO_WINDOW)` keeps every call from flashing a
+console window, since — unlike the once-per-run, cached font enumeration —
+this runs on every click.
+
+Both scripts wrap their whole body in one top-level `try`/`catch`
+(`[Console]::Error.WriteLine($_.Exception.Message)` + `exit 1` on any
+failure, including a non-zero HRESULT from either `ole32.dll` call, checked
+explicitly rather than continuing with `$null`), instead of letting an
+unhandled COM/.NET exception produce an opaque result — `list_instances`
+carries that message back to the page as `VsListResult { instances, error }`
+(not a bare `Vec`), so the Settings dialog can show *why* zero instances
+came back instead of a generic "none found" that used to be
+indistinguishable from a genuine script failure.
+
+Known, accepted limitation: `MainWindow.Activate()` from another process is
+subject to Windows' own foreground-window-stealing rules. It reliably moves
+the caret/active tab inside Visual Studio; whether the window itself jumps
+to the front or just flashes its taskbar icon depends on the OS's current
+focus-stealing state, and there is no legitimate workaround for that short
+of an admin-level trick this wrapper doesn't attempt.
+
+**Rider** needs none of this: JetBrains IDEs since 2020 or so resolve
+`jetbrains://<product>/navigate/reference?project=...&path=...:<line>` deep
+links themselves, focusing whichever running instance has the named project
+open (or launching one). `buildRiderUri` (`philogg.html`, next to the
+context-menu wiring) builds that URI from the same `resolveIdeSourcePath`
+result and hands it to the existing `window.philogg.openPath` bridge method
+— the same one the clickable-local-path feature already uses to open a
+plain file — which resolves an arbitrary registered URI scheme through the
+OS the same way a browser or `Win+R` would, no new Rust command needed.
+Settings → IDE Integration's "Rider" group is just an enable toggle + the
+project name the link's `project=` parameter needs (not derivable from
+anything else PhiLogg knows) — no connection step, no instance picker: the
+IDE resolves that itself.
+
+The `path=file:LINE` segment's line number is **0-based** (person-confirmed:
+opening at "line 1" landed on line 2) — unlike `parseIdeLocation`'s own
+1-based line, and unlike Visual Studio's `Selection.GotoLine`, which is also
+1-based. `buildRiderUri` is the one place that difference is handled
+(`Math.max(0, line - 1)`), so every caller still deals in the same
+human-facing, 1-based line number the log itself reports.
+
+**Prerequisite PhiLogg can't do anything about**: the `jetbrains://` scheme
+has to actually be registered as a URI protocol handler in Windows for
+`openPath` to resolve it to anything. That registration is owned by
+JetBrains Toolbox App (its `jetbrainsd` background service, as of Toolbox
+App 3.3) — a Rider installed standalone, without Toolbox, may have no
+handler registered at all, in which case the OS silently has nothing to do
+with the link (no error PhiLogg's own code could surface — `openPath`'s
+promise resolves either way, since as far as it's concerned it successfully
+asked the OS to open something). The fastest way to tell which side a
+failure is on: Win+R → paste a `jetbrains://...` URI directly. If Windows
+itself can't resolve it either, install/run JetBrains Toolbox App — it's not
+a PhiLogg bug.
+
+Both halves are gated on `window.philogg.isWindows` (baked in at generation
+time in `inject.rs`/`inject.js`, the same mechanism `IS_MAC` already uses) —
+Visual Studio only exists on Windows, and the feature's whole Rider half
+stayed in scope for Windows only too rather than doing the platform-specific
+work an actually cross-platform Rider path would need. The Settings section
+and its nav item, and both context-menu items, are hidden entirely (not just
+inert) outside a Windows desktop build — one of the few places this
+codebase hides rather than shows-but-disables a Settings row, because unlike
+(say) "Close to system tray", there is genuinely no path to make this useful
+on another platform or in the plain browser build.
 
 ## Settings: mirrored into a human-editable `settings.json`
 
