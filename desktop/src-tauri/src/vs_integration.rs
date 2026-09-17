@@ -41,6 +41,7 @@ use serde::Serialize;
 pub struct VsInstance {
     moniker: String,
     pid: u32,
+    #[serde(rename = "solutionPath")]
     solution_path: Option<String>,
     title: String,
 }

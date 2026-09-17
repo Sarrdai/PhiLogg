@@ -210,10 +210,27 @@ GetObject` into the C# side too (see `docs/desktop.md` → "IDE Integration"
 for the mechanism). **Both standalone scripts confirmed working against a
 real Visual Studio 2022 instance** — found the running instance, read its
 open solution, and opened a file at a specific line — before this got
-ported back into `vs_integration.rs`. The in-app path (same logic, now
-wrapped for `-EncodedCommand` delivery) still wants one more confirmation
-from an actual Tauri build, since porting code always risks a copy/paste
-slip even when the logic itself is proven.
+ported back into `vs_integration.rs`.
+
+**One more real bug after that port**, this time actually in the port
+itself rather than the PowerShell/COM logic: the in-app "Connect" found the
+instance but always showed "(no solution open)", even once three separate
+standalone-script reproductions — including one byte-for-byte matching the
+app's exact `-EncodedCommand`/`-NonInteractive`/`CreateNoWindow` child-process
+invocation — all confirmed the PowerShell side reporting the solution path
+correctly. Elevation mismatch (PhiLogg elevated, Visual Studio not) and a
+32-bit/64-bit process mismatch were both ruled out by direct testing (the
+former broke instance discovery entirely when actually elevated, matching
+the expected UAC/ROT-visibility boundary; Task Manager confirmed
+`philogg-desktop.exe` as x64). The real cause was on the Rust↔JS boundary,
+past every test that had been run: `VsInstance.solution_path` had no
+`#[serde(rename)]`, so Tauri serialized it to the page as `"solution_path"`
+— `philogg.html`'s `inst.solutionPath` read was always `undefined`,
+regardless of what PowerShell actually found. One-line fix, not yet
+re-confirmed against a rebuilt app at time of writing. "Open in Visual
+Studio" through the app's own context-menu action (as opposed to the
+standalone script, which did confirm the underlying open-file mechanism)
+still wants its own first real-machine confirmation too.
 
 **Picture-in-picture (2026-09-07)** is verified by `cargo check` plus the
 jsdom suite's Group 182 only. The real `set_always_on_top`/`set_size`/
