@@ -5,6 +5,7 @@
   "skip-changelog": true,
   "packages": {
     ".": {
+      "initial-version": "0.1.0",
       "extra-files": [
         { "type": "generic", "path": "philogg.html" },
         { "type": "json", "path": "desktop/package.json", "jsonpath": "$.version" },
