@@ -85,6 +85,7 @@ fn main() {
             commands::path_for_local_url,
             commands::path_exists,
             commands::open_path,
+            commands::open_local_path,
             commands::list_system_fonts,
             commands::vs_list_instances,
             commands::vs_open_file,
