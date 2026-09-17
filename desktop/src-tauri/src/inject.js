@@ -153,6 +153,12 @@
     openPath: function (path) {
       return invoke("open_path", { path: path });
     },
+    // "Open here": registers the path as a local file (same route
+    // pickFiles/listFolder use) so philogg.html can load it straight into
+    // the tree via its own loadDesktopLocalFiles. See commands.rs::open_local_path.
+    openLocalPath: function (path) {
+      return invoke("open_local_path", { path: path });
+    },
     listSystemFonts: function () {
       return invoke("list_system_fonts").catch(function () {
         return [];
