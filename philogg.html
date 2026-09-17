@@ -2930,6 +2930,22 @@
     border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
   }
   #settingsThemeSelect{min-width:190px;}
+  /* IDE Integration (Settings) — a plain text input inside a settings-row,
+     styled to match the adjacent .settings-row-control select above; and the
+     two rows (Visual Studio connection, instance picker) that need more than
+     one control side by side. */
+  .settings-row-control input[type="text"]{
+    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px;
+    width:220px; box-sizing:border-box;
+  }
+  .settings-row-control.ide-inline{display:flex; align-items:center; gap:8px;}
+  .ide-status-dot{width:8px; height:8px; border-radius:50%; background:var(--text-tertiary); flex:0 0 auto;}
+  .ide-status-dot.connected{background:var(--accent);}
+  /* Hidden outside the Windows desktop build (window.philogg.isWindows) —
+     see initIdeIntegration. Own scoped rules, per this file's no-bare-.hidden
+     convention (see the #settingsAccentRow.hidden comment above). */
+  #settingsNavItemIde.hidden, #settingsSectionIde.hidden, #settingsIdeVsPickerRow.hidden{display:none;}
   /* Accent-color re-pick row (Settings -> Appearance) — only shown for a
      theme with its own highlightPalette, see renderAccentPicker(). Reuses
      .cp-preset's circular-swatch look (color-picker popup) but as a wrapping
@@ -4456,6 +4472,14 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>
       Extract
     </div>
+    <div class="ctx-item" id="ctxOpenInVs">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
+      Open in Visual Studio
+    </div>
+    <div class="ctx-item" id="ctxOpenInRider">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
+      Open in Rider
+    </div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" id="ctxAfter">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 3v10M8 3l-3 3M8 3l3 3"/></svg>
@@ -4893,6 +4917,10 @@
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8h3.2M10.3 8h3.2"/><circle cx="8" cy="8" r="2.3"/></svg>
             Behavior
           </button>
+          <button type="button" class="settings-nav-item" id="settingsNavItemIde" data-nav-target="settingsSectionIde">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
+            IDE Integration
+          </button>
           <button type="button" class="settings-nav-item" data-nav-target="settingsSectionFormats">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="1.4"/><path d="M2 6.2h12M5.6 6.2v7.2"/></svg>
             Log Formats
@@ -5298,6 +5326,69 @@
                   <option value="icon">Icon</option>
                   <option value="type">Type abbreviation</option>
                 </select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section" id="settingsSectionIde">
+          <div class="settings-section-title">IDE Integration</div>
+          <div class="settings-section-desc">Jump from a log entry's Location straight into a running IDE, at the right line. Desktop build on Windows only — hidden everywhere else.</div>
+
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsIdeAnchorFolder">Path anchor pattern</label>
+                <div class="settings-row-hint">The log's file path is remapped onto your local checkout starting right after this match — e.g. "Code\Projects" if that's the folder your solution lives directly in. "*" matches any run of characters, "?" any single one; use a longer pattern (more of the surrounding path) if the plain folder name occurs more than once.</div>
+              </div>
+              <div class="settings-row-control">
+                <input type="text" id="settingsIdeAnchorFolder" placeholder="e.g. Code\Projects" autocomplete="off" spellcheck="false">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Visual Studio</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" id="settingsIdeVsStatusLabel">Connection</label>
+                <div class="settings-row-hint">Connect to one of your currently running Visual Studio instances.</div>
+              </div>
+              <div class="settings-row-control ide-inline">
+                <span class="ide-status-dot" id="settingsIdeVsStatusDot" title="Not connected"></span>
+                <button type="button" class="btn-mini-outline" id="settingsIdeVsConnect">Connect…</button>
+              </div>
+            </div>
+            <div class="settings-row hidden" id="settingsIdeVsPickerRow">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsIdeVsInstanceSelect">Instance</label>
+                <div class="settings-row-hint" id="settingsIdeVsPickerHint">Pick which running instance to use.</div>
+              </div>
+              <div class="settings-row-control ide-inline">
+                <select id="settingsIdeVsInstanceSelect"></select>
+                <button type="button" class="btn-mini-outline" id="settingsIdeVsUseInstance">Use</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Rider</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsIdeRiderEnabled">Enable "Open in Rider"</label>
+                <div class="settings-row-hint">Opens via JetBrains' jetbrains:// link — Rider itself picks the matching running instance, no connection step needed here.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsIdeRiderEnabled"></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsIdeRiderProject">Rider project name</label>
+                <div class="settings-row-hint">The name Rider shows for the currently open project/solution — required by the jetbrains:// link.</div>
+              </div>
+              <div class="settings-row-control">
+                <input type="text" id="settingsIdeRiderProject" placeholder="e.g. myProject" autocomplete="off" spellcheck="false">
               </div>
             </div>
           </div>
@@ -7535,6 +7626,73 @@ function formatLocation(loc) {
   const m = /^(.*?)[\\/]([^\\/]+?)\s+line\s+(\d+)\s*$/i.exec(loc);
   if (m) return { short: m[2] + ":" + m[3], full: loc };
   return { short: loc, full: loc };
+}
+
+// IDE Integration: unlike formatLocation above (which only keeps the
+// filename for display), this keeps the WHOLE raw path — resolveIdeSourcePath
+// needs every folder segment to find the anchor folder in. Greedy `.*` so a
+// path that happens to contain the literal substring "line" earlier still
+// resolves against the LAST " line N" suffix.
+function parseIdeLocation(locationFull) {
+  const m = /^(.*)\s+line\s+(\d+)\s*$/i.exec(locationFull || "");
+  if (!m) return null;
+  return { path: m[1], line: parseInt(m[2], 10) };
+}
+
+// IDE Integration: compiles a person-configured anchor PATTERN into a
+// case-insensitive regex matched as a substring anywhere in a path (not
+// anchored to a whole string like compileGlob's file-matching use, since
+// the point here is finding WHERE the anchor occurs, not whole-string
+// equality). Same '*'/'?' character convention as compileGlob (folder-watch's
+// file-to-format matching, e.g. "app-*.log") — '*' any run of characters,
+// '?' any one character, everything else literal — reused rather than
+// inventing new syntax, person-requested ("an actual pattern like used in
+// other places of the app"). A literal '\' or '/' in the pattern matches
+// EITHER separator, so a multi-segment pattern (e.g. "Code\Projects") can
+// be typed with either slash style regardless of how the log's own path is
+// written, and — the reason a multi-segment pattern matters at all — lets
+// a person disambiguate a folder name that occurs more than once in the
+// path (a lone "Projects" earlier on) by matching more of its surroundings.
+function compileIdeAnchorPattern(pattern) {
+  let src = "";
+  for (const ch of (pattern || "")) {
+    if (ch === "*") src += ".*?";
+    else if (ch === "?") src += ".";
+    else if (ch === "\\" || ch === "/") src += "[\\\\/]";
+    else src += escapeRegExp(ch);
+  }
+  return new RegExp(src, "gi");
+}
+
+// IDE Integration: bridges the log's own (possibly stale) absolute path onto
+// the local checkout by anchoring on a pattern both are assumed to share —
+// e.g. "Code\Projects" matching "...\Code\Projects\MyCompany.Core\Foo.cs" —
+// and joining everything AFTER that match onto solutionDir (the folder the
+// anchor pattern itself identifies locally — e.g. the folder the connected
+// IDE's open .sln/project sits directly in, NOT its parent: the match
+// itself is never part of the relative part, since solutionDir already IS
+// the anchor). Pure and solutionDir-agnostic on purpose: no reach into any
+// connection-state global, so it's independently testable (see
+// tests/philogg.regression.test.js). solutionDir "" (Rider's case, no local
+// checkout path known) yields a plain project-relative path instead.
+function resolveIdeSourcePath(locationFull, anchorPattern, solutionDir) {
+  const parsed = parseIdeLocation(locationFull);
+  if (!parsed) return { error: "no-location" };
+  if (!anchorPattern) return { error: "anchor-not-found" };
+  const re = compileIdeAnchorPattern(anchorPattern);
+  let match = null;
+  let lastMatch = null;
+  while ((match = re.exec(parsed.path))) {
+    lastMatch = match;
+    if (match[0].length === 0) re.lastIndex++; // never loop forever on an empty match
+  }
+  if (!lastMatch) return { error: "anchor-not-found" };
+  const afterAnchor = parsed.path.slice(lastMatch.index + lastMatch[0].length).replace(/^[\\/]+/, "");
+  if (!afterAnchor) return { error: "anchor-not-found" };
+  const relative = afterAnchor.split(/[\\/]+/).filter(s => s.length > 0).join("\\");
+  const base = (solutionDir || "").replace(/[\\/]+$/, "");
+  const resolvedPath = base ? base + "\\" + relative : relative;
+  return { path: resolvedPath, line: parsed.line };
 }
 
 function parseHeaderLine(line) {
@@ -9947,6 +10105,132 @@ let highlightMatchTextEnabled = true;
 // .fp-candidate spans at all, so no underline/hover cost either).
 const FILE_PATH_LINKS_KEY = "philogg-file-path-links-enabled";
 let filePathLinksEnabled = true;
+
+/* ===================== IDE Integration (Settings) =====================
+   Jump from a log entry's Location straight into a running IDE. Desktop
+   (Tauri) + Windows only — the whole Settings section is hidden otherwise
+   (see initIdeIntegration). Visual Studio uses COM automation via the
+   Running Object Table (window.philogg.vsListInstances/vsOpenFile, see
+   desktop/src-tauri/src/vs_integration.rs); Rider instead uses JetBrains'
+   own jetbrains:// deep-link protocol (buildRiderUri, near the context-menu
+   wiring below), which needs no connection step since Rider resolves the
+   target instance itself. Both share the anchor-pattern path remap
+   (resolveIdeSourcePath/compileIdeAnchorPattern, defined next to
+   formatLocation above). */
+const IDE_ANCHOR_FOLDER_KEY = "philogg-ide-anchor-folder";
+const IDE_RIDER_ENABLED_KEY = "philogg-ide-rider-enabled";
+const IDE_RIDER_PROJECT_KEY = "philogg-ide-rider-project";
+let ideAnchorFolder = "";
+let ideRiderEnabled = false;
+let ideRiderProject = "";
+// The connected Visual Studio instance, if any — deliberately session-only
+// (never persisted): a PID/ROT moniker from a previous run is meaningless
+// after either process restarts, so persisting it would just be a stale
+// value to detect and discard. Reconnect each session via Settings.
+let ideVsConnection = null; // { moniker, solutionDir, label }
+
+function updateIdeVsStatusUi() {
+  const dot = document.getElementById("settingsIdeVsStatusDot");
+  const label = document.getElementById("settingsIdeVsStatusLabel");
+  if (!dot) return;
+  dot.classList.toggle("connected", !!ideVsConnection);
+  dot.title = ideVsConnection ? "Connected: " + ideVsConnection.label : "Not connected";
+  if (label) label.textContent = ideVsConnection ? "Connected" : "Connection";
+}
+
+function initIdeIntegration() {
+  ideAnchorFolder = localStorage.getItem(IDE_ANCHOR_FOLDER_KEY) || "";
+  ideRiderEnabled = localStorage.getItem(IDE_RIDER_ENABLED_KEY) === "1";
+  ideRiderProject = localStorage.getItem(IDE_RIDER_PROJECT_KEY) || "";
+
+  const supported = !!(window.philogg && window.philogg.isWindows);
+  const navItem = document.getElementById("settingsNavItemIde");
+  const section = document.getElementById("settingsSectionIde");
+  if (navItem) navItem.classList.toggle("hidden", !supported);
+  if (section) section.classList.toggle("hidden", !supported);
+  if (!supported) return;
+
+  const anchorInput = document.getElementById("settingsIdeAnchorFolder");
+  if (anchorInput) {
+    anchorInput.value = ideAnchorFolder;
+    anchorInput.addEventListener("change", () => {
+      ideAnchorFolder = anchorInput.value.trim();
+      localStorage.setItem(IDE_ANCHOR_FOLDER_KEY, ideAnchorFolder);
+    });
+  }
+
+  const riderToggle = document.getElementById("settingsIdeRiderEnabled");
+  if (riderToggle) {
+    pillSet(riderToggle, ideRiderEnabled);
+    riderToggle.addEventListener("change", ev => {
+      ideRiderEnabled = pillGet(ev.target);
+      localStorage.setItem(IDE_RIDER_ENABLED_KEY, ideRiderEnabled ? "1" : "0");
+    });
+  }
+  const riderProjectInput = document.getElementById("settingsIdeRiderProject");
+  if (riderProjectInput) {
+    riderProjectInput.value = ideRiderProject;
+    riderProjectInput.addEventListener("change", () => {
+      ideRiderProject = riderProjectInput.value.trim();
+      localStorage.setItem(IDE_RIDER_PROJECT_KEY, ideRiderProject);
+    });
+  }
+
+  updateIdeVsStatusUi();
+  const connectBtn = document.getElementById("settingsIdeVsConnect");
+  const pickerRow = document.getElementById("settingsIdeVsPickerRow");
+  const pickerSelect = document.getElementById("settingsIdeVsInstanceSelect");
+  const pickerHint = document.getElementById("settingsIdeVsPickerHint");
+  const useBtn = document.getElementById("settingsIdeVsUseInstance");
+  if (connectBtn) {
+    connectBtn.addEventListener("click", () => {
+      connectBtn.disabled = true;
+      window.philogg.vsListInstances().then(result => {
+        connectBtn.disabled = false;
+        const instances = (result && result.instances) || [];
+        if (instances.length === 0) {
+          if (pickerRow) pickerRow.classList.add("hidden");
+          showCopyToast(result && result.error
+            ? "No running Visual Studio instance found — " + result.error
+            : "No running Visual Studio instance found");
+          return;
+        }
+        pickerSelect.innerHTML = "";
+        instances.forEach(inst => {
+          const opt = document.createElement("option");
+          opt.value = inst.moniker;
+          const solName = inst.solutionPath ? inst.solutionPath.split(/[\\/]/).pop() : "(no solution open)";
+          opt.textContent = solName + " — PID " + inst.pid;
+          opt.dataset.solutionPath = inst.solutionPath || "";
+          pickerSelect.appendChild(opt);
+        });
+        if (pickerHint) {
+          pickerHint.textContent = instances.length + " instance" + (instances.length === 1 ? "" : "s") +
+            " found — pick one to use.";
+        }
+        if (pickerRow) pickerRow.classList.remove("hidden");
+      }).catch(() => {
+        connectBtn.disabled = false;
+        showCopyToast("Couldn't list running Visual Studio instances");
+      });
+    });
+  }
+  if (useBtn) {
+    useBtn.addEventListener("click", () => {
+      const opt = pickerSelect && pickerSelect.selectedOptions[0];
+      if (!opt) return;
+      const solutionPath = opt.dataset.solutionPath;
+      if (!solutionPath) {
+        showCopyToast("That instance has no solution open — open one first");
+        return;
+      }
+      const solutionDir = solutionPath.replace(/[\\/][^\\/]*$/, "");
+      ideVsConnection = { moniker: opt.value, solutionDir, label: solutionPath.split(/[\\/]/).pop() };
+      updateIdeVsStatusUi();
+      if (pickerRow) pickerRow.classList.add("hidden");
+    });
+  }
+}
 
 /* Level bar / filter-tree mode (Settings -> Behavior, FEATURE_BACKLOG.md
    #10) — "auto" (default): clicking a level button upserts a real
@@ -24875,6 +25159,8 @@ const ctxNote = el("#ctxNote");
 const ctxNoteLabel = el("#ctxNoteLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
 const ctxExtractMessage = el("#ctxExtractMessage");
+const ctxOpenInVs = el("#ctxOpenInVs");
+const ctxOpenInRider = el("#ctxOpenInRider");
 const ctxAddToSelection = el("#ctxAddToSelection");
 const addToSelectionMenu = el("#addToSelectionMenu");
 const ctxTimeRangeFromSelection = el("#ctxTimeRangeFromSelection");
@@ -24931,6 +25217,19 @@ function openContextMenu(ev, entry) {
   // uses, and extractMessageFilter below is the exact same function it calls).
   ctxExtractMessage.style.display =
     buildNumericExtractPattern(textColumnValue(entry, "message")) !== null ? "" : "none";
+  // IDE Integration: row-level (not column-gated like "Filter for this
+  // ___" above) — the Method column carries no file/line data of its own,
+  // so gating strictly on which column was clicked would make these items
+  // disappear when right-clicking Method for no good reason. Both items
+  // just need the row's own Location to resolve.
+  const ctxVsTarget = ideVsConnection
+    ? resolveIdeSourcePath(entry.locationFull, ideAnchorFolder, ideVsConnection.solutionDir)
+    : null;
+  ctxOpenInVs.style.display = ctxVsTarget && !ctxVsTarget.error ? "" : "none";
+  const ctxRiderTarget = (ideRiderEnabled && ideRiderProject)
+    ? resolveIdeSourcePath(entry.locationFull, ideAnchorFolder, "")
+    : null;
+  ctxOpenInRider.style.display = ctxRiderTarget && !ctxRiderTarget.error ? "" : "none";
   contextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   contextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 170) + "px";
   contextMenu.classList.remove("hidden");
@@ -25113,6 +25412,81 @@ ctxExtractMessage.addEventListener("click", ev => {
   const entry = ctxEntry;
   closeContextMenu();
   extractMessageFilter(entry);
+});
+
+// IDE Integration — "Open in Visual Studio": re-resolves the path (state may
+// have changed since the menu opened, e.g. the connection dropped), confirms
+// the file actually exists via the same pathExists check the clickable-
+// local-path feature's hover menu already relies on (see linkifyPaths),
+// then asks the connected instance to open it. Every failure surfaces
+// through the existing showCopyToast — no new notification UI needed.
+function openEntryInVisualStudio(entry) {
+  if (!ideVsConnection) return;
+  const target = resolveIdeSourcePath(entry.locationFull, ideAnchorFolder, ideVsConnection.solutionDir);
+  if (target.error === "anchor-not-found") {
+    showCopyToast('Anchor pattern "' + ideAnchorFolder + '" not found in this entry\'s path');
+    return;
+  }
+  if (target.error) return;
+  window.philogg.pathExists(target.path).then(exists => {
+    if (!exists) { showCopyToast("Resolved file doesn't exist: " + target.path); return; }
+    return window.philogg.vsOpenFile(ideVsConnection.moniker, target.path, target.line);
+  }).catch(() => {
+    showCopyToast("Couldn't reach Visual Studio — try reconnecting in Settings");
+  });
+}
+
+// IDE Integration — "Open in Rider": builds JetBrains' own documented
+// jetbrains://<product>/navigate/reference deep link and hands it to the OS's
+// protocol-handler resolution via the same openPath bridge method the
+// clickable-local-path feature uses to open a plain file — Rider itself
+// resolves which running instance/project to focus, so no connection state
+// is needed here (unlike Visual Studio above). `line` is the human-facing,
+// 1-based line number (as parseIdeLocation reports it, and as Visual
+// Studio's own GotoLine expects) — the protocol's own `path=file:LINE`
+// segment is 0-based (person-confirmed: "line 1" opened at line 2), so it's
+// converted right here, at the one place that actually builds the URI.
+function buildRiderUri(projectName, relativePath, line) {
+  return "jetbrains://rider/navigate/reference?project=" + encodeURIComponent(projectName) +
+    "&path=" + encodeURIComponent(relativePath) + ":" + Math.max(0, line - 1);
+}
+
+function openEntryInRider(entry) {
+  if (!ideRiderEnabled || !ideRiderProject) return;
+  // solutionDir "" makes resolveIdeSourcePath hand back a plain
+  // project-relative path — Rider's own path resolution wants exactly that,
+  // forward-slashed like the protocol's own documented examples.
+  const target = resolveIdeSourcePath(entry.locationFull, ideAnchorFolder, "");
+  if (target.error === "anchor-not-found") {
+    showCopyToast('Anchor pattern "' + ideAnchorFolder + '" not found in this entry\'s path');
+    return;
+  }
+  if (target.error) return;
+  const relativePath = target.path.replace(/^[\\/]+/, "").replace(/\\/g, "/");
+  // Confirms PhiLogg's own part ran, regardless of outcome — the OS/Rider
+  // side of resolving a jetbrains:// link (a protocol handler needs to be
+  // registered, normally by JetBrains Toolbox App) is invisible from here;
+  // this at least tells a person "the link was sent" instead of leaving
+  // "nothing happened" ambiguous between that and "PhiLogg didn't even try."
+  window.philogg.openPath(buildRiderUri(ideRiderProject, relativePath, target.line)).then(() => {
+    showCopyToast("Opening in Rider…");
+  }).catch(() => {
+    showCopyToast("Couldn't open Rider");
+  });
+}
+
+ctxOpenInVs.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  openEntryInVisualStudio(entry);
+});
+
+ctxOpenInRider.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  openEntryInRider(entry);
 });
 
 // "Add to selection" — turns the right-clicked row (or the full
@@ -30770,6 +31144,7 @@ initClipboardDecimalSetting();
 initFontScale();
 initQuitOnLastClose();
 initCloseToTray();
+initIdeIntegration();
 initHoverExpandSettings();
 initContextInitialExpansionSetting();
 initContextExpandStepSetting();

@@ -123,6 +123,13 @@ like any other.
   native drag-drop, native folder listing) and the path is known before the
   page ever sees them. Nothing user-visible is missing; it is only why the
   file-opening routes look the way they do.
+- **IDE Integration (Settings → IDE Integration, "jump from a log entry into
+  Visual Studio/Rider") is Windows-only** — hidden entirely on macOS/Linux
+  and in the plain browser build. See `docs/desktop.md` → "IDE Integration"
+  for the mechanism (Running Object Table enumeration + `EnvDTE` COM
+  automation for Visual Studio, a `jetbrains://` deep link for Rider).
+  First real-machine test surfaced issues on both sides, since fixed
+  (unverified on a real machine yet) — see "Status" below.
 
 ## Status
 
@@ -158,6 +165,72 @@ uses. See `docs/desktop.md` for both.
 The native folder watch (2026-09-01) is verified by `cargo check` plus the
 jsdom suite's Group 145 only — the picker, the listing and a real Desktop
 folder still need a person on a real desktop session.
+
+IDE Integration (2026-09-16) is verified by the jsdom suite's Group 230 only
+(the pure path-remap functions) plus manual code review — the sandbox this
+feature was built in has no Windows toolchain and couldn't even build the
+Linux desktop wrapper (missing WebKitGTK dev packages, unrelated to this
+change), so `vs_integration.rs`'s PowerShell/COM script, the Settings
+dialog's Connect flow, and the Rider deep link all still need a person on a
+real Windows machine with Visual Studio and/or Rider installed.
+
+Real Windows run (2026-09-16, person-tested), first attempt: "Connect"
+reported no running Visual Studio instance despite one being open with a
+solution loaded, and "Open in Rider" did nothing. Neither failure mode had
+any diagnostic to go on — `vs_integration.rs`'s PowerShell script swallowed
+every failure into the same generic empty result, and `openPath`'s promise
+for the Rider link only reported a rejection, never a success, leaving
+"nothing happened" ambiguous. Follow-up fix, same day, still unverified on a
+real machine (same sandbox limitation as above): the PowerShell script now
+wraps its whole body in one top-level `try`/`catch` (checking the HRESULT
+of both `ole32.dll` P/Invoke calls explicitly, writing the real exception
+message to stderr and exiting non-zero on any failure instead of letting an
+unhandled exception produce an opaque result) and retrieves the DTE object
+via `IRunningObjectTable.GetObject(moniker)` on the matched moniker instead
+of re-parsing its display-name string with `Marshal.BindToMoniker` — the
+Settings dialog now shows that diagnostic text directly when "Connect…"
+finds zero instances, instead of a generic message indistinguishable from a
+script failure. For Rider, added a success toast so a person can at least
+tell PhiLogg's own side ran; the likely actual cause (research this
+session, not yet confirmed against this person's machine) is that the
+`jetbrains://` scheme's registration in Windows is owned by JetBrains
+Toolbox App's `jetbrainsd` service, not by a standalone Rider install — see
+`docs/desktop.md` → "IDE Integration" for the Win+R self-test.
+
+**Rider confirmed working** on the same real machine, same session, once
+the path-remap fix below landed. **Visual Studio's "Connect" needed two more
+rounds**, each pinned down with a standalone `.ps1` script mirroring
+`vs_integration.rs`'s embedded logic 1:1 (run directly via `powershell
+-File`, no Tauri rebuild per attempt — much faster than round-tripping a
+real build for each fix): a C# compile error (`EnumRunning`'s actual
+signature is `void EnumRunning(out IEnumMoniker)`, not a method returning
+`IEnumMoniker`), then `MK_E_SYNTAX` from `[Marshal]::BindToMoniker` on
+Visual Studio's own moniker shape, fixed by moving `IRunningObjectTable.
+GetObject` into the C# side too (see `docs/desktop.md` → "IDE Integration"
+for the mechanism). **Both standalone scripts confirmed working against a
+real Visual Studio 2022 instance** — found the running instance, read its
+open solution, and opened a file at a specific line — before this got
+ported back into `vs_integration.rs`.
+
+**One more real bug after that port**, this time actually in the port
+itself rather than the PowerShell/COM logic: the in-app "Connect" found the
+instance but always showed "(no solution open)", even once three separate
+standalone-script reproductions — including one byte-for-byte matching the
+app's exact `-EncodedCommand`/`-NonInteractive`/`CreateNoWindow` child-process
+invocation — all confirmed the PowerShell side reporting the solution path
+correctly. Elevation mismatch (PhiLogg elevated, Visual Studio not) and a
+32-bit/64-bit process mismatch were both ruled out by direct testing (the
+former broke instance discovery entirely when actually elevated, matching
+the expected UAC/ROT-visibility boundary; Task Manager confirmed
+`philogg-desktop.exe` as x64). The real cause was on the Rust↔JS boundary,
+past every test that had been run: `VsInstance.solution_path` had no
+`#[serde(rename)]`, so Tauri serialized it to the page as `"solution_path"`
+— `philogg.html`'s `inst.solutionPath` read was always `undefined`,
+regardless of what PowerShell actually found. One-line fix, not yet
+re-confirmed against a rebuilt app at time of writing. "Open in Visual
+Studio" through the app's own context-menu action (as opposed to the
+standalone script, which did confirm the underlying open-file mechanism)
+still wants its own first real-machine confirmation too.
 
 **Picture-in-picture (2026-09-07)** is verified by `cargo check` plus the
 jsdom suite's Group 182 only. The real `set_always_on_top`/`set_size`/
