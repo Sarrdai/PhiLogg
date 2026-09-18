@@ -8243,9 +8243,12 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "Settings button opens the settings page directly (no intermediate menu)");
   assert(d.querySelector("#settingsMenu") === null, "the old separate Format-Manager dropdown menu no longer exists");
 
+  // 4 initially: the builtin default plus the 3 formats loadFormatConfig
+  // seeds for FEATURE_BACKLOG.md #81's reference case (DEMO_SEED_FORMATS —
+  // App log, Syslog, and the meta-format combining them).
   const formatRows = () => [...d.querySelectorAll("#formatList .filter-library-row")];
-  assert(formatRows().length === 1 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
-    "the builtin default format is listed first, and is the only one initially");
+  assert(formatRows().length === 4 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
+    "the builtin default format is listed first, alongside the 3 seeded demo formats");
   assert(formatRows()[0].querySelector(".filter-library-row-del") === null, "the builtin default has no delete button");
 
   const btnAddFormat = d.querySelector("#btnAddFormat");
@@ -8273,7 +8276,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#formatEditCancel"), w);
   assert(!isVisible(formatEditPanel, w), "Cancel closes the inline panel");
   assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
-  assert(formatRows().length === 1, "cancelling adds nothing to the format list");
+  assert(formatRows().length === 4, "cancelling adds nothing to the format list");
 
   // Re-open and actually add one, this time via a pasted sample line instead
   // of typing the pattern by hand — the suggestion should fill in pattern +
@@ -8300,7 +8303,7 @@ await withApp(async (w, d, T) => {
   await waitFor(() => !isVisible(formatEditPanel, w));
   assert(!isVisible(formatEditPanel, w), "saving closes/collapses the inline format panel");
   assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
-  assert(formatRows().length === 2, "the new format is now listed alongside the default");
+  assert(formatRows().length === 5, "the new format is now listed alongside the default and the 3 seeded demo formats");
 
   const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
   assert(newFormat && newFormat.mode === "pattern" && !newFormat.builtin, "new format saved with the suggested (then reviewed) pattern, not builtin");
@@ -26763,6 +26766,419 @@ await withApp(async (w, d, T) => {
   assert(T.state.rootIds.length === 1, "...and nothing new was added to the tree");
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true), openPath: () => {}, openLocalPath: () => Promise.reject(new Error("gone")) } });
 
+/* ============================================================
+   GROUP 232 — Meta-format multi-pattern parsing (FEATURE_BACKLOG.md #81):
+   splitTextByMetaFormat's line classification, against the real reference
+   sample (demo_log_format_sample.log, person-supplied this session) mixing
+   a log4net-style app grammar (format A, DEMO_APP_FORMAT) and RFC 5424
+   syslog (format B, DEMO_SYSLOG_FORMAT) line-by-line, plus every
+   continuation-line (F-line) shape, blank-line-only separators, and an
+   out-of-chronological-order syslog block — then loadMetaFormatText end to
+   end (split -> per-target addFile -> auto-merge via the unmodified
+   mergeFiles).
+   ============================================================ */
+group(232);
+
+// The exact 29-line reference sample (chat upload this session, not
+// checked into the repo — see FEATURE_BACKLOG.md #81 and CHANGELOG.md).
+// One cosmetic change from the original: the U+25D6 glyph on line 24 is
+// replaced by plain text, since it plays no role in classification (it's
+// inside the free-text message, not a matched group) and keeping this
+// file plain-ASCII avoids any source-encoding fragility.
+const META_SAMPLE_LINES = [
+  "2025-01-02 09:15:03.123 [] DEBUG demo.CoreWidget  - Widget DemoForm created for plugin DemoApp", // 1
+  "", // 2
+  "2025-01-02 09:15:03.456 [] INFO  demo.Loader  - Loading module DemoModule (v1.2.3)", // 3
+  "", // 4
+  "2025-01-02 09:15:04.010 [] DEBUG demo.Startup  - Hardware summary:", // 5
+  "cpu_vendor\tACME", // 6
+  "virtual_cores\t8", // 7
+  "l1_cache_bytes\t32768", // 8
+  "", // 9
+  "2025-01-02 09:15:05.777 [] WARN  demo.ShaderLib  - Failed to compile effect: Demo info", // 10
+  "-------------", // 11
+  "0(12) : error D1001: demo shader error", // 12
+  "", // 13
+  "2025-01-02 09:15:06.001 [] ERROR demo.PythonBridge  - Traceback (most recent call last):", // 14
+  '  File "C:\\demo\\app\\lib\\demo_module\\__init__.py", line 4, in <module>', // 15
+  "    from .demo_parser import DemoParser, demo_to_text", // 16
+  "ImportError: cannot import name 'demo_to_text' from 'demo_module.demo_parser'", // 17
+  "", // 18
+  "", // 19
+  "2025-01-02 09:15:06.500 [] INFO  demo.Client  - demo client state changed: DISCONNECTED", // 20
+  "", // 21
+  "<13>1 2025-01-02T09:15:06.711324 localhost demoapp 12345 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Common\\DemoBase.cpp' linenumber='42' errorcode='0' errortext='(info, demo, ok)' agent='agent_demo_0001' system='12345678-1234-1234-1234-123456789012'] stop requested", // 22
+  "<13>1 2025-01-02T09:15:06.711201 localhost demoapp 12346 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Common\\DemoBase.cpp' linenumber='42' errorcode='0' errortext='(info, demo, ok)' agent='agent_demo_0002' system='12345678-1234-1234-1234-123456789012'] stop requested", // 23
+  "<14>1 2025-01-02T09:15:06.711990 localhost demoapp 12345 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Block\\DemoBlock.cpp' linenumber='100' errorcode='D0010001' errortext='(warning, demo, no consumer)' agent='agent_demo_0001' system='12345678-1234-1234-1234-123456789012'] subtask done for tag /JOB :aaaa1111, took 1900us.", // 24
+  "1 step executed in 1234us. Parallel factor 0.5.", // 25
+  "<13>1 2025-01-02T09:15:06.712400 localhost demoapp 12345 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Block\\DemoBlock.cpp' linenumber='145' errorcode='0' errortext='(info, demo, ok)' agent='agent_demo_0001' system='12345678-1234-1234-1234-123456789012'] step end a1b2c3d4 +0 bytes (no action)", // 26
+  "2025-01-02 09:15:07.017 [] DEBUG demo.Sync  - refreshing channel DemoChannel (dirty flag)", // 27
+  "", // 28
+  "<13>1 2025-01-02T09:15:08.123456 localhost demoapp 12345 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Xml\\DemoValidator.cpp' linenumber='9' errorcode='0' errortext='(info, demo, ok)' agent='agent_demo_0001' system='12345678-1234-1234-1234-123456789012'] validation finished for doc demo-1234", // 29
+];
+const META_SAMPLE_TEXT = META_SAMPLE_LINES.join("\n");
+
+await withApp(async (w, d, T) => {
+  section("232a. splitTextByMetaFormat classifies the reference sample's lines into the right per-grammar stream");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  assert(metaFmt && metaFmt.mode === "meta" && metaFmt.targetFormatIds.length === 2, "sanity: the seeded meta-format exists with its 2 targets");
+
+  const streams = w.splitTextByMetaFormat(META_SAMPLE_TEXT, metaFmt);
+  assert(streams.length === 2, "both grammars are present in the sample, so 2 streams come out, got " + streams.length);
+  const appStream = streams.find(s => s.formatId === "fmt-demo-app");
+  const syslogStream = streams.find(s => s.formatId === "fmt-demo-syslog");
+  assert(appStream && syslogStream, "one stream per target format");
+
+  const appLines = appStream.text.split("\n");
+  const syslogLines = syslogStream.text.split("\n");
+  assert(appLines.length === 15, "format A stream: 7 headers (lines 1,3,5,10,14,20,27) + 8 continuation lines (tab-list x2, unindented x2, traceback x3), got " + appLines.length);
+  assert(syslogLines.length === 6, "format B stream: 5 headers (lines 22,23,24,26,29) + 1 bare continuation line (25), got " + syslogLines.length);
+  assert(!appLines.includes("") && !syslogLines.includes(""), "blank lines are dropped during the split, never emitted literally into either stream");
+
+  assert(appLines.includes("cpu_vendor\tACME"), "tab-list continuation (lines 6-8) lands in the app stream");
+  assert(appLines.includes("0(12) : error D1001: demo shader error"), "unindented continuation (line 12) lands in the app stream");
+  assert(appLines.some(l => l.includes("ImportError: cannot import name")), "traceback-style continuation (lines 15-17) lands in the app stream");
+  assert(syslogLines.includes("1 step executed in 1234us. Parallel factor 0.5."),
+    "the bare continuation line right after a syslog header (line 25) lands in the syslog stream, not the app stream (it joins the most recently matched stream)");
+});
+
+await withApp(async (w, d, T) => {
+  section("232b. loadMetaFormatText end to end: the reference sample parses into the right entry counts per grammar and auto-merges chronologically");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+
+  const merged = await w.loadMetaFormatText("demo.log", META_SAMPLE_TEXT, metaFmt);
+  assert(merged.name === "demo.log", "the merged result is named after the physical file, not mergeFiles' default vnode-name join");
+  assert(merged.merged === true, "the auto-merge result is a real merged file node");
+  assert(merged.entries.length === 12, "7 format-A headers + 5 format-B headers = 12 entries total, got " + merged.entries.length);
+  assert(merged.entries.every((e, i, arr) => i === 0 || arr[i - 1].ts <= e.ts), "the merged result is fully chronological");
+  assert(T.state.rootIds.length === 1, "the transient per-grammar vnodes are gone from the tree — only the merged result is left");
+
+  assert(merged.sources && merged.sources.length === 2, "the merged file's Sources breakdown has one entry per target format");
+  assert(merged.sources.map(s => s.name).sort().join(",") === "App log (log4net-style),Syslog (RFC 5424)",
+    "sources are named after the TARGET FORMATS (this is the meta-format auto-merge, not a manual multi-file merge)");
+  const appSrc = merged.sources.find(s => s.name === "App log (log4net-style)");
+  const syslogSrc = merged.sources.find(s => s.name === "Syslog (RFC 5424)");
+  assert(appSrc.count === 7 && syslogSrc.count === 5, "each source's count matches how many entries actually came from it");
+
+  const appEntries = merged.entries.filter(e => e.formatId === "fmt-demo-app");
+  const syslogEntries = merged.entries.filter(e => e.formatId === "fmt-demo-syslog");
+  assert(appEntries.length === 7 && syslogEntries.length === 5, "each entry is stamped with the format it was actually parsed under");
+  assert(syslogEntries.every(e => !isNaN(e.ts)), "the 6-digit-fraction syslog timestamps all parse to valid numbers (see the SSS date-token fix)");
+});
+
+/* ============================================================
+   GROUP 233 — mergeFiles' disjoint-time-range fast path stays chronological
+   even when a virtual stream's own on-disk line order isn't (the real
+   risk this feature's auto-merge introduces: format B's syslog blocks
+   aren't guaranteed sorted, per the reference sample's own lines 22-23).
+   ============================================================ */
+group(233);
+await withApp(async (w, d, T) => {
+  section("233. loadMetaFormatText: auto-merge stays chronological on the disjoint fast path despite an out-of-order syslog block");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+
+  // Format A entries in the 09:00 hour, format B entries in the 10:00 hour
+  // — the two ranges are disjoint, so mergeFiles takes its quick concat
+  // path (philogg.html's mergeFiles, ~9315), which trusts each source's
+  // OWN order rather than re-sorting. The syslog (format B) lines are
+  // written in a deliberately non-chronological on-disk order (b2, b0, b1)
+  // — mirroring the real sample's own descending-timestamp syslog block —
+  // to prove loadMetaFormatText's per-vnode pre-sort (done before
+  // mergeFiles ever sees the vnodes) is what keeps this fast path correct.
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "2025-01-02 09:00:01.000 [] INFO  app.X  - a1",
+    "2025-01-02 09:00:02.000 [] INFO  app.X  - a2",
+    "<13>1 2025-01-02T10:00:02.000000 host app 1 1 [log@1 filename='x.cpp'] b2",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+    "<13>1 2025-01-02T10:00:01.000000 host app 1 1 [log@1 filename='x.cpp'] b1",
+  ].join("\n");
+
+  const merged = await w.loadMetaFormatText("disjoint.log", text, metaFmt);
+  assert(merged.entries.length === 6, "all 6 lines parsed, got " + merged.entries.length);
+  assert(merged.entries.every((e, i, arr) => i === 0 || arr[i - 1].ts <= e.ts),
+    "chronological despite the syslog block's own out-of-order on-disk lines");
+  assert(merged.entries.map(e => e.message).join(",") === "a0,a1,a2,b0,b1,b2",
+    "messages come out in true timestamp order (b0,b1,b2), not on-disk order (b2,b0,b1), got " + merged.entries.map(e => e.message).join(","));
+});
+
+/* ============================================================
+   GROUP 234 — Format Manager UI: the new "Meta" mode (ordered target-
+   format picker, >=2-targets save guard) and removeLogFormat's new guard
+   against deleting a format still used as a meta-format's target.
+   ============================================================ */
+group(234);
+await withApp(async (w, d, T) => {
+  section("234a. Format Manager: creating a meta-format via the UI (mode toggle, field visibility, ordered target picker, >=2-targets guard)");
+  await waitForFormatConfig(T);
+  fireClick(d.querySelector("#btnSettings"), w);
+  fireClick(d.querySelector("#btnAddFormat"), w);
+
+  fireClick(d.querySelector("#formatEditModeMeta"), w);
+  assert(isVisible(d.querySelector("#formatEditMetaField"), w), "meta mode shows the target-format picker");
+  assert(!isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
+    "...and hides the pattern/regex fields");
+  assert(!isVisible(d.querySelector("#formatEditTsFormatField"), w) && !isVisible(d.querySelector("#formatEditLevelsField"), w) && !isVisible(d.querySelector("#formatEditPreviewField"), w),
+    "...and the timestamp/levels/preview fields too — none of them apply to a meta-format");
+
+  d.querySelector("#formatEditName").value = "Test meta";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(isVisible(d.querySelector("#formatEditError"), w) && d.querySelector("#formatEditError").textContent.includes("2"),
+    "saving with 0 targets is rejected with an error mentioning the minimum, got " + d.querySelector("#formatEditError").textContent);
+
+  const select = d.querySelector("#formatEditMetaTargetSelect");
+  select.value = "fmt-demo-app";
+  fireClick(d.querySelector("#formatEditMetaAddBtn"), w);
+  let rows = [...d.querySelectorAll("#formatEditMetaTargets > div")];
+  assert(rows.length === 1 && rows[0].textContent.includes("App log"), "adding a target lists it");
+
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(isVisible(d.querySelector("#formatEditError"), w), "still rejected with only 1 target");
+
+  select.value = "fmt-demo-syslog";
+  fireClick(d.querySelector("#formatEditMetaAddBtn"), w);
+  rows = [...d.querySelectorAll("#formatEditMetaTargets > div")];
+  assert(rows.length === 2, "second target added, got " + rows.length);
+
+  // Reorder: move the second row up, confirm the working order actually flipped.
+  const upBtns = () => [...d.querySelectorAll("#formatEditMetaTargets .filter-library-row-order")].filter(b => b.title === "Move up");
+  fireClick(upBtns()[1], w);
+  rows = [...d.querySelectorAll("#formatEditMetaTargets > div")];
+  assert(rows[0].textContent.includes("Syslog"), "moving the second target up reorders the working list");
+
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => !isVisible(d.querySelector("#formatEditPanel"), w));
+  const saved = T.state.logFormats.find(f => f.name === "Test meta");
+  assert(saved && saved.mode === "meta", "saved as a meta-format");
+  assert(saved.targetFormatIds.join(",") === "fmt-demo-syslog,fmt-demo-app",
+    "the reordered target order is what gets saved, got " + saved.targetFormatIds.join(","));
+
+  const row = [...d.querySelectorAll("#formatList .filter-library-row")].find(r => r.textContent.includes("Test meta"));
+  assert(row && row.querySelector(".filter-library-row-meta").textContent.includes("Meta · 2 targets"), "the format list shows the meta target count");
+});
+
+await withApp(async (w, d, T) => {
+  section("234b. removeLogFormat: a format still referenced as a meta-format's target can't be deleted until the meta-format is");
+  await waitForFormatConfig(T);
+  const before = T.state.logFormats.length;
+  await w.removeLogFormat("fmt-demo-app");
+  assert(T.state.logFormats.some(f => f.id === "fmt-demo-app"), "fmt-demo-app survives — it's still used as a target by the seeded meta-format");
+  assert(T.state.logFormats.length === before, "nothing was removed");
+
+  await w.removeLogFormat("fmt-demo-app-syslog-meta"); // remove the meta-format itself first
+  assert(!T.state.logFormats.some(f => f.id === "fmt-demo-app-syslog-meta"), "the meta-format itself is removable like any other non-builtin format");
+  await w.removeLogFormat("fmt-demo-app");
+  assert(!T.state.logFormats.some(f => f.id === "fmt-demo-app"), "now that no meta-format targets it, fmt-demo-app can be removed");
+});
+
+/* ============================================================
+   GROUP 235 — loadMetaFormatText degenerate cases: only one target
+   format's grammar actually present (no merge needed), and neither
+   target's grammar present at all (falls back to the default format
+   rather than hard-failing).
+   ============================================================ */
+group(235);
+await withApp(async (w, d, T) => {
+  section("235a. loadMetaFormatText: only one target format ever matches — no merge, a plain single-format load instead");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = "2025-01-02 09:00:00.000 [] INFO  app.X  - only app lines here\n2025-01-02 09:00:01.000 [] INFO  app.X  - still app";
+  const result = await w.loadMetaFormatText("app-only.log", text, metaFmt);
+  assert(!result.merged, "a single-grammar file never goes through mergeFiles");
+  assert(result.formatId === "fmt-demo-app", "parsed directly under the one format that actually matched");
+  assert(result.entries.length === 2, "both lines parsed as entries, got " + result.entries.length);
+});
+
+await withApp(async (w, d, T) => {
+  section("235b. loadMetaFormatText: nothing matches either target — falls back to the default format instead of hard-failing");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = "this line matches neither grammar\nnor does this one";
+  const result = await w.loadMetaFormatText("nomatch.log", text, metaFmt);
+  assert(result.formatId === "fmt-default", "falls back to the builtin default format rather than throwing");
+  assert(T.state.rootIds.length === 1, "still produces exactly one (fallback) node, not zero, and not a crash");
+});
+
+/* ============================================================
+   GROUP 236 — mergeFiles' additive node.sources/entry.sourceId stamping,
+   for both merge origins: the pre-existing manual multi-file merge
+   (disjoint AND overlapping paths) and the new meta-format auto-merge.
+   ============================================================ */
+group(236);
+await withApp(async (w, d, T) => {
+  section("236a. mergeFiles: node.sources/entry.sourceId, manual merge, disjoint (quick-concat) path");
+  const fa = await w.addFile("a.log", makeLog(0, 3), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 3, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.sources.length === 2, "one Sources entry per source file");
+  assert(merged.sources[0].id === fa.id && merged.sources[0].name === "a.log" && merged.sources[0].count === 3,
+    "first source's breakdown matches, got " + JSON.stringify(merged.sources[0]));
+  assert(merged.sources[1].id === fb.id && merged.sources[1].name === "b.log" && merged.sources[1].count === 3, "second source's breakdown matches");
+  assert(merged.sources.every(s => s.color === null), "no color assigned yet");
+  assert(merged.entries.filter(e => e.sourceId === fa.id).length === 3 && merged.entries.filter(e => e.sourceId === fb.id).length === 3,
+    "every copied entry is stamped with its own source's id");
+});
+
+await withApp(async (w, d, T) => {
+  section("236b. mergeFiles: node.sources/entry.sourceId, manual merge, overlapping (chunked copy+sort) path");
+  const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const fb = await w.addFile("b.log", makeLog(2, 5, { msgPrefix: "other" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.entries.filter(e => e.sourceId === fa.id).length === 5 && merged.entries.filter(e => e.sourceId === fb.id).length === 5,
+    "sourceId stamping also happens on the chunked copy+sort path");
+});
+
+await withApp(async (w, d, T) => {
+  section("236c. loadMetaFormatText: node.sources named after target formats, transient vnodes cleaned up, entries stay live in entryIndex");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  assert(merged.sources.map(s => s.name).sort().join(",") === "App log (log4net-style),Syslog (RFC 5424)", "sources named after the target formats, not filenames");
+  assert(T.state.rootIds.length === 1 && T.state.rootIds[0] === merged.id, "the transient per-grammar vnodes are removed from the tree — only the merged result remains");
+  const sharedId = merged.entries[0].id;
+  assert(T.entryIndex[sharedId] === merged.entries[0], "the merged entries stay resolvable via entryIndex after their transient source vnodes were deleted");
+});
+
+/* ============================================================
+   GROUP 237 — the "Sources" group in the tree: rendering, independent
+   collapse from the file's own node.collapsed, a source's swatch writing
+   to node.sources[i].color (never node.highlightColor), and
+   computeHighlightMap surfacing that color per-source into the same
+   gutter-marker map filter highlights already use.
+   ============================================================ */
+group(237);
+await withApp(async (w, d, T) => {
+  section("237. Sources group: tree rendering, independent collapse, swatch -> node.sources[i].color, computeHighlightMap picks it up per-source");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.activeId = merged.id;
+  w.render();
+
+  let sourceRows = [...d.querySelectorAll(".tree-row-source")];
+  assert(sourceRows.length === 2, "one row per source rendered, got " + sourceRows.length);
+  assert(sourceRows[0].textContent.includes("a.log") && sourceRows[1].textContent.includes("b.log"), "labeled with the source file names");
+
+  fireClick(d.querySelector(".tree-row-source-group .tree-chevron"), w);
+  assert(merged.sourcesCollapsed === true, "clicking the group chevron collapses the Sources group");
+  w.render();
+  assert(d.querySelectorAll(".tree-row-source").length === 0, "source rows are hidden while collapsed");
+  fireClick(d.querySelector(".tree-row-source-group .tree-chevron"), w);
+  w.render();
+  sourceRows = [...d.querySelectorAll(".tree-row-source")];
+  assert(sourceRows.length === 2, "expanding again brings the rows back");
+
+  const swatch = sourceRows[0].querySelector(".tree-swatch");
+  fireClick(swatch, w);
+  assert(isVisible(d.querySelector("#colorPickerPopup"), w), "clicking a source's swatch opens the color picker");
+  const preset = d.querySelector("#cpPresets .cp-preset");
+  fireClick(preset, w);
+  assert(merged.sources[0].color, "picking a color writes it onto the source entry");
+  assert(!merged.highlightColor, "...not onto the merged file node's own highlightColor (file nodes never carry one)");
+
+  const hlMap = w.computeHighlightMap(merged.id);
+  const coloredEntryId = merged.entries.find(e => e.sourceId === fa.id).id;
+  const uncoloredEntryId = merged.entries.find(e => e.sourceId === fb.id).id;
+  assert(hlMap.get(coloredEntryId) && hlMap.get(coloredEntryId).includes(merged.sources[0].color), "computeHighlightMap surfaces the source's color for its own entries");
+  assert(!hlMap.get(uncoloredEntryId), "...but not for the other (uncolored) source's entries");
+
+  const sourceRowsAgain = [...d.querySelectorAll(".tree-row-source")];
+  fireContextMenu(sourceRowsAgain[0].querySelector(".tree-swatch"), w);
+  assert(merged.sources[0].color === null, "right-click clears the source's color");
+});
+
+/* ============================================================
+   GROUP 238 — undo/redo: a merged file's Sources breakdown (incl. any
+   assigned colors) and a meta-format auto-merge's metaFormatId both
+   survive an in-session delete+undo round trip (snapshotSubtree/
+   restoreSubtree's file branch).
+   ============================================================ */
+group(238);
+await withApp(async (w, d, T) => {
+  section("238a. Undo/redo: node.sources (incl. colors) survives a delete+undo round trip on a manually merged file");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  merged.sources[0].color = "#ff0000";
+  const mergedId = merged.id;
+
+  w.deleteFilterNodeWithUndo(mergedId);
+  assert(!T.state.nodes[mergedId], "the merged file is gone after delete");
+
+  w.undo();
+  const restored = T.state.nodes[mergedId];
+  assert(restored, "the merged file is back after undo");
+  assert(restored.sources && restored.sources.length === 2, "its Sources breakdown survived the round trip");
+  assert(restored.sources[0].color === "#ff0000", "...including the assigned color");
+  assert(restored.merged === true, "still flagged as a merged file");
+});
+
+await withApp(async (w, d, T) => {
+  section("238b. Undo/redo: a meta-format auto-merge's metaFormatId survives a delete+undo round trip too");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const mergedId = merged.id;
+  w.deleteFilterNodeWithUndo(mergedId);
+  w.undo();
+  assert(T.state.nodes[mergedId].metaFormatId === "fmt-demo-app-syslog-meta", "metaFormatId survives the round trip");
+});
+
+/* ============================================================
+   GROUP 239 — the SSS date-token's arbitrary-digit-count fix
+   (DATE_TOKEN_FRAG/parseTimestampGeneric, a prerequisite for format B's
+   6-digit fractional seconds) and the 3 demo formats loadFormatConfig
+   seeds for FEATURE_BACKLOG.md #81's reference case.
+   ============================================================ */
+group(239);
+await withApp(async (w, d, T) => {
+  section("239a. parseTimestampGeneric: a fraction-of-a-second capture of any digit count normalizes to milliseconds, not a literal ms value");
+  const fmt3 = w.compileDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+  const t3 = w.parseTimestampGeneric("2025-01-02 09:15:06.711", fmt3);
+  assert(new Date(t3).getMilliseconds() === 711, "unchanged behavior for a 3-digit fraction (the pre-existing case), got " + new Date(t3).getMilliseconds());
+
+  const fmt1 = w.compileDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+  const t1 = w.parseTimestampGeneric("2025-01-02 09:15:06.7", fmt1);
+  assert(new Date(t1).getMilliseconds() === 700, "a shorter, 1-digit fraction is right-padded (.7 means .700s, not 7ms), got " + new Date(t1).getMilliseconds());
+
+  const fmt6 = w.compileDateFormat("yyyy-MM-ddTHH:mm:ss.SSS");
+  const t6 = w.parseTimestampGeneric("2025-01-02T09:15:06.711324", fmt6);
+  assert(!isNaN(t6), "a 6-digit (microsecond) fraction now matches at all — used to fail outright (SSS was hardcoded to 1-3 digits)");
+  assert(new Date(t6).getMilliseconds() === 711, "...and truncates to millisecond resolution correctly (711324us -> 711ms), not literal 711324ms (which would overflow ~11 minutes into the wrong second), got " + new Date(t6).getMilliseconds());
+  assert(new Date(t6).getSeconds() === 6, "sanity: the overflow bug this fixes would have pushed this into a different second entirely, got seconds=" + new Date(t6).getSeconds());
+});
+
+await withApp(async (w, d, T) => {
+  section("239b. loadFormatConfig seeds the 3 concrete formats from FEATURE_BACKLOG.md #81's reference case, idempotently, non-builtin, no FormatRule");
+  await waitForFormatConfig(T);
+  const app = T.state.logFormats.find(f => f.id === "fmt-demo-app");
+  const syslog = T.state.logFormats.find(f => f.id === "fmt-demo-syslog");
+  const meta = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  assert(app && app.mode === "regex" && !app.builtin, "the app-log format is seeded, regex mode, not builtin (freely editable/deletable)");
+  assert(syslog && syslog.mode === "regex" && !syslog.builtin, "the syslog format is seeded, regex mode, not builtin");
+  assert(meta && meta.mode === "meta" && !meta.builtin, "the meta-format is seeded, meta mode, not builtin");
+  assert(meta.targetFormatIds.join(",") === "fmt-demo-app,fmt-demo-syslog", "the meta-format targets the other two, in order, got " + meta.targetFormatIds.join(","));
+  assert(!T.state.formatRules.some(r => r.formatId === "fmt-demo-app" || r.formatId === "fmt-demo-syslog" || r.formatId === "fmt-demo-app-syslog-meta"),
+    "none of the 3 seeded formats has a FormatRule (filename glob) — they stay dormant until the person adds one by hand");
+
+  // Idempotency: a second loadFormatConfig() call (simulating a second boot
+  // against the same store) must not duplicate the seeded records.
+  await w.loadFormatConfig();
+  assert(T.state.logFormats.filter(f => f.id === "fmt-demo-app").length === 1, "re-seeding is idempotent — no duplicate app-log format");
+  assert(T.state.logFormats.filter(f => f.id === "fmt-demo-app-syslog-meta").length === 1, "...nor duplicate meta-format");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -30465,4 +30881,45 @@ process.exitCode = failed ? 1 : 0;
       (the file having vanished since `path_exists` last checked) surfaces
       a toast naming the path rather than throwing or leaving a stuck
       placeholder.
+   Groups 232-239 — this session, person-requested: FEATURE_BACKLOG.md #81
+      (multi-pattern parsing) implemented as a declarative "meta" LogFormat
+      mode plus the "Sources" grouping/coloring feature for any merged
+      file. 232 covers splitTextByMetaFormat's line classification and
+      loadMetaFormatText's end-to-end split -> per-target addFile ->
+      auto-merge, against the real reference sample (a log4net-style app
+      grammar interleaved with RFC 5424 syslog, chat-uploaded this
+      session) — every continuation-line shape, blank-line dropping, and
+      correct per-source entry/format-id counts. 233 isolates the specific
+      risk the auto-merge introduces: mergeFiles' disjoint-time-range fast
+      path trusts each source's own on-disk order, so loadMetaFormatText's
+      per-vnode pre-sort is what keeps a syslog block's own out-of-order
+      lines (real sample lines 22-23) from producing a non-chronological
+      merged file. 234 covers the new Format Manager "Meta" mode UI (field
+      visibility, ordered target-format picker, the >=2-targets save
+      guard) and removeLogFormat's new guard against deleting a format
+      still used as a meta-format's target. 235 covers the two degenerate
+      split outcomes (only one grammar present; neither). 236 covers
+      mergeFiles' additive node.sources/entry.sourceId stamping for BOTH
+      merge origins — the pre-existing manual multi-file merge (disjoint
+      and overlapping paths) and the new meta-format auto-merge — plus the
+      transient per-grammar vnodes being cleaned up without breaking
+      entryIndex for the entries they handed off to the merged file. 237
+      covers the "Sources" tree group itself: rendering, independent
+      collapse from the file's own node.collapsed, a source's swatch
+      writing to node.sources[i].color (never the unrelated
+      node.highlightColor), and computeHighlightMap surfacing that color
+      per-source into the same gutter-marker map filter highlights already
+      use. 238 covers undo/redo: a merged file's Sources breakdown
+      (including an assigned color) and a meta-format auto-merge's
+      metaFormatId both surviving an in-session delete+undo round trip.
+      239 covers two supporting pieces: the SSS date-token widening from a
+      hardcoded 3-digit fraction to any digit count, with
+      parseTimestampGeneric normalizing by the captured fraction's own
+      length rather than treating it as a literal millisecond value (the
+      bug that would have made format B's 6-digit syslog timestamps
+      overflow ~11 minutes into the wrong second); and the 3 concrete
+      formats (app log, syslog, and the meta-format combining them)
+      loadFormatConfig seeds for this reference case — non-builtin,
+      idempotent, with deliberately no FormatRule (the person adds the
+      filename association by hand, per their own request this session).
    ============================================================ */

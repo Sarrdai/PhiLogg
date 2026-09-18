@@ -849,6 +849,22 @@
     white-space:nowrap; font-size:12.3px;
   }
 
+  /* "Sources" group under a merged file (mergeFiles' additive node.sources
+     — see "File merge" in PROJECT.md/persistence-and-sync.md): a purely
+     presentational group, not a real state.nodes entry (same idea as
+     .tree-row-queued above and the ZIP/folder-watch container rows). Its
+     header and each source row reuse .tree-row's child-slot classes
+     (.tree-chevron-slot/.tree-swatch/.tree-icon/.tree-label/.tree-count,
+     see renderSourcesGroup/renderSourceRow) for visual consistency, but
+     aren't .tree-row itself — nothing here is selectable or draggable,
+     only the chevron and each source's swatch are interactive. */
+  .tree-row-source-group, .tree-row-source{
+    display:flex; align-items:center; gap:7px;
+    padding:6px 8px 6px 12px;
+    color:var(--text-tertiary);
+  }
+  .tree-row-source{opacity:.75;}
+
   /* Filter-history ghost preview (person-requested, this session): shown
      under a freshly loaded file that has no filters of its own yet, when a
      previous session's filter tree for this exact (or since-grown) file
@@ -3121,7 +3137,12 @@
   #formatEditLevelAdd input{flex:1 1 auto; min-width:0;}
   .format-level-error{font-size:11px; color:var(--level-error); margin-top:5px;}
   .format-level-error.hidden{display:none;}
-  #formatEditPatternField.hidden, #formatEditRegexField.hidden{display:none;}
+  #formatEditPatternField.hidden, #formatEditRegexField.hidden, #formatEditMetaField.hidden,
+  #formatEditSampleField.hidden, #formatEditTsFormatField.hidden, #formatEditLevelsField.hidden,
+  #formatEditPreviewField.hidden{display:none;}
+  #formatEditMetaTargets{display:flex; flex-direction:column; gap:4px;}
+  #formatEditMetaAdd{display:flex; gap:6px; margin-top:6px;}
+  #formatEditMetaAdd select{flex:1 1 auto; min-width:0;}
   .settings-inline-panel-title{font-size:12.5px; font-weight:650; color:var(--text-primary); margin-bottom:12px;}
   .settings-inline-panel textarea{
     width:100%; box-sizing:border-box; resize:vertical; min-height:52px;
@@ -5408,7 +5429,7 @@
               <label for="formatEditName">Name</label>
               <input type="text" id="formatEditName" placeholder="e.g. Nginx access log" maxlength="80" autocomplete="off">
             </div>
-            <div class="link-field">
+            <div class="link-field" id="formatEditSampleField">
               <label for="formatEditSample">Example log line(s) <span class="link-target-label">(optional — suggests a pattern below)</span></label>
               <textarea id="formatEditSample" rows="3" placeholder="Paste one or more sample log lines here…"></textarea>
             </div>
@@ -5416,6 +5437,7 @@
               <div class="assert-mode-row">
                 <button type="button" class="assert-mode-btn" id="formatEditModePattern" data-mode="pattern">Pattern</button>
                 <button type="button" class="assert-mode-btn" id="formatEditModeRegex" data-mode="regex">Regex</button>
+                <button type="button" class="assert-mode-btn" id="formatEditModeMeta" data-mode="meta">Meta</button>
               </div>
             </div>
             <div class="link-field" id="formatEditPatternField">
@@ -5428,12 +5450,21 @@
               <input type="text" id="formatEditRegex" placeholder="^(?&lt;ts&gt;\S+) (?&lt;level&gt;\w+) ..." autocomplete="off">
               <div class="session-dialog-note">Needs a (?&lt;message&gt;...) named group; (?&lt;ts&gt;...)/(?&lt;level&gt;...)/(?&lt;thread&gt;...)/(?&lt;location&gt;...)/(?&lt;method&gt;...) are optional.</div>
             </div>
-            <div class="link-field">
+            <div class="link-field hidden" id="formatEditMetaField">
+              <label>Target formats <span class="link-target-label">(ordered — first whose own header matches a line wins)</span></label>
+              <div id="formatEditMetaTargets"></div>
+              <div id="formatEditMetaAdd">
+                <select id="formatEditMetaTargetSelect"></select>
+                <button type="button" id="formatEditMetaAddBtn" class="btn-mini-outline">Add</button>
+              </div>
+              <div class="session-dialog-note">A file resolved to this format is split into one virtual file per target format at load time (classified line by line, first matching target wins), then automatically merged back into one chronological file. Needs at least 2 targets.</div>
+            </div>
+            <div class="link-field" id="formatEditTsFormatField">
               <label for="formatEditTsFormat">Timestamp format</label>
               <input type="text" id="formatEditTsFormat" placeholder="yyyy-MM-dd HH:mm:ss,SSS" autocomplete="off">
               <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
             </div>
-            <div class="link-field">
+            <div class="link-field" id="formatEditLevelsField">
               <label>Log levels <span class="link-target-label">(which ones this format uses, and in which order)</span></label>
               <div id="formatEditLevels"></div>
               <div id="formatEditLevelAdd">
@@ -5443,7 +5474,7 @@
               <div id="formatEditLevelError" class="format-level-error hidden"></div>
               <div class="session-dialog-note">Only checked levels get a quick-filter button for files using this format; anything else falls into OTHER. Custom names match a line's level text exactly (case-insensitive) and get a color from a rotating palette.</div>
             </div>
-            <div class="link-field">
+            <div class="link-field" id="formatEditPreviewField">
               <label>Preview <span class="link-target-label">(from the example line(s) above)</span></label>
               <div id="formatEditPreview" class="format-preview"></div>
             </div>
@@ -7821,7 +7852,10 @@ function unescapePatternText(s) {
 }
 
 const DATE_TOKEN_RE = /yyyy|MM|dd|HH|mm|ss|SSS/g;
-const DATE_TOKEN_FRAG = { yyyy: "\\d{4}", MM: "\\d{2}", dd: "\\d{2}", HH: "\\d{2}", mm: "\\d{2}", ss: "\\d{2}", SSS: "\\d{1,3}" };
+// SSS accepts 1-6 digits (not just 3) so a microsecond-precision fraction
+// (e.g. RFC 5424 syslog's ".711324") still matches; parseTimestampGeneric
+// below normalizes whatever digit count it captures down to milliseconds.
+const DATE_TOKEN_FRAG = { yyyy: "\\d{4}", MM: "\\d{2}", dd: "\\d{2}", HH: "\\d{2}", mm: "\\d{2}", ss: "\\d{2}", SSS: "\\d{1,6}" };
 
 // Compiles a "yyyy-MM-dd HH:mm:ss,SSS"-style token string into a regex
 // (with one capturing group per token, in order) that both matches a
@@ -7863,7 +7897,12 @@ function parseTimestampGeneric(raw, compiledDate) {
   const h = +parts.HH || 0;
   const mi = +parts.mm || 0;
   const s = +parts.ss || 0;
-  const ms = +(parts.SSS || 0);
+  // parts.SSS is a fraction-of-a-second digit string of any length (1-6) —
+  // normalize it to milliseconds by its own digit count rather than taking
+  // it as a literal ms value (a bare +"711324" would mean 711324ms, not
+  // .711324s). Reduces to the previous exact behavior for 3-digit input.
+  const frac = parts.SSS || "";
+  const ms = frac ? Math.round(+frac * Math.pow(10, 3 - frac.length)) : 0;
   return new Date(y, mo, d, h, mi, s, ms).getTime();
 }
 
@@ -7984,6 +8023,14 @@ function resolveFormatIdForFilename(name) {
   return DEFAULT_FORMAT_ID;
 }
 
+// A LogFormat record's `mode` is "pattern" | "regex" | "meta". A "meta"
+// format carries none of pattern/regex/tsFormat/levels — instead it has
+// `targetFormatIds: [id, id, ...]` (>= 2, ordered), naming other, ordinary
+// pattern/regex formats to classify a file's lines against, first match
+// per line wins (see splitTextByMetaFormat). It never compiles to a real
+// per-line parser (see compileOneFormat's "meta" branch above) — a file
+// resolved to one is intercepted and fanned out into per-target virtual
+// files before parsing (see loadMetaFormatText).
 const DEFAULT_FORMAT_ID = "fmt-default";
 const DEFAULT_LOG_FORMAT = {
   id: DEFAULT_FORMAT_ID,
@@ -8010,6 +8057,16 @@ const DEFAULT_LOG_FORMAT = {
 function compileOneFormat(fmt) {
   if (fmt.builtin && !fmt.edited) {
     return { isHeaderLine: line => HEADER_RE.test(line), parseHeader: line => parseHeaderLine(line) };
+  }
+  if (fmt.mode === "meta") {
+    // Defensive fallback only — a meta-format's whole job is to be split
+    // into per-target-format virtual files before any per-line parsing
+    // happens (splitTextByMetaFormat/loadMetaFormatText intercept it in
+    // loadOneFileIntoTree/addFile), so this branch should never actually
+    // run against real file content. It exists so any other caller that
+    // still hands a meta-format id to the per-line compiler degrades
+    // gracefully instead of throwing.
+    return { isHeaderLine: () => true, parseHeader: line => applyFormatMatch({ message: line }, line, null) };
   }
   const dateFrag = compileDateFormat(fmt.tsFormat);
   let compiled = null;
@@ -8045,6 +8102,54 @@ function getCompiledFormat(formatId) {
   c = compileOneFormat(fmt);
   formatCompileCache.set(formatId, c);
   return c;
+}
+
+// Splits one physical file's text into one text stream per target format
+// of a meta-format (see DEFAULT_LOG_FORMAT's comment above), for
+// loadMetaFormatText to parse each stream under its own ordinary format.
+// Classification is a pure per-line grammar test — first target (in
+// declared order) whose own isHeaderLine matches wins; a non-matching,
+// non-blank line joins whichever stream most recently had a header line
+// (the same "continuation" rule parseLogTextAsync already applies within
+// a single format, just resolved per-stream here before parsing starts);
+// a non-matching line before any header has matched yet is dropped,
+// mirroring parseLogTextAsync's own "lines before the first header are
+// dropped" behavior.
+//
+// Blank lines are dropped here, never emitted into any stream. This is
+// deliberate, not a simplification: parseLogTextAsync's own loop only
+// ever treats a blank line as a silent no-op (it satisfies neither the
+// isHeaderLine branch nor the `current && line !== ""` continuation
+// branch), so it can never affect which entry a later line attaches to.
+// Dropping it during the split is therefore provably equivalent to
+// keeping it in any stream and having it dropped again on re-entry into
+// parseLogTextAsync — for every transition shape (inside a run of one
+// grammar, or across a grammar switch, with or without a blank line
+// present at all).
+function splitTextByMetaFormat(text, metaFmt) {
+  const targets = (metaFmt.targetFormatIds || [])
+    .map(id => state.logFormats.find(f => f.id === id))
+    .filter(Boolean); // a target format deleted since the meta-format was saved is skipped, not fatal
+  const compiled = targets.map(fmt => ({ id: fmt.id, name: fmt.name, c: getCompiledFormat(fmt.id) }));
+
+  const lines = text.split(/\r\n|\n/); // same split parseLogTextAsync uses — mixed LF/CRLF anywhere is already fine
+  const buckets = compiled.map(() => []);
+  let currentIdx = -1;
+
+  for (const line of lines) {
+    if (line === "") continue; // see "Blank lines" above — never emitted into any stream
+    let matchedIdx = -1;
+    for (let i = 0; i < compiled.length; i++) {
+      if (compiled[i].c.isHeaderLine(line)) { matchedIdx = i; break; } // first-match-per-line, target order
+    }
+    if (matchedIdx !== -1) { currentIdx = matchedIdx; buckets[matchedIdx].push(line); }
+    else if (currentIdx !== -1) { buckets[currentIdx].push(line); } // continuation of the most recently matched stream
+    // else: no header has matched yet in this file — dropped, same as parseLogTextAsync's own pre-first-header rule.
+  }
+
+  return compiled
+    .map((t, i) => ({ formatId: t.id, name: t.name, text: buckets[i].join("\n") }))
+    .filter(s => s.text !== ""); // a target that matched nothing in this file contributes no stream
 }
 
 // Reads only a file's first and last log entry to learn its covered time
@@ -8708,6 +8813,16 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
     node.formatId = pinnedId;
   } else {
     node.formatId = resolveFormatIdForFilename(name);
+    // Only a *live* filename resolution can land on a meta-format — a
+    // pinned formatIdOverride (session restore, mergeFiles, or this same
+    // function's own recursive calls from loadMetaFormatText) always
+    // names a concrete target format, never a meta-format id, so this
+    // guard only ever fires for a fresh deep-link/import-style load.
+    const fmt0 = state.logFormats.find(f => f.id === node.formatId);
+    if (fmt0 && fmt0.mode === "meta") {
+      deleteNode(node.id);
+      return await loadMetaFormatText(name, text, fmt0);
+    }
   }
   await parseLogTextAsync(text, node, (done, total) => {
     node.loadFraction = total ? done / total : 1;
@@ -8717,6 +8832,71 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
   delete node.loadFraction;
   flushLoadRender(node.id);
   return node;
+}
+
+// A meta-format's whole job: split one physical file's text into its
+// target formats' streams (splitTextByMetaFormat), parse each stream as
+// an ordinary transient file (reusing addFile — i.e. createFileNode +
+// parseLogTextAsync, completely unmodified), then merge those transient
+// files into one chronological result via the existing, unmodified
+// mergeFiles — so a meta-format file ends up as a single merged tree row
+// named after the physical file, with a "Sources" breakdown (see
+// mergeFiles' additive sources/sourceId stamping) instead of leftover
+// standalone virtual rows for each grammar.
+//
+// Session-only, v1: the split/merge here is redone from scratch on every
+// load; nothing about it is pinned or restorable the way an ordinary
+// file's formatId is (see restoreSessionFromCache/persistFileNode — a
+// meta-format's *result* is persisted as an ordinary merged file, same
+// as any other merge, so a reload reparses it under one target format
+// and loses the Sources breakdown, same accepted gap merges already have).
+async function loadMetaFormatText(name, text, metaFmt) {
+  const streams = splitTextByMetaFormat(text, metaFmt);
+
+  if (streams.length === 0) {
+    // Nothing classified at all — never hard-fail a load; fall back to a
+    // plain default-format parse so the person at least sees raw lines.
+    return await addFile(name, text, undefined, DEFAULT_FORMAT_ID);
+  }
+  if (streams.length === 1) {
+    // Only one grammar actually present in this file — no merge needed,
+    // and this is byte-identical to a plain single-format load of the
+    // same content (blank lines are a no-op either way, see
+    // splitTextByMetaFormat's own comment).
+    return await addFile(name, streams[0].text, undefined, streams[0].formatId);
+  }
+
+  const vnodes = [];
+  for (const s of streams) {
+    const vnode = await addFile(s.name, s.text, undefined, s.formatId);
+    // A virtual stream inherits the physical file's on-disk line order,
+    // which is NOT guaranteed chronological within it (e.g. two producers
+    // interleaving inside one syslog block) — mergeFiles' disjoint-range
+    // fast path only sorts the true min/max per source for the overlap
+    // test itself, then concats in file order assuming each source is
+    // already chronological. Sorting here, once, is what keeps that fast
+    // path's output actually chronological for a meta-format's vnodes.
+    vnode.entries.sort((a, b) => a.ts - b.ts);
+    vnodes.push(vnode);
+  }
+
+  const merged = await mergeFiles(vnodes.map(v => v.id));
+  merged.name = name; // the physical filename, not mergeFiles' default "vnode1.name + vnode2.name" join
+  merged.metaFormatId = metaFmt.id; // informational only; no other code path depends on it
+
+  // The vnodes are an implementation artifact of one physical file, not
+  // user-dropped files — remove them from the tree once merged (unlike
+  // the manual "Merge N files" bulk action, which deliberately keeps its
+  // own sources visible; that behavior is untouched since mergeFiles
+  // itself isn't the one deleting anything here). Safe strictly *after*
+  // mergeFiles has already pushed the same entry objects (by reference)
+  // into `merged`: deleteNode's releaseEntriesFromIndex only purges an
+  // entry id no other root still references, and `merged` already does.
+  vnodes.forEach(v => deleteNode(v.id));
+
+  persistFileNode(merged); // refresh the cached record under the renamed name
+  render();
+  return merged;
 }
 
 /* ===================== Value-extraction patterns =====================
@@ -9293,6 +9473,18 @@ async function mergeFiles(fileIds) {
     // still works fine live; only a later session-cache restore, which
     // reparses raw text under one format, would see this simplification.
     formatId: (files[0] && files[0].formatId) || DEFAULT_FORMAT_ID,
+    // Per-source breakdown for the tree's "Sources" group (renderNode) —
+    // color is null (unset) until the person assigns one via its swatch.
+    // count is captured once, here, rather than recomputed per render.
+    // Session-only, like the rest of this merge: never written by
+    // persistFileNode, so a session-cache restore comes back without it
+    // (same accepted gap as the rest of a merged file's live-only state —
+    // see the "Merged-file gotcha" this formatId comment already
+    // documents). Entries are shared by reference across merges, so
+    // re-merging an already-merged file overwrites sourceId on the same
+    // objects, making the earlier merge's own Sources coloring stale —
+    // a known, accepted limitation, not fixed here.
+    sources: files.map(f => ({ id: f.id, name: f.name, color: null, count: f.entries.length })),
   };
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
@@ -9313,14 +9505,18 @@ async function mergeFiles(fileIds) {
   const isDisjoint = nonEmpty.every((x, k) => k === 0 || nonEmpty[k - 1].range.max < x.range.min);
 
   if (isDisjoint) {
-    for (const x of nonEmpty) node.entries.push(...x.f.entries);
+    for (const x of nonEmpty) {
+      for (const e of x.f.entries) { e.sourceId = x.f.id; node.entries.push(e); }
+    }
     node.loadFraction = 1;
     scheduleLoadRender(node.id);
   } else {
     let copied = 0;
     for (const f of files) {
       for (let i = 0; i < f.entries.length; i += MERGE_CHUNK_ENTRIES) {
-        node.entries.push(...f.entries.slice(i, i + MERGE_CHUNK_ENTRIES));
+        const chunk = f.entries.slice(i, i + MERGE_CHUNK_ENTRIES);
+        chunk.forEach(e => { e.sourceId = f.id; });
+        node.entries.push(...chunk);
         copied += Math.min(MERGE_CHUNK_ENTRIES, f.entries.length - i);
         node.loadFraction = MERGE_COPY_WEIGHT * (total ? copied / total : 1);
         scheduleLoadRender(node.id);
@@ -11076,6 +11272,17 @@ function snapshotSubtree(nodeId) {
     // this just preserves the cumulative amount so the file can still be
     // re-edited/undone after a delete+restore round-trip.
     if (node.clockOffset) copy.clockOffset = node.clockOffset;
+    // Sources-group breakdown (mergeFiles' additive `sources`, kept by
+    // reference like entries above — its per-source `color` lives on these
+    // same objects) and sourcesCollapsed (display-only, same tier as
+    // node.collapsed). Session-only like the rest of a merge's live state
+    // (never written by persistFileNode — see mergeFiles' own comment) —
+    // but still needs to survive an in-session undo/redo, same reasoning
+    // as every other field on this branch: a delete+undo round-trip
+    // shouldn't silently drop a merged file's Sources group.
+    if (node.sources) copy.sources = node.sources;
+    if (node.metaFormatId) copy.metaFormatId = node.metaFormatId;
+    if (node.sourcesCollapsed) copy.sourcesCollapsed = true;
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
@@ -11115,6 +11322,9 @@ function restoreSubtree(snap) {
     if (snap.folderId) node.folderId = snap.folderId;
     if (snap.partial) node.partial = snap.partial;
     if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
+    if (snap.sources) node.sources = snap.sources;
+    if (snap.metaFormatId) node.metaFormatId = snap.metaFormatId;
+    if (snap.sourcesCollapsed) node.sourcesCollapsed = true;
     state.nodes[node.id] = node;
     node.entries.forEach(e => { entryIndex[e.id] = e; });
     node.children = snap.children.map(c => restoreSubtree(c).id);
@@ -13077,6 +13287,107 @@ function renderRenameInput(id, node) {
   return input;
 }
 
+// The "Sources" group under a merged file's own row: which physical/
+// virtual file each of its entries came from (see mergeFiles' additive
+// `sources`/`sourceId` stamping), with a per-source colour swatch so the
+// different origins can be told apart in the log view (see
+// computeHighlightMap's source-coloring branch). Purely presentational —
+// `fileNode.sources` is data on the merged file node, but neither this
+// group header nor its per-source rows are real state.nodes entries (same
+// "container row with inert children" shape renderZipSection/
+// renderFolderSection already use for ZIP/folder-watch sections). Never
+// persisted (session-only, like the rest of a merge's live state — see
+// mergeFiles' own comment) — fileNode.sourcesCollapsed is display-only,
+// same tier as node.collapsed itself.
+function renderSourcesGroup(fileNode, depth) {
+  const wrap = document.createElement("div");
+
+  const row = document.createElement("div");
+  row.className = "tree-row-source-group";
+  row.style.paddingLeft = (8 + depth * 18) + "px";
+
+  const chevronSlot = document.createElement("span");
+  chevronSlot.className = "tree-chevron-slot";
+  const chevron = document.createElement("button");
+  chevron.type = "button";
+  const expanded = !fileNode.sourcesCollapsed;
+  chevron.className = "tree-chevron" + (expanded ? " expanded" : "");
+  chevron.title = fileNode.sourcesCollapsed ? "Expand" : "Collapse";
+  chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+  chevron.addEventListener("click", ev => {
+    ev.stopPropagation();
+    fileNode.sourcesCollapsed = !fileNode.sourcesCollapsed;
+    render();
+  });
+  chevronSlot.appendChild(chevron);
+  row.appendChild(chevronSlot);
+
+  const icon = document.createElement("span");
+  icon.className = "tree-icon";
+  icon.innerHTML = ICON_FILES_SEPARATE;
+  row.appendChild(icon);
+
+  const label = document.createElement("span");
+  label.className = "tree-label";
+  label.textContent = "Sources";
+  label.title = "Which source each entry in this merged file came from";
+  row.appendChild(label);
+
+  const count = document.createElement("span");
+  count.className = "tree-count";
+  count.textContent = fileNode.sources.length.toLocaleString("de-DE");
+  row.appendChild(count);
+
+  wrap.appendChild(row);
+  if (!fileNode.sourcesCollapsed) {
+    fileNode.sources.forEach(src => wrap.appendChild(renderSourceRow(src, depth + 1)));
+  }
+  return wrap;
+}
+
+function renderSourceRow(src, depth) {
+  const row = document.createElement("div");
+  row.className = "tree-row-source";
+  row.style.paddingLeft = (8 + depth * 18) + "px";
+
+  // Alignment spacer only — a source row never has children of its own.
+  const chevronSlot = document.createElement("span");
+  chevronSlot.className = "tree-chevron-slot";
+  row.appendChild(chevronSlot);
+
+  const swatch = document.createElement("button");
+  swatch.type = "button";
+  swatch.className = "tree-swatch" + (src.color ? "" : " empty");
+  if (src.color) swatch.style.background = src.color;
+  swatch.title = src.color
+    ? "Source colour — click to change, right-click to clear"
+    : "Set a colour for entries from this source";
+  swatch.addEventListener("click", ev => {
+    ev.stopPropagation();
+    openColorPicker(null, swatch, color => { src.color = color || null; render(); });
+  });
+  swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); src.color = null; render(); });
+  row.appendChild(swatch);
+
+  const icon = document.createElement("span");
+  icon.className = "tree-icon";
+  icon.innerHTML = ICON_FILE;
+  row.appendChild(icon);
+
+  const label = document.createElement("span");
+  label.className = "tree-label";
+  label.textContent = src.name;
+  label.title = src.name;
+  row.appendChild(label);
+
+  const count = document.createElement("span");
+  count.className = "tree-count";
+  count.textContent = src.count.toLocaleString("de-DE");
+  row.appendChild(count);
+
+  return row;
+}
+
 function renderNode(id, depth, opts) {
   const node = state.nodes[id];
   if (node.type === "file" && node.queued) return renderQueuedFileRow(node, depth);
@@ -13339,6 +13650,9 @@ function renderNode(id, depth, opts) {
   wrap.appendChild(row);
   if (node.type === "file" && node.children.length === 0 && node.filterHistoryMatch) {
     wrap.appendChild(renderFilterHistoryPreview(node));
+  }
+  if (node.type === "file" && node.merged && Array.isArray(node.sources) && node.sources.length) {
+    wrap.appendChild(renderSourcesGroup(node, depth + 1));
   }
   // node.collapsed hides real children the normal way (chevron above).
   if (!node.collapsed) {
@@ -17128,6 +17442,26 @@ function computeHighlightMap(fileId) {
       entries.forEach(e => addColor(e.id, node.highlightColor));
     }
   }
+
+  // A merged file's per-source colours (see mergeFiles' additive
+  // `sources`/`sourceId` stamping and renderSourceRow's swatch) ride the
+  // same gutter-marker lane as the filter-highlight colours above — a
+  // source colour is just one more mark an entry can carry, composable
+  // with any filter highlight already on it. Deliberately not wired into
+  // the text-underline-stripe path (getHighlightMatchNodes/
+  // hlStripeGradient): that's specifically for a filter's own text match,
+  // not an entry's origin.
+  if (file.merged && Array.isArray(file.sources) && file.sources.length) {
+    const colorBySourceId = new Map();
+    file.sources.forEach(src => { if (src.color) colorBySourceId.set(src.id, src.color); });
+    if (colorBySourceId.size) {
+      file.entries.forEach(e => {
+        const c = e.sourceId && colorBySourceId.get(e.sourceId);
+        if (c) addColor(e.id, c);
+      });
+    }
+  }
+
   return map;
 }
 
@@ -22524,6 +22858,18 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   const node = existingNode || createFileNode(name, folderId);
   if (existingNode) activateQueuedFileNode(node);
   node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
+
+  const fmt0 = state.logFormats.find(f => f.id === node.formatId);
+  if (fmt0 && fmt0.mode === "meta") {
+    // A meta-format file is fanned out into per-target virtual files and
+    // auto-merged instead of being parsed in place (loadMetaFormatText) —
+    // this placeholder node isn't the result, so it's discarded here. No
+    // live tail/localPath is wired for a meta-format file in v1 (see
+    // loadMetaFormatText's own comment).
+    deleteNode(node.id);
+    const text = await readFileWithProgress(file, () => {});
+    return await loadMetaFormatText(name, text, fmt0);
+  }
   // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
   // when a desktop wrapper exposes getPathForFile (window.philogg) — a
   // plain browser never exposes a File's real OS path (that's the whole
@@ -24155,6 +24501,13 @@ async function probeFolderFileRange(folder, rec) {
   // Same per-filename format resolution loadOneFileIntoTree itself uses —
   // folders have no separate per-folder format setting.
   const formatId = resolveFormatIdForFilename(rec.name);
+  // A meta-format file needs its declarative split to classify lines at
+  // all — probeFileTimeRange's single-format head/tail scan would either
+  // only ever see one of its grammars (depending which happens to sit in
+  // the probed byte window) or none. Not supported in v1: degrade to the
+  // existing "probed, no range found" sentinel rather than probe wrong.
+  const fmt0 = state.logFormats.find(f => f.id === formatId);
+  if (fmt0 && fmt0.mode === "meta") return (rec._range = null);
   return (rec._range = await probeFileTimeRange(file, formatId));
 }
 
@@ -26147,6 +26500,13 @@ const cpClearBtn = el("#cpClearBtn");
 const cpModeFreeBtn = el("#cpModeFree");
 const cpModeThemeBtn = el("#cpModeTheme");
 let colorPickerTargetId = null;
+// Optional override for where a picked color goes — set by openColorPicker's
+// third argument. Lets the same popup commit a color somewhere other than
+// a filter node's highlightColor (see setHighlightColor below), e.g. into a
+// merged file's per-source Sources-group entry (renderSourceRow). Absent
+// (the default, every pre-existing call site), a pick still falls through
+// to setHighlightColor(colorPickerTargetId, ...) exactly as before.
+let colorPickerOnPick = null;
 
 // Distinct, moderately saturated hues; independent from COLUMN_PALETTE
 // (extraction columns) so the two color systems can't be confused. Also
@@ -26176,7 +26536,7 @@ function renderColorPresets() {
     b.className = "cp-preset";
     b.style.background = c;
     b.title = c;
-    b.addEventListener("click", () => { setHighlightColor(colorPickerTargetId, c); closeColorPicker(); });
+    b.addEventListener("click", () => { commitColorPick(c); closeColorPicker(); });
     frag.appendChild(b);
   });
   cpPresets.appendChild(frag);
@@ -26195,15 +26555,24 @@ setColorPickerMode(colorPickerMode); // reflect the persisted/default mode in th
 cpModeFreeBtn.addEventListener("click", () => setColorPickerMode("free"));
 cpModeThemeBtn.addEventListener("click", () => setColorPickerMode("theme"));
 
-function openColorPicker(nodeId, anchorEl) {
+function openColorPicker(nodeId, anchorEl, onPick) {
   colorPickerTargetId = nodeId;
+  colorPickerOnPick = onPick || null;
   renderColorPresets(); // picks up a theme switch that happened since the popup was last opened
   const rect = anchorEl.getBoundingClientRect();
   colorPickerPopup.style.left = Math.min(rect.left, window.innerWidth - 196) + "px";
   colorPickerPopup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 300) + "px";
   colorPickerPopup.classList.remove("hidden");
 }
-function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPickerTargetId = null; }
+function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPickerTargetId = null; colorPickerOnPick = null; }
+
+// Commits a picked color to wherever this popup's current target wants it
+// — colorPickerOnPick when the opener asked for one, otherwise the default
+// (a filter node's own highlightColor, via setHighlightColor).
+function commitColorPick(color) {
+  if (colorPickerOnPick) colorPickerOnPick(color);
+  else setHighlightColor(colorPickerTargetId, color);
+}
 
 // Click position within the wheel -> hue. The conic-gradient starts red at
 // the top (12 o'clock, CSS's 0deg for conic-gradient) and goes clockwise
@@ -26211,18 +26580,21 @@ function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPic
 // "angle clockwise from top" IS the hue directly, just measured differently
 // than atan2's "counter-clockwise from 3 o'clock" — hence the +90deg shift.
 cpWheel.addEventListener("click", ev => {
-  if (!colorPickerTargetId) return;
+  // colorPickerTargetId is legitimately null for an onPick-driven open (a
+  // filter node's own id is always truthy) — only bail when neither a
+  // target nor an onPick callback is set, i.e. the popup isn't really open.
+  if (colorPickerTargetId == null && !colorPickerOnPick) return;
   const rect = cpWheel.getBoundingClientRect();
   const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
   const dx = ev.clientX - cx, dy = ev.clientY - cy;
   if (Math.sqrt(dx * dx + dy * dy) > rect.width / 2) return; // click landed outside the disc
   let hue = Math.atan2(dy, dx) * 180 / Math.PI + 90;
   if (hue < 0) hue += 360;
-  setHighlightColor(colorPickerTargetId, "hsl(" + Math.round(hue) + ", 68%, 55%)");
+  commitColorPick("hsl(" + Math.round(hue) + ", 68%, 55%)");
   closeColorPicker();
 });
 
-cpClearBtn.addEventListener("click", () => { setHighlightColor(colorPickerTargetId, null); closeColorPicker(); });
+cpClearBtn.addEventListener("click", () => { commitColorPick(null); closeColorPicker(); });
 
 // Sets or clears a filter node's highlight colour, which is both the colour
 // AND the on/off state for that highlight rule (session 6 — "has a colour"
@@ -28120,11 +28492,50 @@ async function deleteFormatRuleEntry(id) {
 // Loaded once at boot, before any file parsing can happen (see the Init
 // section). Lazily seeds the builtin default format on a fresh DB, or on
 // an upgrade from a pre-feature session where it's simply missing.
+// FEATURE_BACKLOG.md #81's reference case: a log4net-style app format and
+// an RFC 5424 syslog format that interleave in one physical file, plus the
+// meta-format combining them (see DEFAULT_LOG_FORMAT's mode comment and
+// splitTextByMetaFormat). Seeded once, like DEFAULT_LOG_FORMAT below, so
+// they're available in the Format Manager right away — not builtin, so
+// they're freely editable/deletable like any other format. Deliberately
+// no FormatRule/glob is created for them here; they stay dormant until a
+// filename rule is added by hand (Settings → Format Manager → Filename
+// rules) — see CHANGELOG.md for the session that added this.
+const DEMO_APP_FORMAT = {
+  id: "fmt-demo-app", name: "App log (log4net-style)", mode: "regex",
+  regex: '^(?<ts>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+) \\[\\] (?<level>[A-Z]+)\\s+(?<location>[^\\s].*?)\\s+- (?<message>.*)$',
+  pattern: "", tsFormat: "yyyy-MM-dd HH:mm:ss.SSS", levels: LEVELS.slice(),
+  builtin: false, edited: false, createdAt: 0,
+};
+const DEMO_SYSLOG_FORMAT = {
+  id: "fmt-demo-syslog", name: "Syslog (RFC 5424)", mode: "regex",
+  // 6-digit fractional seconds — exercises the SSS date-token's
+  // arbitrary-digit-count support (see DATE_TOKEN_FRAG/parseTimestampGeneric).
+  // No (?<level>...) group by design: format B has no textual level in the
+  // reference sample, so its entries fall through the existing generic
+  // missing-level default — see FEATURE_BACKLOG.md #80 (independent item).
+  regex: "^<\\d+>1 (?<ts>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+) \\S+ \\S+ (?<thread>\\d+) \\S+ \\[log@\\d+ filename='(?<location>[^']+)'[^\\]]*\\] (?<message>.*)$",
+  pattern: "", tsFormat: "yyyy-MM-ddTHH:mm:ss.SSS", levels: LEVELS.slice(),
+  builtin: false, edited: false, createdAt: 0,
+};
+const DEMO_META_FORMAT = {
+  id: "fmt-demo-app-syslog-meta", name: "App + Syslog (meta)", mode: "meta",
+  targetFormatIds: [DEMO_APP_FORMAT.id, DEMO_SYSLOG_FORMAT.id],
+  builtin: false, edited: false, createdAt: 0,
+};
+const DEMO_SEED_FORMATS = [DEMO_APP_FORMAT, DEMO_SYSLOG_FORMAT, DEMO_META_FORMAT];
+
 async function loadFormatConfig() {
   let formats = await listLogFormats();
   if (!formats.some(f => f.id === DEFAULT_FORMAT_ID)) {
     await saveLogFormat(DEFAULT_LOG_FORMAT);
     formats = formats.concat([DEFAULT_LOG_FORMAT]);
+  }
+  for (const seed of DEMO_SEED_FORMATS) {
+    if (!formats.some(f => f.id === seed.id)) {
+      await saveLogFormat(seed);
+      formats = formats.concat([seed]);
+    }
   }
   state.logFormats = formats;
   state.formatRules = await listFormatRules();
@@ -28618,9 +29029,11 @@ function renderFormatList() {
     row.className = "filter-library-row";
     const main = document.createElement("div");
     main.className = "filter-library-row-main";
+    const modeLabel = fmt.mode === "meta" ? "Meta · " + (fmt.targetFormatIds || []).length + " targets"
+      : fmt.mode === "regex" ? "Regex" : "Pattern";
     main.innerHTML =
       '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") + '</div>' +
-      '<div class="filter-library-row-meta">' + (fmt.mode === "regex" ? "Regex" : "Pattern") +
+      '<div class="filter-library-row-meta">' + modeLabel +
       (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") +
       (formatLevels(fmt.id).join(",") !== LEVELS.join(",") ? " · " + escapeHtml(formatLevels(fmt.id).join(" ")) : "") + '</div>';
     row.appendChild(main);
@@ -28682,6 +29095,11 @@ async function removeLogFormat(id) {
   const usedBy = state.formatRules.filter(r => r.formatId === id).length;
   if (usedBy) {
     showCopyToast(usedBy + " rule" + (usedBy === 1 ? "" : "s") + " still use" + (usedBy === 1 ? "s" : "") + " this format — remove them first");
+    return;
+  }
+  const usedAsTarget = state.logFormats.filter(f => f.mode === "meta" && (f.targetFormatIds || []).includes(id)).length;
+  if (usedAsTarget) {
+    showCopyToast(usedAsTarget + " meta-format" + (usedAsTarget === 1 ? "" : "s") + " still use" + (usedAsTarget === 1 ? "s" : "") + " this format as a target — remove it there first");
     return;
   }
   await deleteLogFormatEntry(id);
@@ -28923,11 +29341,103 @@ formatEditLevelNew.addEventListener("keydown", ev => {
 function updateFormatEditModeUI() {
   el("#formatEditModePattern").classList.toggle("active", formatEditMode === "pattern");
   el("#formatEditModeRegex").classList.toggle("active", formatEditMode === "regex");
+  el("#formatEditModeMeta").classList.toggle("active", formatEditMode === "meta");
   el("#formatEditPatternField").classList.toggle("hidden", formatEditMode !== "pattern");
   el("#formatEditRegexField").classList.toggle("hidden", formatEditMode !== "regex");
+  el("#formatEditMetaField").classList.toggle("hidden", formatEditMode !== "meta");
+  // None of these apply to a meta-format (no timestamp/levels/pattern of
+  // its own to preview against — see DEFAULT_LOG_FORMAT's mode comment).
+  const isMeta = formatEditMode === "meta";
+  el("#formatEditSampleField").classList.toggle("hidden", isMeta);
+  el("#formatEditTsFormatField").classList.toggle("hidden", isMeta);
+  el("#formatEditLevelsField").classList.toggle("hidden", isMeta);
+  el("#formatEditPreviewField").classList.toggle("hidden", isMeta);
 }
 el("#formatEditModePattern").addEventListener("click", () => { formatEditMode = "pattern"; updateFormatEditModeUI(); renderFormatEditPreview(); });
 el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "regex"; updateFormatEditModeUI(); renderFormatEditPreview(); });
+el("#formatEditModeMeta").addEventListener("click", () => { formatEditMode = "meta"; updateFormatEditModeUI(); renderFormatEditMetaTargets(); });
+
+// ---- Meta-format target-format picker (mirrors the level-order editor
+// above: an ordered working array, edited via add/reorder/remove, only
+// written back into the format record on Save) ----
+let formatEditMetaTargets = [];
+
+function renderFormatEditMetaTargetOptions() {
+  const select = el("#formatEditMetaTargetSelect");
+  // A meta-format can't target another meta-format (no nested classification)
+  // or itself; already-chosen targets are removed from the "add" choices.
+  const available = sortedLogFormats().filter(f =>
+    f.mode !== "meta" && f.id !== formatEditId && !formatEditMetaTargets.includes(f.id));
+  select.innerHTML = available.map(f => '<option value="' + escapeHtml(f.id) + '">' + escapeHtml(f.name) + '</option>').join("");
+}
+
+function renderFormatEditMetaTargets() {
+  const container = el("#formatEditMetaTargets");
+  container.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  formatEditMetaTargets.forEach((id, i) => {
+    const fmt = state.logFormats.find(f => f.id === id);
+    const row = document.createElement("div");
+    row.className = "format-level-row";
+
+    const name = document.createElement("div");
+    name.className = "format-level-name";
+    name.textContent = fmt ? fmt.name : "(missing format)";
+    row.appendChild(name);
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "filter-library-row-order";
+    upBtn.title = "Move up";
+    upBtn.textContent = "▲";
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditMetaTarget(i, -1); });
+    row.appendChild(upBtn);
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "filter-library-row-order";
+    downBtn.title = "Move down";
+    downBtn.textContent = "▼";
+    downBtn.disabled = i === formatEditMetaTargets.length - 1;
+    downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditMetaTarget(i, 1); });
+    row.appendChild(downBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "filter-library-row-del";
+    delBtn.title = "Remove this target";
+    delBtn.innerHTML = ICON_CLOSE;
+    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeFormatEditMetaTarget(i); });
+    row.appendChild(delBtn);
+
+    frag.appendChild(row);
+  });
+  container.appendChild(frag);
+  renderFormatEditMetaTargetOptions();
+}
+
+function moveFormatEditMetaTarget(idx, delta) {
+  const other = idx + delta;
+  if (other < 0 || other >= formatEditMetaTargets.length) return;
+  const tmp = formatEditMetaTargets[idx];
+  formatEditMetaTargets[idx] = formatEditMetaTargets[other];
+  formatEditMetaTargets[other] = tmp;
+  renderFormatEditMetaTargets();
+}
+
+function removeFormatEditMetaTarget(idx) {
+  formatEditMetaTargets.splice(idx, 1);
+  renderFormatEditMetaTargets();
+}
+
+el("#formatEditMetaAddBtn").addEventListener("click", ev => {
+  ev.stopPropagation();
+  const id = el("#formatEditMetaTargetSelect").value;
+  if (!id || formatEditMetaTargets.includes(id)) return;
+  formatEditMetaTargets.push(id);
+  renderFormatEditMetaTargets();
+});
 
 // Common log-level names, longest-first-irrelevant (word-boundary match
 // picks the first occurring regardless of listed order) — used only by
@@ -29120,9 +29630,11 @@ function openFormatEditDialog(id) {
   formatEditRegex.value = fmt ? (fmt.regex || "") : "";
   formatEditTsFormat.value = fmt ? (fmt.tsFormat || "") : DEFAULT_LOG_FORMAT.tsFormat;
   setFormatEditLevels(fmt ? fmt.levels : null);
+  formatEditMetaTargets = (fmt && fmt.mode === "meta") ? (fmt.targetFormatIds || []).slice() : [];
   formatEditError.textContent = "";
   formatEditError.classList.add("hidden");
   updateFormatEditModeUI();
+  renderFormatEditMetaTargets();
   renderFormatEditPreview();
   formatEditPanel.classList.remove("hidden");
   el("#btnAddFormat").classList.add("hidden"); // only one editor visible at a time
@@ -29143,15 +29655,23 @@ async function saveFormatEdit() {
   const regex = formatEditRegex.value;
   const tsFormat = formatEditTsFormat.value.trim();
   const levels = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
-  if (!levels.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
 
-  if (formatEditMode === "pattern") {
-    const c = compileFormatPattern(pattern, tsFormat);
-    if (c.error) { formatEditError.textContent = c.error; formatEditError.classList.remove("hidden"); return; }
+  if (formatEditMode === "meta") {
+    if (formatEditMetaTargets.length < 2) {
+      formatEditError.textContent = "Pick at least 2 target formats.";
+      formatEditError.classList.remove("hidden");
+      return;
+    }
   } else {
-    const v = validateFormatRegex(regex);
-    if (v.error) { formatEditError.textContent = v.error; formatEditError.classList.remove("hidden"); return; }
-    if (v.warning) { formatEditError.textContent = v.warning; formatEditError.classList.remove("hidden"); } // non-blocking
+    if (!levels.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
+    if (formatEditMode === "pattern") {
+      const c = compileFormatPattern(pattern, tsFormat);
+      if (c.error) { formatEditError.textContent = c.error; formatEditError.classList.remove("hidden"); return; }
+    } else {
+      const v = validateFormatRegex(regex);
+      if (v.error) { formatEditError.textContent = v.error; formatEditError.classList.remove("hidden"); return; }
+      if (v.warning) { formatEditError.textContent = v.warning; formatEditError.classList.remove("hidden"); } // non-blocking
+    }
   }
 
   const existing = formatEditId ? state.logFormats.find(f => f.id === formatEditId) : null;
@@ -29161,10 +29681,16 @@ async function saveFormatEdit() {
   };
   fmt.name = name.slice(0, 80);
   fmt.mode = formatEditMode;
-  fmt.pattern = pattern;
-  fmt.regex = regex;
-  fmt.tsFormat = tsFormat;
-  fmt.levels = levels;
+  if (formatEditMode === "meta") {
+    fmt.targetFormatIds = formatEditMetaTargets.slice();
+    delete fmt.pattern; delete fmt.regex; delete fmt.tsFormat; delete fmt.levels;
+  } else {
+    fmt.pattern = pattern;
+    fmt.regex = regex;
+    fmt.tsFormat = tsFormat;
+    fmt.levels = levels;
+    delete fmt.targetFormatIds;
+  }
   // See "Log format definitions" — editing the builtin default takes it off
   // the untouched-HEADER_RE fast path from now on.
   if (fmt.builtin) fmt.edited = true;

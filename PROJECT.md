@@ -43,7 +43,10 @@ only how a line is split into those fields is configurable. See "Log format
 definitions" (`philogg.html`, right after "Log parsing") for the full
 mechanism: pattern-mode vs. regex-mode compilation, filename→format glob
 rules (Settings → Format Manager), and how a file's resolved format is
-pinned to it for the rest of its session-cache lifetime.
+pinned to it for the rest of its session-cache lifetime. A third `LogFormat`
+mode, `"meta"` (below), is the one exception to "one format, one file" — it
+never parses a line itself, it fans a file out into several ordinary,
+single-format files first.
 
 A format also carries its own **ordered level list** (`LogFormat.levels`).
 It may pick from the five names that own a theme color (`ALL_LEVELS` =
@@ -98,6 +101,62 @@ own worker and actually parse on separate cores at once — the scenario this
 was built for (large files, several loaded together). See `tests/…` GROUP
 165 for the coverage (sandboxed worker-source execution + concurrent-load
 correctness) and GROUP 68's addendum for the queued-placeholder UX change.
+
+**Multi-pattern parsing: the `"meta"` format mode** (FEATURE_BACKLOG.md #81,
+implemented this session). Some files interleave two or more independent
+grammars line-by-line (the motivating case: a log4net-style app log mixed
+with RFC 5424 syslog blocks, no single header regex covers both). A
+`mode: "meta"` `LogFormat` carries no pattern/regex/tsFormat/levels of its
+own — only an ordered `targetFormatIds` list (≥2) naming other, ordinary
+formats. `splitTextByMetaFormat(text, metaFmt)` classifies each non-blank
+line against every target's own already-compiled `isHeaderLine`, first
+match (in declared order) wins; a non-matching, non-blank line joins
+whichever target's stream most recently matched — the same continuation
+rule `parseLogTextAsync` already applies to a single format, just resolved
+per-stream before parsing starts. Blank lines are dropped during the split
+entirely, never emitted into any stream, which is provably equivalent to
+today's single-format behavior (a blank line is already a no-op in
+`parseLogTextAsync`'s own loop). `loadMetaFormatText(name, text, metaFmt)`
+then parses each classified stream as an ordinary transient file (reusing
+`addFile`/`parseLogTextAsync` unmodified), sorts each transient file's own
+`entries` by `ts` (a virtual stream isn't guaranteed chronological on disk
+— a syslog block in particular — and `mergeFiles`' disjoint-time-range fast
+path trusts each source's own order, so this pre-sort is what keeps that
+fast path correct), merges them via the existing, unmodified `mergeFiles`,
+renames the result to the physical filename, and removes the transient
+per-grammar files (safe — `mergeFiles` already holds the same entry objects
+by reference before any deletion runs). Wired into `loadOneFileIntoTree`
+and `addFile`'s live-resolution branch, so drag-drop, the file picker, and
+folder-watch's on-demand open all pick this up automatically with no
+separate code path. **Not supported in this first version**: folder-watch
+minimap probing (`probeFolderFileRange` returns its ordinary "no range
+found" sentinel for a meta-format file rather than probing one grammar
+wrong), windowed/partial loading, and live-tailing — a meta-format file is
+always a static, fully-read snapshot. Level derivation from a numeric code
+(FEATURE_BACKLOG.md #80) is a separate, independent item — a target format
+missing a `level` group just falls through the existing generic
+missing-level default.
+
+**"Sources" grouping/coloring on any merged file.** `mergeFiles` (used both
+by the meta-format auto-merge above and the pre-existing manual "Merge N
+files" bulk action) additively stamps a `sources: [{id, name, color, count}]`
+array onto the merged file node and an `entry.sourceId` onto every copied
+entry. The tree renders this as an expandable **"Sources"** group directly
+under the merged file's own row (`renderSourcesGroup`/`renderSourceRow`) —
+a purely presentational group, not real `state.nodes` entries, same shape
+as the ZIP/folder-watch container rows. Each source gets its own color
+swatch (the existing highlight color-picker popup, generalized with an
+optional `onPick` callback so a pick can land on `node.sources[i].color`
+instead of a filter node's `highlightColor`); `computeHighlightMap` surfaces
+a colored source's entries into the same gutter-marker lane filter
+highlights already use. Session-only by design (no IndexedDB persistence —
+a session-cache restore of a merged file already reparses from scratch and
+loses this kind of state, same as the pre-existing "Merged-file gotcha"
+below) but threaded through `snapshotSubtree`/`restoreSubtree`'s file
+branch, so an in-session delete+undo doesn't silently drop it. Known,
+accepted limitation: entries are shared by reference across merges, so
+re-merging an already-merged file's entries overwrites `sourceId` on the
+same objects, making the earlier merge's own Sources coloring stale.
 
 ## Core data model
 
