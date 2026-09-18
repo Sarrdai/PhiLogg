@@ -171,10 +171,14 @@ open it in a browser to view it.
   now load and parse concurrently, each on its own Web Worker where
   available, so several large logs loaded together actually parse on
   separate cores at once instead of one at a time.
-- **A merged file shows its "Sources"** — an expandable group under any
-  merged file's row lists which physical file (or, for a multi-pattern file
-  below, which grammar) each entry came from, with its own color swatch so
-  the different origins stay visually distinguishable in the log view.
+- **A merged file shows its "Sources"** — an expandable row under any
+  merged file (alongside Bookmarks/Notes, in that order) lists which
+  physical file (or, for a multi-pattern file below, which grammar) each
+  entry came from, each with its own color swatch and still fully
+  clickable/filterable on its own, so the different origins stay both
+  visually distinguishable and individually workable with. A "Show
+  Sources" toggle (Settings → Behavior) turns this off if you'd rather not
+  see it.
 - **Multi-pattern log files** — a file that interleaves two or more
   independent grammars line-by-line (e.g. an app log mixed with syslog
   blocks) can be split and auto-merged via a new **Meta** format (Settings →

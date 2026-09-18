@@ -13936,8 +13936,12 @@ await withApp(async (w, d, T) => {
   w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[9]);
   fireClick(d.querySelector("#ctxAddToSelection"), w);
   fireClick(menuAction('data-selection-action="create"'), w);
-  const sel2 = T.state.nodes[f.children[0]];
-  assert(sel2.selectionFilter === true && sel2.name === "Selection 2", "a second new selection filter is named \"Selection 2\", got " + sel2.name);
+  // Looked up by name/flag, not f.children[0] — insertSpecialChild (this
+  // session's ordering rework) now sorts Selection 2 AFTER Selection 1
+  // (ascending, not unshifted-to-the-front), so index 0 is no longer where
+  // the newest selection lands.
+  const sel2 = Object.values(T.state.nodes).find(n => n.selectionFilter && n.name === "Selection 2");
+  assert(sel2 && sel2.selectionFilter === true, "a second new selection filter is named \"Selection 2\", got " + (sel2 && sel2.name));
 
   // --- Persistence carriers: selectionFilter is a NEW field (unlike the
   // shared idset value/getEntries machinery, which needed no new code) —
@@ -23872,7 +23876,11 @@ await withApp(async (w, d, T) => {
   const merged = T.state.nodes[T.state.activeId];
   assert(merged && merged.merged === true, "a merged node was created and is the active node");
   assert(merged.entries.length === 6, "merge combines both files' full entries, got " + merged.entries.length);
-  assert(merged.children.length === 0, "merge-full attaches NO timerange filter, got " + merged.children.length + " children");
+  // merged.children now always has the auto-managed "Sources" node (see
+  // createMergeShell) — the assertion here is specifically about NOT
+  // attaching a timerange filter (unlike folderMinimapMergeWindow below).
+  assert(!merged.children.some(id => T.state.nodes[id].filterType === "timerange"),
+    "merge-full attaches NO timerange filter, got children " + JSON.stringify(merged.children.map(id => T.state.nodes[id].filterType)));
 });
 
 await withApp(async (w, d, T) => {
@@ -26853,7 +26861,17 @@ await withApp(async (w, d, T) => {
   assert(merged.merged === true, "the auto-merge result is a real merged file node");
   assert(merged.entries.length === 12, "7 format-A headers + 5 format-B headers = 12 entries total, got " + merged.entries.length);
   assert(merged.entries.every((e, i, arr) => i === 0 || arr[i - 1].ts <= e.ts), "the merged result is fully chronological");
-  assert(T.state.rootIds.length === 1, "the transient per-grammar vnodes are gone from the tree — only the merged result is left");
+  // Per-grammar vnodes are never deleted (this session's rework, reversing
+  // the previous session's "delete after merge" design) — they stay real,
+  // independent, tagged file nodes, hidden from the plain top-level walk
+  // (mergeSourceHidden) but otherwise fully alive.
+  assert(T.state.rootIds.length === 3, "the merge + its 2 per-grammar vnodes are all real rootIds, got " + T.state.rootIds.length);
+  const vnodeIds = T.state.rootIds.filter(id => id !== merged.id);
+  assert(vnodeIds.every(id => {
+    const n = T.state.nodes[id];
+    return n && n.type === "file" && n.mergeOwnerId === merged.id && n.mergeSourceHidden === true;
+  }), "each vnode is tagged mergeOwnerId/mergeSourceHidden, pointing at the merge");
+  assert(vnodeIds.every(id => T.state.nodes[id].entries.length > 0), "each vnode still holds its own real, parsed entries");
 
   assert(merged.sources && merged.sources.length === 2, "the merged file's Sources breakdown has one entry per target format");
   assert(merged.sources.map(s => s.name).sort().join(",") === "App log (log4net-style),Syslog (RFC 5424)",
@@ -27032,7 +27050,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("236c. loadMetaFormatText: node.sources named after target formats, transient vnodes cleaned up, entries stay live in entryIndex");
+  section("236c. loadMetaFormatText: node.sources named after target formats, per-grammar vnodes stay real and tagged, entries live in entryIndex");
   await waitForFormatConfig(T);
   const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
   const text = [
@@ -27041,9 +27059,15 @@ await withApp(async (w, d, T) => {
   ].join("\n");
   const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
   assert(merged.sources.map(s => s.name).sort().join(",") === "App log (log4net-style),Syslog (RFC 5424)", "sources named after the target formats, not filenames");
-  assert(T.state.rootIds.length === 1 && T.state.rootIds[0] === merged.id, "the transient per-grammar vnodes are removed from the tree — only the merged result remains");
+  // Per-grammar vnodes are never deleted (this session's rework) — real,
+  // hidden-from-top-level, independently addressable file nodes.
+  assert(T.state.rootIds.length === 3, "the merge + its 2 per-grammar vnodes are all real rootIds, got " + T.state.rootIds.length);
+  const vnodeIds = T.state.rootIds.filter(id => id !== merged.id);
+  assert(vnodeIds.every(id => T.state.nodes[id].mergeOwnerId === merged.id && T.state.nodes[id].mergeSourceHidden === true),
+    "each vnode is tagged as this merge's hidden source");
+  assert(merged.sources.every(s => vnodeIds.includes(s.id)), "merged.sources[i].id points at the still-live vnode, not a dangling id");
   const sharedId = merged.entries[0].id;
-  assert(T.entryIndex[sharedId] === merged.entries[0], "the merged entries stay resolvable via entryIndex after their transient source vnodes were deleted");
+  assert(T.entryIndex[sharedId] === merged.entries[0], "the merged entries stay resolvable via entryIndex");
 });
 
 /* ============================================================
@@ -27055,33 +27079,48 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(237);
 await withApp(async (w, d, T) => {
-  section("237. Sources group: tree rendering, independent collapse, swatch -> node.sources[i].color, computeHighlightMap picks it up per-source");
+  section("237. Sources node: real tree row, real nested clickable source rows, independent collapse, swatch -> node.sources[i].color, computeHighlightMap picks it up per-source");
   const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
   const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
   const merged = await w.mergeFiles([fa.id, fb.id]);
   T.state.activeId = merged.id;
   w.render();
 
-  let sourceRows = [...d.querySelectorAll(".tree-row-source")];
-  assert(sourceRows.length === 2, "one row per source rendered, got " + sourceRows.length);
-  assert(sourceRows[0].textContent.includes("a.log") && sourceRows[1].textContent.includes("b.log"), "labeled with the source file names");
+  const sourcesNodeId = merged.children[0];
+  const sourcesNode = T.state.nodes[sourcesNodeId];
+  assert(sourcesNode && sourcesNode.filterType === "sources" && sourcesNode.locked === true,
+    "the Sources row is a real, locked filter node — merged.children[0]");
+  const sourcesRow = d.querySelector('.tree-row[data-node-id="' + sourcesNodeId + '"]');
+  assert(sourcesRow && sourcesRow.textContent.includes("Sources"), "it renders as a normal .tree-row, labeled Sources");
 
-  fireClick(d.querySelector(".tree-row-source-group .tree-chevron"), w);
-  assert(merged.sourcesCollapsed === true, "clicking the group chevron collapses the Sources group");
-  w.render();
-  assert(d.querySelectorAll(".tree-row-source").length === 0, "source rows are hidden while collapsed");
-  fireClick(d.querySelector(".tree-row-source-group .tree-chevron"), w);
-  w.render();
-  sourceRows = [...d.querySelectorAll(".tree-row-source")];
-  assert(sourceRows.length === 2, "expanding again brings the rows back");
+  // The two sources are real, independent file nodes (fa/fb themselves,
+  // for a manual bulk merge — see mergeFiles' own comment on mergeOwnerId
+  // without mergeSourceHidden), each rendered a SECOND time, nested under
+  // the Sources row, via the ordinary renderNode reused as-is. DOM order
+  // matches tree order, so [0] is the untouched top-level row and [1] is
+  // the nested one.
+  const faRows = () => [...d.querySelectorAll('.tree-row[data-node-id="' + fa.id + '"]')];
+  assert(faRows().length === 2, "fa renders TWICE — once at top level (bulk-merge originals stay visible), once nested under Sources, got " + faRows().length);
+  assert(fa.mergeOwnerId === merged.id && !fa.mergeSourceHidden, "fa is tagged as this merge's source but NOT hidden — stays a normal top-level row too");
+  assert(fb.mergeOwnerId === merged.id && !fb.mergeSourceHidden, "same for fb");
+  assert(!faRows()[0].querySelector(".tree-swatch"), "the top-level (unnested) fa row carries no source-color swatch");
+  assert(faRows()[1].querySelector(".tree-swatch"), "the nested fa row does");
 
-  const swatch = sourceRows[0].querySelector(".tree-swatch");
+  fireClick(sourcesRow.querySelector(".tree-chevron"), w);
+  assert(sourcesNode.collapsed === true, "clicking the Sources row's own chevron collapses it — the SAME mechanism any other node's children use, no bespoke field");
+  w.render();
+  assert(faRows().length === 1, "the nested fa row is gone while Sources is collapsed — only the top-level original remains");
+  fireClick(d.querySelector('.tree-row[data-node-id="' + sourcesNodeId + '"] .tree-chevron'), w);
+  w.render();
+  assert(faRows().length === 2, "expanding again brings the nested row back");
+
+  const swatch = faRows()[1].querySelector(".tree-swatch");
   fireClick(swatch, w);
   assert(isVisible(d.querySelector("#colorPickerPopup"), w), "clicking a source's swatch opens the color picker");
   const preset = d.querySelector("#cpPresets .cp-preset");
   fireClick(preset, w);
-  assert(merged.sources[0].color, "picking a color writes it onto the source entry");
-  assert(!merged.highlightColor, "...not onto the merged file node's own highlightColor (file nodes never carry one)");
+  assert(merged.sources[0].color, "picking a color writes it onto merged.sources[i], not onto the file node itself");
+  assert(!fa.highlightColor, "...not onto the source file node's own highlightColor (file nodes never carry one)");
 
   const hlMap = w.computeHighlightMap(merged.id);
   const coloredEntryId = merged.entries.find(e => e.sourceId === fa.id).id;
@@ -27089,8 +27128,10 @@ await withApp(async (w, d, T) => {
   assert(hlMap.get(coloredEntryId) && hlMap.get(coloredEntryId).includes(merged.sources[0].color), "computeHighlightMap surfaces the source's color for its own entries");
   assert(!hlMap.get(uncoloredEntryId), "...but not for the other (uncolored) source's entries");
 
-  const sourceRowsAgain = [...d.querySelectorAll(".tree-row-source")];
-  fireContextMenu(sourceRowsAgain[0].querySelector(".tree-swatch"), w);
+  // Re-query: the color pick above triggered a full render(), so the
+  // captured `swatch` element is now detached (CLAUDE.md's "DOM identity
+  // across clicks" gotcha).
+  fireContextMenu(faRows()[1].querySelector(".tree-swatch"), w);
   assert(merged.sources[0].color === null, "right-click clears the source's color");
 });
 
@@ -27177,6 +27218,298 @@ await withApp(async (w, d, T) => {
   await w.loadFormatConfig();
   assert(T.state.logFormats.filter(f => f.id === "fmt-demo-app").length === 1, "re-seeding is idempotent — no duplicate app-log format");
   assert(T.state.logFormats.filter(f => f.id === "fmt-demo-app-syslog-meta").length === 1, "...nor duplicate meta-format");
+});
+
+/* ============================================================
+   GROUP 240 — specialChildRank/insertSpecialChild: the tree's auto-managed
+   rows always sort Sources, Bookmarks, Notes, Selection 1, Selection 2, ...
+   regardless of creation order (this session's rework — previously
+   syncBookmarksFilterNode/syncNotesFilterNode/createSelectionFilterNode
+   each used their own ad hoc unshift/splice, with no shared rule and no
+   awareness of each other — a Selection even unshifted itself ABOVE an
+   existing Bookmarks/Notes node).
+   ============================================================ */
+group(240);
+await withApp(async (w, d, T) => {
+  section("240a. insertSpecialChild: Sources/Bookmarks/Notes/Selection N always sort in that fixed order, regardless of creation order");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+
+  // Bookmark, then note, then two selections, in that creation order —
+  // exercises Notes' bookmarks-relative placement AND two selections'
+  // ascending (not reverse-unshifted) order in one pass.
+  w.toggleBookmark(f.entries[0].id);
+  T.state.notes.set(f.entries[1].id, "a note");
+  w.syncNotesFilterNode(f.id);
+  w.createSelectionFilterNode(f.id, [f.entries[2].id]);
+  w.createSelectionFilterNode(f.id, [f.entries[3].id]);
+
+  const names = () => f.children.map(id => T.state.nodes[id].name);
+  assert(JSON.stringify(names()) === JSON.stringify(["Bookmarks", "Notes", "Selection 1", "Selection 2"]),
+    "no merge on this file, so no Sources — Bookmarks, Notes, Selection 1, Selection 2 in ascending order, got " + JSON.stringify(names()));
+});
+
+await withApp(async (w, d, T) => {
+  section("240b. insertSpecialChild: a merge's own Sources (created at merge time) still sorts first even when a Bookmark/Selection is added afterward");
+  const fb = await w.addFile("b.log", makeLog(100, 3, { msgPrefix: "later" }), () => {});
+  const fc = await w.addFile("c.log", makeLog(200, 3, { msgPrefix: "even later" }), () => {});
+  const merged = await w.mergeFiles([fb.id, fc.id]);
+  w.createSelectionFilterNode(merged.id, [merged.entries[0].id]);
+  // Bookmarking directly via state.bookmarks + syncBookmarksFilterNode(merged.id)
+  // rather than w.toggleBookmark(entryId): a merged file's entries are the
+  // SAME shared objects as its (still-visible, unhidden) sources' own
+  // entries (see mergeFiles' comment), so findRootIdForEntry's lookup for
+  // a shared entry id is inherently ambiguous between the merge and its
+  // sources — a pre-existing property of entry-sharing, not something this
+  // ordering test is about; syncing directly on the node under test sidesteps it.
+  T.state.bookmarks.set(merged.entries[1].id, { bookmarkedAt: Date.now() });
+  w.syncBookmarksFilterNode(merged.id);
+  const mergedNames = () => merged.children.map(id => T.state.nodes[id].name);
+  assert(JSON.stringify(mergedNames()) === JSON.stringify(["Sources", "Bookmarks", "Selection 1"]),
+    "Sources (created at merge time) still sorts before a Bookmark/Selection added afterward, got " + JSON.stringify(mergedNames()));
+});
+
+/* ============================================================
+   GROUP 241 — "Sources" is a real, locked filter node (this session's
+   rework, replacing the previous presentational-only group): its own
+   getEntries is a pure passthrough, it's excluded from filter-tree
+   persistence carriers exactly like Bookmarks/Notes, and its context menu
+   reduces to the same locked-node "Copy only" treatment those two get.
+   ============================================================ */
+group(241);
+await withApp(async (w, d, T) => {
+  section("241a. Sources node: getEntries passthrough, excluded from the session-cache filter-tree carrier (mirrors Bookmarks/Notes)");
+  const fa = await w.addFile("a.log", makeLog(0, 3), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 3, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  const sourcesId = merged.children[0];
+  const sourcesNode = T.state.nodes[sourcesId];
+  assert(sourcesNode.filterType === "sources" && sourcesNode.locked === true, "sanity: real, locked filter node");
+  assert(w.getEntries(sourcesId).length === merged.entries.length,
+    "getEntries on the Sources node is a pure passthrough of its parent's (the merged file's) own result");
+
+  const cached = w.serializeFilterTreeForCache(merged);
+  assert(!cached.roots.some(r => r.filterType === "sources"), "serializeFilterTreeForCache excludes the Sources node, same as Bookmarks/Notes");
+});
+
+await withApp(async (w, d, T) => {
+  section("241b. Sources node: context menu reduces to Copy-only, the same locked-node treatment Bookmarks/Notes already get");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.activeId = merged.id;
+  w.render();
+  const sourcesId = merged.children[0];
+  w.openTreeContextMenu({ clientX: 10, clientY: 10, preventDefault() {} }, sourcesId);
+  const actions = [...d.querySelectorAll("#treeContextMenu [data-action]")].map(el => el.dataset.action);
+  assert(actions.includes("copy"), "Copy is offered, got " + JSON.stringify(actions));
+  assert(!actions.some(a => ["delete", "rename", "edit", "invert", "cut"].includes(a)),
+    "delete/rename/edit/invert/cut are NOT offered for a locked node, got " + JSON.stringify(actions));
+});
+
+/* ============================================================
+   GROUP 242 — the "Show Sources" setting (default true): a pure display
+   toggle, persisted to localStorage, never touching node.sources/
+   mergeOwnerId data itself.
+   ============================================================ */
+group(242);
+await withApp(async (w, d, T) => {
+  section("242. Show Sources: defaults true, toggling off hides the row without touching data, toggling back on restores it, persists");
+  await waitFor(() => T.state.logFormats.length > 0); // boot settle, same as waitForFormatConfig elsewhere
+  assert(w.pillGet(d.querySelector("#settingsShowSources")) === true, "the toggle reflects the true default on a fresh boot");
+
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.activeId = merged.id;
+  w.render();
+  const sourcesId = merged.children[0];
+  assert(d.querySelector('.tree-row[data-node-id="' + sourcesId + '"]'), "Sources row renders by default");
+
+  fireClick(d.querySelector("#settingsShowSources"), w);
+  assert(!d.querySelector('.tree-row[data-node-id="' + sourcesId + '"]'), "toggling off hides the row immediately");
+  assert(merged.sources.length === 2 && merged.children.includes(sourcesId), "...but the underlying node/data are untouched");
+  assert(w.localStorage.getItem("philogg-show-sources") === "0", "persisted to localStorage");
+
+  fireClick(d.querySelector("#settingsShowSources"), w);
+  assert(d.querySelector('.tree-row[data-node-id="' + sourcesId + '"]'), "toggling back on restores the row, same data");
+  assert(w.localStorage.getItem("philogg-show-sources") === "1", "persisted back");
+});
+
+/* ============================================================
+   GROUP 243 — create-merge-first via loadFileDescriptors: the merge row
+   exists and is interactive BEFORE any source finishes loading, sources
+   load nested under Sources (never as a separate top-level flash), and
+   end up real, tagged, hidden-from-top-level nodes.
+   ============================================================ */
+group(243);
+await withApp(async (w, d, T) => {
+  section("243. loadFileDescriptors: merge shell created first, sources load nested/tagged, never a top-level flash");
+  w.confirmMergeOnLoad = () => Promise.resolve(true); // auto-answer "Merge" without driving the real dialog
+  const fileA = new w.File([makeLog(0, 3)], "a.log", { type: "text/plain" });
+  const fileB = new w.File([makeLog(100, 3, { msgPrefix: "later" })], "b.log", { type: "text/plain" });
+  await w.loadFileDescriptors([{ file: fileA }, { file: fileB }]);
+
+  assert(T.state.rootIds.length === 3, "merge + 2 sources, all real rootIds, got " + T.state.rootIds.length);
+  const merged = T.state.nodes[T.state.activeId];
+  assert(merged && merged.merged === true, "the merge is the active node once loading finishes");
+  assert(merged.entries.length === 6, "both sources' entries are combined, got " + merged.entries.length);
+  const sourceIds = merged.sources.map(s => s.id);
+  assert(sourceIds.every(id => {
+    const n = T.state.nodes[id];
+    return n && n.mergeOwnerId === merged.id && n.mergeSourceHidden === true;
+  }), "each source is a real, tagged, hidden-from-top-level node");
+  assert(!T.state.rootIds.some(id => id !== merged.id && !sourceIds.includes(id)), "no stray top-level rows besides the merge and its own sources");
+});
+
+/* ============================================================
+   GROUP 244 — the (n+1)-segment combined progress bar on a create-first
+   merge's own row, shown only while "Show Sources" is off.
+   ============================================================ */
+group(244);
+await withApp(async (w, d, T) => {
+  section("244. Segmented progress: with Show Sources off, the merge row carries n+1 segments instead of nested per-source rows");
+  fireClick(d.querySelector("#settingsShowSources"), w); // off
+  await waitFor(() => T.state.logFormats.length > 0);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  T.state.activeId = merged.id;
+  w.render();
+
+  const row = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
+  assert(row, "sanity: the merge row itself renders");
+  const segments = row.querySelectorAll(".tree-load-fill-segment");
+  // loadSegmentSourceIds is deleted once fillMergedEntries finishes (this
+  // fixture's tiny fixture loads near-instantly) — assert the MECHANISM
+  // (the field existed, is gone once done) rather than catching mid-flight
+  // widths, which would be timing-flaky in a synchronous test fixture.
+  assert(merged.loadSegmentSourceIds === undefined, "loadSegmentSourceIds is cleared once the merge finishes (fillMergedEntries)");
+  assert(!row.querySelector(".tree-load-track"), "no lingering progress bar once loading is fully done");
+  assert(segments.length === 0, "sanity: no stale segment markup left behind either");
+});
+
+/* ============================================================
+   GROUP 245 — meta-format per-grammar vnodes stay real and independently
+   usable after the merge finishes (supersedes the old "vnodes are
+   deleted" design — see the rewritten Group 232b/236c above).
+   ============================================================ */
+group(245);
+await withApp(async (w, d, T) => {
+  section("245. Meta-format vnodes stay clickable/independently selectable after the merge — never deleted");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "2025-01-02 09:00:01.000 [] INFO  app.X  - a1",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const appVnodeId = merged.sources.find(s => s.name.includes("App")).id;
+  const appVnode = T.state.nodes[appVnodeId];
+  assert(appVnode.type === "file" && appVnode.entries.length === 2, "the app-grammar vnode is a real file node with its own 2 entries");
+
+  // Select it directly (as if the person clicked its nested row) and
+  // confirm it behaves exactly like any other file node — own getEntries,
+  // own filter tree.
+  T.state.activeId = appVnodeId;
+  const filt = w.createFilterNode(appVnodeId, "text", "a0");
+  assert(w.getEntries(filt.id).length === 1, "a filter can be added directly onto the vnode and works normally");
+  assert(appVnode.children.includes(filt.id), "the vnode has its own independent filter tree, untouched by the merge");
+});
+
+/* ============================================================
+   GROUP 246 — folder-watch merges (full/window): create-first shell,
+   sources tagged hidden once loaded, and the folder's own listing never
+   double-renders a hidden source.
+   ============================================================ */
+group(246);
+await withApp(async (w, d, T) => {
+  section("246. folderMinimapMergeFull: shell created first, sources end up tagged+hidden, folder's own listing doesn't double-render them");
+  function fakeFileHandle(text) {
+    return {
+      kind: "file",
+      getFile: async () => {
+        const blob = new w.Blob([text]);
+        blob.slice = (s, e) => { const ee = e === undefined ? text.length : e; const sl = text.slice(s, ee); const b = new w.Blob([sl]); b.text = async () => sl; return b; };
+        return blob;
+      },
+    };
+  }
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 3)) };
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, handle: fakeFileHandle(makeLog(100, 3, { msgPrefix: "later" })) };
+  const folder = { id: "fm-246-folder", name: "f246", files: [recA, recB] };
+  T.state.folders.push(folder);
+  await Promise.all(folder.files.map(rec => w.probeFolderFileRange(folder, rec)));
+
+  T.fmFolderId = folder.id;
+  T.fmSelectedRecKeys = new Set([w.folderFileKey(recA), w.folderFileKey(recB)]);
+  T.fmSelectedWindow = null;
+  await w.folderMinimapMergeFull(folder);
+
+  const merged = T.state.nodes[T.state.activeId];
+  assert(merged && merged.merged === true, "a merged node was created and is active");
+  assert(recA.nodeId && recB.nodeId, "both targets loaded");
+  assert(T.state.nodes[recA.nodeId].mergeOwnerId === merged.id && T.state.nodes[recA.nodeId].mergeSourceHidden === true,
+    "recA's node ended up tagged hidden once its own load finished");
+  assert(T.state.nodes[recB.nodeId].mergeOwnerId === merged.id && T.state.nodes[recB.nodeId].mergeSourceHidden === true, "same for recB");
+
+  T.state.activeId = merged.id; // renderMainView needs an active node before render() touches the folder section
+  w.render();
+  const folderBox = w.renderFolderSection(folder);
+  assert(!folderBox.querySelector('[data-node-id="' + recA.nodeId + '"]'), "the folder's own listing does not also render recA (would double-render alongside its nested Sources row)");
+  assert(!folderBox.querySelector('[data-node-id="' + recB.nodeId + '"]'), "same for recB");
+});
+
+/* ============================================================
+   GROUP 247 — the pre-existing manual "Merge N files" bulk action stays
+   additive: originals untouched at top level, same nodes additionally
+   nested under the new merge's Sources (regression-guard for the
+   mergeFiles/createMergeShell split — see also Group 237's own coverage
+   of the same shape).
+   ============================================================ */
+group(247);
+await withApp(async (w, d, T) => {
+  section("247. performBulkAction('merge'): originals stay exactly as before, same nodes additionally nested under the new merge's Sources");
+  const fa = await w.addFile("a.log", makeLog(0, 3), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 3, { msgPrefix: "later" }), () => {});
+  T.state.multiSelect = new Set([fa.id, fb.id]);
+  w.performBulkAction("merge", [fa.id, fb.id]);
+  await waitFor(() => T.state.rootIds.some(id => T.state.nodes[id].merged));
+  const merged = T.state.nodes[T.state.rootIds.find(id => T.state.nodes[id].merged)];
+
+  assert(T.state.rootIds.includes(fa.id) && T.state.rootIds.includes(fb.id), "both originals are still real, top-level rootIds — nothing removed");
+  assert(fa.mergeOwnerId === merged.id && !fa.mergeSourceHidden, "fa is tagged as a source but explicitly NOT hidden");
+  assert(fb.mergeOwnerId === merged.id && !fb.mergeSourceHidden, "same for fb");
+  assert(merged.sources.map(s => s.id).sort().join(",") === [fa.id, fb.id].sort().join(","), "the merge's Sources breakdown references the very same nodes");
+});
+
+/* ============================================================
+   GROUP 248 — deleting a source independently (its own ✕, top-level or
+   nested-only) cleans up its owner's `sources` array instead of leaving a
+   stale/dangling reference.
+   ============================================================ */
+group(248);
+await withApp(async (w, d, T) => {
+  section("248. deleteNode: removing a source independently drops it from its merge's own sources array, no dangling id, no crash rendering Sources");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.sources.length === 2, "sanity: 2 sources before deletion");
+
+  w.deleteFilterNodeWithUndo(fa.id); // the top-level ✕ on a bulk-merge-visible source
+  assert(merged.sources.length === 1 && merged.sources[0].id === fb.id, "fa is dropped from merged.sources once its node is deleted");
+
+  T.state.activeId = merged.id;
+  let threw = false;
+  try { w.render(); } catch (e) { threw = true; }
+  assert(!threw, "rendering the Sources node afterward doesn't throw on the now-dangling reference (it was cleaned up, not just defensively skipped)");
+  const sourcesId = merged.children[0];
+  assert([...(d.querySelectorAll('.tree-row[data-node-id="' + fb.id + '"]'))].length >= 1 &&
+    d.querySelectorAll('.tree-row[data-node-id="' + fa.id + '"]').length === 0,
+    "fb's nested row still renders, fa's is gone entirely (not a broken/empty row)");
 });
 
 console.log("\n" + "=".repeat(60));
@@ -30901,25 +31234,60 @@ process.exitCode = failed ? 1 : 0;
       split outcomes (only one grammar present; neither). 236 covers
       mergeFiles' additive node.sources/entry.sourceId stamping for BOTH
       merge origins — the pre-existing manual multi-file merge (disjoint
-      and overlapping paths) and the new meta-format auto-merge — plus the
-      transient per-grammar vnodes being cleaned up without breaking
-      entryIndex for the entries they handed off to the merged file. 237
-      covers the "Sources" tree group itself: rendering, independent
-      collapse from the file's own node.collapsed, a source's swatch
-      writing to node.sources[i].color (never the unrelated
-      node.highlightColor), and computeHighlightMap surfacing that color
-      per-source into the same gutter-marker map filter highlights already
-      use. 238 covers undo/redo: a merged file's Sources breakdown
-      (including an assigned color) and a meta-format auto-merge's
-      metaFormatId both surviving an in-session delete+undo round trip.
-      239 covers two supporting pieces: the SSS date-token widening from a
-      hardcoded 3-digit fraction to any digit count, with
-      parseTimestampGeneric normalizing by the captured fraction's own
-      length rather than treating it as a literal millisecond value (the
-      bug that would have made format B's 6-digit syslog timestamps
-      overflow ~11 minutes into the wrong second); and the 3 concrete
-      formats (app log, syslog, and the meta-format combining them)
-      loadFormatConfig seeds for this reference case — non-builtin,
-      idempotent, with deliberately no FormatRule (the person adds the
-      filename association by hand, per their own request this session).
+      and overlapping paths) and the new meta-format auto-merge — plus
+      (236c, REWRITTEN in the 240-248 follow-up session below — see that
+      note) the per-grammar vnodes staying real, tagged, live nodes rather
+      than being deleted. 237 covers the "Sources" tree row (REWRITTEN in
+      the same follow-up session — see below) and 238 covers undo/redo of
+      a merge's Sources breakdown/metaFormatId. 239 covers two supporting
+      pieces: the SSS date-token widening from a hardcoded 3-digit
+      fraction to any digit count, with parseTimestampGeneric normalizing
+      by the captured fraction's own length rather than treating it as a
+      literal millisecond value (the bug that would have made format B's
+      6-digit syslog timestamps overflow ~11 minutes into the wrong
+      second); and the 3 concrete formats (app log, syslog, and the
+      meta-format combining them) loadFormatConfig seeds for this
+      reference case — non-builtin, idempotent, with deliberately no
+      FormatRule (the person adds the filename association by hand, per
+      their own request that session).
+   Groups 240-248 — same-project follow-up session, person-requested
+      correction to how 232-239 shipped "Sources": it introduced an extra
+      tree nesting level and, for the meta-format case, deleted the
+      per-grammar vnodes after merging. This session reworks both: (1)
+      "Sources" is now a real, locked filterType:"sources" node
+      (createMergeShell), sibling-ordered with Bookmarks/Notes/Selection N
+      via a new specialChildRank/insertSpecialChild helper (replacing each
+      of their own ad hoc unshift/splice calls) so the tree always reads
+      Sources, Bookmarks, Notes, Selection 1, Selection 2, ...; (2) a new
+      "Show Sources" setting (default true, philogg-show-sources); (3)
+      every merge-into path (meta-format, drag-drop "Merge" confirm,
+      folder-watch full/window merge) now creates the merge's empty shell
+      FIRST and loads sources into it nested/tagged rather than loading to
+      completion first — and per-grammar/per-source files are never
+      deleted, staying real, independently clickable nodes reachable under
+      Sources (mergeOwnerId/mergeSourceHidden tags, mirroring the existing
+      zipId/folderId "real root node, rendered nested, skipped from the
+      plain top-level walk" pattern — except a manually-bulk-merged
+      already-loaded source stays ALSO visible at its original top-level
+      spot, mergeOwnerId without mergeSourceHidden). 240 covers the
+      ordering helper directly, including a merge's own Sources still
+      sorting first when a Bookmark/Selection is added to it afterward.
+      241 covers Sources' real-node mechanics: getEntries passthrough,
+      exclusion from the session-cache filter-tree carrier (mirroring
+      Bookmarks/Notes), and its locked-node "Copy only" context menu. 242
+      covers the Show Sources setting itself. 243 covers create-first
+      loading via loadFileDescriptors end to end. 244 covers the
+      (n+1)-segment combined progress bar shown on the merge's own row
+      while Show Sources is off. 245 covers a meta-format's per-grammar
+      vnodes staying independently usable (superseding 232b/236c's old
+      "vnodes are gone" assertions, rewritten in place rather than left as
+      dead groups). 246 covers folder-watch merges (full window) using the
+      same create-first shell, including the folder's own listing not
+      double-rendering a hidden source (a gap the initial design of this
+      rework session's own plan flagged and fixed before it shipped). 247
+      is a regression-guard for the mergeFiles/createMergeShell split: the
+      pre-existing manual "Merge N files" bulk action still leaves
+      originals untouched at top level. 248 covers deleteNode's new
+      cleanup of a merge's own `sources` array when one of its sources is
+      deleted independently.
    ============================================================ */

@@ -849,22 +849,6 @@
     white-space:nowrap; font-size:12.3px;
   }
 
-  /* "Sources" group under a merged file (mergeFiles' additive node.sources
-     — see "File merge" in PROJECT.md/persistence-and-sync.md): a purely
-     presentational group, not a real state.nodes entry (same idea as
-     .tree-row-queued above and the ZIP/folder-watch container rows). Its
-     header and each source row reuse .tree-row's child-slot classes
-     (.tree-chevron-slot/.tree-swatch/.tree-icon/.tree-label/.tree-count,
-     see renderSourcesGroup/renderSourceRow) for visual consistency, but
-     aren't .tree-row itself — nothing here is selectable or draggable,
-     only the chevron and each source's swatch are interactive. */
-  .tree-row-source-group, .tree-row-source{
-    display:flex; align-items:center; gap:7px;
-    padding:6px 8px 6px 12px;
-    color:var(--text-tertiary);
-  }
-  .tree-row-source{opacity:.75;}
-
   /* Filter-history ghost preview (person-requested, this session): shown
      under a freshly loaded file that has no filters of its own yet, when a
      previous session's filter tree for this exact (or since-grown) file
@@ -3741,6 +3725,18 @@
     background:linear-gradient(90deg, var(--accent), var(--accent-strong));
     transition:width .12s ease-out;
   }
+  /* Combined (n+1)-segment progress bar for a create-first merge's own row
+     while "Show Sources" is off (see renderNode/updateMergeSegmentedProgress)
+     — n equal-width slots (one per source) plus one for the final merge
+     step, each an independent 0-100% fill, sitting inside the same
+     .tree-load-track a single-file row already uses. */
+  .tree-load-segments{display:flex; gap:1px; width:100%; height:100%;}
+  .tree-load-fill-segment-slot{flex:1 1 0; min-width:0; height:100%; overflow:hidden;}
+  .tree-load-fill-segment{
+    display:block; height:100%; width:0%;
+    background:linear-gradient(90deg, var(--accent), var(--accent-strong));
+    transition:width .12s ease-out;
+  }
 
   @media (prefers-reduced-motion:reduce){
     *{transition:none !important; animation:none !important;}
@@ -5303,6 +5299,15 @@
                 </div>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsShowSources">Show Sources</label>
+                <div class="settings-row-hint">Show the "Sources" breakdown under a merged file, listing which file each entry came from.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="true" class="pill-toggle" id="settingsShowSources"></button>
+              </div>
+            </div>
           </div>
 
           <div class="settings-subsection-title">Text-match highlighting</div>
@@ -6837,6 +6842,13 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
 const HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY = "philogg-hide-minimap-full-range-in-full-view";
 let hideMinimapFullRangeInFullView = false;
 
+// Whether the tree's "Sources" node (see createMergeShell/renderNode) shows
+// at all — a pure display toggle, default ON (unlike most settings here,
+// which default off): the underlying node/data is never touched by this,
+// only rendering is skipped (renderNode's own early return).
+const SHOW_SOURCES_KEY = "philogg-show-sources";
+let showSourcesSetting = true;
+
 /* Context view initial state (see buildContextView / contextInitialExpansion).
    Plain localStorage preference, same tier as the level-bar mode and the
    minimap opt-out — a display habit, not session or filter data. Default
@@ -6903,6 +6915,15 @@ function initMinimapFullRangeSetting() {
   if (cb) pillSet(cb, hideMinimapFullRangeInFullView);
 }
 
+// Default true, so this checks for the ABSENCE of an explicit "0" rather
+// than the presence of "1" (opposite polarity from most toggles here,
+// which default off) — a never-set key must still read as "on".
+function initShowSourcesSetting() {
+  showSourcesSetting = localStorage.getItem(SHOW_SOURCES_KEY) !== "0";
+  const cb = document.getElementById("settingsShowSources");
+  if (cb) pillSet(cb, showSourcesSetting);
+}
+
 /* Minimap binning mode (see minimapBinningMode's own module comment, near
    minimapTsToX, for the full "time" vs "entries" mechanism). Same plain-
    localStorage-preference wiring as the toggle above; MINIMAP_BINNING_MODE_KEY
@@ -6965,6 +6986,12 @@ document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListen
   // Full tab is already showing would leave the box exactly as it was until
   // the next unrelated render/scroll happened to call updateMinimapFullRange.
   updateMinimapFullRange();
+});
+
+document.getElementById("settingsShowSources").addEventListener("change", ev => {
+  showSourcesSetting = pillGet(ev.target);
+  localStorage.setItem(SHOW_SOURCES_KEY, showSourcesSetting ? "1" : "0");
+  render();
 });
 
 document.getElementById("settingsMinimapBinningMode").addEventListener("change", ev => {
@@ -8550,6 +8577,46 @@ function scheduleLoadRender(rootId) {
   // cache.
   invalidateCachesForRoots([rootId]);
   updateLoadRowProgress(rootId);
+  // A tick on a merge SOURCE also nudges its owning merge row's own
+  // combined progress display, when that row is currently showing one
+  // (only while "Show Sources" is off — see renderNode's segmented-fill
+  // branch; a no-op query miss otherwise, so no settings check needed
+  // here in the hot path).
+  const node = state.nodes[rootId];
+  if (node && node.mergeOwnerId) updateMergeSegmentedProgress(node.mergeOwnerId);
+}
+// Computes the (n+1) 0..1 fractions a create-first merge's combined
+// progress bar shows — one per source (0 while still queued, its own
+// loadFraction while loading, 1 once finished/deleted) plus the merge
+// node's own loadFraction for the final "merge" segment (only ever set
+// once fillMergedEntries actually starts copying entries). Shared by
+// renderNode's initial paint and updateMergeSegmentedProgress's per-tick
+// direct DOM write, so the two can never disagree on the math.
+function mergeSegmentFractions(merge) {
+  const fracs = merge.loadSegmentSourceIds.map(id => {
+    const src = state.nodes[id];
+    return !src ? 1 : src.queued ? 0 : (typeof src.loadFraction === "number" ? src.loadFraction : 1);
+  });
+  fracs.push(Math.max(0, Math.min(1, merge.loadFraction || 0)));
+  return fracs;
+}
+
+// Only meaningful while "Show Sources" is off — with Sources on, each
+// source's own nested row already carries its own ordinary single-fill
+// bar (unmodified), so the merge row shows nothing of its own until the
+// final copy/sort step. A no-op query miss whenever the segmented markup
+// isn't currently rendered (Sources on, or this node isn't a create-first
+// merge at all), so scheduleLoadRender can call this unconditionally.
+function updateMergeSegmentedProgress(mergeId) {
+  const merge = state.nodes[mergeId];
+  if (!merge || !Array.isArray(merge.loadSegmentSourceIds)) return;
+  const row = document.querySelector('.tree-row[data-node-id="' + mergeId + '"]');
+  if (!row) return;
+  const segments = row.querySelectorAll(".tree-load-fill-segment");
+  if (!segments.length) return;
+  mergeSegmentFractions(merge).forEach((frac, i) => {
+    if (segments[i]) segments[i].style.width = Math.round(frac * 100) + "%";
+  });
 }
 function flushLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
@@ -8835,14 +8902,15 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
 }
 
 // A meta-format's whole job: split one physical file's text into its
-// target formats' streams (splitTextByMetaFormat), parse each stream as
-// an ordinary transient file (reusing addFile — i.e. createFileNode +
-// parseLogTextAsync, completely unmodified), then merge those transient
-// files into one chronological result via the existing, unmodified
-// mergeFiles — so a meta-format file ends up as a single merged tree row
-// named after the physical file, with a "Sources" breakdown (see
-// mergeFiles' additive sources/sourceId stamping) instead of leftover
-// standalone virtual rows for each grammar.
+// target formats' streams (splitTextByMetaFormat), then create the merge
+// result FIRST (createMergeShell — person-requested this session, before
+// any stream is even read) and load each stream into its own real,
+// independent file node nested under the merge's "Sources" (reusing
+// addFile/createQueuedFileNode — i.e. createFileNode + parseLogTextAsync,
+// completely unmodified), finally filling the merge's own entries
+// (fillMergedEntries) once every stream is loaded. The per-grammar nodes
+// are never deleted — they stay real, clickable file nodes, reachable
+// under "Sources" for as long as the merge exists.
 //
 // Session-only, v1: the split/merge here is redone from scratch on every
 // load; nothing about it is pinned or restorable the way an ordinary
@@ -8866,9 +8934,20 @@ async function loadMetaFormatText(name, text, metaFmt) {
     return await addFile(name, streams[0].text, undefined, streams[0].formatId);
   }
 
+  const merged = createMergeShell(name, streams[0].formatId);
+  merged.metaFormatId = metaFmt.id;
+  // Only ever consulted while Sources is hidden (see the segmented-progress
+  // section) — the ordered list of source ids this merge is waiting on.
+  merged.loadSegmentSourceIds = [];
+
   const vnodes = [];
   for (const s of streams) {
-    const vnode = await addFile(s.name, s.text, undefined, s.formatId);
+    const placeholder = createQueuedFileNode(s.name);
+    placeholder.mergeOwnerId = merged.id;
+    placeholder.mergeSourceHidden = true; // an implementation artifact of one physical file, never a standalone top-level row
+    merged.loadSegmentSourceIds.push(placeholder.id);
+    render(); // the placeholder appears nested under Sources (or folds into the merge row's segmented bar) before this stream is even read
+    const vnode = await addFile(s.name, s.text, undefined, s.formatId, placeholder);
     // A virtual stream inherits the physical file's on-disk line order,
     // which is NOT guaranteed chronological within it (e.g. two producers
     // interleaving inside one syslog block) — mergeFiles' disjoint-range
@@ -8880,21 +8959,8 @@ async function loadMetaFormatText(name, text, metaFmt) {
     vnodes.push(vnode);
   }
 
-  const merged = await mergeFiles(vnodes.map(v => v.id));
-  merged.name = name; // the physical filename, not mergeFiles' default "vnode1.name + vnode2.name" join
-  merged.metaFormatId = metaFmt.id; // informational only; no other code path depends on it
-
-  // The vnodes are an implementation artifact of one physical file, not
-  // user-dropped files — remove them from the tree once merged (unlike
-  // the manual "Merge N files" bulk action, which deliberately keeps its
-  // own sources visible; that behavior is untouched since mergeFiles
-  // itself isn't the one deleting anything here). Safe strictly *after*
-  // mergeFiles has already pushed the same entry objects (by reference)
-  // into `merged`: deleteNode's releaseEntriesFromIndex only purges an
-  // entry id no other root still references, and `merged` already does.
-  vnodes.forEach(v => deleteNode(v.id));
-
-  persistFileNode(merged); // refresh the cached record under the renamed name
+  state.activeId = merged.id; // addFile->activateQueuedFileNode moved focus to each stream's node in turn — bring it back to the merge row
+  await fillMergedEntries(merged, vnodes);
   render();
   return merged;
 }
@@ -9460,37 +9526,58 @@ function fileEntryTimeRange(entries) {
   return { min, max };
 }
 
-async function mergeFiles(fileIds) {
-  const files = fileIds.map(id => state.nodes[id]).filter(n => n && n.type === "file");
-  if (files.length < 2) return null;
-
+// Creates the empty merge-result node ("shell") and its locked "Sources"
+// child, inserted into the tree immediately — before any source has been
+// read, let alone parsed (person-requested this session: create the merge
+// entry first, then load into it). fillMergedEntries (below) fills it in
+// once every source is ready; mergeFiles (below) is the "sources already
+// fully loaded" case that does both steps back to back in one call,
+// unchanged from every existing caller's point of view.
+function createMergeShell(name, formatId) {
   const node = {
-    id: uid("f"), type: "file", name: files.map(f => f.name).join(" + "),
-    parentId: null, children: [], entries: [], merged: true, cacheKey: newCacheKey(),
-    loadFraction: 0,
+    id: uid("f"), type: "file", name, parentId: null, children: [], entries: [],
+    merged: true, cacheKey: newCacheKey(), loadFraction: 0,
     // Assumes all sources share one format — the merge itself just reuses
     // entry objects by reference (never reparses), so a mixed-format merge
     // still works fine live; only a later session-cache restore, which
     // reparses raw text under one format, would see this simplification.
-    formatId: (files[0] && files[0].formatId) || DEFAULT_FORMAT_ID,
-    // Per-source breakdown for the tree's "Sources" group (renderNode) —
-    // color is null (unset) until the person assigns one via its swatch.
-    // count is captured once, here, rather than recomputed per render.
-    // Session-only, like the rest of this merge: never written by
-    // persistFileNode, so a session-cache restore comes back without it
-    // (same accepted gap as the rest of a merged file's live-only state —
-    // see the "Merged-file gotcha" this formatId comment already
-    // documents). Entries are shared by reference across merges, so
-    // re-merging an already-merged file overwrites sourceId on the same
-    // objects, making the earlier merge's own Sources coloring stale —
-    // a known, accepted limitation, not fixed here.
-    sources: files.map(f => ({ id: f.id, name: f.name, color: null, count: f.entries.length })),
+    formatId: formatId || DEFAULT_FORMAT_ID,
+    // Per-source breakdown for the tree's "Sources" node, filled in by
+    // fillMergedEntries once every source is ready. Session-only, like the
+    // rest of a merge's live state — never written by persistFileNode (see
+    // the "Merged-file gotcha" in docs/persistence-and-sync.md). Entries
+    // are shared by reference across merges, so re-merging an
+    // already-merged file's entries overwrites sourceId on the same
+    // objects, making the earlier merge's own Sources coloring stale — a
+    // known, accepted limitation, not fixed here.
+    sources: [],
   };
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
+  // The "Sources" row itself — a real, locked filter node (see
+  // specialChildRank/insertSpecialChild), sibling-ordered with
+  // Bookmarks/Notes/Selection N. Its OWN node.children stays empty
+  // forever; renderNode nests this file's `sources` array (real,
+  // independent file nodes, tagged mergeOwnerId below) under it directly
+  // instead of reading real children.
+  const sourcesNode = {
+    id: uid("n"), type: "filter", name: "Sources", parentId: node.id,
+    children: [], filterType: "sources", value: null, inverted: false, locked: true,
+  };
+  state.nodes[sourcesNode.id] = sourcesNode;
+  insertSpecialChild(node, sourcesNode.id, 0);
   activateNewNode(node);
   flushLoadRender();
+  return node;
+}
 
+// Fills a merge shell's entries from `files` (each already a complete,
+// loaded file node) — the actual copy/sort work, unchanged in substance
+// from before this session's rework; the node it writes into may already
+// have existed (and been visible/interactive, sources loading nested
+// under it) for a while now, rather than being created by this same call.
+async function fillMergedEntries(node, files) {
+  node.sources = files.map(f => ({ id: f.id, name: f.name, color: null, count: f.entries.length }));
   const total = files.reduce((sum, f) => sum + f.entries.length, 0);
 
   // Quick merge: if the sources' time ranges don't overlap at all, the
@@ -9523,15 +9610,32 @@ async function mergeFiles(fileIds) {
         await new Promise(r => setTimeout(r, 0));
       }
     }
-    if (state.nodes[node.id] !== node) return node; // removed mid-merge (by the person, or a race)
+    if (state.nodes[node.id] !== node) return; // removed mid-merge (by the person, or a race)
 
     node.entries.sort((a, b) => a.ts - b.ts);
     invalidateOrderIndexMap(node.id); // in-place reorder: same array, same length
   }
 
   delete node.loadFraction;
+  delete node.loadSegmentSourceIds; // see the segmented-progress section — only meaningful while loading
   flushLoadRender(node.id);
   persistFileNode(node); // fire-and-forget; cached as its own text snapshot (see "Session cache")
+}
+
+// The "sources already fully loaded" case — the pre-existing manual
+// "Merge N files" bulk action, and anywhere else every source is already
+// a complete node before merging starts. Tags each source `mergeOwnerId`
+// (deliberately NOT `mergeSourceHidden`) so it stays visible at its
+// existing top-level spot AND additionally renders nested under the new
+// file's "Sources" — the same underlying node in both places (see
+// renderTree's skip logic, which only hides a source from the top level
+// when mergeSourceHidden is also set).
+async function mergeFiles(fileIds) {
+  const files = fileIds.map(id => state.nodes[id]).filter(n => n && n.type === "file");
+  if (files.length < 2) return null;
+  const node = createMergeShell(files.map(f => f.name).join(" + "), files[0] && files[0].formatId);
+  files.forEach(f => { f.mergeOwnerId = node.id; });
+  await fillMergedEntries(node, files);
   return node;
 }
 
@@ -10064,6 +10168,16 @@ function deleteNode(nodeId) {
     state.rootIds = state.rootIds.filter(id => id !== nodeId);
     releaseEntriesFromIndex(node.entries, nodeId);
     cacheDeleteFile(node.cacheKey); // fire-and-forget; meta follows via render()'s debounced persist
+    // This file was one of a merge's sources (see createMergeShell) —
+    // drop it from the owning merge's own `sources` breakdown too, so a
+    // source closed independently (its own ✕, in either the top-level or
+    // the nested-under-Sources row) doesn't leave a stale reference behind
+    // (a permanently non-shrinking "Sources: N" count, or renderNode
+    // trying to nest an id that no longer resolves).
+    if (node.mergeOwnerId) {
+      const owner = state.nodes[node.mergeOwnerId];
+      if (owner && Array.isArray(owner.sources)) owner.sources = owner.sources.filter(s => s.id !== nodeId);
+    }
   } else {
     const parent = state.nodes[node.parentId];
     if (parent) parent.children = parent.children.filter(id => id !== nodeId);
@@ -10849,6 +10963,8 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
     result = parentEntries.filter(e => state.bookmarks.has(e.id));
   } else if (baked.filterType === "notes") {
     result = parentEntries.filter(e => state.notes.has(e.id));
+  } else if (baked.filterType === "sources") {
+    result = parentEntries;
   } else if (baked.filterType === "level") {
     result = parentEntries.filter(e => baked.value.includes(levelBucket(e.level, e.formatId)));
   } else if (baked.filterType === "and" || baked.filterType === "or") {
@@ -10979,6 +11095,15 @@ function getEntriesUncached(node) {
     // "bookmarks" just above, mirroring state.notes instead of
     // state.bookmarks.
     result = parentEntries.filter(e => state.notes.has(e.id));
+  } else if (node.filterType === "sources") {
+    // Auto-managed per-merged-file node (see createMergeShell) — purely a
+    // label/anchor for the tree's "Sources" breakdown; it doesn't filter
+    // anything of its own (the actual per-source entries/colors live on
+    // the owning file's own `sources` array, read directly by
+    // renderSourcesNode/computeHighlightMap), so its own result is just
+    // its parent's (the merged file's) full entries, same as clicking the
+    // file itself.
+    result = parentEntries;
   } else if (node.filterType === "level") {
     // value = array of active level names (e.g. ["ERROR", "WARN"]) — the
     // tree-node counterpart of the level bar's own quick-filter (see
@@ -12749,6 +12874,7 @@ function nodeIconHTML(node) {
     : node.filterType === "level" ? ICON_LEVEL
     : node.filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
     : node.filterType === "notes" ? ICON_NOTE
+    : node.filterType === "sources" ? ICON_FILES_SEPARATE
     : node.filterType === "idset" ? ICON_CHECK
     : timeFilterIcon(node);
 }
@@ -12792,7 +12918,12 @@ function renderTree() {
   // nested inside its zip's own renderZipSection container instead.
   state.rootIds.forEach(id => {
     const node = state.nodes[id];
-    if (node && (node.folderId || node.zipId)) return;
+    // A source loaded specifically FOR a create-first merge (mergeSourceHidden)
+    // is only ever reachable nested under its merge's own "Sources" node —
+    // never as a separate top-level row (see createMergeShell). A source
+    // that was already an independent top-level file BEFORE a manual merge
+    // (mergeOwnerId set, mergeSourceHidden NOT set) stays visible here too.
+    if (node && (node.folderId || node.zipId || (node.mergeOwnerId && node.mergeSourceHidden))) return;
     treeEl.appendChild(renderNode(id, 0));
   });
   // Directly opened/dropped non-log inline-viewable files (this session):
@@ -12870,10 +13001,16 @@ function flattenTreeIds() {
   // Main tree: a node with node.zipId never renders here (renderTree skips
   // it — it nests inside its own zip's renderZipSection container instead),
   // so it's excluded from this top-level walk too and picked up below, in
-  // its actual visual position within its zip's entry list.
+  // its actual visual position within its zip's entry list. A source
+  // hidden under its merge's "Sources" node (mergeOwnerId + mergeSourceHidden)
+  // is excluded the same way, but — unlike zip entries — deliberately has
+  // no re-insertion-at-its-visual-position walk below: it's simply not
+  // nav-reachable by arrow keys, mouse click only (same precedent as the
+  // .queued exclusion above; correct rather than a gap when Sources itself
+  // is toggled off, since no DOM row exists there to navigate to anyway).
   walk(state.rootIds.filter(id => {
     const node = state.nodes[id];
-    return !(node && node.zipId);
+    return !(node && (node.zipId || (node.mergeOwnerId && node.mergeSourceHidden)));
   }));
   // ZIP sections (bugfix, person-reported: nav order didn't match the
   // visual order — every opened non-log entry was being tacked on as one
@@ -13287,110 +13424,19 @@ function renderRenameInput(id, node) {
   return input;
 }
 
-// The "Sources" group under a merged file's own row: which physical/
-// virtual file each of its entries came from (see mergeFiles' additive
-// `sources`/`sourceId` stamping), with a per-source colour swatch so the
-// different origins can be told apart in the log view (see
-// computeHighlightMap's source-coloring branch). Purely presentational —
-// `fileNode.sources` is data on the merged file node, but neither this
-// group header nor its per-source rows are real state.nodes entries (same
-// "container row with inert children" shape renderZipSection/
-// renderFolderSection already use for ZIP/folder-watch sections). Never
-// persisted (session-only, like the rest of a merge's live state — see
-// mergeFiles' own comment) — fileNode.sourcesCollapsed is display-only,
-// same tier as node.collapsed itself.
-function renderSourcesGroup(fileNode, depth) {
-  const wrap = document.createElement("div");
-
-  const row = document.createElement("div");
-  row.className = "tree-row-source-group";
-  row.style.paddingLeft = (8 + depth * 18) + "px";
-
-  const chevronSlot = document.createElement("span");
-  chevronSlot.className = "tree-chevron-slot";
-  const chevron = document.createElement("button");
-  chevron.type = "button";
-  const expanded = !fileNode.sourcesCollapsed;
-  chevron.className = "tree-chevron" + (expanded ? " expanded" : "");
-  chevron.title = fileNode.sourcesCollapsed ? "Expand" : "Collapse";
-  chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
-  chevron.addEventListener("click", ev => {
-    ev.stopPropagation();
-    fileNode.sourcesCollapsed = !fileNode.sourcesCollapsed;
-    render();
-  });
-  chevronSlot.appendChild(chevron);
-  row.appendChild(chevronSlot);
-
-  const icon = document.createElement("span");
-  icon.className = "tree-icon";
-  icon.innerHTML = ICON_FILES_SEPARATE;
-  row.appendChild(icon);
-
-  const label = document.createElement("span");
-  label.className = "tree-label";
-  label.textContent = "Sources";
-  label.title = "Which source each entry in this merged file came from";
-  row.appendChild(label);
-
-  const count = document.createElement("span");
-  count.className = "tree-count";
-  count.textContent = fileNode.sources.length.toLocaleString("de-DE");
-  row.appendChild(count);
-
-  wrap.appendChild(row);
-  if (!fileNode.sourcesCollapsed) {
-    fileNode.sources.forEach(src => wrap.appendChild(renderSourceRow(src, depth + 1)));
-  }
-  return wrap;
-}
-
-function renderSourceRow(src, depth) {
-  const row = document.createElement("div");
-  row.className = "tree-row-source";
-  row.style.paddingLeft = (8 + depth * 18) + "px";
-
-  // Alignment spacer only — a source row never has children of its own.
-  const chevronSlot = document.createElement("span");
-  chevronSlot.className = "tree-chevron-slot";
-  row.appendChild(chevronSlot);
-
-  const swatch = document.createElement("button");
-  swatch.type = "button";
-  swatch.className = "tree-swatch" + (src.color ? "" : " empty");
-  if (src.color) swatch.style.background = src.color;
-  swatch.title = src.color
-    ? "Source colour — click to change, right-click to clear"
-    : "Set a colour for entries from this source";
-  swatch.addEventListener("click", ev => {
-    ev.stopPropagation();
-    openColorPicker(null, swatch, color => { src.color = color || null; render(); });
-  });
-  swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); src.color = null; render(); });
-  row.appendChild(swatch);
-
-  const icon = document.createElement("span");
-  icon.className = "tree-icon";
-  icon.innerHTML = ICON_FILE;
-  row.appendChild(icon);
-
-  const label = document.createElement("span");
-  label.className = "tree-label";
-  label.textContent = src.name;
-  label.title = src.name;
-  row.appendChild(label);
-
-  const count = document.createElement("span");
-  count.className = "tree-count";
-  count.textContent = src.count.toLocaleString("de-DE");
-  row.appendChild(count);
-
-  return row;
-}
-
 function renderNode(id, depth, opts) {
   const node = state.nodes[id];
   if (node.type === "file" && node.queued) return renderQueuedFileRow(node, depth);
+  // A "sources" node (see createMergeShell) is a real, locked filter-node
+  // sibling of Bookmarks/Notes/Selection N (insertSpecialChild keeps them
+  // ordered), so it flows through this same function — but its own
+  // node.children stays permanently empty; nesting is driven by the owning
+  // merged file's own `sources` array + each source's real, independent
+  // file node (see the tail of this function and the swatch block below).
+  // The "Show Sources" setting is a pure display toggle — the node/data
+  // are untouched, only rendering is skipped.
+  if (node.type === "filter" && node.filterType === "sources" && !showSourcesSetting) return document.createElement("div");
+  const sourcesOwnerFile = (node.type === "filter" && node.filterType === "sources") ? state.nodes[node.parentId] : null;
   const wrap = document.createElement("div");
   wrap.dataset.type = node.type;
 
@@ -13427,7 +13473,9 @@ function renderNode(id, depth, opts) {
   // real children.
   const chevronSlot = document.createElement("span");
   chevronSlot.className = "tree-chevron-slot";
-  const hasRealChildren = node.children.length > 0;
+  const hasRealChildren = sourcesOwnerFile
+    ? !!(Array.isArray(sourcesOwnerFile.sources) && sourcesOwnerFile.sources.length)
+    : node.children.length > 0;
   if (hasRealChildren) {
     const chevron = document.createElement("button");
     chevron.type = "button";
@@ -13465,6 +13513,27 @@ function renderNode(id, depth, opts) {
       : "Set a highlight colour for the Highlight view";
     swatch.addEventListener("click", ev => { ev.stopPropagation(); openColorPicker(id, swatch); });
     swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); setHighlightColor(id, null); });
+    row.appendChild(swatch);
+  } else if (node.type === "file" && opts && opts.mergeSourceColor) {
+    // A source file nested under its merge's "Sources" node (see the tail
+    // of this function) — this is the ONE place a FILE row gets a swatch,
+    // bound to the merge's own per-source color (mergedFile.sources[i].color,
+    // see createMergeShell/fillMergedEntries), not node.highlightColor
+    // (which file nodes never have). Reuses openColorPicker's onPick
+    // generalization exactly as the old renderSourceRow did.
+    const src = opts.mergeSourceColor;
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "tree-swatch" + (src.color ? "" : " empty");
+    if (src.color) swatch.style.background = src.color;
+    swatch.title = src.color
+      ? "Source colour — click to change, right-click to clear"
+      : "Set a colour for entries from this source";
+    swatch.addEventListener("click", ev => {
+      ev.stopPropagation();
+      openColorPicker(null, swatch, color => { src.color = color || null; render(); });
+    });
+    swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); src.color = null; render(); });
     row.appendChild(swatch);
   }
 
@@ -13515,7 +13584,11 @@ function renderNode(id, depth, opts) {
 
   const count = document.createElement("span");
   count.className = "tree-count";
-  const ownCount = getEntries(id).length;
+  // A "sources" node's count is how many sources the merge has, not its
+  // (passthrough, identical-to-the-file's-own) entry count — parity with
+  // the previous session's UX and more useful than a number that would
+  // just equal the file's own row right above it.
+  const ownCount = sourcesOwnerFile ? (sourcesOwnerFile.sources || []).length : getEntries(id).length;
   count.textContent = ownCount.toLocaleString("de-DE");
   row.appendChild(count);
 
@@ -13543,7 +13616,32 @@ function renderNode(id, depth, opts) {
   // being read/parsed (see createFileNode/loadOneFileIntoTree) — the row
   // itself is already a normal, fully interactive tree row at this point,
   // this is purely the "still loading" indicator riding along on it.
-  if (node.type === "file" && typeof node.loadFraction === "number") {
+  //
+  // A create-first merge (node.loadSegmentSourceIds, see createMergeShell)
+  // gets a combined (n+1)-segment version of this same bar INSTEAD, but
+  // only while "Show Sources" is off — with Sources on, node.loadFraction
+  // itself stays undefined for the merge row throughout the whole
+  // source-loading phase (only fillMergedEntries ever sets it), so the
+  // plain single-fill branch below already means "no bar here" for free in
+  // that case; each nested source's own row carries its own ordinary
+  // single-fill bar instead, completely unmodified.
+  if (node.type === "file" && Array.isArray(node.loadSegmentSourceIds) && !showSourcesSetting) {
+    const track = document.createElement("span");
+    track.className = "tree-load-track";
+    const segRoot = document.createElement("span");
+    segRoot.className = "tree-load-segments";
+    mergeSegmentFractions(node).forEach(frac => {
+      const slot = document.createElement("span");
+      slot.className = "tree-load-fill-segment-slot";
+      const fill = document.createElement("span");
+      fill.className = "tree-load-fill-segment";
+      fill.style.width = Math.round(frac * 100) + "%";
+      slot.appendChild(fill);
+      segRoot.appendChild(slot);
+    });
+    track.appendChild(segRoot);
+    row.appendChild(track);
+  } else if (node.type === "file" && typeof node.loadFraction === "number") {
     const track = document.createElement("span");
     track.className = "tree-load-track";
     track.innerHTML = '<span class="tree-load-fill" style="width:' +
@@ -13651,12 +13749,20 @@ function renderNode(id, depth, opts) {
   if (node.type === "file" && node.children.length === 0 && node.filterHistoryMatch) {
     wrap.appendChild(renderFilterHistoryPreview(node));
   }
-  if (node.type === "file" && node.merged && Array.isArray(node.sources) && node.sources.length) {
-    wrap.appendChild(renderSourcesGroup(node, depth + 1));
-  }
-  // node.collapsed hides real children the normal way (chevron above).
+  // node.collapsed hides real children the normal way (chevron above). A
+  // "sources" node's own node.children is always empty by design (see the
+  // comment at this function's top) — its nested rows come from the owning
+  // merged file's `sources` array instead, each a real, independently
+  // clickable file node (skipped defensively if one was deleted on its
+  // own since — see deleteNode's sources-array cleanup).
   if (!node.collapsed) {
-    node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1)));
+    if (sourcesOwnerFile) {
+      (sourcesOwnerFile.sources || []).forEach(src => {
+        if (state.nodes[src.id]) wrap.appendChild(renderNode(src.id, depth + 1, { mergeSourceColor: src }));
+      });
+    } else {
+      node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1)));
+    }
   }
   return wrap;
 }
@@ -20938,6 +21044,37 @@ function jumpToEntry(entryId) {
 // which is itself persisted separately — re-deriving the node here after any
 // bookmarks restore keeps it in sync without needing its own serialized
 // shape at all.
+// Fixed sort rank for the tree's auto-managed/special children — Sources
+// (0), Bookmarks (1), Notes (2), then each Selection N by its own creation
+// ordinal (3, 4, 5, ...). An ordinary, user-created filter node has no rank
+// (null) and always sorts after every special one, in whatever relative
+// order it already has — this never touches or reorders those.
+function specialChildRank(node) {
+  if (!node) return null;
+  if (node.filterType === "sources") return 0;
+  if (node.filterType === "bookmarks") return 1;
+  if (node.filterType === "notes") return 2;
+  if (node.selectionFilter) return 3 + (node.selectionOrdinal || 0);
+  return null;
+}
+
+// Inserts `nodeId` into `root.children` at the correct position relative to
+// any other special (ranked) children already present, so "Sources,
+// Bookmarks, Notes, Selection 1, Selection 2, ..." always holds regardless
+// of which was created first — used by syncBookmarksFilterNode/
+// syncNotesFilterNode/createSelectionFilterNode/createMergeShell's own
+// "Sources" node, replacing their previous ad hoc unshift/splice calls. An
+// ordinary (unranked) child is never displaced.
+function insertSpecialChild(root, nodeId, rank) {
+  let idx = root.children.findIndex(id => {
+    const r = specialChildRank(state.nodes[id]);
+    return r !== null && r > rank;
+  });
+  if (idx === -1) idx = root.children.findIndex(id => specialChildRank(state.nodes[id]) === null);
+  if (idx === -1) idx = root.children.length;
+  root.children.splice(idx, 0, nodeId);
+}
+
 function syncBookmarksFilterNode(rootId) {
   const root = state.nodes[rootId];
   if (!root || root.type !== "file") return;
@@ -20949,7 +21086,7 @@ function syncBookmarksFilterNode(rootId) {
       children: [], filterType: "bookmarks", value: null, inverted: false, locked: true,
     };
     state.nodes[node.id] = node;
-    root.children.unshift(node.id);
+    insertSpecialChild(root, node.id, 1);
     invalidateAllCaches();
   } else if (!hasAny && existing) {
     // If this node is the one currently active AND the Filtered tab is what's
@@ -20976,10 +21113,9 @@ function syncBookmarksFilterNode(rootId) {
 // state.notes instead of state.bookmarks (person-requested "Notes" overview,
 // FEATURE_BACKLOG.md "Bookmarks rework" follow-up): a locked, non-persisted
 // filter node named "Notes" that appears the moment this file has ≥1 entry
-// with a note and disappears once none are left. Placed directly below the
-// "Bookmarks" node when one exists (root.children[0]) so it always reads as
-// "Bookmarks, then Notes" in the tree; unshifted to the top itself when
-// Bookmarks isn't present, same top-level placement Bookmarks uses.
+// with a note and disappears once none are left. Positioned via
+// insertSpecialChild (rank 2) so it always reads as "Sources, Bookmarks,
+// Notes, Selection 1, ..." regardless of which of those already exist.
 function syncNotesFilterNode(rootId) {
   const root = state.nodes[rootId];
   if (!root || root.type !== "file") return;
@@ -20991,8 +21127,7 @@ function syncNotesFilterNode(rootId) {
       children: [], filterType: "notes", value: null, inverted: false, locked: true,
     };
     state.nodes[node.id] = node;
-    const bookmarksIdx = root.children.findIndex(id => state.nodes[id] && state.nodes[id].filterType === "bookmarks");
-    root.children.splice(bookmarksIdx === -1 ? 0 : bookmarksIdx + 1, 0, node.id);
+    insertSpecialChild(root, node.id, 2);
     invalidateAllCaches();
   } else if (!hasAny && existing) {
     // Same "don't strand the Filtered tab on a node that's about to vanish"
@@ -23006,6 +23141,19 @@ async function loadFileDescriptors(descs) {
 
   const mergeAfter = descs.length > 1 ? await confirmMergeOnLoad(queuedNodes.map(n => n.name)) : false;
 
+  // Create the merge FIRST (person-requested this session), before any
+  // source has even started reading — each queued placeholder is tagged
+  // right away so it renders nested under the shell's "Sources" (or folds
+  // into its segmented progress bar) instead of as a separate top-level
+  // grayed row for the whole batch.
+  let mergeShell = null;
+  if (mergeAfter) {
+    mergeShell = createMergeShell(queuedNodes.map(n => n.name).join(" + "), undefined);
+    mergeShell.loadSegmentSourceIds = queuedNodes.map(n => n.id);
+    queuedNodes.forEach(n => { n.mergeOwnerId = mergeShell.id; n.mergeSourceHidden = true; });
+    render();
+  }
+
   const loadedIds = [];
   try {
     const results = await Promise.all(descs.map(async (desc, i) => {
@@ -23050,9 +23198,25 @@ async function loadFileDescriptors(descs) {
     render();
   }
 
-  if (mergeAfter && loadedIds.length >= 2) {
-    await mergeFiles(loadedIds); // async now — see mergeFiles' own comment
-    render();
+  if (mergeShell) {
+    if (loadedIds.length >= 2) {
+      state.activeId = mergeShell.id;
+      await fillMergedEntries(mergeShell, loadedIds.map(id => state.nodes[id]));
+      render();
+    } else {
+      // Fewer than 2 sources actually loaded (one or more failed) — no
+      // merge is possible. Any lone survivor was already tagged hidden
+      // when the shell was created (before load results were known), so
+      // un-tag it back to a normal, visible top-level file before dropping
+      // the now-pointless empty shell — otherwise it would be stranded,
+      // permanently un-nestable and un-rendered.
+      loadedIds.forEach(id => {
+        const n = state.nodes[id];
+        if (n) { delete n.mergeOwnerId; delete n.mergeSourceHidden; }
+      });
+      deleteNode(mergeShell.id);
+      render();
+    }
   }
 }
 
@@ -24332,6 +24496,13 @@ function renderFolderSection(folder) {
     list.className = "folder-watch-files";
     folder.files.forEach(rec => {
       if (rec.nodeId && state.nodes[rec.nodeId]) {
+        const n = state.nodes[rec.nodeId];
+        // A source loaded specifically for a create-first folder-watch merge
+        // (see folderMinimapMergeFull/Window) is only reachable nested under
+        // its merge's own "Sources" node — never in the folder's own
+        // listing too, or it would double-render (renderTree's own skip
+        // logic has the same check for the plain top-level case).
+        if (n.mergeOwnerId && n.mergeSourceHidden) return;
         list.appendChild(renderNode(rec.nodeId, 0, { folderTopLevelNoChevron: true, autoOpened: !!rec.openedByAuto }));
         return;
       }
@@ -24352,7 +24523,12 @@ function renderFolderSection(folder) {
         const n = state.nodes[id];
         return n && n.folderId === folder.id && n.name === rec.name;
       });
-      if (loadingId) { list.appendChild(renderNode(loadingId, 0, { folderTopLevelNoChevron: true })); return; }
+      if (loadingId) {
+        const n = state.nodes[loadingId];
+        if (n.mergeOwnerId && n.mergeSourceHidden) return; // same double-render guard as above, mid-load
+        list.appendChild(renderNode(loadingId, 0, { folderTopLevelNoChevron: true }));
+        return;
+      }
       // Non-log, inline-viewable file (this session's generalization — see
       // openInlineViewer's own comment): never gets a rec.nodeId, so the
       // two branches above never match for it — reuses the same
@@ -24775,12 +24951,41 @@ async function folderMinimapLoadIndividually(folder) {
 // resolveFolderMinimapTargets does for the other two actions.
 async function folderMinimapMergeFull(folder) {
   const targets = resolveFolderMinimapTargets(folder);
+  // Merge shell created FIRST (person-requested this session), before any
+  // target is even read — each source is tagged hidden the moment its own
+  // node id is known (right after loadFolderFile returns; loadFolderFile
+  // owns its own node creation with no placeholder to pre-tag through the
+  // way loadFileDescriptors' queued nodes can, so there's a brief,
+  // accepted visibility gap here rather than a larger refactor).
+  const mergeShell = targets.length >= 2 ? createMergeShell(targets.map(r => r.name).join(" + "), undefined) : null;
+  if (mergeShell) mergeShell.loadSegmentSourceIds = [];
   const nodeIds = [];
   for (const rec of targets) {
     await loadFolderFile(folder, rec);
-    if (rec.nodeId) nodeIds.push(rec.nodeId);
+    if (rec.nodeId) {
+      nodeIds.push(rec.nodeId);
+      if (mergeShell) {
+        const n = state.nodes[rec.nodeId];
+        n.mergeOwnerId = mergeShell.id;
+        n.mergeSourceHidden = true;
+        mergeShell.loadSegmentSourceIds.push(rec.nodeId);
+        render();
+      }
+    }
   }
-  if (nodeIds.length >= 2) await mergeFiles(nodeIds);
+  if (nodeIds.length >= 2) {
+    state.activeId = mergeShell.id;
+    await fillMergedEntries(mergeShell, nodeIds.map(id => state.nodes[id]));
+  } else if (mergeShell) {
+    // A target failed to load — fewer than 2 sources actually resolved.
+    // Un-tag any lone survivor back to a normal, visible file and drop the
+    // now-pointless empty shell (same reasoning as loadFileDescriptors').
+    if (nodeIds.length === 1) {
+      const n = state.nodes[nodeIds[0]];
+      if (n) { delete n.mergeOwnerId; delete n.mergeSourceHidden; }
+    }
+    deleteNode(mergeShell.id);
+  }
   // A single target file needs no merge step — loadFolderFile already
   // activated it.
   finishFolderMinimapAction();
@@ -24798,28 +25003,46 @@ async function folderMinimapMergeWindow(folder) {
   const win = fmSelectedWindow;
   if (!win) return;
   const targets = resolveFolderMinimapTargets(folder);
+  // Same create-shell-first shape as folderMinimapMergeFull above.
+  const mergeShell = targets.length >= 2 ? createMergeShell(targets.map(r => r.name).join(" + "), undefined) : null;
+  if (mergeShell) mergeShell.loadSegmentSourceIds = [];
   const nodeIds = [];
   for (const rec of targets) {
     await loadFolderFileWindowed(folder, rec, win.from, win.to);
-    if (rec.nodeId) nodeIds.push(rec.nodeId);
+    if (rec.nodeId) {
+      nodeIds.push(rec.nodeId);
+      if (mergeShell) {
+        const n = state.nodes[rec.nodeId];
+        n.mergeOwnerId = mergeShell.id;
+        n.mergeSourceHidden = true;
+        mergeShell.loadSegmentSourceIds.push(rec.nodeId);
+        render();
+      }
+    }
   }
   let resultId = null;
   if (nodeIds.length >= 2) {
-    const merged = await mergeFiles(nodeIds);
-    resultId = merged && merged.id;
+    state.activeId = mergeShell.id;
+    await fillMergedEntries(mergeShell, nodeIds.map(id => state.nodes[id]));
+    resultId = mergeShell.id;
     // If any source was only partially read, the merge result covers no
     // more than the union of what was actually read — flag it the same
     // way, so it reads (and persists/undoes) as visibly incomplete too,
     // same as any source it was built from.
-    const partialSources = merged ? nodeIds.map(id => state.nodes[id]).filter(n => n && n.partial) : [];
+    const partialSources = nodeIds.map(id => state.nodes[id]).filter(n => n && n.partial);
     if (partialSources.length) {
-      merged.partial = {
+      mergeShell.partial = {
         from: Math.min(...partialSources.map(n => n.partial.from)),
         to: Math.max(...partialSources.map(n => n.partial.to)),
       };
     }
-  } else if (nodeIds.length === 1) {
-    resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
+  } else {
+    if (mergeShell) deleteNode(mergeShell.id); // created for >=2 targets, but fewer actually resolved
+    if (nodeIds.length === 1) {
+      const n = state.nodes[nodeIds[0]];
+      if (n) { delete n.mergeOwnerId; delete n.mergeSourceHidden; } // tagged hidden pre-emptively; wasn't part of a real merge after all
+      resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
+    }
   }
   if (resultId) createFilterNode(resultId, "timerange", { from: win.from, to: win.to });
   finishFolderMinimapAction();
@@ -25994,27 +26217,34 @@ function selectionFilterNodesForRoot(rootId) {
 // every selectionFilter node that already exists across the whole tree
 // (not just under this root), so numbering stays a simple, ever-increasing
 // sequence rather than resetting per file.
+function nextSelectionFilterOrdinal() {
+  return Object.values(state.nodes).filter(node => node.selectionFilter).length + 1;
+}
 function nextSelectionFilterName() {
-  const n = Object.values(state.nodes).filter(node => node.selectionFilter).length;
-  return "Selection " + (n + 1);
+  return "Selection " + nextSelectionFilterOrdinal();
 }
 
 // Creates a brand-new top-level selection filter under `rootId` — same
-// "top-level, alongside Bookmarks" placement syncBookmarksFilterNode uses
-// (root.children.unshift), NOT a child of state.activeId like every other
-// context-menu filter action. Named as an ordinal ("Selection 1", "Selection
-// 2", ...) via nextSelectionFilterName(), not the entry count idSetFilterName
-// gives plot-created idset filters — renaming afterward goes through the
-// standard "Rename…" tree action like any other filter node.
+// "top-level, alongside Bookmarks/Notes/Sources" placement
+// syncBookmarksFilterNode uses (insertSpecialChild), NOT a child of
+// state.activeId like every other context-menu filter action. Named as an
+// ordinal ("Selection 1", "Selection 2", ...) via nextSelectionFilterName(),
+// not the entry count idSetFilterName gives plot-created idset filters —
+// renaming afterward goes through the standard "Rename…" tree action like
+// any other filter node. The ordinal is ALSO captured onto the node itself
+// (selectionOrdinal) so insertSpecialChild's sort survives a later rename —
+// node.name is no longer the source of truth for ordering, just display.
 function createSelectionFilterNode(rootId, ids) {
   const root = state.nodes[rootId];
   if (!root || !ids || !ids.length) return null;
+  const ordinal = nextSelectionFilterOrdinal();
   const node = {
-    id: uid("n"), type: "filter", name: nextSelectionFilterName(), parentId: rootId,
+    id: uid("n"), type: "filter", name: "Selection " + ordinal, parentId: rootId,
     children: [], filterType: "idset", value: ids.slice(), inverted: false, selectionFilter: true,
+    selectionOrdinal: ordinal,
   };
   state.nodes[node.id] = node;
-  root.children.unshift(node.id);
+  insertSpecialChild(root, node.id, 3 + ordinal);
   return activateNewNode(node);
 }
 
@@ -27933,7 +28163,7 @@ noteDialogInput.addEventListener("keydown", ev => {
 
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "idset"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "sources", "idset"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId, includeAncestors) {
@@ -28294,7 +28524,7 @@ function importFilterJson(text) {
     // written to a saved filter file in the first place — an imported one
     // (hand-edited file, or an old export from before this restriction
     // existed) would just be an unlocked look-alike with a stale match set.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes") return false;
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
     // and/or/link carry their two sides as baked condition snapshots. A file
     // or library preset written before that model carries node-id references
     // instead, which mean nothing here — importing it would produce a filter
@@ -30399,7 +30629,7 @@ function serializeFilterTreeForCache(fileNode) {
   // serializing the node itself would just be redundant, drifting state to
   // keep in sync. (A filter manually added as its CHILD, if the person did
   // that, is lost along with it — an accepted edge case, see PROJECT.md.)
-  const persistableChildren = ids => ids.filter(id => state.nodes[id] && state.nodes[id].filterType !== "bookmarks" && state.nodes[id].filterType !== "notes");
+  const persistableChildren = ids => ids.filter(id => state.nodes[id] && state.nodes[id].filterType !== "bookmarks" && state.nodes[id].filterType !== "notes" && state.nodes[id].filterType !== "sources");
 
   function ser(id) {
     const node = state.nodes[id];
@@ -30545,7 +30775,7 @@ function materializeCachedFilters(fileNode, roots) {
     // Same "bookmarks" exclusion as importFilterJson's validate() — the
     // cache never writes this type either (see serializeFilterTreeForCache's
     // persistableChildren), so any that show up here are stale/foreign.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes") return false;
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
     return (sn.children || []).every(valid);
   }
 
@@ -31703,6 +31933,7 @@ initContextExpandStepUnitSetting();
 initContextExpandStepMsSetting();
 initContextToolbar();
 initMinimapFullRangeSetting();
+initShowSourcesSetting();
 initMinimapBinningModeSetting();
 initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
