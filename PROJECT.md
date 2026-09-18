@@ -117,18 +117,22 @@ per-stream before parsing starts. Blank lines are dropped during the split
 entirely, never emitted into any stream, which is provably equivalent to
 today's single-format behavior (a blank line is already a no-op in
 `parseLogTextAsync`'s own loop). `loadMetaFormatText(name, text, metaFmt)`
-then parses each classified stream as an ordinary transient file (reusing
-`addFile`/`parseLogTextAsync` unmodified), sorts each transient file's own
-`entries` by `ts` (a virtual stream isn't guaranteed chronological on disk
-— a syslog block in particular — and `mergeFiles`' disjoint-time-range fast
+creates the merge result FIRST (`createMergeShell`, see "Sources grouping"
+below), then loads each classified stream into its own real, independent
+file node nested under the merge's "Sources" (reusing `addFile`/
+`parseLogTextAsync` unmodified), sorting each stream's own `entries` by
+`ts` first (a virtual stream isn't guaranteed chronological on disk — a
+syslog block in particular — and `mergeFiles`' disjoint-time-range fast
 path trusts each source's own order, so this pre-sort is what keeps that
-fast path correct), merges them via the existing, unmodified `mergeFiles`,
-renames the result to the physical filename, and removes the transient
-per-grammar files (safe — `mergeFiles` already holds the same entry objects
-by reference before any deletion runs). Wired into `loadOneFileIntoTree`
-and `addFile`'s live-resolution branch, so drag-drop, the file picker, and
-folder-watch's on-demand open all pick this up automatically with no
-separate code path. **Not supported in this first version**: folder-watch
+fast path correct), and finally fills the merge's own entries
+(`fillMergedEntries`) once every stream is loaded. The per-grammar file
+nodes are never deleted — they stay real, independently clickable/
+filterable nodes for as long as the merge exists, reachable only nested
+under "Sources" (tagged `mergeOwnerId`/`mergeSourceHidden`, see below).
+Wired into `loadOneFileIntoTree` and `addFile`'s live-resolution branch, so
+drag-drop, the file picker, and folder-watch's on-demand open all pick this
+up automatically with no separate code path. **Not supported in this first
+version**: folder-watch
 minimap probing (`probeFolderFileRange` returns its ordinary "no range
 found" sentinel for a meta-format file rather than probing one grammar
 wrong), windowed/partial loading, and live-tailing — a meta-format file is
@@ -137,26 +141,59 @@ always a static, fully-read snapshot. Level derivation from a numeric code
 missing a `level` group just falls through the existing generic
 missing-level default.
 
-**"Sources" grouping/coloring on any merged file.** `mergeFiles` (used both
-by the meta-format auto-merge above and the pre-existing manual "Merge N
-files" bulk action) additively stamps a `sources: [{id, name, color, count}]`
-array onto the merged file node and an `entry.sourceId` onto every copied
-entry. The tree renders this as an expandable **"Sources"** group directly
-under the merged file's own row (`renderSourcesGroup`/`renderSourceRow`) —
-a purely presentational group, not real `state.nodes` entries, same shape
-as the ZIP/folder-watch container rows. Each source gets its own color
-swatch (the existing highlight color-picker popup, generalized with an
-optional `onPick` callback so a pick can land on `node.sources[i].color`
-instead of a filter node's `highlightColor`); `computeHighlightMap` surfaces
-a colored source's entries into the same gutter-marker lane filter
-highlights already use. Session-only by design (no IndexedDB persistence —
-a session-cache restore of a merged file already reparses from scratch and
-loses this kind of state, same as the pre-existing "Merged-file gotcha"
-below) but threaded through `snapshotSubtree`/`restoreSubtree`'s file
-branch, so an in-session delete+undo doesn't silently drop it. Known,
-accepted limitation: entries are shared by reference across merges, so
-re-merging an already-merged file's entries overwrites `sourceId` on the
-same objects, making the earlier merge's own Sources coloring stale.
+**"Sources" grouping/coloring on any merged file — a real tree-level
+sibling of Bookmarks/Notes/Selection N, not an extra nesting level.**
+`createMergeShell` (the merge-node constructor `mergeFiles` and every
+create-first loader below share) creates one locked, real
+`{type:"filter", filterType:"sources"}` child node per merge, positioned
+via `insertSpecialChild` (a shared rank-based ordering helper —
+`specialChildRank`: Sources=0, Bookmarks=1, Notes=2, Selection N=3+its own
+creation ordinal — replacing what used to be four independent ad hoc
+`unshift`/splice calls) so a file's auto-managed rows always read
+**Sources, Bookmarks, Notes, Selection 1, Selection 2, ...** regardless of
+creation order. The Sources node's own `children` stays empty; nesting
+comes from the owning file's additive `sources: [{id, name, color, count}]`
+array (plus a matching `entry.sourceId` on every copied entry) and each
+source's real file node, rendered a second time via the ordinary
+`renderNode(src.id, depth+1, {mergeSourceColor: src})` — the exact
+"real root node, rendered nested, skipped from the plain top-level walk"
+pattern ZIP/folder-watch containers already use (`mergeOwnerId`/
+`mergeSourceHidden` tags, mirroring `zipId`/`folderId`). The one caller
+that does NOT hide its sources is the pre-existing manual "Merge N files"
+bulk action — its sources stay visible at their original top-level spot
+too (`mergeOwnerId` without `mergeSourceHidden`), rendered a second time
+nested under Sources. Each source gets its own color swatch (the existing
+highlight color-picker popup, generalized with an optional `onPick`
+callback so a pick can land on `node.sources[i].color` instead of a filter
+node's `highlightColor`); `computeHighlightMap` surfaces a colored source's
+entries into the same gutter-marker lane filter highlights already use. A
+**"Show Sources" setting** (default on, `philogg-show-sources`) is a pure
+display toggle — `renderNode` skips rendering the node when it's off; the
+underlying data is untouched. Session-only by design (no IndexedDB
+persistence — a session-cache restore of a merged file already reparses
+from scratch and loses this kind of state, same as the pre-existing
+"Merged-file gotcha" below) but threaded through `snapshotSubtree`/
+`restoreSubtree`'s file branch, so an in-session delete+undo doesn't
+silently drop it. Known, accepted limitation: entries are shared by
+reference across merges, so re-merging an already-merged file's entries
+overwrites `sourceId` on the same objects, making the earlier merge's own
+Sources coloring stale.
+
+**Create-first loading: the merge exists before any source is even read.**
+Every "load files straight into a merge" path (`loadMetaFormatText`'s
+per-grammar streams, `loadFileDescriptors`' drag-drop-then-"Merge" confirm,
+and the folder-watch minimap's "Merge (full)"/"Merge (window)" actions)
+calls `createMergeShell` first, then loads each source into a
+`mergeOwnerId`/`mergeSourceHidden`-tagged node (pre-tagged before its own
+read starts, reusing `addFile`/`loadOneFileIntoTree`'s existing
+`existingNode` parameter, where a placeholder exists to pre-tag through —
+folder-watch has none, so it tags right after that source's own load
+finishes instead, a brief accepted visibility gap). Only once every source
+has finished does `fillMergedEntries` run. While "Show Sources" is off, a
+loading create-first merge's own row shows a combined `(n+1)`-segment
+progress bar instead of relying on nested per-source rows — see
+`docs/persistence-and-sync.md` → "File merge follows the same
+load-progress pattern" for the full mechanism.
 
 ## Core data model
 
