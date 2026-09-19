@@ -5843,6 +5843,15 @@ await withApp(async (w, d, T) => {
    Updates hat schon genug gebracht."* `scheduleLoadRender` is back to
    doing its (now much cheaper, thanks to the third step) per-tick work on
    every single tick, unthrottled.
+   A later session added ONE narrow exception to "nothing else updates
+   live": updateLiveGrowingTotal keeps #tableSpacer's height (and hence the
+   native scrollbar's total/thumb size) tracking the active node's live
+   entry count during a load — a real bug for a large actively-growing
+   merge, where the scrollbar showed a far smaller total until some
+   unrelated full render happened to fire. Still no render() call (it's a
+   direct, O(1) DOM write plus the same cheap renderVisibleRows() the
+   scroll handler already uses) and still scoped to the active node only —
+   the group's core invariant (no render() on a load tick) is unchanged.
    ============================================================ */
 group(50);
 await withApp(async (w, d, T) => {
@@ -5902,15 +5911,16 @@ await withApp(async (w, d, T) => {
   assert(countAfterAnotherTick === nodeB.entries.length && countAfterAnotherTick > countB,
     "the row's DOM text is updated again on the very next tick, matching the data exactly — got " + countAfterAnotherTick);
 
-  // The Filtered view's actual painted DOM never updates automatically at
-  // all during a load — #tableSpacer's height (set only inside
-  // renderTable()) still reflects the entry count from the last real
-  // render (right after B's node was created, i.e. ~0). See Group 49 for
-  // confirming an explicit render() DOES pick up the live mid-parse state.
+  // The Filtered view's actual row DOM (text/painting) never updates
+  // automatically during a load — but #tableSpacer's height (and hence the
+  // scrollbar) now DOES, for the node that IS the active view (Bug 2 fix,
+  // updateLiveGrowingTotal, called from scheduleLoadRender) — B is active
+  // throughout this section. See Group 49 for confirming an explicit
+  // render() picks up the live mid-parse state for everything else.
   const spacerHeight = parseInt(d.querySelector("#tableSpacer").style.height, 10) || 0;
   const expectedIfLive = nodeB.entries.length * T.ROW_HEIGHT;
-  assert(spacerHeight < expectedIfLive,
-    "the table spacer's height was NOT updated to reflect B's live entry count — still stale from the last real render (spacer=" + spacerHeight + ", would be >= " + expectedIfLive + " if live)");
+  assert(spacerHeight >= expectedIfLive,
+    "the table spacer's height DOES track B's live entry count while B is the active view (Bug 2 fix) — spacer=" + spacerHeight + ", expected >= " + expectedIfLive);
 
   // The person switches to a different, already-loaded file mid-load — B
   // keeps streaming in the background exactly the same way it did as the
@@ -27090,8 +27100,15 @@ await withApp(async (w, d, T) => {
   const sourcesNode = T.state.nodes[sourcesNodeId];
   assert(sourcesNode && sourcesNode.filterType === "sources" && sourcesNode.locked === true,
     "the Sources row is a real, locked filter node — merged.children[0]");
+  assert(sourcesNode.collapsed === true,
+    "Sources starts collapsed right after a merge completes (this session's refinement, see fillMergedEntries) — expanded while loading, collapsed once done");
   const sourcesRow = d.querySelector('.tree-row[data-node-id="' + sourcesNodeId + '"]');
   assert(sourcesRow && sourcesRow.textContent.includes("Sources"), "it renders as a normal .tree-row, labeled Sources");
+
+  // Expand it to exercise the nested source rows the rest of this group is about.
+  fireClick(sourcesRow.querySelector(".tree-chevron"), w);
+  assert(sourcesNode.collapsed === false, "clicking the chevron expands it");
+  w.render();
 
   // The two sources are real, independent file nodes (fa/fb themselves,
   // for a manual bulk merge — see mergeFiles' own comment on mergeOwnerId
@@ -27510,6 +27527,329 @@ await withApp(async (w, d, T) => {
   assert([...(d.querySelectorAll('.tree-row[data-node-id="' + fb.id + '"]'))].length >= 1 &&
     d.querySelectorAll('.tree-row[data-node-id="' + fa.id + '"]').length === 0,
     "fb's nested row still renders, fa's is gone entirely (not a broken/empty row)");
+});
+
+/* ============================================================
+   GROUP 249 — Refinement: a nested Sources row (opts.mergeSourceColor) has
+   no delete (✕) button and ignores middle-click delete — only deletable
+   together with its owning merge (see deleteNode's cascade, Group 250). A
+   bulk-merge-visible source's own top-level row is unaffected and keeps
+   both delete affordances.
+   ============================================================ */
+group(249);
+await withApp(async (w, d, T) => {
+  section("249. Nested Sources rows have no ✕/middle-click delete; the same source's top-level row (bulk-merge case) still does");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.activeId = merged.id;
+  const sourcesNode = T.state.nodes[merged.children[0]];
+  sourcesNode.collapsed = false; // Refinement 4 collapses it by default — expand to see nested rows
+  w.render();
+
+  const faRows = () => [...d.querySelectorAll('.tree-row[data-node-id="' + fa.id + '"]')];
+  assert(faRows().length === 2, "sanity: fa renders twice — top-level (bulk-merge original) + nested under Sources");
+  const [topRow, nestedRow] = faRows();
+  assert(topRow.querySelector(".tree-del"), "the top-level (unnested) fa row still has its own ✕");
+  assert(!nestedRow.querySelector(".tree-del"), "the nested fa row has NO ✕ button");
+
+  nestedRow.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+  assert(T.state.nodes[fa.id], "middle-clicking the nested row does NOT delete fa");
+  topRow.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+  assert(!T.state.nodes[fa.id], "middle-clicking the TOP-LEVEL row still deletes fa — its own delete affordance is unaffected");
+});
+
+/* ============================================================
+   GROUP 250 — Refinement: deleting a merge cascades to its hidden sources
+   (deleteNode's own cascade over node.sources) — a create-first
+   (mergeSourceHidden) source has no life outside the merge and is deleted
+   too; a bulk-merge-visible (mergeOwnerId only) source survives at top
+   level, un-orphaned.
+   ============================================================ */
+group(250);
+await withApp(async (w, d, T) => {
+  section("250a. Deleting a create-first merge cascade-deletes its hidden (mergeSourceHidden) sources too");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const vnodeIds = T.state.rootIds.filter(id => id !== merged.id);
+  assert(vnodeIds.length === 2, "sanity: 2 hidden vnode sources exist before deletion");
+  assert(vnodeIds.every(id => T.state.nodes[id].mergeSourceHidden), "sanity: both are hidden sources");
+
+  w.deleteFilterNodeWithUndo(merged.id);
+  assert(!T.state.nodes[merged.id], "the merge itself is gone");
+  vnodeIds.forEach(id => {
+    assert(!T.state.nodes[id], "hidden source " + id + " is cascade-deleted, not orphaned");
+    assert(!T.state.rootIds.includes(id), "...and removed from rootIds too");
+  });
+});
+
+await withApp(async (w, d, T) => {
+  section("250b. Deleting a bulk-merge leaves its (mergeOwnerId-only) sources alive at top level, un-orphaned");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+
+  w.deleteFilterNodeWithUndo(merged.id);
+  assert(!T.state.nodes[merged.id], "the merge itself is gone");
+  assert(T.state.nodes[fa.id] && T.state.nodes[fb.id], "both originals are still alive");
+  assert(T.state.rootIds.includes(fa.id) && T.state.rootIds.includes(fb.id), "...and still at top level");
+  assert(!fa.mergeOwnerId && !fb.mergeOwnerId, "mergeOwnerId is cleared on both — no longer pointing at a dead merge");
+});
+
+/* ============================================================
+   GROUP 251 — Refinement: undo of a deleted create-first merge restores
+   the whole entry, including its cascade-deleted hidden sources (live,
+   clickable, back in state.rootIds).
+   ============================================================ */
+group(251);
+await withApp(async (w, d, T) => {
+  section("251. Delete a create-first merge, then undo — merge AND its hidden sources reappear, live and in state.rootIds");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const mergedId = merged.id;
+  const vnodeIds = T.state.rootIds.filter(id => id !== mergedId).sort();
+
+  w.deleteFilterNodeWithUndo(mergedId);
+  assert(!T.state.nodes[mergedId] && vnodeIds.every(id => !T.state.nodes[id]), "sanity: merge + hidden sources all gone before undo");
+
+  w.undo();
+  assert(T.state.nodes[mergedId], "the merge is back after undo");
+  assert(T.state.rootIds.includes(mergedId), "...in rootIds");
+  vnodeIds.forEach(id => {
+    assert(T.state.nodes[id], "hidden source " + id + " is back too");
+    assert(T.state.rootIds.includes(id), "...and back in rootIds");
+    assert(T.state.nodes[id].mergeOwnerId === mergedId, "...still tagged as this merge's source");
+  });
+  const restored = T.state.nodes[mergedId];
+  assert(restored.sources.map(s => s.id).sort().join(",") === vnodeIds.join(","), "restored.sources still references the (now-live-again) same ids");
+
+  // Live and clickable: activating one renders without throwing.
+  T.state.activeId = vnodeIds[0];
+  let threw = false;
+  try { w.render(); } catch (e) { threw = true; }
+  assert(!threw, "the restored hidden source renders fine as the active node");
+});
+
+/* ============================================================
+   GROUP 252 — Refinement: "Sources" starts collapsed immediately after
+   any merge load completes (create-first and the old bulk "Merge N
+   files" action alike) — expanded only while still loading.
+   ============================================================ */
+group(252);
+await withApp(async (w, d, T) => {
+  section("252a. fillMergedEntries collapses the Sources node once a bulk merge completes");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  const sourcesNode = T.state.nodes[merged.children[0]];
+  assert(sourcesNode.collapsed === true, "Sources is collapsed right after mergeFiles completes");
+});
+
+await withApp(async (w, d, T) => {
+  section("252b. fillMergedEntries collapses the Sources node once a create-first (meta-format) merge completes");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const sourcesNode = T.state.nodes[merged.children[0]];
+  assert(sourcesNode.collapsed === true, "Sources is collapsed right after a create-first merge completes");
+});
+
+/* ============================================================
+   GROUP 253 — Bug fix: the (n+1)-segment combined progress bar on a
+   create-first merge's own row now shows regardless of "Show Sources"
+   (previously only shown while Show Sources was OFF — person-reported:
+   with Sources on/default, the merge row showed no progress at all while
+   its sources were loading, only the eventual copy step moved it).
+   ============================================================ */
+group(253);
+await withApp(async (w, d, T) => {
+  section("253. Segmented progress bar shows on the merge row with Show Sources ON (default) too, not just when off");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  // A synthetic in-progress merge shell — the same shape createMergeShell
+  // leaves mid-load — set up directly rather than racing a real async load,
+  // to avoid timing flakiness (same idiom Group 244 documents).
+  const merged = {
+    id: "merge-test-253", type: "file", name: "merged.log", parentId: null, children: [], entries: [],
+    merged: true, cacheKey: "k253", loadFraction: 0.4, formatId: fa.formatId,
+    sources: [{ id: fa.id, name: fa.name, color: null, count: fa.entries.length }],
+    loadSegmentSourceIds: [fa.id],
+  };
+  T.state.nodes[merged.id] = merged;
+  T.state.rootIds.push(merged.id);
+  T.state.activeId = merged.id;
+
+  w.render();
+  const row = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
+  assert(row, "sanity: the merge row renders");
+  assert(row.querySelectorAll(".tree-load-fill-segment").length === 2,
+    "the merge row shows the (n+1) segmented bar even with Show Sources ON (the default) — got " + row.querySelectorAll(".tree-load-fill-segment").length);
+
+  fireClick(d.querySelector("#settingsShowSources"), w); // off
+  w.render();
+  const rowAfter = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
+  assert(rowAfter.querySelectorAll(".tree-load-fill-segment").length === 2, "...and still shows with Show Sources OFF, unchanged");
+});
+
+/* ============================================================
+   GROUP 254 — Bug fix: the log view's scrollbar total (#tableSpacer's
+   height) now tracks an actively-loading node's live entry count on every
+   load tick, when that node IS the active view — previously it only
+   reflected the count as of the last full renderTable(), which never runs
+   on a load tick, so a large actively-growing merge showed a far smaller,
+   stale scrollbar total until some unrelated full render happened to fire.
+   ============================================================ */
+group(254);
+await withApp(async (w, d, T) => {
+  section("254a. updateLiveGrowingTotal keeps #tableSpacer's height tracking the active node's live entry count during a load tick");
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  w.render();
+  const spacerBefore = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerBefore === fa.entries.length * T.ROW_HEIGHT + 22, "sanity: spacer matches the real render's entry count");
+
+  // Simulate a load tick growing entries in place, same shape
+  // fillMergedEntries's own chunk loop uses.
+  for (let i = 0; i < 50; i++) fa.entries.push({ id: "extra-" + i, ts: Date.now(), level: "INFO", message: "extra", formatId: fa.formatId });
+  w.scheduleLoadRender(fa.id);
+
+  const spacerAfter = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerAfter === fa.entries.length * T.ROW_HEIGHT + 22,
+    "the spacer height tracks the new, live entry count after just a scheduleLoadRender tick — no full render() needed, got " + spacerAfter);
+});
+
+await withApp(async (w, d, T) => {
+  section("254b. updateLiveGrowingTotal no-ops for a background (non-active) node's load tick");
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  const fb = await w.addFile("b.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  w.render();
+  const spacerBefore = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+
+  for (let i = 0; i < 50; i++) fb.entries.push({ id: "extra-" + i, ts: Date.now(), level: "INFO", message: "extra", formatId: fb.formatId });
+  w.scheduleLoadRender(fb.id); // fb is not active — should not touch the spacer
+
+  const spacerAfter = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerAfter === spacerBefore, "the spacer is untouched by a background (non-active) node's load tick");
+});
+
+await withApp(async (w, d, T) => {
+  section("254c. updateLiveGrowingTotal bails out (stays stale) when a level filter is narrowing the active view");
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  T.state.levelFilter = new Set(["info"]); // narrows the view — currentViewEntries is no longer === fa.entries by reference
+  w.render();
+  const spacerBefore = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+
+  for (let i = 0; i < 50; i++) fa.entries.push({ id: "extra-" + i, ts: Date.now(), level: "INFO", message: "extra", formatId: fa.formatId });
+  w.scheduleLoadRender(fa.id);
+
+  const spacerAfter = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerAfter === spacerBefore, "with a level filter narrowing the view, the spacer stays at its last real-render value instead of a partial/incorrect update");
+});
+
+/* ============================================================
+   GROUP 255 — Bug fix: deleting a file mid-load no longer leaves stale
+   entries/leaked entryIndex ids behind, or fires a redundant render for
+   the now-dead node (loadOneFileIntoTree/parseLogTextAsync/parseFileWindow
+   all now guard against a delete raced under an in-flight load).
+   ============================================================ */
+group(255);
+await withApp(async (w, d, T) => {
+  section("255a. Deleting a file mid-parse stops further entries leaking into the orphaned node/entryIndex, and skips the wasted extra render");
+  const text = makeLog(0, 9000, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] });
+  const before = new Set(T.state.rootIds);
+  const donePromise = w.addFile("huge.log", text);
+  const newId = T.state.rootIds.find(id => !before.has(id));
+  const node = T.state.nodes[newId];
+  T.state.activeId = newId;
+
+  await new Promise(r => setTimeout(r, 0)); // let the first parse chunk land
+  const midCount = node.entries.length;
+  assert(midCount > 0 && midCount < 9000, "sanity: genuinely mid-parse");
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRender = render;
+    render = function() { window.__renderCalls = (window.__renderCalls||0)+1; return __origRender(); };
+  `;
+  d.body.appendChild(s);
+  w.__renderCalls = 0;
+
+  w.deleteFilterNodeWithUndo(newId); // the person closes it before it's done
+  assert(!T.state.nodes[newId], "the node is gone right away");
+
+  await donePromise; // let the rest of the (now-orphaned) parse run to completion
+  assert(node.entries.length === midCount,
+    "no further entries were appended to the orphaned node after deletion — got " + node.entries.length + ", expected " + midCount);
+  assert(node.entries.every(e => !T.entryIndex[e.id]), "every one of the node's own entries is absent from entryIndex once deleted (none leaked back in post-deletion)");
+  assert(w.__renderCalls === 0, "the orphaned load's own finally block skips its render entirely once the node is gone — got " + w.__renderCalls);
+});
+
+await withApp(async (w, d, T) => {
+  section("255b. Deleting a windowed folder-watch load mid-parseFileWindow doesn't resurrect it via the 'not ok -> full reload' fallback");
+  const N = 600;
+  const filler = "X".repeat(14000);
+  function makeBigLog(n) {
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+      lines.push(`2024-01-15 10:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"message ${i} ${filler}"`);
+    }
+    return lines.join("\n") + "\n";
+  }
+  const bigText = makeBigLog(N);
+  assert(bigText.length > 8 * 1024 * 1024, "sanity: the fixture is above the windowed-load threshold");
+  const anchor = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+  const tsAt = i => anchor + i * 1000;
+
+  let getFileCalls = 0;
+  function fakeFileHandle(text) {
+    return {
+      async getFile() {
+        getFileCalls++;
+        return {
+          size: text.length,
+          slice(start, end) {
+            const e = end === undefined ? text.length : end;
+            const sliced = text.slice(start, e);
+            return { text: async () => sliced };
+          },
+        };
+      },
+    };
+  }
+
+  const folder = { id: "fm-w-folder-255", name: "w255", files: [] };
+  const from = tsAt(250), to = tsAt(259);
+  const rec = { name: "big.log", relPath: "big.log", nodeId: null, handle: fakeFileHandle(bigText), _range: { first: tsAt(0), last: tsAt(N - 1) } };
+  folder.files.push(rec);
+
+  const donePromise = w.loadFolderFileWindowed(folder, rec, from, to);
+  // Node creation happens after the handle's own (async) getFile() resolves
+  // — wait for it to land in the tree, same "before" diff idiom Group 49
+  // uses, before deleting it mid-window-read.
+  await waitFor(() => T.state.rootIds.length > 0);
+  const nodeId = T.state.rootIds[0];
+
+  w.deleteFilterNodeWithUndo(nodeId);
+  assert(!T.state.nodes[nodeId], "the node is gone right away");
+
+  await donePromise;
+  assert(!T.state.nodes[nodeId], "still gone once the windowed read finishes — not resurrected");
+  assert(getFileCalls === 1, "no full-file fallback reload was triggered by the deletion (getFile() called exactly once, not a second time for loadFolderFile's own full read)");
 });
 
 console.log("\n" + "=".repeat(60));
@@ -31290,4 +31630,60 @@ process.exitCode = failed ? 1 : 0;
       originals untouched at top level. 248 covers deleteNode's new
       cleanup of a merge's own `sources` array when one of its sources is
       deleted independently.
+   Groups 249-255 — same-project follow-up session, person-requested
+      refinements to 240-248's Sources rework plus three bugs found while
+      using it. Refinements: (1) a nested Sources row (opts.mergeSourceColor)
+      no longer has its own ✕/middle-click delete — only deletable together
+      with its owning merge — while a bulk-merge-visible source's own
+      top-level row is unaffected (renderNode's delete-button/auxclick
+      guards). (2) deleteNode now cascades: a merge's mergeSourceHidden
+      sources are deleted along with it (they had no independent
+      existence); a bulk-merge-visible (mergeOwnerId-only) source survives
+      at top level, un-orphaned (mergeOwnerId cleared). (3) undo of a
+      deleted merge now restores its cascade-deleted hidden sources too —
+      snapshotSubtree/restoreSubtree gained hiddenSourceSnapshots/
+      hiddenSourceIds (root-level siblings aren't reachable via the normal
+      children recursion) and undo()'s "deleteFile" branch splices each
+      restored id back into state.rootIds; this also needed
+      snapshotSubtree/restoreSubtree to start carrying mergeOwnerId/
+      mergeSourceHidden at all (never needed before, since a hidden source
+      was never independently snapshotted). (4) fillMergedEntries now
+      collapses the Sources node once a merge completes (both the
+      create-first and old bulk-merge paths funnel through it) — expanded
+      only while still loading. Bugs: (1) the (n+1)-segment progress bar
+      on a create-first merge's own row now always shows while loading,
+      not just when Show Sources is off (person-reported: with Sources on/
+      default, a two-file 100MB drag-drop merge showed NO progress on the
+      merge row at all until each source finished). (2) the log view's
+      scrollbar total (#tableSpacer's height) now tracks an actively-
+      loading node's live entry count on every load tick, when that node
+      IS the active view (new updateLiveGrowingTotal, called from
+      scheduleLoadRender) — previously it only reflected the last full
+      renderTable()'s count, which a load tick never triggers, so a large
+      actively-growing merge (782k entries across two 100MB files) showed
+      a far smaller, constantly "catching up" scrollbar/End-key target
+      until some unrelated full render happened to fire; scoped to the
+      common unfiltered case (currentViewEntries === node.entries by
+      reference) to stay O(1) per tick, not a renderTable() call. (3)
+      deleting a file mid-load no longer leaks entries/entryIndex ids into
+      the now-orphaned node for the rest of its read/parse, or fires a
+      redundant render — loadOneFileIntoTree, addFile (same unconditional-
+      flushLoadRender bug found in a second call site while fixing the
+      first), parseLogTextAsync's plain-loop fallback, and parseFileWindow
+      (plus its own loadFolderFileWindowed caller, which used to
+      incorrectly fall back to a full reload on a false `ok` — now
+      distinguishes "unsafe window" from "deleted mid-load") all gained an
+      existence guard, mirroring the one fillMergedEntries already had for
+      the identical race. 249 covers the delete-button/middle-click
+      gating. 250 covers deleteNode's cascade (both source kinds). 251
+      covers the undo round trip, including the mergeOwnerId/
+      mergeSourceHidden tags surviving it. 252 covers the collapse-on-
+      completion for both merge paths. 253 covers the segmented bar
+      showing with Show Sources on (a synthetic mid-load merge shell, to
+      avoid the timing flakiness Group 244 already documents for a real
+      near-instant fixture). 254 covers the live scrollbar total,
+      including it correctly staying inert for a background (non-active)
+      load and for a level-filter-narrowed view. 255 covers the mid-load-
+      delete guards, both for a plain in-memory parse (addFile) and a
+      windowed folder-watch load (parseFileWindow).
    ============================================================ */

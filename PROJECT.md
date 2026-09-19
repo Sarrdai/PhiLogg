@@ -162,22 +162,38 @@ pattern ZIP/folder-watch containers already use (`mergeOwnerId`/
 that does NOT hide its sources is the pre-existing manual "Merge N files"
 bulk action — its sources stay visible at their original top-level spot
 too (`mergeOwnerId` without `mergeSourceHidden`), rendered a second time
-nested under Sources. Each source gets its own color swatch (the existing
-highlight color-picker popup, generalized with an optional `onPick`
-callback so a pick can land on `node.sources[i].color` instead of a filter
-node's `highlightColor`); `computeHighlightMap` surfaces a colored source's
-entries into the same gutter-marker lane filter highlights already use. A
-**"Show Sources" setting** (default on, `philogg-show-sources`) is a pure
-display toggle — `renderNode` skips rendering the node when it's off; the
-underlying data is untouched. Session-only by design (no IndexedDB
-persistence — a session-cache restore of a merged file already reparses
-from scratch and loses this kind of state, same as the pre-existing
-"Merged-file gotcha" below) but threaded through `snapshotSubtree`/
-`restoreSubtree`'s file branch, so an in-session delete+undo doesn't
-silently drop it. Known, accepted limitation: entries are shared by
-reference across merges, so re-merging an already-merged file's entries
-overwrites `sourceId` on the same objects, making the earlier merge's own
-Sources coloring stale.
+nested under Sources. A nested source row has no ✕/middle-click delete of
+its own (`renderNode`'s delete-button/`auxclick` handlers gate on
+`opts.mergeSourceColor`) — only deletable together with its merge; the
+same source's own top-level row (the bulk-merge case) is unaffected. Each
+source gets its own color swatch (the existing highlight color-picker
+popup, generalized with an optional `onPick` callback so a pick can land
+on `node.sources[i].color` instead of a filter node's `highlightColor`);
+`computeHighlightMap` surfaces a colored source's entries into the same
+gutter-marker lane filter highlights already use. A **"Show Sources"
+setting** (default on, `philogg-show-sources`) is a pure display toggle —
+`renderNode` skips rendering the node when it's off; the underlying data
+is untouched. `fillMergedEntries` collapses the Sources node the moment a
+merge completes (both merge paths) — expanded only while still loading.
+
+Deleting a merge cascades correctly: `deleteNode` deletes its
+`mergeSourceHidden` sources right along with it (they have no independent
+existence), while un-orphaning (clearing `mergeOwnerId`) a bulk-merge-
+visible survivor instead of leaving it tagged toward a dead id. Undoing
+that delete restores the whole thing, hidden sources included —
+`snapshotSubtree`/`restoreSubtree` gained `hiddenSourceSnapshots`/
+`hiddenSourceIds` (root-level siblings aren't reachable via the normal
+`children` recursion) and now also carry a file node's own `mergeOwnerId`/
+`mergeSourceHidden` tags, which neither function had ever needed before.
+
+Session-only by design (no IndexedDB persistence — a session-cache
+restore of a merged file already reparses from scratch and loses this
+kind of state, same as the pre-existing "Merged-file gotcha" below) but
+threaded through `snapshotSubtree`/`restoreSubtree`'s file branch, so an
+in-session delete+undo doesn't silently drop it. Known, accepted
+limitation: entries are shared by reference across merges, so re-merging
+an already-merged file's entries overwrites `sourceId` on the same
+objects, making the earlier merge's own Sources coloring stale.
 
 **Create-first loading: the merge exists before any source is even read.**
 Every "load files straight into a merge" path (`loadMetaFormatText`'s
@@ -189,11 +205,18 @@ read starts, reusing `addFile`/`loadOneFileIntoTree`'s existing
 `existingNode` parameter, where a placeholder exists to pre-tag through —
 folder-watch has none, so it tags right after that source's own load
 finishes instead, a brief accepted visibility gap). Only once every source
-has finished does `fillMergedEntries` run. While "Show Sources" is off, a
-loading create-first merge's own row shows a combined `(n+1)`-segment
-progress bar instead of relying on nested per-source rows — see
-`docs/persistence-and-sync.md` → "File merge follows the same
-load-progress pattern" for the full mechanism.
+has finished does `fillMergedEntries` run. A loading create-first merge's
+own row shows a combined `(n+1)`-segment progress bar **regardless of
+"Show Sources"** — each nested source's own row still carries its own
+ordinary bar too when Sources is shown, alongside it, not instead of it
+(originally gated off when Sources was on, reversed after a person-
+reported bug: with Sources on/default, the merge row showed no progress
+at all while its sources loaded). See `docs/persistence-and-sync.md` →
+"File merge follows the same load-progress pattern" for the full
+mechanism, and → "File loading & progress" for `updateLiveGrowingTotal`,
+which keeps the log view's scrollbar total live for a large actively-
+loading merge specifically (a narrowly-scoped exception to the
+"no rebuild on a load tick" rule just below).
 
 ## Core data model
 
@@ -328,7 +351,7 @@ The full chronological changelog, newest-first — what shipped, in what order, 
 ## Known gotchas — check before touching related code
 
 - `stopPropagation` on any click handler that opens a popup — a click that re-renders its own clicked ancestor (or opens a popup) while still bubbling can trigger the global "click outside a popup closes it" handler against a detached/moved target. Hit at least three times (a pattern-preview span, a pattern-chip toggle, a tree-context-menu "Edit filter…"). See `docs/extraction-and-plotting.md` → "Live pattern preview" for the fullest writeup.
-- **DOM identity across clicks**: `renderVisibleRows()` rebuilds nodes on every render, breaking native `dblclick` if a plain click already re-renders; `renderTree()` does too, breaking native `click` on another row during a hot loop (e.g. while a file loads) — see `docs/persistence-and-sync.md` → "File loading" ("A load tick never rebuilds `#tree` or the level bar") and `docs/testing-and-limitations.md` → "Testing approach" for the canonical bug writeup.
+- **DOM identity across clicks**: `renderVisibleRows()` rebuilds nodes on every render, breaking native `dblclick` if a plain click already re-renders; `renderTree()` does too, breaking native `click` on another row during a hot loop (e.g. while a file loads) — see `docs/persistence-and-sync.md` → "File loading" ("A load tick never rebuilds `#tree` or the level bar") and `docs/testing-and-limitations.md` → "Testing approach" for the canonical bug writeup. One narrow, deliberate exception: `updateLiveGrowingTotal` (2026-09-19) DOES call `renderVisibleRows()` on every load tick, but only for the table view of a node that's both actively loading AND the current active view — `renderTree()`/the tree row DOM are untouched, so this rule's actual protections (tree click-during-load, and the O(n²) cost a full rebuild would add) still hold; the accepted, narrower trade-off is that double-clicking a table row of that one specific still-loading file could in principle land on a rebuilt element mid-load, same class of interaction this gotcha already describes for the tree.
 - **Render scope rule**: `render()` (134+ call sites), `renderTree()` and `renderVisibleRows()`/`renderHighlightVisibleRows()` are unconditional full-subtree rebuilds — no diffing, no partial-update mode. Before adding a new call to any of them, check whether a targeted update already covers the case: `updateSelectedRowClass()` (row selection), `updateLoadRowProgress()` (one tree row's own count/progress, used by load ticks AND by `onTailChange` for a tailed root that isn't behind the active view), `updateMinimapRenderedRange()`/`updateMinimapSelectionMarkers()` (minimap sub-parts). A full rebuild is only justified when tree/row *structure* actually changed, not just one node's/row's own data. This isn't a mandate to build a general diffing layer (out of scope for a single-file, no-build-tooling app) — it's a per-call-site check: does this actually need `render()`, or can it write directly to the one row/node that changed?
 - No `crypto.subtle` — the sync FNV-1a fingerprint (`fingerprintText()`) used for session export/import and file-filter-history matching is intentional, not a placeholder; see `docs/persistence-and-sync.md`.
 - **Any new filter-node field must be threaded through all persistence carriers**: `cloneSubtree`, `snapshotSubtree`/`restoreSubtree` (undo/redo), `serializeFilterBranch`/`importFilterJson` (save/load JSON), `serializeFilterTreeForCache`/`materializeCachedFilters` (session cache). This applies to **file**-node fields too, not just filter fields — `node.formatId` was dropped by the undo snapshot for exactly this reason; a file-node field also needs `persistFileNode`/`restoreSessionFromCache` (session cache, separate from the filter-tree carriers above) alongside `snapshotSubtree`/`restoreSubtree`. `node.merged`, `node.folderId` and `node.partial` (the folder-watch minimap's windowed/partial load, `docs/persistence-and-sync.md`) are the current examples of file-node fields threaded through both.
