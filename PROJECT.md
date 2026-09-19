@@ -206,17 +206,21 @@ read starts, reusing `addFile`/`loadOneFileIntoTree`'s existing
 folder-watch has none, so it tags right after that source's own load
 finishes instead, a brief accepted visibility gap). Only once every source
 has finished does `fillMergedEntries` run. A loading create-first merge's
-own row shows a combined `(n+1)`-segment progress bar **regardless of
-"Show Sources"** — each nested source's own row still carries its own
-ordinary bar too when Sources is shown, alongside it, not instead of it
-(originally gated off when Sources was on, reversed after a person-
-reported bug: with Sources on/default, the merge row showed no progress
-at all while its sources loaded). See `docs/persistence-and-sync.md` →
-"File merge follows the same load-progress pattern" for the full
-mechanism, and → "File loading & progress" for `updateLiveGrowingTotal`,
-which keeps the log view's scrollbar total live for a large actively-
-loading merge specifically (a narrowly-scoped exception to the
-"no rebuild on a load tick" rule just below).
+own row shows a single continuous progress bar (`node.loadSources`
+`{id,weight}` pairs + `updateMergeLoadFraction`, reusing the exact plain
+`.tree-load-fill` markup an ordinary file's own bar already uses),
+weighted by each source's real size (byte count where known, an equal
+fallback otherwise) rather than a plain per-source average, with a small
+fixed reservation (`MERGE_STEP_BAR_FRACTION`) for the merge-copy step —
+**regardless of "Show Sources"** — each nested source's own row still
+carries its own ordinary bar too when Sources is shown, alongside it, not
+instead of it. See `docs/persistence-and-sync.md` → "File merge follows
+the same load-progress pattern" for the full mechanism, and → "File
+loading & progress" for `updateLiveGrowingTotal`/`detectMaxTableScrollPx`,
+which together keep the log view's scrollbar both live and correctly
+capped for a large actively-loading merge (a narrowly-scoped exception to
+the "no rebuild on a load tick" rule just below, plus a real browser
+height-limit fix — see the "Known gotchas" entry for it).
 
 ## Core data model
 
@@ -352,6 +356,7 @@ The full chronological changelog, newest-first — what shipped, in what order, 
 
 - `stopPropagation` on any click handler that opens a popup — a click that re-renders its own clicked ancestor (or opens a popup) while still bubbling can trigger the global "click outside a popup closes it" handler against a detached/moved target. Hit at least three times (a pattern-preview span, a pattern-chip toggle, a tree-context-menu "Edit filter…"). See `docs/extraction-and-plotting.md` → "Live pattern preview" for the fullest writeup.
 - **DOM identity across clicks**: `renderVisibleRows()` rebuilds nodes on every render, breaking native `dblclick` if a plain click already re-renders; `renderTree()` does too, breaking native `click` on another row during a hot loop (e.g. while a file loads) — see `docs/persistence-and-sync.md` → "File loading" ("A load tick never rebuilds `#tree` or the level bar") and `docs/testing-and-limitations.md` → "Testing approach" for the canonical bug writeup. One narrow, deliberate exception: `updateLiveGrowingTotal` (2026-09-19) DOES call `renderVisibleRows()` on every load tick, but only for the table view of a node that's both actively loading AND the current active view — `renderTree()`/the tree row DOM are untouched, so this rule's actual protections (tree click-during-load, and the O(n²) cost a full rebuild would add) still hold; the accepted, narrower trade-off is that double-clicking a table row of that one specific still-loading file could in principle land on a rebuilt element mid-load, same class of interaction this gotcha already describes for the tree.
+- **Browsers have a hard practical ceiling on a single element's CSS height.** Confirmed empirically (person-reported bug on an 822,697-entry merge, this session, 2026-09-19): Chromium clamps a too-tall element to exactly `33,554,428px`; Firefox instead discards the whole oversized declaration and falls back to `height:auto`, which can silently resolve to `0px` for an element (like `#tableSpacer`) whose only content is absolutely positioned and so doesn't count toward auto-sizing — `#tableSpacer` then stops contributing to `#tableBody`'s scrollable region at all (no `overflow:hidden` between them), leaving `#tableRows`' own drifting `top` offset as the only thing driving `scrollHeight`, which produces an erratic, wrong-proportioned native scrollbar. `philogg.html`'s log table fixes this with `detectMaxTableScrollPx` (a lazy, cached, per-session feature-detection of the *actual running engine's own* ceiling — not a fixed constant, since the app's primary target, Tauri on Windows/WebView2, has ~2x Firefox's headroom and a hardcoded Firefox-safe cap would needlessly halve its scroll resolution) plus `computeTableSpacerContentHeight`/`tableScrollHeightScale`, converted through at every `#tableBody` scroll-position boundary (`logicalToPhysicalScrollPx`/`physicalToLogicalScrollPx`). Any future virtualized list in this codebase (the extraction table, the link-pair view — both currently use the same unmitigated `count * rowHeight` approach) needs the same treatment before it can be trusted at very large counts — see `docs/persistence-and-sync.md` → "File merge follows the same load-progress pattern".
 - **Render scope rule**: `render()` (134+ call sites), `renderTree()` and `renderVisibleRows()`/`renderHighlightVisibleRows()` are unconditional full-subtree rebuilds — no diffing, no partial-update mode. Before adding a new call to any of them, check whether a targeted update already covers the case: `updateSelectedRowClass()` (row selection), `updateLoadRowProgress()` (one tree row's own count/progress, used by load ticks AND by `onTailChange` for a tailed root that isn't behind the active view), `updateMinimapRenderedRange()`/`updateMinimapSelectionMarkers()` (minimap sub-parts). A full rebuild is only justified when tree/row *structure* actually changed, not just one node's/row's own data. This isn't a mandate to build a general diffing layer (out of scope for a single-file, no-build-tooling app) — it's a per-call-site check: does this actually need `render()`, or can it write directly to the one row/node that changed?
 - No `crypto.subtle` — the sync FNV-1a fingerprint (`fingerprintText()`) used for session export/import and file-filter-history matching is intentional, not a placeholder; see `docs/persistence-and-sync.md`.
 - **Any new filter-node field must be threaded through all persistence carriers**: `cloneSubtree`, `snapshotSubtree`/`restoreSubtree` (undo/redo), `serializeFilterBranch`/`importFilterJson` (save/load JSON), `serializeFilterTreeForCache`/`materializeCachedFilters` (session cache). This applies to **file**-node fields too, not just filter fields — `node.formatId` was dropped by the undo snapshot for exactly this reason; a file-node field also needs `persistFileNode`/`restoreSessionFromCache` (session cache, separate from the filter-tree carriers above) alongside `snapshotSubtree`/`restoreSubtree`. `node.merged`, `node.folderId` and `node.partial` (the folder-watch minimap's windowed/partial load, `docs/persistence-and-sync.md`) are the current examples of file-node fields threaded through both.
