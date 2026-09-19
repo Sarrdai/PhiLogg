@@ -7838,6 +7838,11 @@ async function parseLogTextAsync(text, node, onProgress) {
     if (i % PARSE_CHUNK_LINES === 0) {
       if (onProgress) onProgress(i, lines.length);
       await new Promise(resolve => setTimeout(resolve, 0)); // yield a tick
+      // Deleted mid-parse (by the person, or a race) — stop touching the
+      // now-orphaned node/entryIndex for the rest of the file; the only
+      // caller (loadOneFileIntoTree) already no-ops on its own existence
+      // check once this returns.
+      if (state.nodes[node.id] !== node) return;
     }
   }
   if (current) { entryIndex[current.id] = current; node.entries.push(current); }
@@ -8362,6 +8367,11 @@ async function parseFileWindow(file, node, from, to, onProgress) {
     pos = end;
     if (onProgress) onProgress(pos - startOffset, Math.max(1, file.size - startOffset));
     await new Promise(r => setTimeout(r, 0)); // yield a tick, same as parseLogTextAsync's own loop
+    // node.id is only ever unset for a node that was never registered in
+    // state.nodes in the first place (a direct/synthetic call, e.g. a unit
+    // test exercising this function in isolation) — that's not "deleted",
+    // so only bail when a REAL registered node has since been removed.
+    if (node.id && state.nodes[node.id] !== node) return false; // deleted mid-load — stop touching the orphaned node/entryIndex
   }
   if (current) { entryIndex[current.id] = current; node.entries.push(current); }
   return true;
@@ -8407,6 +8417,10 @@ async function loadFolderFileWindowed(folder, rec, from, to) {
   } catch (err) { ok = false; }
 
   if (!ok) {
+    // parseFileWindow also returns false when the node was deleted
+    // mid-load (person closed it before the window finished) — respect
+    // that instead of reviving it via a full-file fallback load.
+    if (state.nodes[node.id] !== node) return;
     // Not safely windowable (or something else went wrong) — drop the
     // half-built node and fall back to reading the whole file instead of
     // leaving a misleadingly partial one behind.
@@ -8516,6 +8530,13 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
     worker.onmessage = (ev) => {
       const msg = ev.data;
       if (msg.type === "chunk") {
+        // Deleted mid-load (by the person, or a race) — stop feeding the
+        // now-orphaned node/entryIndex and stop the background parse
+        // outright, instead of leaking entries into them for the rest of
+        // the file. Resolve (not reject) so the awaiting caller just
+        // proceeds to its own existence check instead of hitting the
+        // worker-failure fallback path.
+        if (state.nodes[node.id] !== node) { worker.terminate(); resolve(); return; }
         for (const entry of msg.entries) {
           entry.id = uid("e");
           entryIndex[entry.id] = entry;
@@ -8578,12 +8599,42 @@ function scheduleLoadRender(rootId) {
   invalidateCachesForRoots([rootId]);
   updateLoadRowProgress(rootId);
   // A tick on a merge SOURCE also nudges its owning merge row's own
-  // combined progress display, when that row is currently showing one
-  // (only while "Show Sources" is off — see renderNode's segmented-fill
-  // branch; a no-op query miss otherwise, so no settings check needed
-  // here in the hot path).
+  // combined progress display (see renderNode's segmented-fill branch —
+  // always shown for a create-first merge in progress, regardless of
+  // "Show Sources"; a no-op query miss whenever that row isn't currently
+  // in the segmented-loading state).
   const node = state.nodes[rootId];
   if (node && node.mergeOwnerId) updateMergeSegmentedProgress(node.mergeOwnerId);
+  updateLiveGrowingTotal(rootId);
+}
+// Bug fix: the log view's scrollbar (native — driven by #tableSpacer's own
+// height, no custom thumb) otherwise only reflects the entry count as of
+// the last full renderTable(), which never runs on a load tick — so for a
+// node that's actively loading AND currently the active view (a large
+// create-first merge, most visibly), the scrollbar stayed frozen at
+// whatever the total was minutes earlier, and End/Ctrl+End (the browser's
+// native "scroll to scrollHeight") could only ever reach that stale point.
+// Deliberately NOT a renderTable() call — that's O(n) (filters, sort,
+// minimap), which per-tick would make a many-chunk load O(n^2), exactly
+// what the "no view rebuild on a load tick" rule (see scheduleLoadRender's
+// own history above) exists to avoid. Only handles the common case: when
+// currentViewEntries IS node.entries by the same reference (getEntries
+// returns node.entries directly for a file node; applyLevelFilter/
+// getVisibleEntries/spliceTempAnchor all return their input unchanged
+// absent a level filter/pinned-bookmarks union/temp anchor) — that
+// reference-equality check alone proves nothing is narrowing the view, so
+// .length is already live; only the spacer height (which caps the
+// browser's native scrollHeight) is stale and needs writing. A narrowed
+// view is left to catch up at the next real render, as before.
+function updateLiveGrowingTotal(rootId) {
+  if (rootId !== state.activeId) return;
+  if (fhActiveTab === "table" || fhActiveTab === "plot") return; // extraction view showing, not the log table
+  const node = state.nodes[rootId];
+  if (!node || node.type !== "file") return;
+  if (currentViewEntries !== node.entries) return; // a filter/pin/anchor is narrowing the view — bail, stays stale until the next full render
+  if (needsRowOffsets()) return; // multiline/notes/wrap: the offsets table would need a real rebuild
+  tableSpacer.style.height = (node.entries.length * ROW_HEIGHT + 22) + "px";
+  renderVisibleRows(); // cheap — visible rows only, picks up newly-in-range rows immediately
 }
 // Computes the (n+1) 0..1 fractions a create-first merge's combined
 // progress bar shows — one per source (0 while still queued, its own
@@ -8601,12 +8652,11 @@ function mergeSegmentFractions(merge) {
   return fracs;
 }
 
-// Only meaningful while "Show Sources" is off — with Sources on, each
-// source's own nested row already carries its own ordinary single-fill
-// bar (unmodified), so the merge row shows nothing of its own until the
-// final copy/sort step. A no-op query miss whenever the segmented markup
-// isn't currently rendered (Sources on, or this node isn't a create-first
-// merge at all), so scheduleLoadRender can call this unconditionally.
+// Shown regardless of "Show Sources" — when Sources is also on, each
+// source's own nested row carries its own ordinary single-fill bar too,
+// in addition to this. A no-op query miss whenever the segmented markup
+// isn't currently rendered (this node isn't a create-first merge
+// currently loading), so scheduleLoadRender can call this unconditionally.
 function updateMergeSegmentedProgress(mergeId) {
   const merge = state.nodes[mergeId];
   if (!merge || !Array.isArray(merge.loadSegmentSourceIds)) return;
@@ -8897,7 +8947,10 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
     if (onProgress) onProgress(done, total);
   });
   delete node.loadFraction;
-  flushLoadRender(node.id);
+  // Skip the render if the node was deleted mid-parse (by the person, or a
+  // race) — same guard loadOneFileIntoTree's own finally block has for the
+  // identical situation on its own load path.
+  if (state.nodes[node.id] === node) flushLoadRender(node.id);
   return node;
 }
 
@@ -9616,6 +9669,15 @@ async function fillMergedEntries(node, files) {
     invalidateOrderIndexMap(node.id); // in-place reorder: same array, same length
   }
 
+  // Sources stays expanded through the whole load (createMergeShell
+  // deliberately leaves it that way, so per-source progress is visible
+  // nested underneath) — collapse it now that the merge is actually done,
+  // for every path that lands here (create-first and the old already-
+  // loaded bulk "Merge N files" action alike, since both funnel through
+  // this one function).
+  const sourcesNode = node.children.map(cid => state.nodes[cid]).find(c => c && c.filterType === "sources");
+  if (sourcesNode) sourcesNode.collapsed = true;
+
   delete node.loadFraction;
   delete node.loadSegmentSourceIds; // see the segmented-progress section — only meaningful while loading
   flushLoadRender(node.id);
@@ -10177,6 +10239,28 @@ function deleteNode(nodeId) {
     if (node.mergeOwnerId) {
       const owner = state.nodes[node.mergeOwnerId];
       if (owner && Array.isArray(owner.sources)) owner.sources = owner.sources.filter(s => s.id !== nodeId);
+    }
+    // Deleting a merge itself: mergeSourceHidden sources have no life
+    // outside this merge (they only ever appeared nested under its
+    // Sources row, never at top level) — cascade-delete them too. A
+    // bulk-merge-visible survivor (mergeOwnerId set, mergeSourceHidden
+    // NOT set — it's also an ordinary top-level row) stays alive and at
+    // top level; just un-orphan it so it doesn't keep pointing at a now-
+    // dead merge id. [...node.sources] spread: the recursive deleteNode
+    // call below reassigns OTHER surviving sources' owner.sources array in
+    // place via the cleanup block just above, same reasoning as the
+    // existing [...node.children] spread at the top of this function. A
+    // hidden source can never itself carry a .sources array (mergeSourceHidden
+    // is only ever set on freshly-loaded placeholders, never on a
+    // pre-existing merge — see mergeFiles/loadFileDescriptors), so this
+    // can't recurse into a nested merge.
+    if (Array.isArray(node.sources)) {
+      [...node.sources].forEach(s => {
+        const src = state.nodes[s.id];
+        if (!src) return;
+        if (src.mergeSourceHidden) deleteNode(src.id);
+        else { delete src.mergeOwnerId; delete src.mergeSourceHidden; }
+      });
     }
   } else {
     const parent = state.nodes[node.parentId];
@@ -11397,6 +11481,15 @@ function snapshotSubtree(nodeId) {
     // this just preserves the cumulative amount so the file can still be
     // re-edited/undone after a delete+restore round-trip.
     if (node.clockOffset) copy.clockOffset = node.clockOffset;
+    // A merge's own source tags (see createMergeShell/mergeFiles) — this
+    // branch runs for a hidden source itself when it's being cascade-
+    // snapshotted as part of its owning merge (see the hiddenSourceSnapshots
+    // block below), so its own mergeOwnerId/mergeSourceHidden need to
+    // survive the round trip too, or a restored source would come back
+    // untagged, no longer nested under (or cascade-deletable with) its
+    // merge.
+    if (node.mergeOwnerId) copy.mergeOwnerId = node.mergeOwnerId;
+    if (node.mergeSourceHidden) copy.mergeSourceHidden = true;
     // Sources-group breakdown (mergeFiles' additive `sources`, kept by
     // reference like entries above — its per-source `color` lives on these
     // same objects) and sourcesCollapsed (display-only, same tier as
@@ -11405,7 +11498,18 @@ function snapshotSubtree(nodeId) {
     // but still needs to survive an in-session undo/redo, same reasoning
     // as every other field on this branch: a delete+undo round-trip
     // shouldn't silently drop a merged file's Sources group.
-    if (node.sources) copy.sources = node.sources;
+    if (node.sources) {
+      copy.sources = node.sources;
+      // mergeSourceHidden sources are root-level siblings, not real
+      // children — the children.map(snapshotSubtree) above never reaches
+      // them, yet deleteNode cascade-deletes them right along with this
+      // node (see its own comment), so an undo of that delete needs to
+      // bring them back too. Snapshotting here (before deleteNode runs —
+      // deleteFilterNodeWithUndo always snapshots first) is safe: they're
+      // still live nodes at this point.
+      const hidden = node.sources.filter(s => { const n = state.nodes[s.id]; return n && n.mergeSourceHidden; });
+      if (hidden.length) copy.hiddenSourceSnapshots = hidden.map(s => snapshotSubtree(s.id));
+    }
     if (node.metaFormatId) copy.metaFormatId = node.metaFormatId;
     if (node.sourcesCollapsed) copy.sourcesCollapsed = true;
     return copy;
@@ -11447,12 +11551,24 @@ function restoreSubtree(snap) {
     if (snap.folderId) node.folderId = snap.folderId;
     if (snap.partial) node.partial = snap.partial;
     if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
+    if (snap.mergeOwnerId) node.mergeOwnerId = snap.mergeOwnerId;
+    if (snap.mergeSourceHidden) node.mergeSourceHidden = true;
     if (snap.sources) node.sources = snap.sources;
     if (snap.metaFormatId) node.metaFormatId = snap.metaFormatId;
     if (snap.sourcesCollapsed) node.sourcesCollapsed = true;
     state.nodes[node.id] = node;
     node.entries.forEach(e => { entryIndex[e.id] = e; });
     node.children = snap.children.map(c => restoreSubtree(c).id);
+    // Recreate each cascade-deleted hidden source (see snapshotSubtree) —
+    // restoreSubtree already drops each one into state.nodes by its
+    // original id; it's not a structural child, so the caller (undo()'s
+    // "deleteFile" branch) still needs to splice each id into
+    // state.rootIds itself, same as it does for this node. Transient —
+    // deleted below by the caller once consumed, not part of persistFileNode's
+    // field whitelist.
+    if (snap.hiddenSourceSnapshots) {
+      node.hiddenSourceIds = snap.hiddenSourceSnapshots.map(c => restoreSubtree(c).id);
+    }
     return node;
   }
   const node = {
@@ -11651,6 +11767,21 @@ function undo() {
     const restored = restoreSubtree(action.snapshot);
     const idx = action.index === -1 || action.index == null ? state.rootIds.length : Math.min(action.index, state.rootIds.length);
     state.rootIds.splice(idx, 0, restored.id);
+    // Cascade-restored hidden sources (see snapshotSubtree/restoreSubtree)
+    // aren't structural children — restoreSubtree already recreated them
+    // in state.nodes, but every file node must live in state.rootIds too
+    // (deleteNode's own invariant), so splice each one in right after the
+    // merge itself.
+    if (restored.hiddenSourceIds) {
+      const at = state.rootIds.indexOf(restored.id);
+      restored.hiddenSourceIds.forEach((hid, i) => {
+        if (state.nodes[hid]) state.rootIds.splice(at + 1 + i, 0, hid);
+      });
+      restored.hiddenSourceIds.forEach(hid => {
+        if (state.nodes[hid]) persistFileNode(state.nodes[hid]);
+      });
+      delete restored.hiddenSourceIds;
+    }
     state.activeId = restored.id;
     persistFileNode(restored); // fire-and-forget — re-adds the cache record deleteNode dropped
   } else if (action.kind === "move") {
@@ -13600,8 +13731,14 @@ function renderNode(id, depth, opts) {
   // of the same information wasn't earning its space. No replacement.
 
   // Restricted node (see syncBookmarksFilterNode/deleteFilterNodeWithUndo):
-  // no ✕ button at all — it's only ever added/removed automatically.
-  if (!node.locked) {
+  // no ✕ button at all — it's only ever added/removed automatically. A
+  // nested Sources row (opts.mergeSourceColor set — see the swatch block
+  // above) is the same restriction: it only ever disappears together with
+  // its owning merge (see deleteNode's cascade), never on its own — even
+  // when the same node is ALSO an ordinary top-level row elsewhere (the
+  // bulk-merge case), where it keeps its own ✕ since opts.mergeSourceColor
+  // isn't set for that call.
+  if (!node.locked && !(opts && opts.mergeSourceColor)) {
     const del = document.createElement("button");
     del.className = "tree-del";
     del.innerHTML = ICON_CLOSE;
@@ -13618,14 +13755,16 @@ function renderNode(id, depth, opts) {
   // this is purely the "still loading" indicator riding along on it.
   //
   // A create-first merge (node.loadSegmentSourceIds, see createMergeShell)
-  // gets a combined (n+1)-segment version of this same bar INSTEAD, but
-  // only while "Show Sources" is off — with Sources on, node.loadFraction
-  // itself stays undefined for the merge row throughout the whole
-  // source-loading phase (only fillMergedEntries ever sets it), so the
-  // plain single-fill branch below already means "no bar here" for free in
-  // that case; each nested source's own row carries its own ordinary
-  // single-fill bar instead, completely unmodified.
-  if (node.type === "file" && Array.isArray(node.loadSegmentSourceIds) && !showSourcesSetting) {
+  // gets a combined (n+1)-segment version of this same bar INSTEAD, always
+  // — regardless of "Show Sources" (person-reported: with Sources on, the
+  // merge row showed no progress at all while its sources were loading,
+  // since node.loadFraction itself stays undefined for the merge row
+  // throughout the whole source-loading phase — only fillMergedEntries
+  // ever sets it — so a viewer had nothing to look at on the merge's own
+  // row until the copy step started). Each nested source's own row still
+  // carries its own ordinary single-fill bar too when Sources is shown —
+  // this is in addition to that, not instead of it.
+  if (node.type === "file" && Array.isArray(node.loadSegmentSourceIds)) {
     const track = document.createElement("span");
     track.className = "tree-load-track";
     const segRoot = document.createElement("span");
@@ -13701,7 +13840,7 @@ function renderNode(id, depth, opts) {
   // the browser's middle-click autoscroll indicator from appearing first.
   row.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
   row.addEventListener("auxclick", ev => {
-    if (ev.button !== 1 || node.locked) return;
+    if (ev.button !== 1 || node.locked || (opts && opts.mergeSourceColor)) return;
     ev.preventDefault();
     deleteFilterNodeWithUndo(id);
     render();
@@ -23030,7 +23169,12 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     throw err;
   } finally {
     delete node.loadFraction;
-    flushLoadRender(node.id);
+    // Skip the render if the node was already deleted mid-load (by the
+    // person, or the catch above) — same guard fillMergedEntries already
+    // has for the equivalent race, just applied before the render instead
+    // of after (rendering for a dead node id is a wasted full render, not
+    // just redundant work).
+    if (state.nodes[node.id] === node) flushLoadRender(node.id);
   }
   if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
   persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
