@@ -3725,19 +3725,6 @@
     background:linear-gradient(90deg, var(--accent), var(--accent-strong));
     transition:width .12s ease-out;
   }
-  /* Combined (n+1)-segment progress bar for a create-first merge's own row
-     while "Show Sources" is off (see renderNode/updateMergeSegmentedProgress)
-     — n equal-width slots (one per source) plus one for the final merge
-     step, each an independent 0-100% fill, sitting inside the same
-     .tree-load-track a single-file row already uses. */
-  .tree-load-segments{display:flex; gap:1px; width:100%; height:100%;}
-  .tree-load-fill-segment-slot{flex:1 1 0; min-width:0; height:100%; overflow:hidden;}
-  .tree-load-fill-segment{
-    display:block; height:100%; width:0%;
-    background:linear-gradient(90deg, var(--accent), var(--accent-strong));
-    transition:width .12s ease-out;
-  }
-
   @media (prefers-reduced-motion:reduce){
     *{transition:none !important; animation:none !important;}
   }
@@ -8599,12 +8586,11 @@ function scheduleLoadRender(rootId) {
   invalidateCachesForRoots([rootId]);
   updateLoadRowProgress(rootId);
   // A tick on a merge SOURCE also nudges its owning merge row's own
-  // combined progress display (see renderNode's segmented-fill branch —
-  // always shown for a create-first merge in progress, regardless of
-  // "Show Sources"; a no-op query miss whenever that row isn't currently
-  // in the segmented-loading state).
+  // combined progress bar (byte-weighted across every source, shown
+  // regardless of "Show Sources" the same way any other loading file's
+  // bar is — see updateMergeLoadFraction).
   const node = state.nodes[rootId];
-  if (node && node.mergeOwnerId) updateMergeSegmentedProgress(node.mergeOwnerId);
+  if (node && node.mergeOwnerId) updateMergeLoadFraction(node.mergeOwnerId);
   updateLiveGrowingTotal(rootId);
 }
 // Bug fix: the log view's scrollbar (native — driven by #tableSpacer's own
@@ -8633,40 +8619,32 @@ function updateLiveGrowingTotal(rootId) {
   if (!node || node.type !== "file") return;
   if (currentViewEntries !== node.entries) return; // a filter/pin/anchor is narrowing the view — bail, stays stale until the next full render
   if (needsRowOffsets()) return; // multiline/notes/wrap: the offsets table would need a real rebuild
-  tableSpacer.style.height = (node.entries.length * ROW_HEIGHT + 22) + "px";
+  tableSpacer.style.height = (computeTableSpacerContentHeight(node.entries.length * ROW_HEIGHT) + 22) + "px";
   renderVisibleRows(); // cheap — visible rows only, picks up newly-in-range rows immediately
 }
-// Computes the (n+1) 0..1 fractions a create-first merge's combined
-// progress bar shows — one per source (0 while still queued, its own
-// loadFraction while loading, 1 once finished/deleted) plus the merge
-// node's own loadFraction for the final "merge" segment (only ever set
-// once fillMergedEntries actually starts copying entries). Shared by
-// renderNode's initial paint and updateMergeSegmentedProgress's per-tick
-// direct DOM write, so the two can never disagree on the math.
-function mergeSegmentFractions(merge) {
-  const fracs = merge.loadSegmentSourceIds.map(id => {
-    const src = state.nodes[id];
-    return !src ? 1 : src.queued ? 0 : (typeof src.loadFraction === "number" ? src.loadFraction : 1);
-  });
-  fracs.push(Math.max(0, Math.min(1, merge.loadFraction || 0)));
-  return fracs;
-}
-
-// Shown regardless of "Show Sources" — when Sources is also on, each
-// source's own nested row carries its own ordinary single-fill bar too,
-// in addition to this. A no-op query miss whenever the segmented markup
-// isn't currently rendered (this node isn't a create-first merge
-// currently loading), so scheduleLoadRender can call this unconditionally.
-function updateMergeSegmentedProgress(mergeId) {
+// Computes and writes a create-first merge's own combined loadFraction —
+// a single continuous 0..1 value spanning every source's own read+parse
+// progress (weighted by each source's own `weight`, e.g. real byte size —
+// see the 3 loadSources populate sites — not an equal N-way split),
+// reserving the final MERGE_STEP_BAR_FRACTION of the bar for the merge-
+// copy/sort step itself (filled in by fillMergedEntries once loading is
+// done). Reuses the exact same plain-fill DOM writer (updateLoadRowProgress)
+// an ordinary file's own progress bar already uses — no separate markup,
+// shown regardless of "Show Sources" the same way any other loading file's
+// bar is.
+function updateMergeLoadFraction(mergeId) {
   const merge = state.nodes[mergeId];
-  if (!merge || !Array.isArray(merge.loadSegmentSourceIds)) return;
-  const row = document.querySelector('.tree-row[data-node-id="' + mergeId + '"]');
-  if (!row) return;
-  const segments = row.querySelectorAll(".tree-load-fill-segment");
-  if (!segments.length) return;
-  mergeSegmentFractions(merge).forEach((frac, i) => {
-    if (segments[i]) segments[i].style.width = Math.round(frac * 100) + "%";
+  if (!merge || !Array.isArray(merge.loadSources)) return;
+  let totalWeight = 0, doneWeight = 0;
+  merge.loadSources.forEach(({ id, weight }) => {
+    const src = state.nodes[id];
+    const frac = !src ? 1 : src.queued ? 0 : (typeof src.loadFraction === "number" ? src.loadFraction : 1);
+    totalWeight += weight;
+    doneWeight += weight * frac;
   });
+  const loadPhase = totalWeight ? doneWeight / totalWeight : 1;
+  merge.loadFraction = loadPhase * (1 - MERGE_STEP_BAR_FRACTION);
+  updateLoadRowProgress(mergeId);
 }
 function flushLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
@@ -8989,17 +8967,19 @@ async function loadMetaFormatText(name, text, metaFmt) {
 
   const merged = createMergeShell(name, streams[0].formatId);
   merged.metaFormatId = metaFmt.id;
-  // Only ever consulted while Sources is hidden (see the segmented-progress
-  // section) — the ordered list of source ids this merge is waiting on.
-  merged.loadSegmentSourceIds = [];
+  // The sources this merge's combined progress bar is waiting on, each
+  // weighted by its own stream's character count (a reasonable byte-size
+  // proxy — log text is overwhelmingly ASCII — known upfront since
+  // splitTextByMetaFormat already ran).
+  merged.loadSources = [];
 
   const vnodes = [];
   for (const s of streams) {
     const placeholder = createQueuedFileNode(s.name);
     placeholder.mergeOwnerId = merged.id;
     placeholder.mergeSourceHidden = true; // an implementation artifact of one physical file, never a standalone top-level row
-    merged.loadSegmentSourceIds.push(placeholder.id);
-    render(); // the placeholder appears nested under Sources (or folds into the merge row's segmented bar) before this stream is even read
+    merged.loadSources.push({ id: placeholder.id, weight: s.text.length });
+    render(); // the placeholder appears nested under Sources before this stream is even read
     const vnode = await addFile(s.name, s.text, undefined, s.formatId, placeholder);
     // A virtual stream inherits the physical file's on-disk line order,
     // which is NOT guaranteed chronological within it (e.g. two producers
@@ -9564,6 +9544,15 @@ function createAndOrNode(idA, idB, mode) {
 const MERGE_CHUNK_ENTRIES = 20000;
 const MERGE_COPY_WEIGHT = 0.6;
 const MERGE_SORT_WEIGHT = 0.4;
+// Fixed, deliberately simple reservation for the merge-copy/sort step's
+// own share of a create-first merge's single combined progress bar
+// (person-confirmed: not worth modeling exact relative effort — merge-copy
+// is normally much faster per-byte than the read+parse phase it follows).
+// A quick (disjoint-time-range) merge still finishes this whole sliver
+// almost instantly, same as before; a real chunked merge gets a small but
+// visible remaining stretch instead of the bar looking falsely "done" the
+// moment every source finishes loading.
+const MERGE_STEP_BAR_FRACTION = 0.1;
 // Min/max timestamp of a (possibly unsorted) entries array, in one linear
 // pass — null for an empty array. Used by mergeFiles' quick-merge check;
 // deliberately doesn't assume entries[0]/entries[last] are the extremes,
@@ -9658,7 +9647,11 @@ async function fillMergedEntries(node, files) {
         chunk.forEach(e => { e.sourceId = f.id; });
         node.entries.push(...chunk);
         copied += Math.min(MERGE_CHUNK_ENTRIES, f.entries.length - i);
-        node.loadFraction = MERGE_COPY_WEIGHT * (total ? copied / total : 1);
+        // Rebased into the reserved tail of the merge's single combined
+        // bar (see MERGE_STEP_BAR_FRACTION/updateMergeLoadFraction) — the
+        // loading phase already filled the rest of the bar via each
+        // source's own weighted loadFraction.
+        node.loadFraction = (1 - MERGE_STEP_BAR_FRACTION) + MERGE_STEP_BAR_FRACTION * (total ? copied / total : 1);
         scheduleLoadRender(node.id);
         await new Promise(r => setTimeout(r, 0));
       }
@@ -9679,7 +9672,7 @@ async function fillMergedEntries(node, files) {
   if (sourcesNode) sourcesNode.collapsed = true;
 
   delete node.loadFraction;
-  delete node.loadSegmentSourceIds; // see the segmented-progress section — only meaningful while loading
+  delete node.loadSources; // see the combined-progress-bar section — only meaningful while loading
   flushLoadRender(node.id);
   persistFileNode(node); // fire-and-forget; cached as its own text snapshot (see "Session cache")
 }
@@ -12588,7 +12581,7 @@ function applyNavWaypoint(wp) {
   if (wp.contextAnchor && applyContextJumpExpansion(wp.contextAnchor.id)) renderHighlightView();
   const scroller = activeNavScroller();
   if (scroller === tableBody) {
-    if (!restoreViewAnchor(wp.filterAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScroll) && wp.rawScrollTop != null) {
+    if (!restoreViewAnchor(wp.filterAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical) && wp.rawScrollTop != null) {
       setTableScroll(wp.rawScrollTop);
     }
   } else if (wp.rawScrollTop != null) {
@@ -13752,35 +13745,12 @@ function renderNode(id, depth, opts) {
   // Progress fill along the row's bottom edge while this file is still
   // being read/parsed (see createFileNode/loadOneFileIntoTree) — the row
   // itself is already a normal, fully interactive tree row at this point,
-  // this is purely the "still loading" indicator riding along on it.
-  //
-  // A create-first merge (node.loadSegmentSourceIds, see createMergeShell)
-  // gets a combined (n+1)-segment version of this same bar INSTEAD, always
-  // — regardless of "Show Sources" (person-reported: with Sources on, the
-  // merge row showed no progress at all while its sources were loading,
-  // since node.loadFraction itself stays undefined for the merge row
-  // throughout the whole source-loading phase — only fillMergedEntries
-  // ever sets it — so a viewer had nothing to look at on the merge's own
-  // row until the copy step started). Each nested source's own row still
-  // carries its own ordinary single-fill bar too when Sources is shown —
-  // this is in addition to that, not instead of it.
-  if (node.type === "file" && Array.isArray(node.loadSegmentSourceIds)) {
-    const track = document.createElement("span");
-    track.className = "tree-load-track";
-    const segRoot = document.createElement("span");
-    segRoot.className = "tree-load-segments";
-    mergeSegmentFractions(node).forEach(frac => {
-      const slot = document.createElement("span");
-      slot.className = "tree-load-fill-segment-slot";
-      const fill = document.createElement("span");
-      fill.className = "tree-load-fill-segment";
-      fill.style.width = Math.round(frac * 100) + "%";
-      slot.appendChild(fill);
-      segRoot.appendChild(slot);
-    });
-    track.appendChild(segRoot);
-    row.appendChild(track);
-  } else if (node.type === "file" && typeof node.loadFraction === "number") {
+  // this is purely the "still loading" indicator riding along on it. A
+  // create-first merge's own row uses this exact same plain fill too (see
+  // updateMergeLoadFraction) — its loadFraction is a single continuous
+  // value spanning every source's weighted load progress plus a reserved
+  // tail for the merge-copy step, so no separate markup is needed here.
+  if (node.type === "file" && typeof node.loadFraction === "number") {
     const track = document.createElement("span");
     track.className = "tree-load-track";
     track.innerHTML = '<span class="tree-load-fill" style="width:' +
@@ -17087,6 +17057,68 @@ let ROW_HEIGHT = 28;
 const ROW_HEIGHT_BASE = 28;
 const BUFFER_ROWS = 10;
 
+/* ---------- Virtualized scroll height beyond a browser's own ceiling ----
+   Bug fix (person-reported, a real merge with 822,697 entries): every
+   major engine has a hard practical limit on a single element's CSS
+   height, and #tableSpacer's declared height (entries.length * ROW_HEIGHT,
+   or tableRowOffsets[...] when multiline/wrap/notes is on) had no cap at
+   all. Confirmed empirically this session with a real browser harness:
+   Chromium hard-clamps to exactly 33,554,428px; Firefox instead discards
+   an oversized declaration entirely and falls back to height:auto — which
+   resolves to 0 for #tableSpacer, since its only content (#tableRows) is
+   absolutely positioned and doesn't count toward auto-sizing. Once
+   #tableSpacer collapses to 0, it stops contributing anything to
+   #tableBody's scrollable region at all (no overflow:hidden sits between
+   them), leaving #tableRows' own drifting `top` offset as the only thing
+   driving scrollHeight — exactly matching every reported symptom (wrong
+   scrollbar proportions, jumping while scrolling, the thumb shrinking
+   while holding End).
+   Fix: never let #tableSpacer's declared height exceed a safe ceiling —
+   detected per-session (not hardcoded to the tightest known engine,
+   Firefox, since the app's primary target, Tauri on Windows, embeds
+   WebView2/Chromium with roughly 2x that headroom) — and convert every
+   scroll-position read/write for #tableBody through the resulting scale
+   factor at the boundary. Real on-screen row geometry (ROW_HEIGHT itself,
+   viewport height, rendered row spacing) is never touched — only the
+   position of the rendered row window WITHIN the (possibly compressed)
+   physical spacer, and the reported scrollTop, are rescaled. */
+let detectedMaxTableScrollPx = null;
+function detectMaxTableScrollPx() {
+  if (detectedMaxTableScrollPx !== null) return detectedMaxTableScrollPx;
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:absolute;visibility:hidden;width:1px;top:-999999px;left:-999999px;";
+  document.body.appendChild(probe);
+  let lo = 1000000, hi = 40000000; // below every known engine's ceiling .. above every known engine's ceiling
+  const fits = h => { probe.style.height = h + "px"; return parseInt(getComputedStyle(probe).height, 10) === h; };
+  if (fits(hi)) { lo = hi; } // a future, even more generous engine
+  else {
+    while (hi - lo > 100000) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (fits(mid)) lo = mid; else hi = mid;
+    }
+  }
+  probe.remove();
+  // Small safety margin: the real #tableSpacer sits inside this app's own
+  // deeper flex nesting, not a bare offscreen probe — confirmed this
+  // session to match closely, but leaving ~5% headroom costs nothing.
+  detectedMaxTableScrollPx = Math.floor(lo * 0.95);
+  return detectedMaxTableScrollPx;
+}
+let tableScrollHeightScale = 1; // physical = logical * this; 1 == no compression needed
+
+// Caps `contentPx` (the true, uncompressed content height) to this
+// session's detected safe ceiling, updating tableScrollHeightScale as a
+// side effect. Shared by renderTable() and updateLiveGrowingTotal() so
+// both compute the physical spacer height identically.
+function computeTableSpacerContentHeight(contentPx) {
+  const cap = detectMaxTableScrollPx();
+  if (contentPx <= cap) { tableScrollHeightScale = 1; return contentPx; }
+  tableScrollHeightScale = cap / contentPx;
+  return cap;
+}
+function logicalToPhysicalScrollPx(px) { return tableScrollHeightScale === 1 ? px : px * tableScrollHeightScale; }
+function physicalToLogicalScrollPx(px) { return tableScrollHeightScale === 1 ? px : px / tableScrollHeightScale; }
+
 /* ---------- Multiline message display (state.multilineMessages) ----------
    Off by default: rows stay the fixed ROW_HEIGHT, virtualization math below
    is untouched from before this feature. On: a row's height grows with its
@@ -17245,7 +17277,10 @@ function topVisibleEntryId(entries, offsets, scrollTop) {
    caller falls back to its own default (reset to top). */
 function captureViewAnchor(entries, offsets, scrollEl) {
   if (!entries.length) return null;
-  const scrollTop = scrollEl.scrollTop;
+  // Shared with highlightBody (never compressed — the ternary is a no-op
+  // there); tableBody's own scrollTop is physical, converted to the same
+  // logical space offsets/ROW_HEIGHT math already uses.
+  const scrollTop = scrollEl === tableBody ? physicalToLogicalScrollPx(scrollEl.scrollTop) : scrollEl.scrollTop;
   const viewportH = scrollEl.clientHeight || 400;
   if (state.selectedId) {
     const idx = entries.findIndex(e => e.id === state.selectedId);
@@ -17428,6 +17463,13 @@ function setTableScroll(value) {
   lastProgrammaticScrollTs = performance.now();
   tableBody.scrollTop = Math.max(0, value);
 }
+// setTableScroll's own callers that want "scroll to the true bottom"
+// already pass tableBody.scrollHeight directly (already physical, and the
+// physical bottom always equals the logical bottom under a linear scale —
+// see computeTableSpacerContentHeight) — only a target computed from
+// LOGICAL row math (scrollToIndex, restoreViewAnchor's tableBody use)
+// needs this conversion first.
+function setTableScrollLogical(value) { setTableScroll(logicalToPhysicalScrollPx(value)); }
 
 /* ===================== Horizontal scroll (FEATURE_BACKLOG.md "Horizontal
    scrollbar in the Filter view") =====================
@@ -17473,18 +17515,23 @@ function contextRangeIndex(ranges, ts) {
 function renderVisibleRows() {
   const total = currentViewEntries.length;
   const viewportH = tableBody.clientHeight || 400;
-  const scrollTop = tableBody.scrollTop;
+  // #tableBody's own scrollTop is in PHYSICAL (possibly compressed) space —
+  // see computeTableSpacerContentHeight's own comment. Convert to logical
+  // space once here; tableRowOffsets/ROW_HEIGHT-based math below is always
+  // logical (rendered rows sit at their true height regardless of
+  // compression), so the conversion happens only at this one read boundary.
+  const scrollTop = physicalToLogicalScrollPx(tableBody.scrollTop);
   let start, end;
   if (needsRowOffsets() && tableRowOffsets) {
     const centerIdx = findOffsetIndex(tableRowOffsets, scrollTop);
     start = Math.max(0, centerIdx - BUFFER_ROWS);
     end = Math.min(total, findOffsetIndex(tableRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
-    tableRows.style.top = tableRowOffsets[start] + "px";
+    tableRows.style.top = logicalToPhysicalScrollPx(tableRowOffsets[start]) + "px";
   } else {
     const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
     start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
     end = Math.min(total, start + maxVisible);
-    tableRows.style.top = (start * ROW_HEIGHT) + "px";
+    tableRows.style.top = logicalToPhysicalScrollPx(start * ROW_HEIGHT) + "px";
   }
 
   // Bracket rendering only makes sense in the file's natural chronological
@@ -19881,17 +19928,21 @@ function updateMinimapFullRange() {
 function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
   const viewportH = scrollEl.clientHeight || 400;
   const maxIdx = entries.length - 1;
+  // Shared with highlightBody (never compressed — the ternary is a no-op
+  // there); tableBody's own scrollTop is physical, converted to the same
+  // logical space rowOffsets/ROW_HEIGHT math already uses.
+  const scrollTop = scrollEl === tableBody ? physicalToLogicalScrollPx(scrollEl.scrollTop) : scrollEl.scrollTop;
   let startIdx, endIdx;
   // Keyed on the offsets array's presence, not on needsRowOffsets(): the
   // Context view always has one (its gap strips make row tops variable
   // regardless of the multiline/notes toggles), while the Filtered view still
   // passes null whenever its rows are a flat ROW_HEIGHT each.
   if (rowOffsets) {
-    startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(rowOffsets, scrollEl.scrollTop)));
-    endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(rowOffsets, scrollEl.scrollTop + viewportH)));
+    startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(rowOffsets, scrollTop)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(rowOffsets, scrollTop + viewportH)));
   } else {
-    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollEl.scrollTop / ROW_HEIGHT)));
-    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollEl.scrollTop + viewportH) / ROW_HEIGHT)));
+    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollTop / ROW_HEIGHT)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT)));
   }
   // The temp anchor row (see spliceTempAnchor) is a foreign entry that's
   // genuinely rendered in the viewport but isn't a real member of the view —
@@ -20262,6 +20313,11 @@ timelineMinimapSvg.addEventListener("contextmenu", ev => {
 function scrollToIndex(index, opts) {
   opts = opts || {};
   const viewportH = tableBody.clientHeight || 400;
+  // rowTop/rowH (from tableRowOffsets/ROW_HEIGHT) are always logical — see
+  // renderVisibleRows' own comment — so tableBody.scrollTop (physical) is
+  // converted once here for the comparisons below, and the final target
+  // (computed in that same logical space) goes through setTableScrollLogical.
+  const scrollTop = physicalToLogicalScrollPx(tableBody.scrollTop);
   let rowTop, rowH;
   if (needsRowOffsets() && tableRowOffsets) {
     rowTop = tableRowOffsets[index] || 0;
@@ -20273,20 +20329,21 @@ function scrollToIndex(index, opts) {
   let target;
   if (opts.offset != null) {
     // Preserve the entry's previous on-screen pixel position instead of
-    // centering — setTableScroll's own Math.max(0, …) clamp naturally
-    // covers "not enough rows above to keep that offset" by pinning the
-    // row as high as it can go (offset 0) instead of the requested one.
+    // centering — setTableScrollLogical's own Math.max(0, …) clamp
+    // naturally covers "not enough rows above to keep that offset" by
+    // pinning the row as high as it can go (offset 0) instead of the
+    // requested one.
     target = rowTop - opts.offset;
   } else if (opts.center) {
     target = rowTop - viewportH / 2 + rowH / 2;
-  } else if (rowTop < tableBody.scrollTop) {
+  } else if (rowTop < scrollTop) {
     target = rowTop;
-  } else if (rowTop + rowH > tableBody.scrollTop + viewportH) {
+  } else if (rowTop + rowH > scrollTop + viewportH) {
     target = rowTop + rowH - viewportH;
   } else {
-    target = tableBody.scrollTop; // already in view
+    target = scrollTop; // already in view
   }
-  setTableScroll(target);
+  setTableScrollLogical(target);
   renderVisibleRows();
 
   if (opts.flash) {
@@ -21333,7 +21390,10 @@ function toggleBookmark(entryId) {
     currentViewEntries = spliceTempAnchor(getVisibleEntries());
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
     tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-    tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+    {
+      const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+      tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+    }
     cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
     syncTableRowsWidth();
   }
@@ -21840,7 +21900,10 @@ function renderTable() {
   currentViewEntries = spliceTempAnchor(minimapViewEntries);
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-  tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  {
+    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+    tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+  }
   cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
   syncTableRowsWidth();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
@@ -21907,7 +21970,7 @@ function renderTable() {
     return;
   }
 
-  if (restoreViewAnchor(scrollAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScroll)) {
+  if (restoreViewAnchor(scrollAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical)) {
     renderVisibleRows();
     return;
   }
@@ -23293,7 +23356,11 @@ async function loadFileDescriptors(descs) {
   let mergeShell = null;
   if (mergeAfter) {
     mergeShell = createMergeShell(queuedNodes.map(n => n.name).join(" + "), undefined);
-    mergeShell.loadSegmentSourceIds = queuedNodes.map(n => n.id);
+    // Real File objects are in scope here — weight each source by its true
+    // byte size (person-requested: reflect actual relative load effort,
+    // not an equal N-way split). A zip-sourced entry has no `.file` (only
+    // `.name`) — weight 1 (equal) for those.
+    mergeShell.loadSources = descs.map((d, i) => ({ id: queuedNodes[i].id, weight: d.file ? d.file.size : 1 }));
     queuedNodes.forEach(n => { n.mergeOwnerId = mergeShell.id; n.mergeSourceHidden = true; });
     render();
   }
@@ -25102,7 +25169,11 @@ async function folderMinimapMergeFull(folder) {
   // way loadFileDescriptors' queued nodes can, so there's a brief,
   // accepted visibility gap here rather than a larger refactor).
   const mergeShell = targets.length >= 2 ? createMergeShell(targets.map(r => r.name).join(" + "), undefined) : null;
-  if (mergeShell) mergeShell.loadSegmentSourceIds = [];
+  // No file size is known at this point (only a handle; loadFolderFile
+  // reads it transiently and never stores it back onto rec), and sources
+  // load strictly sequentially here — equal weighting is the honest,
+  // simplest choice for this path.
+  if (mergeShell) mergeShell.loadSources = [];
   const nodeIds = [];
   for (const rec of targets) {
     await loadFolderFile(folder, rec);
@@ -25112,7 +25183,7 @@ async function folderMinimapMergeFull(folder) {
         const n = state.nodes[rec.nodeId];
         n.mergeOwnerId = mergeShell.id;
         n.mergeSourceHidden = true;
-        mergeShell.loadSegmentSourceIds.push(rec.nodeId);
+        mergeShell.loadSources.push({ id: rec.nodeId, weight: 1 });
         render();
       }
     }
@@ -25149,7 +25220,9 @@ async function folderMinimapMergeWindow(folder) {
   const targets = resolveFolderMinimapTargets(folder);
   // Same create-shell-first shape as folderMinimapMergeFull above.
   const mergeShell = targets.length >= 2 ? createMergeShell(targets.map(r => r.name).join(" + "), undefined) : null;
-  if (mergeShell) mergeShell.loadSegmentSourceIds = [];
+  // Same "no size known, sequential loading -> equal weighting" reasoning
+  // as folderMinimapMergeFull above.
+  if (mergeShell) mergeShell.loadSources = [];
   const nodeIds = [];
   for (const rec of targets) {
     await loadFolderFileWindowed(folder, rec, win.from, win.to);
@@ -25159,7 +25232,7 @@ async function folderMinimapMergeWindow(folder) {
         const n = state.nodes[rec.nodeId];
         n.mergeOwnerId = mergeShell.id;
         n.mergeSourceHidden = true;
-        mergeShell.loadSegmentSourceIds.push(rec.nodeId);
+        mergeShell.loadSources.push({ id: rec.nodeId, weight: 1 });
         render();
       }
     }
@@ -28245,7 +28318,10 @@ function setNoteAndRepaint(entryId, text) {
   if (rootId) syncNotesFilterNode(rootId);
   renderTree(); // repaint the sidebar in case the auto "Notes" node just appeared/disappeared
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-  tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  {
+    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+    tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+  }
   rebuildHighlightOffsets();
   renderVisibleRows();
   renderHighlightVisibleRows();

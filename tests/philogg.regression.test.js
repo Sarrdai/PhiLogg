@@ -270,6 +270,16 @@ async function withApp(run, opts = {}) {
       get ROW_HEIGHT() { return ROW_HEIGHT; },
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
+      get BUFFER_ROWS() { return BUFFER_ROWS; },
+      get tableScrollHeightScale() { return tableScrollHeightScale; },
+      // jsdom has no real layout engine, so detectMaxTableScrollPx's own
+      // probe (getComputedStyle on a huge height) never actually clamps —
+      // it always detects the full range, unlike a real browser. This
+      // test-only hook pins detectedMaxTableScrollPx directly, skipping
+      // the probe, so a group can force a small, deterministic cap.
+      forceTableScrollCap(px) { detectedMaxTableScrollPx = px; },
+      resetTableScrollCap() { detectedMaxTableScrollPx = null; tableScrollHeightScale = 1; },
+      detectMaxTableScrollPx() { return detectMaxTableScrollPx(); },
       // The boot restore promise (restoreSessionFromCache + restoreWatchedFolders),
       // awaited by every "reload" group instead of polling state.rootIds.
       get bootRestore() { return bootRestore; },
@@ -27379,14 +27389,18 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 244 — the (n+1)-segment combined progress bar on a create-first
-   merge's own row, shown only while "Show Sources" is off.
+   GROUP 244 — a create-first merge's own combined progress bar
+   (node.loadSources/updateMergeLoadFraction) is cleaned up once the merge
+   finishes — REWRITTEN this session: this used to test the retired
+   (n+1)-segment design (loadSegmentSourceIds/.tree-load-fill-segment),
+   superseded by a single continuous, byte-weighted bar reusing the plain
+   .tree-load-fill markup any ordinary file's own bar already uses — see
+   Group 257 for the weighted-math/reserved-tail coverage.
    ============================================================ */
 group(244);
 await withApp(async (w, d, T) => {
-  section("244. Segmented progress: with Show Sources off, the merge row carries n+1 segments instead of nested per-source rows");
-  fireClick(d.querySelector("#settingsShowSources"), w); // off
-  await waitFor(() => T.state.logFormats.length > 0);
+  section("244. loadSources is cleared and no progress track lingers once a create-first merge finishes");
+  await waitForFormatConfig(T);
   const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
   const text = [
     "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
@@ -27398,14 +27412,13 @@ await withApp(async (w, d, T) => {
 
   const row = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
   assert(row, "sanity: the merge row itself renders");
-  const segments = row.querySelectorAll(".tree-load-fill-segment");
-  // loadSegmentSourceIds is deleted once fillMergedEntries finishes (this
-  // fixture's tiny fixture loads near-instantly) — assert the MECHANISM
-  // (the field existed, is gone once done) rather than catching mid-flight
-  // widths, which would be timing-flaky in a synchronous test fixture.
-  assert(merged.loadSegmentSourceIds === undefined, "loadSegmentSourceIds is cleared once the merge finishes (fillMergedEntries)");
+  // loadSources is deleted once fillMergedEntries finishes (this fixture's
+  // tiny fixture loads near-instantly) — assert the MECHANISM (the field
+  // existed, is gone once done) rather than catching mid-flight widths,
+  // which would be timing-flaky in a synchronous test fixture.
+  assert(merged.loadSources === undefined, "loadSources is cleared once the merge finishes (fillMergedEntries)");
+  assert(typeof merged.loadFraction !== "number", "loadFraction is cleared too — no lingering progress state");
   assert(!row.querySelector(".tree-load-track"), "no lingering progress bar once loading is fully done");
-  assert(segments.length === 0, "sanity: no stale segment markup left behind either");
 });
 
 /* ============================================================
@@ -27669,15 +27682,18 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 253 — Bug fix: the (n+1)-segment combined progress bar on a
-   create-first merge's own row now shows regardless of "Show Sources"
-   (previously only shown while Show Sources was OFF — person-reported:
-   with Sources on/default, the merge row showed no progress at all while
-   its sources were loading, only the eventual copy step moved it).
+   GROUP 253 — a create-first merge's own combined progress bar shows
+   regardless of "Show Sources" — REWRITTEN this session: the original
+   (n+1)-segment design (retired) had this same person-reported bug
+   (Show Sources on/default hid all progress on the merge row); the new
+   single continuous bar (node.loadFraction via updateMergeLoadFraction)
+   reuses the plain .tree-load-fill markup any ordinary file's own bar
+   already uses, so this now just confirms that plain bar isn't
+   accidentally gated on the setting either.
    ============================================================ */
 group(253);
 await withApp(async (w, d, T) => {
-  section("253. Segmented progress bar shows on the merge row with Show Sources ON (default) too, not just when off");
+  section("253. The merge row's combined progress bar shows with Show Sources ON (default) too, not just when off");
   const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
   // A synthetic in-progress merge shell — the same shape createMergeShell
   // leaves mid-load — set up directly rather than racing a real async load,
@@ -27686,7 +27702,7 @@ await withApp(async (w, d, T) => {
     id: "merge-test-253", type: "file", name: "merged.log", parentId: null, children: [], entries: [],
     merged: true, cacheKey: "k253", loadFraction: 0.4, formatId: fa.formatId,
     sources: [{ id: fa.id, name: fa.name, color: null, count: fa.entries.length }],
-    loadSegmentSourceIds: [fa.id],
+    loadSources: [{ id: fa.id, weight: 1 }],
   };
   T.state.nodes[merged.id] = merged;
   T.state.rootIds.push(merged.id);
@@ -27695,13 +27711,14 @@ await withApp(async (w, d, T) => {
   w.render();
   const row = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
   assert(row, "sanity: the merge row renders");
-  assert(row.querySelectorAll(".tree-load-fill-segment").length === 2,
-    "the merge row shows the (n+1) segmented bar even with Show Sources ON (the default) — got " + row.querySelectorAll(".tree-load-fill-segment").length);
+  const fill = () => row.querySelector(".tree-load-fill");
+  assert(fill(), "the merge row shows the plain progress fill even with Show Sources ON (the default)");
+  assert(fill().style.width === "40%", "the fill width reflects node.loadFraction directly — got " + fill().style.width);
 
   fireClick(d.querySelector("#settingsShowSources"), w); // off
   w.render();
   const rowAfter = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
-  assert(rowAfter.querySelectorAll(".tree-load-fill-segment").length === 2, "...and still shows with Show Sources OFF, unchanged");
+  assert(rowAfter.querySelector(".tree-load-fill"), "...and still shows with Show Sources OFF, unchanged");
 });
 
 /* ============================================================
@@ -27850,6 +27867,171 @@ await withApp(async (w, d, T) => {
   await donePromise;
   assert(!T.state.nodes[nodeId], "still gone once the windowed read finishes — not resurrected");
   assert(getFileCalls === 1, "no full-file fallback reload was triggered by the deletion (getFile() called exactly once, not a second time for loadFolderFile's own full read)");
+});
+
+/* ============================================================
+   GROUP 256 — Bug fix: #tableSpacer's declared height (and every
+   scroll-position read/write for #tableBody) is now capped and rescaled
+   under a safe, per-session feature-detected ceiling — a real,
+   empirically-confirmed browser limitation (Chromium hard-clamps at
+   exactly 33,554,428px; Firefox instead discards an oversized declaration
+   entirely, falling back to height:auto -> 0px for #tableSpacer, since
+   its only content is absolutely-positioned #tableRows, which doesn't
+   count toward auto-sizing) that a large enough merge's old, uncapped
+   `entries.length * ROW_HEIGHT` math could exceed. jsdom has no real
+   layout engine, so detectMaxTableScrollPx's own probe never actually
+   clamps there — T.forceTableScrollCap pins the cap directly for a
+   deterministic, fast-in-jsdom test.
+   ============================================================ */
+group(256);
+await withApp(async (w, d, T) => {
+  section("256a. computeTableSpacerContentHeight caps #tableSpacer's height and tracks a scale factor once the true content exceeds the detected safe ceiling");
+  T.forceTableScrollCap(1000000);
+  const N = 50000; // 50,000 * 28 = 1,400,000 > the forced 1,000,000 cap
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const spacerHeight = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerHeight <= 1000000 + 22, "the spacer height is capped at the forced ceiling — got " + spacerHeight);
+  const expectedScale = 1000000 / (N * T.ROW_HEIGHT);
+  assert(Math.abs(T.tableScrollHeightScale - expectedScale) < 1e-9, "tableScrollHeightScale reflects the true/capped ratio — got " + T.tableScrollHeightScale);
+});
+
+await withApp(async (w, d, T) => {
+  section("256b. renderVisibleRows resolves the correct row range from a physical scrollTop partway through the compressed range");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const physicalTarget = 500000;
+  tableBody.scrollTop = physicalTarget;
+  w.renderVisibleRows();
+
+  const logicalScrollTop = physicalTarget / T.tableScrollHeightScale;
+  const expectedStartIdx = Math.max(0, Math.floor(logicalScrollTop / T.ROW_HEIGHT) - T.BUFFER_ROWS);
+  const expectedEntry = fa.entries[expectedStartIdx];
+  assert(d.querySelector('#tableRows [data-entry-id="' + expectedEntry.id + '"]'),
+    "the row range resolved from the compressed physicalToLogicalScrollPx round trip matches the expected logical row (index " + expectedStartIdx + ")");
+
+  // tableRows' own physical `top` should equal the logical start offset
+  // converted back through the same scale (logicalToPhysicalScrollPx).
+  const expectedPhysicalTop = (expectedStartIdx * T.ROW_HEIGHT) * T.tableScrollHeightScale;
+  const actualTop = parseFloat(d.querySelector("#tableRows").style.top);
+  assert(Math.abs(actualTop - expectedPhysicalTop) < 1, "tableRows' physical top offset matches logicalToPhysicalScrollPx(start*ROW_HEIGHT) — got " + actualTop + ", expected ~" + expectedPhysicalTop);
+});
+
+await withApp(async (w, d, T) => {
+  section("256c. scrollToIndex scrolling to a deep index still reveals the right entry under compression");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const deepIndex = 40000;
+  w.scrollToIndex(deepIndex, { center: true });
+  const targetEntry = fa.entries[deepIndex];
+  assert(d.querySelector('#tableRows [data-entry-id="' + targetEntry.id + '"]'),
+    "scrollToIndex(40000, {center:true}) renders the target entry despite the compressed physical scroll range");
+});
+
+await withApp(async (w, d, T) => {
+  section("256d. setTableScroll(tableBody.scrollHeight) — the tail-follow 'scroll to true bottom' idiom — still reaches the true physical max unaffected by compression");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  // jsdom has no real layout engine, so scrollHeight isn't naturally
+  // non-zero — stub it to what a real browser would report once
+  // #tableSpacer is capped at the forced 1,000,000px ceiling (same idiom
+  // other groups already use for this).
+  Object.defineProperty(tableBody, "scrollHeight", { value: 1000000 + 22, configurable: true });
+  w.setTableScroll(tableBody.scrollHeight);
+  assert(tableBody.scrollTop === tableBody.scrollHeight, "scrollTop reaches the DOM's own (capped) scrollHeight exactly — no double-compression");
+
+  const lastEntry = fa.entries[N - 1];
+  w.renderVisibleRows();
+  assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the last real entry is reachable at the physical max");
+});
+
+await withApp(async (w, d, T) => {
+  section("256e. detectMaxTableScrollPx is a cached, self-consistent probe");
+  T.resetTableScrollCap();
+  const first = T.detectMaxTableScrollPx();
+  assert(typeof first === "number" && first > 0, "returns a plausible positive number — got " + first);
+  const second = T.detectMaxTableScrollPx();
+  assert(second === first, "caches on a second call rather than re-probing");
+});
+
+/* ============================================================
+   GROUP 257 — Part B: the create-first merge's single continuous,
+   byte-weighted combined progress bar (updateMergeLoadFraction,
+   MERGE_STEP_BAR_FRACTION) — replaces the retired (n+1)-segment design
+   entirely (see Groups 244/253's rewrites).
+   ============================================================ */
+group(257);
+await withApp(async (w, d, T) => {
+  section("257a. updateMergeLoadFraction weights sources by their real size, not a plain average");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  fa.loadFraction = 0.5; // 10x weight, half done
+  fb.loadFraction = 0.5; // 1x weight, half done — same fraction as fa, so weighting shouldn't matter here...
+  const merged = {
+    id: "merge-test-257a", type: "file", name: "m.log", parentId: null, children: [], entries: [],
+    merged: true, cacheKey: "k257a", formatId: fa.formatId, sources: [],
+    loadSources: [{ id: fa.id, weight: 10 }, { id: fb.id, weight: 1 }],
+  };
+  T.state.nodes[merged.id] = merged;
+  T.state.rootIds.push(merged.id);
+  // Unequal PROGRESS this time: the heavier (10x) source is much further
+  // along than the lighter one — a plain average would read (0.9+0.1)/2 =
+  // 0.5; the correct byte-weighted figure is dominated by the 10x source.
+  fa.loadFraction = 0.9;
+  fb.loadFraction = 0.1;
+  w.updateMergeLoadFraction(merged.id);
+  const expectedLoadPhase = (10 * 0.9 + 1 * 0.1) / 11; // = 0.8272...
+  const expected = expectedLoadPhase * (1 - 0.1); // MERGE_STEP_BAR_FRACTION = 0.1
+  assert(Math.abs(merged.loadFraction - expected) < 1e-9,
+    "loadFraction is the byte-weighted average, not a plain (0.9+0.1)/2=0.5 — got " + merged.loadFraction + ", expected " + expected);
+});
+
+await withApp(async (w, d, T) => {
+  section("257b. the reserved MERGE_STEP_BAR_FRACTION tail: fully-loaded sources but the merge step not yet run stays below 100%");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = {
+    id: "merge-test-257b", type: "file", name: "m.log", parentId: null, children: [], entries: [],
+    merged: true, cacheKey: "k257b", formatId: fa.formatId, sources: [],
+    loadSources: [{ id: fa.id, weight: 1 }, { id: fb.id, weight: 1 }],
+  };
+  T.state.nodes[merged.id] = merged;
+  T.state.rootIds.push(merged.id);
+  fa.loadFraction = 1;
+  fb.loadFraction = 1;
+  w.updateMergeLoadFraction(merged.id);
+  assert(merged.loadFraction < 1, "the bar does NOT read 100% while sources are done but the merge-copy step hasn't run yet — got " + merged.loadFraction);
+  assert(Math.abs(merged.loadFraction - 0.9) < 1e-9, "...specifically stops at 1 - MERGE_STEP_BAR_FRACTION (0.9) — got " + merged.loadFraction);
+});
+
+await withApp(async (w, d, T) => {
+  section("257c. a disjoint (quick-merge) real merge still jumps the WHOLE bar to 100% in one step, and no segmented markup exists anywhere");
+  const fa = await w.addFile("a.log", makeLog(0, 5), () => {}); // disjoint time ranges
+  const fb = await w.addFile("b.log", makeLog(1000, 5, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.entries.length === 10, "sanity: the quick/disjoint merge actually ran");
+  assert(typeof merged.loadFraction !== "number", "loadFraction is cleared once finished — was set to 1 (the WHOLE bar), never a partial fraction, for the disjoint fast path");
+  T.state.activeId = merged.id;
+  w.render();
+  const row = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
+  assert(!row.querySelector(".tree-load-track"), "no lingering progress track once done");
+  assert(d.querySelectorAll(".tree-load-fill-segment").length === 0, "no segmented-bar markup exists anywhere in the DOM — the retired design is fully gone");
 });
 
 console.log("\n" + "=".repeat(60));
@@ -31681,9 +31863,64 @@ process.exitCode = failed ? 1 : 0;
       completion for both merge paths. 253 covers the segmented bar
       showing with Show Sources on (a synthetic mid-load merge shell, to
       avoid the timing flakiness Group 244 already documents for a real
-      near-instant fixture). 254 covers the live scrollbar total,
-      including it correctly staying inert for a background (non-active)
-      load and for a level-filter-narrowed view. 255 covers the mid-load-
-      delete guards, both for a plain in-memory parse (addFile) and a
-      windowed folder-watch load (parseFileWindow).
+      near-instant fixture — REWRITTEN in the immediate follow-up session
+      below against the retired design's replacement). 254 covers the live
+      scrollbar total, including it correctly staying inert for a
+      background (non-active) load and for a level-filter-narrowed view.
+      255 covers the mid-load-delete guards, both for a plain in-memory
+      parse (addFile) and a windowed folder-watch load (parseFileWindow).
+   Groups 256-257 — same-project immediate follow-up session, person-
+      reported: the 249-255 session's own scrollbar fix (updateLiveGrowingTotal)
+      only addressed staleness DURING a load tick — the person's repro was
+      AFTER a merge fully finished loading (822,697 entries, Firefox), which
+      survived switching files and back. Root-caused (after several ruled-
+      out hypotheses — a generic browser-height-limit guess, PhiLogg's own
+      UI-scale zoom, device pixel ratio, inflated row height from Multiline/
+      Wrap/Notes, all directly tested and refuted) to a genuine, pre-existing
+      (reproduced on `main`, unrelated to any session's own changes) browser
+      limitation: #tableSpacer's declared height had no cap at all, and
+      every major engine has a hard practical ceiling on a single element's
+      CSS height — Chromium clamps to exactly 33,554,428px (confirmed this
+      session with a real Playwright/Chromium harness built for the
+      investigation); Firefox instead discards an oversized declaration
+      entirely and falls back to height:auto, which resolves to 0 for
+      #tableSpacer since its only content (#tableRows) is absolutely
+      positioned and doesn't count toward auto-sizing — matching the
+      person's own getComputedStyle "0px" reading exactly, and explaining
+      every symptom once #tableSpacer stops contributing to #tableBody's
+      scrollable region at all (no overflow:hidden between them, so
+      #tableRows' own drifting `top` offset becomes the only thing driving
+      scrollHeight). Fixed with detectMaxTableScrollPx (a lazy, cached,
+      per-session binary-search feature-detection of the REAL running
+      engine's own ceiling, person-requested over a fixed worst-case
+      constant — the app's primary target, Tauri on Windows, embeds
+      WebView2/Chromium with ~2x Firefox's own headroom, so hardcoding to
+      Firefox's tighter limit would needlessly halve scroll resolution
+      there) plus a tableScrollHeightScale conversion threaded through
+      every #tableBody scroll-position read/write (renderVisibleRows,
+      scrollToIndex, captureViewAnchor, minimapRenderedSpan) — real
+      on-screen row geometry is never touched, only the position within
+      the (possibly compressed) physical spacer. Separately, the person's
+      progress-bar clarification (a single continuous bar, byte-weighted
+      per source, with a small reserved tail for the merge-copy step only
+      — not the previous 1/(n+1) equal-segment split) replaced the whole
+      segmented-bar design (node.loadSegmentSourceIds/mergeSegmentFractions/
+      updateMergeSegmentedProgress/.tree-load-fill-segment) with
+      node.loadSources ({id,weight} pairs) + updateMergeLoadFraction,
+      reusing the exact same plain .tree-load-fill markup an ordinary
+      file's own bar already uses — net simplification, no new CSS/markup.
+      256 covers the scroll-cap/rescale mechanism (jsdom has no real layout
+      engine, so a T.forceTableScrollCap test hook pins a small,
+      deterministic ceiling rather than relying on jsdom to ever actually
+      clamp): capping/scale tracking, renderVisibleRows' round trip,
+      scrollToIndex under compression, the tail-follow "scroll to
+      scrollHeight" idiom staying uncompressed, and detectMaxTableScrollPx's
+      own caching. 257 covers the byte-weighted combined bar: real
+      weighting (not a plain average), the reserved tail never reading
+      100% before the merge step runs, and a disjoint/quick real merge
+      still jumping the whole bar to 100% in one step with no segmented
+      markup left anywhere. Groups 244 and 253 (this session's own
+      immediate predecessor) were rewritten in place against the new
+      node.loadSources/plain-bar design — see each group's own updated
+      banner.
    ============================================================ */
