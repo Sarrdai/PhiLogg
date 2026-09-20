@@ -17110,10 +17110,20 @@ let tableScrollHeightScale = 1; // physical = logical * this; 1 == no compressio
 // session's detected safe ceiling, updating tableScrollHeightScale as a
 // side effect. Shared by renderTable() and updateLiveGrowingTotal() so
 // both compute the physical spacer height identically.
+// The scale maps SCROLLABLE RANGES (scrollHeight - clientHeight on each
+// side), not raw content heights: #tableBody's native scrollTop only ever
+// reaches cap - clientHeight, so a plain cap/contentPx ratio leaves the
+// converted logical position short of the true bottom by
+// clientHeight * (contentPx/cap - 1) px at the native max — several
+// row-heights under real compression — meaning End never actually reveals
+// the last rows even once the native scrollbar is fully at its ceiling.
 function computeTableSpacerContentHeight(contentPx) {
   const cap = detectMaxTableScrollPx();
   if (contentPx <= cap) { tableScrollHeightScale = 1; return contentPx; }
-  tableScrollHeightScale = cap / contentPx;
+  const viewportH = tableBody.clientHeight || 0;
+  const physicalRange = Math.max(1, cap - viewportH);
+  const logicalRange = Math.max(1, contentPx - viewportH);
+  tableScrollHeightScale = physicalRange / logicalRange;
   return cap;
 }
 function logicalToPhysicalScrollPx(px) { return tableScrollHeightScale === 1 ? px : px * tableScrollHeightScale; }

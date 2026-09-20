@@ -27894,8 +27894,10 @@ await withApp(async (w, d, T) => {
 
   const spacerHeight = parseInt(d.querySelector("#tableSpacer").style.height, 10);
   assert(spacerHeight <= 1000000 + 22, "the spacer height is capped at the forced ceiling — got " + spacerHeight);
-  const expectedScale = 1000000 / (N * T.ROW_HEIGHT);
-  assert(Math.abs(T.tableScrollHeightScale - expectedScale) < 1e-9, "tableScrollHeightScale reflects the true/capped ratio — got " + T.tableScrollHeightScale);
+  // Range-based (viewport-aware), not a raw content-height ratio — see 256f.
+  const viewportH = d.querySelector("#tableBody").clientHeight;
+  const expectedScale = (1000000 - viewportH) / (N * T.ROW_HEIGHT - viewportH);
+  assert(Math.abs(T.tableScrollHeightScale - expectedScale) < 1e-9, "tableScrollHeightScale reflects the true/capped range ratio — got " + T.tableScrollHeightScale);
 });
 
 await withApp(async (w, d, T) => {
@@ -27968,6 +27970,35 @@ await withApp(async (w, d, T) => {
   assert(typeof first === "number" && first > 0, "returns a plausible positive number — got " + first);
   const second = T.detectMaxTableScrollPx();
   assert(second === first, "caches on a second call rather than re-probing");
+});
+
+await withApp(async (w, d, T) => {
+  section("256f. computeTableSpacerContentHeight's range-based scale (accounts for viewport height) maps the true native scrollTop max exactly onto the true logical bottom — the old content-ratio-only scale (cap/contentPx) left this short by clientHeight*(contentPx/cap - 1) px, meaning End never actually revealed the last rows even once the native scrollbar was fully at its ceiling (person-reported follow-up)");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const viewportH = tableBody.clientHeight;
+  const contentPx = N * T.ROW_HEIGHT;
+  const cap = 1000000;
+  // The native scrollTop range is scrollHeight - clientHeight; #tableSpacer's
+  // own +22px padding (unrelated to this fix, sub-row) is folded into cap
+  // already via detectMaxTableScrollPx's own margin, so the pure physical
+  // range this scale must map onto is cap - viewportH.
+  const nativeMaxScrollTop = cap - viewportH;
+
+  const logicalAtNativeMax = nativeMaxScrollTop / T.tableScrollHeightScale;
+  const trueLogicalMax = contentPx - viewportH;
+  assert(Math.abs(logicalAtNativeMax - trueLogicalMax) < 1e-6, "the native scrollTop max converts to the true logical bottom under the viewport-aware scale — got " + logicalAtNativeMax + ", expected " + trueLogicalMax);
+
+  // Sanity check: the old (unfixed) content-ratio-only scale would have
+  // left a real, multi-row gap here — confirms this is a non-trivial fix.
+  const oldScale = cap / contentPx;
+  const oldLogicalAtNativeMax = nativeMaxScrollTop / oldScale;
+  assert(trueLogicalMax - oldLogicalAtNativeMax > T.ROW_HEIGHT, "the old content-ratio scale would have undershot the true bottom by more than a row — got a gap of " + (trueLogicalMax - oldLogicalAtNativeMax));
 });
 
 /* ============================================================
@@ -31923,4 +31954,29 @@ process.exitCode = failed ? 1 : 0;
       immediate predecessor) were rewritten in place against the new
       node.loadSources/plain-bar design — see each group's own updated
       banner.
+   Group 256 (256f added) — same-project immediate follow-up, person-
+      reported again after retesting the 256-257 fix in Firefox: the
+      scrollbar now looked proportional, but holding/repeatedly pressing
+      End needed several tries to reach the true last row, and the final
+      row kept drifting a few px rather than settling. Root-caused to a
+      real math defect in computeTableSpacerContentHeight: it derived
+      tableScrollHeightScale as a plain content-height ratio (cap /
+      contentPx) and applied it as a linear-from-origin scale to
+      #tableBody's native scrollTop — but the native scrollable RANGE on
+      each side is scrollHeight - clientHeight, not the raw content
+      height, so a content-ratio scale leaves the logical position at the
+      true native scrollTop max short of the true logical bottom by
+      clientHeight * (contentPx/cap - 1) px — several row-heights under
+      real compression, meaning End could reach its native physical
+      ceiling while the render still never showed the actual last rows.
+      Fixed by deriving the scale from the two scrollable RANGES instead
+      ((cap - clientHeight) / (contentPx - clientHeight)); no call site
+      or helper signature changed, only how tableScrollHeightScale itself
+      is computed. 256f adds the regression check: converting the true
+      native scrollTop max through the corrected scale now lands exactly
+      on the true logical bottom, and a sanity assertion confirms the old
+      content-ratio scale really would have undershot it by more than a
+      row. 256a's expectedScale was updated to the same range-based
+      formula (the suite globally stubs clientHeight to 400 via
+      Element.prototype, so this wasn't a no-op).
    ============================================================ */
