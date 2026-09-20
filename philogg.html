@@ -17533,15 +17533,38 @@ function renderVisibleRows() {
   const scrollTop = physicalToLogicalScrollPx(tableBody.scrollTop);
   let start, end;
   if (needsRowOffsets() && tableRowOffsets) {
-    const centerIdx = findOffsetIndex(tableRowOffsets, scrollTop);
+    const centerIdx = Math.min(findOffsetIndex(tableRowOffsets, scrollTop), Math.max(0, total - 1));
     start = Math.max(0, centerIdx - BUFFER_ROWS);
     end = Math.min(total, findOffsetIndex(tableRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
-    tableRows.style.top = logicalToPhysicalScrollPx(tableRowOffsets[start]) + "px";
+    let physicalTop = logicalToPhysicalScrollPx(tableRowOffsets[start]);
+    // #tableRows' own rendered height is always the TRUE (uncompressed) row
+    // heights — only its top offset is compressed — so top-anchoring it via
+    // logicalToPhysicalScrollPx alone can push its true bottom edge past
+    // #tableSpacer's own capped declared height once end reaches the very
+    // last entry (the BUFFER_ROWS lookback above leaves the rendered block
+    // taller than the viewport right at the tail). #tableSpacer/#tableRows
+    // are deliberately overflow:visible (so a long message's horizontal
+    // overflow bleeds up to #tableBody's own scrollbar — see the "Horizontal
+    // scroll" comment below), so nothing else clips that overhang, and it's
+    // free to inflate the browser's own real scrollHeight beyond what
+    // computeTableSpacerContentHeight assumed. Bottom-anchoring at the tail
+    // instead keeps the true rendered box within the capped spacer always.
+    if (tableScrollHeightScale !== 1 && end === total) {
+      const cap = detectMaxTableScrollPx();
+      physicalTop = Math.min(physicalTop, cap - (tableRowOffsets[end] - tableRowOffsets[start]));
+    }
+    tableRows.style.top = physicalTop + "px";
   } else {
     const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
-    start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+    start = Math.min(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS), Math.max(0, total - 1));
     end = Math.min(total, start + maxVisible);
-    tableRows.style.top = logicalToPhysicalScrollPx(start * ROW_HEIGHT) + "px";
+    let physicalTop = logicalToPhysicalScrollPx(start * ROW_HEIGHT);
+    // Same tail-overhang guard as the offsets branch above.
+    if (tableScrollHeightScale !== 1 && end === total) {
+      const cap = detectMaxTableScrollPx();
+      physicalTop = Math.min(physicalTop, cap - (end - start) * ROW_HEIGHT);
+    }
+    tableRows.style.top = physicalTop + "px";
   }
 
   // Bracket rendering only makes sense in the file's natural chronological

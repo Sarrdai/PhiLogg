@@ -28001,6 +28001,51 @@ await withApp(async (w, d, T) => {
   assert(trueLogicalMax - oldLogicalAtNativeMax > T.ROW_HEIGHT, "the old content-ratio scale would have undershot the true bottom by more than a row — got a gap of " + (trueLogicalMax - oldLogicalAtNativeMax));
 });
 
+await withApp(async (w, d, T) => {
+  section("256g. renderVisibleRows() bottom-anchors #tableRows at the tail so its TRUE (uncompressed) rendered box never overhangs #tableSpacer's own capped height — person-reported follow-up: End landed short of the true last row with blank space below it in Firefox, because the old top-anchored math (start offset back by BUFFER_ROWS) could push tableRows' real bottom edge past the capped spacer, inflating the browser's own real scrollHeight beyond what computeTableSpacerContentHeight assumed");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const viewportH = tableBody.clientHeight;
+  const cap = 1000000;
+  tableBody.scrollTop = cap - viewportH; // the true native scrollTop max
+  w.renderVisibleRows();
+
+  const physicalTop = parseFloat(d.querySelector("#tableRows").style.top);
+  const renderedCount = d.querySelectorAll('#tableRows [data-entry-id]').length;
+  const trueRenderedHeight = renderedCount * T.ROW_HEIGHT + 22;
+  assert(physicalTop + trueRenderedHeight <= cap + 22 + 1, "tableRows' true (uncompressed) rendered box stays within #tableSpacer's own capped declared height — top " + physicalTop + " + height " + trueRenderedHeight + " should be <= " + (cap + 22));
+
+  const lastEntry = fa.entries[N - 1];
+  assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the true last entry is still rendered at the native scrollTop max — no blank space where it should be");
+});
+
+await withApp(async (w, d, T) => {
+  section("256h. renderVisibleRows() degrades to a sane, non-empty last-page render when scrollTop is set beyond the assumed physical max (e.g. a real browser's scrollHeight momentarily inflated past what computeTableSpacerContentHeight assumed) — defensive upper clamp on start/centerIdx, which previously had none");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const viewportH = tableBody.clientHeight;
+  const cap = 1000000;
+  // Deliberately past the assumed physical max (cap - viewportH) — simulates
+  // a real scrollTop the browser reports beyond what our own math expects.
+  tableBody.scrollTop = cap - viewportH + 50000;
+  w.renderVisibleRows();
+
+  const renderedCount = d.querySelectorAll('#tableRows [data-entry-id]').length;
+  assert(renderedCount > 0, "the render window is non-empty even for an out-of-assumed-range scrollTop — got " + renderedCount + " rows");
+  const lastEntry = fa.entries[N - 1];
+  assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the true last entry is still reachable — the render clamps to a sane last page instead of overshooting past total");
+});
+
 /* ============================================================
    GROUP 257 — Part B: the create-first merge's single continuous,
    byte-weighted combined progress bar (updateMergeLoadFraction,
@@ -31954,7 +31999,7 @@ process.exitCode = failed ? 1 : 0;
       immediate predecessor) were rewritten in place against the new
       node.loadSources/plain-bar design — see each group's own updated
       banner.
-   Group 256 (256f added) — same-project immediate follow-up, person-
+   Group 256 (256f-h added) — same-project immediate follow-up, person-
       reported again after retesting the 256-257 fix in Firefox: the
       scrollbar now looked proportional, but holding/repeatedly pressing
       End needed several tries to reach the true last row, and the final
@@ -31979,4 +32024,45 @@ process.exitCode = failed ? 1 : 0;
       row. 256a's expectedScale was updated to the same range-based
       formula (the suite globally stubs clientHeight to 400 via
       Element.prototype, so this wasn't a no-op).
+   Group 256 (256g-h added) — same-project immediate follow-up, person-
+      reported yet again after retesting: End now landed close to but not
+      exactly at the true end (blank space below the last row, ~5 entries
+      unreachable), and Home afterward needed several presses to actually
+      reach the top, each landing further (Chrome unaffected). Root-caused
+      to a second, independent defect in renderVisibleRows()'s own render
+      geometry, not the scale formula: #tableRows' own rendered row heights
+      are always TRUE/uncompressed (only its `top` offset is compressed),
+      and its BUFFER_ROWS lookback (offsetting `start` back by 10 rows so a
+      small scroll doesn't need a full re-render) leaves the rendered block
+      taller than the viewport right at the tail — while `end` was always
+      clamped to `total`, the block's top was still positioned via a plain
+      top-anchored logicalToPhysicalScrollPx(start*ROW_HEIGHT), which lands
+      close enough to the physical cap at the tail that `top + true
+      rendered height` provably exceeds #tableSpacer's own capped declared
+      height there. #tableSpacer/#tableRows are deliberately
+      overflow:visible (so a long message's horizontal overflow bleeds up
+      to #tableBody's own scrollbar — ruling out overflow:hidden as a fix,
+      it would also clip that), so nothing stops the overhang from
+      inflating the browser's own real scrollHeight beyond what
+      computeTableSpacerContentHeight assumed — matching every symptom: a
+      scrollTop genuinely past the assumed physical max converts to a
+      logical `start` past `total` with (previously) no upper clamp to
+      catch it (blank space), and each native Home/End keypress recomputes
+      against a scrollHeight that itself shifts as #tableRows repositions
+      (the multi-press convergence). Fixed with two changes to
+      renderVisibleRows(), both branches: (1) bottom-anchor `top` instead
+      of top-anchoring it whenever `end === total` and compression is
+      active — `Math.min(naiveTop, cap - trueRenderedLogicalHeight)`,
+      verified algebraically monotonic (never a visible snap/jump) across
+      the whole tail region; (2) a defensive upper clamp on `start`/
+      `centerIdx` (previously only `end` was clamped against `total`), so
+      any residual out-of-range scrollTop still degrades to a sane last
+      page instead of an empty render. 256g asserts the rendered block's
+      true height never overhangs the capped spacer at the native scrollTop
+      max, and that the true last entry is still rendered there (no blank
+      space); 256h asserts a scrollTop deliberately set past the assumed
+      physical max still renders a non-empty last page reaching the true
+      last entry. Real Firefox isn't available in this sandbox (same
+      limitation as the prior two rounds) — final on-screen confirmation is
+      left to the person's own retest.
    ============================================================ */
