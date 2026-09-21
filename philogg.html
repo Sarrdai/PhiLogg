@@ -17112,16 +17112,19 @@ let tableScrollHeightScale = 1; // physical = logical * this; 1 == no compressio
 // both compute the physical spacer height identically.
 // The scale maps SCROLLABLE RANGES (scrollHeight - clientHeight on each
 // side), not raw content heights: #tableBody's native scrollTop only ever
-// reaches cap - clientHeight, so a plain cap/contentPx ratio leaves the
+// reaches (cap + TABLE_SPACER_PAD) - clientHeight — every call site sets
+// tableSpacer.style.height to `computeTableSpacerContentHeight(...) + 22`,
+// never the bare cap — so a plain cap/contentPx ratio leaves the
 // converted logical position short of the true bottom by
 // clientHeight * (contentPx/cap - 1) px at the native max — several
 // row-heights under real compression — meaning End never actually reveals
 // the last rows even once the native scrollbar is fully at its ceiling.
+const TABLE_SPACER_PAD = 22; // #tableRows' own top+bottom padding — see every `+ 22` at tableSpacer.style.height's call sites
 function computeTableSpacerContentHeight(contentPx) {
   const cap = detectMaxTableScrollPx();
   if (contentPx <= cap) { tableScrollHeightScale = 1; return contentPx; }
   const viewportH = tableBody.clientHeight || 0;
-  const physicalRange = Math.max(1, cap - viewportH);
+  const physicalRange = Math.max(1, (cap + TABLE_SPACER_PAD) - viewportH);
   const logicalRange = Math.max(1, contentPx - viewportH);
   tableScrollHeightScale = physicalRange / logicalRange;
   return cap;
