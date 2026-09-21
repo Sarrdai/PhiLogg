@@ -18911,7 +18911,44 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
   });
 }
 
-let highlightScrollTicking = false;
+// Re-rendering the full visible-row DOM (bracket detection, match
+// highlighting, ...) on every single animation frame of a scroll is
+// expensive enough to visibly interfere with the browser's own native
+// scroll-animation scheduling on a heavily compressed huge table —
+// empirically confirmed via real Firefox telemetry (2026-09-21, person-
+// reported: holding/pressing End on an 822,697-entry merge repeatedly
+// stalled the native scrollTop >150,000 physical px short of the true
+// max, non-deterministically between attempts — consistent with
+// main-thread contention from the per-frame rebuild, not a hard browser
+// limit or any remaining scroll-math bug). Throttles a rapid burst of
+// scroll events (native keyboard End/Home, momentum scrolling, ...) down
+// to at most one render per SCROLL_RENDER_THROTTLE_MS via setTimeout —
+// freeing up most of each animation frame's time budget — while a single,
+// isolated scroll event (mouse wheel, trackpad) still renders immediately
+// on its own next frame, same as before. The render function always reads
+// live DOM/state at call time (never a captured snapshot), so the last
+// render in a throttled burst still reflects the true final scroll
+// position once scrolling settles — no separate "did anything change"
+// bookkeeping needed beyond the `pending` flag below.
+const SCROLL_RENDER_THROTTLE_MS = 100;
+function makeThrottledScrollRenderer(renderFn) {
+  let ticking = false, pending = false;
+  function frame() { requestAnimationFrame(renderFn); }
+  function rearm() {
+    setTimeout(() => {
+      if (pending) { pending = false; frame(); rearm(); }
+      else { ticking = false; }
+    }, SCROLL_RENDER_THROTTLE_MS);
+  }
+  return function onScroll() {
+    if (ticking) { pending = true; return; }
+    ticking = true;
+    frame();
+    rearm();
+  };
+}
+
+const throttledHighlightScrollRender = makeThrottledScrollRenderer(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); });
 highlightBody.addEventListener("scroll", () => {
   // Twin of #tableBody's own listener below (FEATURE_BACKLOG #25): manual
   // scrolling away from the bottom of a tailed Highlight/Full view disengages
@@ -18927,18 +18964,15 @@ highlightBody.addEventListener("scroll", () => {
       maybeReengageTailFollow();
     }
   }
-  if (highlightScrollTicking) return;
-  highlightScrollTicking = true;
-  // Twin of #tableBody's own rAF-batched updateMinimapRenderedRange() call
-  // below — keeps Box #2 tracking the Full view's own scroll position while
+  // Twin of #tableBody's own updateMinimapRenderedRange() call below —
+  // keeps Box #2 tracking the Full view's own scroll position while
   // the Full tab is what's showing (see that function's fhLayout/fhActiveTab
   // branch; a no-op otherwise).
-  requestAnimationFrame(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); highlightScrollTicking = false; });
+  throttledHighlightScrollRender();
 });
 window.addEventListener("resize", () => renderHighlightVisibleRows());
 
-// Batches rapid scroll events onto animation frames instead of re-rendering per event.
-let scrollTicking = false;
+const throttledTableScrollRender = makeThrottledScrollRenderer(() => { renderVisibleRows(); updateMinimapRenderedRange(); });
 tableBody.addEventListener("scroll", () => {
   // Manual scrolling away from the bottom of a tailed view disengages
   // auto-follow; scrolling (or jumping — e.g. a "go to last row" shortcut)
@@ -18955,9 +18989,7 @@ tableBody.addEventListener("scroll", () => {
       maybeReengageTailFollow();
     }
   }
-  if (scrollTicking) return;
-  scrollTicking = true;
-  requestAnimationFrame(() => { renderVisibleRows(); updateMinimapRenderedRange(); scrollTicking = false; });
+  throttledTableScrollRender();
 });
 window.addEventListener("resize", () => {
   renderVisibleRows();
