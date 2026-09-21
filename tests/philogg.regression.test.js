@@ -271,6 +271,7 @@ async function withApp(run, opts = {}) {
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
       get BUFFER_ROWS() { return BUFFER_ROWS; },
+      get TABLE_SPACER_PAD() { return TABLE_SPACER_PAD; },
       get tableScrollHeightScale() { return tableScrollHeightScale; },
       // jsdom has no real layout engine, so detectMaxTableScrollPx's own
       // probe (getComputedStyle on a huge height) never actually clamps —
@@ -27895,8 +27896,12 @@ await withApp(async (w, d, T) => {
   const spacerHeight = parseInt(d.querySelector("#tableSpacer").style.height, 10);
   assert(spacerHeight <= 1000000 + 22, "the spacer height is capped at the forced ceiling — got " + spacerHeight);
   // Range-based (viewport-aware), not a raw content-height ratio — see 256f.
+  // The physical range is (cap + TABLE_SPACER_PAD) - viewportH, matching the
+  // REAL declared/rendered spacer height (every call site sets it to
+  // computeTableSpacerContentHeight(...) + TABLE_SPACER_PAD, never the bare
+  // cap) — see 256i for the regression this specifically guards against.
   const viewportH = d.querySelector("#tableBody").clientHeight;
-  const expectedScale = (1000000 - viewportH) / (N * T.ROW_HEIGHT - viewportH);
+  const expectedScale = (1000000 + T.TABLE_SPACER_PAD - viewportH) / (N * T.ROW_HEIGHT - viewportH);
   assert(Math.abs(T.tableScrollHeightScale - expectedScale) < 1e-9, "tableScrollHeightScale reflects the true/capped range ratio — got " + T.tableScrollHeightScale);
 });
 
@@ -27984,11 +27989,10 @@ await withApp(async (w, d, T) => {
   const viewportH = tableBody.clientHeight;
   const contentPx = N * T.ROW_HEIGHT;
   const cap = 1000000;
-  // The native scrollTop range is scrollHeight - clientHeight; #tableSpacer's
-  // own +22px padding (unrelated to this fix, sub-row) is folded into cap
-  // already via detectMaxTableScrollPx's own margin, so the pure physical
-  // range this scale must map onto is cap - viewportH.
-  const nativeMaxScrollTop = cap - viewportH;
+  // The native scrollTop range is scrollHeight - clientHeight, and the REAL
+  // declared/rendered spacer height is cap + TABLE_SPACER_PAD (every call
+  // site adds it) — see 256i for the regression this line itself guards.
+  const nativeMaxScrollTop = (cap + T.TABLE_SPACER_PAD) - viewportH;
 
   const logicalAtNativeMax = nativeMaxScrollTop / T.tableScrollHeightScale;
   const trueLogicalMax = contentPx - viewportH;
@@ -28044,6 +28048,31 @@ await withApp(async (w, d, T) => {
   assert(renderedCount > 0, "the render window is non-empty even for an out-of-assumed-range scrollTop — got " + renderedCount + " rows");
   const lastEntry = fa.entries[N - 1];
   assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the true last entry is still reachable — the render clamps to a sane last page instead of overshooting past total");
+});
+
+await withApp(async (w, d, T) => {
+  section("256i. computeTableSpacerContentHeight's physical range accounts for TABLE_SPACER_PAD, not just cap — person-reported follow-up: real Firefox telemetry showed the render collapsing to a single row exactly at/near the true native scrollTop max, because the old physicalRange (cap - clientHeight) was 22px SHORT of the real native range (tableSpacer.style.height is always cap + TABLE_SPACER_PAD, never the bare cap), pushing the converted logical position just past total and tripping the 256h defensive clamp prematurely");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const viewportH = tableBody.clientHeight;
+  const cap = 1000000;
+  // Same idiom as 256d/256g: stub scrollHeight to what a real browser
+  // reports once #tableSpacer is capped — cap + TABLE_SPACER_PAD, never the
+  // bare cap. Scroll to the TRUE native max derived from that real value.
+  Object.defineProperty(tableBody, "scrollHeight", { value: cap + T.TABLE_SPACER_PAD, configurable: true });
+  tableBody.scrollTop = tableBody.scrollHeight - viewportH;
+  w.renderVisibleRows();
+
+  const maxVisible = Math.ceil(viewportH / T.ROW_HEIGHT) + T.BUFFER_ROWS * 2;
+  const renderedCount = d.querySelectorAll('#tableRows [data-entry-id]').length;
+  assert(renderedCount >= maxVisible - T.BUFFER_ROWS, "the render at the TRUE native scrollTop max is a healthy last page, not collapsed to a handful of rows by a premature defensive clamp — got " + renderedCount + " rows, expected at least " + (maxVisible - T.BUFFER_ROWS));
+  const lastEntry = fa.entries[N - 1];
+  assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the true last entry is rendered at the true native scrollTop max");
 });
 
 /* ============================================================
@@ -32065,4 +32094,46 @@ process.exitCode = failed ? 1 : 0;
       last entry. Real Firefox isn't available in this sandbox (same
       limitation as the prior two rounds) — final on-screen confirmation is
       left to the person's own retest.
+   Group 256 (256i added) — same-project immediate follow-up. This round
+      broke the "no real Firefox in this sandbox" impasse: the person
+      instrumented #tableBody's own scroll listener with a small pasted
+      console script (window.__dbg, logging scrollTop/scrollHeight/
+      clientHeight/spacerHeight/tableRows' own top+rect-height/scale on
+      every scroll tick) and captured a real End/Home/End sequence,
+      confirming (a) scrollHeight stayed rock-stable throughout (the
+      256g-h tail-overhang fix genuinely holds — no more scrollHeight
+      drift), but (b) End still didn't cleanly reach a stable end and Home
+      still needed several presses. Working the captured numbers by hand
+      (scrollHeight=9054710, clientHeight=242) found a second, independent,
+      smaller defect: the true native scrollTop max is scrollHeight -
+      clientHeight = 9054468, but computeTableSpacerContentHeight's
+      physicalRange used `cap - clientHeight` = 9054446 — 22px short,
+      because every call site sets tableSpacer.style.height to
+      `computeTableSpacerContentHeight(...) + 22` (TABLE_SPACER_PAD, now a
+      named constant), never the bare cap, and the scale computation never
+      accounted for that same pad. A 22px physical shortfall divides down
+      to a real, if modest (single-digit-row), logical undershoot at the
+      true native max. New constant `TABLE_SPACER_PAD = 22` (extracted from
+      the previously-inlined literal at all `tableSpacer.style.height`
+      call sites, referenced from computeTableSpacerContentHeight); the
+      renderVisibleRows() tail-anchor bounds added last round didn't need
+      touching (`cap - trueRenderedHeight` already implicitly cancels the
+      same pad against a rendered box that also carries it once). 256a/256f
+      updated to the pad-aware formula (a real behavior change — the suite
+      globally stubs clientHeight to 400, so 22px isn't negligible there
+      either); new 256i reproduces the exact class of bug directly: scrolls
+      to the TRUE native max (derived from a stubbed real scrollHeight,
+      cap + TABLE_SPACER_PAD, same idiom as 256d/256g) and asserts a
+      healthy last-page render — this fails without the fix (confirmed:
+      renders only 17 of an expected 25 rows) and passes with it. The
+      captured telemetry's still-unexplained residual (rowsRectHeight
+      collapsing from 834px to 50px — a single rendered row — exactly at
+      the native max, followed by a large backward scrollTop jump) is NOT
+      fully accounted for by this fix on its own arithmetic (worked by
+      hand against the real total≈822,731 the telemetry implies, the
+      naive/buggy math already predicted ~17-21 rows there, not 1) — flagged
+      for a follow-up round with more targeted instrumentation (logging
+      currentViewEntries.length and the real rendered row count directly
+      from inside renderVisibleRows, plus checking whether needsRowOffsets()
+      is active for that person's session) rather than claimed fixed.
    ============================================================ */
