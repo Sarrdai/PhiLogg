@@ -28139,6 +28139,109 @@ await withApp(async (w, d, T) => {
   assert(d.querySelectorAll(".tree-load-fill-segment").length === 0, "no segmented-bar markup exists anywhere in the DOM — the retired design is fully gone");
 });
 
+/* ============================================================
+   GROUP 258 — Bug fix: a rapid burst of #tableBody/#highlightBody scroll
+   events (native keyboard End/Home, momentum scrolling, ...) used to
+   trigger one full renderVisibleRows()/renderHighlightVisibleRows() DOM
+   rebuild per animation frame via requestAnimationFrame batching alone —
+   cheap for an ordinary file, but expensive enough on a huge compressed
+   merge to visibly compete with the browser's own native scroll-animation
+   scheduling for main-thread time (person-reported, 2026-09-21, confirmed
+   via real Firefox telemetry: holding "End" on an 822,697-entry merge
+   repeatedly stalled the native scrollTop >150,000 physical px short of
+   the true max, non-deterministically between attempts). Now throttled to
+   at most one render per SCROLL_RENDER_THROTTLE_MS (100ms) during a rapid
+   burst via makeThrottledScrollRenderer, while a single, isolated scroll
+   event still renders on its very next frame — same as before.
+   ============================================================ */
+group(258);
+await withApp(async (w, d, T) => {
+  section("258a. A single, isolated scroll event still renders on its very next animation frame — no regression for ordinary (non-burst) scrolling");
+  const f = await w.addFile("a.log", makeLog(0, 200), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRVR = renderVisibleRows;
+    renderVisibleRows = function() { window.__rvrCalls = (window.__rvrCalls||0)+1; return __origRVR(); };
+  `;
+  d.body.appendChild(s);
+  w.__rvrCalls = 0;
+
+  const tableBody = d.querySelector("#tableBody");
+  tableBody.scrollTop = T.ROW_HEIGHT * 5;
+  tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  assert(w.__rvrCalls === 0, "the render does NOT run synchronously inside the scroll handler — still deferred onto a frame, got " + w.__rvrCalls);
+
+  await sleep(50); // let the batched rAF actually fire, same idiom GROUP 47 uses
+  assert(w.__rvrCalls === 1, "a single scroll event still produces exactly one render on its next frame, got " + w.__rvrCalls);
+});
+
+await withApp(async (w, d, T) => {
+  section("258b. A rapid burst of scroll events collapses into far fewer renders, and the trailing catch-up render still reflects the true final scrollTop — the actual regression check for the reported bug");
+  const f = await w.addFile("a.log", makeLog(0, 2000), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRVR = renderVisibleRows;
+    renderVisibleRows = function() { window.__rvrCalls = (window.__rvrCalls||0)+1; return __origRVR(); };
+  `;
+  d.body.appendChild(s);
+  w.__rvrCalls = 0;
+
+  const tableBody = d.querySelector("#tableBody");
+  // Ten rapid scroll events, all before the 100ms throttle window (or even
+  // one animation frame) has a chance to elapse — simulates the dense
+  // event stream a native keyboard-scroll animation produces.
+  const targets = [];
+  for (let i = 1; i <= 10; i++) {
+    const top = T.ROW_HEIGHT * i * 10;
+    targets.push(top);
+    tableBody.scrollTop = top;
+    tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  }
+  const lastTop = targets[targets.length - 1];
+
+  await sleep(50); // long enough for the leading-edge rAF render, short of the 100ms throttle window
+  assert(w.__rvrCalls === 1, "ten rapid-fire events still collapse onto exactly one leading-edge render, got " + w.__rvrCalls);
+
+  await sleep(150); // now past SCROLL_RENDER_THROTTLE_MS — the trailing catch-up render should have fired
+  assert(w.__rvrCalls === 2, "exactly one trailing catch-up render fires once the burst settles, got " + w.__rvrCalls + " total (nine events collapsed away, not re-rendered individually)");
+  assert(tableBody.scrollTop === lastTop, "sanity: scrollTop itself already reflects the last dispatched event (scrollTop is a plain DOM property, unaffected by the render throttle)");
+  const expectedIdx = Math.floor(lastTop / T.ROW_HEIGHT);
+  const expectedEntry = f.entries[expectedIdx];
+  assert(d.querySelector('#tableRows [data-entry-id="' + expectedEntry.id + '"]'), "the trailing catch-up render reflects the TRUE final scrollTop (the last of the ten events), not a stale intermediate one");
+});
+
+await withApp(async (w, d, T) => {
+  section("258c. Same throttling for the twin #highlightBody/renderHighlightVisibleRows listener");
+  const f = await w.addFile("a.log", makeLog(0, 200), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.applyFhView("stacked"); // Context/Full split — makes #highlightBody the visible Full-view scroller
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRHVR = renderHighlightVisibleRows;
+    renderHighlightVisibleRows = function() { window.__rhvrCalls = (window.__rhvrCalls||0)+1; return __origRHVR(); };
+  `;
+  d.body.appendChild(s);
+  w.__rhvrCalls = 0;
+
+  const highlightBody = d.querySelector("#highlightBody");
+  for (let i = 1; i <= 5; i++) {
+    highlightBody.scrollTop = T.ROW_HEIGHT * i * 5;
+    highlightBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  }
+  await sleep(50);
+  assert(w.__rhvrCalls === 1, "a rapid burst on #highlightBody also collapses onto one leading-edge render, got " + w.__rhvrCalls);
+  await sleep(150);
+  assert(w.__rhvrCalls === 2, "and one trailing catch-up render once it settles, got " + w.__rhvrCalls);
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -32136,4 +32239,54 @@ process.exitCode = failed ? 1 : 0;
       currentViewEntries.length and the real rendered row count directly
       from inside renderVisibleRows, plus checking whether needsRowOffsets()
       is active for that person's session) rather than claimed fixed.
+   Group 258 — same-project immediate follow-up, same day. The requested
+      follow-up instrumentation WAS captured (person confirmed
+      needsRowOffsets() was false — the plain, non-offsets branch — ruling
+      that out) and it directly answered the open question from Group 256's
+      last entry: currentViewEntries.length stayed perfectly constant
+      (822,697) across the whole sequence — the "total fluctuates" theory
+      is dead. What the new telemetry showed instead: closing the DevTools
+      console mid-session changed #tableBody's clientHeight (242 -> 853),
+      incidentally giving two independent real "End" attempts at the same
+      853px viewport to compare — both stalled 150,000-190,000 PHYSICAL px
+      short of the true native scrollTop max (scrollHeight - clientHeight),
+      non-deterministically between the two attempts (8,898,078 vs
+      8,866,508). That magnitude rules out every scroll-math fix from the
+      last three rounds (all on the order of tens to a few hundred px) —
+      this is a different class of bug entirely. Root-caused to
+      renderVisibleRows() fully rebuilding #tableRows' DOM (innerHTML = ""
+      + up to ~51 rows' worth of bracket detection/match highlighting) on
+      EVERY single requestAnimationFrame tick of a scroll — cheap for an
+      ordinary file, but on a huge compressed merge this is enough
+      main-thread work per frame to visibly compete with (and, per the
+      telemetry, apparently truncate) Firefox's own native keyboard-scroll
+      animation, which doesn't literally "scroll until the target is
+      reached" but runs its own timed interpolation — heavy JS work on the
+      main thread during that window can make it finish well short of the
+      real target. Fixed by throttling scroll-triggered renders (both
+      #tableBody and its twin #highlightBody listener) to at most one per
+      SCROLL_RENDER_THROTTLE_MS (100ms, new makeThrottledScrollRenderer
+      helper) during a rapid burst, instead of once per animation frame —
+      freeing up most of each frame's time budget for the browser's own
+      scroll physics — while a single, isolated scroll event (mouse wheel,
+      trackpad) still renders on its very next frame, unchanged from
+      before; the render function always reads live DOM/state at call
+      time, so the trailing catch-up render at the end of a throttled
+      burst still reflects the true final scroll position with no extra
+      bookkeeping. The pre-existing module-level scrollTicking/
+      highlightScrollTicking flags were folded into the new helper's own
+      closure state (no longer separate globals). 258a proves no
+      regression for ordinary single-event scrolling (still renders on the
+      very next frame, nothing synchronous inside the handler — same
+      GROUP-47 monkey-patch-a-global-function-declaration idiom). 258b is
+      the actual regression check: ten rapid-fire scroll events collapse
+      onto exactly ONE leading-edge render (not ten), and exactly one
+      trailing catch-up render fires once the burst settles, reflecting
+      the true LAST of the ten dispatched positions, not a stale
+      intermediate one. 258c covers the #highlightBody twin identically.
+      Real Firefox still isn't available in this sandbox — whether this
+      throttling is sufficient to let the native scroll animation
+      complete is, once again, left to the person's own retest; this round
+      at least replaced two rounds of blind guessing with a fix grounded
+      in a concrete, measured magnitude from real telemetry.
    ============================================================ */
