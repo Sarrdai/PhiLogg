@@ -8591,36 +8591,18 @@ function scheduleLoadRender(rootId) {
   // bar is — see updateMergeLoadFraction).
   const node = state.nodes[rootId];
   if (node && node.mergeOwnerId) updateMergeLoadFraction(node.mergeOwnerId);
-  updateLiveGrowingTotal(rootId);
-}
-// Bug fix: the log view's scrollbar (native — driven by #tableSpacer's own
-// height, no custom thumb) otherwise only reflects the entry count as of
-// the last full renderTable(), which never runs on a load tick — so for a
-// node that's actively loading AND currently the active view (a large
-// create-first merge, most visibly), the scrollbar stayed frozen at
-// whatever the total was minutes earlier, and End/Ctrl+End (the browser's
-// native "scroll to scrollHeight") could only ever reach that stale point.
-// Deliberately NOT a renderTable() call — that's O(n) (filters, sort,
-// minimap), which per-tick would make a many-chunk load O(n^2), exactly
-// what the "no view rebuild on a load tick" rule (see scheduleLoadRender's
-// own history above) exists to avoid. Only handles the common case: when
-// currentViewEntries IS node.entries by the same reference (getEntries
-// returns node.entries directly for a file node; applyLevelFilter/
-// getVisibleEntries/spliceTempAnchor all return their input unchanged
-// absent a level filter/pinned-bookmarks union/temp anchor) — that
-// reference-equality check alone proves nothing is narrowing the view, so
-// .length is already live; only the spacer height (which caps the
-// browser's native scrollHeight) is stale and needs writing. A narrowed
-// view is left to catch up at the next real render, as before.
-function updateLiveGrowingTotal(rootId) {
-  if (rootId !== state.activeId) return;
-  if (fhActiveTab === "table" || fhActiveTab === "plot") return; // extraction view showing, not the log table
-  const node = state.nodes[rootId];
-  if (!node || node.type !== "file") return;
-  if (currentViewEntries !== node.entries) return; // a filter/pin/anchor is narrowing the view — bail, stays stale until the next full render
-  if (needsRowOffsets()) return; // multiline/notes/wrap: the offsets table would need a real rebuild
-  tableSpacer.style.height = (computeTableSpacerContentHeight(node.entries.length * ROW_HEIGHT) + 22) + "px";
-  renderVisibleRows(); // cheap — visible rows only, picks up newly-in-range rows immediately
+  // A previous session added a narrow exception here (updateLiveGrowingTotal)
+  // that kept #tableSpacer's height/the visible rows live-tracking the
+  // active node's growing entry count during a load tick, to fix a stale
+  // scrollbar total on a large actively-growing merge. Removed again
+  // (person-requested): it broke the "nothing renders until fully loaded"
+  // rule this whole function exists to enforce, and stacked with the
+  // per-grammar meta-format flicker fix above, it was the second of two
+  // ways partial content could leak out before a load actually finished.
+  // The scrollbar goes back to reflecting a stale total until the load's
+  // natural-completion render fires — same accepted tradeoff as every
+  // other part of the view during a load. See "File loading" in
+  // docs/persistence-and-sync.md.
 }
 // Computes and writes a create-first merge's own combined loadFraction —
 // a single continuous 0..1 value spanning every source's own read+parse
@@ -8698,7 +8680,7 @@ function createFileNode(name, folderId) {
   // row would. Skipped during session restore for the same reason
   // state.activeId is: restoreSessionFromCache's own final correction is
   // the single source of truth for both once every file is back.
-  if (!sessionRestoreInProgress) { state.activeId = node.id; state.multiSelect = new Set(); }
+  if (!sessionRestoreInProgress && !metaFormatSplitInProgress) { state.activeId = node.id; state.multiSelect = new Set(); }
   flushLoadRender();
   return node;
 }
@@ -8735,7 +8717,7 @@ function activateQueuedFileNode(node) {
   // fix, just through a new call path. state.activeId is left untouched;
   // restoreSessionFromCache's own final correction (`s.active`/its
   // fallback) remains the single source of truth once every file is back.
-  if (!sessionRestoreInProgress) {
+  if (!sessionRestoreInProgress && !metaFormatSplitInProgress) {
     // See createFileNode's own comment on this same pairing: a stale
     // state.multiSelect entry from an earlier plain tree-row click must not
     // outlive the row it pointed at becoming inactive.
@@ -8974,25 +8956,35 @@ async function loadMetaFormatText(name, text, metaFmt) {
   merged.loadSources = [];
 
   const vnodes = [];
-  for (const s of streams) {
-    const placeholder = createQueuedFileNode(s.name);
-    placeholder.mergeOwnerId = merged.id;
-    placeholder.mergeSourceHidden = true; // an implementation artifact of one physical file, never a standalone top-level row
-    merged.loadSources.push({ id: placeholder.id, weight: s.text.length });
-    render(); // the placeholder appears nested under Sources before this stream is even read
-    const vnode = await addFile(s.name, s.text, undefined, s.formatId, placeholder);
-    // A virtual stream inherits the physical file's on-disk line order,
-    // which is NOT guaranteed chronological within it (e.g. two producers
-    // interleaving inside one syslog block) — mergeFiles' disjoint-range
-    // fast path only sorts the true min/max per source for the overlap
-    // test itself, then concats in file order assuming each source is
-    // already chronological. Sorting here, once, is what keeps that fast
-    // path's output actually chronological for a meta-format's vnodes.
-    vnode.entries.sort((a, b) => a.ts - b.ts);
-    vnodes.push(vnode);
+  metaFormatSplitInProgress = true;
+  try {
+    for (const s of streams) {
+      const placeholder = createQueuedFileNode(s.name);
+      placeholder.mergeOwnerId = merged.id;
+      placeholder.mergeSourceHidden = true; // an implementation artifact of one physical file, never a standalone top-level row
+      merged.loadSources.push({ id: placeholder.id, weight: s.text.length });
+      render(); // the placeholder appears nested under Sources before this stream is even read
+      // metaFormatSplitInProgress keeps state.activeId pinned on the merge
+      // row throughout — without it, addFile->activateQueuedFileNode would
+      // briefly make THIS stream the active node, and its own natural
+      // completion render would flash its already-complete minimap/table
+      // as if it were the merge's own current state.
+      const vnode = await addFile(s.name, s.text, undefined, s.formatId, placeholder);
+      // A virtual stream inherits the physical file's on-disk line order,
+      // which is NOT guaranteed chronological within it (e.g. two producers
+      // interleaving inside one syslog block) — mergeFiles' disjoint-range
+      // fast path only sorts the true min/max per source for the overlap
+      // test itself, then concats in file order assuming each source is
+      // already chronological. Sorting here, once, is what keeps that fast
+      // path's output actually chronological for a meta-format's vnodes.
+      vnode.entries.sort((a, b) => a.ts - b.ts);
+      vnodes.push(vnode);
+    }
+  } finally {
+    metaFormatSplitInProgress = false;
   }
 
-  state.activeId = merged.id; // addFile->activateQueuedFileNode moved focus to each stream's node in turn — bring it back to the merge row
+  state.activeId = merged.id; // belt-and-suspenders: activeId should already be untouched, but a thrown/caught stream load shouldn't leave it stranded
   await fillMergedEntries(merged, vnodes);
   render();
   return merged;
@@ -17108,8 +17100,8 @@ let tableScrollHeightScale = 1; // physical = logical * this; 1 == no compressio
 
 // Caps `contentPx` (the true, uncompressed content height) to this
 // session's detected safe ceiling, updating tableScrollHeightScale as a
-// side effect. Shared by renderTable() and updateLiveGrowingTotal() so
-// both compute the physical spacer height identically.
+// side effect. Called from renderTable() so every real (non-load-tick)
+// render computes the physical spacer height identically.
 // The scale maps SCROLLABLE RANGES (scrollHeight - clientHeight on each
 // side), not raw content heights: #tableBody's native scrollTop only ever
 // reaches (cap + TABLE_SPACER_PAD) - clientHeight — every call site sets
@@ -31035,6 +31027,18 @@ function buildCacheMeta() {
 
 let metaPersistTimer = null;
 let sessionRestoreInProgress = false;
+// Set for the duration of loadMetaFormatText's per-stream loop — same
+// "don't let a temporary internal node steal activeId" shape as
+// sessionRestoreInProgress above. Without this, addFile->
+// activateQueuedFileNode would flip state.activeId onto each per-grammar
+// stream in turn as it finishes, giving that stream's own natural
+// flushLoadRender a real, full render() while it's briefly the active
+// node — visibly flashing that one format's own (complete) minimap/table
+// before focus returns to the still-loading merge row. See "File loading"
+// in docs/persistence-and-sync.md — the merge itself must stay frozen
+// (progress bar only) until fillMergedEntries actually finishes it, same
+// as any other loading node.
+let metaFormatSplitInProgress = false;
 
 async function persistMetaNow() {
   if (!cacheEnabled() || sessionRestoreInProgress) return;
