@@ -171,6 +171,19 @@ open it in a browser to view it.
   now load and parse concurrently, each on its own Web Worker where
   available, so several large logs loaded together actually parse on
   separate cores at once instead of one at a time.
+- **A merged file shows its "Sources"** — an expandable row under any
+  merged file (alongside Bookmarks/Notes, in that order) lists which
+  physical file (or, for a multi-pattern file below, which grammar) each
+  entry came from, each with its own color swatch and still fully
+  clickable/filterable on its own, so the different origins stay both
+  visually distinguishable and individually workable with. A "Show
+  Sources" toggle (Settings → Behavior) turns this off if you'd rather not
+  see it.
+- **Multi-pattern log files** — a file that interleaves two or more
+  independent grammars line-by-line (e.g. an app log mixed with syslog
+  blocks) can be split and auto-merged via a new **Meta** format (Settings →
+  Format Manager): pick which existing formats to classify lines against, in
+  order, and the file loads as one chronological, Sources-labeled result.
 - **Deep-link loading** — `philogg.html?url=<encoded-url>` fetches and opens
   a log at boot, for linking straight to a log from CI/a report (requires
   PhiLogg itself served over `http(s)`, not opened as a local file, and CORS
@@ -213,6 +226,10 @@ open it in a browser to view it.
   ERROR/WARN/INFO/DEBUG/TRACE plus your own custom names (NOTICE, FATAL,
   VERBOSE, …), each getting a color of its own — that's what the level
   quick-filter bar shows for files using it; anything else falls into OTHER.
+  A **Meta** format mode combines several of your own formats into one:
+  point it at an ordered list of target formats and a file matching it gets
+  split by grammar and auto-merged (see "A merged file shows its 'Sources'"
+  above) instead of being parsed as one grammar.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
   Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
   JSON (download a template, fill in your colors, import it back).

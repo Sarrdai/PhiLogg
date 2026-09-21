@@ -270,6 +270,17 @@ async function withApp(run, opts = {}) {
       get ROW_HEIGHT() { return ROW_HEIGHT; },
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
+      get BUFFER_ROWS() { return BUFFER_ROWS; },
+      get TABLE_SPACER_PAD() { return TABLE_SPACER_PAD; },
+      get tableScrollHeightScale() { return tableScrollHeightScale; },
+      // jsdom has no real layout engine, so detectMaxTableScrollPx's own
+      // probe (getComputedStyle on a huge height) never actually clamps —
+      // it always detects the full range, unlike a real browser. This
+      // test-only hook pins detectedMaxTableScrollPx directly, skipping
+      // the probe, so a group can force a small, deterministic cap.
+      forceTableScrollCap(px) { detectedMaxTableScrollPx = px; },
+      resetTableScrollCap() { detectedMaxTableScrollPx = null; tableScrollHeightScale = 1; },
+      detectMaxTableScrollPx() { return detectMaxTableScrollPx(); },
       // The boot restore promise (restoreSessionFromCache + restoreWatchedFolders),
       // awaited by every "reload" group instead of polling state.rootIds.
       get bootRestore() { return bootRestore; },
@@ -5843,6 +5854,15 @@ await withApp(async (w, d, T) => {
    Updates hat schon genug gebracht."* `scheduleLoadRender` is back to
    doing its (now much cheaper, thanks to the third step) per-tick work on
    every single tick, unthrottled.
+   A later session added ONE narrow exception to "nothing else updates
+   live": updateLiveGrowingTotal keeps #tableSpacer's height (and hence the
+   native scrollbar's total/thumb size) tracking the active node's live
+   entry count during a load — a real bug for a large actively-growing
+   merge, where the scrollbar showed a far smaller total until some
+   unrelated full render happened to fire. Still no render() call (it's a
+   direct, O(1) DOM write plus the same cheap renderVisibleRows() the
+   scroll handler already uses) and still scoped to the active node only —
+   the group's core invariant (no render() on a load tick) is unchanged.
    ============================================================ */
 group(50);
 await withApp(async (w, d, T) => {
@@ -5902,15 +5922,16 @@ await withApp(async (w, d, T) => {
   assert(countAfterAnotherTick === nodeB.entries.length && countAfterAnotherTick > countB,
     "the row's DOM text is updated again on the very next tick, matching the data exactly — got " + countAfterAnotherTick);
 
-  // The Filtered view's actual painted DOM never updates automatically at
-  // all during a load — #tableSpacer's height (set only inside
-  // renderTable()) still reflects the entry count from the last real
-  // render (right after B's node was created, i.e. ~0). See Group 49 for
-  // confirming an explicit render() DOES pick up the live mid-parse state.
+  // The Filtered view's actual row DOM (text/painting) never updates
+  // automatically during a load — but #tableSpacer's height (and hence the
+  // scrollbar) now DOES, for the node that IS the active view (Bug 2 fix,
+  // updateLiveGrowingTotal, called from scheduleLoadRender) — B is active
+  // throughout this section. See Group 49 for confirming an explicit
+  // render() picks up the live mid-parse state for everything else.
   const spacerHeight = parseInt(d.querySelector("#tableSpacer").style.height, 10) || 0;
   const expectedIfLive = nodeB.entries.length * T.ROW_HEIGHT;
-  assert(spacerHeight < expectedIfLive,
-    "the table spacer's height was NOT updated to reflect B's live entry count — still stale from the last real render (spacer=" + spacerHeight + ", would be >= " + expectedIfLive + " if live)");
+  assert(spacerHeight >= expectedIfLive,
+    "the table spacer's height DOES track B's live entry count while B is the active view (Bug 2 fix) — spacer=" + spacerHeight + ", expected >= " + expectedIfLive);
 
   // The person switches to a different, already-loaded file mid-load — B
   // keeps streaming in the background exactly the same way it did as the
@@ -8243,9 +8264,12 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "Settings button opens the settings page directly (no intermediate menu)");
   assert(d.querySelector("#settingsMenu") === null, "the old separate Format-Manager dropdown menu no longer exists");
 
+  // 4 initially: the builtin default plus the 3 formats loadFormatConfig
+  // seeds for FEATURE_BACKLOG.md #81's reference case (DEMO_SEED_FORMATS —
+  // App log, Syslog, and the meta-format combining them).
   const formatRows = () => [...d.querySelectorAll("#formatList .filter-library-row")];
-  assert(formatRows().length === 1 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
-    "the builtin default format is listed first, and is the only one initially");
+  assert(formatRows().length === 4 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
+    "the builtin default format is listed first, alongside the 3 seeded demo formats");
   assert(formatRows()[0].querySelector(".filter-library-row-del") === null, "the builtin default has no delete button");
 
   const btnAddFormat = d.querySelector("#btnAddFormat");
@@ -8273,7 +8297,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#formatEditCancel"), w);
   assert(!isVisible(formatEditPanel, w), "Cancel closes the inline panel");
   assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
-  assert(formatRows().length === 1, "cancelling adds nothing to the format list");
+  assert(formatRows().length === 4, "cancelling adds nothing to the format list");
 
   // Re-open and actually add one, this time via a pasted sample line instead
   // of typing the pattern by hand — the suggestion should fill in pattern +
@@ -8300,7 +8324,7 @@ await withApp(async (w, d, T) => {
   await waitFor(() => !isVisible(formatEditPanel, w));
   assert(!isVisible(formatEditPanel, w), "saving closes/collapses the inline format panel");
   assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
-  assert(formatRows().length === 2, "the new format is now listed alongside the default");
+  assert(formatRows().length === 5, "the new format is now listed alongside the default and the 3 seeded demo formats");
 
   const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
   assert(newFormat && newFormat.mode === "pattern" && !newFormat.builtin, "new format saved with the suggested (then reviewed) pattern, not builtin");
@@ -13933,8 +13957,12 @@ await withApp(async (w, d, T) => {
   w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[9]);
   fireClick(d.querySelector("#ctxAddToSelection"), w);
   fireClick(menuAction('data-selection-action="create"'), w);
-  const sel2 = T.state.nodes[f.children[0]];
-  assert(sel2.selectionFilter === true && sel2.name === "Selection 2", "a second new selection filter is named \"Selection 2\", got " + sel2.name);
+  // Looked up by name/flag, not f.children[0] — insertSpecialChild (this
+  // session's ordering rework) now sorts Selection 2 AFTER Selection 1
+  // (ascending, not unshifted-to-the-front), so index 0 is no longer where
+  // the newest selection lands.
+  const sel2 = Object.values(T.state.nodes).find(n => n.selectionFilter && n.name === "Selection 2");
+  assert(sel2 && sel2.selectionFilter === true, "a second new selection filter is named \"Selection 2\", got " + (sel2 && sel2.name));
 
   // --- Persistence carriers: selectionFilter is a NEW field (unlike the
   // shared idset value/getEntries machinery, which needed no new code) —
@@ -23869,7 +23897,11 @@ await withApp(async (w, d, T) => {
   const merged = T.state.nodes[T.state.activeId];
   assert(merged && merged.merged === true, "a merged node was created and is the active node");
   assert(merged.entries.length === 6, "merge combines both files' full entries, got " + merged.entries.length);
-  assert(merged.children.length === 0, "merge-full attaches NO timerange filter, got " + merged.children.length + " children");
+  // merged.children now always has the auto-managed "Sources" node (see
+  // createMergeShell) — the assertion here is specifically about NOT
+  // attaching a timerange filter (unlike folderMinimapMergeWindow below).
+  assert(!merged.children.some(id => T.state.nodes[id].filterType === "timerange"),
+    "merge-full attaches NO timerange filter, got children " + JSON.stringify(merged.children.map(id => T.state.nodes[id].filterType)));
 });
 
 await withApp(async (w, d, T) => {
@@ -26762,6 +26794,1453 @@ await withApp(async (w, d, T) => {
     "the failure is reported by path instead of silently doing nothing, got " + d.querySelector("#copyToast").textContent);
   assert(T.state.rootIds.length === 1, "...and nothing new was added to the tree");
 }, { philogg: { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]), pathExists: () => Promise.resolve(true), openPath: () => {}, openLocalPath: () => Promise.reject(new Error("gone")) } });
+
+/* ============================================================
+   GROUP 232 — Meta-format multi-pattern parsing (FEATURE_BACKLOG.md #81):
+   splitTextByMetaFormat's line classification, against the real reference
+   sample (demo_log_format_sample.log, person-supplied this session) mixing
+   a log4net-style app grammar (format A, DEMO_APP_FORMAT) and RFC 5424
+   syslog (format B, DEMO_SYSLOG_FORMAT) line-by-line, plus every
+   continuation-line (F-line) shape, blank-line-only separators, and an
+   out-of-chronological-order syslog block — then loadMetaFormatText end to
+   end (split -> per-target addFile -> auto-merge via the unmodified
+   mergeFiles).
+   ============================================================ */
+group(232);
+
+// The exact 29-line reference sample (chat upload this session, not
+// checked into the repo — see FEATURE_BACKLOG.md #81 and CHANGELOG.md).
+// One cosmetic change from the original: the U+25D6 glyph on line 24 is
+// replaced by plain text, since it plays no role in classification (it's
+// inside the free-text message, not a matched group) and keeping this
+// file plain-ASCII avoids any source-encoding fragility.
+const META_SAMPLE_LINES = [
+  "2025-01-02 09:15:03.123 [] DEBUG demo.CoreWidget  - Widget DemoForm created for plugin DemoApp", // 1
+  "", // 2
+  "2025-01-02 09:15:03.456 [] INFO  demo.Loader  - Loading module DemoModule (v1.2.3)", // 3
+  "", // 4
+  "2025-01-02 09:15:04.010 [] DEBUG demo.Startup  - Hardware summary:", // 5
+  "cpu_vendor\tACME", // 6
+  "virtual_cores\t8", // 7
+  "l1_cache_bytes\t32768", // 8
+  "", // 9
+  "2025-01-02 09:15:05.777 [] WARN  demo.ShaderLib  - Failed to compile effect: Demo info", // 10
+  "-------------", // 11
+  "0(12) : error D1001: demo shader error", // 12
+  "", // 13
+  "2025-01-02 09:15:06.001 [] ERROR demo.PythonBridge  - Traceback (most recent call last):", // 14
+  '  File "C:\\demo\\app\\lib\\demo_module\\__init__.py", line 4, in <module>', // 15
+  "    from .demo_parser import DemoParser, demo_to_text", // 16
+  "ImportError: cannot import name 'demo_to_text' from 'demo_module.demo_parser'", // 17
+  "", // 18
+  "", // 19
+  "2025-01-02 09:15:06.500 [] INFO  demo.Client  - demo client state changed: DISCONNECTED", // 20
+  "", // 21
+  "<13>1 2025-01-02T09:15:06.711324 localhost demoapp 12345 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Common\\DemoBase.cpp' linenumber='42' errorcode='0' errortext='(info, demo, ok)' agent='agent_demo_0001' system='12345678-1234-1234-1234-123456789012'] stop requested", // 22
+  "<13>1 2025-01-02T09:15:06.711201 localhost demoapp 12346 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Common\\DemoBase.cpp' linenumber='42' errorcode='0' errortext='(info, demo, ok)' agent='agent_demo_0002' system='12345678-1234-1234-1234-123456789012'] stop requested", // 23
+  "<14>1 2025-01-02T09:15:06.711990 localhost demoapp 12345 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Block\\DemoBlock.cpp' linenumber='100' errorcode='D0010001' errortext='(warning, demo, no consumer)' agent='agent_demo_0001' system='12345678-1234-1234-1234-123456789012'] subtask done for tag /JOB :aaaa1111, took 1900us.", // 24
+  "1 step executed in 1234us. Parallel factor 0.5.", // 25
+  "<13>1 2025-01-02T09:15:06.712400 localhost demoapp 12345 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Block\\DemoBlock.cpp' linenumber='145' errorcode='0' errortext='(info, demo, ok)' agent='agent_demo_0001' system='12345678-1234-1234-1234-123456789012'] step end a1b2c3d4 +0 bytes (no action)", // 26
+  "2025-01-02 09:15:07.017 [] DEBUG demo.Sync  - refreshing channel DemoChannel (dirty flag)", // 27
+  "", // 28
+  "<13>1 2025-01-02T09:15:08.123456 localhost demoapp 12345 1 [log@9999 filename='C:\\dev\\demo\\Projects\\Demo.Xml\\DemoValidator.cpp' linenumber='9' errorcode='0' errortext='(info, demo, ok)' agent='agent_demo_0001' system='12345678-1234-1234-1234-123456789012'] validation finished for doc demo-1234", // 29
+];
+const META_SAMPLE_TEXT = META_SAMPLE_LINES.join("\n");
+
+await withApp(async (w, d, T) => {
+  section("232a. splitTextByMetaFormat classifies the reference sample's lines into the right per-grammar stream");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  assert(metaFmt && metaFmt.mode === "meta" && metaFmt.targetFormatIds.length === 2, "sanity: the seeded meta-format exists with its 2 targets");
+
+  const streams = w.splitTextByMetaFormat(META_SAMPLE_TEXT, metaFmt);
+  assert(streams.length === 2, "both grammars are present in the sample, so 2 streams come out, got " + streams.length);
+  const appStream = streams.find(s => s.formatId === "fmt-demo-app");
+  const syslogStream = streams.find(s => s.formatId === "fmt-demo-syslog");
+  assert(appStream && syslogStream, "one stream per target format");
+
+  const appLines = appStream.text.split("\n");
+  const syslogLines = syslogStream.text.split("\n");
+  assert(appLines.length === 15, "format A stream: 7 headers (lines 1,3,5,10,14,20,27) + 8 continuation lines (tab-list x2, unindented x2, traceback x3), got " + appLines.length);
+  assert(syslogLines.length === 6, "format B stream: 5 headers (lines 22,23,24,26,29) + 1 bare continuation line (25), got " + syslogLines.length);
+  assert(!appLines.includes("") && !syslogLines.includes(""), "blank lines are dropped during the split, never emitted literally into either stream");
+
+  assert(appLines.includes("cpu_vendor\tACME"), "tab-list continuation (lines 6-8) lands in the app stream");
+  assert(appLines.includes("0(12) : error D1001: demo shader error"), "unindented continuation (line 12) lands in the app stream");
+  assert(appLines.some(l => l.includes("ImportError: cannot import name")), "traceback-style continuation (lines 15-17) lands in the app stream");
+  assert(syslogLines.includes("1 step executed in 1234us. Parallel factor 0.5."),
+    "the bare continuation line right after a syslog header (line 25) lands in the syslog stream, not the app stream (it joins the most recently matched stream)");
+});
+
+await withApp(async (w, d, T) => {
+  section("232b. loadMetaFormatText end to end: the reference sample parses into the right entry counts per grammar and auto-merges chronologically");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+
+  const merged = await w.loadMetaFormatText("demo.log", META_SAMPLE_TEXT, metaFmt);
+  assert(merged.name === "demo.log", "the merged result is named after the physical file, not mergeFiles' default vnode-name join");
+  assert(merged.merged === true, "the auto-merge result is a real merged file node");
+  assert(merged.entries.length === 12, "7 format-A headers + 5 format-B headers = 12 entries total, got " + merged.entries.length);
+  assert(merged.entries.every((e, i, arr) => i === 0 || arr[i - 1].ts <= e.ts), "the merged result is fully chronological");
+  // Per-grammar vnodes are never deleted (this session's rework, reversing
+  // the previous session's "delete after merge" design) — they stay real,
+  // independent, tagged file nodes, hidden from the plain top-level walk
+  // (mergeSourceHidden) but otherwise fully alive.
+  assert(T.state.rootIds.length === 3, "the merge + its 2 per-grammar vnodes are all real rootIds, got " + T.state.rootIds.length);
+  const vnodeIds = T.state.rootIds.filter(id => id !== merged.id);
+  assert(vnodeIds.every(id => {
+    const n = T.state.nodes[id];
+    return n && n.type === "file" && n.mergeOwnerId === merged.id && n.mergeSourceHidden === true;
+  }), "each vnode is tagged mergeOwnerId/mergeSourceHidden, pointing at the merge");
+  assert(vnodeIds.every(id => T.state.nodes[id].entries.length > 0), "each vnode still holds its own real, parsed entries");
+
+  assert(merged.sources && merged.sources.length === 2, "the merged file's Sources breakdown has one entry per target format");
+  assert(merged.sources.map(s => s.name).sort().join(",") === "App log (log4net-style),Syslog (RFC 5424)",
+    "sources are named after the TARGET FORMATS (this is the meta-format auto-merge, not a manual multi-file merge)");
+  const appSrc = merged.sources.find(s => s.name === "App log (log4net-style)");
+  const syslogSrc = merged.sources.find(s => s.name === "Syslog (RFC 5424)");
+  assert(appSrc.count === 7 && syslogSrc.count === 5, "each source's count matches how many entries actually came from it");
+
+  const appEntries = merged.entries.filter(e => e.formatId === "fmt-demo-app");
+  const syslogEntries = merged.entries.filter(e => e.formatId === "fmt-demo-syslog");
+  assert(appEntries.length === 7 && syslogEntries.length === 5, "each entry is stamped with the format it was actually parsed under");
+  assert(syslogEntries.every(e => !isNaN(e.ts)), "the 6-digit-fraction syslog timestamps all parse to valid numbers (see the SSS date-token fix)");
+});
+
+/* ============================================================
+   GROUP 233 — mergeFiles' disjoint-time-range fast path stays chronological
+   even when a virtual stream's own on-disk line order isn't (the real
+   risk this feature's auto-merge introduces: format B's syslog blocks
+   aren't guaranteed sorted, per the reference sample's own lines 22-23).
+   ============================================================ */
+group(233);
+await withApp(async (w, d, T) => {
+  section("233. loadMetaFormatText: auto-merge stays chronological on the disjoint fast path despite an out-of-order syslog block");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+
+  // Format A entries in the 09:00 hour, format B entries in the 10:00 hour
+  // — the two ranges are disjoint, so mergeFiles takes its quick concat
+  // path (philogg.html's mergeFiles, ~9315), which trusts each source's
+  // OWN order rather than re-sorting. The syslog (format B) lines are
+  // written in a deliberately non-chronological on-disk order (b2, b0, b1)
+  // — mirroring the real sample's own descending-timestamp syslog block —
+  // to prove loadMetaFormatText's per-vnode pre-sort (done before
+  // mergeFiles ever sees the vnodes) is what keeps this fast path correct.
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "2025-01-02 09:00:01.000 [] INFO  app.X  - a1",
+    "2025-01-02 09:00:02.000 [] INFO  app.X  - a2",
+    "<13>1 2025-01-02T10:00:02.000000 host app 1 1 [log@1 filename='x.cpp'] b2",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+    "<13>1 2025-01-02T10:00:01.000000 host app 1 1 [log@1 filename='x.cpp'] b1",
+  ].join("\n");
+
+  const merged = await w.loadMetaFormatText("disjoint.log", text, metaFmt);
+  assert(merged.entries.length === 6, "all 6 lines parsed, got " + merged.entries.length);
+  assert(merged.entries.every((e, i, arr) => i === 0 || arr[i - 1].ts <= e.ts),
+    "chronological despite the syslog block's own out-of-order on-disk lines");
+  assert(merged.entries.map(e => e.message).join(",") === "a0,a1,a2,b0,b1,b2",
+    "messages come out in true timestamp order (b0,b1,b2), not on-disk order (b2,b0,b1), got " + merged.entries.map(e => e.message).join(","));
+});
+
+/* ============================================================
+   GROUP 234 — Format Manager UI: the new "Meta" mode (ordered target-
+   format picker, >=2-targets save guard) and removeLogFormat's new guard
+   against deleting a format still used as a meta-format's target.
+   ============================================================ */
+group(234);
+await withApp(async (w, d, T) => {
+  section("234a. Format Manager: creating a meta-format via the UI (mode toggle, field visibility, ordered target picker, >=2-targets guard)");
+  await waitForFormatConfig(T);
+  fireClick(d.querySelector("#btnSettings"), w);
+  fireClick(d.querySelector("#btnAddFormat"), w);
+
+  fireClick(d.querySelector("#formatEditModeMeta"), w);
+  assert(isVisible(d.querySelector("#formatEditMetaField"), w), "meta mode shows the target-format picker");
+  assert(!isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
+    "...and hides the pattern/regex fields");
+  assert(!isVisible(d.querySelector("#formatEditTsFormatField"), w) && !isVisible(d.querySelector("#formatEditLevelsField"), w) && !isVisible(d.querySelector("#formatEditPreviewField"), w),
+    "...and the timestamp/levels/preview fields too — none of them apply to a meta-format");
+
+  d.querySelector("#formatEditName").value = "Test meta";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(isVisible(d.querySelector("#formatEditError"), w) && d.querySelector("#formatEditError").textContent.includes("2"),
+    "saving with 0 targets is rejected with an error mentioning the minimum, got " + d.querySelector("#formatEditError").textContent);
+
+  const select = d.querySelector("#formatEditMetaTargetSelect");
+  select.value = "fmt-demo-app";
+  fireClick(d.querySelector("#formatEditMetaAddBtn"), w);
+  let rows = [...d.querySelectorAll("#formatEditMetaTargets > div")];
+  assert(rows.length === 1 && rows[0].textContent.includes("App log"), "adding a target lists it");
+
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(isVisible(d.querySelector("#formatEditError"), w), "still rejected with only 1 target");
+
+  select.value = "fmt-demo-syslog";
+  fireClick(d.querySelector("#formatEditMetaAddBtn"), w);
+  rows = [...d.querySelectorAll("#formatEditMetaTargets > div")];
+  assert(rows.length === 2, "second target added, got " + rows.length);
+
+  // Reorder: move the second row up, confirm the working order actually flipped.
+  const upBtns = () => [...d.querySelectorAll("#formatEditMetaTargets .filter-library-row-order")].filter(b => b.title === "Move up");
+  fireClick(upBtns()[1], w);
+  rows = [...d.querySelectorAll("#formatEditMetaTargets > div")];
+  assert(rows[0].textContent.includes("Syslog"), "moving the second target up reorders the working list");
+
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => !isVisible(d.querySelector("#formatEditPanel"), w));
+  const saved = T.state.logFormats.find(f => f.name === "Test meta");
+  assert(saved && saved.mode === "meta", "saved as a meta-format");
+  assert(saved.targetFormatIds.join(",") === "fmt-demo-syslog,fmt-demo-app",
+    "the reordered target order is what gets saved, got " + saved.targetFormatIds.join(","));
+
+  const row = [...d.querySelectorAll("#formatList .filter-library-row")].find(r => r.textContent.includes("Test meta"));
+  assert(row && row.querySelector(".filter-library-row-meta").textContent.includes("Meta · 2 targets"), "the format list shows the meta target count");
+});
+
+await withApp(async (w, d, T) => {
+  section("234b. removeLogFormat: a format still referenced as a meta-format's target can't be deleted until the meta-format is");
+  await waitForFormatConfig(T);
+  const before = T.state.logFormats.length;
+  await w.removeLogFormat("fmt-demo-app");
+  assert(T.state.logFormats.some(f => f.id === "fmt-demo-app"), "fmt-demo-app survives — it's still used as a target by the seeded meta-format");
+  assert(T.state.logFormats.length === before, "nothing was removed");
+
+  await w.removeLogFormat("fmt-demo-app-syslog-meta"); // remove the meta-format itself first
+  assert(!T.state.logFormats.some(f => f.id === "fmt-demo-app-syslog-meta"), "the meta-format itself is removable like any other non-builtin format");
+  await w.removeLogFormat("fmt-demo-app");
+  assert(!T.state.logFormats.some(f => f.id === "fmt-demo-app"), "now that no meta-format targets it, fmt-demo-app can be removed");
+});
+
+/* ============================================================
+   GROUP 235 — loadMetaFormatText degenerate cases: only one target
+   format's grammar actually present (no merge needed), and neither
+   target's grammar present at all (falls back to the default format
+   rather than hard-failing).
+   ============================================================ */
+group(235);
+await withApp(async (w, d, T) => {
+  section("235a. loadMetaFormatText: only one target format ever matches — no merge, a plain single-format load instead");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = "2025-01-02 09:00:00.000 [] INFO  app.X  - only app lines here\n2025-01-02 09:00:01.000 [] INFO  app.X  - still app";
+  const result = await w.loadMetaFormatText("app-only.log", text, metaFmt);
+  assert(!result.merged, "a single-grammar file never goes through mergeFiles");
+  assert(result.formatId === "fmt-demo-app", "parsed directly under the one format that actually matched");
+  assert(result.entries.length === 2, "both lines parsed as entries, got " + result.entries.length);
+});
+
+await withApp(async (w, d, T) => {
+  section("235b. loadMetaFormatText: nothing matches either target — falls back to the default format instead of hard-failing");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = "this line matches neither grammar\nnor does this one";
+  const result = await w.loadMetaFormatText("nomatch.log", text, metaFmt);
+  assert(result.formatId === "fmt-default", "falls back to the builtin default format rather than throwing");
+  assert(T.state.rootIds.length === 1, "still produces exactly one (fallback) node, not zero, and not a crash");
+});
+
+/* ============================================================
+   GROUP 236 — mergeFiles' additive node.sources/entry.sourceId stamping,
+   for both merge origins: the pre-existing manual multi-file merge
+   (disjoint AND overlapping paths) and the new meta-format auto-merge.
+   ============================================================ */
+group(236);
+await withApp(async (w, d, T) => {
+  section("236a. mergeFiles: node.sources/entry.sourceId, manual merge, disjoint (quick-concat) path");
+  const fa = await w.addFile("a.log", makeLog(0, 3), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 3, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.sources.length === 2, "one Sources entry per source file");
+  assert(merged.sources[0].id === fa.id && merged.sources[0].name === "a.log" && merged.sources[0].count === 3,
+    "first source's breakdown matches, got " + JSON.stringify(merged.sources[0]));
+  assert(merged.sources[1].id === fb.id && merged.sources[1].name === "b.log" && merged.sources[1].count === 3, "second source's breakdown matches");
+  assert(merged.sources.every(s => s.color === null), "no color assigned yet");
+  assert(merged.entries.filter(e => e.sourceId === fa.id).length === 3 && merged.entries.filter(e => e.sourceId === fb.id).length === 3,
+    "every copied entry is stamped with its own source's id");
+});
+
+await withApp(async (w, d, T) => {
+  section("236b. mergeFiles: node.sources/entry.sourceId, manual merge, overlapping (chunked copy+sort) path");
+  const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const fb = await w.addFile("b.log", makeLog(2, 5, { msgPrefix: "other" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.entries.filter(e => e.sourceId === fa.id).length === 5 && merged.entries.filter(e => e.sourceId === fb.id).length === 5,
+    "sourceId stamping also happens on the chunked copy+sort path");
+});
+
+await withApp(async (w, d, T) => {
+  section("236c. loadMetaFormatText: node.sources named after target formats, per-grammar vnodes stay real and tagged, entries live in entryIndex");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  assert(merged.sources.map(s => s.name).sort().join(",") === "App log (log4net-style),Syslog (RFC 5424)", "sources named after the target formats, not filenames");
+  // Per-grammar vnodes are never deleted (this session's rework) — real,
+  // hidden-from-top-level, independently addressable file nodes.
+  assert(T.state.rootIds.length === 3, "the merge + its 2 per-grammar vnodes are all real rootIds, got " + T.state.rootIds.length);
+  const vnodeIds = T.state.rootIds.filter(id => id !== merged.id);
+  assert(vnodeIds.every(id => T.state.nodes[id].mergeOwnerId === merged.id && T.state.nodes[id].mergeSourceHidden === true),
+    "each vnode is tagged as this merge's hidden source");
+  assert(merged.sources.every(s => vnodeIds.includes(s.id)), "merged.sources[i].id points at the still-live vnode, not a dangling id");
+  const sharedId = merged.entries[0].id;
+  assert(T.entryIndex[sharedId] === merged.entries[0], "the merged entries stay resolvable via entryIndex");
+});
+
+/* ============================================================
+   GROUP 237 — the "Sources" group in the tree: rendering, independent
+   collapse from the file's own node.collapsed, a source's swatch writing
+   to node.sources[i].color (never node.highlightColor), and
+   computeHighlightMap surfacing that color per-source into the same
+   gutter-marker map filter highlights already use.
+   ============================================================ */
+group(237);
+await withApp(async (w, d, T) => {
+  section("237. Sources node: real tree row, real nested clickable source rows, independent collapse, swatch -> node.sources[i].color, computeHighlightMap picks it up per-source");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.activeId = merged.id;
+  w.render();
+
+  const sourcesNodeId = merged.children[0];
+  const sourcesNode = T.state.nodes[sourcesNodeId];
+  assert(sourcesNode && sourcesNode.filterType === "sources" && sourcesNode.locked === true,
+    "the Sources row is a real, locked filter node — merged.children[0]");
+  assert(sourcesNode.collapsed === true,
+    "Sources starts collapsed right after a merge completes (this session's refinement, see fillMergedEntries) — expanded while loading, collapsed once done");
+  const sourcesRow = d.querySelector('.tree-row[data-node-id="' + sourcesNodeId + '"]');
+  assert(sourcesRow && sourcesRow.textContent.includes("Sources"), "it renders as a normal .tree-row, labeled Sources");
+
+  // Expand it to exercise the nested source rows the rest of this group is about.
+  fireClick(sourcesRow.querySelector(".tree-chevron"), w);
+  assert(sourcesNode.collapsed === false, "clicking the chevron expands it");
+  w.render();
+
+  // The two sources are real, independent file nodes (fa/fb themselves,
+  // for a manual bulk merge — see mergeFiles' own comment on mergeOwnerId
+  // without mergeSourceHidden), each rendered a SECOND time, nested under
+  // the Sources row, via the ordinary renderNode reused as-is. DOM order
+  // matches tree order, so [0] is the untouched top-level row and [1] is
+  // the nested one.
+  const faRows = () => [...d.querySelectorAll('.tree-row[data-node-id="' + fa.id + '"]')];
+  assert(faRows().length === 2, "fa renders TWICE — once at top level (bulk-merge originals stay visible), once nested under Sources, got " + faRows().length);
+  assert(fa.mergeOwnerId === merged.id && !fa.mergeSourceHidden, "fa is tagged as this merge's source but NOT hidden — stays a normal top-level row too");
+  assert(fb.mergeOwnerId === merged.id && !fb.mergeSourceHidden, "same for fb");
+  assert(!faRows()[0].querySelector(".tree-swatch"), "the top-level (unnested) fa row carries no source-color swatch");
+  assert(faRows()[1].querySelector(".tree-swatch"), "the nested fa row does");
+
+  fireClick(sourcesRow.querySelector(".tree-chevron"), w);
+  assert(sourcesNode.collapsed === true, "clicking the Sources row's own chevron collapses it — the SAME mechanism any other node's children use, no bespoke field");
+  w.render();
+  assert(faRows().length === 1, "the nested fa row is gone while Sources is collapsed — only the top-level original remains");
+  fireClick(d.querySelector('.tree-row[data-node-id="' + sourcesNodeId + '"] .tree-chevron'), w);
+  w.render();
+  assert(faRows().length === 2, "expanding again brings the nested row back");
+
+  const swatch = faRows()[1].querySelector(".tree-swatch");
+  fireClick(swatch, w);
+  assert(isVisible(d.querySelector("#colorPickerPopup"), w), "clicking a source's swatch opens the color picker");
+  const preset = d.querySelector("#cpPresets .cp-preset");
+  fireClick(preset, w);
+  assert(merged.sources[0].color, "picking a color writes it onto merged.sources[i], not onto the file node itself");
+  assert(!fa.highlightColor, "...not onto the source file node's own highlightColor (file nodes never carry one)");
+
+  const hlMap = w.computeHighlightMap(merged.id);
+  const coloredEntryId = merged.entries.find(e => e.sourceId === fa.id).id;
+  const uncoloredEntryId = merged.entries.find(e => e.sourceId === fb.id).id;
+  assert(hlMap.get(coloredEntryId) && hlMap.get(coloredEntryId).includes(merged.sources[0].color), "computeHighlightMap surfaces the source's color for its own entries");
+  assert(!hlMap.get(uncoloredEntryId), "...but not for the other (uncolored) source's entries");
+
+  // Re-query: the color pick above triggered a full render(), so the
+  // captured `swatch` element is now detached (CLAUDE.md's "DOM identity
+  // across clicks" gotcha).
+  fireContextMenu(faRows()[1].querySelector(".tree-swatch"), w);
+  assert(merged.sources[0].color === null, "right-click clears the source's color");
+});
+
+/* ============================================================
+   GROUP 238 — undo/redo: a merged file's Sources breakdown (incl. any
+   assigned colors) and a meta-format auto-merge's metaFormatId both
+   survive an in-session delete+undo round trip (snapshotSubtree/
+   restoreSubtree's file branch).
+   ============================================================ */
+group(238);
+await withApp(async (w, d, T) => {
+  section("238a. Undo/redo: node.sources (incl. colors) survives a delete+undo round trip on a manually merged file");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  merged.sources[0].color = "#ff0000";
+  const mergedId = merged.id;
+
+  w.deleteFilterNodeWithUndo(mergedId);
+  assert(!T.state.nodes[mergedId], "the merged file is gone after delete");
+
+  w.undo();
+  const restored = T.state.nodes[mergedId];
+  assert(restored, "the merged file is back after undo");
+  assert(restored.sources && restored.sources.length === 2, "its Sources breakdown survived the round trip");
+  assert(restored.sources[0].color === "#ff0000", "...including the assigned color");
+  assert(restored.merged === true, "still flagged as a merged file");
+});
+
+await withApp(async (w, d, T) => {
+  section("238b. Undo/redo: a meta-format auto-merge's metaFormatId survives a delete+undo round trip too");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const mergedId = merged.id;
+  w.deleteFilterNodeWithUndo(mergedId);
+  w.undo();
+  assert(T.state.nodes[mergedId].metaFormatId === "fmt-demo-app-syslog-meta", "metaFormatId survives the round trip");
+});
+
+/* ============================================================
+   GROUP 239 — the SSS date-token's arbitrary-digit-count fix
+   (DATE_TOKEN_FRAG/parseTimestampGeneric, a prerequisite for format B's
+   6-digit fractional seconds) and the 3 demo formats loadFormatConfig
+   seeds for FEATURE_BACKLOG.md #81's reference case.
+   ============================================================ */
+group(239);
+await withApp(async (w, d, T) => {
+  section("239a. parseTimestampGeneric: a fraction-of-a-second capture of any digit count normalizes to milliseconds, not a literal ms value");
+  const fmt3 = w.compileDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+  const t3 = w.parseTimestampGeneric("2025-01-02 09:15:06.711", fmt3);
+  assert(new Date(t3).getMilliseconds() === 711, "unchanged behavior for a 3-digit fraction (the pre-existing case), got " + new Date(t3).getMilliseconds());
+
+  const fmt1 = w.compileDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+  const t1 = w.parseTimestampGeneric("2025-01-02 09:15:06.7", fmt1);
+  assert(new Date(t1).getMilliseconds() === 700, "a shorter, 1-digit fraction is right-padded (.7 means .700s, not 7ms), got " + new Date(t1).getMilliseconds());
+
+  const fmt6 = w.compileDateFormat("yyyy-MM-ddTHH:mm:ss.SSS");
+  const t6 = w.parseTimestampGeneric("2025-01-02T09:15:06.711324", fmt6);
+  assert(!isNaN(t6), "a 6-digit (microsecond) fraction now matches at all — used to fail outright (SSS was hardcoded to 1-3 digits)");
+  assert(new Date(t6).getMilliseconds() === 711, "...and truncates to millisecond resolution correctly (711324us -> 711ms), not literal 711324ms (which would overflow ~11 minutes into the wrong second), got " + new Date(t6).getMilliseconds());
+  assert(new Date(t6).getSeconds() === 6, "sanity: the overflow bug this fixes would have pushed this into a different second entirely, got seconds=" + new Date(t6).getSeconds());
+});
+
+await withApp(async (w, d, T) => {
+  section("239b. loadFormatConfig seeds the 3 concrete formats from FEATURE_BACKLOG.md #81's reference case, idempotently, non-builtin, no FormatRule");
+  await waitForFormatConfig(T);
+  const app = T.state.logFormats.find(f => f.id === "fmt-demo-app");
+  const syslog = T.state.logFormats.find(f => f.id === "fmt-demo-syslog");
+  const meta = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  assert(app && app.mode === "regex" && !app.builtin, "the app-log format is seeded, regex mode, not builtin (freely editable/deletable)");
+  assert(syslog && syslog.mode === "regex" && !syslog.builtin, "the syslog format is seeded, regex mode, not builtin");
+  assert(meta && meta.mode === "meta" && !meta.builtin, "the meta-format is seeded, meta mode, not builtin");
+  assert(meta.targetFormatIds.join(",") === "fmt-demo-app,fmt-demo-syslog", "the meta-format targets the other two, in order, got " + meta.targetFormatIds.join(","));
+  assert(!T.state.formatRules.some(r => r.formatId === "fmt-demo-app" || r.formatId === "fmt-demo-syslog" || r.formatId === "fmt-demo-app-syslog-meta"),
+    "none of the 3 seeded formats has a FormatRule (filename glob) — they stay dormant until the person adds one by hand");
+
+  // Idempotency: a second loadFormatConfig() call (simulating a second boot
+  // against the same store) must not duplicate the seeded records.
+  await w.loadFormatConfig();
+  assert(T.state.logFormats.filter(f => f.id === "fmt-demo-app").length === 1, "re-seeding is idempotent — no duplicate app-log format");
+  assert(T.state.logFormats.filter(f => f.id === "fmt-demo-app-syslog-meta").length === 1, "...nor duplicate meta-format");
+});
+
+/* ============================================================
+   GROUP 240 — specialChildRank/insertSpecialChild: the tree's auto-managed
+   rows always sort Sources, Bookmarks, Notes, Selection 1, Selection 2, ...
+   regardless of creation order (this session's rework — previously
+   syncBookmarksFilterNode/syncNotesFilterNode/createSelectionFilterNode
+   each used their own ad hoc unshift/splice, with no shared rule and no
+   awareness of each other — a Selection even unshifted itself ABOVE an
+   existing Bookmarks/Notes node).
+   ============================================================ */
+group(240);
+await withApp(async (w, d, T) => {
+  section("240a. insertSpecialChild: Sources/Bookmarks/Notes/Selection N always sort in that fixed order, regardless of creation order");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+
+  // Bookmark, then note, then two selections, in that creation order —
+  // exercises Notes' bookmarks-relative placement AND two selections'
+  // ascending (not reverse-unshifted) order in one pass.
+  w.toggleBookmark(f.entries[0].id);
+  T.state.notes.set(f.entries[1].id, "a note");
+  w.syncNotesFilterNode(f.id);
+  w.createSelectionFilterNode(f.id, [f.entries[2].id]);
+  w.createSelectionFilterNode(f.id, [f.entries[3].id]);
+
+  const names = () => f.children.map(id => T.state.nodes[id].name);
+  assert(JSON.stringify(names()) === JSON.stringify(["Bookmarks", "Notes", "Selection 1", "Selection 2"]),
+    "no merge on this file, so no Sources — Bookmarks, Notes, Selection 1, Selection 2 in ascending order, got " + JSON.stringify(names()));
+});
+
+await withApp(async (w, d, T) => {
+  section("240b. insertSpecialChild: a merge's own Sources (created at merge time) still sorts first even when a Bookmark/Selection is added afterward");
+  const fb = await w.addFile("b.log", makeLog(100, 3, { msgPrefix: "later" }), () => {});
+  const fc = await w.addFile("c.log", makeLog(200, 3, { msgPrefix: "even later" }), () => {});
+  const merged = await w.mergeFiles([fb.id, fc.id]);
+  w.createSelectionFilterNode(merged.id, [merged.entries[0].id]);
+  // Bookmarking directly via state.bookmarks + syncBookmarksFilterNode(merged.id)
+  // rather than w.toggleBookmark(entryId): a merged file's entries are the
+  // SAME shared objects as its (still-visible, unhidden) sources' own
+  // entries (see mergeFiles' comment), so findRootIdForEntry's lookup for
+  // a shared entry id is inherently ambiguous between the merge and its
+  // sources — a pre-existing property of entry-sharing, not something this
+  // ordering test is about; syncing directly on the node under test sidesteps it.
+  T.state.bookmarks.set(merged.entries[1].id, { bookmarkedAt: Date.now() });
+  w.syncBookmarksFilterNode(merged.id);
+  const mergedNames = () => merged.children.map(id => T.state.nodes[id].name);
+  assert(JSON.stringify(mergedNames()) === JSON.stringify(["Sources", "Bookmarks", "Selection 1"]),
+    "Sources (created at merge time) still sorts before a Bookmark/Selection added afterward, got " + JSON.stringify(mergedNames()));
+});
+
+/* ============================================================
+   GROUP 241 — "Sources" is a real, locked filter node (this session's
+   rework, replacing the previous presentational-only group): its own
+   getEntries is a pure passthrough, it's excluded from filter-tree
+   persistence carriers exactly like Bookmarks/Notes, and its context menu
+   reduces to the same locked-node "Copy only" treatment those two get.
+   ============================================================ */
+group(241);
+await withApp(async (w, d, T) => {
+  section("241a. Sources node: getEntries passthrough, excluded from the session-cache filter-tree carrier (mirrors Bookmarks/Notes)");
+  const fa = await w.addFile("a.log", makeLog(0, 3), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 3, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  const sourcesId = merged.children[0];
+  const sourcesNode = T.state.nodes[sourcesId];
+  assert(sourcesNode.filterType === "sources" && sourcesNode.locked === true, "sanity: real, locked filter node");
+  assert(w.getEntries(sourcesId).length === merged.entries.length,
+    "getEntries on the Sources node is a pure passthrough of its parent's (the merged file's) own result");
+
+  const cached = w.serializeFilterTreeForCache(merged);
+  assert(!cached.roots.some(r => r.filterType === "sources"), "serializeFilterTreeForCache excludes the Sources node, same as Bookmarks/Notes");
+});
+
+await withApp(async (w, d, T) => {
+  section("241b. Sources node: context menu reduces to Copy-only, the same locked-node treatment Bookmarks/Notes already get");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.activeId = merged.id;
+  w.render();
+  const sourcesId = merged.children[0];
+  w.openTreeContextMenu({ clientX: 10, clientY: 10, preventDefault() {} }, sourcesId);
+  const actions = [...d.querySelectorAll("#treeContextMenu [data-action]")].map(el => el.dataset.action);
+  assert(actions.includes("copy"), "Copy is offered, got " + JSON.stringify(actions));
+  assert(!actions.some(a => ["delete", "rename", "edit", "invert", "cut"].includes(a)),
+    "delete/rename/edit/invert/cut are NOT offered for a locked node, got " + JSON.stringify(actions));
+});
+
+/* ============================================================
+   GROUP 242 — the "Show Sources" setting (default true): a pure display
+   toggle, persisted to localStorage, never touching node.sources/
+   mergeOwnerId data itself.
+   ============================================================ */
+group(242);
+await withApp(async (w, d, T) => {
+  section("242. Show Sources: defaults true, toggling off hides the row without touching data, toggling back on restores it, persists");
+  await waitFor(() => T.state.logFormats.length > 0); // boot settle, same as waitForFormatConfig elsewhere
+  assert(w.pillGet(d.querySelector("#settingsShowSources")) === true, "the toggle reflects the true default on a fresh boot");
+
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.activeId = merged.id;
+  w.render();
+  const sourcesId = merged.children[0];
+  assert(d.querySelector('.tree-row[data-node-id="' + sourcesId + '"]'), "Sources row renders by default");
+
+  fireClick(d.querySelector("#settingsShowSources"), w);
+  assert(!d.querySelector('.tree-row[data-node-id="' + sourcesId + '"]'), "toggling off hides the row immediately");
+  assert(merged.sources.length === 2 && merged.children.includes(sourcesId), "...but the underlying node/data are untouched");
+  assert(w.localStorage.getItem("philogg-show-sources") === "0", "persisted to localStorage");
+
+  fireClick(d.querySelector("#settingsShowSources"), w);
+  assert(d.querySelector('.tree-row[data-node-id="' + sourcesId + '"]'), "toggling back on restores the row, same data");
+  assert(w.localStorage.getItem("philogg-show-sources") === "1", "persisted back");
+});
+
+/* ============================================================
+   GROUP 243 — create-merge-first via loadFileDescriptors: the merge row
+   exists and is interactive BEFORE any source finishes loading, sources
+   load nested under Sources (never as a separate top-level flash), and
+   end up real, tagged, hidden-from-top-level nodes.
+   ============================================================ */
+group(243);
+await withApp(async (w, d, T) => {
+  section("243. loadFileDescriptors: merge shell created first, sources load nested/tagged, never a top-level flash");
+  w.confirmMergeOnLoad = () => Promise.resolve(true); // auto-answer "Merge" without driving the real dialog
+  const fileA = new w.File([makeLog(0, 3)], "a.log", { type: "text/plain" });
+  const fileB = new w.File([makeLog(100, 3, { msgPrefix: "later" })], "b.log", { type: "text/plain" });
+  await w.loadFileDescriptors([{ file: fileA }, { file: fileB }]);
+
+  assert(T.state.rootIds.length === 3, "merge + 2 sources, all real rootIds, got " + T.state.rootIds.length);
+  const merged = T.state.nodes[T.state.activeId];
+  assert(merged && merged.merged === true, "the merge is the active node once loading finishes");
+  assert(merged.entries.length === 6, "both sources' entries are combined, got " + merged.entries.length);
+  const sourceIds = merged.sources.map(s => s.id);
+  assert(sourceIds.every(id => {
+    const n = T.state.nodes[id];
+    return n && n.mergeOwnerId === merged.id && n.mergeSourceHidden === true;
+  }), "each source is a real, tagged, hidden-from-top-level node");
+  assert(!T.state.rootIds.some(id => id !== merged.id && !sourceIds.includes(id)), "no stray top-level rows besides the merge and its own sources");
+});
+
+/* ============================================================
+   GROUP 244 — a create-first merge's own combined progress bar
+   (node.loadSources/updateMergeLoadFraction) is cleaned up once the merge
+   finishes — REWRITTEN this session: this used to test the retired
+   (n+1)-segment design (loadSegmentSourceIds/.tree-load-fill-segment),
+   superseded by a single continuous, byte-weighted bar reusing the plain
+   .tree-load-fill markup any ordinary file's own bar already uses — see
+   Group 257 for the weighted-math/reserved-tail coverage.
+   ============================================================ */
+group(244);
+await withApp(async (w, d, T) => {
+  section("244. loadSources is cleared and no progress track lingers once a create-first merge finishes");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  T.state.activeId = merged.id;
+  w.render();
+
+  const row = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
+  assert(row, "sanity: the merge row itself renders");
+  // loadSources is deleted once fillMergedEntries finishes (this fixture's
+  // tiny fixture loads near-instantly) — assert the MECHANISM (the field
+  // existed, is gone once done) rather than catching mid-flight widths,
+  // which would be timing-flaky in a synchronous test fixture.
+  assert(merged.loadSources === undefined, "loadSources is cleared once the merge finishes (fillMergedEntries)");
+  assert(typeof merged.loadFraction !== "number", "loadFraction is cleared too — no lingering progress state");
+  assert(!row.querySelector(".tree-load-track"), "no lingering progress bar once loading is fully done");
+});
+
+/* ============================================================
+   GROUP 245 — meta-format per-grammar vnodes stay real and independently
+   usable after the merge finishes (supersedes the old "vnodes are
+   deleted" design — see the rewritten Group 232b/236c above).
+   ============================================================ */
+group(245);
+await withApp(async (w, d, T) => {
+  section("245. Meta-format vnodes stay clickable/independently selectable after the merge — never deleted");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "2025-01-02 09:00:01.000 [] INFO  app.X  - a1",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const appVnodeId = merged.sources.find(s => s.name.includes("App")).id;
+  const appVnode = T.state.nodes[appVnodeId];
+  assert(appVnode.type === "file" && appVnode.entries.length === 2, "the app-grammar vnode is a real file node with its own 2 entries");
+
+  // Select it directly (as if the person clicked its nested row) and
+  // confirm it behaves exactly like any other file node — own getEntries,
+  // own filter tree.
+  T.state.activeId = appVnodeId;
+  const filt = w.createFilterNode(appVnodeId, "text", "a0");
+  assert(w.getEntries(filt.id).length === 1, "a filter can be added directly onto the vnode and works normally");
+  assert(appVnode.children.includes(filt.id), "the vnode has its own independent filter tree, untouched by the merge");
+});
+
+/* ============================================================
+   GROUP 246 — folder-watch merges (full/window): create-first shell,
+   sources tagged hidden once loaded, and the folder's own listing never
+   double-renders a hidden source.
+   ============================================================ */
+group(246);
+await withApp(async (w, d, T) => {
+  section("246. folderMinimapMergeFull: shell created first, sources end up tagged+hidden, folder's own listing doesn't double-render them");
+  function fakeFileHandle(text) {
+    return {
+      kind: "file",
+      getFile: async () => {
+        const blob = new w.Blob([text]);
+        blob.slice = (s, e) => { const ee = e === undefined ? text.length : e; const sl = text.slice(s, ee); const b = new w.Blob([sl]); b.text = async () => sl; return b; };
+        return blob;
+      },
+    };
+  }
+  const recA = { name: "a.log", relPath: "a.log", nodeId: null, handle: fakeFileHandle(makeLog(0, 3)) };
+  const recB = { name: "b.log", relPath: "b.log", nodeId: null, handle: fakeFileHandle(makeLog(100, 3, { msgPrefix: "later" })) };
+  const folder = { id: "fm-246-folder", name: "f246", files: [recA, recB] };
+  T.state.folders.push(folder);
+  await Promise.all(folder.files.map(rec => w.probeFolderFileRange(folder, rec)));
+
+  T.fmFolderId = folder.id;
+  T.fmSelectedRecKeys = new Set([w.folderFileKey(recA), w.folderFileKey(recB)]);
+  T.fmSelectedWindow = null;
+  await w.folderMinimapMergeFull(folder);
+
+  const merged = T.state.nodes[T.state.activeId];
+  assert(merged && merged.merged === true, "a merged node was created and is active");
+  assert(recA.nodeId && recB.nodeId, "both targets loaded");
+  assert(T.state.nodes[recA.nodeId].mergeOwnerId === merged.id && T.state.nodes[recA.nodeId].mergeSourceHidden === true,
+    "recA's node ended up tagged hidden once its own load finished");
+  assert(T.state.nodes[recB.nodeId].mergeOwnerId === merged.id && T.state.nodes[recB.nodeId].mergeSourceHidden === true, "same for recB");
+
+  T.state.activeId = merged.id; // renderMainView needs an active node before render() touches the folder section
+  w.render();
+  const folderBox = w.renderFolderSection(folder);
+  assert(!folderBox.querySelector('[data-node-id="' + recA.nodeId + '"]'), "the folder's own listing does not also render recA (would double-render alongside its nested Sources row)");
+  assert(!folderBox.querySelector('[data-node-id="' + recB.nodeId + '"]'), "same for recB");
+});
+
+/* ============================================================
+   GROUP 247 — the pre-existing manual "Merge N files" bulk action stays
+   additive: originals untouched at top level, same nodes additionally
+   nested under the new merge's Sources (regression-guard for the
+   mergeFiles/createMergeShell split — see also Group 237's own coverage
+   of the same shape).
+   ============================================================ */
+group(247);
+await withApp(async (w, d, T) => {
+  section("247. performBulkAction('merge'): originals stay exactly as before, same nodes additionally nested under the new merge's Sources");
+  const fa = await w.addFile("a.log", makeLog(0, 3), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 3, { msgPrefix: "later" }), () => {});
+  T.state.multiSelect = new Set([fa.id, fb.id]);
+  w.performBulkAction("merge", [fa.id, fb.id]);
+  await waitFor(() => T.state.rootIds.some(id => T.state.nodes[id].merged));
+  const merged = T.state.nodes[T.state.rootIds.find(id => T.state.nodes[id].merged)];
+
+  assert(T.state.rootIds.includes(fa.id) && T.state.rootIds.includes(fb.id), "both originals are still real, top-level rootIds — nothing removed");
+  assert(fa.mergeOwnerId === merged.id && !fa.mergeSourceHidden, "fa is tagged as a source but explicitly NOT hidden");
+  assert(fb.mergeOwnerId === merged.id && !fb.mergeSourceHidden, "same for fb");
+  assert(merged.sources.map(s => s.id).sort().join(",") === [fa.id, fb.id].sort().join(","), "the merge's Sources breakdown references the very same nodes");
+});
+
+/* ============================================================
+   GROUP 248 — deleting a source independently (its own ✕, top-level or
+   nested-only) cleans up its owner's `sources` array instead of leaving a
+   stale/dangling reference.
+   ============================================================ */
+group(248);
+await withApp(async (w, d, T) => {
+  section("248. deleteNode: removing a source independently drops it from its merge's own sources array, no dangling id, no crash rendering Sources");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.sources.length === 2, "sanity: 2 sources before deletion");
+
+  w.deleteFilterNodeWithUndo(fa.id); // the top-level ✕ on a bulk-merge-visible source
+  assert(merged.sources.length === 1 && merged.sources[0].id === fb.id, "fa is dropped from merged.sources once its node is deleted");
+
+  T.state.activeId = merged.id;
+  let threw = false;
+  try { w.render(); } catch (e) { threw = true; }
+  assert(!threw, "rendering the Sources node afterward doesn't throw on the now-dangling reference (it was cleaned up, not just defensively skipped)");
+  const sourcesId = merged.children[0];
+  assert([...(d.querySelectorAll('.tree-row[data-node-id="' + fb.id + '"]'))].length >= 1 &&
+    d.querySelectorAll('.tree-row[data-node-id="' + fa.id + '"]').length === 0,
+    "fb's nested row still renders, fa's is gone entirely (not a broken/empty row)");
+});
+
+/* ============================================================
+   GROUP 249 — Refinement: a nested Sources row (opts.mergeSourceColor) has
+   no delete (✕) button and ignores middle-click delete — only deletable
+   together with its owning merge (see deleteNode's cascade, Group 250). A
+   bulk-merge-visible source's own top-level row is unaffected and keeps
+   both delete affordances.
+   ============================================================ */
+group(249);
+await withApp(async (w, d, T) => {
+  section("249. Nested Sources rows have no ✕/middle-click delete; the same source's top-level row (bulk-merge case) still does");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  T.state.activeId = merged.id;
+  const sourcesNode = T.state.nodes[merged.children[0]];
+  sourcesNode.collapsed = false; // Refinement 4 collapses it by default — expand to see nested rows
+  w.render();
+
+  const faRows = () => [...d.querySelectorAll('.tree-row[data-node-id="' + fa.id + '"]')];
+  assert(faRows().length === 2, "sanity: fa renders twice — top-level (bulk-merge original) + nested under Sources");
+  const [topRow, nestedRow] = faRows();
+  assert(topRow.querySelector(".tree-del"), "the top-level (unnested) fa row still has its own ✕");
+  assert(!nestedRow.querySelector(".tree-del"), "the nested fa row has NO ✕ button");
+
+  nestedRow.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+  assert(T.state.nodes[fa.id], "middle-clicking the nested row does NOT delete fa");
+  topRow.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+  assert(!T.state.nodes[fa.id], "middle-clicking the TOP-LEVEL row still deletes fa — its own delete affordance is unaffected");
+});
+
+/* ============================================================
+   GROUP 250 — Refinement: deleting a merge cascades to its hidden sources
+   (deleteNode's own cascade over node.sources) — a create-first
+   (mergeSourceHidden) source has no life outside the merge and is deleted
+   too; a bulk-merge-visible (mergeOwnerId only) source survives at top
+   level, un-orphaned.
+   ============================================================ */
+group(250);
+await withApp(async (w, d, T) => {
+  section("250a. Deleting a create-first merge cascade-deletes its hidden (mergeSourceHidden) sources too");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const vnodeIds = T.state.rootIds.filter(id => id !== merged.id);
+  assert(vnodeIds.length === 2, "sanity: 2 hidden vnode sources exist before deletion");
+  assert(vnodeIds.every(id => T.state.nodes[id].mergeSourceHidden), "sanity: both are hidden sources");
+
+  w.deleteFilterNodeWithUndo(merged.id);
+  assert(!T.state.nodes[merged.id], "the merge itself is gone");
+  vnodeIds.forEach(id => {
+    assert(!T.state.nodes[id], "hidden source " + id + " is cascade-deleted, not orphaned");
+    assert(!T.state.rootIds.includes(id), "...and removed from rootIds too");
+  });
+});
+
+await withApp(async (w, d, T) => {
+  section("250b. Deleting a bulk-merge leaves its (mergeOwnerId-only) sources alive at top level, un-orphaned");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+
+  w.deleteFilterNodeWithUndo(merged.id);
+  assert(!T.state.nodes[merged.id], "the merge itself is gone");
+  assert(T.state.nodes[fa.id] && T.state.nodes[fb.id], "both originals are still alive");
+  assert(T.state.rootIds.includes(fa.id) && T.state.rootIds.includes(fb.id), "...and still at top level");
+  assert(!fa.mergeOwnerId && !fb.mergeOwnerId, "mergeOwnerId is cleared on both — no longer pointing at a dead merge");
+});
+
+/* ============================================================
+   GROUP 251 — Refinement: undo of a deleted create-first merge restores
+   the whole entry, including its cascade-deleted hidden sources (live,
+   clickable, back in state.rootIds).
+   ============================================================ */
+group(251);
+await withApp(async (w, d, T) => {
+  section("251. Delete a create-first merge, then undo — merge AND its hidden sources reappear, live and in state.rootIds");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const mergedId = merged.id;
+  const vnodeIds = T.state.rootIds.filter(id => id !== mergedId).sort();
+
+  w.deleteFilterNodeWithUndo(mergedId);
+  assert(!T.state.nodes[mergedId] && vnodeIds.every(id => !T.state.nodes[id]), "sanity: merge + hidden sources all gone before undo");
+
+  w.undo();
+  assert(T.state.nodes[mergedId], "the merge is back after undo");
+  assert(T.state.rootIds.includes(mergedId), "...in rootIds");
+  vnodeIds.forEach(id => {
+    assert(T.state.nodes[id], "hidden source " + id + " is back too");
+    assert(T.state.rootIds.includes(id), "...and back in rootIds");
+    assert(T.state.nodes[id].mergeOwnerId === mergedId, "...still tagged as this merge's source");
+  });
+  const restored = T.state.nodes[mergedId];
+  assert(restored.sources.map(s => s.id).sort().join(",") === vnodeIds.join(","), "restored.sources still references the (now-live-again) same ids");
+
+  // Live and clickable: activating one renders without throwing.
+  T.state.activeId = vnodeIds[0];
+  let threw = false;
+  try { w.render(); } catch (e) { threw = true; }
+  assert(!threw, "the restored hidden source renders fine as the active node");
+});
+
+/* ============================================================
+   GROUP 252 — Refinement: "Sources" starts collapsed immediately after
+   any merge load completes (create-first and the old bulk "Merge N
+   files" action alike) — expanded only while still loading.
+   ============================================================ */
+group(252);
+await withApp(async (w, d, T) => {
+  section("252a. fillMergedEntries collapses the Sources node once a bulk merge completes");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  const sourcesNode = T.state.nodes[merged.children[0]];
+  assert(sourcesNode.collapsed === true, "Sources is collapsed right after mergeFiles completes");
+});
+
+await withApp(async (w, d, T) => {
+  section("252b. fillMergedEntries collapses the Sources node once a create-first (meta-format) merge completes");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+  const text = [
+    "2025-01-02 09:00:00.000 [] INFO  app.X  - a0",
+    "<13>1 2025-01-02T10:00:00.000000 host app 1 1 [log@1 filename='x.cpp'] b0",
+  ].join("\n");
+  const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
+  const sourcesNode = T.state.nodes[merged.children[0]];
+  assert(sourcesNode.collapsed === true, "Sources is collapsed right after a create-first merge completes");
+});
+
+/* ============================================================
+   GROUP 253 — a create-first merge's own combined progress bar shows
+   regardless of "Show Sources" — REWRITTEN this session: the original
+   (n+1)-segment design (retired) had this same person-reported bug
+   (Show Sources on/default hid all progress on the merge row); the new
+   single continuous bar (node.loadFraction via updateMergeLoadFraction)
+   reuses the plain .tree-load-fill markup any ordinary file's own bar
+   already uses, so this now just confirms that plain bar isn't
+   accidentally gated on the setting either.
+   ============================================================ */
+group(253);
+await withApp(async (w, d, T) => {
+  section("253. The merge row's combined progress bar shows with Show Sources ON (default) too, not just when off");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  // A synthetic in-progress merge shell — the same shape createMergeShell
+  // leaves mid-load — set up directly rather than racing a real async load,
+  // to avoid timing flakiness (same idiom Group 244 documents).
+  const merged = {
+    id: "merge-test-253", type: "file", name: "merged.log", parentId: null, children: [], entries: [],
+    merged: true, cacheKey: "k253", loadFraction: 0.4, formatId: fa.formatId,
+    sources: [{ id: fa.id, name: fa.name, color: null, count: fa.entries.length }],
+    loadSources: [{ id: fa.id, weight: 1 }],
+  };
+  T.state.nodes[merged.id] = merged;
+  T.state.rootIds.push(merged.id);
+  T.state.activeId = merged.id;
+
+  w.render();
+  const row = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
+  assert(row, "sanity: the merge row renders");
+  const fill = () => row.querySelector(".tree-load-fill");
+  assert(fill(), "the merge row shows the plain progress fill even with Show Sources ON (the default)");
+  assert(fill().style.width === "40%", "the fill width reflects node.loadFraction directly — got " + fill().style.width);
+
+  fireClick(d.querySelector("#settingsShowSources"), w); // off
+  w.render();
+  const rowAfter = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
+  assert(rowAfter.querySelector(".tree-load-fill"), "...and still shows with Show Sources OFF, unchanged");
+});
+
+/* ============================================================
+   GROUP 254 — Bug fix: the log view's scrollbar total (#tableSpacer's
+   height) now tracks an actively-loading node's live entry count on every
+   load tick, when that node IS the active view — previously it only
+   reflected the count as of the last full renderTable(), which never runs
+   on a load tick, so a large actively-growing merge showed a far smaller,
+   stale scrollbar total until some unrelated full render happened to fire.
+   ============================================================ */
+group(254);
+await withApp(async (w, d, T) => {
+  section("254a. updateLiveGrowingTotal keeps #tableSpacer's height tracking the active node's live entry count during a load tick");
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  w.render();
+  const spacerBefore = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerBefore === fa.entries.length * T.ROW_HEIGHT + 22, "sanity: spacer matches the real render's entry count");
+
+  // Simulate a load tick growing entries in place, same shape
+  // fillMergedEntries's own chunk loop uses.
+  for (let i = 0; i < 50; i++) fa.entries.push({ id: "extra-" + i, ts: Date.now(), level: "INFO", message: "extra", formatId: fa.formatId });
+  w.scheduleLoadRender(fa.id);
+
+  const spacerAfter = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerAfter === fa.entries.length * T.ROW_HEIGHT + 22,
+    "the spacer height tracks the new, live entry count after just a scheduleLoadRender tick — no full render() needed, got " + spacerAfter);
+});
+
+await withApp(async (w, d, T) => {
+  section("254b. updateLiveGrowingTotal no-ops for a background (non-active) node's load tick");
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  const fb = await w.addFile("b.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  w.render();
+  const spacerBefore = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+
+  for (let i = 0; i < 50; i++) fb.entries.push({ id: "extra-" + i, ts: Date.now(), level: "INFO", message: "extra", formatId: fb.formatId });
+  w.scheduleLoadRender(fb.id); // fb is not active — should not touch the spacer
+
+  const spacerAfter = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerAfter === spacerBefore, "the spacer is untouched by a background (non-active) node's load tick");
+});
+
+await withApp(async (w, d, T) => {
+  section("254c. updateLiveGrowingTotal bails out (stays stale) when a level filter is narrowing the active view");
+  const fa = await w.addFile("a.log", makeLog(0, 5));
+  T.state.activeId = fa.id;
+  T.state.levelFilter = new Set(["info"]); // narrows the view — currentViewEntries is no longer === fa.entries by reference
+  w.render();
+  const spacerBefore = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+
+  for (let i = 0; i < 50; i++) fa.entries.push({ id: "extra-" + i, ts: Date.now(), level: "INFO", message: "extra", formatId: fa.formatId });
+  w.scheduleLoadRender(fa.id);
+
+  const spacerAfter = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerAfter === spacerBefore, "with a level filter narrowing the view, the spacer stays at its last real-render value instead of a partial/incorrect update");
+});
+
+/* ============================================================
+   GROUP 255 — Bug fix: deleting a file mid-load no longer leaves stale
+   entries/leaked entryIndex ids behind, or fires a redundant render for
+   the now-dead node (loadOneFileIntoTree/parseLogTextAsync/parseFileWindow
+   all now guard against a delete raced under an in-flight load).
+   ============================================================ */
+group(255);
+await withApp(async (w, d, T) => {
+  section("255a. Deleting a file mid-parse stops further entries leaking into the orphaned node/entryIndex, and skips the wasted extra render");
+  const text = makeLog(0, 9000, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] });
+  const before = new Set(T.state.rootIds);
+  const donePromise = w.addFile("huge.log", text);
+  const newId = T.state.rootIds.find(id => !before.has(id));
+  const node = T.state.nodes[newId];
+  T.state.activeId = newId;
+
+  await new Promise(r => setTimeout(r, 0)); // let the first parse chunk land
+  const midCount = node.entries.length;
+  assert(midCount > 0 && midCount < 9000, "sanity: genuinely mid-parse");
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRender = render;
+    render = function() { window.__renderCalls = (window.__renderCalls||0)+1; return __origRender(); };
+  `;
+  d.body.appendChild(s);
+  w.__renderCalls = 0;
+
+  w.deleteFilterNodeWithUndo(newId); // the person closes it before it's done
+  assert(!T.state.nodes[newId], "the node is gone right away");
+
+  await donePromise; // let the rest of the (now-orphaned) parse run to completion
+  assert(node.entries.length === midCount,
+    "no further entries were appended to the orphaned node after deletion — got " + node.entries.length + ", expected " + midCount);
+  assert(node.entries.every(e => !T.entryIndex[e.id]), "every one of the node's own entries is absent from entryIndex once deleted (none leaked back in post-deletion)");
+  assert(w.__renderCalls === 0, "the orphaned load's own finally block skips its render entirely once the node is gone — got " + w.__renderCalls);
+});
+
+await withApp(async (w, d, T) => {
+  section("255b. Deleting a windowed folder-watch load mid-parseFileWindow doesn't resurrect it via the 'not ok -> full reload' fallback");
+  const N = 600;
+  const filler = "X".repeat(14000);
+  function makeBigLog(n) {
+    const lines = [];
+    for (let i = 0; i < n; i++) {
+      lines.push(`2024-01-15 10:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"message ${i} ${filler}"`);
+    }
+    return lines.join("\n") + "\n";
+  }
+  const bigText = makeBigLog(N);
+  assert(bigText.length > 8 * 1024 * 1024, "sanity: the fixture is above the windowed-load threshold");
+  const anchor = new Date(2024, 0, 15, 10, 0, 0, 0).getTime();
+  const tsAt = i => anchor + i * 1000;
+
+  let getFileCalls = 0;
+  function fakeFileHandle(text) {
+    return {
+      async getFile() {
+        getFileCalls++;
+        return {
+          size: text.length,
+          slice(start, end) {
+            const e = end === undefined ? text.length : end;
+            const sliced = text.slice(start, e);
+            return { text: async () => sliced };
+          },
+        };
+      },
+    };
+  }
+
+  const folder = { id: "fm-w-folder-255", name: "w255", files: [] };
+  const from = tsAt(250), to = tsAt(259);
+  const rec = { name: "big.log", relPath: "big.log", nodeId: null, handle: fakeFileHandle(bigText), _range: { first: tsAt(0), last: tsAt(N - 1) } };
+  folder.files.push(rec);
+
+  const donePromise = w.loadFolderFileWindowed(folder, rec, from, to);
+  // Node creation happens after the handle's own (async) getFile() resolves
+  // — wait for it to land in the tree, same "before" diff idiom Group 49
+  // uses, before deleting it mid-window-read.
+  await waitFor(() => T.state.rootIds.length > 0);
+  const nodeId = T.state.rootIds[0];
+
+  w.deleteFilterNodeWithUndo(nodeId);
+  assert(!T.state.nodes[nodeId], "the node is gone right away");
+
+  await donePromise;
+  assert(!T.state.nodes[nodeId], "still gone once the windowed read finishes — not resurrected");
+  assert(getFileCalls === 1, "no full-file fallback reload was triggered by the deletion (getFile() called exactly once, not a second time for loadFolderFile's own full read)");
+});
+
+/* ============================================================
+   GROUP 256 — Bug fix: #tableSpacer's declared height (and every
+   scroll-position read/write for #tableBody) is now capped and rescaled
+   under a safe, per-session feature-detected ceiling — a real,
+   empirically-confirmed browser limitation (Chromium hard-clamps at
+   exactly 33,554,428px; Firefox instead discards an oversized declaration
+   entirely, falling back to height:auto -> 0px for #tableSpacer, since
+   its only content is absolutely-positioned #tableRows, which doesn't
+   count toward auto-sizing) that a large enough merge's old, uncapped
+   `entries.length * ROW_HEIGHT` math could exceed. jsdom has no real
+   layout engine, so detectMaxTableScrollPx's own probe never actually
+   clamps there — T.forceTableScrollCap pins the cap directly for a
+   deterministic, fast-in-jsdom test.
+   ============================================================ */
+group(256);
+await withApp(async (w, d, T) => {
+  section("256a. computeTableSpacerContentHeight caps #tableSpacer's height and tracks a scale factor once the true content exceeds the detected safe ceiling");
+  T.forceTableScrollCap(1000000);
+  const N = 50000; // 50,000 * 28 = 1,400,000 > the forced 1,000,000 cap
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const spacerHeight = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+  assert(spacerHeight <= 1000000 + 22, "the spacer height is capped at the forced ceiling — got " + spacerHeight);
+  // Range-based (viewport-aware), not a raw content-height ratio — see 256f.
+  // The physical range is (cap + TABLE_SPACER_PAD) - viewportH, matching the
+  // REAL declared/rendered spacer height (every call site sets it to
+  // computeTableSpacerContentHeight(...) + TABLE_SPACER_PAD, never the bare
+  // cap) — see 256i for the regression this specifically guards against.
+  const viewportH = d.querySelector("#tableBody").clientHeight;
+  const expectedScale = (1000000 + T.TABLE_SPACER_PAD - viewportH) / (N * T.ROW_HEIGHT - viewportH);
+  assert(Math.abs(T.tableScrollHeightScale - expectedScale) < 1e-9, "tableScrollHeightScale reflects the true/capped range ratio — got " + T.tableScrollHeightScale);
+});
+
+await withApp(async (w, d, T) => {
+  section("256b. renderVisibleRows resolves the correct row range from a physical scrollTop partway through the compressed range");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const physicalTarget = 500000;
+  tableBody.scrollTop = physicalTarget;
+  w.renderVisibleRows();
+
+  const logicalScrollTop = physicalTarget / T.tableScrollHeightScale;
+  const expectedStartIdx = Math.max(0, Math.floor(logicalScrollTop / T.ROW_HEIGHT) - T.BUFFER_ROWS);
+  const expectedEntry = fa.entries[expectedStartIdx];
+  assert(d.querySelector('#tableRows [data-entry-id="' + expectedEntry.id + '"]'),
+    "the row range resolved from the compressed physicalToLogicalScrollPx round trip matches the expected logical row (index " + expectedStartIdx + ")");
+
+  // tableRows' own physical `top` should equal the logical start offset
+  // converted back through the same scale (logicalToPhysicalScrollPx).
+  const expectedPhysicalTop = (expectedStartIdx * T.ROW_HEIGHT) * T.tableScrollHeightScale;
+  const actualTop = parseFloat(d.querySelector("#tableRows").style.top);
+  assert(Math.abs(actualTop - expectedPhysicalTop) < 1, "tableRows' physical top offset matches logicalToPhysicalScrollPx(start*ROW_HEIGHT) — got " + actualTop + ", expected ~" + expectedPhysicalTop);
+});
+
+await withApp(async (w, d, T) => {
+  section("256c. scrollToIndex scrolling to a deep index still reveals the right entry under compression");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const deepIndex = 40000;
+  w.scrollToIndex(deepIndex, { center: true });
+  const targetEntry = fa.entries[deepIndex];
+  assert(d.querySelector('#tableRows [data-entry-id="' + targetEntry.id + '"]'),
+    "scrollToIndex(40000, {center:true}) renders the target entry despite the compressed physical scroll range");
+});
+
+await withApp(async (w, d, T) => {
+  section("256d. setTableScroll(tableBody.scrollHeight) — the tail-follow 'scroll to true bottom' idiom — still reaches the true physical max unaffected by compression");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  // jsdom has no real layout engine, so scrollHeight isn't naturally
+  // non-zero — stub it to what a real browser would report once
+  // #tableSpacer is capped at the forced 1,000,000px ceiling (same idiom
+  // other groups already use for this).
+  Object.defineProperty(tableBody, "scrollHeight", { value: 1000000 + 22, configurable: true });
+  w.setTableScroll(tableBody.scrollHeight);
+  assert(tableBody.scrollTop === tableBody.scrollHeight, "scrollTop reaches the DOM's own (capped) scrollHeight exactly — no double-compression");
+
+  const lastEntry = fa.entries[N - 1];
+  w.renderVisibleRows();
+  assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the last real entry is reachable at the physical max");
+});
+
+await withApp(async (w, d, T) => {
+  section("256e. detectMaxTableScrollPx is a cached, self-consistent probe");
+  T.resetTableScrollCap();
+  const first = T.detectMaxTableScrollPx();
+  assert(typeof first === "number" && first > 0, "returns a plausible positive number — got " + first);
+  const second = T.detectMaxTableScrollPx();
+  assert(second === first, "caches on a second call rather than re-probing");
+});
+
+await withApp(async (w, d, T) => {
+  section("256f. computeTableSpacerContentHeight's range-based scale (accounts for viewport height) maps the true native scrollTop max exactly onto the true logical bottom — the old content-ratio-only scale (cap/contentPx) left this short by clientHeight*(contentPx/cap - 1) px, meaning End never actually revealed the last rows even once the native scrollbar was fully at its ceiling (person-reported follow-up)");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const viewportH = tableBody.clientHeight;
+  const contentPx = N * T.ROW_HEIGHT;
+  const cap = 1000000;
+  // The native scrollTop range is scrollHeight - clientHeight, and the REAL
+  // declared/rendered spacer height is cap + TABLE_SPACER_PAD (every call
+  // site adds it) — see 256i for the regression this line itself guards.
+  const nativeMaxScrollTop = (cap + T.TABLE_SPACER_PAD) - viewportH;
+
+  const logicalAtNativeMax = nativeMaxScrollTop / T.tableScrollHeightScale;
+  const trueLogicalMax = contentPx - viewportH;
+  assert(Math.abs(logicalAtNativeMax - trueLogicalMax) < 1e-6, "the native scrollTop max converts to the true logical bottom under the viewport-aware scale — got " + logicalAtNativeMax + ", expected " + trueLogicalMax);
+
+  // Sanity check: the old (unfixed) content-ratio-only scale would have
+  // left a real, multi-row gap here — confirms this is a non-trivial fix.
+  const oldScale = cap / contentPx;
+  const oldLogicalAtNativeMax = nativeMaxScrollTop / oldScale;
+  assert(trueLogicalMax - oldLogicalAtNativeMax > T.ROW_HEIGHT, "the old content-ratio scale would have undershot the true bottom by more than a row — got a gap of " + (trueLogicalMax - oldLogicalAtNativeMax));
+});
+
+await withApp(async (w, d, T) => {
+  section("256g. renderVisibleRows() bottom-anchors #tableRows at the tail so its TRUE (uncompressed) rendered box never overhangs #tableSpacer's own capped height — person-reported follow-up: End landed short of the true last row with blank space below it in Firefox, because the old top-anchored math (start offset back by BUFFER_ROWS) could push tableRows' real bottom edge past the capped spacer, inflating the browser's own real scrollHeight beyond what computeTableSpacerContentHeight assumed");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const viewportH = tableBody.clientHeight;
+  const cap = 1000000;
+  tableBody.scrollTop = cap - viewportH; // the true native scrollTop max
+  w.renderVisibleRows();
+
+  const physicalTop = parseFloat(d.querySelector("#tableRows").style.top);
+  const renderedCount = d.querySelectorAll('#tableRows [data-entry-id]').length;
+  const trueRenderedHeight = renderedCount * T.ROW_HEIGHT + 22;
+  assert(physicalTop + trueRenderedHeight <= cap + 22 + 1, "tableRows' true (uncompressed) rendered box stays within #tableSpacer's own capped declared height — top " + physicalTop + " + height " + trueRenderedHeight + " should be <= " + (cap + 22));
+
+  const lastEntry = fa.entries[N - 1];
+  assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the true last entry is still rendered at the native scrollTop max — no blank space where it should be");
+});
+
+await withApp(async (w, d, T) => {
+  section("256h. renderVisibleRows() degrades to a sane, non-empty last-page render when scrollTop is set beyond the assumed physical max (e.g. a real browser's scrollHeight momentarily inflated past what computeTableSpacerContentHeight assumed) — defensive upper clamp on start/centerIdx, which previously had none");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const viewportH = tableBody.clientHeight;
+  const cap = 1000000;
+  // Deliberately past the assumed physical max (cap - viewportH) — simulates
+  // a real scrollTop the browser reports beyond what our own math expects.
+  tableBody.scrollTop = cap - viewportH + 50000;
+  w.renderVisibleRows();
+
+  const renderedCount = d.querySelectorAll('#tableRows [data-entry-id]').length;
+  assert(renderedCount > 0, "the render window is non-empty even for an out-of-assumed-range scrollTop — got " + renderedCount + " rows");
+  const lastEntry = fa.entries[N - 1];
+  assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the true last entry is still reachable — the render clamps to a sane last page instead of overshooting past total");
+});
+
+await withApp(async (w, d, T) => {
+  section("256i. computeTableSpacerContentHeight's physical range accounts for TABLE_SPACER_PAD, not just cap — person-reported follow-up: real Firefox telemetry showed the render collapsing to a single row exactly at/near the true native scrollTop max, because the old physicalRange (cap - clientHeight) was 22px SHORT of the real native range (tableSpacer.style.height is always cap + TABLE_SPACER_PAD, never the bare cap), pushing the converted logical position just past total and tripping the 256h defensive clamp prematurely");
+  T.forceTableScrollCap(1000000);
+  const N = 50000;
+  const fa = await w.addFile("a.log", makeLog(0, N));
+  T.state.activeId = fa.id;
+  w.render();
+
+  const tableBody = d.querySelector("#tableBody");
+  const viewportH = tableBody.clientHeight;
+  const cap = 1000000;
+  // Same idiom as 256d/256g: stub scrollHeight to what a real browser
+  // reports once #tableSpacer is capped — cap + TABLE_SPACER_PAD, never the
+  // bare cap. Scroll to the TRUE native max derived from that real value.
+  Object.defineProperty(tableBody, "scrollHeight", { value: cap + T.TABLE_SPACER_PAD, configurable: true });
+  tableBody.scrollTop = tableBody.scrollHeight - viewportH;
+  w.renderVisibleRows();
+
+  const maxVisible = Math.ceil(viewportH / T.ROW_HEIGHT) + T.BUFFER_ROWS * 2;
+  const renderedCount = d.querySelectorAll('#tableRows [data-entry-id]').length;
+  assert(renderedCount >= maxVisible - T.BUFFER_ROWS, "the render at the TRUE native scrollTop max is a healthy last page, not collapsed to a handful of rows by a premature defensive clamp — got " + renderedCount + " rows, expected at least " + (maxVisible - T.BUFFER_ROWS));
+  const lastEntry = fa.entries[N - 1];
+  assert(d.querySelector('#tableRows [data-entry-id="' + lastEntry.id + '"]'), "the true last entry is rendered at the true native scrollTop max");
+});
+
+/* ============================================================
+   GROUP 257 — Part B: the create-first merge's single continuous,
+   byte-weighted combined progress bar (updateMergeLoadFraction,
+   MERGE_STEP_BAR_FRACTION) — replaces the retired (n+1)-segment design
+   entirely (see Groups 244/253's rewrites).
+   ============================================================ */
+group(257);
+await withApp(async (w, d, T) => {
+  section("257a. updateMergeLoadFraction weights sources by their real size, not a plain average");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  fa.loadFraction = 0.5; // 10x weight, half done
+  fb.loadFraction = 0.5; // 1x weight, half done — same fraction as fa, so weighting shouldn't matter here...
+  const merged = {
+    id: "merge-test-257a", type: "file", name: "m.log", parentId: null, children: [], entries: [],
+    merged: true, cacheKey: "k257a", formatId: fa.formatId, sources: [],
+    loadSources: [{ id: fa.id, weight: 10 }, { id: fb.id, weight: 1 }],
+  };
+  T.state.nodes[merged.id] = merged;
+  T.state.rootIds.push(merged.id);
+  // Unequal PROGRESS this time: the heavier (10x) source is much further
+  // along than the lighter one — a plain average would read (0.9+0.1)/2 =
+  // 0.5; the correct byte-weighted figure is dominated by the 10x source.
+  fa.loadFraction = 0.9;
+  fb.loadFraction = 0.1;
+  w.updateMergeLoadFraction(merged.id);
+  const expectedLoadPhase = (10 * 0.9 + 1 * 0.1) / 11; // = 0.8272...
+  const expected = expectedLoadPhase * (1 - 0.1); // MERGE_STEP_BAR_FRACTION = 0.1
+  assert(Math.abs(merged.loadFraction - expected) < 1e-9,
+    "loadFraction is the byte-weighted average, not a plain (0.9+0.1)/2=0.5 — got " + merged.loadFraction + ", expected " + expected);
+});
+
+await withApp(async (w, d, T) => {
+  section("257b. the reserved MERGE_STEP_BAR_FRACTION tail: fully-loaded sources but the merge step not yet run stays below 100%");
+  const fa = await w.addFile("a.log", makeLog(0, 2), () => {});
+  const fb = await w.addFile("b.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = {
+    id: "merge-test-257b", type: "file", name: "m.log", parentId: null, children: [], entries: [],
+    merged: true, cacheKey: "k257b", formatId: fa.formatId, sources: [],
+    loadSources: [{ id: fa.id, weight: 1 }, { id: fb.id, weight: 1 }],
+  };
+  T.state.nodes[merged.id] = merged;
+  T.state.rootIds.push(merged.id);
+  fa.loadFraction = 1;
+  fb.loadFraction = 1;
+  w.updateMergeLoadFraction(merged.id);
+  assert(merged.loadFraction < 1, "the bar does NOT read 100% while sources are done but the merge-copy step hasn't run yet — got " + merged.loadFraction);
+  assert(Math.abs(merged.loadFraction - 0.9) < 1e-9, "...specifically stops at 1 - MERGE_STEP_BAR_FRACTION (0.9) — got " + merged.loadFraction);
+});
+
+await withApp(async (w, d, T) => {
+  section("257c. a disjoint (quick-merge) real merge still jumps the WHOLE bar to 100% in one step, and no segmented markup exists anywhere");
+  const fa = await w.addFile("a.log", makeLog(0, 5), () => {}); // disjoint time ranges
+  const fb = await w.addFile("b.log", makeLog(1000, 5, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fa.id, fb.id]);
+  assert(merged.entries.length === 10, "sanity: the quick/disjoint merge actually ran");
+  assert(typeof merged.loadFraction !== "number", "loadFraction is cleared once finished — was set to 1 (the WHOLE bar), never a partial fraction, for the disjoint fast path");
+  T.state.activeId = merged.id;
+  w.render();
+  const row = d.querySelector('.tree-row[data-node-id="' + merged.id + '"]');
+  assert(!row.querySelector(".tree-load-track"), "no lingering progress track once done");
+  assert(d.querySelectorAll(".tree-load-fill-segment").length === 0, "no segmented-bar markup exists anywhere in the DOM — the retired design is fully gone");
+});
+
+/* ============================================================
+   GROUP 258 — Bug fix: a rapid burst of #tableBody/#highlightBody scroll
+   events (native keyboard End/Home, momentum scrolling, ...) used to
+   trigger one full renderVisibleRows()/renderHighlightVisibleRows() DOM
+   rebuild per animation frame via requestAnimationFrame batching alone —
+   cheap for an ordinary file, but expensive enough on a huge compressed
+   merge to visibly compete with the browser's own native scroll-animation
+   scheduling for main-thread time (person-reported, 2026-09-21, confirmed
+   via real Firefox telemetry: holding "End" on an 822,697-entry merge
+   repeatedly stalled the native scrollTop >150,000 physical px short of
+   the true max, non-deterministically between attempts). Now throttled to
+   at most one render per SCROLL_RENDER_THROTTLE_MS (100ms) during a rapid
+   burst via makeThrottledScrollRenderer, while a single, isolated scroll
+   event still renders on its very next frame — same as before.
+   ============================================================ */
+group(258);
+await withApp(async (w, d, T) => {
+  section("258a. A single, isolated scroll event still renders on its very next animation frame — no regression for ordinary (non-burst) scrolling");
+  const f = await w.addFile("a.log", makeLog(0, 200), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRVR = renderVisibleRows;
+    renderVisibleRows = function() { window.__rvrCalls = (window.__rvrCalls||0)+1; return __origRVR(); };
+  `;
+  d.body.appendChild(s);
+  w.__rvrCalls = 0;
+
+  const tableBody = d.querySelector("#tableBody");
+  tableBody.scrollTop = T.ROW_HEIGHT * 5;
+  tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  assert(w.__rvrCalls === 0, "the render does NOT run synchronously inside the scroll handler — still deferred onto a frame, got " + w.__rvrCalls);
+
+  await sleep(50); // let the batched rAF actually fire, same idiom GROUP 47 uses
+  assert(w.__rvrCalls === 1, "a single scroll event still produces exactly one render on its next frame, got " + w.__rvrCalls);
+});
+
+await withApp(async (w, d, T) => {
+  section("258b. A rapid burst of scroll events collapses into far fewer renders, and the trailing catch-up render still reflects the true final scrollTop — the actual regression check for the reported bug");
+  const f = await w.addFile("a.log", makeLog(0, 2000), () => {});
+  T.state.activeId = f.id;
+  w.render();
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRVR = renderVisibleRows;
+    renderVisibleRows = function() { window.__rvrCalls = (window.__rvrCalls||0)+1; return __origRVR(); };
+  `;
+  d.body.appendChild(s);
+  w.__rvrCalls = 0;
+
+  const tableBody = d.querySelector("#tableBody");
+  // Ten rapid scroll events, all before the 100ms throttle window (or even
+  // one animation frame) has a chance to elapse — simulates the dense
+  // event stream a native keyboard-scroll animation produces.
+  const targets = [];
+  for (let i = 1; i <= 10; i++) {
+    const top = T.ROW_HEIGHT * i * 10;
+    targets.push(top);
+    tableBody.scrollTop = top;
+    tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  }
+  const lastTop = targets[targets.length - 1];
+
+  await sleep(50); // long enough for the leading-edge rAF render, short of the 100ms throttle window
+  assert(w.__rvrCalls === 1, "ten rapid-fire events still collapse onto exactly one leading-edge render, got " + w.__rvrCalls);
+
+  await sleep(150); // now past SCROLL_RENDER_THROTTLE_MS — the trailing catch-up render should have fired
+  assert(w.__rvrCalls === 2, "exactly one trailing catch-up render fires once the burst settles, got " + w.__rvrCalls + " total (nine events collapsed away, not re-rendered individually)");
+  assert(tableBody.scrollTop === lastTop, "sanity: scrollTop itself already reflects the last dispatched event (scrollTop is a plain DOM property, unaffected by the render throttle)");
+  const expectedIdx = Math.floor(lastTop / T.ROW_HEIGHT);
+  const expectedEntry = f.entries[expectedIdx];
+  assert(d.querySelector('#tableRows [data-entry-id="' + expectedEntry.id + '"]'), "the trailing catch-up render reflects the TRUE final scrollTop (the last of the ten events), not a stale intermediate one");
+});
+
+await withApp(async (w, d, T) => {
+  section("258c. Same throttling for the twin #highlightBody/renderHighlightVisibleRows listener");
+  const f = await w.addFile("a.log", makeLog(0, 200), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.applyFhView("stacked"); // Context/Full split — makes #highlightBody the visible Full-view scroller
+
+  const s = d.createElement("script");
+  s.textContent = `
+    const __origRHVR = renderHighlightVisibleRows;
+    renderHighlightVisibleRows = function() { window.__rhvrCalls = (window.__rhvrCalls||0)+1; return __origRHVR(); };
+  `;
+  d.body.appendChild(s);
+  w.__rhvrCalls = 0;
+
+  const highlightBody = d.querySelector("#highlightBody");
+  for (let i = 1; i <= 5; i++) {
+    highlightBody.scrollTop = T.ROW_HEIGHT * i * 5;
+    highlightBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+  }
+  await sleep(50);
+  assert(w.__rhvrCalls === 1, "a rapid burst on #highlightBody also collapses onto one leading-edge render, got " + w.__rhvrCalls);
+  await sleep(150);
+  assert(w.__rhvrCalls === 2, "and one trailing catch-up render once it settles, got " + w.__rhvrCalls);
+});
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
@@ -30465,4 +31944,349 @@ process.exitCode = failed ? 1 : 0;
       (the file having vanished since `path_exists` last checked) surfaces
       a toast naming the path rather than throwing or leaving a stuck
       placeholder.
+   Groups 232-239 — this session, person-requested: FEATURE_BACKLOG.md #81
+      (multi-pattern parsing) implemented as a declarative "meta" LogFormat
+      mode plus the "Sources" grouping/coloring feature for any merged
+      file. 232 covers splitTextByMetaFormat's line classification and
+      loadMetaFormatText's end-to-end split -> per-target addFile ->
+      auto-merge, against the real reference sample (a log4net-style app
+      grammar interleaved with RFC 5424 syslog, chat-uploaded this
+      session) — every continuation-line shape, blank-line dropping, and
+      correct per-source entry/format-id counts. 233 isolates the specific
+      risk the auto-merge introduces: mergeFiles' disjoint-time-range fast
+      path trusts each source's own on-disk order, so loadMetaFormatText's
+      per-vnode pre-sort is what keeps a syslog block's own out-of-order
+      lines (real sample lines 22-23) from producing a non-chronological
+      merged file. 234 covers the new Format Manager "Meta" mode UI (field
+      visibility, ordered target-format picker, the >=2-targets save
+      guard) and removeLogFormat's new guard against deleting a format
+      still used as a meta-format's target. 235 covers the two degenerate
+      split outcomes (only one grammar present; neither). 236 covers
+      mergeFiles' additive node.sources/entry.sourceId stamping for BOTH
+      merge origins — the pre-existing manual multi-file merge (disjoint
+      and overlapping paths) and the new meta-format auto-merge — plus
+      (236c, REWRITTEN in the 240-248 follow-up session below — see that
+      note) the per-grammar vnodes staying real, tagged, live nodes rather
+      than being deleted. 237 covers the "Sources" tree row (REWRITTEN in
+      the same follow-up session — see below) and 238 covers undo/redo of
+      a merge's Sources breakdown/metaFormatId. 239 covers two supporting
+      pieces: the SSS date-token widening from a hardcoded 3-digit
+      fraction to any digit count, with parseTimestampGeneric normalizing
+      by the captured fraction's own length rather than treating it as a
+      literal millisecond value (the bug that would have made format B's
+      6-digit syslog timestamps overflow ~11 minutes into the wrong
+      second); and the 3 concrete formats (app log, syslog, and the
+      meta-format combining them) loadFormatConfig seeds for this
+      reference case — non-builtin, idempotent, with deliberately no
+      FormatRule (the person adds the filename association by hand, per
+      their own request that session).
+   Groups 240-248 — same-project follow-up session, person-requested
+      correction to how 232-239 shipped "Sources": it introduced an extra
+      tree nesting level and, for the meta-format case, deleted the
+      per-grammar vnodes after merging. This session reworks both: (1)
+      "Sources" is now a real, locked filterType:"sources" node
+      (createMergeShell), sibling-ordered with Bookmarks/Notes/Selection N
+      via a new specialChildRank/insertSpecialChild helper (replacing each
+      of their own ad hoc unshift/splice calls) so the tree always reads
+      Sources, Bookmarks, Notes, Selection 1, Selection 2, ...; (2) a new
+      "Show Sources" setting (default true, philogg-show-sources); (3)
+      every merge-into path (meta-format, drag-drop "Merge" confirm,
+      folder-watch full/window merge) now creates the merge's empty shell
+      FIRST and loads sources into it nested/tagged rather than loading to
+      completion first — and per-grammar/per-source files are never
+      deleted, staying real, independently clickable nodes reachable under
+      Sources (mergeOwnerId/mergeSourceHidden tags, mirroring the existing
+      zipId/folderId "real root node, rendered nested, skipped from the
+      plain top-level walk" pattern — except a manually-bulk-merged
+      already-loaded source stays ALSO visible at its original top-level
+      spot, mergeOwnerId without mergeSourceHidden). 240 covers the
+      ordering helper directly, including a merge's own Sources still
+      sorting first when a Bookmark/Selection is added to it afterward.
+      241 covers Sources' real-node mechanics: getEntries passthrough,
+      exclusion from the session-cache filter-tree carrier (mirroring
+      Bookmarks/Notes), and its locked-node "Copy only" context menu. 242
+      covers the Show Sources setting itself. 243 covers create-first
+      loading via loadFileDescriptors end to end. 244 covers the
+      (n+1)-segment combined progress bar shown on the merge's own row
+      while Show Sources is off. 245 covers a meta-format's per-grammar
+      vnodes staying independently usable (superseding 232b/236c's old
+      "vnodes are gone" assertions, rewritten in place rather than left as
+      dead groups). 246 covers folder-watch merges (full window) using the
+      same create-first shell, including the folder's own listing not
+      double-rendering a hidden source (a gap the initial design of this
+      rework session's own plan flagged and fixed before it shipped). 247
+      is a regression-guard for the mergeFiles/createMergeShell split: the
+      pre-existing manual "Merge N files" bulk action still leaves
+      originals untouched at top level. 248 covers deleteNode's new
+      cleanup of a merge's own `sources` array when one of its sources is
+      deleted independently.
+   Groups 249-255 — same-project follow-up session, person-requested
+      refinements to 240-248's Sources rework plus three bugs found while
+      using it. Refinements: (1) a nested Sources row (opts.mergeSourceColor)
+      no longer has its own ✕/middle-click delete — only deletable together
+      with its owning merge — while a bulk-merge-visible source's own
+      top-level row is unaffected (renderNode's delete-button/auxclick
+      guards). (2) deleteNode now cascades: a merge's mergeSourceHidden
+      sources are deleted along with it (they had no independent
+      existence); a bulk-merge-visible (mergeOwnerId-only) source survives
+      at top level, un-orphaned (mergeOwnerId cleared). (3) undo of a
+      deleted merge now restores its cascade-deleted hidden sources too —
+      snapshotSubtree/restoreSubtree gained hiddenSourceSnapshots/
+      hiddenSourceIds (root-level siblings aren't reachable via the normal
+      children recursion) and undo()'s "deleteFile" branch splices each
+      restored id back into state.rootIds; this also needed
+      snapshotSubtree/restoreSubtree to start carrying mergeOwnerId/
+      mergeSourceHidden at all (never needed before, since a hidden source
+      was never independently snapshotted). (4) fillMergedEntries now
+      collapses the Sources node once a merge completes (both the
+      create-first and old bulk-merge paths funnel through it) — expanded
+      only while still loading. Bugs: (1) the (n+1)-segment progress bar
+      on a create-first merge's own row now always shows while loading,
+      not just when Show Sources is off (person-reported: with Sources on/
+      default, a two-file 100MB drag-drop merge showed NO progress on the
+      merge row at all until each source finished). (2) the log view's
+      scrollbar total (#tableSpacer's height) now tracks an actively-
+      loading node's live entry count on every load tick, when that node
+      IS the active view (new updateLiveGrowingTotal, called from
+      scheduleLoadRender) — previously it only reflected the last full
+      renderTable()'s count, which a load tick never triggers, so a large
+      actively-growing merge (782k entries across two 100MB files) showed
+      a far smaller, constantly "catching up" scrollbar/End-key target
+      until some unrelated full render happened to fire; scoped to the
+      common unfiltered case (currentViewEntries === node.entries by
+      reference) to stay O(1) per tick, not a renderTable() call. (3)
+      deleting a file mid-load no longer leaks entries/entryIndex ids into
+      the now-orphaned node for the rest of its read/parse, or fires a
+      redundant render — loadOneFileIntoTree, addFile (same unconditional-
+      flushLoadRender bug found in a second call site while fixing the
+      first), parseLogTextAsync's plain-loop fallback, and parseFileWindow
+      (plus its own loadFolderFileWindowed caller, which used to
+      incorrectly fall back to a full reload on a false `ok` — now
+      distinguishes "unsafe window" from "deleted mid-load") all gained an
+      existence guard, mirroring the one fillMergedEntries already had for
+      the identical race. 249 covers the delete-button/middle-click
+      gating. 250 covers deleteNode's cascade (both source kinds). 251
+      covers the undo round trip, including the mergeOwnerId/
+      mergeSourceHidden tags surviving it. 252 covers the collapse-on-
+      completion for both merge paths. 253 covers the segmented bar
+      showing with Show Sources on (a synthetic mid-load merge shell, to
+      avoid the timing flakiness Group 244 already documents for a real
+      near-instant fixture — REWRITTEN in the immediate follow-up session
+      below against the retired design's replacement). 254 covers the live
+      scrollbar total, including it correctly staying inert for a
+      background (non-active) load and for a level-filter-narrowed view.
+      255 covers the mid-load-delete guards, both for a plain in-memory
+      parse (addFile) and a windowed folder-watch load (parseFileWindow).
+   Groups 256-257 — same-project immediate follow-up session, person-
+      reported: the 249-255 session's own scrollbar fix (updateLiveGrowingTotal)
+      only addressed staleness DURING a load tick — the person's repro was
+      AFTER a merge fully finished loading (822,697 entries, Firefox), which
+      survived switching files and back. Root-caused (after several ruled-
+      out hypotheses — a generic browser-height-limit guess, PhiLogg's own
+      UI-scale zoom, device pixel ratio, inflated row height from Multiline/
+      Wrap/Notes, all directly tested and refuted) to a genuine, pre-existing
+      (reproduced on `main`, unrelated to any session's own changes) browser
+      limitation: #tableSpacer's declared height had no cap at all, and
+      every major engine has a hard practical ceiling on a single element's
+      CSS height — Chromium clamps to exactly 33,554,428px (confirmed this
+      session with a real Playwright/Chromium harness built for the
+      investigation); Firefox instead discards an oversized declaration
+      entirely and falls back to height:auto, which resolves to 0 for
+      #tableSpacer since its only content (#tableRows) is absolutely
+      positioned and doesn't count toward auto-sizing — matching the
+      person's own getComputedStyle "0px" reading exactly, and explaining
+      every symptom once #tableSpacer stops contributing to #tableBody's
+      scrollable region at all (no overflow:hidden between them, so
+      #tableRows' own drifting `top` offset becomes the only thing driving
+      scrollHeight). Fixed with detectMaxTableScrollPx (a lazy, cached,
+      per-session binary-search feature-detection of the REAL running
+      engine's own ceiling, person-requested over a fixed worst-case
+      constant — the app's primary target, Tauri on Windows, embeds
+      WebView2/Chromium with ~2x Firefox's own headroom, so hardcoding to
+      Firefox's tighter limit would needlessly halve scroll resolution
+      there) plus a tableScrollHeightScale conversion threaded through
+      every #tableBody scroll-position read/write (renderVisibleRows,
+      scrollToIndex, captureViewAnchor, minimapRenderedSpan) — real
+      on-screen row geometry is never touched, only the position within
+      the (possibly compressed) physical spacer. Separately, the person's
+      progress-bar clarification (a single continuous bar, byte-weighted
+      per source, with a small reserved tail for the merge-copy step only
+      — not the previous 1/(n+1) equal-segment split) replaced the whole
+      segmented-bar design (node.loadSegmentSourceIds/mergeSegmentFractions/
+      updateMergeSegmentedProgress/.tree-load-fill-segment) with
+      node.loadSources ({id,weight} pairs) + updateMergeLoadFraction,
+      reusing the exact same plain .tree-load-fill markup an ordinary
+      file's own bar already uses — net simplification, no new CSS/markup.
+      256 covers the scroll-cap/rescale mechanism (jsdom has no real layout
+      engine, so a T.forceTableScrollCap test hook pins a small,
+      deterministic ceiling rather than relying on jsdom to ever actually
+      clamp): capping/scale tracking, renderVisibleRows' round trip,
+      scrollToIndex under compression, the tail-follow "scroll to
+      scrollHeight" idiom staying uncompressed, and detectMaxTableScrollPx's
+      own caching. 257 covers the byte-weighted combined bar: real
+      weighting (not a plain average), the reserved tail never reading
+      100% before the merge step runs, and a disjoint/quick real merge
+      still jumping the whole bar to 100% in one step with no segmented
+      markup left anywhere. Groups 244 and 253 (this session's own
+      immediate predecessor) were rewritten in place against the new
+      node.loadSources/plain-bar design — see each group's own updated
+      banner.
+   Group 256 (256f-h added) — same-project immediate follow-up, person-
+      reported again after retesting the 256-257 fix in Firefox: the
+      scrollbar now looked proportional, but holding/repeatedly pressing
+      End needed several tries to reach the true last row, and the final
+      row kept drifting a few px rather than settling. Root-caused to a
+      real math defect in computeTableSpacerContentHeight: it derived
+      tableScrollHeightScale as a plain content-height ratio (cap /
+      contentPx) and applied it as a linear-from-origin scale to
+      #tableBody's native scrollTop — but the native scrollable RANGE on
+      each side is scrollHeight - clientHeight, not the raw content
+      height, so a content-ratio scale leaves the logical position at the
+      true native scrollTop max short of the true logical bottom by
+      clientHeight * (contentPx/cap - 1) px — several row-heights under
+      real compression, meaning End could reach its native physical
+      ceiling while the render still never showed the actual last rows.
+      Fixed by deriving the scale from the two scrollable RANGES instead
+      ((cap - clientHeight) / (contentPx - clientHeight)); no call site
+      or helper signature changed, only how tableScrollHeightScale itself
+      is computed. 256f adds the regression check: converting the true
+      native scrollTop max through the corrected scale now lands exactly
+      on the true logical bottom, and a sanity assertion confirms the old
+      content-ratio scale really would have undershot it by more than a
+      row. 256a's expectedScale was updated to the same range-based
+      formula (the suite globally stubs clientHeight to 400 via
+      Element.prototype, so this wasn't a no-op).
+   Group 256 (256g-h added) — same-project immediate follow-up, person-
+      reported yet again after retesting: End now landed close to but not
+      exactly at the true end (blank space below the last row, ~5 entries
+      unreachable), and Home afterward needed several presses to actually
+      reach the top, each landing further (Chrome unaffected). Root-caused
+      to a second, independent defect in renderVisibleRows()'s own render
+      geometry, not the scale formula: #tableRows' own rendered row heights
+      are always TRUE/uncompressed (only its `top` offset is compressed),
+      and its BUFFER_ROWS lookback (offsetting `start` back by 10 rows so a
+      small scroll doesn't need a full re-render) leaves the rendered block
+      taller than the viewport right at the tail — while `end` was always
+      clamped to `total`, the block's top was still positioned via a plain
+      top-anchored logicalToPhysicalScrollPx(start*ROW_HEIGHT), which lands
+      close enough to the physical cap at the tail that `top + true
+      rendered height` provably exceeds #tableSpacer's own capped declared
+      height there. #tableSpacer/#tableRows are deliberately
+      overflow:visible (so a long message's horizontal overflow bleeds up
+      to #tableBody's own scrollbar — ruling out overflow:hidden as a fix,
+      it would also clip that), so nothing stops the overhang from
+      inflating the browser's own real scrollHeight beyond what
+      computeTableSpacerContentHeight assumed — matching every symptom: a
+      scrollTop genuinely past the assumed physical max converts to a
+      logical `start` past `total` with (previously) no upper clamp to
+      catch it (blank space), and each native Home/End keypress recomputes
+      against a scrollHeight that itself shifts as #tableRows repositions
+      (the multi-press convergence). Fixed with two changes to
+      renderVisibleRows(), both branches: (1) bottom-anchor `top` instead
+      of top-anchoring it whenever `end === total` and compression is
+      active — `Math.min(naiveTop, cap - trueRenderedLogicalHeight)`,
+      verified algebraically monotonic (never a visible snap/jump) across
+      the whole tail region; (2) a defensive upper clamp on `start`/
+      `centerIdx` (previously only `end` was clamped against `total`), so
+      any residual out-of-range scrollTop still degrades to a sane last
+      page instead of an empty render. 256g asserts the rendered block's
+      true height never overhangs the capped spacer at the native scrollTop
+      max, and that the true last entry is still rendered there (no blank
+      space); 256h asserts a scrollTop deliberately set past the assumed
+      physical max still renders a non-empty last page reaching the true
+      last entry. Real Firefox isn't available in this sandbox (same
+      limitation as the prior two rounds) — final on-screen confirmation is
+      left to the person's own retest.
+   Group 256 (256i added) — same-project immediate follow-up. This round
+      broke the "no real Firefox in this sandbox" impasse: the person
+      instrumented #tableBody's own scroll listener with a small pasted
+      console script (window.__dbg, logging scrollTop/scrollHeight/
+      clientHeight/spacerHeight/tableRows' own top+rect-height/scale on
+      every scroll tick) and captured a real End/Home/End sequence,
+      confirming (a) scrollHeight stayed rock-stable throughout (the
+      256g-h tail-overhang fix genuinely holds — no more scrollHeight
+      drift), but (b) End still didn't cleanly reach a stable end and Home
+      still needed several presses. Working the captured numbers by hand
+      (scrollHeight=9054710, clientHeight=242) found a second, independent,
+      smaller defect: the true native scrollTop max is scrollHeight -
+      clientHeight = 9054468, but computeTableSpacerContentHeight's
+      physicalRange used `cap - clientHeight` = 9054446 — 22px short,
+      because every call site sets tableSpacer.style.height to
+      `computeTableSpacerContentHeight(...) + 22` (TABLE_SPACER_PAD, now a
+      named constant), never the bare cap, and the scale computation never
+      accounted for that same pad. A 22px physical shortfall divides down
+      to a real, if modest (single-digit-row), logical undershoot at the
+      true native max. New constant `TABLE_SPACER_PAD = 22` (extracted from
+      the previously-inlined literal at all `tableSpacer.style.height`
+      call sites, referenced from computeTableSpacerContentHeight); the
+      renderVisibleRows() tail-anchor bounds added last round didn't need
+      touching (`cap - trueRenderedHeight` already implicitly cancels the
+      same pad against a rendered box that also carries it once). 256a/256f
+      updated to the pad-aware formula (a real behavior change — the suite
+      globally stubs clientHeight to 400, so 22px isn't negligible there
+      either); new 256i reproduces the exact class of bug directly: scrolls
+      to the TRUE native max (derived from a stubbed real scrollHeight,
+      cap + TABLE_SPACER_PAD, same idiom as 256d/256g) and asserts a
+      healthy last-page render — this fails without the fix (confirmed:
+      renders only 17 of an expected 25 rows) and passes with it. The
+      captured telemetry's still-unexplained residual (rowsRectHeight
+      collapsing from 834px to 50px — a single rendered row — exactly at
+      the native max, followed by a large backward scrollTop jump) is NOT
+      fully accounted for by this fix on its own arithmetic (worked by
+      hand against the real total≈822,731 the telemetry implies, the
+      naive/buggy math already predicted ~17-21 rows there, not 1) — flagged
+      for a follow-up round with more targeted instrumentation (logging
+      currentViewEntries.length and the real rendered row count directly
+      from inside renderVisibleRows, plus checking whether needsRowOffsets()
+      is active for that person's session) rather than claimed fixed.
+   Group 258 — same-project immediate follow-up, same day. The requested
+      follow-up instrumentation WAS captured (person confirmed
+      needsRowOffsets() was false — the plain, non-offsets branch — ruling
+      that out) and it directly answered the open question from Group 256's
+      last entry: currentViewEntries.length stayed perfectly constant
+      (822,697) across the whole sequence — the "total fluctuates" theory
+      is dead. What the new telemetry showed instead: closing the DevTools
+      console mid-session changed #tableBody's clientHeight (242 -> 853),
+      incidentally giving two independent real "End" attempts at the same
+      853px viewport to compare — both stalled 150,000-190,000 PHYSICAL px
+      short of the true native scrollTop max (scrollHeight - clientHeight),
+      non-deterministically between the two attempts (8,898,078 vs
+      8,866,508). That magnitude rules out every scroll-math fix from the
+      last three rounds (all on the order of tens to a few hundred px) —
+      this is a different class of bug entirely. Root-caused to
+      renderVisibleRows() fully rebuilding #tableRows' DOM (innerHTML = ""
+      + up to ~51 rows' worth of bracket detection/match highlighting) on
+      EVERY single requestAnimationFrame tick of a scroll — cheap for an
+      ordinary file, but on a huge compressed merge this is enough
+      main-thread work per frame to visibly compete with (and, per the
+      telemetry, apparently truncate) Firefox's own native keyboard-scroll
+      animation, which doesn't literally "scroll until the target is
+      reached" but runs its own timed interpolation — heavy JS work on the
+      main thread during that window can make it finish well short of the
+      real target. Fixed by throttling scroll-triggered renders (both
+      #tableBody and its twin #highlightBody listener) to at most one per
+      SCROLL_RENDER_THROTTLE_MS (100ms, new makeThrottledScrollRenderer
+      helper) during a rapid burst, instead of once per animation frame —
+      freeing up most of each frame's time budget for the browser's own
+      scroll physics — while a single, isolated scroll event (mouse wheel,
+      trackpad) still renders on its very next frame, unchanged from
+      before; the render function always reads live DOM/state at call
+      time, so the trailing catch-up render at the end of a throttled
+      burst still reflects the true final scroll position with no extra
+      bookkeeping. The pre-existing module-level scrollTicking/
+      highlightScrollTicking flags were folded into the new helper's own
+      closure state (no longer separate globals). 258a proves no
+      regression for ordinary single-event scrolling (still renders on the
+      very next frame, nothing synchronous inside the handler — same
+      GROUP-47 monkey-patch-a-global-function-declaration idiom). 258b is
+      the actual regression check: ten rapid-fire scroll events collapse
+      onto exactly ONE leading-edge render (not ten), and exactly one
+      trailing catch-up render fires once the burst settles, reflecting
+      the true LAST of the ten dispatched positions, not a stale
+      intermediate one. 258c covers the #highlightBody twin identically.
+      Real Firefox still isn't available in this sandbox — whether this
+      throttling is sufficient to let the native scroll animation
+      complete is, once again, left to the person's own retest; this round
+      at least replaced two rounds of blind guessing with a fix grounded
+      in a concrete, measured magnitude from real telemetry.
    ============================================================ */

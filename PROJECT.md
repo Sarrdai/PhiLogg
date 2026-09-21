@@ -43,7 +43,10 @@ only how a line is split into those fields is configurable. See "Log format
 definitions" (`philogg.html`, right after "Log parsing") for the full
 mechanism: pattern-mode vs. regex-mode compilation, filename→format glob
 rules (Settings → Format Manager), and how a file's resolved format is
-pinned to it for the rest of its session-cache lifetime.
+pinned to it for the rest of its session-cache lifetime. A third `LogFormat`
+mode, `"meta"` (below), is the one exception to "one format, one file" — it
+never parses a line itself, it fans a file out into several ordinary,
+single-format files first.
 
 A format also carries its own **ordered level list** (`LogFormat.levels`).
 It may pick from the five names that own a theme color (`ALL_LEVELS` =
@@ -98,6 +101,126 @@ own worker and actually parse on separate cores at once — the scenario this
 was built for (large files, several loaded together). See `tests/…` GROUP
 165 for the coverage (sandboxed worker-source execution + concurrent-load
 correctness) and GROUP 68's addendum for the queued-placeholder UX change.
+
+**Multi-pattern parsing: the `"meta"` format mode** (FEATURE_BACKLOG.md #81,
+implemented this session). Some files interleave two or more independent
+grammars line-by-line (the motivating case: a log4net-style app log mixed
+with RFC 5424 syslog blocks, no single header regex covers both). A
+`mode: "meta"` `LogFormat` carries no pattern/regex/tsFormat/levels of its
+own — only an ordered `targetFormatIds` list (≥2) naming other, ordinary
+formats. `splitTextByMetaFormat(text, metaFmt)` classifies each non-blank
+line against every target's own already-compiled `isHeaderLine`, first
+match (in declared order) wins; a non-matching, non-blank line joins
+whichever target's stream most recently matched — the same continuation
+rule `parseLogTextAsync` already applies to a single format, just resolved
+per-stream before parsing starts. Blank lines are dropped during the split
+entirely, never emitted into any stream, which is provably equivalent to
+today's single-format behavior (a blank line is already a no-op in
+`parseLogTextAsync`'s own loop). `loadMetaFormatText(name, text, metaFmt)`
+creates the merge result FIRST (`createMergeShell`, see "Sources grouping"
+below), then loads each classified stream into its own real, independent
+file node nested under the merge's "Sources" (reusing `addFile`/
+`parseLogTextAsync` unmodified), sorting each stream's own `entries` by
+`ts` first (a virtual stream isn't guaranteed chronological on disk — a
+syslog block in particular — and `mergeFiles`' disjoint-time-range fast
+path trusts each source's own order, so this pre-sort is what keeps that
+fast path correct), and finally fills the merge's own entries
+(`fillMergedEntries`) once every stream is loaded. The per-grammar file
+nodes are never deleted — they stay real, independently clickable/
+filterable nodes for as long as the merge exists, reachable only nested
+under "Sources" (tagged `mergeOwnerId`/`mergeSourceHidden`, see below).
+Wired into `loadOneFileIntoTree` and `addFile`'s live-resolution branch, so
+drag-drop, the file picker, and folder-watch's on-demand open all pick this
+up automatically with no separate code path. **Not supported in this first
+version**: folder-watch
+minimap probing (`probeFolderFileRange` returns its ordinary "no range
+found" sentinel for a meta-format file rather than probing one grammar
+wrong), windowed/partial loading, and live-tailing — a meta-format file is
+always a static, fully-read snapshot. Level derivation from a numeric code
+(FEATURE_BACKLOG.md #80) is a separate, independent item — a target format
+missing a `level` group just falls through the existing generic
+missing-level default.
+
+**"Sources" grouping/coloring on any merged file — a real tree-level
+sibling of Bookmarks/Notes/Selection N, not an extra nesting level.**
+`createMergeShell` (the merge-node constructor `mergeFiles` and every
+create-first loader below share) creates one locked, real
+`{type:"filter", filterType:"sources"}` child node per merge, positioned
+via `insertSpecialChild` (a shared rank-based ordering helper —
+`specialChildRank`: Sources=0, Bookmarks=1, Notes=2, Selection N=3+its own
+creation ordinal — replacing what used to be four independent ad hoc
+`unshift`/splice calls) so a file's auto-managed rows always read
+**Sources, Bookmarks, Notes, Selection 1, Selection 2, ...** regardless of
+creation order. The Sources node's own `children` stays empty; nesting
+comes from the owning file's additive `sources: [{id, name, color, count}]`
+array (plus a matching `entry.sourceId` on every copied entry) and each
+source's real file node, rendered a second time via the ordinary
+`renderNode(src.id, depth+1, {mergeSourceColor: src})` — the exact
+"real root node, rendered nested, skipped from the plain top-level walk"
+pattern ZIP/folder-watch containers already use (`mergeOwnerId`/
+`mergeSourceHidden` tags, mirroring `zipId`/`folderId`). The one caller
+that does NOT hide its sources is the pre-existing manual "Merge N files"
+bulk action — its sources stay visible at their original top-level spot
+too (`mergeOwnerId` without `mergeSourceHidden`), rendered a second time
+nested under Sources. A nested source row has no ✕/middle-click delete of
+its own (`renderNode`'s delete-button/`auxclick` handlers gate on
+`opts.mergeSourceColor`) — only deletable together with its merge; the
+same source's own top-level row (the bulk-merge case) is unaffected. Each
+source gets its own color swatch (the existing highlight color-picker
+popup, generalized with an optional `onPick` callback so a pick can land
+on `node.sources[i].color` instead of a filter node's `highlightColor`);
+`computeHighlightMap` surfaces a colored source's entries into the same
+gutter-marker lane filter highlights already use. A **"Show Sources"
+setting** (default on, `philogg-show-sources`) is a pure display toggle —
+`renderNode` skips rendering the node when it's off; the underlying data
+is untouched. `fillMergedEntries` collapses the Sources node the moment a
+merge completes (both merge paths) — expanded only while still loading.
+
+Deleting a merge cascades correctly: `deleteNode` deletes its
+`mergeSourceHidden` sources right along with it (they have no independent
+existence), while un-orphaning (clearing `mergeOwnerId`) a bulk-merge-
+visible survivor instead of leaving it tagged toward a dead id. Undoing
+that delete restores the whole thing, hidden sources included —
+`snapshotSubtree`/`restoreSubtree` gained `hiddenSourceSnapshots`/
+`hiddenSourceIds` (root-level siblings aren't reachable via the normal
+`children` recursion) and now also carry a file node's own `mergeOwnerId`/
+`mergeSourceHidden` tags, which neither function had ever needed before.
+
+Session-only by design (no IndexedDB persistence — a session-cache
+restore of a merged file already reparses from scratch and loses this
+kind of state, same as the pre-existing "Merged-file gotcha" below) but
+threaded through `snapshotSubtree`/`restoreSubtree`'s file branch, so an
+in-session delete+undo doesn't silently drop it. Known, accepted
+limitation: entries are shared by reference across merges, so re-merging
+an already-merged file's entries overwrites `sourceId` on the same
+objects, making the earlier merge's own Sources coloring stale.
+
+**Create-first loading: the merge exists before any source is even read.**
+Every "load files straight into a merge" path (`loadMetaFormatText`'s
+per-grammar streams, `loadFileDescriptors`' drag-drop-then-"Merge" confirm,
+and the folder-watch minimap's "Merge (full)"/"Merge (window)" actions)
+calls `createMergeShell` first, then loads each source into a
+`mergeOwnerId`/`mergeSourceHidden`-tagged node (pre-tagged before its own
+read starts, reusing `addFile`/`loadOneFileIntoTree`'s existing
+`existingNode` parameter, where a placeholder exists to pre-tag through —
+folder-watch has none, so it tags right after that source's own load
+finishes instead, a brief accepted visibility gap). Only once every source
+has finished does `fillMergedEntries` run. A loading create-first merge's
+own row shows a single continuous progress bar (`node.loadSources`
+`{id,weight}` pairs + `updateMergeLoadFraction`, reusing the exact plain
+`.tree-load-fill` markup an ordinary file's own bar already uses),
+weighted by each source's real size (byte count where known, an equal
+fallback otherwise) rather than a plain per-source average, with a small
+fixed reservation (`MERGE_STEP_BAR_FRACTION`) for the merge-copy step —
+**regardless of "Show Sources"** — each nested source's own row still
+carries its own ordinary bar too when Sources is shown, alongside it, not
+instead of it. See `docs/persistence-and-sync.md` → "File merge follows
+the same load-progress pattern" for the full mechanism, and → "File
+loading & progress" for `updateLiveGrowingTotal`/`detectMaxTableScrollPx`,
+which together keep the log view's scrollbar both live and correctly
+capped for a large actively-loading merge (a narrowly-scoped exception to
+the "no rebuild on a load tick" rule just below, plus a real browser
+height-limit fix — see the "Known gotchas" entry for it).
 
 ## Core data model
 
@@ -232,7 +355,9 @@ The full chronological changelog, newest-first — what shipped, in what order, 
 ## Known gotchas — check before touching related code
 
 - `stopPropagation` on any click handler that opens a popup — a click that re-renders its own clicked ancestor (or opens a popup) while still bubbling can trigger the global "click outside a popup closes it" handler against a detached/moved target. Hit at least three times (a pattern-preview span, a pattern-chip toggle, a tree-context-menu "Edit filter…"). See `docs/extraction-and-plotting.md` → "Live pattern preview" for the fullest writeup.
-- **DOM identity across clicks**: `renderVisibleRows()` rebuilds nodes on every render, breaking native `dblclick` if a plain click already re-renders; `renderTree()` does too, breaking native `click` on another row during a hot loop (e.g. while a file loads) — see `docs/persistence-and-sync.md` → "File loading" ("A load tick never rebuilds `#tree` or the level bar") and `docs/testing-and-limitations.md` → "Testing approach" for the canonical bug writeup.
+- **DOM identity across clicks**: `renderVisibleRows()` rebuilds nodes on every render, breaking native `dblclick` if a plain click already re-renders; `renderTree()` does too, breaking native `click` on another row during a hot loop (e.g. while a file loads) — see `docs/persistence-and-sync.md` → "File loading" ("A load tick never rebuilds `#tree` or the level bar") and `docs/testing-and-limitations.md` → "Testing approach" for the canonical bug writeup. One narrow, deliberate exception: `updateLiveGrowingTotal` (2026-09-19) DOES call `renderVisibleRows()` on every load tick, but only for the table view of a node that's both actively loading AND the current active view — `renderTree()`/the tree row DOM are untouched, so this rule's actual protections (tree click-during-load, and the O(n²) cost a full rebuild would add) still hold; the accepted, narrower trade-off is that double-clicking a table row of that one specific still-loading file could in principle land on a rebuilt element mid-load, same class of interaction this gotcha already describes for the tree.
+- **Browsers have a hard practical ceiling on a single element's CSS height.** Confirmed empirically (person-reported bug on an 822,697-entry merge, this session, 2026-09-19): Chromium clamps a too-tall element to exactly `33,554,428px`; Firefox instead discards the whole oversized declaration and falls back to `height:auto`, which can silently resolve to `0px` for an element (like `#tableSpacer`) whose only content is absolutely positioned and so doesn't count toward auto-sizing — `#tableSpacer` then stops contributing to `#tableBody`'s scrollable region at all (no `overflow:hidden` between them), leaving `#tableRows`' own drifting `top` offset as the only thing driving `scrollHeight`, which produces an erratic, wrong-proportioned native scrollbar. `philogg.html`'s log table fixes this with `detectMaxTableScrollPx` (a lazy, cached, per-session feature-detection of the *actual running engine's own* ceiling — not a fixed constant, since the app's primary target, Tauri on Windows/WebView2, has ~2x Firefox's headroom and a hardcoded Firefox-safe cap would needlessly halve its scroll resolution) plus `computeTableSpacerContentHeight`/`tableScrollHeightScale`, converted through at every `#tableBody` scroll-position boundary (`logicalToPhysicalScrollPx`/`physicalToLogicalScrollPx`). **The scale itself must be range-based, not content-ratio-based** (2026-09-20 follow-up, person-reported: `End` needed several presses to reach the true last row, which never settled) — `tableScrollHeightScale` maps `#tableBody`'s native scrollable *range* (`scrollHeight - clientHeight`) on each side, i.e. `(cap - clientHeight) / (contentPx - clientHeight)`, not the raw content heights (`cap / contentPx`); the latter looks equivalent since `clientHeight` is tiny relative to the multi-million-px heights on each side, but it leaves the logical position computed at the true native `scrollTop` maximum short of the true logical bottom by `clientHeight * (contentPx/cap - 1)` px — several row-heights under real compression. **`#tableRows`' own true (uncompressed) rendered box can still overhang `#tableSpacer`'s capped height at the tail even with a correct scale** (2026-09-20, second follow-up, person-reported: `End` landed short of the true last row with blank space below it, `Home` afterward needed several presses to reach the top) — `#tableRows` only has its `top` offset compressed, never its own real row heights, and its `BUFFER_ROWS` lookback (`start` offset back by 10 rows, so a small scroll doesn't need a full re-render) leaves the rendered block taller than the viewport right at the tail; a plain top-anchored `top` can then push `top + true rendered height` past `#tableSpacer`'s own capped declared height, and since `#tableSpacer`/`#tableRows` are deliberately `overflow:visible` (so a long message's horizontal overflow bleeds up to `#tableBody`'s own horizontal scrollbar — `overflow:hidden` isn't an option here, CSS forces the other axis to `auto` too and breaks that), nothing stops the overhang from inflating the browser's own real `scrollHeight` past what the JS assumed — the same "no clipping ancestor" mechanism as the original bug above, just resurfacing at render-geometry granularity. `renderVisibleRows()` now bottom-anchors `top` (`Math.min(naiveTop, cap - trueRenderedLogicalHeight)`) whenever the render reaches the true last entry under compression, plus a defensive upper clamp on `start`/`centerIdx` (previously only `end` was ever clamped against `total`) so an out-of-range `scrollTop` degrades to a sane last page instead of an empty one. **The scale's physical range also has to account for `#tableRows`' own padding, not just `cap`** (2026-09-21, third follow-up — the first round where the person captured real Firefox telemetry via a pasted console script instead of another blind guess): `tableSpacer.style.height` is always set to `computeTableSpacerContentHeight(...) + TABLE_SPACER_PAD` (22px), never the bare `cap`, but the scale's `physicalRange` was computed as `cap - clientHeight` — 22px short of the real native range `scrollHeight - clientHeight`. Fixed by using `(cap + TABLE_SPACER_PAD) - clientHeight`. The captured telemetry confirmed the tail-overhang fix above genuinely holds (`scrollHeight` stayed perfectly constant across a real End/Home/End sequence), but also showed a striking, still-unexplained symptom this 22px fix does *not* fully account for by its own arithmetic: the rendered row count collapsing from ~30 rows to a single row right at the native max, followed by a large backward `scrollTop` jump — worked by hand against the telemetry's implied real entry count, the old math already predicted a healthy row count there, not a collapse to one. Left open for that round rather than claimed fixed; resolved the same day (below) via targeted instrumentation rather than more guessing. Any future virtualized list in this codebase (the extraction table, the link-pair view — both currently use the same unmitigated `count * rowHeight` approach) needs the same treatment before it can be trusted at very large counts — see `docs/persistence-and-sync.md` → "File merge follows the same load-progress pattern".
+- **Rebuilding a virtualized list's visible-row DOM on every animation frame of a scroll can visibly compete with the browser's own native scroll-animation scheduling.** Resolved the open question from the gotcha above (2026-09-21, same day): the person instrumented `renderVisibleRows()` itself (monkey-patching the global function binding to log `currentViewEntries.length`/rendered row count/`scrollTop` on every call) and captured a real End/Home/End sequence, ruling out both remaining theories from that entry (`currentViewEntries.length` stayed perfectly constant; `needsRowOffsets()` was off). What the telemetry showed instead: two independent real "End" key attempts at the same 853px viewport both stalled **150,000-190,000 physical px** short of the true native `scrollTop` max, non-deterministically — an order of magnitude beyond anything a scroll-math bug could cause. Root cause: `renderVisibleRows()` fully rebuilds `#tableRows`' DOM (`innerHTML = ""` + up to ~51 rows' worth of bracket detection/match highlighting) on **every single `requestAnimationFrame` tick** of a scroll — cheap normally, but heavy enough on a huge compressed merge to eat into the main-thread time Firefox's own native keyboard-scroll animation needs (which runs a timed interpolation, not "scroll until the target is literally reached" — heavy JS work during that window can make it finish short of the real target). Fixed with `makeThrottledScrollRenderer` (`philogg.html`, next to the `#tableBody`/`#highlightBody` scroll listeners): throttles scroll-triggered renders to at most one per `SCROLL_RENDER_THROTTLE_MS` (100ms) via `setTimeout` during a rapid burst, instead of one per animation frame, while a single isolated scroll event still renders on its very next frame unchanged — applied to both `#tableBody` and its twin `#highlightBody` listener. See `CHANGELOG.md`'s 2026-09-21 entries for the full telemetry-driven investigation.
 - **Render scope rule**: `render()` (134+ call sites), `renderTree()` and `renderVisibleRows()`/`renderHighlightVisibleRows()` are unconditional full-subtree rebuilds — no diffing, no partial-update mode. Before adding a new call to any of them, check whether a targeted update already covers the case: `updateSelectedRowClass()` (row selection), `updateLoadRowProgress()` (one tree row's own count/progress, used by load ticks AND by `onTailChange` for a tailed root that isn't behind the active view), `updateMinimapRenderedRange()`/`updateMinimapSelectionMarkers()` (minimap sub-parts). A full rebuild is only justified when tree/row *structure* actually changed, not just one node's/row's own data. This isn't a mandate to build a general diffing layer (out of scope for a single-file, no-build-tooling app) — it's a per-call-site check: does this actually need `render()`, or can it write directly to the one row/node that changed?
 - No `crypto.subtle` — the sync FNV-1a fingerprint (`fingerprintText()`) used for session export/import and file-filter-history matching is intentional, not a placeholder; see `docs/persistence-and-sync.md`.
 - **Any new filter-node field must be threaded through all persistence carriers**: `cloneSubtree`, `snapshotSubtree`/`restoreSubtree` (undo/redo), `serializeFilterBranch`/`importFilterJson` (save/load JSON), `serializeFilterTreeForCache`/`materializeCachedFilters` (session cache). This applies to **file**-node fields too, not just filter fields — `node.formatId` was dropped by the undo snapshot for exactly this reason; a file-node field also needs `persistFileNode`/`restoreSessionFromCache` (session cache, separate from the filter-tree carriers above) alongside `snapshotSubtree`/`restoreSubtree`. `node.merged`, `node.folderId` and `node.partial` (the folder-watch minimap's windowed/partial load, `docs/persistence-and-sync.md`) are the current examples of file-node fields threaded through both.

@@ -3121,7 +3121,12 @@
   #formatEditLevelAdd input{flex:1 1 auto; min-width:0;}
   .format-level-error{font-size:11px; color:var(--level-error); margin-top:5px;}
   .format-level-error.hidden{display:none;}
-  #formatEditPatternField.hidden, #formatEditRegexField.hidden{display:none;}
+  #formatEditPatternField.hidden, #formatEditRegexField.hidden, #formatEditMetaField.hidden,
+  #formatEditSampleField.hidden, #formatEditTsFormatField.hidden, #formatEditLevelsField.hidden,
+  #formatEditPreviewField.hidden{display:none;}
+  #formatEditMetaTargets{display:flex; flex-direction:column; gap:4px;}
+  #formatEditMetaAdd{display:flex; gap:6px; margin-top:6px;}
+  #formatEditMetaAdd select{flex:1 1 auto; min-width:0;}
   .settings-inline-panel-title{font-size:12.5px; font-weight:650; color:var(--text-primary); margin-bottom:12px;}
   .settings-inline-panel textarea{
     width:100%; box-sizing:border-box; resize:vertical; min-height:52px;
@@ -3720,7 +3725,6 @@
     background:linear-gradient(90deg, var(--accent), var(--accent-strong));
     transition:width .12s ease-out;
   }
-
   @media (prefers-reduced-motion:reduce){
     *{transition:none !important; animation:none !important;}
   }
@@ -5282,6 +5286,15 @@
                 </div>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsShowSources">Show Sources</label>
+                <div class="settings-row-hint">Show the "Sources" breakdown under a merged file, listing which file each entry came from.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="true" class="pill-toggle" id="settingsShowSources"></button>
+              </div>
+            </div>
           </div>
 
           <div class="settings-subsection-title">Text-match highlighting</div>
@@ -5408,7 +5421,7 @@
               <label for="formatEditName">Name</label>
               <input type="text" id="formatEditName" placeholder="e.g. Nginx access log" maxlength="80" autocomplete="off">
             </div>
-            <div class="link-field">
+            <div class="link-field" id="formatEditSampleField">
               <label for="formatEditSample">Example log line(s) <span class="link-target-label">(optional — suggests a pattern below)</span></label>
               <textarea id="formatEditSample" rows="3" placeholder="Paste one or more sample log lines here…"></textarea>
             </div>
@@ -5416,6 +5429,7 @@
               <div class="assert-mode-row">
                 <button type="button" class="assert-mode-btn" id="formatEditModePattern" data-mode="pattern">Pattern</button>
                 <button type="button" class="assert-mode-btn" id="formatEditModeRegex" data-mode="regex">Regex</button>
+                <button type="button" class="assert-mode-btn" id="formatEditModeMeta" data-mode="meta">Meta</button>
               </div>
             </div>
             <div class="link-field" id="formatEditPatternField">
@@ -5428,12 +5442,21 @@
               <input type="text" id="formatEditRegex" placeholder="^(?&lt;ts&gt;\S+) (?&lt;level&gt;\w+) ..." autocomplete="off">
               <div class="session-dialog-note">Needs a (?&lt;message&gt;...) named group; (?&lt;ts&gt;...)/(?&lt;level&gt;...)/(?&lt;thread&gt;...)/(?&lt;location&gt;...)/(?&lt;method&gt;...) are optional.</div>
             </div>
-            <div class="link-field">
+            <div class="link-field hidden" id="formatEditMetaField">
+              <label>Target formats <span class="link-target-label">(ordered — first whose own header matches a line wins)</span></label>
+              <div id="formatEditMetaTargets"></div>
+              <div id="formatEditMetaAdd">
+                <select id="formatEditMetaTargetSelect"></select>
+                <button type="button" id="formatEditMetaAddBtn" class="btn-mini-outline">Add</button>
+              </div>
+              <div class="session-dialog-note">A file resolved to this format is split into one virtual file per target format at load time (classified line by line, first matching target wins), then automatically merged back into one chronological file. Needs at least 2 targets.</div>
+            </div>
+            <div class="link-field" id="formatEditTsFormatField">
               <label for="formatEditTsFormat">Timestamp format</label>
               <input type="text" id="formatEditTsFormat" placeholder="yyyy-MM-dd HH:mm:ss,SSS" autocomplete="off">
               <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
             </div>
-            <div class="link-field">
+            <div class="link-field" id="formatEditLevelsField">
               <label>Log levels <span class="link-target-label">(which ones this format uses, and in which order)</span></label>
               <div id="formatEditLevels"></div>
               <div id="formatEditLevelAdd">
@@ -5443,7 +5466,7 @@
               <div id="formatEditLevelError" class="format-level-error hidden"></div>
               <div class="session-dialog-note">Only checked levels get a quick-filter button for files using this format; anything else falls into OTHER. Custom names match a line's level text exactly (case-insensitive) and get a color from a rotating palette.</div>
             </div>
-            <div class="link-field">
+            <div class="link-field" id="formatEditPreviewField">
               <label>Preview <span class="link-target-label">(from the example line(s) above)</span></label>
               <div id="formatEditPreview" class="format-preview"></div>
             </div>
@@ -6806,6 +6829,13 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
 const HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY = "philogg-hide-minimap-full-range-in-full-view";
 let hideMinimapFullRangeInFullView = false;
 
+// Whether the tree's "Sources" node (see createMergeShell/renderNode) shows
+// at all — a pure display toggle, default ON (unlike most settings here,
+// which default off): the underlying node/data is never touched by this,
+// only rendering is skipped (renderNode's own early return).
+const SHOW_SOURCES_KEY = "philogg-show-sources";
+let showSourcesSetting = true;
+
 /* Context view initial state (see buildContextView / contextInitialExpansion).
    Plain localStorage preference, same tier as the level-bar mode and the
    minimap opt-out — a display habit, not session or filter data. Default
@@ -6872,6 +6902,15 @@ function initMinimapFullRangeSetting() {
   if (cb) pillSet(cb, hideMinimapFullRangeInFullView);
 }
 
+// Default true, so this checks for the ABSENCE of an explicit "0" rather
+// than the presence of "1" (opposite polarity from most toggles here,
+// which default off) — a never-set key must still read as "on".
+function initShowSourcesSetting() {
+  showSourcesSetting = localStorage.getItem(SHOW_SOURCES_KEY) !== "0";
+  const cb = document.getElementById("settingsShowSources");
+  if (cb) pillSet(cb, showSourcesSetting);
+}
+
 /* Minimap binning mode (see minimapBinningMode's own module comment, near
    minimapTsToX, for the full "time" vs "entries" mechanism). Same plain-
    localStorage-preference wiring as the toggle above; MINIMAP_BINNING_MODE_KEY
@@ -6934,6 +6973,12 @@ document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListen
   // Full tab is already showing would leave the box exactly as it was until
   // the next unrelated render/scroll happened to call updateMinimapFullRange.
   updateMinimapFullRange();
+});
+
+document.getElementById("settingsShowSources").addEventListener("change", ev => {
+  showSourcesSetting = pillGet(ev.target);
+  localStorage.setItem(SHOW_SOURCES_KEY, showSourcesSetting ? "1" : "0");
+  render();
 });
 
 document.getElementById("settingsMinimapBinningMode").addEventListener("change", ev => {
@@ -7780,6 +7825,11 @@ async function parseLogTextAsync(text, node, onProgress) {
     if (i % PARSE_CHUNK_LINES === 0) {
       if (onProgress) onProgress(i, lines.length);
       await new Promise(resolve => setTimeout(resolve, 0)); // yield a tick
+      // Deleted mid-parse (by the person, or a race) — stop touching the
+      // now-orphaned node/entryIndex for the rest of the file; the only
+      // caller (loadOneFileIntoTree) already no-ops on its own existence
+      // check once this returns.
+      if (state.nodes[node.id] !== node) return;
     }
   }
   if (current) { entryIndex[current.id] = current; node.entries.push(current); }
@@ -7821,7 +7871,10 @@ function unescapePatternText(s) {
 }
 
 const DATE_TOKEN_RE = /yyyy|MM|dd|HH|mm|ss|SSS/g;
-const DATE_TOKEN_FRAG = { yyyy: "\\d{4}", MM: "\\d{2}", dd: "\\d{2}", HH: "\\d{2}", mm: "\\d{2}", ss: "\\d{2}", SSS: "\\d{1,3}" };
+// SSS accepts 1-6 digits (not just 3) so a microsecond-precision fraction
+// (e.g. RFC 5424 syslog's ".711324") still matches; parseTimestampGeneric
+// below normalizes whatever digit count it captures down to milliseconds.
+const DATE_TOKEN_FRAG = { yyyy: "\\d{4}", MM: "\\d{2}", dd: "\\d{2}", HH: "\\d{2}", mm: "\\d{2}", ss: "\\d{2}", SSS: "\\d{1,6}" };
 
 // Compiles a "yyyy-MM-dd HH:mm:ss,SSS"-style token string into a regex
 // (with one capturing group per token, in order) that both matches a
@@ -7863,7 +7916,12 @@ function parseTimestampGeneric(raw, compiledDate) {
   const h = +parts.HH || 0;
   const mi = +parts.mm || 0;
   const s = +parts.ss || 0;
-  const ms = +(parts.SSS || 0);
+  // parts.SSS is a fraction-of-a-second digit string of any length (1-6) —
+  // normalize it to milliseconds by its own digit count rather than taking
+  // it as a literal ms value (a bare +"711324" would mean 711324ms, not
+  // .711324s). Reduces to the previous exact behavior for 3-digit input.
+  const frac = parts.SSS || "";
+  const ms = frac ? Math.round(+frac * Math.pow(10, 3 - frac.length)) : 0;
   return new Date(y, mo, d, h, mi, s, ms).getTime();
 }
 
@@ -7984,6 +8042,14 @@ function resolveFormatIdForFilename(name) {
   return DEFAULT_FORMAT_ID;
 }
 
+// A LogFormat record's `mode` is "pattern" | "regex" | "meta". A "meta"
+// format carries none of pattern/regex/tsFormat/levels — instead it has
+// `targetFormatIds: [id, id, ...]` (>= 2, ordered), naming other, ordinary
+// pattern/regex formats to classify a file's lines against, first match
+// per line wins (see splitTextByMetaFormat). It never compiles to a real
+// per-line parser (see compileOneFormat's "meta" branch above) — a file
+// resolved to one is intercepted and fanned out into per-target virtual
+// files before parsing (see loadMetaFormatText).
 const DEFAULT_FORMAT_ID = "fmt-default";
 const DEFAULT_LOG_FORMAT = {
   id: DEFAULT_FORMAT_ID,
@@ -8010,6 +8076,16 @@ const DEFAULT_LOG_FORMAT = {
 function compileOneFormat(fmt) {
   if (fmt.builtin && !fmt.edited) {
     return { isHeaderLine: line => HEADER_RE.test(line), parseHeader: line => parseHeaderLine(line) };
+  }
+  if (fmt.mode === "meta") {
+    // Defensive fallback only — a meta-format's whole job is to be split
+    // into per-target-format virtual files before any per-line parsing
+    // happens (splitTextByMetaFormat/loadMetaFormatText intercept it in
+    // loadOneFileIntoTree/addFile), so this branch should never actually
+    // run against real file content. It exists so any other caller that
+    // still hands a meta-format id to the per-line compiler degrades
+    // gracefully instead of throwing.
+    return { isHeaderLine: () => true, parseHeader: line => applyFormatMatch({ message: line }, line, null) };
   }
   const dateFrag = compileDateFormat(fmt.tsFormat);
   let compiled = null;
@@ -8045,6 +8121,54 @@ function getCompiledFormat(formatId) {
   c = compileOneFormat(fmt);
   formatCompileCache.set(formatId, c);
   return c;
+}
+
+// Splits one physical file's text into one text stream per target format
+// of a meta-format (see DEFAULT_LOG_FORMAT's comment above), for
+// loadMetaFormatText to parse each stream under its own ordinary format.
+// Classification is a pure per-line grammar test — first target (in
+// declared order) whose own isHeaderLine matches wins; a non-matching,
+// non-blank line joins whichever stream most recently had a header line
+// (the same "continuation" rule parseLogTextAsync already applies within
+// a single format, just resolved per-stream here before parsing starts);
+// a non-matching line before any header has matched yet is dropped,
+// mirroring parseLogTextAsync's own "lines before the first header are
+// dropped" behavior.
+//
+// Blank lines are dropped here, never emitted into any stream. This is
+// deliberate, not a simplification: parseLogTextAsync's own loop only
+// ever treats a blank line as a silent no-op (it satisfies neither the
+// isHeaderLine branch nor the `current && line !== ""` continuation
+// branch), so it can never affect which entry a later line attaches to.
+// Dropping it during the split is therefore provably equivalent to
+// keeping it in any stream and having it dropped again on re-entry into
+// parseLogTextAsync — for every transition shape (inside a run of one
+// grammar, or across a grammar switch, with or without a blank line
+// present at all).
+function splitTextByMetaFormat(text, metaFmt) {
+  const targets = (metaFmt.targetFormatIds || [])
+    .map(id => state.logFormats.find(f => f.id === id))
+    .filter(Boolean); // a target format deleted since the meta-format was saved is skipped, not fatal
+  const compiled = targets.map(fmt => ({ id: fmt.id, name: fmt.name, c: getCompiledFormat(fmt.id) }));
+
+  const lines = text.split(/\r\n|\n/); // same split parseLogTextAsync uses — mixed LF/CRLF anywhere is already fine
+  const buckets = compiled.map(() => []);
+  let currentIdx = -1;
+
+  for (const line of lines) {
+    if (line === "") continue; // see "Blank lines" above — never emitted into any stream
+    let matchedIdx = -1;
+    for (let i = 0; i < compiled.length; i++) {
+      if (compiled[i].c.isHeaderLine(line)) { matchedIdx = i; break; } // first-match-per-line, target order
+    }
+    if (matchedIdx !== -1) { currentIdx = matchedIdx; buckets[matchedIdx].push(line); }
+    else if (currentIdx !== -1) { buckets[currentIdx].push(line); } // continuation of the most recently matched stream
+    // else: no header has matched yet in this file — dropped, same as parseLogTextAsync's own pre-first-header rule.
+  }
+
+  return compiled
+    .map((t, i) => ({ formatId: t.id, name: t.name, text: buckets[i].join("\n") }))
+    .filter(s => s.text !== ""); // a target that matched nothing in this file contributes no stream
 }
 
 // Reads only a file's first and last log entry to learn its covered time
@@ -8230,6 +8354,11 @@ async function parseFileWindow(file, node, from, to, onProgress) {
     pos = end;
     if (onProgress) onProgress(pos - startOffset, Math.max(1, file.size - startOffset));
     await new Promise(r => setTimeout(r, 0)); // yield a tick, same as parseLogTextAsync's own loop
+    // node.id is only ever unset for a node that was never registered in
+    // state.nodes in the first place (a direct/synthetic call, e.g. a unit
+    // test exercising this function in isolation) — that's not "deleted",
+    // so only bail when a REAL registered node has since been removed.
+    if (node.id && state.nodes[node.id] !== node) return false; // deleted mid-load — stop touching the orphaned node/entryIndex
   }
   if (current) { entryIndex[current.id] = current; node.entries.push(current); }
   return true;
@@ -8275,6 +8404,10 @@ async function loadFolderFileWindowed(folder, rec, from, to) {
   } catch (err) { ok = false; }
 
   if (!ok) {
+    // parseFileWindow also returns false when the node was deleted
+    // mid-load (person closed it before the window finished) — respect
+    // that instead of reviving it via a full-file fallback load.
+    if (state.nodes[node.id] !== node) return;
     // Not safely windowable (or something else went wrong) — drop the
     // half-built node and fall back to reading the whole file instead of
     // leaving a misleadingly partial one behind.
@@ -8384,6 +8517,13 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
     worker.onmessage = (ev) => {
       const msg = ev.data;
       if (msg.type === "chunk") {
+        // Deleted mid-load (by the person, or a race) — stop feeding the
+        // now-orphaned node/entryIndex and stop the background parse
+        // outright, instead of leaking entries into them for the rest of
+        // the file. Resolve (not reject) so the awaiting caller just
+        // proceeds to its own existence check instead of hitting the
+        // worker-failure fallback path.
+        if (state.nodes[node.id] !== node) { worker.terminate(); resolve(); return; }
         for (const entry of msg.entries) {
           entry.id = uid("e");
           entryIndex[entry.id] = entry;
@@ -8445,6 +8585,66 @@ function scheduleLoadRender(rootId) {
   // cache.
   invalidateCachesForRoots([rootId]);
   updateLoadRowProgress(rootId);
+  // A tick on a merge SOURCE also nudges its owning merge row's own
+  // combined progress bar (byte-weighted across every source, shown
+  // regardless of "Show Sources" the same way any other loading file's
+  // bar is — see updateMergeLoadFraction).
+  const node = state.nodes[rootId];
+  if (node && node.mergeOwnerId) updateMergeLoadFraction(node.mergeOwnerId);
+  updateLiveGrowingTotal(rootId);
+}
+// Bug fix: the log view's scrollbar (native — driven by #tableSpacer's own
+// height, no custom thumb) otherwise only reflects the entry count as of
+// the last full renderTable(), which never runs on a load tick — so for a
+// node that's actively loading AND currently the active view (a large
+// create-first merge, most visibly), the scrollbar stayed frozen at
+// whatever the total was minutes earlier, and End/Ctrl+End (the browser's
+// native "scroll to scrollHeight") could only ever reach that stale point.
+// Deliberately NOT a renderTable() call — that's O(n) (filters, sort,
+// minimap), which per-tick would make a many-chunk load O(n^2), exactly
+// what the "no view rebuild on a load tick" rule (see scheduleLoadRender's
+// own history above) exists to avoid. Only handles the common case: when
+// currentViewEntries IS node.entries by the same reference (getEntries
+// returns node.entries directly for a file node; applyLevelFilter/
+// getVisibleEntries/spliceTempAnchor all return their input unchanged
+// absent a level filter/pinned-bookmarks union/temp anchor) — that
+// reference-equality check alone proves nothing is narrowing the view, so
+// .length is already live; only the spacer height (which caps the
+// browser's native scrollHeight) is stale and needs writing. A narrowed
+// view is left to catch up at the next real render, as before.
+function updateLiveGrowingTotal(rootId) {
+  if (rootId !== state.activeId) return;
+  if (fhActiveTab === "table" || fhActiveTab === "plot") return; // extraction view showing, not the log table
+  const node = state.nodes[rootId];
+  if (!node || node.type !== "file") return;
+  if (currentViewEntries !== node.entries) return; // a filter/pin/anchor is narrowing the view — bail, stays stale until the next full render
+  if (needsRowOffsets()) return; // multiline/notes/wrap: the offsets table would need a real rebuild
+  tableSpacer.style.height = (computeTableSpacerContentHeight(node.entries.length * ROW_HEIGHT) + 22) + "px";
+  renderVisibleRows(); // cheap — visible rows only, picks up newly-in-range rows immediately
+}
+// Computes and writes a create-first merge's own combined loadFraction —
+// a single continuous 0..1 value spanning every source's own read+parse
+// progress (weighted by each source's own `weight`, e.g. real byte size —
+// see the 3 loadSources populate sites — not an equal N-way split),
+// reserving the final MERGE_STEP_BAR_FRACTION of the bar for the merge-
+// copy/sort step itself (filled in by fillMergedEntries once loading is
+// done). Reuses the exact same plain-fill DOM writer (updateLoadRowProgress)
+// an ordinary file's own progress bar already uses — no separate markup,
+// shown regardless of "Show Sources" the same way any other loading file's
+// bar is.
+function updateMergeLoadFraction(mergeId) {
+  const merge = state.nodes[mergeId];
+  if (!merge || !Array.isArray(merge.loadSources)) return;
+  let totalWeight = 0, doneWeight = 0;
+  merge.loadSources.forEach(({ id, weight }) => {
+    const src = state.nodes[id];
+    const frac = !src ? 1 : src.queued ? 0 : (typeof src.loadFraction === "number" ? src.loadFraction : 1);
+    totalWeight += weight;
+    doneWeight += weight * frac;
+  });
+  const loadPhase = totalWeight ? doneWeight / totalWeight : 1;
+  merge.loadFraction = loadPhase * (1 - MERGE_STEP_BAR_FRACTION);
+  updateLoadRowProgress(mergeId);
 }
 function flushLoadRender(rootId) {
   if (rootId) invalidateCachesForRoots([rootId]);
@@ -8708,6 +8908,16 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
     node.formatId = pinnedId;
   } else {
     node.formatId = resolveFormatIdForFilename(name);
+    // Only a *live* filename resolution can land on a meta-format — a
+    // pinned formatIdOverride (session restore, mergeFiles, or this same
+    // function's own recursive calls from loadMetaFormatText) always
+    // names a concrete target format, never a meta-format id, so this
+    // guard only ever fires for a fresh deep-link/import-style load.
+    const fmt0 = state.logFormats.find(f => f.id === node.formatId);
+    if (fmt0 && fmt0.mode === "meta") {
+      deleteNode(node.id);
+      return await loadMetaFormatText(name, text, fmt0);
+    }
   }
   await parseLogTextAsync(text, node, (done, total) => {
     node.loadFraction = total ? done / total : 1;
@@ -8715,8 +8925,77 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
     if (onProgress) onProgress(done, total);
   });
   delete node.loadFraction;
-  flushLoadRender(node.id);
+  // Skip the render if the node was deleted mid-parse (by the person, or a
+  // race) — same guard loadOneFileIntoTree's own finally block has for the
+  // identical situation on its own load path.
+  if (state.nodes[node.id] === node) flushLoadRender(node.id);
   return node;
+}
+
+// A meta-format's whole job: split one physical file's text into its
+// target formats' streams (splitTextByMetaFormat), then create the merge
+// result FIRST (createMergeShell — person-requested this session, before
+// any stream is even read) and load each stream into its own real,
+// independent file node nested under the merge's "Sources" (reusing
+// addFile/createQueuedFileNode — i.e. createFileNode + parseLogTextAsync,
+// completely unmodified), finally filling the merge's own entries
+// (fillMergedEntries) once every stream is loaded. The per-grammar nodes
+// are never deleted — they stay real, clickable file nodes, reachable
+// under "Sources" for as long as the merge exists.
+//
+// Session-only, v1: the split/merge here is redone from scratch on every
+// load; nothing about it is pinned or restorable the way an ordinary
+// file's formatId is (see restoreSessionFromCache/persistFileNode — a
+// meta-format's *result* is persisted as an ordinary merged file, same
+// as any other merge, so a reload reparses it under one target format
+// and loses the Sources breakdown, same accepted gap merges already have).
+async function loadMetaFormatText(name, text, metaFmt) {
+  const streams = splitTextByMetaFormat(text, metaFmt);
+
+  if (streams.length === 0) {
+    // Nothing classified at all — never hard-fail a load; fall back to a
+    // plain default-format parse so the person at least sees raw lines.
+    return await addFile(name, text, undefined, DEFAULT_FORMAT_ID);
+  }
+  if (streams.length === 1) {
+    // Only one grammar actually present in this file — no merge needed,
+    // and this is byte-identical to a plain single-format load of the
+    // same content (blank lines are a no-op either way, see
+    // splitTextByMetaFormat's own comment).
+    return await addFile(name, streams[0].text, undefined, streams[0].formatId);
+  }
+
+  const merged = createMergeShell(name, streams[0].formatId);
+  merged.metaFormatId = metaFmt.id;
+  // The sources this merge's combined progress bar is waiting on, each
+  // weighted by its own stream's character count (a reasonable byte-size
+  // proxy — log text is overwhelmingly ASCII — known upfront since
+  // splitTextByMetaFormat already ran).
+  merged.loadSources = [];
+
+  const vnodes = [];
+  for (const s of streams) {
+    const placeholder = createQueuedFileNode(s.name);
+    placeholder.mergeOwnerId = merged.id;
+    placeholder.mergeSourceHidden = true; // an implementation artifact of one physical file, never a standalone top-level row
+    merged.loadSources.push({ id: placeholder.id, weight: s.text.length });
+    render(); // the placeholder appears nested under Sources before this stream is even read
+    const vnode = await addFile(s.name, s.text, undefined, s.formatId, placeholder);
+    // A virtual stream inherits the physical file's on-disk line order,
+    // which is NOT guaranteed chronological within it (e.g. two producers
+    // interleaving inside one syslog block) — mergeFiles' disjoint-range
+    // fast path only sorts the true min/max per source for the overlap
+    // test itself, then concats in file order assuming each source is
+    // already chronological. Sorting here, once, is what keeps that fast
+    // path's output actually chronological for a meta-format's vnodes.
+    vnode.entries.sort((a, b) => a.ts - b.ts);
+    vnodes.push(vnode);
+  }
+
+  state.activeId = merged.id; // addFile->activateQueuedFileNode moved focus to each stream's node in turn — bring it back to the merge row
+  await fillMergedEntries(merged, vnodes);
+  render();
+  return merged;
 }
 
 /* ===================== Value-extraction patterns =====================
@@ -9265,6 +9544,15 @@ function createAndOrNode(idA, idB, mode) {
 const MERGE_CHUNK_ENTRIES = 20000;
 const MERGE_COPY_WEIGHT = 0.6;
 const MERGE_SORT_WEIGHT = 0.4;
+// Fixed, deliberately simple reservation for the merge-copy/sort step's
+// own share of a create-first merge's single combined progress bar
+// (person-confirmed: not worth modeling exact relative effort — merge-copy
+// is normally much faster per-byte than the read+parse phase it follows).
+// A quick (disjoint-time-range) merge still finishes this whole sliver
+// almost instantly, same as before; a real chunked merge gets a small but
+// visible remaining stretch instead of the bar looking falsely "done" the
+// moment every source finishes loading.
+const MERGE_STEP_BAR_FRACTION = 0.1;
 // Min/max timestamp of a (possibly unsorted) entries array, in one linear
 // pass — null for an empty array. Used by mergeFiles' quick-merge check;
 // deliberately doesn't assume entries[0]/entries[last] are the extremes,
@@ -9280,25 +9568,58 @@ function fileEntryTimeRange(entries) {
   return { min, max };
 }
 
-async function mergeFiles(fileIds) {
-  const files = fileIds.map(id => state.nodes[id]).filter(n => n && n.type === "file");
-  if (files.length < 2) return null;
-
+// Creates the empty merge-result node ("shell") and its locked "Sources"
+// child, inserted into the tree immediately — before any source has been
+// read, let alone parsed (person-requested this session: create the merge
+// entry first, then load into it). fillMergedEntries (below) fills it in
+// once every source is ready; mergeFiles (below) is the "sources already
+// fully loaded" case that does both steps back to back in one call,
+// unchanged from every existing caller's point of view.
+function createMergeShell(name, formatId) {
   const node = {
-    id: uid("f"), type: "file", name: files.map(f => f.name).join(" + "),
-    parentId: null, children: [], entries: [], merged: true, cacheKey: newCacheKey(),
-    loadFraction: 0,
+    id: uid("f"), type: "file", name, parentId: null, children: [], entries: [],
+    merged: true, cacheKey: newCacheKey(), loadFraction: 0,
     // Assumes all sources share one format — the merge itself just reuses
     // entry objects by reference (never reparses), so a mixed-format merge
     // still works fine live; only a later session-cache restore, which
     // reparses raw text under one format, would see this simplification.
-    formatId: (files[0] && files[0].formatId) || DEFAULT_FORMAT_ID,
+    formatId: formatId || DEFAULT_FORMAT_ID,
+    // Per-source breakdown for the tree's "Sources" node, filled in by
+    // fillMergedEntries once every source is ready. Session-only, like the
+    // rest of a merge's live state — never written by persistFileNode (see
+    // the "Merged-file gotcha" in docs/persistence-and-sync.md). Entries
+    // are shared by reference across merges, so re-merging an
+    // already-merged file's entries overwrites sourceId on the same
+    // objects, making the earlier merge's own Sources coloring stale — a
+    // known, accepted limitation, not fixed here.
+    sources: [],
   };
   state.nodes[node.id] = node;
   state.rootIds.push(node.id);
+  // The "Sources" row itself — a real, locked filter node (see
+  // specialChildRank/insertSpecialChild), sibling-ordered with
+  // Bookmarks/Notes/Selection N. Its OWN node.children stays empty
+  // forever; renderNode nests this file's `sources` array (real,
+  // independent file nodes, tagged mergeOwnerId below) under it directly
+  // instead of reading real children.
+  const sourcesNode = {
+    id: uid("n"), type: "filter", name: "Sources", parentId: node.id,
+    children: [], filterType: "sources", value: null, inverted: false, locked: true,
+  };
+  state.nodes[sourcesNode.id] = sourcesNode;
+  insertSpecialChild(node, sourcesNode.id, 0);
   activateNewNode(node);
   flushLoadRender();
+  return node;
+}
 
+// Fills a merge shell's entries from `files` (each already a complete,
+// loaded file node) — the actual copy/sort work, unchanged in substance
+// from before this session's rework; the node it writes into may already
+// have existed (and been visible/interactive, sources loading nested
+// under it) for a while now, rather than being created by this same call.
+async function fillMergedEntries(node, files) {
+  node.sources = files.map(f => ({ id: f.id, name: f.name, color: null, count: f.entries.length }));
   const total = files.reduce((sum, f) => sum + f.entries.length, 0);
 
   // Quick merge: if the sources' time ranges don't overlap at all, the
@@ -9313,29 +9634,63 @@ async function mergeFiles(fileIds) {
   const isDisjoint = nonEmpty.every((x, k) => k === 0 || nonEmpty[k - 1].range.max < x.range.min);
 
   if (isDisjoint) {
-    for (const x of nonEmpty) node.entries.push(...x.f.entries);
+    for (const x of nonEmpty) {
+      for (const e of x.f.entries) { e.sourceId = x.f.id; node.entries.push(e); }
+    }
     node.loadFraction = 1;
     scheduleLoadRender(node.id);
   } else {
     let copied = 0;
     for (const f of files) {
       for (let i = 0; i < f.entries.length; i += MERGE_CHUNK_ENTRIES) {
-        node.entries.push(...f.entries.slice(i, i + MERGE_CHUNK_ENTRIES));
+        const chunk = f.entries.slice(i, i + MERGE_CHUNK_ENTRIES);
+        chunk.forEach(e => { e.sourceId = f.id; });
+        node.entries.push(...chunk);
         copied += Math.min(MERGE_CHUNK_ENTRIES, f.entries.length - i);
-        node.loadFraction = MERGE_COPY_WEIGHT * (total ? copied / total : 1);
+        // Rebased into the reserved tail of the merge's single combined
+        // bar (see MERGE_STEP_BAR_FRACTION/updateMergeLoadFraction) — the
+        // loading phase already filled the rest of the bar via each
+        // source's own weighted loadFraction.
+        node.loadFraction = (1 - MERGE_STEP_BAR_FRACTION) + MERGE_STEP_BAR_FRACTION * (total ? copied / total : 1);
         scheduleLoadRender(node.id);
         await new Promise(r => setTimeout(r, 0));
       }
     }
-    if (state.nodes[node.id] !== node) return node; // removed mid-merge (by the person, or a race)
+    if (state.nodes[node.id] !== node) return; // removed mid-merge (by the person, or a race)
 
     node.entries.sort((a, b) => a.ts - b.ts);
     invalidateOrderIndexMap(node.id); // in-place reorder: same array, same length
   }
 
+  // Sources stays expanded through the whole load (createMergeShell
+  // deliberately leaves it that way, so per-source progress is visible
+  // nested underneath) — collapse it now that the merge is actually done,
+  // for every path that lands here (create-first and the old already-
+  // loaded bulk "Merge N files" action alike, since both funnel through
+  // this one function).
+  const sourcesNode = node.children.map(cid => state.nodes[cid]).find(c => c && c.filterType === "sources");
+  if (sourcesNode) sourcesNode.collapsed = true;
+
   delete node.loadFraction;
+  delete node.loadSources; // see the combined-progress-bar section — only meaningful while loading
   flushLoadRender(node.id);
   persistFileNode(node); // fire-and-forget; cached as its own text snapshot (see "Session cache")
+}
+
+// The "sources already fully loaded" case — the pre-existing manual
+// "Merge N files" bulk action, and anywhere else every source is already
+// a complete node before merging starts. Tags each source `mergeOwnerId`
+// (deliberately NOT `mergeSourceHidden`) so it stays visible at its
+// existing top-level spot AND additionally renders nested under the new
+// file's "Sources" — the same underlying node in both places (see
+// renderTree's skip logic, which only hides a source from the top level
+// when mergeSourceHidden is also set).
+async function mergeFiles(fileIds) {
+  const files = fileIds.map(id => state.nodes[id]).filter(n => n && n.type === "file");
+  if (files.length < 2) return null;
+  const node = createMergeShell(files.map(f => f.name).join(" + "), files[0] && files[0].formatId);
+  files.forEach(f => { f.mergeOwnerId = node.id; });
+  await fillMergedEntries(node, files);
   return node;
 }
 
@@ -9868,6 +10223,38 @@ function deleteNode(nodeId) {
     state.rootIds = state.rootIds.filter(id => id !== nodeId);
     releaseEntriesFromIndex(node.entries, nodeId);
     cacheDeleteFile(node.cacheKey); // fire-and-forget; meta follows via render()'s debounced persist
+    // This file was one of a merge's sources (see createMergeShell) —
+    // drop it from the owning merge's own `sources` breakdown too, so a
+    // source closed independently (its own ✕, in either the top-level or
+    // the nested-under-Sources row) doesn't leave a stale reference behind
+    // (a permanently non-shrinking "Sources: N" count, or renderNode
+    // trying to nest an id that no longer resolves).
+    if (node.mergeOwnerId) {
+      const owner = state.nodes[node.mergeOwnerId];
+      if (owner && Array.isArray(owner.sources)) owner.sources = owner.sources.filter(s => s.id !== nodeId);
+    }
+    // Deleting a merge itself: mergeSourceHidden sources have no life
+    // outside this merge (they only ever appeared nested under its
+    // Sources row, never at top level) — cascade-delete them too. A
+    // bulk-merge-visible survivor (mergeOwnerId set, mergeSourceHidden
+    // NOT set — it's also an ordinary top-level row) stays alive and at
+    // top level; just un-orphan it so it doesn't keep pointing at a now-
+    // dead merge id. [...node.sources] spread: the recursive deleteNode
+    // call below reassigns OTHER surviving sources' owner.sources array in
+    // place via the cleanup block just above, same reasoning as the
+    // existing [...node.children] spread at the top of this function. A
+    // hidden source can never itself carry a .sources array (mergeSourceHidden
+    // is only ever set on freshly-loaded placeholders, never on a
+    // pre-existing merge — see mergeFiles/loadFileDescriptors), so this
+    // can't recurse into a nested merge.
+    if (Array.isArray(node.sources)) {
+      [...node.sources].forEach(s => {
+        const src = state.nodes[s.id];
+        if (!src) return;
+        if (src.mergeSourceHidden) deleteNode(src.id);
+        else { delete src.mergeOwnerId; delete src.mergeSourceHidden; }
+      });
+    }
   } else {
     const parent = state.nodes[node.parentId];
     if (parent) parent.children = parent.children.filter(id => id !== nodeId);
@@ -10653,6 +11040,8 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
     result = parentEntries.filter(e => state.bookmarks.has(e.id));
   } else if (baked.filterType === "notes") {
     result = parentEntries.filter(e => state.notes.has(e.id));
+  } else if (baked.filterType === "sources") {
+    result = parentEntries;
   } else if (baked.filterType === "level") {
     result = parentEntries.filter(e => baked.value.includes(levelBucket(e.level, e.formatId)));
   } else if (baked.filterType === "and" || baked.filterType === "or") {
@@ -10783,6 +11172,15 @@ function getEntriesUncached(node) {
     // "bookmarks" just above, mirroring state.notes instead of
     // state.bookmarks.
     result = parentEntries.filter(e => state.notes.has(e.id));
+  } else if (node.filterType === "sources") {
+    // Auto-managed per-merged-file node (see createMergeShell) — purely a
+    // label/anchor for the tree's "Sources" breakdown; it doesn't filter
+    // anything of its own (the actual per-source entries/colors live on
+    // the owning file's own `sources` array, read directly by
+    // renderSourcesNode/computeHighlightMap), so its own result is just
+    // its parent's (the merged file's) full entries, same as clicking the
+    // file itself.
+    result = parentEntries;
   } else if (node.filterType === "level") {
     // value = array of active level names (e.g. ["ERROR", "WARN"]) — the
     // tree-node counterpart of the level bar's own quick-filter (see
@@ -11076,6 +11474,37 @@ function snapshotSubtree(nodeId) {
     // this just preserves the cumulative amount so the file can still be
     // re-edited/undone after a delete+restore round-trip.
     if (node.clockOffset) copy.clockOffset = node.clockOffset;
+    // A merge's own source tags (see createMergeShell/mergeFiles) — this
+    // branch runs for a hidden source itself when it's being cascade-
+    // snapshotted as part of its owning merge (see the hiddenSourceSnapshots
+    // block below), so its own mergeOwnerId/mergeSourceHidden need to
+    // survive the round trip too, or a restored source would come back
+    // untagged, no longer nested under (or cascade-deletable with) its
+    // merge.
+    if (node.mergeOwnerId) copy.mergeOwnerId = node.mergeOwnerId;
+    if (node.mergeSourceHidden) copy.mergeSourceHidden = true;
+    // Sources-group breakdown (mergeFiles' additive `sources`, kept by
+    // reference like entries above — its per-source `color` lives on these
+    // same objects) and sourcesCollapsed (display-only, same tier as
+    // node.collapsed). Session-only like the rest of a merge's live state
+    // (never written by persistFileNode — see mergeFiles' own comment) —
+    // but still needs to survive an in-session undo/redo, same reasoning
+    // as every other field on this branch: a delete+undo round-trip
+    // shouldn't silently drop a merged file's Sources group.
+    if (node.sources) {
+      copy.sources = node.sources;
+      // mergeSourceHidden sources are root-level siblings, not real
+      // children — the children.map(snapshotSubtree) above never reaches
+      // them, yet deleteNode cascade-deletes them right along with this
+      // node (see its own comment), so an undo of that delete needs to
+      // bring them back too. Snapshotting here (before deleteNode runs —
+      // deleteFilterNodeWithUndo always snapshots first) is safe: they're
+      // still live nodes at this point.
+      const hidden = node.sources.filter(s => { const n = state.nodes[s.id]; return n && n.mergeSourceHidden; });
+      if (hidden.length) copy.hiddenSourceSnapshots = hidden.map(s => snapshotSubtree(s.id));
+    }
+    if (node.metaFormatId) copy.metaFormatId = node.metaFormatId;
+    if (node.sourcesCollapsed) copy.sourcesCollapsed = true;
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
@@ -11115,9 +11544,24 @@ function restoreSubtree(snap) {
     if (snap.folderId) node.folderId = snap.folderId;
     if (snap.partial) node.partial = snap.partial;
     if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
+    if (snap.mergeOwnerId) node.mergeOwnerId = snap.mergeOwnerId;
+    if (snap.mergeSourceHidden) node.mergeSourceHidden = true;
+    if (snap.sources) node.sources = snap.sources;
+    if (snap.metaFormatId) node.metaFormatId = snap.metaFormatId;
+    if (snap.sourcesCollapsed) node.sourcesCollapsed = true;
     state.nodes[node.id] = node;
     node.entries.forEach(e => { entryIndex[e.id] = e; });
     node.children = snap.children.map(c => restoreSubtree(c).id);
+    // Recreate each cascade-deleted hidden source (see snapshotSubtree) —
+    // restoreSubtree already drops each one into state.nodes by its
+    // original id; it's not a structural child, so the caller (undo()'s
+    // "deleteFile" branch) still needs to splice each id into
+    // state.rootIds itself, same as it does for this node. Transient —
+    // deleted below by the caller once consumed, not part of persistFileNode's
+    // field whitelist.
+    if (snap.hiddenSourceSnapshots) {
+      node.hiddenSourceIds = snap.hiddenSourceSnapshots.map(c => restoreSubtree(c).id);
+    }
     return node;
   }
   const node = {
@@ -11316,6 +11760,21 @@ function undo() {
     const restored = restoreSubtree(action.snapshot);
     const idx = action.index === -1 || action.index == null ? state.rootIds.length : Math.min(action.index, state.rootIds.length);
     state.rootIds.splice(idx, 0, restored.id);
+    // Cascade-restored hidden sources (see snapshotSubtree/restoreSubtree)
+    // aren't structural children — restoreSubtree already recreated them
+    // in state.nodes, but every file node must live in state.rootIds too
+    // (deleteNode's own invariant), so splice each one in right after the
+    // merge itself.
+    if (restored.hiddenSourceIds) {
+      const at = state.rootIds.indexOf(restored.id);
+      restored.hiddenSourceIds.forEach((hid, i) => {
+        if (state.nodes[hid]) state.rootIds.splice(at + 1 + i, 0, hid);
+      });
+      restored.hiddenSourceIds.forEach(hid => {
+        if (state.nodes[hid]) persistFileNode(state.nodes[hid]);
+      });
+      delete restored.hiddenSourceIds;
+    }
     state.activeId = restored.id;
     persistFileNode(restored); // fire-and-forget — re-adds the cache record deleteNode dropped
   } else if (action.kind === "move") {
@@ -12122,7 +12581,7 @@ function applyNavWaypoint(wp) {
   if (wp.contextAnchor && applyContextJumpExpansion(wp.contextAnchor.id)) renderHighlightView();
   const scroller = activeNavScroller();
   if (scroller === tableBody) {
-    if (!restoreViewAnchor(wp.filterAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScroll) && wp.rawScrollTop != null) {
+    if (!restoreViewAnchor(wp.filterAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical) && wp.rawScrollTop != null) {
       setTableScroll(wp.rawScrollTop);
     }
   } else if (wp.rawScrollTop != null) {
@@ -12539,6 +12998,7 @@ function nodeIconHTML(node) {
     : node.filterType === "level" ? ICON_LEVEL
     : node.filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
     : node.filterType === "notes" ? ICON_NOTE
+    : node.filterType === "sources" ? ICON_FILES_SEPARATE
     : node.filterType === "idset" ? ICON_CHECK
     : timeFilterIcon(node);
 }
@@ -12582,7 +13042,12 @@ function renderTree() {
   // nested inside its zip's own renderZipSection container instead.
   state.rootIds.forEach(id => {
     const node = state.nodes[id];
-    if (node && (node.folderId || node.zipId)) return;
+    // A source loaded specifically FOR a create-first merge (mergeSourceHidden)
+    // is only ever reachable nested under its merge's own "Sources" node —
+    // never as a separate top-level row (see createMergeShell). A source
+    // that was already an independent top-level file BEFORE a manual merge
+    // (mergeOwnerId set, mergeSourceHidden NOT set) stays visible here too.
+    if (node && (node.folderId || node.zipId || (node.mergeOwnerId && node.mergeSourceHidden))) return;
     treeEl.appendChild(renderNode(id, 0));
   });
   // Directly opened/dropped non-log inline-viewable files (this session):
@@ -12660,10 +13125,16 @@ function flattenTreeIds() {
   // Main tree: a node with node.zipId never renders here (renderTree skips
   // it — it nests inside its own zip's renderZipSection container instead),
   // so it's excluded from this top-level walk too and picked up below, in
-  // its actual visual position within its zip's entry list.
+  // its actual visual position within its zip's entry list. A source
+  // hidden under its merge's "Sources" node (mergeOwnerId + mergeSourceHidden)
+  // is excluded the same way, but — unlike zip entries — deliberately has
+  // no re-insertion-at-its-visual-position walk below: it's simply not
+  // nav-reachable by arrow keys, mouse click only (same precedent as the
+  // .queued exclusion above; correct rather than a gap when Sources itself
+  // is toggled off, since no DOM row exists there to navigate to anyway).
   walk(state.rootIds.filter(id => {
     const node = state.nodes[id];
-    return !(node && node.zipId);
+    return !(node && (node.zipId || (node.mergeOwnerId && node.mergeSourceHidden)));
   }));
   // ZIP sections (bugfix, person-reported: nav order didn't match the
   // visual order — every opened non-log entry was being tacked on as one
@@ -13080,6 +13551,16 @@ function renderRenameInput(id, node) {
 function renderNode(id, depth, opts) {
   const node = state.nodes[id];
   if (node.type === "file" && node.queued) return renderQueuedFileRow(node, depth);
+  // A "sources" node (see createMergeShell) is a real, locked filter-node
+  // sibling of Bookmarks/Notes/Selection N (insertSpecialChild keeps them
+  // ordered), so it flows through this same function — but its own
+  // node.children stays permanently empty; nesting is driven by the owning
+  // merged file's own `sources` array + each source's real, independent
+  // file node (see the tail of this function and the swatch block below).
+  // The "Show Sources" setting is a pure display toggle — the node/data
+  // are untouched, only rendering is skipped.
+  if (node.type === "filter" && node.filterType === "sources" && !showSourcesSetting) return document.createElement("div");
+  const sourcesOwnerFile = (node.type === "filter" && node.filterType === "sources") ? state.nodes[node.parentId] : null;
   const wrap = document.createElement("div");
   wrap.dataset.type = node.type;
 
@@ -13116,7 +13597,9 @@ function renderNode(id, depth, opts) {
   // real children.
   const chevronSlot = document.createElement("span");
   chevronSlot.className = "tree-chevron-slot";
-  const hasRealChildren = node.children.length > 0;
+  const hasRealChildren = sourcesOwnerFile
+    ? !!(Array.isArray(sourcesOwnerFile.sources) && sourcesOwnerFile.sources.length)
+    : node.children.length > 0;
   if (hasRealChildren) {
     const chevron = document.createElement("button");
     chevron.type = "button";
@@ -13154,6 +13637,27 @@ function renderNode(id, depth, opts) {
       : "Set a highlight colour for the Highlight view";
     swatch.addEventListener("click", ev => { ev.stopPropagation(); openColorPicker(id, swatch); });
     swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); setHighlightColor(id, null); });
+    row.appendChild(swatch);
+  } else if (node.type === "file" && opts && opts.mergeSourceColor) {
+    // A source file nested under its merge's "Sources" node (see the tail
+    // of this function) — this is the ONE place a FILE row gets a swatch,
+    // bound to the merge's own per-source color (mergedFile.sources[i].color,
+    // see createMergeShell/fillMergedEntries), not node.highlightColor
+    // (which file nodes never have). Reuses openColorPicker's onPick
+    // generalization exactly as the old renderSourceRow did.
+    const src = opts.mergeSourceColor;
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "tree-swatch" + (src.color ? "" : " empty");
+    if (src.color) swatch.style.background = src.color;
+    swatch.title = src.color
+      ? "Source colour — click to change, right-click to clear"
+      : "Set a colour for entries from this source";
+    swatch.addEventListener("click", ev => {
+      ev.stopPropagation();
+      openColorPicker(null, swatch, color => { src.color = color || null; render(); });
+    });
+    swatch.addEventListener("contextmenu", ev => { ev.preventDefault(); ev.stopPropagation(); src.color = null; render(); });
     row.appendChild(swatch);
   }
 
@@ -13204,7 +13708,11 @@ function renderNode(id, depth, opts) {
 
   const count = document.createElement("span");
   count.className = "tree-count";
-  const ownCount = getEntries(id).length;
+  // A "sources" node's count is how many sources the merge has, not its
+  // (passthrough, identical-to-the-file's-own) entry count — parity with
+  // the previous session's UX and more useful than a number that would
+  // just equal the file's own row right above it.
+  const ownCount = sourcesOwnerFile ? (sourcesOwnerFile.sources || []).length : getEntries(id).length;
   count.textContent = ownCount.toLocaleString("de-DE");
   row.appendChild(count);
 
@@ -13216,8 +13724,14 @@ function renderNode(id, depth, opts) {
   // of the same information wasn't earning its space. No replacement.
 
   // Restricted node (see syncBookmarksFilterNode/deleteFilterNodeWithUndo):
-  // no ✕ button at all — it's only ever added/removed automatically.
-  if (!node.locked) {
+  // no ✕ button at all — it's only ever added/removed automatically. A
+  // nested Sources row (opts.mergeSourceColor set — see the swatch block
+  // above) is the same restriction: it only ever disappears together with
+  // its owning merge (see deleteNode's cascade), never on its own — even
+  // when the same node is ALSO an ordinary top-level row elsewhere (the
+  // bulk-merge case), where it keeps its own ✕ since opts.mergeSourceColor
+  // isn't set for that call.
+  if (!node.locked && !(opts && opts.mergeSourceColor)) {
     const del = document.createElement("button");
     del.className = "tree-del";
     del.innerHTML = ICON_CLOSE;
@@ -13231,7 +13745,11 @@ function renderNode(id, depth, opts) {
   // Progress fill along the row's bottom edge while this file is still
   // being read/parsed (see createFileNode/loadOneFileIntoTree) — the row
   // itself is already a normal, fully interactive tree row at this point,
-  // this is purely the "still loading" indicator riding along on it.
+  // this is purely the "still loading" indicator riding along on it. A
+  // create-first merge's own row uses this exact same plain fill too (see
+  // updateMergeLoadFraction) — its loadFraction is a single continuous
+  // value spanning every source's weighted load progress plus a reserved
+  // tail for the merge-copy step, so no separate markup is needed here.
   if (node.type === "file" && typeof node.loadFraction === "number") {
     const track = document.createElement("span");
     track.className = "tree-load-track";
@@ -13292,7 +13810,7 @@ function renderNode(id, depth, opts) {
   // the browser's middle-click autoscroll indicator from appearing first.
   row.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
   row.addEventListener("auxclick", ev => {
-    if (ev.button !== 1 || node.locked) return;
+    if (ev.button !== 1 || node.locked || (opts && opts.mergeSourceColor)) return;
     ev.preventDefault();
     deleteFilterNodeWithUndo(id);
     render();
@@ -13340,9 +13858,20 @@ function renderNode(id, depth, opts) {
   if (node.type === "file" && node.children.length === 0 && node.filterHistoryMatch) {
     wrap.appendChild(renderFilterHistoryPreview(node));
   }
-  // node.collapsed hides real children the normal way (chevron above).
+  // node.collapsed hides real children the normal way (chevron above). A
+  // "sources" node's own node.children is always empty by design (see the
+  // comment at this function's top) — its nested rows come from the owning
+  // merged file's `sources` array instead, each a real, independently
+  // clickable file node (skipped defensively if one was deleted on its
+  // own since — see deleteNode's sources-array cleanup).
   if (!node.collapsed) {
-    node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1)));
+    if (sourcesOwnerFile) {
+      (sourcesOwnerFile.sources || []).forEach(src => {
+        if (state.nodes[src.id]) wrap.appendChild(renderNode(src.id, depth + 1, { mergeSourceColor: src }));
+      });
+    } else {
+      node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1)));
+    }
   }
   return wrap;
 }
@@ -16528,6 +17057,81 @@ let ROW_HEIGHT = 28;
 const ROW_HEIGHT_BASE = 28;
 const BUFFER_ROWS = 10;
 
+/* ---------- Virtualized scroll height beyond a browser's own ceiling ----
+   Bug fix (person-reported, a real merge with 822,697 entries): every
+   major engine has a hard practical limit on a single element's CSS
+   height, and #tableSpacer's declared height (entries.length * ROW_HEIGHT,
+   or tableRowOffsets[...] when multiline/wrap/notes is on) had no cap at
+   all. Confirmed empirically this session with a real browser harness:
+   Chromium hard-clamps to exactly 33,554,428px; Firefox instead discards
+   an oversized declaration entirely and falls back to height:auto — which
+   resolves to 0 for #tableSpacer, since its only content (#tableRows) is
+   absolutely positioned and doesn't count toward auto-sizing. Once
+   #tableSpacer collapses to 0, it stops contributing anything to
+   #tableBody's scrollable region at all (no overflow:hidden sits between
+   them), leaving #tableRows' own drifting `top` offset as the only thing
+   driving scrollHeight — exactly matching every reported symptom (wrong
+   scrollbar proportions, jumping while scrolling, the thumb shrinking
+   while holding End).
+   Fix: never let #tableSpacer's declared height exceed a safe ceiling —
+   detected per-session (not hardcoded to the tightest known engine,
+   Firefox, since the app's primary target, Tauri on Windows, embeds
+   WebView2/Chromium with roughly 2x that headroom) — and convert every
+   scroll-position read/write for #tableBody through the resulting scale
+   factor at the boundary. Real on-screen row geometry (ROW_HEIGHT itself,
+   viewport height, rendered row spacing) is never touched — only the
+   position of the rendered row window WITHIN the (possibly compressed)
+   physical spacer, and the reported scrollTop, are rescaled. */
+let detectedMaxTableScrollPx = null;
+function detectMaxTableScrollPx() {
+  if (detectedMaxTableScrollPx !== null) return detectedMaxTableScrollPx;
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:absolute;visibility:hidden;width:1px;top:-999999px;left:-999999px;";
+  document.body.appendChild(probe);
+  let lo = 1000000, hi = 40000000; // below every known engine's ceiling .. above every known engine's ceiling
+  const fits = h => { probe.style.height = h + "px"; return parseInt(getComputedStyle(probe).height, 10) === h; };
+  if (fits(hi)) { lo = hi; } // a future, even more generous engine
+  else {
+    while (hi - lo > 100000) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (fits(mid)) lo = mid; else hi = mid;
+    }
+  }
+  probe.remove();
+  // Small safety margin: the real #tableSpacer sits inside this app's own
+  // deeper flex nesting, not a bare offscreen probe — confirmed this
+  // session to match closely, but leaving ~5% headroom costs nothing.
+  detectedMaxTableScrollPx = Math.floor(lo * 0.95);
+  return detectedMaxTableScrollPx;
+}
+let tableScrollHeightScale = 1; // physical = logical * this; 1 == no compression needed
+
+// Caps `contentPx` (the true, uncompressed content height) to this
+// session's detected safe ceiling, updating tableScrollHeightScale as a
+// side effect. Shared by renderTable() and updateLiveGrowingTotal() so
+// both compute the physical spacer height identically.
+// The scale maps SCROLLABLE RANGES (scrollHeight - clientHeight on each
+// side), not raw content heights: #tableBody's native scrollTop only ever
+// reaches (cap + TABLE_SPACER_PAD) - clientHeight — every call site sets
+// tableSpacer.style.height to `computeTableSpacerContentHeight(...) + 22`,
+// never the bare cap — so a plain cap/contentPx ratio leaves the
+// converted logical position short of the true bottom by
+// clientHeight * (contentPx/cap - 1) px at the native max — several
+// row-heights under real compression — meaning End never actually reveals
+// the last rows even once the native scrollbar is fully at its ceiling.
+const TABLE_SPACER_PAD = 22; // #tableRows' own top+bottom padding — see every `+ 22` at tableSpacer.style.height's call sites
+function computeTableSpacerContentHeight(contentPx) {
+  const cap = detectMaxTableScrollPx();
+  if (contentPx <= cap) { tableScrollHeightScale = 1; return contentPx; }
+  const viewportH = tableBody.clientHeight || 0;
+  const physicalRange = Math.max(1, (cap + TABLE_SPACER_PAD) - viewportH);
+  const logicalRange = Math.max(1, contentPx - viewportH);
+  tableScrollHeightScale = physicalRange / logicalRange;
+  return cap;
+}
+function logicalToPhysicalScrollPx(px) { return tableScrollHeightScale === 1 ? px : px * tableScrollHeightScale; }
+function physicalToLogicalScrollPx(px) { return tableScrollHeightScale === 1 ? px : px / tableScrollHeightScale; }
+
 /* ---------- Multiline message display (state.multilineMessages) ----------
    Off by default: rows stay the fixed ROW_HEIGHT, virtualization math below
    is untouched from before this feature. On: a row's height grows with its
@@ -16686,7 +17290,10 @@ function topVisibleEntryId(entries, offsets, scrollTop) {
    caller falls back to its own default (reset to top). */
 function captureViewAnchor(entries, offsets, scrollEl) {
   if (!entries.length) return null;
-  const scrollTop = scrollEl.scrollTop;
+  // Shared with highlightBody (never compressed — the ternary is a no-op
+  // there); tableBody's own scrollTop is physical, converted to the same
+  // logical space offsets/ROW_HEIGHT math already uses.
+  const scrollTop = scrollEl === tableBody ? physicalToLogicalScrollPx(scrollEl.scrollTop) : scrollEl.scrollTop;
   const viewportH = scrollEl.clientHeight || 400;
   if (state.selectedId) {
     const idx = entries.findIndex(e => e.id === state.selectedId);
@@ -16869,6 +17476,13 @@ function setTableScroll(value) {
   lastProgrammaticScrollTs = performance.now();
   tableBody.scrollTop = Math.max(0, value);
 }
+// setTableScroll's own callers that want "scroll to the true bottom"
+// already pass tableBody.scrollHeight directly (already physical, and the
+// physical bottom always equals the logical bottom under a linear scale —
+// see computeTableSpacerContentHeight) — only a target computed from
+// LOGICAL row math (scrollToIndex, restoreViewAnchor's tableBody use)
+// needs this conversion first.
+function setTableScrollLogical(value) { setTableScroll(logicalToPhysicalScrollPx(value)); }
 
 /* ===================== Horizontal scroll (FEATURE_BACKLOG.md "Horizontal
    scrollbar in the Filter view") =====================
@@ -16914,18 +17528,46 @@ function contextRangeIndex(ranges, ts) {
 function renderVisibleRows() {
   const total = currentViewEntries.length;
   const viewportH = tableBody.clientHeight || 400;
-  const scrollTop = tableBody.scrollTop;
+  // #tableBody's own scrollTop is in PHYSICAL (possibly compressed) space —
+  // see computeTableSpacerContentHeight's own comment. Convert to logical
+  // space once here; tableRowOffsets/ROW_HEIGHT-based math below is always
+  // logical (rendered rows sit at their true height regardless of
+  // compression), so the conversion happens only at this one read boundary.
+  const scrollTop = physicalToLogicalScrollPx(tableBody.scrollTop);
   let start, end;
   if (needsRowOffsets() && tableRowOffsets) {
-    const centerIdx = findOffsetIndex(tableRowOffsets, scrollTop);
+    const centerIdx = Math.min(findOffsetIndex(tableRowOffsets, scrollTop), Math.max(0, total - 1));
     start = Math.max(0, centerIdx - BUFFER_ROWS);
     end = Math.min(total, findOffsetIndex(tableRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
-    tableRows.style.top = tableRowOffsets[start] + "px";
+    let physicalTop = logicalToPhysicalScrollPx(tableRowOffsets[start]);
+    // #tableRows' own rendered height is always the TRUE (uncompressed) row
+    // heights — only its top offset is compressed — so top-anchoring it via
+    // logicalToPhysicalScrollPx alone can push its true bottom edge past
+    // #tableSpacer's own capped declared height once end reaches the very
+    // last entry (the BUFFER_ROWS lookback above leaves the rendered block
+    // taller than the viewport right at the tail). #tableSpacer/#tableRows
+    // are deliberately overflow:visible (so a long message's horizontal
+    // overflow bleeds up to #tableBody's own scrollbar — see the "Horizontal
+    // scroll" comment below), so nothing else clips that overhang, and it's
+    // free to inflate the browser's own real scrollHeight beyond what
+    // computeTableSpacerContentHeight assumed. Bottom-anchoring at the tail
+    // instead keeps the true rendered box within the capped spacer always.
+    if (tableScrollHeightScale !== 1 && end === total) {
+      const cap = detectMaxTableScrollPx();
+      physicalTop = Math.min(physicalTop, cap - (tableRowOffsets[end] - tableRowOffsets[start]));
+    }
+    tableRows.style.top = physicalTop + "px";
   } else {
     const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
-    start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+    start = Math.min(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS), Math.max(0, total - 1));
     end = Math.min(total, start + maxVisible);
-    tableRows.style.top = (start * ROW_HEIGHT) + "px";
+    let physicalTop = logicalToPhysicalScrollPx(start * ROW_HEIGHT);
+    // Same tail-overhang guard as the offsets branch above.
+    if (tableScrollHeightScale !== 1 && end === total) {
+      const cap = detectMaxTableScrollPx();
+      physicalTop = Math.min(physicalTop, cap - (end - start) * ROW_HEIGHT);
+    }
+    tableRows.style.top = physicalTop + "px";
   }
 
   // Bracket rendering only makes sense in the file's natural chronological
@@ -17128,6 +17770,26 @@ function computeHighlightMap(fileId) {
       entries.forEach(e => addColor(e.id, node.highlightColor));
     }
   }
+
+  // A merged file's per-source colours (see mergeFiles' additive
+  // `sources`/`sourceId` stamping and renderSourceRow's swatch) ride the
+  // same gutter-marker lane as the filter-highlight colours above — a
+  // source colour is just one more mark an entry can carry, composable
+  // with any filter highlight already on it. Deliberately not wired into
+  // the text-underline-stripe path (getHighlightMatchNodes/
+  // hlStripeGradient): that's specifically for a filter's own text match,
+  // not an entry's origin.
+  if (file.merged && Array.isArray(file.sources) && file.sources.length) {
+    const colorBySourceId = new Map();
+    file.sources.forEach(src => { if (src.color) colorBySourceId.set(src.id, src.color); });
+    if (colorBySourceId.size) {
+      file.entries.forEach(e => {
+        const c = e.sourceId && colorBySourceId.get(e.sourceId);
+        if (c) addColor(e.id, c);
+      });
+    }
+  }
+
   return map;
 }
 
@@ -18249,7 +18911,44 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
   });
 }
 
-let highlightScrollTicking = false;
+// Re-rendering the full visible-row DOM (bracket detection, match
+// highlighting, ...) on every single animation frame of a scroll is
+// expensive enough to visibly interfere with the browser's own native
+// scroll-animation scheduling on a heavily compressed huge table —
+// empirically confirmed via real Firefox telemetry (2026-09-21, person-
+// reported: holding/pressing End on an 822,697-entry merge repeatedly
+// stalled the native scrollTop >150,000 physical px short of the true
+// max, non-deterministically between attempts — consistent with
+// main-thread contention from the per-frame rebuild, not a hard browser
+// limit or any remaining scroll-math bug). Throttles a rapid burst of
+// scroll events (native keyboard End/Home, momentum scrolling, ...) down
+// to at most one render per SCROLL_RENDER_THROTTLE_MS via setTimeout —
+// freeing up most of each animation frame's time budget — while a single,
+// isolated scroll event (mouse wheel, trackpad) still renders immediately
+// on its own next frame, same as before. The render function always reads
+// live DOM/state at call time (never a captured snapshot), so the last
+// render in a throttled burst still reflects the true final scroll
+// position once scrolling settles — no separate "did anything change"
+// bookkeeping needed beyond the `pending` flag below.
+const SCROLL_RENDER_THROTTLE_MS = 100;
+function makeThrottledScrollRenderer(renderFn) {
+  let ticking = false, pending = false;
+  function frame() { requestAnimationFrame(renderFn); }
+  function rearm() {
+    setTimeout(() => {
+      if (pending) { pending = false; frame(); rearm(); }
+      else { ticking = false; }
+    }, SCROLL_RENDER_THROTTLE_MS);
+  }
+  return function onScroll() {
+    if (ticking) { pending = true; return; }
+    ticking = true;
+    frame();
+    rearm();
+  };
+}
+
+const throttledHighlightScrollRender = makeThrottledScrollRenderer(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); });
 highlightBody.addEventListener("scroll", () => {
   // Twin of #tableBody's own listener below (FEATURE_BACKLOG #25): manual
   // scrolling away from the bottom of a tailed Highlight/Full view disengages
@@ -18265,18 +18964,15 @@ highlightBody.addEventListener("scroll", () => {
       maybeReengageTailFollow();
     }
   }
-  if (highlightScrollTicking) return;
-  highlightScrollTicking = true;
-  // Twin of #tableBody's own rAF-batched updateMinimapRenderedRange() call
-  // below — keeps Box #2 tracking the Full view's own scroll position while
+  // Twin of #tableBody's own updateMinimapRenderedRange() call below —
+  // keeps Box #2 tracking the Full view's own scroll position while
   // the Full tab is what's showing (see that function's fhLayout/fhActiveTab
   // branch; a no-op otherwise).
-  requestAnimationFrame(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); highlightScrollTicking = false; });
+  throttledHighlightScrollRender();
 });
 window.addEventListener("resize", () => renderHighlightVisibleRows());
 
-// Batches rapid scroll events onto animation frames instead of re-rendering per event.
-let scrollTicking = false;
+const throttledTableScrollRender = makeThrottledScrollRenderer(() => { renderVisibleRows(); updateMinimapRenderedRange(); });
 tableBody.addEventListener("scroll", () => {
   // Manual scrolling away from the bottom of a tailed view disengages
   // auto-follow; scrolling (or jumping — e.g. a "go to last row" shortcut)
@@ -18293,9 +18989,7 @@ tableBody.addEventListener("scroll", () => {
       maybeReengageTailFollow();
     }
   }
-  if (scrollTicking) return;
-  scrollTicking = true;
-  requestAnimationFrame(() => { renderVisibleRows(); updateMinimapRenderedRange(); scrollTicking = false; });
+  throttledTableScrollRender();
 });
 window.addEventListener("resize", () => {
   renderVisibleRows();
@@ -19302,17 +19996,21 @@ function updateMinimapFullRange() {
 function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
   const viewportH = scrollEl.clientHeight || 400;
   const maxIdx = entries.length - 1;
+  // Shared with highlightBody (never compressed — the ternary is a no-op
+  // there); tableBody's own scrollTop is physical, converted to the same
+  // logical space rowOffsets/ROW_HEIGHT math already uses.
+  const scrollTop = scrollEl === tableBody ? physicalToLogicalScrollPx(scrollEl.scrollTop) : scrollEl.scrollTop;
   let startIdx, endIdx;
   // Keyed on the offsets array's presence, not on needsRowOffsets(): the
   // Context view always has one (its gap strips make row tops variable
   // regardless of the multiline/notes toggles), while the Filtered view still
   // passes null whenever its rows are a flat ROW_HEIGHT each.
   if (rowOffsets) {
-    startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(rowOffsets, scrollEl.scrollTop)));
-    endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(rowOffsets, scrollEl.scrollTop + viewportH)));
+    startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(rowOffsets, scrollTop)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(rowOffsets, scrollTop + viewportH)));
   } else {
-    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollEl.scrollTop / ROW_HEIGHT)));
-    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollEl.scrollTop + viewportH) / ROW_HEIGHT)));
+    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollTop / ROW_HEIGHT)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT)));
   }
   // The temp anchor row (see spliceTempAnchor) is a foreign entry that's
   // genuinely rendered in the viewport but isn't a real member of the view —
@@ -19683,6 +20381,11 @@ timelineMinimapSvg.addEventListener("contextmenu", ev => {
 function scrollToIndex(index, opts) {
   opts = opts || {};
   const viewportH = tableBody.clientHeight || 400;
+  // rowTop/rowH (from tableRowOffsets/ROW_HEIGHT) are always logical — see
+  // renderVisibleRows' own comment — so tableBody.scrollTop (physical) is
+  // converted once here for the comparisons below, and the final target
+  // (computed in that same logical space) goes through setTableScrollLogical.
+  const scrollTop = physicalToLogicalScrollPx(tableBody.scrollTop);
   let rowTop, rowH;
   if (needsRowOffsets() && tableRowOffsets) {
     rowTop = tableRowOffsets[index] || 0;
@@ -19694,20 +20397,21 @@ function scrollToIndex(index, opts) {
   let target;
   if (opts.offset != null) {
     // Preserve the entry's previous on-screen pixel position instead of
-    // centering — setTableScroll's own Math.max(0, …) clamp naturally
-    // covers "not enough rows above to keep that offset" by pinning the
-    // row as high as it can go (offset 0) instead of the requested one.
+    // centering — setTableScrollLogical's own Math.max(0, …) clamp
+    // naturally covers "not enough rows above to keep that offset" by
+    // pinning the row as high as it can go (offset 0) instead of the
+    // requested one.
     target = rowTop - opts.offset;
   } else if (opts.center) {
     target = rowTop - viewportH / 2 + rowH / 2;
-  } else if (rowTop < tableBody.scrollTop) {
+  } else if (rowTop < scrollTop) {
     target = rowTop;
-  } else if (rowTop + rowH > tableBody.scrollTop + viewportH) {
+  } else if (rowTop + rowH > scrollTop + viewportH) {
     target = rowTop + rowH - viewportH;
   } else {
-    target = tableBody.scrollTop; // already in view
+    target = scrollTop; // already in view
   }
-  setTableScroll(target);
+  setTableScrollLogical(target);
   renderVisibleRows();
 
   if (opts.flash) {
@@ -20604,6 +21308,37 @@ function jumpToEntry(entryId) {
 // which is itself persisted separately — re-deriving the node here after any
 // bookmarks restore keeps it in sync without needing its own serialized
 // shape at all.
+// Fixed sort rank for the tree's auto-managed/special children — Sources
+// (0), Bookmarks (1), Notes (2), then each Selection N by its own creation
+// ordinal (3, 4, 5, ...). An ordinary, user-created filter node has no rank
+// (null) and always sorts after every special one, in whatever relative
+// order it already has — this never touches or reorders those.
+function specialChildRank(node) {
+  if (!node) return null;
+  if (node.filterType === "sources") return 0;
+  if (node.filterType === "bookmarks") return 1;
+  if (node.filterType === "notes") return 2;
+  if (node.selectionFilter) return 3 + (node.selectionOrdinal || 0);
+  return null;
+}
+
+// Inserts `nodeId` into `root.children` at the correct position relative to
+// any other special (ranked) children already present, so "Sources,
+// Bookmarks, Notes, Selection 1, Selection 2, ..." always holds regardless
+// of which was created first — used by syncBookmarksFilterNode/
+// syncNotesFilterNode/createSelectionFilterNode/createMergeShell's own
+// "Sources" node, replacing their previous ad hoc unshift/splice calls. An
+// ordinary (unranked) child is never displaced.
+function insertSpecialChild(root, nodeId, rank) {
+  let idx = root.children.findIndex(id => {
+    const r = specialChildRank(state.nodes[id]);
+    return r !== null && r > rank;
+  });
+  if (idx === -1) idx = root.children.findIndex(id => specialChildRank(state.nodes[id]) === null);
+  if (idx === -1) idx = root.children.length;
+  root.children.splice(idx, 0, nodeId);
+}
+
 function syncBookmarksFilterNode(rootId) {
   const root = state.nodes[rootId];
   if (!root || root.type !== "file") return;
@@ -20615,7 +21350,7 @@ function syncBookmarksFilterNode(rootId) {
       children: [], filterType: "bookmarks", value: null, inverted: false, locked: true,
     };
     state.nodes[node.id] = node;
-    root.children.unshift(node.id);
+    insertSpecialChild(root, node.id, 1);
     invalidateAllCaches();
   } else if (!hasAny && existing) {
     // If this node is the one currently active AND the Filtered tab is what's
@@ -20642,10 +21377,9 @@ function syncBookmarksFilterNode(rootId) {
 // state.notes instead of state.bookmarks (person-requested "Notes" overview,
 // FEATURE_BACKLOG.md "Bookmarks rework" follow-up): a locked, non-persisted
 // filter node named "Notes" that appears the moment this file has ≥1 entry
-// with a note and disappears once none are left. Placed directly below the
-// "Bookmarks" node when one exists (root.children[0]) so it always reads as
-// "Bookmarks, then Notes" in the tree; unshifted to the top itself when
-// Bookmarks isn't present, same top-level placement Bookmarks uses.
+// with a note and disappears once none are left. Positioned via
+// insertSpecialChild (rank 2) so it always reads as "Sources, Bookmarks,
+// Notes, Selection 1, ..." regardless of which of those already exist.
 function syncNotesFilterNode(rootId) {
   const root = state.nodes[rootId];
   if (!root || root.type !== "file") return;
@@ -20657,8 +21391,7 @@ function syncNotesFilterNode(rootId) {
       children: [], filterType: "notes", value: null, inverted: false, locked: true,
     };
     state.nodes[node.id] = node;
-    const bookmarksIdx = root.children.findIndex(id => state.nodes[id] && state.nodes[id].filterType === "bookmarks");
-    root.children.splice(bookmarksIdx === -1 ? 0 : bookmarksIdx + 1, 0, node.id);
+    insertSpecialChild(root, node.id, 2);
     invalidateAllCaches();
   } else if (!hasAny && existing) {
     // Same "don't strand the Filtered tab on a node that's about to vanish"
@@ -20725,7 +21458,10 @@ function toggleBookmark(entryId) {
     currentViewEntries = spliceTempAnchor(getVisibleEntries());
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
     tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-    tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+    {
+      const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+      tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+    }
     cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
     syncTableRowsWidth();
   }
@@ -21232,7 +21968,10 @@ function renderTable() {
   currentViewEntries = spliceTempAnchor(minimapViewEntries);
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-  tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  {
+    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+    tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+  }
   cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
   syncTableRowsWidth();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
@@ -21299,7 +22038,7 @@ function renderTable() {
     return;
   }
 
-  if (restoreViewAnchor(scrollAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScroll)) {
+  if (restoreViewAnchor(scrollAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical)) {
     renderVisibleRows();
     return;
   }
@@ -22524,6 +23263,18 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   const node = existingNode || createFileNode(name, folderId);
   if (existingNode) activateQueuedFileNode(node);
   node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
+
+  const fmt0 = state.logFormats.find(f => f.id === node.formatId);
+  if (fmt0 && fmt0.mode === "meta") {
+    // A meta-format file is fanned out into per-target virtual files and
+    // auto-merged instead of being parsed in place (loadMetaFormatText) —
+    // this placeholder node isn't the result, so it's discarded here. No
+    // live tail/localPath is wired for a meta-format file in v1 (see
+    // loadMetaFormatText's own comment).
+    deleteNode(node.id);
+    const text = await readFileWithProgress(file, () => {});
+    return await loadMetaFormatText(name, text, fmt0);
+  }
   // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
   // when a desktop wrapper exposes getPathForFile (window.philogg) — a
   // plain browser never exposes a File's real OS path (that's the whole
@@ -22549,7 +23300,12 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     throw err;
   } finally {
     delete node.loadFraction;
-    flushLoadRender(node.id);
+    // Skip the render if the node was already deleted mid-load (by the
+    // person, or the catch above) — same guard fillMergedEntries already
+    // has for the equivalent race, just applied before the render instead
+    // of after (rendering for a dead node id is a wasted full render, not
+    // just redundant work).
+    if (state.nodes[node.id] === node) flushLoadRender(node.id);
   }
   if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
   persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
@@ -22660,6 +23416,23 @@ async function loadFileDescriptors(descs) {
 
   const mergeAfter = descs.length > 1 ? await confirmMergeOnLoad(queuedNodes.map(n => n.name)) : false;
 
+  // Create the merge FIRST (person-requested this session), before any
+  // source has even started reading — each queued placeholder is tagged
+  // right away so it renders nested under the shell's "Sources" (or folds
+  // into its segmented progress bar) instead of as a separate top-level
+  // grayed row for the whole batch.
+  let mergeShell = null;
+  if (mergeAfter) {
+    mergeShell = createMergeShell(queuedNodes.map(n => n.name).join(" + "), undefined);
+    // Real File objects are in scope here — weight each source by its true
+    // byte size (person-requested: reflect actual relative load effort,
+    // not an equal N-way split). A zip-sourced entry has no `.file` (only
+    // `.name`) — weight 1 (equal) for those.
+    mergeShell.loadSources = descs.map((d, i) => ({ id: queuedNodes[i].id, weight: d.file ? d.file.size : 1 }));
+    queuedNodes.forEach(n => { n.mergeOwnerId = mergeShell.id; n.mergeSourceHidden = true; });
+    render();
+  }
+
   const loadedIds = [];
   try {
     const results = await Promise.all(descs.map(async (desc, i) => {
@@ -22704,9 +23477,25 @@ async function loadFileDescriptors(descs) {
     render();
   }
 
-  if (mergeAfter && loadedIds.length >= 2) {
-    await mergeFiles(loadedIds); // async now — see mergeFiles' own comment
-    render();
+  if (mergeShell) {
+    if (loadedIds.length >= 2) {
+      state.activeId = mergeShell.id;
+      await fillMergedEntries(mergeShell, loadedIds.map(id => state.nodes[id]));
+      render();
+    } else {
+      // Fewer than 2 sources actually loaded (one or more failed) — no
+      // merge is possible. Any lone survivor was already tagged hidden
+      // when the shell was created (before load results were known), so
+      // un-tag it back to a normal, visible top-level file before dropping
+      // the now-pointless empty shell — otherwise it would be stranded,
+      // permanently un-nestable and un-rendered.
+      loadedIds.forEach(id => {
+        const n = state.nodes[id];
+        if (n) { delete n.mergeOwnerId; delete n.mergeSourceHidden; }
+      });
+      deleteNode(mergeShell.id);
+      render();
+    }
   }
 }
 
@@ -23986,6 +24775,13 @@ function renderFolderSection(folder) {
     list.className = "folder-watch-files";
     folder.files.forEach(rec => {
       if (rec.nodeId && state.nodes[rec.nodeId]) {
+        const n = state.nodes[rec.nodeId];
+        // A source loaded specifically for a create-first folder-watch merge
+        // (see folderMinimapMergeFull/Window) is only reachable nested under
+        // its merge's own "Sources" node — never in the folder's own
+        // listing too, or it would double-render (renderTree's own skip
+        // logic has the same check for the plain top-level case).
+        if (n.mergeOwnerId && n.mergeSourceHidden) return;
         list.appendChild(renderNode(rec.nodeId, 0, { folderTopLevelNoChevron: true, autoOpened: !!rec.openedByAuto }));
         return;
       }
@@ -24006,7 +24802,12 @@ function renderFolderSection(folder) {
         const n = state.nodes[id];
         return n && n.folderId === folder.id && n.name === rec.name;
       });
-      if (loadingId) { list.appendChild(renderNode(loadingId, 0, { folderTopLevelNoChevron: true })); return; }
+      if (loadingId) {
+        const n = state.nodes[loadingId];
+        if (n.mergeOwnerId && n.mergeSourceHidden) return; // same double-render guard as above, mid-load
+        list.appendChild(renderNode(loadingId, 0, { folderTopLevelNoChevron: true }));
+        return;
+      }
       // Non-log, inline-viewable file (this session's generalization — see
       // openInlineViewer's own comment): never gets a rec.nodeId, so the
       // two branches above never match for it — reuses the same
@@ -24155,6 +24956,13 @@ async function probeFolderFileRange(folder, rec) {
   // Same per-filename format resolution loadOneFileIntoTree itself uses —
   // folders have no separate per-folder format setting.
   const formatId = resolveFormatIdForFilename(rec.name);
+  // A meta-format file needs its declarative split to classify lines at
+  // all — probeFileTimeRange's single-format head/tail scan would either
+  // only ever see one of its grammars (depending which happens to sit in
+  // the probed byte window) or none. Not supported in v1: degrade to the
+  // existing "probed, no range found" sentinel rather than probe wrong.
+  const fmt0 = state.logFormats.find(f => f.id === formatId);
+  if (fmt0 && fmt0.mode === "meta") return (rec._range = null);
   return (rec._range = await probeFileTimeRange(file, formatId));
 }
 
@@ -24422,12 +25230,45 @@ async function folderMinimapLoadIndividually(folder) {
 // resolveFolderMinimapTargets does for the other two actions.
 async function folderMinimapMergeFull(folder) {
   const targets = resolveFolderMinimapTargets(folder);
+  // Merge shell created FIRST (person-requested this session), before any
+  // target is even read — each source is tagged hidden the moment its own
+  // node id is known (right after loadFolderFile returns; loadFolderFile
+  // owns its own node creation with no placeholder to pre-tag through the
+  // way loadFileDescriptors' queued nodes can, so there's a brief,
+  // accepted visibility gap here rather than a larger refactor).
+  const mergeShell = targets.length >= 2 ? createMergeShell(targets.map(r => r.name).join(" + "), undefined) : null;
+  // No file size is known at this point (only a handle; loadFolderFile
+  // reads it transiently and never stores it back onto rec), and sources
+  // load strictly sequentially here — equal weighting is the honest,
+  // simplest choice for this path.
+  if (mergeShell) mergeShell.loadSources = [];
   const nodeIds = [];
   for (const rec of targets) {
     await loadFolderFile(folder, rec);
-    if (rec.nodeId) nodeIds.push(rec.nodeId);
+    if (rec.nodeId) {
+      nodeIds.push(rec.nodeId);
+      if (mergeShell) {
+        const n = state.nodes[rec.nodeId];
+        n.mergeOwnerId = mergeShell.id;
+        n.mergeSourceHidden = true;
+        mergeShell.loadSources.push({ id: rec.nodeId, weight: 1 });
+        render();
+      }
+    }
   }
-  if (nodeIds.length >= 2) await mergeFiles(nodeIds);
+  if (nodeIds.length >= 2) {
+    state.activeId = mergeShell.id;
+    await fillMergedEntries(mergeShell, nodeIds.map(id => state.nodes[id]));
+  } else if (mergeShell) {
+    // A target failed to load — fewer than 2 sources actually resolved.
+    // Un-tag any lone survivor back to a normal, visible file and drop the
+    // now-pointless empty shell (same reasoning as loadFileDescriptors').
+    if (nodeIds.length === 1) {
+      const n = state.nodes[nodeIds[0]];
+      if (n) { delete n.mergeOwnerId; delete n.mergeSourceHidden; }
+    }
+    deleteNode(mergeShell.id);
+  }
   // A single target file needs no merge step — loadFolderFile already
   // activated it.
   finishFolderMinimapAction();
@@ -24445,28 +25286,48 @@ async function folderMinimapMergeWindow(folder) {
   const win = fmSelectedWindow;
   if (!win) return;
   const targets = resolveFolderMinimapTargets(folder);
+  // Same create-shell-first shape as folderMinimapMergeFull above.
+  const mergeShell = targets.length >= 2 ? createMergeShell(targets.map(r => r.name).join(" + "), undefined) : null;
+  // Same "no size known, sequential loading -> equal weighting" reasoning
+  // as folderMinimapMergeFull above.
+  if (mergeShell) mergeShell.loadSources = [];
   const nodeIds = [];
   for (const rec of targets) {
     await loadFolderFileWindowed(folder, rec, win.from, win.to);
-    if (rec.nodeId) nodeIds.push(rec.nodeId);
+    if (rec.nodeId) {
+      nodeIds.push(rec.nodeId);
+      if (mergeShell) {
+        const n = state.nodes[rec.nodeId];
+        n.mergeOwnerId = mergeShell.id;
+        n.mergeSourceHidden = true;
+        mergeShell.loadSources.push({ id: rec.nodeId, weight: 1 });
+        render();
+      }
+    }
   }
   let resultId = null;
   if (nodeIds.length >= 2) {
-    const merged = await mergeFiles(nodeIds);
-    resultId = merged && merged.id;
+    state.activeId = mergeShell.id;
+    await fillMergedEntries(mergeShell, nodeIds.map(id => state.nodes[id]));
+    resultId = mergeShell.id;
     // If any source was only partially read, the merge result covers no
     // more than the union of what was actually read — flag it the same
     // way, so it reads (and persists/undoes) as visibly incomplete too,
     // same as any source it was built from.
-    const partialSources = merged ? nodeIds.map(id => state.nodes[id]).filter(n => n && n.partial) : [];
+    const partialSources = nodeIds.map(id => state.nodes[id]).filter(n => n && n.partial);
     if (partialSources.length) {
-      merged.partial = {
+      mergeShell.partial = {
         from: Math.min(...partialSources.map(n => n.partial.from)),
         to: Math.max(...partialSources.map(n => n.partial.to)),
       };
     }
-  } else if (nodeIds.length === 1) {
-    resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
+  } else {
+    if (mergeShell) deleteNode(mergeShell.id); // created for >=2 targets, but fewer actually resolved
+    if (nodeIds.length === 1) {
+      const n = state.nodes[nodeIds[0]];
+      if (n) { delete n.mergeOwnerId; delete n.mergeSourceHidden; } // tagged hidden pre-emptively; wasn't part of a real merge after all
+      resultId = nodeIds[0]; // a single file in the window: no merge needed, just filter it
+    }
   }
   if (resultId) createFilterNode(resultId, "timerange", { from: win.from, to: win.to });
   finishFolderMinimapAction();
@@ -25641,27 +26502,34 @@ function selectionFilterNodesForRoot(rootId) {
 // every selectionFilter node that already exists across the whole tree
 // (not just under this root), so numbering stays a simple, ever-increasing
 // sequence rather than resetting per file.
+function nextSelectionFilterOrdinal() {
+  return Object.values(state.nodes).filter(node => node.selectionFilter).length + 1;
+}
 function nextSelectionFilterName() {
-  const n = Object.values(state.nodes).filter(node => node.selectionFilter).length;
-  return "Selection " + (n + 1);
+  return "Selection " + nextSelectionFilterOrdinal();
 }
 
 // Creates a brand-new top-level selection filter under `rootId` — same
-// "top-level, alongside Bookmarks" placement syncBookmarksFilterNode uses
-// (root.children.unshift), NOT a child of state.activeId like every other
-// context-menu filter action. Named as an ordinal ("Selection 1", "Selection
-// 2", ...) via nextSelectionFilterName(), not the entry count idSetFilterName
-// gives plot-created idset filters — renaming afterward goes through the
-// standard "Rename…" tree action like any other filter node.
+// "top-level, alongside Bookmarks/Notes/Sources" placement
+// syncBookmarksFilterNode uses (insertSpecialChild), NOT a child of
+// state.activeId like every other context-menu filter action. Named as an
+// ordinal ("Selection 1", "Selection 2", ...) via nextSelectionFilterName(),
+// not the entry count idSetFilterName gives plot-created idset filters —
+// renaming afterward goes through the standard "Rename…" tree action like
+// any other filter node. The ordinal is ALSO captured onto the node itself
+// (selectionOrdinal) so insertSpecialChild's sort survives a later rename —
+// node.name is no longer the source of truth for ordering, just display.
 function createSelectionFilterNode(rootId, ids) {
   const root = state.nodes[rootId];
   if (!root || !ids || !ids.length) return null;
+  const ordinal = nextSelectionFilterOrdinal();
   const node = {
-    id: uid("n"), type: "filter", name: nextSelectionFilterName(), parentId: rootId,
+    id: uid("n"), type: "filter", name: "Selection " + ordinal, parentId: rootId,
     children: [], filterType: "idset", value: ids.slice(), inverted: false, selectionFilter: true,
+    selectionOrdinal: ordinal,
   };
   state.nodes[node.id] = node;
-  root.children.unshift(node.id);
+  insertSpecialChild(root, node.id, 3 + ordinal);
   return activateNewNode(node);
 }
 
@@ -26147,6 +27015,13 @@ const cpClearBtn = el("#cpClearBtn");
 const cpModeFreeBtn = el("#cpModeFree");
 const cpModeThemeBtn = el("#cpModeTheme");
 let colorPickerTargetId = null;
+// Optional override for where a picked color goes — set by openColorPicker's
+// third argument. Lets the same popup commit a color somewhere other than
+// a filter node's highlightColor (see setHighlightColor below), e.g. into a
+// merged file's per-source Sources-group entry (renderSourceRow). Absent
+// (the default, every pre-existing call site), a pick still falls through
+// to setHighlightColor(colorPickerTargetId, ...) exactly as before.
+let colorPickerOnPick = null;
 
 // Distinct, moderately saturated hues; independent from COLUMN_PALETTE
 // (extraction columns) so the two color systems can't be confused. Also
@@ -26176,7 +27051,7 @@ function renderColorPresets() {
     b.className = "cp-preset";
     b.style.background = c;
     b.title = c;
-    b.addEventListener("click", () => { setHighlightColor(colorPickerTargetId, c); closeColorPicker(); });
+    b.addEventListener("click", () => { commitColorPick(c); closeColorPicker(); });
     frag.appendChild(b);
   });
   cpPresets.appendChild(frag);
@@ -26195,15 +27070,24 @@ setColorPickerMode(colorPickerMode); // reflect the persisted/default mode in th
 cpModeFreeBtn.addEventListener("click", () => setColorPickerMode("free"));
 cpModeThemeBtn.addEventListener("click", () => setColorPickerMode("theme"));
 
-function openColorPicker(nodeId, anchorEl) {
+function openColorPicker(nodeId, anchorEl, onPick) {
   colorPickerTargetId = nodeId;
+  colorPickerOnPick = onPick || null;
   renderColorPresets(); // picks up a theme switch that happened since the popup was last opened
   const rect = anchorEl.getBoundingClientRect();
   colorPickerPopup.style.left = Math.min(rect.left, window.innerWidth - 196) + "px";
   colorPickerPopup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 300) + "px";
   colorPickerPopup.classList.remove("hidden");
 }
-function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPickerTargetId = null; }
+function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPickerTargetId = null; colorPickerOnPick = null; }
+
+// Commits a picked color to wherever this popup's current target wants it
+// — colorPickerOnPick when the opener asked for one, otherwise the default
+// (a filter node's own highlightColor, via setHighlightColor).
+function commitColorPick(color) {
+  if (colorPickerOnPick) colorPickerOnPick(color);
+  else setHighlightColor(colorPickerTargetId, color);
+}
 
 // Click position within the wheel -> hue. The conic-gradient starts red at
 // the top (12 o'clock, CSS's 0deg for conic-gradient) and goes clockwise
@@ -26211,18 +27095,21 @@ function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPic
 // "angle clockwise from top" IS the hue directly, just measured differently
 // than atan2's "counter-clockwise from 3 o'clock" — hence the +90deg shift.
 cpWheel.addEventListener("click", ev => {
-  if (!colorPickerTargetId) return;
+  // colorPickerTargetId is legitimately null for an onPick-driven open (a
+  // filter node's own id is always truthy) — only bail when neither a
+  // target nor an onPick callback is set, i.e. the popup isn't really open.
+  if (colorPickerTargetId == null && !colorPickerOnPick) return;
   const rect = cpWheel.getBoundingClientRect();
   const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
   const dx = ev.clientX - cx, dy = ev.clientY - cy;
   if (Math.sqrt(dx * dx + dy * dy) > rect.width / 2) return; // click landed outside the disc
   let hue = Math.atan2(dy, dx) * 180 / Math.PI + 90;
   if (hue < 0) hue += 360;
-  setHighlightColor(colorPickerTargetId, "hsl(" + Math.round(hue) + ", 68%, 55%)");
+  commitColorPick("hsl(" + Math.round(hue) + ", 68%, 55%)");
   closeColorPicker();
 });
 
-cpClearBtn.addEventListener("click", () => { setHighlightColor(colorPickerTargetId, null); closeColorPicker(); });
+cpClearBtn.addEventListener("click", () => { commitColorPick(null); closeColorPicker(); });
 
 // Sets or clears a filter node's highlight colour, which is both the colour
 // AND the on/off state for that highlight rule (session 6 — "has a colour"
@@ -27499,7 +28386,10 @@ function setNoteAndRepaint(entryId, text) {
   if (rootId) syncNotesFilterNode(rootId);
   renderTree(); // repaint the sidebar in case the auto "Notes" node just appeared/disappeared
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-  tableSpacer.style.height = ((needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT) + 22) + "px";
+  {
+    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+    tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+  }
   rebuildHighlightOffsets();
   renderVisibleRows();
   renderHighlightVisibleRows();
@@ -27561,7 +28451,7 @@ noteDialogInput.addEventListener("keydown", ev => {
 
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "idset"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "sources", "idset"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId, includeAncestors) {
@@ -27922,7 +28812,7 @@ function importFilterJson(text) {
     // written to a saved filter file in the first place — an imported one
     // (hand-edited file, or an old export from before this restriction
     // existed) would just be an unlocked look-alike with a stale match set.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes") return false;
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
     // and/or/link carry their two sides as baked condition snapshots. A file
     // or library preset written before that model carries node-id references
     // instead, which mean nothing here — importing it would produce a filter
@@ -28120,11 +29010,50 @@ async function deleteFormatRuleEntry(id) {
 // Loaded once at boot, before any file parsing can happen (see the Init
 // section). Lazily seeds the builtin default format on a fresh DB, or on
 // an upgrade from a pre-feature session where it's simply missing.
+// FEATURE_BACKLOG.md #81's reference case: a log4net-style app format and
+// an RFC 5424 syslog format that interleave in one physical file, plus the
+// meta-format combining them (see DEFAULT_LOG_FORMAT's mode comment and
+// splitTextByMetaFormat). Seeded once, like DEFAULT_LOG_FORMAT below, so
+// they're available in the Format Manager right away — not builtin, so
+// they're freely editable/deletable like any other format. Deliberately
+// no FormatRule/glob is created for them here; they stay dormant until a
+// filename rule is added by hand (Settings → Format Manager → Filename
+// rules) — see CHANGELOG.md for the session that added this.
+const DEMO_APP_FORMAT = {
+  id: "fmt-demo-app", name: "App log (log4net-style)", mode: "regex",
+  regex: '^(?<ts>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+) \\[\\] (?<level>[A-Z]+)\\s+(?<location>[^\\s].*?)\\s+- (?<message>.*)$',
+  pattern: "", tsFormat: "yyyy-MM-dd HH:mm:ss.SSS", levels: LEVELS.slice(),
+  builtin: false, edited: false, createdAt: 0,
+};
+const DEMO_SYSLOG_FORMAT = {
+  id: "fmt-demo-syslog", name: "Syslog (RFC 5424)", mode: "regex",
+  // 6-digit fractional seconds — exercises the SSS date-token's
+  // arbitrary-digit-count support (see DATE_TOKEN_FRAG/parseTimestampGeneric).
+  // No (?<level>...) group by design: format B has no textual level in the
+  // reference sample, so its entries fall through the existing generic
+  // missing-level default — see FEATURE_BACKLOG.md #80 (independent item).
+  regex: "^<\\d+>1 (?<ts>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+) \\S+ \\S+ (?<thread>\\d+) \\S+ \\[log@\\d+ filename='(?<location>[^']+)'[^\\]]*\\] (?<message>.*)$",
+  pattern: "", tsFormat: "yyyy-MM-ddTHH:mm:ss.SSS", levels: LEVELS.slice(),
+  builtin: false, edited: false, createdAt: 0,
+};
+const DEMO_META_FORMAT = {
+  id: "fmt-demo-app-syslog-meta", name: "App + Syslog (meta)", mode: "meta",
+  targetFormatIds: [DEMO_APP_FORMAT.id, DEMO_SYSLOG_FORMAT.id],
+  builtin: false, edited: false, createdAt: 0,
+};
+const DEMO_SEED_FORMATS = [DEMO_APP_FORMAT, DEMO_SYSLOG_FORMAT, DEMO_META_FORMAT];
+
 async function loadFormatConfig() {
   let formats = await listLogFormats();
   if (!formats.some(f => f.id === DEFAULT_FORMAT_ID)) {
     await saveLogFormat(DEFAULT_LOG_FORMAT);
     formats = formats.concat([DEFAULT_LOG_FORMAT]);
+  }
+  for (const seed of DEMO_SEED_FORMATS) {
+    if (!formats.some(f => f.id === seed.id)) {
+      await saveLogFormat(seed);
+      formats = formats.concat([seed]);
+    }
   }
   state.logFormats = formats;
   state.formatRules = await listFormatRules();
@@ -28618,9 +29547,11 @@ function renderFormatList() {
     row.className = "filter-library-row";
     const main = document.createElement("div");
     main.className = "filter-library-row-main";
+    const modeLabel = fmt.mode === "meta" ? "Meta · " + (fmt.targetFormatIds || []).length + " targets"
+      : fmt.mode === "regex" ? "Regex" : "Pattern";
     main.innerHTML =
       '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") + '</div>' +
-      '<div class="filter-library-row-meta">' + (fmt.mode === "regex" ? "Regex" : "Pattern") +
+      '<div class="filter-library-row-meta">' + modeLabel +
       (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") +
       (formatLevels(fmt.id).join(",") !== LEVELS.join(",") ? " · " + escapeHtml(formatLevels(fmt.id).join(" ")) : "") + '</div>';
     row.appendChild(main);
@@ -28682,6 +29613,11 @@ async function removeLogFormat(id) {
   const usedBy = state.formatRules.filter(r => r.formatId === id).length;
   if (usedBy) {
     showCopyToast(usedBy + " rule" + (usedBy === 1 ? "" : "s") + " still use" + (usedBy === 1 ? "s" : "") + " this format — remove them first");
+    return;
+  }
+  const usedAsTarget = state.logFormats.filter(f => f.mode === "meta" && (f.targetFormatIds || []).includes(id)).length;
+  if (usedAsTarget) {
+    showCopyToast(usedAsTarget + " meta-format" + (usedAsTarget === 1 ? "" : "s") + " still use" + (usedAsTarget === 1 ? "s" : "") + " this format as a target — remove it there first");
     return;
   }
   await deleteLogFormatEntry(id);
@@ -28923,11 +29859,103 @@ formatEditLevelNew.addEventListener("keydown", ev => {
 function updateFormatEditModeUI() {
   el("#formatEditModePattern").classList.toggle("active", formatEditMode === "pattern");
   el("#formatEditModeRegex").classList.toggle("active", formatEditMode === "regex");
+  el("#formatEditModeMeta").classList.toggle("active", formatEditMode === "meta");
   el("#formatEditPatternField").classList.toggle("hidden", formatEditMode !== "pattern");
   el("#formatEditRegexField").classList.toggle("hidden", formatEditMode !== "regex");
+  el("#formatEditMetaField").classList.toggle("hidden", formatEditMode !== "meta");
+  // None of these apply to a meta-format (no timestamp/levels/pattern of
+  // its own to preview against — see DEFAULT_LOG_FORMAT's mode comment).
+  const isMeta = formatEditMode === "meta";
+  el("#formatEditSampleField").classList.toggle("hidden", isMeta);
+  el("#formatEditTsFormatField").classList.toggle("hidden", isMeta);
+  el("#formatEditLevelsField").classList.toggle("hidden", isMeta);
+  el("#formatEditPreviewField").classList.toggle("hidden", isMeta);
 }
 el("#formatEditModePattern").addEventListener("click", () => { formatEditMode = "pattern"; updateFormatEditModeUI(); renderFormatEditPreview(); });
 el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "regex"; updateFormatEditModeUI(); renderFormatEditPreview(); });
+el("#formatEditModeMeta").addEventListener("click", () => { formatEditMode = "meta"; updateFormatEditModeUI(); renderFormatEditMetaTargets(); });
+
+// ---- Meta-format target-format picker (mirrors the level-order editor
+// above: an ordered working array, edited via add/reorder/remove, only
+// written back into the format record on Save) ----
+let formatEditMetaTargets = [];
+
+function renderFormatEditMetaTargetOptions() {
+  const select = el("#formatEditMetaTargetSelect");
+  // A meta-format can't target another meta-format (no nested classification)
+  // or itself; already-chosen targets are removed from the "add" choices.
+  const available = sortedLogFormats().filter(f =>
+    f.mode !== "meta" && f.id !== formatEditId && !formatEditMetaTargets.includes(f.id));
+  select.innerHTML = available.map(f => '<option value="' + escapeHtml(f.id) + '">' + escapeHtml(f.name) + '</option>').join("");
+}
+
+function renderFormatEditMetaTargets() {
+  const container = el("#formatEditMetaTargets");
+  container.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  formatEditMetaTargets.forEach((id, i) => {
+    const fmt = state.logFormats.find(f => f.id === id);
+    const row = document.createElement("div");
+    row.className = "format-level-row";
+
+    const name = document.createElement("div");
+    name.className = "format-level-name";
+    name.textContent = fmt ? fmt.name : "(missing format)";
+    row.appendChild(name);
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "filter-library-row-order";
+    upBtn.title = "Move up";
+    upBtn.textContent = "▲";
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditMetaTarget(i, -1); });
+    row.appendChild(upBtn);
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "filter-library-row-order";
+    downBtn.title = "Move down";
+    downBtn.textContent = "▼";
+    downBtn.disabled = i === formatEditMetaTargets.length - 1;
+    downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditMetaTarget(i, 1); });
+    row.appendChild(downBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "filter-library-row-del";
+    delBtn.title = "Remove this target";
+    delBtn.innerHTML = ICON_CLOSE;
+    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeFormatEditMetaTarget(i); });
+    row.appendChild(delBtn);
+
+    frag.appendChild(row);
+  });
+  container.appendChild(frag);
+  renderFormatEditMetaTargetOptions();
+}
+
+function moveFormatEditMetaTarget(idx, delta) {
+  const other = idx + delta;
+  if (other < 0 || other >= formatEditMetaTargets.length) return;
+  const tmp = formatEditMetaTargets[idx];
+  formatEditMetaTargets[idx] = formatEditMetaTargets[other];
+  formatEditMetaTargets[other] = tmp;
+  renderFormatEditMetaTargets();
+}
+
+function removeFormatEditMetaTarget(idx) {
+  formatEditMetaTargets.splice(idx, 1);
+  renderFormatEditMetaTargets();
+}
+
+el("#formatEditMetaAddBtn").addEventListener("click", ev => {
+  ev.stopPropagation();
+  const id = el("#formatEditMetaTargetSelect").value;
+  if (!id || formatEditMetaTargets.includes(id)) return;
+  formatEditMetaTargets.push(id);
+  renderFormatEditMetaTargets();
+});
 
 // Common log-level names, longest-first-irrelevant (word-boundary match
 // picks the first occurring regardless of listed order) — used only by
@@ -29120,9 +30148,11 @@ function openFormatEditDialog(id) {
   formatEditRegex.value = fmt ? (fmt.regex || "") : "";
   formatEditTsFormat.value = fmt ? (fmt.tsFormat || "") : DEFAULT_LOG_FORMAT.tsFormat;
   setFormatEditLevels(fmt ? fmt.levels : null);
+  formatEditMetaTargets = (fmt && fmt.mode === "meta") ? (fmt.targetFormatIds || []).slice() : [];
   formatEditError.textContent = "";
   formatEditError.classList.add("hidden");
   updateFormatEditModeUI();
+  renderFormatEditMetaTargets();
   renderFormatEditPreview();
   formatEditPanel.classList.remove("hidden");
   el("#btnAddFormat").classList.add("hidden"); // only one editor visible at a time
@@ -29143,15 +30173,23 @@ async function saveFormatEdit() {
   const regex = formatEditRegex.value;
   const tsFormat = formatEditTsFormat.value.trim();
   const levels = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
-  if (!levels.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
 
-  if (formatEditMode === "pattern") {
-    const c = compileFormatPattern(pattern, tsFormat);
-    if (c.error) { formatEditError.textContent = c.error; formatEditError.classList.remove("hidden"); return; }
+  if (formatEditMode === "meta") {
+    if (formatEditMetaTargets.length < 2) {
+      formatEditError.textContent = "Pick at least 2 target formats.";
+      formatEditError.classList.remove("hidden");
+      return;
+    }
   } else {
-    const v = validateFormatRegex(regex);
-    if (v.error) { formatEditError.textContent = v.error; formatEditError.classList.remove("hidden"); return; }
-    if (v.warning) { formatEditError.textContent = v.warning; formatEditError.classList.remove("hidden"); } // non-blocking
+    if (!levels.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
+    if (formatEditMode === "pattern") {
+      const c = compileFormatPattern(pattern, tsFormat);
+      if (c.error) { formatEditError.textContent = c.error; formatEditError.classList.remove("hidden"); return; }
+    } else {
+      const v = validateFormatRegex(regex);
+      if (v.error) { formatEditError.textContent = v.error; formatEditError.classList.remove("hidden"); return; }
+      if (v.warning) { formatEditError.textContent = v.warning; formatEditError.classList.remove("hidden"); } // non-blocking
+    }
   }
 
   const existing = formatEditId ? state.logFormats.find(f => f.id === formatEditId) : null;
@@ -29161,10 +30199,16 @@ async function saveFormatEdit() {
   };
   fmt.name = name.slice(0, 80);
   fmt.mode = formatEditMode;
-  fmt.pattern = pattern;
-  fmt.regex = regex;
-  fmt.tsFormat = tsFormat;
-  fmt.levels = levels;
+  if (formatEditMode === "meta") {
+    fmt.targetFormatIds = formatEditMetaTargets.slice();
+    delete fmt.pattern; delete fmt.regex; delete fmt.tsFormat; delete fmt.levels;
+  } else {
+    fmt.pattern = pattern;
+    fmt.regex = regex;
+    fmt.tsFormat = tsFormat;
+    fmt.levels = levels;
+    delete fmt.targetFormatIds;
+  }
   // See "Log format definitions" — editing the builtin default takes it off
   // the untouched-HEADER_RE fast path from now on.
   if (fmt.builtin) fmt.edited = true;
@@ -29873,7 +30917,7 @@ function serializeFilterTreeForCache(fileNode) {
   // serializing the node itself would just be redundant, drifting state to
   // keep in sync. (A filter manually added as its CHILD, if the person did
   // that, is lost along with it — an accepted edge case, see PROJECT.md.)
-  const persistableChildren = ids => ids.filter(id => state.nodes[id] && state.nodes[id].filterType !== "bookmarks" && state.nodes[id].filterType !== "notes");
+  const persistableChildren = ids => ids.filter(id => state.nodes[id] && state.nodes[id].filterType !== "bookmarks" && state.nodes[id].filterType !== "notes" && state.nodes[id].filterType !== "sources");
 
   function ser(id) {
     const node = state.nodes[id];
@@ -30019,7 +31063,7 @@ function materializeCachedFilters(fileNode, roots) {
     // Same "bookmarks" exclusion as importFilterJson's validate() — the
     // cache never writes this type either (see serializeFilterTreeForCache's
     // persistableChildren), so any that show up here are stale/foreign.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes") return false;
+    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
     return (sn.children || []).every(valid);
   }
 
@@ -31177,6 +32221,7 @@ initContextExpandStepUnitSetting();
 initContextExpandStepMsSetting();
 initContextToolbar();
 initMinimapFullRangeSetting();
+initShowSourcesSetting();
 initMinimapBinningModeSetting();
 initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
