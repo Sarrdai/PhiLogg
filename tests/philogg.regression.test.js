@@ -5855,14 +5855,15 @@ await withApp(async (w, d, T) => {
    doing its (now much cheaper, thanks to the third step) per-tick work on
    every single tick, unthrottled.
    A later session added ONE narrow exception to "nothing else updates
-   live": updateLiveGrowingTotal keeps #tableSpacer's height (and hence the
-   native scrollbar's total/thumb size) tracking the active node's live
-   entry count during a load — a real bug for a large actively-growing
-   merge, where the scrollbar showed a far smaller total until some
-   unrelated full render happened to fire. Still no render() call (it's a
-   direct, O(1) DOM write plus the same cheap renderVisibleRows() the
-   scroll handler already uses) and still scoped to the active node only —
-   the group's core invariant (no render() on a load tick) is unchanged.
+   live" (updateLiveGrowingTotal, GROUP 254) that kept #tableSpacer's
+   height/the visible rows tracking the active node's live entry count
+   during a load, to fix a stale scrollbar total on a large actively-
+   growing merge. Removed again in a further session, person-requested
+   after noticing it (and a separate meta-format focus-flicker bug, see
+   GROUP 245/246) let partial content show before a load actually
+   finished: "Rendern erst wenn vollständig geladen soll für alles
+   gelten." The scrollbar now goes back to staying stale during a load,
+   same as the rest of the view — see GROUP 254's own rewritten header.
    ============================================================ */
 group(50);
 await withApp(async (w, d, T) => {
@@ -5922,16 +5923,14 @@ await withApp(async (w, d, T) => {
   assert(countAfterAnotherTick === nodeB.entries.length && countAfterAnotherTick > countB,
     "the row's DOM text is updated again on the very next tick, matching the data exactly — got " + countAfterAnotherTick);
 
-  // The Filtered view's actual row DOM (text/painting) never updates
-  // automatically during a load — but #tableSpacer's height (and hence the
-  // scrollbar) now DOES, for the node that IS the active view (Bug 2 fix,
-  // updateLiveGrowingTotal, called from scheduleLoadRender) — B is active
-  // throughout this section. See Group 49 for confirming an explicit
-  // render() picks up the live mid-parse state for everything else.
+  // #tableSpacer's height (and hence the native scrollbar) stays frozen
+  // during a load tick too, same as everything else — a previous session's
+  // updateLiveGrowingTotal exception (which tracked it live for the active
+  // node) was removed again; see GROUP 254's rewritten header.
   const spacerHeight = parseInt(d.querySelector("#tableSpacer").style.height, 10) || 0;
-  const expectedIfLive = nodeB.entries.length * T.ROW_HEIGHT;
-  assert(spacerHeight >= expectedIfLive,
-    "the table spacer's height DOES track B's live entry count while B is the active view (Bug 2 fix) — spacer=" + spacerHeight + ", expected >= " + expectedIfLive);
+  const liveTotal = nodeB.entries.length * T.ROW_HEIGHT;
+  assert(spacerHeight < liveTotal,
+    "the table spacer's height stays stale, NOT tracking B's live entry count, even while B is the active view — spacer=" + spacerHeight + ", live total=" + liveTotal);
 
   // The person switches to a different, already-loaded file mid-load — B
   // keeps streaming in the background exactly the same way it did as the
@@ -27723,16 +27722,23 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 254 — Bug fix: the log view's scrollbar total (#tableSpacer's
-   height) now tracks an actively-loading node's live entry count on every
-   load tick, when that node IS the active view — previously it only
-   reflected the count as of the last full renderTable(), which never runs
-   on a load tick, so a large actively-growing merge showed a far smaller,
-   stale scrollbar total until some unrelated full render happened to fire.
+   GROUP 254 — REWRITTEN (this session, person-requested: "Rendern erst
+   wenn vollständig geladen soll für alles gelten"). Originally covered a
+   narrow exception (updateLiveGrowingTotal) that kept the log view's
+   scrollbar total (#tableSpacer's height) tracking an actively-loading
+   active node's live entry count on every load tick, to fix a stale
+   scrollbar on a large actively-growing merge. That exception is now
+   removed outright — it violated the broader "nothing renders until fully
+   loaded" rule this whole area exists to enforce (see GROUP 50's header),
+   and stacked with the meta-format per-stream focus flicker (GROUP 245/
+   246) it was the second of two ways partial content leaked out mid-load.
+   The scrollbar goes back to reflecting a stale total until the load's
+   natural-completion render fires, same as every other part of the view
+   during a load — an accepted tradeoff, not a regression.
    ============================================================ */
 group(254);
 await withApp(async (w, d, T) => {
-  section("254a. updateLiveGrowingTotal keeps #tableSpacer's height tracking the active node's live entry count during a load tick");
+  section("254a. #tableSpacer's height stays stale during a load tick, even for the active node (updateLiveGrowingTotal removed)");
   const fa = await w.addFile("a.log", makeLog(0, 5));
   T.state.activeId = fa.id;
   w.render();
@@ -27745,12 +27751,12 @@ await withApp(async (w, d, T) => {
   w.scheduleLoadRender(fa.id);
 
   const spacerAfter = parseInt(d.querySelector("#tableSpacer").style.height, 10);
-  assert(spacerAfter === fa.entries.length * T.ROW_HEIGHT + 22,
-    "the spacer height tracks the new, live entry count after just a scheduleLoadRender tick — no full render() needed, got " + spacerAfter);
+  assert(spacerAfter === spacerBefore,
+    "the spacer height stays at its last real-render value after a scheduleLoadRender tick, not the new live entry count — got " + spacerAfter);
 });
 
 await withApp(async (w, d, T) => {
-  section("254b. updateLiveGrowingTotal no-ops for a background (non-active) node's load tick");
+  section("254b. #tableSpacer stays stale for a background (non-active) node's load tick too (unchanged invariant)");
   const fa = await w.addFile("a.log", makeLog(0, 5));
   const fb = await w.addFile("b.log", makeLog(0, 5));
   T.state.activeId = fa.id;
@@ -27765,10 +27771,10 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("254c. updateLiveGrowingTotal bails out (stays stale) when a level filter is narrowing the active view");
+  section("254c. #tableSpacer stays stale during a load tick even with a level filter narrowing the active view (unchanged invariant)");
   const fa = await w.addFile("a.log", makeLog(0, 5));
   T.state.activeId = fa.id;
-  T.state.levelFilter = new Set(["info"]); // narrows the view — currentViewEntries is no longer === fa.entries by reference
+  T.state.levelFilter = new Set(["info"]); // narrows the view
   w.render();
   const spacerBefore = parseInt(d.querySelector("#tableSpacer").style.height, 10);
 
@@ -27776,7 +27782,7 @@ await withApp(async (w, d, T) => {
   w.scheduleLoadRender(fa.id);
 
   const spacerAfter = parseInt(d.querySelector("#tableSpacer").style.height, 10);
-  assert(spacerAfter === spacerBefore, "with a level filter narrowing the view, the spacer stays at its last real-render value instead of a partial/incorrect update");
+  assert(spacerAfter === spacerBefore, "with a level filter narrowing the view, the spacer stays at its last real-render value");
 });
 
 /* ============================================================
@@ -28240,6 +28246,70 @@ await withApp(async (w, d, T) => {
   assert(w.__rhvrCalls === 1, "a rapid burst on #highlightBody also collapses onto one leading-edge render, got " + w.__rhvrCalls);
   await sleep(150);
   assert(w.__rhvrCalls === 2, "and one trailing catch-up render once it settles, got " + w.__rhvrCalls);
+});
+
+/* ============================================================
+   GROUP 259 — Bug fix: a meta-format merge's per-grammar streams no
+   longer briefly steal focus (and a real, full render) from the merge row
+   while they're still loading (this session, 2026-09-21, person-reported:
+   "bei als Merge geladene Files wie Meta-Formate [erscheint] die Anzeige
+   schon..., wenn eines der Formate geladen ist, die Minimap zeigt dann
+   beim Laden unterschiedliche Zustände an"). Root cause: loadMetaFormatText
+   loads each stream via addFile(..., placeholder), which internally calls
+   activateQueuedFileNode — unconditionally flipping state.activeId onto
+   that stream for the duration of its own parse, so its own natural
+   flushLoadRender ran a real, full render() with THAT stream (already
+   complete) as the active view, before state.activeId was reset back to
+   the merge only after the whole loop finished. Fixed with a new
+   metaFormatSplitInProgress guard (mirroring the pre-existing
+   sessionRestoreInProgress one), checked in both createFileNode's and
+   activateQueuedFileNode's activeId assignment, set for the loop's
+   duration. Also covers the companion fix in the same session: the
+   updateLiveGrowingTotal exception (GROUP 254, now removed) that let a
+   loading file's visible rows/scrollbar grow live for the active view —
+   removed outright per the same person request ("Rendern erst wenn
+   vollständig geladen soll für alles gelten").
+   ============================================================ */
+group(259);
+await withApp(async (w, d, T) => {
+  section("259. loadMetaFormatText keeps the merge as the active node throughout the per-stream loop — a stream never briefly becomes active mid-load");
+  await waitForFormatConfig(T);
+  const metaFmt = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
+
+  // Streams well over PARSE_CHUNK_LINES (4000) each, so every stream's own
+  // parse genuinely yields multiple times — without that, the whole loop
+  // could run start-to-finish inside one synchronous stretch and this test
+  // would pass by accident, never actually observing an intermediate state.
+  const N = 5000;
+  const lines = [];
+  for (let i = 0; i < N; i++) {
+    lines.push("2025-01-02 09:15:03.123 [] INFO  demo.Loader  - app line " + i);
+    lines.push("<13>1 2025-01-02T09:15:03.711324 localhost demoapp 12345 1 [log@9999 filename='x.cpp' linenumber='1' errorcode='0' errortext='(info, demo, ok)' agent='a' system='s'] syslog line " + i);
+  }
+  const text = lines.join("\n");
+
+  const before = new Set(T.state.rootIds);
+  const donePromise = w.loadMetaFormatText("mix.log", text, metaFmt);
+
+  // loadMetaFormatText runs synchronously (split, createMergeShell, and the
+  // first stream's parse up to its first chunk yield) before this line ever
+  // runs — the merge shell and its activation already happened.
+  const mergedId = T.state.rootIds.find(id => !before.has(id) && T.state.nodes[id].merged);
+  assert(mergedId, "the merge shell exists synchronously as soon as loadMetaFormatText is called");
+  assert(T.state.activeId === mergedId,
+    "the merge is already the active node while the FIRST stream is still mid-parse — not flipped onto its placeholder (this is where the bug showed up)");
+  assert(w.getVisibleEntries().length === 0, "the active (merge) view shows no entries yet — the still-loading app-format stream's own content is not visible early");
+
+  // Let more ticks land — including, most likely, the first stream's own
+  // natural completion (which used to run a real full render with itself
+  // as the active node) and the second stream starting.
+  for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 0));
+  assert(T.state.activeId === mergedId, "the merge is still the active node partway through the loop, surviving at least one stream's own completion");
+
+  const merged = await donePromise;
+  assert(merged.id === mergedId, "sanity: the returned node is the same merge shell observed throughout");
+  assert(T.state.activeId === mergedId, "the merge remains the active node once everything has finished");
+  assert(merged.entries.length === N * 2, "the merge's own entries are complete once loading is done — got " + merged.entries.length);
 });
 
 console.log("\n" + "=".repeat(60));
@@ -32289,4 +32359,23 @@ process.exitCode = failed ? 1 : 0;
       complete is, once again, left to the person's own retest; this round
       at least replaced two rounds of blind guessing with a fix grounded
       in a concrete, measured magnitude from real telemetry.
+   Group 259 — new session, person-reported: a meta-format merge's Filtered/
+      Full/minimap view flickered through each per-grammar stream's own
+      (already complete) content before settling on the merge, because
+      loadMetaFormatText's per-stream addFile(..., placeholder) call
+      briefly made that placeholder the active node (via
+      activateQueuedFileNode) while it loaded. Fixed with a new
+      metaFormatSplitInProgress guard, set for the loop's duration and
+      checked alongside the pre-existing sessionRestoreInProgress guard in
+      both createFileNode and activateQueuedFileNode. 259 drives a
+      real, multi-chunk two-stream meta-format load and asserts
+      state.activeId stays pinned to the merge the whole way through —
+      synchronously right after the call (before the first stream's own
+      first parse chunk yields), after several more ticks (spanning at
+      least one stream's own natural completion), and once everything is
+      done. Same session also removed the GROUP 254 live-scrollbar
+      exception outright (see that group's rewritten header) — the two
+      fixes together restore "nothing in the view updates until a load is
+      completely finished" as an exception-free rule, person-requested:
+      "Rendern erst wenn vollständig geladen soll für alles gelten."
    ============================================================ */
