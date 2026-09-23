@@ -29206,7 +29206,8 @@ await withApp(async (w, d, T) => {
   const rowOf = n => d.querySelector('#tree .tree-row[data-node-id="' + n.id + '"]');
   const guides = n => [...rowOf(n).querySelectorAll(":scope > .tree-guide")];
   const on = n => guides(n).filter(g => g.classList.contains("on"));
-  const at = (n, x) => guides(n).filter(g => g.style.left === x + "px");
+  // Elbows start 1px left of their rail (square corner), so match both.
+  const at = (n, x) => guides(n).filter(g => g.style.left === x + "px" || g.style.left === (x - 1) + "px");
 
   assert(d.querySelector("#breadcrumbBar") === null && d.querySelector("#breadcrumb") === null, "the breadcrumb bar is removed");
 
@@ -29220,6 +29221,20 @@ await withApp(async (w, d, T) => {
   assert(on(A2).length === 0 && on(B).length === 0, "rows off the path get no highlighted segment");
   assert(at(A2, 34).length === 2, "the last child gets only an upper half + elbow (no line continues below it)");
   assert(w.getComputedStyle(guides(f)[0]).pointerEvents === "none", "guides never intercept clicks on the row");
+  // Follow-up (person-reported): 1.5px filled boxes rendered at uneven
+  // thickness (pixel snapping of a fractional width) — lines are integer
+  // 2px borders now; and the multi-select outline no longer frames the
+  // active row, where it cut across the lines.
+  const vCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("v")));
+  const hCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h")));
+  assert(vCs.borderLeftWidth === "2px", "vertical guides are a 2px left border, got " + vCs.borderLeftWidth);
+  assert(hCs.borderTopWidth === "2px", "elbows are a 2px top border, got " + hCs.borderTopWidth);
+  T.state.multiSelect = new Set([A1.id, A2.id]);
+  w.render();
+  assert(rowOf(A1).classList.contains("multi-selected") && w.getComputedStyle(rowOf(A1)).boxShadow === "none",
+    "the active row carries no multi-select outline, got " + w.getComputedStyle(rowOf(A1)).boxShadow);
+  assert(w.getComputedStyle(rowOf(A2)).boxShadow !== "none", "other multi-selected rows keep their outline");
+  T.state.multiSelect = new Set([A1.id]);
 
   // Path through a later sibling: the root rail passes A's subtree highlighted.
   T.state.activeId = B.id;
@@ -33400,4 +33415,6 @@ process.exitCode = failed ? 1 : 0;
    Group 262 — new session (2026-09-23): tree connector lines with the
               active path highlighted, replacing the removed breadcrumb bar
               (Groups 26/100/152/199i/225/PiP list trimmed of it).
+              Follow-up: 2px border lines (even thickness), no multi-select
+              outline on the active row.
    ============================================================ */

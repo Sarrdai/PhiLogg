@@ -755,6 +755,10 @@
     background:var(--accent-soft);
     box-shadow:inset 0 0 0 1.5px var(--accent);
   }
+  /* The active row is marked by its own background/left border; the
+     multi-select outline on top of it cut across the connector lines
+     (person-reported), so it only shows on the OTHER selected rows. */
+  .tree-row.active.multi-selected{box-shadow:none;}
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
   .tree-row[draggable="true"]{cursor:grab;}
@@ -766,11 +770,15 @@
      ancestor's chevron x plus a short elbow into the row. Segments on the
      path from the root to the active row get .on (accent), so the active
      filter chain reads straight off the tree. Absolutely positioned, so
-     they don't take part in the row's flex layout (no gap, no shifting). */
-  .tree-guide{position:absolute; pointer-events:none; background:var(--border);}
-  .tree-guide.v{width:1.5px; margin-left:-.75px;}
-  .tree-guide.h{height:1.5px; top:50%; margin-top:-.75px;}
-  .tree-guide.on{background:var(--accent); z-index:1;}
+     they don't take part in the row's flex layout (no gap, no shifting).
+     Drawn as 2px BORDERS on zero-size boxes, not as backgrounds: a filled
+     box with a fractional width/offset (the old 1.5px) gets pixel-snapped
+     to 1 or 2 device pixels depending on where it lands, so lines came out
+     visibly uneven (person-reported); border widths snap consistently. */
+  .tree-guide{position:absolute; pointer-events:none; width:0; height:0; border:0 solid var(--border);}
+  .tree-guide.v{border-left-width:2px; margin-left:-1px;}
+  .tree-guide.h{border-top-width:2px; top:50%; margin-top:-1px;}
+  .tree-guide.on{border-color:var(--accent); z-index:1;}
   .tree-swatch{
     flex:0 0 auto; width:13px; height:13px; margin:0; padding:0; cursor:pointer;
     border-radius:50%; border:1px solid var(--border-soft); background:transparent;
@@ -14284,7 +14292,7 @@ function decorateTreeGuides(rootWrap) {
       // chevron slot up to the swatch/icon.
       const pad = parseFloat(row.style.paddingLeft) || 0;
       const end = pad + (row.querySelector(".tree-chevron") ? 1 : 20);
-      addGuide(row, "h", link.elbowOn, { left: link.x + "px", width: Math.max(0, end - link.x) + "px" });
+      addGuide(row, "h", link.elbowOn, { left: (link.x - 1) + "px", width: Math.max(0, end - link.x + 1) + "px" });
     }
     const kids = [...wrap.children].slice(1).filter(rowOf);
     if (!kids.length) return;
