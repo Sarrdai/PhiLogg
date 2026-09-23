@@ -16845,7 +16845,7 @@ await withApp(async (w, d, T) => {
     "it starts out enabled for the empty (literal) input");
 
   // Every boolean in the popup is a role=switch button on the pill-toggle
-  // state protocol, drawn as a label-only view-tab toggle (Group 263).
+  // state protocol, drawn as a standalone label-only toggle (Group 263).
   ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
     const box = d.querySelector("#" + id);
     assert(box.tagName === "BUTTON" && box.classList.contains("label-toggle") && box.getAttribute("role") === "switch",
@@ -29143,12 +29143,13 @@ await withApp(async (w, d, T) => {
    case, Whole word, Exclude (NOT)) / Search in; and a live result summary
    (big count + "matches in N" + "captures: …", a match-over-time
    histogram, up to three sample rows as a table with the hit marked).
-   Follow-up, same day (person-requested): every toggle takes #fhTabs'
-   view-tab look — Text/Regex as a segmented .view-tabs group, the option
-   switches and Search in columns as label-only .label-toggle items with
-   the .icon-toggle status bar (so a single-label toggle doesn't read as a
-   button); the Insert chips, being actions, got the app's framed button
-   look instead.
+   Follow-ups, same day (person-requested): only the exclusive Text/Regex
+   choice takes #fhTabs' segmented view-tab look; the independent on/off
+   options (Match case/Whole word/Exclude (NOT), each Search in column) are
+   standalone label-only .label-toggle items with the .icon-toggle status
+   bar (so a single-label toggle doesn't read as a button) — not boxed into
+   a shared control; the Insert chips, being actions, got the app's framed
+   button look.
    ============================================================ */
 group(263);
 await withApp(async (w, d, T) => {
@@ -29181,26 +29182,26 @@ await withApp(async (w, d, T) => {
   const labels = [...d.querySelectorAll("#filterForm .filter-section-label")].map(l => l.textContent);
   assert(JSON.stringify(labels) === JSON.stringify(["Insert", "Syntax", "Search in"]), "rows are captioned Insert / Syntax / Search in, in that order, got " + JSON.stringify(labels));
   const syntaxRow = d.querySelector(".filter-settings-row");
-  const syntaxOrder = [...syntaxRow.querySelectorAll(".view-tab")].map(x => x.textContent);
+  const syntaxOrder = [...syntaxRow.querySelectorAll(".view-tab, .label-toggle")].map(x => x.textContent);
   assert(JSON.stringify(syntaxOrder) === JSON.stringify(["Text", "Regex", "Match case", "Whole word", "Exclude (NOT)"]),
     "the Syntax row reads Text | Regex, Match case, Whole word, Exclude (NOT), got " + JSON.stringify(syntaxOrder));
   assert(d.querySelector("#filterRegexCheckbox") === null, "the old 'Interpret input as regex' pill is gone");
 
-  // --- One look for every toggle: #fhTabs' view-tab (follow-up, same day) ---
+  // --- Exclusive choice vs. independent on/off (follow-ups, same day) ---
   const groups = [...d.querySelectorAll("#filterForm .view-tabs")];
-  assert(groups.length === 3, "three view-tabs groups: Text/Regex, the option switches, Search in, got " + groups.length);
-  assert(groups[0].contains(d.querySelector("#filterSyntaxText")) && groups[0].contains(d.querySelector("#filterSyntaxRegex")) && groups[0].children.length === 2,
-    "Text/Regex form their own segmented group");
+  assert(groups.length === 1 && groups[0].contains(d.querySelector("#filterSyntaxText")) && groups[0].contains(d.querySelector("#filterSyntaxRegex")) && groups[0].children.length === 2,
+    "only the exclusive Text/Regex choice is a segmented view-tabs group");
   ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
     const t = d.getElementById(id);
-    assert(groups[1].contains(t) && t.classList.contains("view-tab") && t.classList.contains("label-toggle") && !t.classList.contains("pill-toggle"),
-      "#" + id + " is a label-only view-tab toggle (no switch track) in the options group");
+    assert(t.classList.contains("label-toggle") && !t.classList.contains("view-tab") && !t.classList.contains("pill-toggle") && !t.closest(".view-tabs"),
+      "#" + id + " is a standalone label-only toggle, not part of a shared segmented control");
   });
   assert(d.querySelector("#filterInvertCheckbox").classList.contains("label-toggle-danger"), "NOT keeps its red accent");
   assert(!d.querySelector("#filterPopup label"), "no separate captions — each toggle is its own single label");
   const css = d.querySelector("style").textContent;
-  assert(/\.view-tab\.label-toggle::after\{[^}]*height:2px/.test(css) && css.includes(".view-tab.label-toggle.active::after, .view-tab.label-toggle[aria-checked=\"true\"]::after{background:var(--accent-strong);}"),
+  assert(/\.label-toggle::after\{[^}]*height:2px/.test(css) && css.includes('.label-toggle.active::after, .label-toggle[aria-checked="true"]::after{background:var(--accent-strong);}'),
     "single-label toggles carry the status bar (the .icon-toggle rule) so they don't read as buttons");
+  assert(/\.label-toggle\{[^}]*background:none; border:none/.test(css), "a label toggle has no button chrome at rest");
   const tokenChip = d.querySelector(".token-chip");
   assert(!tokenChip.classList.contains("view-tab") && !tokenChip.classList.contains("label-toggle"), "Insert chips are actions and keep a button look, not the toggle look");
 
@@ -29208,8 +29209,8 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.openFilterPopup();
   const colChips = [...d.querySelectorAll("#filterColumnChipGroup .column-chip")];
-  assert(colChips.length > 0 && colChips.every(c => c.classList.contains("view-tab") && c.classList.contains("label-toggle") && c.getAttribute("aria-pressed") === "false"),
-    "Search in columns are label-only view-tab toggles inside their own group");
+  assert(colChips.length > 0 && colChips.every(c => c.classList.contains("label-toggle") && !c.closest(".view-tabs") && c.getAttribute("aria-pressed") === "false"),
+    "Search in columns are standalone label-only toggles, same look as the option switches");
   fireClick(colChips[0], w);
   assert(colChips[0].classList.contains("active") && colChips[0].getAttribute("aria-pressed") === "true", "clicking a column toggles it on (.active + aria-pressed)");
   fireClick(colChips[0], w);
@@ -33441,8 +33442,9 @@ process.exitCode = failed ? 1 : 0;
               "in <parent>" scope hint (15 chars) instead of the "Filter
               on" pill chain, Text/Regex switch, Insert/Syntax/Search in
               rows, live result summary (count, histogram, sample table);
-              follow-up: view-tab look for every toggle (label-only
-              switches with a status bar), button look for Insert chips.
+              follow-ups: segmented view-tab look for Text/Regex only,
+              standalone label-only toggles with a status bar for the
+              on/off options and columns, button look for Insert chips.
               Groups 152/225 (.crumb pill + separator styling) removed with
               the last .crumb consumer; 39/40/122/149/212 updated.
    ============================================================ */

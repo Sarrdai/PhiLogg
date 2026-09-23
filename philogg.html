@@ -3458,29 +3458,36 @@
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
   }
-  /* Every toggle in the popup uses the view-tab look (#fhTabs' Context/
-     Filtered/Table/Plot): a .view-tabs group box, chrome-free items, the
-     selected/on ones raised (--bg-elevated-2) in --accent-strong. Text/Regex
-     is a plain segmented pair inside one group. The independent on/off
-     labels (Match case / Whole word / Exclude (NOT) and the Search in
-     columns) additionally carry .label-toggle: a thin accent bar under the
-     label as the on/off status light — same rule as .icon-toggle — so a
-     single-label toggle never reads as an action button. Switches keep the
-     .pill-toggle state protocol (role=switch + aria-checked + .on, via
-     pillGet/pillSet and the shared delegated click handler). */
-  #filterForm .view-tabs{flex:0 1 auto; flex-wrap:wrap; height:auto; min-height:28px;}
-  #filterForm .view-tab{height:22px;}
-  .view-tab.label-toggle{position:relative;}
-  .view-tab.label-toggle[aria-checked="true"]{background:var(--bg-elevated-2); color:var(--accent-strong);}
-  .view-tab.label-toggle::after{
-    content:""; position:absolute; left:50%; bottom:1px; transform:translateX(-50%);
+  /* Two kinds of toggle, two looks. Text/Regex is an exclusive choice, so
+     it's a segmented .view-tabs group — #fhTabs' Context/Filtered/Table/
+     Plot look. Match case / Whole word / Exclude (NOT) and each Search in
+     column are INDEPENDENT on/off options, so each is its own standalone
+     .label-toggle, never boxed into a shared control: chrome-free label,
+     --accent-strong when on plus a thin bar under it as the on/off status
+     light — the .icon-toggle rule, so a single-label toggle never reads as
+     an action button. The switches keep the .pill-toggle state protocol
+     (role=switch + aria-checked + .on, via pillGet/pillSet and the shared
+     delegated click handler); column chips use .active + aria-pressed. */
+  #filterForm .view-tabs{flex:0 0 auto;}
+  .filter-toggle-set{display:flex; align-items:center; flex-wrap:wrap; gap:4px;}
+  .label-toggle{
+    position:relative; height:28px; display:inline-flex; align-items:center; flex:0 0 auto;
+    padding:0 9px; background:none; border:none; border-radius:7px;
+    color:var(--text-secondary); font-size:11px; font-weight:600; white-space:nowrap;
+    cursor:pointer; transition:background .12s, color .12s;
+  }
+  .label-toggle:hover:not(:disabled){background:var(--bg-elevated-2); color:var(--text-primary);}
+  .label-toggle.active, .label-toggle[aria-checked="true"]{color:var(--accent-strong);}
+  .label-toggle::after{
+    content:""; position:absolute; left:50%; bottom:3px; transform:translateX(-50%);
     width:60%; height:2px; border-radius:1px; background:transparent; transition:background .12s;
   }
-  .view-tab.label-toggle.active::after, .view-tab.label-toggle[aria-checked="true"]::after{background:var(--accent-strong);}
+  .label-toggle.active::after, .label-toggle[aria-checked="true"]::after{background:var(--accent-strong);}
+  .label-toggle:disabled{opacity:.35; cursor:not-allowed;}
   /* NOT keeps its own red accent — the one option that removes rows rather
      than narrowing them. */
-  .view-tab.label-toggle-danger[aria-checked="true"]{color:var(--level-error);}
-  .view-tab.label-toggle-danger[aria-checked="true"]::after{background:var(--level-error);}
+  .label-toggle-danger[aria-checked="true"]{color:var(--level-error);}
+  .label-toggle-danger[aria-checked="true"]::after{background:var(--level-error);}
   .filter-column-chips{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
@@ -4012,10 +4019,10 @@
               <button type="button" class="view-tab active" id="filterSyntaxText" aria-pressed="true" title="Plain text, optionally with [*:…] wildcard tokens">Text</button>
               <button type="button" class="view-tab" id="filterSyntaxRegex" aria-pressed="false" title="Use RegExp">Regex</button>
             </div>
-            <div class="view-tabs" role="group" aria-label="Options">
-              <button type="button" role="switch" aria-checked="false" class="view-tab label-toggle" id="filterCaseCheckbox" title="Case sensitive">Match case</button>
-              <button type="button" role="switch" aria-checked="false" class="view-tab label-toggle" id="filterWholeWordCheckbox">Whole word</button>
-              <button type="button" role="switch" aria-checked="false" class="view-tab label-toggle label-toggle-danger" id="filterInvertCheckbox" title="Invert — keep only the rows that do NOT match">Exclude (NOT)</button>
+            <div class="filter-toggle-set">
+              <button type="button" role="switch" aria-checked="false" class="label-toggle" id="filterCaseCheckbox" title="Case sensitive">Match case</button>
+              <button type="button" role="switch" aria-checked="false" class="label-toggle" id="filterWholeWordCheckbox">Whole word</button>
+              <button type="button" role="switch" aria-checked="false" class="label-toggle label-toggle-danger" id="filterInvertCheckbox" title="Invert — keep only the rows that do NOT match">Exclude (NOT)</button>
             </div>
           </div>
           <div id="filterColumnChips" class="filter-column-chips filter-section-row" title="Columns to search">
@@ -4023,7 +4030,7 @@
             <!-- Chip buttons are JS-built into this group by
                  renderFilterColumnChipButtons (Custom Columns feature: the
                  column set is per-format/dynamic) — see activeTextFilterColumns(). -->
-            <div class="view-tabs" id="filterColumnChipGroup" role="group" aria-label="Search in"></div>
+            <div class="filter-toggle-set" id="filterColumnChipGroup" role="group" aria-label="Search in"></div>
           </div>
           <div id="filterPatternPreview" class="hidden"></div>
           <!-- Live result summary: big match count + meta lines left, a
@@ -12216,7 +12223,7 @@ function pillSet(elm, on, fireChange) {
 // dispatches a `change` event, so existing change listeners keep working.
 document.addEventListener("click", ev => {
   // .label-toggle[role=switch]: the filter popup's label-only switches
-  // (Match case/Whole word/NOT) — same state protocol, view-tab look.
+  // (Match case/Whole word/NOT) — same state protocol, no track/knob.
   const pill = ev.target.closest && ev.target.closest('.pill-toggle, .label-toggle[role="switch"]');
   if (!pill || pill.disabled) return;
   pillSet(pill, !pillGet(pill), true);
@@ -26141,7 +26148,7 @@ function renderFilterColumnChipButtons() {
   activeTextFilterColumns().forEach(col => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "view-tab label-toggle column-chip";
+    btn.className = "label-toggle column-chip";
     btn.dataset.col = col.key;
     btn.textContent = col.label;
     filterColumnChipGroup.appendChild(btn);
