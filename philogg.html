@@ -775,9 +775,12 @@
      box with a fractional width/offset (the old 1.5px) gets pixel-snapped
      to 1 or 2 device pixels depending on where it lands, so lines came out
      visibly uneven (person-reported); border widths snap consistently. */
-  .tree-guide{position:absolute; pointer-events:none; width:0; height:0; border:0 solid var(--border);}
-  .tree-guide.v{border-left-width:2px; margin-left:-1px;}
-  .tree-guide.h{border-top-width:2px; top:50%; margin-top:-1px;}
+  .tree-guide{position:absolute; pointer-events:none; border:0 solid var(--border);}
+  /* Only the cross axis is zeroed: a .v segment spanning top:0/bottom:0
+     needs height:auto to stretch (an explicit height:0 here once silently
+     collapsed every rail/stem/lower half, person-reported). */
+  .tree-guide.v{width:0; border-left-width:2px; margin-left:-1px;}
+  .tree-guide.h{height:0; border-top-width:2px; top:50%; margin-top:-1px;}
   .tree-guide.on{border-color:var(--accent); z-index:1;}
   .tree-swatch{
     flex:0 0 auto; width:13px; height:13px; margin:0; padding:0; cursor:pointer;
