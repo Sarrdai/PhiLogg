@@ -66,6 +66,9 @@ open it in a browser to view it.
   case-sensitive, restricted to specific columns, inverted (NOT),
   interpreted as a real regular expression, or limited to **whole-word
   matches** ("Test" matches "Test is active", not "Testing activated").
+  While you type, the filter dialog previews the result live: the match
+  count, a histogram of the matches over time, and the first matching rows
+  with the hit marked.
 - **Level bar can write into the filter tree** — by default, clicking
   ERROR/WARN/INFO/DEBUG on the level bar creates/edits a real, undoable
   filter-tree node at your current position, instead of a separate global
