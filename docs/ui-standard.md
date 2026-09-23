@@ -87,6 +87,16 @@ dialog: `filterRegexCheckbox`, `filterCaseCheckbox`,
 `csvExportFullEntryInput`, `plotNormalize`, `plotAxisEqual`, and every
 `settings*` / `fwSettings*` boolean.
 
+**Exception — label-only toggles (`.view-tab.label-toggle`).** Where a
+row of toggles sits next to a segmented `.view-tabs` control (the filter
+popup's Syntax/Search in rows), a boolean may instead be a single-label
+item inside a `.view-tabs` group: same `role="switch"`/`aria-checked`
+protocol, no track/knob. It **must** carry `.label-toggle`, whose thin
+`--accent-strong` bar under the label is the on/off status light (the same
+rule as `.icon-toggle`) — a label-only toggle without it is
+indistinguishable from a button. Actions next to it keep a framed button
+look.
+
 **Do NOT convert** multi-select checkbox *lists* — these stay native
 checkbox rows because they're a set-selection, not an on/off option:
 column visibility (`colToggle*`), Plot Y-column picker (`plot-y-item`),

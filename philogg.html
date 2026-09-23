@@ -2967,9 +2967,8 @@
   }
   .settings-switch input:checked + .settings-switch-track{background:var(--accent-soft);}
   .settings-switch input:checked + .settings-switch-track::after{left:18px; background:var(--accent);}
-  /* Compact variant of the exact same switch, for the dense option rows of
-     the filter popup (see .filter-toggle) — a full-size 38x22 switch would
-     dominate a row that also holds "Aa"/"NOT" next to it. */
+  /* Compact variant of the exact same switch, for dense option rows where a
+     full-size 38x22 switch would dominate. */
   .settings-switch.settings-switch-sm{width:30px; height:18px;}
   .settings-switch.settings-switch-sm .settings-switch-track{border-radius:9px;}
   .settings-switch.settings-switch-sm .settings-switch-track::after{width:14px; height:14px; border-radius:7px;}
@@ -3459,57 +3458,44 @@
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
   }
-  .filter-syntax-toggle{margin-bottom:0;}
-  .filter-syntax-toggle .assert-mode-btn{padding:3px 10px; font-size:11px;}
-  /* One shared shape for every boolean option in this popup —
-     case-sensitivity, whole-word and NOT (regex mode is the Text/Regex
-     segmented control instead, a choice between two syntaxes). Person-requested
-     (this session): they render as the SAME on/off switch the Settings rows
-     use (.settings-switch, in its compact .settings-switch-sm size) instead
-     of native accent-coloured checkboxes, so "boolean option" looks the
-     same everywhere in the app. The real <input> is still a plain checkbox
-     underneath — only its default appearance is replaced — so every
-     .checked/change-event code path (and every test driving them) is
-     unaffected. The switch and its caption are two separate <label>s
-     (nested labels are invalid HTML): the caption carries `for=` so
-     clicking the text still toggles the switch. */
-  .filter-toggle{
-    display:flex; align-items:center; gap:6px; flex:0 0 auto;
-    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
-    user-select:none; white-space:nowrap;
+  /* Every toggle in the popup uses the view-tab look (#fhTabs' Context/
+     Filtered/Table/Plot): a .view-tabs group box, chrome-free items, the
+     selected/on ones raised (--bg-elevated-2) in --accent-strong. Text/Regex
+     is a plain segmented pair inside one group. The independent on/off
+     labels (Match case / Whole word / Exclude (NOT) and the Search in
+     columns) additionally carry .label-toggle: a thin accent bar under the
+     label as the on/off status light — same rule as .icon-toggle — so a
+     single-label toggle never reads as an action button. Switches keep the
+     .pill-toggle state protocol (role=switch + aria-checked + .on, via
+     pillGet/pillSet and the shared delegated click handler). */
+  #filterForm .view-tabs{flex:0 1 auto; flex-wrap:wrap; height:auto; min-height:28px;}
+  #filterForm .view-tab{height:22px;}
+  .view-tab.label-toggle{position:relative;}
+  .view-tab.label-toggle[aria-checked="true"]{background:var(--bg-elevated-2); color:var(--accent-strong);}
+  .view-tab.label-toggle::after{
+    content:""; position:absolute; left:50%; bottom:1px; transform:translateX(-50%);
+    width:60%; height:2px; border-radius:1px; background:transparent; transition:background .12s;
   }
-  .filter-toggle-label{cursor:pointer;}
-  .filter-toggle:has(.pill-toggle[aria-checked="true"]){color:var(--accent-strong);}
-  /* NOT keeps its own red accent — the one option in the popup that removes
-     rows rather than narrowing them (its pill's track/knob turn red when on). */
-  .filter-toggle-danger:has(.pill-toggle[aria-checked="true"]){color:var(--level-error);}
-  .filter-toggle-danger .pill-toggle[aria-checked="true"]{background:color-mix(in srgb, var(--level-error) 30%, transparent); border-color:var(--level-error);}
-  .filter-toggle-danger .pill-toggle[aria-checked="true"]::after{background:var(--level-error);}
-  /* "Match whole word" is only meaningful for a plain literal search — see
-     updateWholeWordAvailability(); greyed out rather than hidden so it
-     doesn't shift the row's layout as the input is typed into. */
-  .filter-toggle.disabled{opacity:.4;}
-  .filter-toggle.disabled .filter-toggle-label, .filter-toggle.disabled .pill-toggle{cursor:not-allowed;}
+  .view-tab.label-toggle.active::after, .view-tab.label-toggle[aria-checked="true"]::after{background:var(--accent-strong);}
+  /* NOT keeps its own red accent — the one option that removes rows rather
+     than narrowing them. */
+  .view-tab.label-toggle-danger[aria-checked="true"]{color:var(--level-error);}
+  .view-tab.label-toggle-danger[aria-checked="true"]::after{background:var(--level-error);}
   .filter-column-chips{
-    display:flex; align-items:center; gap:5px; flex-wrap:wrap;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
   }
-  .column-chip{
-    font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--text-secondary);
-    background:transparent; border:1px solid var(--border); border-radius:20px;
-    padding:4px 9px; line-height:16px; cursor:pointer; user-select:none;
-    transition:background .12s, border-color .12s, color .12s, filter .12s;
-  }
-  .column-chip:hover{filter:brightness(1.25);}
-  .column-chip.active{background:var(--accent); border-color:transparent; color:var(--accent-on);}
-  .filter-token-chips{display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
+  .filter-token-chips{display:flex; align-items:center; gap:4px; flex-wrap:wrap;}
   .filter-token-chips.hidden{display:none;}
+  /* Insert chips are actions, not toggles — they keep the app's framed
+     button look (.toolbar-icon-btn's frame/fill/hover) at the popup's 28px
+     control height, visibly distinct from the chrome-free toggles below. */
   .token-chip{
-    font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--accent-strong);
-    background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius:5px;
-    padding:2px 7px; cursor:pointer; transition:filter .12s;
+    height:28px; font-family:var(--font-mono); font-size:11px; font-weight:600; color:var(--text-secondary);
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:7px;
+    padding:0 9px; cursor:pointer; transition:background .12s, border-color .12s, color .12s;
   }
-  .token-chip:hover{filter:brightness(1.2);}
+  .token-chip:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
   /* Footer row: the submit button, right-aligned (the match count moved
      up into #filterResults). */
   .filter-footer-row{
@@ -4022,28 +4008,22 @@
           </div>
           <div class="filter-settings-row filter-section-row">
             <span class="filter-section-label">Syntax</span>
-            <div class="assert-mode-row filter-syntax-toggle" role="group" aria-label="Syntax">
-              <button type="button" class="assert-mode-btn active" id="filterSyntaxText" aria-pressed="true" title="Plain text, optionally with [*:…] wildcard tokens">Text</button>
-              <button type="button" class="assert-mode-btn" id="filterSyntaxRegex" aria-pressed="false" title="Use RegExp">Regex</button>
+            <div class="view-tabs" role="group" aria-label="Syntax">
+              <button type="button" class="view-tab active" id="filterSyntaxText" aria-pressed="true" title="Plain text, optionally with [*:…] wildcard tokens">Text</button>
+              <button type="button" class="view-tab" id="filterSyntaxRegex" aria-pressed="false" title="Use RegExp">Regex</button>
             </div>
-            <div class="filter-toggle" title="Case sensitive">
-              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterCaseCheckbox"></button>
-              <label class="filter-toggle-label" for="filterCaseCheckbox">Match case</label>
-            </div>
-            <div class="filter-toggle" id="filterWholeWordRow">
-              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterWholeWordCheckbox"></button>
-              <label class="filter-toggle-label" for="filterWholeWordCheckbox">Whole word</label>
-            </div>
-            <div class="filter-toggle filter-toggle-danger" title="Invert — keep only the rows that do NOT match">
-              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterInvertCheckbox"></button>
-              <label class="filter-toggle-label" for="filterInvertCheckbox">Exclude (NOT)</label>
+            <div class="view-tabs" role="group" aria-label="Options">
+              <button type="button" role="switch" aria-checked="false" class="view-tab label-toggle" id="filterCaseCheckbox" title="Case sensitive">Match case</button>
+              <button type="button" role="switch" aria-checked="false" class="view-tab label-toggle" id="filterWholeWordCheckbox">Whole word</button>
+              <button type="button" role="switch" aria-checked="false" class="view-tab label-toggle label-toggle-danger" id="filterInvertCheckbox" title="Invert — keep only the rows that do NOT match">Exclude (NOT)</button>
             </div>
           </div>
           <div id="filterColumnChips" class="filter-column-chips filter-section-row" title="Columns to search">
             <span class="filter-section-label">Search in</span>
-            <!-- Chip buttons are JS-built by renderFilterColumnChipButtons
-                 (Custom Columns feature: the column set is now per-format/
-                 dynamic, not a fixed six) — see activeTextFilterColumns(). -->
+            <!-- Chip buttons are JS-built into this group by
+                 renderFilterColumnChipButtons (Custom Columns feature: the
+                 column set is per-format/dynamic) — see activeTextFilterColumns(). -->
+            <div class="view-tabs" id="filterColumnChipGroup" role="group" aria-label="Search in"></div>
           </div>
           <div id="filterPatternPreview" class="hidden"></div>
           <!-- Live result summary: big match count + meta lines left, a
@@ -12235,7 +12215,9 @@ function pillSet(elm, on, fireChange) {
 // bubbles here, so label clicks toggle it too without extra wiring. Toggling
 // dispatches a `change` event, so existing change listeners keep working.
 document.addEventListener("click", ev => {
-  const pill = ev.target.closest && ev.target.closest(".pill-toggle");
+  // .label-toggle[role=switch]: the filter popup's label-only switches
+  // (Match case/Whole word/NOT) — same state protocol, view-tab look.
+  const pill = ev.target.closest && ev.target.closest('.pill-toggle, .label-toggle[role="switch"]');
   if (!pill || pill.disabled) return;
   pillSet(pill, !pillGet(pill), true);
 });
@@ -26116,8 +26098,8 @@ const filterCaseCheckbox = el("#filterCaseCheckbox");
 const filterSyntaxTextBtn = el("#filterSyntaxText");
 const filterSyntaxRegexBtn = el("#filterSyntaxRegex");
 const filterWholeWordCheckbox = el("#filterWholeWordCheckbox");
-const filterWholeWordRow = el("#filterWholeWordRow");
 const filterColumnChips = el("#filterColumnChips");
+const filterColumnChipGroup = el("#filterColumnChipGroup");
 const filterScopeHint = el("#filterScopeHint");
 const filterResults = el("#filterResults");
 const filterResultsMinimap = el("#filterResultsMinimap");
@@ -26155,21 +26137,21 @@ let filterPopupColumns = new Set();
 // (openFilterPopup/openEditFilterPopup), before renderFilterColumnChips
 // (below, unchanged) sets which ones start active.
 function renderFilterColumnChipButtons() {
-  const label = filterColumnChips.querySelector(".filter-section-label");
-  filterColumnChips.innerHTML = "";
-  if (label) filterColumnChips.appendChild(label);
+  filterColumnChipGroup.innerHTML = "";
   activeTextFilterColumns().forEach(col => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "column-chip";
+    btn.className = "view-tab label-toggle column-chip";
     btn.dataset.col = col.key;
     btn.textContent = col.label;
-    filterColumnChips.appendChild(btn);
+    filterColumnChipGroup.appendChild(btn);
   });
 }
 function renderFilterColumnChips() {
   filterColumnChips.querySelectorAll(".column-chip").forEach(chip => {
-    chip.classList.toggle("active", filterPopupColumns.has(chip.dataset.col));
+    const on = filterPopupColumns.has(chip.dataset.col);
+    chip.classList.toggle("active", on);
+    chip.setAttribute("aria-pressed", on ? "true" : "false");
   });
 }
 filterColumnChips.addEventListener("click", ev => {
@@ -26621,8 +26603,7 @@ const WHOLE_WORD_TITLE_NA = "Not applicable to a regex or a wildcard-token patte
 function updateWholeWordAvailability() {
   const inapplicable = isFilterRegexMode() || isExtractPattern(filterInput.value);
   filterWholeWordCheckbox.disabled = inapplicable;
-  filterWholeWordRow.classList.toggle("disabled", inapplicable);
-  filterWholeWordRow.title = inapplicable ? WHOLE_WORD_TITLE_NA : WHOLE_WORD_TITLE;
+  filterWholeWordCheckbox.title = inapplicable ? WHOLE_WORD_TITLE_NA : WHOLE_WORD_TITLE;
 }
 
 // Content-driven availability state, kept as its own function (rather than

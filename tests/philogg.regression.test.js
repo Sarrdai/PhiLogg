@@ -16840,16 +16840,16 @@ await withApp(async (w, d, T) => {
   w.render();
   w.openFilterPopup();
   const wholeWordCheckbox = d.querySelector("#filterWholeWordCheckbox");
-  const wholeWordRow = d.querySelector("#filterWholeWordRow");
   assert(wholeWordCheckbox && pillChecked(wholeWordCheckbox) === false, "the \"Match whole word\" toggle defaults to OFF (person-specified default)");
-  assert(!wholeWordCheckbox.disabled && !wholeWordRow.classList.contains("disabled"),
+  assert(!wholeWordCheckbox.disabled,
     "it starts out enabled for the empty (literal) input");
 
-  // Every boolean in the popup is a .pill-toggle (docs/ui-standard.md #69) now.
+  // Every boolean in the popup is a role=switch button on the pill-toggle
+  // state protocol, drawn as a label-only view-tab toggle (Group 263).
   ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
     const box = d.querySelector("#" + id);
-    assert(box.tagName === "BUTTON" && box.classList.contains("pill-toggle") && box.getAttribute("role") === "switch",
-      "#" + id + " is a role=switch .pill-toggle button (unified boolean control)");
+    assert(box.tagName === "BUTTON" && box.classList.contains("label-toggle") && box.getAttribute("role") === "switch",
+      "#" + id + " is a role=switch .label-toggle button (unified boolean control)");
     assert(box.hasAttribute("aria-checked"), "#" + id + " carries aria-checked state");
   });
 
@@ -16869,15 +16869,15 @@ await withApp(async (w, d, T) => {
   // A wildcard pattern greys it out — that language has its own boundaries.
   filterInput.value = "Test [*:word]";
   fireInput(filterInput, w);
-  assert(wholeWordCheckbox.disabled && wholeWordRow.classList.contains("disabled"),
+  assert(wholeWordCheckbox.disabled,
     "typing a wildcard-token pattern disables the whole-word toggle instead of letting it sit there as a no-op");
   filterInput.value = "Test";
   fireInput(filterInput, w);
-  assert(!wholeWordCheckbox.disabled && !wholeWordRow.classList.contains("disabled"), "...and removing the token re-enables it");
+  assert(!wholeWordCheckbox.disabled, "...and removing the token re-enables it");
 
   // So does regex mode.
   fireClick(d.querySelector("#filterSyntaxRegex"), w);
-  assert(wholeWordCheckbox.disabled && wholeWordRow.classList.contains("disabled"),
+  assert(wholeWordCheckbox.disabled,
     "regex mode disables the whole-word toggle too (\\b/lookarounds do the job there)");
   fireClick(d.querySelector("#filterSyntaxText"), w);
   assert(!wholeWordCheckbox.disabled, "leaving regex mode re-enables it");
@@ -18081,7 +18081,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="highlight"]'), w);
 
   assert(T.fhActiveTab === "highlight", "fhActiveTab switches to Context");
-  assert(d.querySelector('.view-tab.active').dataset.fhTab === "highlight", "the Context tab pill is the one marked active");
+  assert(d.querySelector('#fhTabs .view-tab.active').dataset.fhTab === "highlight", "the Context tab pill is the one marked active");
   assert(d.querySelector("#extractWrap").style.display === "none", "the extraction table is no longer the visible content component");
   assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
 });
@@ -18103,7 +18103,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="filter"]'), w);
 
   assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
-  assert(d.querySelector('.view-tab.active').dataset.fhTab === "filter", "the Filtered tab pill is the one marked active");
+  assert(d.querySelector('#fhTabs .view-tab.active').dataset.fhTab === "filter", "the Filtered tab pill is the one marked active");
   assert(d.querySelector("#extractWrap").style.display === "none", "the plot is no longer the visible content component");
   assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
 });
@@ -24509,9 +24509,9 @@ group(212);
 await withApp(async (w, d, T) => {
   section("212a. .pill-toggle component: click + label-click flip aria-checked/.on, read back via aria-checked");
 
-  T.state.activeId = null;
-  w.openFilterPopup();
-  const pill = d.querySelector("#filterInvertCheckbox");
+  // The filter popup's switches are label-only view-tab toggles since
+  // 2026-09-23 (Group 263) — the link dialog's pill is the reference here.
+  const pill = d.querySelector("#linkExclusiveInput");
   assert(pill.tagName === "BUTTON" && pill.getAttribute("role") === "switch" && pill.classList.contains("pill-toggle"),
     "a converted boolean is a <button role=switch class=pill-toggle>, not a native checkbox");
   assert(pill.getAttribute("aria-checked") === "false" && !pill.classList.contains("on"),
@@ -24528,7 +24528,7 @@ await withApp(async (w, d, T) => {
 
   // Clicking the associated <label for=…> toggles it too (browser forwards
   // the click to the labelled button, which the delegated handler catches).
-  const label = d.querySelector('label[for="filterInvertCheckbox"]');
+  const label = d.querySelector('label[for="linkExclusiveInput"]');
   assert(label, "the pill has an adjacent <label for> wiring the text to it");
   fireClick(label, w);
   assert(pillChecked(pill), "clicking the label toggles the pill on");
@@ -24536,18 +24536,20 @@ await withApp(async (w, d, T) => {
   assert(!pillChecked(pill), "clicking the label again toggles it back off");
 
   // A toggle dispatches a real `change` event, so change-driven app logic
-  // keeps working: turning NOT on re-runs the live match as "kept (NOT)".
+  // keeps working — the same protocol drives the filter popup's label-only
+  // switches: turning NOT on re-runs the live match as "kept (NOT)".
   const pf = await w.addFile("pill.log", makeLog(0, 4), () => {});
-  w.closeFilterPopup();
   T.state.activeId = pf.id;
   w.openFilterPopup();
+  const notToggle = d.querySelector("#filterInvertCheckbox");
   d.querySelector("#filterInput").value = "message";
   fireInput(d.querySelector("#filterInput"), w);
-  fireClick(pill, w);
+  fireClick(notToggle, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("kept (NOT) in"),
-    "toggling the NOT pill fired change -> evaluateLiveMatch re-ran in NOT mode, got " + d.querySelector("#filterLiveMatch").textContent);
-  fireClick(pill, w);
+  assert(pillChecked(notToggle) && d.querySelector("#filterLiveMatch").textContent.includes("kept (NOT) in"),
+    "toggling the NOT switch fired change -> evaluateLiveMatch re-ran in NOT mode, got " + d.querySelector("#filterLiveMatch").textContent);
+  fireClick(notToggle, w);
+  w.closeFilterPopup();
 
   // pillGet/pillSet round-trip (the app's own helpers, exposed as functions):
   // pillSet(el,true) with no fireChange flag mirrors the old `.checked =` and
@@ -24577,7 +24579,9 @@ await withApp(async (w, d, T) => {
 
   // Every listed single-boolean id is now a role=switch pill (and none of the
   // deliberately-untouched multi-select checkbox lists were converted).
-  const pillIds = ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox",
+  // (The filter popup's three switches moved to the label-only view-tab
+  // look on 2026-09-23 — Groups 149/263.)
+  const pillIds = ["linkExclusiveInput", "linkOrderEnforceInput",
     "settingsCloseToTray", "settingsHoverExpandSidebar", "settingsHoverExpandDetail",
     "settingsHideMinimapFullRangeInFullView", "settingsTempAnchorAcrossFiles",
     "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail"];
@@ -29139,6 +29143,12 @@ await withApp(async (w, d, T) => {
    case, Whole word, Exclude (NOT)) / Search in; and a live result summary
    (big count + "matches in N" + "captures: …", a match-over-time
    histogram, up to three sample rows as a table with the hit marked).
+   Follow-up, same day (person-requested): every toggle takes #fhTabs'
+   view-tab look — Text/Regex as a segmented .view-tabs group, the option
+   switches and Search in columns as label-only .label-toggle items with
+   the .icon-toggle status bar (so a single-label toggle doesn't read as a
+   button); the Insert chips, being actions, got the app's framed button
+   look instead.
    ============================================================ */
 group(263);
 await withApp(async (w, d, T) => {
@@ -29171,14 +29181,42 @@ await withApp(async (w, d, T) => {
   const labels = [...d.querySelectorAll("#filterForm .filter-section-label")].map(l => l.textContent);
   assert(JSON.stringify(labels) === JSON.stringify(["Insert", "Syntax", "Search in"]), "rows are captioned Insert / Syntax / Search in, in that order, got " + JSON.stringify(labels));
   const syntaxRow = d.querySelector(".filter-settings-row");
-  const syntaxOrder = [...syntaxRow.querySelectorAll("#filterSyntaxText, #filterSyntaxRegex, .filter-toggle-label")].map(x => x.textContent);
+  const syntaxOrder = [...syntaxRow.querySelectorAll(".view-tab")].map(x => x.textContent);
   assert(JSON.stringify(syntaxOrder) === JSON.stringify(["Text", "Regex", "Match case", "Whole word", "Exclude (NOT)"]),
     "the Syntax row reads Text | Regex, Match case, Whole word, Exclude (NOT), got " + JSON.stringify(syntaxOrder));
   assert(d.querySelector("#filterRegexCheckbox") === null, "the old 'Interpret input as regex' pill is gone");
 
+  // --- One look for every toggle: #fhTabs' view-tab (follow-up, same day) ---
+  const groups = [...d.querySelectorAll("#filterForm .view-tabs")];
+  assert(groups.length === 3, "three view-tabs groups: Text/Regex, the option switches, Search in, got " + groups.length);
+  assert(groups[0].contains(d.querySelector("#filterSyntaxText")) && groups[0].contains(d.querySelector("#filterSyntaxRegex")) && groups[0].children.length === 2,
+    "Text/Regex form their own segmented group");
+  ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
+    const t = d.getElementById(id);
+    assert(groups[1].contains(t) && t.classList.contains("view-tab") && t.classList.contains("label-toggle") && !t.classList.contains("pill-toggle"),
+      "#" + id + " is a label-only view-tab toggle (no switch track) in the options group");
+  });
+  assert(d.querySelector("#filterInvertCheckbox").classList.contains("label-toggle-danger"), "NOT keeps its red accent");
+  assert(!d.querySelector("#filterPopup label"), "no separate captions — each toggle is its own single label");
+  const css = d.querySelector("style").textContent;
+  assert(/\.view-tab\.label-toggle::after\{[^}]*height:2px/.test(css) && css.includes(".view-tab.label-toggle.active::after, .view-tab.label-toggle[aria-checked=\"true\"]::after{background:var(--accent-strong);}"),
+    "single-label toggles carry the status bar (the .icon-toggle rule) so they don't read as buttons");
+  const tokenChip = d.querySelector(".token-chip");
+  assert(!tokenChip.classList.contains("view-tab") && !tokenChip.classList.contains("label-toggle"), "Insert chips are actions and keep a button look, not the toggle look");
+
   // --- Text/Regex switch drives regex mode and round-trips through edit ---
   T.state.activeId = f.id;
   w.openFilterPopup();
+  const colChips = [...d.querySelectorAll("#filterColumnChipGroup .column-chip")];
+  assert(colChips.length > 0 && colChips.every(c => c.classList.contains("view-tab") && c.classList.contains("label-toggle") && c.getAttribute("aria-pressed") === "false"),
+    "Search in columns are label-only view-tab toggles inside their own group");
+  fireClick(colChips[0], w);
+  assert(colChips[0].classList.contains("active") && colChips[0].getAttribute("aria-pressed") === "true", "clicking a column toggles it on (.active + aria-pressed)");
+  fireClick(colChips[0], w);
+  const caseT = d.querySelector("#filterCaseCheckbox");
+  fireClick(caseT, w);
+  assert(pillChecked(caseT) && caseT.classList.contains("on"), "clicking the Match case label itself switches it on (pill-toggle state protocol)");
+  fireClick(caseT, w);
   const input = d.querySelector("#filterInput");
   const textBtn = d.querySelector("#filterSyntaxText"), regexBtn = d.querySelector("#filterSyntaxRegex");
   assert(textBtn.classList.contains("active") && textBtn.getAttribute("aria-pressed") === "true" && !regexBtn.classList.contains("active"), "Text is active by default");
@@ -33402,7 +33440,9 @@ process.exitCode = failed ? 1 : 0;
    Group 263 — new session (2026-09-23): filter popup redesign — inline
               "in <parent>" scope hint (15 chars) instead of the "Filter
               on" pill chain, Text/Regex switch, Insert/Syntax/Search in
-              rows, live result summary (count, histogram, sample table).
+              rows, live result summary (count, histogram, sample table);
+              follow-up: view-tab look for every toggle (label-only
+              switches with a status bar), button look for Insert chips.
               Groups 152/225 (.crumb pill + separator styling) removed with
               the last .crumb consumer; 39/40/122/149/212 updated.
    ============================================================ */
