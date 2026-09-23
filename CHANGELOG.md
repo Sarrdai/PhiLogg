@@ -2,6 +2,8 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: ancestor names on the active path take the path accent (this session, 2026-09-23, person-requested)**. `decorateTreeGuides` marks the file and parent filter rows of the active node `.on-path`; their names render in `--accent`, like the highlighted lines (level-node word colors included). Group 262 extended. Full suite: **5267 passed, 0 failed**.
+
 - **fix: missing tree connector segments (this session, 2026-09-23, person-reported, screenshot)**. The previous fix's base `.tree-guide{height:0}` overrode the `top:0; bottom:0` stretch, so every rail, stem and lower half collapsed to nothing. Only the cross axis is zeroed now (`.v{width:0}`, `.h{height:0}`). Group 262 extended. Full suite: **5264 passed, 0 failed**.
 
 - **fix: tree connector lines render at even thickness, active row loses its multi-select outline (this session, 2026-09-23, person-reported, screenshot)**. The 1.5px background-filled guides got pixel-snapped unevenly; they're 2px borders now. The multi-select outline on the active row cut across the lines and is suppressed there (other multi-selected rows keep it). Group 262 extended. Full suite: **5262 passed, 0 failed**.
