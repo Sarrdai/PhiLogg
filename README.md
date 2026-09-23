@@ -50,7 +50,9 @@ open it in a browser to view it.
   and nearest-neighbor link filters (time-context and count-context filters
   also exist and fully work, but creating a new one is temporarily
   unreachable — see `docs/filters.md`); each level narrows/transforms the
-  result of the one above it. The Files & Filters sidebar has its own icon
+  result of the one above it. Connector lines tie each filter to its
+  parent, and the path down to the selected filter is highlighted, so the
+  active chain reads straight off the tree. The Files & Filters sidebar has its own icon
   toolbar (same icon+hover-label style as the log view's own toolbars)
   whose buttons change with the current selection — Adjust clock for a
   file, Merge for 2+ files, Rename/Edit/Invert plus Add-to-library/Apply-
@@ -58,7 +60,7 @@ open it in a browser to view it.
   tree's existing right-click menu (Copy/Cut/Save filter…/Load filter… stay
   there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
   a human-readable label
-  shown in the tree/breadcrumb instead of the raw pattern — handy for turning
+  shown in the tree instead of the raw pattern — handy for turning
   a chain into a readable narrative ("Step 3: calibration errors"). Editing a
   filter's actual value moved to `Ctrl+E`. A text filter can be
   case-sensitive, restricted to specific columns, inverted (NOT),
@@ -272,7 +274,7 @@ open it in a browser to view it.
 - **Fullscreen focus mode** (desktop app) — `F11` (rebindable) drops into a
   distraction-free fullscreen: the header disappears, the sidebar and detail
   panel collapse to edge-hover overlays, and the active log/extraction view
-  takes the whole window; the tabs, level bar, breadcrumb and minimap stay.
+  takes the whole window; the tabs, level bar and minimap stay.
   `F11` again or `Esc` leaves it. Real OS fullscreen is desktop-only, so the
   shortcut is bound only in the desktop app — a plain browser keeps its own
   `F11`.

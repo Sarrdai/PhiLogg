@@ -2878,17 +2878,9 @@ await withApp(async (w, d, T) => {
   assert(viewBarChildren.indexOf("breadcrumb") === -1, "breadcrumb is NOT inside #viewBar any more");
   assert(d.querySelector("#levelBar").parentElement === viewBar, "level bar is nested INSIDE #viewBar");
   assert(viewBar.querySelector('[data-row-actions="viewbar"]') !== null, "the row-actions group is nested INSIDE #viewBar too, right of the level filter");
-  const breadcrumbBar = d.querySelector("#breadcrumbBar");
-  assert(breadcrumbBar !== null, "#breadcrumbBar exists as its own row");
-  assert(d.querySelector("#breadcrumb").parentElement === breadcrumbBar, "breadcrumb is nested inside #breadcrumbBar instead");
-  // --- Placement: minimap, then breadcrumb, then the Filter-Toolbar (person-requested) ---
-  const minimapEl = d.querySelector("#timelineMinimap");
-  const contentChildren = [...minimapEl.parentElement.children];
-  const idxMinimap = contentChildren.indexOf(minimapEl);
-  const idxBreadcrumbBar = contentChildren.indexOf(breadcrumbBar);
-  const idxViewBar = contentChildren.indexOf(viewBar);
-  assert(idxMinimap < idxBreadcrumbBar && idxBreadcrumbBar < idxViewBar,
-    "DOM order is timeline minimap, then #breadcrumbBar, then #viewBar (the Filter-Toolbar)");
+  // Breadcrumb bar removed (2026-09-23, person-requested) — the active path
+  // is drawn as highlighted connector lines in the tree instead (GROUP 262).
+  assert(d.querySelector("#breadcrumbBar") === null && d.querySelector("#breadcrumb") === null, "the breadcrumb bar is gone");
 
   const cs = w.getComputedStyle;
 
@@ -2920,7 +2912,6 @@ await withApp(async (w, d, T) => {
   assert(cs(viewBar).display === "flow-root", "#viewBar is a flow-root (contains the floats regardless of breadcrumb height)");
   assert(cs(d.querySelector("#fhTabs")).float === "left", "#fhTabs floats left so it stays pinned to the top line");
   assert(cs(d.querySelector("#levelBar")).float === "left", "#levelBar floats left so it stays pinned to the top line");
-  assert(cs(d.querySelector("#breadcrumb")).display === "block", "#breadcrumb is a plain block (not flex) so its chips text-wrap onto their own line(s) instead of the whole element behaving like a flex item");
   // Regression guard for a real bug hit once already: #viewBar's flow-root
   // is a SEPARATE concern from its own flex-item sizing as a child of
   // #content (a flex column). Losing flex-shrink:0 here lets #content
@@ -2931,7 +2922,6 @@ await withApp(async (w, d, T) => {
   // reported and fixed in this session.
   assert(cs(viewBar).flexShrink === "0", "#viewBar must not flex-shrink as a child of #content, or its floated children get clipped when vertical space is tight");
   assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter buttons render inside #viewBar");
-  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb chips render inside #breadcrumbBar");
 
   // Extract mode (UPDATED by this session's toolbar reorganization):
   // #viewBar (tabs + level filter) is now IDENTICAL regardless of tab,
@@ -2950,7 +2940,6 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#levelBar").style.display === "", "level bar STAYS visible while the Table tab is showing — #viewBar is now identical across every tab");
   assert(isVisible(d.querySelector('[data-row-actions="viewbar"]'), w) === true, "the row-actions group (in #viewBar) stays visible on the Table tab too — it's part of the universal Filter-Toolbar, not a log-view toolbar");
   assert(d.querySelector("#fhSplit").style.display === "none", "sanity: the log-view split (and with it #contextToolbar/#filteredToolbar's DISPLAY toggles) isn't on screen on the Table tab");
-  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb still renders in extract mode");
   w.applyFhView("filter");
   assert(d.querySelector("#levelBar").style.display === "", "level bar stays visible switching to the Filtered tab too");
   assert(isVisible(d.querySelector(".toggle-notes"), w) === true, "the log-display toggles (now inside #contextToolbar/#filteredToolbar) are back on screen on the Filtered tab");
@@ -2959,67 +2948,16 @@ await withApp(async (w, d, T) => {
   T.state.activeId = textNode.id;
   w.render();
 
-  // --- Breadcrumb follow-up (person-requested, this session): same overall
-  // height as the level filter row (level buttons became solid-color 28x28
-  // circles with no visible text of their own in a later session — see
-  // Group 214 — so text-size/padding parity no longer applies, only the
-  // shared 28px height does), and clickable chips select that ancestor node
-  // in the filter tree. ---
-  const crumbEl = d.querySelector("#breadcrumb .crumb");
+  // --- Shared 28px row height (the breadcrumb chips that used to be
+  // checked here too are gone with the breadcrumb bar). ---
   const levelBtnEl = d.querySelector("#levelBar .level-btn");
-  // Regression guard, superseded/simplified this session ("Main window
-  // visual consistency fix"): the row used to chase height parity via
-  // per-element line-height/padding arithmetic (three rounds of it, see git
-  // blame) because #fhTabs (.view-tabs) has TWO nested boxes (its own
-  // padding+border, then .view-tab's padding inside that) while .crumb/
-  // .level-btn are single-box pills — no line-height value made those two
-  // shapes provably equal without hand-computing the sum each time. Fixed
-  // by giving every one of them the SAME explicit height (28px) plus
-  // flex-centering instead: #fhTabs itself is 28px tall (box-sizing:
-  // border-box includes its own padding+border in that), .view-tab fills
-  // it via height:100%, and .crumb/.level-btn are directly 28px tall —
-  // one shared number, no arithmetic to keep in sync.
   const fhTabsEl = d.querySelector("#fhTabs");
   const viewTabEl = d.querySelector("#fhTabs .view-tab");
   assert(cs(fhTabsEl).height === "28px",
     "#fhTabs (.view-tabs) has the shared row height (28px) directly — the height REFERENCE for the rest of the row is now a plain number, not a line-height sum");
   assert(cs(viewTabEl).height === "100%",
     "#fhTabs' own button (.view-tab) fills its container via height:100% + flex-centering, not a pinned line-height");
-  assert(cs(crumbEl).height === "28px" && cs(levelBtnEl).height === "28px",
-    "breadcrumb chips and level pills share the exact same 28px height as #fhTabs, no line-height arithmetic needed");
-  // Regression guard, UPDATED this session (2026-09-08, person-reported via
-  // an annotated mockup: "unten sichtbar größer als oben"): the vertical-align
-  // :top + margin-top:0 rationale below the fold used to hold because #breadcrumb
-  // lived directly inside floated #viewBar alongside #fhTabs/#levelBar (a
-  // #fhTabs/#levelBar-alignment concern that no longer applies — breadcrumb
-  // has its own dedicated #breadcrumbBar row now, see the "Toolbar
-  // reorganization follow-up" changelog entry). Once #breadcrumbBar started
-  // flex-centering #breadcrumb's WHOLE box (align-items:center), the old
-  // asymmetric margin (0 top / 6 bottom, needed only to add a gap between
-  // wrapped lines) shifted the visible pill toward the top of that centered
-  // box, leaving a visibly bigger gap below the pill than above it. Fix:
-  // #breadcrumb .crumb now carries a SYMMETRIC vertical margin (2px/2px) —
-  // small enough that #breadcrumbBar still shrinks (not grows) relative to
-  // its old 44px height, but equal on both sides so the outer centering
-  // produces an equal gap top and bottom.
-  assert(cs(crumbEl).verticalAlign === "top", "breadcrumb chips still use vertical-align:top (harmless/inert once the row is centered by its own flex parent, not load-bearing any more, but left as-is)");
-  assert(cs(crumbEl).marginTop === "2px" && cs(crumbEl).marginBottom === "2px",
-    "breadcrumb chips carry a SYMMETRIC 2px top/bottom margin (was 0px/6px) so #breadcrumbBar's centering doesn't visibly shift the pill toward the top");
-  const breadcrumbBarEl = d.querySelector("#breadcrumbBar");
-  assert(cs(breadcrumbBarEl).paddingTop === cs(breadcrumbBarEl).paddingBottom,
-    "sanity: #breadcrumbBar's own top/bottom padding is symmetric too, so nothing upstream reintroduces the asymmetry");
-
-  const crumbs = [...d.querySelectorAll("#breadcrumb .crumb")];
-  assert(crumbs.length === 2, "sanity: breadcrumb has file + filter = 2 chips, got " + crumbs.length);
-  assert(!crumbs[0].classList.contains("current") && crumbs[1].classList.contains("current"),
-    "sanity: only the active node's own chip is marked current — the other chip is a clickable ancestor");
-  fireClick(crumbs[0], w); // click the file chip — an ancestor, not the currently active node
-  assert(T.state.activeId === f.id, "clicking a breadcrumb chip selects that node (state.activeId updates to it)");
-  assert(T.state.multiSelect.has(f.id) && T.state.multiSelect.size === 1,
-    "clicking a breadcrumb chip sets a single-node multiSelect, same as a plain (non-Ctrl) tree-row click");
-  assert(d.querySelector(".tree-row.active") !== null, "the file's tree row is now marked active after the breadcrumb click");
-  T.state.activeId = textNode.id; // reset for the popup checks below
-  w.render();
+  assert(cs(levelBtnEl).height === "28px", "level pills share the exact same 28px height as #fhTabs");
 
   // --- Sidebar no longer has a permanent shortcuts strip (superseded, see
   // GROUP 114 for the current Shortcut Manager; #btnShortcuts itself is gone
@@ -11235,7 +11173,7 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(100);
 await withApp(async (w, d, T) => {
-  section("100. Middle-click a filter node (tree row / breadcrumb chip) deletes it");
+  section("100. Middle-click a filter node (tree row) deletes it");
 
   const f = await w.addFile("app.log", makeLog(0, 5), () => {});
   const filt = w.createFilterNode(f.id, "text", "message");
@@ -11259,13 +11197,6 @@ await withApp(async (w, d, T) => {
   rowAgain.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }));
   assert(!!T.state.nodes[filt.id], "auxclick with a non-middle button does not delete the node");
 
-  // Breadcrumb chip: same behavior, reachable from the chain display too.
-  T.state.activeId = filt.id;
-  w.render();
-  const crumb = [...d.querySelectorAll("#breadcrumb .crumb")].find(c => c.classList.contains("current"));
-  crumb.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
-  assert(!T.state.nodes[filt.id], "middle-clicking the active breadcrumb chip deletes that filter node too");
-  assert(f.children.length === 0, "...removed from its parent's children");
 });
 
 /* ============================================================
@@ -15768,7 +15699,10 @@ await withApp(async (w, d, T) => {
   T.state.activeId = longFilter.id;
   w.render();
 
-  const crumbs = [...d.querySelectorAll("#breadcrumb .crumb")];
+  // The breadcrumb bar these pills were first checked in is gone
+  // (2026-09-23) — #filterTargetChain is the remaining .crumb consumer.
+  w.openFilterPopup();
+  const crumbs = [...d.querySelectorAll("#filterTargetChain .crumb")];
   const longCrumb = crumbs.find(c => c.textContent === longName);
   assert(longCrumb, "the long-named filter still renders its full text as the chip's own content (truncation is CSS-only, not JS-shortened text)");
   const longLabel = longCrumb.querySelector(".crumb-label");
@@ -15792,6 +15726,7 @@ await withApp(async (w, d, T) => {
   // --- Same pill, same rule, in the filter-target chain the "add filter"
   // popup shows (#filterTargetChain reuses .crumb) — it didn't set a
   // tooltip at all before this session.
+  w.closeFilterPopup();
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
@@ -20482,7 +20417,7 @@ await withApp(async (w, d, T) => {
   // session (FEATURE_BACKLOG.md #77, retired outright in favor of
   // #sidebarToolbar) — no replacement entry needed, #sidebarToolbar is a
   // descendant of #sidebar, already covered by that entry.
-  for (const id of ["#toolbar", "#sidebar", "#breadcrumbBar", "#extractToolbar", "#tableToolbar",
+  for (const id of ["#toolbar", "#sidebar", "#extractToolbar", "#tableToolbar",
     "#plotToolbar", "#plotControls", "#contextToolbar", "#filteredToolbar", "#linkToolbar",
     "#detailPanel", "#detailResizer", "#timelineMinimap", "#emptyState"]) {
     assert(css.includes("html.pip-mode " + id), "html.pip-mode hides " + id);
@@ -22376,7 +22311,6 @@ group(199);
     // is a CSS ::before counter (generated content, not a DOM text node),
     // so it never shows up here (see GROUP 199k below for the gutter itself).
     assert(d.querySelector("#inlineTextViewer .itv-line").textContent === "hello world", "the text viewer renders the extracted content");
-    assert(d.querySelector("#breadcrumbBar").style.display === "none", "the tab bar (#breadcrumbBar) is hidden while a non-log inline viewer is active");
 
     w.closeInlineViewer();
     assert(T.state.inlineViewer === null, "closing the inline viewer clears state.inlineViewer");
@@ -25901,7 +25835,7 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(225);
 await withApp(async (w, d, T) => {
-  section("225. Breadcrumb/filter-target-chain separator is a bordered circle around a real (font-independent) SVG chevron, not a bare small glyph");
+  section("225. Filter-target-chain separator is a bordered circle around a real (font-independent) SVG chevron, not a bare small glyph");
 
   const cs = w.getComputedStyle;
   const css = d.querySelector("style").textContent;
@@ -25911,7 +25845,8 @@ await withApp(async (w, d, T) => {
   T.state.activeId = node.id;
   w.render();
 
-  const sep = d.querySelector("#breadcrumb .crumb-sep");
+  w.openFilterPopup();
+  const sep = d.querySelector("#filterTargetChain .crumb-sep");
   assert(sep, "sanity: the separator chip still renders between the file and filter pills");
   assert(!sep.textContent.trim(), "the separator no longer relies on a text glyph at all (its font-metrics ink wasn't reliably centered in the circle — see the group banner), got textContent " + JSON.stringify(sep.textContent));
   const svg = sep.querySelector("svg");
@@ -25932,18 +25867,6 @@ await withApp(async (w, d, T) => {
   assert(!/\.crumb-sep\{[^}]*--text-tertiary/.test(css), "the old low-contrast --text-tertiary color is gone from .crumb-sep's own rule");
   assert(css.includes("background:var(--bg-elevated-2); border:1px solid var(--border-soft)"), "the circle has its own themed background/border");
 
-  // Same shared rule + markup powers the filter-target-chain popup's pill
-  // separator (GROUP 152's "pills are separated the same way #breadcrumb
-  // separates its chain") — spot-check it renders the same icon there too.
-  // Create mode's target chain runs down to state.activeId, so it needs
-  // the FILTER node active (not the file) to actually produce a 2-pill
-  // chain with a separator between them (see Group 39's own coverage of
-  // this popup's create-vs-edit chain shape).
-  T.state.activeId = node.id;
-  w.render();
-  w.openFilterPopup();
-  const chainSep = d.querySelector("#filterTargetChain .crumb-sep");
-  assert(chainSep && chainSep.querySelector("svg"), "the filter-target chain's separator is the same SVG-based chip, not a leftover text glyph");
 });
 
 /* ============================================================
@@ -29261,6 +29184,90 @@ await withApp(async (w, d, T) => {
   const wEntries = posted.filter(m => m.type === "chunk").flatMap(m => m.entries);
   assert(wEntries.length === 3 && wEntries[1].message.endsWith("DirectInspect") && wEntries[0].message === "Refreshing test procedures list.",
     "the worker parser does the same, got " + JSON.stringify(wEntries.map(e => e.message)));
+});
+
+/* ============================================================
+   GROUP 262 — Tree connector lines with a highlighted active path
+   (person-requested, 2026-09-23, screenshot): the breadcrumb bar was
+   removed outright and the active filter chain is drawn in the tree
+   itself instead — decorateTreeGuides() adds .tree-guide segments (rails
+   at each parent's chevron x, an elbow into every child row, a stem below
+   an expanded parent) and marks the ones on the root -> active path .on.
+   ============================================================ */
+group(262);
+await withApp(async (w, d, T) => {
+  section("262. Tree connector lines highlight the path to the active node");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const A = w.createFilterNode(f.id, "text", "message");
+  const A1 = w.createFilterNode(A.id, "text", "1");
+  const A2 = w.createFilterNode(A.id, "text", "2");
+  const B = w.createFilterNode(f.id, "text", "3");
+  const rowOf = n => d.querySelector('#tree .tree-row[data-node-id="' + n.id + '"]');
+  const guides = n => [...rowOf(n).querySelectorAll(":scope > .tree-guide")];
+  const on = n => guides(n).filter(g => g.classList.contains("on"));
+  // Elbows start 1px left of their rail (square corner), so match both.
+  const at = (n, x) => guides(n).filter(g => g.style.left === x + "px" || g.style.left === (x - 1) + "px");
+
+  assert(d.querySelector("#breadcrumbBar") === null && d.querySelector("#breadcrumb") === null, "the breadcrumb bar is removed");
+
+  T.state.activeId = A1.id;
+  w.render();
+  assert(guides(f).length === 1 && on(f).length === 1, "the root row gets one stem, highlighted since the active node is below it");
+  assert(on(A).length === 3 && on(A).some(g => g.classList.contains("h")), "A (on the path) highlights its upper link half, its elbow and its own stem, got " + on(A).length);
+  assert(at(A, 16).some(g => g.style.top === "50%" && !g.classList.contains("on")), "A's lower link half toward sibling B stays unhighlighted (the path turns into A)");
+  assert(on(A1).length === 2 && at(A1, 34).filter(g => g.classList.contains("on")).length === 2, "the active row itself highlights its upper link half and its elbow at its parent's x (34px)");
+  assert(at(A1, 16).length === 1 && !at(A1, 16)[0].classList.contains("on"), "A1 carries the root's pass-through rail (A has a later sibling), not highlighted");
+  assert(on(A2).length === 0 && on(B).length === 0, "rows off the path get no highlighted segment");
+  assert(at(A2, 34).length === 2, "the last child gets only an upper half + elbow (no line continues below it)");
+  assert(w.getComputedStyle(guides(f)[0]).pointerEvents === "none", "guides never intercept clicks on the row");
+  // Follow-up (person-reported): 1.5px filled boxes rendered at uneven
+  // thickness (pixel snapping of a fractional width) — lines are integer
+  // 2px borders now; and the multi-select outline no longer frames the
+  // active row, where it cut across the lines.
+  const vCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("v")));
+  const hCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h")));
+  assert(vCs.borderLeftWidth === "2px", "vertical guides are a 2px left border, got " + vCs.borderLeftWidth);
+  assert(hCs.borderTopWidth === "2px", "elbows are a 2px top border, got " + hCs.borderTopWidth);
+  // Follow-up 2 (person-reported): a base height:0 on .tree-guide beat the
+  // top:0/bottom:0 stretch, collapsing every rail, stem and lower half.
+  const rail = at(A1, 16)[0];
+  assert(rail.style.bottom === "0px" && w.getComputedStyle(rail).height !== "0px",
+    "a full-span rail has no fixed height, so top:0/bottom:0 can stretch it, got " + w.getComputedStyle(rail).height);
+  assert(w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h"))).height === "0px", "elbows are still zero-height (just their border)");
+  T.state.multiSelect = new Set([A1.id, A2.id]);
+  w.render();
+  assert(rowOf(A1).classList.contains("multi-selected") && w.getComputedStyle(rowOf(A1)).boxShadow === "none",
+    "the active row carries no multi-select outline, got " + w.getComputedStyle(rowOf(A1)).boxShadow);
+  assert(w.getComputedStyle(rowOf(A2)).boxShadow !== "none", "other multi-selected rows keep their outline");
+  T.state.multiSelect = new Set([A1.id]);
+
+  // Follow-up 3 (person-requested): the ancestors' names (file + parent
+  // filters) take the path accent too; the active row and off-path rows don't.
+  assert(rowOf(f).classList.contains("on-path") && rowOf(A).classList.contains("on-path"), "the file and parent filter rows are marked on-path");
+  assert(!rowOf(A1).classList.contains("on-path") && !rowOf(A2).classList.contains("on-path") && !rowOf(B).classList.contains("on-path"),
+    "neither the active row itself nor off-path rows are marked");
+  const css = [...d.querySelectorAll("style")].map(x => x.textContent).join("\n");
+  assert(/\.tree-row\.on-path \.tree-label \*\{color:var\(--accent\) !important;\}/.test(css) && css.includes(".tree-row.on-path .tree-label,"),
+    "on-path labels (and a level node's inline-colored words inside them) use the accent color");
+
+  // Path through a later sibling: the root rail passes A's subtree highlighted.
+  T.state.activeId = B.id;
+  w.render();
+  assert(at(A1, 16).every(g => g.classList.contains("on")) && at(A2, 16).every(g => g.classList.contains("on")),
+    "with B active, the root rail running past A's children is highlighted");
+  assert(on(A).length === 2 && !on(A).some(g => g.classList.contains("h")), "A's vertical passes through highlighted but its elbow and stem are not");
+  assert(on(B).length === 2, "B highlights its upper half and elbow");
+
+  // A collapsed parent draws no stem and its children no guides at all.
+  A.collapsed = true;
+  w.render();
+  assert(rowOf(A1) === null && guides(A).length === 3, "collapsed A: no children rendered, A has no stem (top, bottom, elbow only)");
+
+  // The whole tree is redrawn per render, so no guide ever doubles up.
+  A.collapsed = false;
+  w.render(); w.render();
+  assert(guides(A1).length === 4, "re-rendering doesn't accumulate guides (rail + upper/lower half + elbow), got " + guides(A1).length);
 });
 
 console.log("\n" + "=".repeat(60));
@@ -33420,4 +33427,11 @@ process.exitCode = failed ? 1 : 0;
       makeLog's tab-separated lines — it had been crashing its shard, and
       silently shortening the reported total, since the Custom Columns
       session).
+   Group 262 — new session (2026-09-23): tree connector lines with the
+              active path highlighted, replacing the removed breadcrumb bar
+              (Groups 26/100/152/199i/225/PiP list trimmed of it).
+              Follow-up: 2px border lines (even thickness), no multi-select
+              outline on the active row; stretched verticals not
+              collapsed by a base height:0; ancestor names (.on-path)
+              in the path accent.
    ============================================================ */

@@ -467,7 +467,7 @@
   .toolbar-icon-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
   /* Toggled state for icon buttons that are persistent on/off switches
      rather than popup triggers — reuses the accent colors already used for
-     the breadcrumb's ".crumb.current". Superseded by .icon-toggle below for
+     the filter-target chain's ".crumb.current". Superseded by .icon-toggle below for
      the 17 buttons that are genuinely persistent toggles (person-reported:
      this frame+fill treatment made them indistinguishable from plain action
      buttons in their inactive state); this rule stays as the fallback for
@@ -755,11 +755,39 @@
     background:var(--accent-soft);
     box-shadow:inset 0 0 0 1.5px var(--accent);
   }
+  /* The active row is marked by its own background/left border; the
+     multi-select outline on top of it cut across the connector lines
+     (person-reported), so it only shows on the OTHER selected rows. */
+  .tree-row.active.multi-selected{box-shadow:none;}
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
   .tree-row[draggable="true"]{cursor:grab;}
   .tree-row.dragging{opacity:.4;}
   .tree-row.drag-over{background:var(--accent-soft); box-shadow:inset 0 0 0 1.5px var(--accent);}
+  /* Tree connector lines (replace the removed breadcrumb bar, person-
+     requested): each row carries absolutely positioned .tree-guide segments
+     built by decorateTreeGuides after renderNode — vertical rails at each
+     ancestor's chevron x plus a short elbow into the row. Segments on the
+     path from the root to the active row get .on (accent), so the active
+     filter chain reads straight off the tree. Absolutely positioned, so
+     they don't take part in the row's flex layout (no gap, no shifting).
+     Drawn as 2px BORDERS on zero-size boxes, not as backgrounds: a filled
+     box with a fractional width/offset (the old 1.5px) gets pixel-snapped
+     to 1 or 2 device pixels depending on where it lands, so lines came out
+     visibly uneven (person-reported); border widths snap consistently. */
+  .tree-guide{position:absolute; pointer-events:none; border:0 solid var(--border);}
+  /* Only the cross axis is zeroed: a .v segment spanning top:0/bottom:0
+     needs height:auto to stretch (an explicit height:0 here once silently
+     collapsed every rail/stem/lower half, person-reported). */
+  .tree-guide.v{width:0; border-left-width:2px; margin-left:-1px;}
+  .tree-guide.h{height:0; border-top-width:2px; top:50%; margin-top:-1px;}
+  .tree-guide.on{border-color:var(--accent); z-index:1;}
+  /* Ancestors of the active row (file + parent filters) show their name in
+     the same accent as the highlighted path lines (person-requested) — the
+     path reads from the names too, not just the lines. Overrides the
+     per-word inline level colors of a level node's label on purpose. */
+  .tree-row.on-path .tree-label,
+  .tree-row.on-path .tree-label *{color:var(--accent) !important;}
   .tree-swatch{
     flex:0 0 auto; width:13px; height:13px; margin:0; padding:0; cursor:pointer;
     border-radius:50%; border:1px solid var(--border-soft); background:transparent;
@@ -906,10 +934,10 @@
      Plot/Stacked) — this session's toolbar reorganization, person-requested
      "Gesamtkonzept": just the view toggle (#fhTabs) and the level
      quick-filter (#levelBar + #btnApplyLevelToTree), both floated left so
-     they stay pinned to the top-left corner of the row. The breadcrumb and
-     the six log-display toggles that used to also live here moved out —
-     breadcrumb into its own always-reserved #breadcrumbBar row right below
-     (see that div's own comment), the toggles into each log view's own
+     they stay pinned to the top-left corner of the row. The breadcrumb (since
+     removed — the active path is now drawn as highlighted connector lines
+     in the tree, see decorateTreeGuides) and the six log-display toggles
+     that used to also live here moved out — the toggles into each log view's own
      toolbar (#contextToolbar/#filteredToolbar) since they're view-specific,
      not universal. #viewBar uses display:flow-root so its own height always
      reaches the floats' bottom edge (plain floats don't contribute to a
@@ -988,59 +1016,6 @@
      requested. 20px bar + 4px top/bottom margin = the row's 28px. */
   #viewBar > .row-action-separator{float:left; height:20px; margin:4px 4px;}
 
-  /* Breadcrumb's own row (this session's toolbar reorganization) — always
-     reserved, even with no active filter chain, so #viewBar/#breadcrumbBar
-     never change height across views and Zeile 3 (the view toolbar) below
-     never jumps. Plain block, same as before: #breadcrumb's own
-     inline-block .crumb chips wrap line-by-line on their own now that
-     there's nothing else sharing the row to wrap around. */
-  #breadcrumbBar{
-    /* Flex-centers #breadcrumb's whole box; the row is kept as small as the
-       chips need (person-requested: may shrink, never grow beyond the old
-       44px). min-height is a floor, not the real height: #breadcrumb's own
-       content (a single line of .crumb chips) needs 32px — 28px chip height
-       plus its own 2px top/2px bottom margin (see #breadcrumb .crumb below,
-       kept symmetric so #breadcrumbBar's centering doesn't shift the visible
-       pill off-center) — so the actual rendered height ends up 4+32+4=40px
-       (plus the 1px border), still a fixed reserved height so #viewBar below
-       never jumps across views. */
-    flex:0 0 auto; min-height:40px; box-sizing:border-box;
-    display:flex; align-items:center;
-    padding:4px 16px; background:var(--bg-panel); border-bottom:1px solid var(--border);
-  }
-  #breadcrumb{
-    /* No line-height override here: it would be inherited by .crumb below
-       and inflate ITS box height on top of its own padding (bit us once
-       already — see .crumb's comment). Vertical gap between wrapped lines
-       comes from .crumb/.crumb-sep's own margin instead. */
-  }
-  /* #breadcrumbBar centers #breadcrumb's whole rendered box (align-items:center,
-     see #breadcrumbBar above) — it does NOT center each chip individually. The
-     base .crumb/.crumb-sep rules below still carry their ORIGINAL asymmetric
-     vertical margins (0/6 and 8/6), hand-tuned for the pre-#breadcrumbBar era
-     when this content sat directly inside floated #viewBar with no outer
-     centering at all. Left as-is, that asymmetry (margin-bottom > margin-top)
-     shifts the visible pill toward the TOP of #breadcrumb's own box, so once
-     THAT box gets centered by #breadcrumbBar, the gap below the pill visibly
-     exceeds the gap above it (person-reported, mockup with measured margins).
-     Scoped override: symmetric small margins (2px vertical, half the old 6px
-     total) so the pill sits genuinely centered within its own margin box —
-     #breadcrumbBar's centering then produces an equal gap top and bottom. The
-     .crumb-sep margin-top is re-derived to keep its 12px glyph line vertically
-     centered against .crumb's now-2px-margin-top box: crumb's visible pill
-     spans margin-top(2)..margin-top+28, center at 2+14=16; sep's margin-top
-     must put its 12px line's center at that same 16 -> margin-top = 16-6 = 10
-     (was 8, tuned for the old margin-top:0 crumb). Bottom margins mirror the
-     new top values so the still-supported multi-line wrap case (a long filter
-     chain) keeps a modest, even gap between lines instead of 0. */
-  #breadcrumb .crumb{margin:2px 4px 2px 0;}
-  /* .crumb-sep is a fixed 18x18 circle now (see its base rule below) — its
-     margin-top must re-center that circle on wherever THIS context's pill
-     center actually sits: #breadcrumb's .crumb has margin-top:2px, so its
-     28px pill spans 2..30, center 16 -> margin-top = 16 - 18/2 = 7.
-     Bottom mirrors top (7) since .crumb's own margin here is symmetric
-     (2/2), same reasoning as the base rule's asymmetric 6px bottom below. */
-  #breadcrumb .crumb-sep{margin:7px 4px 7px;}
   .crumb{
     /* Shared 28px pill shape (this session — see "Main window visual
        consistency fix"): a fixed height plus flex-centering instead of the
@@ -1108,8 +1083,8 @@
      within its own centered box, a font-metrics quirk (right-side
      bearing) no amount of margin/padding tuning on the container can fix,
      since it's baked into the glyph itself and varies by font. Swapped the
-     text glyph for ICON_CARET_RIGHT (renderBreadcrumb/
-     renderFilterTargetChain now set .innerHTML, not .textContent) — the
+     text glyph for ICON_CARET_RIGHT (renderFilterTargetChain
+     now sets .innerHTML, not .textContent) — the
      same hand-drawn SVG chevron already used for the Context view's match
      nav, whose path is authored symmetric inside its own viewBox, so it's
      geometrically centered by construction and renders identically
@@ -1120,8 +1095,8 @@
      element with its own boundary, matching the pill's own rounded shape
      language, instead of a stray glyph floating in the gap. Fixed 18x18
      size: margin-top just needs to land this circle's own center on the
-     same y the flanking pill's center sits at. Base context (no
-     #breadcrumb override — see below): .crumb's margin-top is 0, so its
+     same y the flanking pill's center sits at. Base context:
+     .crumb's margin-top is 0, so its
      28px pill centers at 14 -> margin-top = 14 - 18/2 = 5. Bottom margin
      mirrors .crumb's own asymmetric 6px bottom margin so wrapped
      multi-line chains keep an even line gap. */
@@ -3536,9 +3511,9 @@
   #filterPopup.hidden{display:none;}
   .filter-popup-row{display:flex; align-items:center; gap:8px;}
   #filterPopupLabel{font-size:11px; color:var(--text-tertiary); white-space:nowrap; padding-left:4px; flex:0 0 auto;}
-  /* Reuses .crumb/.crumb-sep (see #breadcrumb) to show the filter-chain
+  /* Reuses .crumb/.crumb-sep to show the filter-chain
      pills this new/edited filter applies on, replacing the old plain-text
-     "Filter on “X”:" label — wraps like #breadcrumb instead of forcing
+     "Filter on “X”:" label — wraps instead of forcing
      the popup wider. */
   .filter-target-chain{display:flex; align-items:center; flex-wrap:wrap; flex:1 1 auto; min-width:0;}
   @keyframes inputError{ 0%,100%{border-color:var(--border);} 30%,70%{border-color:var(--level-error);} }
@@ -3922,7 +3897,6 @@
      into its far left. */
   html.pip-mode #toolbar,
   html.pip-mode #sidebar,
-  html.pip-mode #breadcrumbBar,
   html.pip-mode #extractToolbar,
   html.pip-mode #tableToolbar,
   html.pip-mode #plotToolbar,
@@ -3966,7 +3940,7 @@
      reveal. The Files & Filters sidebar and the Entry Detail panel are
      force-collapsed to their edge-hover overlays through the EXISTING
      collapse+peek mechanism (see toggleFocusMode), so nothing extra is needed
-     for them here. #breadcrumbBar, #viewBar, the timeline minimap and the
+     for them here. #viewBar, the timeline minimap and the
      active view all stay visible and take the freed space via the normal flex
      layout. */
   body.focus-mode #toolbar { display: none !important; }
@@ -4136,15 +4110,6 @@
         <div id="timelineMinimapTooltip" class="hidden"></div>
         <div id="timelineMinimapDragRect" class="hidden"></div>
         <div id="timelineMinimapDragLabel" class="hidden"></div>
-      </div>
-
-      <!-- Breadcrumb: its own always-reserved row (person-requested),
-           sitting between the timeline minimap and #viewBar (Filter-
-           Toolbar) below — the active-filter-chain display never competes
-           for space with the view toggle/level filter/row-actions, and
-           stays visually identical across every tab. -->
-      <div id="breadcrumbBar">
-        <div id="breadcrumb"></div>
       </div>
 
       <!-- Filter/Highlight split. Filter view is
@@ -7564,7 +7529,7 @@ const state = {
   rootIds: [],    // file node ids, in load order
   activeId: null,
   focusRegion: "entries", // "entries" | "tree" — which pane the arrow keys act on;
-                          // "tree" is set by clicking a tree row/breadcrumb chip or
+                          // "tree" is set by clicking a tree row or
                           // dropping a drag onto a new parent, "entries" by any entry
                           // selection (see applySelection) — see moveTreeSelection
   entriesView: "filter",  // "filter" | "highlight" — which Log view arrow keys move
@@ -9828,7 +9793,7 @@ function isTimeFilterType(filterType) {
 // active node's ancestor chain, in root-to-node order — feeds the Table/Plot
 // toolbar's filter-info span (see updateTableFilterInfo/updatePlotFilterInfo)
 // so it's obvious a time filter is narrowing what's shown, without having to
-// scroll the breadcrumb/tree to spot it.
+// scroll the tree to spot it.
 function activeTimeFilters() {
   if (!state.activeId) return [];
   return getChain(state.activeId)
@@ -12129,7 +12094,7 @@ function toggleInvertWithUndo(nodeId) {
 // Sets/clears a node's custom display label (FEATURE_BACKLOG.md #12 — "Rename
 // / label filter nodes"). node.name stays the auto-derived raw-value text
 // untouched (still what editing/library-save/etc. fall back to); node.label,
-// when present, is what the tree/breadcrumb/etc. show instead — see
+// when present, is what the tree/etc. show instead — see
 // nodeDisplayName. No invalidateAllCaches: a label never affects which
 // entries match, only how the node reads. A no-op rename (trimmed value
 // equals the current label) is skipped so cancelling/re-confirming an
@@ -12315,8 +12280,6 @@ document.addEventListener("click", ev => {
   pillSet(pill, !pillGet(pill), true);
 });
 const treeEl = el("#tree");
-const breadcrumbEl = el("#breadcrumb");
-const breadcrumbBarEl = el("#breadcrumbBar");
 const levelBarEl = el("#levelBar");
 const btnApplyLevelToTree = el("#btnApplyLevelToTree");
 const tableBody = el("#tableBody");
@@ -12708,7 +12671,7 @@ function revealFilteredView() {
 
 // Tracks state.activeId across render() calls (every state mutation ends in
 // one — see render()'s own comment) so switching the active node to a
-// filter — via the tree, the breadcrumb, arrow-key nav, drag-drop
+// filter — via the tree, arrow-key nav, drag-drop
 // reparenting, undo/redo, … any of the ~30 call sites that set
 // state.activeId directly — reveals the Filtered view the same way creating
 // or editing a filter already does (revealFilteredView() above), instead of
@@ -12740,7 +12703,7 @@ let notesFilterPrevShowNotes = false;
    never produces one.
 
    A. Always (an explicit relocation, no condition, no timer):
-      A1  state.activeId changes — tree click, breadcrumb chip, Alt+Arrow
+      A1  state.activeId changes — tree click, Alt+Arrow
           tree nav, creating/editing a filter, drag-drop reparent, an
           undo/redo that lands on another node. Detected in render() via
           the same lastActiveIdForReveal check revealFilteredView() uses,
@@ -13147,7 +13110,6 @@ function render() {
     if (state.activeId) recordNavVisit();
   }
   renderTree();
-  renderBreadcrumb();
   renderLevelBar();
   // Custom Columns: activeColumnDefs()/activeMessageVisible() (the header,
   // the columns panel, --row-grid) come from the formats currently in play,
@@ -13197,14 +13159,6 @@ function render() {
 // for why).
 function renderMainView() {
   const hasFiles = state.rootIds.length > 0;
-  // Tab bar (#breadcrumbBar) UI fix, this session: hidden whenever the
-  // active/displayed content isn't a log tab — nothing loaded at all, or a
-  // non-log inline viewer (image/syntax-highlighted text) is the active
-  // content instead, since breadcrumb chips are a log-filter-tree concept
-  // with nothing meaningful to show either way. Set here (not left to
-  // renderBreadcrumb itself) since both conditions this checks — hasFiles,
-  // state.inlineViewer — are exactly renderMainView's own inputs below.
-  breadcrumbBarEl.style.display = (hasFiles && !state.inlineViewer && !state.folderView) ? "" : "none";
   if (state.inlineViewer) {
     // Bug 3 fix (person-reported): the minimap is a log-view-only concept
     // (see timelineMinimapEl's other gating below, all keyed on a log node
@@ -13213,7 +13167,7 @@ function renderMainView() {
     // a non-log entry just stuck, including staying visible after the
     // underlying log file was closed entirely while this non-log viewer
     // stayed open (this branch returns before the `!hasFiles` block further
-    // down ever runs). Same condition as breadcrumbBarEl right above.
+    // down ever runs).
     timelineMinimapEl.classList.add("hidden");
     emptyState.style.display = "none";
     viewBarEl.style.display = "none";
@@ -13620,7 +13574,7 @@ function flattenTreeIds() {
 }
 
 // Moves state.activeId with the arrow keys once the tree has keyboard focus
-// (state.focusRegion === "tree" — set by clicking a tree row/breadcrumb chip
+// (state.focusRegion === "tree" — set by clicking a tree row
 // or dropping a drag onto a new parent; cleared back to "entries" by any
 // entry-table selection, see applySelection). Up/Down step through the
 // flattened visual order; Left/Right jump to the parent/first child —
@@ -13891,7 +13845,7 @@ function startRenameNode(nodeId) {
 }
 
 // Shared by every place a filter/level/and/or/... node's name is shown to
-// the user (tree row, breadcrumb, context menu header, ...): a node.label
+// the user (tree row, context menu header, ...): a node.label
 // (see renameFilterNodeWithUndo) overrides the
 // auto-derived node.name for DISPLAY only — node.name itself is untouched,
 // so anything that needs the actual pattern (Edit dialog, library save
@@ -13899,7 +13853,7 @@ function startRenameNode(nodeId) {
 // Same "display only" idea for a folder-watch file with "show relative
 // path" on (Folder watch settings dialog): the grayed listing already shows
 // rec.relPath (renderInactiveFileRow) — this makes an OPENED file's name
-// (tree row, breadcrumb, tab, ...) keep showing it too instead of reverting
+// (tree row, tab, ...) keep showing it too instead of reverting
 // to the bare filename the moment it's loaded (person-reported).
 function nodeDisplayName(node) {
   if (node.type === "filter" && node.label) return node.label;
@@ -14121,7 +14075,7 @@ function renderNode(id, depth, opts) {
   // window was actually read from disk, not the whole file — the icon
   // badge alone (ICON_FILE_PARTIAL) wouldn't say what window, so it's
   // spelled out here instead of changing the tree label itself (which
-  // ripples into breadcrumbs/rail markers/etc. — see nodeDisplayName).
+  // ripples into rail markers/etc. — see nodeDisplayName).
   if (node.partial) titleParts.push(`Partial load: only ${formatTime(node.partial.from)} – ${formatTime(node.partial.to)} was read from disk`);
   if (titleParts.length) icon.title = titleParts.join(" — ");
   row.appendChild(icon);
@@ -14313,48 +14267,60 @@ function renderNode(id, depth, opts) {
       node.children.forEach(cid => wrap.appendChild(renderNode(cid, depth + 1)));
     }
   }
+  if (depth === 0) decorateTreeGuides(wrap);
   return wrap;
 }
 
-function renderBreadcrumb() {
-  breadcrumbEl.innerHTML = "";
-  if (!state.activeId || !state.nodes[state.activeId]) return;
-  const chain = getChain(state.activeId);
-  chain.forEach((node, i) => {
-    if (i > 0) {
-      const sep = document.createElement("span");
-      sep.className = "crumb-sep";
-      sep.innerHTML = ICON_CARET_RIGHT; // geometrically centered SVG, not a font glyph — see .crumb-sep's CSS comment
-      breadcrumbEl.appendChild(sep);
+// Draws the tree's connector lines into one rendered top-level subtree
+// (renderNode's own wrap/row/child-wrap DOM, so every call site — #tree,
+// folder and zip sections — gets them) and highlights the path from its
+// root down to the active row. Driven by the DOM rather than node.children
+// so hidden nodes, collapsed subtrees and merge "Sources" nesting are drawn
+// exactly as rendered. Each line runs at its parent's chevron center x.
+function decorateTreeGuides(rootWrap) {
+  const onPath = new Set();
+  const activeRow = rootWrap.querySelector(".tree-row.active");
+  for (let w = activeRow && activeRow.parentElement; w && rootWrap.contains(w); w = w.parentElement) onPath.add(w);
+  onPath.forEach(w => { const r = w.firstElementChild; if (r && r !== activeRow && r.classList.contains("tree-row")) r.classList.add("on-path"); });
+  const rowOf = w => (w.firstElementChild && w.firstElementChild.classList.contains("tree-row")) ? w.firstElementChild : null;
+  const addGuide = (row, cls, on, style) => {
+    const g = document.createElement("span");
+    g.className = "tree-guide " + cls + (on ? " on" : "");
+    Object.assign(g.style, style);
+    row.appendChild(g);
+  };
+  // rails: pass-through verticals of ancestors with later siblings;
+  // link: this row's own connection to its parent (null for the root).
+  (function walk(wrap, rails, link) {
+    const row = rowOf(wrap);
+    if (!row) return;
+    rails.forEach(r => addGuide(row, "v", r.on, { left: r.x + "px", top: "0", bottom: "0" }));
+    if (link) {
+      addGuide(row, "v", link.topOn, { left: link.x + "px", top: "0", height: "50%" });
+      if (link.bottomOn !== null) addGuide(row, "v", link.bottomOn, { left: link.x + "px", top: "50%", bottom: "0" });
+      // Elbow ends at the chevron when there is one, else crosses the empty
+      // chevron slot up to the swatch/icon.
+      const pad = parseFloat(row.style.paddingLeft) || 0;
+      const end = pad + (row.querySelector(".tree-chevron") ? 1 : 20);
+      addGuide(row, "h", link.elbowOn, { left: (link.x - 1) + "px", width: Math.max(0, end - link.x + 1) + "px" });
     }
-    const isCurrent = node.id === state.activeId;
-    const chip = document.createElement("span");
-    chip.className = "crumb" + (isCurrent ? " current" : "");
-    const label = document.createElement("span");
-    label.className = "crumb-label";
-    label.textContent = nodeDisplayName(node);
-    chip.appendChild(label);
-    chip.title = "Select in the filter tree: " + nodeDisplayName(node);
-    // Same single-select behavior as a plain (non-Ctrl) tree-row click —
-    // lets the breadcrumb double as a quick "jump to an ancestor filter"
-    // shortcut without touching the tree's own click handler.
-    chip.addEventListener("click", () => {
-      state.multiSelect = new Set([node.id]);
-      state.activeId = node.id;
-      state.focusRegion = "tree";
-      render();
+    const kids = [...wrap.children].slice(1).filter(rowOf);
+    if (!kids.length) return;
+    const x = (parseFloat(row.style.paddingLeft) || 0) + 8;
+    const activeIdx = kids.findIndex(k => onPath.has(k));
+    // Stem from below the parent's chevron down to the first child.
+    addGuide(row, "v", activeIdx >= 0, { left: x + "px", top: "calc(50% + 8px)", bottom: "0" });
+    const childRails = link && link.bottomOn !== null ? [...rails, { x: link.x, on: link.bottomOn }] : rails;
+    kids.forEach((k, i) => {
+      const last = i === kids.length - 1;
+      walk(k, childRails, {
+        x,
+        topOn: activeIdx >= i,
+        bottomOn: last ? null : activeIdx > i,
+        elbowOn: activeIdx === i,
+      });
     });
-    // Middle-click (FEATURE_BACKLOG #17): same delete as the tree row's own
-    // ✕ button / middle-click, reachable straight from the breadcrumb.
-    chip.addEventListener("mousedown", ev => { if (ev.button === 1) ev.preventDefault(); });
-    chip.addEventListener("auxclick", ev => {
-      if (ev.button !== 1 || node.locked) return;
-      ev.preventDefault();
-      deleteFilterNodeWithUndo(node.id);
-      render();
-    });
-    breadcrumbEl.appendChild(chip);
-  });
+  })(rootWrap, [], null);
 }
 
 // The level array of the "level" filter node currently sitting at
@@ -19493,7 +19459,7 @@ let detailResizeTicking = false;
 window.addEventListener("mousemove", ev => {
   if (!resizing) return;
   const deltaY = ev.clientY - resizeStartY; // dragging down (positive) shrinks the panel
-  const maxHeight = Math.max(150, window.innerHeight - 260); // leave room for header/breadcrumb/table
+  const maxHeight = Math.max(150, window.innerHeight - 260); // leave room for header/table
   const newHeight = Math.max(80, Math.min(maxHeight, resizeStartHeight - deltaY));
   detailPanel.style.height = newHeight + "px";
   if (detailResizeTicking) return;
@@ -19888,7 +19854,7 @@ function initDetailCollapsed() {
    A distraction-free mode: the header is removed outright, the Files &
    Filters sidebar and the Entry Detail panel are force-collapsed to their
    edge-hover overlays, and the active log/extraction view takes the freed
-   space — with #breadcrumbBar, #viewBar and the timeline minimap left
+   space — with #viewBar and the timeline minimap left
    visible. Real OS fullscreen is a Tauri-only capability, so entering focus
    mode also asks the desktop wrapper to go fullscreen (window.philogg
    .setFullscreen); in the plain browser build that half is simply absent and
@@ -26252,11 +26218,9 @@ filterColumnChips.addEventListener("click", ev => {
   evaluateLiveMatch();
 });
 
-// Renders the chain of filter-tree pills (same .crumb/.crumb-sep visuals as
-// #breadcrumb, see renderBreadcrumb) leading down to filterPopupBaseId —
+// Renders the chain of filter-tree pills (.crumb/.crumb-sep) leading down to filterPopupBaseId —
 // the node whose entries this new/edited filter actually runs against —
-// replacing the old plain-text "Filter on “X”:" label with the same
-// active-filter-chain visualization already used next to the level filter.
+// replacing the old plain-text "Filter on “X”:" label.
 function renderFilterTargetChain() {
   filterTargetChainEl.innerHTML = "";
   if (!filterPopupBaseId || !state.nodes[filterPopupBaseId]) return;
@@ -30020,7 +29984,7 @@ const FIXED_SHORTCUTS = [
   { label: "Click a row — select it",                 display: null },
   { label: "Multi-select rows",                       display: ["Ctrl", "click"] },
   { label: "Move selection up/down",                  display: ["↑", "↓"] },
-  { label: "Navigate the tree (row/breadcrumb focused)", display: ["↑", "↓", "←", "→"] },
+  { label: "Navigate the tree (row focused)", display: ["↑", "↓", "←", "→"] },
   { label: "Jump to Filtered view (filter selected in tree)", display: ["Enter"] },
   { label: "Same as double-click (row selected in Filtered/Stacked)", display: ["Enter"] },
   { label: "Right-click a row — filter before/after",  display: null },
