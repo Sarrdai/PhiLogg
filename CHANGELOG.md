@@ -2,6 +2,8 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: tree connector lines render at even thickness, active row loses its multi-select outline (this session, 2026-09-23, person-reported, screenshot)**. The 1.5px background-filled guides got pixel-snapped unevenly; they're 2px borders now. The multi-select outline on the active row cut across the lines and is suppressed there (other multi-selected rows keep it). Group 262 extended. Full suite: **5262 passed, 0 failed**.
+
 - **feat: tree connector lines with the active path highlighted, replacing the breadcrumb bar (this session, 2026-09-23, person-requested, screenshot)**. The `#breadcrumbBar` row (`#breadcrumb`, `renderBreadcrumb`, its CSS and PiP rule) is removed outright. Instead `decorateTreeGuides()` draws connector lines into the filter tree after each top-level `renderNode` — vertical rails at each parent's chevron, an elbow into each child, a stem below an expanded parent — and highlights (`--accent`) the segments on the path from the root to the active row. It walks the rendered DOM, so collapsed/hidden nodes and merge "Sources" nesting draw as shown. The `.crumb` pill styles stay for the filter popup's `#filterTargetChain`. `docs/ui-and-views.md` → "Tree row layout" describes it.
   - **Tests**: new **Group 262**. Groups 26/100/152/199i/225 and the PiP chrome list dropped their breadcrumb assertions (152/225 now check `#filterTargetChain`).
   - **Full suite**: **5258 passed, 0 failed**.
