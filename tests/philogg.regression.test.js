@@ -29143,6 +29143,8 @@ await withApp(async (w, d, T) => {
    case, Whole word, Exclude (NOT)) / Search in; and a live result summary
    (big count + "matches in N" + "captures: …", a match-over-time
    histogram, up to three sample rows as a table with the hit marked).
+   The histogram uses the timeline minimap's level colors: per bin, the
+   highest-severity hit's level wins (follow-up, same day).
    Follow-ups, same day (person-requested): only the exclusive Text/Regex
    choice takes #fhTabs' segmented view-tab look; the independent on/off
    options (Match case/Whole word/Exclude (NOT), each Search in column) are
@@ -29252,6 +29254,10 @@ await withApp(async (w, d, T) => {
   const bars = [...d.querySelectorAll("#filterResultsMinimap rect")];
   assert(!d.querySelector("#filterResultsMinimap").classList.contains("hidden") && bars.length > 0, "the match histogram renders bars");
   assert(bars.reduce((n, r) => n + Number(r.querySelector("title").textContent), 0) === 11, "histogram buckets add up to the match count");
+  // Level colors, like the timeline minimap: hits 1 and 11..19 are INFO,
+  // 10 and 15 ERROR (makeLog), each alone in its bucket here.
+  assert(bars.filter(r => r.classList.contains("minimap-lvl-error")).length === 2 && bars.filter(r => r.classList.contains("minimap-lvl-info")).length === 9,
+    "each histogram bar carries its level's minimap-lvl-* class, got " + bars.map(r => r.getAttribute("class")).join(","));
 
   // NOT: kept rows, no hit to mark
   fireClick(d.querySelector("#filterInvertCheckbox"), w);
@@ -29265,6 +29271,22 @@ await withApp(async (w, d, T) => {
   fireInput(input, w);
   await sleep(200);
   assert(d.querySelector(".filter-live-captures").textContent === "captures: value (int)", "a wildcard pattern lists its captures, got " + (d.querySelector(".filter-live-captures") || {}).textContent);
+
+  // Highest level wins per bin: INFO, WARN and DEBUG hits sharing one
+  // timestamp land in one bucket, which is drawn WARN.
+  const binLines = [["INFO", "0"], ["WARN", "0"], ["DEBUG", "0"], ["DEBUG", "9"]].map(([lvl, sec], i) =>
+    `2024-01-15 10:00:0${sec},000\t${lvl}\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"hit ${i}"`);
+  const bf = await w.addFile("bins.log", binLines.join("\n") + "\n", () => {});
+  w.closeFilterPopup();
+  T.state.activeId = bf.id;
+  w.openFilterPopup();
+  input.value = "hit";
+  fireInput(input, w);
+  await sleep(200);
+  const binBars = [...d.querySelectorAll("#filterResultsMinimap rect")];
+  assert(binBars.length === 2 && binBars[0].getAttribute("class") === "minimap-lvl-warn" && binBars[0].querySelector("title").textContent === "3",
+    "a bin holding INFO+WARN+DEBUG hits is colored WARN (highest level wins), got " + binBars.map(r => r.getAttribute("class") + "/" + r.textContent).join(","));
+  assert(binBars[1].getAttribute("class") === "minimap-lvl-debug", "a DEBUG-only bin stays DEBUG");
 
   // No hits: warn state, no histogram, no samples
   input.value = "nothing matches this";

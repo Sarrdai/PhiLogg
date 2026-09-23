@@ -2,6 +2,8 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: filter popup match histogram uses the log-level colors (this session, 2026-09-23, person-requested)**. Each bar of `#filterResultsMinimap` is colored like the timeline minimap: per bin the highest-severity hit's level wins. The rank→class table moved out of `renderTimelineMinimap` into a shared `minimapLevelClass(rank)`. Group 263 extended. Full suite: **5280 passed, 0 failed**.
+
 - **fix: filter popup — independent options are no longer boxed like an exclusive choice (this session, 2026-09-23, person-reported: the previous entry misread the request)**. Only Text/Regex keeps the segmented `.view-tabs` look. Match case, Whole word, Exclude (NOT) and the Search in columns are standalone `.label-toggle`s again outside any shared group: chrome-free label, accent color + status bar when on. `docs/ui-standard.md`'s label-only toggle exception says so. Group 263 updated. Full suite: **5277 passed, 0 failed**.
 
 - **feat: filter popup — one toggle look (this session, 2026-09-23, person-requested follow-up)**. Text/Regex now uses `#fhTabs`' view-tab look (Context/Filtered/Table/Plot); Match case/Whole word/Exclude (NOT) and the Search in columns became label-only `.view-tab.label-toggle` items in their own `.view-tabs` groups, with the `.icon-toggle` status bar under an active label so they don't read as buttons (switch state protocol unchanged). The Insert chips, being actions, got the app's framed button look. `.filter-toggle*`/`.column-chip` CSS removed; `docs/ui-standard.md` documents the label-only toggle exception.
