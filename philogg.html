@@ -1907,8 +1907,13 @@
     padding:2px 6px; border-radius:4px; white-space:nowrap;
   }
   .col-thread{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-loc{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-location{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-method{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* Custom columns (Custom Columns feature): every user-defined column
+     shares one style, same as col-location/col-method above — the actual
+     column identity lives in data-col, not the class, so a format defining
+     any number of custom columns needs no new CSS per column. */
+  .col-custom{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-msg{font-family:var(--font-log); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   /* Horizontal scrollbar, in BOTH log views (the Context view was added
      2026-09-02, person-requested — it used to keep an ellipsis-only
@@ -3120,10 +3125,31 @@
   #formatEditLevelAdd{display:flex; gap:6px; margin-top:6px;}
   #formatEditLevelAdd input{flex:1 1 auto; min-width:0;}
   .format-level-error{font-size:11px; color:var(--level-error); margin-top:5px;}
+  /* Level value-type (Text/Integer) toggle — same .assert-mode-btn look as
+     the Pattern/Regex/Meta mode toggle above. */
+  #formatEditLevelValueType{display:flex; gap:6px; margin-bottom:8px;}
+  .format-level-value{width:56px; flex:0 0 auto; font-size:12px; padding:3px 6px;}
+  /* Explicit per-level color swatch (format setup's level color-mapping) —
+     same circular-swatch-button idiom as .accent-swatch. A blank/transparent
+     swatch means "no explicit color", i.e. still the automatic fixed-name/
+     rotating-slot color. */
+  .format-level-swatch{
+    width:18px; height:18px; border-radius:50%; border:1px solid var(--border-soft);
+    cursor:pointer; padding:0; flex:0 0 auto; background:transparent;
+  }
+  .format-level-swatch:hover{box-shadow:0 0 0 2px var(--accent);}
+  /* Custom Columns editor (per-format ordered middle-column list) — same
+     ▲/▼ reorder idiom as the level list above; every row (default or
+     custom) is removable/re-addable, unlike the level list's fixed-five. */
+  #formatEditColumns{display:flex; flex-direction:column; gap:4px;}
+  #formatEditColumnDefaultAdd{display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;}
+  #formatEditColumnAdd{display:flex; gap:6px; margin-top:8px;}
+  #formatEditColumnAdd input{flex:1 1 auto; min-width:0;}
+  .format-column-error{font-size:11px; color:var(--level-error); margin-top:5px;}
   .format-level-error.hidden{display:none;}
   #formatEditPatternField.hidden, #formatEditRegexField.hidden, #formatEditMetaField.hidden,
   #formatEditSampleField.hidden, #formatEditTsFormatField.hidden, #formatEditLevelsField.hidden,
-  #formatEditPreviewField.hidden{display:none;}
+  #formatEditColumnsField.hidden, #formatEditPreviewField.hidden{display:none;}
   #formatEditMetaTargets{display:flex; flex-direction:column; gap:4px;}
   #formatEditMetaAdd{display:flex; gap:6px; margin-top:6px;}
   #formatEditMetaAdd select{flex:1 1 auto; min-width:0;}
@@ -3965,12 +3991,9 @@
           <div id="filterPatternPreview" class="hidden"></div>
           <div id="filterColumnChips" class="filter-column-chips" title="Columns to search">
             <span class="filter-section-label">Applies to:</span>
-            <button type="button" class="column-chip" data-col="time">Time</button>
-            <button type="button" class="column-chip" data-col="level">Level</button>
-            <button type="button" class="column-chip" data-col="thread">Thread</button>
-            <button type="button" class="column-chip" data-col="location">Location</button>
-            <button type="button" class="column-chip" data-col="method">Method</button>
-            <button type="button" class="column-chip" data-col="message">Message</button>
+            <!-- Chip buttons are JS-built by renderFilterColumnChipButtons
+                 (Custom Columns feature: the column set is now per-format/
+                 dynamic, not a fixed six) — see activeTextFilterColumns(). -->
           </div>
           <div class="filter-footer-row">
             <div id="filterLiveMatch"></div>
@@ -4128,16 +4151,11 @@
             <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
           </div>
           <div id="highlightHeader">
-            <div class="row-grid">
-              <span></span>
-              <span class="th">Time</span>
-              <span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>
-              <span class="th">Level</span>
-              <span class="th" data-col="thread" title="Middle-click to hide">Thread</span>
-              <span class="th" data-col="loc" title="Middle-click to hide">Location</span>
-              <span class="th" data-col="method" title="Middle-click to hide">Method</span>
-              <span class="th">Message</span>
-            </div>
+            <!-- Content is JS-built by renderColumnHeader (Custom Columns
+                 feature: the column set is now per-format/dynamic, not a
+                 fixed six) — see philogg.html's "Log view column
+                 visibility / width" section. -->
+            <div class="row-grid"></div>
           </div>
           <div id="highlightBody">
             <div id="highlightSpacer">
@@ -4180,25 +4198,12 @@
               <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
             </div>
             <div id="tableHeader">
-              <div class="row-grid">
-                <span></span>
-                <span class="th th-sortable" data-sort="time">Time<span class="th-sort-arrow"></span></span>
-                <span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>
-                <span class="th th-sortable" data-sort="level">Level<span class="th-sort-arrow"></span></span>
-                <span class="th th-sortable" data-sort="thread" data-col="thread" title="Middle-click to hide">Thread<span class="th-sort-arrow"></span></span>
-                <span class="th th-sortable" data-sort="location" data-col="loc" title="Middle-click to hide">Location<span class="th-sort-arrow"></span></span>
-                <span class="th" data-col="method" title="Middle-click to hide">Method</span>
-                <span class="th">Message</span>
-                <!-- Out-of-flow (position:absolute), so these don't consume
-                     a grid auto-placement slot among the 8 items above —
-                     see positionColumnResizeHandles for their placement. -->
-                <span class="col-resize-handle" data-col="time" title="Drag to resize"></span>
-                <span class="col-resize-handle" data-col="delta" title="Drag to resize"></span>
-                <span class="col-resize-handle" data-col="level" title="Drag to resize"></span>
-                <span class="col-resize-handle" data-col="thread" title="Drag to resize"></span>
-                <span class="col-resize-handle" data-col="loc" title="Drag to resize"></span>
-                <span class="col-resize-handle" data-col="method" title="Drag to resize"></span>
-              </div>
+              <!-- Content (including the out-of-flow .col-resize-handle
+                   spans) is JS-built by renderColumnHeader (Custom Columns
+                   feature: the column set is now per-format/dynamic, not a
+                   fixed six) — see philogg.html's "Log view column
+                   visibility / width" section. -->
+              <div class="row-grid"></div>
             </div>
             <div id="tableBody">
               <div id="tableSpacer">
@@ -5435,12 +5440,12 @@
             <div class="link-field" id="formatEditPatternField">
               <label for="formatEditPattern">Conversion pattern</label>
               <input type="text" id="formatEditPattern" placeholder='%d\t%p\t"%t"\t%c\t[%M]\t"%m"%n' autocomplete="off">
-              <div class="session-dialog-note">%d/%date %p/%level %t/%thread %c/%logger %M/%method %m/%message %n — \t \n \\ stand for a literal tab/newline/backslash.</div>
+              <div class="session-dialog-note">%d/%date %p/%level %t/%thread %c/%logger %M/%method %m/%message %X{name} (custom column) %n — \t \n \\ stand for a literal tab/newline/backslash.</div>
             </div>
             <div class="link-field hidden" id="formatEditRegexField">
               <label for="formatEditRegex">Regex</label>
               <input type="text" id="formatEditRegex" placeholder="^(?&lt;ts&gt;\S+) (?&lt;level&gt;\w+) ..." autocomplete="off">
-              <div class="session-dialog-note">Needs a (?&lt;message&gt;...) named group; (?&lt;ts&gt;...)/(?&lt;level&gt;...)/(?&lt;thread&gt;...)/(?&lt;location&gt;...)/(?&lt;method&gt;...) are optional.</div>
+              <div class="session-dialog-note">Needs (?&lt;ts&gt;...) and (?&lt;level&gt;...) named groups; (?&lt;thread&gt;...)/(?&lt;location&gt;...)/(?&lt;method&gt;...)/(?&lt;message&gt;...) and any other name (a custom column) are optional.</div>
             </div>
             <div class="link-field hidden" id="formatEditMetaField">
               <label>Target formats <span class="link-target-label">(ordered — first whose own header matches a line wins)</span></label>
@@ -5457,14 +5462,30 @@
               <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
             </div>
             <div class="link-field" id="formatEditLevelsField">
-              <label>Log levels <span class="link-target-label">(which ones this format uses, and in which order)</span></label>
+              <label>Log levels <span class="link-target-label">(which ones this format uses, and in which order) — mandatory</span></label>
+              <div id="formatEditLevelValueType">
+                <button type="button" class="assert-mode-btn" id="formatEditLevelTypeText" data-level-type="text">Text</button>
+                <button type="button" class="assert-mode-btn" id="formatEditLevelTypeInt" data-level-type="int">Integer</button>
+              </div>
               <div id="formatEditLevels"></div>
               <div id="formatEditLevelAdd">
                 <input type="text" id="formatEditLevelNew" placeholder="Custom level name (e.g. NOTICE)" autocomplete="off" spellcheck="false">
                 <button type="button" id="formatEditLevelAddBtn" class="btn-mini-outline">Add</button>
               </div>
               <div id="formatEditLevelError" class="format-level-error hidden"></div>
-              <div class="session-dialog-note">Only checked levels get a quick-filter button for files using this format; anything else falls into OTHER. Custom names match a line's level text exactly (case-insensitive) and get a color from a rotating palette.</div>
+              <div class="session-dialog-note">Only checked levels get a quick-filter button for files using this format; anything else falls into OTHER. In Text mode, a custom name matches a line's level text exactly (case-insensitive); in Integer mode, each level instead matches a numeric code (e.g. syslog severity). Click a level's swatch to pick an explicit color, or leave it automatic (rotating palette).</div>
+            </div>
+            <div class="link-field" id="formatEditColumnsField">
+              <label>Columns <span class="link-target-label">(Thread/Location/Method and any custom columns — which ones, and in which order)</span></label>
+              <div id="formatEditColumns"></div>
+              <div id="formatEditColumnAdd">
+                <input type="text" id="formatEditColumnKeyNew" placeholder="Capture name (e.g. requestId)" autocomplete="off" spellcheck="false">
+                <input type="text" id="formatEditColumnLabelNew" placeholder="Column label (e.g. Request Id)" autocomplete="off" spellcheck="false">
+                <button type="button" id="formatEditColumnAddBtn" class="btn-mini-outline">Add</button>
+              </div>
+              <div id="formatEditColumnError" class="format-column-error hidden"></div>
+              <label class="column-toggle-row"><input type="checkbox" id="formatEditMessageVisible" checked> Show Message column</label>
+              <div class="session-dialog-note">Thread/Location/Method are optional — remove any that don't apply, or re-add them below. A custom column's capture name must appear as a %X{name} token (Pattern mode) or (?&lt;name&gt;...) group (Regex mode) above.</div>
             </div>
             <div class="link-field" id="formatEditPreviewField">
               <label>Preview <span class="link-target-label">(from the example line(s) above)</span></label>
@@ -5591,17 +5612,15 @@
   </div>
 
   <!-- Log view column visibility (FEATURE_BACKLOG.md "Column visibility /
-       width persistence"). Time/Level/Message are always shown (no toggle);
-       widths for all six are drag-resized from #tableHeader's own resize
-       handles instead, not from here. -->
+       width persistence"; generalized for Custom Columns). Time/Level are
+       always shown (no toggle); everything else — Δt, Thread/Location/
+       Method/custom columns (per the active format(s)), Message — is
+       JS-rendered here by renderColumnsPanel, since the set of hideable
+       columns is now dynamic. Widths are drag-resized from #tableHeader's
+       own resize handles instead, not from here. -->
   <div id="columnsPanel" class="hidden">
     <div class="bookmarks-panel-title">Columns</div>
-    <div id="columnsList">
-      <label class="column-toggle-row"><input type="checkbox" id="colToggleDelta"> Δt</label>
-      <label class="column-toggle-row"><input type="checkbox" id="colToggleThread"> Thread</label>
-      <label class="column-toggle-row"><input type="checkbox" id="colToggleLoc"> Location</label>
-      <label class="column-toggle-row"><input type="checkbox" id="colToggleMethod"> Method</label>
-    </div>
+    <div id="columnsList"></div>
     <button type="button" id="btnResetColumns" class="btn-mini-outline">Reset widths</button>
   </div>
 
@@ -7446,8 +7465,12 @@ const state = {
   // the --row-grid CSS custom property (see applyRowGrid) rather than
   // per-row DOM changes, so both Log views (Filter + Highlight, sharing the
   // same var) and virtualized rows update with zero re-render cost.
-  columnVisible: { delta: true, thread: true, loc: true, method: true },
-  columnWidths: { time: 178, delta: 72, level: 66, thread: 92, loc: 158, method: 168 },
+  // Seeded with the legacy fixed columns; any other key (a custom column,
+  // or "message" once hidden) is looked up via columnVisibleFor/
+  // columnWidthFor below, which fall back to sane defaults when absent —
+  // so this object never needs an entry pre-created for every possible key.
+  columnVisible: { delta: true, thread: true, location: true, method: true, message: true },
+  columnWidths: { time: 178, delta: 72, level: 66, thread: 92, location: 158, method: 168 },
 
   // Watched folders (FEATURE_BACKLOG.md "Folder watch + lazy loading"), see
   // "Folder watch (lazy loading)" section near the Tailing code. Each entry:
@@ -7538,21 +7561,48 @@ function isReservedLevelName(name) {
 // existed) — the fixed set the level bar showed before this was configurable.
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
 
-// The level list of one format, falling back to LEVELS. Names are normalized
-// (trimmed/uppercased) and de-duplicated; empty entries and the reserved
-// OTHER are dropped, so a hand-edited/older record can't smuggle in a name
-// that would collide with the implicit catch-all bucket. Any other name —
-// including one nobody has ever heard of — is kept: that IS custom levels.
-function formatLevels(formatId) {
+// A format's level DEFINITIONS, normalized from whichever raw shape is
+// stored: a plain string[] of names (every format saved before Custom
+// Columns/int-level support existed) or the v2 {value, name, color}[]
+// shape. `value` is what a captured level token is matched against
+// (levelBucket: case-insensitive name match when the format's
+// levelValueType is "text", numeric match when "int"); `name` is the
+// canonical bucket name shown/colored everywhere; `color` is an explicit
+// user-picked CSS color, or null for the legacy fixed-name/rotating-slot
+// behavior (see levelColorVar). Empty entries and the reserved OTHER are
+// dropped, same as before.
+function formatLevelDefs(formatId) {
   const fmt = state.logFormats.find(f => f.id === formatId);
   const raw = fmt && Array.isArray(fmt.levels) ? fmt.levels : null;
-  if (!raw) return LEVELS;
+  if (!raw) return LEVELS.map(n => ({ value: n, name: n, color: null }));
   const out = [];
-  raw.forEach(l => {
-    const n = normalizeLevelName(l);
-    if (n && n !== "OTHER" && !out.includes(n)) out.push(n);
+  const seen = new Set();
+  raw.forEach(item => {
+    const isObj = item && typeof item === "object";
+    const n = normalizeLevelName(isObj ? item.name : item);
+    if (!n || n === "OTHER" || seen.has(n)) return;
+    seen.add(n);
+    const value = isObj && item.value != null && item.value !== "" ? String(item.value) : n;
+    const color = isObj && item.color ? item.color : null;
+    out.push({ value, name: n, color });
   });
-  return out.length ? out : LEVELS;
+  return out.length ? out : LEVELS.map(n => ({ value: n, name: n, color: null }));
+}
+
+// Whether a format's captured level token is meant to be matched as free
+// text (default) or as a numeric severity code (e.g. syslog 0-7) against
+// each level definition's `value`.
+function formatLevelValueType(formatId) {
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  return fmt && fmt.levelValueType === "int" ? "int" : "text";
+}
+
+// The level NAME list of one format, falling back to LEVELS — every
+// pre-existing consumer (activeLevelOrder, entryComparator, filter-node
+// values, level-bar/minimap rendering) only ever needs names, oblivious to
+// value-type/explicit-color, so this stays the narrow accessor they use.
+function formatLevels(formatId) {
+  return formatLevelDefs(formatId).map(d => d.name);
 }
 
 // Which --level-custom-N slot a custom level name gets: its position among
@@ -7578,10 +7628,36 @@ function customLevelSlot(name, formatId) {
   return 0;
 }
 
-// The CSS color for a level BUCKET name, or null if it has none (OTHER and
-// anything unrecognized fall back to the caller's default text color).
+// An explicit, user-picked color for a level BUCKET name (format setup's
+// level color-mapping), or null if none is set. With a formatId, only that
+// format's own definitions are consulted; without one (a bare bucket name —
+// the level bar, a filter-node label, unioning several formats) every
+// stored format is searched in order, first explicit color wins, mirroring
+// customLevelSlot's own no-formatId fallback below.
+function explicitLevelColor(name, formatId) {
+  const n = normalizeLevelName(name);
+  if (!n) return null;
+  if (formatId != null) {
+    const def = formatLevelDefs(formatId).find(d => d.name === n);
+    return def ? def.color : null;
+  }
+  for (const f of state.logFormats) {
+    const def = formatLevelDefs(f.id).find(d => d.name === n);
+    if (def && def.color) return def.color;
+  }
+  return null;
+}
+
+// The CSS color for a level BUCKET name — either an explicit user-picked
+// color (a literal, e.g. "#ff4444") or a theme CSS var(), or null if it has
+// none (OTHER and anything unrecognized fall back to the caller's default
+// text color). Both a var() reference and a literal color string are valid
+// CSS `color` values, so every caller can plug the result straight into an
+// inline style either way.
 function levelColorVar(name, formatId) {
   const n = normalizeLevelName(name);
+  const explicit = explicitLevelColor(n, formatId);
+  if (explicit) return explicit;
   if (ALL_LEVELS.includes(n)) return "var(--level-" + n.toLowerCase() + ")";
   const slot = customLevelSlot(n, formatId);
   return slot ? "var(--level-custom-" + slot + ")" : null;
@@ -7610,6 +7686,129 @@ function canonicalLevelOrder(levels) {
   const order = activeLevelOrder();
   return order.filter(l => levels.includes(l)).concat(levels.filter(l => !order.includes(l)));
 }
+
+/* ===================== Custom columns =====================
+   A format's own "middle" column list (Thread/Location/Method — each
+   individually optional now — plus any custom columns populated by a
+   %X{name}/(?<name>...) capture). Time and Level are NOT part of this list:
+   they're the two mandatory columns, always first, never hideable. Message
+   is likewise not part of this list: it's always last, its own
+   messageVisible flag controls whether it's shown, and it never
+   reorders — see formatMessageVisible below and the row-grid code that
+   consumes both. */
+
+// Thread/Location/Method, in that order — the default middle-column set
+// every format had before Custom Columns existed, and what a format record
+// saved before this feature (or with no columnDefs at all) falls back to.
+const DEFAULT_MIDDLE_COLUMNS = [
+  { key: "thread", kind: "default", label: "Thread" },
+  { key: "location", kind: "default", label: "Location" },
+  { key: "method", kind: "default", label: "Method" },
+];
+
+// One format's ordered middle-column list. Defensive against a corrupt/
+// hand-edited record: drops any entry with no key, a key colliding with a
+// reserved field name other than thread/location/method (ts/level/message),
+// or a duplicate key.
+function formatColumnDefs(formatId) {
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  if (!fmt || !Array.isArray(fmt.columnDefs)) return DEFAULT_MIDDLE_COLUMNS.slice();
+  const out = [];
+  const seen = new Set();
+  fmt.columnDefs.forEach(d => {
+    if (!d || !d.key || seen.has(d.key)) return;
+    if (RESERVED_FIELD_KEYS.has(d.key) && d.key !== "thread" && d.key !== "location" && d.key !== "method") return;
+    seen.add(d.key);
+    out.push({ key: d.key, kind: d.kind === "custom" ? "custom" : "default", label: d.label || d.key });
+  });
+  return out;
+}
+
+// Whether the Message column is shown for one format — absent/undefined
+// means visible, matching every format's behavior before this feature.
+function formatMessageVisible(formatId) {
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  return !fmt || fmt.messageVisible !== false;
+}
+
+// The union of every currently-loaded root file's middle-column list, each
+// contributing its own columns in tree order, de-duplicated by key as they
+// first appear — same union-of-loaded-formats idiom as activeLevelOrder().
+// This is what the columns panel, the row/header renderers, the context
+// menu, and the filter popup's column chips all iterate.
+function activeColumnDefs() {
+  const out = [];
+  const seen = new Set();
+  const push = d => { if (!seen.has(d.key)) { seen.add(d.key); out.push(d); } };
+  state.rootIds.forEach(id => {
+    const n = state.nodes[id];
+    if (n) formatColumnDefs(n.formatId || DEFAULT_FORMAT_ID).forEach(push);
+  });
+  if (!out.length) DEFAULT_MIDDLE_COLUMNS.forEach(push);
+  return out;
+}
+
+// Message is visible if ANY currently-loaded format shows it — a merged
+// session with sources from several formats shouldn't lose the column just
+// because one of them hides it (mirrors the "hidden collapses, doesn't
+// disappear" stance the rest of the column system takes).
+function activeMessageVisible() {
+  if (!state.rootIds.length) return true;
+  return state.rootIds.some(id => {
+    const n = state.nodes[id];
+    return n && formatMessageVisible(n.formatId || DEFAULT_FORMAT_ID);
+  });
+}
+
+// Every column key known across ALL saved formats (not just currently
+// loaded ones) — deliberately broader than activeColumnDefs(): a saved
+// filter's column restriction on a format that isn't loaded right now
+// (cache-restored session before that file's re-added, or an imported
+// filter authored against a different format) should survive rather than
+// being silently dropped. See materializeSerializedRoots/
+// materializeCachedFilters, which validate node.columns against this.
+function knownTextFilterColumnKeys() {
+  const out = new Set(["time", "level", "thread", "location", "method", "message"]);
+  state.logFormats.forEach(f => formatColumnDefs(f.id).forEach(d => out.add(d.key)));
+  return out;
+}
+
+// The column list the context menu's "Filter for this ___" entry and the
+// filter popup's "applies to" chips offer: Time + Level (always present,
+// mandatory columns), then every currently-loaded format's middle columns
+// (union, activeColumnDefs), then Message if any loaded format shows it —
+// replaces the old fixed TEXT_FILTER_COLUMNS table.
+function activeTextFilterColumns() {
+  const out = [{ key: "time", label: "Time" }, { key: "level", label: "Level" }];
+  activeColumnDefs().forEach(d => out.push({ key: d.key, label: d.label }));
+  if (activeMessageVisible()) out.push({ key: "message", label: "Message" });
+  return out;
+}
+
+// Column-key value lookup for one entry — the six reserved fields keep
+// their historical accessors, anything else reads the entry's custom
+// `fields` bag (see applyFormatMatch). Replaces the old fixed-switch
+// textColumnValue with the same (e, key) signature, so every call site
+// keeps working unchanged.
+function entryColumnValue(e, key) {
+  switch (key) {
+    case "time": return e.tsRaw || "";
+    case "level": return e.level || "";
+    case "thread": return e.thread || "";
+    case "location": return e.locationFull || "";
+    case "method": return e.method || "";
+    case "message": return e.message || "";
+    default: return (e.fields && e.fields[key]) || "";
+  }
+}
+
+// The CSS class a column's cell/measurement element uses. Every built-in
+// field keeps its own per-key class (unchanged styling); any custom column
+// shares one class (.col-custom) instead of one per key, since a format can
+// define any number of them and they're all styled identically — see the
+// .col-custom CSS rule.
+const BUILTIN_FIELD_KEYS = new Set(["time", "delta", "level", "thread", "location", "method", "message"]);
+function columnCssClass(key) { return "col-" + (BUILTIN_FIELD_KEYS.has(key) ? key : "custom"); }
 
 // Severity ordering used when the log table is sorted by the Level column,
 // and as the minimap's "most severe bucket" index. Custom level names sit
@@ -7776,6 +7975,7 @@ function parseHeaderLine(line) {
     method,
     message,
     raw: line,
+    fields: EMPTY_ENTRY_FIELDS,
   };
 }
 
@@ -7839,9 +8039,15 @@ async function parseLogTextAsync(text, node, onProgress) {
 /* ===================== Log format definitions =====================
    Beyond the builtin default above, a person can define additional log
    formats (Settings → Format Manager) and map filenames to them via glob
-   rules. Every format still produces the same fixed entry shape used
-   everywhere else in the app ({ts, level, thread, location, method,
-   message}) — only how a line is split into those fields is configurable.
+   rules. Every format produces the same entry SHAPE used everywhere else in
+   the app ({ts, level, thread, location, method, message, fields}) — how a
+   line is split into those fields (and which of the optional ones it even
+   populates) is configurable per format. Time and Level are the two
+   mandatory columns (enforced at save time in the Format Manager, not at
+   compile time — see compileFormatPattern/validateFormatRegex); Thread/
+   Location/Method/Message are all individually optional, and any other
+   named capture is a CUSTOM COLUMN, landing on the entry's `fields` bag
+   (see "Custom columns" and applyFormatMatch).
 
    A format is defined one of two ways:
    - "pattern" mode: a log4net/LogViewPlus-style conversion pattern, e.g.
@@ -7849,21 +8055,24 @@ async function parseLogTextAsync(text, node, onProgress) {
      which mirrors compileExtractPattern's approach (see "Value-extraction
      patterns") but emits NAMED capture groups instead of positional ones.
    - "regex" mode: a raw regex supplied directly, with the same named
-     groups (ts/level/thread/location/method/message) — the escape hatch
-     for shapes the token language can't express.
+     groups (ts/level/thread/location/method/message, or any other name for
+     a custom column) — the escape hatch for shapes the token language
+     can't express.
    Both modes funnel into applyFormatMatch(), so parsing code downstream
    never needs to know which mode produced the match.
 
    Token vocabulary (pattern mode): %d/%date (timestamp), %p/%level,
-   %t/%thread, %c/%logger (location), %M/%method, %m/%message (required),
-   %n (line end, no regex contribution — matching is already line-by-line),
-   %% (literal "%"). A single-line text input can't contain a literal tab
-   or newline, so \t / \n / \\ two-character escape sequences in the raw
-   pattern text are unescaped into real bytes before token-scanning — the
-   same convention tools/log-simulator.html's pattern field uses on the
-   generator side, so one pattern string works for both parsing and
-   generating matching test data. Keep that file's copy of this token
-   vocabulary in sync if it ever changes here.
+   %t/%thread, %c/%logger (location), %M/%method, %m/%message,
+   %X{name} (custom column, log4j MDC-style — captures free text into a
+   user-chosen field name; name can't reuse ts/level/thread/location/
+   method/message), %n (line end, no regex contribution — matching is
+   already line-by-line), %% (literal "%"). A single-line text input can't
+   contain a literal tab or newline, so \t / \n / \\ two-character escape
+   sequences in the raw pattern text are unescaped into real bytes before
+   token-scanning — the same convention tools/log-simulator.html's pattern
+   field uses on the generator side, so one pattern string works for both
+   parsing and generating matching test data. Keep that file's copy of this
+   token vocabulary in sync if it ever changes here.
 */
 
 function unescapePatternText(s) {
@@ -7927,7 +8136,10 @@ function parseTimestampGeneric(raw, compiledDate) {
 
 // Longer word-forms listed before their single-letter alias in each
 // alternative so e.g. "%date" isn't consumed as "%d" + leftover "ate".
-const FORMAT_TOKEN_RE = /%(date|d)(?:\{[^}]*\})?|%(level|p)|%(thread|t)|%(logger|c)|%(method|M)|%(message|m)|%n|%%/g;
+// %X{name} (log4j MDC-style) is the one open-ended alternative: it captures
+// free text into a user-chosen field name instead of one of the six fixed
+// ones — see RESERVED_FIELD_KEYS and compileFormatPattern below.
+const FORMAT_TOKEN_RE = /%(date|d)(?:\{[^}]*\})?|%(level|p)|%(thread|t)|%(logger|c)|%(method|M)|%(message|m)|%X\{([A-Za-z_$][A-Za-z0-9_$]*)\}|%n|%%/g;
 const FORMAT_TOKEN_FIELD = {
   date: "ts", d: "ts",
   level: "level", p: "level",
@@ -7937,10 +8149,23 @@ const FORMAT_TOKEN_FIELD = {
   message: "message", m: "message",
 };
 
+// The six field names every format's compiled regex may use as-is —
+// reserved so a %X{name}/(?<name>...) custom column can never collide with
+// one of them. Anything else captured by a format (custom Pattern-mode
+// %X{} tokens, or a hand-written Regex-mode named group) is a custom
+// column and ends up on an entry's `fields` bag — see applyFormatMatch.
+const RESERVED_FIELD_KEYS = new Set(["ts", "level", "thread", "location", "method", "message"]);
+
 // Compiles a conversion pattern into { regex, hasTs } with one named
-// capture group per distinct field (ts/level/thread/location/method/
-// message). Returns { error } if the pattern has no %m/%message token or
-// fails to compile.
+// capture group per distinct field (the six reserved ones, plus any
+// %X{name} custom fields). Returns { error } only if the resulting pattern
+// fails to compile — no single token is technically required here (every
+// field applyFormatMatch reads has a graceful default: ts->NaN, level->
+// "INFO", everything else->""). Time and Level being the two MANDATORY
+// columns (see PROJECT.md) is enforced as a product-level rule at save time
+// in the Format Manager (saveFormatEdit), not baked into compiling — a
+// format saved before that rule existed, or compiled at runtime for a file
+// already on disk, must keep parsing exactly as it always has.
 function compileFormatPattern(pattern, tsFormat) {
   const raw = unescapePatternText(pattern || "");
   const dateFrag = compileDateFormat(tsFormat);
@@ -7957,8 +8182,17 @@ function compileFormatPattern(pattern, tsFormat) {
     lastIndex = FORMAT_TOKEN_RE.lastIndex;
     if (tok === "%n") continue;
     if (tok === "%%") { regexStr += "%"; continue; }
-    const tokenWord = m[1] || m[2] || m[3] || m[4] || m[5] || m[6];
-    const field = FORMAT_TOKEN_FIELD[tokenWord];
+    const customName = m[7];
+    let field;
+    if (customName) {
+      if (RESERVED_FIELD_KEYS.has(customName)) {
+        return { error: '%X{' + customName + '} can\'t reuse the reserved field name "' + customName + '" — use %d/%p/%t/%c/%M/%m for that instead.' };
+      }
+      field = customName;
+    } else {
+      const tokenWord = m[1] || m[2] || m[3] || m[4] || m[5] || m[6];
+      field = FORMAT_TOKEN_FIELD[tokenWord];
+    }
     const isLast = lastIndex === raw.length;
     let frag;
     if (field === "ts") frag = dateFrag ? dateFrag.regexStr : (isLast ? ".*" : ".*?");
@@ -7972,31 +8206,44 @@ function compileFormatPattern(pattern, tsFormat) {
     }
   }
   regexStr += escapeRegExp(raw.slice(lastIndex));
-  if (!fieldsSeen.has("message")) return { error: "Pattern needs a %m / %message token." };
   try {
-    return { regex: new RegExp("^" + regexStr + "$"), regexStr, hasTs: fieldsSeen.has("ts") };
+    return { regex: new RegExp("^" + regexStr + "$"), regexStr, hasTs: fieldsSeen.has("ts"), hasLevel: fieldsSeen.has("level") };
   } catch (e) {
     return { error: "Invalid resulting pattern: " + e.message };
   }
 }
 
 // Regex mode: the person supplies the whole-line regex directly. Must
-// compile and must name a "message" group (the one field with no sane
-// default); missing "ts" is a non-blocking warning, not a save-blocker.
+// compile; every named group (the six reserved ones, or a custom column) is
+// optional at this level (see compileFormatPattern's own comment) — missing
+// "ts"/"level" surface as save-time warnings/errors in the Format Manager
+// instead (saveFormatEdit), since Time/Level being mandatory is a product
+// rule, not something a regex can be technically required to satisfy.
 function validateFormatRegex(src) {
   let re;
   try { re = new RegExp(src || ""); } catch (e) { return { error: "Invalid regex: " + e.message }; }
-  if (!/\(\?<message>/.test(src || "")) return { error: 'Regex needs a "(?<message>...)" group.' };
   const warning = /\(\?<ts>/.test(src) ? "" : 'No "(?<ts>...)" group — entries will not sort chronologically.';
-  return { regex: re, warning };
+  return { regex: re, warning, hasTs: /\(\?<ts>/.test(src || ""), hasLevel: /\(\?<level>/.test(src || "") };
 }
 
 // The single "matched named groups -> entry object" applier both pattern
 // mode and regex mode funnel through, reusing the same location/quote
-// helpers the builtin default format uses.
+// helpers the builtin default format uses. Any captured group beyond the
+// six reserved fields is a custom column and lands in `fields`, keyed by
+// its capture-group name — a format that defines none (the common case,
+// including every builtin/legacy format) pays no extra allocation, since
+// every entry then shares the one frozen EMPTY_FIELDS object.
+const EMPTY_ENTRY_FIELDS = Object.freeze({});
 function applyFormatMatch(groups, line, compiledDate) {
   groups = groups || {};
   const loc = formatLocation(groups.location || "");
+  let fields = null;
+  for (const k in groups) {
+    if (!RESERVED_FIELD_KEYS.has(k) && groups[k] != null) {
+      if (!fields) fields = {};
+      fields[k] = stripQuotes(groups[k]);
+    }
+  }
   return {
     id: uid("e"),
     tsRaw: groups.ts || "",
@@ -8008,6 +8255,7 @@ function applyFormatMatch(groups, line, compiledDate) {
     method: groups.method || "",
     message: groups.message != null ? stripQuotes(groups.message) : line,
     raw: line,
+    fields: fields || EMPTY_ENTRY_FIELDS,
   };
 }
 
@@ -8448,7 +8696,12 @@ function buildLogParseWorkerSrc() {
     ["FORMAT_TOKEN_FIELD", FORMAT_TOKEN_FIELD],
     ["HEADER_RE", HEADER_RE],
     ["PARSE_CHUNK_LINES", PARSE_CHUNK_LINES],
-  ].map(([name, val]) => "const " + name + " = " + (val instanceof RegExp ? val.toString() : JSON.stringify(val)) + ";").join("\n");
+    ["RESERVED_FIELD_KEYS", RESERVED_FIELD_KEYS],
+  ].map(([name, val]) => "const " + name + " = " + (
+    val instanceof RegExp ? val.toString() :
+    val instanceof Set ? "new Set(" + JSON.stringify([...val]) + ")" :
+    JSON.stringify(val)
+  ) + ";").join("\n") + "\nconst EMPTY_ENTRY_FIELDS = Object.freeze({});";
   const fnDefs = [
     unescapePatternText, compileDateFormat, parseTimestampGeneric,
     compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
@@ -8740,8 +8993,17 @@ function activateQueuedFileNode(node) {
 //      explicitly lists are ever their own bucket, which keeps the count
 //      aggregation and the level bar bounded by configuration.
 function levelBucket(level, formatId) {
-  const l = normalizeLevelName(level);
-  if (!l) return "OTHER";
+  const raw = String(level == null ? "" : level).trim();
+  if (!raw) return "OTHER";
+  // Integer-valued formats (e.g. syslog severity 0-7) match a captured
+  // token against each definition's `value`, not its `name` — a numeric
+  // code has no natural text-prefix relationship to ERROR/WARN/..., so
+  // there's no cascade fallback: an unmapped code is simply OTHER.
+  if (formatLevelValueType(formatId) === "int") {
+    const def = formatLevelDefs(formatId).find(d => d.value === raw || Number(d.value) === Number(raw));
+    return def ? def.name : "OTHER";
+  }
+  const l = normalizeLevelName(raw);
   if (formatLevels(formatId).includes(l)) return l;
   if (l.startsWith("ERR") || l.startsWith("FATAL")) return "ERROR";
   if (l.startsWith("WARN")) return "WARN";
@@ -10267,31 +10529,13 @@ function deleteNode(nodeId) {
 
 // Target-column options for "text" filters (FEATURE_BACKLOG.md "Per-filter
 // target column") — mirrors the columns the log table itself shows
-// (see renderTable's .col-time/.col-level/.col-thread/.col-loc/.col-method/
-// .col-msg spans). Same selection logic as the level filter bar
-// (state.levelFilter/applyLevelFilter): none selected = search every
-// column, one or more selected = restrict to those.
-const TEXT_FILTER_COLUMNS = [
-  { key: "time", label: "Time" },
-  { key: "level", label: "Level" },
-  { key: "thread", label: "Thread" },
-  { key: "location", label: "Location" },
-  { key: "method", label: "Method" },
-  { key: "message", label: "Message" },
-];
-const TEXT_FILTER_COLUMN_KEYS = new Set(TEXT_FILTER_COLUMNS.map(c => c.key));
-
-function textColumnValue(e, key) {
-  switch (key) {
-    case "time": return e.tsRaw || "";
-    case "level": return e.level || "";
-    case "thread": return e.thread || "";
-    case "location": return e.locationFull || "";
-    case "method": return e.method || "";
-    case "message": return e.message || "";
-    default: return "";
-  }
-}
+// (see renderTable's .col-time/.col-level/.col-thread/.col-location/
+// .col-method/.col-msg/.col-custom spans). Same selection logic as the level
+// filter bar (state.levelFilter/applyLevelFilter): none selected = search
+// every column, one or more selected = restrict to those. The column list itself
+// (activeTextFilterColumns) and the per-entry value lookup
+// (entryColumnValue) now live in the "Custom columns" section above,
+// generalized over per-format custom columns instead of a fixed table.
 
 // Shared match logic for "text" filters — used both by getEntries (the
 // actual filter) and evaluateLiveMatch (the popup's live count preview), so
@@ -10351,12 +10595,12 @@ function includesWholeWord(hay, needle) {
 
 function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wildcardColumns, regexObj, wholeWord) {
   if (regexObj) {
-    if (columns && columns.length) return columns.some(key => regexObj.test(textColumnValue(e, key)));
+    if (columns && columns.length) return columns.some(key => regexObj.test(entryColumnValue(e, key)));
     return regexObj.test(e.raw);
   }
   if (wildcardRegex) {
     if (columns && columns.length) {
-      return columns.some(key => !!wildcardMatch(wildcardRegex, wildcardColumns, textColumnValue(e, key)));
+      return columns.some(key => !!wildcardMatch(wildcardRegex, wildcardColumns, entryColumnValue(e, key)));
     }
     // Person-reported bug: a "text" filter carrying [*:...]/[*] tokens
     // (see "A text filter's value can itself contain wildcard tokens"
@@ -10378,7 +10622,7 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
   const q = caseSensitive ? value : value.toLowerCase();
   if (columns && columns.length) {
     return columns.some(key => {
-      const text = textColumnValue(e, key);
+      const text = entryColumnValue(e, key);
       const hay = caseSensitive ? text : text.toLowerCase();
       return wholeWord ? includesWholeWord(hay, q) : hay.includes(q);
     });
@@ -10421,7 +10665,7 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
    there. Match ranges are searched against whichever text is actually ON
    SCREEN for a field (formatTime(e.ts), e.locationShort, ...) rather than
    the raw value the filter engine itself tests (e.tsRaw, e.locationFull —
-   see textColumnValue); those can diverge for "time"/"location" (a
+   see entryColumnValue); those can diverge for "time"/"location" (a
    formatted/abbreviated display vs. the raw stored string), so searching the
    displayed text keeps the marked span trivially correct — always a real
    substring of what's on screen — at the cost of occasionally under/over-
@@ -10677,12 +10921,12 @@ function textFilterMatchSpec(node) {
 }
 
 // The columns a "text" filter node's match applies to: its own target-column
-// restriction if set, else every column TEXT_FILTER_COLUMNS lists (a
+// restriction if set, else every column activeTextFilterColumns() lists (a
 // column-less filter searches the whole raw line — see textFilterMatches —
 // which has no single on-screen counterpart once the raw tab-separated line
 // is thrown away, so every displayed column is searched independently).
 function textMatchTargetColumns(node) {
-  return (node.columns && node.columns.length) ? node.columns : TEXT_FILTER_COLUMNS.map(c => c.key);
+  return (node.columns && node.columns.length) ? node.columns : activeTextFilterColumns().map(c => c.key);
 }
 
 // Every [start, end) occurrence of spec's pattern inside `text` — not just
@@ -11956,14 +12200,15 @@ const btnHighlightMatchText = elAll(".toggle-highlightmatch");
 const btnFilePathLinks = elAll(".toggle-filepaths");
 const columnsPanel = el("#columnsPanel");
 const btnResetColumns = el("#btnResetColumns");
-const columnToggleInputs = {
-  delta: el("#colToggleDelta"),
-  thread: el("#colToggleThread"),
-  loc: el("#colToggleLoc"),
-  method: el("#colToggleMethod"),
-};
-const columnResizeHandleEls = {};
-tableHeaderEl.querySelectorAll(".col-resize-handle").forEach(h => { columnResizeHandleEls[h.dataset.col] = h; });
+// columnToggleInputs/columnResizeHandleEls are rebuilt whenever the active
+// column set changes (Custom Columns: the set is per-format/dynamic, not a
+// fixed six) — see renderColumnHeader/renderColumnsPanel/refreshColumnState.
+// The header itself is JS-built too (empty <div class="row-grid"> in the
+// static HTML), so it's rendered once right here before the initial
+// collectColumnResizeHandles() call.
+let columnToggleInputs = {};
+renderColumnHeader();
+let columnResizeHandleEls = collectColumnResizeHandles();
 const tailJumpBtn = el("#tailJumpBtn");
 const tailJumpBtnHighlight = el("#tailJumpBtnHighlight");
 const timelineMinimapEl = el("#timelineMinimap");
@@ -12715,6 +12960,20 @@ function render() {
   renderTree();
   renderBreadcrumb();
   renderLevelBar();
+  // Custom Columns: activeColumnDefs()/activeMessageVisible() (the header,
+  // the columns panel, --row-grid) come from the formats currently in play,
+  // same as renderLevelBar() right above — refreshed here so a file add/
+  // remove (or anything else that changes which formats are loaded) picks
+  // up the right columns without every such call site needing its own
+  // explicit refreshColumnState() call. Memoized against the last-seen
+  // column set so a render() that didn't change it (the common case — most
+  // renders are a filter-tree change, not a file add/remove) costs one
+  // cheap array-join comparison, not a DOM rebuild.
+  const columnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible();
+  if (columnStateKey !== lastColumnStateKey) {
+    lastColumnStateKey = columnStateKey;
+    refreshColumnState();
+  }
   renderMainView();
   renderStatus();
   updateDetailPanel();
@@ -17579,6 +17838,10 @@ function renderVisibleRows() {
   // Carries both kinds at once here: the active filter path's matches (gated
   // by the "show in rows" toggle) and every coloured highlight rule's.
   const mm = buildMatchMarkContext(textMatchHighlightInRows);
+  // Computed once per render() call, not per row (Custom Columns) — same
+  // reasoning as mm above.
+  const columnDefs = activeColumnDefs();
+  const messageVisible = activeMessageVisible();
 
   const frag = document.createDocumentFragment();
   for (let i = start; i < end; i++) {
@@ -17629,9 +17892,17 @@ function renderVisibleRows() {
     const timeText = formatTime(e.ts);
     const timeHtml = markFieldHtml(mm, timeText, "time");
     const levelHtml = markFieldHtml(mm, e.level, "level");
-    const threadHtml = markFieldHtml(mm, e.thread, "thread");
-    const locHtml = markFieldHtml(mm, e.locationShort, "location");
-    const methodHtml = markFieldHtml(mm, e.method, "method");
+    // Custom Columns: the middle (Thread/Location/Method/custom) spans are
+    // built from columnDefs instead of three hardcoded fields — see
+    // entryColumnValue/columnCssClass ("Custom columns" section). Every
+    // span carries data-col so the context menu (resolveContextFilterColumn)
+    // and middle-click-to-hide can resolve it generically.
+    let middleHtml = "";
+    for (const col of columnDefs) {
+      const val = entryColumnValue(e, col.key);
+      const html = markFieldHtml(mm, val, col.key);
+      middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+    }
     const msgHtmlBase = markFieldHtml(mm, e.message, "message");
     const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
@@ -17642,13 +17913,11 @@ function renderVisibleRows() {
       bracketHtml +
       (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
       '<span class="col-bar"></span>' +
-      '<span class="col-time">' + timeHtml + '</span>' +
+      '<span class="col-time" data-col="time">' + timeHtml + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      '<span class="col-level"><span class="level-badge">' + levelHtml + '</span></span>' +
-      '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + threadHtml + '</span>' +
-      '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + locHtml + '</span>' +
-      '<span class="col-method" title="' + escapeHtml(e.method) + '">' + methodHtml + '</span>' +
-      '<span class="col-msg">' + msgHtml + '</span>';
+      '<span class="col-level" data-col="level"><span class="level-badge">' + levelHtml + '</span></span>' +
+      middleHtml +
+      (messageVisible ? '<span class="col-msg" data-col="message">' + msgHtml + '</span>' : "");
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
     row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
@@ -18737,6 +19006,10 @@ function renderHighlightVisibleRows() {
   // claim about. A highlight rule is file-wide by definition, which is why
   // its gutter markers already show here.
   const mm = buildMatchMarkContext(false);
+  // Computed once per render() call, not per row (Custom Columns) — same
+  // reasoning as renderVisibleRows.
+  const columnDefs = activeColumnDefs();
+  const messageVisible = activeMessageVisible();
 
   const frag = document.createDocumentFragment();
   // A leading gap's filler rows have no row to hang off — they belong above
@@ -18786,17 +19059,23 @@ function renderHighlightVisibleRows() {
     const timeText = formatTime(e.ts);
     const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message");
     const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
+    // Custom Columns: same generalized middle-column loop as
+    // renderVisibleRows — see its own comment.
+    let middleHtml = "";
+    for (const col of columnDefs) {
+      const val = entryColumnValue(e, col.key);
+      const html = markFieldHtml(mm, val, col.key);
+      middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+    }
     row.innerHTML =
       markerHtml +
       (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
       '<span class="col-bar"></span>' +
-      '<span class="col-time">' + markFieldHtml(mm, timeText, "time") + '</span>' +
+      '<span class="col-time" data-col="time">' + markFieldHtml(mm, timeText, "time") + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      '<span class="col-level"><span class="level-badge">' + markFieldHtml(mm, e.level, "level") + '</span></span>' +
-      '<span class="col-thread" title="' + escapeHtml(e.thread) + '">' + markFieldHtml(mm, e.thread, "thread") + '</span>' +
-      '<span class="col-loc" title="' + escapeHtml(e.locationFull) + '">' + markFieldHtml(mm, e.locationShort, "location") + '</span>' +
-      '<span class="col-method" title="' + escapeHtml(e.method) + '">' + markFieldHtml(mm, e.method, "method") + '</span>' +
-      '<span class="col-msg">' + hlMsgHtml + '</span>';
+      '<span class="col-level" data-col="level"><span class="level-badge">' + markFieldHtml(mm, e.level, "level") + '</span></span>' +
+      middleHtml +
+      (messageVisible ? '<span class="col-msg" data-col="message">' + hlMsgHtml + '</span>' : "");
     // A PLAIN click is a jump to that match and gets the expansion treatment
     // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
     // gesture and must leave the row list alone, or the range the person is
@@ -21592,34 +21871,61 @@ btnFilePathLinks.forEach(b => b.addEventListener("click", () => {
 }));
 
 /* ===================== Log view column visibility / width (FEATURE_BACKLOG.md
-   "Column visibility / width persistence in the log view") =====================
+   "Column visibility / width persistence in the log view"; generalized for
+   Custom Columns — per-format columns, not a fixed six) =====================
    Applied entirely through the --row-grid CSS custom property (already the
    single source of truth for every row's column layout — see its own CSS
    comment near .row-grid) rather than per-row DOM changes: flipping a
    visibility checkbox or dragging a header handle just recomputes this one
    string and both Log views (Filter + Highlight, sharing the var) and every
-   virtualized row reflow natively, with zero JS re-render cost. Time/Level/
-   Message stay always-visible (no checkbox); Message has no width of its
-   own — it's the grid's 1fr flexible remainder, so shrinking/growing any
-   other column's track resizes it automatically. Global setting, not
-   per-file — same tier as state.multilineMessages/pinBookmarksInFilteredView
-   (see buildCacheMeta/restoreSessionFromCache). */
-const DEFAULT_COLUMN_WIDTHS = { time: 178, delta: 72, level: 66, thread: 92, loc: 158, method: 168 };
-const COLUMN_TRACK_ORDER = ["time", "delta", "level", "thread", "loc", "method"]; // matches --row-grid tracks 2-7 (1=bar 5px, 8=message 1fr)
-const HIDEABLE_COLUMNS = ["delta", "thread", "loc", "method"];
+   virtualized row reflow natively, with zero JS re-render cost. Time/Level
+   stay always-visible (no checkbox, no width of their own beyond their
+   fixed default); Message stays last with no width of its own when shown
+   (1fr, the grid's flexible remainder) but — unlike before this feature —
+   CAN be hidden per format (activeMessageVisible). Between them sits
+   activeColumnDefs()'s dynamic, per-format-ordered list (Thread/Location/
+   Method plus any custom columns). Global setting, not per-file — same tier
+   as state.multilineMessages/pinBookmarksInFilteredView (see
+   buildCacheMeta/restoreSessionFromCache): a column's width/visibility
+   preference is remembered by KEY across whatever format/file happens to
+   define that key, not reset every time the active file changes. */
+const FIXED_COLUMN_WIDTHS = { time: 178, delta: 72, level: 66, thread: 92, location: 158, method: 168 };
+const DEFAULT_CUSTOM_COLUMN_WIDTH = 120; // initial width for a column this dictionary has no entry for yet
 const COLUMN_MIN_WIDTH = 40;
 const COLUMN_GRID_GAP = 12; // must match .row-grid's column-gap
 const COLUMN_BAR_WIDTH = 5; // must match --row-grid's first (bar) track
-// Below this viewport width, Thread/Location/Method are always hidden
-// regardless of state.columnVisible — same breakpoint/columns the old
+// Below this viewport width, the dynamic middle columns are always hidden
+// regardless of state.columnVisible — same breakpoint the old
 // @media (max-width:760px) rule used to hide directly in CSS, folded in
 // here instead now that this function is the single place --row-grid gets
 // computed (see the @media block's own comment for why living in both
-// places at once broke things). Deliberately a narrower list than
-// HIDEABLE_COLUMNS: the old mobile rule kept Δt visible (just narrower),
-// only Thread/Location/Method were dropped.
+// places at once broke things). Δt/Message stay visible (just narrower/
+// unaffected) on mobile, same as before this feature.
 const COLUMN_MOBILE_BREAKPOINT = 760;
-const COLUMN_MOBILE_FORCE_HIDDEN = ["thread", "loc", "method"];
+
+// Width/visibility lookups fall back to a sane default for a key that
+// state.columnWidths/columnVisible has no entry for yet — a freshly
+// authored custom column, or a format loaded for the first time — instead
+// of requiring some explicit initialization step whenever the active
+// column set changes.
+function columnWidthFor(key) {
+  const w = state.columnWidths[key];
+  return Number.isFinite(w) ? w : (FIXED_COLUMN_WIDTHS[key] != null ? FIXED_COLUMN_WIDTHS[key] : DEFAULT_CUSTOM_COLUMN_WIDTH);
+}
+function columnVisibleFor(key) {
+  const v = state.columnVisible[key];
+  return v === undefined ? true : v;
+}
+
+// Rebuilds columnResizeHandleEls from whatever .col-resize-handle elements
+// currently exist in the Filter header — called by renderColumnHeader
+// (below) whenever the active column set changes, since the handles
+// themselves are now rebuilt then too.
+function collectColumnResizeHandles() {
+  const map = {};
+  tableHeaderEl.querySelectorAll(".col-resize-handle").forEach(h => { map[h.dataset.col] = h; });
+  return map;
+}
 
 // Recomputes --row-grid from state.columnWidths/columnVisible (plus the
 // viewport-width override above) and repositions the header's resize
@@ -21629,10 +21935,13 @@ function applyRowGrid() {
   const mobile = window.innerWidth <= COLUMN_MOBILE_BREAKPOINT;
   const parts = [COLUMN_BAR_WIDTH + "px"];
   let x = COLUMN_BAR_WIDTH;
-  COLUMN_TRACK_ORDER.forEach(key => {
-    const hideable = HIDEABLE_COLUMNS.includes(key);
-    const hidden = (mobile && COLUMN_MOBILE_FORCE_HIDDEN.includes(key)) || (hideable && !state.columnVisible[key]);
-    const w = hidden ? 0 : state.columnWidths[key];
+  // mobileForce: forced hidden below COLUMN_MOBILE_BREAKPOINT regardless of
+  // state.columnVisible — only the dynamic middle columns (Thread/Location/
+  // Method/custom); Δt stays visible (just narrower), same as before this
+  // feature's mobile rule.
+  const pushTrack = (key, hideable, mobileForce) => {
+    const hidden = (mobile && mobileForce) || (hideable && !columnVisibleFor(key));
+    const w = hidden ? 0 : columnWidthFor(key);
     parts.push(w + "px");
     x += COLUMN_GRID_GAP + w;
     const handle = columnResizeHandleEls[key];
@@ -21640,8 +21949,17 @@ function applyRowGrid() {
       handle.style.left = x + "px";
       handle.style.display = hidden ? "none" : "";
     }
-  });
-  parts.push("1fr");
+  };
+  pushTrack("time", false, false);
+  pushTrack("delta", true, false);
+  pushTrack("level", false, false);
+  activeColumnDefs().forEach(col => pushTrack(col.key, true, true));
+  // Message: pinned last, own hidden/visible flag (activeMessageVisible),
+  // still the 1fr remainder when visible — when hidden it needs an
+  // explicit 0px track instead of the unconditional literal "1fr" this
+  // push used to be, so a hidden 1fr track doesn't still eat the row's
+  // available width.
+  parts.push(activeMessageVisible() ? "1fr" : "0px");
   document.documentElement.style.setProperty("--row-grid", parts.join(" "));
   // x is now the position right after the last fixed (non-message) column —
   // i.e. everything the message column's own track excludes. Column widths
@@ -21653,6 +21971,64 @@ function applyRowGrid() {
   syncTableRowsWidth();
 }
 window.addEventListener("resize", applyRowGrid);
+
+// Called whenever "which formats are currently loaded" or "a loaded
+// format's own column list" changes — from render() itself (see its own
+// comment, memoized against lastColumnStateKey) and directly from
+// saveFormatEdit, which never goes through render() (the Settings dialog
+// is separate UI from the main render pipeline — same reason it calls
+// renderLevelBar() explicitly too). Rebuilds the header/resize-handles/
+// columns-panel from the new activeColumnDefs() and reapplies the grid.
+let lastColumnStateKey = "";
+function refreshColumnState() {
+  renderColumnHeader();
+  columnResizeHandleEls = collectColumnResizeHandles();
+  if (!columnsPanel.classList.contains("hidden")) renderColumnsPanel();
+  applyRowGrid();
+}
+
+// The Filter header's row-grid content: Time/Δt/Level (fixed, non-
+// reorderable) + activeColumnDefs()'s dynamic middle columns + Message
+// (fixed last). `sortable` is false for the Highlight header, which has
+// never supported column-header sorting. Thread/Location are the only
+// middle columns entryComparator (see "Custom columns" section) knows how
+// to sort by — a custom column gets a plain, non-sortable .th, same as
+// Method always has.
+function buildRowGridHeaderHtml(sortable) {
+  let out = "<span></span>";
+  out += sortable
+    ? '<span class="th th-sortable" data-sort="time">Time<span class="th-sort-arrow"></span></span>'
+    : '<span class="th">Time</span>';
+  out += '<span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>';
+  out += sortable
+    ? '<span class="th th-sortable" data-sort="level">Level<span class="th-sort-arrow"></span></span>'
+    : '<span class="th">Level</span>';
+  activeColumnDefs().forEach(col => {
+    const sortKey = (col.key === "thread" || col.key === "location") ? col.key : null;
+    const label = escapeHtml(col.label);
+    out += (sortable && sortKey)
+      ? '<span class="th th-sortable" data-sort="' + sortKey + '" data-col="' + col.key + '" title="Middle-click to hide">' + label + '<span class="th-sort-arrow"></span></span>'
+      : '<span class="th" data-col="' + col.key + '" title="Middle-click to hide">' + label + '</span>';
+  });
+  out += '<span class="th" data-col="message" title="Middle-click to hide">Message</span>';
+  return out;
+}
+// Out-of-flow (position:absolute) resize handles, Filter header only — see
+// positionColumnResizeHandles/applyRowGrid for their placement. No handle
+// for Message: it has no width of its own (1fr grid remainder).
+function buildResizeHandlesHtml() {
+  let out = '<span class="col-resize-handle" data-col="time" title="Drag to resize"></span>' +
+    '<span class="col-resize-handle" data-col="delta" title="Drag to resize"></span>' +
+    '<span class="col-resize-handle" data-col="level" title="Drag to resize"></span>';
+  activeColumnDefs().forEach(col => {
+    out += '<span class="col-resize-handle" data-col="' + col.key + '" title="Drag to resize"></span>';
+  });
+  return out;
+}
+function renderColumnHeader() {
+  tableHeaderEl.querySelector(".row-grid").innerHTML = buildRowGridHeaderHtml(true) + buildResizeHandlesHtml();
+  highlightHeaderEl.querySelector(".row-grid").innerHTML = buildRowGridHeaderHtml(false);
+}
 
 /* ---------- Filter view row width (person-reported follow-up to the
    horizontal-scrollbar feature above) ----------
@@ -21783,11 +22159,42 @@ function syncTableRowsWidth() {
 }
 
 function closeColumnsPanel() { columnsPanel.classList.add("hidden"); }
+// Rebuilds #columnsList's checkbox rows from Δt (fixed) + activeColumnDefs()
+// (dynamic, per-format) + Message (fixed, hideable since this feature) —
+// replaces the old static 4-checkbox markup, since the hideable column set
+// is no longer fixed. Called on open and whenever refreshColumnState() runs
+// while the panel happens to be open (a format save/file change while the
+// person has it up).
+const columnsListEl = el("#columnsList");
+function renderColumnsPanel() {
+  columnsListEl.innerHTML = "";
+  columnToggleInputs = {};
+  const addRow = (key, label) => {
+    const row = document.createElement("label");
+    row.className = "column-toggle-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.dataset.col = key; // stable generic selector (a custom column has no fixed id)
+    cb.checked = columnVisibleFor(key);
+    cb.addEventListener("change", () => {
+      state.columnVisible[key] = cb.checked;
+      applyRowGrid();
+      render();
+    });
+    row.appendChild(cb);
+    row.appendChild(document.createTextNode(" " + label));
+    columnsListEl.appendChild(row);
+    columnToggleInputs[key] = cb;
+  };
+  addRow("delta", "Δt");
+  activeColumnDefs().forEach(col => addRow(col.key, col.label));
+  addRow("message", "Message");
+}
 // anchorBtn: whichever of the two (Context/Filtered) copies was actually
 // clicked (ev.currentTarget below) — the panel opens next to that one, not
 // always the same fixed copy, since both can be on screen at once (Stacked).
 function openColumnsPanel(anchorBtn) {
-  Object.keys(columnToggleInputs).forEach(key => { columnToggleInputs[key].checked = state.columnVisible[key]; });
+  renderColumnsPanel();
   const rect = anchorBtn.getBoundingClientRect();
   columnsPanel.style.top = (rect.bottom + 6) + "px";
   columnsPanel.style.left = Math.min(rect.left, window.innerWidth - 210) + "px";
@@ -21797,15 +22204,12 @@ btnColumns.forEach(b => b.addEventListener("click", ev => {
   if (columnsPanel.classList.contains("hidden")) openColumnsPanel(ev.currentTarget);
   else closeColumnsPanel();
 }));
-Object.keys(columnToggleInputs).forEach(key => {
-  columnToggleInputs[key].addEventListener("change", () => {
-    state.columnVisible[key] = columnToggleInputs[key].checked;
-    applyRowGrid();
-    render();
-  });
-});
 btnResetColumns.addEventListener("click", () => {
-  state.columnWidths = { ...DEFAULT_COLUMN_WIDTHS };
+  // Explicit defaults for the 6 fixed columns (matches the pre-Custom-
+  // Columns DEFAULT_COLUMN_WIDTHS reset exactly); any custom column's width
+  // is cleared too, falling back to DEFAULT_CUSTOM_COLUMN_WIDTH via
+  // columnWidthFor.
+  state.columnWidths = { ...FIXED_COLUMN_WIDTHS };
   applyRowGrid();
   render();
 });
@@ -21837,19 +22241,24 @@ function toggleColumnFromHeaderClick(ev) {
 // Drag-resize (mousedown on a handle -> mousemove adjusts state.columnWidths
 // live -> mouseup persists). No rAF batching needed here, unlike the panel
 // resizers (sidebar/detail/fhSplit): applyRowGrid() is just one CSS custom
-// property write plus 6 handle .style.left writes, cheap enough to run
-// synchronously on every mousemove — there's no expensive re-render to defer
-// (column widths reflow via CSS grid on their own, same reasoning as the
-// sidebar resizer's own comment about the table/highlight columns).
+// property write plus a handful of handle .style.left writes, cheap enough
+// to run synchronously on every mousemove — there's no expensive re-render
+// to defer (column widths reflow via CSS grid on their own, same reasoning
+// as the sidebar resizer's own comment about the table/highlight columns).
+// Delegated on tableHeaderEl itself (not per-handle) since the handles are
+// now rebuilt whenever the active column set changes (Custom Columns) —
+// delegation means resize/autofit keep working after a rebuild with no
+// re-attachment step.
 let columnResizing = null; // { key, startX, startWidth }
-Object.keys(columnResizeHandleEls).forEach(key => {
-  columnResizeHandleEls[key].addEventListener("mousedown", ev => {
-    columnResizing = { key, startX: ev.clientX, startWidth: state.columnWidths[key] };
-    columnResizeHandleEls[key].classList.add("dragging");
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    ev.preventDefault();
-  });
+tableHeaderEl.addEventListener("mousedown", ev => {
+  const handle = ev.target.closest(".col-resize-handle");
+  if (!handle) return;
+  const key = handle.dataset.col;
+  columnResizing = { key, startX: ev.clientX, startWidth: columnWidthFor(key) };
+  handle.classList.add("dragging");
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  ev.preventDefault();
 });
 window.addEventListener("mousemove", ev => {
   if (!columnResizing) return;
@@ -21859,7 +22268,8 @@ window.addEventListener("mousemove", ev => {
 });
 window.addEventListener("mouseup", () => {
   if (!columnResizing) return;
-  columnResizeHandleEls[columnResizing.key].classList.remove("dragging");
+  const handle = columnResizeHandleEls[columnResizing.key];
+  if (handle) handle.classList.remove("dragging");
   columnResizing = null;
   document.body.style.cursor = "";
   document.body.style.userSelect = "";
@@ -21878,7 +22288,7 @@ function measureColumnText(key, text) {
   let m = columnMeasureEls[key];
   if (!m) {
     m = document.createElement("span");
-    m.className = "col-" + key;
+    m.className = columnCssClass(key);
     m.style.cssText = "position:absolute; visibility:hidden; left:-99999px; top:0; white-space:nowrap; width:auto;";
     document.body.appendChild(m);
     columnMeasureEls[key] = m;
@@ -21911,24 +22321,26 @@ function autofitColumnWidth(key) {
       const dm = prev ? (e.ts - prev.ts) : null;
       text = dm == null ? "—" : formatDelta(dm);
     }
-    else if (key === "level") text = e.level;
-    else if (key === "thread") text = e.thread;
-    else if (key === "loc") text = e.locationShort;
-    else if (key === "method") text = e.method;
-    else text = "";
+    // "location" measures the SHORT form (locationShort) — what's actually
+    // on screen — same as before this feature; everything else (level/
+    // thread/method, and any custom column) reads via entryColumnValue,
+    // which already returns the right on-screen text for each.
+    else if (key === "location") text = e.locationShort;
+    else text = entryColumnValue(e, key);
     if (text && text.length > longest.length) longest = text;
   }
   const w = longest ? measureColumnText(key, longest) : 0;
   return Math.max(COLUMN_MIN_WIDTH, Math.ceil(w) + COLUMN_AUTOFIT_PADDING);
 }
-Object.keys(columnResizeHandleEls).forEach(key => {
-  columnResizeHandleEls[key].addEventListener("dblclick", ev => {
-    ev.preventDefault();
-    state.columnWidths[key] = autofitColumnWidth(key);
-    applyRowGrid();
-    render();
-    schedulePersistMeta();
-  });
+tableHeaderEl.addEventListener("dblclick", ev => {
+  const handle = ev.target.closest(".col-resize-handle");
+  if (!handle) return;
+  ev.preventDefault();
+  const key = handle.dataset.col;
+  state.columnWidths[key] = autofitColumnWidth(key);
+  applyRowGrid();
+  render();
+  schedulePersistMeta();
 });
 
 function renderTable() {
@@ -25596,12 +26008,30 @@ let filterPopupBaseId = null;
 let filterPopupIgnored = new Set();
 
 // filterPopupColumns: working copy of the "text" filter's target-column
-// restriction (see TEXT_FILTER_COLUMNS/textFilterMatches) — same
+// restriction (see activeTextFilterColumns/textFilterMatches) — same
 // create/edit lifecycle as filterPopupIgnored above, and the same
 // selection logic as state.levelFilter/applyLevelFilter: empty set searches
 // every column, non-empty restricts to those.
 let filterPopupColumns = new Set();
 
+// Rebuilds the chip <button> elements themselves from activeTextFilterColumns()
+// — replaces the old static 6-button markup, since the column set is now
+// per-format/dynamic (Custom Columns). Called once whenever the popup opens
+// (openFilterPopup/openEditFilterPopup), before renderFilterColumnChips
+// (below, unchanged) sets which ones start active.
+function renderFilterColumnChipButtons() {
+  const label = filterColumnChips.querySelector(".filter-section-label");
+  filterColumnChips.innerHTML = "";
+  if (label) filterColumnChips.appendChild(label);
+  activeTextFilterColumns().forEach(col => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "column-chip";
+    btn.dataset.col = col.key;
+    btn.textContent = col.label;
+    filterColumnChips.appendChild(btn);
+  });
+}
 function renderFilterColumnChips() {
   filterColumnChips.querySelectorAll(".column-chip").forEach(chip => {
     chip.classList.toggle("active", filterPopupColumns.has(chip.dataset.col));
@@ -25659,6 +26089,7 @@ function openFilterPopup() {
   pillSet(filterRegexCheckbox, false);
   pillSet(filterWholeWordCheckbox, false); // person-specified default: off
   updateRegexModeUI();
+  renderFilterColumnChipButtons();
   renderFilterColumnChips();
   updateFilterAvailability();
   filterLiveMatch.textContent = "";
@@ -25694,6 +26125,7 @@ function openEditFilterPopup(nodeId) {
   pillSet(filterRegexCheckbox, node.filterType === "text" && !!node.isRegex);
   pillSet(filterWholeWordCheckbox, node.filterType === "text" && !!node.wholeWord);
   updateRegexModeUI();
+  renderFilterColumnChipButtons();
   renderFilterColumnChips();
   updateFilterAvailability();
   filterLiveMatch.textContent = "";
@@ -26019,30 +26451,25 @@ const addToSelectionMenu = el("#addToSelectionMenu");
 const ctxTimeRangeFromSelection = el("#ctxTimeRangeFromSelection");
 let ctxEntry = null;
 
-// Maps a row's .col-* span class (see renderTable's row-grid markup) to its
-// TEXT_FILTER_COLUMNS entry, so "Filter for this ___" (below) reads the
-// SAME key/label the filter popup's own column-restriction chips use —
-// can't drift out of sync since there's only the one source of labels.
-const CTX_FILTER_COLUMN_CLASSES = [
-  ["col-time", "time"], ["col-level", "level"], ["col-thread", "thread"],
-  ["col-loc", "location"], ["col-method", "method"], ["col-msg", "message"],
-];
 // The row's own "contextmenu" listener is attached once per row (see the
 // four openContextMenu call sites), so ev.target is whichever inner
-// .col-* span the pointer actually landed on — walk up from there to find
-// out which column was right-clicked. Anything else (row background/
-// gutter, a link-view pair's brace) falls back to "message", the one
-// column every entry always has meaningful text in.
+// [data-col] span the pointer actually landed on (every column span carries
+// one — see renderVisibleRows/renderHighlightVisibleRows) — walk up from
+// there to find out which column was right-clicked, then resolve it against
+// activeTextFilterColumns() so "Filter for this ___" (below) reads the SAME
+// key/label the filter popup's own column-restriction chips use — can't
+// drift out of sync since there's only the one source of labels. Anything
+// without a [data-col] ancestor (row background/gutter, a link-view pair's
+// brace) falls back to "message", the one column every entry always has
+// meaningful text in.
 function resolveContextFilterColumn(ev) {
   const target = ev && ev.target;
-  if (target && target.closest) {
-    for (const [cls, key] of CTX_FILTER_COLUMN_CLASSES) {
-      if (target.closest("." + cls)) return TEXT_FILTER_COLUMNS.find(c => c.key === key);
-    }
-  }
-  return TEXT_FILTER_COLUMNS.find(c => c.key === "message");
+  const span = target && target.closest ? target.closest("[data-col]") : null;
+  const cols = activeTextFilterColumns();
+  const key = span ? span.dataset.col : "message";
+  return cols.find(c => c.key === key) || cols.find(c => c.key === "message");
 }
-let ctxFilterColumn = TEXT_FILTER_COLUMNS[TEXT_FILTER_COLUMNS.length - 1]; // "message", matches the fallback above
+let ctxFilterColumn = { key: "message", label: "Message" }; // matches the fallback above
 
 function openContextMenu(ev, entry) {
   ctxEntry = entry;
@@ -26069,7 +26496,7 @@ function openContextMenu(ev, entry) {
   // message" (buildNumericExtractPattern is the exact same check that button
   // uses, and extractMessageFilter below is the exact same function it calls).
   ctxExtractMessage.style.display =
-    buildNumericExtractPattern(textColumnValue(entry, "message")) !== null ? "" : "none";
+    buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
   // IDE Integration: row-level (not column-gated like "Filter for this
   // ___" above) — the Method column carries no file/line data of its own,
   // so gating strictly on which column was clicked would make these items
@@ -26217,7 +26644,7 @@ function collapseNewlinesToWildcard(pattern) {
 // in, same as the mouse path's own no-numeric-content fallback target).
 function openFilterForEntryColumn(entry, column) {
   if (!entry || !state.activeId) return;
-  const value = textColumnValue(entry, column.key);
+  const value = entryColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
   const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
   openFilterPopup();
@@ -26239,8 +26666,8 @@ function openFilterForEntryColumn(entry, column) {
 // casing needed anywhere else.
 function extractMessageFilter(entry) {
   if (!entry || !state.activeId) return;
-  const column = TEXT_FILTER_COLUMNS.find(c => c.key === "message");
-  const value = textColumnValue(entry, column.key);
+  const column = { key: "message", label: "Message" };
+  const value = entryColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
   const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
   createFilterNode(state.activeId, "text", pattern, false, [], false, ["message"], false, false);
@@ -26892,7 +27319,7 @@ function updateRowActionButtons() {
   // literal-text filter node, which isn't what "Extract" is for (person-
   // requested, 2026-09-08 — use "Message" for that case instead).
   const extractActionEnabled = messageActionEnabled &&
-    buildNumericExtractPattern(textColumnValue(messageActionEntry, "message")) !== null;
+    buildNumericExtractPattern(entryColumnValue(messageActionEntry, "message")) !== null;
   elAll('[data-row-action="bookmark"]').forEach(b => {
     b.disabled = !singleRowEnabled;
     b.classList.toggle("active", !!entry && state.bookmarks.has(entry.id));
@@ -26944,7 +27371,7 @@ function handleRowActionClick(action, anchorBtn) {
     }
     case "filterForMessage": {
       const msgEntry = singleMessageActionEntry();
-      if (msgEntry) openFilterForEntryColumn(msgEntry, TEXT_FILTER_COLUMNS.find(c => c.key === "message"));
+      if (msgEntry) openFilterForEntryColumn(msgEntry, { key: "message", label: "Message" });
       break;
     }
     case "extractMessage": {
@@ -28758,7 +29185,7 @@ function materializeSerializedRoots(roots, resolveParentId) {
     }
     if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
     if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
-      node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
+      node.columns = sn.columns.filter(c => knownTextFilterColumnKeys().has(c));
     }
     if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
     if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
@@ -29715,15 +30142,43 @@ let formatEditMode = "pattern";
 // position so unchecking and re-checking one doesn't lose where it sat.
 let formatEditLevelOrder = LEVELS.slice();
 let formatEditLevelOn = new Set(LEVELS);
+// Whether a captured level token is matched as text (default) or a numeric
+// code (formatLevelValueType's per-format flag — see "Custom columns"/level
+// section). formatEditLevelMeta carries each row's {value, color}: `value`
+// is only meaningful/shown in "int" mode (the numeric code this level
+// matches); `color` is an explicit user-picked color, or null for the
+// automatic fixed-name/rotating-slot behavior (see levelColorVar).
+let formatEditLevelValueType = "text";
+let formatEditLevelMeta = new Map();
+function formatEditLevelMetaFor(name) {
+  if (!formatEditLevelMeta.has(name)) formatEditLevelMeta.set(name, { value: name, color: null });
+  return formatEditLevelMeta.get(name);
+}
+function updateFormatEditLevelModeUI() {
+  el("#formatEditLevelTypeText").classList.toggle("active", formatEditLevelValueType === "text");
+  el("#formatEditLevelTypeInt").classList.toggle("active", formatEditLevelValueType === "int");
+}
+el("#formatEditLevelTypeText").addEventListener("click", () => { formatEditLevelValueType = "text"; updateFormatEditLevelModeUI(); renderFormatEditLevels(); });
+el("#formatEditLevelTypeInt").addEventListener("click", () => { formatEditLevelValueType = "int"; updateFormatEditLevelModeUI(); renderFormatEditLevels(); });
 
 // Seeds the working level state from a stored format (or the defaults for a
 // brand-new one): its own levels first, in their stored order (custom names
-// included), then every remaining FIXED level appended unchecked.
-function setFormatEditLevels(levels) {
+// included), then every remaining FIXED level appended unchecked. Accepts
+// both the legacy plain-string levels array and the v2 {value,name,color}
+// shape (formatLevelDefs' own upcast logic, mirrored here for the editor).
+function setFormatEditLevels(levels, valueType) {
+  formatEditLevelValueType = valueType === "int" ? "int" : "text";
+  formatEditLevelMeta = new Map();
   const picked = [];
-  (Array.isArray(levels) ? levels : LEVELS).forEach(l => {
-    const n = normalizeLevelName(l);
-    if (n && n !== "OTHER" && !picked.includes(n)) picked.push(n);
+  (Array.isArray(levels) ? levels : LEVELS).forEach(item => {
+    const isObj = item && typeof item === "object";
+    const n = normalizeLevelName(isObj ? item.name : item);
+    if (!n || n === "OTHER" || picked.includes(n)) return;
+    picked.push(n);
+    formatEditLevelMeta.set(n, {
+      value: isObj && item.value != null && item.value !== "" ? String(item.value) : n,
+      color: isObj && item.color ? item.color : null,
+    });
   });
   const base = picked.length ? picked : LEVELS.slice();
   formatEditLevelOrder = base.concat(ALL_LEVELS.filter(l => !base.includes(l)));
@@ -29731,6 +30186,7 @@ function setFormatEditLevels(levels) {
   formatEditLevelError.textContent = "";
   formatEditLevelError.classList.add("hidden");
   formatEditLevelNew.value = "";
+  updateFormatEditLevelModeUI();
   renderFormatEditLevels();
 }
 
@@ -29760,6 +30216,7 @@ function addFormatEditLevel() {
   }
   formatEditLevelOrder.push(name);
   formatEditLevelOn.add(name);
+  formatEditLevelMeta.set(name, { value: name, color: null });
   formatEditLevelNew.value = "";
   showFormatEditLevelError("");
   renderFormatEditLevels();
@@ -29770,6 +30227,7 @@ function removeFormatEditLevel(lvl) {
   if (idx === -1 || ALL_LEVELS.includes(lvl)) return; // fixed rows are unchecked, never removed
   formatEditLevelOrder.splice(idx, 1);
   formatEditLevelOn.delete(lvl);
+  formatEditLevelMeta.delete(lvl);
   showFormatEditLevelError("");
   renderFormatEditLevels();
 }
@@ -29792,13 +30250,33 @@ function renderFormatEditLevels() {
     row.appendChild(cb);
 
     const isCustom = !ALL_LEVELS.includes(lvl);
+    const meta = formatEditLevelMetaFor(lvl);
+    const slot = isCustom ? formatEditLevelSlot(lvl) : 0;
+    const autoColor = isCustom ? "var(--level-custom-" + slot + ")" : "var(--level-" + lvl.toLowerCase() + ")";
     const name = document.createElement("div");
     name.className = "format-level-name";
-    const slot = isCustom ? formatEditLevelSlot(lvl) : 0;
-    name.style.color = isCustom ? "var(--level-custom-" + slot + ")" : "var(--level-" + lvl.toLowerCase() + ")";
+    name.style.color = meta.color || autoColor;
     name.textContent = lvl;
     row.appendChild(name);
 
+    // Integer mode: the numeric code this level matches (e.g. syslog
+    // severity) — hidden in Text mode, where the level's NAME is itself
+    // what's matched (levelBucket).
+    if (formatEditLevelValueType === "int") {
+      const valInput = document.createElement("input");
+      valInput.type = "text";
+      valInput.className = "format-level-value";
+      valInput.placeholder = "code";
+      valInput.title = "Numeric level code this format's captured value must match";
+      valInput.value = meta.value === lvl ? "" : meta.value;
+      valInput.addEventListener("change", () => { meta.value = valInput.value.trim() || lvl; });
+      row.appendChild(valInput);
+    }
+
+    // ▲/▼ (and delete, for a custom row) stay the first buttons in DOM
+    // order — same convention as every other reorderable list in this file
+    // (rows()[i].querySelector("button") == ▲) — the color swatch is
+    // appended last, as a trailing accessory rather than disturbing that.
     const upBtn = document.createElement("button");
     upBtn.type = "button";
     upBtn.className = "filter-library-row-order";
@@ -29827,6 +30305,21 @@ function renderFormatEditLevels() {
       row.appendChild(delBtn);
     }
 
+    // Explicit color swatch — openColorPicker's onPick callback (a null
+    // color, from the picker's own "clear" action, resets to the automatic
+    // fixed-name/rotating-slot color).
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "format-level-swatch";
+    swatch.title = meta.color ? "Explicit color (click to change, or Clear for automatic)" : "Pick an explicit color (otherwise uses the automatic theme color)";
+    swatch.style.background = meta.color || "transparent";
+    swatch.style.borderColor = meta.color || autoColor;
+    swatch.addEventListener("click", ev => {
+      ev.stopPropagation();
+      openColorPicker(null, swatch, color => { meta.color = color; renderFormatEditLevels(); });
+    });
+    row.appendChild(swatch);
+
     frag.appendChild(row);
   });
   formatEditLevelsEl.appendChild(frag);
@@ -29848,6 +30341,169 @@ formatEditLevelNew.addEventListener("keydown", ev => {
   addFormatEditLevel();
 });
 
+// ---- Custom columns editor (per-format ordered middle-column list) ----
+// Same ▲/▼-reorder idiom as the level list above, but every row (default or
+// custom) is removable/re-addable — there's no fixed five to preserve
+// position for, since Thread/Location/Method are each individually
+// optional now (Custom Columns).
+const formatEditColumnsEl = el("#formatEditColumns");
+const formatEditColumnKeyNew = el("#formatEditColumnKeyNew");
+const formatEditColumnLabelNew = el("#formatEditColumnLabelNew");
+const formatEditColumnError = el("#formatEditColumnError");
+const formatEditMessageVisibleEl = el("#formatEditMessageVisible");
+let formatEditColumnOrder = DEFAULT_MIDDLE_COLUMNS.slice();
+
+// Seeds the working column state from a stored format's columnDefs (or the
+// legacy default of all three) plus its messageVisible flag.
+function setFormatEditColumns(columnDefs, messageVisible) {
+  formatEditColumnOrder = (Array.isArray(columnDefs) && columnDefs.length)
+    ? columnDefs.map(d => ({ key: d.key, kind: d.kind === "custom" ? "custom" : "default", label: d.label || d.key }))
+    : DEFAULT_MIDDLE_COLUMNS.slice();
+  formatEditMessageVisibleEl.checked = messageVisible !== false;
+  showFormatEditColumnError("");
+  formatEditColumnKeyNew.value = "";
+  formatEditColumnLabelNew.value = "";
+  renderFormatEditColumns();
+}
+
+function showFormatEditColumnError(msg) {
+  formatEditColumnError.textContent = msg;
+  formatEditColumnError.classList.toggle("hidden", !msg);
+}
+
+// Every named capture group in a compiled regex's source — used to validate
+// that a custom column's key is actually captured by the pattern/regex
+// above before letting it be added (a dangling column would never show
+// anything).
+function formatCapturedGroupNames(regex) {
+  const names = [];
+  const re = /\(\?<([A-Za-z_$][A-Za-z0-9_$]*)>/g;
+  let m;
+  while ((m = re.exec(regex.source)) !== null) names.push(m[1]);
+  return names;
+}
+
+// Default columns (Thread/Location/Method) currently removed from the
+// list — offered as one-click "+ Thread" style re-add chips, since a
+// default column's key/label are fixed and don't need the custom-column
+// name/label fields below.
+function availableDefaultColumnsToAdd() {
+  const present = new Set(formatEditColumnOrder.map(d => d.key));
+  return DEFAULT_MIDDLE_COLUMNS.filter(d => !present.has(d.key));
+}
+function addFormatEditDefaultColumn(key) {
+  const def = DEFAULT_MIDDLE_COLUMNS.find(d => d.key === key);
+  if (!def || formatEditColumnOrder.some(d => d.key === key)) return;
+  formatEditColumnOrder.push({ key: def.key, kind: "default", label: def.label });
+  showFormatEditColumnError("");
+  renderFormatEditColumns();
+}
+
+// Adds a custom column from the "capture name"/"label" fields. The key must
+// currently appear as a captured group in the pattern/regex above (%X{name}
+// in Pattern mode, (?<name>...) in Regex mode) — same live-recompile idea
+// renderFormatEditPreview already uses for the sample-line preview.
+function addFormatEditCustomColumn() {
+  const key = formatEditColumnKeyNew.value.trim();
+  const label = formatEditColumnLabelNew.value.trim() || key;
+  if (!key) { showFormatEditColumnError("Enter the capture name (the %X{name} or (?<name>...) group)."); return; }
+  if (RESERVED_FIELD_KEYS.has(key)) { showFormatEditColumnError('"' + key + '" is a reserved field name — pick another.'); return; }
+  if (formatEditColumnOrder.some(d => d.key === key)) { showFormatEditColumnError('"' + key + '" is already a column.'); return; }
+  const compiled = compilePreviewFormat(formatEditMode, formatEditPattern.value, formatEditRegex.value, formatEditTsFormat.value.trim());
+  const capturedNames = compiled ? formatCapturedGroupNames(compiled.regex) : [];
+  if (!capturedNames.includes(key)) {
+    showFormatEditColumnError('"' + key + '" isn’t currently captured by the pattern/regex above.');
+    return;
+  }
+  formatEditColumnOrder.push({ key, kind: "custom", label: label.slice(0, 40) });
+  formatEditColumnKeyNew.value = "";
+  formatEditColumnLabelNew.value = "";
+  showFormatEditColumnError("");
+  renderFormatEditColumns();
+}
+
+function removeFormatEditColumn(key) {
+  const idx = formatEditColumnOrder.findIndex(d => d.key === key);
+  if (idx === -1) return;
+  formatEditColumnOrder.splice(idx, 1);
+  showFormatEditColumnError("");
+  renderFormatEditColumns();
+}
+
+function moveFormatEditColumn(key, delta) {
+  const idx = formatEditColumnOrder.findIndex(d => d.key === key);
+  const other = idx + delta;
+  if (idx === -1 || other < 0 || other >= formatEditColumnOrder.length) return;
+  const tmp = formatEditColumnOrder[idx];
+  formatEditColumnOrder[idx] = formatEditColumnOrder[other];
+  formatEditColumnOrder[other] = tmp;
+  renderFormatEditColumns();
+}
+
+function renderFormatEditColumns() {
+  formatEditColumnsEl.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  formatEditColumnOrder.forEach((col, i) => {
+    const row = document.createElement("div");
+    row.className = "format-level-row";
+    row.dataset.col = col.key;
+
+    const name = document.createElement("div");
+    name.className = "format-level-name";
+    name.textContent = col.kind === "custom" ? col.label + " (" + col.key + ")" : col.label;
+    row.appendChild(name);
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "filter-library-row-order";
+    upBtn.title = "Move up";
+    upBtn.textContent = "▲";
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditColumn(col.key, -1); });
+    row.appendChild(upBtn);
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "filter-library-row-order";
+    downBtn.title = "Move down";
+    downBtn.textContent = "▼";
+    downBtn.disabled = i === formatEditColumnOrder.length - 1;
+    downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditColumn(col.key, 1); });
+    row.appendChild(downBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "filter-library-row-del";
+    delBtn.title = "Remove this column";
+    delBtn.innerHTML = ICON_CLOSE;
+    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeFormatEditColumn(col.key); });
+    row.appendChild(delBtn);
+
+    frag.appendChild(row);
+  });
+  formatEditColumnsEl.appendChild(frag);
+
+  const addRow = document.createElement("div");
+  addRow.id = "formatEditColumnDefaultAdd";
+  availableDefaultColumnsToAdd().forEach(def => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "btn-mini-outline";
+    chip.textContent = "+ " + def.label;
+    chip.addEventListener("click", ev => { ev.stopPropagation(); addFormatEditDefaultColumn(def.key); });
+    addRow.appendChild(chip);
+  });
+  formatEditColumnsEl.appendChild(addRow);
+}
+el("#formatEditColumnAddBtn").addEventListener("click", ev => { ev.stopPropagation(); addFormatEditCustomColumn(); });
+[formatEditColumnKeyNew, formatEditColumnLabelNew].forEach(input => {
+  input.addEventListener("keydown", ev => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault(); // the editor sits inside a dialog — Enter must not submit/close it
+    addFormatEditCustomColumn();
+  });
+});
+
 function updateFormatEditModeUI() {
   el("#formatEditModePattern").classList.toggle("active", formatEditMode === "pattern");
   el("#formatEditModeRegex").classList.toggle("active", formatEditMode === "regex");
@@ -29861,6 +30517,7 @@ function updateFormatEditModeUI() {
   el("#formatEditSampleField").classList.toggle("hidden", isMeta);
   el("#formatEditTsFormatField").classList.toggle("hidden", isMeta);
   el("#formatEditLevelsField").classList.toggle("hidden", isMeta);
+  el("#formatEditColumnsField").classList.toggle("hidden", isMeta);
   el("#formatEditPreviewField").classList.toggle("hidden", isMeta);
 }
 el("#formatEditModePattern").addEventListener("click", () => { formatEditMode = "pattern"; updateFormatEditModeUI(); renderFormatEditPreview(); });
@@ -30102,8 +30759,15 @@ function renderFormatEditPreview() {
       const parts = ['<span class="format-preview-field"><b>Level</b> ' + escapeHtml(entry.level) + '</span>'];
       if (groups.ts != null) parts.unshift('<span class="format-preview-field"><b>Time</b> ' + escapeHtml(entry.tsRaw) + (isNaN(entry.ts) ? " (unparsed)" : "") + '</span>');
       if (groups.thread != null) parts.push('<span class="format-preview-field"><b>Thread</b> ' + escapeHtml(entry.thread) + '</span>');
+      if (groups.location != null) parts.push('<span class="format-preview-field"><b>Location</b> ' + escapeHtml(entry.locationFull) + '</span>');
       if (groups.method != null) parts.push('<span class="format-preview-field"><b>Method</b> ' + escapeHtml(entry.method) + '</span>');
       parts.push('<span class="format-preview-field"><b>Message</b> ' + escapeHtml(entry.message) + '</span>');
+      // Custom columns (any captured group beyond the six reserved fields) —
+      // lets the person verify a %X{name}/(?<name>...) capture actually
+      // pulls the value they expect before adding it as a column below.
+      Object.keys(entry.fields).forEach(key => {
+        parts.push('<span class="format-preview-field"><b>' + escapeHtml(key) + '</b> ' + escapeHtml(entry.fields[key]) + '</span>');
+      });
       row.innerHTML = parts.join("");
     }
     frag.appendChild(row);
@@ -30139,7 +30803,8 @@ function openFormatEditDialog(id) {
   formatEditPattern.value = fmt ? (fmt.pattern || "") : DEFAULT_LOG_FORMAT.pattern;
   formatEditRegex.value = fmt ? (fmt.regex || "") : "";
   formatEditTsFormat.value = fmt ? (fmt.tsFormat || "") : DEFAULT_LOG_FORMAT.tsFormat;
-  setFormatEditLevels(fmt ? fmt.levels : null);
+  setFormatEditLevels(fmt ? fmt.levels : null, fmt ? fmt.levelValueType : "text");
+  setFormatEditColumns(fmt ? fmt.columnDefs : null, fmt ? fmt.messageVisible : true);
   formatEditMetaTargets = (fmt && fmt.mode === "meta") ? (fmt.targetFormatIds || []).slice() : [];
   formatEditError.textContent = "";
   formatEditError.classList.add("hidden");
@@ -30164,7 +30829,7 @@ async function saveFormatEdit() {
   const pattern = formatEditPattern.value;
   const regex = formatEditRegex.value;
   const tsFormat = formatEditTsFormat.value.trim();
-  const levels = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
+  const levelNames = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
 
   if (formatEditMode === "meta") {
     if (formatEditMetaTargets.length < 2) {
@@ -30173,14 +30838,28 @@ async function saveFormatEdit() {
       return;
     }
   } else {
-    if (!levels.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
+    if (!levelNames.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
+    let compileResult;
     if (formatEditMode === "pattern") {
-      const c = compileFormatPattern(pattern, tsFormat);
-      if (c.error) { formatEditError.textContent = c.error; formatEditError.classList.remove("hidden"); return; }
+      compileResult = compileFormatPattern(pattern, tsFormat);
+      if (compileResult.error) { formatEditError.textContent = compileResult.error; formatEditError.classList.remove("hidden"); return; }
     } else {
-      const v = validateFormatRegex(regex);
-      if (v.error) { formatEditError.textContent = v.error; formatEditError.classList.remove("hidden"); return; }
-      if (v.warning) { formatEditError.textContent = v.warning; formatEditError.classList.remove("hidden"); } // non-blocking
+      compileResult = validateFormatRegex(regex);
+      if (compileResult.error) { formatEditError.textContent = compileResult.error; formatEditError.classList.remove("hidden"); return; }
+    }
+    // Time and Level are the two mandatory columns (product rule, not a
+    // parsing requirement — see compileFormatPattern's own comment): a
+    // format missing either is blocked from saving, even one that
+    // previously saved fine before this rule existed.
+    if (!compileResult.hasTs) {
+      formatEditError.textContent = formatEditMode === "pattern" ? "Pattern needs a %d / %date token." : 'Regex needs a "(?<ts>...)" group.';
+      formatEditError.classList.remove("hidden");
+      return;
+    }
+    if (!compileResult.hasLevel) {
+      formatEditError.textContent = formatEditMode === "pattern" ? "Pattern needs a %p / %level token." : 'Regex needs a "(?<level>...)" group.';
+      formatEditError.classList.remove("hidden");
+      return;
     }
   }
 
@@ -30194,11 +30873,18 @@ async function saveFormatEdit() {
   if (formatEditMode === "meta") {
     fmt.targetFormatIds = formatEditMetaTargets.slice();
     delete fmt.pattern; delete fmt.regex; delete fmt.tsFormat; delete fmt.levels;
+    delete fmt.levelValueType; delete fmt.columnDefs; delete fmt.messageVisible;
   } else {
     fmt.pattern = pattern;
     fmt.regex = regex;
     fmt.tsFormat = tsFormat;
-    fmt.levels = levels;
+    fmt.levelValueType = formatEditLevelValueType;
+    fmt.levels = levelNames.map(n => {
+      const meta = formatEditLevelMetaFor(n);
+      return { value: formatEditLevelValueType === "int" ? (meta.value || n) : n, name: n, color: meta.color };
+    });
+    fmt.columnDefs = formatEditColumnOrder.map(d => ({ key: d.key, kind: d.kind, label: d.label }));
+    fmt.messageVisible = formatEditMessageVisibleEl.checked;
     delete fmt.targetFormatIds;
   }
   // See "Log format definitions" — editing the builtin default takes it off
@@ -30212,6 +30898,8 @@ async function saveFormatEdit() {
   renderFormatList();
   renderFormatRuleFormatOptions();
   renderLevelBar(); // its buttons/order come from the formats currently in play
+  refreshColumnState(); // its columns/header likewise come from the formats currently in play
+  lastColumnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible(); // keep render()'s own memo check in sync, avoid a redundant second refresh on its next call
 }
 el("#formatEditSave").addEventListener("click", saveFormatEdit);
 
@@ -30524,7 +31212,7 @@ document.addEventListener("keydown", ev => {
   // resolve a clicked column from, and message is the one column every
   // entry always has meaningful text in (same fallback the mouse path uses).
   if (ev.key === "Enter" && ev.altKey && state.focusRegion === "entries") {
-    const messageColumn = TEXT_FILTER_COLUMNS.find(c => c.key === "message");
+    const messageColumn = { key: "message", label: "Message" };
     // Link view: target the selected pair/tuple as a whole (same object the
     // brace's own right-click → "Filter for this message" passes in), not
     // whichever single real entry state.selectedId happens to still hold
@@ -31106,7 +31794,7 @@ function materializeCachedFilters(fileNode, roots) {
     }
     if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
     if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
-      node.columns = sn.columns.filter(c => TEXT_FILTER_COLUMN_KEYS.has(c));
+      node.columns = sn.columns.filter(c => knownTextFilterColumnKeys().has(c));
     }
     if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
     if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
@@ -31282,11 +31970,20 @@ async function restoreSessionFromCache() {
     state.wrapMessages = !!s.wrapMessages;
     state.wrapTextView = !!s.wrapTextView;
     state.showNotes = !!s.showNotes;
+    // Custom Columns: the hideable/resizable key set is no longer a fixed
+    // list (a custom column can carry any key) — restore whatever keys the
+    // persisted object itself has, same permissive shape state.columnVisible/
+    // columnWidths already tolerate at runtime (columnVisibleFor/
+    // columnWidthFor fall back for any key not present). Time/Level are
+    // never persisted as visibility entries (always shown, no checkbox), so
+    // no explicit exclusion is needed here.
     if (s.columnVisible && typeof s.columnVisible === "object") {
-      HIDEABLE_COLUMNS.forEach(key => { if (typeof s.columnVisible[key] === "boolean") state.columnVisible[key] = s.columnVisible[key]; });
+      Object.keys(s.columnVisible).forEach(key => {
+        if (typeof s.columnVisible[key] === "boolean") state.columnVisible[key] = s.columnVisible[key];
+      });
     }
     if (s.columnWidths && typeof s.columnWidths === "object") {
-      COLUMN_TRACK_ORDER.forEach(key => {
+      Object.keys(s.columnWidths).forEach(key => {
         const w = +s.columnWidths[key];
         if (Number.isFinite(w) && w >= COLUMN_MIN_WIDTH) state.columnWidths[key] = w;
       });
