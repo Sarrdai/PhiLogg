@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~31,200 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~34,000 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -50,7 +50,16 @@ six reserved field names (`ts`/`level`/`thread`/`location`/`method`/
 (`philogg.html`, right after "Log parsing") for the full parsing mechanism:
 pattern-mode vs. regex-mode compilation, filename→format glob rules
 (Settings → Format Manager), and how a file's resolved format is pinned to
-it for the rest of its session-cache lifetime. A third `LogFormat` mode,
+it for the rest of its session-cache lifetime. Formats are defined in one
+**format dialog** (Settings → Log Formats → Add/Edit): example lines
+(paste/drop/open) get an automatic suggestion right away, the person
+corrects it by marking column values in the lines or by editing the regex
+directly, levels are auto-filled from the examples, and a table preview
+shows the result. The dialog always saves **Regex mode** (a stored
+Pattern-mode format still parses, and is converted to its compiled regex
+when saved there), stores the examples on the record as `sampleSetup`, and
+can add a filename rule on the way (see `docs/ui-and-views.md` → "Format
+dialog"). A third `LogFormat` mode,
 `"meta"` (below), is the one exception to "one format, one file" — it never
 parses a line itself, it fans a file out into several ordinary,
 single-format files first.
@@ -61,9 +70,9 @@ Regex mode already supports this natively via any `(?<name>...)` group
 beyond the six reserved ones, no parsing change needed there. A format's
 `columnDefs: [{key, kind: "default"|"custom", label}]` is its **ordered,
 reorderable middle-column list** — Thread/Location/Method (each individually
-removable/re-addable) plus any custom columns — edited via the Format
-Manager's Columns section (`renderFormatEditColumns`, same ▲/▼-reorder
-idiom the level list already used). Time and Level are NOT part of this
+removable/re-addable) plus any custom columns — edited in the format
+dialog's column list (`fwz.columns`, see `docs/ui-and-views.md` → "Format
+dialog"; only the columns the saved regex actually captures are stored). Time and Level are NOT part of this
 list: they're always first, never hideable. Message is likewise not part of
 it: always last (the row grid's flexible `1fr` remainder when shown), with
 its own `messageVisible: boolean` flag instead of an order position.
