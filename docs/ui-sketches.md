@@ -55,7 +55,7 @@ Switched via **`#fhTabs`** (`.view-tabs`, `data-fh-tab`):
   (right-click a tree node) vs. **`#contextMenu`** (right-click a log row:
   `#ctxAfter`, `#ctxBefore`, `#ctxBookmark`, `#ctxNote`,
   `#ctxFilterForColumn`, `#ctxAddToSelection`).
-- Filter builder popup: `#filterColumnChips` ("Applies to:"),
+- Filter builder popup: `#filterColumnChips` ("Search in"),
   `#filterLiveMatch`, `#filterExtractBtn` ("Extract"), `#filterSubmitBtn`
   ("Add filter").
 

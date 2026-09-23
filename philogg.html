@@ -467,7 +467,7 @@
   .toolbar-icon-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
   /* Toggled state for icon buttons that are persistent on/off switches
      rather than popup triggers — reuses the accent colors already used for
-     the filter-target chain's ".crumb.current". Superseded by .icon-toggle below for
+     the (since removed) filter-target chain pills. Superseded by .icon-toggle below for
      the 17 buttons that are genuinely persistent toggles (person-reported:
      this frame+fill treatment made them indistinguishable from plain action
      buttons in their inactive state); this rule stays as the fallback for
@@ -1016,98 +1016,6 @@
      requested. 20px bar + 4px top/bottom margin = the row's 28px. */
   #viewBar > .row-action-separator{float:left; height:20px; margin:4px 4px;}
 
-  .crumb{
-    /* Shared 28px pill shape (this session — see "Main window visual
-       consistency fix"): a fixed height plus flex-centering instead of the
-       line-height/padding arithmetic three earlier rounds hand-tuned to
-       coincidentally match
-       #fhTabs (that history — chasing padding/line-height/vertical-align
-       parity pixel by pixel — is in git blame, not worth keeping alive as
-       a comment now that the arithmetic itself is gone). inline-flex (not
-       block/flex) keeps the chip an inline-level box so it still wraps
-       around the #fhTabs/#levelBar floats line-by-line like plain text
-       would, while centering its own single line of text vertically
-       without needing a line-height value at all.
-
-       vertical-align:top (not middle) is what pins the chip's own top edge
-       to the SAME y-position #fhTabs/#levelBar's floats start at (both are
-       the first content in #viewBar, so a float's top and a normal-flow
-       inline box's first line both begin flush at #viewBar's content-box
-       top — floats narrow the available width there, they don't push the
-       line down). vertical-align:middle instead aligns relative to the
-       PARENT's font baseline/x-height, which doesn't reliably line up with
-       where a float starts and can drift a few px depending on inherited
-       font metrics.
-
-       justify-content:flex-start (not center): centering only shows once a
-       long chip actually hits max-width below — a centered overflowing text
-       node gets clipped equally on BOTH sides, so text-overflow's single
-       ellipsis marker (drawn at the inline-end only) leaves an unmarked cut
-       mid-word on the left with no visual cue anything is missing (person-
-       reported). Left-aligned, the clipped part is only ever the tail, so
-       the start of the name stays put and the ellipsis correctly marks
-       "there's more" at the end. */
-    display:inline-flex; align-items:center; justify-content:flex-start;
-    vertical-align:top; height:28px; margin:0 4px 6px 0;
-    font-size:10.5px; color:var(--text-secondary); cursor:pointer;
-    background:var(--bg-elevated); border:1px solid var(--border-soft);
-    padding:0 9px; border-radius:20px; transition:background .12s, border-color .12s, filter .12s;
-    /* Person-reported: a long auto-generated filter name (no width cap of
-       its own) could outgrow one pill's whole line, wrapping its text onto
-       a second line inside the fixed 28px height and spilling above/below
-       it. max-width caps every chip to one line and one length, same idea
-       as .tree-label's truncation; chip.title below still carries the
-       untruncated name as a tooltip. */
-    max-width:220px;
-  }
-  .crumb:hover{filter:brightness(1.25);}
-  /* The actual truncated text lives in a child span, not directly in .crumb
-     (person-reported follow-up: overflow/text-overflow/white-space set
-     directly on .crumb itself never clipped anything — its text is an
-     anonymous flex item, and a flex CONTAINER's text-overflow only elides
-     content that overflows its own principal box, not a child flex item's
-     box, which is what the raw text became once .crumb turned into a flex
-     formatting context). .crumb-label is that child: flex:1 1 auto with
-     min-width:0 lets it actually shrink below its own text's natural width
-     (the default min-width:auto on a flex item is exactly what was letting
-     it overflow un-clipped before), and carries the ellipsis trio itself. */
-  .crumb-label{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .crumb.current{color:var(--accent-strong); border-color:color-mix(in srgb, var(--accent) 35%, transparent); background:var(--accent-soft);}
-  /* Separator between pills (person-reported, twice: first that the bare
-     "›" glyph read as small/lost/unaligned against --text-tertiary's low
-     contrast; then, after switching to a bigger/bolder "›" in a themed
-     circle, that the glyph itself still looked off-center INSIDE that
-     circle). Root cause of round two: a text glyph's layout box (what
-     centers via flex) and its actual visible ink aren't the same
-     rectangle — measured directly, "›"'s ink sat visibly left-of-center
-     within its own centered box, a font-metrics quirk (right-side
-     bearing) no amount of margin/padding tuning on the container can fix,
-     since it's baked into the glyph itself and varies by font. Swapped the
-     text glyph for ICON_CARET_RIGHT (renderFilterTargetChain
-     now sets .innerHTML, not .textContent) — the
-     same hand-drawn SVG chevron already used for the Context view's match
-     nav, whose path is authored symmetric inside its own viewBox, so it's
-     geometrically centered by construction and renders identically
-     regardless of font/OS. `color` still drives it (the icon's
-     stroke="currentColor"), just no longer also a font-size/line-height/
-     font-weight for a text glyph that no longer exists here.
-     The circle itself is unchanged: a small filled/bordered connector
-     element with its own boundary, matching the pill's own rounded shape
-     language, instead of a stray glyph floating in the gap. Fixed 18x18
-     size: margin-top just needs to land this circle's own center on the
-     same y the flanking pill's center sits at. Base context:
-     .crumb's margin-top is 0, so its
-     28px pill centers at 14 -> margin-top = 14 - 18/2 = 5. Bottom margin
-     mirrors .crumb's own asymmetric 6px bottom margin so wrapped
-     multi-line chains keep an even line gap. */
-  .crumb-sep{
-    display:inline-flex; align-items:center; justify-content:center;
-    vertical-align:top; box-sizing:border-box;
-    width:18px; height:18px; margin:5px 4px 6px;
-    border-radius:50%; background:var(--bg-elevated-2); border:1px solid var(--border-soft);
-    color:var(--accent-strong);
-  }
-
   /* ---------- Level filter bar ---------- */
   #levelBar{
     /* Sits left of the filter-creation actions (Before/After/Time range/...
@@ -1482,7 +1390,7 @@
      Clickable (follow-up, same session, see timelineMinimapMetaEl's own
      click listener) — cursor+hover brightening are the only affordance
      needed, same "filled colored control brightens on hover" convention
-     `.level-btn`/`.crumb`/etc. already use elsewhere in this file. */
+     `.level-btn`/etc. already use elsewhere in this file. */
   .minimap-meta-level{font-weight:650; cursor:pointer; transition:filter .12s;}
   .minimap-meta-level:hover{filter:brightness(1.35);}
   #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block;}
@@ -1795,7 +1703,7 @@
      real context row: "this isn't a log line, click it to change what is
      shown". Same height for both (CONTEXT_STRIP_HEIGHT) so the
      virtualization math stays one number. The whole row is the click target,
-     same as any other row-shaped control in this file (.tree-row, .crumb). */
+     same as any other row-shaped control in this file (.tree-row). */
   .ctx-gap-placeholder{
     box-sizing:border-box; height:22px; cursor:pointer;
     font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);
@@ -3059,9 +2967,8 @@
   }
   .settings-switch input:checked + .settings-switch-track{background:var(--accent-soft);}
   .settings-switch input:checked + .settings-switch-track::after{left:18px; background:var(--accent);}
-  /* Compact variant of the exact same switch, for the dense option rows of
-     the filter popup (see .filter-toggle) — a full-size 38x22 switch would
-     dominate a row that also holds "Aa"/"NOT" next to it. */
+  /* Compact variant of the exact same switch, for dense option rows where a
+     full-size 38x22 switch would dominate. */
   .settings-switch.settings-switch-sm{width:30px; height:18px;}
   .settings-switch.settings-switch-sm .settings-switch-track{border-radius:9px;}
   .settings-switch.settings-switch-sm .settings-switch-track::after{width:14px; height:14px; border-radius:7px;}
@@ -3300,7 +3207,7 @@
   /* ---------- Table/Plot view tabs ---------- */
   /* height:28px (this session — see "Main window visual consistency fix")
      is #fhTabs' own total box height, matching the shared 28px control
-     height used by .toolbar-icon-btn/.level-btn/.crumb elsewhere in this
+     height used by .toolbar-icon-btn/.level-btn elsewhere in this
      row — box-sizing:border-box (the `*` rule) means padding(2)+border(1)
      on each side is included in that 28px, leaving .view-tab's own
      height:100% below to fill exactly the remaining space with no
@@ -3509,97 +3416,129 @@
     width:min(620px, 92%); max-height:calc(100vh - 76px); overflow-y:auto;
   }
   #filterPopup.hidden{display:none;}
-  .filter-popup-row{display:flex; align-items:center; gap:8px;}
-  #filterPopupLabel{font-size:11px; color:var(--text-tertiary); white-space:nowrap; padding-left:4px; flex:0 0 auto;}
-  /* Reuses .crumb/.crumb-sep to show the filter-chain
-     pills this new/edited filter applies on, replacing the old plain-text
-     "Filter on “X”:" label — wraps instead of forcing
-     the popup wider. */
-  .filter-target-chain{display:flex; align-items:center; flex-wrap:wrap; flex:1 1 auto; min-width:0;}
+  /* The input row: a bordered wrap that looks like the input and holds the
+     "in <parent>" scope hint (#filterScopeHint, first 15 chars of the node
+     this filter runs against) plus the borderless <input>, then the close
+     button. The wrap owns border/focus/error state (via :has), so the hint
+     reads as part of the field instead of needing measured padding. */
+  .filter-input-row{display:flex; align-items:center; gap:6px;}
   @keyframes inputError{ 0%,100%{border-color:var(--border);} 30%,70%{border-color:var(--level-error);} }
-  #filterInput.input-error{ animation:inputError .5s ease; }
+  .filter-input-wrap{
+    flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:6px;
+    background:var(--bg-app); border:1px solid var(--border); border-radius:6px; padding:0 0 0 6px;
+  }
+  .filter-input-wrap:has(#filterInput:focus){border-color:var(--accent);}
+  .filter-input-wrap:has(#filterInput.input-error){animation:inputError .5s ease;}
+  .filter-input-wrap:has(#filterInput.input-regex-error){border-color:var(--level-error);}
+  .filter-scope-hint{
+    flex:0 0 auto; white-space:nowrap; font-family:var(--font-mono); font-size:10.5px;
+    color:var(--text-tertiary); background:var(--bg-elevated-2); border:1px solid var(--border-soft);
+    border-radius:5px; padding:1px 6px;
+  }
+  .filter-scope-hint:empty{display:none;}
+  .filter-scope-hint b{color:var(--accent-strong); font-weight:650;}
   #filterInput{
-    flex:1 1 auto; background:var(--bg-app); border:1px solid var(--border);
-    border-radius:6px; padding:8px 10px; color:var(--text-primary);
+    flex:1 1 auto; min-width:0; background:transparent; border:none;
+    padding:8px 10px 8px 0; color:var(--text-primary);
     font-family:var(--font-mono); font-size:12.5px; outline:none;
   }
-  #filterInput:focus{border-color:var(--accent);}
-  /* Structured into distinct sections (person-requested, this session):
-     input+wildcards, settings (case/NOT), preview, "applies to" column
-     restriction, then a footer row (match count left, Extract-values +
-     submit right) — each later section divided from the one above by a
-     thin top border so the popup reads as organized blocks instead of one
-     undifferentiated stack, without needing a text caption on every row. */
+  /* Sections, top to bottom: input (+ Insert wildcard chips), Syntax
+     (Text/Regex + Match case / Whole word / Exclude (NOT)), Search in
+     (column restriction), the wildcard pattern preview, the live result
+     summary, then the footer. Every captioned row (.filter-section-row)
+     puts its caption in a fixed-width left column so the three rows'
+     controls line up. */
   #filterForm{display:flex; flex-direction:column; gap:10px;}
   .filter-input-section{display:flex; flex-direction:column; gap:8px;}
-  .filter-section-label{font-size:10.5px; color:var(--text-tertiary); white-space:nowrap; margin-right:2px; flex:0 0 auto;}
+  .filter-section-label{
+    font-size:10.5px; color:var(--text-tertiary); white-space:nowrap; flex:0 0 auto;
+    text-transform:uppercase; letter-spacing:.04em; width:68px;
+  }
   .filter-settings-row{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
   }
-  /* One shared shape for every boolean option in this popup — regex mode
-     (which sits above everything else, FEATURE_BACKLOG.md #16: a real
-     RegExp alternative to the wildcard-token language, kept as a per-filter
-     toggle rather than a second dialog so switching back and forth costs
-     one click), case-sensitivity, whole-word and NOT. Person-requested
-     (this session): they render as the SAME on/off switch the Settings rows
-     use (.settings-switch, in its compact .settings-switch-sm size) instead
-     of native accent-coloured checkboxes, so "boolean option" looks the
-     same everywhere in the app. The real <input> is still a plain checkbox
-     underneath — only its default appearance is replaced — so every
-     .checked/change-event code path (and every test driving them) is
-     unaffected. The switch and its caption are two separate <label>s
-     (nested labels are invalid HTML): the caption carries `for=` so
-     clicking the text still toggles the switch. */
-  .filter-toggle{
-    display:flex; align-items:center; gap:6px; flex:0 0 auto;
-    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
-    user-select:none; white-space:nowrap;
+  /* Two kinds of toggle, two looks. Text/Regex is an exclusive choice, so
+     it's a segmented .view-tabs group — #fhTabs' Context/Filtered/Table/
+     Plot look. Match case / Whole word / Exclude (NOT) and each Search in
+     column are INDEPENDENT on/off options, so each is its own standalone
+     .label-toggle, never boxed into a shared control: chrome-free label,
+     --accent-strong when on plus a thin bar under it as the on/off status
+     light — the .icon-toggle rule, so a single-label toggle never reads as
+     an action button. The switches keep the .pill-toggle state protocol
+     (role=switch + aria-checked + .on, via pillGet/pillSet and the shared
+     delegated click handler); column chips use .active + aria-pressed. */
+  #filterForm .view-tabs{flex:0 0 auto;}
+  .filter-toggle-set{display:flex; align-items:center; flex-wrap:wrap; gap:4px;}
+  .label-toggle{
+    position:relative; height:28px; display:inline-flex; align-items:center; flex:0 0 auto;
+    padding:0 9px; background:none; border:none; border-radius:7px;
+    color:var(--text-secondary); font-size:11px; font-weight:600; white-space:nowrap;
+    cursor:pointer; transition:background .12s, color .12s;
   }
-  .filter-toggle-label{cursor:pointer;}
-  .filter-toggle:has(.pill-toggle[aria-checked="true"]){color:var(--accent-strong);}
-  /* NOT keeps its own red accent — the one option in the popup that removes
-     rows rather than narrowing them (its pill's track/knob turn red when on). */
-  .filter-toggle-danger:has(.pill-toggle[aria-checked="true"]){color:var(--level-error);}
-  .filter-toggle-danger .pill-toggle[aria-checked="true"]{background:color-mix(in srgb, var(--level-error) 30%, transparent); border-color:var(--level-error);}
-  .filter-toggle-danger .pill-toggle[aria-checked="true"]::after{background:var(--level-error);}
-  /* "Match whole word" is only meaningful for a plain literal search — see
-     updateWholeWordAvailability(); greyed out rather than hidden so it
-     doesn't shift the row's layout as the input is typed into. */
-  .filter-toggle.disabled{opacity:.4;}
-  .filter-toggle.disabled .filter-toggle-label, .filter-toggle.disabled .pill-toggle{cursor:not-allowed;}
-  #filterInput.input-regex-error{border-color:var(--level-error);}
+  .label-toggle:hover:not(:disabled){background:var(--bg-elevated-2); color:var(--text-primary);}
+  .label-toggle.active, .label-toggle[aria-checked="true"]{color:var(--accent-strong);}
+  .label-toggle::after{
+    content:""; position:absolute; left:50%; bottom:3px; transform:translateX(-50%);
+    width:60%; height:2px; border-radius:1px; background:transparent; transition:background .12s;
+  }
+  .label-toggle.active::after, .label-toggle[aria-checked="true"]::after{background:var(--accent-strong);}
+  .label-toggle:disabled{opacity:.35; cursor:not-allowed;}
+  /* NOT keeps its own red accent — the one option that removes rows rather
+     than narrowing them. */
+  .label-toggle-danger[aria-checked="true"]{color:var(--level-error);}
+  .label-toggle-danger[aria-checked="true"]::after{background:var(--level-error);}
   .filter-column-chips{
-    display:flex; align-items:center; gap:5px; flex-wrap:wrap;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     padding-top:9px; border-top:1px solid var(--border-soft);
   }
-  .column-chip{
-    font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--text-secondary);
-    background:transparent; border:1px solid var(--border); border-radius:20px;
-    padding:4px 9px; line-height:16px; cursor:pointer; user-select:none;
-    transition:background .12s, border-color .12s, color .12s, filter .12s;
-  }
-  .column-chip:hover{filter:brightness(1.25);}
-  .column-chip.active{background:var(--accent); border-color:transparent; color:var(--accent-on);}
-  .filter-token-chips{display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
+  .filter-token-chips{display:flex; align-items:center; gap:4px; flex-wrap:wrap;}
   .filter-token-chips.hidden{display:none;}
+  /* Insert chips are actions, not toggles — they keep the app's framed
+     button look (.toolbar-icon-btn's frame/fill/hover) at the popup's 28px
+     control height, visibly distinct from the chrome-free toggles below. */
   .token-chip{
-    font-family:var(--font-mono); font-size:10.5px; font-weight:650; color:var(--accent-strong);
-    background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius:5px;
-    padding:2px 7px; cursor:pointer; transition:filter .12s;
+    height:28px; font-family:var(--font-mono); font-size:11px; font-weight:600; color:var(--text-secondary);
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:7px;
+    padding:0 9px; cursor:pointer; transition:background .12s, border-color .12s, color .12s;
   }
-  .token-chip:hover{filter:brightness(1.2);}
-  /* Footer row: match count left-aligned, Extract-values + submit right —
-     person-requested split (previously the match count sat above the
-     column chips, and Extract-values lived in the settings row). */
+  .token-chip:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
+  /* Footer row: the submit button, right-aligned (the match count moved
+     up into #filterResults). */
   .filter-footer-row{
-    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    display:flex; align-items:center; justify-content:flex-end; gap:10px;
     padding-top:9px; border-top:1px solid var(--border-soft);
   }
   .filter-footer-actions{display:flex; align-items:center; gap:8px; flex:0 0 auto;}
-  #filterLiveMatch{font-size:10.8px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; min-height:14px; flex:1 1 auto; min-width:0;}
+  /* Live result summary (renderLiveResults): big count + "matches in N" /
+     "captures: …" meta on the left, a match-over-time histogram on the
+     right, then up to FILTER_SAMPLE_ROWS matching rows as a small table
+     (level bar, HH:mm:ss.SSS, message with the hit marked). */
+  #filterResults{display:flex; flex-direction:column; gap:8px; padding-top:9px; border-top:1px solid var(--border-soft);}
+  #filterResults.hidden{display:none;}
+  .filter-results-head{display:flex; align-items:center; gap:14px; min-height:34px;}
+  #filterLiveMatch{
+    display:flex; align-items:center; gap:10px; flex:0 0 auto;
+    font-size:10.8px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;
+  }
   #filterLiveMatch.warn{color:var(--warn);}
   #filterLiveMatch.error{color:var(--level-error);}
+  .filter-live-count{font-size:26px; font-weight:700; line-height:1; color:var(--text-primary);}
+  #filterLiveMatch.warn .filter-live-count{color:var(--warn);}
+  .filter-live-meta{display:flex; flex-direction:column; gap:2px; font-family:var(--font-mono);}
+  #filterResultsMinimap{flex:1 1 auto; min-width:0; height:30px;}
+  #filterResultsMinimap.hidden{display:none;}
+  #filterResultsMinimap rect{opacity:.95;}
+  #filterResultsSamples{display:flex; flex-direction:column; gap:2px;}
+  #filterResultsSamples:empty{display:none;}
+  .filter-sample-row{
+    display:grid; grid-template-columns:3px auto minmax(0,1fr); column-gap:10px; align-items:center;
+    font-family:var(--font-mono); font-size:11.5px; line-height:20px; padding-right:6px;
+  }
+  .filter-sample-row .col-bar{margin:2px 0; height:16px;}
+  .filter-sample-time{color:var(--text-tertiary); white-space:nowrap;}
+  .filter-sample-msg{color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .filter-sample-hit{background:var(--accent-soft); color:var(--accent-strong); border-radius:3px; padding:0 1px;}
   /* ---------- Filter popup: live pattern preview (real sample message, matched substrings highlighted in place) ---------- */
   #filterPatternPreview{
     font-family:var(--font-mono); font-size:11.5px; line-height:1.6; color:var(--text-secondary);
@@ -4050,53 +3989,61 @@
     <section id="content">
 
       <div id="filterPopup" class="hidden">
-        <div class="filter-popup-row">
-          <span id="filterPopupLabel">Filter</span>
-          <div id="filterTargetChain" class="filter-target-chain"></div>
-          <button type="button" class="btn-icon" id="btnCloseFilterPopup" title="Close">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
-          </button>
-        </div>
         <form id="filterForm">
-          <div class="filter-toggle" id="filterRegexRow" title="Use RegExp">
-            <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterRegexCheckbox"></button>
-            <label class="filter-toggle-label" for="filterRegexCheckbox">Interpret input as regex</label>
-          </div>
           <div class="filter-input-section">
-            <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [*:float]" autocomplete="off">
-            <div id="filterTokenChips" class="filter-token-chips">
-              <span class="filter-section-label">Insert:</span>
-              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [*:float>=10], [*:float&lt;20,>10], or [*:float|>=10] for |value|>=10">[float]</button>
+            <div class="filter-input-row">
+              <!-- The "in <parent>" scope hint sits INSIDE the input's box
+                   (the wrap carries the border, the <input> is borderless) —
+                   it replaced the old "Filter on:" pill-chain header row. -->
+              <div class="filter-input-wrap">
+                <span id="filterScopeHint" class="filter-scope-hint"></span>
+                <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [*:float]" autocomplete="off">
+              </div>
+              <button type="button" class="btn-icon" id="btnCloseFilterPopup" title="Close">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+              </button>
+            </div>
+            <div id="filterTokenChips" class="filter-token-chips filter-section-row">
+              <span class="filter-section-label">Insert</span>
               <button type="button" class="token-chip" data-token="int" title="Add a condition manually, e.g. [*:int>=10], [*:int&lt;20,>10], or [*:int|>=10] for |value|>=10">[int]</button>
+              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [*:float>=10], [*:float&lt;20,>10], or [*:float|>=10] for |value|>=10">[float]</button>
               <button type="button" class="token-chip" data-token="time">[time]</button>
               <button type="button" class="token-chip" data-token="word">[word]</button>
               <button type="button" class="token-chip" data-token="hex">[hex]</button>
               <button type="button" class="token-chip" data-token="*">[*]</button>
             </div>
           </div>
-          <div class="filter-settings-row">
-            <div class="filter-toggle" title="Case sensitive">
-              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterCaseCheckbox"></button>
-              <label class="filter-toggle-label" for="filterCaseCheckbox">Aa</label>
+          <div class="filter-settings-row filter-section-row">
+            <span class="filter-section-label">Syntax</span>
+            <div class="view-tabs" role="group" aria-label="Syntax">
+              <button type="button" class="view-tab active" id="filterSyntaxText" aria-pressed="true" title="Plain text, optionally with [*:…] wildcard tokens">Text</button>
+              <button type="button" class="view-tab" id="filterSyntaxRegex" aria-pressed="false" title="Use RegExp">Regex</button>
             </div>
-            <div class="filter-toggle" id="filterWholeWordRow">
-              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterWholeWordCheckbox"></button>
-              <label class="filter-toggle-label" for="filterWholeWordCheckbox">Match whole word</label>
+            <div class="filter-toggle-set">
+              <button type="button" role="switch" aria-checked="false" class="label-toggle" id="filterCaseCheckbox" title="Case sensitive">Match case</button>
+              <button type="button" role="switch" aria-checked="false" class="label-toggle" id="filterWholeWordCheckbox">Whole word</button>
+              <button type="button" role="switch" aria-checked="false" class="label-toggle label-toggle-danger" id="filterInvertCheckbox" title="Invert — keep only the rows that do NOT match">Exclude (NOT)</button>
             </div>
-            <div class="filter-toggle filter-toggle-danger" title="Invert">
-              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="filterInvertCheckbox"></button>
-              <label class="filter-toggle-label" for="filterInvertCheckbox">NOT</label>
-            </div>
+          </div>
+          <div id="filterColumnChips" class="filter-column-chips filter-section-row" title="Columns to search">
+            <span class="filter-section-label">Search in</span>
+            <!-- Chip buttons are JS-built into this group by
+                 renderFilterColumnChipButtons (Custom Columns feature: the
+                 column set is per-format/dynamic) — see activeTextFilterColumns(). -->
+            <div class="filter-toggle-set" id="filterColumnChipGroup" role="group" aria-label="Search in"></div>
           </div>
           <div id="filterPatternPreview" class="hidden"></div>
-          <div id="filterColumnChips" class="filter-column-chips" title="Columns to search">
-            <span class="filter-section-label">Applies to:</span>
-            <!-- Chip buttons are JS-built by renderFilterColumnChipButtons
-                 (Custom Columns feature: the column set is now per-format/
-                 dynamic, not a fixed six) — see activeTextFilterColumns(). -->
+          <!-- Live result summary: big match count + meta lines left, a
+               match-over-time histogram right, then up to three matching
+               rows as a sample table — see evaluateLiveMatch/renderLiveResults. -->
+          <div id="filterResults" class="hidden">
+            <div class="filter-results-head">
+              <div id="filterLiveMatch"></div>
+              <svg id="filterResultsMinimap" class="hidden" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+            </div>
+            <div id="filterResultsSamples"></div>
           </div>
           <div class="filter-footer-row">
-            <div id="filterLiveMatch"></div>
             <div class="filter-footer-actions">
               <button type="submit" class="btn-mini" id="filterSubmitBtn">Add filter</button>
             </div>
@@ -7939,6 +7886,14 @@ function columnCssClass(key) { return "col-" + (BUILTIN_FIELD_KEYS.has(key) ? ke
 // — OTHER stays last, so its rank leaves room for CUSTOM_LEVEL_SLOTS slots.
 const LEVEL_SORT_RANK = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3, TRACE: 4, OTHER: 5 + CUSTOM_LEVEL_SLOTS };
 
+// The .minimap-lvl-* fill class for a levelSortRank: the five known
+// buckets, then one slot per --level-custom-N, then OTHER last. Shared by
+// the timeline minimap and the filter popup's match histogram.
+function minimapLevelClass(rank) {
+  if (rank < 5) return ["minimap-lvl-error", "minimap-lvl-warn", "minimap-lvl-info", "minimap-lvl-debug", "minimap-lvl-trace"][rank];
+  if (rank < 5 + CUSTOM_LEVEL_SLOTS) return "minimap-lvl-custom-" + (rank - 4);
+  return "minimap-lvl-other";
+}
 function levelSortRank(bucket, formatId) {
   const r = LEVEL_SORT_RANK[bucket];
   if (r !== undefined) return r;
@@ -12275,7 +12230,9 @@ function pillSet(elm, on, fireChange) {
 // bubbles here, so label clicks toggle it too without extra wiring. Toggling
 // dispatches a `change` event, so existing change listeners keep working.
 document.addEventListener("click", ev => {
-  const pill = ev.target.closest && ev.target.closest(".pill-toggle");
+  // .label-toggle[role=switch]: the filter popup's label-only switches
+  // (Match case/Whole word/NOT) — same state protocol, no track/knob.
+  const pill = ev.target.closest && ev.target.closest('.pill-toggle, .label-toggle[role="switch"]');
   if (!pill || pill.disabled) return;
   pillSet(pill, !pillGet(pill), true);
 });
@@ -19297,7 +19254,7 @@ function makeContextRunHandle(run, isTop, isBottom) {
 // beside. Neither is a real entry — the dimming
 // signals "this is a stand-in, click it", the opposite reasoning from why a
 // real context row is no longer dimmed. The whole row is the click target,
-// same as any other row-shaped control in this file (.tree-row, .crumb, …)
+// same as any other row-shaped control in this file (.tree-row, …)
 // rather than requiring the icon itself to be hit. Listeners are attached
 // fresh on every render, same as every other per-row listener here — DOM
 // identity across renders is never assumed (see CLAUDE.md's
@@ -20336,11 +20293,6 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const barW = W / bucketCount;
   const usableH = H - 3;
   const heightFor = count => count === 0 ? 0 : Math.max(1.5, (Math.log(count + 1) / Math.log(maxCount + 1)) * usableH);
-  // Index = levelSortRank: the five known buckets, then one slot per
-  // --level-custom-N, then OTHER last.
-  const rankClass = ["minimap-lvl-error", "minimap-lvl-warn", "minimap-lvl-info", "minimap-lvl-debug", "minimap-lvl-trace"]
-    .concat(Array.from({ length: CUSTOM_LEVEL_SLOTS }, (_, i) => "minimap-lvl-custom-" + (i + 1)))
-    .concat(["minimap-lvl-other"]);
 
   let bgParts = "", ovParts = "";
   for (let i = 0; i < bucketCount; i++) {
@@ -20350,7 +20302,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
     if (bh > 0) bgParts += '<rect class="minimap-bg-bar" x="' + x.toFixed(1) + '" y="' + (H - bh).toFixed(1) + '" width="' + w + '" height="' + bh.toFixed(1) + '"/>';
     if (ovCounts[i] > 0) {
       const oh = heightFor(ovCounts[i]);
-      ovParts += '<rect class="minimap-ov-bar ' + rankClass[ovRank[i]] + '" x="' + x.toFixed(1) + '" y="' + (H - oh).toFixed(1) + '" width="' + w + '" height="' + oh.toFixed(1) + '"/>';
+      ovParts += '<rect class="minimap-ov-bar ' + minimapLevelClass(ovRank[i]) + '" x="' + x.toFixed(1) + '" y="' + (H - oh).toFixed(1) + '" width="' + w + '" height="' + oh.toFixed(1) + '"/>';
     }
   }
 
@@ -26145,7 +26097,6 @@ function fwPatternStartFiltersBlock(p, idx, libraryRecords) {
 /* ===================== Filter popup (Ctrl+F to create, F2/right-click "Edit filter…" to edit) ===================== */
 
 const filterPopup = el("#filterPopup");
-const filterPopupLabel = el("#filterPopupLabel");
 const filterInput = el("#filterInput");
 const filterForm = el("#filterForm");
 const filterSubmitBtn = el("#filterSubmitBtn");
@@ -26154,11 +26105,15 @@ const filterLiveMatch = el("#filterLiveMatch");
 const filterPatternPreview = el("#filterPatternPreview");
 const filterInvertCheckbox = el("#filterInvertCheckbox");
 const filterCaseCheckbox = el("#filterCaseCheckbox");
-const filterRegexCheckbox = el("#filterRegexCheckbox");
+const filterSyntaxTextBtn = el("#filterSyntaxText");
+const filterSyntaxRegexBtn = el("#filterSyntaxRegex");
 const filterWholeWordCheckbox = el("#filterWholeWordCheckbox");
-const filterWholeWordRow = el("#filterWholeWordRow");
 const filterColumnChips = el("#filterColumnChips");
-const filterTargetChainEl = el("#filterTargetChain");
+const filterColumnChipGroup = el("#filterColumnChipGroup");
+const filterScopeHint = el("#filterScopeHint");
+const filterResults = el("#filterResults");
+const filterResultsMinimap = el("#filterResultsMinimap");
+const filterResultsSamples = el("#filterResultsSamples");
 
 // editingFilterId: the node being edited, or null when the popup is in its
 // normal "create a new child filter" mode.
@@ -26192,21 +26147,21 @@ let filterPopupColumns = new Set();
 // (openFilterPopup/openEditFilterPopup), before renderFilterColumnChips
 // (below, unchanged) sets which ones start active.
 function renderFilterColumnChipButtons() {
-  const label = filterColumnChips.querySelector(".filter-section-label");
-  filterColumnChips.innerHTML = "";
-  if (label) filterColumnChips.appendChild(label);
+  filterColumnChipGroup.innerHTML = "";
   activeTextFilterColumns().forEach(col => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "column-chip";
+    btn.className = "label-toggle column-chip";
     btn.dataset.col = col.key;
     btn.textContent = col.label;
-    filterColumnChips.appendChild(btn);
+    filterColumnChipGroup.appendChild(btn);
   });
 }
 function renderFilterColumnChips() {
   filterColumnChips.querySelectorAll(".column-chip").forEach(chip => {
-    chip.classList.toggle("active", filterPopupColumns.has(chip.dataset.col));
+    const on = filterPopupColumns.has(chip.dataset.col);
+    chip.classList.toggle("active", on);
+    chip.setAttribute("aria-pressed", on ? "true" : "false");
   });
 }
 filterColumnChips.addEventListener("click", ev => {
@@ -26218,29 +26173,35 @@ filterColumnChips.addEventListener("click", ev => {
   evaluateLiveMatch();
 });
 
-// Renders the chain of filter-tree pills (.crumb/.crumb-sep) leading down to filterPopupBaseId —
-// the node whose entries this new/edited filter actually runs against —
-// replacing the old plain-text "Filter on “X”:" label.
-function renderFilterTargetChain() {
-  filterTargetChainEl.innerHTML = "";
-  if (!filterPopupBaseId || !state.nodes[filterPopupBaseId]) return;
-  const chain = getChain(filterPopupBaseId);
-  chain.forEach((node, i) => {
-    if (i > 0) {
-      const sep = document.createElement("span");
-      sep.className = "crumb-sep";
-      sep.innerHTML = ICON_CARET_RIGHT; // geometrically centered SVG, not a font glyph — see .crumb-sep's CSS comment
-      filterTargetChainEl.appendChild(sep);
-    }
-    const chip = document.createElement("span");
-    chip.className = "crumb" + (i === chain.length - 1 ? " current" : "");
-    const label = document.createElement("span");
-    label.className = "crumb-label";
-    label.textContent = nodeDisplayName(node);
-    chip.appendChild(label);
-    chip.title = nodeDisplayName(node); // full name as a tooltip — the pill itself is truncated, see .crumb-label's ellipsis
-    filterTargetChainEl.appendChild(chip);
-  });
+// The inline "in <parent>" hint inside the input box: names the node whose
+// entries this new/edited filter runs against (filterPopupBaseId — the
+// direct parent-to-be in create mode, the edited filter's existing parent
+// in edit mode), capped at FILTER_SCOPE_HINT_MAX characters so it never
+// crowds the input; the full name is the tooltip. Replaced the old
+// "Filter on:" header row with its full-chain pills.
+const FILTER_SCOPE_HINT_MAX = 15;
+function renderFilterScopeHint() {
+  filterScopeHint.textContent = "";
+  filterScopeHint.title = "";
+  const node = filterPopupBaseId && state.nodes[filterPopupBaseId];
+  if (!node) return;
+  const name = nodeDisplayName(node);
+  const name15 = name.length > FILTER_SCOPE_HINT_MAX ? name.slice(0, FILTER_SCOPE_HINT_MAX) + "\u2026" : name;
+  const b = document.createElement("b");
+  b.textContent = name15;
+  filterScopeHint.append("in ", b);
+  filterScopeHint.title = "Filter runs on: " + name;
+}
+
+// Text/Regex syntax switch (FEATURE_BACKLOG.md #16: a real RegExp
+// alternative to the wildcard-token language) — a two-button segmented
+// control; the "Regex" button's .active class IS the state.
+function isFilterRegexMode() { return filterSyntaxRegexBtn.classList.contains("active"); }
+function setFilterRegexMode(on) {
+  filterSyntaxRegexBtn.classList.toggle("active", !!on);
+  filterSyntaxTextBtn.classList.toggle("active", !on);
+  filterSyntaxRegexBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  filterSyntaxTextBtn.setAttribute("aria-pressed", on ? "false" : "true");
 }
 
 function openFilterPopup() {
@@ -26250,20 +26211,18 @@ function openFilterPopup() {
   filterPopupBaseId = state.activeId;
   filterPopupIgnored = new Set();
   filterPopupColumns = new Set();
-  filterPopupLabel.textContent = "Filter on:";
-  renderFilterTargetChain();
+  renderFilterScopeHint();
   filterSubmitBtn.textContent = "Add filter";
   filterInput.value = "";
   pillSet(filterInvertCheckbox, false);
   pillSet(filterCaseCheckbox, false);
-  pillSet(filterRegexCheckbox, false);
+  setFilterRegexMode(false);
   pillSet(filterWholeWordCheckbox, false); // person-specified default: off
   updateRegexModeUI();
   renderFilterColumnChipButtons();
   renderFilterColumnChips();
   updateFilterAvailability();
-  filterLiveMatch.textContent = "";
-  filterLiveMatch.className = "";
+  clearLiveResults();
   filterPatternPreview.classList.add("hidden");
   filterPatternPreview.innerHTML = "";
   filterPopup.classList.remove("hidden");
@@ -26286,20 +26245,18 @@ function openEditFilterPopup(nodeId) {
   filterPopupColumns = new Set(node.columns || []);
   state.activeId = nodeId;
   render();
-  filterPopupLabel.textContent = "Edit filter on:";
-  renderFilterTargetChain();
+  renderFilterScopeHint();
   filterSubmitBtn.textContent = "Save";
   filterInput.value = node.value;
   pillSet(filterInvertCheckbox, !!node.inverted);
   pillSet(filterCaseCheckbox, node.filterType === "text" && !!node.caseSensitive);
-  pillSet(filterRegexCheckbox, node.filterType === "text" && !!node.isRegex);
+  setFilterRegexMode(node.filterType === "text" && !!node.isRegex);
   pillSet(filterWholeWordCheckbox, node.filterType === "text" && !!node.wholeWord);
   updateRegexModeUI();
   renderFilterColumnChipButtons();
   renderFilterColumnChips();
   updateFilterAvailability();
-  filterLiveMatch.textContent = "";
-  filterLiveMatch.className = "";
+  clearLiveResults();
   filterPopup.classList.remove("hidden");
   filterInput.focus();
   filterInput.select();
@@ -26353,20 +26310,23 @@ filterTokenChips.addEventListener("click", ev => {
 // JS regex — the token-insert chips (#filterTokenChips) and the pattern
 // preview (which shows placeholder capture groups, a wildcard-only concept).
 // Everything else (live match count, case-sensitivity, NOT, column
-// restriction, target chain) stays visible/usable in both modes.
+// restriction, scope hint) stays visible/usable in both modes.
 function updateRegexModeUI() {
-  const isRegex = pillGet(filterRegexCheckbox);
+  const isRegex = isFilterRegexMode();
   filterTokenChips.classList.toggle("hidden", isRegex);
   if (isRegex) {
     filterPatternPreview.classList.add("hidden");
     filterPatternPreview.innerHTML = "";
   }
 }
-filterRegexCheckbox.addEventListener("change", () => {
+[filterSyntaxTextBtn, filterSyntaxRegexBtn].forEach(btn => btn.addEventListener("click", () => {
+  const wantRegex = btn === filterSyntaxRegexBtn;
+  if (wantRegex === isFilterRegexMode()) return;
+  setFilterRegexMode(wantRegex);
   updateRegexModeUI();
   updateFilterAvailability();
   evaluateLiveMatch();
-});
+}));
 
 // Live-evaluates the current input against the rows the filter would apply
 // to (filterPopupBaseId's visible entries — the new filter's parent-to-be
@@ -26388,9 +26348,8 @@ function evaluateLiveMatch() {
   clearTimeout(liveMatchTimer);
   liveMatchTimer = setTimeout(() => {
     const val = filterInput.value.trim();
-    filterLiveMatch.className = "";
     if (!val || !filterPopupBaseId) {
-      filterLiveMatch.textContent = "";
+      clearLiveResults();
       filterPatternPreview.classList.add("hidden");
       filterPatternPreview.innerHTML = "";
       return;
@@ -26400,40 +26359,162 @@ function evaluateLiveMatch() {
     const caseSensitive = pillGet(filterCaseCheckbox);
     const columns = [...filterPopupColumns];
 
-    if (pillGet(filterRegexCheckbox)) {
+    // hitRe: finds the hit inside a sample row's message for the <mark>
+    // (see renderLiveResults) — null where the match isn't a single
+    // message substring worth marking.
+    let test, hitRe = null, captures = null;
+    if (isFilterRegexMode()) {
       // Regex mode has no wildcard-token pattern preview to show — the
       // preview box stays hidden the whole time (see updateRegexModeUI).
       filterPatternPreview.classList.add("hidden");
       filterPatternPreview.innerHTML = "";
       const re = compileRegexFilter(val, caseSensitive);
-      if (!re) { filterInput.classList.add("input-regex-error"); filterLiveMatch.textContent = "Invalid regex"; filterLiveMatch.className = "error"; return; }
+      if (!re) { filterInput.classList.add("input-regex-error"); showLiveMatchError("Invalid regex"); return; }
       filterInput.classList.remove("input-regex-error");
-      let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, null, null, re) ? 1 : 0), 0);
-      if (inverted) matches = baseEntries.length - matches;
-      const label = inverted ? "Kept (NOT): " : "Matches: ";
-      filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
-      if (matches === 0) filterLiveMatch.className = "warn";
-      return;
+      test = e => textFilterMatches(e, val, caseSensitive, columns, null, null, re);
+      hitRe = re;
+    } else {
+      filterInput.classList.remove("input-regex-error");
+      updateFilterPatternPreview(val, baseEntries);
+      let wildcardRegex = null, wildcardColumns = null;
+      if (isExtractPattern(val)) {
+        const spec = compileExtractPattern(val);
+        if (!spec) { showLiveMatchError("Invalid pattern"); return; }
+        wildcardRegex = new RegExp(spec.regexStr, (caseSensitive ? "" : "i") + "s");
+        wildcardColumns = spec.columns;
+        hitRe = wildcardRegex;
+        captures = spec.columns.filter((c, i) => !filterPopupIgnored.has(i));
+      } else {
+        hitRe = new RegExp(escapeRegExp(val), caseSensitive ? "" : "i");
+      }
+      // wholeWord only reaches the literal branch of textFilterMatches — a
+      // wildcard pattern disables the toggle anyway (updateWholeWordAvailability).
+      const wholeWord = pillGet(filterWholeWordCheckbox) && !filterWholeWordCheckbox.disabled;
+      test = e => textFilterMatches(e, val, caseSensitive, columns, wildcardRegex, wildcardColumns, null, wholeWord);
     }
-    filterInput.classList.remove("input-regex-error");
-    updateFilterPatternPreview(val, baseEntries);
-
-    let wildcardRegex = null, wildcardColumns = null;
-    if (isExtractPattern(val)) {
-      const spec = compileExtractPattern(val);
-      if (!spec) { filterLiveMatch.textContent = "Invalid pattern"; filterLiveMatch.className = "error"; return; }
-      wildcardRegex = new RegExp(spec.regexStr, (caseSensitive ? "" : "i") + "s");
-      wildcardColumns = spec.columns;
-    }
-    // wholeWord only reaches the literal branch of textFilterMatches — a
-    // wildcard pattern disables the toggle anyway (updateWholeWordAvailability).
-    const wholeWord = pillGet(filterWholeWordCheckbox) && !filterWholeWordCheckbox.disabled;
-    let matches = baseEntries.reduce((n, e) => n + (textFilterMatches(e, val, caseSensitive, columns, wildcardRegex, wildcardColumns, null, wholeWord) ? 1 : 0), 0);
-    if (inverted) matches = baseEntries.length - matches;
-    const label = inverted ? "Kept (NOT): " : "Matches: ";
-    filterLiveMatch.textContent = label + matches.toLocaleString("de-DE") + " of " + baseEntries.length.toLocaleString("de-DE") + " rows";
-    if (matches === 0) filterLiveMatch.className = "warn";
+    // A column restriction without Message means the hit isn't in the
+    // message text the sample rows show — nothing there to mark.
+    if (columns.length && !columns.includes("message")) hitRe = null;
+    const hits = baseEntries.filter(e => test(e) !== inverted);
+    renderLiveResults(hits, baseEntries, inverted ? null : hitRe, inverted, captures);
   }, 150);
+}
+
+function clearLiveResults() {
+  filterLiveMatch.textContent = "";
+  filterLiveMatch.className = "";
+  filterResultsMinimap.innerHTML = "";
+  filterResultsMinimap.classList.add("hidden");
+  filterResultsSamples.innerHTML = "";
+  filterResults.classList.add("hidden");
+}
+function showLiveMatchError(msg) {
+  clearLiveResults();
+  filterResults.classList.remove("hidden");
+  filterLiveMatch.textContent = msg;
+  filterLiveMatch.className = "error";
+}
+
+// The live result summary under the options: a big match count with
+// "matches in N" (or "kept (NOT) in N") and, for a wildcard pattern, the
+// columns it will capture; a histogram of the hits over the base rows' time
+// span (renderLiveMatchMinimap); and the first FILTER_SAMPLE_ROWS hits as a
+// small table — level bar, time of day, message with the hit marked.
+const FILTER_SAMPLE_ROWS = 3;
+function renderLiveResults(hits, baseEntries, hitRe, inverted, captures) {
+  clearLiveResults();
+  filterResults.classList.remove("hidden");
+  const fmt = n => n.toLocaleString("de-DE");
+  const count = document.createElement("span");
+  count.className = "filter-live-count";
+  count.textContent = fmt(hits.length);
+  const meta = document.createElement("span");
+  meta.className = "filter-live-meta";
+  const line = document.createElement("span");
+  line.textContent = (inverted ? "kept (NOT) in " : "matches in ") + fmt(baseEntries.length);
+  meta.appendChild(line);
+  if (captures && captures.length) {
+    const cap = document.createElement("span");
+    cap.className = "filter-live-captures";
+    cap.textContent = "captures: " + captures.map(c => c.name + " (" + c.type + ")").join(", ");
+    meta.appendChild(cap);
+  }
+  // The " " text node keeps textContent reading "61 matches in 471" (a flex
+  // container ignores it for layout).
+  filterLiveMatch.append(count, " ", meta);
+  if (hits.length === 0) filterLiveMatch.className = "warn";
+
+  renderLiveMatchMinimap(hits, baseEntries);
+
+  hits.slice(0, FILTER_SAMPLE_ROWS).forEach(e => {
+    const row = document.createElement("div");
+    row.className = "filter-sample-row " + levelClass(e.level, e.formatId);
+    const bar = document.createElement("span");
+    bar.className = "col-bar";
+    const time = document.createElement("span");
+    time.className = "filter-sample-time";
+    time.textContent = formatTime(e.ts).slice(11); // HH:mm:ss.SSS
+    const msg = document.createElement("span");
+    msg.className = "filter-sample-msg";
+    msg.title = e.message;
+    appendSampleMessage(msg, e.message, hitRe);
+    row.append(bar, time, msg);
+    filterResultsSamples.appendChild(row);
+  });
+}
+
+// Writes `message` into `target`, the first hitRe match wrapped in a
+// <mark>. A hit deep inside a long message is brought into view by cutting
+// the lead-in to FILTER_SAMPLE_LEAD characters before it (the row itself is
+// one ellipsized line).
+const FILTER_SAMPLE_LEAD = 30;
+function appendSampleMessage(target, message, hitRe) {
+  const m = hitRe ? new RegExp(hitRe.source, hitRe.flags.replace("g", "")).exec(message) : null;
+  if (!m || !m[0]) { target.textContent = message; return; }
+  let start = 0;
+  if (m.index > FILTER_SAMPLE_LEAD * 2) start = m.index - FILTER_SAMPLE_LEAD;
+  const mark = document.createElement("mark");
+  mark.className = "filter-sample-hit";
+  mark.textContent = m[0];
+  target.append((start ? "…" : "") + message.slice(start, m.index), mark, message.slice(m.index + m[0].length));
+}
+
+// Histogram of the hits over the base rows' time span, FILTER_MINIMAP_BUCKETS
+// bars scaled to the fullest bucket, each bar colored like the timeline
+// minimap: the highest-severity level among that bucket's hits wins
+// (levelSortRank/minimapLevelClass). Hidden when there's nothing to place
+// (no hits, or no parseable timestamps).
+const FILTER_MINIMAP_BUCKETS = 60;
+function renderLiveMatchMinimap(hits, baseEntries) {
+  let min = Infinity, max = -Infinity;
+  for (const e of baseEntries) {
+    if (isNaN(e.ts)) continue;
+    if (e.ts < min) min = e.ts;
+    if (e.ts > max) max = e.ts;
+  }
+  if (!hits.length || min === Infinity) return;
+  const buckets = new Array(FILTER_MINIMAP_BUCKETS).fill(0);
+  const ranks = new Array(FILTER_MINIMAP_BUCKETS).fill(Infinity);
+  const span = max - min;
+  for (const e of hits) {
+    if (isNaN(e.ts)) continue;
+    const i = span > 0 ? Math.min(FILTER_MINIMAP_BUCKETS - 1, Math.floor((e.ts - min) / span * FILTER_MINIMAP_BUCKETS)) : 0;
+    buckets[i]++;
+    const rank = levelSortRank(levelBucket(e.level, e.formatId), e.formatId);
+    if (rank < ranks[i]) ranks[i] = rank;
+  }
+  const peak = Math.max(...buckets);
+  if (!peak) return;
+  const H = 30;
+  filterResultsMinimap.setAttribute("viewBox", "0 0 " + FILTER_MINIMAP_BUCKETS + " " + H);
+  let svg = "";
+  buckets.forEach((n, i) => {
+    if (!n) return;
+    const h = Math.max(1.5, n / peak * H);
+    svg += '<rect class="' + minimapLevelClass(ranks[i]) + '" x="' + (i + 0.15) + '" y="' + (H - h) + '" width="0.7" height="' + h + '"><title>' + n + '</title></rect>';
+  });
+  filterResultsMinimap.innerHTML = svg;
+  filterResultsMinimap.classList.remove("hidden");
 }
 
 // Part A of REQUIREMENTS-extract-preview-and-ignore.md: renders the pattern
@@ -26508,6 +26589,7 @@ function updateFilterPatternPreview(val, baseEntries) {
       ev.stopPropagation();
       if (filterPopupIgnored.has(i)) filterPopupIgnored.delete(i); else filterPopupIgnored.add(i);
       updateFilterPatternPreview(filterInput.value.trim(), baseEntries);
+      evaluateLiveMatch(); // refresh the summary's "captures:" line
     });
     frag.appendChild(span);
     if (condLabel) {
@@ -26534,10 +26616,9 @@ function updateFilterPatternPreview(val, baseEntries) {
 const WHOLE_WORD_TITLE = "Only match the input as a whole word — “Test” matches “Test is active” but not “Testing activated”";
 const WHOLE_WORD_TITLE_NA = "Not applicable to a regex or a wildcard-token pattern — those express their own boundaries (\\b, [*:word], …)";
 function updateWholeWordAvailability() {
-  const inapplicable = pillGet(filterRegexCheckbox) || isExtractPattern(filterInput.value);
+  const inapplicable = isFilterRegexMode() || isExtractPattern(filterInput.value);
   filterWholeWordCheckbox.disabled = inapplicable;
-  filterWholeWordRow.classList.toggle("disabled", inapplicable);
-  filterWholeWordRow.title = inapplicable ? WHOLE_WORD_TITLE_NA : WHOLE_WORD_TITLE;
+  filterWholeWordCheckbox.title = inapplicable ? WHOLE_WORD_TITLE_NA : WHOLE_WORD_TITLE;
 }
 
 // Content-driven availability state, kept as its own function (rather than
@@ -26567,7 +26648,7 @@ filterWholeWordCheckbox.addEventListener("change", evaluateLiveMatch);
 function commitFilter() {
   const val = filterInput.value.trim();
   if (!val || !filterPopupBaseId) { closeFilterPopup(); return; }
-  const isRegex = pillGet(filterRegexCheckbox);
+  const isRegex = isFilterRegexMode();
 
   if (isRegex) {
     if (!compileRegexFilter(val, pillGet(filterCaseCheckbox))) {

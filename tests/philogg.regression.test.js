@@ -424,7 +424,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "message 1";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200)); // evaluateLiveMatch is debounced 150ms
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("11 of 20"), "live match count reflects the typed filter before submit");
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("11 matches in 20"), "live match count reflects the typed filter before submit");
 
   const chip = d.querySelector('.token-chip[data-token="int"]');
   filterInput.value = "n=";
@@ -4016,13 +4016,13 @@ await withApp(async (w, d, T) => {
   filterInput.value = "TOKEN";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("2 of 5"), "live match with no column restriction counts both TOKEN occurrences");
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("2 matches in 5"), "live match with no column restriction counts both TOKEN occurrences");
 
   const messageChip = d.querySelector('.column-chip[data-col="message"]');
   fireClick(messageChip, w);
   assert(messageChip.classList.contains("active"), "clicking a column chip marks it active");
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("1 of 5"), "live match updates live once a column chip restricts the search");
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("1 matches in 5"), "live match updates live once a column chip restricts the search");
 
   fireSubmit(d.querySelector("#filterForm"), w);
   const uiCreated = T.state.nodes[T.state.activeId];
@@ -4601,29 +4601,25 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(39);
 await withApp(async (w, d, T) => {
-  section("39. Filter popup: target chain + wildcard-as-filter matching semantics");
+  section("39. Filter popup: scope hint + wildcard-as-filter matching semantics");
 
   assert(d.querySelector("#filterHint") === null, "the old 'Werte extrahieren:' hint row is gone — the token chips already insert wildcards directly");
   assert(d.querySelector(".filter-input-section #filterInput") !== null, "the filter input lives in its own input section (see Group 40 for the fuller section-reorg coverage)");
 
-  // --- Target-chain pill visualization (replaces the old plain-text "Filter on “X”:" label) ---
+  // --- Scope hint (replaced the "Filter on:" header + target-chain pills,
+  // 2026-09-23 — see Group 263 for the full popup-redesign coverage) ---
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const parentFilter = w.createFilterNode(f.id, "text", "message"); // matches all 5 rows
   w.render();
   w.openFilterPopup();
-  assert(d.querySelector("#filterPopupLabel").textContent === "Filter on:", "the label is now a short static prefix; the actual target is shown by the pill chain");
-  let chainChips = [...d.querySelectorAll("#filterTargetChain .crumb")];
-  assert(chainChips.length === 2 && chainChips[0].textContent === f.name && chainChips[1].textContent === parentFilter.name,
-    "create mode's target chain shows the full chain down to (and including) the active node this filter will be added under");
-  assert(chainChips[1].classList.contains("current") && !chainChips[0].classList.contains("current"),
-    "the chain's last pill (the actual attach point) is marked current, same convention as #breadcrumb");
-  assert(d.querySelectorAll("#filterTargetChain .crumb-sep").length === 1, "pills are separated the same way #breadcrumb separates its chain");
+  assert(d.querySelector("#filterPopupLabel") === null && d.querySelector("#filterTargetChain") === null,
+    "the 'Filter on:' label and its pill chain are gone");
+  assert(d.querySelector("#filterScopeHint").textContent === "in " + parentFilter.name.slice(0, 15) + (parentFilter.name.length > 15 ? "\u2026" : ""),
+    "create mode's scope hint names the active node this filter will be added under, got " + d.querySelector("#filterScopeHint").textContent);
 
   w.openEditFilterPopup(parentFilter.id);
-  assert(d.querySelector("#filterPopupLabel").textContent === "Edit filter on:", "edit mode uses its own short static prefix");
-  chainChips = [...d.querySelectorAll("#filterTargetChain .crumb")];
-  assert(chainChips.length === 1 && chainChips[0].textContent === f.name,
-    "edit mode's target chain shows the chain down to the edited filter's PARENT (whose entries the value change re-filters), not the filter being edited itself");
+  assert(d.querySelector("#filterScopeHint").textContent === "in " + f.name,
+    "edit mode's scope hint names the edited filter's PARENT (whose entries the value change re-filters), not the filter being edited itself");
   w.closeFilterPopup();
 
   // --- Wildcard-as-filter "text" matching: direct-API sanity for the two
@@ -4701,18 +4697,17 @@ await withApp(async (w, d, T) => {
   const inputSection = d.querySelector(".filter-input-section");
   assert(inputSection.contains(d.querySelector("#filterInput")) && inputSection.contains(d.querySelector("#filterTokenChips")),
     "the input and the [float]/[int]/... wildcard chips are grouped together in one input section");
-  assert(d.querySelector("#filterTokenChips .filter-section-label").textContent === "Insert:", "the wildcard-insert chips carry an 'Insert:' caption");
+  assert(d.querySelector("#filterTokenChips .filter-section-label").textContent === "Insert", "the wildcard-insert chips carry an 'Insert' caption");
 
   const settingsRow = d.querySelector(".filter-settings-row");
   assert(settingsRow.contains(d.querySelector("#filterCaseCheckbox")) && settingsRow.contains(d.querySelector("#filterInvertCheckbox")),
     "case-sensitive and NOT live together in the settings row");
 
-  assert(d.querySelector("#filterColumnChips .filter-section-label").textContent === "Applies to:", "the column-restriction chips carry an 'Applies to:' caption now that they're their own section");
+  assert(d.querySelector("#filterColumnChips .filter-section-label").textContent === "Search in", "the column-restriction chips carry a 'Search in' caption");
 
   const footerRow = d.querySelector(".filter-footer-row");
   const footerActions = d.querySelector(".filter-footer-actions");
-  assert(footerRow.firstElementChild.id === "filterLiveMatch", "the match count is the footer row's first (left-aligned) child");
-  assert(footerRow.lastElementChild === footerActions, "the action buttons are the footer row's last (right-aligned) child");
+  assert(footerRow.children.length === 1 && footerRow.lastElementChild === footerActions, "the footer holds only the action buttons (the match count moved up into #filterResults)");
   const actionChildren = [...footerActions.children];
   // The separate "Extract" button is gone (this session's filterType merge,
   // docs/ui-implementation-plan.md's follow-up note) — "Add filter" is the
@@ -4722,10 +4717,11 @@ await withApp(async (w, d, T) => {
 
   const formChildren = [...d.querySelector("#filterForm").children];
   const idx = el => formChildren.indexOf(el);
-  assert(idx(inputSection) < idx(settingsRow) && idx(settingsRow) < idx(d.querySelector("#filterPatternPreview")) &&
-    idx(d.querySelector("#filterPatternPreview")) < idx(d.querySelector("#filterColumnChips")) &&
-    idx(d.querySelector("#filterColumnChips")) < idx(footerRow),
-    "sections appear top-to-bottom in the requested order: input, settings, preview, applies-to, footer");
+  assert(idx(inputSection) < idx(settingsRow) && idx(settingsRow) < idx(d.querySelector("#filterColumnChips")) &&
+    idx(d.querySelector("#filterColumnChips")) < idx(d.querySelector("#filterPatternPreview")) &&
+    idx(d.querySelector("#filterPatternPreview")) < idx(d.querySelector("#filterResults")) &&
+    idx(d.querySelector("#filterResults")) < idx(footerRow),
+    "sections appear top-to-bottom: input, syntax, search in, preview, results, footer");
 
   // --- Bugfix (historical, kept as a plain sanity check now that Extract's
   // own disabled-state is gone): a direct .value write (token chip click)
@@ -9568,7 +9564,6 @@ await withApp(async (w, d, T) => {
     { selector: ".brand-mark", bad: "#2f8f8c" },
     { selector: ".brand-mark", bad: "#0b1016" },
     { selector: ".toolbar-badge", bad: "#08201f" },
-    { selector: ".crumb.current", bad: "rgba(79,199,195,.35)" },
     { selector: ".level-btn.lvl-error", bad: "rgba(241,101,101,.35)" },
     { selector: ".lvl-error .level-badge", bad: "rgba(241,101,101,.28)" },
     { selector: ".log-row.lvl-error:hover", bad: "rgba(241,101,101,.20)" },
@@ -9899,7 +9894,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "score=[*:int>=15]";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 of 20"),
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 matches in 20"),
     "live-match count only counts rows satisfying the condition (15..19), got " + d.querySelector("#filterLiveMatch").textContent);
 
   /* ---------- pattern preview: the sample match is one where the condition actually holds, and shows a visible condition badge ---------- */
@@ -13525,8 +13520,9 @@ await withApp(async (w, d, T) => {
    Origin: this session (FEATURE_BACKLOG.md #16). A real JS RegExp,
    alongside (not replacing) the wildcard-token "text" filter language —
    toggled per-node via node.isRegex on the SAME "text" filterType (no new
-   filter type), gated at the top of the filter popup by
-   #filterRegexCheckbox. Case-sensitivity/column-restriction stay available
+   filter type), gated in the filter popup by
+   #filterRegexCheckbox (since 2026-09-23 the Text/Regex segmented switch,
+   #filterSyntaxText/#filterSyntaxRegex). Case-sensitivity/column-restriction stay available
    in both modes; only the wildcard-token-specific UI (token chips, the
    pattern preview) hides while regex mode is on. An invalid regex degrades
    to an empty match set (getEntries) / an inline error state (the popup),
@@ -13581,10 +13577,11 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
-  assert(pillChecked(d.querySelector("#filterRegexCheckbox")) === false, "regex toggle defaults to OFF, same as case/NOT");
+  assert(!d.querySelector("#filterSyntaxRegex").classList.contains("active") && d.querySelector("#filterSyntaxText").classList.contains("active"),
+    "the Text/Regex syntax switch defaults to Text");
   assert(isVisible(d.querySelector("#filterTokenChips"), w), "sanity: token chips visible before regex mode is toggled on");
 
-  fireClick(d.querySelector("#filterRegexCheckbox"), w);
+  fireClick(d.querySelector("#filterSyntaxRegex"), w);
   assert(!isVisible(d.querySelector("#filterTokenChips"), w), "turning regex mode on hides the wildcard-token insert chips");
   assert(!d.querySelector("#filterCaseCheckbox").disabled && !d.querySelector("#filterColumnChips").classList.contains("hidden"),
     "case-sensitivity and column-restriction stay visible/enabled in regex mode — only wildcard-specific UI is hidden");
@@ -13594,7 +13591,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "^connection";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 of 4"), "live match count works in regex mode too (case-insensitive '^connection' also matches entry 3's 'CONNECTION')");
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 matches in 4"), "live match count works in regex mode too (case-insensitive '^connection' also matches entry 3's 'CONNECTION')");
 
   // Invalid regex while typing -> inline error state, not a crash
   filterInput.value = "(unterminated";
@@ -15662,84 +15659,6 @@ await withApp(async (w, d, T) => {
 
 
 /* ============================================================
-   GROUP 152 — Filter path pills (.crumb, shared by #breadcrumb and
-   #filterTargetChain) stay one line long and a bounded width instead of
-   overflowing (person-reported, screenshot: a long auto-generated filter
-   name wrapped its own text onto a second line inside the pill's fixed
-   28px height, spilling above/below it, with the arrow-only line that
-   followed pushed onto its own row). .crumb now caps at max-width:220px;
-   the untruncated name is still reachable as a tooltip (chip.title).
-   Follow-up 1, same session (person-reported): the chip's
-   justify-content:center meant an overflowing chip clipped BOTH ends
-   equally, leaving an unmarked cut mid-text on the left with the
-   ellipsis only visible on the right — so the truncated pill showed a
-   slice from the MIDDLE of the name instead of its start. Switched to
-   justify-content:flex-start so the start of the name is what stays
-   visible.
-   Follow-up 2, same session (person-reported, after a real-browser
-   screenshot showed NO clipping/ellipsis at all despite follow-up 1):
-   overflow/text-overflow/white-space had been set directly on .crumb,
-   but its text became an anonymous flex item once the chip turned into
-   inline-flex — a flex container's text-overflow only elides its own
-   principal box's overflow, not a child flex item's, so nothing ever
-   clipped. Moved the text into a real child element, .crumb-label
-   (flex:1 1 auto; min-width:0 plus the ellipsis trio), which is where
-   the assertions below now check.
-   ============================================================ */
-group(152);
-await withApp(async (w, d, T) => {
-  section("152. Filter path pills cap width and expose the full name as a tooltip");
-
-  const cs = w.getComputedStyle;
-  const longPattern = "message ".repeat(20) + "[*:float] this is a very long auto-generated filter name indeed";
-  const longName = "“" + longPattern + "”"; // createFilterNode's own "text" display name, wrapped in curly quotes
-
-  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
-  const longFilter = w.createFilterNode(f.id, "text", longPattern);
-  T.state.activeId = longFilter.id;
-  w.render();
-
-  // The breadcrumb bar these pills were first checked in is gone
-  // (2026-09-23) — #filterTargetChain is the remaining .crumb consumer.
-  w.openFilterPopup();
-  const crumbs = [...d.querySelectorAll("#filterTargetChain .crumb")];
-  const longCrumb = crumbs.find(c => c.textContent === longName);
-  assert(longCrumb, "the long-named filter still renders its full text as the chip's own content (truncation is CSS-only, not JS-shortened text)");
-  const longLabel = longCrumb.querySelector(".crumb-label");
-  assert(longLabel && longLabel.textContent === longName,
-    "the actual text lives in a child .crumb-label span, not directly in .crumb — a flex container's own text-overflow doesn't clip a child flex item's box, only its own principal box's content, so the truncation properties have to live on that child instead");
-
-  assert(cs(longLabel).whiteSpace === "nowrap", "a pill never wraps its own text onto a second line");
-  assert(cs(longLabel).overflow === "hidden" && cs(longLabel).textOverflow === "ellipsis",
-    "overflowing text is clipped with an ellipsis, same mechanism as .tree-label");
-  assert(cs(longLabel).minWidth === "0px", "the label can actually shrink below its own text's natural width (default flex-item min-width:auto is exactly what let it overflow un-clipped before this fix)");
-  assert(cs(longCrumb).maxWidth === "220px", "the pill itself is capped to a bounded width, got " + cs(longCrumb).maxWidth);
-  assert(longCrumb.title.includes(longName), "the full untruncated name is still reachable via the chip's tooltip, got " + longCrumb.title);
-  assert(cs(longCrumb).justifyContent === "flex-start",
-    "the chip left-aligns its text (not centered) so the START of a truncated name stays visible instead of a clipped mid-text slice, got " + cs(longCrumb).justifyContent);
-
-  // Sanity: a short chip is unaffected — still shows its plain text, no
-  // clipping actually kicks in below the cap.
-  const shortCrumb = crumbs.find(c => c.textContent === "a.log");
-  assert(shortCrumb && cs(shortCrumb).maxWidth === "220px", "the same rule applies uniformly (the cap is a ceiling, not a fixed size) — short names just never hit it");
-
-  // --- Same pill, same rule, in the filter-target chain the "add filter"
-  // popup shows (#filterTargetChain reuses .crumb) — it didn't set a
-  // tooltip at all before this session.
-  w.closeFilterPopup();
-  T.state.activeId = f.id;
-  w.render();
-  w.openFilterPopup();
-  const chainChip = [...d.querySelectorAll("#filterTargetChain .crumb")].find(c => c.textContent === "a.log");
-  assert(chainChip, "the filter-target chain renders its chip(s)");
-  const chainLabel = chainChip.querySelector(".crumb-label");
-  assert(chainLabel && cs(chainChip).maxWidth === "220px" && cs(chainLabel).textOverflow === "ellipsis",
-    "the filter-target chain's pills are capped/truncated the same way #breadcrumb's are (shared .crumb/.crumb-label rule)");
-  assert(chainChip.title === "a.log", "the filter-target chain's chip now also carries the full name as a tooltip, got " + JSON.stringify(chainChip.title));
-});
-
-
-/* ============================================================
    GROUP 139 — Desktop bridge contract when getPathForFile can't resolve
    anything (the wrapper in desktop/)
    Origin: the session adding the Tauri desktop wrapper. No system webview
@@ -16921,16 +16840,16 @@ await withApp(async (w, d, T) => {
   w.render();
   w.openFilterPopup();
   const wholeWordCheckbox = d.querySelector("#filterWholeWordCheckbox");
-  const wholeWordRow = d.querySelector("#filterWholeWordRow");
   assert(wholeWordCheckbox && pillChecked(wholeWordCheckbox) === false, "the \"Match whole word\" toggle defaults to OFF (person-specified default)");
-  assert(!wholeWordCheckbox.disabled && !wholeWordRow.classList.contains("disabled"),
+  assert(!wholeWordCheckbox.disabled,
     "it starts out enabled for the empty (literal) input");
 
-  // Every boolean in the popup is a .pill-toggle (docs/ui-standard.md #69) now.
-  ["filterRegexCheckbox", "filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
+  // Every boolean in the popup is a role=switch button on the pill-toggle
+  // state protocol, drawn as a standalone label-only toggle (Group 263).
+  ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
     const box = d.querySelector("#" + id);
-    assert(box.tagName === "BUTTON" && box.classList.contains("pill-toggle") && box.getAttribute("role") === "switch",
-      "#" + id + " is a role=switch .pill-toggle button (unified boolean control)");
+    assert(box.tagName === "BUTTON" && box.classList.contains("label-toggle") && box.getAttribute("role") === "switch",
+      "#" + id + " is a role=switch .label-toggle button (unified boolean control)");
     assert(box.hasAttribute("aria-checked"), "#" + id + " carries aria-checked state");
   });
 
@@ -16940,27 +16859,27 @@ await withApp(async (w, d, T) => {
   filterInput.value = "Test";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 of 6"),
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 matches in 6"),
     "live match count without whole-word: 5 of 6 rows, got " + d.querySelector("#filterLiveMatch").textContent);
   fireClick(wholeWordCheckbox, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 of 6"),
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 matches in 6"),
     "turning \"Match whole word\" on drops \"Testing\"/\"retest\" from the live count, got " + d.querySelector("#filterLiveMatch").textContent);
 
   // A wildcard pattern greys it out — that language has its own boundaries.
   filterInput.value = "Test [*:word]";
   fireInput(filterInput, w);
-  assert(wholeWordCheckbox.disabled && wholeWordRow.classList.contains("disabled"),
+  assert(wholeWordCheckbox.disabled,
     "typing a wildcard-token pattern disables the whole-word toggle instead of letting it sit there as a no-op");
   filterInput.value = "Test";
   fireInput(filterInput, w);
-  assert(!wholeWordCheckbox.disabled && !wholeWordRow.classList.contains("disabled"), "...and removing the token re-enables it");
+  assert(!wholeWordCheckbox.disabled, "...and removing the token re-enables it");
 
   // So does regex mode.
-  fireClick(d.querySelector("#filterRegexCheckbox"), w);
-  assert(wholeWordCheckbox.disabled && wholeWordRow.classList.contains("disabled"),
+  fireClick(d.querySelector("#filterSyntaxRegex"), w);
+  assert(wholeWordCheckbox.disabled,
     "regex mode disables the whole-word toggle too (\\b/lookarounds do the job there)");
-  fireClick(d.querySelector("#filterRegexCheckbox"), w);
+  fireClick(d.querySelector("#filterSyntaxText"), w);
   assert(!wholeWordCheckbox.disabled, "leaving regex mode re-enables it");
 
   // Submitting stores the flag.
@@ -16973,7 +16892,7 @@ await withApp(async (w, d, T) => {
   // A regex filter never stores the flag, even with the box left checked.
   w.openFilterPopup();
   setPill(d.querySelector("#filterWholeWordCheckbox"), true);
-  fireClick(d.querySelector("#filterRegexCheckbox"), w);
+  fireClick(d.querySelector("#filterSyntaxRegex"), w);
   d.querySelector("#filterInput").value = "Test";
   fireInput(d.querySelector("#filterInput"), w);
   fireSubmit(d.querySelector("#filterForm"), w);
@@ -18162,7 +18081,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="highlight"]'), w);
 
   assert(T.fhActiveTab === "highlight", "fhActiveTab switches to Context");
-  assert(d.querySelector('.view-tab.active').dataset.fhTab === "highlight", "the Context tab pill is the one marked active");
+  assert(d.querySelector('#fhTabs .view-tab.active').dataset.fhTab === "highlight", "the Context tab pill is the one marked active");
   assert(d.querySelector("#extractWrap").style.display === "none", "the extraction table is no longer the visible content component");
   assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
 });
@@ -18184,7 +18103,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="filter"]'), w);
 
   assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
-  assert(d.querySelector('.view-tab.active').dataset.fhTab === "filter", "the Filtered tab pill is the one marked active");
+  assert(d.querySelector('#fhTabs .view-tab.active').dataset.fhTab === "filter", "the Filtered tab pill is the one marked active");
   assert(d.querySelector("#extractWrap").style.display === "none", "the plot is no longer the visible content component");
   assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
 });
@@ -19510,7 +19429,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "boom[*]Foo.Baz()";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("1 of 2"), "live match count also finds the multi-line entry, got " + d.querySelector("#filterLiveMatch").textContent);
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("1 matches in 2"), "live match count also finds the multi-line entry, got " + d.querySelector("#filterLiveMatch").textContent);
 });
 
 /* ============================================================
@@ -24590,9 +24509,9 @@ group(212);
 await withApp(async (w, d, T) => {
   section("212a. .pill-toggle component: click + label-click flip aria-checked/.on, read back via aria-checked");
 
-  T.state.activeId = null;
-  w.openFilterPopup();
-  const pill = d.querySelector("#filterRegexCheckbox");
+  // The filter popup's switches are label-only view-tab toggles since
+  // 2026-09-23 (Group 263) — the link dialog's pill is the reference here.
+  const pill = d.querySelector("#linkExclusiveInput");
   assert(pill.tagName === "BUTTON" && pill.getAttribute("role") === "switch" && pill.classList.contains("pill-toggle"),
     "a converted boolean is a <button role=switch class=pill-toggle>, not a native checkbox");
   assert(pill.getAttribute("aria-checked") === "false" && !pill.classList.contains("on"),
@@ -24609,7 +24528,7 @@ await withApp(async (w, d, T) => {
 
   // Clicking the associated <label for=…> toggles it too (browser forwards
   // the click to the labelled button, which the delegated handler catches).
-  const label = d.querySelector('label[for="filterRegexCheckbox"]');
+  const label = d.querySelector('label[for="linkExclusiveInput"]');
   assert(label, "the pill has an adjacent <label for> wiring the text to it");
   fireClick(label, w);
   assert(pillChecked(pill), "clicking the label toggles the pill on");
@@ -24617,12 +24536,20 @@ await withApp(async (w, d, T) => {
   assert(!pillChecked(pill), "clicking the label again toggles it back off");
 
   // A toggle dispatches a real `change` event, so change-driven app logic
-  // keeps working: turning regex mode on hides the pattern-token chips.
-  assert(!d.querySelector("#filterTokenChips").classList.contains("hidden"), "token chips visible while regex mode is off");
-  fireClick(pill, w);
-  assert(d.querySelector("#filterTokenChips").classList.contains("hidden"),
-    "toggling the regex pill fired change -> updateRegexModeUI hid the token chips");
-  fireClick(pill, w);
+  // keeps working — the same protocol drives the filter popup's label-only
+  // switches: turning NOT on re-runs the live match as "kept (NOT)".
+  const pf = await w.addFile("pill.log", makeLog(0, 4), () => {});
+  T.state.activeId = pf.id;
+  w.openFilterPopup();
+  const notToggle = d.querySelector("#filterInvertCheckbox");
+  d.querySelector("#filterInput").value = "message";
+  fireInput(d.querySelector("#filterInput"), w);
+  fireClick(notToggle, w);
+  await new Promise(r => setTimeout(r, 200));
+  assert(pillChecked(notToggle) && d.querySelector("#filterLiveMatch").textContent.includes("kept (NOT) in"),
+    "toggling the NOT switch fired change -> evaluateLiveMatch re-ran in NOT mode, got " + d.querySelector("#filterLiveMatch").textContent);
+  fireClick(notToggle, w);
+  w.closeFilterPopup();
 
   // pillGet/pillSet round-trip (the app's own helpers, exposed as functions):
   // pillSet(el,true) with no fireChange flag mirrors the old `.checked =` and
@@ -24652,7 +24579,9 @@ await withApp(async (w, d, T) => {
 
   // Every listed single-boolean id is now a role=switch pill (and none of the
   // deliberately-untouched multi-select checkbox lists were converted).
-  const pillIds = ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox",
+  // (The filter popup's three switches moved to the label-only view-tab
+  // look on 2026-09-23 — Groups 149/263.)
+  const pillIds = ["linkExclusiveInput", "linkOrderEnforceInput",
     "settingsCloseToTray", "settingsHoverExpandSidebar", "settingsHoverExpandDetail",
     "settingsHideMinimapFullRangeInFullView", "settingsTempAnchorAcrossFiles",
     "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail"];
@@ -25801,72 +25730,6 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#noteDialogSave"), w);
   assert(T.state.notes.get(f.entries[2].id) === "via dialog", "sanity: note saved via the Alt+N dialog");
   assert(T.state.showNotes === true, "saving a new note through the note dialog also auto-enables Show Notes");
-});
-
-/* ============================================================
-   GROUP 225 — .crumb-sep (the separator between filter path pills, shared
-   by #breadcrumb and #filterTargetChain) redesigned as a distinct
-   connector element, in two rounds this session (person-reported both
-   times, screenshots). Numbered 225, not 224, to avoid colliding with the
-   unrelated Show-Notes-auto-enable Group 224 merged into main the same day.
-   Round 1: the bare "›" glyph read as small/lost/unaligned, especially
-   against --text-tertiary's low contrast against --bg-panel. Fixed with a
-   themed 18x18 bordered circle (--accent-strong) instead of plain inline
-   text sized/colored off the ambient font.
-   Round 2: with the circle in place, the "›" GLYPH ITSELF still looked
-   off-center inside it. Measured directly (Range.getBoundingClientRect()
-   on the text node): the glyph's own advance-width box WAS centered by
-   the container's flexbox, but "›"'s visible ink sits left-of-center
-   within that box (ordinary font right-side-bearing) — a font-metrics
-   quirk no container-level margin/padding can fix, since it's baked into
-   the glyph and varies by font/OS. Fixed by swapping the text glyph for
-   ICON_CARET_RIGHT (renderBreadcrumb/renderFilterTargetChain now set
-   .innerHTML, not .textContent) — the same hand-drawn SVG chevron already
-   used for the Context view's match nav, authored symmetric inside its
-   own viewBox and therefore centered by construction, independent of any
-   font.
-   jsdom's getComputedStyle can't resolve var() inside the
-   `background`/`border` SHORTHANDS used here (see tests/README.md "Known
-   gaps" — confirmed empirically: it falls back to initial values instead
-   of the declared var()), so the background/border assertions below check
-   the raw stylesheet source instead of computed style; the shape/layout
-   properties (declared as plain px/keyword values, no var()) resolve fine
-   via getComputedStyle.
-   ============================================================ */
-group(225);
-await withApp(async (w, d, T) => {
-  section("225. Filter-target-chain separator is a bordered circle around a real (font-independent) SVG chevron, not a bare small glyph");
-
-  const cs = w.getComputedStyle;
-  const css = d.querySelector("style").textContent;
-
-  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
-  const node = w.createFilterNode(f.id, "text", "msg");
-  T.state.activeId = node.id;
-  w.render();
-
-  w.openFilterPopup();
-  const sep = d.querySelector("#filterTargetChain .crumb-sep");
-  assert(sep, "sanity: the separator chip still renders between the file and filter pills");
-  assert(!sep.textContent.trim(), "the separator no longer relies on a text glyph at all (its font-metrics ink wasn't reliably centered in the circle — see the group banner), got textContent " + JSON.stringify(sep.textContent));
-  const svg = sep.querySelector("svg");
-  assert(svg, "the separator now hosts a real SVG icon instead of a text character");
-  assert(svg.querySelector('path[d="M6 4l4 4-4 4"]'), "it's specifically ICON_CARET_RIGHT — a plain caret authored symmetric inside its own viewBox, so it's centered by construction regardless of font/OS, got " + svg.outerHTML);
-  assert(svg.getAttribute("stroke") === "currentColor", "the icon inherits .crumb-sep's own color (currentColor) rather than hardcoding one");
-
-  assert(cs(sep).width === "18px" && cs(sep).height === "18px", "the separator is a fixed 18x18 box, got " + cs(sep).width + "/" + cs(sep).height);
-  assert(cs(sep).borderRadius === "50%", "the separator is a circle (border-radius:50%), giving it its own visible boundary instead of floating as bare text/an unbounded icon");
-  assert(cs(sep).display === "inline-flex" && cs(sep).alignItems === "center" && cs(sep).justifyContent === "center",
-    "the icon is centered inside that circle via flex");
-
-  // Two rules share the .crumb-sep selector (the base rule plus a
-  // #breadcrumb-scoped margin override for its different pill-center math
-  // — see the comments on both in the stylesheet), so this greps the base
-  // rule's specific declarations rather than regex-matching "the" rule.
-  assert(css.includes("color:var(--accent-strong)"), "the icon uses the stronger --accent-strong color, not the low-contrast --text-tertiary it used before");
-  assert(!/\.crumb-sep\{[^}]*--text-tertiary/.test(css), "the old low-contrast --text-tertiary color is gone from .crumb-sep's own rule");
-  assert(css.includes("background:var(--bg-elevated-2); border:1px solid var(--border-soft)"), "the circle has its own themed background/border");
-
 });
 
 /* ============================================================
@@ -29268,6 +29131,169 @@ await withApp(async (w, d, T) => {
   A.collapsed = false;
   w.render(); w.render();
   assert(guides(A1).length === 4, "re-rendering doesn't accumulate guides (rail + upper/lower half + elbow), got " + guides(A1).length);
+});
+
+/* ============================================================
+   GROUP 263 — Filter popup redesign (person-requested, 2026-09-23, from a
+   mockup screenshot; the app's own styling kept): no "Filter on:" header
+   with target-chain pills any more — an inline "in <parent>" hint inside
+   the input box instead (first 15 characters of the direct parent's name);
+   a Text/Regex segmented switch replaces the "Interpret input as regex"
+   pill; rows captioned and ordered Insert / Syntax (Text|Regex, Match
+   case, Whole word, Exclude (NOT)) / Search in; and a live result summary
+   (big count + "matches in N" + "captures: …", a match-over-time
+   histogram, up to three sample rows as a table with the hit marked).
+   The histogram uses the timeline minimap's level colors: per bin, the
+   highest-severity hit's level wins (follow-up, same day).
+   Follow-ups, same day (person-requested): only the exclusive Text/Regex
+   choice takes #fhTabs' segmented view-tab look; the independent on/off
+   options (Match case/Whole word/Exclude (NOT), each Search in column) are
+   standalone label-only .label-toggle items with the .icon-toggle status
+   bar (so a single-label toggle doesn't read as a button) — not boxed into
+   a shared control; the Insert chips, being actions, got the app's framed
+   button look.
+   ============================================================ */
+group(263);
+await withApp(async (w, d, T) => {
+  section("263. Filter popup: scope hint, Text/Regex switch, captioned rows, live result summary");
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const longParent = w.createFilterNode(f.id, "text", "message 1"); // name “message 1” (11 chars)
+  const veryLong = w.createFilterNode(f.id, "text", "message"); // matches all 20
+  veryLong.name = "AVeryLongParentNodeName";
+  w.render();
+
+  // --- Scope hint: max 15 characters of the DIRECT parent's name ---
+  T.state.activeId = veryLong.id;
+  w.openFilterPopup();
+  const hint = d.querySelector("#filterScopeHint");
+  assert(hint.closest(".filter-input-wrap") && hint.closest(".filter-input-wrap").contains(d.querySelector("#filterInput")),
+    "the scope hint sits inside the input's box, next to the input");
+  assert(hint.textContent === "in AVeryLongParent…", "a long parent name is cut to its first 15 characters (+ ellipsis), got " + JSON.stringify(hint.textContent));
+  assert(hint.querySelector("b").textContent.replace("…", "").length === 15, "exactly 15 characters of the name are shown");
+  assert(hint.title.includes("AVeryLongParentNodeName"), "the full name is the tooltip");
+  w.closeFilterPopup();
+  T.state.activeId = longParent.id;
+  w.openFilterPopup();
+  assert(hint.textContent === "in " + longParent.name, "a short name is shown whole, only the direct parent (no chain), got " + hint.textContent);
+  assert(d.querySelector("#filterPopupLabel") === null && d.querySelector("#filterTargetChain") === null && d.querySelector(".crumb") === null,
+    "no 'Filter on' header / breadcrumb pills any more");
+  w.closeFilterPopup();
+
+  // --- Captioned rows, order and naming ---
+  const labels = [...d.querySelectorAll("#filterForm .filter-section-label")].map(l => l.textContent);
+  assert(JSON.stringify(labels) === JSON.stringify(["Insert", "Syntax", "Search in"]), "rows are captioned Insert / Syntax / Search in, in that order, got " + JSON.stringify(labels));
+  const syntaxRow = d.querySelector(".filter-settings-row");
+  const syntaxOrder = [...syntaxRow.querySelectorAll(".view-tab, .label-toggle")].map(x => x.textContent);
+  assert(JSON.stringify(syntaxOrder) === JSON.stringify(["Text", "Regex", "Match case", "Whole word", "Exclude (NOT)"]),
+    "the Syntax row reads Text | Regex, Match case, Whole word, Exclude (NOT), got " + JSON.stringify(syntaxOrder));
+  assert(d.querySelector("#filterRegexCheckbox") === null, "the old 'Interpret input as regex' pill is gone");
+
+  // --- Exclusive choice vs. independent on/off (follow-ups, same day) ---
+  const groups = [...d.querySelectorAll("#filterForm .view-tabs")];
+  assert(groups.length === 1 && groups[0].contains(d.querySelector("#filterSyntaxText")) && groups[0].contains(d.querySelector("#filterSyntaxRegex")) && groups[0].children.length === 2,
+    "only the exclusive Text/Regex choice is a segmented view-tabs group");
+  ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
+    const t = d.getElementById(id);
+    assert(t.classList.contains("label-toggle") && !t.classList.contains("view-tab") && !t.classList.contains("pill-toggle") && !t.closest(".view-tabs"),
+      "#" + id + " is a standalone label-only toggle, not part of a shared segmented control");
+  });
+  assert(d.querySelector("#filterInvertCheckbox").classList.contains("label-toggle-danger"), "NOT keeps its red accent");
+  assert(!d.querySelector("#filterPopup label"), "no separate captions — each toggle is its own single label");
+  const css = d.querySelector("style").textContent;
+  assert(/\.label-toggle::after\{[^}]*height:2px/.test(css) && css.includes('.label-toggle.active::after, .label-toggle[aria-checked="true"]::after{background:var(--accent-strong);}'),
+    "single-label toggles carry the status bar (the .icon-toggle rule) so they don't read as buttons");
+  assert(/\.label-toggle\{[^}]*background:none; border:none/.test(css), "a label toggle has no button chrome at rest");
+  const tokenChip = d.querySelector(".token-chip");
+  assert(!tokenChip.classList.contains("view-tab") && !tokenChip.classList.contains("label-toggle"), "Insert chips are actions and keep a button look, not the toggle look");
+
+  // --- Text/Regex switch drives regex mode and round-trips through edit ---
+  T.state.activeId = f.id;
+  w.openFilterPopup();
+  const colChips = [...d.querySelectorAll("#filterColumnChipGroup .column-chip")];
+  assert(colChips.length > 0 && colChips.every(c => c.classList.contains("label-toggle") && !c.closest(".view-tabs") && c.getAttribute("aria-pressed") === "false"),
+    "Search in columns are standalone label-only toggles, same look as the option switches");
+  fireClick(colChips[0], w);
+  assert(colChips[0].classList.contains("active") && colChips[0].getAttribute("aria-pressed") === "true", "clicking a column toggles it on (.active + aria-pressed)");
+  fireClick(colChips[0], w);
+  const caseT = d.querySelector("#filterCaseCheckbox");
+  fireClick(caseT, w);
+  assert(pillChecked(caseT) && caseT.classList.contains("on"), "clicking the Match case label itself switches it on (pill-toggle state protocol)");
+  fireClick(caseT, w);
+  const input = d.querySelector("#filterInput");
+  const textBtn = d.querySelector("#filterSyntaxText"), regexBtn = d.querySelector("#filterSyntaxRegex");
+  assert(textBtn.classList.contains("active") && textBtn.getAttribute("aria-pressed") === "true" && !regexBtn.classList.contains("active"), "Text is active by default");
+  fireClick(regexBtn, w);
+  assert(regexBtn.classList.contains("active") && !textBtn.classList.contains("active") && regexBtn.getAttribute("aria-pressed") === "true", "clicking Regex switches the segmented control");
+  input.value = "message 1\\d";
+  fireInput(input, w);
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const reNode = T.state.nodes[T.state.activeId];
+  assert(reNode.isRegex === true && w.getEntries(reNode.id).length === 10, "submitting in Regex mode creates a regex filter (message 10..19), got " + w.getEntries(reNode.id).length);
+  w.openEditFilterPopup(reNode.id);
+  assert(regexBtn.classList.contains("active"), "edit mode pre-selects Regex for a regex node");
+  w.closeFilterPopup();
+  T.state.activeId = f.id;
+  w.openFilterPopup();
+  assert(textBtn.classList.contains("active"), "a fresh popup resets to Text");
+
+  // --- Live result summary ---
+  assert(d.querySelector("#filterResults").classList.contains("hidden"), "no summary while the input is empty");
+  input.value = "message 1";
+  fireInput(input, w);
+  await sleep(200);
+  assert(!d.querySelector("#filterResults").classList.contains("hidden"), "the summary shows once something is typed");
+  assert(d.querySelector(".filter-live-count").textContent === "11", "big count = matches (message 1, 10..19), got " + d.querySelector(".filter-live-count").textContent);
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("11 matches in 20"), "meta line reads 'matches in <base rows>', got " + d.querySelector("#filterLiveMatch").textContent);
+  assert(!d.querySelector(".filter-live-captures"), "a plain text search has no captures line");
+  const rows = [...d.querySelectorAll("#filterResultsSamples .filter-sample-row")];
+  assert(rows.length === 3, "at most three sample rows, got " + rows.length);
+  assert(rows[0].querySelector(".filter-sample-time").textContent === "10:00:01.000", "sample time is HH:mm:ss.SSS, got " + rows[0].querySelector(".filter-sample-time").textContent);
+  assert(rows[0].querySelector(".filter-sample-hit").textContent === "message 1", "the hit is marked in the sample message");
+  assert(rows[0].querySelector(".col-bar") && rows[0].classList.contains("lvl-info"), "each sample row carries its level bar (lvl-* class + .col-bar)");
+  const bars = [...d.querySelectorAll("#filterResultsMinimap rect")];
+  assert(!d.querySelector("#filterResultsMinimap").classList.contains("hidden") && bars.length > 0, "the match histogram renders bars");
+  assert(bars.reduce((n, r) => n + Number(r.querySelector("title").textContent), 0) === 11, "histogram buckets add up to the match count");
+  // Level colors, like the timeline minimap: hits 1 and 11..19 are INFO,
+  // 10 and 15 ERROR (makeLog), each alone in its bucket here.
+  assert(bars.filter(r => r.classList.contains("minimap-lvl-error")).length === 2 && bars.filter(r => r.classList.contains("minimap-lvl-info")).length === 9,
+    "each histogram bar carries its level's minimap-lvl-* class, got " + bars.map(r => r.getAttribute("class")).join(","));
+
+  // NOT: kept rows, no hit to mark
+  fireClick(d.querySelector("#filterInvertCheckbox"), w);
+  await sleep(200);
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("9 kept (NOT) in 20"), "NOT counts the kept rows, got " + d.querySelector("#filterLiveMatch").textContent);
+  assert(!d.querySelector(".filter-sample-hit"), "NOT samples have nothing to mark");
+  fireClick(d.querySelector("#filterInvertCheckbox"), w);
+
+  // Wildcard pattern: captures line
+  input.value = "message [*:int]";
+  fireInput(input, w);
+  await sleep(200);
+  assert(d.querySelector(".filter-live-captures").textContent === "captures: value (int)", "a wildcard pattern lists its captures, got " + (d.querySelector(".filter-live-captures") || {}).textContent);
+
+  // Highest level wins per bin: INFO, WARN and DEBUG hits sharing one
+  // timestamp land in one bucket, which is drawn WARN.
+  const binLines = [["INFO", "0"], ["WARN", "0"], ["DEBUG", "0"], ["DEBUG", "9"]].map(([lvl, sec], i) =>
+    `2024-01-15 10:00:0${sec},000\t${lvl}\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"hit ${i}"`);
+  const bf = await w.addFile("bins.log", binLines.join("\n") + "\n", () => {});
+  w.closeFilterPopup();
+  T.state.activeId = bf.id;
+  w.openFilterPopup();
+  input.value = "hit";
+  fireInput(input, w);
+  await sleep(200);
+  const binBars = [...d.querySelectorAll("#filterResultsMinimap rect")];
+  assert(binBars.length === 2 && binBars[0].getAttribute("class") === "minimap-lvl-warn" && binBars[0].querySelector("title").textContent === "3",
+    "a bin holding INFO+WARN+DEBUG hits is colored WARN (highest level wins), got " + binBars.map(r => r.getAttribute("class") + "/" + r.textContent).join(","));
+  assert(binBars[1].getAttribute("class") === "minimap-lvl-debug", "a DEBUG-only bin stays DEBUG");
+
+  // No hits: warn state, no histogram, no samples
+  input.value = "nothing matches this";
+  fireInput(input, w);
+  await sleep(200);
+  assert(d.querySelector(".filter-live-count").textContent === "0" && d.querySelector("#filterLiveMatch").className === "warn", "zero matches shows 0 in the warn state");
+  assert(d.querySelector("#filterResultsMinimap").classList.contains("hidden") && !d.querySelector(".filter-sample-row"), "no histogram / sample rows without hits");
 });
 
 console.log("\n" + "=".repeat(60));
@@ -33434,4 +33460,13 @@ process.exitCode = failed ? 1 : 0;
               outline on the active row; stretched verticals not
               collapsed by a base height:0; ancestor names (.on-path)
               in the path accent.
+   Group 263 — new session (2026-09-23): filter popup redesign — inline
+              "in <parent>" scope hint (15 chars) instead of the "Filter
+              on" pill chain, Text/Regex switch, Insert/Syntax/Search in
+              rows, live result summary (count, histogram, sample table);
+              follow-ups: segmented view-tab look for Text/Regex only,
+              standalone label-only toggles with a status bar for the
+              on/off options and columns, button look for Insert chips.
+              Groups 152/225 (.crumb pill + separator styling) removed with
+              the last .crumb consumer; 39/40/122/149/212 updated.
    ============================================================ */
