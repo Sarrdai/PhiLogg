@@ -29229,6 +29229,12 @@ await withApp(async (w, d, T) => {
   const hCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h")));
   assert(vCs.borderLeftWidth === "2px", "vertical guides are a 2px left border, got " + vCs.borderLeftWidth);
   assert(hCs.borderTopWidth === "2px", "elbows are a 2px top border, got " + hCs.borderTopWidth);
+  // Follow-up 2 (person-reported): a base height:0 on .tree-guide beat the
+  // top:0/bottom:0 stretch, collapsing every rail, stem and lower half.
+  const rail = at(A1, 16)[0];
+  assert(rail.style.bottom === "0px" && w.getComputedStyle(rail).height !== "0px",
+    "a full-span rail has no fixed height, so top:0/bottom:0 can stretch it, got " + w.getComputedStyle(rail).height);
+  assert(w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h"))).height === "0px", "elbows are still zero-height (just their border)");
   T.state.multiSelect = new Set([A1.id, A2.id]);
   w.render();
   assert(rowOf(A1).classList.contains("multi-selected") && w.getComputedStyle(rowOf(A1)).boxShadow === "none",
@@ -33416,5 +33422,6 @@ process.exitCode = failed ? 1 : 0;
               active path highlighted, replacing the removed breadcrumb bar
               (Groups 26/100/152/199i/225/PiP list trimmed of it).
               Follow-up: 2px border lines (even thickness), no multi-select
-              outline on the active row.
+              outline on the active row; stretched verticals not
+              collapsed by a base height:0.
    ============================================================ */
