@@ -6969,7 +6969,7 @@ await withApp(async (w, d, T) => {
   assert(columnsPanel.classList.contains("hidden"), "columns popup starts hidden");
   fireClick(btnColumns, w);
   assert(!columnsPanel.classList.contains("hidden"), "clicking #btnColumns opens the popup");
-  const threadCb = d.querySelector("#colToggleThread");
+  const threadCb = d.querySelector('#columnsList input[data-col="thread"]');
   assert(threadCb.checked === true, "checkbox reflects the current (default-visible) state when opened");
 
   threadCb.checked = false;
@@ -6991,7 +6991,7 @@ await withApp(async (w, d, T) => {
   T.state.columnWidths.method = 300; // simulate a prior resize
   w.applyRowGrid();
   fireClick(d.querySelector("#btnResetColumns"), w);
-  assert(T.state.columnWidths.method === 168, "Reset widths restores DEFAULT_COLUMN_WIDTHS");
+  assert(T.state.columnWidths.method === 168, "Reset widths restores FIXED_COLUMN_WIDTHS");
   assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 92px 158px 168px 1fr",
     "…and --row-grid reflects the reset defaults");
 });
@@ -7003,7 +7003,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
 
-  const handle = d.querySelector('.col-resize-handle[data-col="loc"]');
+  const handle = d.querySelector('.col-resize-handle[data-col="location"]');
   assert(handle, "Location's resize handle exists in #tableHeader");
   assert(handle.style.left === (5 + 12 + 178 + 12 + 72 + 12 + 66 + 12 + 92 + 12 + 158) + "px",
     "handle is positioned at the cumulative right edge of its own column, got " + handle.style.left);
@@ -7011,20 +7011,20 @@ await withApp(async (w, d, T) => {
   handle.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: 500 }));
   assert(handle.classList.contains("dragging"), "mousedown starts the drag (handle gets .dragging)");
   d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: 540 })); // +40px
-  assert(T.state.columnWidths.loc === 198, "dragging 40px right grows Location's width by 40px (158 -> 198), got " + T.state.columnWidths.loc);
+  assert(T.state.columnWidths.location === 198, "dragging 40px right grows Location's width by 40px (158 -> 198), got " + T.state.columnWidths.location);
   assert(d.documentElement.style.getPropertyValue("--row-grid").includes("198px"), "--row-grid reflects the live drag width");
 
   // Shrinking below COLUMN_MIN_WIDTH clamps rather than going negative/zero
   d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: -900 }));
-  assert(T.state.columnWidths.loc === 40, "drag clamps at COLUMN_MIN_WIDTH (40px), never below it, got " + T.state.columnWidths.loc);
+  assert(T.state.columnWidths.location === 40, "drag clamps at COLUMN_MIN_WIDTH (40px), never below it, got " + T.state.columnWidths.location);
 
   d.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, cancelable: true }));
   assert(!handle.classList.contains("dragging"), "mouseup ends the drag");
 
   // A mousemove with no active drag is a no-op (no leftover state from the previous drag)
-  const widthBefore = T.state.columnWidths.loc;
+  const widthBefore = T.state.columnWidths.location;
   d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: 999 }));
-  assert(T.state.columnWidths.loc === widthBefore, "mousemove after mouseup no longer affects the column width");
+  assert(T.state.columnWidths.location === widthBefore, "mousemove after mouseup no longer affects the column width");
 });
 
 await withApp(async (w, d, T) => {
@@ -7280,7 +7280,7 @@ await withApp(async (w, d, T) => {
   assert(timeEl && cs(timeEl).overflow === "hidden", "col-time declares overflow:hidden too (defensive — also resizable now), got " + (timeEl && cs(timeEl).overflow));
   // Same fix already existed for these three (regression guard: this bugfix
   // must not have accidentally removed it).
-  ["col-thread", "col-loc", "col-method"].forEach(cls => {
+  ["col-thread", "col-location", "col-method"].forEach(cls => {
     const el = d.querySelector("#tableRows ." + cls);
     assert(el && cs(el).overflow === "hidden", "." + cls + " still declares overflow:hidden");
   });
@@ -8181,8 +8181,18 @@ await withApp(async (w, d, T) => {
   assert(m && m.groups.level === "INFO" && m.groups.thread === "main" && m.groups.method === "Startup" && m.groups.message === "Application started",
     "compiled regex extracts level/thread/method/message correctly, got " + JSON.stringify(m && m.groups));
 
+  // Message is no longer a compile-time requirement (Custom Columns: it
+  // gracefully falls back to the whole raw line via applyFormatMatch when
+  // ungrouped) — nothing about %d/%p/%m is technically required to compile;
+  // Time/Level being the two MANDATORY columns is enforced as a save-time
+  // rule in the Format Manager instead (see GROUP 70k).
   const noMsg = w.compileFormatPattern("%d %p", "");
-  assert(noMsg.error, "a pattern with no %m/%message token is rejected");
+  assert(!noMsg.error && noMsg.hasTs && noMsg.hasLevel,
+    "a pattern with %d+%p but no %m/%message compiles fine, message falls back to the raw line");
+
+  const noTsNoLevel = w.compileFormatPattern("%m", "");
+  assert(!noTsNoLevel.error && !noTsNoLevel.hasTs && !noTsNoLevel.hasLevel,
+    "a pattern with neither %d nor %p also compiles fine — no field is technically required at this level");
 
   const withEscapes = w.compileFormatPattern("%p\\t%m", "");
   assert(withEscapes.regex && withEscapes.regex.test("INFO\thello"), "\\t in the pattern text becomes a real tab before compiling");
@@ -8201,8 +8211,12 @@ await withApp(async (w, d, T) => {
   const v1 = w.validateFormatRegex("(unterminated");
   assert(v1.error, "an invalid regex is rejected with an error");
 
+  // Message (and ts) are no longer compile-time requirements — only Level
+  // is present here, and that's enough to compile without error; ts's
+  // absence still surfaces as the same non-blocking warning as v3 below.
   const v2 = w.validateFormatRegex("^(?<level>\\w+) (?<thread>\\S+)$");
-  assert(v2.error, "a regex without a (?<message>...) group is rejected");
+  assert(!v2.error && v2.warning && v2.hasLevel && !v2.hasTs,
+    "a regex without a (?<message>...)/(?<ts>...) group compiles fine now — Time/Level mandatory is a save-time rule instead (see GROUP 70k)");
 
   const v3 = w.validateFormatRegex("^(?<level>\\w+) (?<message>.*)$");
   assert(!v3.error && v3.warning, "missing (?<ts>...) is a non-blocking warning, not a save-blocking error");
@@ -8528,11 +8542,13 @@ await withApp(async (w, d, T) => {
     "sanity: unedited default parses a normal file correctly");
 
   // Edit the default: rename it and replace the pattern with something that
-  // only extracts level+message (drops thread/method entirely) — a clearly
-  // DIFFERENT, verifiable parse result, not just a cosmetic name change.
+  // only extracts time+level+message (drops thread/method entirely) — a
+  // clearly DIFFERENT, verifiable parse result, not just a cosmetic name
+  // change. %d/%p stay present: Time and Level are the two mandatory
+  // columns (GROUP 70k) — a pattern missing either is refused at save time.
   fireClick(defaultRow().querySelector("button.btn-mini-outline"), w); // "Edit"
   d.querySelector("#formatEditName").value = "Renamed default";
-  d.querySelector("#formatEditPattern").value = "%p %m%n";
+  d.querySelector("#formatEditPattern").value = "%d %p %m%n";
   fireClick(d.querySelector("#formatEditSave"), w);
   // saveFormatEdit's IndexedDB write is async — wait for the state asserted on.
   await waitFor(() => {
@@ -8548,7 +8564,8 @@ await withApp(async (w, d, T) => {
   assert(duringEdit.entries.length === 1, "sanity: the edited pattern still matches the line as a single entry, got " + duringEdit.entries.length);
   assert(duringEdit.entries[0].thread === "" && duringEdit.entries[0].method === "",
     "while edited, the SAME file shape now parses under the new (different) pattern — thread/method no longer extracted");
-  assert(isNaN(duringEdit.entries[0].ts), "...and the %d-less pattern has no ts group at all, so ts is NaN");
+  assert(!isNaN(duringEdit.entries[0].ts) && duringEdit.entries[0].level === "ERROR",
+    "...and ts/level (the two mandatory columns) still parse correctly under the new pattern");
 
   // Reset: reverts the row AND restores the original untouched fast-path parsing.
   fireClick(resetBtn(), w);
@@ -12884,19 +12901,27 @@ await withApp(async (w, d, T) => {
   cb("TRACE").checked = true; cb("TRACE").dispatchEvent(new w.Event("change"));
   cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
 
+  // fmt.levels is now the v2 {value,name,color}[] shape (Custom Columns'
+  // level int/text/explicit-color mapping) for anything saved through the
+  // editor, but DEFAULT_LOG_FORMAT.levels (and hence a just-Reset record)
+  // stays the legacy plain-string shape on purpose — same both-shapes
+  // tolerance formatLevelDefs itself has. This helper reads just the names,
+  // in order, from either shape.
+  const levelNames = fmt => fmt.levels.map(l => (l && typeof l === "object") ? l.name : l).join(",");
+
   fireClick(d.querySelector("#formatEditSave"), w);
   // saveFormatEdit awaits its IndexedDB write BEFORE updating state.logFormats,
   // so polling the in-memory list covers both assertions below — and unlike
   // the fixed 20ms sleep it was, it holds up under a loaded shard.
   await waitFor(() => {
     const f = T.state.logFormats.find(f => f.id === "fmt-default");
-    return f && f.levels.join(",") === "ERROR,WARN,INFO,TRACE";
+    return f && levelNames(f) === "ERROR,WARN,INFO,TRACE";
   });
   const fmt = T.state.logFormats.find(f => f.id === "fmt-default");
-  assert(fmt.levels.join(",") === "ERROR,WARN,INFO,TRACE",
-    "the saved list is the checked levels in the arranged order, got " + fmt.levels.join(","));
+  assert(levelNames(fmt) === "ERROR,WARN,INFO,TRACE",
+    "the saved list is the checked levels in the arranged order, got " + levelNames(fmt));
   const stored = await w.listLogFormats();
-  assert(stored.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,TRACE", "...and it persisted to IndexedDB");
+  assert(levelNames(stored.find(f => f.id === "fmt-default")) === "ERROR,WARN,INFO,TRACE", "...and it persisted to IndexedDB");
 
   // Reopening the editor shows the saved order back, unused level appended.
   fireClick(defaultRow().querySelector("button.btn-mini-outline"), w);
@@ -12908,7 +12933,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#formatEditSave"), w);
   assert(!d.querySelector("#formatEditError").classList.contains("hidden") && d.querySelector("#formatEditError").textContent.includes("at least one"),
     "saving with no level checked shows an error instead of storing an empty list");
-  assert(T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,TRACE", "...and the stored list is untouched");
+  assert(levelNames(T.state.logFormats.find(f => f.id === "fmt-default")) === "ERROR,WARN,INFO,TRACE", "...and the stored list is untouched");
   fireClick(d.querySelector("#formatEditCancel"), w);
 
   // Reset restores the builtin default's original level list too.
@@ -12921,7 +12946,7 @@ await withApp(async (w, d, T) => {
   // that isn't the one just clicked is the post-write signal (see 70f for why
   // waiting on the state instead tears the window down mid-write).
   await waitFor(() => { const b = findResetBtn(); return !!b && b !== staleResetBtn; });
-  assert(T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,DEBUG",
+  assert(levelNames(T.state.logFormats.find(f => f.id === "fmt-default")) === "ERROR,WARN,INFO,DEBUG",
     "Reset reverts the builtin default's levels to the original four");
 }, { indexedDB: new IDBFactory() });
 
@@ -13102,13 +13127,15 @@ await withApp(async (w, d, T) => {
   cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
 
   fireClick(d.querySelector("#formatEditSave"), w);
-  const saved = () => T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",");
+  // fmt.levels is the v2 {value,name,color}[] shape (Custom Columns' level
+  // int/text/explicit-color mapping) — this reads just the names, in order.
+  const saved = () => T.state.logFormats.find(f => f.id === "fmt-default").levels.map(l => l.name).join(",");
   // saveFormatEdit's IndexedDB write is async — wait for the stored list.
   await waitFor(() => saved() === "ERROR,WARN,INFO,NOTICE,AUDIT");
   assert(saved() === "ERROR,WARN,INFO,NOTICE,AUDIT",
     "the saved list is the checked rows (custom names included) in the arranged order, got " + saved());
   const stored = await w.listLogFormats();
-  assert(stored.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,NOTICE,AUDIT", "...and it persisted to IndexedDB");
+  assert(stored.find(f => f.id === "fmt-default").levels.map(l => l.name).join(",") === "ERROR,WARN,INFO,NOTICE,AUDIT", "...and it persisted to IndexedDB");
   assert(w.formatLevels("fmt-default").join(",") === "ERROR,WARN,INFO,NOTICE,AUDIT",
     "formatLevels no longer strips names outside the fixed five");
 
@@ -17346,13 +17373,16 @@ await withApp(async (w, d, T) => {
   assert(T.state.columnVisible.thread === false, "middle-click sets columnVisible.thread = false");
   assert(d.documentElement.style.getPropertyValue("--row-grid").includes("0px"),
     "Thread's track collapses to 0px in --row-grid, same as unchecking it in the panel");
-  const threadCb = d.querySelector("#colToggleThread");
+  // Open the Columns panel so its checkboxes exist (JS-rendered on open —
+  // see renderColumnsPanel), then check it reflects the middle-click.
+  fireClick(d.querySelector(".toggle-columns"), w);
+  const threadCb = d.querySelector('#columnsList input[data-col="thread"]');
   assert(threadCb.checked === false, "the Columns panel checkbox reflects the middle-click too");
 
   // Non-middle button is a no-op.
-  const locTh = d.querySelector('#tableHeader .th[data-col="loc"]');
+  const locTh = d.querySelector('#tableHeader .th[data-col="location"]');
   locTh.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }));
-  assert(T.state.columnVisible.loc === true, "auxclick with a non-middle button does not hide the column");
+  assert(T.state.columnVisible.location === true, "auxclick with a non-middle button does not hide the column");
 
   // Always-visible columns (Time/Level/Message) have no data-col and are unaffected.
   const timeTh = d.querySelector('#tableHeader .th[data-sort="time"]');
@@ -24694,11 +24724,14 @@ await withApp(async (w, d, T) => {
       "#" + id + " is a .pill-toggle button");
   });
 
-  // The multi-select column-visibility list stays native checkboxes.
-  ["colToggleDelta", "colToggleThread", "colToggleLoc", "colToggleMethod"].forEach(id => {
-    const c = d.getElementById(id);
+  // The multi-select column-visibility list stays native checkboxes (JS-
+  // rendered on open by renderColumnsPanel — Custom Columns feature, the
+  // set is per-format/dynamic now, not four fixed ids).
+  fireClick(d.querySelector(".toggle-columns"), w);
+  ["delta", "thread", "location", "method"].forEach(key => {
+    const c = d.querySelector('#columnsList input[data-col="' + key + '"]');
     assert(c && c.tagName === "INPUT" && c.type === "checkbox",
-      "#" + id + " (a set-selection list item) stays a native checkbox, not a pill");
+      'the "' + key + '" column-visibility item (a set-selection list item) stays a native checkbox, not a pill');
   });
 
   // Session-export per-file toggles stay native checkboxes too.
@@ -28310,6 +28343,311 @@ await withApp(async (w, d, T) => {
   assert(merged.id === mergedId, "sanity: the returned node is the same merge shell observed throughout");
   assert(T.state.activeId === mergedId, "the merge remains the active node once everything has finished");
   assert(merged.entries.length === N * 2, "the merge's own entries are complete once loading is done — got " + merged.entries.length);
+});
+
+/* ============================================================
+   GROUP 260 — Custom Columns (per-format custom columns)
+   Origin: this session. Every format's entry schema was fixed at six
+   fields (ts/level/thread/location/method/message); this generalizes it:
+   Time and Level stay the two MANDATORY columns (enforced at save time in
+   the Format Manager, not at compile time — compileFormatPattern/
+   validateFormatRegex themselves stay purely technical, no field is
+   actually required to compile), while Thread/Location/Method/Message are
+   each individually optional per format, and a format may additionally
+   define CUSTOM columns populated by a %X{name} pattern token (new,
+   log4j MDC-style) or a plain (?<name>...) regex group (already possible,
+   now surfaced) — landing on an entry's new `fields` bag (applyFormatMatch).
+   Column order/visibility/width (COLUMN_TRACK_ORDER/HIDEABLE_COLUMNS before
+   this) generalizes to activeColumnDefs(), a dynamic per-format union (same
+   idiom as the pre-existing activeLevelOrder()); the row renderers, the
+   context menu's "Filter for this ___", and the filter popup's column
+   chips all now read from that instead of a fixed six-entry table. Level
+   also gains an int-or-text value type with explicit per-level colors
+   (formatLevelDefs/levelBucket/levelColorVar), replacing the purely name/
+   position-driven color assignment for a format that wants one (e.g. a
+   syslog severity code 0-7 mapped to named, colored levels).
+   ============================================================ */
+group(260);
+await withApp(async (w, d, T) => {
+  section("260a. Parsing: %X{name} pattern token and (?<name>...) regex groups both capture into entry.fields");
+
+  const cPattern = w.compileFormatPattern('%d\\t%p\\t%X{reqId}\\t"%m"%n', "yyyy-MM-dd HH:mm:ss,SSS");
+  assert(cPattern && cPattern.regex && cPattern.hasTs && cPattern.hasLevel, "a pattern with %d/%p/%X{reqId} compiles, with ts+level groups");
+  const mPattern = cPattern.regex.exec('2024-01-15 10:00:00,000\tINFO\treq-42\t"hello"');
+  assert(mPattern && mPattern.groups.reqId === "req-42", "the %X{} token captures its value under the chosen field name");
+
+  const collide = w.compileFormatPattern("%X{level} %m", "");
+  assert(collide.error && collide.error.includes("reserved"), "%X{} can't reuse a reserved field name (ts/level/thread/location/method/message)");
+
+  const noMandatory = w.compileFormatPattern("%m", "");
+  assert(!noMandatory.error && !noMandatory.hasTs && !noMandatory.hasLevel,
+    "compiling itself has no hard requirement — Time/Level mandatory is a save-time rule instead (see 260b)");
+
+  const vRegex = w.validateFormatRegex("^(?<ts>\\S+) (?<level>\\w+) (?<sessionId>\\S+) (?<message>.*)$");
+  assert(!vRegex.error, "a hand-written regex with a custom named group (sessionId) compiles fine, no parsing-side change needed");
+  const mRegex = vRegex.regex.exec("2024-01-15T10:00:00 ERROR sess-7 boom");
+  const entry = w.applyFormatMatch(mRegex.groups, "raw line", null);
+  assert(entry.fields.sessionId === "sess-7", "the custom group lands on entry.fields, keyed by its capture name");
+  assert(!("sessionId" in entry), "...not as a top-level entry property (only the six reserved fields get those)");
+
+  const plainEntry = w.applyFormatMatch({ ts: "x", level: "INFO", message: "hi" }, "hi", null);
+  assert(Object.keys(plainEntry.fields).length === 0, "a format with no custom captures gets an empty fields bag (shared EMPTY_ENTRY_FIELDS, no per-entry allocation)");
+});
+
+await withApp(async (w, d, T) => {
+  section("260b. Data model: formatColumnDefs/messageVisible fallback for legacy records; Time/Level mandatory at save time");
+  await waitForFormatConfig(T);
+
+  // A format record predating this feature (no columnDefs/messageVisible)
+  // falls back exactly to today's fixed three, in the legacy order.
+  const legacyFmt = {
+    id: "fmt-legacy", name: "Legacy", mode: "pattern", pattern: '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n',
+    regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", levels: ["ERROR", "INFO"],
+    builtin: false, edited: false, createdAt: Date.now(),
+  };
+  T.state.logFormats.push(legacyFmt);
+  const defs = w.formatColumnDefs("fmt-legacy");
+  assert(defs.map(x => x.key).join(",") === "thread,location,method", "no columnDefs -> the legacy fixed three, in the legacy order, got " + defs.map(x => x.key).join(","));
+  assert(defs.every(x => x.kind === "default"), "...all flagged 'default' kind");
+  assert(w.formatMessageVisible("fmt-legacy") === true, "no messageVisible -> visible (today's always-on behavior)");
+
+  // Format Manager: Time and Level are the two mandatory columns — saving a
+  // pattern missing either is blocked, even though neither is technically
+  // required to compile (260a).
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  d.querySelector("#formatEditName").value = "No level";
+  d.querySelector("#formatEditPattern").value = "%d %m%n";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(!d.querySelector("#formatEditError").classList.contains("hidden") && d.querySelector("#formatEditError").textContent.includes("%p"),
+    "saving a pattern with no %p/%level token is blocked with an error");
+  assert(!T.state.logFormats.some(f => f.name === "No level"), "...and nothing was saved");
+
+  d.querySelector("#formatEditPattern").value = "%p %m%n";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(!d.querySelector("#formatEditError").classList.contains("hidden") && d.querySelector("#formatEditError").textContent.includes("%d"),
+    "saving a pattern with no %d/%date token is blocked too");
+  assert(!T.state.logFormats.some(f => f.name === "No level"), "...and still nothing was saved");
+
+  d.querySelector("#formatEditPattern").value = "%d %p %m%n";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.some(f => f.name === "No level"));
+  assert(T.state.logFormats.some(f => f.name === "No level"), "...but with both %d and %p present, saving succeeds");
+});
+
+await withApp(async (w, d, T) => {
+  section("260c. Format Manager: Custom Columns editor — add/remove/reorder default+custom columns, round-trips through save/reopen/IndexedDB");
+  await waitForFormatConfig(T);
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  d.querySelector("#formatEditName").value = "ReqId format";
+  d.querySelector("#formatEditPattern").value = '%d\\t%p\\t%X{reqId}\\t"%m"%n';
+  fireInput(d.querySelector("#formatEditPattern"), w);
+
+  const colRows = () => [...d.querySelectorAll("#formatEditColumns .format-level-row")];
+  assert(colRows().map(r => r.dataset.col).join(",") === "thread,location,method", "the editor starts with the three legacy default columns");
+
+  // Remove Location — a re-add chip for it appears; clicking it restores it
+  // at the end of the list.
+  const removeColBtn = key => d.querySelector('.format-level-row[data-col="' + key + '"] .filter-library-row-del');
+  fireClick(removeColBtn("location"), w);
+  assert(colRows().map(r => r.dataset.col).join(",") === "thread,method", "removing Location drops it from the working list");
+  const addChip = label => [...d.querySelectorAll("#formatEditColumnDefaultAdd button")].find(b => b.textContent === "+ " + label);
+  assert(addChip("Location"), "a '+ Location' re-add chip appears once it's removed");
+  fireClick(addChip("Location"), w);
+  assert(colRows().map(r => r.dataset.col).join(",") === "thread,method,location", "clicking the chip re-adds it, at the end of the list");
+  assert(!addChip("Location"), "...and the chip itself disappears once re-added");
+  fireClick(removeColBtn("location"), w); // drop it again for the rest of this test
+
+  // A capture name NOT present in the pattern/regex above is rejected.
+  d.querySelector("#formatEditColumnKeyNew").value = "notCaptured";
+  fireClick(d.querySelector("#formatEditColumnAddBtn"), w);
+  assert(!d.querySelector("#formatEditColumnError").classList.contains("hidden"), "adding a column whose key isn't captured by the pattern/regex is rejected");
+  assert(colRows().map(r => r.dataset.col).join(",") === "thread,method", "...and the working list is unchanged");
+
+  // A reserved field name is rejected too.
+  d.querySelector("#formatEditColumnKeyNew").value = "message";
+  fireClick(d.querySelector("#formatEditColumnAddBtn"), w);
+  assert(!d.querySelector("#formatEditColumnError").classList.contains("hidden"), "a reserved field name (message) can't be added as a custom column");
+
+  // The captured reqId group can be added, with its own display label.
+  d.querySelector("#formatEditColumnKeyNew").value = "reqId";
+  d.querySelector("#formatEditColumnLabelNew").value = "Request Id";
+  fireClick(d.querySelector("#formatEditColumnAddBtn"), w);
+  assert(colRows().map(r => r.dataset.col).join(",") === "thread,method,reqId", "a custom column captured by the pattern above can be added");
+
+  // Reorder: move reqId up above Method.
+  const upBtn = key => [...d.querySelector('.format-level-row[data-col="' + key + '"]').querySelectorAll("button.filter-library-row-order")][0];
+  fireClick(upBtn("reqId"), w);
+  assert(colRows().map(r => r.dataset.col).join(",") === "thread,reqId,method", "▲ reorders a custom column above a default one, same as any other row");
+
+  // Hide Message for this format.
+  d.querySelector("#formatEditMessageVisible").checked = false;
+
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.some(f => f.name === "ReqId format"));
+  const fmt = T.state.logFormats.find(f => f.name === "ReqId format");
+  assert(fmt.columnDefs.map(c => c.key).join(",") === "thread,reqId,method", "the saved columnDefs match the arranged working order, got " + fmt.columnDefs.map(c => c.key).join(","));
+  assert(fmt.columnDefs.find(c => c.key === "reqId").kind === "custom" && fmt.columnDefs.find(c => c.key === "reqId").label === "Request Id",
+    "the custom column's kind and label are persisted");
+  assert(fmt.columnDefs.find(c => c.key === "thread").kind === "default", "a default column's kind is persisted too");
+  assert(fmt.messageVisible === false, "messageVisible is persisted");
+  const stored = await w.listLogFormats();
+  const storedFmt = stored.find(f => f.name === "ReqId format");
+  assert(storedFmt.columnDefs.map(c => c.key).join(",") === "thread,reqId,method", "...and it persisted to IndexedDB");
+  assert(storedFmt.messageVisible === false, "...messageVisible too");
+
+  // Reopening the editor shows the saved column list and Message toggle back.
+  fireClick(d.querySelector("#formatList .filter-library-row:last-child button.btn-mini-outline"), w);
+  assert(colRows().map(r => r.dataset.col).join(",") === "thread,reqId,method", "reopening restores the saved column order");
+  assert(d.querySelector("#formatEditMessageVisible").checked === false, "...and the saved Message-visibility state");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("260d. End to end: a loaded custom-column format renders its columns, and the union of loaded formats drives the context menu + filter popup chips");
+  await waitForFormatConfig(T);
+
+  const reqIdFmt = {
+    id: "fmt-reqid", name: "ReqId", mode: "pattern", pattern: '%d\\t%p\\t%X{reqId}\\t"%m"%n',
+    regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", levels: ["ERROR", "INFO"],
+    columnDefs: [{ key: "reqId", kind: "custom", label: "Request Id" }], // Thread/Location/Method all dropped
+    messageVisible: true, builtin: false, edited: false, createdAt: Date.now(),
+  };
+  T.state.logFormats.push(reqIdFmt);
+  const reqIdLines = [0, 1, 2].map(i => `2024-01-15 10:00:0${i},000\t${i === 0 ? "ERROR" : "INFO"}\treq-${i}\t"hello ${i}"`).join("\n") + "\n";
+  const f = await w.addFile("reqid.log", reqIdLines, () => {}, "fmt-reqid");
+  T.state.activeId = f.id;
+  w.render();
+
+  assert(f.entries[0].fields.reqId === "req-0", "sanity: the custom column's value is captured on each entry");
+  assert(w.activeColumnDefs().map(c => c.key).join(",") === "reqId", "activeColumnDefs() for this lone loaded format is just its own custom column (Thread/Location/Method all dropped)");
+  assert(w.entryColumnValue(f.entries[1], "reqId") === "req-1", "entryColumnValue reads a custom column's value the same way as a built-in one");
+
+  const reqIdCell = [...d.querySelectorAll('#tableRows .col-custom[data-col="reqId"]')][1]; // row for entries[1] ("req-1")
+  assert(reqIdCell && reqIdCell.textContent.trim() === "req-1", "the rendered row shows the custom column, tagged data-col and the shared .col-custom class");
+  assert(!d.querySelector("#tableRows .col-thread") && !d.querySelector("#tableRows .col-location") && !d.querySelector("#tableRows .col-method"),
+    "the three default columns this format dropped render nothing at all");
+
+  // The HEADER (a separate, otherwise-static DOM tree from the per-row
+  // renderers above) must pick up the very same column set — render()
+  // refreshes it via refreshColumnState() whenever activeColumnDefs()'s key
+  // set actually changes (memoized against lastColumnStateKey), which
+  // addFile's own w.render() call above should have just triggered.
+  assert(d.querySelector('#tableHeader .th[data-col="reqId"]') && d.querySelector('#tableHeader .th[data-col="reqId"]').textContent.trim() === "Request Id",
+    "the Filter header shows the custom column with its own label, picked up by the very first render() after loading this format's file");
+  assert(!d.querySelector('#tableHeader .th[data-col="location"]') && !d.querySelector('#tableHeader .th[data-col="thread"]') && !d.querySelector('#tableHeader .th[data-col="method"]'),
+    "...and none of the three columns this format dropped");
+  assert(d.querySelector('#highlightHeader .th[data-col="reqId"]'), "the Highlight header picks up the same dynamic column set too");
+
+  // Context menu: right-clicking the custom column's cell resolves to it.
+  fireContextMenu(reqIdCell, w, 50, 50);
+  assert(d.querySelector("#ctxFilterForColumnLabel").textContent === "Filter for this Request Id", "right-clicking the custom column's cell labels the action for it");
+  fireClick(d.querySelector("#ctxFilterForColumn"), w);
+  assert(d.querySelector("#filterInput").value === "req[*:int]", "the custom column's value fills the filter input, numeric content auto-wildcarded same as any other column (openFilterForEntryColumn) — got " + d.querySelector("#filterInput").value);
+  assert(d.querySelector('.column-chip[data-col="reqId"]').classList.contains("active"), "the custom column's own chip is pre-selected in the filter popup");
+  assert(!d.querySelector('.column-chip[data-col="thread"]'), "a column this format doesn't define (Thread) has no chip at all");
+  w.closeFilterPopup();
+
+  // Union across loaded formats: a second file under the builtin default
+  // (Thread/Location/Method, no custom columns) joins the same session —
+  // the context menu / filter popup should now offer BOTH formats' columns.
+  const g = await w.addFile("default.log", makeLog(0, 2), () => {});
+  w.render();
+  const unionKeys = w.activeColumnDefs().map(c => c.key);
+  assert(unionKeys.includes("reqId") && unionKeys.includes("thread") && unionKeys.includes("location") && unionKeys.includes("method"),
+    "activeColumnDefs() unions every currently-loaded format's columns, got " + unionKeys.join(","));
+  const chipCols = () => [...d.querySelectorAll(".column-chip")].map(c => c.dataset.col);
+  w.openFilterPopup();
+  assert(chipCols().includes("reqId") && chipCols().includes("thread"), "the filter popup's chip list reflects the same union, even while the OTHER file is active");
+  w.closeFilterPopup();
+});
+
+await withApp(async (w, d, T) => {
+  section("260e. Persistence: a filter's restriction to a custom column survives export/import and cache save/restore even when its owning format isn't currently loaded");
+  await waitForFormatConfig(T);
+
+  // The format that defines "reqId" is known (registered) but never loaded
+  // as a root file in this test — knownTextFilterColumnKeys() is checked
+  // against every KNOWN format, not just currently active ones.
+  T.state.logFormats.push({
+    id: "fmt-reqid-2", name: "ReqId 2", mode: "pattern", pattern: '%d\\t%p\\t%X{reqId}\\t"%m"%n',
+    regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", levels: ["ERROR", "INFO"],
+    columnDefs: [{ key: "reqId", kind: "custom", label: "Request Id" }],
+    messageVisible: true, builtin: false, edited: false, createdAt: Date.now(),
+  });
+
+  const logText = makeLog(0, 3);
+  const fSave = await w.addFile("save-src.log", logText, () => {});
+  const saveNode = w.createFilterNode(fSave.id, "text", "req-1", false, null, false, ["reqId", "totallyBogus"]);
+  w.render();
+
+  const branch = w.serializeFilterBranch(saveNode.id);
+  assert(branch.roots[0].columns && branch.roots[0].columns.includes("reqId"), "serializeFilterBranch writes the custom-column restriction into the saved JSON verbatim");
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+
+  const fLoad = await w.addFile("save-dest.log", logText, () => {});
+  w.render();
+  function setLoadTarget(targetId) {
+    const s = d.createElement("script");
+    s.textContent = `loadFilterTargetId = ${JSON.stringify(targetId)};`;
+    d.body.appendChild(s);
+  }
+  setLoadTarget(fLoad.id);
+  w.importFilterJson(json);
+  const loaded = T.state.nodes[fLoad.children[fLoad.children.length - 1]];
+  assert(loaded.columns.includes("reqId"),
+    "reqId survives import even though fmt-reqid-2 (the format that defines it) is never loaded as a root file — a saved filter's restriction on a not-currently-open format's column is kept, not silently dropped");
+  assert(!loaded.columns.includes("totallyBogus"), "...but a key no KNOWN format defines at all is still stripped, same defensive posture as before this feature");
+
+  // Same permissive-but-defensive policy for the session-cache carrier.
+  const fCacheSrc = await w.addFile("cache-src.log", logText, () => {});
+  w.createFilterNode(fCacheSrc.id, "text", "req-1", false, null, false, ["reqId", "totallyBogus"]);
+  w.render();
+  const { roots: cacheRoots } = w.serializeFilterTreeForCache(fCacheSrc);
+  const fCacheDest = await w.addFile("cache-dest.log", logText, () => {});
+  w.materializeCachedFilters(fCacheDest, cacheRoots);
+  const cached = Object.values(T.state.nodes).find(n => n.parentId === fCacheDest.id);
+  assert(cached.columns.includes("reqId") && !cached.columns.includes("totallyBogus"),
+    "materializeCachedFilters applies the same knownTextFilterColumnKeys() policy — reqId kept, totallyBogus stripped");
+});
+
+await withApp(async (w, d, T) => {
+  section("260f. Level int-mode value matching + explicit per-level colors (format setup's level color-mapping)");
+  await waitForFormatConfig(T);
+
+  // Text mode (default): unaffected by this feature at all.
+  T.state.logFormats.push({
+    id: "fmt-text-lvl", name: "TextLvl", mode: "pattern", pattern: '%d\\t%p\\t"%m"%n',
+    regex: "", tsFormat: "", levels: [{ value: "ERROR", name: "ERROR", color: null }],
+    builtin: false, edited: false, createdAt: Date.now(),
+  });
+  assert(w.levelBucket("ERROR", "fmt-text-lvl") === "ERROR", "text-mode (default) matches the captured token against each level's NAME");
+
+  // Int mode: the captured token (a numeric severity code, e.g. syslog)
+  // matches each level definition's `value`, not its `name`.
+  T.state.logFormats.push({
+    id: "fmt-int-lvl", name: "IntLvl", mode: "pattern", pattern: '%d\\t%p\\t"%m"%n',
+    regex: "", tsFormat: "", levelValueType: "int",
+    levels: [
+      { value: "3", name: "ERROR", color: "#ff4444" },
+      { value: "6", name: "INFO", color: null },
+    ],
+    builtin: false, edited: false, createdAt: Date.now(),
+  });
+  assert(w.levelBucket("3", "fmt-int-lvl") === "ERROR", "int-mode matches the captured numeric code against each level's `value`, not its name");
+  assert(w.levelBucket("6", "fmt-int-lvl") === "INFO", "...every mapped code resolves to its own level");
+  assert(w.levelBucket("ERROR", "fmt-int-lvl") === "OTHER", "...the level's NAME itself is no longer a match in int mode (no text-prefix cascade for numeric codes)");
+  assert(w.levelBucket("9", "fmt-int-lvl") === "OTHER", "an unmapped numeric code falls into OTHER, same catch-all as text mode");
+
+  assert(w.levelColorVar("ERROR", "fmt-int-lvl") === "#ff4444", "an explicit per-level color is used directly as the CSS color value");
+  assert(w.levelColorVar("INFO", "fmt-int-lvl") === "var(--level-info)",
+    "a level with no explicit color (color:null) falls back to the automatic fixed-name theme var, same as before this feature");
+
+  // formatLevelDefs upcasts a legacy plain-string levels array on read —
+  // every pre-existing saved format keeps working unchanged.
+  const legacyDefs = w.formatLevelDefs("fmt-default");
+  assert(legacyDefs.every(d => d.color === null) && legacyDefs.map(d => d.name).join(",") === "ERROR,WARN,INFO,DEBUG",
+    "the builtin default's plain-string levels list upcasts to {value,name,color:null} entries with no behavior change");
 });
 
 console.log("\n" + "=".repeat(60));
@@ -32378,4 +32716,65 @@ process.exitCode = failed ? 1 : 0;
       fixes together restore "nothing in the view updates until a load is
       completely finished" as an exception-free rule, person-requested:
       "Rendern erst wenn vollständig geladen soll für alles gelten."
+   Group 260 — new session: Custom Columns (person-requested — per-format
+      custom columns, populated by Pattern/Regex format-rule captures, with
+      a configurable left-to-right order; the current fixed six-field
+      schema becomes the "default" columns, individually optional per
+      format except Time and Level). compileFormatPattern/
+      validateFormatRegex themselves went from "message is the one hard
+      compile requirement" to "nothing is technically required to compile"
+      (every field already had a graceful default) — Time/Level being
+      MANDATORY is now enforced as a save-time-only rule in the Format
+      Manager (saveFormatEdit), so a runtime-compiled format (a file
+      already on disk under an old format record) never regresses. New
+      %X{name} pattern token (log4j MDC-style) gives Pattern mode parity
+      with Regex mode's pre-existing (?<name>...) custom named groups;
+      both land on a new entry.fields bag (applyFormatMatch), read via the
+      new entryColumnValue(e,key) (replaces the old fixed-switch
+      textColumnValue). COLUMN_TRACK_ORDER/HIDEABLE_COLUMNS/
+      DEFAULT_COLUMN_WIDTHS (global, fixed-six) became activeColumnDefs()/
+      FIXED_COLUMN_WIDTHS (per-format-union, dynamic — same
+      activeLevelOrder() union idiom), and the old fixed TEXT_FILTER_COLUMNS
+      table became activeTextFilterColumns(), consumed by the row renderers
+      (data-col added to every column span), the context menu's generalized
+      "Filter for this ___" (resolveContextFilterColumn now a plain
+      [data-col] walk), and the filter popup's column chips (now
+      JS-rendered). The two node.columns whitelist chokepoints
+      (materializeSerializedRoots/materializeCachedFilters) swapped
+      TEXT_FILTER_COLUMN_KEYS for knownTextFilterColumnKeys(), deliberately
+      broader (validates against every KNOWN format, not just currently-
+      loaded ones) so a saved filter's column restriction survives even
+      when its owning format isn't open right now. Level gained an
+      int-or-text value type with explicit per-level colors
+      (formatLevelDefs's v2 {value,name,color} item shape, upcast from the
+      legacy plain-string array on read — see formatLevelDefs's own
+      comment) for formats whose captured level is a numeric code (e.g.
+      syslog severity) rather than a name. The "loc" vs "location" column-
+      key split (CSS class/grid-track key vs. filter/context-menu key) was
+      unified on "location" throughout while touching this code (bundled
+      cleanup, not a requirement of the feature itself). 260a covers
+      parsing (both custom-column mechanisms + the fields bag + the
+      reserved-name collision check); 260b the data-model fallback for
+      pre-feature format records plus the save-time Time/Level gate; 260c
+      the Format Manager's new Custom Columns editor UI end to end
+      (add/remove/reorder default+custom columns, the default-column
+      re-add chips, save/reopen/IndexedDB round-trip); 260d rendering +
+      context menu + filter-popup-chip integration for a loaded custom-
+      column format, plus the union-of-loaded-formats behavior; 260e the
+      permissive-but-still-defensive knownTextFilterColumnKeys() policy at
+      both persistence chokepoints; 260f the level int-mode/explicit-color
+      mechanics. Existing groups 58/70/116d/117/154/212b were updated in
+      place (not dropped) where their assertions depended on now-superseded
+      specifics: GROUP 58/154's "loc" column key and the columns panel's
+      fixed #colToggle* ids (the panel is JS-rendered now — see
+      renderColumnsPanel — so tests query by [data-col] instead); GROUP 70's
+      "%m/(?<message>...) is required to compile" assertions (now compiles
+      fine, message falls back to the raw line — see above); GROUP 70j's
+      builtin-default-edit demo pattern (needed a %d token added, since Time
+      is now mandatory to save); GROUP 116d/117d's fmt.levels
+      plain-string-array assumption (now the v2 object-array shape for
+      anything saved through the editor — DEFAULT_LOG_FORMAT.levels itself,
+      and hence a just-Reset record, deliberately stays the legacy shape,
+      which formatLevelDefs still upcasts); GROUP 212b's fixed #colToggle*
+      id list (same dynamic-panel reason as 58/154).
    ============================================================ */

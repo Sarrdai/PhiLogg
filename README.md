@@ -221,11 +221,18 @@ open it in a browser to view it.
 - **Configurable log formats** (Settings → Format Manager) — define
   additional formats (a log4net-style conversion pattern, or a raw regex
   for edge cases) and map them to files by filename pattern; the log4net-style
-  default format still works with zero configuration. Each format also picks
+  default format still works with zero configuration. **Custom columns**:
+  each format picks its own set of columns, in your own order — Thread/
+  Location/Method are each optional (drop any you don't need), and a
+  pattern's `%X{name}` token (or a regex's own `(?<name>...)` group) can
+  capture anything else into a column of its own, right next to the built-in
+  ones. Only Time and Level are always required. Each format also picks
   **which log levels it uses and in what order** — any subset of
   ERROR/WARN/INFO/DEBUG/TRACE plus your own custom names (NOTICE, FATAL,
-  VERBOSE, …), each getting a color of its own — that's what the level
-  quick-filter bar shows for files using it; anything else falls into OTHER.
+  VERBOSE, …), each with an automatic color or one you pick yourself — that's
+  what the level quick-filter bar shows for files using it; anything else
+  falls into OTHER. Levels can also be matched by a numeric code instead of
+  text (e.g. syslog severity), mapped to whichever names/colors you choose.
   A **Meta** format mode combines several of your own formats into one:
   point it at an ordered list of target formats and a file matching it gets
   split by grammar and auto-merged (see "A merged file shows its 'Sources'"
@@ -291,10 +298,13 @@ Log line formats are not fixed — they're fully configurable via
 **Settings → Format Manager**: define any number of formats as a
 `%d %p %t %c %M %m %n`-style conversion pattern, or drop down to a raw regex
 for shapes the pattern language can't express, then map filenames to a format
-with a glob rule (e.g. `app-*.log`). Every configured format still produces
-the same fixed entry schema (timestamp/level/thread/location/method/message),
-so filters, sorting, and export work identically regardless of which format
-parsed a given file.
+with a glob rule (e.g. `app-*.log`). Time and Level are the only two
+mandatory columns — Thread/Location/Method/Message are each individually
+optional per format, and a `%X{name}` pattern token (or a regex's own
+`(?<name>...)` group) captures anything else into a **custom column** of its
+own, in whatever order you arrange the format's columns. Filters, sorting,
+and export all work the same regardless of which format parsed a given file
+or which columns it defines.
 
 Out of the box, with zero configuration, PhiLogg falls back to a log4net-style
 conversion pattern:
