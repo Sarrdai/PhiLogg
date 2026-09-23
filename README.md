@@ -219,14 +219,18 @@ open it in a browser to view it.
 - **Session export/import** — package an analysis (files, filters,
   bookmarks, notes) to share with a colleague.
 - **Configurable log formats** (Settings → Format Manager) — define
-  additional formats (a log4net-style conversion pattern, or a raw regex
-  for edge cases) and map them to files by filename pattern; the log4net-style
-  default format still works with zero configuration. **Custom columns**:
-  each format picks its own set of columns, in your own order — Thread/
-  Location/Method are each optional (drop any you don't need), and a
-  pattern's `%X{name}` token (or a regex's own `(?<name>...)` group) can
-  capture anything else into a column of its own, right next to the built-in
-  ones. Only Time and Level are always required. Each format also picks
+  additional formats **by example**: paste or drop a few log lines and
+  PhiLogg suggests a format right away, shown as a live table preview of how
+  the lines will be split. Correct the suggestion by picking a column and
+  selecting its value in the lines (with undo/redo), or edit the regex
+  directly; the timestamp format and the log levels are detected from the
+  examples too. Optionally map the format to files by filename pattern in
+  the same dialog. The log4net-style default format still works with zero
+  configuration. **Custom columns**: each format picks its own set of
+  columns, in your own order — Thread/Location/Method are each optional
+  (drop any you don't need), and anything else can get a column of its own,
+  right next to the built-in ones. Only Time and Level are always required.
+  Each format also picks
   **which log levels it uses and in what order** — any subset of
   ERROR/WARN/INFO/DEBUG/TRACE plus your own custom names (NOTICE, FATAL,
   VERBOSE, …), each with an automatic color or one you pick yourself — that's
@@ -295,14 +299,14 @@ rather than through that API.
 ## The log format it reads
 
 Log line formats are not fixed — they're fully configurable via
-**Settings → Format Manager**: define any number of formats as a
-`%d %p %t %c %M %m %n`-style conversion pattern, or drop down to a raw regex
-for shapes the pattern language can't express, then map filenames to a format
-with a glob rule (e.g. `app-*.log`). Time and Level are the only two
-mandatory columns — Thread/Location/Method/Message are each individually
-optional per format, and a `%X{name}` pattern token (or a regex's own
-`(?<name>...)` group) captures anything else into a **custom column** of its
-own, in whatever order you arrange the format's columns. Filters, sorting,
+**Settings → Format Manager**: define any number of formats from example
+lines — PhiLogg suggests one automatically, you correct it by marking column
+values in the examples or by editing the regex directly — then map filenames
+to a format with a glob rule (e.g. `app-*.log`), right in the same dialog or
+in the rule list. Time and Level are the only two mandatory columns —
+Thread/Location/Method/Message are each individually optional per format,
+and any other named regex group (`(?<name>...)`) becomes a **custom
+column** of its own, in whatever order you arrange the format's columns. Filters, sorting,
 and export all work the same regardless of which format parsed a given file
 or which columns it defines.
 

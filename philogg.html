@@ -3147,12 +3147,138 @@
   #formatEditColumnAdd input{flex:1 1 auto; min-width:0;}
   .format-column-error{font-size:11px; color:var(--level-error); margin-top:5px;}
   .format-level-error.hidden{display:none;}
-  #formatEditPatternField.hidden, #formatEditRegexField.hidden, #formatEditMetaField.hidden,
-  #formatEditSampleField.hidden, #formatEditTsFormatField.hidden, #formatEditLevelsField.hidden,
-  #formatEditColumnsField.hidden, #formatEditPreviewField.hidden{display:none;}
   #formatEditMetaTargets{display:flex; flex-direction:column; gap:4px;}
   #formatEditMetaAdd{display:flex; gap:6px; margin-top:6px;}
   #formatEditMetaAdd select{flex:1 1 auto; min-width:0;}
+  /* ---------- Format dialog (#formatDialog) — stacks above #settingsDialog
+     (z-index 75). Each column owns a hue (--fwz-hue, set inline per
+     swatch/mark), so one mark color reads the same in the column list and
+     in every example line. ---------- */
+  #formatDialog{
+    position:fixed; inset:0; z-index:80; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #formatDialog.hidden, #fwzFileInput.hidden, #fwzNormalBody.hidden, #formatEditMetaField.hidden{display:none;}
+  .fwz-card{width:min(1320px, 97vw); height:min(940px, 95vh);}
+  .fwz-top{display:flex; gap:16px; align-items:flex-start; padding:12px 22px 0; border-bottom:1px solid var(--border); flex:0 0 auto;}
+  .fwz-top .link-field{margin-bottom:10px;}
+  .fwz-top input[type="text"]{
+    width:100%; box-sizing:border-box; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:6px 8px; font-size:12px;
+  }
+  .fwz-top #formatEditRuleGlob{font-family:var(--font-mono);}
+  .fwz-name-field{flex:1 1 260px; min-width:0;}
+  .fwz-rule-field{flex:1 1 320px; min-width:0;}
+  .fwz-rule-field .fwz-hint{margin:4px 0 0;}
+  .fwz-main{flex:1 1 auto; display:flex; min-height:0;}
+  .fwz-side{flex:0 0 300px; border-right:1px solid var(--border); padding:14px 14px; overflow-y:auto; position:relative;}
+  .fwz-levels-title{margin-top:18px;}
+  #formatEditLevels .format-level-name-input{
+    flex:1; min-width:0; font-size:12px; padding:2px 5px; font-weight:600;
+    background:var(--bg-app); border:1px solid var(--border); border-radius:5px;
+  }
+  #formatEditLevels .format-level-value{background:var(--bg-app); border:1px solid var(--border); border-radius:5px; color:var(--text-primary);}
+  #formatEditLevels .format-level-row.fwz-level-flash{animation:fwzLineFlash 1.4s ease-out;}
+  .fwz-meta-body{flex:1 1 auto; overflow-y:auto; padding:16px 22px;}
+  .fwz-meta-body .fwz-section-title{margin-bottom:8px;}
+  .fwz-prev-row .level-badge{cursor:pointer;}
+  .fwz-body{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; padding:14px 18px; gap:8px; overflow:hidden;}
+  .fwz-section-title{font-size:11.5px; font-weight:650; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em;}
+  .fwz-hint{font-size:11px; color:var(--text-tertiary); margin:4px 0 10px; line-height:1.45;}
+  #fwzColumns{display:flex; flex-direction:column; gap:4px;}
+  .fwz-col-row{
+    display:flex; align-items:center; gap:6px; padding:5px 6px; border-radius:6px; cursor:pointer;
+    background:var(--bg-panel); border:1px solid transparent; font-size:12px;
+  }
+  .fwz-col-row:hover{border-color:var(--border);}
+  .fwz-col-row.active{border-color:hsl(var(--fwz-hue) 70% 50%); background:hsl(var(--fwz-hue) 70% 50% / .16);}
+  .fwz-col-swatch{width:10px; height:10px; border-radius:3px; flex:0 0 auto; background:hsl(var(--fwz-hue) 70% 50%);}
+  .fwz-col-label{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .fwz-col-rename{
+    width:100%; box-sizing:border-box; font-size:12px; padding:1px 4px; background:var(--bg-app);
+    border:1px solid var(--accent); border-radius:4px; color:var(--text-primary);
+  }
+  .fwz-col-count{font-size:10.5px; color:var(--text-tertiary); font-family:var(--font-mono);}
+  .fwz-col-req{font-size:10px; color:var(--text-tertiary);}
+  #fwzDefaultAdd{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  #fwzColumnAdd{display:flex; gap:6px; margin-top:10px;}
+  #fwzColumnAdd input{
+    flex:1 1 auto; min-width:0; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:5px 8px; font-size:12px;
+  }
+  .fwz-toolbar{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;}
+  .fwz-toolbar-actions{display:flex; gap:6px; flex-wrap:wrap;}
+  #fwzSample{
+    flex:1 1 45%; min-height:120px; overflow:auto; border:1px solid var(--border); border-radius:8px;
+    background:var(--bg-app); font-family:var(--font-mono); font-size:12px; line-height:1.75; outline:none;
+  }
+  #fwzSample{position:relative;} /* offsetParent for fwzRevealLine's offsetTop */
+  #fwzSample:focus-visible{border-color:var(--accent);}
+  .fwz-line.fwz-line-flash{animation:fwzLineFlash 1.4s ease-out;}
+  @keyframes fwzLineFlash{0%, 35%{background:color-mix(in srgb, var(--accent) 38%, transparent);} 100%{background:transparent;}}
+  .fwz-prev-row[data-line]:not(.fwz-prev-head){cursor:pointer;}
+  .fwz-prev-row[data-line]:not(.fwz-prev-head):hover{background:var(--bg-elevated-2);}
+  .fwz-toolbar-actions button:disabled{opacity:.4; cursor:default;}
+  .fwz-confirm{
+    display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px; font-size:12px;
+    background:color-mix(in srgb, var(--level-warn) 14%, transparent); border:1px solid var(--level-warn); color:var(--text-primary);
+  }
+  .fwz-confirm span{flex:1 1 auto;}
+  .fwz-confirm button{white-space:nowrap; flex:0 0 auto;}
+  /* The level-add field and meta-target select lost their styling with the
+     old inline panel — same field look as the column-add input. */
+  #formatDialog #formatEditLevelAdd input, #formatDialog #formatEditMetaAdd select{
+    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:5px 8px; font-size:12px;
+  }
+  .fwz-confirm.hidden{display:none;}
+  #fwzSample.fwz-drop-active{border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft);}
+  .fwz-empty{
+    height:100%; min-height:110px; display:flex; align-items:center; justify-content:center; text-align:center;
+    color:var(--text-tertiary); font-family:inherit; font-size:12.5px; padding:16px; box-sizing:border-box;
+  }
+  .fwz-line{display:flex; align-items:flex-start; border-bottom:1px solid var(--border-soft);}
+  .fwz-line.fwz-learn{background:var(--accent-soft);}
+  .fwz-line-no{
+    flex:0 0 38px; text-align:right; padding-right:8px; color:var(--text-tertiary); user-select:none;
+    font-size:10.5px; line-height:inherit;
+  }
+  .fwz-line-text{flex:1 1 auto; white-space:pre; padding-right:10px; cursor:text;}
+  .fwz-line-clear{
+    flex:0 0 auto; visibility:hidden; background:none; border:none; color:var(--text-tertiary);
+    cursor:pointer; font-size:11px; padding:0 8px; line-height:inherit;
+  }
+  .fwz-line.fwz-learn:hover .fwz-line-clear{visibility:visible;}
+  .fwz-mark{
+    background:hsl(var(--fwz-hue) 70% 50% / .30); box-shadow:inset 0 -2px 0 hsl(var(--fwz-hue) 70% 50%);
+    border-radius:3px; cursor:pointer;
+  }
+  /* A continuation line's Message mark: same faint look as a suggestion,
+     dashed underline to set it apart (it's the parser appending the line,
+     not a match of its own). */
+  .fwz-mark.fwz-suggested.fwz-continuation{box-shadow:none; border-bottom:1px dashed hsl(var(--fwz-hue) 70% 50% / .8); border-radius:0;}
+  .fwz-mark.fwz-suggested{background:hsl(var(--fwz-hue) 70% 50% / .10); box-shadow:inset 0 -1px 0 hsl(var(--fwz-hue) 70% 50% / .7); cursor:text;}
+  .fwz-result{display:flex; gap:12px;}
+  .fwz-result .link-field{margin-bottom:0; flex:1 1 auto; min-width:0;}
+  .fwz-result .fwz-ts-field{flex:0 0 240px;}
+  .fwz-result input{
+    width:100%; box-sizing:border-box; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:6px 8px; font-family:var(--font-mono); font-size:12px;
+  }
+  .fwz-status{font-size:11.5px; color:var(--text-tertiary); min-height:16px; line-height:1.45;}
+  .fwz-status .fwz-error{color:var(--level-error);}
+  .fwz-status .fwz-warn{color:var(--level-warn);}
+  #fwzPreview{
+    flex:1 1 35%; min-height:90px; overflow:auto; border:1px solid var(--border); border-radius:8px;
+    background:var(--bg-app); font-family:var(--font-mono); font-size:11.5px;
+  }
+  .fwz-prev-row{display:grid; gap:10px; padding:3px 10px; border-bottom:1px solid var(--border-soft); align-items:start; min-width:max-content;}
+  .fwz-prev-head{position:sticky; top:0; background:var(--bg-elevated-2); color:var(--text-secondary); font-weight:600; font-family:inherit; font-size:11px; z-index:1;}
+  .fwz-prev-row > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .fwz-prev-row > span.fwz-prev-msg{white-space:pre; overflow:visible;}
+  .fwz-prev-unmatched{color:var(--text-tertiary); font-style:italic;}
+  .fwz-actions{display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:12px 22px; border-top:1px solid var(--border); flex:0 0 auto;}
+  .fwz-actions .time-range-error{margin:0 auto 0 0;}
   .settings-inline-panel-title{font-size:12.5px; font-weight:650; color:var(--text-primary); margin-bottom:12px;}
   .settings-inline-panel textarea{
     width:100%; box-sizing:border-box; resize:vertical; min-height:52px;
@@ -5420,83 +5546,6 @@
           <div id="formatList"></div>
           <div class="settings-card-footer"><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format…</button></div>
           </div>
-          <div id="formatEditPanel" class="hidden settings-inline-panel">
-            <div class="settings-inline-panel-title" id="formatEditTitle">Add log format</div>
-            <div class="link-field">
-              <label for="formatEditName">Name</label>
-              <input type="text" id="formatEditName" placeholder="e.g. Nginx access log" maxlength="80" autocomplete="off">
-            </div>
-            <div class="link-field" id="formatEditSampleField">
-              <label for="formatEditSample">Example log line(s) <span class="link-target-label">(optional — suggests a pattern below)</span></label>
-              <textarea id="formatEditSample" rows="3" placeholder="Paste one or more sample log lines here…"></textarea>
-            </div>
-            <div class="link-field">
-              <div class="assert-mode-row">
-                <button type="button" class="assert-mode-btn" id="formatEditModePattern" data-mode="pattern">Pattern</button>
-                <button type="button" class="assert-mode-btn" id="formatEditModeRegex" data-mode="regex">Regex</button>
-                <button type="button" class="assert-mode-btn" id="formatEditModeMeta" data-mode="meta">Meta</button>
-              </div>
-            </div>
-            <div class="link-field" id="formatEditPatternField">
-              <label for="formatEditPattern">Conversion pattern</label>
-              <input type="text" id="formatEditPattern" placeholder='%d\t%p\t"%t"\t%c\t[%M]\t"%m"%n' autocomplete="off">
-              <div class="session-dialog-note">%d/%date %p/%level %t/%thread %c/%logger %M/%method %m/%message %X{name} (custom column) %n — \t \n \\ stand for a literal tab/newline/backslash.</div>
-            </div>
-            <div class="link-field hidden" id="formatEditRegexField">
-              <label for="formatEditRegex">Regex</label>
-              <input type="text" id="formatEditRegex" placeholder="^(?&lt;ts&gt;\S+) (?&lt;level&gt;\w+) ..." autocomplete="off">
-              <div class="session-dialog-note">Needs (?&lt;ts&gt;...) and (?&lt;level&gt;...) named groups; (?&lt;thread&gt;...)/(?&lt;location&gt;...)/(?&lt;method&gt;...)/(?&lt;message&gt;...) and any other name (a custom column) are optional.</div>
-            </div>
-            <div class="link-field hidden" id="formatEditMetaField">
-              <label>Target formats <span class="link-target-label">(ordered — first whose own header matches a line wins)</span></label>
-              <div id="formatEditMetaTargets"></div>
-              <div id="formatEditMetaAdd">
-                <select id="formatEditMetaTargetSelect"></select>
-                <button type="button" id="formatEditMetaAddBtn" class="btn-mini-outline">Add</button>
-              </div>
-              <div class="session-dialog-note">A file resolved to this format is split into one virtual file per target format at load time (classified line by line, first matching target wins), then automatically merged back into one chronological file. Needs at least 2 targets.</div>
-            </div>
-            <div class="link-field" id="formatEditTsFormatField">
-              <label for="formatEditTsFormat">Timestamp format</label>
-              <input type="text" id="formatEditTsFormat" placeholder="yyyy-MM-dd HH:mm:ss,SSS" autocomplete="off">
-              <div class="session-dialog-note">Tokens: yyyy MM dd HH mm ss SSS. Empty = free-form (best effort).</div>
-            </div>
-            <div class="link-field" id="formatEditLevelsField">
-              <label>Log levels <span class="link-target-label">(which ones this format uses, and in which order) — mandatory</span></label>
-              <div id="formatEditLevelValueType">
-                <button type="button" class="assert-mode-btn" id="formatEditLevelTypeText" data-level-type="text">Text</button>
-                <button type="button" class="assert-mode-btn" id="formatEditLevelTypeInt" data-level-type="int">Integer</button>
-              </div>
-              <div id="formatEditLevels"></div>
-              <div id="formatEditLevelAdd">
-                <input type="text" id="formatEditLevelNew" placeholder="Custom level name (e.g. NOTICE)" autocomplete="off" spellcheck="false">
-                <button type="button" id="formatEditLevelAddBtn" class="btn-mini-outline">Add</button>
-              </div>
-              <div id="formatEditLevelError" class="format-level-error hidden"></div>
-              <div class="session-dialog-note">Only checked levels get a quick-filter button for files using this format; anything else falls into OTHER. In Text mode, a custom name matches a line's level text exactly (case-insensitive); in Integer mode, each level instead matches a numeric code (e.g. syslog severity). Click a level's swatch to pick an explicit color, or leave it automatic (rotating palette).</div>
-            </div>
-            <div class="link-field" id="formatEditColumnsField">
-              <label>Columns <span class="link-target-label">(Thread/Location/Method and any custom columns — which ones, and in which order)</span></label>
-              <div id="formatEditColumns"></div>
-              <div id="formatEditColumnAdd">
-                <input type="text" id="formatEditColumnKeyNew" placeholder="Capture name (e.g. requestId)" autocomplete="off" spellcheck="false">
-                <input type="text" id="formatEditColumnLabelNew" placeholder="Column label (e.g. Request Id)" autocomplete="off" spellcheck="false">
-                <button type="button" id="formatEditColumnAddBtn" class="btn-mini-outline">Add</button>
-              </div>
-              <div id="formatEditColumnError" class="format-column-error hidden"></div>
-              <label class="column-toggle-row"><input type="checkbox" id="formatEditMessageVisible" checked> Show Message column</label>
-              <div class="session-dialog-note">Thread/Location/Method are optional — remove any that don't apply, or re-add them below. A custom column's capture name must appear as a %X{name} token (Pattern mode) or (?&lt;name&gt;...) group (Regex mode) above.</div>
-            </div>
-            <div class="link-field" id="formatEditPreviewField">
-              <label>Preview <span class="link-target-label">(from the example line(s) above)</span></label>
-              <div id="formatEditPreview" class="format-preview"></div>
-            </div>
-            <div class="time-range-error hidden" id="formatEditError"></div>
-            <div class="link-dialog-actions">
-              <button type="button" id="formatEditCancel" class="btn-mini-secondary">Cancel</button>
-              <button type="button" id="formatEditSave" class="btn-mini">Save</button>
-            </div>
-          </div>
 
           <div class="settings-subsection-title">Filename rules — first matching pattern wins; files matching none use the default format</div>
           <div class="settings-card" id="formatRuleListCard">
@@ -5552,6 +5601,115 @@
     </div>
   </div>
 
+  <!-- Format dialog (Settings → Log Formats → "Add format…"/"Edit"): the ONE
+       place a log format is defined — name, kind (log format / meta),
+       optional filename rule, example lines with a live suggestion, column
+       marking, the editable regex + timestamp format, log levels, and a
+       table preview. See "Format dialog" in the script. Opens ON TOP of the
+       Settings dialog (higher z-index), never closes it. -->
+  <div id="formatDialog" class="hidden">
+    <div class="settings-page-card fwz-card">
+      <div class="settings-page-header">
+        <div class="settings-page-title" id="formatEditTitle">Add log format</div>
+        <button type="button" id="fwzClose" class="btn-icon" title="Close">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg>
+        </button>
+      </div>
+      <div class="fwz-top">
+        <div class="link-field fwz-name-field">
+          <label for="formatEditName">Name</label>
+          <input type="text" id="formatEditName" placeholder="e.g. Nginx access log" maxlength="80" autocomplete="off">
+        </div>
+        <div class="link-field">
+          <label>Kind</label>
+          <div class="assert-mode-row">
+            <button type="button" class="assert-mode-btn" id="formatEditModeRegex" data-mode="regex">Log format</button>
+            <button type="button" class="assert-mode-btn" id="formatEditModeMeta" data-mode="meta">Meta (combines formats)</button>
+          </div>
+        </div>
+        <div class="link-field fwz-rule-field">
+          <label for="formatEditRuleGlob">Use for files matching <span class="link-target-label">(optional — adds a filename rule)</span></label>
+          <input type="text" id="formatEditRuleGlob" placeholder="e.g. app-*.log" autocomplete="off" spellcheck="false">
+          <div id="formatEditRuleInfo" class="fwz-hint"></div>
+        </div>
+      </div>
+      <div class="fwz-main" id="fwzNormalBody">
+        <div class="fwz-side">
+          <div class="fwz-section-title">Columns</div>
+          <div class="fwz-hint">Pick a column, then select its value in an example line.</div>
+          <div id="fwzColumns"></div>
+          <div id="fwzDefaultAdd"></div>
+          <div id="fwzColumnAdd">
+            <input type="text" id="fwzColumnLabelNew" placeholder="New column title" maxlength="40" autocomplete="off" spellcheck="false">
+            <button type="button" id="fwzColumnAddBtn" class="btn-mini-outline">Add</button>
+          </div>
+          <div id="fwzColumnError" class="format-column-error hidden"></div>
+          <label class="column-toggle-row"><input type="checkbox" id="formatEditMessageVisible" checked> Show Message column</label>
+
+          <div class="fwz-section-title fwz-levels-title">Log levels</div>
+          <div class="fwz-hint">Filled from the levels found in the examples. Checked levels get a quick-filter button; anything else falls into OTHER.</div>
+          <div id="formatEditLevelValueType">
+            <button type="button" class="assert-mode-btn" id="formatEditLevelTypeText" data-level-type="text">Text</button>
+            <button type="button" class="assert-mode-btn" id="formatEditLevelTypeInt" data-level-type="int">Integer</button>
+          </div>
+          <div id="formatEditLevels"></div>
+          <div id="formatEditLevelAdd">
+            <input type="text" id="formatEditLevelNew" placeholder="Custom level (e.g. NOTICE)" autocomplete="off" spellcheck="false">
+            <button type="button" id="formatEditLevelAddBtn" class="btn-mini-outline">Add</button>
+          </div>
+          <div id="formatEditLevelError" class="format-level-error hidden"></div>
+        </div>
+        <div class="fwz-body">
+          <div class="fwz-toolbar">
+            <div class="fwz-section-title">Example lines <span class="link-target-label" id="fwzLineCount"></span></div>
+            <div class="fwz-toolbar-actions">
+              <button type="button" id="fwzOpenFile" class="btn-mini-outline">Open file…</button>
+              <button type="button" id="fwzPasteBtn" class="btn-mini-outline">Paste</button>
+              <button type="button" id="fwzResuggest" class="btn-mini-outline" title="Replace the current marks, regex and timestamp format with a fresh automatic suggestion">✦ Re-suggest</button>
+              <button type="button" id="fwzUndo" class="btn-mini-outline" title="Undo (Ctrl+Z)">↶ Undo</button>
+              <button type="button" id="fwzRedo" class="btn-mini-outline" title="Redo (Ctrl+Y / Ctrl+Shift+Z)">↷ Redo</button>
+              <button type="button" id="fwzClearMarks" class="btn-mini-outline">Clear marks</button>
+              <button type="button" id="fwzClearAll" class="btn-mini-outline">Clear all</button>
+              <input type="file" id="fwzFileInput" class="hidden">
+            </div>
+          </div>
+          <div id="fwzResuggestConfirm" class="fwz-confirm hidden">
+            <span>Re-suggest discards the current marks, the regex and the timestamp format and replaces them with a fresh automatic suggestion. You can undo this.</span>
+            <button type="button" id="fwzResuggestYes" class="btn-mini">Re-suggest</button>
+            <button type="button" id="fwzResuggestNo" class="btn-mini-secondary">Keep current</button>
+          </div>
+          <div id="fwzSample" tabindex="0"></div>
+          <div class="fwz-result">
+            <div class="link-field">
+              <label for="formatEditRegex">Regex <span class="link-target-label">(derived from the marks — or edit it directly)</span></label>
+              <input type="text" id="formatEditRegex" placeholder="^(?&lt;ts&gt;\S+) (?&lt;level&gt;\w+) (?&lt;message&gt;.*)$" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="link-field fwz-ts-field">
+              <label for="formatEditTsFormat">Timestamp format <span class="link-target-label">(detected, editable)</span></label>
+              <input type="text" id="formatEditTsFormat" placeholder="yyyy-MM-dd HH:mm:ss,SSS" autocomplete="off" spellcheck="false">
+            </div>
+          </div>
+          <div id="fwzStatus" class="fwz-status"></div>
+          <div class="fwz-section-title">Preview</div>
+          <div id="fwzPreview"></div>
+        </div>
+      </div>
+      <div class="fwz-meta-body hidden" id="formatEditMetaField">
+        <div class="fwz-section-title">Target formats <span class="link-target-label">(ordered — first whose own header matches a line wins)</span></div>
+        <div id="formatEditMetaTargets"></div>
+        <div id="formatEditMetaAdd">
+          <select id="formatEditMetaTargetSelect"></select>
+          <button type="button" id="formatEditMetaAddBtn" class="btn-mini-outline">Add</button>
+        </div>
+        <div class="session-dialog-note">A file resolved to this format is split into one virtual file per target format at load time (classified line by line, first matching target wins), then automatically merged back into one chronological file. Needs at least 2 targets.</div>
+      </div>
+      <div class="fwz-actions">
+        <div class="time-range-error hidden" id="formatEditError"></div>
+        <button type="button" id="formatEditCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="formatEditSave" class="btn-mini">Save</button>
+      </div>
+    </div>
+  </div>
   <!-- Per-folder Folder-watch settings (gear icon on a .folder-watch-header —
        see openFolderWatchSettingsDialog). Reuses the same settings-page-card/
        settings-row/settings-switch classes as #settingsDialog above so it
@@ -8017,8 +8175,7 @@ async function parseLogTextAsync(text, node, onProgress) {
       // owning format's level list per-entry, without needing the tree node.
       current.formatId = formatId;
     } else if (current && line !== "") {
-      current.message += "\n" + line;
-      current.raw += "\n" + line;
+      appendContinuationLine(current, line);
     }
     // lines before the first header are dropped
 
@@ -8166,7 +8323,10 @@ const RESERVED_FIELD_KEYS = new Set(["ts", "level", "thread", "location", "metho
 // in the Format Manager (saveFormatEdit), not baked into compiling — a
 // format saved before that rule existed, or compiled at runtime for a file
 // already on disk, must keep parsing exactly as it always has.
-function compileFormatPattern(pattern, tsFormat) {
+// opts.plainDateGroups: the timestamp's inner per-token groups become
+// non-capturing — for a regex the format dialog shows/saves as TEXT, whose
+// only capture groups should be the named column groups.
+function compileFormatPattern(pattern, tsFormat, opts) {
   const raw = unescapePatternText(pattern || "");
   const dateFrag = compileDateFormat(tsFormat);
   FORMAT_TOKEN_RE.lastIndex = 0;
@@ -8195,7 +8355,7 @@ function compileFormatPattern(pattern, tsFormat) {
     }
     const isLast = lastIndex === raw.length;
     let frag;
-    if (field === "ts") frag = dateFrag ? dateFrag.regexStr : (isLast ? ".*" : ".*?");
+    if (field === "ts") frag = dateFrag ? (opts && opts.plainDateGroups ? dateFrag.regexStr.replace(/(?<!\\)\((?=\\d)/g, "(?:") : dateFrag.regexStr) : (isLast ? ".*" : ".*?");
     else if (field === "level" || field === "thread") frag = isLast ? ".*" : "\\S+";
     else frag = isLast ? ".*" : ".*?";
     if (fieldsSeen.has(field)) {
@@ -8315,6 +8475,35 @@ const DEFAULT_LOG_FORMAT = {
   createdAt: 0,
 };
 
+// A quoted, possibly multi-line message: a regex ending in
+// `"(?<message>...)(?:")?$` (what the format dialog derives when the
+// message is wrapped in quotes — the closing quote is optional there
+// because a multi-line message only closes on a later continuation line).
+// Returns that quote character, or "" for any other regex.
+function messageWrapQuote(src) {
+  const m = /(["'])\(\?<message>[^)]*\)\(\?:\1\)\?\$$/.exec(src || "");
+  return m ? m[1] : "";
+}
+// Header side: if the message's closing quote isn't on its header line, the
+// entry remembers the open quote, so the continuation line that closes it
+// can drop it (appendContinuationLine) — otherwise the leading quote would
+// be excluded (it's literal in the regex) but the trailing one kept.
+function markOpenMessageQuote(entry, quote, line) {
+  if (quote && !line.endsWith(quote)) entry.msgOpenQuote = quote;
+  return entry;
+}
+// The one "append a non-header line to the current entry" step every
+// parser loop shares (main thread, worker, tailing, format-dialog preview).
+function appendContinuationLine(entry, line) {
+  let text = line;
+  if (entry.msgOpenQuote && text.endsWith(entry.msgOpenQuote)) {
+    text = text.slice(0, -entry.msgOpenQuote.length);
+    delete entry.msgOpenQuote;
+  }
+  entry.message += "\n" + text;
+  entry.raw += "\n" + line;
+}
+
 // Compiles one LogFormat record into { isHeaderLine(line), parseHeader(line) }.
 // The builtin default, as long as it hasn't been edited, is a thin
 // pass-through to the untouched HEADER_RE/parseHeaderLine above — zero
@@ -8350,11 +8539,13 @@ function compileOneFormat(fmt) {
       parseHeader: line => applyFormatMatch({ message: line }, line, dateFrag),
     };
   }
+  const wrapQuote = messageWrapQuote(compiled.regex.source);
   return {
     isHeaderLine: line => compiled.regex.test(line),
     parseHeader: line => {
       const m = compiled.regex.exec(line);
-      return applyFormatMatch((m && m.groups) || {}, line, dateFrag);
+      const entry = applyFormatMatch((m && m.groups) || {}, line, dateFrag);
+      return m ? markOpenMessageQuote(entry, wrapQuote, line) : entry;
     },
   };
 }
@@ -8595,8 +8786,7 @@ async function parseFileWindow(file, node, from, to, onProgress) {
         current.formatId = formatId;
         if (current.ts > to) { current = null; stopped = true; break; } // past the window — nothing further is needed
       } else if (current && line !== "") {
-        current.message += "\n" + line;
-        current.raw += "\n" + line;
+        appendContinuationLine(current, line);
       }
     }
     pos = end;
@@ -8706,7 +8896,7 @@ function buildLogParseWorkerSrc() {
     unescapePatternText, compileDateFormat, parseTimestampGeneric,
     compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
     formatLocation, applyFormatMatch, parseTimestamp, parseHeaderLine,
-    compileOneFormat,
+    messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
   ].map(fn => fn.toString()).join("\n\n");
   // A local, worker-scoped id counter — never the page's own uidCounter,
   // which is main-thread-only state a worker can't share. The main thread
@@ -8727,8 +8917,7 @@ function buildLogParseWorkerSrc() {
     '      current = compiled.parseHeader(line);',
     '      current.formatId = fmt.id;',
     '    } else if (current && line !== "") {',
-    '      current.message += "\\n" + line;',
-    '      current.raw += "\\n" + line;',
+    '      appendContinuationLine(current, line);',
     '    }',
     '    if (i % PARSE_CHUNK_LINES === 0) {',
     '      if (pending.length) { postMessage({ type: "chunk", entries: pending }); pending = []; }',
@@ -19760,7 +19949,7 @@ function toggleFocusMode(on) {
 // itself closes.
 function anyEscapeOverlayOpen() {
   const overlayIds = [
-    "filterPopup", "settingsDialog", "folderWatchSettingsDialog", "linkDialog",
+    "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
@@ -24134,6 +24323,16 @@ window.philoggLoadUrl = loadUrlIntoTree;
 // impossible with only the File System Access API (it needs a live
 // FileSystemDirectoryHandle, which a path can't produce).
 async function loadDesktopLocalFiles({ files, folders } = {}) {
+  // Same "the format setup wizard takes the drop" rule as the browser drop
+  // handler: the first dropped file becomes example lines, nothing loads.
+  if (formatDialogOpen() && Array.isArray(files) && files.length) {
+    const res = await fetch(files[0].url);
+    if (!res.ok) { showCopyToast(`Couldn't open "${files[0].name}" (HTTP ${res.status})`); return; }
+    const bytes = await res.arrayBuffer();
+    fwzSuggestRuleFromFilename(files[0].name);
+    fwzAppendText(new TextDecoder().decode(bytes.slice(0, 512 * 1024)));
+    return;
+  }
   if (Array.isArray(folders) && folders.length) {
     if (FOLDER_WATCH_NATIVE) {
       for (const path of folders) await addWatchedFolder(nativeDirHandle(path));
@@ -24214,6 +24413,9 @@ function nativeDragDropOwnsThis() {
 window.addEventListener("dragenter", ev => {
   if (nativeDragDropOwnsThis() || !isFileDrag(ev)) return;
   ev.preventDefault();
+  // The format setup wizard takes a dropped file as example lines instead
+  // of loading it — its own box shows the drop feedback, not this overlay.
+  if (formatDialogOpen()) return;
   dragCounter++;
   dropOverlay.classList.remove("hidden");
 });
@@ -24254,6 +24456,11 @@ window.addEventListener("drop", ev => {
   dropOverlay.classList.add("hidden");
   const dt = ev.dataTransfer;
   if (!dt) return;
+  if (formatDialogOpen()) {
+    fwzSampleEl.classList.remove("fwz-drop-active");
+    if (dt.files && dt.files[0]) fwzLoadFile(dt.files[0]);
+    return;
+  }
 
   // Prefer FileSystemHandles (Chromium) so dropped files can be tailed, and
   // so a dropped folder resolves to a FileSystemDirectoryHandle (kind
@@ -24381,8 +24588,7 @@ function appendTailText(node, chunkText) {
       last = e;
       changed = true;
     } else if (last && line !== "") {
-      last.message += "\n" + line;
-      last.raw += "\n" + line;
+      appendContinuationLine(last, line);
       changed = true;
     }
   }
@@ -29708,11 +29914,14 @@ async function renderLibraryToolbarPresets() {
    row buttons is still added for consistency/defense with the rest of
    the codebase's discipline.
 
-   Add/Edit format and Add/Edit rule are NOT separate dialogs — they're
-   inline panels (.settings-inline-panel, highlighted background) that
-   expand within the Log Formats section itself (formatEditPanel/
-   formatRuleEditPanel), closed only via their own Cancel/Save, never by
-   an outside click — there's no backdrop of their own to click. */
+   Add/Edit rule is NOT a separate dialog — it's an inline panel
+   (.settings-inline-panel, highlighted background) that expands within
+   the Log Formats section itself (formatRuleEditPanel), closed only via
+   its own Cancel/Save. Add/Edit FORMAT is the exception: it needs room for
+   examples, marking and a table preview, so it's its own large dialog on
+   top of Settings (#formatDialog, see "Format dialog"), closed via
+   Cancel/✕/Esc/Save — never by an outside click, so no work is lost to a
+   stray click. */
 const settingsDialog = el("#settingsDialog");
 const formatList = el("#formatList");
 const formatRuleList = el("#formatRuleList");
@@ -30119,20 +30328,20 @@ async function removeFormatRule(id) {
   renderFormatRuleList();
 }
 
-// ---- Add/Edit log format — inline panel (not a separate dialog) ----
-const formatEditPanel = el("#formatEditPanel");
+// ---- Add/Edit log format — the format dialog (#formatDialog, see
+// "Format dialog" further below for the examples/marking/preview part) ----
 const formatEditName = el("#formatEditName");
-const formatEditSample = el("#formatEditSample");
-const formatEditPattern = el("#formatEditPattern");
 const formatEditRegex = el("#formatEditRegex");
 const formatEditTsFormat = el("#formatEditTsFormat");
 const formatEditError = el("#formatEditError");
-const formatEditPreview = el("#formatEditPreview");
+const formatEditRuleGlob = el("#formatEditRuleGlob");
 const formatEditLevelsEl = el("#formatEditLevels");
 const formatEditLevelNew = el("#formatEditLevelNew");
 const formatEditLevelError = el("#formatEditLevelError");
 let formatEditId = null;
-let formatEditMode = "pattern";
+// "regex" (an ordinary log format — the dialog only ever writes Regex
+// mode; a stored Pattern-mode format opens as its compiled regex) or "meta".
+let formatEditMode = "regex";
 // Working state of the editor's level list: the arranged order of every row
 // (the five fixed ALL_LEVELS rows, which are always present and merely
 // checked/unchecked, plus any CUSTOM names this format defines, which exist
@@ -30158,8 +30367,16 @@ function updateFormatEditLevelModeUI() {
   el("#formatEditLevelTypeText").classList.toggle("active", formatEditLevelValueType === "text");
   el("#formatEditLevelTypeInt").classList.toggle("active", formatEditLevelValueType === "int");
 }
-el("#formatEditLevelTypeText").addEventListener("click", () => { formatEditLevelValueType = "text"; updateFormatEditLevelModeUI(); renderFormatEditLevels(); });
-el("#formatEditLevelTypeInt").addEventListener("click", () => { formatEditLevelValueType = "int"; updateFormatEditLevelModeUI(); renderFormatEditLevels(); });
+el("#formatEditLevelTypeText").addEventListener("click", () => { formatEditLevelValueType = "text"; updateFormatEditLevelModeUI(); renderFormatEditLevels(); formatEditLevelsChanged(); });
+el("#formatEditLevelTypeInt").addEventListener("click", () => { formatEditLevelValueType = "int"; updateFormatEditLevelModeUI(); renderFormatEditLevels(); formatEditLevelsChanged(); });
+// Any hand edit of the level list: from now on the dialog stops
+// auto-filling it from the examples (fwzSyncLevels only adds newly seen
+// values), and the preview's level badges recolor right away.
+function formatEditLevelsChanged() {
+  if (!fwz) return;
+  fwz.levelsTouched = true;
+  renderFwzPreview();
+}
 
 // Seeds the working level state from a stored format (or the defaults for a
 // brand-new one): its own levels first, in their stored order (custom names
@@ -30220,6 +30437,7 @@ function addFormatEditLevel() {
   formatEditLevelNew.value = "";
   showFormatEditLevelError("");
   renderFormatEditLevels();
+  formatEditLevelsChanged();
 }
 
 function removeFormatEditLevel(lvl) {
@@ -30230,6 +30448,7 @@ function removeFormatEditLevel(lvl) {
   formatEditLevelMeta.delete(lvl);
   showFormatEditLevelError("");
   renderFormatEditLevels();
+  formatEditLevelsChanged();
 }
 
 function renderFormatEditLevels() {
@@ -30246,6 +30465,7 @@ function renderFormatEditLevels() {
     cb.title = "Use this level for this format";
     cb.addEventListener("change", () => {
       if (cb.checked) formatEditLevelOn.add(lvl); else formatEditLevelOn.delete(lvl);
+      formatEditLevelsChanged();
     });
     row.appendChild(cb);
 
@@ -30253,11 +30473,26 @@ function renderFormatEditLevels() {
     const meta = formatEditLevelMetaFor(lvl);
     const slot = isCustom ? formatEditLevelSlot(lvl) : 0;
     const autoColor = isCustom ? "var(--level-custom-" + slot + ")" : "var(--level-" + lvl.toLowerCase() + ")";
-    const name = document.createElement("div");
-    name.className = "format-level-name";
-    name.style.color = meta.color || autoColor;
-    name.textContent = lvl;
-    row.appendChild(name);
+    // A custom level's name is editable in place (e.g. an auto-filled
+    // integer code "3" renamed to "ERROR" — see renameFormatEditLevel).
+    if (isCustom) {
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.className = "format-level-name-input";
+      nameInput.value = lvl;
+      nameInput.title = "Level name — edit to rename";
+      nameInput.spellcheck = false;
+      nameInput.style.color = meta.color || autoColor;
+      nameInput.addEventListener("change", () => renameFormatEditLevel(lvl, nameInput.value));
+      nameInput.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); nameInput.blur(); } });
+      row.appendChild(nameInput);
+    } else {
+      const name = document.createElement("div");
+      name.className = "format-level-name";
+      name.style.color = meta.color || autoColor;
+      name.textContent = lvl;
+      row.appendChild(name);
+    }
 
     // Integer mode: the numeric code this level matches (e.g. syslog
     // severity) — hidden in Text mode, where the level's NAME is itself
@@ -30268,8 +30503,8 @@ function renderFormatEditLevels() {
       valInput.className = "format-level-value";
       valInput.placeholder = "code";
       valInput.title = "Numeric level code this format's captured value must match";
-      valInput.value = meta.value === lvl ? "" : meta.value;
-      valInput.addEventListener("change", () => { meta.value = valInput.value.trim() || lvl; });
+      valInput.value = meta.value === lvl && !/^\d+$/.test(lvl) ? "" : meta.value;
+      valInput.addEventListener("change", () => { meta.value = valInput.value.trim() || lvl; formatEditLevelsChanged(); });
       row.appendChild(valInput);
     }
 
@@ -30316,7 +30551,7 @@ function renderFormatEditLevels() {
     swatch.style.borderColor = meta.color || autoColor;
     swatch.addEventListener("click", ev => {
       ev.stopPropagation();
-      openColorPicker(null, swatch, color => { meta.color = color; renderFormatEditLevels(); });
+      openColorPicker(null, swatch, color => { meta.color = color; renderFormatEditLevels(); formatEditLevelsChanged(); });
     });
     row.appendChild(swatch);
 
@@ -30332,6 +30567,37 @@ function moveFormatEditLevel(lvl, delta) {
   formatEditLevelOrder[idx] = formatEditLevelOrder[other];
   formatEditLevelOrder[other] = lvl;
   renderFormatEditLevels();
+  formatEditLevelsChanged();
+}
+
+// Renames a custom level row. Renaming onto one of the five fixed names
+// that isn't in use yet MERGES into that fixed row (it gets this row's
+// integer code, color and position) — the natural way to map an
+// auto-filled code like "3" onto ERROR. Any other existing name is refused.
+function renameFormatEditLevel(oldName, raw) {
+  const name = normalizeLevelName(raw);
+  const idx = formatEditLevelOrder.indexOf(oldName);
+  if (idx === -1 || !name || name === oldName) { renderFormatEditLevels(); return; }
+  if (name === "OTHER") { showFormatEditLevelError("OTHER is the built-in catch-all and can't be used."); renderFormatEditLevels(); return; }
+  const meta = formatEditLevelMetaFor(oldName);
+  if (ALL_LEVELS.includes(name)) {
+    if (formatEditLevelOn.has(name)) { showFormatEditLevelError('"' + name + '" is already in use.'); renderFormatEditLevels(); return; }
+    formatEditLevelOrder.splice(formatEditLevelOrder.indexOf(name), 1);
+    formatEditLevelOrder[formatEditLevelOrder.indexOf(oldName)] = name;
+    formatEditLevelOn.delete(oldName);
+    formatEditLevelOn.add(name);
+    formatEditLevelMeta.delete(oldName);
+    formatEditLevelMeta.set(name, { value: formatEditLevelValueType === "int" ? meta.value : name, color: meta.color });
+  } else {
+    if (formatEditLevelOrder.includes(name)) { showFormatEditLevelError('"' + name + '" is already in the list.'); renderFormatEditLevels(); return; }
+    formatEditLevelOrder[idx] = name;
+    if (formatEditLevelOn.delete(oldName)) formatEditLevelOn.add(name);
+    formatEditLevelMeta.delete(oldName);
+    formatEditLevelMeta.set(name, { value: formatEditLevelValueType === "int" ? meta.value : name, color: meta.color });
+  }
+  showFormatEditLevelError("");
+  renderFormatEditLevels();
+  formatEditLevelsChanged();
 }
 
 el("#formatEditLevelAddBtn").addEventListener("click", ev => { ev.stopPropagation(); addFormatEditLevel(); });
@@ -30341,40 +30607,14 @@ formatEditLevelNew.addEventListener("keydown", ev => {
   addFormatEditLevel();
 });
 
-// ---- Custom columns editor (per-format ordered middle-column list) ----
-// Same ▲/▼-reorder idiom as the level list above, but every row (default or
-// custom) is removable/re-addable — there's no fixed five to preserve
-// position for, since Thread/Location/Method are each individually
-// optional now (Custom Columns).
-const formatEditColumnsEl = el("#formatEditColumns");
-const formatEditColumnKeyNew = el("#formatEditColumnKeyNew");
-const formatEditColumnLabelNew = el("#formatEditColumnLabelNew");
-const formatEditColumnError = el("#formatEditColumnError");
+// ---- Columns ----
+// The column list itself lives in the dialog's own state (fwz.columns, see
+// "Format dialog"); Message's visibility is a plain checkbox.
 const formatEditMessageVisibleEl = el("#formatEditMessageVisible");
-let formatEditColumnOrder = DEFAULT_MIDDLE_COLUMNS.slice();
 
-// Seeds the working column state from a stored format's columnDefs (or the
-// legacy default of all three) plus its messageVisible flag.
-function setFormatEditColumns(columnDefs, messageVisible) {
-  formatEditColumnOrder = (Array.isArray(columnDefs) && columnDefs.length)
-    ? columnDefs.map(d => ({ key: d.key, kind: d.kind === "custom" ? "custom" : "default", label: d.label || d.key }))
-    : DEFAULT_MIDDLE_COLUMNS.slice();
-  formatEditMessageVisibleEl.checked = messageVisible !== false;
-  showFormatEditColumnError("");
-  formatEditColumnKeyNew.value = "";
-  formatEditColumnLabelNew.value = "";
-  renderFormatEditColumns();
-}
-
-function showFormatEditColumnError(msg) {
-  formatEditColumnError.textContent = msg;
-  formatEditColumnError.classList.toggle("hidden", !msg);
-}
-
-// Every named capture group in a compiled regex's source — used to validate
-// that a custom column's key is actually captured by the pattern/regex
-// above before letting it be added (a dangling column would never show
-// anything).
+// Every named capture group in a compiled regex's source — which columns a
+// regex actually fills (a listed column it doesn't capture is left out on
+// save, since it would only ever show empty).
 function formatCapturedGroupNames(regex) {
   const names = [];
   const re = /\(\?<([A-Za-z_$][A-Za-z0-9_$]*)>/g;
@@ -30383,145 +30623,17 @@ function formatCapturedGroupNames(regex) {
   return names;
 }
 
-// Default columns (Thread/Location/Method) currently removed from the
-// list — offered as one-click "+ Thread" style re-add chips, since a
-// default column's key/label are fixed and don't need the custom-column
-// name/label fields below.
-function availableDefaultColumnsToAdd() {
-  const present = new Set(formatEditColumnOrder.map(d => d.key));
-  return DEFAULT_MIDDLE_COLUMNS.filter(d => !present.has(d.key));
-}
-function addFormatEditDefaultColumn(key) {
-  const def = DEFAULT_MIDDLE_COLUMNS.find(d => d.key === key);
-  if (!def || formatEditColumnOrder.some(d => d.key === key)) return;
-  formatEditColumnOrder.push({ key: def.key, kind: "default", label: def.label });
-  showFormatEditColumnError("");
-  renderFormatEditColumns();
-}
-
-// Adds a custom column from the "capture name"/"label" fields. The key must
-// currently appear as a captured group in the pattern/regex above (%X{name}
-// in Pattern mode, (?<name>...) in Regex mode) — same live-recompile idea
-// renderFormatEditPreview already uses for the sample-line preview.
-function addFormatEditCustomColumn() {
-  const key = formatEditColumnKeyNew.value.trim();
-  const label = formatEditColumnLabelNew.value.trim() || key;
-  if (!key) { showFormatEditColumnError("Enter the capture name (the %X{name} or (?<name>...) group)."); return; }
-  if (RESERVED_FIELD_KEYS.has(key)) { showFormatEditColumnError('"' + key + '" is a reserved field name — pick another.'); return; }
-  if (formatEditColumnOrder.some(d => d.key === key)) { showFormatEditColumnError('"' + key + '" is already a column.'); return; }
-  const compiled = compilePreviewFormat(formatEditMode, formatEditPattern.value, formatEditRegex.value, formatEditTsFormat.value.trim());
-  const capturedNames = compiled ? formatCapturedGroupNames(compiled.regex) : [];
-  if (!capturedNames.includes(key)) {
-    showFormatEditColumnError('"' + key + '" isn’t currently captured by the pattern/regex above.');
-    return;
-  }
-  formatEditColumnOrder.push({ key, kind: "custom", label: label.slice(0, 40) });
-  formatEditColumnKeyNew.value = "";
-  formatEditColumnLabelNew.value = "";
-  showFormatEditColumnError("");
-  renderFormatEditColumns();
-}
-
-function removeFormatEditColumn(key) {
-  const idx = formatEditColumnOrder.findIndex(d => d.key === key);
-  if (idx === -1) return;
-  formatEditColumnOrder.splice(idx, 1);
-  showFormatEditColumnError("");
-  renderFormatEditColumns();
-}
-
-function moveFormatEditColumn(key, delta) {
-  const idx = formatEditColumnOrder.findIndex(d => d.key === key);
-  const other = idx + delta;
-  if (idx === -1 || other < 0 || other >= formatEditColumnOrder.length) return;
-  const tmp = formatEditColumnOrder[idx];
-  formatEditColumnOrder[idx] = formatEditColumnOrder[other];
-  formatEditColumnOrder[other] = tmp;
-  renderFormatEditColumns();
-}
-
-function renderFormatEditColumns() {
-  formatEditColumnsEl.innerHTML = "";
-  const frag = document.createDocumentFragment();
-  formatEditColumnOrder.forEach((col, i) => {
-    const row = document.createElement("div");
-    row.className = "format-level-row";
-    row.dataset.col = col.key;
-
-    const name = document.createElement("div");
-    name.className = "format-level-name";
-    name.textContent = col.kind === "custom" ? col.label + " (" + col.key + ")" : col.label;
-    row.appendChild(name);
-
-    const upBtn = document.createElement("button");
-    upBtn.type = "button";
-    upBtn.className = "filter-library-row-order";
-    upBtn.title = "Move up";
-    upBtn.textContent = "▲";
-    upBtn.disabled = i === 0;
-    upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditColumn(col.key, -1); });
-    row.appendChild(upBtn);
-
-    const downBtn = document.createElement("button");
-    downBtn.type = "button";
-    downBtn.className = "filter-library-row-order";
-    downBtn.title = "Move down";
-    downBtn.textContent = "▼";
-    downBtn.disabled = i === formatEditColumnOrder.length - 1;
-    downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatEditColumn(col.key, 1); });
-    row.appendChild(downBtn);
-
-    const delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.className = "filter-library-row-del";
-    delBtn.title = "Remove this column";
-    delBtn.innerHTML = ICON_CLOSE;
-    delBtn.addEventListener("click", ev => { ev.stopPropagation(); removeFormatEditColumn(col.key); });
-    row.appendChild(delBtn);
-
-    frag.appendChild(row);
-  });
-  formatEditColumnsEl.appendChild(frag);
-
-  const addRow = document.createElement("div");
-  addRow.id = "formatEditColumnDefaultAdd";
-  availableDefaultColumnsToAdd().forEach(def => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "btn-mini-outline";
-    chip.textContent = "+ " + def.label;
-    chip.addEventListener("click", ev => { ev.stopPropagation(); addFormatEditDefaultColumn(def.key); });
-    addRow.appendChild(chip);
-  });
-  formatEditColumnsEl.appendChild(addRow);
-}
-el("#formatEditColumnAddBtn").addEventListener("click", ev => { ev.stopPropagation(); addFormatEditCustomColumn(); });
-[formatEditColumnKeyNew, formatEditColumnLabelNew].forEach(input => {
-  input.addEventListener("keydown", ev => {
-    if (ev.key !== "Enter") return;
-    ev.preventDefault(); // the editor sits inside a dialog — Enter must not submit/close it
-    addFormatEditCustomColumn();
-  });
-});
-
+// Kind toggle: an ordinary log format (examples, columns, levels, regex)
+// or a meta-format combining others (only its ordered target list — see
+// DEFAULT_LOG_FORMAT's mode comment).
 function updateFormatEditModeUI() {
-  el("#formatEditModePattern").classList.toggle("active", formatEditMode === "pattern");
-  el("#formatEditModeRegex").classList.toggle("active", formatEditMode === "regex");
-  el("#formatEditModeMeta").classList.toggle("active", formatEditMode === "meta");
-  el("#formatEditPatternField").classList.toggle("hidden", formatEditMode !== "pattern");
-  el("#formatEditRegexField").classList.toggle("hidden", formatEditMode !== "regex");
-  el("#formatEditMetaField").classList.toggle("hidden", formatEditMode !== "meta");
-  // None of these apply to a meta-format (no timestamp/levels/pattern of
-  // its own to preview against — see DEFAULT_LOG_FORMAT's mode comment).
   const isMeta = formatEditMode === "meta";
-  el("#formatEditSampleField").classList.toggle("hidden", isMeta);
-  el("#formatEditTsFormatField").classList.toggle("hidden", isMeta);
-  el("#formatEditLevelsField").classList.toggle("hidden", isMeta);
-  el("#formatEditColumnsField").classList.toggle("hidden", isMeta);
-  el("#formatEditPreviewField").classList.toggle("hidden", isMeta);
+  el("#formatEditModeRegex").classList.toggle("active", !isMeta);
+  el("#formatEditModeMeta").classList.toggle("active", isMeta);
+  el("#fwzNormalBody").classList.toggle("hidden", isMeta);
+  el("#formatEditMetaField").classList.toggle("hidden", !isMeta);
 }
-el("#formatEditModePattern").addEventListener("click", () => { formatEditMode = "pattern"; updateFormatEditModeUI(); renderFormatEditPreview(); });
-el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "regex"; updateFormatEditModeUI(); renderFormatEditPreview(); });
+el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "regex"; updateFormatEditModeUI(); });
 el("#formatEditModeMeta").addEventListener("click", () => { formatEditMode = "meta"; updateFormatEditModeUI(); renderFormatEditMetaTargets(); });
 
 // ---- Meta-format target-format picker (mirrors the level-order editor
@@ -30700,6 +30812,26 @@ function suggestPatternFromSample(sampleText) {
     }
   }
 
+  // A path-like field in a gap between two claimed spans (e.g. the default
+  // format's `C:\src\App.cs\tline 12` between "thread" and [method]) is the
+  // location (%c). Left as literal text, it would pin the suggestion to
+  // this one line's file name and line number and match no other line.
+  if (!spans.some(s => s.token === "%c")) {
+    const sorted = spans.slice().sort((a, b) => a.start - b.start);
+    for (let i = 0; i + 1 < sorted.length; i++) {
+      const gs = sorted[i].end, ge = sorted[i + 1].start;
+      const gap = line.slice(gs, ge);
+      const lead = gap.match(/^[\s"'\[\]()]*/)[0].length;
+      const trail = gap.match(/[\s"'\[\]()]*$/)[0].length;
+      if (lead + trail >= gap.length) continue;
+      const content = gap.slice(lead, gap.length - trail);
+      if (/[\\\/]|\.[A-Za-z]{1,5}\b/.test(content)) {
+        spans.push({ start: gs + lead, end: ge - trail, token: "%c" });
+        break;
+      }
+    }
+  }
+
   if (!spans.length) return null; // nothing recognizable — not a useful suggestion
   spans.sort((a, b) => a.start - b.start);
 
@@ -30710,12 +30842,23 @@ function suggestPatternFromSample(sampleText) {
   }
   // A short separator run right after the last token (a closing delimiter
   // from a quoted/bracketed span, ": ", " - ", a bare space, ...) stays
-  // literal; the rest of the line is the message.
+  // literal; the rest of the line is the message — minus a closing quote
+  // matching one that opens it (the default format's `"%m"`).
   const tail = line.slice(cursor);
   const sep = /^[\s:>)\]"'\-–—.,;]*/.exec(tail)[0];
-  pattern += escapePatternLiteral(sep) + "%m%n";
+  const q = sep.slice(-1);
+  const closesQuote = (q === '"' || q === "'") && tail.length > sep.length + 1 && tail.endsWith(q);
+  pattern += escapePatternLiteral(sep) + "%m" + (closesQuote ? escapePatternLiteral(q) : "") + "%n";
 
-  return { pattern, tsFormat };
+  // Every claimed span as {field, start, end} on `line` (the trimmed line
+  // the suggestion was built from) — the format dialog turns these into
+  // virtual marks (fwzSuggestFromLines).
+  const TOKEN_FIELD = { "%d": "ts", "%p": "level", "%t": "thread", "%c": "location", "%M": "method" };
+  const fields = spans.map(s => ({ field: TOKEN_FIELD[s.token], start: s.start, end: s.end }));
+  const msgStart = cursor + sep.length, msgEnd = line.length - (closesQuote ? 1 : 0);
+  if (msgEnd > msgStart) fields.push({ field: "message", start: msgStart, end: msgEnd });
+
+  return { pattern, tsFormat, line, fields };
 }
 
 // Compiles the CURRENT mode/pattern/regex/tsFormat for the live preview
@@ -30726,141 +30869,1233 @@ function compilePreviewFormat(mode, pattern, regex, tsFormat) {
     const v = validateFormatRegex(regex || "");
     return v.error ? null : { regex: v.regex, dateFrag: null };
   }
-  const c = compileFormatPattern(pattern || "", tsFormat || "");
+  const c = compileFormatPattern(pattern || "", tsFormat || "", { plainDateGroups: true });
   return c.error ? null : { regex: c.regex, dateFrag: compileDateFormat(tsFormat || "") };
 }
 
-// Re-parses the pasted example line(s) with whatever pattern/regex/
-// tsFormat is currently in the fields, so editing any of them updates the
-// preview live — the person never has to save first to see if it works.
-function renderFormatEditPreview() {
-  const lines = formatEditSample.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).slice(0, 5);
-  if (!lines.length) {
-    formatEditPreview.innerHTML = '<div class="format-preview-empty">Paste an example log line above to see a preview here.</div>';
-    return;
-  }
-  const compiled = compilePreviewFormat(formatEditMode, formatEditPattern.value, formatEditRegex.value, formatEditTsFormat.value.trim());
-  if (!compiled) {
-    formatEditPreview.innerHTML = '<div class="format-preview-empty">Fix the pattern/regex above to see a preview.</div>';
-    return;
-  }
-  formatEditPreview.innerHTML = "";
-  const frag = document.createDocumentFragment();
-  lines.forEach(line => {
-    const m = compiled.regex.exec(line);
-    const row = document.createElement("div");
-    if (!m) {
-      row.className = "format-preview-row format-preview-nomatch";
-      row.textContent = "No match: " + line;
-    } else {
-      row.className = "format-preview-row";
-      const groups = m.groups || {};
-      const entry = applyFormatMatch(groups, line, compiled.dateFrag);
-      const parts = ['<span class="format-preview-field"><b>Level</b> ' + escapeHtml(entry.level) + '</span>'];
-      if (groups.ts != null) parts.unshift('<span class="format-preview-field"><b>Time</b> ' + escapeHtml(entry.tsRaw) + (isNaN(entry.ts) ? " (unparsed)" : "") + '</span>');
-      if (groups.thread != null) parts.push('<span class="format-preview-field"><b>Thread</b> ' + escapeHtml(entry.thread) + '</span>');
-      if (groups.location != null) parts.push('<span class="format-preview-field"><b>Location</b> ' + escapeHtml(entry.locationFull) + '</span>');
-      if (groups.method != null) parts.push('<span class="format-preview-field"><b>Method</b> ' + escapeHtml(entry.method) + '</span>');
-      parts.push('<span class="format-preview-field"><b>Message</b> ' + escapeHtml(entry.message) + '</span>');
-      // Custom columns (any captured group beyond the six reserved fields) —
-      // lets the person verify a %X{name}/(?<name>...) capture actually
-      // pulls the value they expect before adding it as a column below.
-      Object.keys(entry.fields).forEach(key => {
-        parts.push('<span class="format-preview-field"><b>' + escapeHtml(key) + '</b> ' + escapeHtml(entry.fields[key]) + '</span>');
-      });
-      row.innerHTML = parts.join("");
-    }
-    frag.appendChild(row);
-  });
-  formatEditPreview.appendChild(frag);
-}
-[formatEditPattern, formatEditRegex, formatEditTsFormat].forEach(input => {
-  input.addEventListener("input", renderFormatEditPreview);
-});
-formatEditSample.addEventListener("input", () => {
-  const suggestion = suggestPatternFromSample(formatEditSample.value);
-  if (suggestion) {
-    formatEditMode = "pattern";
-    updateFormatEditModeUI();
-    formatEditPattern.value = suggestion.pattern;
-    formatEditTsFormat.value = suggestion.tsFormat;
-  }
-  renderFormatEditPreview();
-});
+/* ===================== Format dialog (examples, marking, regex, preview) =====================
+   The one dialog a log format is defined in (Settings → Log Formats →
+   "Add format…"/"Edit"), on top of Settings: name, kind (log format /
+   meta), an optional filename rule, and — for an ordinary format — example
+   lines that come in by paste, file drop, or file picker. As soon as there
+   are examples, an automatic SUGGESTION (suggestPatternFromSample on the
+   first line with a timestamp) stands in as the regex and pre-marks every
+   line it matches; an edited format's own regex stands in instead while it
+   still matches the examples; a regex typed into the Regex field stands in
+   instead of either. The person picks a column (Time/Level/Thread/
+   Location/Method/custom/Message) and selects that column's value inside an
+   example line; after every mark, a Regex-mode regex is re-derived from ALL
+   marks (deriveFormatRegexFromMarks) and applied live to every example line
+   — as faint "suggested" marks on lines not marked by hand, and as a table
+   preview shaped like the real log view, whose level badges follow the
+   level list (auto-filled from the examples for a new format — see
+   fwzSyncLevels). Save validates and writes the format (always Regex mode).
 
-// Both the builtin default and a brand-new format default to the same
-// canonical pattern (see DEFAULT_LOG_FORMAT / tools/log-simulator.html) —
-// a fresh "Add format" starts from something that already parses, not a
-// blank slate. The sample field is never pre-filled (it's a one-time input
-// aid, not a stored format property) even when editing an existing format.
+   Marked lines are the LEARNING lines; unmarked lines never feed the
+   derivation (so a stack-trace continuation line can't skew it). Whether a
+   line is a new entry or a continuation is still decided by the derived
+   regex alone — the preview table shows exactly that. Marking a line that
+   only has suggested marks first adopts those suggestions as real marks,
+   so correcting one wrong column never requires re-marking the others.
+
+   The example lines + marks are stored on the format record
+   (`fmt.sampleSetup = {lines, marks}`, lines capped to
+   FWZ_STORED_LINES/the last marked line) so a later "Edit" reopens the
+   dialog where it was left. Marks reference column KEYS (the regex's group
+   names); labels live on columnDefs as before. */
+const FWZ_MAX_LINES = 200;
+const FWZ_MAX_LINE_LEN = 2000;
+const FWZ_STORED_LINES = 50;
+const FWZ_HUES = [210, 28, 140, 280, 350, 180, 55, 250, 100, 320, 15, 195];
+const FWZ_FIXED_COLUMNS = { ts: "Time", level: "Level", message: "Message" };
+
+// Splits pasted/dropped text into example lines: blank lines dropped (the
+// parser ignores them too), overlong lines truncated, raw content otherwise
+// kept as-is (leading whitespace included — it's part of what the regex
+// must match).
+function fwzSplitLines(text) {
+  return String(text || "").split(/\r\n|\n|\r/)
+    .filter(l => l.trim() !== "")
+    .map(l => (l.length > FWZ_MAX_LINE_LEN ? l.slice(0, FWZ_MAX_LINE_LEN) : l));
+}
+
+// "Request Id" -> "requestId": a valid named-group identifier (ASCII only,
+// matching formatCapturedGroupNames), unique among `taken`, never one of
+// the six reserved field names.
+function fwzLabelToKey(label, taken) {
+  const words = String(label || "")
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss")
+    .split(/[^A-Za-z0-9]+/).filter(Boolean);
+  let key = words.map((w, i) => (i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1))).join("");
+  if (!key || /^\d/.test(key)) key = "col" + key;
+  let out = key, n = 2;
+  while (RESERVED_FIELD_KEYS.has(out) || (taken && taken.has(out))) out = key + n++;
+  return out;
+}
+
+// Derives a tsFormat token string ("yyyy-MM-dd HH:mm:ss,SSS", ...) from the
+// timestamp values marked in the examples. Classifies the FIRST value's
+// digit runs (yyyy-MM-dd / dd.MM.yyyy / MM/dd/yyyy date part, then
+// HH:mm[:ss[<sep>SSS]]), keeps its non-digit separators literal, and only
+// returns the result if it round-trips every marked value through
+// compileDateFormat — anything it can't express (month names, a timezone
+// suffix, ...) returns "" (free-form Date.parse fallback).
+function detectTsFormatFromValues(values) {
+  const vals = (values || []).map(v => String(v).trim()).filter(Boolean);
+  if (!vals.length) return "";
+  const parts = vals[0].match(/\d+|\D+/g) || [];
+  const digitRuns = parts.filter(p => /^\d/.test(p));
+  const L = digitRuns.map(r => r.length);
+  const tokens = [];
+  let i = 0;
+  if (L[0] === 4 && L[1] === 2 && L[2] === 2) {
+    tokens.push("yyyy", "MM", "dd"); i = 3;
+  } else if (L[0] === 2 && L[1] === 2 && L[2] === 4) {
+    const firstSep = parts[1] || "";
+    const firstIsDay = firstSep === "." || vals.some(v => +(v.match(/\d+/) || ["0"])[0] > 12);
+    tokens.push(firstIsDay ? "dd" : "MM", firstIsDay ? "MM" : "dd", "yyyy"); i = 3;
+  }
+  if (L[i] === 2 && L[i + 1] === 2) {
+    tokens.push("HH", "mm"); i += 2;
+    if (L[i] === 2) {
+      tokens.push("ss"); i++;
+      if (i === L.length - 1 && L[i] >= 1 && L[i] <= 6) { tokens.push("SSS"); i++; }
+    }
+  }
+  if (!tokens.length || i !== L.length) return "";
+  let fmt = "", t = 0;
+  for (const p of parts) {
+    if (/^\d/.test(p)) fmt += tokens[t++];
+    else {
+      if (/[yMdHmsS]/.test(p)) return ""; // would be misread as a date token
+      fmt += p;
+    }
+  }
+  const compiled = compileDateFormat(fmt);
+  if (!compiled || !vals.every(v => compiled.matchRegex.test(v))) return "";
+  return fmt;
+}
+
+// A regex literal for one separator/literal run, readable in a text field:
+// a tab shows as \t rather than an invisible character.
+function fwzRegexLiteral(s) {
+  return escapeRegExp(s).replace(/\t/g, "\\t");
+}
+// A separator literal, with every run of plain spaces loosened to \s+ —
+// columns are often space-padded ("INFO  [" vs "ERROR ["), which a handful
+// of examples rarely shows in full.
+function fwzSepLiteral(s) {
+  return fwzRegexLiteral(s).replace(/ +/g, "\\s+");
+}
+function fwzCharClassEscape(c) {
+  if (c === "\t") return "\\t";
+  return /[\]\\^-]/.test(c) ? "\\" + c : c;
+}
+// Non-capturing variant of compileDateFormat's regexStr, so a derived
+// regex's only capture groups are the named column groups.
+function fwzDateFragNonCapturing(fmt) {
+  const c = compileDateFormat(fmt);
+  if (!c) return null;
+  DATE_TOKEN_RE.lastIndex = 0;
+  let last = 0, out = "", m;
+  while ((m = DATE_TOKEN_RE.exec(fmt)) !== null) {
+    out += fwzRegexLiteral(fmt.slice(last, m.index)) + DATE_TOKEN_FRAG[m[0]];
+    last = DATE_TOKEN_RE.lastIndex;
+  }
+  return { frag: out + fwzRegexLiteral(fmt.slice(last)), matchRegex: c.matchRegex };
+}
+
+// Regex fragment for the text between two marked columns (or before the
+// first / after the last), from its value on every learning line: an
+// identical run everywhere stays literal (see fwzSepLiteral for spaces);
+// whitespace-only variants become \s+ (\s* when some line has none);
+// anything else becomes a lazy .*?. `literal` is the exact shared text
+// (when there is one), used to pick the preceding column's character class.
+function fwzSeparatorFrag(variants) {
+  if (variants.every(v => v === variants[0])) {
+    return { frag: fwzSepLiteral(variants[0]), literal: variants[0] };
+  }
+  if (variants.every(v => /^\s*$/.test(v))) return { frag: variants.some(v => v === "") ? "\\s*" : "\\s+", literal: null };
+  return { frag: ".*?", literal: null };
+}
+
+// Regex fragment for one column's value, from every learning line's marked
+// value and the (literal, if any) separator right after it. Level: \w+
+// when every value is a word. Otherwise the first that fits: \d+,
+// "anything up to the next separator character" (generalizes best from
+// few examples — "main" and "worker-1" are both "up to the ]"), \w+, \S+,
+// then a lazy .+? as the catch-all. `isLast`: nothing follows the column
+// on any line, so a greedy match is safe.
+function fwzColumnFrag(key, values, nextLiteral, isLast, dateFrag) {
+  if (key === "ts" && dateFrag && values.every(v => dateFrag.matchRegex.test(v.trim()))) return dateFrag.frag;
+  if (key === "message") return isLast ? ".*" : ".*?";
+  if (key === "level" && values.every(v => /^\w+$/.test(v))) return "\\w+";
+  if (values.every(v => /^\d+$/.test(v))) return "\\d+";
+  if (nextLiteral) {
+    const c = nextLiteral.charAt(0);
+    if (!values.some(v => v.includes(c))) {
+      if (/\s/.test(c) && values.every(v => /^\S+$/.test(v))) return "\\S+";
+      return "[^" + fwzCharClassEscape(c) + "]+";
+    }
+  }
+  if (values.every(v => /^\w+$/.test(v))) return "\\w+";
+  if (values.every(v => /^\S+$/.test(v))) return "\\S+";
+  return isLast ? ".+" : ".+?";
+}
+
+// Everything the derivation below needs from a line's marks, sorted by
+// position. Pure helper, shared with the wizard's rendering.
+function fwzMarksByLine(marks) {
+  const byLine = new Map();
+  (marks || []).forEach(m => {
+    if (!byLine.has(m.line)) byLine.set(m.line, []);
+    byLine.get(m.line).push(m);
+  });
+  byLine.forEach(list => list.sort((a, b) => a.start - b.start));
+  return byLine;
+}
+
+// The core of the wizard: turns example lines + marks into a whole-line
+// Regex-mode regex with one named group per marked column.
+//   lines: string[]; marks: [{line, start, end, key}]
+//   opts.tsFormat: a person-supplied timestamp format (overrides detection)
+//   opts.labels: {key: label} for readable error messages
+// Returns { source, tsFormat, error, warnings, learnLines, keys }.
+// `source` is null when there's nothing to derive yet (no marks) or on error.
+function deriveFormatRegexFromMarks(lines, marks, opts) {
+  opts = opts || {};
+  const labelOf = k => (opts.labels && opts.labels[k]) || FWZ_FIXED_COLUMNS[k] || k;
+  const byLine = fwzMarksByLine(marks);
+  const learnLines = [...byLine.keys()].filter(i => i >= 0 && i < lines.length).sort((a, b) => a - b);
+  const result = { source: null, tsFormat: "", error: "", warnings: [], learnLines, keys: [] };
+  if (!learnLines.length) return result;
+
+  // Message marked on only SOME lines: the unmarked-tail rule below already
+  // covers it, so a trailing message mark is dropped rather than rejected.
+  const hasMsg = learnLines.map(i => byLine.get(i).some(m => m.key === "message"));
+  const msgEverywhere = hasMsg.every(Boolean);
+  const seqs = learnLines.map(i => {
+    let list = byLine.get(i);
+    if (!msgEverywhere && list.length && list[list.length - 1].key === "message") list = list.slice(0, -1);
+    return list;
+  });
+  const refKeys = seqs[0].map(m => m.key);
+  if (!refKeys.length) { result.error = "Mark at least one column other than Message."; return result; }
+  for (let s = 1; s < seqs.length; s++) {
+    const keys = seqs[s].map(m => m.key);
+    if (keys.join("\u0000") !== refKeys.join("\u0000")) {
+      const fmtKeys = ks => ks.map(labelOf).join(", ") || "(nothing)";
+      result.error = "Line " + (learnLines[s] + 1) + " marks " + fmtKeys(keys) + ", but line " + (learnLines[0] + 1) +
+        " marks " + fmtKeys(refKeys) + " — mark the same columns, in the same order, on every example line (or clear one of them).";
+      return result;
+    }
+  }
+  if (new Set(refKeys).size !== refKeys.length) { result.error = "A column is marked twice on the same line."; return result; }
+  result.keys = refKeys.slice();
+  const k = refKeys.length;
+  const messageMarked = refKeys.includes("message");
+
+  // segs[j][s]: j = 0 is the text before the first mark, j = k after the last.
+  const segs = [];
+  for (let j = 0; j <= k; j++) segs.push([]);
+  const values = refKeys.map(() => []);
+  seqs.forEach((list, s) => {
+    const text = lines[learnLines[s]];
+    let cursor = 0;
+    list.forEach((m, j) => {
+      segs[j].push(text.slice(cursor, m.start));
+      values[j].push(text.slice(m.start, m.end));
+      cursor = m.end;
+    });
+    segs[k].push(text.slice(cursor));
+  });
+
+  const tsIdx = refKeys.indexOf("ts");
+  const tsFormat = opts.tsFormat != null ? opts.tsFormat : (tsIdx >= 0 ? detectTsFormatFromValues(values[tsIdx]) : "");
+  result.tsFormat = tsFormat;
+  const dateFrag = tsFormat ? fwzDateFragNonCapturing(tsFormat) : null;
+
+  // Tail handling: with Message unmarked, the rest of the line after the
+  // last marked column becomes the message — minus a separator run
+  // (": ", " - ", "] ", ...) every learning line shares.
+  let tailLiteral = "", tailFrag = "";
+  if (!messageMarked) {
+    let common = segs[k][0];
+    segs[k].forEach(v => { let n = 0; while (n < common.length && n < v.length && common[n] === v[n]) n++; common = common.slice(0, n); });
+    tailLiteral = /^[\s:>)\]}"'|\-–—.,;]*/.exec(common)[0];
+    tailFrag = fwzSepLiteral(tailLiteral) + "(?<message>.*)";
+  } else if (!segs[k].every(v => v === "")) {
+    const sep = fwzSeparatorFrag(segs[k]);
+    tailFrag = sep.literal != null ? sep.frag : ".*";
+    // Text after a marked Message at the end of the line (typically its
+    // closing quote) is OPTIONAL: a multi-line message only closes on a
+    // later continuation line, and requiring it would make that entry's
+    // own header line not match at all — it'd be glued onto the previous
+    // entry. Same tolerance as the builtin default's header check.
+    if (sep.literal != null && refKeys[k - 1] === "message") tailFrag = "(?:" + tailFrag + ")?";
+  }
+
+  const pre = fwzSeparatorFrag(segs[0]);
+  let src = "^" + pre.frag;
+  refKeys.forEach((key, j) => {
+    const isLastCol = j === k - 1;
+    let nextLiteral, nextFrag;
+    if (isLastCol) {
+      nextLiteral = messageMarked ? (segs[k].every(v => v === segs[k][0]) ? segs[k][0] : null) : tailLiteral;
+      nextFrag = tailFrag;
+    } else {
+      const sep = fwzSeparatorFrag(segs[j + 1]);
+      nextLiteral = sep.literal;
+      nextFrag = sep.frag;
+    }
+    const nothingAfter = isLastCol && (messageMarked ? segs[k].every(v => v === "") : false);
+    src += "(?<" + key + ">" + fwzColumnFrag(key, values[j], nextLiteral, nothingAfter, dateFrag) + ")" + nextFrag;
+  });
+  src += "$";
+
+  let re;
+  try { re = new RegExp(src, "d"); } catch (e) { result.error = "Couldn't build a regex from these marks: " + e.message; return result; }
+  result.source = src;
+
+  // Self-check: every learning line must match, and split where it was
+  // marked — a mismatch is a warning (the regex still works, just not
+  // exactly as marked), naming the lines so they can be looked at.
+  const off = [];
+  learnLines.forEach((li, s) => {
+    const m = re.exec(lines[li]);
+    const ok = m && m.indices && m.indices.groups && seqs[s].every(mk => {
+      const r = m.indices.groups[mk.key];
+      return r && r[0] === mk.start && r[1] === mk.end;
+    });
+    if (!ok) off.push(li + 1);
+  });
+  if (off.length) result.warnings.push("The derived regex splits line" + (off.length === 1 ? " " : "s ") + off.join(", ") + " differently than marked.");
+  if (tsIdx >= 0 && !tsFormat) result.warnings.push("Timestamp format not recognized — enter it by hand, or times fall back to free-form parsing.");
+  return result;
+}
+
+// Parses the example lines the way parseLogTextAsync would with this regex
+// (header line = new entry, anything else appended to the previous entry's
+// message) — the wizard's table preview. Lines before the first header come
+// back as {unmatched: line}. Every result carries `srcLine`, the index of the
+// example line it starts at (double-click a preview row to reveal it).
+function fwzParsePreview(lines, source, tsFormat) {
+  if (!source) return [];
+  let re;
+  try { re = new RegExp(source); } catch (e) { return []; }
+  const dateFrag = compileDateFormat(tsFormat || "");
+  const wrapQuote = messageWrapQuote(source);
+  const out = [];
+  let cur = null;
+  lines.forEach((line, i) => {
+    const m = re.exec(line);
+    if (m) {
+      cur = markOpenMessageQuote(applyFormatMatch(m.groups || {}, line, dateFrag), wrapQuote, line);
+      cur.srcLine = i;
+      out.push(cur);
+    } else if (cur) {
+      appendContinuationLine(cur, line);
+    } else {
+      out.push({ unmatched: line, srcLine: i });
+    }
+  });
+  return out;
+}
+
+// ---- Format dialog UI ----
+const formatDialog = el("#formatDialog");
+const fwzSampleEl = el("#fwzSample");
+const fwzColumnsEl = el("#fwzColumns");
+const fwzColumnLabelNew = el("#fwzColumnLabelNew");
+const fwzTsFormatEl = formatEditTsFormat;
+// Working state while the dialog is open (null otherwise):
+//   lines, marks, columns [{key, kind: "fixed"|"default"|"custom", label, hue}],
+//   activeKey, tsTouched (person edited the timestamp format by hand),
+//   levelsTouched (level list edited by hand, or an existing format's own),
+//   formatRegex (the edited format's own regex), manualSrc (regex typed by
+//   hand), fallback/fallbackKind (the "d"-flagged stand-in regex while no
+//   line is marked — see fwzRefreshFallback), derived (last derivation
+//   result), undo/redo stacks.
+let fwz = null;
+
+function formatDialogOpen() { return !formatDialog.classList.contains("hidden"); }
+
+// ---- Wizard undo/redo ----
+// Whole-state snapshots (lines, marks, columns, active column, timestamp
+// format field) — the wizard's state is small (≤200 lines of text shared by
+// reference, strings being immutable), so snapshotting is simpler and safer
+// than per-action inverse operations. fwzCheckpoint() is called right before
+// every mutating action (mark add/remove/clear, lines appended/cleared,
+// columns added/removed/moved); a new action clears the redo stack. Typing
+// in the wizard's own text fields keeps the browser's native input undo.
+const FWZ_UNDO_LIMIT = 100;
+function fwzSnapshot() {
+  return {
+    lines: fwz.lines.slice(),
+    marks: fwz.marks.map(m => ({ line: m.line, start: m.start, end: m.end, key: m.key })),
+    columns: fwz.columns.map(c => ({ key: c.key, kind: c.kind, label: c.label, hue: c.hue })),
+    activeKey: fwz.activeKey,
+    tsTouched: fwz.tsTouched,
+    tsFormat: fwzTsFormatEl.value,
+    manualSrc: fwz.manualSrc,
+    forceSuggestion: fwz.forceSuggestion,
+  };
+}
+function fwzRestoreSnapshot(s) {
+  fwz.lines = s.lines.slice();
+  fwz.marks = s.marks.map(m => ({ line: m.line, start: m.start, end: m.end, key: m.key }));
+  fwz.columns = s.columns.map(c => ({ key: c.key, kind: c.kind, label: c.label, hue: c.hue }));
+  fwz.activeKey = s.activeKey;
+  fwz.tsTouched = s.tsTouched;
+  fwzTsFormatEl.value = s.tsFormat;
+  fwz.manualSrc = s.manualSrc;
+  fwz.forceSuggestion = s.forceSuggestion;
+  fwz.notice = "";
+}
+function fwzCheckpoint() {
+  fwz.undo.push(fwzSnapshot());
+  if (fwz.undo.length > FWZ_UNDO_LIMIT) fwz.undo.shift();
+  fwz.redo = [];
+}
+function fwzUndo() {
+  if (!fwz || !fwz.undo.length) return false;
+  fwz.redo.push(fwzSnapshot());
+  fwzRestoreSnapshot(fwz.undo.pop());
+  fwzUpdate();
+  return true;
+}
+function fwzRedo() {
+  if (!fwz || !fwz.redo.length) return false;
+  fwz.undo.push(fwzSnapshot());
+  fwzRestoreSnapshot(fwz.redo.pop());
+  fwzUpdate();
+  return true;
+}
+// Called from the main keydown handler while the wizard is open: Ctrl+Z
+// undoes, Ctrl+Shift+Z / Ctrl+Y redo — the wizard's own history, never the
+// filter tree's (which would otherwise change behind the dialog). Inside a
+// text field the keys are left to the field's native undo.
+function fwzHandleUndoKeydown(ev) {
+  if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return false;
+  const k = ev.key.toLowerCase();
+  const isUndo = k === "z" && !ev.shiftKey;
+  const isRedo = (k === "z" && ev.shiftKey) || (k === "y" && !ev.shiftKey);
+  if (!isUndo && !isRedo) return false;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return true; // swallowed for the tree, native undo proceeds
+  ev.preventDefault();
+  if (isUndo) fwzUndo(); else fwzRedo();
+  return true;
+}
+
+function fwzNextHue() {
+  const used = new Set(fwz.columns.map(c => c.hue));
+  return FWZ_HUES.find(h => !used.has(h)) ?? FWZ_HUES[fwz.columns.length % FWZ_HUES.length];
+}
+
+// Opens the format dialog for a new format (id null) or an existing one.
+// An existing format brings its stored examples + marks (sampleSetup), its
+// columns, levels and timestamp format; its own regex (a Pattern-mode
+// format's compiled one) pre-marks the examples until a line is marked.
 function openFormatEditDialog(id) {
   formatEditId = id;
   const fmt = id ? state.logFormats.find(f => f.id === id) : null;
+  const isMeta = !!(fmt && fmt.mode === "meta");
   el("#formatEditTitle").textContent = fmt ? "Edit log format" : "Add log format";
   formatEditName.value = fmt ? fmt.name : "";
-  formatEditSample.value = "";
-  formatEditMode = fmt ? fmt.mode : "pattern";
-  formatEditPattern.value = fmt ? (fmt.pattern || "") : DEFAULT_LOG_FORMAT.pattern;
-  formatEditRegex.value = fmt ? (fmt.regex || "") : "";
-  formatEditTsFormat.value = fmt ? (fmt.tsFormat || "") : DEFAULT_LOG_FORMAT.tsFormat;
-  setFormatEditLevels(fmt ? fmt.levels : null, fmt ? fmt.levelValueType : "text");
-  setFormatEditColumns(fmt ? fmt.columnDefs : null, fmt ? fmt.messageVisible : true);
-  formatEditMetaTargets = (fmt && fmt.mode === "meta") ? (fmt.targetFormatIds || []).slice() : [];
+  formatEditMode = isMeta ? "meta" : "regex";
+  formatEditMetaTargets = isMeta ? (fmt.targetFormatIds || []).slice() : [];
+  formatEditTsFormat.value = fmt && !isMeta ? (fmt.tsFormat || "") : "";
+  formatEditRuleGlob.value = "";
+  formatEditMessageVisibleEl.checked = !fmt || fmt.messageVisible !== false;
+  setFormatEditLevels(fmt && !isMeta ? fmt.levels : null, fmt ? fmt.levelValueType : "text");
+  const setup = fmt && fmt.sampleSetup && Array.isArray(fmt.sampleSetup.lines) ? fmt.sampleSetup : null;
+  fwz = {
+    lines: setup ? setup.lines.slice(0, FWZ_MAX_LINES) : [],
+    marks: setup && Array.isArray(setup.marks) ? setup.marks.map(m => ({ line: m.line, start: m.start, end: m.end, key: m.key })) : [],
+    columns: [],
+    activeKey: "ts",
+    tsTouched: false,
+    // A saved format's own level list is a deliberate choice — only a new
+    // format's levels are auto-filled from the examples (fwzSyncLevels).
+    levelsTouched: !!fmt,
+    formatRegex: null,
+    manualSrc: null,
+    forceSuggestion: false, // "Re-suggest" used: suggest even for an edited format
+    fallback: null,
+    fallbackKind: "",
+    regexError: "",
+    derived: null,
+    notice: "",
+    undo: [],
+    redo: [],
+  };
+  const pushCol = (key, kind, label) => fwz.columns.push({ key, kind, label, hue: fwzNextHue() });
+  pushCol("ts", "fixed", "Time");
+  pushCol("level", "fixed", "Level");
+  (fmt && !isMeta ? formatColumnDefs(fmt.id) : DEFAULT_MIDDLE_COLUMNS).forEach(d => pushCol(d.key, d.kind, d.label));
+  pushCol("message", "fixed", "Message");
+  const keys = new Set(fwz.columns.map(c => c.key));
+  fwz.marks = fwz.marks.filter(m => keys.has(m.key) && m.line < fwz.lines.length);
+  if (fmt && !isMeta) {
+    const compiled = compilePreviewFormat(fmt.mode === "regex" ? "regex" : "pattern", fmt.pattern, fmt.regex, fmt.tsFormat || "");
+    if (compiled) { try { fwz.formatRegex = new RegExp(compiled.regex.source, "d"); } catch (e) { fwz.formatRegex = null; } }
+  }
   formatEditError.textContent = "";
   formatEditError.classList.add("hidden");
+  fwzColumnLabelNew.value = "";
+  fwzShowColumnError("");
+  renderFormatRuleInfo();
+  fwzAskResuggest(false);
   updateFormatEditModeUI();
   renderFormatEditMetaTargets();
-  renderFormatEditPreview();
-  formatEditPanel.classList.remove("hidden");
-  el("#btnAddFormat").classList.add("hidden"); // only one editor visible at a time
-  if (formatEditPanel.scrollIntoView) formatEditPanel.scrollIntoView({ block: "nearest" }); // not implemented in jsdom
+  formatDialog.classList.remove("hidden");
+  fwzUpdate();
   formatEditName.focus();
 }
+
 function closeFormatEditDialog() {
-  formatEditPanel.classList.add("hidden");
-  el("#btnAddFormat").classList.remove("hidden");
+  formatDialog.classList.add("hidden");
+  fwzSampleEl.classList.remove("fwz-drop-active");
+  fwz = null;
   formatEditId = null;
 }
-el("#formatEditCancel").addEventListener("click", closeFormatEditDialog);
 
-async function saveFormatEdit() {
-  const name = formatEditName.value.trim();
-  if (!name) { formatEditError.textContent = "Name is required."; formatEditError.classList.remove("hidden"); return; }
-  const pattern = formatEditPattern.value;
-  const regex = formatEditRegex.value;
-  const tsFormat = formatEditTsFormat.value.trim();
-  const levelNames = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
+// Which filename rules already point at the format being edited — shown
+// under the rule field, which itself only ever ADDS a rule (ordering/
+// editing/removing stays in Settings → Filename rules).
+function renderFormatRuleInfo() {
+  const rules = formatEditId
+    ? state.formatRules.filter(r => r.formatId === formatEditId).sort((a, b) => a.order - b.order)
+    : [];
+  el("#formatEditRuleInfo").textContent = rules.length
+    ? "Already used for: " + rules.map(r => r.glob).join(", ") + " — reorder or remove rules in Settings → Filename rules."
+    : "";
+}
 
-  if (formatEditMode === "meta") {
-    if (formatEditMetaTargets.length < 2) {
-      formatEditError.textContent = "Pick at least 2 target formats.";
-      formatEditError.classList.remove("hidden");
-      return;
+// "app-2026-09-23.log" -> "app-*.log": every digit run becomes "*", and
+// "*"s joined only by separators collapse into one.
+function fwzSuggestGlob(filename) {
+  const base = String(filename || "").split(/[\\/]/).pop();
+  if (!base) return "";
+  return base.replace(/\d+/g, "*").replace(/\*(?:[-_.\s:]*\*)+/g, "*");
+}
+// A dropped/opened example file pre-fills the (still empty) rule field.
+function fwzSuggestRuleFromFilename(name) {
+  if (!fwz || formatEditRuleGlob.value.trim()) return;
+  const g = fwzSuggestGlob(name);
+  if (g) formatEditRuleGlob.value = g;
+}
+
+// The automatic suggestion for a set of example lines: the same
+// suggestPatternFromSample the old single-line example field used, run on
+// the first line that starts with a recognizable timestamp (header lines,
+// not a stack-trace continuation), compiled to a "d"-flagged regex.
+function fwzSuggestFromLines(lines) {
+  const line = lines.find(l => SAMPLE_TS_CANDIDATES.some(c => c.re.test(l))) || lines[0];
+  if (!line) return null;
+  const sug = suggestPatternFromSample(line);
+  if (!sug) return null;
+  const c = compileFormatPattern(sug.pattern, sug.tsFormat, { plainDateGroups: true });
+  if (c.error) return null;
+  let re;
+  try { re = new RegExp(c.regex.source, "d"); } catch (e) { return null; }
+  // Generalize like hand marks do: the suggestion's own column spans on its
+  // source line become virtual marks for deriveFormatRegexFromMarks, which
+  // loosens space padding and picks "up to the next separator" classes.
+  // Taken from the spans directly, NOT by re-running the raw regex — that
+  // one can fail even on its own line (its thread is `\S+`, a quoted
+  // thread like "(1) " contains a space), which used to drop us back to the
+  // raw, single-line-only suggestion.
+  const marks = (sug.fields || []).filter(f => f.end > f.start).map(f => ({ line: 0, start: f.start, end: f.end, key: f.field }));
+  if (marks.length) {
+    const d = deriveFormatRegexFromMarks([sug.line], marks, { tsFormat: sug.tsFormat });
+    if (d.source && !d.error) {
+      try { return { regex: new RegExp(d.source, "d"), tsFormat: sug.tsFormat }; } catch (e) { /* fall through to the raw suggestion */ }
     }
-  } else {
-    if (!levelNames.length) { formatEditError.textContent = "Pick at least one log level."; formatEditError.classList.remove("hidden"); return; }
-    let compileResult;
-    if (formatEditMode === "pattern") {
-      compileResult = compileFormatPattern(pattern, tsFormat);
-      if (compileResult.error) { formatEditError.textContent = compileResult.error; formatEditError.classList.remove("hidden"); return; }
+  }
+  return { regex: re, tsFormat: sug.tsFormat };
+}
+
+// Picks the stand-in regex used while no line is marked (and shown as
+// suggested marks): a regex typed by hand wins; else, when EDITING a
+// format, that format's own regex — always, even if new examples don't
+// match it (the status line says so; "Re-suggest" is the explicit way to
+// start over); else — a new format, or after "Re-suggest" — the automatic
+// suggestion (which also fills the timestamp field, unless it was edited
+// by hand).
+function fwzRefreshFallback() {
+  fwz.regexError = "";
+  if (fwz.manualSrc != null) {
+    fwz.fallbackKind = "manual";
+    try { fwz.fallback = fwz.manualSrc ? new RegExp(fwz.manualSrc, "d") : null; }
+    catch (e) { fwz.fallback = null; fwz.regexError = "Invalid regex: " + e.message; }
+    return;
+  }
+  if (fwz.formatRegex && !fwz.forceSuggestion) {
+    fwz.fallback = fwz.formatRegex;
+    fwz.fallbackKind = "format";
+    return;
+  }
+  const sug = fwzSuggestFromLines(fwz.lines);
+  fwz.fallback = sug ? sug.regex : null;
+  fwz.fallbackKind = sug ? "suggestion" : "";
+  if (sug && !fwz.tsTouched && !fwz.marks.length) fwzTsFormatEl.value = sug.tsFormat;
+}
+
+// "Re-suggest": discards the current marks, a typed regex and the timestamp
+// format, and replaces them with a fresh automatic suggestion for the
+// current examples — also for an edited format, whose own regex it then
+// stops using as the stand-in. One undo checkpoint, so Undo reverts it
+// completely. Asked for via an inline confirmation first (fwzAskResuggest).
+function fwzResuggest() {
+  if (!fwz || !fwz.lines.length) return false;
+  fwzCheckpoint();
+  fwz.marks = [];
+  fwz.manualSrc = null;
+  fwz.forceSuggestion = true;
+  fwz.tsTouched = false;
+  fwz.notice = "";
+  fwzRefreshFallback();
+  // Columns the suggestion captures but the list lacks get added, same as
+  // for a typed regex.
+  if (fwz.fallback) {
+    formatCapturedGroupNames(fwz.fallback).forEach(k => {
+      if (k === "ts" || k === "level" || k === "message" || fwz.columns.some(c => c.key === k)) return;
+      const def = DEFAULT_MIDDLE_COLUMNS.find(d => d.key === k);
+      fwz.columns.splice(fwz.columns.length - 1, 0, { key: k, kind: def ? "default" : "custom", label: def ? def.label : k, hue: fwzNextHue() });
+    });
+  }
+  fwzUpdate();
+  return true;
+}
+function fwzAskResuggest(show) {
+  el("#fwzResuggestConfirm").classList.toggle("hidden", !show);
+}
+
+function fwzShowColumnError(msg) {
+  const e = el("#fwzColumnError");
+  e.textContent = msg;
+  e.classList.toggle("hidden", !msg);
+}
+
+function fwzLabels() {
+  const out = {};
+  fwz.columns.forEach(c => { out[c.key] = c.label; });
+  return out;
+}
+
+// Re-derives the regex from the current marks. With no marks at all, the
+// editor's own current regex (if any) stands in, so pasted lines of an
+// already-defined format show as pre-marked and preview-parsed right away.
+function fwzDerive() {
+  const d = deriveFormatRegexFromMarks(fwz.lines, fwz.marks, {
+    tsFormat: fwz.tsTouched ? fwzTsFormatEl.value.trim() : null,
+    labels: fwzLabels(),
+  });
+  if (!fwz.tsTouched && d.learnLines.length && fwz.marks.some(m => m.key === "ts")) fwzTsFormatEl.value = d.tsFormat;
+  fwz.derived = d;
+}
+
+function fwzCurrentRegex() {
+  const d = fwz.derived;
+  if (d && d.source) return new RegExp(d.source, "d");
+  if (d && d.learnLines.length) return null; // marks exist but are inconsistent — don't fall back to the old regex
+  return fwz.fallback;
+}
+
+// Suggested (not yet hand-made) marks for one line: the current regex's
+// named groups that map to a wizard column, on a line with no manual marks.
+function fwzSuggestedMarks(lineIdx, re) {
+  if (re === undefined) re = fwzCurrentRegex();
+  if (!re) return [];
+  const m = re.exec(fwz.lines[lineIdx]);
+  if (!m || !m.indices || !m.indices.groups) return [];
+  const out = [];
+  fwz.columns.forEach(c => {
+    const r = m.indices.groups[c.key];
+    if (r && r[1] > r[0]) out.push({ line: lineIdx, start: r[0], end: r[1], key: c.key });
+  });
+  return out;
+}
+
+// Assigns [start, end) of one example line to the active column. Trims
+// surrounding whitespace off the selection (a double-click word selection
+// often carries a trailing space). A line with no manual marks first
+// adopts its suggested marks (see the section comment), then any mark
+// overlapping the new range — or the same column's old mark on this
+// line — is replaced.
+function fwzAddMark(lineIdx, start, end, key) {
+  if (!fwz || lineIdx < 0 || lineIdx >= fwz.lines.length) return false;
+  key = key || fwz.activeKey;
+  if (!fwz.columns.some(c => c.key === key)) return false;
+  const text = fwz.lines[lineIdx];
+  start = Math.max(0, Math.min(start, text.length));
+  end = Math.max(0, Math.min(end, text.length));
+  if (end < start) { const t = start; start = end; end = t; }
+  while (start < end && /\s/.test(text[start])) start++;
+  while (end > start && /\s/.test(text[end - 1])) end--;
+  if (start >= end) return false;
+  fwzCheckpoint();
+  if (!fwz.marks.some(m => m.line === lineIdx)) {
+    const anyLearnHasMsg = fwz.marks.some(m => m.key === "message");
+    const hasLearn = fwz.marks.length > 0;
+    fwzSuggestedMarks(lineIdx).forEach(s => {
+      // Adopting a suggested Message only when the existing examples mark
+      // Message too — otherwise the tail rule already covers it, and an
+      // extra Message mark would make this line's column set differ.
+      if (s.key === "message" && hasLearn && !anyLearnHasMsg) return;
+      fwz.marks.push(s);
+    });
+  }
+  fwz.marks = fwz.marks.filter(m => !(m.line === lineIdx && (m.key === key || (m.start < end && m.end > start))));
+  fwz.marks.push({ line: lineIdx, start, end, key });
+  fwzUpdate();
+  return true;
+}
+
+function fwzRemoveMark(lineIdx, key) {
+  if (!fwz.marks.some(m => m.line === lineIdx && m.key === key)) return;
+  fwzCheckpoint();
+  fwz.marks = fwz.marks.filter(m => !(m.line === lineIdx && m.key === key));
+  fwzUpdate();
+}
+
+function fwzClearLine(lineIdx) {
+  if (!fwz.marks.some(m => m.line === lineIdx)) return;
+  fwzCheckpoint();
+  fwz.marks = fwz.marks.filter(m => m.line !== lineIdx);
+  fwzUpdate();
+}
+
+function fwzAppendText(text) {
+  if (!fwz) return;
+  const incoming = fwzSplitLines(text);
+  if (!incoming.length) return;
+  const room = FWZ_MAX_LINES - fwz.lines.length;
+  if (room > 0) fwzCheckpoint();
+  fwz.lines = fwz.lines.concat(incoming.slice(0, Math.max(0, room)));
+  fwz.notice = incoming.length > room ? "Only the first " + FWZ_MAX_LINES + " lines are kept as examples." : "";
+  fwzUpdate();
+}
+
+function fwzLoadFile(file) {
+  if (!file || !fwz) return Promise.resolve();
+  fwzSuggestRuleFromFilename(file.name);
+  // Only the head of a (possibly huge) log file is needed as examples.
+  const head = file.slice ? file.slice(0, 512 * 1024) : file;
+  const read = typeof head.text === "function" ? head.text() : new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsText(head);
+  });
+  return read.then(t => fwzAppendText(t), () => { if (fwz) { fwz.notice = "Couldn't read that file."; renderFwzResult(); } });
+}
+
+// Switches the active column by toggling classes in place — NOT via
+// renderFwzColumns(), which rebuilds the rows: the first click of a
+// double-click (rename, below) would otherwise replace the node the
+// second click lands on, and the dblclick never fires (CLAUDE.md's
+// DOM-identity gotcha).
+function fwzSetActive(key) {
+  fwz.activeKey = key;
+  fwzColumnsEl.querySelectorAll(".fwz-col-row").forEach(r => r.classList.toggle("active", r.dataset.col === key));
+}
+
+// Renames a column's TITLE in place (double-click its label). The capture
+// name (key) never changes — marks and the regex keep referring to it.
+function fwzStartColumnRename(key, labelEl) {
+  const col = fwz.columns.find(c => c.key === key);
+  if (!col || labelEl.querySelector("input")) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "fwz-col-rename";
+  input.value = col.label;
+  input.maxLength = 40;
+  input.spellcheck = false;
+  labelEl.textContent = "";
+  labelEl.appendChild(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = commit => {
+    if (done) return;
+    done = true;
+    const label = input.value.trim();
+    if (commit && label && label !== col.label) {
+      if (fwz.columns.some(c => c !== col && c.label.toLowerCase() === label.toLowerCase())) {
+        fwzShowColumnError('"' + label + '" already exists.');
+      } else {
+        fwzCheckpoint();
+        col.label = label;
+        fwzShowColumnError("");
+      }
+    }
+    fwzUpdate();
+  };
+  input.addEventListener("keydown", ev => {
+    ev.stopPropagation();
+    if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("click", ev => ev.stopPropagation());
+}
+
+function fwzAddCustomColumn() {
+  const label = fwzColumnLabelNew.value.trim();
+  if (!label) { fwzShowColumnError("Enter a column title."); return; }
+  if (fwz.columns.some(c => c.label.toLowerCase() === label.toLowerCase())) { fwzShowColumnError('"' + label + '" already exists.'); return; }
+  const key = fwzLabelToKey(label, new Set(fwz.columns.map(c => c.key)));
+  fwzCheckpoint();
+  // Custom columns go right before Message (pinned last).
+  fwz.columns.splice(fwz.columns.length - 1, 0, { key, kind: "custom", label: label.slice(0, 40), hue: fwzNextHue() });
+  fwzColumnLabelNew.value = "";
+  fwzShowColumnError("");
+  fwz.activeKey = key;
+  fwzUpdate();
+}
+
+function fwzAddDefaultColumn(key) {
+  const def = DEFAULT_MIDDLE_COLUMNS.find(d => d.key === key);
+  if (!def || fwz.columns.some(c => c.key === key)) return;
+  fwzCheckpoint();
+  fwz.columns.splice(fwz.columns.length - 1, 0, { key, kind: "default", label: def.label, hue: fwzNextHue() });
+  fwz.activeKey = key;
+  fwzUpdate();
+}
+
+function fwzRemoveColumn(key) {
+  const col = fwz.columns.find(c => c.key === key);
+  if (!col || col.kind === "fixed") return;
+  fwzCheckpoint();
+  fwz.columns = fwz.columns.filter(c => c.key !== key);
+  fwz.marks = fwz.marks.filter(m => m.key !== key);
+  if (fwz.activeKey === key) fwz.activeKey = "ts";
+  fwzUpdate();
+}
+
+// Reorders a middle column among the other middle columns (Time/Level stay
+// first, Message stays last — same pinning as the editor's column list).
+// The regex's group order follows the marks' positions in the line, not
+// this list — this is the display order of the columns in the log view.
+function fwzMoveColumn(key, delta) {
+  const idx = fwz.columns.findIndex(c => c.key === key);
+  const other = idx + delta;
+  if (idx === -1 || fwz.columns[idx].kind === "fixed") return;
+  if (other < 0 || other >= fwz.columns.length || fwz.columns[other].kind === "fixed") return;
+  fwzCheckpoint();
+  const tmp = fwz.columns[idx];
+  fwz.columns[idx] = fwz.columns[other];
+  fwz.columns[other] = tmp;
+  fwzUpdate();
+}
+
+function fwzUpdate() {
+  el("#fwzUndo").disabled = !fwz.undo.length;
+  el("#fwzRedo").disabled = !fwz.redo.length;
+  el("#fwzResuggest").disabled = !fwz.lines.length;
+  fwzRefreshFallback();
+  fwzDerive();
+  const re = fwzCurrentRegex();
+  fwzSyncLevels(re ? fwzParsePreview(fwz.lines, re.source, fwzTsFormatEl.value.trim()) : []);
+  renderFwzColumns();
+  renderFwzSample();
+  renderFwzResult();
+}
+
+function renderFwzColumns() {
+  fwzColumnsEl.innerHTML = "";
+  const counts = {};
+  fwz.marks.forEach(m => { counts[m.key] = (counts[m.key] || 0) + 1; });
+  const frag = document.createDocumentFragment();
+  fwz.columns.forEach((col, i) => {
+    const row = document.createElement("div");
+    row.className = "fwz-col-row" + (col.key === fwz.activeKey ? " active" : "");
+    row.dataset.col = col.key;
+    row.style.setProperty("--fwz-hue", col.hue);
+    row.title = col.kind === "custom" ? "Capture group: " + col.key : "";
+    row.innerHTML = '<span class="fwz-col-swatch"></span><span class="fwz-col-label"></span>' +
+      '<span class="fwz-col-count">' + (counts[col.key] || 0) + '</span>';
+    const labelEl = row.querySelector(".fwz-col-label");
+    labelEl.textContent = col.label;
+    labelEl.title = "Double-click to rename";
+    labelEl.addEventListener("dblclick", ev => { ev.stopPropagation(); fwzStartColumnRename(col.key, labelEl); });
+    if (col.key === "ts" || col.key === "level") {
+      const req = document.createElement("span");
+      req.className = "fwz-col-req";
+      req.textContent = "required";
+      row.insertBefore(req, row.querySelector(".fwz-col-count"));
+    }
+    row.addEventListener("click", ev => { ev.stopPropagation(); fwzSetActive(col.key); });
+    if (col.kind !== "fixed") {
+      const mk = (cls, text, title, disabled, fn) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = cls; b.title = title; b.disabled = disabled;
+        if (text) b.textContent = text; else b.innerHTML = ICON_CLOSE;
+        b.addEventListener("click", ev => { ev.stopPropagation(); fn(); });
+        row.appendChild(b);
+      };
+      mk("filter-library-row-order", "▲", "Move up", fwz.columns[i - 1].kind === "fixed", () => fwzMoveColumn(col.key, -1));
+      mk("filter-library-row-order", "▼", "Move down", fwz.columns[i + 1].kind === "fixed", () => fwzMoveColumn(col.key, 1));
+      mk("filter-library-row-del", "", "Remove this column", false, () => fwzRemoveColumn(col.key));
+    }
+    frag.appendChild(row);
+  });
+  fwzColumnsEl.appendChild(frag);
+
+  const addEl = el("#fwzDefaultAdd");
+  addEl.innerHTML = "";
+  DEFAULT_MIDDLE_COLUMNS.filter(d => !fwz.columns.some(c => c.key === d.key)).forEach(def => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "btn-mini-outline";
+    chip.textContent = "+ " + def.label;
+    chip.addEventListener("click", ev => { ev.stopPropagation(); fwzAddDefaultColumn(def.key); });
+    addEl.appendChild(chip);
+  });
+}
+
+function renderFwzSample() {
+  el("#fwzLineCount").textContent = fwz.lines.length ? "(" + fwz.lines.length + ")" : "";
+  const scrollTop = fwzSampleEl.scrollTop, scrollLeft = fwzSampleEl.scrollLeft;
+  fwzSampleEl.innerHTML = "";
+  if (!fwz.lines.length) {
+    fwzSampleEl.innerHTML = '<div class="fwz-empty">Paste log lines here (Ctrl+V) or drop a log file.<br>Then pick a column on the left and select its value in a line.</div>';
+    return;
+  }
+  const hueOf = {};
+  fwz.columns.forEach(c => { hueOf[c.key] = c.hue; });
+  const labels = fwzLabels();
+  const byLine = fwzMarksByLine(fwz.marks);
+  const re = fwzCurrentRegex();
+  // Continuation lines (no header match, after an entry started) belong to
+  // that entry's Message — shown as a Message mark across the line, like
+  // the parser appends them (fwzParsePreview/appendContinuationLine),
+  // minus the closing quote of a quoted multi-line message.
+  const wrapQuote = re ? messageWrapQuote(re.source) : "";
+  let inEntry = false, openQuote = "", entryStart = -1;
+  const frag = document.createDocumentFragment();
+  fwz.lines.forEach((text, li) => {
+    const manual = byLine.get(li);
+    let marks = manual || fwzSuggestedMarks(li, re).sort((a, b) => a.start - b.start);
+    let continuation = false;
+    if (manual || (re && re.test(text))) {
+      inEntry = true;
+      entryStart = li;
+      openQuote = wrapQuote && !text.endsWith(wrapQuote) ? wrapQuote : "";
+    } else if (inEntry && re) {
+      continuation = true;
+      let end = text.length;
+      if (openQuote && text.endsWith(openQuote)) { end -= openQuote.length; openQuote = ""; }
+      marks = end > 0 ? [{ line: li, start: 0, end, key: "message" }] : [];
+    }
+    const row = document.createElement("div");
+    row.className = "fwz-line" + (manual ? " fwz-learn" : "") + (continuation ? " fwz-cont" : "");
+    row.dataset.line = li;
+    const no = document.createElement("span");
+    no.className = "fwz-line-no";
+    no.textContent = li + 1;
+    row.appendChild(no);
+    const t = document.createElement("span");
+    t.className = "fwz-line-text";
+    let cursor = 0;
+    marks.forEach(m => {
+      if (m.start < cursor) return; // overlapping (defensive) — skip
+      if (m.start > cursor) t.appendChild(document.createTextNode(text.slice(cursor, m.start)));
+      const span = document.createElement("span");
+      span.className = "fwz-mark" + (manual ? "" : " fwz-suggested") + (continuation ? " fwz-continuation" : "");
+      span.dataset.col = m.key;
+      span.style.setProperty("--fwz-hue", hueOf[m.key]);
+      span.title = (labels[m.key] || m.key) + (continuation ? " (continued from line " + (entryStart + 1) + ")" : manual ? " — click to remove" : " (suggested)");
+      span.textContent = text.slice(m.start, m.end);
+      t.appendChild(span);
+      cursor = m.end;
+    });
+    if (cursor < text.length) t.appendChild(document.createTextNode(text.slice(cursor)));
+    row.appendChild(t);
+    if (manual) {
+      const clr = document.createElement("button");
+      clr.type = "button";
+      clr.className = "fwz-line-clear";
+      clr.title = "Clear this line's marks";
+      clr.textContent = "✕";
+      clr.addEventListener("click", ev => { ev.stopPropagation(); fwzClearLine(li); });
+      row.appendChild(clr);
+    }
+    frag.appendChild(row);
+  });
+  fwzSampleEl.appendChild(frag);
+  fwzSampleEl.scrollTop = scrollTop;
+  fwzSampleEl.scrollLeft = scrollLeft;
+}
+
+function fwzSetStatus(parts) {
+  const s = el("#fwzStatus");
+  s.innerHTML = "";
+  parts.forEach(p => {
+    const d = document.createElement("div");
+    if (p.cls) d.className = p.cls;
+    d.textContent = p.text;
+    s.appendChild(d);
+  });
+}
+
+// The regex the dialog would save right now: derived from the marks, or
+// else the stand-in (typed by hand / the format's own / the suggestion).
+function fwzCurrentSource() {
+  const re = fwzCurrentRegex();
+  return re ? re.source : "";
+}
+
+// What still stands between the current state and a savable format —
+// shown in the status line, and re-checked (and reported) by Save.
+function fwzSaveBlocker() {
+  const d = fwz.derived;
+  if (d && d.error) return d.error;
+  if (fwz.regexError && !(d && d.source)) return fwz.regexError;
+  const src = fwzCurrentSource();
+  if (!src) return fwz.lines.length ? "Mark at least Time and Level in an example line, or enter a regex." : "Paste or drop example lines — or enter a regex directly.";
+  if (!/\(\?<ts>/.test(src)) return "Time is required — mark the timestamp in an example line (or add a (?<ts>...) group).";
+  if (!/\(\?<level>/.test(src)) return "Level is required — mark the level in an example line (or add a (?<level>...) group).";
+  return "";
+}
+
+const FWZ_FALLBACK_HINT = {
+  suggestion: "Automatic suggestion — mark a column in a line to correct it.",
+  format: "Marks suggested by the format's current regex — mark a line to derive a new one.",
+  manual: "Marks suggested by the regex above — mark a line to derive a new one from the marks.",
+};
+
+function renderFwzResult() {
+  const d = fwz.derived;
+  // Never overwrite the Regex field while it's being typed in.
+  if (document.activeElement !== formatEditRegex) {
+    formatEditRegex.value = d && d.source ? d.source : (fwz.manualSrc != null ? fwz.manualSrc : (fwz.fallback ? fwz.fallback.source : ""));
+  }
+  const status = [];
+  if (fwz.notice) status.push({ text: fwz.notice, cls: "fwz-warn" });
+  const blocker = fwzSaveBlocker();
+  if (blocker) status.push({ text: blocker, cls: (d && d.error) || fwz.regexError ? "fwz-error" : "" });
+  if (d && !d.error) d.warnings.forEach(w => status.push({ text: w, cls: "fwz-warn" }));
+  if ((!d || !d.learnLines.length) && fwz.lines.length && fwz.fallback) {
+    if (fwz.fallbackKind === "format" && !fwz.lines.some(l => fwz.fallback.test(l))) {
+      status.push({ text: "The format's current regex matches none of the example lines — mark columns to derive a new one, or use Re-suggest.", cls: "fwz-warn" });
+    } else if (FWZ_FALLBACK_HINT[fwz.fallbackKind]) {
+      status.push({ text: FWZ_FALLBACK_HINT[fwz.fallbackKind] });
+    }
+  }
+  if (!blocker) {
+    const captured = new Set(formatCapturedGroupNames(new RegExp(fwzCurrentSource())));
+    const dropped = fwz.columns.filter(c => c.kind !== "fixed" && !captured.has(c.key));
+    if (dropped.length) status.push({ text: "Not captured by the regex — left out on save: " + dropped.map(c => c.label).join(", ") + ".", cls: "fwz-warn" });
+  }
+  fwzSetStatus(status);
+  renderFwzPreview();
+}
+
+// ---- Levels in the dialog: auto-fill from the examples + preview colors ----
+// The same fixed-name prefix cascade levelBucket applies in text mode.
+function fwzLevelCascade(l) {
+  if (ALL_LEVELS.includes(l)) return l;
+  if (l.startsWith("ERR") || l.startsWith("FATAL")) return "ERROR";
+  if (l.startsWith("WARN")) return "WARN";
+  if (l.startsWith("INFO")) return "INFO";
+  if (l.startsWith("DEBUG")) return "DEBUG";
+  if (l.startsWith("TRACE")) return "TRACE";
+  return null;
+}
+function fwzLevelValueMatches(name, raw) {
+  const v = formatEditLevelMetaFor(name).value;
+  return v === raw || (v !== "" && raw !== "" && !isNaN(Number(v)) && Number(v) === Number(raw));
+}
+// Fills the level list from the level values the current regex captures in
+// the examples. While the list hasn't been edited by hand (a new format):
+// all-numeric values switch to Integer mode with one level per code, each
+// initially named after its own code ("3" -> 3) for the person to rename;
+// otherwise Text mode, the default four plus any fixed level the values
+// cascade to, plus every other value as a custom level. Once edited by hand
+// (or for an existing format), newly seen values are only ADDED.
+function fwzSyncLevels(entries) {
+  const vals = [];
+  entries.forEach(e => {
+    if (e.unmatched != null) return;
+    const v = String(e.level || "").trim();
+    if (v && !vals.includes(v)) vals.push(v);
+  });
+  if (!vals.length) return;
+  const sig = () => JSON.stringify([formatEditLevelValueType, formatEditLevelOrder, [...formatEditLevelOn],
+    formatEditLevelOrder.map(n => formatEditLevelMetaFor(n).value + "|" + formatEditLevelMetaFor(n).color)]);
+  const before = sig();
+  const addCustom = n => {
+    formatEditLevelOrder.push(n);
+    formatEditLevelOn.add(n);
+    formatEditLevelMeta.set(n, { value: n, color: null });
+  };
+  if (!fwz.levelsTouched) {
+    formatEditLevelMeta = new Map();
+    if (vals.every(v => /^\d+$/.test(v))) {
+      const codes = vals.slice().sort((a, b) => Number(a) - Number(b));
+      formatEditLevelValueType = "int";
+      formatEditLevelOrder = codes.concat(ALL_LEVELS);
+      formatEditLevelOn = new Set(codes);
+      codes.forEach(c => formatEditLevelMeta.set(c, { value: c, color: null }));
     } else {
-      compileResult = validateFormatRegex(regex);
-      if (compileResult.error) { formatEditError.textContent = compileResult.error; formatEditError.classList.remove("hidden"); return; }
+      formatEditLevelValueType = "text";
+      const on = new Set(LEVELS);
+      const custom = [];
+      vals.forEach(v => {
+        const n = normalizeLevelName(v);
+        const b = fwzLevelCascade(n);
+        if (b) on.add(b);
+        else if (n !== "OTHER" && !custom.includes(n)) custom.push(n);
+      });
+      const fixedOn = ALL_LEVELS.filter(l => on.has(l));
+      formatEditLevelOrder = fixedOn.concat(custom, ALL_LEVELS.filter(l => !on.has(l)));
+      formatEditLevelOn = new Set(fixedOn.concat(custom));
+      custom.forEach(n => formatEditLevelMeta.set(n, { value: n, color: null }));
     }
+  } else if (formatEditLevelValueType === "int") {
+    vals.forEach(v => {
+      if (!/^\d+$/.test(v) || formatEditLevelOrder.includes(v)) return;
+      if (formatEditLevelOrder.some(n => formatEditLevelOn.has(n) && fwzLevelValueMatches(n, v))) return;
+      addCustom(v);
+    });
+  } else {
+    vals.forEach(v => {
+      const n = normalizeLevelName(v);
+      if (n === "OTHER" || formatEditLevelOrder.includes(n) || fwzLevelCascade(n)) return;
+      addCustom(n);
+    });
+  }
+  if (sig() !== before) {
+    updateFormatEditLevelModeUI();
+    renderFormatEditLevels();
+  }
+}
+// A raw captured level value -> {bucket, color}, resolved against the
+// dialog's CURRENT (unsaved) level list the same way levelBucket resolves
+// a saved one; color null means OTHER.
+function fwzResolveLevel(raw) {
+  const r = String(raw == null ? "" : raw).trim();
+  let bucket = "OTHER";
+  if (r) {
+    if (formatEditLevelValueType === "int") {
+      bucket = formatEditLevelOrder.find(n => formatEditLevelOn.has(n) && fwzLevelValueMatches(n, r)) || "OTHER";
+    } else {
+      const l = normalizeLevelName(r);
+      bucket = formatEditLevelOn.has(l) ? l : (fwzLevelCascade(l) || "OTHER");
+    }
+  }
+  if (bucket === "OTHER") return { bucket, color: null };
+  const meta = formatEditLevelMetaFor(bucket);
+  const auto = ALL_LEVELS.includes(bucket) ? "var(--level-" + bucket.toLowerCase() + ")" : "var(--level-custom-" + (formatEditLevelSlot(bucket) || 1) + ")";
+  return { bucket, color: meta.color || auto };
+}
+// Scrolls the level list to one level's row and flashes it — a click on a
+// level badge in the preview.
+function fwzRevealLevel(name) {
+  const row = formatEditLevelsEl.querySelector('.format-level-row[data-level="' + (window.CSS && CSS.escape ? CSS.escape(name) : name) + '"]');
+  if (!row) return false;
+  const side = row.closest(".fwz-side");
+  if (side) side.scrollTop = Math.max(0, row.offsetTop - (side.clientHeight - row.offsetHeight) / 2);
+  row.classList.remove("fwz-level-flash");
+  void row.offsetWidth;
+  row.classList.add("fwz-level-flash");
+  return true;
+}
+
+function renderFwzPreview() {
+  const box = el("#fwzPreview");
+  box.innerHTML = "";
+  const re = fwzCurrentRegex();
+  const tsFormat = fwzTsFormatEl.value.trim();
+  const entries = re ? fwzParsePreview(fwz.lines, re.source, tsFormat) : [];
+  if (!entries.length) {
+    box.innerHTML = '<div class="format-preview-empty">' + (fwz.lines.length ? "No preview yet — mark columns in an example line, or fix the regex." : "Add example lines to see a preview.") + '</div>';
+    return;
+  }
+  const captured = new Set(formatCapturedGroupNames(re));
+  const middle = fwz.columns.filter(c => c.kind !== "fixed" && captured.has(c.key));
+  const template = "190px 80px " + middle.map(() => "minmax(70px, 160px)").join(" ") + " minmax(200px, 1fr)";
+  const frag = document.createDocumentFragment();
+  const head = document.createElement("div");
+  head.className = "fwz-prev-row fwz-prev-head";
+  head.style.gridTemplateColumns = template;
+  ["Time", "Level"].concat(middle.map(c => c.label), ["Message"]).forEach(label => {
+    const s = document.createElement("span");
+    s.textContent = label;
+    head.appendChild(s);
+  });
+  frag.appendChild(head);
+  entries.forEach(e => {
+    const row = document.createElement("div");
+    row.dataset.line = e.srcLine;
+    row.title = "Double-click to show this line in the examples";
+    if (e.unmatched != null) {
+      row.className = "fwz-prev-row fwz-prev-unmatched";
+      row.style.gridTemplateColumns = "1fr";
+      row.textContent = "(before the first entry — dropped) " + e.unmatched;
+      frag.appendChild(row);
+      return;
+    }
+    const lv = fwzResolveLevel(e.level);
+    row.className = "fwz-prev-row" + (lv.color ? "" : " lvl-other");
+    row.style.gridTemplateColumns = template;
+    const cell = (text, cls) => {
+      const s = document.createElement("span");
+      if (cls) s.className = cls;
+      s.textContent = text;
+      s.title = text;
+      row.appendChild(s);
+      return s;
+    };
+    cell(isNaN(e.ts) ? (e.tsRaw ? e.tsRaw + " (unparsed)" : "—") : formatTime(e.ts));
+    const lvl = cell("", "col-level");
+    lvl.title = "";
+    const badge = document.createElement("span");
+    badge.className = "level-badge";
+    badge.textContent = e.level;
+    badge.dataset.level = lv.bucket;
+    badge.title = lv.color ? "Level " + lv.bucket + " — click to find it in the level list" : "Not a configured level (OTHER)";
+    if (lv.color) {
+      badge.style.color = lv.color;
+      badge.style.background = "color-mix(in srgb, " + lv.color + " 24%, transparent)";
+    }
+    lvl.appendChild(badge);
+    middle.forEach(c => cell(entryColumnValue(e, c.key)));
+    cell(e.message, "fwz-prev-msg");
+    frag.appendChild(row);
+  });
+  box.appendChild(frag);
+}
+el("#fwzPreview").addEventListener("click", ev => {
+  const badge = ev.target.closest ? ev.target.closest(".level-badge[data-level]") : null;
+  if (!badge || !fwz || badge.dataset.level === "OTHER") return;
+  ev.stopPropagation();
+  fwzRevealLevel(badge.dataset.level);
+});
+
+// ---- Save ----
+async function saveFormatEdit() {
+  if (!fwz) return;
+  const fail = msg => { formatEditError.textContent = msg; formatEditError.classList.remove("hidden"); };
+  const name = formatEditName.value.trim();
+  if (!name) return fail("Name is required.");
+  const levelNames = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
+  let src = "";
+  if (formatEditMode === "meta") {
+    if (formatEditMetaTargets.length < 2) return fail("Pick at least 2 target formats.");
+  } else {
     // Time and Level are the two mandatory columns (product rule, not a
-    // parsing requirement — see compileFormatPattern's own comment): a
-    // format missing either is blocked from saving, even one that
-    // previously saved fine before this rule existed.
-    if (!compileResult.hasTs) {
-      formatEditError.textContent = formatEditMode === "pattern" ? "Pattern needs a %d / %date token." : 'Regex needs a "(?<ts>...)" group.';
-      formatEditError.classList.remove("hidden");
-      return;
-    }
-    if (!compileResult.hasLevel) {
-      formatEditError.textContent = formatEditMode === "pattern" ? "Pattern needs a %p / %level token." : 'Regex needs a "(?<level>...)" group.';
-      formatEditError.classList.remove("hidden");
-      return;
-    }
+    // parsing requirement — see compileFormatPattern's own comment).
+    const blocker = fwzSaveBlocker();
+    if (blocker) return fail(blocker);
+    src = fwzCurrentSource();
+    const v = validateFormatRegex(src);
+    if (v.error) return fail(v.error);
+    if (!levelNames.length) return fail("Pick at least one log level.");
   }
 
   const existing = formatEditId ? state.logFormats.find(f => f.id === formatEditId) : null;
@@ -30873,35 +32108,211 @@ async function saveFormatEdit() {
   if (formatEditMode === "meta") {
     fmt.targetFormatIds = formatEditMetaTargets.slice();
     delete fmt.pattern; delete fmt.regex; delete fmt.tsFormat; delete fmt.levels;
-    delete fmt.levelValueType; delete fmt.columnDefs; delete fmt.messageVisible;
+    delete fmt.levelValueType; delete fmt.columnDefs; delete fmt.messageVisible; delete fmt.sampleSetup;
   } else {
-    fmt.pattern = pattern;
-    fmt.regex = regex;
-    fmt.tsFormat = tsFormat;
+    fmt.pattern = "";
+    fmt.regex = src;
+    fmt.tsFormat = formatEditTsFormat.value.trim();
     fmt.levelValueType = formatEditLevelValueType;
     fmt.levels = levelNames.map(n => {
       const meta = formatEditLevelMetaFor(n);
       return { value: formatEditLevelValueType === "int" ? (meta.value || n) : n, name: n, color: meta.color };
     });
-    fmt.columnDefs = formatEditColumnOrder.map(d => ({ key: d.key, kind: d.kind, label: d.label }));
+    // Only columns the regex actually fills — a listed column it doesn't
+    // capture would only ever show empty.
+    const captured = new Set(formatCapturedGroupNames(new RegExp(src)));
+    fmt.columnDefs = fwz.columns.filter(c => c.kind !== "fixed" && captured.has(c.key))
+      .map(c => ({ key: c.key, kind: c.kind === "custom" ? "custom" : "default", label: c.label }));
     fmt.messageVisible = formatEditMessageVisibleEl.checked;
+    if (fwz.lines.length) {
+      const lastMarked = fwz.marks.reduce((mx, m) => Math.max(mx, m.line), -1);
+      const keep = Math.min(fwz.lines.length, Math.max(FWZ_STORED_LINES, lastMarked + 1));
+      fmt.sampleSetup = {
+        lines: fwz.lines.slice(0, keep),
+        marks: fwz.marks.filter(m => m.line < keep).map(m => ({ line: m.line, start: m.start, end: m.end, key: m.key })),
+      };
+    } else {
+      delete fmt.sampleSetup;
+    }
     delete fmt.targetFormatIds;
   }
   // See "Log format definitions" — editing the builtin default takes it off
   // the untouched-HEADER_RE fast path from now on.
   if (fmt.builtin) fmt.edited = true;
+  const glob = formatEditRuleGlob.value.trim();
 
   await saveLogFormat(fmt);
   const idx = state.logFormats.findIndex(f => f.id === fmt.id);
   if (idx === -1) state.logFormats.push(fmt); else state.logFormats[idx] = fmt;
+  // The optional rule field only ever ADDS a rule, appended last (first
+  // match wins, so it never overrides an existing rule's precedence).
+  if (glob && !state.formatRules.some(r => r.formatId === fmt.id && r.glob === glob)) {
+    const rule = {
+      id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+      order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
+      createdAt: Date.now(),
+      glob,
+      formatId: fmt.id,
+    };
+    await saveFormatRule(rule);
+    state.formatRules.push(rule);
+  }
   closeFormatEditDialog();
   renderFormatList();
+  renderFormatRuleList();
   renderFormatRuleFormatOptions();
   renderLevelBar(); // its buttons/order come from the formats currently in play
   refreshColumnState(); // its columns/header likewise come from the formats currently in play
   lastColumnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible(); // keep render()'s own memo check in sync, avoid a redundant second refresh on its next call
 }
+
+// Scrolls the example-lines box so example line `lineIdx` sits in its
+// vertical middle (and back to the line start horizontally), then flashes
+// it briefly — the preview table's double-click target. Scrolls only
+// #fwzSample itself (not via scrollIntoView, which would also scroll the
+// dialog's other ancestors).
+function fwzRevealLine(lineIdx) {
+  const lineEl = fwzSampleEl.querySelector('.fwz-line[data-line="' + lineIdx + '"]');
+  if (!lineEl) return false;
+  fwzSampleEl.scrollTop = Math.max(0, lineEl.offsetTop - (fwzSampleEl.clientHeight - lineEl.offsetHeight) / 2);
+  fwzSampleEl.scrollLeft = 0;
+  lineEl.classList.remove("fwz-line-flash");
+  void lineEl.offsetWidth; // restart the animation on a repeated double-click
+  lineEl.classList.add("fwz-line-flash");
+  return true;
+}
+// Delegated on the preview box (its rows are rebuilt on every change —
+// see CLAUDE.md's DOM-identity gotcha — so a per-row listener could land on
+// a node replaced between the two clicks).
+el("#fwzPreview").addEventListener("dblclick", ev => {
+  const row = ev.target.closest ? ev.target.closest(".fwz-prev-row[data-line]") : null;
+  if (!row || !fwz) return;
+  ev.preventDefault();
+  const sel = window.getSelection ? window.getSelection() : null;
+  if (sel) sel.removeAllRanges(); // a double-click also word-selects the cell text
+  fwzRevealLine(+row.dataset.line);
+});
+
+// Character offset of (node, offset) within a line's text element — walks
+// its text nodes in order (mark spans split the line into several).
+function fwzOffsetIn(container, node, offset) {
+  if (!container.contains(node)) return null;
+  const r = document.createRange();
+  r.setStart(container, 0);
+  r.setEnd(node, offset);
+  return r.toString().length;
+}
+
+// mouseup inside the example lines: a non-empty selection within ONE line
+// becomes a mark for the active column; a plain click on a manual mark
+// removes it.
+function fwzHandleSampleMouseUp(ev) {
+  if (!fwz) return;
+  const sel = window.getSelection ? window.getSelection() : null;
+  if (sel && !sel.isCollapsed && sel.rangeCount) {
+    const range = sel.getRangeAt(0);
+    const startText = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
+    const endText = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer;
+    const lineA = startText && startText.closest ? startText.closest(".fwz-line") : null;
+    const lineB = endText && endText.closest ? endText.closest(".fwz-line") : null;
+    if (!lineA || lineA !== lineB) {
+      if (lineA || lineB) { fwz.notice = "Select text within a single line."; renderFwzResult(); }
+      return;
+    }
+    const textEl = lineA.querySelector(".fwz-line-text");
+    const a = fwzOffsetIn(textEl, range.startContainer, range.startOffset);
+    const b = fwzOffsetIn(textEl, range.endContainer, range.endOffset);
+    if (a == null || b == null) return;
+    fwz.notice = "";
+    sel.removeAllRanges();
+    fwzAddMark(+lineA.dataset.line, a, b);
+    return;
+  }
+  const markEl = ev.target && ev.target.closest ? ev.target.closest(".fwz-mark:not(.fwz-suggested)") : null;
+  if (markEl) {
+    const lineEl = markEl.closest(".fwz-line");
+    fwzRemoveMark(+lineEl.dataset.line, markEl.dataset.col);
+  }
+}
+
+fwzSampleEl.addEventListener("mouseup", fwzHandleSampleMouseUp);
+fwzSampleEl.addEventListener("paste", ev => {
+  const text = ev.clipboardData ? ev.clipboardData.getData("text/plain") : "";
+  if (!text) return;
+  ev.preventDefault();
+  fwzAppendText(text);
+});
+// Drag feedback on the example-lines box. The actual drop is handled for
+// the whole wizard by the window-level drop handler (and, under the desktop
+// wrapper, by loadDesktopLocalFiles) — see formatDialogOpen() there.
+fwzSampleEl.addEventListener("dragover", ev => { if (isFileDrag(ev)) { ev.preventDefault(); fwzSampleEl.classList.add("fwz-drop-active"); } });
+fwzSampleEl.addEventListener("dragleave", () => fwzSampleEl.classList.remove("fwz-drop-active"));
+el("#fwzOpenFile").addEventListener("click", ev => { ev.stopPropagation(); el("#fwzFileInput").click(); });
+el("#fwzFileInput").addEventListener("change", ev => {
+  const f = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (f) fwzLoadFile(f);
+});
+el("#fwzPasteBtn").addEventListener("click", ev => {
+  ev.stopPropagation();
+  if (!navigator.clipboard || !navigator.clipboard.readText) { fwz.notice = "Use Ctrl+V in the example lines box to paste."; renderFwzResult(); return; }
+  navigator.clipboard.readText().then(t => fwzAppendText(t), () => {
+    if (fwz) { fwz.notice = "Clipboard access was denied — use Ctrl+V in the example lines box instead."; renderFwzResult(); }
+  });
+});
+el("#fwzClearMarks").addEventListener("click", ev => {
+  ev.stopPropagation();
+  if (!fwz.marks.length) return;
+  fwzCheckpoint();
+  fwz.marks = []; fwz.notice = ""; fwzUpdate();
+});
+el("#fwzClearAll").addEventListener("click", ev => {
+  ev.stopPropagation();
+  if (!fwz.marks.length && !fwz.lines.length) return;
+  fwzCheckpoint();
+  fwz.marks = []; fwz.lines = []; fwz.notice = ""; fwzUpdate();
+});
+el("#fwzUndo").addEventListener("click", ev => { ev.stopPropagation(); fwzUndo(); });
+el("#fwzRedo").addEventListener("click", ev => { ev.stopPropagation(); fwzRedo(); });
+el("#fwzColumnAddBtn").addEventListener("click", ev => { ev.stopPropagation(); fwzAddCustomColumn(); });
+fwzColumnLabelNew.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  ev.preventDefault();
+  fwzAddCustomColumn();
+});
+fwzTsFormatEl.addEventListener("input", () => {
+  // Emptying the field hands timestamp detection back to the wizard.
+  fwz.tsTouched = fwzTsFormatEl.value.trim() !== "";
+  fwzDerive();
+  renderFwzResult();
+});
+el("#fwzClose").addEventListener("click", closeFormatEditDialog);
+el("#fwzResuggest").addEventListener("click", ev => { ev.stopPropagation(); if (fwz && fwz.lines.length) fwzAskResuggest(true); });
+el("#fwzResuggestYes").addEventListener("click", ev => { ev.stopPropagation(); fwzAskResuggest(false); fwzResuggest(); });
+el("#fwzResuggestNo").addEventListener("click", ev => { ev.stopPropagation(); fwzAskResuggest(false); });
+el("#formatEditCancel").addEventListener("click", closeFormatEditDialog);
 el("#formatEditSave").addEventListener("click", saveFormatEdit);
+
+// Typing a regex by hand: it becomes the stand-in (fwzRefreshFallback),
+// replacing all marks — they're re-set from the typed regex as suggested
+// marks. One undo checkpoint per editing session of the field (not per
+// keystroke), so Undo brings back the marks from before the typing. A
+// named group the column list doesn't have yet is added as a column.
+formatEditRegex.addEventListener("focus", () => { if (fwz) fwz.regexEditCheckpointed = false; });
+formatEditRegex.addEventListener("input", () => {
+  if (!fwz) return;
+  if (!fwz.regexEditCheckpointed) { fwzCheckpoint(); fwz.regexEditCheckpointed = true; }
+  fwz.marks = [];
+  fwz.manualSrc = formatEditRegex.value;
+  let names = [];
+  try { names = formatCapturedGroupNames(new RegExp(fwz.manualSrc)); } catch (e) { /* reported by fwzRefreshFallback */ }
+  names.forEach(k => {
+    if (k === "ts" || k === "level" || k === "message" || fwz.columns.some(c => c.key === k)) return;
+    const def = DEFAULT_MIDDLE_COLUMNS.find(d => d.key === k);
+    fwz.columns.splice(fwz.columns.length - 1, 0, { key: k, kind: def ? "default" : "custom", label: def ? def.label : k, hue: fwzNextHue() });
+  });
+  fwzUpdate();
+});
 
 // ---- Add/Edit filename rule — inline panel (not a separate dialog) ----
 const formatRuleEditPanel = el("#formatRuleEditPanel");
@@ -30983,6 +32394,7 @@ document.addEventListener("keydown", ev => {
   // press to rebind an action — consume it here, before any of the app's
   // own bindings below can react to it.
   if (shortcutRecordingId !== null) { onShortcutRecordingKeydown(ev); return; }
+  if (formatDialogOpen() && fwzHandleUndoKeydown(ev)) return;
 
   const key = ev.key.toLowerCase();
   const inInput = document.activeElement && document.activeElement.tagName === "INPUT";
@@ -30997,6 +32409,9 @@ document.addEventListener("keydown", ev => {
     // only when nothing else is consuming this Esc — captured before the
     // closes below run, so an open overlay closes first and a single Esc never
     // both closes it AND leaves focus mode.
+    // The format setup wizard sits on top of Settings: Esc closes just the
+    // wizard, leaving Settings (and its unsaved format editor) open.
+    if (formatDialogOpen()) { closeFormatEditDialog(); return; }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
     closePlotFullscreen();
     closeSettingsDialog();
