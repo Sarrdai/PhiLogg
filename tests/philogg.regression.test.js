@@ -303,6 +303,10 @@ async function withApp(run, opts = {}) {
       set fmSelectedWindow(v) { fmSelectedWindow = v; },
       get fmFolderId() { return fmFolderId; },
       set fmFolderId(v) { fmFolderId = v; },
+      // Format setup wizard (GROUP 261).
+      get fwz() { return fwz; },
+
+
     };
   `;
   document.body.appendChild(bridge);
@@ -6969,7 +6973,7 @@ await withApp(async (w, d, T) => {
   assert(columnsPanel.classList.contains("hidden"), "columns popup starts hidden");
   fireClick(btnColumns, w);
   assert(!columnsPanel.classList.contains("hidden"), "clicking #btnColumns opens the popup");
-  const threadCb = d.querySelector("#colToggleThread");
+  const threadCb = d.querySelector('#columnsList input[data-col="thread"]');
   assert(threadCb.checked === true, "checkbox reflects the current (default-visible) state when opened");
 
   threadCb.checked = false;
@@ -6991,7 +6995,7 @@ await withApp(async (w, d, T) => {
   T.state.columnWidths.method = 300; // simulate a prior resize
   w.applyRowGrid();
   fireClick(d.querySelector("#btnResetColumns"), w);
-  assert(T.state.columnWidths.method === 168, "Reset widths restores DEFAULT_COLUMN_WIDTHS");
+  assert(T.state.columnWidths.method === 168, "Reset widths restores FIXED_COLUMN_WIDTHS");
   assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 92px 158px 168px 1fr",
     "…and --row-grid reflects the reset defaults");
 });
@@ -7003,7 +7007,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
 
-  const handle = d.querySelector('.col-resize-handle[data-col="loc"]');
+  const handle = d.querySelector('.col-resize-handle[data-col="location"]');
   assert(handle, "Location's resize handle exists in #tableHeader");
   assert(handle.style.left === (5 + 12 + 178 + 12 + 72 + 12 + 66 + 12 + 92 + 12 + 158) + "px",
     "handle is positioned at the cumulative right edge of its own column, got " + handle.style.left);
@@ -7011,20 +7015,20 @@ await withApp(async (w, d, T) => {
   handle.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: 500 }));
   assert(handle.classList.contains("dragging"), "mousedown starts the drag (handle gets .dragging)");
   d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: 540 })); // +40px
-  assert(T.state.columnWidths.loc === 198, "dragging 40px right grows Location's width by 40px (158 -> 198), got " + T.state.columnWidths.loc);
+  assert(T.state.columnWidths.location === 198, "dragging 40px right grows Location's width by 40px (158 -> 198), got " + T.state.columnWidths.location);
   assert(d.documentElement.style.getPropertyValue("--row-grid").includes("198px"), "--row-grid reflects the live drag width");
 
   // Shrinking below COLUMN_MIN_WIDTH clamps rather than going negative/zero
   d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: -900 }));
-  assert(T.state.columnWidths.loc === 40, "drag clamps at COLUMN_MIN_WIDTH (40px), never below it, got " + T.state.columnWidths.loc);
+  assert(T.state.columnWidths.location === 40, "drag clamps at COLUMN_MIN_WIDTH (40px), never below it, got " + T.state.columnWidths.location);
 
   d.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, cancelable: true }));
   assert(!handle.classList.contains("dragging"), "mouseup ends the drag");
 
   // A mousemove with no active drag is a no-op (no leftover state from the previous drag)
-  const widthBefore = T.state.columnWidths.loc;
+  const widthBefore = T.state.columnWidths.location;
   d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: 999 }));
-  assert(T.state.columnWidths.loc === widthBefore, "mousemove after mouseup no longer affects the column width");
+  assert(T.state.columnWidths.location === widthBefore, "mousemove after mouseup no longer affects the column width");
 });
 
 await withApp(async (w, d, T) => {
@@ -7280,7 +7284,7 @@ await withApp(async (w, d, T) => {
   assert(timeEl && cs(timeEl).overflow === "hidden", "col-time declares overflow:hidden too (defensive — also resizable now), got " + (timeEl && cs(timeEl).overflow));
   // Same fix already existed for these three (regression guard: this bugfix
   // must not have accidentally removed it).
-  ["col-thread", "col-loc", "col-method"].forEach(cls => {
+  ["col-thread", "col-location", "col-method"].forEach(cls => {
     const el = d.querySelector("#tableRows ." + cls);
     assert(el && cs(el).overflow === "hidden", "." + cls + " still declares overflow:hidden");
   });
@@ -8181,8 +8185,18 @@ await withApp(async (w, d, T) => {
   assert(m && m.groups.level === "INFO" && m.groups.thread === "main" && m.groups.method === "Startup" && m.groups.message === "Application started",
     "compiled regex extracts level/thread/method/message correctly, got " + JSON.stringify(m && m.groups));
 
+  // Message is no longer a compile-time requirement (Custom Columns: it
+  // gracefully falls back to the whole raw line via applyFormatMatch when
+  // ungrouped) — nothing about %d/%p/%m is technically required to compile;
+  // Time/Level being the two MANDATORY columns is enforced as a save-time
+  // rule in the Format Manager instead (see GROUP 70k).
   const noMsg = w.compileFormatPattern("%d %p", "");
-  assert(noMsg.error, "a pattern with no %m/%message token is rejected");
+  assert(!noMsg.error && noMsg.hasTs && noMsg.hasLevel,
+    "a pattern with %d+%p but no %m/%message compiles fine, message falls back to the raw line");
+
+  const noTsNoLevel = w.compileFormatPattern("%m", "");
+  assert(!noTsNoLevel.error && !noTsNoLevel.hasTs && !noTsNoLevel.hasLevel,
+    "a pattern with neither %d nor %p also compiles fine — no field is technically required at this level");
 
   const withEscapes = w.compileFormatPattern("%p\\t%m", "");
   assert(withEscapes.regex && withEscapes.regex.test("INFO\thello"), "\\t in the pattern text becomes a real tab before compiling");
@@ -8201,8 +8215,12 @@ await withApp(async (w, d, T) => {
   const v1 = w.validateFormatRegex("(unterminated");
   assert(v1.error, "an invalid regex is rejected with an error");
 
+  // Message (and ts) are no longer compile-time requirements — only Level
+  // is present here, and that's enough to compile without error; ts's
+  // absence still surfaces as the same non-blocking warning as v3 below.
   const v2 = w.validateFormatRegex("^(?<level>\\w+) (?<thread>\\S+)$");
-  assert(v2.error, "a regex without a (?<message>...) group is rejected");
+  assert(!v2.error && v2.warning && v2.hasLevel && !v2.hasTs,
+    "a regex without a (?<message>...)/(?<ts>...) group compiles fine now — Time/Level mandatory is a save-time rule instead (see GROUP 70k)");
 
   const v3 = w.validateFormatRegex("^(?<level>\\w+) (?<message>.*)$");
   assert(!v3.error && v3.warning, "missing (?<ts>...) is a non-blocking warning, not a save-blocking error");
@@ -8256,7 +8274,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("70e. End-to-end: add a custom format (via sample-suggested pattern) + filename rule on the Settings page, then load a matching file");
+  section("70e. End-to-end: add a custom format (via the automatic suggestion from a pasted example) + filename rule on the Settings page, then load a matching file");
   await waitForFormatConfig(T);
 
   fireClick(d.querySelector("#btnSettings"), w);
@@ -8275,44 +8293,40 @@ await withApp(async (w, d, T) => {
   assert(btnAddFormat.className === "btn-mini-dashed", "the Add-format button uses the dashed 'add' style, not a filled/outline row-action style, got " + btnAddFormat.className);
   assert(isVisible(btnAddFormat, w), "sanity: the Add-format button is actually visible on screen before anything is clicked");
   fireClick(btnAddFormat, w);
-  const formatEditPanel = d.querySelector("#formatEditPanel");
-  assert(isVisible(formatEditPanel, w), "Add format embeds inline (same page, no new dialog) and is actually rendered on screen, not just missing the 'hidden' class");
-  assert(d.querySelector(".settings-page-card").contains(formatEditPanel), "the inline panel lives inside the same settings-page card, not a separate popup");
-  assert(!isVisible(btnAddFormat, w), "the Add-format button itself is actually hidden on screen while its inline panel is open — not just class-toggled with no matching CSS rule");
+  const dlg = d.querySelector("#formatDialog");
+  assert(isVisible(dlg, w), "Add format opens the format dialog (actually rendered, not just missing the 'hidden' class)");
+  assert(isVisible(d.querySelector("#settingsDialog"), w), "...on top of Settings, which stays open");
+  assert(d.querySelector("#formatEditPanel") === null, "the old inline format panel is gone — the dialog is the one place a format is defined");
+  assert(d.querySelector("#formatEditPattern") === null, "...and so is the Pattern field (the dialog writes Regex mode only)");
 
-  // Only the pattern OR the regex field is visible, matching the mode toggle
-  // — checked via actual computed display, not just the "hidden" class,
-  // since a class with no matching CSS rule leaves the element fully visible.
-  assert(isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
-    "pattern mode (the default) shows the pattern field, hides the regex field");
+  // Kind toggle: Meta swaps the whole examples/columns/levels body for the
+  // target list — checked via actual computed display.
+  assert(isVisible(d.querySelector("#fwzNormalBody"), w) && !isVisible(d.querySelector("#formatEditMetaField"), w),
+    "a new format starts as an ordinary log format: examples body shown, meta targets hidden");
+  fireClick(d.querySelector("#formatEditModeMeta"), w);
+  assert(!isVisible(d.querySelector("#fwzNormalBody"), w) && isVisible(d.querySelector("#formatEditMetaField"), w),
+    "Meta hides the examples body and shows the target list");
   fireClick(d.querySelector("#formatEditModeRegex"), w);
-  assert(!isVisible(d.querySelector("#formatEditPatternField"), w) && isVisible(d.querySelector("#formatEditRegexField"), w),
-    "switching to regex mode hides the pattern field, shows the regex field");
-  fireClick(d.querySelector("#formatEditModePattern"), w);
-  assert(isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
-    "switching back to pattern mode shows it again, hides regex");
+  assert(isVisible(d.querySelector("#fwzNormalBody"), w) && !isVisible(d.querySelector("#formatEditMetaField"), w), "switching back restores it");
 
-  // Cancel closes the panel AND brings the Add button back, no format saved.
+  // Cancel closes the dialog, no format saved.
   fireClick(d.querySelector("#formatEditCancel"), w);
-  assert(!isVisible(formatEditPanel, w), "Cancel closes the inline panel");
-  assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
+  assert(!isVisible(dlg, w), "Cancel closes the dialog");
   assert(formatRows().length === 4, "cancelling adds nothing to the format list");
 
-  // Re-open and actually add one, this time via a pasted sample line instead
-  // of typing the pattern by hand — the suggestion should fill in pattern +
-  // tsFormat automatically.
+  // Re-open and add one from a pasted example: the automatic suggestion
+  // fills the regex + timestamp format and the preview right away.
   fireClick(btnAddFormat, w);
-  assert(!isVisible(btnAddFormat, w), "hidden again on re-open");
-  const sampleInput = d.querySelector("#formatEditSample");
-  sampleInput.value = "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed";
-  fireInput(sampleInput, w);
-  assert(d.querySelector("#formatEditPattern").value === "[%d] %p (%t) %m%n",
-    "pasting a sample line auto-suggests a matching conversion pattern, got " + d.querySelector("#formatEditPattern").value);
+  fwzPaste(w, d, "[2024-01-15 10:00:00] ERROR (worker-1) Database connection failed");
+  const regex = d.querySelector("#formatEditRegex").value;
+  assert(regex.includes("(?<ts>") && regex.includes("(?<level>") && regex.includes("(?<thread>") && regex.includes("(?<message>"),
+    "pasting an example immediately fills in a suggested regex with ts/level/thread/message groups, got " + regex);
   assert(d.querySelector("#formatEditTsFormat").value === "yyyy-MM-dd HH:mm:ss", "...and the matching timestamp format");
+  assert(T.fwz.fallbackKind === "suggestion" && T.fwz.marks.length === 0, "...as a suggestion, without any hand marks");
+  assert(d.querySelectorAll('#fwzSample .fwz-line[data-line="0"] .fwz-mark.fwz-suggested').length === 4, "the example line shows the suggestion as suggested marks");
 
-  const previewRows = () => [...d.querySelectorAll("#formatEditPreview .format-preview-row")];
-  assert(previewRows().length === 1 && !previewRows()[0].classList.contains("format-preview-nomatch"),
-    "the live preview parses the pasted sample line with the suggested pattern");
+  const previewRows = () => [...d.querySelectorAll("#fwzPreview .fwz-prev-row:not(.fwz-prev-head)")];
+  assert(previewRows().length === 1, "the live preview parses the pasted example with the suggestion");
   assert(previewRows()[0].textContent.includes("ERROR") && previewRows()[0].textContent.includes("worker-1") && previewRows()[0].textContent.includes("Database connection failed"),
     "the preview shows the extracted level/thread/message, got " + previewRows()[0].textContent);
 
@@ -8320,14 +8334,14 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#formatEditSave"), w);
   // saveFormatEdit's IndexedDB write is async and the UI only updates once it
   // resolves — wait for that, not for a fixed 20ms (tests/README.md's rule).
-  await waitFor(() => !isVisible(formatEditPanel, w));
-  assert(!isVisible(formatEditPanel, w), "saving closes/collapses the inline format panel");
-  assert(isVisible(btnAddFormat, w), "...and the Add-format button reappears");
+  await waitFor(() => !isVisible(dlg, w));
+  assert(!isVisible(dlg, w), "saving closes the dialog");
   assert(formatRows().length === 5, "the new format is now listed alongside the default and the 3 seeded demo formats");
 
   const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
-  assert(newFormat && newFormat.mode === "pattern" && !newFormat.builtin, "new format saved with the suggested (then reviewed) pattern, not builtin");
-  assert(newFormat.pattern === "[%d] %p (%t) %m%n" && newFormat.tsFormat === "yyyy-MM-dd HH:mm:ss", "the saved format keeps the suggested pattern/tsFormat unchanged (person didn't edit it further)");
+  assert(newFormat && newFormat.mode === "regex" && !newFormat.builtin, "new format saved in Regex mode, not builtin");
+  assert(newFormat.regex === regex && newFormat.tsFormat === "yyyy-MM-dd HH:mm:ss", "the saved format keeps the suggested regex/tsFormat unchanged (person didn't edit it further)");
+  assert(newFormat.columnDefs.map(c => c.key).join(",") === "thread", "only the columns the regex captures are saved (Thread), got " + newFormat.columnDefs.map(c => c.key).join(","));
 
   const btnAddFormatRule = d.querySelector("#btnAddFormatRule");
   assert(btnAddFormatRule.className === "btn-mini-dashed", "the Add-rule button uses the dashed 'add' style too, got " + btnAddFormatRule.className);
@@ -8528,11 +8542,17 @@ await withApp(async (w, d, T) => {
     "sanity: unedited default parses a normal file correctly");
 
   // Edit the default: rename it and replace the pattern with something that
-  // only extracts level+message (drops thread/method entirely) — a clearly
-  // DIFFERENT, verifiable parse result, not just a cosmetic name change.
+  // only extracts time+level+message (drops thread/method entirely) — a
+  // clearly DIFFERENT, verifiable parse result, not just a cosmetic name
+  // change. %d/%p stay present: Time and Level are the two mandatory
+  // columns (GROUP 70k) — a pattern missing either is refused at save time.
+  // Tab-separated, like makeLog's lines. Typed into the format dialog's
+  // Regex field (the dialog writes Regex mode only — a typed regex replaces
+  // the default's own compiled pattern as the one that gets saved).
   fireClick(defaultRow().querySelector("button.btn-mini-outline"), w); // "Edit"
   d.querySelector("#formatEditName").value = "Renamed default";
-  d.querySelector("#formatEditPattern").value = "%p %m%n";
+  d.querySelector("#formatEditRegex").value = "^(?<ts>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2},\\d{3})\\t(?<level>\\S+)\\t(?<message>.*)$";
+  fireInput(d.querySelector("#formatEditRegex"), w);
   fireClick(d.querySelector("#formatEditSave"), w);
   // saveFormatEdit's IndexedDB write is async — wait for the state asserted on.
   await waitFor(() => {
@@ -8548,7 +8568,8 @@ await withApp(async (w, d, T) => {
   assert(duringEdit.entries.length === 1, "sanity: the edited pattern still matches the line as a single entry, got " + duringEdit.entries.length);
   assert(duringEdit.entries[0].thread === "" && duringEdit.entries[0].method === "",
     "while edited, the SAME file shape now parses under the new (different) pattern — thread/method no longer extracted");
-  assert(isNaN(duringEdit.entries[0].ts), "...and the %d-less pattern has no ts group at all, so ts is NaN");
+  assert(!isNaN(duringEdit.entries[0].ts) && duringEdit.entries[0].level === "ERROR",
+    "...and ts/level (the two mandatory columns) still parse correctly under the new pattern");
 
   // Reset: reverts the row AND restores the original untouched fast-path parsing.
   fireClick(resetBtn(), w);
@@ -12884,19 +12905,27 @@ await withApp(async (w, d, T) => {
   cb("TRACE").checked = true; cb("TRACE").dispatchEvent(new w.Event("change"));
   cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
 
+  // fmt.levels is now the v2 {value,name,color}[] shape (Custom Columns'
+  // level int/text/explicit-color mapping) for anything saved through the
+  // editor, but DEFAULT_LOG_FORMAT.levels (and hence a just-Reset record)
+  // stays the legacy plain-string shape on purpose — same both-shapes
+  // tolerance formatLevelDefs itself has. This helper reads just the names,
+  // in order, from either shape.
+  const levelNames = fmt => fmt.levels.map(l => (l && typeof l === "object") ? l.name : l).join(",");
+
   fireClick(d.querySelector("#formatEditSave"), w);
   // saveFormatEdit awaits its IndexedDB write BEFORE updating state.logFormats,
   // so polling the in-memory list covers both assertions below — and unlike
   // the fixed 20ms sleep it was, it holds up under a loaded shard.
   await waitFor(() => {
     const f = T.state.logFormats.find(f => f.id === "fmt-default");
-    return f && f.levels.join(",") === "ERROR,WARN,INFO,TRACE";
+    return f && levelNames(f) === "ERROR,WARN,INFO,TRACE";
   });
   const fmt = T.state.logFormats.find(f => f.id === "fmt-default");
-  assert(fmt.levels.join(",") === "ERROR,WARN,INFO,TRACE",
-    "the saved list is the checked levels in the arranged order, got " + fmt.levels.join(","));
+  assert(levelNames(fmt) === "ERROR,WARN,INFO,TRACE",
+    "the saved list is the checked levels in the arranged order, got " + levelNames(fmt));
   const stored = await w.listLogFormats();
-  assert(stored.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,TRACE", "...and it persisted to IndexedDB");
+  assert(levelNames(stored.find(f => f.id === "fmt-default")) === "ERROR,WARN,INFO,TRACE", "...and it persisted to IndexedDB");
 
   // Reopening the editor shows the saved order back, unused level appended.
   fireClick(defaultRow().querySelector("button.btn-mini-outline"), w);
@@ -12908,7 +12937,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#formatEditSave"), w);
   assert(!d.querySelector("#formatEditError").classList.contains("hidden") && d.querySelector("#formatEditError").textContent.includes("at least one"),
     "saving with no level checked shows an error instead of storing an empty list");
-  assert(T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,TRACE", "...and the stored list is untouched");
+  assert(levelNames(T.state.logFormats.find(f => f.id === "fmt-default")) === "ERROR,WARN,INFO,TRACE", "...and the stored list is untouched");
   fireClick(d.querySelector("#formatEditCancel"), w);
 
   // Reset restores the builtin default's original level list too.
@@ -12921,7 +12950,7 @@ await withApp(async (w, d, T) => {
   // that isn't the one just clicked is the post-write signal (see 70f for why
   // waiting on the state instead tears the window down mid-write).
   await waitFor(() => { const b = findResetBtn(); return !!b && b !== staleResetBtn; });
-  assert(T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,DEBUG",
+  assert(levelNames(T.state.logFormats.find(f => f.id === "fmt-default")) === "ERROR,WARN,INFO,DEBUG",
     "Reset reverts the builtin default's levels to the original four");
 }, { indexedDB: new IDBFactory() });
 
@@ -13071,7 +13100,7 @@ await withApp(async (w, d, T) => {
     "Add appends the trimmed/uppercased custom name as a new row, got " + rows().map(r => r.dataset.level).join(","));
   const noticeRow = () => d.querySelector('.format-level-row[data-level="NOTICE"]');
   assert(noticeRow().querySelector("input").checked, "a freshly added custom level is checked");
-  assert(noticeRow().querySelector(".format-level-name").style.color === "var(--level-custom-1)",
+  assert(noticeRow().querySelector(".format-level-name-input").style.color === "var(--level-custom-1)",
     "...and previews its palette color while still being edited");
   assert(noticeRow().querySelector(".filter-library-row-del"), "a custom row gets a delete control");
   assert(input.value === "", "the add field clears after a successful add");
@@ -13091,7 +13120,7 @@ await withApp(async (w, d, T) => {
   input.value = "AUDIT";
   input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   assert(rows().map(r => r.dataset.level).join(",").endsWith("NOTICE,AUDIT"), "Enter in the add field appends the name too");
-  assert(d.querySelector('.format-level-row[data-level="AUDIT"] .format-level-name').style.color === "var(--level-custom-2)",
+  assert(d.querySelector('.format-level-row[data-level="AUDIT"] .format-level-name-input').style.color === "var(--level-custom-2)",
     "the second custom row previews the second palette slot");
 
   // Reorder a custom row like any other, then drop the fixed TRACE/DEBUG.
@@ -13102,13 +13131,15 @@ await withApp(async (w, d, T) => {
   cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
 
   fireClick(d.querySelector("#formatEditSave"), w);
-  const saved = () => T.state.logFormats.find(f => f.id === "fmt-default").levels.join(",");
+  // fmt.levels is the v2 {value,name,color}[] shape (Custom Columns' level
+  // int/text/explicit-color mapping) — this reads just the names, in order.
+  const saved = () => T.state.logFormats.find(f => f.id === "fmt-default").levels.map(l => l.name).join(",");
   // saveFormatEdit's IndexedDB write is async — wait for the stored list.
   await waitFor(() => saved() === "ERROR,WARN,INFO,NOTICE,AUDIT");
   assert(saved() === "ERROR,WARN,INFO,NOTICE,AUDIT",
     "the saved list is the checked rows (custom names included) in the arranged order, got " + saved());
   const stored = await w.listLogFormats();
-  assert(stored.find(f => f.id === "fmt-default").levels.join(",") === "ERROR,WARN,INFO,NOTICE,AUDIT", "...and it persisted to IndexedDB");
+  assert(stored.find(f => f.id === "fmt-default").levels.map(l => l.name).join(",") === "ERROR,WARN,INFO,NOTICE,AUDIT", "...and it persisted to IndexedDB");
   assert(w.formatLevels("fmt-default").join(",") === "ERROR,WARN,INFO,NOTICE,AUDIT",
     "formatLevels no longer strips names outside the fixed five");
 
@@ -17346,13 +17377,16 @@ await withApp(async (w, d, T) => {
   assert(T.state.columnVisible.thread === false, "middle-click sets columnVisible.thread = false");
   assert(d.documentElement.style.getPropertyValue("--row-grid").includes("0px"),
     "Thread's track collapses to 0px in --row-grid, same as unchecking it in the panel");
-  const threadCb = d.querySelector("#colToggleThread");
+  // Open the Columns panel so its checkboxes exist (JS-rendered on open —
+  // see renderColumnsPanel), then check it reflects the middle-click.
+  fireClick(d.querySelector(".toggle-columns"), w);
+  const threadCb = d.querySelector('#columnsList input[data-col="thread"]');
   assert(threadCb.checked === false, "the Columns panel checkbox reflects the middle-click too");
 
   // Non-middle button is a no-op.
-  const locTh = d.querySelector('#tableHeader .th[data-col="loc"]');
+  const locTh = d.querySelector('#tableHeader .th[data-col="location"]');
   locTh.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }));
-  assert(T.state.columnVisible.loc === true, "auxclick with a non-middle button does not hide the column");
+  assert(T.state.columnVisible.location === true, "auxclick with a non-middle button does not hide the column");
 
   // Always-visible columns (Time/Level/Message) have no data-col and are unaffected.
   const timeTh = d.querySelector('#tableHeader .th[data-sort="time"]');
@@ -24694,11 +24728,14 @@ await withApp(async (w, d, T) => {
       "#" + id + " is a .pill-toggle button");
   });
 
-  // The multi-select column-visibility list stays native checkboxes.
-  ["colToggleDelta", "colToggleThread", "colToggleLoc", "colToggleMethod"].forEach(id => {
-    const c = d.getElementById(id);
+  // The multi-select column-visibility list stays native checkboxes (JS-
+  // rendered on open by renderColumnsPanel — Custom Columns feature, the
+  // set is per-format/dynamic now, not four fixed ids).
+  fireClick(d.querySelector(".toggle-columns"), w);
+  ["delta", "thread", "location", "method"].forEach(key => {
+    const c = d.querySelector('#columnsList input[data-col="' + key + '"]');
     assert(c && c.tagName === "INPUT" && c.type === "checkbox",
-      "#" + id + " (a set-selection list item) stays a native checkbox, not a pill");
+      'the "' + key + '" column-visibility item (a set-selection list item) stays a native checkbox, not a pill');
   });
 
   // Session-export per-file toggles stay native checkboxes too.
@@ -26957,10 +26994,10 @@ await withApp(async (w, d, T) => {
 
   fireClick(d.querySelector("#formatEditModeMeta"), w);
   assert(isVisible(d.querySelector("#formatEditMetaField"), w), "meta mode shows the target-format picker");
-  assert(!isVisible(d.querySelector("#formatEditPatternField"), w) && !isVisible(d.querySelector("#formatEditRegexField"), w),
-    "...and hides the pattern/regex fields");
-  assert(!isVisible(d.querySelector("#formatEditTsFormatField"), w) && !isVisible(d.querySelector("#formatEditLevelsField"), w) && !isVisible(d.querySelector("#formatEditPreviewField"), w),
-    "...and the timestamp/levels/preview fields too — none of them apply to a meta-format");
+  assert(!isVisible(d.querySelector("#fwzNormalBody"), w),
+    "...and hides the whole examples/columns/levels/regex/preview body — none of it applies to a meta-format");
+  assert(isVisible(d.querySelector("#formatEditName"), w) && isVisible(d.querySelector("#formatEditRuleGlob"), w),
+    "...while name and the optional filename rule stay (both apply to a meta-format too)");
 
   d.querySelector("#formatEditName").value = "Test meta";
   fireClick(d.querySelector("#formatEditSave"), w);
@@ -26988,7 +27025,7 @@ await withApp(async (w, d, T) => {
   assert(rows[0].textContent.includes("Syslog"), "moving the second target up reorders the working list");
 
   fireClick(d.querySelector("#formatEditSave"), w);
-  await waitFor(() => !isVisible(d.querySelector("#formatEditPanel"), w));
+  await waitFor(() => !isVisible(d.querySelector("#formatDialog"), w));
   const saved = T.state.logFormats.find(f => f.name === "Test meta");
   assert(saved && saved.mode === "meta", "saved as a meta-format");
   assert(saved.targetFormatIds.join(",") === "fmt-demo-syslog,fmt-demo-app",
@@ -28310,6 +28347,920 @@ await withApp(async (w, d, T) => {
   assert(merged.id === mergedId, "sanity: the returned node is the same merge shell observed throughout");
   assert(T.state.activeId === mergedId, "the merge remains the active node once everything has finished");
   assert(merged.entries.length === N * 2, "the merge's own entries are complete once loading is done — got " + merged.entries.length);
+});
+
+/* ============================================================
+   GROUP 260 — Custom Columns (per-format custom columns)
+   Origin: this session. Every format's entry schema was fixed at six
+   fields (ts/level/thread/location/method/message); this generalizes it:
+   Time and Level stay the two MANDATORY columns (enforced at save time in
+   the Format Manager, not at compile time — compileFormatPattern/
+   validateFormatRegex themselves stay purely technical, no field is
+   actually required to compile), while Thread/Location/Method/Message are
+   each individually optional per format, and a format may additionally
+   define CUSTOM columns populated by a %X{name} pattern token (new,
+   log4j MDC-style) or a plain (?<name>...) regex group (already possible,
+   now surfaced) — landing on an entry's new `fields` bag (applyFormatMatch).
+   Column order/visibility/width (COLUMN_TRACK_ORDER/HIDEABLE_COLUMNS before
+   this) generalizes to activeColumnDefs(), a dynamic per-format union (same
+   idiom as the pre-existing activeLevelOrder()); the row renderers, the
+   context menu's "Filter for this ___", and the filter popup's column
+   chips all now read from that instead of a fixed six-entry table. Level
+   also gains an int-or-text value type with explicit per-level colors
+   (formatLevelDefs/levelBucket/levelColorVar), replacing the purely name/
+   position-driven color assignment for a format that wants one (e.g. a
+   syslog severity code 0-7 mapped to named, colored levels).
+   ============================================================ */
+group(260);
+await withApp(async (w, d, T) => {
+  section("260a. Parsing: %X{name} pattern token and (?<name>...) regex groups both capture into entry.fields");
+
+  const cPattern = w.compileFormatPattern('%d\\t%p\\t%X{reqId}\\t"%m"%n', "yyyy-MM-dd HH:mm:ss,SSS");
+  assert(cPattern && cPattern.regex && cPattern.hasTs && cPattern.hasLevel, "a pattern with %d/%p/%X{reqId} compiles, with ts+level groups");
+  const mPattern = cPattern.regex.exec('2024-01-15 10:00:00,000\tINFO\treq-42\t"hello"');
+  assert(mPattern && mPattern.groups.reqId === "req-42", "the %X{} token captures its value under the chosen field name");
+
+  const collide = w.compileFormatPattern("%X{level} %m", "");
+  assert(collide.error && collide.error.includes("reserved"), "%X{} can't reuse a reserved field name (ts/level/thread/location/method/message)");
+
+  const noMandatory = w.compileFormatPattern("%m", "");
+  assert(!noMandatory.error && !noMandatory.hasTs && !noMandatory.hasLevel,
+    "compiling itself has no hard requirement — Time/Level mandatory is a save-time rule instead (see 260b)");
+
+  const vRegex = w.validateFormatRegex("^(?<ts>\\S+) (?<level>\\w+) (?<sessionId>\\S+) (?<message>.*)$");
+  assert(!vRegex.error, "a hand-written regex with a custom named group (sessionId) compiles fine, no parsing-side change needed");
+  const mRegex = vRegex.regex.exec("2024-01-15T10:00:00 ERROR sess-7 boom");
+  const entry = w.applyFormatMatch(mRegex.groups, "raw line", null);
+  assert(entry.fields.sessionId === "sess-7", "the custom group lands on entry.fields, keyed by its capture name");
+  assert(!("sessionId" in entry), "...not as a top-level entry property (only the six reserved fields get those)");
+
+  const plainEntry = w.applyFormatMatch({ ts: "x", level: "INFO", message: "hi" }, "hi", null);
+  assert(Object.keys(plainEntry.fields).length === 0, "a format with no custom captures gets an empty fields bag (shared EMPTY_ENTRY_FIELDS, no per-entry allocation)");
+});
+
+await withApp(async (w, d, T) => {
+  section("260b. Data model: formatColumnDefs/messageVisible fallback for legacy records; Time/Level mandatory at save time");
+  await waitForFormatConfig(T);
+
+  // A format record predating this feature (no columnDefs/messageVisible)
+  // falls back exactly to today's fixed three, in the legacy order.
+  const legacyFmt = {
+    id: "fmt-legacy", name: "Legacy", mode: "pattern", pattern: '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n',
+    regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", levels: ["ERROR", "INFO"],
+    builtin: false, edited: false, createdAt: Date.now(),
+  };
+  T.state.logFormats.push(legacyFmt);
+  const defs = w.formatColumnDefs("fmt-legacy");
+  assert(defs.map(x => x.key).join(",") === "thread,location,method", "no columnDefs -> the legacy fixed three, in the legacy order, got " + defs.map(x => x.key).join(","));
+  assert(defs.every(x => x.kind === "default"), "...all flagged 'default' kind");
+  assert(w.formatMessageVisible("fmt-legacy") === true, "no messageVisible -> visible (today's always-on behavior)");
+
+  // Format dialog: Time and Level are the two mandatory columns — saving a
+  // regex missing either group is blocked, even though neither is
+  // technically required to compile (260a).
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  d.querySelector("#formatEditName").value = "No level";
+  const typeRegex = src => { d.querySelector("#formatEditRegex").value = src; fireInput(d.querySelector("#formatEditRegex"), w); };
+  typeRegex("^(?<ts>\\S+) (?<message>.*)$");
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(!d.querySelector("#formatEditError").classList.contains("hidden") && d.querySelector("#formatEditError").textContent.includes("Level is required"),
+    "saving a regex with no (?<level>) group is blocked with an error, got " + d.querySelector("#formatEditError").textContent);
+  assert(!T.state.logFormats.some(f => f.name === "No level"), "...and nothing was saved");
+
+  typeRegex("^(?<level>\\w+) (?<message>.*)$");
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(!d.querySelector("#formatEditError").classList.contains("hidden") && d.querySelector("#formatEditError").textContent.includes("Time is required"),
+    "saving a regex with no (?<ts>) group is blocked too");
+  assert(!T.state.logFormats.some(f => f.name === "No level"), "...and still nothing was saved");
+
+  typeRegex("^(?<ts>\\S+) (?<level>\\w+) (?<message>.*)$");
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.some(f => f.name === "No level"));
+  assert(T.state.logFormats.some(f => f.name === "No level"), "...but with both groups present, saving succeeds");
+});
+
+await withApp(async (w, d, T) => {
+  section("260c. Format dialog: columns — a typed regex's groups become columns, add/remove/reorder/rename, only captured ones saved, round-trips through save/reopen/IndexedDB");
+  await waitForFormatConfig(T);
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  d.querySelector("#formatEditName").value = "ReqId format";
+
+  const colKeys = () => [...d.querySelectorAll("#fwzColumns .fwz-col-row")].map(r => r.dataset.col).join(",");
+  assert(colKeys() === "ts,level,thread,location,method,message", "a new format starts with Time, Level, the three default columns, Message");
+
+  // A typed regex's named group that isn't a column yet becomes one.
+  d.querySelector("#formatEditRegex").value = "^(?<ts>\\S+ \\S+)\\t(?<level>\\S+)\\t(?<thread>\\S+)\\t(?<reqId>\\S+)\\t(?<message>.*)$";
+  fireInput(d.querySelector("#formatEditRegex"), w);
+  assert(colKeys() === "ts,level,thread,location,method,reqId,message", "a typed regex's custom group (reqId) is added as a column, got " + colKeys());
+
+  // Remove Location — a re-add chip appears; clicking it restores it before Message.
+  const colDel = key => d.querySelector('#fwzColumns .fwz-col-row[data-col="' + key + '"] .filter-library-row-del');
+  fireClick(colDel("location"), w);
+  assert(colKeys() === "ts,level,thread,method,reqId,message", "removing Location drops it");
+  const addChip = label => [...d.querySelectorAll("#fwzDefaultAdd button")].find(b => b.textContent === "+ " + label);
+  assert(addChip("Location"), "a '+ Location' re-add chip appears once it's removed");
+  fireClick(addChip("Location"), w);
+  assert(colKeys() === "ts,level,thread,method,reqId,location,message", "clicking the chip re-adds it before Message, got " + colKeys());
+  assert(!addChip("Location"), "...and the chip itself disappears once re-added");
+
+  // Reorder: move reqId up above Method.
+  fireClick(d.querySelector('#fwzColumns .fwz-col-row[data-col="reqId"] .filter-library-row-order'), w);
+  assert(colKeys() === "ts,level,thread,reqId,method,location,message", "▲ reorders a custom column above a default one, got " + colKeys());
+
+  // Rename reqId's title by double-clicking its label; the key stays.
+  const label = d.querySelector('#fwzColumns .fwz-col-row[data-col="reqId"] .fwz-col-label');
+  label.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true }));
+  const renameInput = label.querySelector("input");
+  assert(renameInput && renameInput.value === "reqId", "double-clicking a column title opens an inline rename field");
+  renameInput.value = "Request Id";
+  renameInput.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  assert(d.querySelector('#fwzColumns .fwz-col-row[data-col="reqId"] .fwz-col-label').textContent === "Request Id", "Enter commits the new title; the key stays reqId");
+
+  // Columns the regex doesn't capture are flagged, and left out on save.
+  assert(d.querySelector("#fwzStatus").textContent.includes("left out on save: Method, Location"),
+    "the status line names listed columns the regex doesn't capture, got " + d.querySelector("#fwzStatus").textContent);
+
+  d.querySelector("#formatEditMessageVisible").checked = false;
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.some(f => f.name === "ReqId format"));
+  const fmt = T.state.logFormats.find(f => f.name === "ReqId format");
+  assert(fmt.columnDefs.map(c => c.key).join(",") === "thread,reqId", "the saved columnDefs are the captured columns, in the arranged order, got " + fmt.columnDefs.map(c => c.key).join(","));
+  assert(fmt.columnDefs.find(c => c.key === "reqId").kind === "custom" && fmt.columnDefs.find(c => c.key === "reqId").label === "Request Id",
+    "the custom column's kind and (renamed) title are persisted");
+  assert(fmt.columnDefs.find(c => c.key === "thread").kind === "default", "a default column's kind is persisted too");
+  assert(fmt.messageVisible === false, "messageVisible is persisted");
+  const stored = await w.listLogFormats();
+  const storedFmt = stored.find(f => f.name === "ReqId format");
+  assert(storedFmt.columnDefs.map(c => c.key).join(",") === "thread,reqId", "...and it persisted to IndexedDB");
+  assert(storedFmt.messageVisible === false, "...messageVisible too");
+
+  // Reopening the dialog shows the saved column list and Message toggle back.
+  w.openFormatEditDialog(fmt.id);
+  assert(colKeys() === "ts,level,thread,reqId,message", "reopening restores the saved columns, got " + colKeys());
+  assert(d.querySelector("#formatEditMessageVisible").checked === false, "...and the saved Message-visibility state");
+  assert(d.querySelector("#formatEditRegex").value === fmt.regex, "...and shows the saved regex");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("260d. End to end: a loaded custom-column format renders its columns, and the union of loaded formats drives the context menu + filter popup chips");
+  await waitForFormatConfig(T);
+
+  const reqIdFmt = {
+    id: "fmt-reqid", name: "ReqId", mode: "pattern", pattern: '%d\\t%p\\t%X{reqId}\\t"%m"%n',
+    regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", levels: ["ERROR", "INFO"],
+    columnDefs: [{ key: "reqId", kind: "custom", label: "Request Id" }], // Thread/Location/Method all dropped
+    messageVisible: true, builtin: false, edited: false, createdAt: Date.now(),
+  };
+  T.state.logFormats.push(reqIdFmt);
+  const reqIdLines = [0, 1, 2].map(i => `2024-01-15 10:00:0${i},000\t${i === 0 ? "ERROR" : "INFO"}\treq-${i}\t"hello ${i}"`).join("\n") + "\n";
+  const f = await w.addFile("reqid.log", reqIdLines, () => {}, "fmt-reqid");
+  T.state.activeId = f.id;
+  w.render();
+
+  assert(f.entries[0].fields.reqId === "req-0", "sanity: the custom column's value is captured on each entry");
+  assert(w.activeColumnDefs().map(c => c.key).join(",") === "reqId", "activeColumnDefs() for this lone loaded format is just its own custom column (Thread/Location/Method all dropped)");
+  assert(w.entryColumnValue(f.entries[1], "reqId") === "req-1", "entryColumnValue reads a custom column's value the same way as a built-in one");
+
+  const reqIdCell = [...d.querySelectorAll('#tableRows .col-custom[data-col="reqId"]')][1]; // row for entries[1] ("req-1")
+  assert(reqIdCell && reqIdCell.textContent.trim() === "req-1", "the rendered row shows the custom column, tagged data-col and the shared .col-custom class");
+  assert(!d.querySelector("#tableRows .col-thread") && !d.querySelector("#tableRows .col-location") && !d.querySelector("#tableRows .col-method"),
+    "the three default columns this format dropped render nothing at all");
+
+  // The HEADER (a separate, otherwise-static DOM tree from the per-row
+  // renderers above) must pick up the very same column set — render()
+  // refreshes it via refreshColumnState() whenever activeColumnDefs()'s key
+  // set actually changes (memoized against lastColumnStateKey), which
+  // addFile's own w.render() call above should have just triggered.
+  assert(d.querySelector('#tableHeader .th[data-col="reqId"]') && d.querySelector('#tableHeader .th[data-col="reqId"]').textContent.trim() === "Request Id",
+    "the Filter header shows the custom column with its own label, picked up by the very first render() after loading this format's file");
+  assert(!d.querySelector('#tableHeader .th[data-col="location"]') && !d.querySelector('#tableHeader .th[data-col="thread"]') && !d.querySelector('#tableHeader .th[data-col="method"]'),
+    "...and none of the three columns this format dropped");
+  assert(d.querySelector('#highlightHeader .th[data-col="reqId"]'), "the Highlight header picks up the same dynamic column set too");
+
+  // Context menu: right-clicking the custom column's cell resolves to it.
+  fireContextMenu(reqIdCell, w, 50, 50);
+  assert(d.querySelector("#ctxFilterForColumnLabel").textContent === "Filter for this Request Id", "right-clicking the custom column's cell labels the action for it");
+  fireClick(d.querySelector("#ctxFilterForColumn"), w);
+  assert(d.querySelector("#filterInput").value === "req[*:int]", "the custom column's value fills the filter input, numeric content auto-wildcarded same as any other column (openFilterForEntryColumn) — got " + d.querySelector("#filterInput").value);
+  assert(d.querySelector('.column-chip[data-col="reqId"]').classList.contains("active"), "the custom column's own chip is pre-selected in the filter popup");
+  assert(!d.querySelector('.column-chip[data-col="thread"]'), "a column this format doesn't define (Thread) has no chip at all");
+  w.closeFilterPopup();
+
+  // Union across loaded formats: a second file under the builtin default
+  // (Thread/Location/Method, no custom columns) joins the same session —
+  // the context menu / filter popup should now offer BOTH formats' columns.
+  const g = await w.addFile("default.log", makeLog(0, 2), () => {});
+  w.render();
+  const unionKeys = w.activeColumnDefs().map(c => c.key);
+  assert(unionKeys.includes("reqId") && unionKeys.includes("thread") && unionKeys.includes("location") && unionKeys.includes("method"),
+    "activeColumnDefs() unions every currently-loaded format's columns, got " + unionKeys.join(","));
+  const chipCols = () => [...d.querySelectorAll(".column-chip")].map(c => c.dataset.col);
+  w.openFilterPopup();
+  assert(chipCols().includes("reqId") && chipCols().includes("thread"), "the filter popup's chip list reflects the same union, even while the OTHER file is active");
+  w.closeFilterPopup();
+});
+
+await withApp(async (w, d, T) => {
+  section("260e. Persistence: a filter's restriction to a custom column survives export/import and cache save/restore even when its owning format isn't currently loaded");
+  await waitForFormatConfig(T);
+
+  // The format that defines "reqId" is known (registered) but never loaded
+  // as a root file in this test — knownTextFilterColumnKeys() is checked
+  // against every KNOWN format, not just currently active ones.
+  T.state.logFormats.push({
+    id: "fmt-reqid-2", name: "ReqId 2", mode: "pattern", pattern: '%d\\t%p\\t%X{reqId}\\t"%m"%n',
+    regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", levels: ["ERROR", "INFO"],
+    columnDefs: [{ key: "reqId", kind: "custom", label: "Request Id" }],
+    messageVisible: true, builtin: false, edited: false, createdAt: Date.now(),
+  });
+
+  const logText = makeLog(0, 3);
+  const fSave = await w.addFile("save-src.log", logText, () => {});
+  const saveNode = w.createFilterNode(fSave.id, "text", "req-1", false, null, false, ["reqId", "totallyBogus"]);
+  w.render();
+
+  const branch = w.serializeFilterBranch(saveNode.id);
+  assert(branch.roots[0].columns && branch.roots[0].columns.includes("reqId"), "serializeFilterBranch writes the custom-column restriction into the saved JSON verbatim");
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+
+  const fLoad = await w.addFile("save-dest.log", logText, () => {});
+  w.render();
+  function setLoadTarget(targetId) {
+    const s = d.createElement("script");
+    s.textContent = `loadFilterTargetId = ${JSON.stringify(targetId)};`;
+    d.body.appendChild(s);
+  }
+  setLoadTarget(fLoad.id);
+  w.importFilterJson(json);
+  const loaded = T.state.nodes[fLoad.children[fLoad.children.length - 1]];
+  assert(loaded.columns.includes("reqId"),
+    "reqId survives import even though fmt-reqid-2 (the format that defines it) is never loaded as a root file — a saved filter's restriction on a not-currently-open format's column is kept, not silently dropped");
+  assert(!loaded.columns.includes("totallyBogus"), "...but a key no KNOWN format defines at all is still stripped, same defensive posture as before this feature");
+
+  // Same permissive-but-defensive policy for the session-cache carrier.
+  const fCacheSrc = await w.addFile("cache-src.log", logText, () => {});
+  w.createFilterNode(fCacheSrc.id, "text", "req-1", false, null, false, ["reqId", "totallyBogus"]);
+  w.render();
+  const { roots: cacheRoots } = w.serializeFilterTreeForCache(fCacheSrc);
+  const fCacheDest = await w.addFile("cache-dest.log", logText, () => {});
+  w.materializeCachedFilters(fCacheDest, cacheRoots);
+  const cached = Object.values(T.state.nodes).find(n => n.parentId === fCacheDest.id);
+  assert(cached.columns.includes("reqId") && !cached.columns.includes("totallyBogus"),
+    "materializeCachedFilters applies the same knownTextFilterColumnKeys() policy — reqId kept, totallyBogus stripped");
+});
+
+await withApp(async (w, d, T) => {
+  section("260f. Level int-mode value matching + explicit per-level colors (format setup's level color-mapping)");
+  await waitForFormatConfig(T);
+
+  // Text mode (default): unaffected by this feature at all.
+  T.state.logFormats.push({
+    id: "fmt-text-lvl", name: "TextLvl", mode: "pattern", pattern: '%d\\t%p\\t"%m"%n',
+    regex: "", tsFormat: "", levels: [{ value: "ERROR", name: "ERROR", color: null }],
+    builtin: false, edited: false, createdAt: Date.now(),
+  });
+  assert(w.levelBucket("ERROR", "fmt-text-lvl") === "ERROR", "text-mode (default) matches the captured token against each level's NAME");
+
+  // Int mode: the captured token (a numeric severity code, e.g. syslog)
+  // matches each level definition's `value`, not its `name`.
+  T.state.logFormats.push({
+    id: "fmt-int-lvl", name: "IntLvl", mode: "pattern", pattern: '%d\\t%p\\t"%m"%n',
+    regex: "", tsFormat: "", levelValueType: "int",
+    levels: [
+      { value: "3", name: "ERROR", color: "#ff4444" },
+      { value: "6", name: "INFO", color: null },
+    ],
+    builtin: false, edited: false, createdAt: Date.now(),
+  });
+  assert(w.levelBucket("3", "fmt-int-lvl") === "ERROR", "int-mode matches the captured numeric code against each level's `value`, not its name");
+  assert(w.levelBucket("6", "fmt-int-lvl") === "INFO", "...every mapped code resolves to its own level");
+  assert(w.levelBucket("ERROR", "fmt-int-lvl") === "OTHER", "...the level's NAME itself is no longer a match in int mode (no text-prefix cascade for numeric codes)");
+  assert(w.levelBucket("9", "fmt-int-lvl") === "OTHER", "an unmapped numeric code falls into OTHER, same catch-all as text mode");
+
+  assert(w.levelColorVar("ERROR", "fmt-int-lvl") === "#ff4444", "an explicit per-level color is used directly as the CSS color value");
+  assert(w.levelColorVar("INFO", "fmt-int-lvl") === "var(--level-info)",
+    "a level with no explicit color (color:null) falls back to the automatic fixed-name theme var, same as before this feature");
+
+  // formatLevelDefs upcasts a legacy plain-string levels array on read —
+  // every pre-existing saved format keeps working unchanged.
+  const legacyDefs = w.formatLevelDefs("fmt-default");
+  assert(legacyDefs.every(d => d.color === null) && legacyDefs.map(d => d.name).join(",") === "ERROR,WARN,INFO,DEBUG",
+    "the builtin default's plain-string levels list upcasts to {value,name,color:null} entries with no behavior change");
+});
+
+/* ============================================================
+   GROUP 261 — Format dialog (Add/Edit log format, by example)
+   Origin: this session. The one dialog a format is defined in, on top of
+   Settings: example lines are pasted/dropped/opened and immediately get an
+   automatic suggestion (suggested marks + preview); a column is picked and
+   its value selected inside example lines to correct it, or the regex is
+   edited directly; a Regex-mode regex (plus the timestamp format) is
+   derived from all marks (deriveFormatRegexFromMarks) and previewed live —
+   as suggested marks on unmarked lines and as a log-view-shaped table
+   whose level badges follow the (auto-filled) level list. Marked lines are
+   the only learning input; a line with only suggested marks adopts them
+   when first marked by hand. Save writes the format (Regex mode), an
+   optional filename rule, and the examples + marks as fmt.sampleSetup so a
+   later Edit reopens where it was left.
+   ============================================================ */
+group(261);
+const FWZ_SAMPLE = [
+  "2026-09-23 10:00:01.123 ERROR [main] req=abc123 Verbindung fehlgeschlagen",
+  "java.io.IOException: timeout",
+  "    at com.foo.Net.connect(Net.java:42)",
+  "2026-09-23 10:00:02.456 INFO  [worker-1] req=def456 Neuer Versuch",
+  "2026-09-23 10:00:03.789 WARN  [main] req=ghi789 Langsam: 1200ms",
+];
+// Selects [start, end) of one rendered wizard example line and fires the
+// mouseup the wizard listens for — the same path a real mouse selection
+// takes (Selection API -> offsets across the line's text nodes/mark spans).
+function fwzSelectInLine(w, d, lineIdx, start, end) {
+  const textEl = d.querySelector('#fwzSample .fwz-line[data-line="' + lineIdx + '"] .fwz-line-text');
+  const walker = d.createTreeWalker(textEl, w.NodeFilter.SHOW_TEXT);
+  const range = d.createRange();
+  let pos = 0, n, startSet = false;
+  while ((n = walker.nextNode())) {
+    const len = n.textContent.length;
+    if (!startSet && start <= pos + len) { range.setStart(n, start - pos); startSet = true; }
+    if (end <= pos + len) { range.setEnd(n, end - pos); break; }
+    pos += len;
+  }
+  const sel = w.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  d.querySelector("#fwzSample").dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true }));
+}
+function fwzPaste(w, d, text) {
+  const ev = new w.Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, "clipboardData", { value: { getData: () => text } });
+  d.querySelector("#fwzSample").dispatchEvent(ev);
+}
+
+await withApp(async (w, d, T) => {
+  section("261a. deriveFormatRegexFromMarks / detectTsFormatFromValues / fwzLabelToKey: the pure derivation");
+
+  assert(w.detectTsFormatFromValues(["2026-09-23 10:00:01.123", "2026-09-23 10:00:02.4"]) === "yyyy-MM-dd HH:mm:ss.SSS",
+    "ISO-ish date + time with a '.' fraction is detected, fraction length may vary");
+  assert(w.detectTsFormatFromValues(["2026-09-23T10:00:01,123"]) === "yyyy-MM-ddTHH:mm:ss,SSS", "a 'T' separator and ',' fraction round-trip literally");
+  assert(w.detectTsFormatFromValues(["23.09.2026 10:00:01"]) === "dd.MM.yyyy HH:mm:ss", "a dotted day-first date is dd.MM.yyyy");
+  assert(w.detectTsFormatFromValues(["09/23/2026 10:00:01"]) === "MM/dd/yyyy HH:mm:ss", "a slashed date is month-first unless a first part is > 12");
+  assert(w.detectTsFormatFromValues(["23/09/2026 10:00:01"]) === "dd/MM/yyyy HH:mm:ss", "...and day-first when one is > 12");
+  assert(w.detectTsFormatFromValues(["10:00:01.123"]) === "HH:mm:ss.SSS", "a time-only value works too");
+  assert(w.detectTsFormatFromValues(["2026-09-23T10:00:01.123+02:00"]) === "", "a timezone suffix isn't expressible -> '' (free-form Date.parse fallback)");
+  assert(w.detectTsFormatFromValues(["Sep 23 10:00:01"]) === "", "month names aren't expressible -> ''");
+
+  assert(w.fwzLabelToKey("Request Id", new Set()) === "requestId", "a title becomes a camelCase capture name");
+  assert(w.fwzLabelToKey("Größe", new Set()) === "groesse", "umlauts are transliterated to ASCII (formatCapturedGroupNames is ASCII-only)");
+  assert(w.fwzLabelToKey("Message", new Set()) === "message2", "a reserved field name is never produced");
+  assert(w.fwzLabelToKey("Request Id", new Set(["requestId"])) === "requestId2", "...nor a key already taken");
+  assert(w.fwzLabelToKey("123", new Set()) === "col123", "a key never starts with a digit");
+
+  // One fully marked line is enough to generalize to the others.
+  const marks = [
+    { line: 0, start: 0, end: 23, key: "ts" },
+    { line: 0, start: 24, end: 29, key: "level" },
+    { line: 0, start: 31, end: 35, key: "thread" },
+    { line: 0, start: 41, end: 47, key: "requestId" },
+  ];
+  const r = w.deriveFormatRegexFromMarks(FWZ_SAMPLE, marks, {});
+  assert(r.source && !r.error, "a regex is derived from one marked line, got " + r.source + " / " + r.error);
+  assert(r.tsFormat === "yyyy-MM-dd HH:mm:ss.SSS", "the timestamp format is detected from the marked Time value");
+  assert(r.keys.join(",") === "ts,level,thread,requestId", "keys lists the marked columns in line order");
+  assert(!r.warnings.length, "the regex re-splits the learning line exactly as marked (no self-check warning)");
+  const re = new RegExp(r.source);
+  const g3 = re.exec(FWZ_SAMPLE[3]).groups;
+  assert(g3.level === "INFO" && g3.thread === "worker-1" && g3.requestId === "def456" && g3.message === "Neuer Versuch",
+    "the derived regex generalizes to an unmarked line: space padding ('INFO  ') and a thread with '-' in it — got " + JSON.stringify(g3));
+  assert(!re.test(FWZ_SAMPLE[1]) && !re.test(FWZ_SAMPLE[2]), "continuation (stack-trace) lines don't match, so they stay part of the previous entry");
+  assert(re.exec(FWZ_SAMPLE[0]).groups.message === "Verbindung fehlgeschlagen", "with Message unmarked, the rest of the line after the last column (minus the separator) is the message");
+
+  const withTs = w.deriveFormatRegexFromMarks(FWZ_SAMPLE, marks, { tsFormat: "yyyy-MM-dd HH:mm:ss" });
+  assert(withTs.tsFormat === "yyyy-MM-dd HH:mm:ss", "a person-supplied timestamp format overrides detection");
+
+  // Inconsistent example lines are reported, not silently merged.
+  const bad = w.deriveFormatRegexFromMarks(FWZ_SAMPLE, marks.concat([{ line: 3, start: 0, end: 23, key: "ts" }]), { labels: { requestId: "Request Id" } });
+  assert(!bad.source && bad.error.includes("Line 4") && bad.error.includes("Request Id"),
+    "a line marking a different column set is an error naming both lines (and column titles), got: " + bad.error);
+
+  // Message marked on some lines only: tolerated, the tail rule covers it.
+  const someMsg = w.deriveFormatRegexFromMarks(FWZ_SAMPLE, marks.concat([
+    { line: 0, start: 48, end: FWZ_SAMPLE[0].length, key: "message" },
+    { line: 4, start: 0, end: 23, key: "ts" }, { line: 4, start: 24, end: 28, key: "level" },
+    { line: 4, start: 31, end: 35, key: "thread" }, { line: 4, start: 41, end: 47, key: "requestId" },
+  ]), {});
+  assert(someMsg.source && !someMsg.error, "Message marked on only some learning lines is tolerated (dropped in favor of the tail rule)");
+
+  const noMarks = w.deriveFormatRegexFromMarks(FWZ_SAMPLE, [], {});
+  assert(noMarks.source === null && !noMarks.error, "no marks -> nothing derived, no error");
+
+  const preview = w.fwzParsePreview(["orphan line"].concat(FWZ_SAMPLE), r.source, r.tsFormat);
+  assert(preview.length === 4 && preview[0].unmatched === "orphan line", "the table preview reports lines before the first entry as unmatched");
+  assert(preview[1].message === "Verbindung fehlgeschlagen\njava.io.IOException: timeout\n    at com.foo.Net.connect(Net.java:42)",
+    "continuation lines are appended to the previous entry's message, like parseLogTextAsync");
+  assert(!isNaN(preview[1].ts) && preview[1].fields.requestId === "abc123", "entries carry a parsed timestamp and the custom column's value");
+});
+
+await withApp(async (w, d, T) => {
+  section("261b. Format dialog: paste, add a column, mark by selection (correcting the automatic suggestion), suggestion adoption, save, reopen");
+  await waitForFormatConfig(T);
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  d.querySelector("#formatEditName").value = "Wizard format";
+  const dlg = d.querySelector("#formatDialog");
+  assert(isVisible(dlg, w), "Add format opens the format dialog");
+  assert(isVisible(d.querySelector("#settingsDialog"), w), "...on top of Settings, which stays open");
+
+  fwzPaste(w, d, FWZ_SAMPLE.join("\r\n") + "\r\n\r\n");
+  assert(T.fwz.lines.length === 5, "pasted text becomes example lines (CRLF handled, blank lines dropped), got " + T.fwz.lines.length);
+  assert(d.querySelectorAll("#fwzSample .fwz-line").length === 5, "...and each renders as its own line");
+  const colKeys = () => [...d.querySelectorAll("#fwzColumns .fwz-col-row")].map(r => r.dataset.col).join(",");
+  assert(colKeys() === "ts,level,thread,location,method,message", "the column list: Time, Level, the default middle columns, Message — got " + colKeys());
+
+  // Remove Location/Method, add a custom column.
+  const colDel = key => d.querySelector('#fwzColumns .fwz-col-row[data-col="' + key + '"] .filter-library-row-del');
+  fireClick(colDel("location"), w);
+  fireClick(colDel("method"), w);
+  d.querySelector("#fwzColumnLabelNew").value = "Request Id";
+  fireClick(d.querySelector("#fwzColumnAddBtn"), w);
+  assert(colKeys() === "ts,level,thread,requestId,message", "a new custom column is added before Message, got " + colKeys());
+  assert(T.fwz.activeKey === "requestId", "...and becomes the active column");
+  assert(!colDel("ts") && !colDel("message"), "Time/Level/Message are fixed (not removable)");
+
+  // Mark line 1 by selection, one column at a time. The first mark adopts
+  // the automatic suggestion's marks on that line; the following ones
+  // correct it (Thread instead of the suggested bracketed Method, Request
+  // Id carved out of the suggested Message tail).
+  const pick = key => fireClick(d.querySelector('#fwzColumns .fwz-col-row[data-col="' + key + '"]'), w);
+  pick("ts"); fwzSelectInLine(w, d, 0, 0, 23);
+  pick("level"); fwzSelectInLine(w, d, 0, 24, 30); // includes the trailing space: trimmed
+  pick("thread"); fwzSelectInLine(w, d, 0, 31, 35);
+  pick("requestId"); fwzSelectInLine(w, d, 0, 41, 47);
+  const lvl = T.fwz.marks.find(m => m.line === 0 && m.key === "level");
+  assert(lvl && lvl.start === 24 && lvl.end === 29, "a selection is trimmed of surrounding whitespace, got " + JSON.stringify(lvl));
+  assert(T.fwz.marks.length === 4, "four marks on line 1");
+  assert(d.querySelectorAll('#fwzSample .fwz-line[data-line="0"] .fwz-mark:not(.fwz-suggested)').length === 4, "...rendered as solid marks");
+  assert(d.querySelector("#formatEditRegex").value.includes("(?<requestId>"), "the derived regex is shown, with the custom column's group");
+  assert(d.querySelector("#formatEditTsFormat").value === "yyyy-MM-dd HH:mm:ss.SSS", "the timestamp format field is filled from detection");
+  assert(d.querySelectorAll('#fwzSample .fwz-line[data-line="3"] .fwz-mark.fwz-suggested').length === 5,
+    "an unmarked line matching the derived regex shows suggested marks (incl. the tail Message)");
+  const contMarks = [1, 2].map(i => [...d.querySelectorAll('#fwzSample .fwz-line[data-line="' + i + '"] .fwz-mark')]);
+  assert(contMarks.every(ms => ms.length === 1 && ms[0].dataset.col === "message" && ms[0].classList.contains("fwz-continuation")),
+    "a continuation (stack-trace) line shows one Message mark across the line — it belongs to the previous entry's message");
+  assert(contMarks[1][0].textContent === FWZ_SAMPLE[2] && contMarks[1][0].title.includes("line 1"), "...covering the whole line, titled with the entry it continues");
+  assert(contMarks[0][0].classList.contains("fwz-suggested"), "...and it's not a hand mark (not removable, not a learning line)");
+
+  // Preview table: 3 entries, the stack trace inside the first one's message.
+  const rows = [...d.querySelectorAll("#fwzPreview .fwz-prev-row:not(.fwz-prev-head)")];
+  const head = [...d.querySelectorAll("#fwzPreview .fwz-prev-head span")].map(s => s.textContent).join(",");
+  assert(head === "Time,Level,Thread,Request Id,Message", "the preview's header is shaped like the log view, got " + head);
+  assert(rows.length === 3, "the preview shows 3 entries (continuation lines folded in), got " + rows.length);
+  assert(rows[0].querySelector(".fwz-prev-msg").textContent.includes("java.io.IOException"), "...the stack trace sits in the first entry's message");
+  const badge1 = rows[1].querySelector(".level-badge");
+  assert(badge1.textContent === "INFO" && badge1.dataset.level === "INFO" && badge1.style.color === "var(--level-info)",
+    "level badges resolve against the dialog's level list and are colored like the log view");
+
+  // Correcting one column on a suggested line adopts that line's other suggestions.
+  pick("thread"); fwzSelectInLine(w, d, 3, 31, 39);
+  const l3 = T.fwz.marks.filter(m => m.line === 3).map(m => m.key).sort().join(",");
+  assert(l3 === "level,requestId,thread,ts", "marking a suggested line adopts its other suggestions (Message excluded — tail rule), got " + l3);
+  assert(!T.fwz.derived.error, "...so the two learning lines stay consistent");
+
+  // A plain click on a solid mark removes it.
+  fwzSelectInLine(w, d, 0, 0, 0); // collapse the selection
+  w.getSelection().removeAllRanges();
+  d.querySelector('#fwzSample .fwz-line[data-line="3"] .fwz-mark[data-col="thread"]').dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true }));
+  assert(!T.fwz.marks.some(m => m.line === 3 && m.key === "thread"), "clicking a mark removes it");
+  assert(T.fwz.derived.error.includes("Line 4"), "...which now makes line 4 inconsistent — reported by name");
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(isVisible(d.querySelector("#formatEditError"), w) && d.querySelector("#formatEditError").textContent.includes("Line 4"),
+    "...and Save is refused with that same reason while the marks are inconsistent");
+  fireClick(d.querySelector('#fwzSample .fwz-line[data-line="3"] .fwz-line-clear'), w);
+  assert(!T.fwz.marks.some(m => m.line === 3) && !T.fwz.derived.error, "a line's ✕ clears all its marks, back to consistent");
+
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.some(f => f.name === "Wizard format"));
+  const saved = T.state.logFormats.find(f => f.name === "Wizard format");
+  assert(saved.mode === "regex" && saved.regex.includes("(?<requestId>"), "the saved format is a Regex-mode format with the derived regex");
+  assert(saved.columnDefs.map(c => c.key + ":" + c.label).join(",") === "thread:Thread,requestId:Request Id", "...with the dialog's (marked) columns and titles");
+  assert(saved.tsFormat === "yyyy-MM-dd HH:mm:ss.SSS", "...the detected timestamp format");
+  assert(saved.levels.map(l => l.name).join(",") === "ERROR,WARN,INFO,DEBUG", "...the levels auto-filled from the examples (all four defaults, ERROR/INFO seen)");
+  assert(saved.sampleSetup && saved.sampleSetup.lines.length === 5 && saved.sampleSetup.marks.length === 4, "...and the examples + marks stored as sampleSetup");
+
+  // Reopen: the dialog picks up where it was left.
+  w.openFormatEditDialog(saved.id);
+  assert(T.fwz.lines.length === 5 && T.fwz.marks.length === 4, "reopening the dialog for a saved format restores its examples + marks");
+  assert(colKeys() === "ts,level,thread,requestId,message", "...and its columns, got " + colKeys());
+  assert(T.fwz.derived.source === saved.regex, "...and re-derives the same regex");
+
+  // Esc closes only the dialog.
+  d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert(!isVisible(dlg, w) && isVisible(d.querySelector("#settingsDialog"), w), "Esc closes the format dialog but leaves Settings open");
+});
+
+await withApp(async (w, d, T) => {
+  section("261c. Format dialog: an existing format pre-marks pasted lines; a dropped file becomes examples instead of loading; Save needs Time+Level");
+  await waitForFormatConfig(T);
+  w.openSettingsDialog();
+  w.openFormatEditDialog("fmt-default");
+  const line = '2024-01-15 10:00:00,123\tINFO\t"main"\tC:\\src\\App.cs\tline 12\t[Startup]\t"Application started"';
+  fwzPaste(w, d, line);
+  const sugg = [...d.querySelectorAll('#fwzSample .fwz-line[data-line="0"] .fwz-mark.fwz-suggested')].map(s => s.dataset.col).join(",");
+  assert(sugg === "ts,level,thread,location,method,message", "with no marks yet, the format's current pattern pre-marks a pasted line, got " + sugg);
+  assert(T.fwz.fallbackKind === "format", "...its own regex, not a fresh suggestion, since it still matches the examples");
+  assert(d.querySelectorAll("#fwzPreview .fwz-prev-row:not(.fwz-prev-head)").length === 1, "...and previews it");
+  assert(!/\(\\d\{4\}\)/.test(d.querySelector("#formatEditRegex").value), "the pattern's compiled regex is shown without unnamed date-part groups");
+
+  fwzSelectInLine(w, d, 0, 0, 23);
+  const keysNow = T.fwz.marks.map(m => m.key).sort().join(",");
+  assert(keysNow === "level,location,message,method,thread,ts","marking a pre-marked line adopts all its suggestions first, got " + keysNow);
+  fireClick(d.querySelector("#fwzClearMarks"), w);
+  assert(T.fwz.marks.length === 0 && T.fwz.lines.length === 1, "Clear marks keeps the lines");
+  fireClick(d.querySelector("#fwzClearAll"), w);
+  assert(T.fwz.lines.length === 0 && d.querySelector("#fwzSample .fwz-empty"), "Clear all empties the examples and shows the paste/drop hint");
+
+  // A dropped file becomes example lines; nothing is loaded into the tree.
+  const rootsBefore = T.state.rootIds.length;
+  const file = new w.File(["2026-01-01 00:00:00 DEBUG hello\n2026-01-01 00:00:01 INFO world\n"], "x-2026-01-01.log");
+  const drop = new w.Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(drop, "dataTransfer", { value: { files: [file], items: [], types: ["Files"] } });
+  w.dispatchEvent(drop);
+  await waitFor(() => T.fwz.lines.length === 2);
+  assert(T.fwz.lines.length === 2, "a file dropped while the wizard is open becomes example lines");
+  assert(T.state.rootIds.length === rootsBefore, "...and is NOT loaded into the tree");
+  assert(d.querySelector("#formatEditRuleGlob").value === "x-*.log", "...and pre-fills the filename rule field from its name, got " + d.querySelector("#formatEditRuleGlob").value);
+  // Hand marks override the suggestion: Time alone, no Level.
+  d.querySelector('#fwzColumns .fwz-col-row[data-col="ts"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  d.querySelector("#formatEditRegex").value = ""; // no stand-in regex, so the first mark adopts nothing
+  fireInput(d.querySelector("#formatEditRegex"), w);
+  fwzSelectInLine(w, d, 0, 0, 19);
+  assert(d.querySelector("#fwzStatus").textContent.includes("Level is required"), "with Time but no Level marked, the status line says what's missing");
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(isVisible(d.querySelector("#formatEditError"), w) && d.querySelector("#formatEditError").textContent.includes("Level is required"), "...and Save refuses with the same reason");
+  fireClick(d.querySelector("#formatEditCancel"), w);
+  assert(!isVisible(d.querySelector("#formatDialog"), w), "Cancel closes the dialog");
+  const def = T.state.logFormats.find(f => f.id === "fmt-default");
+  assert(!def.edited && def.mode === "pattern" && !def.sampleSetup, "...without touching the stored format");
+  assert(!T.state.formatRules.length, "...and without adding the pre-filled rule");
+});
+
+await withApp(async (w, d, T) => {
+  section("261d. Format dialog: undo/redo of marks/columns/lines (buttons + Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z); preview double-click reveals the source line");
+  await waitForFormatConfig(T);
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  const undoBtn = d.querySelector("#fwzUndo"), redoBtn = d.querySelector("#fwzRedo");
+  assert(undoBtn.disabled && redoBtn.disabled, "Undo/Redo start disabled — nothing to undo yet");
+
+  fwzPaste(w, d, FWZ_SAMPLE.join("\n"));
+  // An emptied Regex field means no stand-in regex at all — so the marks
+  // below start from nothing instead of adopting the automatic suggestion.
+  d.querySelector("#formatEditRegex").value = "";
+  fireInput(d.querySelector("#formatEditRegex"), w);
+  const pick = key => fireClick(d.querySelector('#fwzColumns .fwz-col-row[data-col="' + key + '"]'), w);
+  pick("ts"); fwzSelectInLine(w, d, 0, 0, 23);
+  pick("level"); fwzSelectInLine(w, d, 0, 24, 29);
+  pick("thread"); fwzSelectInLine(w, d, 0, 31, 35);
+  const keys = () => T.fwz.marks.map(m => m.key).join(",");
+  assert(keys() === "ts,level,thread" && !undoBtn.disabled, "three marks made, Undo enabled");
+
+  // A wrong mark replaces a good one (overlap) — Undo brings the good one back.
+  pick("level"); fwzSelectInLine(w, d, 0, 31, 35);
+  assert(keys() === "ts,level", "a wrong mark over Thread's value replaced the Thread mark, got " + keys());
+  fireClick(undoBtn, w);
+  assert(keys() === "ts,level,thread" && T.fwz.marks.find(m => m.key === "level").start === 24,
+    "Undo restores the previous marks exactly, got " + keys());
+  assert(!redoBtn.disabled, "...and enables Redo");
+  fireClick(redoBtn, w);
+  assert(keys() === "ts,level", "Redo re-applies the undone mark");
+  fireClick(undoBtn, w);
+
+  // Keyboard: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z, with focus outside text fields.
+  d.querySelector("#fwzSample").focus();
+  const key = (k, shift) => d.dispatchEvent(new w.KeyboardEvent("keydown", { key: k, ctrlKey: true, shiftKey: !!shift, bubbles: true, cancelable: true }));
+  key("z");
+  assert(keys() === "ts,level", "Ctrl+Z undoes the last mark (Thread)");
+  key("y");
+  assert(keys() === "ts,level,thread", "Ctrl+Y redoes it");
+  key("z"); key("z", true);
+  assert(keys() === "ts,level,thread", "Ctrl+Shift+Z redoes too");
+
+  // A new action after an undo clears the redo stack.
+  key("z");
+  pick("thread"); fwzSelectInLine(w, d, 0, 41, 47);
+  assert(redoBtn.disabled, "a new mark after Undo clears Redo");
+
+  // Removing a column (and its marks) is undoable too — both come back.
+  fireClick(d.querySelector('#fwzColumns .fwz-col-row[data-col="location"] .filter-library-row-del'), w);
+  fireClick(d.querySelector('#fwzColumns .fwz-col-row[data-col="thread"] .filter-library-row-del'), w);
+  assert(!T.fwz.columns.some(c => c.key === "thread") && keys() === "ts,level", "removing Thread drops the column and its mark");
+  fireClick(undoBtn, w);
+  assert(T.fwz.columns.some(c => c.key === "thread") && keys().includes("thread"), "Undo restores the column and its mark");
+
+  // Clear all is undoable — the examples come back.
+  fireClick(d.querySelector("#fwzClearAll"), w);
+  assert(T.fwz.lines.length === 0, "Clear all empties everything");
+  fireClick(undoBtn, w);
+  assert(T.fwz.lines.length === 5 && T.fwz.marks.length === 3, "Undo after Clear all restores lines and marks");
+
+  // Inside a text field, Ctrl+Z stays the field's own (native) undo.
+  const before = keys();
+  d.querySelector("#fwzColumnLabelNew").focus();
+  key("z");
+  assert(keys() === before, "Ctrl+Z inside the column-title field doesn't undo wizard marks");
+  d.querySelector("#fwzSample").focus();
+
+  // Preview: each row knows its example line; double-click reveals it.
+  pick("thread"); fwzSelectInLine(w, d, 0, 31, 35); // Thread back on "main" (it sat on the req value)
+  const pv = w.fwzParsePreview(["orphan"].concat(FWZ_SAMPLE), T.fwz.derived.source, "");
+  assert(pv[0].srcLine === 0 && pv[1].srcLine === 1 && pv[2].srcLine === 4, "preview entries carry the example line they start at (continuations folded)");
+  const row = d.querySelectorAll("#fwzPreview .fwz-prev-row:not(.fwz-prev-head)")[1];
+  assert(row.dataset.line === "3", "the second preview row points at example line 4 (index 3), got " + row.dataset.line);
+  row.querySelector("span").dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  assert(d.querySelector('#fwzSample .fwz-line[data-line="3"]').classList.contains("fwz-line-flash"),
+    "double-clicking a preview row flashes (and scrolls to) its example line");
+  assert(d.querySelectorAll("#fwzSample .fwz-line-flash").length === 1, "...only that one");
+});
+
+await withApp(async (w, d, T) => {
+  section("261e. Format dialog: automatic suggestion, levels auto-filled from the examples (text + integer), level rename/merge, badge → level row");
+  await waitForFormatConfig(T);
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+
+  // The automatic suggestion (suggestPatternFromSample, generalized through
+  // the mark derivation) is in place the moment examples arrive.
+  fwzPaste(w, d, FWZ_SAMPLE.join("\n") + "\n2026-09-23 10:00:04.000 NOTICE [main] req=x1 audit\n2026-09-23 10:00:05.000 WARNING [main] req=x2 w");
+  assert(T.fwz.fallbackKind === "suggestion" && !T.fwz.marks.length, "pasting examples brings an automatic suggestion, no hand marks");
+  assert(d.querySelector("#fwzStatus").textContent.includes("Automatic suggestion"), "...announced in the status line");
+  const entries = () => [...d.querySelectorAll("#fwzPreview .fwz-prev-row:not(.fwz-prev-head)")];
+  assert(entries().length === 5, "the suggestion already splits all five entries — incl. the space-padded 'INFO  [' line — with the stack trace folded in, got " + entries().length);
+  assert(d.querySelector("#formatEditTsFormat").value === "yyyy-MM-dd HH:mm:ss.SSS", "...and fills the timestamp format");
+
+  // Text levels: defaults + every fixed level the values cascade to, plus
+  // unknown values as custom levels (WARNING cascades to WARN, NOTICE is new).
+  const lvlRows = () => [...d.querySelectorAll("#formatEditLevels .format-level-row")].map(r => r.dataset.level + (r.querySelector('input[type="checkbox"]').checked ? "+" : "-")).join(",");
+  assert(lvlRows() === "ERROR+,WARN+,INFO+,DEBUG+,NOTICE+,TRACE-", "a new format's level list is filled from the examples, got " + lvlRows());
+  const noticeBadge = entries()[3].querySelector(".level-badge");
+  assert(noticeBadge.dataset.level === "NOTICE" && noticeBadge.style.color === "var(--level-custom-1)", "the NOTICE badge takes the custom level's color");
+  assert(entries()[4].querySelector(".level-badge").dataset.level === "WARN", "WARNING resolves to WARN like levelBucket's cascade");
+
+  // Clicking a badge finds its row in the level list.
+  noticeBadge.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(d.querySelector('#formatEditLevels .format-level-row[data-level="NOTICE"]').classList.contains("fwz-level-flash"), "clicking a level badge flashes that level's row");
+
+  // A hand edit stops the auto-fill (only new values get added from then on).
+  const cb = lvl => d.querySelector('#formatEditLevels .format-level-row[data-level="' + lvl + '"] input[type="checkbox"]');
+  cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
+  assert(T.fwz.levelsTouched, "unchecking a level marks the list as hand-edited");
+  fwzPaste(w, d, "2026-09-23 10:00:06.000 AUDIT [main] req=x3 a");
+  assert(lvlRows() === "ERROR+,WARN+,INFO+,DEBUG-,NOTICE+,TRACE-,AUDIT+", "after a hand edit, a newly seen value is only appended, nothing else changes, got " + lvlRows());
+  fireClick(d.querySelector("#formatEditCancel"), w);
+
+  // Integer levels: all-numeric values switch to Integer mode, one level
+  // per code, each initially named after its own code.
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  fwzPaste(w, d, "2026-09-23 10:00:01 3 boom\n2026-09-23 10:00:02 6 ok\n2026-09-23 10:00:03 6 ok2");
+  // The plain suggestion has no level here; mark Time + Level by hand.
+  const pick = key => fireClick(d.querySelector('#fwzColumns .fwz-col-row[data-col="' + key + '"]'), w);
+  pick("ts"); fwzSelectInLine(w, d, 0, 0, 19);
+  pick("level"); fwzSelectInLine(w, d, 0, 20, 21);
+  assert(d.querySelector("#formatEditLevelTypeInt").classList.contains("active"), "all-numeric level values switch the list to Integer mode");
+  assert(lvlRows().startsWith("3+,6+,"), "one checked level per code, in numeric order, got " + lvlRows());
+  const codeInput = lvl => d.querySelector('#formatEditLevels .format-level-row[data-level="' + lvl + '"] .format-level-value');
+  const nameInput = lvl => d.querySelector('#formatEditLevels .format-level-row[data-level="' + lvl + '"] .format-level-name-input');
+  assert(codeInput("3").value === "3" && nameInput("3").value === "3", "each code's level is named after the code itself (3 -> 3)");
+
+  // Renaming "3" to a fixed name merges into that row, keeping the code.
+  nameInput("3").value = "error";
+  nameInput("3").dispatchEvent(new w.Event("change"));
+  assert(!d.querySelector('#formatEditLevels .format-level-row[data-level="3"]'), "renaming 3 -> error merges the row away...");
+  assert(cb("ERROR").checked && codeInput("ERROR").value === "3", "...into the fixed ERROR row, now checked and mapped to code 3");
+  assert(entries()[0].querySelector(".level-badge").dataset.level === "ERROR", "the preview's code-3 badge now resolves to ERROR");
+  // Renaming "6" to a new name just renames it.
+  nameInput("6").value = "Notice";
+  nameInput("6").dispatchEvent(new w.Event("change"));
+  assert(nameInput("NOTICE") && codeInput("NOTICE").value === "6", "renaming 6 -> Notice renames the row (uppercased), code kept");
+  nameInput("NOTICE").value = "error";
+  nameInput("NOTICE").dispatchEvent(new w.Event("change"));
+  assert(nameInput("NOTICE") && d.querySelector("#formatEditLevelError").textContent.includes("already"), "renaming onto a name already in use is refused");
+
+  d.querySelector("#formatEditName").value = "Sev";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.some(f => f.name === "Sev"));
+  const sev = T.state.logFormats.find(f => f.name === "Sev");
+  assert(sev.levelValueType === "int" && sev.levels.map(l => l.name + "=" + l.value).join(",") === "ERROR=3,NOTICE=6",
+    "the saved format maps its codes to the renamed levels, got " + sev.levels.map(l => l.name + "=" + l.value).join(","));
+  assert(w.levelBucket("3", sev.id) === "ERROR" && w.levelBucket("6", sev.id) === "NOTICE", "...which levelBucket then applies to real entries");
+});
+
+await withApp(async (w, d, T) => {
+  section("261f. Format dialog: a hand-typed regex (suggested marks, undo, invalid regex), the optional filename rule, and an existing Pattern-mode format saved as Regex");
+  await waitForFormatConfig(T);
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  fwzPaste(w, d, FWZ_SAMPLE.join("\n"));
+  const pick = key => fireClick(d.querySelector('#fwzColumns .fwz-col-row[data-col="' + key + '"]'), w);
+  pick("ts"); fwzSelectInLine(w, d, 0, 0, 23);
+  const marksBefore = T.fwz.marks.length;
+  assert(marksBefore > 0, "sanity: some marks exist before typing a regex");
+
+  // Typing a regex replaces the marks; its groups show as suggested marks.
+  const rx = d.querySelector("#formatEditRegex");
+  rx.dispatchEvent(new w.Event("focus"));
+  rx.value = "^(?<ts>\\S+ \\S+) (?<level>\\w+)\\s+\\[(?<thread>[^\\]]+)\\] req=(?<req>\\S+) (?<message>.*)$";
+  fireInput(rx, w);
+  rx.value += ""; fireInput(rx, w); // a second keystroke in the same edit session
+  assert(T.fwz.marks.length === 0 && T.fwz.fallbackKind === "manual", "a typed regex replaces the marks and becomes the stand-in");
+  assert(T.fwz.columns.some(c => c.key === "req" && c.kind === "custom"), "its new custom group (req) is added as a column");
+  const sugg = [...d.querySelectorAll('#fwzSample .fwz-line[data-line="3"] .fwz-mark.fwz-suggested')].map(s => s.dataset.col).join(",");
+  assert(sugg === "ts,level,thread,req,message", "every matching line shows the typed regex's groups as suggested marks, got " + sugg);
+  fireClick(d.querySelector("#fwzUndo"), w);
+  assert(T.fwz.marks.length === marksBefore && T.fwz.manualSrc == null, "one Undo reverts the whole typing session — the marks are back");
+  fireClick(d.querySelector("#fwzRedo"), w);
+  assert(T.fwz.fallbackKind === "manual" && T.fwz.marks.length === 0, "Redo re-applies it");
+
+  // An invalid regex is reported and blocks Save.
+  rx.dispatchEvent(new w.Event("focus"));
+  rx.value = "^(?<ts>[";
+  fireInput(rx, w);
+  assert(d.querySelector("#fwzStatus .fwz-error") && d.querySelector("#fwzStatus").textContent.includes("Invalid regex"), "an invalid typed regex shows an error in the status line");
+  d.querySelector("#formatEditName").value = "Typed";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(d.querySelector("#formatEditError").textContent.includes("Invalid regex") && !T.state.logFormats.some(f => f.name === "Typed"), "...and Save refuses it");
+  rx.value = "^(?<ts>\\S+ \\S+) (?<level>\\w+)\\s+(?<message>.*)$";
+  fireInput(rx, w);
+
+  // The optional rule field adds a rule on save (appended last).
+  T.state.formatRules.push({ id: "rule-x", glob: "other-*.log", formatId: "fmt-demo-app", order: 7, createdAt: 0 });
+  d.querySelector("#formatEditRuleGlob").value = "typed-*.log";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.some(f => f.name === "Typed"));
+  const typed = T.state.logFormats.find(f => f.name === "Typed");
+  const rule = T.state.formatRules.find(r => r.glob === "typed-*.log");
+  assert(rule && rule.formatId === typed.id && rule.order === 8, "saving with the rule field filled adds a filename rule for this format, after all existing ones");
+  assert(d.querySelector("#formatRuleList").textContent.includes("typed-*.log"), "...shown in Settings' rule list right away");
+  assert(w.resolveFormatIdForFilename("typed-1.log") === typed.id, "...and used for matching files");
+
+  // Reopening shows the rules already pointing at this format; saving
+  // again with the same glob doesn't duplicate it.
+  w.openFormatEditDialog(typed.id);
+  assert(d.querySelector("#formatEditRuleInfo").textContent.includes("typed-*.log"), "the dialog lists the rules already using this format");
+  d.querySelector("#formatEditRuleGlob").value = "typed-*.log";
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => !isVisible(d.querySelector("#formatDialog"), w));
+  assert(T.state.formatRules.filter(r => r.glob === "typed-*.log").length === 1, "the same glob for the same format isn't added twice");
+
+  // An existing Pattern-mode format opens as its compiled regex and saves as Regex mode.
+  T.state.logFormats.push({
+    id: "fmt-pat", name: "Pattern fmt", mode: "pattern", pattern: '%d\\t%p\\t"%t"\\t%m%n', regex: "",
+    tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", levels: ["ERROR", "INFO"], builtin: false, edited: false, createdAt: 1,
+  });
+  w.openFormatEditDialog("fmt-pat");
+  assert(d.querySelector("#formatEditRegex").value.startsWith("^(?<ts>(?:\\d{4})"), "a Pattern-mode format opens with its compiled regex in the Regex field");
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.find(f => f.id === "fmt-pat").mode === "regex");
+  const pat2 = T.state.logFormats.find(f => f.id === "fmt-pat");
+  w.invalidateFormatCompileCache();
+  const e = w.getCompiledFormat("fmt-pat").parseHeader('2024-01-15 10:00:00,123\tERROR\t"main"\tboom');
+  assert(pat2.regex && pat2.pattern === "" && e.level === "ERROR" && e.thread === "main" && e.message === "boom" && !isNaN(e.ts),
+    "saved as Regex mode with the compiled pattern, and still parses its own lines the same way");
+});
+
+await withApp(async (w, d, T) => {
+  section("261g. Format dialog: editing keeps the format's own regex for new examples (no automatic suggestion); Re-suggest asks first, replaces, and is undoable");
+  await waitForFormatConfig(T);
+  w.openSettingsDialog();
+  T.state.logFormats.push({
+    id: "fmt-own", name: "Own", mode: "regex", regex: "^(?<ts>\\S+) (?<level>\\w+) (?<message>.*)$",
+    pattern: "", tsFormat: "", levels: ["ERROR", "INFO"], builtin: false, edited: false, createdAt: 1,
+  });
+  w.openFormatEditDialog("fmt-own");
+  const rx = () => d.querySelector("#formatEditRegex").value;
+  const ownSrc = "^(?<ts>\\S+) (?<level>\\w+) (?<message>.*)$";
+  assert(d.querySelector("#fwzResuggest").disabled, "Re-suggest is disabled while there are no examples");
+
+  // Examples the format's regex doesn't match: it still stays the regex —
+  // no silent switch to an automatic suggestion in edit mode.
+  fwzPaste(w, d, FWZ_SAMPLE.join("\n"));
+  assert(T.fwz.fallbackKind === "format" && rx() === ownSrc, "in edit mode, pasted examples are shown against the format's own regex, got " + T.fwz.fallbackKind + " / " + rx());
+  assert(d.querySelector("#fwzStatus").textContent.includes("matches none of the example lines"), "...with a warning when it matches none of them");
+  assert(d.querySelector("#formatEditTsFormat").value === "", "...and the format's own timestamp format is left alone");
+
+  // Re-suggest asks first; "Keep current" changes nothing.
+  const confirmBar = d.querySelector("#fwzResuggestConfirm");
+  assert(!isVisible(confirmBar, w), "no confirmation shown up front");
+  fireClick(d.querySelector("#fwzResuggest"), w);
+  assert(isVisible(confirmBar, w) && confirmBar.textContent.includes("discards"), "Re-suggest shows a warning that the current settings get discarded");
+  fireClick(d.querySelector("#fwzResuggestNo"), w);
+  assert(!isVisible(confirmBar, w) && T.fwz.fallbackKind === "format" && rx() === ownSrc, "'Keep current' dismisses it without changing anything");
+
+  // Some hand marks, then Re-suggest for real.
+  const pick = key => fireClick(d.querySelector('#fwzColumns .fwz-col-row[data-col="' + key + '"]'), w);
+  pick("thread"); fwzSelectInLine(w, d, 0, 31, 35);
+  const marksBefore = JSON.stringify(T.fwz.marks);
+  assert(T.fwz.marks.length > 0, "sanity: hand marks exist");
+  fireClick(d.querySelector("#fwzResuggest"), w);
+  fireClick(d.querySelector("#fwzResuggestYes"), w);
+  assert(!isVisible(confirmBar, w), "confirming closes the warning");
+  assert(T.fwz.marks.length === 0 && T.fwz.fallbackKind === "suggestion", "Re-suggest drops the marks and uses a fresh automatic suggestion, even when editing");
+  assert(rx() !== ownSrc && rx().includes("(?<ts>") && d.querySelector("#formatEditTsFormat").value === "yyyy-MM-dd HH:mm:ss.SSS",
+    "...with the suggestion's regex and timestamp format");
+  assert(d.querySelectorAll("#fwzPreview .fwz-prev-row:not(.fwz-prev-head)").length === 3, "...and the preview follows it");
+
+  // Undo reverts it completely.
+  fireClick(d.querySelector("#fwzUndo"), w);
+  assert(JSON.stringify(T.fwz.marks) === marksBefore && !T.fwz.forceSuggestion, "one Undo brings back the marks from before Re-suggest");
+  assert(d.querySelector("#formatEditTsFormat").value === "", "...and the previous timestamp format");
+  fireClick(d.querySelector("#fwzClearMarks"), w);
+  assert(T.fwz.fallbackKind === "format" && rx() === ownSrc, "...so without marks, the format's own regex is the stand-in again");
+  fireClick(d.querySelector("#formatEditCancel"), w);
+
+  // A new format still gets the automatic suggestion right away.
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  fwzPaste(w, d, FWZ_SAMPLE.join("\n"));
+  assert(T.fwz.fallbackKind === "suggestion" && rx().includes("(?<level>"), "a NEW format gets the automatic suggestion immediately");
+});
+
+await withApp(async (w, d, T) => {
+  section("261h. Default-format-shaped examples (person-reported): the suggestion claims the path as Location and generalizes; a multi-line quoted message still starts its own entry");
+  await waitForFormatConfig(T);
+  const L = [
+    '2026-07-01 20:06:02,889\tDEBUG\t"(1) "\tC:\\git\\nexis\\Code\\Projects\\Yxlon.Ui.OperatorSettings\\ViewModels\\TestProceduresViewModel.cs\tline 30\t[RefreshTestProcedures]\t"Refreshing test procedures list."',
+    '2026-07-01 20:06:02,889\tDEBUG\t"(1) "\tC:\\git\\nexis\\Code\\Projects\\Yxlon.Ui.OperatorSettings\\ViewModels\\TestProceduresViewModel.cs\tline 32\t[SelectedTestProcedure]\t"Setting selected test procedure to \'Evaluate',
+    'Evaluate with DirectInspect"',
+    '2026-07-01 20:06:02,890\tINFO\t"(12) "\tC:\\git\\nexis\\Code\\Projects\\Yxlon.Ui.TaskControls\\ViewModels\\DetailsEditViewModel.cs\tline 487\t[Other]\t"x"',
+  ];
+
+  const sug = w.suggestPatternFromSample(L[0]);
+  assert(sug.fields.map(f => f.field).join(",") === "ts,level,thread,location,method,message",
+    "the suggestion claims ts/level/thread/LOCATION/method/message on a default-format line, got " + sug.fields.map(f => f.field).join(","));
+  assert(sug.pattern.startsWith('%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"'), "...its pattern keeps the path out of the literal text and closes the message's quote, got " + sug.pattern);
+
+  const s = w.fwzSuggestFromLines(L);
+  const re = new RegExp(s.regex.source);
+  assert(!s.regex.source.includes("TestProceduresViewModel"), "the suggestion regex doesn't pin one line's file path, got " + s.regex.source);
+  const prev = w.fwzParsePreview(L, s.regex.source, s.tsFormat);
+  assert(prev.length === 3 && prev.every(e => e.unmatched == null), "the suggestion matches all three entries' header lines, got " + prev.length);
+  assert(prev[0].thread === "(1)" && prev[0].method === "RefreshTestProcedures" && prev[0].message === "Refreshing test procedures list.",
+    "...splitting them like the default format, got " + JSON.stringify([prev[0].thread, prev[0].method, prev[0].message]));
+  // The continuation line that closes the quote loses it — the opening
+  // quote is literal in the regex (never part of the message), so keeping
+  // the closing one would leave the message lopsided.
+  assert(prev[1].method === "SelectedTestProcedure" && prev[1].message === "Setting selected test procedure to 'Evaluate\nEvaluate with DirectInspect",
+    "a message whose closing quote is on a continuation line starts its own entry, and the closing quote is dropped, got " + JSON.stringify(prev[1].message));
+  assert(prev[1].raw.endsWith('DirectInspect"'), "...while the entry's raw text keeps the line verbatim");
+  assert(w.messageWrapQuote(s.regex.source) === '"', "the suggestion's regex is recognized as a quote-wrapped message");
+  assert(re.test(L[1]), "(the multi-line entry's header line matches)");
+
+  // Hand marks like the person's: Message marked WITH its quotes excluded.
+  const l0 = L[0], pos = t => l0.indexOf(t);
+  const marks = [
+    { line: 0, start: 0, end: 23, key: "ts" }, { line: 0, start: 24, end: 29, key: "level" },
+    { line: 0, start: pos("(1) "), end: pos("(1) ") + 4, key: "thread" },
+    { line: 0, start: pos("C:"), end: pos("\t[Refresh"), key: "location" },
+    { line: 0, start: pos("RefreshTest"), end: pos(']\t"'), key: "method" },
+    { line: 0, start: pos("Refreshing"), end: l0.length - 1, key: "message" },
+  ];
+  const dr = w.deriveFormatRegexFromMarks(L, marks, {});
+  assert(dr.source && !dr.error && dr.source.endsWith('(?:")?$'), "text after a marked Message at the line end becomes optional, got " + dr.source);
+  const prev2 = w.fwzParsePreview(L, dr.source, dr.tsFormat);
+  assert(prev2.length === 3 && prev2[1].method === "SelectedTestProcedure", "with the hand marks, the unterminated multi-line message's line starts its own entry too, got " + prev2.length);
+  assert(prev2[0].message === "Refreshing test procedures list.", "...and a normal line's message still excludes the closing quote");
+  assert(prev2[1].message.endsWith("DirectInspect"), "...and the multi-line one drops its closing quote too");
+
+  // In the dialog: the continuation line of the quoted multi-line message
+  // is marked as Message — without its closing quote.
+  w.openSettingsDialog();
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  fwzPaste(w, d, L.join("\n"));
+  const cont = [...d.querySelectorAll('#fwzSample .fwz-line[data-line="2"] .fwz-mark')];
+  assert(cont.length === 1 && cont[0].dataset.col === "message" && cont[0].textContent === "Evaluate with DirectInspect",
+    "the continuation line's Message mark covers it up to, not including, the closing quote, got " + JSON.stringify(cont.map(c => c.textContent)));
+  assert(d.querySelector('#fwzSample .fwz-line[data-line="2"] .fwz-line-text').textContent === L[2], "...the quote itself still shows, unmarked");
+  fireClick(d.querySelector("#formatEditCancel"), w);
+
+  // Same in real parsing: main-thread loop (jsdom has no Worker), tailing,
+  // and the worker source (sandboxed, like GROUP 165).
+  T.state.logFormats.push({
+    id: "fmt-261h", name: "Quoted", mode: "regex", regex: dr.source, pattern: "", tsFormat: dr.tsFormat,
+    levels: ["ERROR", "WARN", "INFO", "DEBUG"], builtin: false, edited: false, createdAt: 1,
+  });
+  w.invalidateFormatCompileCache();
+  const node = await w.addFile("quoted.log", L.slice(0, 3).join("\n") + "\n", () => {}, "fmt-261h");
+  const parsed = node.entries;
+  assert(parsed.length === 2 && parsed[1].message === "Setting selected test procedure to 'Evaluate\nEvaluate with DirectInspect",
+    "a real parse drops the closing quote of a multi-line message, got " + JSON.stringify(parsed.map(e => e.message)));
+
+  const posted = [];
+  const sandboxSelf = {};
+  const ctx = vm.createContext({ self: sandboxSelf, postMessage: msg => posted.push(msg) });
+  vm.runInContext(w.buildLogParseWorkerSrc(), ctx);
+  sandboxSelf.onmessage({ data: { text: L.join("\n") + "\n", fmt: T.state.logFormats.find(f => f.id === "fmt-261h") } });
+  const wEntries = posted.filter(m => m.type === "chunk").flatMap(m => m.entries);
+  assert(wEntries.length === 3 && wEntries[1].message.endsWith("DirectInspect") && wEntries[0].message === "Refreshing test procedures list.",
+    "the worker parser does the same, got " + JSON.stringify(wEntries.map(e => e.message)));
 });
 
 console.log("\n" + "=".repeat(60));
@@ -32378,4 +33329,95 @@ process.exitCode = failed ? 1 : 0;
       fixes together restore "nothing in the view updates until a load is
       completely finished" as an exception-free rule, person-requested:
       "Rendern erst wenn vollständig geladen soll für alles gelten."
+   Group 260 — new session: Custom Columns (person-requested — per-format
+      custom columns, populated by Pattern/Regex format-rule captures, with
+      a configurable left-to-right order; the current fixed six-field
+      schema becomes the "default" columns, individually optional per
+      format except Time and Level). compileFormatPattern/
+      validateFormatRegex themselves went from "message is the one hard
+      compile requirement" to "nothing is technically required to compile"
+      (every field already had a graceful default) — Time/Level being
+      MANDATORY is now enforced as a save-time-only rule in the Format
+      Manager (saveFormatEdit), so a runtime-compiled format (a file
+      already on disk under an old format record) never regresses. New
+      %X{name} pattern token (log4j MDC-style) gives Pattern mode parity
+      with Regex mode's pre-existing (?<name>...) custom named groups;
+      both land on a new entry.fields bag (applyFormatMatch), read via the
+      new entryColumnValue(e,key) (replaces the old fixed-switch
+      textColumnValue). COLUMN_TRACK_ORDER/HIDEABLE_COLUMNS/
+      DEFAULT_COLUMN_WIDTHS (global, fixed-six) became activeColumnDefs()/
+      FIXED_COLUMN_WIDTHS (per-format-union, dynamic — same
+      activeLevelOrder() union idiom), and the old fixed TEXT_FILTER_COLUMNS
+      table became activeTextFilterColumns(), consumed by the row renderers
+      (data-col added to every column span), the context menu's generalized
+      "Filter for this ___" (resolveContextFilterColumn now a plain
+      [data-col] walk), and the filter popup's column chips (now
+      JS-rendered). The two node.columns whitelist chokepoints
+      (materializeSerializedRoots/materializeCachedFilters) swapped
+      TEXT_FILTER_COLUMN_KEYS for knownTextFilterColumnKeys(), deliberately
+      broader (validates against every KNOWN format, not just currently-
+      loaded ones) so a saved filter's column restriction survives even
+      when its owning format isn't open right now. Level gained an
+      int-or-text value type with explicit per-level colors
+      (formatLevelDefs's v2 {value,name,color} item shape, upcast from the
+      legacy plain-string array on read — see formatLevelDefs's own
+      comment) for formats whose captured level is a numeric code (e.g.
+      syslog severity) rather than a name. The "loc" vs "location" column-
+      key split (CSS class/grid-track key vs. filter/context-menu key) was
+      unified on "location" throughout while touching this code (bundled
+      cleanup, not a requirement of the feature itself). 260a covers
+      parsing (both custom-column mechanisms + the fields bag + the
+      reserved-name collision check); 260b the data-model fallback for
+      pre-feature format records plus the save-time Time/Level gate; 260c
+      the Format Manager's new Custom Columns editor UI end to end
+      (add/remove/reorder default+custom columns, the default-column
+      re-add chips, save/reopen/IndexedDB round-trip); 260d rendering +
+      context menu + filter-popup-chip integration for a loaded custom-
+      column format, plus the union-of-loaded-formats behavior; 260e the
+      permissive-but-still-defensive knownTextFilterColumnKeys() policy at
+      both persistence chokepoints; 260f the level int-mode/explicit-color
+      mechanics. Existing groups 58/70/116d/117/154/212b were updated in
+      place (not dropped) where their assertions depended on now-superseded
+      specifics: GROUP 58/154's "loc" column key and the columns panel's
+      fixed #colToggle* ids (the panel is JS-rendered now — see
+      renderColumnsPanel — so tests query by [data-col] instead); GROUP 70's
+      "%m/(?<message>...) is required to compile" assertions (now compiles
+      fine, message falls back to the raw line — see above); GROUP 70j's
+      builtin-default-edit demo pattern (needed a %d token added, since Time
+      is now mandatory to save); GROUP 116d/117d's fmt.levels
+      plain-string-array assumption (now the v2 object-array shape for
+      anything saved through the editor — DEFAULT_LOG_FORMAT.levels itself,
+      and hence a just-Reset record, deliberately stays the legacy shape,
+      which formatLevelDefs still upcasts); GROUP 212b's fixed #colToggle*
+      id list (same dynamic-panel reason as 58/154).
+   Group 261 — new session (2026-09-23): the format dialog (person-
+      requested) — define a format from pasted/dropped example lines with an
+      automatic suggestion, column marking, direct regex editing, levels
+      auto-filled from the examples, a table preview, undo/redo, and an
+      optional filename rule; it replaced the old inline format editor
+      (its Pattern field, single example field, and column editor are gone
+      — saving is Regex mode only). 261a pure derivation, 261b dialog end
+      to end incl. sampleSetup save/reopen, 261c pre-marking/file drop/Save
+      gating/Cancel, 261d undo/redo + preview double-click reveal, 261e
+      suggestion + level auto-fill/rename/merge + badge reveal, 261f typed
+      regex + filename rule + Pattern-to-Regex save, 261g edit mode keeps
+      the format's own regex for new examples + Re-suggest (warning,
+      confirm, undo), 261h default-format-shaped examples (person-reported:
+      the suggestion left the file path literal and matched nothing; a
+      message closing on a continuation line glued its entry onto the
+      previous one, then kept its closing quote in the message — now
+      dropped by the shared appendContinuationLine in every parser path;
+      continuation lines in the examples now show a Message mark — 261b's
+      old "a continuation line gets none" assertion was replaced by that). Rewritten in place for
+      the dialog (not dropped): 70e (inline panel + pattern suggestion ->
+      dialog + automatic suggestion, Regex-mode save), 70j (edits the regex
+      instead of the pattern), 116d/117d (custom level names are now an
+      editable input), 234a (meta hides the whole examples body), 260b
+      (Time/Level mandatory checked on a typed regex), 260c (columns editor
+      -> the dialog's column list, incl. rename + only-captured-saved).
+      Same session
+      fixed GROUP 70j's edited-default pattern ("%d %p %m%n" never matched
+      makeLog's tab-separated lines — it had been crashing its shard, and
+      silently shortening the reported total, since the Custom Columns
+      session).
    ============================================================ */

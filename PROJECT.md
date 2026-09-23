@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~31,200 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~34,000 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -37,29 +37,90 @@ A local `npm run build` in `desktop/` does neither transformation.
 
 ## The log formats it parses
 
-Every file is parsed under one `LogFormat` — every format still produces the
-same fixed entry schema (`ts, level, thread, location, method, message`),
-only how a line is split into those fields is configurable. See "Log format
-definitions" (`philogg.html`, right after "Log parsing") for the full
-mechanism: pattern-mode vs. regex-mode compilation, filename→format glob
-rules (Settings → Format Manager), and how a file's resolved format is
-pinned to it for the rest of its session-cache lifetime. A third `LogFormat`
-mode, `"meta"` (below), is the one exception to "one format, one file" — it
-never parses a line itself, it fans a file out into several ordinary,
+Every file is parsed under one `LogFormat`. Every format produces the same
+entry **shape** — `{ts, level, thread, location, method, message, fields}`
+— but not the same fixed set of populated/displayed columns any more
+(**Custom Columns**, FEATURE_BACKLOG.md-adjacent, this session): **Time and
+Level are the only two mandatory columns**; Thread/Location/Method/Message
+are each individually optional per format, and a format may additionally
+define its own **custom columns**, populated by a named capture beyond the
+six reserved field names (`ts`/`level`/`thread`/`location`/`method`/
+`message`) — landing on the entry's `fields` bag, keyed by capture name
+(`applyFormatMatch`, `RESERVED_FIELD_KEYS`). See "Log format definitions"
+(`philogg.html`, right after "Log parsing") for the full parsing mechanism:
+pattern-mode vs. regex-mode compilation, filename→format glob rules
+(Settings → Format Manager), and how a file's resolved format is pinned to
+it for the rest of its session-cache lifetime. Formats are defined in one
+**format dialog** (Settings → Log Formats → Add/Edit): example lines
+(paste/drop/open) get an automatic suggestion right away, the person
+corrects it by marking column values in the lines or by editing the regex
+directly, levels are auto-filled from the examples, and a table preview
+shows the result. The dialog always saves **Regex mode** (a stored
+Pattern-mode format still parses, and is converted to its compiled regex
+when saved there), stores the examples on the record as `sampleSetup`, and
+can add a filename rule on the way (see `docs/ui-and-views.md` → "Format
+dialog"). A third `LogFormat` mode,
+`"meta"` (below), is the one exception to "one format, one file" — it never
+parses a line itself, it fans a file out into several ordinary,
 single-format files first.
 
-A format also carries its own **ordered level list** (`LogFormat.levels`).
-It may pick from the five names that own a theme color (`ALL_LEVELS` =
-`ERROR/WARN/INFO/DEBUG/TRACE`) *and* add arbitrary **custom names** of its
-own (`NOTICE`, `FATAL`, `VERBOSE`, …), which take a color from the rotating
-`--level-custom-1..6` palette; `OTHER` stays the implicit catch-all and is
-never listed. It decides which level buttons the level bar offers, and in
-which order, for files using that format; a format without the field (every
+**Custom columns**, concretely: Pattern mode gets a new `%X{name}` token
+(log4j MDC-style — captures free text into a user-chosen field name);
+Regex mode already supports this natively via any `(?<name>...)` group
+beyond the six reserved ones, no parsing change needed there. A format's
+`columnDefs: [{key, kind: "default"|"custom", label}]` is its **ordered,
+reorderable middle-column list** — Thread/Location/Method (each individually
+removable/re-addable) plus any custom columns — edited in the format
+dialog's column list (`fwz.columns`, see `docs/ui-and-views.md` → "Format
+dialog"; only the columns the saved regex actually captures are stored). Time and Level are NOT part of this
+list: they're always first, never hideable. Message is likewise not part of
+it: always last (the row grid's flexible `1fr` remainder when shown), with
+its own `messageVisible: boolean` flag instead of an order position.
+`formatColumnDefs(formatId)`/`formatMessageVisible(formatId)` read one
+format's own list (falling back to the legacy fixed three / always-visible
+for a record predating this feature); `activeColumnDefs()`/
+`activeMessageVisible()` union every currently-loaded root file's own list
+— same idiom as `activeLevelOrder()` below — and drive the row/header
+renderers, the columns-visibility panel, the context menu's generalized
+"Filter for this ___" (`activeTextFilterColumns()`, replacing the old fixed
+6-entry `TEXT_FILTER_COLUMNS` table), and the filter popup's column-
+restriction chips. `entryColumnValue(e, key)` is the one place that reads
+either a reserved field or a custom `fields[key]` value for a given column
+key — the generalized replacement for the old fixed-switch
+`textColumnValue`. **Time/Level being mandatory is enforced only at
+save time** in the Format Manager (`saveFormatEdit`) — `compileFormatPattern`/
+`validateFormatRegex` themselves have no hard field requirement any more
+(every field already has a graceful runtime default: `ts`→`NaN`, `level`→
+`"INFO"`, everything else→`""`/the whole raw line for `message`), so a
+format saved before this rule existed, or compiled at runtime for a file
+already on disk, keeps parsing exactly as it always has.
+
+A format also carries its own **ordered level list** (`LogFormat.levels`,
+`formatLevelDefs(formatId)`). It may pick from the five names that own a
+theme color (`ALL_LEVELS` = `ERROR/WARN/INFO/DEBUG/TRACE`) *and* add
+arbitrary **custom names** of its own (`NOTICE`, `FATAL`, `VERBOSE`, …);
+`OTHER` stays the implicit catch-all and is never listed. Each level
+definition is `{value, name, color}`: `name` is the canonical bucket name
+shown/colored everywhere; `color` is an explicit, user-picked CSS color
+(format setup's level color-mapping — `explicitLevelColor`/
+`levelColorVar`), or `null` for the legacy fixed-name/rotating
+`--level-custom-1..6`-palette behavior; `value` is what a captured level
+token is matched against, either as case-insensitive **text** (the name
+itself, default) or as a **numeric code** when the format's
+`levelValueType` is `"int"` (e.g. RFC 5424 syslog severity 0–7 — a format
+setup UI toggle, `formatEditLevelValueType`, no fixed severity table
+needed since each code maps explicitly to a name+color). A legacy record's
+plain-string `levels` array (every format saved before this feature)
+upcasts on read to `{value: name, name, color: null}` — no migration
+needed. It decides which level buttons the level bar offers, and in which
+order, for files using that format; a format without the field (every
 builtin, and anything created before this existed) falls back to `LEVELS` =
 `ERROR, WARN, INFO, DEBUG`. Every entry is stamped with the `formatId` it
 was parsed under (`parseLogTextAsync` and `appendTailText`), which is what
-lets `levelBucket(level, formatId)` resolve a raw level string against its
-*own* format's list before falling through the fixed prefix cascade. See `docs/ui-and-views.md` → "Level bar" for how several
+lets `levelBucket(level, formatId)` resolve a raw level string (or, in int
+mode, a numeric code) against its *own* format's list before falling
+through the fixed prefix cascade (text mode only — a numeric code has no
+natural cascade). See `docs/ui-and-views.md` → "Level bar" for how several
 open formats combine (`activeLevelOrder`/`canonicalLevelOrder`).
 
 The builtin default (`fmt-default`, non-deletable, always sorts first in the
@@ -136,10 +197,11 @@ version**: folder-watch
 minimap probing (`probeFolderFileRange` returns its ordinary "no range
 found" sentinel for a meta-format file rather than probing one grammar
 wrong), windowed/partial loading, and live-tailing — a meta-format file is
-always a static, fully-read snapshot. Level derivation from a numeric code
-(FEATURE_BACKLOG.md #80) is a separate, independent item — a target format
-missing a `level` group just falls through the existing generic
-missing-level default.
+always a static, fully-read snapshot. A meta-format's own targets are
+ordinary formats, so int-mode level derivation from a numeric code (see
+"The log formats it parses" above) already applies per-target the same as
+for any single-format file; a target missing a `level` group just falls
+through the existing generic missing-level default.
 
 **"Sources" grouping/coloring on any merged file — a real tree-level
 sibling of Bookmarks/Notes/Selection N, not an extra nesting level.**
