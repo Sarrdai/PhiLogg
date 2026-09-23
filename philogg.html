@@ -3526,9 +3526,9 @@
   .filter-live-count{font-size:26px; font-weight:700; line-height:1; color:var(--text-primary);}
   #filterLiveMatch.warn .filter-live-count{color:var(--warn);}
   .filter-live-meta{display:flex; flex-direction:column; gap:2px; font-family:var(--font-mono);}
-  #filterResultsMinimap{flex:1 1 auto; min-width:0; height:30px; color:var(--accent);}
+  #filterResultsMinimap{flex:1 1 auto; min-width:0; height:30px;}
   #filterResultsMinimap.hidden{display:none;}
-  #filterResultsMinimap rect{fill:currentColor; opacity:.75;}
+  #filterResultsMinimap rect{opacity:.95;}
   #filterResultsSamples{display:flex; flex-direction:column; gap:2px;}
   #filterResultsSamples:empty{display:none;}
   .filter-sample-row{
@@ -7886,6 +7886,14 @@ function columnCssClass(key) { return "col-" + (BUILTIN_FIELD_KEYS.has(key) ? ke
 // — OTHER stays last, so its rank leaves room for CUSTOM_LEVEL_SLOTS slots.
 const LEVEL_SORT_RANK = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3, TRACE: 4, OTHER: 5 + CUSTOM_LEVEL_SLOTS };
 
+// The .minimap-lvl-* fill class for a levelSortRank: the five known
+// buckets, then one slot per --level-custom-N, then OTHER last. Shared by
+// the timeline minimap and the filter popup's match histogram.
+function minimapLevelClass(rank) {
+  if (rank < 5) return ["minimap-lvl-error", "minimap-lvl-warn", "minimap-lvl-info", "minimap-lvl-debug", "minimap-lvl-trace"][rank];
+  if (rank < 5 + CUSTOM_LEVEL_SLOTS) return "minimap-lvl-custom-" + (rank - 4);
+  return "minimap-lvl-other";
+}
 function levelSortRank(bucket, formatId) {
   const r = LEVEL_SORT_RANK[bucket];
   if (r !== undefined) return r;
@@ -20285,11 +20293,6 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const barW = W / bucketCount;
   const usableH = H - 3;
   const heightFor = count => count === 0 ? 0 : Math.max(1.5, (Math.log(count + 1) / Math.log(maxCount + 1)) * usableH);
-  // Index = levelSortRank: the five known buckets, then one slot per
-  // --level-custom-N, then OTHER last.
-  const rankClass = ["minimap-lvl-error", "minimap-lvl-warn", "minimap-lvl-info", "minimap-lvl-debug", "minimap-lvl-trace"]
-    .concat(Array.from({ length: CUSTOM_LEVEL_SLOTS }, (_, i) => "minimap-lvl-custom-" + (i + 1)))
-    .concat(["minimap-lvl-other"]);
 
   let bgParts = "", ovParts = "";
   for (let i = 0; i < bucketCount; i++) {
@@ -20299,7 +20302,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
     if (bh > 0) bgParts += '<rect class="minimap-bg-bar" x="' + x.toFixed(1) + '" y="' + (H - bh).toFixed(1) + '" width="' + w + '" height="' + bh.toFixed(1) + '"/>';
     if (ovCounts[i] > 0) {
       const oh = heightFor(ovCounts[i]);
-      ovParts += '<rect class="minimap-ov-bar ' + rankClass[ovRank[i]] + '" x="' + x.toFixed(1) + '" y="' + (H - oh).toFixed(1) + '" width="' + w + '" height="' + oh.toFixed(1) + '"/>';
+      ovParts += '<rect class="minimap-ov-bar ' + minimapLevelClass(ovRank[i]) + '" x="' + x.toFixed(1) + '" y="' + (H - oh).toFixed(1) + '" width="' + w + '" height="' + oh.toFixed(1) + '"/>';
     }
   }
 
@@ -26477,7 +26480,9 @@ function appendSampleMessage(target, message, hitRe) {
 }
 
 // Histogram of the hits over the base rows' time span, FILTER_MINIMAP_BUCKETS
-// bars scaled to the fullest bucket. Hidden when there's nothing to place
+// bars scaled to the fullest bucket, each bar colored like the timeline
+// minimap: the highest-severity level among that bucket's hits wins
+// (levelSortRank/minimapLevelClass). Hidden when there's nothing to place
 // (no hits, or no parseable timestamps).
 const FILTER_MINIMAP_BUCKETS = 60;
 function renderLiveMatchMinimap(hits, baseEntries) {
@@ -26489,11 +26494,14 @@ function renderLiveMatchMinimap(hits, baseEntries) {
   }
   if (!hits.length || min === Infinity) return;
   const buckets = new Array(FILTER_MINIMAP_BUCKETS).fill(0);
+  const ranks = new Array(FILTER_MINIMAP_BUCKETS).fill(Infinity);
   const span = max - min;
   for (const e of hits) {
     if (isNaN(e.ts)) continue;
     const i = span > 0 ? Math.min(FILTER_MINIMAP_BUCKETS - 1, Math.floor((e.ts - min) / span * FILTER_MINIMAP_BUCKETS)) : 0;
     buckets[i]++;
+    const rank = levelSortRank(levelBucket(e.level, e.formatId), e.formatId);
+    if (rank < ranks[i]) ranks[i] = rank;
   }
   const peak = Math.max(...buckets);
   if (!peak) return;
@@ -26503,7 +26511,7 @@ function renderLiveMatchMinimap(hits, baseEntries) {
   buckets.forEach((n, i) => {
     if (!n) return;
     const h = Math.max(1.5, n / peak * H);
-    svg += '<rect x="' + (i + 0.15) + '" y="' + (H - h) + '" width="0.7" height="' + h + '"><title>' + n + '</title></rect>';
+    svg += '<rect class="' + minimapLevelClass(ranks[i]) + '" x="' + (i + 0.15) + '" y="' + (H - h) + '" width="0.7" height="' + h + '"><title>' + n + '</title></rect>';
   });
   filterResultsMinimap.innerHTML = svg;
   filterResultsMinimap.classList.remove("hidden");
