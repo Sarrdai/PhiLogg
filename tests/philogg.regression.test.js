@@ -29242,6 +29242,15 @@ await withApp(async (w, d, T) => {
   assert(w.getComputedStyle(rowOf(A2)).boxShadow !== "none", "other multi-selected rows keep their outline");
   T.state.multiSelect = new Set([A1.id]);
 
+  // Follow-up 3 (person-requested): the ancestors' names (file + parent
+  // filters) take the path accent too; the active row and off-path rows don't.
+  assert(rowOf(f).classList.contains("on-path") && rowOf(A).classList.contains("on-path"), "the file and parent filter rows are marked on-path");
+  assert(!rowOf(A1).classList.contains("on-path") && !rowOf(A2).classList.contains("on-path") && !rowOf(B).classList.contains("on-path"),
+    "neither the active row itself nor off-path rows are marked");
+  const css = [...d.querySelectorAll("style")].map(x => x.textContent).join("\n");
+  assert(/\.tree-row\.on-path \.tree-label \*\{color:var\(--accent\) !important;\}/.test(css) && css.includes(".tree-row.on-path .tree-label,"),
+    "on-path labels (and a level node's inline-colored words inside them) use the accent color");
+
   // Path through a later sibling: the root rail passes A's subtree highlighted.
   T.state.activeId = B.id;
   w.render();
@@ -33423,5 +33432,6 @@ process.exitCode = failed ? 1 : 0;
               (Groups 26/100/152/199i/225/PiP list trimmed of it).
               Follow-up: 2px border lines (even thickness), no multi-select
               outline on the active row; stretched verticals not
-              collapsed by a base height:0.
+              collapsed by a base height:0; ancestor names (.on-path)
+              in the path accent.
    ============================================================ */

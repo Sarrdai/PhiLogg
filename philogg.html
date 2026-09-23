@@ -782,6 +782,12 @@
   .tree-guide.v{width:0; border-left-width:2px; margin-left:-1px;}
   .tree-guide.h{height:0; border-top-width:2px; top:50%; margin-top:-1px;}
   .tree-guide.on{border-color:var(--accent); z-index:1;}
+  /* Ancestors of the active row (file + parent filters) show their name in
+     the same accent as the highlighted path lines (person-requested) — the
+     path reads from the names too, not just the lines. Overrides the
+     per-word inline level colors of a level node's label on purpose. */
+  .tree-row.on-path .tree-label,
+  .tree-row.on-path .tree-label *{color:var(--accent) !important;}
   .tree-swatch{
     flex:0 0 auto; width:13px; height:13px; margin:0; padding:0; cursor:pointer;
     border-radius:50%; border:1px solid var(--border-soft); background:transparent;
@@ -14275,6 +14281,7 @@ function decorateTreeGuides(rootWrap) {
   const onPath = new Set();
   const activeRow = rootWrap.querySelector(".tree-row.active");
   for (let w = activeRow && activeRow.parentElement; w && rootWrap.contains(w); w = w.parentElement) onPath.add(w);
+  onPath.forEach(w => { const r = w.firstElementChild; if (r && r !== activeRow && r.classList.contains("tree-row")) r.classList.add("on-path"); });
   const rowOf = w => (w.firstElementChild && w.firstElementChild.classList.contains("tree-row")) ? w.firstElementChild : null;
   const addGuide = (row, cls, on, style) => {
     const g = document.createElement("span");
