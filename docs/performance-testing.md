@@ -16,6 +16,7 @@ bottleneck was the transport to the page, which only the real app contains).
 |---|---|---|---|
 | Rust crate alone | `logparse/examples/bench.rs` | read, parse, batch encoding | cargo |
 | Page in jsdom | `tools/perf/render-profile.js` | JS parse, `render()` breakdown, CPU profile | `tests/node_modules` |
+| Page in headless Chromium | `tools/perf/chromium-scroll-bench.js` | log-view row render cost, what the viewport shows while scrolling | global Playwright (preinstalled) |
 | Real desktop app | `tools/perf/desktop-load-bench.sh` | wall time from open to rendered, per route | WebKitGTK, Xvfb, release build |
 
 ## Test data
@@ -72,6 +73,34 @@ Reading it:
   found.)
 - Absolute times are V8 in Node, not WebKit/WebView2 — compare before/after,
   don't quote them as app numbers.
+
+## Level 2b — the page in headless Chromium (scrolling)
+
+```
+NODE_PATH=$(npm root -g) node tools/perf/chromium-scroll-bench.js /tmp/philogg-perf/perf-650k.log [philogg.html]
+```
+
+Opens the page from `file://` in the container's preinstalled Chromium
+(Playwright; `PLAYWRIGHT_BROWSERS_PATH` is set, never `playwright install`)
+and loads the file through `#fileInput`. Chromium is WebView2's engine
+family, so this is the closest stand-in for the Windows desktop app that
+runs here — and scrolling can't be measured in Level 3 at all (the
+unmapped Xvfb window never ticks `requestAnimationFrame`). Prints:
+
+- the scroll scale (`tableScrollHeightScale`; 1 = uncompressed) and the
+  cost of a full `renderVisibleRows()` rebuild vs. a scroll render
+  (`renderVisibleRows(true)`, 100px steps), style + layout included;
+- per scroll scenario (real `mouse.wheel` events): rows moved, renders,
+  **blank** — renders where the viewport, just before the render, had no
+  rows at its top or bottom (the old rows at the new scroll offset: what
+  the compositor showed for that frame) — and **jumps** — renders that
+  changed which entry sits at the viewport top (0 = seamless).
+
+Headless wheel events scroll instantly (no smooth-scroll animation), so a
+"400px x40" flick is a worst case, not a typical gesture. A scrollbar-thumb
+drag isn't in the script: driven from Playwright, several steps land in
+one frame and the render count reads low; drive it from inside the page
+(`tableBody.scrollTop += ...` in a `setTimeout` loop) if it matters.
 
 ## Level 3 — the real desktop app, headless
 
@@ -180,3 +209,13 @@ rendered):
 
 Rust crate alone, same file: read ~0.3 s, parse ~0.6 s (4 threads) /
 ~1.7 s (1 thread), batch encoding ~0.4 s.
+
+Scrolling (Level 2b, headless Chromium 141, same 650k-entry file, 572px
+viewport; "blank"/"jumps" per scroll render, see Level 2b):
+
+| Date | State | scale | full rebuild | scroll render | wheel down x40 | wheel up x40 | 400px flick x40 |
+|---|---|---|---|---|---|---|---|
+| 2026-09-24 | before (950,000px cap bug, 100ms throttle) | 0.052 | 5.7 ms | 13.8 ms | 14 jumps (max 195 rows) | 15/15 blank | 13/15 blank |
+| 2026-09-24 | cap fix, per-frame renders, row reuse | 1 | 5.5 ms | 0.8 ms | 0 | 0/40 blank | 0/40 blank |
+
+Before the fix one wheel notch moved 68 rows; after, 4.
