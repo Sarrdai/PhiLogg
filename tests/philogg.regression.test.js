@@ -34743,4 +34743,32 @@ process.exitCode = failed ? 1 : 0;
               instead of the 100ms throttle (GROUP 258 updated), and row
               reuse on scroll renders (identity kept, one-screen overscan,
               same markup as a full rebuild, note rows paired).
+   Group 267 — new session (2026-09-24, load/filter performance): the
+              session cache off the load path — a File load cached as the
+              File itself (blob, restored identically), text records
+              written when idle, a tail change dropping the blob, and the
+              desktop "path" record (person-decided: re-read from disk on
+              restore, a deleted file dropped). The suite's structuredClone
+              shim lets fake-indexeddb store jsdom Blobs.
+   Group 268 — same session: parallel JS parsing — encodeEntryBatch ->
+              decodeNativeBatch round trip over the golden cases, cuts only
+              before header lines (CRLF edge), one fake worker per piece
+              with out-of-order completion, file-order ids, rollback +
+              fallback on a worker failure, a custom regex format, and the
+              drain yielding through queueTask, never setTimeout. Groups
+              165b/c and 261 now decode the worker's binary batches.
+   Group 269 — same session: per-file aggregates — complete when the load
+              finishes, minimap bars/full-range box/measured message/level
+              counts identical to the per-entry passes (time + entries
+              mode, single- and multi-line), unsorted/NaN ts fallback, tail
+              appends folded in incrementally, rotation, clock offset,
+              merge and a format level edit.
+   Group 270 — same session: the Context view is built only while visible
+              (Filtered tab: not built, stale; revealed: built once;
+              Stacked: every render), its match/gap part memoized (re-render
+              and gap toggle reuse it, an append rebuilds it, identical to a
+              cold build), OR/link reference checks, a jump from the
+              Filtered tab. Groups 55a/55d/61a/97a/137/202b/202c assert on
+              both Log views at once and now run in Stacked layout, where
+              both are on screen.
    ============================================================ */
