@@ -8100,6 +8100,7 @@ async function parseLogTextAsync(text, node, onProgress) {
     // lines before the first header are dropped
 
     if (i % PARSE_CHUNK_LINES === 0) {
+      updateFileAggregate(node); // see "Per-file aggregates"
       if (onProgress) onProgress(i, lines.length);
       await new Promise(resolve => setTimeout(resolve, 0)); // yield a tick
       // Deleted mid-parse (by the person, or a race) — stop touching the
@@ -8110,6 +8111,7 @@ async function parseLogTextAsync(text, node, onProgress) {
     }
   }
   if (current) { entryIndex[current.id] = current; node.entries.push(current); }
+  updateFileAggregate(node);
   if (onProgress) onProgress(lines.length, lines.length);
 }
 
@@ -8931,6 +8933,8 @@ function splitTextAtHeaderLines(text, isHeaderLine, n) {
   return pieces;
 }
 
+// Batches (PARSE_CHUNK_LINES each) adopted per task — see drain below.
+const PARALLEL_PARSE_DRAIN_BATCHES = 8;
 // Pieces smaller than this aren't worth a worker of their own.
 const PARALLEL_PARSE_MIN_CHARS = 1 << 20;
 function parallelParseWorkerCount(textLength) {
@@ -8965,6 +8969,7 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
       if (settled) return;
       stop();
       for (const e of node.entries.splice(start)) delete entryIndex[e.id];
+      invalidateFileAggregate(node);
       reject(err);
     };
     const append = entries => {
@@ -8974,11 +8979,26 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
         entryIndex[e.id] = e;
         node.entries.push(e);
       }
+      updateFileAggregate(node); // while the workers are still busy, not in the first render
     };
+    // Appends whatever is ready, in file order — at most
+    // PARALLEL_PARSE_DRAIN_BATCHES batches per task: once the first piece is
+    // done, the later pieces' queued batches (most of the file) would
+    // otherwise all be adopted in one long task.
+    let drainScheduled = false;
     const drain = () => {
+      if (drainScheduled || settled) return;
+      if (state.nodes[node.id] !== node) { stop(); resolve(); return; } // deleted mid-load, see onmessage
+      let budget = PARALLEL_PARSE_DRAIN_BATCHES;
       while (next < pieces.length) {
-        for (const entries of queued[next]) append(entries);
-        queued[next] = [];
+        while (queued[next].length) {
+          if (budget-- === 0) {
+            drainScheduled = true;
+            setTimeout(() => { drainScheduled = false; drain(); }, 0);
+            return;
+          }
+          append(queued[next].shift());
+        }
         if (!finished[next]) return;
         next++;
       }
@@ -9201,11 +9221,13 @@ async function parseLocalFileNatively(url, node, onFraction) {
           entryIndex[e.id] = e;
           node.entries.push(e);
         }
+        updateFileAggregate(node); // see "Per-file aggregates"
       }
       if (onFraction && typeof batch.fraction === "number") onFraction(batch.fraction);
     });
   } catch (err) {
     for (const e of node.entries.splice(start)) delete entryIndex[e.id];
+    invalidateFileAggregate(node);
     throw err;
   }
 }
@@ -9678,6 +9700,7 @@ async function loadMetaFormatText(name, text, metaFmt) {
       // already chronological. Sorting here, once, is what keeps that fast
       // path's output actually chronological for a meta-format's vnodes.
       vnode.entries.sort((a, b) => a.ts - b.ts);
+      invalidateOrderIndexMap(vnode.id); // in-place reorder: same array, same length
       vnodes.push(vnode);
     }
   } finally {
@@ -10494,7 +10517,7 @@ function buildOrderIndexMap(fileId) {
 // key above can't see: a reorder that keeps the same array and length.
 function invalidateOrderIndexMap(fileId) {
   const file = fileId && state.nodes[fileId];
-  if (file) file._orderIndexMap = null;
+  if (file) { file._orderIndexMap = null; invalidateFileAggregate(file); } // the aggregate's entry indices moved too
 }
 
 /* ===================== Per-file clock offset (FEATURE_BACKLOG.md #29) =====================
@@ -10540,6 +10563,7 @@ function resortMergedFilesAfterShift() {
 function shiftFileEntriesTs(node, deltaMs) {
   if (!node || !Array.isArray(node.entries) || !deltaMs) return;
   for (const e of node.entries) e.ts += deltaMs;
+  invalidateFileAggregate(node); // its min/max ts moved
   resortMergedFilesAfterShift();
 }
 
@@ -12061,6 +12085,81 @@ function invalidateCachesForRoots(changedRootIds) {
   }
 }
 
+/* Per-file aggregates: what the first render of a freshly loaded file would
+   otherwise compute in full passes over every entry — level counts
+   (getLevelCounts), the minimap's bucket bars (renderTimelineMinimap,
+   updateMinimapFullRange) and the widest message (computeMaxMessageWidth).
+   updateFileAggregate catches up from the last entry it saw to the end of
+   node.entries; the load paths call it after every adopted batch (while the
+   workers are still parsing), so the render finds it complete, and every
+   reader calls it too (fileAggregate), so a tail append is folded in
+   incrementally and correctness never depends on those call sites.
+   Kept per raw level text + formatId (not per bucket), so a format's level
+   edit changes nothing here — buckets and ranks are resolved when read.
+   Self-validating like _orderIndexMap for a replaced array (rotation) or a
+   shrunk one (a rolled-back parse); a mutation it can't see — an in-place
+   reorder (invalidateOrderIndexMap) or shifted ts (a clock offset) — drops
+   it via invalidateFileAggregate. */
+function invalidateFileAggregate(node) {
+  if (node) node._agg = null;
+}
+function updateFileAggregate(node) {
+  const entries = node.entries;
+  let a = node._agg;
+  if (!a || a.entries !== entries || a.count > entries.length) {
+    a = node._agg = {
+      entries, count: 0,
+      byFormat: new Map(), // formatId -> Map(level -> rec)
+      levelOrder: [],      // rec { formatId, level, n, idx: Int32Array (entry indices, ascending) }, first appearance first
+      sorted: true,        // every ts a number, non-decreasing
+      minTs: Infinity, maxTs: -Infinity,
+      longestMsg: "",      // first longest message (computeMaxMessageWidth, single-line)
+      longestLine: "",     // first longest line of any message (multi-line)
+    };
+  }
+  // The last entry already seen can still have grown (a tail tick appends
+  // continuation lines to it), so its message is looked at again.
+  for (let i = a.count ? a.count - 1 : 0; i < entries.length; i++) {
+    const e = entries[i];
+    const msg = e.message || "";
+    if (msg.length > a.longestMsg.length) a.longestMsg = msg;
+    if (msg.length > a.longestLine.length) {
+      if (msg.indexOf("\n") < 0) a.longestLine = msg;
+      else for (const line of msg.split("\n")) if (line.length > a.longestLine.length) a.longestLine = line;
+    }
+    if (i < a.count) continue;
+    let byLevel = a.byFormat.get(e.formatId);
+    if (!byLevel) { byLevel = new Map(); a.byFormat.set(e.formatId, byLevel); }
+    let rec = byLevel.get(e.level);
+    if (!rec) {
+      rec = { formatId: e.formatId, level: e.level, n: 0, idx: new Int32Array(64) };
+      byLevel.set(e.level, rec);
+      a.levelOrder.push(rec);
+    }
+    if (rec.n === rec.idx.length) { const grown = new Int32Array(rec.n * 2); grown.set(rec.idx); rec.idx = grown; }
+    rec.idx[rec.n++] = i;
+    const ts = e.ts;
+    if (ts < a.minTs) a.minTs = ts;
+    if (ts > a.maxTs) a.maxTs = ts;
+    if (a.sorted && !(i === 0 ? ts === ts : ts >= entries[i - 1].ts)) a.sorted = false;
+  }
+  a.count = entries.length;
+  return a;
+}
+function fileAggregate(node) {
+  return updateFileAggregate(node);
+}
+// The aggregate of the root file whose entries array `entries` is, if any —
+// a view that IS a file's whole entry list (a file node active, no level
+// filter, sort or pinned rows) can use it instead of a pass of its own.
+function aggregateForEntries(entries) {
+  for (const id of state.rootIds) {
+    const n = state.nodes[id];
+    if (n && n.entries === entries) return fileAggregate(n);
+  }
+  return null;
+}
+
 // Per-level entry counts for a node's own result, cached alongside _cache
 // (cleared in the exact same two places above). renderLevelBar needs these on
 // every render(), and the O(n) levelBucket pass over a large active view was
@@ -12069,6 +12168,18 @@ function invalidateCachesForRoots(changedRootIds) {
 function getLevelCounts(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return {};
+  if (!node._levelCounts && node.type === "file") {
+    // A file's counts come from its aggregate (per raw level text, bucketed
+    // here — so a format's level edit needs no recount), in order of first
+    // appearance, the same key order the per-entry loop below produces.
+    const counts = {};
+    const bucketOf = makeLevelBucketer();
+    for (const rec of fileAggregate(node).levelOrder) {
+      const b = bucketOf(rec.level, rec.formatId);
+      counts[b] = (counts[b] || 0) + rec.n;
+    }
+    node._levelCounts = counts;
+  }
   if (!node._levelCounts) {
     const counts = {};
     const bucketOf = makeLevelBucketer();
@@ -20554,6 +20665,31 @@ function minimapBarSpan(ts) {
 // order — i.e. currentViewEntries *before* any column-sort copy is applied
 // (see renderTable), since bucketing needs real time order regardless of
 // what the table itself is currently sorted by.
+// Where each minimap bucket starts in a root file's entries — bounds[b] is
+// the first index in bucket b or later, bounds[bucketCount] the entry count
+// — found by binary search instead of bucketing every entry. The bucket of
+// an index is monotonic in the index in entries mode, and in time mode as
+// long as the file's ts are all numbers and non-decreasing (its aggregate
+// knows); null otherwise, and the caller buckets entry by entry.
+function minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode) {
+  const root = state.nodes[rootId];
+  const entries = root.entries;
+  const n = entries.length;
+  if (!entriesMode && !fileAggregate(root).sorted) return null;
+  const bucketAt = entriesMode
+    ? i => Math.min(bucketCount - 1, Math.floor((i / n) * bucketCount))
+    : i => bucketOfTime(entries[i].ts);
+  const bounds = new Array(bucketCount + 1);
+  bounds[bucketCount] = n;
+  let lo0 = 0;
+  for (let b = 0; b < bucketCount; b++) {
+    let lo = lo0, hi = n;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (bucketAt(mid) < b) lo = mid + 1; else hi = mid; }
+    bounds[b] = lo0 = lo;
+  }
+  return bounds;
+}
+
 function renderTimelineMinimap(rootId, viewEntries) {
   minimapLastRootId = rootId;
   minimapLastViewEntries = viewEntries;
@@ -20639,7 +20775,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
     maxCount = c.maxCount;
   } else {
     bgCounts = new Array(bucketCount).fill(0);
-    if (entriesMode) {
+    const bounds = minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode);
+    if (bounds) {
+      for (let b = 0; b < bucketCount; b++) bgCounts[b] = bounds[b + 1] - bounds[b];
+    } else if (entriesMode) {
       // Entries mode slices the WHOLE root file into bucketCount equal-size
       // INDEX ranges — every bucket ends up covering the same fixed slice of
       // the file's line count, so the background bars render essentially
@@ -20665,6 +20804,31 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const ovCounts = new Array(bucketCount).fill(0);
   const ovRank = new Array(bucketCount).fill(Infinity);
   const ovName = new Array(bucketCount).fill("");
+  // The overlay of a view that IS the whole file (its first render, a file
+  // node active without a level filter) straight from the aggregate: the
+  // same counts as the background, and per bucket the lowest-ranked level
+  // present — ties going to the level whose first entry in that bucket comes
+  // first, exactly what the per-entry loop below picks.
+  const bounds = viewEntries === rootEntries ? minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode) : null;
+  if (bounds) {
+    const ovFirst = new Array(bucketCount).fill(Infinity);
+    for (let b = 0; b < bucketCount; b++) ovCounts[b] = bounds[b + 1] - bounds[b];
+    for (const rec of fileAggregate(state.nodes[rootId]).levelOrder) {
+      const bucket = levelBucket(rec.level, rec.formatId);
+      const rank = levelSortRank(bucket, rec.formatId);
+      const idx = rec.idx;
+      let j = 0;
+      for (let b = 0; b < bucketCount && j < rec.n; b++) {
+        // First of this level's entries at or after the bucket's start.
+        let lo = j, hi = rec.n;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (idx[mid] < bounds[b]) lo = mid + 1; else hi = mid; }
+        j = lo;
+        if (j < rec.n && idx[j] < bounds[b + 1] && (rank < ovRank[b] || (rank === ovRank[b] && idx[j] < ovFirst[b]))) {
+          ovRank[b] = rank; ovName[b] = bucket; ovFirst[b] = idx[j];
+        }
+      }
+    }
+  }
   // Entries mode needs each viewEntries entry's position WITHIN THE ROOT
   // FILE, not within viewEntries itself — viewEntries is a filtered SUBSET,
   // so its own array index would bucket by "Nth match" instead of "Nth line
@@ -20679,7 +20843,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // Resolved once per distinct (format, level) pair, not per entry — same
   // reasoning as makeLevelBucketer, extended to the rank.
   const levelInfo = new Map(); // formatId -> Map(level -> [bucket, rank])
-  for (const e of viewEntries) {
+  if (!bounds) for (const e of viewEntries) {
     let b;
     if (entriesMode) {
       const idx = orderIndexMap.get(e.id);
@@ -20773,7 +20937,9 @@ function updateMinimapFullRange() {
   const entries = minimapLastViewEntries;
   if (!entries || entries.length === 0) { rect.classList.add("hidden"); return; }
   let minTs = Infinity, maxTs = -Infinity;
-  for (const e of entries) {
+  const agg = aggregateForEntries(entries);
+  if (agg) { minTs = agg.minTs; maxTs = agg.maxTs; }
+  else for (const e of entries) {
     if (e.ts < minTs) minTs = e.ts;
     if (e.ts > maxTs) maxTs = e.ts;
   }
@@ -22661,6 +22827,13 @@ function longestMessageLine(message) {
 // Monospace font (var(--font-mono)), so the longest line in characters is
 // also the widest in pixels.
 function computeMaxMessageWidth(entries) {
+  // A file's whole entry list: its aggregate already knows (same first-
+  // longest pick, in the same order, as the scan below).
+  const agg = aggregateForEntries(entries);
+  if (agg) {
+    const line = state.multilineMessages ? agg.longestLine : agg.longestMsg;
+    return line ? measureMsgWidth(line) : 0;
+  }
   let longest = "";
   for (let i = 0; i < entries.length; i++) {
     const line = longestMessageLine(entries[i].message);
@@ -33968,6 +34141,7 @@ async function restoreSessionFromCache() {
       if (rec.clockOffset && !node.merged) {
         node.clockOffset = rec.clockOffset;
         for (const e of node.entries) e.ts += rec.clockOffset;
+        invalidateFileAggregate(node);
       }
       // Re-links this node to its watched folder, if it had one — the
       // folder record itself (including its handle) comes back separately
