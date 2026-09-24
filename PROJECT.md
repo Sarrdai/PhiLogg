@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~34,500 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~34,600 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -162,6 +162,19 @@ own worker and actually parse on separate cores at once — the scenario this
 was built for (large files, several loaded together). See `tests/…` GROUP
 165 for the coverage (sandboxed worker-source execution + concurrent-load
 correctness) and GROUP 68's addendum for the queued-placeholder UX change.
+
+**Native parsing under the desktop wrapper (`parseLocalFileNatively`).**
+When `window.philogg.parseLogFile` exists, a file opened from disk (dialog,
+drop, folder watch, file association) skips both of the above: the Rust
+backend reads it and parses it on every core (`desktop/src-tauri/logparse`),
+streaming entries back in batches. The page still owns the parsing rules —
+`nativeFormatSpec` hands Rust the regex source/date regex this page itself
+compiled (shared `compileFormatRegex`), timestamps come back "naive" and are
+localized by this engine (`makeNaiveTsLocalizer`), and anything the native
+engine can't run with identical semantics (lookaround, backreferences, a
+meta-format) falls back to the JS path above. A golden fixture shared by the
+jsdom suite (GROUP 264) and the crate's `cargo test` pins both parsers to the
+same output. See `docs/desktop.md` → "Native parsing".
 
 **Multi-pattern parsing: the `"meta"` format mode** (FEATURE_BACKLOG.md #81,
 implemented this session). Some files interleave two or more independent
@@ -412,6 +425,9 @@ Undo/redo, bookmarks (the auto-managed "Bookmarks" filter node), notes, pin-book
 
 ### `docs/desktop.md`
 The desktop wrapper's internal mechanism (`desktop/`, Tauri v2 + the OS webview): custom `philogg://` scheme, the injected script and the `window.philogg` bridge, native file/folder opening, frameless window and drag region, settings mirroring, tray/splash/close-to-tray, picture-in-picture (PiP), IDE Integration (Windows-only jump from a log entry into Visual Studio/Rider), and the release workflow. `desktop/README.md` has the build/run steps, prerequisites, current run status, and the known limitations.
+
+### `docs/performance-testing.md`
+How to measure load/render performance at three levels — the Rust parser alone, the page in jsdom with a CPU profile, and the **real desktop app headless** in a cloud container (Xvfb + WebKitGTK, timings read back through the `settings.json` mirror) — with the scripts in `tools/perf/`, the traps (the release binary serves its own copy of `philogg.html`; fresh XDG dirs per run), and recorded baseline numbers.
 
 ### `docs/testing-and-limitations.md`
 The jsdom-based testing approach (and its known blind spots — no real layout/paint engine), plus the running list of known limitations and intentionally-deferred items (assertions/ignored-columns keyed by index not name, no cross-file filter combination, no AND/OR over a `link` node, etc.).

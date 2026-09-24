@@ -83,6 +83,7 @@ fn main() {
             commands::list_folder,
             commands::list_subfolders,
             commands::path_for_local_url,
+            commands::parse_log_file,
             commands::path_exists,
             commands::open_path,
             commands::open_local_path,

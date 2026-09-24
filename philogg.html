@@ -8444,29 +8444,56 @@ function compileOneFormat(fmt) {
     // gracefully instead of throwing.
     return { isHeaderLine: () => true, parseHeader: line => applyFormatMatch({ message: line }, line, null) };
   }
-  const dateFrag = compileDateFormat(fmt.tsFormat);
-  let compiled = null;
-  if (fmt.mode === "regex") {
-    const v = validateFormatRegex(fmt.regex || "");
-    if (!v.error) compiled = { regex: v.regex };
-  } else {
-    const c = compileFormatPattern(fmt.pattern || "", fmt.tsFormat);
-    if (!c.error) compiled = c;
-  }
-  if (!compiled) {
+  const { dateFrag, regex } = compileFormatRegex(fmt);
+  if (!regex) {
     return {
       isHeaderLine: () => true,
       parseHeader: line => applyFormatMatch({ message: line }, line, dateFrag),
     };
   }
-  const wrapQuote = messageWrapQuote(compiled.regex.source);
+  const wrapQuote = messageWrapQuote(regex.source);
   return {
-    isHeaderLine: line => compiled.regex.test(line),
+    isHeaderLine: line => regex.test(line),
     parseHeader: line => {
-      const m = compiled.regex.exec(line);
+      const m = regex.exec(line);
       const entry = applyFormatMatch((m && m.groups) || {}, line, dateFrag);
       return m ? markOpenMessageQuote(entry, wrapQuote, line) : entry;
     },
+  };
+}
+
+// A pattern/regex-mode format's compiled line regex (null if it fails to
+// compile) and timestamp fragment — shared by compileOneFormat and
+// nativeFormatSpec, so the desktop's native parser is handed exactly the
+// regex this page itself would run.
+function compileFormatRegex(fmt) {
+  const dateFrag = compileDateFormat(fmt.tsFormat);
+  let regex = null;
+  if (fmt.mode === "regex") {
+    const v = validateFormatRegex(fmt.regex || "");
+    if (!v.error) regex = v.regex;
+  } else {
+    const c = compileFormatPattern(fmt.pattern || "", fmt.tsFormat);
+    if (!c.error) regex = c.regex;
+  }
+  return { dateFrag, regex };
+}
+
+// The description of a format the desktop wrapper's native parser
+// (window.philogg.parseLogFile, desktop/src-tauri/logparse) executes — the
+// page compiles, Rust only runs the result, so what a format *means* stays
+// defined here. Mirrors compileOneFormat branch for branch; null for a
+// meta-format, which is split in JS before any per-line parsing.
+function nativeFormatSpec(fmt) {
+  if (fmt.builtin && !fmt.edited) return { builtin: true, regex: null, dateRegex: null, dateOrder: [], wrapQuote: "" };
+  if (fmt.mode === "meta") return null;
+  const { dateFrag, regex } = compileFormatRegex(fmt);
+  return {
+    builtin: false,
+    regex: regex ? regex.source : null,
+    dateRegex: dateFrag ? dateFrag.matchRegex.source : null,
+    dateOrder: dateFrag ? dateFrag.order.slice() : [],
+    wrapQuote: regex ? messageWrapQuote(regex.source) : "",
   };
 }
 
@@ -8817,6 +8844,7 @@ function buildLogParseWorkerSrc() {
     compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
     formatLocation, applyFormatMatch, parseTimestamp, parseHeaderLine,
     messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
+    compileFormatRegex,
   ].map(fn => fn.toString()).join("\n\n");
   // A local, worker-scoped id counter — never the page's own uidCounter,
   // which is main-thread-only state a worker can't share. The main thread
@@ -8901,6 +8929,128 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
     };
     worker.postMessage({ text, fmt });
   });
+}
+
+/* ===================== Native parsing (desktop wrapper) =====================
+   Under the desktop wrapper a file opened from disk never has to pass
+   through this page as text at all: window.philogg.parseLogFile has the
+   Rust backend read it and parse it on every core at once
+   (desktop/src-tauri/logparse), streaming finished entries back in binary
+   batches (decodeNativeBatch).
+   The format is still compiled HERE (nativeFormatSpec) — Rust only executes
+   the regex/date description it is handed, so the parsing rules have one
+   definition. Anything it can't take (a meta-format, a regex construct its
+   engine lacks, a missing bridge) rejects before a single entry is
+   appended, and the caller falls back to the ordinary read + parse. */
+function canParseNatively(handle) {
+  return !!(window.philogg && typeof window.philogg.parseLogFile === "function" &&
+    isUrlTailHandle(handle) && isDesktopLocalUrl(handle[URL_TAIL_HANDLE]));
+}
+
+// Rust returns timestamps "naive" — Date.UTC(y, mo, d, h, mi, s, ms) — and
+// this finishes parseTimestamp/parseTimestampGeneric's own
+// new Date(y, mo, d, h, mi, s, ms) in THIS engine, so DST gaps/overlaps and
+// the tz database are exactly the page's. The local offset is constant
+// within a minute of wall time, so one Date per distinct minute is enough.
+function makeNaiveTsLocalizer() {
+  const offsets = new Map();
+  return naive => {
+    const minute = Math.floor(naive / 60000);
+    let off = offsets.get(minute);
+    if (off === undefined) {
+      const n = new Date(minute * 60000);
+      const local = new Date(0);
+      // setFullYear, not the constructor — that would remap years 0..99.
+      local.setFullYear(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
+      local.setHours(n.getUTCHours(), n.getUTCMinutes(), 0, 0);
+      off = local.getTime() - minute * 60000;
+      offsets.set(minute, off);
+    }
+    return naive + off;
+  };
+}
+
+// Reads one binary entry batch (layout: desktop/src-tauri/logparse/src/
+// batch.rs) into entry objects of this page's own shape and key order
+// (applyFormatMatch/parseHeaderLine), minus id/formatId. The whole batch's
+// strings arrive as ONE UTF-8 buffer — decoded once, every field a
+// substring of it, located by varint offsets relative to the entry's raw;
+// ts stays naive (see makeNaiveTsLocalizer).
+const nativeBatchDecoder = typeof TextDecoder === "function" ? new TextDecoder("utf-8", { ignoreBOM: true }) : null;
+function decodeNativeBatch(buf) {
+  const head = new DataView(buf, 0, 16);
+  const fraction = head.getFloat64(0, true);
+  const count = head.getUint32(8, true);
+  const tableLen = head.getUint32(12, true);
+  const ts = new Float64Array(buf, 16, count);
+  const tab = new Uint8Array(buf, 16 + count * 8, tableLen);
+  const S = nativeBatchDecoder.decode(new Uint8Array(buf, 16 + count * 8 + tableLen));
+  const entries = new Array(count);
+  let p = 0;
+  let rawAt = 0;
+  const next = () => {
+    let b = tab[p++];
+    if (b < 0x80) return b;
+    let v = b & 0x7F, shift = 7;
+    do { b = tab[p++]; v |= (b & 0x7F) << shift; shift += 7; } while (b >= 0x80);
+    return v;
+  };
+  const str = () => { const start = rawAt + next(); return S.substring(start, start + next()); };
+  for (let i = 0; i < count; i++) {
+    rawAt += next();
+    const raw = S.substring(rawAt, rawAt + next());
+    const e = { id: "", tsRaw: str(), ts: ts[i], level: str(), thread: str(), locationShort: str(),
+      locationFull: str(), method: str(), message: str(), raw, fields: EMPTY_ENTRY_FIELDS };
+    const flags = next();
+    if (flags & 1) e.msgOpenQuote = str();
+    const k = flags >>> 1;
+    if (k) {
+      const fields = {};
+      for (let j = 0; j < k; j++) { const name = str(); fields[name] = str(); }
+      e.fields = fields;
+    }
+    entries[i] = e;
+  }
+  return { fraction, entries };
+}
+
+// Resolves with { size } (bytes read — the tail offset) once every entry is
+// on node.entries. onFraction(0..1) drives the row's progress fill. A
+// rejection leaves node.entries/entryIndex exactly as they were.
+async function parseLocalFileNatively(url, node, onFraction) {
+  const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  const spec = nativeFormatSpec(fmt);
+  if (!spec) throw new Error("meta-format");
+  // No compiled date format: Date.parse, which only this engine can answer.
+  const freeDate = !spec.builtin && !spec.dateRegex;
+  const localize = makeNaiveTsLocalizer();
+  const start = node.entries.length;
+  let orphaned = false;
+  try {
+    return await window.philogg.parseLogFile(url, spec, msg => {
+      if (orphaned) return;
+      // Deleted mid-load — same rule as parseLogTextInWorker: stop feeding
+      // the orphaned node; the caller's own existence check takes over.
+      if (state.nodes[node.id] !== node) { orphaned = true; return; }
+      // An ArrayBuffer is an entry batch; anything else a {fraction} progress note.
+      const batch = msg instanceof ArrayBuffer ? decodeNativeBatch(msg) : msg;
+      if (batch.entries) {
+        for (const e of batch.entries) {
+          e.id = uid("e");
+          e.ts = freeDate ? (e.tsRaw ? parseTimestampGeneric(e.tsRaw, null) : NaN)
+            : isNaN(e.ts) ? NaN : localize(e.ts);
+          e.formatId = formatId;
+          entryIndex[e.id] = e;
+          node.entries.push(e);
+        }
+      }
+      if (onFraction && typeof batch.fraction === "number") onFraction(batch.fraction);
+    });
+  } catch (err) {
+    for (const e of node.entries.splice(start)) delete entryIndex[e.id];
+    throw err;
+  }
 }
 
 // Cheap, targeted update for JUST the loading file's own tree row (progress
@@ -9120,6 +9270,22 @@ function levelBucket(level, formatId) {
   if (l.startsWith("DEBUG")) return "DEBUG";
   if (l.startsWith("TRACE")) return "TRACE";
   return "OTHER";
+}
+
+// levelBucket for one pass over many entries: re-resolving the owning
+// format's level list per entry (a formats lookup plus fresh arrays) costs
+// hundreds of ms on a large file, while a file has only a handful of
+// distinct (format, level) pairs. Scoped to one pass on purpose — a
+// long-lived cache would go stale when a format's levels are edited.
+function makeLevelBucketer() {
+  const byFormat = new Map();
+  return (level, formatId) => {
+    let byLevel = byFormat.get(formatId);
+    if (!byLevel) { byLevel = new Map(); byFormat.set(formatId, byLevel); }
+    let b = byLevel.get(level);
+    if (b === undefined) { b = levelBucket(level, formatId); byLevel.set(level, b); }
+    return b;
+  };
 }
 
 // The lvl-* class for a level. Called both with an entry's raw level text
@@ -11388,7 +11554,8 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
   } else if (baked.filterType === "sources") {
     result = parentEntries;
   } else if (baked.filterType === "level") {
-    result = parentEntries.filter(e => baked.value.includes(levelBucket(e.level, e.formatId)));
+    const bucketOf = makeLevelBucketer();
+    result = parentEntries.filter(e => baked.value.includes(bucketOf(e.level, e.formatId)));
   } else if (baked.filterType === "and" || baked.filterType === "or") {
     const aEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
     const bEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
@@ -11532,7 +11699,8 @@ function getEntriesUncached(node) {
     // applyLevelFilter/FEATURE_BACKLOG.md #10). An empty array never lives
     // in the tree (see applyLevelSelectionToTree, which deletes the node
     // instead), but is treated as "match nothing" here for safety.
-    result = parentEntries.filter(e => node.value.includes(levelBucket(e.level, e.formatId)));
+    const bucketOf = makeLevelBucketer();
+    result = parentEntries.filter(e => node.value.includes(bucketOf(e.level, e.formatId)));
   } else if (node.filterType === "and" || node.filterType === "or") {
     // Self-contained: bakedA/bakedB are flat condition snapshots (see
     // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
@@ -11740,10 +11908,11 @@ function getLevelCounts(nodeId) {
   if (!node) return {};
   if (!node._levelCounts) {
     const counts = {};
+    const bucketOf = makeLevelBucketer();
     for (const e of getEntries(nodeId)) {
       // Keyed by the entry's OWN computed bucket, never by iterating a fixed
       // name list — that's what makes per-format custom buckets counted too.
-      const b = levelBucket(e.level, e.formatId);
+      const b = bucketOf(e.level, e.formatId);
       counts[b] = (counts[b] || 0) + 1;
     }
     node._levelCounts = counts;
@@ -14396,7 +14565,8 @@ function renderLevelBar() {
 
 function applyLevelFilter(entries) {
   if (state.levelFilter.size === 0) return entries;
-  return entries.filter(e => state.levelFilter.has(levelBucket(e.level, e.formatId)));
+  const bucketOf = makeLevelBucketer();
+  return entries.filter(e => state.levelFilter.has(bucketOf(e.level, e.formatId)));
 }
 
 // Bookmarked entries belonging to a given root file, resolved via an
@@ -20262,6 +20432,9 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // lowerBoundByTs call would cost.
   const orderIndexMap = entriesMode ? buildOrderIndexMap(rootId) : null;
   const rootCount = rootEntries.length;
+  // Resolved once per distinct (format, level) pair, not per entry — same
+  // reasoning as makeLevelBucketer, extended to the rank.
+  const levelInfo = new Map(); // formatId -> Map(level -> [bucket, rank])
   for (const e of viewEntries) {
     let b;
     if (entriesMode) {
@@ -20276,9 +20449,15 @@ function renderTimelineMinimap(rootId, viewEntries) {
       b = bucketOfTime(e.ts);
     }
     ovCounts[b]++;
-    const bucket = levelBucket(e.level, e.formatId);
-    const rank = levelSortRank(bucket, e.formatId);
-    if (rank < ovRank[b]) { ovRank[b] = rank; ovName[b] = bucket; }
+    let byLevel = levelInfo.get(e.formatId);
+    if (!byLevel) { byLevel = new Map(); levelInfo.set(e.formatId, byLevel); }
+    let info = byLevel.get(e.level);
+    if (!info) {
+      const bucket = levelBucket(e.level, e.formatId);
+      info = [bucket, levelSortRank(bucket, e.formatId)];
+      byLevel.set(e.level, info);
+    }
+    if (info[1] < ovRank[b]) { ovRank[b] = info[1]; ovName[b] = info[0]; }
   }
   minimapBgCounts = bgCounts;
   minimapOvCounts = ovCounts;
@@ -23762,14 +23941,18 @@ function loadFiles(fileList) {
 // phases (READ_WEIGHT/PARSE_WEIGHT), instead of going through addFile.
 // folderId (optional) tags the node so it renders inside that watched
 // folder's section (renderFolderSection) instead of the plain tree, from
-// the very first moment — see createFileNode. Caller owns the final
-// render() around this; the row's progress fill is fully self-managed via
+// the very first moment — see createFileNode. Caller owns the render()
+// once this returns (this function never renders the loaded result
+// itself); the row's progress fill is fully self-managed via
 // scheduleLoadRender in the meantime.
 // existingNode (optional): reuses an already-inserted queued placeholder
 // (see createQueuedFileNode/loadFileDescriptors) instead of creating a fresh
 // node via createFileNode — activateQueuedFileNode clears its .queued flag
 // and takes over the "insert into the active view" job createFileNode would
 // otherwise have done.
+// file may be null when canParseNatively(handle): the desktop wrapper then
+// reads and parses the file itself (parseLocalFileNatively), and only a
+// fallback ever fetches it here, through handle.getFile().
 async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   const node = existingNode || createFileNode(name, folderId);
   if (existingNode) activateQueuedFileNode(node);
@@ -23783,7 +23966,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     // live tail/localPath is wired for a meta-format file in v1 (see
     // loadMetaFormatText's own comment).
     deleteNode(node.id);
-    const text = await readFileWithProgress(file, () => {});
+    const text = await readFileWithProgress(file || await handle.getFile(), () => {});
     return await loadMetaFormatText(name, text, fmt0);
   }
   // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
@@ -23793,30 +23976,44 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   // either, so in practice this stays unset and the path arrives via
   // loadDesktopLocalFiles instead. Kept because it costs nothing and is the
   // only route that would work for a File the page opened itself.
-  if (window.philogg && typeof window.philogg.getPathForFile === "function") {
+  if (file && window.philogg && typeof window.philogg.getPathForFile === "function") {
     const resolvedPath = window.philogg.getPathForFile(file);
     if (resolvedPath) node.localPath = resolvedPath;
   }
+  let size = file ? file.size : 0; // bytes consumed — where tailing picks up
   try {
-    const text = await readFileWithProgress(file, (loaded, total) => {
-      node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
-      scheduleLoadRender(node.id);
-    });
-    await parseLogTextAsync(text, node, (done, total) => {
-      node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
-      scheduleLoadRender(node.id);
-    });
+    if (!file) {
+      try {
+        size = (await parseLocalFileNatively(handle[URL_TAIL_HANDLE], node, fraction => {
+          node.loadFraction = fraction;
+          scheduleLoadRender(node.id);
+        })).size;
+      } catch (err) {
+        // Not natively parseable (see parseLocalFileNatively) — the ordinary route.
+        file = await handle.getFile();
+        size = file.size;
+      }
+    }
+    if (file) {
+      const text = await readFileWithProgress(file, (loaded, total) => {
+        node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
+        scheduleLoadRender(node.id);
+      });
+      await parseLogTextAsync(text, node, (done, total) => {
+        node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
+        scheduleLoadRender(node.id);
+      });
+    }
   } catch (err) {
     deleteNode(node.id); // reading/parsing failed — don't leave a permanently empty file behind
     throw err;
   } finally {
     delete node.loadFraction;
-    // Skip the render if the node was already deleted mid-load (by the
-    // person, or the catch above) — same guard fillMergedEntries already
-    // has for the equivalent race, just applied before the render instead
-    // of after (rendering for a dead node id is a wasted full render, not
-    // just redundant work).
-    if (state.nodes[node.id] === node) flushLoadRender(node.id);
+    // No render here: the caller renders once, after the history match and
+    // the tail below are in place too. It used to flushLoadRender() here AND
+    // the caller rendered again right after — two full renders per loaded
+    // file, each hundreds of ms on a large one.
+    if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
   }
   if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
   persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
@@ -23831,7 +24028,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   if (handle) {
     node.tail = {
       handle,
-      offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
+      offset: size,        // bytes consumed so far; the poll reads only file.slice(offset)
       pending: "",         // trailing line fragment not yet terminated by a newline
       failed: false,       // set once TAIL_MAX_CONSECUTIVE_ERRORS polls in a row fail
       busy: false,         // guards against overlapping async polls on slow disks
@@ -23945,6 +24142,10 @@ async function loadFileDescriptors(descs) {
   }
 
   const loadedIds = [];
+  // Each finished file renders once, as soon as it's done (another file of
+  // the batch may still be loading); only a failure — whose placeholder is
+  // removed without a render — leaves the final render below still to do.
+  let needsFinalRender = true;
   try {
     const results = await Promise.all(descs.map(async (desc, i) => {
       const { handle } = desc;
@@ -23961,8 +24162,12 @@ async function loadFileDescriptors(descs) {
         // be rendered before the first byte is read — used by the desktop
         // route, where "reading" is a fetch of the wrapper's philogg://local
         // URL rather than an already-open File object.
-        const file = desc.file || await desc.openFile();
-        const node = await loadOneFileIntoTree(file.name, file, handle, null, queuedNodes[i]);
+        // ...unless the wrapper parses it natively, which needs no fetch at
+        // all (see canParseNatively).
+        const file = desc.file || (canParseNatively(handle) ? null : await desc.openFile());
+        const node = await loadOneFileIntoTree(file ? file.name : desc.name, file, handle, null, queuedNodes[i]);
+        render();
+        needsFinalRender = false;
         return node.id;
       } catch (err) {
         // One file's read/parse failure (loadOneFileIntoTree already removed
@@ -23980,12 +24185,13 @@ async function loadFileDescriptors(descs) {
         // reproduce under devtools.
         const reason = err && err.message ? ` (${err.message})` : "";
         showCopyToast(`Couldn't load "${queuedNodes[i].name}"${reason}`);
+        needsFinalRender = true;
         return null;
       }
     }));
     loadedIds.push(...results.filter(id => id != null));
   } finally {
-    render();
+    if (needsFinalRender) render();
   }
 
   if (mergeShell) {
@@ -24168,25 +24374,51 @@ async function loadUrlIntoTree(url) {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
     return;
   }
-  let res;
-  try {
-    res = await fetch(url);
-  } catch (err) {
-    showCopyToast("Could not load log from URL (network or CORS error)");
-    return;
-  }
-  if (!res.ok) {
-    showCopyToast(`Could not load log from URL (HTTP ${res.status})`);
-    return;
-  }
-  const buf = await res.arrayBuffer();
-  const text = new TextDecoder().decode(buf);
   let name = "remote.log";
   try {
     const last = decodeURIComponent(new URL(url, location.href).pathname.split("/").filter(Boolean).pop() || "");
     if (last) name = last;
   } catch { /* keep the "remote.log" fallback */ }
-  const node = await addFile(name, text);
+  // Desktop wrapper: parse the file natively (see canParseNatively) — a
+  // meta-format is split in JS, so it always takes the fetch below.
+  let node = null;
+  let size = null;
+  const formatId = resolveFormatIdForFilename(name);
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  if (canParseNatively(urlTailHandle(url)) && !(fmt && fmt.mode === "meta")) {
+    node = createFileNode(name);
+    node.formatId = formatId;
+    try {
+      size = (await parseLocalFileNatively(url, node, fraction => {
+        node.loadFraction = fraction;
+        scheduleLoadRender(node.id);
+      })).size;
+      delete node.loadFraction;
+      // Rendered once, at the end of this function (tail included).
+      if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
+    } catch (err) {
+      // Not natively parseable — the fetch below fills this same node.
+    }
+  }
+  if (size === null) {
+    let res;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      if (node) deleteNode(node.id);
+      showCopyToast("Could not load log from URL (network or CORS error)");
+      return;
+    }
+    if (!res.ok) {
+      if (node) deleteNode(node.id);
+      showCopyToast(`Could not load log from URL (HTTP ${res.status})`);
+      return;
+    }
+    const buf = await res.arrayBuffer();
+    const text = new TextDecoder().decode(buf);
+    node = await addFile(name, text, undefined, undefined, node || undefined);
+    size = buf.byteLength;
+  }
   // FEATURE_BACKLOG.md #52 ("Open File Location" / "Copy URL"): kept for
   // every ?url= deep-link, not just the desktop-local ones — a plain
   // http(s) report link has no OS folder to reveal, but the context menu
@@ -24195,7 +24427,7 @@ async function loadUrlIntoTree(url) {
   if (isDesktopLocalUrl(url)) {
     node.tail = {
       handle: urlTailHandle(url),
-      offset: buf.byteLength,
+      offset: size,
       pending: "",
       failed: false,
       busy: false,
@@ -25087,19 +25319,23 @@ async function loadFolderFile(folder, rec, auto) {
     render();
     return;
   }
-  let file;
-  try {
-    file = await rec.handle.getFile();
-  } catch (err) {
-    showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
-    return;
-  }
   // Non-log, inline-viewable file (this session's generalization — see
   // openInlineViewer's own comment): never becomes a real node/rec.nodeId,
   // same as a ZIP entry of one of these types. `auto` is never true here in
   // practice (applyFolderAutoRules' groupBy already excludes non-log recs),
   // but the check is unconditional regardless of caller.
   const viewKind = inlineViewableKind(rec.name);
+  // A log file the desktop wrapper parses natively is never fetched here
+  // (see canParseNatively) — loadOneFileIntoTree takes it from the handle.
+  let file = null;
+  if (viewKind || !canParseNatively(rec.handle)) {
+    try {
+      file = await rec.handle.getFile();
+    } catch (err) {
+      showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
+      return;
+    }
+  }
   if (viewKind) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mapKey = folderFileKey(rec);
@@ -25107,7 +25343,16 @@ async function loadFolderFile(folder, rec, auto) {
     return;
   }
   try {
-    const node = await loadOneFileIntoTree(rec.name, file, rec.handle, folder.id);
+    let node;
+    try {
+      node = await loadOneFileIntoTree(rec.name, file, rec.handle, folder.id);
+    } catch (err) {
+      if (file) throw err;
+      // Natively parsed: the read that failed is the one the getFile()
+      // above would otherwise have made — same message.
+      showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
+      return;
+    }
     rec.nodeId = node.id;
     rec.openedByAuto = !!auto;
     if (auto) {
@@ -26496,11 +26741,12 @@ function renderLiveMatchMinimap(hits, baseEntries) {
   const buckets = new Array(FILTER_MINIMAP_BUCKETS).fill(0);
   const ranks = new Array(FILTER_MINIMAP_BUCKETS).fill(Infinity);
   const span = max - min;
+  const bucketOf = makeLevelBucketer();
   for (const e of hits) {
     if (isNaN(e.ts)) continue;
     const i = span > 0 ? Math.min(FILTER_MINIMAP_BUCKETS - 1, Math.floor((e.ts - min) / span * FILTER_MINIMAP_BUCKETS)) : 0;
     buckets[i]++;
-    const rank = levelSortRank(levelBucket(e.level, e.formatId), e.formatId);
+    const rank = levelSortRank(bucketOf(e.level, e.formatId), e.formatId);
     if (rank < ranks[i]) ranks[i] = rank;
   }
   const peak = Math.max(...buckets);
