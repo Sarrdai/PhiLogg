@@ -8444,29 +8444,56 @@ function compileOneFormat(fmt) {
     // gracefully instead of throwing.
     return { isHeaderLine: () => true, parseHeader: line => applyFormatMatch({ message: line }, line, null) };
   }
-  const dateFrag = compileDateFormat(fmt.tsFormat);
-  let compiled = null;
-  if (fmt.mode === "regex") {
-    const v = validateFormatRegex(fmt.regex || "");
-    if (!v.error) compiled = { regex: v.regex };
-  } else {
-    const c = compileFormatPattern(fmt.pattern || "", fmt.tsFormat);
-    if (!c.error) compiled = c;
-  }
-  if (!compiled) {
+  const { dateFrag, regex } = compileFormatRegex(fmt);
+  if (!regex) {
     return {
       isHeaderLine: () => true,
       parseHeader: line => applyFormatMatch({ message: line }, line, dateFrag),
     };
   }
-  const wrapQuote = messageWrapQuote(compiled.regex.source);
+  const wrapQuote = messageWrapQuote(regex.source);
   return {
-    isHeaderLine: line => compiled.regex.test(line),
+    isHeaderLine: line => regex.test(line),
     parseHeader: line => {
-      const m = compiled.regex.exec(line);
+      const m = regex.exec(line);
       const entry = applyFormatMatch((m && m.groups) || {}, line, dateFrag);
       return m ? markOpenMessageQuote(entry, wrapQuote, line) : entry;
     },
+  };
+}
+
+// A pattern/regex-mode format's compiled line regex (null if it fails to
+// compile) and timestamp fragment — shared by compileOneFormat and
+// nativeFormatSpec, so the desktop's native parser is handed exactly the
+// regex this page itself would run.
+function compileFormatRegex(fmt) {
+  const dateFrag = compileDateFormat(fmt.tsFormat);
+  let regex = null;
+  if (fmt.mode === "regex") {
+    const v = validateFormatRegex(fmt.regex || "");
+    if (!v.error) regex = v.regex;
+  } else {
+    const c = compileFormatPattern(fmt.pattern || "", fmt.tsFormat);
+    if (!c.error) regex = c.regex;
+  }
+  return { dateFrag, regex };
+}
+
+// The description of a format the desktop wrapper's native parser
+// (window.philogg.parseLogFile, desktop/src-tauri/logparse) executes — the
+// page compiles, Rust only runs the result, so what a format *means* stays
+// defined here. Mirrors compileOneFormat branch for branch; null for a
+// meta-format, which is split in JS before any per-line parsing.
+function nativeFormatSpec(fmt) {
+  if (fmt.builtin && !fmt.edited) return { builtin: true, regex: null, dateRegex: null, dateOrder: [], wrapQuote: "" };
+  if (fmt.mode === "meta") return null;
+  const { dateFrag, regex } = compileFormatRegex(fmt);
+  return {
+    builtin: false,
+    regex: regex ? regex.source : null,
+    dateRegex: dateFrag ? dateFrag.matchRegex.source : null,
+    dateOrder: dateFrag ? dateFrag.order.slice() : [],
+    wrapQuote: regex ? messageWrapQuote(regex.source) : "",
   };
 }
 
@@ -8817,6 +8844,7 @@ function buildLogParseWorkerSrc() {
     compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
     formatLocation, applyFormatMatch, parseTimestamp, parseHeaderLine,
     messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
+    compileFormatRegex,
   ].map(fn => fn.toString()).join("\n\n");
   // A local, worker-scoped id counter — never the page's own uidCounter,
   // which is main-thread-only state a worker can't share. The main thread
@@ -8901,6 +8929,82 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
     };
     worker.postMessage({ text, fmt });
   });
+}
+
+/* ===================== Native parsing (desktop wrapper) =====================
+   Under the desktop wrapper a file opened from disk never has to pass
+   through this page as text at all: window.philogg.parseLogFile has the
+   Rust backend read it and parse it on every core at once
+   (desktop/src-tauri/logparse), streaming finished entries back in batches.
+   The format is still compiled HERE (nativeFormatSpec) — Rust only executes
+   the regex/date description it is handed, so the parsing rules have one
+   definition. Anything it can't take (a meta-format, a regex construct its
+   engine lacks, a missing bridge) rejects before a single entry is
+   appended, and the caller falls back to the ordinary read + parse. */
+function canParseNatively(handle) {
+  return !!(window.philogg && typeof window.philogg.parseLogFile === "function" &&
+    isUrlTailHandle(handle) && isDesktopLocalUrl(handle[URL_TAIL_HANDLE]));
+}
+
+// Rust returns timestamps "naive" — Date.UTC(y, mo, d, h, mi, s, ms) — and
+// this finishes parseTimestamp/parseTimestampGeneric's own
+// new Date(y, mo, d, h, mi, s, ms) in THIS engine, so DST gaps/overlaps and
+// the tz database are exactly the page's. The local offset is constant
+// within a minute of wall time, so one Date per distinct minute is enough.
+function makeNaiveTsLocalizer() {
+  const offsets = new Map();
+  return naive => {
+    const minute = Math.floor(naive / 60000);
+    let off = offsets.get(minute);
+    if (off === undefined) {
+      const n = new Date(minute * 60000);
+      const local = new Date(0);
+      // setFullYear, not the constructor — that would remap years 0..99.
+      local.setFullYear(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
+      local.setHours(n.getUTCHours(), n.getUTCMinutes(), 0, 0);
+      off = local.getTime() - minute * 60000;
+      offsets.set(minute, off);
+    }
+    return naive + off;
+  };
+}
+
+// Resolves with { size } (bytes read — the tail offset) once every entry is
+// on node.entries. onFraction(0..1) drives the row's progress fill. A
+// rejection leaves node.entries/entryIndex exactly as they were.
+async function parseLocalFileNatively(url, node, onFraction) {
+  const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  const spec = nativeFormatSpec(fmt);
+  if (!spec) throw new Error("meta-format");
+  // No compiled date format: Date.parse, which only this engine can answer.
+  const freeDate = !spec.builtin && !spec.dateRegex;
+  const localize = makeNaiveTsLocalizer();
+  const start = node.entries.length;
+  let orphaned = false;
+  try {
+    return await window.philogg.parseLogFile(url, spec, msg => {
+      if (orphaned) return;
+      // Deleted mid-load — same rule as parseLogTextInWorker: stop feeding
+      // the orphaned node; the caller's own existence check takes over.
+      if (state.nodes[node.id] !== node) { orphaned = true; return; }
+      if (msg.entries) {
+        for (const e of msg.entries) {
+          e.id = uid("e");
+          e.ts = freeDate ? (e.tsRaw ? parseTimestampGeneric(e.tsRaw, null) : NaN)
+            : e.ts == null ? NaN : localize(e.ts);
+          if (!e.fields || Object.keys(e.fields).length === 0) e.fields = EMPTY_ENTRY_FIELDS;
+          e.formatId = formatId;
+          entryIndex[e.id] = e;
+          node.entries.push(e);
+        }
+      }
+      if (onFraction && typeof msg.fraction === "number") onFraction(msg.fraction);
+    });
+  } catch (err) {
+    for (const e of node.entries.splice(start)) delete entryIndex[e.id];
+    throw err;
+  }
 }
 
 // Cheap, targeted update for JUST the loading file's own tree row (progress
@@ -23770,6 +23874,9 @@ function loadFiles(fileList) {
 // node via createFileNode — activateQueuedFileNode clears its .queued flag
 // and takes over the "insert into the active view" job createFileNode would
 // otherwise have done.
+// file may be null when canParseNatively(handle): the desktop wrapper then
+// reads and parses the file itself (parseLocalFileNatively), and only a
+// fallback ever fetches it here, through handle.getFile().
 async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   const node = existingNode || createFileNode(name, folderId);
   if (existingNode) activateQueuedFileNode(node);
@@ -23783,7 +23890,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     // live tail/localPath is wired for a meta-format file in v1 (see
     // loadMetaFormatText's own comment).
     deleteNode(node.id);
-    const text = await readFileWithProgress(file, () => {});
+    const text = await readFileWithProgress(file || await handle.getFile(), () => {});
     return await loadMetaFormatText(name, text, fmt0);
   }
   // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
@@ -23793,19 +23900,34 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   // either, so in practice this stays unset and the path arrives via
   // loadDesktopLocalFiles instead. Kept because it costs nothing and is the
   // only route that would work for a File the page opened itself.
-  if (window.philogg && typeof window.philogg.getPathForFile === "function") {
+  if (file && window.philogg && typeof window.philogg.getPathForFile === "function") {
     const resolvedPath = window.philogg.getPathForFile(file);
     if (resolvedPath) node.localPath = resolvedPath;
   }
+  let size = file ? file.size : 0; // bytes consumed — where tailing picks up
   try {
-    const text = await readFileWithProgress(file, (loaded, total) => {
-      node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
-      scheduleLoadRender(node.id);
-    });
-    await parseLogTextAsync(text, node, (done, total) => {
-      node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
-      scheduleLoadRender(node.id);
-    });
+    if (!file) {
+      try {
+        size = (await parseLocalFileNatively(handle[URL_TAIL_HANDLE], node, fraction => {
+          node.loadFraction = fraction;
+          scheduleLoadRender(node.id);
+        })).size;
+      } catch (err) {
+        // Not natively parseable (see parseLocalFileNatively) — the ordinary route.
+        file = await handle.getFile();
+        size = file.size;
+      }
+    }
+    if (file) {
+      const text = await readFileWithProgress(file, (loaded, total) => {
+        node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
+        scheduleLoadRender(node.id);
+      });
+      await parseLogTextAsync(text, node, (done, total) => {
+        node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
+        scheduleLoadRender(node.id);
+      });
+    }
   } catch (err) {
     deleteNode(node.id); // reading/parsing failed — don't leave a permanently empty file behind
     throw err;
@@ -23831,7 +23953,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   if (handle) {
     node.tail = {
       handle,
-      offset: file.size,   // bytes consumed so far; the poll reads only file.slice(offset)
+      offset: size,        // bytes consumed so far; the poll reads only file.slice(offset)
       pending: "",         // trailing line fragment not yet terminated by a newline
       failed: false,       // set once TAIL_MAX_CONSECUTIVE_ERRORS polls in a row fail
       busy: false,         // guards against overlapping async polls on slow disks
@@ -23961,8 +24083,10 @@ async function loadFileDescriptors(descs) {
         // be rendered before the first byte is read — used by the desktop
         // route, where "reading" is a fetch of the wrapper's philogg://local
         // URL rather than an already-open File object.
-        const file = desc.file || await desc.openFile();
-        const node = await loadOneFileIntoTree(file.name, file, handle, null, queuedNodes[i]);
+        // ...unless the wrapper parses it natively, which needs no fetch at
+        // all (see canParseNatively).
+        const file = desc.file || (canParseNatively(handle) ? null : await desc.openFile());
+        const node = await loadOneFileIntoTree(file ? file.name : desc.name, file, handle, null, queuedNodes[i]);
         return node.id;
       } catch (err) {
         // One file's read/parse failure (loadOneFileIntoTree already removed
@@ -24168,25 +24292,50 @@ async function loadUrlIntoTree(url) {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
     return;
   }
-  let res;
-  try {
-    res = await fetch(url);
-  } catch (err) {
-    showCopyToast("Could not load log from URL (network or CORS error)");
-    return;
-  }
-  if (!res.ok) {
-    showCopyToast(`Could not load log from URL (HTTP ${res.status})`);
-    return;
-  }
-  const buf = await res.arrayBuffer();
-  const text = new TextDecoder().decode(buf);
   let name = "remote.log";
   try {
     const last = decodeURIComponent(new URL(url, location.href).pathname.split("/").filter(Boolean).pop() || "");
     if (last) name = last;
   } catch { /* keep the "remote.log" fallback */ }
-  const node = await addFile(name, text);
+  // Desktop wrapper: parse the file natively (see canParseNatively) — a
+  // meta-format is split in JS, so it always takes the fetch below.
+  let node = null;
+  let size = null;
+  const formatId = resolveFormatIdForFilename(name);
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  if (canParseNatively(urlTailHandle(url)) && !(fmt && fmt.mode === "meta")) {
+    node = createFileNode(name);
+    node.formatId = formatId;
+    try {
+      size = (await parseLocalFileNatively(url, node, fraction => {
+        node.loadFraction = fraction;
+        scheduleLoadRender(node.id);
+      })).size;
+      delete node.loadFraction;
+      if (state.nodes[node.id] === node) flushLoadRender(node.id);
+    } catch (err) {
+      // Not natively parseable — the fetch below fills this same node.
+    }
+  }
+  if (size === null) {
+    let res;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      if (node) deleteNode(node.id);
+      showCopyToast("Could not load log from URL (network or CORS error)");
+      return;
+    }
+    if (!res.ok) {
+      if (node) deleteNode(node.id);
+      showCopyToast(`Could not load log from URL (HTTP ${res.status})`);
+      return;
+    }
+    const buf = await res.arrayBuffer();
+    const text = new TextDecoder().decode(buf);
+    node = await addFile(name, text, undefined, undefined, node || undefined);
+    size = buf.byteLength;
+  }
   // FEATURE_BACKLOG.md #52 ("Open File Location" / "Copy URL"): kept for
   // every ?url= deep-link, not just the desktop-local ones — a plain
   // http(s) report link has no OS folder to reveal, but the context menu
@@ -24195,7 +24344,7 @@ async function loadUrlIntoTree(url) {
   if (isDesktopLocalUrl(url)) {
     node.tail = {
       handle: urlTailHandle(url),
-      offset: buf.byteLength,
+      offset: size,
       pending: "",
       failed: false,
       busy: false,
@@ -25087,19 +25236,23 @@ async function loadFolderFile(folder, rec, auto) {
     render();
     return;
   }
-  let file;
-  try {
-    file = await rec.handle.getFile();
-  } catch (err) {
-    showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
-    return;
-  }
   // Non-log, inline-viewable file (this session's generalization — see
   // openInlineViewer's own comment): never becomes a real node/rec.nodeId,
   // same as a ZIP entry of one of these types. `auto` is never true here in
   // practice (applyFolderAutoRules' groupBy already excludes non-log recs),
   // but the check is unconditional regardless of caller.
   const viewKind = inlineViewableKind(rec.name);
+  // A log file the desktop wrapper parses natively is never fetched here
+  // (see canParseNatively) — loadOneFileIntoTree takes it from the handle.
+  let file = null;
+  if (viewKind || !canParseNatively(rec.handle)) {
+    try {
+      file = await rec.handle.getFile();
+    } catch (err) {
+      showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
+      return;
+    }
+  }
   if (viewKind) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mapKey = folderFileKey(rec);
@@ -25107,7 +25260,16 @@ async function loadFolderFile(folder, rec, auto) {
     return;
   }
   try {
-    const node = await loadOneFileIntoTree(rec.name, file, rec.handle, folder.id);
+    let node;
+    try {
+      node = await loadOneFileIntoTree(rec.name, file, rec.handle, folder.id);
+    } catch (err) {
+      if (file) throw err;
+      // Natively parsed: the read that failed is the one the getFile()
+      // above would otherwise have made — same message.
+      showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
+      return;
+    }
     rec.nodeId = node.id;
     rec.openedByAuto = !!auto;
     if (auto) {

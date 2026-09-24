@@ -36,6 +36,15 @@ packaged as a bundle resource. Opening a file directly:
 npm run dev -- -- path/to/file.log
 ```
 
+The native log parser (`src-tauri/logparse/`, see `docs/desktop.md` →
+"Native parsing") is its own crate with no Tauri dependency, so its tests
+run without the webview toolchain:
+
+```
+cd desktop/src-tauri
+cargo test -p philogg-logparse
+```
+
 Builds are produced by two manual workflows sharing the same per-OS
 checkboxes and build steps: `.github/workflows/build-tester-files.yml`
 (uploads installers as workflow run artifacts named `PhiLogg-<sha>.<ext>`,
@@ -67,6 +76,8 @@ strip offers return-to-full and a minimize back to the taskbar),
 `settings.json` mirroring of the `philogg-*` settings, "Open File Location" /
 "Copy Path", the system font list for the UI font picker, a folder watch
 that does not go through the browser's File System Access API (see below),
+native log parsing (a file opened from disk is read and parsed by the Rust
+backend on every core, with the same rules as the page's own parser),
 and — Windows only, an optional installer component — Explorer right-click
 entries: "Open in PhiLogg" on a `.log`/`.zip` file and "Watch this Folder"
 on a folder, cleanly removed on uninstall (see `docs/desktop.md` → "Windows
@@ -239,6 +250,18 @@ on a real desktop session (`npm run dev`), on Windows and macOS especially —
 the injected strip's `markDragRegion` drag handle and the async
 `pip_enter`/`pip_exit`/`pip_minimize` commands (see `docs/desktop.md` →
 "Picture-in-picture") are the parts most likely to need platform adjustment.
+
+**Native parsing (2026-09-24)** is verified by `cargo check`, the crate's own
+`cargo test` (the golden fixture shared with the jsdom suite, a brute-force
+`formatLocation` check, the JS-regex translation) and the jsdom suite's
+Group 264 (a stubbed bridge). Not yet run inside a real webview — the
+IPC channel stand-in in `inject.js` (message reordering, the `{end: true}`
+marker) is the part only a real run exercises. Measured on the crate alone
+(1M entries / 154 MB, default format, 4 cores): read ~0.25s, parse ~0.6s,
+JSON ~0.3s (a regex-mode format: parse ~1.3s); the page's own parse loop
+needed ~3.7s on one thread for the same file. Not in either number: the
+page turning the JSON batches into entries on its main thread, which only a
+real webview run can measure.
 
 **Not yet run on macOS.** The window chrome specifically (the injected
 title-bar buttons, the drag region, rounded corners, the traffic-light
