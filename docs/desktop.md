@@ -350,20 +350,38 @@ parses `tsRaw` itself.
 parsed with rayon; each slice keeps the lines before its first header, and
 the stitch step appends those to the previous slice's last entry (they are
 its continuation lines — including the open-quote bookkeeping, which lives
-on the entry). The entries are then serialized to JSON in parallel, a few
-10,000-entry batches at a time, and sent over a Tauri IPC channel in order.
+on the entry). The entries are then encoded into binary batches of 25,000
+in parallel, a few at a time, and sent over a Tauri IPC channel in order.
+
+**The transport is binary, not JSON** (`logparse/src/batch.rs` has the
+layout). The first version sent JSON and gained nothing over the JS path
+in a real build (person-reported, confirmed with a WebKitGTK run under
+Xvfb: 100 MB / 650k entries, Rust finished in 1.0 s, the page had the
+entries at 8.2 s vs. 8.6 s on the old path) — ~3 bytes of JSON per byte of
+log went through the IPC and `JSON.parse` ran on the main thread. A batch
+now carries all its strings in **one UTF-8 buffer**, decoded by a single
+`TextDecoder` call in `decodeNativeBatch`; every field is a `substring` of
+it, located by varint offsets relative to the entry's `raw`, and a field
+that already occurs inside `raw` (most of them) isn't written a second
+time. Timestamps travel as a `Float64Array` (NaN for none). Same run
+afterwards: the native part is done at ~2.8 s (IPC ~1.1 s, decode ~0.45 s,
+creating the entries/ids/`entryIndex` ~0.65 s), the whole load 4.3 s vs.
+8.4 s on the JS path. What is left is page-side and shared by both paths:
+the first `render()` of the loaded file (~1.1 s here) and one more
+`render()` right after it.
 
 **The channel.** `inject.js` has a small stand-in for `@tauri-apps/api`'s
 `Channel` (reorders by `index` — large messages go through a separate fetch
 and can overtake each other — and resolves once the `{end: true}` marker
 says Rust dropped its side). Messages are `{type: "progress", fraction}`
-while parsing (0–0.4 of the row's bar) and `{type: "chunk", fraction,
-entries}` for the batches (0.4–1). Each entry arrives in the page's own
-entry shape and key order (`logparse::Entry`'s `Serialize`);
-`parseLocalFileNatively` assigns the page id, localizes `ts`, swaps an empty
-`fields` for the shared `EMPTY_ENTRY_FIELDS` and stamps `formatId`, so a
-native entry is indistinguishable from a JS-parsed one. A rejection rolls
-back whatever batches had already been appended.
+JSON while parsing (0–0.4 of the row's bar) and the batches as
+`ArrayBuffer`s (0.4–1, the fraction is in each batch's header).
+`decodeNativeBatch` builds each entry in the page's own shape and key order
+(one V8 hidden class for native and JS-parsed entries, custom-column-free
+entries sharing `EMPTY_ENTRY_FIELDS`); `parseLocalFileNatively` then
+assigns the page id, localizes `ts` and stamps `formatId`, so a native
+entry is indistinguishable from a JS-parsed one. A rejection rolls back
+whatever batches had already been appended.
 
 **Where it's used.** `canParseNatively(handle)` — the bridge exists and the
 handle is a `urlTailHandle` over a `philogg://local/…` URL — gates the three
@@ -395,6 +413,12 @@ crate's `tests/golden.rs` checks the Rust parser against it at slice sizes
 from 1 byte to 1 MB. After a deliberate change to JS parsing, regenerate
 with `UPDATE_NATIVE_GOLDEN=1 TZ=UTC GROUP=264 npm test` (in `tests/`), then
 make `cargo test -p philogg-logparse` (in `desktop/src-tauri/`) pass again.
+The binary layout is pinned the same way across the language boundary:
+`tests/fixtures/native-batch-golden.json` holds every golden case encoded
+by Rust (`cargo test` checks the encoding is unchanged and round-trips),
+and Group 264 feeds exactly those bytes to the page's `decodeNativeBatch`
+and compares the result with the JS parser's entries. After a deliberate
+layout change: `UPDATE_NATIVE_BATCH=1 cargo test -p philogg-logparse`.
 
 ## Windows Explorer context-menu integration
 

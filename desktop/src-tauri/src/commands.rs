@@ -259,8 +259,9 @@ pub fn path_for_local_url(app: AppHandle, url: String) -> Option<String> {
 /// protocol handler does, so the page can't name an arbitrary path — and
 /// parses it under `format` (the page's own `nativeFormatSpec`) on every core
 /// via `philogg-logparse`, streaming the entries back over `on_event`:
-/// `{type:"progress", fraction}` while parsing, then `{type:"chunk",
-/// fraction, entries}` batches in file order.
+/// `{type:"progress", fraction}` JSON while parsing, then the entries as
+/// binary batches in file order (`logparse::batch` has the layout — JSON
+/// batches were the first version and cost several times the parse itself).
 ///
 /// Errors come back before anything is streamed (the format is compiled
 /// first), which is what lets the page fall back to its own parser cleanly
@@ -291,7 +292,7 @@ pub struct ParseSummary {
 /// Share of the row's progress bar spent parsing; delivering the batches
 /// fills the rest.
 const PARSE_SHARE: f64 = 0.4;
-const BATCH_ENTRIES: usize = 10_000;
+const BATCH_ENTRIES: usize = 25_000;
 
 fn parse_and_stream(
     path: &std::path::Path,
@@ -317,7 +318,9 @@ fn parse_and_stream(
         }
     });
     drop(text);
-    lp::for_each_chunk_message(&entries, BATCH_ENTRIES, PARSE_SHARE, &mut |json| send(json))?;
+    lp::batch::for_each_batch(&entries, BATCH_ENTRIES, PARSE_SHARE, &mut |bytes| {
+        channel.send(InvokeResponseBody::Raw(bytes)).map_err(|e| e.to_string())
+    })?;
     Ok(ParseSummary { size })
 }
 

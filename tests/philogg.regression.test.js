@@ -29344,20 +29344,23 @@ group(264);
     w.deleteNode(node.id);
     return entries;
   }
-  // A stand-in for inject.js's parseLogFile: streams `entries` (wire shape)
-  // in two batches the way commands.rs does, then resolves { size }.
-  function nativeStub(bridge, entries, size, opts = {}) {
+  // Each golden case encoded by the RUST side (logparse::batch, via its
+  // `cargo test`) — decoding these with the page's decodeNativeBatch is the
+  // cross-language check of the binary layout.
+  const batches = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "native-batch-golden.json"), "utf8"));
+  // A stand-in for inject.js's parseLogFile: a progress note, then the
+  // case's binary batch (fraction 0.5), the way commands.rs streams them;
+  // resolves { size }.
+  function nativeStub(bridge, caseName, size, opts = {}) {
     bridge.calls = [];
     bridge.parseLogFile = async (url, spec, onMessage) => {
       bridge.calls.push({ url, spec });
       await Promise.resolve();
       if (opts.rejectBefore) throw new Error(opts.rejectBefore);
       onMessage({ type: "progress", fraction: 0.2 });
-      const copy = JSON.parse(JSON.stringify(entries));
-      const half = Math.ceil(copy.length / 2);
-      onMessage({ type: "chunk", fraction: 0.7, entries: copy.slice(0, half) });
+      const win = bridge.window;
+      onMessage(win.Uint8Array.from(Buffer.from(batches[caseName], "base64")).buffer);
       if (opts.rejectAfter) throw new Error(opts.rejectAfter);
-      onMessage({ type: "chunk", fraction: 1, entries: copy.slice(half) });
       return { size };
     };
   }
@@ -29415,16 +29418,19 @@ group(264);
 
   await withApp(async (w, d, T) => {
     section("264b. Entries streamed by the native parser are adopted exactly like JS-parsed ones");
+    bridge.window = w;
+    assert(Object.keys(batches).length === golden.cases.filter(c => c.nativeSupported !== false).length,
+      "the Rust-encoded batch fixture covers every natively supported golden case");
     for (const c of golden.cases.filter(c => c.nativeSupported !== false)) {
       const jsEntries = await jsParse(w, T, c);
-      nativeStub(bridge, c.entries, 99);
+      nativeStub(bridge, c.name, 99);
       const node = w.createFileNode(c.name + "-native.log");
       node.formatId = c.format.id;
       const fractions = [];
       const res = await w.parseLocalFileNatively("philogg://local/1/x.log", node, f => fractions.push(f));
       assert(res.size === 99 && bridge.calls[0].url === "philogg://local/1/x.log" && JSON.stringify(bridge.calls[0].spec) === JSON.stringify(c.spec),
         c.name + ": the bridge gets the url and the golden spec; resolves with the size");
-      assert(fractions.join(",") === "0.2,0.7,1", c.name + ": progress fractions pass through, got " + fractions.join(","));
+      assert(fractions.join(",") === "0.2,0.5", c.name + ": progress fractions pass through, got " + fractions.join(","));
       assert(node.entries.length === jsEntries.length, c.name + ": same entry count as JS");
       node.entries.forEach((e, i) => {
         const j = jsEntries[i];
@@ -29439,7 +29445,7 @@ group(264);
     }
 
     // A rejection after a batch already arrived rolls it back.
-    nativeStub(bridge, golden.cases[0].entries, 5, { rejectAfter: "boom" });
+    nativeStub(bridge, golden.cases[0].name, 5, { rejectAfter: "boom" });
     const node = w.createFileNode("rollback.log");
     let err = null;
     try { await w.parseLocalFileNatively("philogg://local/2/r.log", node, () => {}); } catch (e) { err = e; }
@@ -29450,8 +29456,9 @@ group(264);
     section("264c. Desktop load routes parse natively without fetching the file; fall back when refused");
     const c = golden.cases.find(x => x.name === "builtin-crlf-trailing-newline");
     installFetch(w, c.text);
+    bridge.window = w;
 
-    nativeStub(bridge, c.entries, 4321);
+    nativeStub(bridge, c.name, 4321);
     await w.loadDesktopLocalFiles({ files: [{ name: "n.log", url: "philogg://local/7/n.log", path: "/tmp/n.log" }] });
     let node = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "n.log");
     assert(node && node.entries.length === c.entries.length, "a dropped/picked file lands with the native entries");
@@ -29460,20 +29467,20 @@ group(264);
     assert(node.tail && node.tail.offset === 4321 && node.localPath === "/tmp/n.log", "tailing resumes at the byte size Rust read; the path is kept");
     assert(node.loadFraction === undefined, "the progress fill is cleared once loaded");
 
-    nativeStub(bridge, c.entries, 1, { rejectBefore: "lookaround" });
+    nativeStub(bridge, c.name, 1, { rejectBefore: "lookaround" });
     await w.loadDesktopLocalFiles({ files: [{ name: "f.log", url: "philogg://local/8/f.log", path: "/tmp/f.log" }] });
     node = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "f.log");
     assert(node && node.entries.length === c.entries.length && w.fetchCalls.filter(u => u.endsWith("/f.log")).length === 1,
       "a refused native parse falls back to fetch + the JS parser, got " + (node && node.entries.length) + " / " + w.fetchCalls.join(","));
     assert(node.tail.offset === new w.TextEncoder().encode(c.text).byteLength, "...with the fetched byte length as the tail offset");
 
-    nativeStub(bridge, c.entries, 777);
+    nativeStub(bridge, c.name, 777);
     await w.loadUrlIntoTree("philogg://local/9/u.log");
     node = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "u.log");
     assert(node && node.entries.length === c.entries.length && !w.fetchCalls.some(u => u.endsWith("/u.log")) && node.tail.offset === 777,
       "the file-association route (loadUrlIntoTree) parses natively too");
 
-    nativeStub(bridge, c.entries, 1, { rejectBefore: "no" });
+    nativeStub(bridge, c.name, 1, { rejectBefore: "no" });
     await w.loadUrlIntoTree("philogg://local/10/v.log");
     const vs = T.state.rootIds.map(id => T.state.nodes[id]).filter(n => n.name === "v.log");
     assert(vs.length === 1 && vs[0].entries.length === c.entries.length && w.fetchCalls.filter(u => u.endsWith("/v.log")).length === 1,
@@ -29486,40 +29493,40 @@ group(264);
     T.state.formatRules.push({ glob: "*.meta.log", formatId: "meta1", order: -1 });
     w.invalidateFormatCompileCache(); w.invalidateGlobCompileCache();
     installFetch(w, "1 a\n<b>\n2 c\n");
-    nativeStub(bridge, [], 1);
+    nativeStub(bridge, c.name, 1);
     await w.loadUrlIntoTree("philogg://local/11/m.meta.log");
     // (the other files opened above are tailing, and their polls fetch too)
     const metaFetches = w.fetchCalls.filter(u => u.endsWith("/m.meta.log")).length;
     assert(bridge.calls.length === 0 && metaFetches === 1, "a meta-format file goes through fetch + the JS split, got " + bridge.calls.length + "/" + metaFetches);
   }, { philogg: bridge });
 
-  const dirsN = { "/logs": { "a.log": makeLog(0, 4) } };
+  const crlfCase = golden.cases.find(x => x.name === "builtin-crlf-trailing-newline");
+  const dirsN = { "/logs": { "a.log": crlfCase.text } };
   const folderBridge = nativeFolderBridge(dirsN);
   folderBridge.picked = { path: "/logs", name: "logs" };
   await withApp(async (w, d, T) => {
     section("264d. A natively listed folder file is parsed natively too");
     folderBridge.installFetch(w);
-    const ref = await w.addFile("ref.log", makeLog(0, 4));
-    const wire = ref.entries.map(e => toWire(e, false));
+    folderBridge.window = w;
     let fetched = 0;
     const realFetch = w.fetch;
     w.fetch = async url => { fetched++; return realFetch(url); };
-    nativeStub(folderBridge, wire, 555);
+    nativeStub(folderBridge, crlfCase.name, 555);
     await w.openFolderPickerFlow();
     const folder = T.state.folders[0];
     const rec = folder.files.find(f => f.name === "a.log");
     await w.loadFolderFile(folder, rec);
     const node = T.state.nodes[rec.nodeId];
-    assert(node && node.entries.length === 4 && fetched === 0 && node.tail.offset === 555 && node.localPath === "/logs/a.log",
+    assert(node && node.entries.length === crlfCase.entries.length && fetched === 0 && node.tail.offset === 555 && node.localPath === "/logs/a.log",
       "loadFolderFile hands the listed file to the native parser, no fetch, got " + (node && node.entries.length) + "/" + fetched);
 
-    nativeStub(folderBridge, wire, 1, { rejectBefore: "gone" });
+    nativeStub(folderBridge, crlfCase.name, 1, { rejectBefore: "gone" });
     const rec2 = { name: "missing.log", handle: w.urlTailHandle("philogg://local/404/missing.log", "/logs/missing.log") };
     await w.loadFolderFile(folder, rec2);
     assert(!rec2.nodeId && d.querySelector("#copyToast").textContent.includes("moved or deleted"),
       "a file that can't be read either way gets the usual \"moved or deleted\" notice");
     const localize = w.makeNaiveTsLocalizer();
-    assert(node.entries[0].ts === localize(wire[0].ts), "sanity: timestamps localized");
+    assert(node.entries[0].ts === localize(crlfCase.entries[0].ts), "sanity: timestamps localized");
   }, { philogg: folderBridge });
 
   if (groupSelected()) {
