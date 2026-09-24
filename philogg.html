@@ -8078,8 +8078,8 @@ async function parseLogTextAsync(text, node, onProgress) {
       // Worker unavailable, or building/running its blob failed (blocked
       // blob: URLs, out of memory, …) — fall through to the plain loop
       // below so a load never hard-fails just because the fast path didn't
-      // work. node.entries/entryIndex are untouched at this point: nothing
-      // is appended until the worker's first "chunk" message.
+      // work. node.entries/entryIndex are as they were before the call:
+      // parseLogTextInWorker rolls back whatever it appended before failing.
     }
   }
   const compiled = getCompiledFormat(formatId);
@@ -8844,14 +8844,23 @@ function buildLogParseWorkerSrc() {
     compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
     formatLocation, applyFormatMatch, parseTimestamp, parseHeaderLine,
     messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
-    compileFormatRegex,
+    compileFormatRegex, encodeEntryBatch,
   ].map(fn => fn.toString()).join("\n\n");
   // A local, worker-scoped id counter — never the page's own uidCounter,
   // which is main-thread-only state a worker can't share. The main thread
   // reassigns real ids when it merges each chunk back in (see
   // parseLogTextInWorker), so these only need to be unique within one file.
   const uidDef = "let workerUidCounter = 0;\nfunction uid(prefix) { return prefix + (++workerUidCounter); }";
+  // Finished entries go back as binary batches (encodeEntryBatch — the
+  // native parser's layout, read by the page's own decodeNativeBatch), the
+  // ArrayBuffer transferred rather than copied: structured-cloning ~10
+  // strings per entry and unpacking them again on the main thread cost that
+  // thread ~1.4s per 650k entries.
   const mainLoop = [
+    'function postEntries(entries) {',
+    '  const batch = encodeEntryBatch(entries, 0);',
+    '  postMessage({ type: "batch", buf: batch.buf, strings: batch.strings }, [batch.buf]);',
+    '}',
     'self.onmessage = (ev) => {',
     '  const { text, fmt } = ev.data;',
     '  const compiled = compileOneFormat(fmt);',
@@ -8868,12 +8877,12 @@ function buildLogParseWorkerSrc() {
     '      appendContinuationLine(current, line);',
     '    }',
     '    if (i % PARSE_CHUNK_LINES === 0) {',
-    '      if (pending.length) { postMessage({ type: "chunk", entries: pending }); pending = []; }',
+    '      if (pending.length) { postEntries(pending); pending = []; }',
     '      postMessage({ type: "progress", done: i, total: lines.length });',
     '    }',
     '  }',
     '  if (current) pending.push(current);',
-    '  if (pending.length) postMessage({ type: "chunk", entries: pending });',
+    '  if (pending.length) postEntries(pending);',
     '  postMessage({ type: "done", total: lines.length });',
     '};',
   ].join("\n");
@@ -8889,46 +8898,192 @@ function getLogParseWorkerUrl() {
   return logParseWorkerUrl;
 }
 
-// Mirrors the main-thread loop's chunked streaming: node.entries fills in
-// live in the same PARSE_CHUNK_LINES-sized batches, just produced by the
-// worker instead. Rejects (never resolves-with-partial-work) on any worker
-// failure so parseLogTextAsync can fall back to the plain loop cleanly.
+// Splits a file's text into up to n pieces that each parse on their own to
+// exactly the entries the whole text parses to: every cut sits right before
+// a header line (isHeaderLine), so a continuation line — a stack trace, a
+// multi-line message — never ends up in a different piece than its entry,
+// and no piece starts with lines the parser would drop. A piece ends before
+// its last line's terminator ("\n" or "\r\n"), so splitting it on
+// /\r\n|\n/ yields exactly the whole text's lines in that range. A cut that
+// finds no header line within PARALLEL_PARSE_MAX_SCAN lines is skipped
+// (fewer, bigger pieces). Returns [start, end) offsets.
+const PARALLEL_PARSE_MAX_SCAN = 100000;
+function splitTextAtHeaderLines(text, isHeaderLine, n) {
+  const pieces = [];
+  let start = 0;
+  for (let k = 1; k < n; k++) {
+    const nl = text.indexOf("\n", Math.max(start, Math.floor(text.length * k / n)));
+    if (nl < 0) break;
+    let lineStart = nl + 1, cut = -1;
+    for (let scanned = 0; lineStart < text.length && scanned < PARALLEL_PARSE_MAX_SCAN; scanned++) {
+      let lineEnd = text.indexOf("\n", lineStart);
+      if (lineEnd < 0) lineEnd = text.length;
+      const contentEnd = lineEnd > lineStart && lineEnd < text.length && text.charCodeAt(lineEnd - 1) === 13 ? lineEnd - 1 : lineEnd;
+      if (isHeaderLine(text.slice(lineStart, contentEnd))) { cut = lineStart; break; }
+      lineStart = lineEnd + 1;
+    }
+    if (cut <= start) continue;
+    const end = text.charCodeAt(cut - 2) === 13 ? cut - 2 : cut - 1; // drop the previous line's terminator
+    pieces.push([start, end]);
+    start = cut;
+  }
+  pieces.push([start, text.length]);
+  return pieces;
+}
+
+// Pieces smaller than this aren't worth a worker of their own.
+const PARALLEL_PARSE_MIN_CHARS = 1 << 20;
+function parallelParseWorkerCount(textLength) {
+  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 1;
+  return Math.max(1, Math.min(cores, 16, Math.floor(textLength / PARALLEL_PARSE_MIN_CHARS)));
+}
+
+// Parses on every core: the text is cut at header lines
+// (splitTextAtHeaderLines) into one piece per worker, and the pieces'
+// entries are appended in file order — a later piece's batches wait until
+// every earlier piece is complete — with ids assigned here, on the main
+// thread (uid/entryIndex are main-thread state), in file order. A worker
+// batch's ts is already final: the worker ran parseTimestamp/
+// parseTimestampGeneric itself, in this same engine and time zone — unlike
+// a native batch, whose naive ts parseLocalFileNatively still localizes
+// (makeNaiveTsLocalizer). Rejects on any worker failure with node.entries/
+// entryIndex rolled back, so parseLogTextAsync can fall back to the plain
+// loop cleanly.
 function parseLogTextInWorker(text, formatId, node, onProgress) {
   const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  const pieces = splitTextAtHeaderLines(text, getCompiledFormat(formatId).isHeaderLine, parallelParseWorkerCount(text.length));
+  const start = node.entries.length;
   return new Promise((resolve, reject) => {
-    let worker;
-    try {
-      worker = new Worker(getLogParseWorkerUrl());
-    } catch (err) {
+    const workers = [];
+    const queued = pieces.map(() => []); // decoded entry arrays not yet appended, per piece
+    const finished = pieces.map(() => false);
+    const progress = pieces.map(() => 0);  // 0..1 per piece
+    let next = 0;       // the piece whose entries are being appended
+    let settled = false;
+    const stop = () => { settled = true; workers.forEach(wk => wk.terminate()); };
+    const fail = err => {
+      if (settled) return;
+      stop();
+      for (const e of node.entries.splice(start)) delete entryIndex[e.id];
       reject(err);
-      return;
-    }
-    worker.onerror = (err) => { worker.terminate(); reject(err); };
-    worker.onmessage = (ev) => {
-      const msg = ev.data;
-      if (msg.type === "chunk") {
-        // Deleted mid-load (by the person, or a race) — stop feeding the
-        // now-orphaned node/entryIndex and stop the background parse
-        // outright, instead of leaking entries into them for the rest of
-        // the file. Resolve (not reject) so the awaiting caller just
-        // proceeds to its own existence check instead of hitting the
-        // worker-failure fallback path.
-        if (state.nodes[node.id] !== node) { worker.terminate(); resolve(); return; }
-        for (const entry of msg.entries) {
-          entry.id = uid("e");
-          entryIndex[entry.id] = entry;
-          node.entries.push(entry);
-        }
-      } else if (msg.type === "progress") {
-        if (onProgress) onProgress(msg.done, msg.total);
-      } else if (msg.type === "done") {
-        if (onProgress) onProgress(msg.total, msg.total);
-        worker.terminate();
-        resolve();
+    };
+    const append = entries => {
+      for (const e of entries) {
+        e.id = uid("e");
+        e.formatId = formatId;
+        entryIndex[e.id] = e;
+        node.entries.push(e);
       }
     };
-    worker.postMessage({ text, fmt });
+    const drain = () => {
+      while (next < pieces.length) {
+        for (const entries of queued[next]) append(entries);
+        queued[next] = [];
+        if (!finished[next]) return;
+        next++;
+      }
+      stop();
+      if (onProgress) onProgress(text.length, text.length);
+      resolve();
+    };
+    const reportProgress = () => {
+      if (!onProgress) return;
+      let done = 0;
+      pieces.forEach(([a, b], i) => { done += progress[i] * (b - a); });
+      onProgress(done, text.length);
+    };
+    pieces.forEach(([a, b], i) => {
+      if (settled) return;
+      let worker;
+      try {
+        worker = new Worker(getLogParseWorkerUrl());
+      } catch (err) {
+        fail(err);
+        return;
+      }
+      workers.push(worker);
+      worker.onerror = err => fail(err);
+      worker.onmessage = ev => {
+        if (settled) return;
+        // Deleted mid-load (by the person, or a race) — stop feeding the
+        // now-orphaned node/entryIndex and stop the background parse
+        // outright. Resolve (not reject) so the awaiting caller just
+        // proceeds to its own existence check instead of hitting the
+        // worker-failure fallback path.
+        if (state.nodes[node.id] !== node) { stop(); resolve(); return; }
+        const msg = ev.data;
+        if (msg.type === "batch") {
+          queued[i].push(decodeNativeBatch(msg.buf, msg.strings).entries);
+          if (i === next) drain();
+        } else if (msg.type === "progress") {
+          progress[i] = msg.total ? msg.done / msg.total : 1;
+          reportProgress();
+        } else if (msg.type === "done") {
+          progress[i] = 1;
+          finished[i] = true;
+          reportProgress();
+          if (i === next) drain();
+        }
+      };
+      worker.postMessage({ text: pieces.length === 1 ? text : text.slice(a, b), fmt });
+    });
   });
+}
+
+// Writes entries into the binary batch layout the desktop's native parser
+// sends (desktop/src-tauri/logparse/src/batch.rs, read by decodeNativeBatch
+// below): the log-parse worker's transport. Mirrors batch.rs's encoder —
+// every string once, a field found inside its entry's raw referenced there
+// instead of written again, positions in UTF-16 code units — with one
+// difference: the string section stays a JS string (`strings`) next to the
+// ArrayBuffer (`buf`: header, ts, reference table) instead of being UTF-8
+// encoded onto its end. Posting a flat string is a plain copy, while
+// TextEncoder in the worker plus TextDecoder on the main thread cost ~6ms
+// per MB — and a string also carries a lone surrogate unchanged, which a
+// UTF-8 round trip would replace. ts goes in as-is (see
+// parseLogTextInWorker on local vs. naive ts).
+function encodeEntryBatch(entries, fraction) {
+  const parts = [];
+  let pos = 0;
+  let tab = new Uint8Array(entries.length * 24 + 64);
+  let p = 0;
+  const varint = v => {
+    if (p + 5 > tab.length) { const t = new Uint8Array(tab.length * 2); t.set(tab); tab = t; }
+    while (v >= 0x80) { tab[p++] = (v & 0x7F) | 0x80; v >>>= 7; }
+    tab[p++] = v;
+  };
+  const append = str => { const at = pos; parts.push(str); pos += str.length; return at; };
+  const field = (str, raw, rawAt) => {
+    const b = str === "" ? 0 : raw.indexOf(str);
+    varint((b >= 0 ? rawAt + b : append(str)) - rawAt);
+    varint(str.length);
+  };
+  let prevRaw = 0;
+  for (const e of entries) {
+    const raw = e.raw;
+    const rawAt = append(raw);
+    varint(rawAt - prevRaw);
+    varint(raw.length);
+    prevRaw = rawAt;
+    field(e.tsRaw, raw, rawAt); field(e.level, raw, rawAt); field(e.thread, raw, rawAt);
+    field(e.locationShort, raw, rawAt); field(e.locationFull, raw, rawAt);
+    field(e.method, raw, rawAt); field(e.message, raw, rawAt);
+    const keys = Object.keys(e.fields);
+    const open = e.msgOpenQuote !== undefined;
+    varint((open ? 1 : 0) | keys.length << 1);
+    if (open) field(e.msgOpenQuote, raw, rawAt);
+    for (const k of keys) { field(k, raw, rawAt); field(e.fields[k], raw, rawAt); }
+  }
+  const n = entries.length;
+  const buf = new ArrayBuffer(16 + n * 8 + p);
+  const head = new DataView(buf, 0, 16);
+  head.setFloat64(0, fraction, true);
+  head.setUint32(8, n, true);
+  head.setUint32(12, p, true);
+  const ts = new Float64Array(buf, 16, n);
+  for (let i = 0; i < n; i++) ts[i] = entries[i].ts;
+  new Uint8Array(buf, 16 + n * 8, p).set(tab.subarray(0, p));
+  return { buf, strings: parts.join("") };
 }
 
 /* ===================== Native parsing (desktop wrapper) =====================
@@ -8975,16 +9130,18 @@ function makeNaiveTsLocalizer() {
 // (applyFormatMatch/parseHeaderLine), minus id/formatId. The whole batch's
 // strings arrive as ONE UTF-8 buffer — decoded once, every field a
 // substring of it, located by varint offsets relative to the entry's raw;
-// ts stays naive (see makeNaiveTsLocalizer).
+// ts stays as sent (naive from Rust, see makeNaiveTsLocalizer). `strings`:
+// the string section already as a JS string, in place of the buffer's
+// UTF-8 tail — how the log-parse worker sends it (encodeEntryBatch).
 const nativeBatchDecoder = typeof TextDecoder === "function" ? new TextDecoder("utf-8", { ignoreBOM: true }) : null;
-function decodeNativeBatch(buf) {
+function decodeNativeBatch(buf, strings) {
   const head = new DataView(buf, 0, 16);
   const fraction = head.getFloat64(0, true);
   const count = head.getUint32(8, true);
   const tableLen = head.getUint32(12, true);
   const ts = new Float64Array(buf, 16, count);
   const tab = new Uint8Array(buf, 16 + count * 8, tableLen);
-  const S = nativeBatchDecoder.decode(new Uint8Array(buf, 16 + count * 8 + tableLen));
+  const S = strings !== undefined ? strings : nativeBatchDecoder.decode(new Uint8Array(buf, 16 + count * 8 + tableLen));
   const entries = new Array(count);
   let p = 0;
   let rawAt = 0;
