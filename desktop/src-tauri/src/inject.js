@@ -24,6 +24,36 @@
     }
   }
 
+  // A Tauri IPC channel (what @tauri-apps/api's `Channel` does, without the
+  // package): Rust sends `{ message, index }`, large messages arrive through
+  // a separate fetch and so can overtake each other, hence the reordering;
+  // `{ end: true, index }` follows once Rust dropped its side. `done`
+  // resolves after the last message was handed to onMessage.
+  function channel(onMessage) {
+    var next = 0;
+    var endIndex = -1;
+    var pending = {};
+    var finish;
+    var done = new Promise(function (resolve) {
+      finish = resolve;
+    });
+    var id = window.__TAURI_INTERNALS__.transformCallback(function (raw) {
+      if ("end" in raw) endIndex = raw.index;
+      else pending[raw.index] = raw.message;
+      while (next in pending) {
+        var msg = pending[next];
+        delete pending[next];
+        next += 1;
+        onMessage(msg);
+      }
+      if (next === endIndex) {
+        window.__TAURI_INTERNALS__.unregisterCallback(id);
+        finish();
+      }
+    });
+    return { arg: "__CHANNEL__:" + id, done: done };
+  }
+
   // ---------------------------------------------------------------- settings
   // FEATURE_BACKLOG.md #33, read half. Hydrates once per process: the values
   // baked in above are a snapshot taken at startup, so re-applying them after
@@ -158,6 +188,21 @@
     // the tree via its own loadDesktopLocalFiles. See commands.rs::open_local_path.
     openLocalPath: function (path) {
       return invoke("open_local_path", { path: path });
+    },
+    // Native parsing: Rust reads the philogg://local/… file behind `url` and
+    // parses it in parallel under `format` (philogg.html's nativeFormatSpec),
+    // streaming `{ fraction, entries? }` batches to onMessage in order.
+    // Resolves with `{ size }` once the last batch was delivered; rejects —
+    // before any batch — for a format the native engine can't run exactly
+    // like JS, and philogg.html falls back to its own parser.
+    // See commands.rs::parse_log_file.
+    parseLogFile: function (url, format, onMessage) {
+      var ch = channel(onMessage);
+      return invoke("parse_log_file", { url: url, format: format, onEvent: ch.arg }).then(function (summary) {
+        return ch.done.then(function () {
+          return summary;
+        });
+      });
     },
     listSystemFonts: function () {
       return invoke("list_system_fonts").catch(function () {

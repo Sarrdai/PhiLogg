@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~34,500 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~34,600 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -162,6 +162,19 @@ own worker and actually parse on separate cores at once — the scenario this
 was built for (large files, several loaded together). See `tests/…` GROUP
 165 for the coverage (sandboxed worker-source execution + concurrent-load
 correctness) and GROUP 68's addendum for the queued-placeholder UX change.
+
+**Native parsing under the desktop wrapper (`parseLocalFileNatively`).**
+When `window.philogg.parseLogFile` exists, a file opened from disk (dialog,
+drop, folder watch, file association) skips both of the above: the Rust
+backend reads it and parses it on every core (`desktop/src-tauri/logparse`),
+streaming entries back in batches. The page still owns the parsing rules —
+`nativeFormatSpec` hands Rust the regex source/date regex this page itself
+compiled (shared `compileFormatRegex`), timestamps come back "naive" and are
+localized by this engine (`makeNaiveTsLocalizer`), and anything the native
+engine can't run with identical semantics (lookaround, backreferences, a
+meta-format) falls back to the JS path above. A golden fixture shared by the
+jsdom suite (GROUP 264) and the crate's `cargo test` pins both parsers to the
+same output. See `docs/desktop.md` → "Native parsing".
 
 **Multi-pattern parsing: the `"meta"` format mode** (FEATURE_BACKLOG.md #81,
 implemented this session). Some files interleave two or more independent

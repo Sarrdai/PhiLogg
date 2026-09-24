@@ -38,6 +38,10 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 | `fonts.rs` | system font enumeration |
 | `vs_integration.rs` | Visual Studio COM automation (Running Object Table) |
 
+Plus one workspace crate beside `src/`: `logparse/` (`philogg-logparse`), the
+native log parser — Tauri-free on purpose, so `cargo test -p philogg-logparse`
+runs without the webview toolchain. See "Native parsing" below.
+
 ## The `philogg://` scheme, and why there is a `fetch` shim
 
 The wrapper registers a custom URI scheme rather than loading the page off `file:`,
@@ -87,8 +91,8 @@ gets no script (it ends by reporting "painted", which would dismiss the splash i
 
 **Bridge.** `window.philogg` is the narrow surface `philogg.html` feature-detects on
 (`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`,
-`pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, `exitPip`, and
-`getPathForFile`. That last one returns `null` permanently — no system webview can
+`pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, `exitPip`,
+`parseLogFile` (see "Native parsing" below), and `getPathForFile`. That last one returns `null` permanently — no system webview can
 resolve a `File` object back to its OS path — which is why the wrapper opens files
 itself instead (next paragraph). `philogg.html` treats a null `getPathForFile` as "no
 path known", so nothing breaks; under this wrapper no route reaches that case any more.
@@ -296,6 +300,101 @@ Two details that are easy to get wrong:
   `sourceUrl`/`localPath` of any already-open file on every scan.
 
 Covered by test **Group 145**.
+
+## Native parsing
+
+A log opened from disk is read and parsed by the Rust backend, not by the
+page: `window.philogg.parseLogFile(url, spec, onMessage)` → the
+`parse_log_file` command (`commands.rs`) → the `philogg-logparse` crate
+(`logparse/`). The file never travels through the webview as text — no
+`fetch` of `philogg://local/…`, no `FileReader`, no copy into a Web Worker —
+and parsing runs on every core at once, not one worker per file.
+
+**One definition of the parsing rules.** The page still compiles the format
+itself: `nativeFormatSpec(fmt)` (`philogg.html`, next to `compileOneFormat`,
+sharing its `compileFormatRegex`) hands over `{builtin, regex, dateRegex,
+dateOrder, wrapQuote}` — the *source* of the regex JS itself would run, the
+compiled `tsFormat` regex, and the quoted-message rule. Rust only executes
+that description:
+
+- `builtin` (the unedited default format) is a port of `HEADER_RE` +
+  `parseHeaderLine`.
+- `regex` runs through `jsregex::translate`, which rewrites the places where
+  the `regex` crate's syntax means something different from a no-flags JS
+  regex: `\d`/`\w`/`\b` become ASCII-only, `\s` becomes JS's own set, `.`
+  excludes `\r`/U+2028/U+2029, `\uHHHH` and Annex-B literal braces are
+  spelled out. Lookaround, backreferences and similar constructs are
+  **refused** — the command errors before streaming anything and the page
+  parses that file in JS as before. `null` (a regex that failed to compile)
+  reproduces the "every line is its own entry" fallback.
+- `applyFormatMatch`, `stripQuotes`, `formatLocation` (hand-written from the
+  end instead of a regex — it was half the parse time; a brute-force test
+  checks it against the regex), `appendContinuationLine`,
+  `parseTimestamp`/`parseTimestampGeneric` and `String.prototype.trim`'s
+  whitespace set are mirrored one function each; the Rust functions name
+  their JS counterpart.
+- Bytes are decoded like `FileReader.readAsText`: BOM sniffing for
+  UTF-8/UTF-16LE/UTF-16BE, U+FFFD per malformed sequence.
+
+**Timestamps come back naive.** Both JS timestamp parsers end in
+`new Date(y, mo, d, h, mi, s, ms)` — local time. Rust returns
+`Date.UTC(...)` of the same fields instead (with JS's `|| default`
+fallbacks, the 0..99 → 19xx year mapping and month/day rollover), and the
+page's `makeNaiveTsLocalizer` converts it with its own engine, caching one
+`Date` per distinct wall-clock minute. DST gaps/overlaps and the tz database
+are therefore the page's own, on every platform. A format with no
+`tsFormat` (free-form, `Date.parse`) gets `ts: null` from Rust and the page
+parses `tsRaw` itself.
+
+**Parallelism.** The text is cut into ~1 MB slices at line boundaries and
+parsed with rayon; each slice keeps the lines before its first header, and
+the stitch step appends those to the previous slice's last entry (they are
+its continuation lines — including the open-quote bookkeeping, which lives
+on the entry). The entries are then serialized to JSON in parallel, a few
+10,000-entry batches at a time, and sent over a Tauri IPC channel in order.
+
+**The channel.** `inject.js` has a small stand-in for `@tauri-apps/api`'s
+`Channel` (reorders by `index` — large messages go through a separate fetch
+and can overtake each other — and resolves once the `{end: true}` marker
+says Rust dropped its side). Messages are `{type: "progress", fraction}`
+while parsing (0–0.4 of the row's bar) and `{type: "chunk", fraction,
+entries}` for the batches (0.4–1). Each entry arrives in the page's own
+entry shape and key order (`logparse::Entry`'s `Serialize`);
+`parseLocalFileNatively` assigns the page id, localizes `ts`, swaps an empty
+`fields` for the shared `EMPTY_ENTRY_FIELDS` and stamps `formatId`, so a
+native entry is indistinguishable from a JS-parsed one. A rejection rolls
+back whatever batches had already been appended.
+
+**Where it's used.** `canParseNatively(handle)` — the bridge exists and the
+handle is a `urlTailHandle` over a `philogg://local/…` URL — gates the three
+routes that open a file from disk: `loadFileDescriptors` (dialog, drop;
+`openFile()` is then never called), `loadFolderFile` (folder watch) and
+`loadUrlIntoTree` (file association / launch argument, filling the same node
+if it falls back). `loadOneFileIntoTree` takes `file = null` for these and
+falls back to `handle.getFile()` + the ordinary read/parse whenever the
+native call rejects. `parse_log_file` resolves the URL through the same
+`local_file_for_url` lookup as the protocol handler, so the page can only
+have files parsed that were already registered from OS-supplied input — it
+can't name an arbitrary path. The tail offset is the byte size Rust read.
+
+**Not native (unchanged JS paths):** meta-formats (split in JS first), live
+tailing appends (small, incremental), session-cache restore (the text comes
+from IndexedDB), the windowed/partial minimap load, ZIP entries, and the
+plain browser build.
+
+**Known difference:** a non-unicode JS regex counts UTF-16 code units, so a
+counted quantifier over an astral character (`.{2}` against one emoji) can
+match in JS and not natively. Format regexes don't count characters that
+way in practice.
+
+**Keeping the two sides in step.** `tests/fixtures/native-parse-golden.json`
+holds inputs (text or raw bytes), the spec `nativeFormatSpec` builds, and
+the entries the **JS** parser produces (ts naive, generated under
+`TZ=UTC`). The jsdom suite's Group 264 checks the JS parser against it; the
+crate's `tests/golden.rs` checks the Rust parser against it at slice sizes
+from 1 byte to 1 MB. After a deliberate change to JS parsing, regenerate
+with `UPDATE_NATIVE_GOLDEN=1 TZ=UTC GROUP=264 npm test` (in `tests/`), then
+make `cargo test -p philogg-logparse` (in `desktop/src-tauri/`) pass again.
 
 ## Windows Explorer context-menu integration
 

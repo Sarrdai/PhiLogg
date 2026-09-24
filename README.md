@@ -29,8 +29,9 @@ deployments possible:
   OS's own webview, so the installer stays small. Desktop-only extras
   include close-to-system-tray and picture-in-picture: a diagonal `<->`
   window-control button shrinks the window to a small always-on-top content
-  view (with its own return-to-full and minimize buttons). See
-  `desktop/README.md`.
+  view (with its own return-to-full and minimize buttons). Log files opened
+  from disk are read and parsed natively (Rust, on all CPU cores) with the
+  same parsing rules as the browser build. See `desktop/README.md`.
 
 ## Screenshots
 
@@ -337,12 +338,14 @@ in a different shape to try the Format Manager against.
 philogg.html                            the application — everything lives here
 tests/
   philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events)
+  fixtures/native-parse-golden.json     parsing golden file shared with the native parser's cargo test
   README.md                             testing conventions
 tools/
   log-simulator.html                    standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
 desktop/
   README.md                             desktop wrapper (Tauri): prerequisites, build/run steps, known limitations
   src-tauri/                            Rust backend + tauri.conf.json (file associations + native file/folder opening, loads philogg.html unmodified)
+  src-tauri/logparse/                   native log parser (parallel, same rules as philogg.html's own), used by the desktop build
 homepage/
   index.html                            static feature-tour / marketing page
   screenshots/                          screenshots used by the homepage and this README

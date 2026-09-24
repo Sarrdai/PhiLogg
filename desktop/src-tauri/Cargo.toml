@@ -10,6 +10,11 @@ rust-version = "1.77"
 
 # The binary is named after productName's slug in the bundle, but the crate's
 # own bin name is what `cargo run`/`tauri dev` uses.
+# The native log parser lives in its own Tauri-free crate so `cargo test -p
+# philogg-logparse` runs without the webview toolchain — see logparse/src/lib.rs.
+[workspace]
+members = ["logparse"]
+
 [[bin]]
 name = "philogg-desktop"
 path = "src/main.rs"
@@ -25,6 +30,7 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 urlencoding = "2"
+philogg-logparse = { path = "logparse" }
 
 # Windows-only: reaches into the WebView2 controller to turn off its
 # Alt-as-accelerator-key handling (see windows.rs's disable_alt_accelerator_keys).
