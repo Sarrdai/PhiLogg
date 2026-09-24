@@ -426,6 +426,9 @@ Undo/redo, bookmarks (the auto-managed "Bookmarks" filter node), notes, pin-book
 ### `docs/desktop.md`
 The desktop wrapper's internal mechanism (`desktop/`, Tauri v2 + the OS webview): custom `philogg://` scheme, the injected script and the `window.philogg` bridge, native file/folder opening, frameless window and drag region, settings mirroring, tray/splash/close-to-tray, picture-in-picture (PiP), IDE Integration (Windows-only jump from a log entry into Visual Studio/Rider), and the release workflow. `desktop/README.md` has the build/run steps, prerequisites, current run status, and the known limitations.
 
+### `docs/performance-testing.md`
+How to measure load/render performance at three levels — the Rust parser alone, the page in jsdom with a CPU profile, and the **real desktop app headless** in a cloud container (Xvfb + WebKitGTK, timings read back through the `settings.json` mirror) — with the scripts in `tools/perf/`, the traps (the release binary serves its own copy of `philogg.html`; fresh XDG dirs per run), and recorded baseline numbers.
+
 ### `docs/testing-and-limitations.md`
 The jsdom-based testing approach (and its known blind spots — no real layout/paint engine), plus the running list of known limitations and intentionally-deferred items (assertions/ignored-columns keyed by index not name, no cross-file filter combination, no AND/OR over a `link` node, etc.).
 
