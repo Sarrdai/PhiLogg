@@ -144,6 +144,11 @@ like any other.
 
 ## Status
 
+The app also runs headless in a Linux cloud container (Xvfb + WebKitGTK) —
+enough to measure load times end to end, though not to see or click the UI.
+See `docs/performance-testing.md` for the setup and
+`tools/perf/desktop-load-bench.sh`.
+
 Verified end to end on Linux (WebKitGTK, headless X server, 2026-09-01):
 the page loads through the custom scheme, a file passed on the command line
 is fetched and tail-polled, `settings.json` is written, and a second launch

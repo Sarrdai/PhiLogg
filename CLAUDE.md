@@ -45,6 +45,10 @@ and a frameless window around the unmodified `philogg.html` — see
   fixture, see `docs/desktop.md` → "Native parsing") — and a session that
   only touched Markdown (`PROJECT.md`, `docs/*.md`, `CHANGELOG.md`,
   `README.md`, `FEATURE_BACKLOG.md`, `CLAUDE.md`). Don't run it out of habit.
+- **Performance claims get measured in the real app**, not only in a
+  component benchmark — `docs/performance-testing.md` has the headless
+  desktop-app setup (`tools/perf/desktop-load-bench.sh`) that works in the
+  cloud container.
 - **Update the docs every session that changes behavior**: a dated,
   newest-first entry in `CHANGELOG.md`; the relevant `docs/*.md` file (or
   `PROJECT.md` itself for core architecture) updated to describe the

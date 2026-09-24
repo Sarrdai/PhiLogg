@@ -408,6 +408,10 @@ counted quantifier over an astral character (`.{2}` against one emoji) can
 match in JS and not natively. Format regexes don't count characters that
 way in practice.
 
+**Measuring it.** `docs/performance-testing.md` describes how the numbers
+above were taken — including the headless run of the real app — and has the
+scripts (`tools/perf/`) and recorded baselines.
+
 **Keeping the two sides in step.** `tests/fixtures/native-parse-golden.json`
 holds inputs (text or raw bytes), the spec `nativeFormatSpec` builds, and
 the entries the **JS** parser produces (ts naive, generated under

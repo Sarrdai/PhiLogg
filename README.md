@@ -342,6 +342,7 @@ tests/
   README.md                             testing conventions
 tools/
   log-simulator.html                    standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
+  perf/                                 performance measurement scripts (test data, jsdom render profile, headless desktop-app load timing) — see docs/performance-testing.md
 desktop/
   README.md                             desktop wrapper (Tauri): prerequisites, build/run steps, known limitations
   src-tauri/                            Rust backend + tauri.conf.json (file associations + native file/folder opening, loads philogg.html unmodified)
