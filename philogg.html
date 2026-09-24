@@ -10517,7 +10517,11 @@ function buildOrderIndexMap(fileId) {
 // key above can't see: a reorder that keeps the same array and length.
 function invalidateOrderIndexMap(fileId) {
   const file = fileId && state.nodes[fileId];
-  if (file) { file._orderIndexMap = null; invalidateFileAggregate(file); } // the aggregate's entry indices moved too
+  if (file) {
+    file._orderIndexMap = null;
+    file._orderVersion = (file._orderVersion || 0) + 1; // keys contextMatchesAndGaps' memo
+    invalidateFileAggregate(file); // the aggregate's entry indices moved too
+  }
 }
 
 /* ===================== Per-file clock offset (FEATURE_BACKLOG.md #29) =====================
@@ -12940,7 +12944,10 @@ function showFhTab(tab) {
     // (FEATURE_BACKLOG #25 — live-follow now applies to both views).
     if (tab === "highlight") {
       if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
-      renderHighlightVisibleRows();
+      // Revealed while stale (see renderMainView): build it now — unless this
+      // switch happens inside a render(), whose renderMainView builds it next.
+      if (contextViewStale && !renderDepth) renderHighlightView();
+      else renderHighlightVisibleRows();
     } else {
       if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
       renderVisibleRows();
@@ -12996,7 +13003,8 @@ function applyFhView(view) {
     if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
     if (wasOnTableOrPlot) renderMainView(); // content component switches back from Table/Plot to #fhSplit
     renderVisibleRows();
-    renderHighlightVisibleRows();
+    if (contextViewStale && !renderDepth) renderHighlightView(); // see showFhTab
+    else renderHighlightVisibleRows();
     // Entering Stacked always shows Box #1 (see updateMinimapFullRange) and
     // ties Box #2 back to the Filtered pane (see updateMinimapRenderedRange)
     // — re-evaluate immediately, same reasoning as showFhTab's own call below
@@ -13213,7 +13221,9 @@ function captureNavWaypoint(nodeId) {
     // Only the plain log table has an entry-keyed row list to anchor in; the
     // extraction table and the link pair view fall back to rawScrollTop.
     filterAnchor: scroller === tableBody ? captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody) : null,
-    contextAnchor: captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody),
+    // A stale (hidden, not rebuilt — see renderMainView) Context list belongs
+    // to an earlier node; its scroll position is all that's worth keeping.
+    contextAnchor: contextViewStale ? null : captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody),
     rawScrollTop: scroller.scrollTop,
     contextScrollTop: highlightBody.scrollTop,
   };
@@ -13497,7 +13507,12 @@ function updateSortIndicators() {
   });
 }
 
+let renderDepth = 0; // > 0 while render() runs — see showFhTab's lazy Context build
 function render() {
+  renderDepth++;
+  try { renderInner(); } finally { renderDepth--; }
+}
+function renderInner() {
   if (state.activeId !== lastActiveIdForReveal) {
     const prevNode = state.nodes[lastActiveIdForReveal];
     lastActiveIdForReveal = state.activeId;
@@ -13656,6 +13671,7 @@ function renderMainView() {
     contextRuns = [];
     contextMatchRows = [];
     contextMatchPos = new Map();
+    contextMatchMemo = null; // holds the closed files' entries otherwise
     contextExpansionsKey = null;
     updateContextToolbar();
     return;
@@ -13736,7 +13752,19 @@ function renderMainView() {
     timelineMinimapEl.classList.remove("hidden");
     renderTable();
   }
-  renderHighlightView(true); // highlightColorMap was computed fresh above
+  // The Context view is only built while it is on screen (Stacked, or its
+  // tab): building it means a match set and gap list over the whole file,
+  // hundreds of ms for a large one, on every render. Hidden, it is marked
+  // stale and built when it is revealed (showFhTab/applyFhView).
+  if (contextViewVisible()) renderHighlightView(true); // highlightColorMap was computed fresh above
+  else contextViewStale = true;
+}
+
+// Whether the Context view (#highlightWrap) is on screen: Stacked shows it
+// next to Filtered, tabs layout only on its own tab.
+let contextViewStale = false;
+function contextViewVisible() {
+  return fhActiveTab !== "table" && fhActiveTab !== "plot" && (fhLayout === "stacked" || fhActiveTab === "highlight");
 }
 
 function renderStatus() {
@@ -18770,9 +18798,10 @@ let contextStrips = new Map();
 // for the ~40 rows actually on screen — see contextRunAt.
 let contextRuns = [];
 // Indices into currentHighlightViewEntries of the rows that are real matches,
-// ascending, plus each match's 1-based ordinal by entry id. Both are built
-// during buildContextView's own single walk rather than rescanned later: the
-// toolbar refreshes on every selection change, and an O(rows) scan per arrow
+// ascending, plus each match's 1-based ordinal by entry id. Built with the
+// view (the rows by buildContextView's own walk, the ordinals once per match
+// set by contextMatchesAndGaps) rather than rescanned later: the toolbar
+// refreshes on every selection change, and an O(rows) scan per arrow
 // keypress would be felt on a large fully-expanded view.
 let contextMatchRows = [];
 let contextMatchPos = new Map();
@@ -18924,6 +18953,66 @@ function contextRunAt(i) {
 // contextStrips/contextRuns along the way. Walks the gap list rather than the
 // whole file, so the cost scales with the number of matches, not the file
 // size.
+// The match/gap half of buildContextView, memoized per (active node, its
+// getEntries() result, the root's entries array + length + order version).
+// contextMatchIds/contextGaps are shared with the memo, so — as everywhere
+// they were already only read — nothing may mutate them in place.
+let contextMatchMemo = null;
+function contextMatchesAndGaps(node, root) {
+  const all = root.entries;
+  const result = getEntries(node.id);
+  const m = contextMatchMemo;
+  if (m && m.nodeId === node.id && m.result === result && m.all === all && m.length === all.length &&
+      m.orderVersion === (root._orderVersion || 0)) return m;
+  const matchIds = new Set();
+  // Root-file indices of the matches, ascending.
+  let idxs = null;
+  if (node.filterType !== "link") {
+    // Every other filter keeps its parent's order, so its result is normally
+    // a subsequence of the root's entries: one walk along both finds the
+    // indices without an id -> index map. Anything else (an "or" re-sorted
+    // by ts, say) runs off the end and takes the map route below.
+    idxs = [];
+    let j = 0;
+    for (const e of result) {
+      matchIds.add(e.id);
+      while (j < all.length && all[j] !== e) j++;
+      if (j === all.length) { idxs = null; break; }
+      idxs.push(j++);
+    }
+    if (!idxs) result.forEach(e => matchIds.add(e.id));
+  } else {
+    // Synthetic pair entries: colour/mark the real entries underneath, via the
+    // same recursive getTupleEntries() walk computeHighlightMap uses (a
+    // chained link's pair is itself a pair on one or both sides).
+    result.forEach(pair => getTupleEntries(pair).forEach(e => matchIds.add(e.id)));
+  }
+  if (!idxs) {
+    // A link node's flattened underlying entries genuinely can land out of
+    // order (a "before" hop's match precedes its own reference — see "Link
+    // filter" in docs/filters.md), hence sorting rather than trusting it.
+    const orderIndexMap = buildOrderIndexMap(root.id);
+    idxs = [];
+    matchIds.forEach(id => {
+      const i = orderIndexMap.get(id);
+      if (i !== undefined) idxs.push(i);
+    });
+    idxs.sort((a, b) => a - b);
+  }
+  const gaps = [];
+  // Entry id -> its 1-based position among the matches (contextMatchPos).
+  const matchPos = new Map();
+  let prev = -1;
+  for (let k = 0; k < idxs.length; k++) {
+    if (idxs[k] > prev + 1) gaps.push({ start: prev + 1, end: idxs[k] });
+    if (idxs[k] !== prev) matchPos.set(all[idxs[k]].id, matchPos.size + 1);
+    prev = idxs[k];
+  }
+  if (prev + 1 < all.length) gaps.push({ start: prev + 1, end: all.length });
+  contextMatchMemo = { nodeId: node.id, result, all, length: all.length, orderVersion: root._orderVersion || 0, matchIds, gaps, matchPos };
+  return contextMatchMemo;
+}
+
 function buildContextView(rootId) {
   contextActive = false;
   contextMatchIds = new Set();
@@ -18942,35 +19031,14 @@ function buildContextView(rootId) {
   if (!node || node.type !== "filter") return all;
   contextActive = true;
 
-  const result = getEntries(node.id);
-  if (node.filterType === "link") {
-    // Synthetic pair entries: colour/mark the real entries underneath, via the
-    // same recursive getTupleEntries() walk computeHighlightMap uses (a
-    // chained link's pair is itself a pair on one or both sides).
-    result.forEach(pair => getTupleEntries(pair).forEach(e => contextMatchIds.add(e.id)));
-  } else {
-    result.forEach(e => contextMatchIds.add(e.id));
-  }
-
-  // Root-file indices of the matches, ascending. Non-link filters preserve the
-  // parent's order, so their result is already sorted and the sort below is a
-  // no-op scan; a link node's flattened underlying entries genuinely can land
-  // out of order (a "before" hop's match precedes its own reference — see
-  // "Link filter" in docs/filters.md), hence sorting rather than trusting it.
-  const orderIndexMap = buildOrderIndexMap(rootId);
-  const idxs = [];
-  contextMatchIds.forEach(id => {
-    const i = orderIndexMap.get(id);
-    if (i !== undefined) idxs.push(i);
-  });
-  idxs.sort((a, b) => a - b);
-
-  let prev = -1;
-  for (let k = 0; k < idxs.length; k++) {
-    if (idxs[k] > prev + 1) contextGaps.push({ start: prev + 1, end: idxs[k] });
-    prev = idxs[k];
-  }
-  if (prev + 1 < all.length) contextGaps.push({ start: prev + 1, end: all.length });
+  // Which entries match and where the gaps between them fall depends only on
+  // the node's result and the root's entries, not on what is expanded — so
+  // it is memoized (contextMatchesAndGaps) and only the expansion-dependent
+  // rows/strips/runs below are rebuilt on every call.
+  const matches = contextMatchesAndGaps(node, root);
+  contextMatchIds = matches.matchIds;
+  contextGaps = matches.gaps;
+  contextMatchPos = matches.matchPos;
 
   // A different active node means a different result set, so the previous
   // node's expansions (plain root-file index ranges) mean nothing here — drop
@@ -19069,7 +19137,6 @@ function buildContextView(rootId) {
     // Not inside any gap, so this row is a match by construction.
     out.push(all[i]);
     contextMatchRows.push(out.length - 1);
-    contextMatchPos.set(all[i].id, contextMatchRows.length);
     i++;
   }
   return out;
@@ -19545,6 +19612,7 @@ function setHighlightScroll(value) {
 // fhLayout/fhActiveTab branch — a no-op whenever the Filtered tab or Stacked
 // layout is what's showing instead).
 function renderHighlightView(colorMapIsFresh) {
+  contextViewStale = false;
   const rootId = getRootFileId(state.activeId);
   const sameRoot = rootId === lastHighlightRootId;
   // Only worth trying to preserve scroll position within the SAME root
