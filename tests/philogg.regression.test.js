@@ -27978,10 +27978,14 @@ await withApp(async (w, d, T) => {
    scheduling for main-thread time (person-reported, 2026-09-21, confirmed
    via real Firefox telemetry: holding "End" on an 822,697-entry merge
    repeatedly stalled the native scrollTop >150,000 physical px short of
-   the true max, non-deterministically between attempts). Now throttled to
-   at most one render per SCROLL_RENDER_THROTTLE_MS (100ms) during a rapid
-   burst via makeThrottledScrollRenderer, while a single, isolated scroll
-   event still renders on its very next frame — same as before.
+   the true max, non-deterministically between attempts). That fix
+   throttled bursts to one render per 100ms; 2026-09-24 replaced the
+   throttle with makeScrollRenderer (one render per animation frame, reading
+   the final scroll position, plus a cost-based backoff for expensive
+   renders — see GROUP 266), because the 100ms gaps let the viewport scroll
+   past the rendered rows. This group now pins the parts both share: a
+   scroll render is deferred onto a frame, and a burst collapses onto one
+   render that already shows the final position.
    ============================================================ */
 group(258);
 await withApp(async (w, d, T) => {
@@ -28022,9 +28026,9 @@ await withApp(async (w, d, T) => {
   w.__rvrCalls = 0;
 
   const tableBody = d.querySelector("#tableBody");
-  // Ten rapid scroll events, all before the 100ms throttle window (or even
-  // one animation frame) has a chance to elapse — simulates the dense
-  // event stream a native keyboard-scroll animation produces.
+  // Ten rapid scroll events, all before one animation frame has a chance
+  // to elapse — simulates the dense event stream a native keyboard-scroll
+  // animation produces.
   const targets = [];
   for (let i = 1; i <= 10; i++) {
     const top = T.ROW_HEIGHT * i * 10;
@@ -28034,19 +28038,19 @@ await withApp(async (w, d, T) => {
   }
   const lastTop = targets[targets.length - 1];
 
-  await sleep(50); // long enough for the leading-edge rAF render, short of the 100ms throttle window
-  assert(w.__rvrCalls === 1, "ten rapid-fire events still collapse onto exactly one leading-edge render, got " + w.__rvrCalls);
-
-  await sleep(150); // now past SCROLL_RENDER_THROTTLE_MS — the trailing catch-up render should have fired
-  assert(w.__rvrCalls === 2, "exactly one trailing catch-up render fires once the burst settles, got " + w.__rvrCalls + " total (nine events collapsed away, not re-rendered individually)");
-  assert(tableBody.scrollTop === lastTop, "sanity: scrollTop itself already reflects the last dispatched event (scrollTop is a plain DOM property, unaffected by the render throttle)");
+  await sleep(50); // long enough for the next frame's render
+  assert(w.__rvrCalls === 1, "ten rapid-fire events collapse onto exactly one render, got " + w.__rvrCalls);
+  assert(tableBody.scrollTop === lastTop, "sanity: scrollTop itself already reflects the last dispatched event (scrollTop is a plain DOM property)");
   const expectedIdx = Math.floor(lastTop / T.ROW_HEIGHT);
   const expectedEntry = f.entries[expectedIdx];
-  assert(d.querySelector('#tableRows [data-entry-id="' + expectedEntry.id + '"]'), "the trailing catch-up render reflects the TRUE final scrollTop (the last of the ten events), not a stale intermediate one");
+  assert(d.querySelector('#tableRows [data-entry-id="' + expectedEntry.id + '"]'), "that one render reflects the TRUE final scrollTop (the last of the ten events), not a stale intermediate one");
+
+  await sleep(150);
+  assert(w.__rvrCalls === 1, "no redundant trailing render once the burst settles, got " + w.__rvrCalls + " total");
 });
 
 await withApp(async (w, d, T) => {
-  section("258c. Same throttling for the twin #highlightBody/renderHighlightVisibleRows listener");
+  section("258c. Same collapsing for the twin #highlightBody/renderHighlightVisibleRows listener");
   const f = await w.addFile("a.log", makeLog(0, 200), () => {});
   T.state.activeId = f.id;
   w.render();
@@ -28066,9 +28070,9 @@ await withApp(async (w, d, T) => {
     highlightBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
   }
   await sleep(50);
-  assert(w.__rhvrCalls === 1, "a rapid burst on #highlightBody also collapses onto one leading-edge render, got " + w.__rhvrCalls);
+  assert(w.__rhvrCalls === 1, "a rapid burst on #highlightBody also collapses onto one render, got " + w.__rhvrCalls);
   await sleep(150);
-  assert(w.__rhvrCalls === 2, "and one trailing catch-up render once it settles, got " + w.__rhvrCalls);
+  assert(w.__rhvrCalls === 1, "and no redundant trailing render once it settles, got " + w.__rhvrCalls);
 });
 
 /* ============================================================
@@ -29669,6 +29673,197 @@ group(265);
     assert(calls > 0 && calls < 150, "a full render of 200 entries resolves levels per distinct pair, not per entry: " + calls + " levelBucket calls");
     const ov2 = [...d.querySelectorAll("#timelineMinimap .minimap-ov-bar")].map(r => r.getAttribute("class"));
     assert(JSON.stringify(ov2) === JSON.stringify(ov), "the overlay is identical across renders");
+  });
+}
+
+/* ============================================================
+   GROUP 266 — Log view scrolling (2026-09-24, measured in headless
+   Chromium on a 650k-entry file): (a) detectMaxTableScrollPx read
+   Chromium's exponent serialization of a computed height ("2e+07px") with
+   parseInt, so the cap came out 950,000px and every view above ~34k rows
+   was scroll-compressed (650k rows ~19x: one wheel notch moved ~68 rows,
+   every render snapped the content); (b) the 100ms scroll-render throttle
+   became one render per frame with a cost-based backoff; (c) a scroll
+   render keeps the rows still in its window and builds only the new ones,
+   with a one-screen overscan.
+   ============================================================ */
+group(266);
+{
+  // Stand-ins for how an engine reports a probe element's computed height:
+  // Chromium clamps at 33,554,428px and prints 6 significant digits in
+  // exponent form from 1e6px up; Firefox drops an oversized declaration
+  // (height:auto -> 0px for the empty probe).
+  const chromiumHeight = h => {
+    const used = Math.min(h, 33554428);
+    if (used < 1e6) return used + "px";
+    return used.toPrecision(6).replace(/\.?0+e/, "e").replace(/e\+(\d)$/, "e+0$1") + "px";
+  };
+  const firefoxHeight = h => (h > 17895697 ? 0 : h) + "px";
+  async function probeWith(w, T, fmt) {
+    const real = w.getComputedStyle;
+    w.getComputedStyle = function (elm) {
+      const h = parseFloat(elm.style && elm.style.height);
+      if (!(h >= 1e6)) return real.apply(this, arguments);
+      return { height: fmt(h) };
+    };
+    try {
+      T.resetTableScrollCap();
+      return T.detectMaxTableScrollPx();
+    } finally {
+      w.getComputedStyle = real;
+    }
+  }
+
+  await withApp(async (w, d, T) => {
+    section("266a. detectMaxTableScrollPx reads Chromium's exponent-form computed heights (was: 950,000px cap, compressing every view above ~34k rows)");
+    assert(chromiumHeight(20000000) === "2e+07px" && chromiumHeight(40000000) === "3.35544e+07px", "sanity: the stand-in prints what Chromium prints");
+    const cap = await probeWith(w, T, chromiumHeight);
+    assert(cap > 0.94 * 33554428 && cap <= 33554428, "Chromium: cap is ~95% of its real 33,554,428px ceiling, got " + cap);
+    assert(650000 * T.ROW_HEIGHT < cap, "a 650k-row file fits uncompressed under that cap");
+
+    const ffCap = await probeWith(w, T, firefoxHeight);
+    assert(ffCap > 0.94 * 17895697 && ffCap <= 17895697, "Firefox (declaration dropped above its ceiling): cap is ~95% of it, got " + ffCap);
+
+    // End to end: 40k rows (1.12M px) is past the old 950,000px cap.
+    await probeWith(w, T, chromiumHeight);
+    const f = await w.addFile("a.log", makeLog(0, 40000), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    assert(T.tableScrollHeightScale === 1, "a 40k-row view is not compressed any more, scale " + T.tableScrollHeightScale);
+    assert(parseInt(d.querySelector("#tableSpacer").style.height, 10) === 40000 * T.ROW_HEIGHT + T.TABLE_SPACER_PAD, "the spacer has the true content height");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("266b. Scroll renders run every frame, not every 100ms; an expensive render backs off");
+    const f = await w.addFile("a.log", makeLog(0, 2000), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    const tableBody = d.querySelector("#tableBody");
+    const orig = w.renderVisibleRows;
+    let calls = 0, lastArg;
+    w.renderVisibleRows = function (reuse) { calls++; lastArg = reuse; return orig.apply(this, arguments); };
+
+    // Three scroll events 50ms apart: each renders before the next arrives.
+    // The old throttle held the 2nd and 3rd until ~100ms after the 1st.
+    for (let i = 1; i <= 3; i++) {
+      tableBody.scrollTop = T.ROW_HEIGHT * 20 * i;
+      tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+      await sleep(50);
+      assert(calls === i, "scroll event " + i + " rendered within 50ms (" + calls + " renders)");
+    }
+    assert(lastArg === true, "the scroll listener asks renderVisibleRows to reuse rows");
+
+    // A render costing 30ms (> SCROLL_RENDER_BUDGET_MS) holds the next one
+    // off for 3x its cost; per-frame rendering would manage ~8 in 300ms.
+    w.renderVisibleRows = function () {
+      calls++;
+      const until = Date.now() + 30;
+      while (Date.now() < until) { /* an expensive render */ }
+      return orig.apply(this, arguments);
+    };
+    calls = 0;
+    const t0 = Date.now();
+    let top = T.ROW_HEIGHT * 100;
+    while (Date.now() - t0 < 300) {
+      top += T.ROW_HEIGHT;
+      tableBody.scrollTop = top;
+      tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+      await sleep(8);
+    }
+    const inBurst = calls;
+    assert(inBurst >= 1 && inBurst <= 4, "expensive renders back off during the burst: " + inBurst + " renders in 300ms");
+    await waitFor(() => d.querySelector('#tableRows [data-entry-id="' + f.entries[Math.floor(top / T.ROW_HEIGHT)].id + '"]'), { timeout: 1000 });
+    assert(d.querySelector('#tableRows [data-entry-id="' + f.entries[Math.floor(top / T.ROW_HEIGHT)].id + '"]'), "the pending render still lands and shows the final position");
+    w.renderVisibleRows = orig;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("266c. A scroll render keeps the rows still in its window, builds only the new ones, and matches a full rebuild");
+    const f = await w.addFile("a.log", makeLog(0, 2000), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    const tableBody = d.querySelector("#tableBody");
+    const rows = () => [...d.querySelectorAll("#tableRows > *")];
+    const ids = () => rows().map(r => r.dataset.entryId);
+    const rowOf = i => d.querySelector('#tableRows [data-entry-id="' + f.entries[i].id + '"]');
+    const expectIds = (from, to) => f.entries.slice(from, to).map(e => e.id);
+    const screenRows = Math.ceil(400 / T.ROW_HEIGHT); // clientHeight is stubbed to 400
+
+    // A jump past the previous window: nothing to reuse -> small full rebuild.
+    tableBody.scrollTop = T.ROW_HEIGHT * 500;
+    w.renderVisibleRows(true);
+    assert(JSON.stringify(ids()) === JSON.stringify(expectIds(500 - T.BUFFER_ROWS, 500 + screenRows + T.BUFFER_ROWS)), "a jump renders the BUFFER_ROWS window");
+    const kept = rowOf(505);
+
+    // Five rows further: reuse, with a one-screen overscan on each side.
+    tableBody.scrollTop = T.ROW_HEIGHT * 505;
+    w.renderVisibleRows(true);
+    const lo = 505 - screenRows, hi = lo + screenRows * 3;
+    assert(JSON.stringify(ids()) === JSON.stringify(expectIds(lo, hi)), "the window widens to a screen of overscan per side, rows in order");
+    assert(rowOf(505) === kept, "a row still in the window is the SAME element, not rebuilt");
+    assert(parseFloat(d.querySelector("#tableRows").style.top) === lo * T.ROW_HEIGHT, "#tableRows moved to the new window's top");
+
+    // Back up past the old top: rows are prepended, the bottom trimmed.
+    tableBody.scrollTop = T.ROW_HEIGHT * 480;
+    w.renderVisibleRows(true);
+    assert(JSON.stringify(ids()) === JSON.stringify(expectIds(480 - screenRows, 480 + screenRows * 2)), "scrolling up prepends and trims, rows in order");
+    assert(rowOf(505) === kept, "...and keeps the rows that are still in range");
+    const reusedHtml = new Map(rows().map(r => [r.dataset.entryId, r.outerHTML]));
+
+    // Any other caller rebuilds everything, and its rows look the same.
+    w.renderVisibleRows();
+    assert(rowOf(485) && rowOf(485) !== kept, "a plain renderVisibleRows() rebuilds every row");
+    const mismatch = rows().filter(r => reusedHtml.get(r.dataset.entryId) !== r.outerHTML).map(r => r.dataset.entryId);
+    assert(mismatch.length === 0, "reused/incrementally built rows are identical to a full rebuild's: mismatches " + mismatch.join(","));
+
+    // A new list (any render()) is never reused from.
+    tableBody.scrollTop = T.ROW_HEIGHT * 482;
+    w.renderVisibleRows(true);
+    const before = rowOf(485);
+    T.state.levelFilter = new Set(["INFO"]);
+    w.render();
+    tableBody.scrollTop = T.ROW_HEIGHT * 10;
+    w.renderVisibleRows(true);
+    assert(rows().every(r => T.currentViewEntries.some(e => e.id === r.dataset.entryId)), "after the list changed, only rows of the new list are shown");
+    assert(rowOf(485) !== before, "no row element survives from the old list");
+    T.state.levelFilter = new Set();
+    w.render();
+
+    // Rows cleared behind its back (the no-files path empties #tableRows):
+    // not reused either.
+    tableBody.scrollTop = T.ROW_HEIGHT * 300;
+    w.renderVisibleRows();
+    d.querySelector("#tableRows").innerHTML = "";
+    tableBody.scrollTop = T.ROW_HEIGHT * 302;
+    w.renderVisibleRows(true);
+    assert(rowOf(302) && ids().length > screenRows, "rows removed by someone else are rebuilt, not assumed present");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("266d. Row reuse keeps a note row with its entry, and drops both together");
+    const f = await w.addFile("a.log", makeLog(0, 2000), () => {});
+    T.state.activeId = f.id;
+    T.state.notes.set(f.entries[500].id, "note on 500");
+    T.state.notes.set(f.entries[515].id, "note on 515");
+    T.state.showNotes = true;
+    w.render();
+    const tableBody = d.querySelector("#tableBody");
+    const noteRows = () => [...d.querySelectorAll("#tableRows > .note-row")];
+    const pairedWithEntry = () => noteRows().every(n => n.previousElementSibling && n.previousElementSibling.classList.contains("log-row") &&
+      n.previousElementSibling.dataset.entryId === n.dataset.entryId);
+
+    w.scrollToIndex(505);
+    w.renderVisibleRows();
+    tableBody.scrollTop = tableBody.scrollTop + T.ROW_HEIGHT * 3;
+    w.renderVisibleRows(true);
+    assert(noteRows().length === 2 && pairedWithEntry(), "both notes rendered, each right after its entry's row");
+    for (let k = 0; k < 6; k++) {
+      tableBody.scrollTop = tableBody.scrollTop + T.ROW_HEIGHT * 8;
+      w.renderVisibleRows(true);
+      assert(pairedWithEntry(), "step " + k + ": no orphaned or misplaced note row");
+    }
+    assert(!d.querySelector('#tableRows [data-entry-id="' + f.entries[500].id + '"]'), "500 scrolled out of the window...");
+    assert(noteRows().every(n => n.dataset.entryId !== f.entries[500].id), "...and took its note row with it");
   });
 }
 
@@ -33719,6 +33914,12 @@ process.exitCode = failed ? 1 : 0;
       complete is, once again, left to the person's own retest; this round
       at least replaced two rounds of blind guessing with a fix grounded
       in a concrete, measured magnitude from real telemetry.
+      Updated 2026-09-24 (GROUP 266's session): the 100ms throttle was
+      replaced by one render per frame plus a cost-based backoff; 258b/c's
+      "exactly one trailing catch-up render" assertions were dropped (a
+      burst now collapses onto the next frame's single render, which
+      already reads the final position) and replaced by "no redundant
+      trailing render".
    Group 259 — new session, person-reported: a meta-format merge's Filtered/
       Full/minimap view flickered through each per-grammar stream's own
       (already complete) content before settling on the merge, because
@@ -33859,4 +34060,11 @@ process.exitCode = failed ? 1 : 0;
               association), and makeLevelBucketer's per-pass memo equal to
               levelBucket (text + int formats) incl. minimap overlay and
               level counts.
+   Group 266 — new session (2026-09-24): log view scrolling —
+              detectMaxTableScrollPx reads Chromium's exponent-form computed
+              height (was a 950,000px cap, compressing every view above
+              ~34k rows), per-frame scroll renders with a cost-based backoff
+              instead of the 100ms throttle (GROUP 258 updated), and row
+              reuse on scroll renders (identity kept, one-screen overscan,
+              same markup as a full rebuild, note rows paired).
    ============================================================ */
