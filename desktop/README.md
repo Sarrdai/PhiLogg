@@ -36,6 +36,15 @@ packaged as a bundle resource. Opening a file directly:
 npm run dev -- -- path/to/file.log
 ```
 
+The native log parser (`src-tauri/logparse/`, see `docs/desktop.md` →
+"Native parsing") is its own crate with no Tauri dependency, so its tests
+run without the webview toolchain:
+
+```
+cd desktop/src-tauri
+cargo test -p philogg-logparse
+```
+
 Builds are produced by two manual workflows sharing the same per-OS
 checkboxes and build steps: `.github/workflows/build-tester-files.yml`
 (uploads installers as workflow run artifacts named `PhiLogg-<sha>.<ext>`,
@@ -67,6 +76,8 @@ strip offers return-to-full and a minimize back to the taskbar),
 `settings.json` mirroring of the `philogg-*` settings, "Open File Location" /
 "Copy Path", the system font list for the UI font picker, a folder watch
 that does not go through the browser's File System Access API (see below),
+native log parsing (a file opened from disk is read and parsed by the Rust
+backend on every core, with the same rules as the page's own parser),
 and — Windows only, an optional installer component — Explorer right-click
 entries: "Open in PhiLogg" on a `.log`/`.zip` file and "Watch this Folder"
 on a folder, cleanly removed on uninstall (see `docs/desktop.md` → "Windows
@@ -132,6 +143,11 @@ like any other.
   (unverified on a real machine yet) — see "Status" below.
 
 ## Status
+
+The app also runs headless in a Linux cloud container (Xvfb + WebKitGTK) —
+enough to measure load times end to end, though not to see or click the UI.
+See `docs/performance-testing.md` for the setup and
+`tools/perf/desktop-load-bench.sh`.
 
 Verified end to end on Linux (WebKitGTK, headless X server, 2026-09-01):
 the page loads through the custom scheme, a file passed on the command line
@@ -239,6 +255,22 @@ on a real desktop session (`npm run dev`), on Windows and macOS especially —
 the injected strip's `markDragRegion` drag handle and the async
 `pip_enter`/`pip_exit`/`pip_minimize` commands (see `docs/desktop.md` →
 "Picture-in-picture") are the parts most likely to need platform adjustment.
+
+**Native parsing (2026-09-24)**: the first tester build showed no gain
+(person-tested on Windows: a 100 MB drop took just under 5 s in both the
+desktop build and the HTML build). Reproduced on Linux (WebKitGTK under
+Xvfb, 100 MB / 650k entries, launch-argument route): Rust was done after
+1.0 s, but the JSON transport to the page took the rest — 8.2 s vs. 8.6 s
+on the JS path. With the binary transport (see `docs/desktop.md` → "Native
+parsing") the same run is 4.3 s vs. 8.4 s; the native part ends at ~2.8 s,
+the remainder is the page's own first render, shared by both paths. A
+follow-up the same day (one render per load instead of two, per-entry
+level work in `render()` memoized) brought that run to ~3.3 s (JS path
+~8.1 s).
+Windows (WebView2) numbers after that fix are still to be measured. Also
+covered by `cargo test` (golden fixtures shared with the jsdom suite, a
+brute-force `formatLocation` check, the JS-regex translation) and the jsdom
+suite's Group 264.
 
 **Not yet run on macOS.** The window chrome specifically (the injected
 title-bar buttons, the drag region, rounded corners, the traffic-light

@@ -148,6 +148,14 @@ throwaway test from scratch. When a session adds a feature:
 
 ## Known gaps (things this suite does NOT cover)
 
+- The desktop wrapper's native parser (`desktop/src-tauri/logparse`, Rust)
+  is never run by this suite. Group 264 pins the JS parser to
+  `fixtures/native-parse-golden.json` and exercises the page's side with a
+  stubbed `window.philogg.parseLogFile`; the same golden file is what the
+  crate's own `cargo test` checks the Rust side against. Regenerate it after
+  a deliberate JS parsing change with
+  `UPDATE_NATIVE_GOLDEN=1 TZ=UTC GROUP=264 npm test`.
+
 - Pure CSS/layout bugs — geometry, paint order, hit-testing — need
   manual/visual review instead (jsdom has no real layout engine). This does
   **not** extend to show/hide correctness, though: jsdom's
