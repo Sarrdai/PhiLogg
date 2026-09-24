@@ -9413,18 +9413,24 @@ function releaseEntriesFromIndex(entries, excludeRootId) {
 // by session-cache/merge restore so a file already parsed once never
 // silently reparses differently just because rules changed since (see
 // "Log format definitions" and restoreSessionFromCache).
+// Pins a file to a stored format (a session restore, mergeFiles, a
+// meta-format stream) instead of resolving one from its filename.
+async function pinFileFormat(node, formatId) {
+  const pinnedId = formatId || DEFAULT_FORMAT_ID;
+  // A restored file's pinned formatId can name a custom format not yet
+  // loaded from IndexedDB — loadFormatConfig() runs in parallel with boot,
+  // not gating it, so an ordinary/default-format load never waits on it.
+  // This is the one place a still-missing lookup would actually mis-parse
+  // a file (falling back to the default), so wait for it here specifically.
+  if (pinnedId !== DEFAULT_FORMAT_ID && !state.logFormats.some(f => f.id === pinnedId)) await formatConfigReady;
+  node.formatId = pinnedId;
+}
+
 async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
   const node = existingNode || createFileNode(name);
   if (existingNode) activateQueuedFileNode(node);
   if (formatIdOverride !== undefined) {
-    const pinnedId = formatIdOverride || DEFAULT_FORMAT_ID;
-    // A restored file's pinned formatId can name a custom format not yet
-    // loaded from IndexedDB — loadFormatConfig() runs in parallel with boot,
-    // not gating it, so an ordinary/default-format load never waits on it.
-    // This is the one place a still-missing lookup would actually mis-parse
-    // a file (falling back to the default), so wait for it here specifically.
-    if (pinnedId !== DEFAULT_FORMAT_ID && !state.logFormats.some(f => f.id === pinnedId)) await formatConfigReady;
-    node.formatId = pinnedId;
+    await pinFileFormat(node, formatIdOverride);
   } else {
     node.formatId = resolveFormatIdForFilename(name);
     // Only a *live* filename resolution can land on a meta-format — a
@@ -11967,6 +11973,9 @@ function snapshotSubtree(nodeId) {
     // same objects just get unplugged from entryIndex/rootIds on delete and
     // plugged back in on undo, same as a real re-open.
     copy.entries = node.entries; copy.cacheKey = node.cacheKey;
+    // Same entries, so the File they were parsed from still matches them —
+    // the restored node's cache record stays a cheap Blob (fileCacheSource).
+    if (node._cacheBlob) copy._cacheBlob = node._cacheBlob;
     if (node.merged) copy.merged = true;
     if (node.tail) copy.tail = node.tail;
     // formatId decides how the level bar is built (formatLevels), how tailed
@@ -12058,6 +12067,7 @@ function restoreSubtree(snap) {
     if (snap.folderId) node.folderId = snap.folderId;
     if (snap.partial) node.partial = snap.partial;
     if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
+    if (snap._cacheBlob) node._cacheBlob = snap._cacheBlob;
     if (snap.mergeOwnerId) node.mergeOwnerId = snap.mergeOwnerId;
     if (snap.mergeSourceHidden) node.mergeSourceHidden = true;
     if (snap.sources) node.sources = snap.sources;
@@ -24093,6 +24103,10 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
   }
   if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
+  // The session cache stores the File itself rather than rebuilding its text
+  // (see fileCacheSource) — except for a ZIP entry, whose File is only an
+  // in-memory copy of the extracted bytes.
+  if (file && !node.zipId) node._cacheBlob = file;
   persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
   // File filter history (see the section near the end of the script):
   // a freshly loaded file always starts with zero filter children, so
@@ -24891,6 +24905,9 @@ async function tailTick() {
 
 function onTailChange(changedRootIds) {
   invalidateCachesForRoots(changedRootIds);
+  // Grown or rotated: the File the node was loaded from no longer matches
+  // its entries, so its cache record goes back to rebuilt text.
+  changedRootIds.forEach(id => { const n = state.nodes[id]; if (n) delete n._cacheBlob; });
   // Keep the session cache's file text roughly current while tailing —
   // heavily debounced (see CACHE_FILE_DEBOUNCE_MS), pagehide flushes the rest.
   changedRootIds.forEach(id => { const n = state.nodes[id]; if (n) schedulePersistFileNode(n); });
@@ -33255,10 +33272,32 @@ function rebuildFileText(node) {
   return node.entries.map(e => e.raw).join("\n");
 }
 
-async function persistFileNode(node) {
+// What a file's cache record carries as its content, cheapest first:
+// - "path": nothing — a desktop file (node.localPath, and the wrapper can
+//   re-register a path via openLocalPath) is re-read and re-parsed from disk
+//   on restore. Person-decided trade-off: a file deleted or moved since is
+//   simply not restored, in exchange for never copying its text anywhere.
+// - "blob": the original File/Blob the node was loaded from
+//   (node._cacheBlob, see loadOneFileIntoTree) — IndexedDB copies a Blob's
+//   bytes off the JS thread, so storing it costs the page ~nothing.
+//   Only valid while node.entries are still exactly what that File parses
+//   to: any tail append or rotation drops it (onTailChange).
+// - "text": rebuildFileText — merges, meta-format streams, ZIP entries,
+//   tailed files, ... Building and structured-cloning ~100 MB of text blocks
+//   the main thread for ~0.5-1.5 s, so that write waits for idle time.
+function fileCacheSource(node) {
+  if (node.localPath && !node.partial && !node.merged && canReopenLocalPath()) return "path";
+  if (node._cacheBlob) return "blob";
+  return "text";
+}
+
+// immediate: write now even when that means building the text (pagehide).
+async function persistFileNode(node, immediate) {
   if (!cacheEnabled() || sessionRestoreInProgress) return;
   if (!node || node.type !== "file") return;
   if (!node.cacheKey) node.cacheKey = newCacheKey();
+  const source = fileCacheSource(node);
+  if (source === "text" && !immediate) return persistFileNodeWhenIdle(node);
   await cacheStoreOp("files", "readwrite", store => store.put({
     key: node.cacheKey,
     name: node.name,
@@ -33282,7 +33321,10 @@ async function persistFileNode(node) {
     // persisted right below, and restoreSessionFromCache rebuilds an
     // equivalent handle from it.
     handle: (node.tail && !node.folderId && !isUrlTailHandle(node.tail.handle)) ? node.tail.handle : null,
-    text: rebuildFileText(node),
+    // Exactly one of text/blob is set, or neither for a "path" record — see
+    // fileCacheSource.
+    text: source === "text" ? rebuildFileText(node) : null,
+    blob: source === "blob" ? node._cacheBlob : null,
     formatId: node.formatId || null,
     // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (desktop
     // wrapper only) and sourceUrl (any ?url=/philoggLoadUrl deep-link) both
@@ -33299,13 +33341,37 @@ async function persistFileNode(node) {
     // restored session would show a deliberately-incomplete node as if it
     // were the file's normal full content.
     partial: node.partial || null,
-    // Per-file clock offset (FEATURE_BACKLOG.md #29): `text` above is rebuilt
-    // from entry.raw (the ORIGINAL, unshifted timestamps), so this signed-ms
-    // amount is what restoreSessionFromCache re-applies to the freshly-parsed
-    // entries to reinstate the correction. Never set on a merged file.
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): the content above is
+    // the ORIGINAL file (text: rebuilt from entry.raw, unshifted), so this
+    // signed-ms amount is what restoreSessionFromCache re-applies to the
+    // freshly-parsed entries to reinstate the correction. Never set on a
+    // merged file.
     clockOffset: node.clockOffset || 0,
     savedAt: Date.now(),
   }));
+}
+
+// A "text" record's write, deferred until the page is idle — never on a
+// load's path to its first render (loadOneFileIntoTree persists right before
+// its caller renders). One pending write per file; it reads the node's state
+// when it runs, so a later change before then is included. The returned
+// promise settles once the write is done, so `await persistFileNode(node)`
+// still means "written". pagehide runs whatever is still pending.
+const pendingIdlePersists = new Map(); // cacheKey -> { node, promise, run }
+function persistFileNodeWhenIdle(node) {
+  const pending = pendingIdlePersists.get(node.cacheKey);
+  if (pending && pending.node === node) return pending.promise;
+  let resolve;
+  const entry = { node, promise: new Promise(r => { resolve = r; }) };
+  entry.run = () => {
+    if (pendingIdlePersists.get(node.cacheKey) !== entry) { resolve(); return; } // superseded, flushed or deleted
+    pendingIdlePersists.delete(node.cacheKey);
+    resolve(state.nodes[node.id] === node ? persistFileNode(node, true) : undefined);
+  };
+  pendingIdlePersists.set(node.cacheKey, entry);
+  if (typeof requestIdleCallback === "function") requestIdleCallback(entry.run, { timeout: 5000 });
+  else setTimeout(entry.run, 0);
+  return entry.promise;
 }
 
 // Per-file debounce for tail appends — rebuilding and writing a large file's
@@ -33328,6 +33394,7 @@ async function cacheDeleteFile(cacheKey) {
   if (!cacheKey) return;
   const pending = pendingFilePersists.get(cacheKey);
   if (pending) { clearTimeout(pending.timer); pendingFilePersists.delete(cacheKey); }
+  pendingIdlePersists.delete(cacheKey);
   await cacheStoreOp("files", "readwrite", store => store.delete(cacheKey));
 }
 
@@ -33611,6 +33678,9 @@ function materializeCachedFilters(fileNode, roots) {
 // clone always fails permission checks in jsdom (see tests/README.md), so
 // tests exercise this directly with a working fixture handle, the same way
 // reconnectFolder's own test does for folders.
+function newTailState(handle, offset) {
+  return { handle, offset, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
+}
 async function tryReattachFileTail(node, handle) {
   try {
     // A urlTailHandle has no permission model to query — the wrapper's own
@@ -33618,20 +33688,48 @@ async function tryReattachFileTail(node, handle) {
     // fails later, which tailTick already degrades gracefully on.
     const perm = isUrlTailHandle(handle) ? "granted" : await handle.queryPermission({ mode: "read" });
     if (perm === "granted") {
-      node.tail = {
-        handle,
-        offset: new Blob([rebuildFileText(node)]).size,
-        pending: "",
-        failed: false,
-        busy: false,
-        errorCount: 0,
-        lastGrowth: Date.now(),
-        wasLive: true,
-      };
+      node.tail = newTailState(handle, new Blob([rebuildFileText(node)]).size);
       return true;
     }
   } catch { /* handle unusable (moved/deleted) — stays a static snapshot */ }
   return false;
+}
+
+// A desktop "path" cache record (see fileCacheSource): the wrapper registers
+// the stored path again (openLocalPath rejects once the file is gone) and the
+// file is parsed the way loadOneFileIntoTree parses a freshly opened one —
+// natively where possible, else fetched and parsed in JS — under the format
+// it was pinned to. Resolves with the node and what the caller needs to
+// re-link it: this run's URL, the path, a tail handle and the bytes read.
+function canReopenLocalPath() {
+  return !!(window.philogg && typeof window.philogg.openLocalPath === "function");
+}
+async function reopenLocalPathForRestore(rec, placeholder) {
+  const local = await window.philogg.openLocalPath(rec.localPath);
+  const handle = urlTailHandle(local.url, local.path);
+  const node = placeholder;
+  activateQueuedFileNode(node);
+  await pinFileFormat(node, rec.formatId);
+  let size;
+  try {
+    try {
+      size = (await parseLocalFileNatively(local.url, node, fraction => {
+        node.loadFraction = fraction;
+        scheduleLoadRender(node.id);
+      })).size;
+    } catch (err) {
+      const file = await handle.getFile();
+      size = file.size;
+      await parseLogTextAsync(await file.text(), node, (done, total) => {
+        node.loadFraction = total ? done / total : 1;
+        scheduleLoadRender(node.id);
+      });
+    }
+  } finally {
+    delete node.loadFraction;
+  }
+  if (state.nodes[node.id] === node) flushLoadRender(node.id);
+  return { node, url: local.url, path: local.path || rec.localPath, handle, size };
 }
 
 // Boot-time restore. Returns true if at least one file came back. Any error
@@ -33660,7 +33758,10 @@ async function restoreSessionFromCache() {
     const recs = []; // { key, rec } | null (rec fetch failed/out of sync) per fileOrder entry
     for (const key of meta.fileOrder) {
       const rec = await cacheStoreOp("files", "readonly", store => store.get(key));
-      recs.push(rec && typeof rec.text === "string" ? { key, rec } : null);
+      // Content comes as text, as the original File (blob), or — a desktop
+      // "path" record, see fileCacheSource — re-read from disk.
+      const usable = rec && (typeof rec.text === "string" || rec.blob || (rec.localPath && canReopenLocalPath()));
+      recs.push(usable ? { key, rec } : null);
     }
     const queued = recs.map(entry => entry && createQueuedFileNode(entry.rec.name));
     if (queued.some(Boolean)) render();
@@ -33680,7 +33781,23 @@ async function restoreSessionFromCache() {
       // Explicit override (never undefined) so a restored file is pinned to
       // whatever format it was actually parsed under, even if the person's
       // filename rules have since changed — see "Log format definitions".
-      const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
+      let node, reopened = null;
+      try {
+        if (typeof rec.text === "string" || rec.blob) {
+          const text = typeof rec.text === "string" ? rec.text : await rec.blob.text();
+          node = await addFile(rec.name, text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
+          if (rec.blob) node._cacheBlob = rec.blob; // still the file's content — keeps its next write cheap
+        } else {
+          reopened = await reopenLocalPathForRestore(rec, placeholder);
+          node = reopened.node;
+        }
+      } catch (err) {
+        // This one file can't come back (a "path" record whose file is gone,
+        // an unreadable blob) — drop its placeholder, keep restoring the rest.
+        if (state.nodes[placeholder.id] === placeholder) deleteNode(placeholder.id);
+        continue;
+      }
+      if (state.nodes[node.id] !== node) continue;
       if (rec.merged) node.merged = true;
       // Windowed/partial load (see loadFolderFileWindowed): rec.text is
       // already just the slice that was actually read, so reparsing it here
@@ -33701,9 +33818,17 @@ async function restoreSessionFromCache() {
       if (rec.folderId) node.folderId = rec.folderId;
       if (rec.localPath) node.localPath = rec.localPath;
       if (rec.sourceUrl) node.sourceUrl = rec.sourceUrl;
+      // Re-read from disk: this run's own philogg://local/… URL replaces the
+      // stored one (those ids are per process), and tailing resumes from
+      // exactly the bytes just parsed.
+      if (reopened) {
+        node.localPath = reopened.path;
+        node.sourceUrl = reopened.url;
+        if (!rec.folderId) node.tail = newTailState(reopened.handle, reopened.size);
+      }
       // Plain (non-folder) file that was being tailed before the reload:
       // try to resume silently — see tryReattachFileTail.
-      if (rec.handle && !rec.folderId) await tryReattachFileTail(node, rec.handle);
+      else if (rec.handle && !rec.folderId) await tryReattachFileTail(node, rec.handle);
       // A desktop-local file (file association, or the wrapper's own
       // picker/drop — see loadDesktopLocalFiles) was tailed through a
       // urlTailHandle, which persistFileNode deliberately doesn't store.
@@ -33841,9 +33966,10 @@ window.addEventListener("pagehide", () => {
   if (metaPersistTimer) { clearTimeout(metaPersistTimer); metaPersistTimer = null; persistMetaNow(); }
   for (const { timer, node } of pendingFilePersists.values()) {
     clearTimeout(timer);
-    if (state.nodes[node.id] === node) persistFileNode(node);
+    if (state.nodes[node.id] === node) persistFileNode(node, true);
   }
   pendingFilePersists.clear();
+  for (const entry of [...pendingIdlePersists.values()]) entry.run();
 });
 
 /* ===================== Session export / import =====================
