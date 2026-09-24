@@ -182,6 +182,9 @@ async function withApp(run, opts = {}) {
       if (opts.philogg) {
         Object.defineProperty(window, "philogg", { value: opts.philogg, configurable: true });
       }
+      // opts.beforeParse(window): anything else a group needs in place before
+      // the page's script runs (a global jsdom lacks, say).
+      if (opts.beforeParse) opts.beforeParse(window);
       Object.defineProperty(window.Element.prototype, "clientHeight", { get() { return 400; }, configurable: true });
       Object.defineProperty(window.Element.prototype, "clientWidth", { get() { return 800; }, configurable: true });
       window.Element.prototype.getBoundingClientRect = function () {
@@ -30171,6 +30174,35 @@ group(268);
     assert(node2.entries.length === reference.length && noId(node2.entries) === noId(reference), "no duplicated or missing entries after the fallback (" + node2.entries.length + ")");
     assert(Object.keys(T.entryIndex).length === before + reference.length, "entryIndex holds each entry once");
   });
+
+  await withApp(async (w, d, T) => {
+    section("268f. The drain adopts queued batches a few at a time, yielding through queueTask (a message), never setTimeout — hidden windows throttle timers");
+    Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 4, configurable: true });
+    const text = bigText();
+    const reference = await mainThreadParse(w, T, text, "fmt-default");
+    // Worker 0 is by far the slowest: every later piece's batches queue up
+    // behind it and are adopted in one go once it is done.
+    installFakeWorker(w, { delay: i => (i === 0 ? 60 : 0) });
+    let pageTimeouts = 0;
+    const origSetTimeout = w.setTimeout;
+    // Only the parse's own timers — a render (createFileNode's) schedules its debounced persists too.
+    w.setTimeout = function () { if (/parseLogTextInWorker|drain/.test(new Error().stack)) pageTimeouts++; return origSetTimeout.apply(this, arguments); };
+    const node = w.createFileNode("drain.log");
+    node.formatId = "fmt-default";
+    await w.parseLogTextAsync(text, node, () => {});
+    w.setTimeout = origSetTimeout;
+    assert(noId(node.entries) === noId(reference), "entries identical (" + node.entries.length + ")");
+    assert(pageTimeouts === 0, "no setTimeout during the parallel parse (" + pageTimeouts + ")");
+  }, { beforeParse: window => {
+    // jsdom has no MessageChannel: a stand-in delivering each message as a
+    // task of its own (setImmediate — not the page's timers).
+    window.MessageChannel = class {
+      constructor() {
+        this.port1 = { onmessage: null };
+        this.port2 = { postMessage: data => setImmediate(() => this.port1.onmessage && this.port1.onmessage({ data })) };
+      }
+    };
+  } });
 
   await withApp(async (w, d, T) => {
     section("268e. A custom regex format with custom columns and a quoted multi-line message parses identically through the workers");
