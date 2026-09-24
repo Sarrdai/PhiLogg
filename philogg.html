@@ -17622,7 +17622,20 @@ function detectMaxTableScrollPx() {
   probe.style.cssText = "position:absolute;visibility:hidden;width:1px;top:-999999px;left:-999999px;";
   document.body.appendChild(probe);
   let lo = 1000000, hi = 40000000; // below every known engine's ceiling .. above every known engine's ceiling
-  const fits = h => { probe.style.height = h + "px"; return parseInt(getComputedStyle(probe).height, 10) === h; };
+  // parseFloat with a relative tolerance, NOT parseInt + exact equality:
+  // Chromium (so also WebView2, the desktop app's engine) serializes a
+  // computed length of 1e6px or more in exponent form with 6 significant
+  // digits ("2e+07px", "2.05123e+07px"). parseInt stopped at the "e" (2),
+  // so every probe failed and the cap fell back to 0.95 * lo = 950,000px —
+  // compressing every view above ~34k rows (a 650k-row file ~19x: one wheel
+  // notch moved ~68 rows and every render visibly snapped the content).
+  // 1e-5 is well above that serialization's rounding (5e-6) and far below
+  // what a real clamp or a dropped declaration (Firefox: height:auto -> 0)
+  // looks like.
+  const fits = h => {
+    probe.style.height = h + "px";
+    return Math.abs(parseFloat(getComputedStyle(probe).height) - h) <= h * 1e-5;
+  };
   if (fits(hi)) { lo = hi; } // a future, even more generous engine
   else {
     while (hi - lo > 100000) {
@@ -18058,7 +18071,22 @@ function contextRangeIndex(ranges, ts) {
   return -1;
 }
 
-function renderVisibleRows() {
+// The rows currently in #tableRows, recorded by every renderVisibleRows()
+// call so the next SCROLL render can keep the ones still inside its window
+// instead of rebuilding them (see renderVisibleRows' reuseRows). groups[k]
+// holds the elements of entry start + k: its row, plus its note row if shown.
+let tableRowsWindow = null;
+
+// reuseRows (only the #tableBody scroll listener passes it): keep the rows
+// of the previous render that are still in the window, drop the ones that
+// scrolled out and build only the ones that scrolled in. Every other caller
+// rebuilds all rows, because it's reacting to something that can change any
+// row (a new list, a toggle, a selection/bookmark/highlight change, ...) —
+// which also means reused rows always come from a render that already
+// reflected the current state. Rebuilding every row on each scroll frame
+// cost ~6ms in Chromium (mostly style/layout of the new rows), which is what
+// used to limit both the frame rate and the buffer size.
+function renderVisibleRows(reuseRows) {
   const total = currentViewEntries.length;
   const viewportH = tableBody.clientHeight || 400;
   // #tableBody's own scrollTop is in PHYSICAL (possibly compressed) space —
@@ -18067,41 +18095,57 @@ function renderVisibleRows() {
   // logical (rendered rows sit at their true height regardless of
   // compression), so the conversion happens only at this one read boundary.
   const scrollTop = physicalToLogicalScrollPx(tableBody.scrollTop);
-  let start, end;
-  if (needsRowOffsets() && tableRowOffsets) {
-    const centerIdx = Math.min(findOffsetIndex(tableRowOffsets, scrollTop), Math.max(0, total - 1));
-    start = Math.max(0, centerIdx - BUFFER_ROWS);
-    end = Math.min(total, findOffsetIndex(tableRowOffsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
-    let physicalTop = logicalToPhysicalScrollPx(tableRowOffsets[start]);
-    // #tableRows' own rendered height is always the TRUE (uncompressed) row
-    // heights — only its top offset is compressed — so top-anchoring it via
-    // logicalToPhysicalScrollPx alone can push its true bottom edge past
-    // #tableSpacer's own capped declared height once end reaches the very
-    // last entry (the BUFFER_ROWS lookback above leaves the rendered block
-    // taller than the viewport right at the tail). #tableSpacer/#tableRows
-    // are deliberately overflow:visible (so a long message's horizontal
-    // overflow bleeds up to #tableBody's own scrollbar — see the "Horizontal
-    // scroll" comment below), so nothing else clips that overhang, and it's
-    // free to inflate the browser's own real scrollHeight beyond what
-    // computeTableSpacerContentHeight assumed. Bottom-anchoring at the tail
-    // instead keeps the true rendered box within the capped spacer always.
-    if (tableScrollHeightScale !== 1 && end === total) {
-      const cap = detectMaxTableScrollPx();
-      physicalTop = Math.min(physicalTop, cap - (tableRowOffsets[end] - tableRowOffsets[start]));
+  // The entry range [start, end) to render with `pad` rows beyond the
+  // viewport on each side, and #tableRows' physical top for it.
+  function rowWindow(pad) {
+    let start, end, top;
+    if (needsRowOffsets() && tableRowOffsets) {
+      const centerIdx = Math.min(findOffsetIndex(tableRowOffsets, scrollTop), Math.max(0, total - 1));
+      start = Math.max(0, centerIdx - pad);
+      end = Math.min(total, findOffsetIndex(tableRowOffsets, scrollTop + viewportH) + pad + 1);
+      top = logicalToPhysicalScrollPx(tableRowOffsets[start]);
+      // #tableRows' own rendered height is always the TRUE (uncompressed) row
+      // heights — only its top offset is compressed — so top-anchoring it via
+      // logicalToPhysicalScrollPx alone can push its true bottom edge past
+      // #tableSpacer's own capped declared height once end reaches the very
+      // last entry (the `pad` lookback above leaves the rendered block
+      // taller than the viewport right at the tail). #tableSpacer/#tableRows
+      // are deliberately overflow:visible (so a long message's horizontal
+      // overflow bleeds up to #tableBody's own scrollbar — see the "Horizontal
+      // scroll" comment below), so nothing else clips that overhang, and it's
+      // free to inflate the browser's own real scrollHeight beyond what
+      // computeTableSpacerContentHeight assumed. Bottom-anchoring at the tail
+      // instead keeps the true rendered box within the capped spacer always.
+      if (tableScrollHeightScale !== 1 && end === total) {
+        top = Math.min(top, detectMaxTableScrollPx() - (tableRowOffsets[end] - tableRowOffsets[start]));
+      }
+    } else {
+      const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + pad * 2;
+      start = Math.min(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - pad), Math.max(0, total - 1));
+      end = Math.min(total, start + maxVisible);
+      top = logicalToPhysicalScrollPx(start * ROW_HEIGHT);
+      // Same tail-overhang guard as the offsets branch above.
+      if (tableScrollHeightScale !== 1 && end === total) {
+        top = Math.min(top, detectMaxTableScrollPx() - (end - start) * ROW_HEIGHT);
+      }
     }
-    tableRows.style.top = physicalTop + "px";
-  } else {
-    const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + BUFFER_ROWS * 2;
-    start = Math.min(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS), Math.max(0, total - 1));
-    end = Math.min(total, start + maxVisible);
-    let physicalTop = logicalToPhysicalScrollPx(start * ROW_HEIGHT);
-    // Same tail-overhang guard as the offsets branch above.
-    if (tableScrollHeightScale !== 1 && end === total) {
-      const cap = detectMaxTableScrollPx();
-      physicalTop = Math.min(physicalTop, cap - (end - start) * ROW_HEIGHT);
-    }
-    tableRows.style.top = physicalTop + "px";
+    return { start, end, top };
   }
+  // A full rebuild renders BUFFER_ROWS beyond the viewport, since every row
+  // there costs a fresh build and layout. A scroll render only builds what's
+  // new to the window, so it can afford a whole screen on each side — a fast
+  // wheel/touchpad flick then stays within rows that are already there
+  // instead of showing blank space until the next frame. A jump past the
+  // previous window (scrollbar thumb, End) has nothing to reuse and falls
+  // back to the small full rebuild; the next scroll frame widens it again.
+  const w = tableRowsWindow;
+  const canReuse = !!(reuseRows && w && w.entries === currentViewEntries && w.total === total &&
+    tableRows.firstElementChild === w.first);
+  let win = rowWindow(canReuse ? Math.max(BUFFER_ROWS, Math.ceil(viewportH / ROW_HEIGHT)) : BUFFER_ROWS);
+  const reuse = canReuse && win.start < w.end && win.end > w.start;
+  if (canReuse && !reuse) win = rowWindow(BUFFER_ROWS);
+  const { start, end } = win;
+  tableRows.style.top = win.top + "px";
 
   // Bracket rendering only makes sense in the file's natural chronological
   // order (a manual column sort would scatter a group's rows apart), and
@@ -18125,91 +18169,119 @@ function renderVisibleRows() {
   const columnDefs = activeColumnDefs();
   const messageVisible = activeMessageVisible();
 
-  const frag = document.createDocumentFragment();
-  for (let i = start; i < end; i++) {
-    const e = currentViewEntries[i];
-    const row = document.createElement("div");
-    let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
-      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
-      (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") +
-      (e._tempAnchor ? " temp-anchor-row" : "");
-
-    let bracketHtml = "";
-    // Highlight-rule matches (see computeHighlightMap) — shown here too now,
-    // not just in the Full view. Rendered before the context bracket so the
-    // two share the left gutter in the same relative order as the Full
-    // view's markers + bookmark dot (see the .hl-markers CSS comment for the
-    // known overlap edge case when both a highlight color and an active
-    // context filter apply to the same row).
-    const hlColors = highlightColorMap.get(e.id);
-    if (hlColors && hlColors.length) {
-      bracketHtml += '<span class="hl-markers">' + hlColors.map(c => '<span class="hl-marker" style="background:' + c + '"></span>').join("") + '</span>';
+  const rc = { total, ctxNode, mm, columnDefs, messageVisible };
+  let groups;
+  if (reuse) {
+    for (let i = w.start; i < start; i++) w.groups[i - w.start].forEach(el => el.remove());
+    for (let i = end; i < w.end; i++) w.groups[i - w.start].forEach(el => el.remove());
+    groups = w.groups.slice(Math.max(start, w.start) - w.start, Math.min(end, w.end) - w.start);
+    if (start < w.start) {
+      const frag = document.createDocumentFragment();
+      const above = [];
+      for (let i = start; i < w.start; i++) above.push(appendLogRow(frag, i, rc));
+      tableRows.insertBefore(frag, tableRows.firstChild);
+      groups = above.concat(groups);
     }
-    if (ctxNode) {
-      const gIdx = contextRangeIndex(ctxNode._contextRanges, e.ts);
-      if (gIdx !== -1) {
-        // Look at actual neighbors in the full result (not just the
-        // rendered window) so the start/end caps are correct regardless of
-        // where the virtualized viewport happens to be scrolled to.
-        const prevE = i > 0 ? currentViewEntries[i - 1] : null;
-        const nextE = i < total - 1 ? currentViewEntries[i + 1] : null;
-        const isStart = !prevE || contextRangeIndex(ctxNode._contextRanges, prevE.ts) !== gIdx;
-        const isEnd = !nextE || contextRangeIndex(ctxNode._contextRanges, nextE.ts) !== gIdx;
-        cls += " ctx-row" + (isStart ? " ctx-start" : "") + (isEnd ? " ctx-end" : "");
-        bracketHtml = '<span class="ctx-bracket"></span>';
-        if (ctxNode._anchorIds.has(e.id)) bracketHtml += '<span class="ctx-anchor-dot" title="Reference entry"></span>';
-      }
+    if (end > w.end) {
+      const frag = document.createDocumentFragment();
+      for (let i = w.end; i < end; i++) groups.push(appendLogRow(frag, i, rc));
+      tableRows.appendChild(frag);
     }
-    // Δt is only meaningful when rows are in chronological order — under a
-    // column sort, adjacent rows aren't temporally adjacent, so it's dashed
-    // out rather than shown misleadingly (same reasoning as the context
-    // bracket being suppressed under column sort, see contextRangeIndex above).
-    const prevE = i > 0 ? currentViewEntries[i - 1] : null;
-    const deltaMs = (!state.sortColumn && prevE) ? (e.ts - prevE.ts) : null;
-
-    // markFieldHtml short-circuits to a plain escapeHtml before any range
-    // search when nothing can contribute a mark (feature/row-toggle off and
-    // no coloured filters), so this costs what it did before any of this
-    // existed in the common case.
-    const timeText = formatTime(e.ts);
-    const timeHtml = markFieldHtml(mm, timeText, "time");
-    const levelHtml = markFieldHtml(mm, e.level, "level");
-    // Custom Columns: the middle (Thread/Location/Method/custom) spans are
-    // built from columnDefs instead of three hardcoded fields — see
-    // entryColumnValue/columnCssClass ("Custom columns" section). Every
-    // span carries data-col so the context menu (resolveContextFilterColumn)
-    // and middle-click-to-hide can resolve it generically.
-    let middleHtml = "";
-    for (const col of columnDefs) {
-      const val = entryColumnValue(e, col.key);
-      const html = markFieldHtml(mm, val, col.key);
-      middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
-    }
-    const msgHtmlBase = markFieldHtml(mm, e.message, "message");
-    const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
-
-    row.className = cls;
-    row.style.height = baseRowHeightForEntry(e, tableWrapCols) + "px";
-    row.dataset.entryId = e.id;
-    row.innerHTML =
-      bracketHtml +
-      (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
-      '<span class="col-bar"></span>' +
-      '<span class="col-time" data-col="time">' + timeHtml + '</span>' +
-      '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      '<span class="col-level" data-col="level"><span class="level-badge">' + levelHtml + '</span></span>' +
-      middleHtml +
-      (messageVisible ? '<span class="col-msg" data-col="message">' + msgHtml + '</span>' : "");
-    row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
-    row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
-    row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
-    frag.appendChild(row);
-    appendNoteRow(frag, e);
+  } else {
+    const frag = document.createDocumentFragment();
+    groups = [];
+    for (let i = start; i < end; i++) groups.push(appendLogRow(frag, i, rc));
+    tableRows.innerHTML = "";
+    tableRows.appendChild(frag);
   }
-  tableRows.innerHTML = "";
-  tableRows.appendChild(frag);
+  tableRowsWindow = { entries: currentViewEntries, total, start, end, groups, first: tableRows.firstElementChild };
   verifyVisibleFpCandidates(tableRows);
   syncTableHeaderWidth();
+}
+
+// Builds currentViewEntries[i]'s row (plus its note row, if any) into `frag`
+// and returns those elements. `rc` carries what renderVisibleRows computes
+// once per call rather than per row.
+function appendLogRow(frag, i, rc) {
+  const e = currentViewEntries[i];
+  const row = document.createElement("div");
+  let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
+    (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
+    (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") +
+    (e._tempAnchor ? " temp-anchor-row" : "");
+
+  let bracketHtml = "";
+  // Highlight-rule matches (see computeHighlightMap) — shown here too now,
+  // not just in the Full view. Rendered before the context bracket so the
+  // two share the left gutter in the same relative order as the Full
+  // view's markers + bookmark dot (see the .hl-markers CSS comment for the
+  // known overlap edge case when both a highlight color and an active
+  // context filter apply to the same row).
+  const hlColors = highlightColorMap.get(e.id);
+  if (hlColors && hlColors.length) {
+    bracketHtml += '<span class="hl-markers">' + hlColors.map(c => '<span class="hl-marker" style="background:' + c + '"></span>').join("") + '</span>';
+  }
+  if (rc.ctxNode) {
+    const gIdx = contextRangeIndex(rc.ctxNode._contextRanges, e.ts);
+    if (gIdx !== -1) {
+      // Look at actual neighbors in the full result (not just the
+      // rendered window) so the start/end caps are correct regardless of
+      // where the virtualized viewport happens to be scrolled to.
+      const prevE = i > 0 ? currentViewEntries[i - 1] : null;
+      const nextE = i < rc.total - 1 ? currentViewEntries[i + 1] : null;
+      const isStart = !prevE || contextRangeIndex(rc.ctxNode._contextRanges, prevE.ts) !== gIdx;
+      const isEnd = !nextE || contextRangeIndex(rc.ctxNode._contextRanges, nextE.ts) !== gIdx;
+      cls += " ctx-row" + (isStart ? " ctx-start" : "") + (isEnd ? " ctx-end" : "");
+      bracketHtml = '<span class="ctx-bracket"></span>';
+      if (rc.ctxNode._anchorIds.has(e.id)) bracketHtml += '<span class="ctx-anchor-dot" title="Reference entry"></span>';
+    }
+  }
+  // Δt is only meaningful when rows are in chronological order — under a
+  // column sort, adjacent rows aren't temporally adjacent, so it's dashed
+  // out rather than shown misleadingly (same reasoning as the context
+  // bracket being suppressed under column sort, see contextRangeIndex above).
+  const prevE = i > 0 ? currentViewEntries[i - 1] : null;
+  const deltaMs = (!state.sortColumn && prevE) ? (e.ts - prevE.ts) : null;
+
+  // markFieldHtml short-circuits to a plain escapeHtml before any range
+  // search when nothing can contribute a mark (feature/row-toggle off and
+  // no coloured filters), so this costs what it did before any of this
+  // existed in the common case.
+  const timeText = formatTime(e.ts);
+  const timeHtml = markFieldHtml(rc.mm, timeText, "time");
+  const levelHtml = markFieldHtml(rc.mm, e.level, "level");
+  // Custom Columns: the middle (Thread/Location/Method/custom) spans are
+  // built from columnDefs instead of three hardcoded fields — see
+  // entryColumnValue/columnCssClass ("Custom columns" section). Every
+  // span carries data-col so the context menu (resolveContextFilterColumn)
+  // and middle-click-to-hide can resolve it generically.
+  let middleHtml = "";
+  for (const col of rc.columnDefs) {
+    const val = entryColumnValue(e, col.key);
+    const html = markFieldHtml(rc.mm, val, col.key);
+    middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+  }
+  const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message");
+  const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
+
+  row.className = cls;
+  row.style.height = baseRowHeightForEntry(e, tableWrapCols) + "px";
+  row.dataset.entryId = e.id;
+  row.innerHTML =
+    bracketHtml +
+    (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
+    '<span class="col-bar"></span>' +
+    '<span class="col-time" data-col="time">' + timeHtml + '</span>' +
+    '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
+    '<span class="col-level" data-col="level"><span class="level-badge">' + levelHtml + '</span></span>' +
+    middleHtml +
+    (rc.messageVisible ? '<span class="col-msg" data-col="message">' + msgHtml + '</span>' : "");
+  row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
+  row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
+  row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
+  frag.appendChild(row);
+  const noteRow = appendNoteRow(frag, e);
+  return noteRow ? [row, noteRow] : [row];
 }
 
 // Shared by renderVisibleRows/renderHighlightVisibleRows: appends a note-row
@@ -18220,6 +18292,8 @@ function renderVisibleRows() {
 // are attached fresh every render, same as every other per-row listener in
 // this file (renderVisibleRows/renderNode) — DOM identity across renders is
 // never assumed (see CLAUDE.md's "renderVisibleRows() rebuilds nodes" gotcha).
+// Returns the note row (or undefined) so renderVisibleRows can track it with
+// its entry's row for reuse.
 function appendNoteRow(frag, e) {
   if (!state.showNotes) return;
   const note = state.notes.get(e.id);
@@ -18232,6 +18306,7 @@ function appendNoteRow(frag, e) {
   noteRow.title = "Double-click to edit";
   noteRow.addEventListener("dblclick", ev => { ev.stopPropagation(); openNoteEditor(e.id); });
   frag.appendChild(noteRow);
+  return noteRow;
 }
 
 /* ===================== Highlight view =====================
@@ -19464,44 +19539,46 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
   });
 }
 
-// Re-rendering the full visible-row DOM (bracket detection, match
-// highlighting, ...) on every single animation frame of a scroll is
-// expensive enough to visibly interfere with the browser's own native
-// scroll-animation scheduling on a heavily compressed huge table —
-// empirically confirmed via real Firefox telemetry (2026-09-21, person-
-// reported: holding/pressing End on an 822,697-entry merge repeatedly
-// stalled the native scrollTop >150,000 physical px short of the true
-// max, non-deterministically between attempts — consistent with
-// main-thread contention from the per-frame rebuild, not a hard browser
-// limit or any remaining scroll-math bug). Throttles a rapid burst of
-// scroll events (native keyboard End/Home, momentum scrolling, ...) down
-// to at most one render per SCROLL_RENDER_THROTTLE_MS via setTimeout —
-// freeing up most of each animation frame's time budget — while a single,
-// isolated scroll event (mouse wheel, trackpad) still renders immediately
-// on its own next frame, same as before. The render function always reads
-// live DOM/state at call time (never a captured snapshot), so the last
-// render in a throttled burst still reflects the true final scroll
-// position once scrolling settles — no separate "did anything change"
-// bookkeeping needed beyond the `pending` flag below.
-const SCROLL_RENDER_THROTTLE_MS = 100;
-function makeThrottledScrollRenderer(renderFn) {
-  let ticking = false, pending = false;
-  function frame() { requestAnimationFrame(renderFn); }
-  function rearm() {
-    setTimeout(() => {
-      if (pending) { pending = false; frame(); rearm(); }
-      else { ticking = false; }
-    }, SCROLL_RENDER_THROTTLE_MS);
+// Scroll-triggered renders run at most once per animation frame: a burst of
+// scroll events (wheel, momentum, native keyboard End/Home animation, a
+// scrollbar-thumb drag) collapses onto the next frame's render, which reads
+// the live scroll position at that moment (never a captured snapshot), so
+// no separate trailing catch-up render is needed.
+//
+// It used to be throttled to one render per 100ms instead. That was a
+// workaround for real Firefox telemetry (2026-09-21, person-reported:
+// holding End on an 822,697-entry merge stalled the native scrollTop
+// >150,000 physical px short of the true max — main-thread contention from
+// a full row rebuild per frame on a heavily compressed table). But 100ms is
+// six frames the viewport can scroll past the rendered rows, which is where
+// the blank rows on every faster scroll came from (measured in Chromium,
+// 2026-09-24). What the Firefox case actually needs is only that an
+// EXPENSIVE render never monopolizes the main thread — so the backoff is
+// cost-based now: a render that took longer than SCROLL_RENDER_BUDGET_MS
+// (most of a 60Hz frame) holds the next one off for SCROLL_RENDER_BACKOFF
+// times its own cost (rendering then keeps at most ~1/4 of the main
+// thread), while an ordinary render — a full rebuild is a few ms, a
+// scroll render with renderVisibleRows' row reuse ~1ms — is never delayed.
+const SCROLL_RENDER_BUDGET_MS = 12;
+const SCROLL_RENDER_BACKOFF = 3;
+function makeScrollRenderer(renderFn) {
+  let pending = false, notBefore = 0;
+  function frame() {
+    const t0 = performance.now();
+    if (t0 < notBefore) { requestAnimationFrame(frame); return; }
+    pending = false;
+    renderFn();
+    const cost = performance.now() - t0;
+    notBefore = cost > SCROLL_RENDER_BUDGET_MS ? t0 + cost * (1 + SCROLL_RENDER_BACKOFF) : 0;
   }
   return function onScroll() {
-    if (ticking) { pending = true; return; }
-    ticking = true;
-    frame();
-    rearm();
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(frame);
   };
 }
 
-const throttledHighlightScrollRender = makeThrottledScrollRenderer(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); });
+const highlightScrollRender = makeScrollRenderer(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); });
 highlightBody.addEventListener("scroll", () => {
   // Twin of #tableBody's own listener below (FEATURE_BACKLOG #25): manual
   // scrolling away from the bottom of a tailed Highlight/Full view disengages
@@ -19521,11 +19598,11 @@ highlightBody.addEventListener("scroll", () => {
   // keeps Box #2 tracking the Full view's own scroll position while
   // the Full tab is what's showing (see that function's fhLayout/fhActiveTab
   // branch; a no-op otherwise).
-  throttledHighlightScrollRender();
+  highlightScrollRender();
 });
 window.addEventListener("resize", () => renderHighlightVisibleRows());
 
-const throttledTableScrollRender = makeThrottledScrollRenderer(() => { renderVisibleRows(); updateMinimapRenderedRange(); });
+const tableScrollRender = makeScrollRenderer(() => { renderVisibleRows(true); updateMinimapRenderedRange(); });
 tableBody.addEventListener("scroll", () => {
   // Manual scrolling away from the bottom of a tailed view disengages
   // auto-follow; scrolling (or jumping — e.g. a "go to last row" shortcut)
@@ -19542,7 +19619,7 @@ tableBody.addEventListener("scroll", () => {
       maybeReengageTailFollow();
     }
   }
-  throttledTableScrollRender();
+  tableScrollRender();
 });
 window.addEventListener("resize", () => {
   renderVisibleRows();
