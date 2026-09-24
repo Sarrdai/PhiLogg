@@ -367,8 +367,11 @@ time. Timestamps travel as a `Float64Array` (NaN for none). Same run
 afterwards: the native part is done at ~2.8 s (IPC ~1.1 s, decode ~0.45 s,
 creating the entries/ids/`entryIndex` ~0.65 s), the whole load 4.3 s vs.
 8.4 s on the JS path. What is left is page-side and shared by both paths:
-the first `render()` of the loaded file (~1.1 s here) and one more
-`render()` right after it.
+the first `render()` of the loaded file. A follow-up (2026-09-24) removed
+a second full render every load paid and memoized the per-entry level
+work inside `render()` (see `docs/persistence-and-sync.md` → "File
+loading" and `docs/ui-and-views.md` → "Level bar"): the whole load is now
+~3.3 s here (JS path ~8.1 s).
 
 **The channel.** `inject.js` has a small stand-in for `@tauri-apps/api`'s
 `Channel` (reorders by `index` — large messages go through a separate fetch

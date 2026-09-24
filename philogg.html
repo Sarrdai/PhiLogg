@@ -9272,6 +9272,22 @@ function levelBucket(level, formatId) {
   return "OTHER";
 }
 
+// levelBucket for one pass over many entries: re-resolving the owning
+// format's level list per entry (a formats lookup plus fresh arrays) costs
+// hundreds of ms on a large file, while a file has only a handful of
+// distinct (format, level) pairs. Scoped to one pass on purpose — a
+// long-lived cache would go stale when a format's levels are edited.
+function makeLevelBucketer() {
+  const byFormat = new Map();
+  return (level, formatId) => {
+    let byLevel = byFormat.get(formatId);
+    if (!byLevel) { byLevel = new Map(); byFormat.set(formatId, byLevel); }
+    let b = byLevel.get(level);
+    if (b === undefined) { b = levelBucket(level, formatId); byLevel.set(level, b); }
+    return b;
+  };
+}
+
 // The lvl-* class for a level. Called both with an entry's raw level text
 // (plus its formatId) and with a bare bucket NAME (the level bar, which
 // unions several formats' lists and so has no single format context) — in
@@ -11538,7 +11554,8 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
   } else if (baked.filterType === "sources") {
     result = parentEntries;
   } else if (baked.filterType === "level") {
-    result = parentEntries.filter(e => baked.value.includes(levelBucket(e.level, e.formatId)));
+    const bucketOf = makeLevelBucketer();
+    result = parentEntries.filter(e => baked.value.includes(bucketOf(e.level, e.formatId)));
   } else if (baked.filterType === "and" || baked.filterType === "or") {
     const aEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
     const bEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
@@ -11682,7 +11699,8 @@ function getEntriesUncached(node) {
     // applyLevelFilter/FEATURE_BACKLOG.md #10). An empty array never lives
     // in the tree (see applyLevelSelectionToTree, which deletes the node
     // instead), but is treated as "match nothing" here for safety.
-    result = parentEntries.filter(e => node.value.includes(levelBucket(e.level, e.formatId)));
+    const bucketOf = makeLevelBucketer();
+    result = parentEntries.filter(e => node.value.includes(bucketOf(e.level, e.formatId)));
   } else if (node.filterType === "and" || node.filterType === "or") {
     // Self-contained: bakedA/bakedB are flat condition snapshots (see
     // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
@@ -11890,10 +11908,11 @@ function getLevelCounts(nodeId) {
   if (!node) return {};
   if (!node._levelCounts) {
     const counts = {};
+    const bucketOf = makeLevelBucketer();
     for (const e of getEntries(nodeId)) {
       // Keyed by the entry's OWN computed bucket, never by iterating a fixed
       // name list — that's what makes per-format custom buckets counted too.
-      const b = levelBucket(e.level, e.formatId);
+      const b = bucketOf(e.level, e.formatId);
       counts[b] = (counts[b] || 0) + 1;
     }
     node._levelCounts = counts;
@@ -14546,7 +14565,8 @@ function renderLevelBar() {
 
 function applyLevelFilter(entries) {
   if (state.levelFilter.size === 0) return entries;
-  return entries.filter(e => state.levelFilter.has(levelBucket(e.level, e.formatId)));
+  const bucketOf = makeLevelBucketer();
+  return entries.filter(e => state.levelFilter.has(bucketOf(e.level, e.formatId)));
 }
 
 // Bookmarked entries belonging to a given root file, resolved via an
@@ -20412,6 +20432,9 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // lowerBoundByTs call would cost.
   const orderIndexMap = entriesMode ? buildOrderIndexMap(rootId) : null;
   const rootCount = rootEntries.length;
+  // Resolved once per distinct (format, level) pair, not per entry — same
+  // reasoning as makeLevelBucketer, extended to the rank.
+  const levelInfo = new Map(); // formatId -> Map(level -> [bucket, rank])
   for (const e of viewEntries) {
     let b;
     if (entriesMode) {
@@ -20426,9 +20449,15 @@ function renderTimelineMinimap(rootId, viewEntries) {
       b = bucketOfTime(e.ts);
     }
     ovCounts[b]++;
-    const bucket = levelBucket(e.level, e.formatId);
-    const rank = levelSortRank(bucket, e.formatId);
-    if (rank < ovRank[b]) { ovRank[b] = rank; ovName[b] = bucket; }
+    let byLevel = levelInfo.get(e.formatId);
+    if (!byLevel) { byLevel = new Map(); levelInfo.set(e.formatId, byLevel); }
+    let info = byLevel.get(e.level);
+    if (!info) {
+      const bucket = levelBucket(e.level, e.formatId);
+      info = [bucket, levelSortRank(bucket, e.formatId)];
+      byLevel.set(e.level, info);
+    }
+    if (info[1] < ovRank[b]) { ovRank[b] = info[1]; ovName[b] = info[0]; }
   }
   minimapBgCounts = bgCounts;
   minimapOvCounts = ovCounts;
@@ -23912,8 +23941,9 @@ function loadFiles(fileList) {
 // phases (READ_WEIGHT/PARSE_WEIGHT), instead of going through addFile.
 // folderId (optional) tags the node so it renders inside that watched
 // folder's section (renderFolderSection) instead of the plain tree, from
-// the very first moment — see createFileNode. Caller owns the final
-// render() around this; the row's progress fill is fully self-managed via
+// the very first moment — see createFileNode. Caller owns the render()
+// once this returns (this function never renders the loaded result
+// itself); the row's progress fill is fully self-managed via
 // scheduleLoadRender in the meantime.
 // existingNode (optional): reuses an already-inserted queued placeholder
 // (see createQueuedFileNode/loadFileDescriptors) instead of creating a fresh
@@ -23979,12 +24009,11 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     throw err;
   } finally {
     delete node.loadFraction;
-    // Skip the render if the node was already deleted mid-load (by the
-    // person, or the catch above) — same guard fillMergedEntries already
-    // has for the equivalent race, just applied before the render instead
-    // of after (rendering for a dead node id is a wasted full render, not
-    // just redundant work).
-    if (state.nodes[node.id] === node) flushLoadRender(node.id);
+    // No render here: the caller renders once, after the history match and
+    // the tail below are in place too. It used to flushLoadRender() here AND
+    // the caller rendered again right after — two full renders per loaded
+    // file, each hundreds of ms on a large one.
+    if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
   }
   if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
   persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
@@ -24113,6 +24142,10 @@ async function loadFileDescriptors(descs) {
   }
 
   const loadedIds = [];
+  // Each finished file renders once, as soon as it's done (another file of
+  // the batch may still be loading); only a failure — whose placeholder is
+  // removed without a render — leaves the final render below still to do.
+  let needsFinalRender = true;
   try {
     const results = await Promise.all(descs.map(async (desc, i) => {
       const { handle } = desc;
@@ -24133,6 +24166,8 @@ async function loadFileDescriptors(descs) {
         // all (see canParseNatively).
         const file = desc.file || (canParseNatively(handle) ? null : await desc.openFile());
         const node = await loadOneFileIntoTree(file ? file.name : desc.name, file, handle, null, queuedNodes[i]);
+        render();
+        needsFinalRender = false;
         return node.id;
       } catch (err) {
         // One file's read/parse failure (loadOneFileIntoTree already removed
@@ -24150,12 +24185,13 @@ async function loadFileDescriptors(descs) {
         // reproduce under devtools.
         const reason = err && err.message ? ` (${err.message})` : "";
         showCopyToast(`Couldn't load "${queuedNodes[i].name}"${reason}`);
+        needsFinalRender = true;
         return null;
       }
     }));
     loadedIds.push(...results.filter(id => id != null));
   } finally {
-    render();
+    if (needsFinalRender) render();
   }
 
   if (mergeShell) {
@@ -24358,7 +24394,8 @@ async function loadUrlIntoTree(url) {
         scheduleLoadRender(node.id);
       })).size;
       delete node.loadFraction;
-      if (state.nodes[node.id] === node) flushLoadRender(node.id);
+      // Rendered once, at the end of this function (tail included).
+      if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
     } catch (err) {
       // Not natively parseable — the fetch below fills this same node.
     }
@@ -26704,11 +26741,12 @@ function renderLiveMatchMinimap(hits, baseEntries) {
   const buckets = new Array(FILTER_MINIMAP_BUCKETS).fill(0);
   const ranks = new Array(FILTER_MINIMAP_BUCKETS).fill(Infinity);
   const span = max - min;
+  const bucketOf = makeLevelBucketer();
   for (const e of hits) {
     if (isNaN(e.ts)) continue;
     const i = span > 0 ? Math.min(FILTER_MINIMAP_BUCKETS - 1, Math.floor((e.ts - min) / span * FILTER_MINIMAP_BUCKETS)) : 0;
     buckets[i]++;
-    const rank = levelSortRank(levelBucket(e.level, e.formatId), e.formatId);
+    const rank = levelSortRank(bucketOf(e.level, e.formatId), e.formatId);
     if (rank < ranks[i]) ranks[i] = rank;
   }
   const peak = Math.max(...buckets);
