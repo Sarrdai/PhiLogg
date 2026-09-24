@@ -8935,7 +8935,8 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
    Under the desktop wrapper a file opened from disk never has to pass
    through this page as text at all: window.philogg.parseLogFile has the
    Rust backend read it and parse it on every core at once
-   (desktop/src-tauri/logparse), streaming finished entries back in batches.
+   (desktop/src-tauri/logparse), streaming finished entries back in binary
+   batches (decodeNativeBatch).
    The format is still compiled HERE (nativeFormatSpec) — Rust only executes
    the regex/date description it is handed, so the parsing rules have one
    definition. Anything it can't take (a meta-format, a regex construct its
@@ -8969,6 +8970,50 @@ function makeNaiveTsLocalizer() {
   };
 }
 
+// Reads one binary entry batch (layout: desktop/src-tauri/logparse/src/
+// batch.rs) into entry objects of this page's own shape and key order
+// (applyFormatMatch/parseHeaderLine), minus id/formatId. The whole batch's
+// strings arrive as ONE UTF-8 buffer — decoded once, every field a
+// substring of it, located by varint offsets relative to the entry's raw;
+// ts stays naive (see makeNaiveTsLocalizer).
+const nativeBatchDecoder = typeof TextDecoder === "function" ? new TextDecoder("utf-8", { ignoreBOM: true }) : null;
+function decodeNativeBatch(buf) {
+  const head = new DataView(buf, 0, 16);
+  const fraction = head.getFloat64(0, true);
+  const count = head.getUint32(8, true);
+  const tableLen = head.getUint32(12, true);
+  const ts = new Float64Array(buf, 16, count);
+  const tab = new Uint8Array(buf, 16 + count * 8, tableLen);
+  const S = nativeBatchDecoder.decode(new Uint8Array(buf, 16 + count * 8 + tableLen));
+  const entries = new Array(count);
+  let p = 0;
+  let rawAt = 0;
+  const next = () => {
+    let b = tab[p++];
+    if (b < 0x80) return b;
+    let v = b & 0x7F, shift = 7;
+    do { b = tab[p++]; v |= (b & 0x7F) << shift; shift += 7; } while (b >= 0x80);
+    return v;
+  };
+  const str = () => { const start = rawAt + next(); return S.substring(start, start + next()); };
+  for (let i = 0; i < count; i++) {
+    rawAt += next();
+    const raw = S.substring(rawAt, rawAt + next());
+    const e = { id: "", tsRaw: str(), ts: ts[i], level: str(), thread: str(), locationShort: str(),
+      locationFull: str(), method: str(), message: str(), raw, fields: EMPTY_ENTRY_FIELDS };
+    const flags = next();
+    if (flags & 1) e.msgOpenQuote = str();
+    const k = flags >>> 1;
+    if (k) {
+      const fields = {};
+      for (let j = 0; j < k; j++) { const name = str(); fields[name] = str(); }
+      e.fields = fields;
+    }
+    entries[i] = e;
+  }
+  return { fraction, entries };
+}
+
 // Resolves with { size } (bytes read — the tail offset) once every entry is
 // on node.entries. onFraction(0..1) drives the row's progress fill. A
 // rejection leaves node.entries/entryIndex exactly as they were.
@@ -8988,18 +9033,19 @@ async function parseLocalFileNatively(url, node, onFraction) {
       // Deleted mid-load — same rule as parseLogTextInWorker: stop feeding
       // the orphaned node; the caller's own existence check takes over.
       if (state.nodes[node.id] !== node) { orphaned = true; return; }
-      if (msg.entries) {
-        for (const e of msg.entries) {
+      // An ArrayBuffer is an entry batch; anything else a {fraction} progress note.
+      const batch = msg instanceof ArrayBuffer ? decodeNativeBatch(msg) : msg;
+      if (batch.entries) {
+        for (const e of batch.entries) {
           e.id = uid("e");
           e.ts = freeDate ? (e.tsRaw ? parseTimestampGeneric(e.tsRaw, null) : NaN)
-            : e.ts == null ? NaN : localize(e.ts);
-          if (!e.fields || Object.keys(e.fields).length === 0) e.fields = EMPTY_ENTRY_FIELDS;
+            : isNaN(e.ts) ? NaN : localize(e.ts);
           e.formatId = formatId;
           entryIndex[e.id] = e;
           node.entries.push(e);
         }
       }
-      if (onFraction && typeof msg.fraction === "number") onFraction(msg.fraction);
+      if (onFraction && typeof batch.fraction === "number") onFraction(batch.fraction);
     });
   } catch (err) {
     for (const e of node.entries.splice(start)) delete entryIndex[e.id];

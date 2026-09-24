@@ -251,17 +251,18 @@ the injected strip's `markDragRegion` drag handle and the async
 `pip_enter`/`pip_exit`/`pip_minimize` commands (see `docs/desktop.md` →
 "Picture-in-picture") are the parts most likely to need platform adjustment.
 
-**Native parsing (2026-09-24)** is verified by `cargo check`, the crate's own
-`cargo test` (the golden fixture shared with the jsdom suite, a brute-force
-`formatLocation` check, the JS-regex translation) and the jsdom suite's
-Group 264 (a stubbed bridge). Not yet run inside a real webview — the
-IPC channel stand-in in `inject.js` (message reordering, the `{end: true}`
-marker) is the part only a real run exercises. Measured on the crate alone
-(1M entries / 154 MB, default format, 4 cores): read ~0.25s, parse ~0.6s,
-JSON ~0.3s (a regex-mode format: parse ~1.3s); the page's own parse loop
-needed ~3.7s on one thread for the same file. Not in either number: the
-page turning the JSON batches into entries on its main thread, which only a
-real webview run can measure.
+**Native parsing (2026-09-24)**: the first tester build showed no gain
+(person-tested on Windows: a 100 MB drop took just under 5 s in both the
+desktop build and the HTML build). Reproduced on Linux (WebKitGTK under
+Xvfb, 100 MB / 650k entries, launch-argument route): Rust was done after
+1.0 s, but the JSON transport to the page took the rest — 8.2 s vs. 8.6 s
+on the JS path. With the binary transport (see `docs/desktop.md` → "Native
+parsing") the same run is 4.3 s vs. 8.4 s; the native part ends at ~2.8 s,
+the remainder is the page's own first render, shared by both paths.
+Windows (WebView2) numbers after that fix are still to be measured. Also
+covered by `cargo test` (golden fixtures shared with the jsdom suite, a
+brute-force `formatLocation` check, the JS-regex translation) and the jsdom
+suite's Group 264.
 
 **Not yet run on macOS.** The window chrome specifically (the injected
 title-bar buttons, the drag region, rounded corners, the traffic-light

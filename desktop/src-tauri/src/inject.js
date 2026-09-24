@@ -191,7 +191,9 @@
     },
     // Native parsing: Rust reads the philogg://local/… file behind `url` and
     // parses it in parallel under `format` (philogg.html's nativeFormatSpec),
-    // streaming `{ fraction, entries? }` batches to onMessage in order.
+    // handing onMessage, in order, `{ type: "progress", fraction }` notes and
+    // the entries as binary batches (ArrayBuffers — philogg.html's
+    // decodeNativeBatch reads them).
     // Resolves with `{ size }` once the last batch was delivered; rejects —
     // before any batch — for a format the native engine can't run exactly
     // like JS, and philogg.html falls back to its own parser.

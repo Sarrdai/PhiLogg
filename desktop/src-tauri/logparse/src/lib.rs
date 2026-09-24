@@ -14,6 +14,7 @@
 //! (checked by both this crate's tests and the jsdom regression suite) is the
 //! tripwire for the two drifting apart.
 
+pub mod batch;
 pub mod jsregex;
 pub mod timestamp;
 
@@ -66,8 +67,9 @@ pub struct Entry {
 }
 
 impl Serialize for Entry {
-    /// Key order matches the object literal JS builds (plus `id`, which the
-    /// page assigns), so native and JS-parsed entries share one V8 shape.
+    /// The golden fixture's entry shape (`tests/golden.rs`): the page's own
+    /// keys and order, `id` left empty. The page itself receives entries as
+    /// binary batches instead — see `batch`.
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         struct Fields<'a>(&'a [(String, String)]);
         impl Serialize for Fields<'_> {
@@ -417,46 +419,6 @@ fn parse_chunk<'a>(chunk: &'a str, is_last: bool, parser: &Parser) -> ChunkResul
         }
     }
     res
-}
-
-/// One `{"type":"chunk", ...}` channel message, serialized.
-pub fn chunk_message(entries: &[Entry], fraction: f64) -> String {
-    #[derive(Serialize)]
-    struct Msg<'a> {
-        r#type: &'static str,
-        fraction: f64,
-        entries: &'a [Entry],
-    }
-    serde_json::to_string(&Msg { r#type: "chunk", fraction, entries }).expect("entries always serialize")
-}
-
-/// Serializes `entries` into `{"type":"chunk"}` messages of `batch` entries
-/// each — in parallel, a few batches at a time so the JSON never exists for
-/// the whole file at once — and hands them to `send` in order. `fraction`
-/// runs from `base` to 1 across the batches.
-pub fn for_each_chunk_message(
-    entries: &[Entry],
-    batch: usize,
-    base: f64,
-    send: &mut dyn FnMut(String) -> Result<(), String>,
-) -> Result<(), String> {
-    let batches: Vec<&[Entry]> = entries.chunks(batch.max(1)).collect();
-    let n = batches.len();
-    let window = rayon::current_num_threads().max(1) * 2;
-    for (w, group) in batches.chunks(window).enumerate() {
-        let messages: Vec<String> = group
-            .par_iter()
-            .enumerate()
-            .map(|(k, b)| {
-                let done = (w * window + k + 1) as f64 / n as f64;
-                chunk_message(b, base + (1.0 - base) * done)
-            })
-            .collect();
-        for m in messages {
-            send(m)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
