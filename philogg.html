@@ -8933,6 +8933,18 @@ function splitTextAtHeaderLines(text, isHeaderLine, n) {
   return pieces;
 }
 
+// Runs fn in a task of its own, as soon as the event loop gets to it — a
+// MessageChannel message rather than setTimeout(fn, 0), which browsers clamp
+// and, in a hidden window, throttle to as little as once a second.
+const queueTaskChannel = typeof MessageChannel === "function" ? new MessageChannel() : null;
+const queuedTasks = [];
+if (queueTaskChannel) queueTaskChannel.port1.onmessage = () => { const fn = queuedTasks.shift(); if (fn) fn(); };
+function queueTask(fn) {
+  if (!queueTaskChannel) { setTimeout(fn, 0); return; }
+  queuedTasks.push(fn);
+  queueTaskChannel.port2.postMessage(null);
+}
+
 // Batches (PARSE_CHUNK_LINES each) adopted per task — see drain below.
 const PARALLEL_PARSE_DRAIN_BATCHES = 8;
 // Pieces smaller than this aren't worth a worker of their own.
@@ -8984,7 +8996,11 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
     // Appends whatever is ready, in file order — at most
     // PARALLEL_PARSE_DRAIN_BATCHES batches per task: once the first piece is
     // done, the later pieces' queued batches (most of the file) would
-    // otherwise all be adopted in one long task.
+    // otherwise all be adopted in one long task. The next step is queued as
+    // a message (queueTask), not a setTimeout: a hidden window's timers are
+    // throttled — measured in the desktop app headless, 20 such yields added
+    // ~5s to a 650k-entry load — and a load behind a minimized window or the
+    // tray is exactly that case.
     let drainScheduled = false;
     const drain = () => {
       if (drainScheduled || settled) return;
@@ -8994,7 +9010,7 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
         while (queued[next].length) {
           if (budget-- === 0) {
             drainScheduled = true;
-            setTimeout(() => { drainScheduled = false; drain(); }, 0);
+            queueTask(() => { drainScheduled = false; drain(); });
             return;
           }
           append(queued[next].shift());
