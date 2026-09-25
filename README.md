@@ -168,6 +168,15 @@ deployments possible:
   get pan/zoom/reset (drag-to-select a region to zoom, same as Plot View).
   Every opened one is closable the same way a log file is (✕ or middle-click
   its row).
+- **Filter text files line by line** — the text viewer's funnel button
+  ("Filter lines"), or simply Ctrl+F in the viewer, opens what it shows as a filterable file, one entry per
+  line: text, regex and wildcard filters (`"temp": [*:float>20]`), the
+  extraction Table and Plot all work, with the line number taking the place
+  of the timestamp. With JSON Pretty Print on, the filters see the
+  pretty-printed lines, so a minified one-line JSON document becomes
+  searchable field by field. The filterable version sits under its file in
+  the tree (file → text version → filters) and keeps the viewer's
+  indentation and JSON/XML syntax colors.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
@@ -215,9 +224,10 @@ deployments possible:
   the desired absolute time of the file's first line, with a live before→after
   preview; it's undoable and survives a reload.
 - **Session cache** — reload the browser tab and get your files, filters,
-  and settings back. In the desktop app a file is re-read from disk on the
-  next start instead of being copied into the cache, so a file deleted or
-  moved in the meantime is left out of the restored session.
+  opened text/image files and settings back. In the desktop app a file is
+  re-read from disk on the next start instead of being copied into the
+  cache, so a file deleted or moved in the meantime is left out of the
+  restored session.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
   presets you apply across different files — pin a preset (with an icon of
   your choice) to the Filter-Toolbar for one-click reuse.
