@@ -8923,7 +8923,7 @@ async function loadFolderFileWindowed(folder, rec, from, to) {
     return;
   }
   let file;
-  try { file = await rec.handle.getFile(); }
+  try { file = await getPartialReadFile(rec.handle); }
   catch (err) {
     showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
     return;
@@ -11864,6 +11864,12 @@ function getEntries(nodeId) {
   if (getEntriesInProgress.has(nodeId)) return [];
   getEntriesInProgress.add(nodeId);
   try {
+    const tailBase = node._tailBase;
+    if (tailBase) {
+      node._tailBase = null;
+      const extended = extendCachedEntries(node, tailBase);
+      if (extended) return extended;
+    }
     return getEntriesUncached(node);
   } finally {
     getEntriesInProgress.delete(nodeId);
@@ -11977,9 +11983,38 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
   return result;
 }
 
-function getEntriesUncached(node) {
-  const nodeId = node.id;
+// Filter types whose result is a plain per-entry test over parentEntries
+// (inverted or not): whether an entry is kept never depends on any other
+// entry. For these, a tail append only has to look at the new entries (plus
+// the file's previous last entry, which may have gained continuation lines)
+// — see invalidateCachesForRoots/extendCachedEntries. Everything else
+// (and/or/link/context/countContext) looks at neighbours or re-sorts, and is
+// recomputed from scratch. ("sources" is per-entry too, but returns its
+// parent's array itself, and only ever sits under a merge, which isn't tailed.)
+const PER_ENTRY_FILTER_TYPES = new Set(["text", "after", "before", "timerange", "idset", "bookmarks", "notes", "level"]);
+
+// Brings a per-entry filter's pre-append result up to date after a tail
+// append without re-testing the entries it already covered: the first
+// tailBase.stable entries of the old result are still exactly right (they
+// all precede the file's previous last entry), and the parent's entries
+// from tailBase.parentStable on are the only ones that can have changed or
+// be new. Returns null when the parent no longer fits that shape (then the
+// caller recomputes in full).
+function extendCachedEntries(node, tailBase) {
   const parentEntries = getEntries(node.parentId);
+  if (parentEntries.length < tailBase.parentStable) return null;
+  const delta = getEntriesUncached(node, parentEntries.slice(tailBase.parentStable));
+  const result = tailBase.cache.slice(0, tailBase.stable);
+  for (let i = 0; i < delta.length; i++) result.push(delta[i]);
+  node._cache = result;
+  return result;
+}
+
+// parentOverride: evaluate over these entries instead of the parent's full
+// result, and don't cache — extendCachedEntries' delta evaluation.
+function getEntriesUncached(node, parentOverride) {
+  const nodeId = node.id;
+  const parentEntries = parentOverride || getEntries(node.parentId);
   let result;
   if (node.filterType === "text") {
     const value = String(node.value);
@@ -12198,7 +12233,7 @@ function getEntriesUncached(node) {
     result = parentEntries.filter(e => !keptIds.has(e.id));
   }
 
-  node._cache = result;
+  if (!parentOverride) node._cache = result;
   return result;
 }
 
@@ -12208,7 +12243,7 @@ function getEntriesUncached(node) {
 // any more: a deletion never changes any surviving node's parentId, so no
 // surviving node's cache needs clearing at all (see deleteNode's comment).
 function invalidateAllCaches() {
-  Object.values(state.nodes).forEach(n => { n._cache = null; n._levelCounts = null; });
+  Object.values(state.nodes).forEach(n => { n._cache = null; n._tailBase = null; n._levelCounts = null; });
 }
 
 // Scoped variant used by onTailChange only: a tail tick knows exactly which
@@ -12222,7 +12257,15 @@ function invalidateAllCaches() {
 // what made tailing feel sluggish with several large files loaded.
 // Structural changes (move/delete/invert/edit) still use the global sweep
 // above — they're rare user actions and the sweep is trivially correct.
-function invalidateCachesForRoots(changedRootIds) {
+//
+// appendedFrom (optional, tail ticks only): root id -> that file's entry
+// count before this tick, for a root that only GREW (no rotation). A
+// per-entry filter (PER_ENTRY_FILTER_TYPES) under such a root whose whole
+// chain up to the file is per-entry keeps its old result as node._tailBase
+// instead of losing it, and its next getEntries() only tests the new
+// entries (extendCachedEntries) — the difference between re-running every
+// filter over a million entries each poll and testing a few dozen.
+function invalidateCachesForRoots(changedRootIds, appendedFrom) {
   const changed = new Set(changedRootIds);
   const memo = new Map(); // node id -> is (transitively) affected
   function isDirty(id) {
@@ -12244,9 +12287,46 @@ function invalidateCachesForRoots(changedRootIds) {
     memo.set(id, d);
     return d;
   }
+  // How many leading entries of a node's current (pre-append) result stay
+  // valid, and so what an extension can start from — null when it can't be
+  // extended. Computed for every dirty node before any cache is dropped.
+  const stableMemo = new Map();
+  function stableOf(id) {
+    if (stableMemo.has(id)) return stableMemo.get(id);
+    stableMemo.set(id, null); // cycle guard, same belt-and-braces as isDirty
+    const n = state.nodes[id];
+    let r = null;
+    if (n && n.type === "file") {
+      const oldLen = appendedFrom && appendedFrom.get(id);
+      // The previous last entry may have gained continuation lines, so it
+      // counts as changed; everything before it is untouched.
+      if (typeof oldLen === "number" && oldLen <= n.entries.length) r = { len: Math.max(0, oldLen - 1), pivot: oldLen ? n.entries[oldLen - 1] : null };
+    } else if (n && PER_ENTRY_FILTER_TYPES.has(n.filterType)) {
+      const parent = stableOf(n.parentId);
+      if (parent) {
+        if (n._tailBase) r = { len: n._tailBase.stable, parentStable: n._tailBase.parentStable, base: n._tailBase.cache, pivot: parent.pivot, keep: true };
+        else if (n._cache) {
+          const c = n._cache;
+          r = { len: c.length && c[c.length - 1] === parent.pivot ? c.length - 1 : c.length, parentStable: parent.len, base: c, pivot: parent.pivot };
+        }
+      }
+    }
+    stableMemo.set(id, r);
+    return r;
+  }
+  const plans = new Map();
+  if (appendedFrom && appendedFrom.size) {
+    for (const id of Object.keys(state.nodes)) {
+      const n = state.nodes[id];
+      if (n.type !== "file" && isDirty(id)) { const st = stableOf(id); if (st) plans.set(id, st); }
+    }
+  }
   for (const id of Object.keys(state.nodes)) {
     if (isDirty(id)) {
       const n = state.nodes[id];
+      const plan = plans.get(id);
+      if (plan && !plan.keep) n._tailBase = { cache: plan.base, stable: plan.len, parentStable: plan.parentStable };
+      else if (!plan) n._tailBase = null;
       n._cache = null;
       n._levelCounts = null;
       // The session-export content fingerprint (see getFileFullHash) is
@@ -14147,11 +14227,13 @@ function flattenTreeIds() {
   // been opened (an unopened placeholder row has nothing to select/copy and
   // stays unreachable by design, same as before this fix).
   state.zips.forEach(zip => {
+    const rootByName = new Map(); // same one-pass lookup as renderFolderSection's
+    state.rootIds.forEach(id => {
+      const n = state.nodes[id];
+      if (n && n.zipId === zip.id && !rootByName.has(n.name)) rootByName.set(n.name, id);
+    });
     zip.entries.forEach(entry => {
-      const openId = state.rootIds.find(id => {
-        const n = state.nodes[id];
-        return n && n.zipId === zip.id && n.name === entry.name;
-      });
+      const openId = rootByName.get(entry.name);
       if (openId) walk([openId]);
       else if (zip.inlineViewers.has(entry.name)) ids.push(viewerNavId("zip", zip.id, entry.name));
     });
@@ -23766,11 +23848,34 @@ function renderZipSection(zip) {
 // owner-specific extract-and-open on dblclick (openZipEntry for a ZIP
 // entry, loadFolderFile for a folder-watch file — each already knows how to
 // route a non-log entry through openInlineViewer itself, same as before).
+// Unopened container rows are reused across renders while nothing they show
+// changed (see inactiveRowCache): renderTree() rebuilds the sidebar on every
+// render — every tail tick of an active live file — and a big ZIP or folder
+// listing was thousands of fresh elements each time; keeping the element
+// also keeps a double-click on it working through such a render (the
+// DOM-identity gotcha in PROJECT.md).
+const inactiveRowCache = new WeakMap(); // viewersMap -> Map(key -> { sig, row })
+function cachedInactiveRow(owner, key, sig, build) {
+  let m = inactiveRowCache.get(owner);
+  if (!m) inactiveRowCache.set(owner, m = new Map());
+  const hit = m.get(key);
+  if (hit && hit.sig === sig) return hit.row;
+  const row = build();
+  m.set(key, { sig, row });
+  return row;
+}
+
 function renderInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn) {
   const cachedViewer = viewersMap.get(mapKey);
   const isActive = !!cachedViewer && state.inlineViewer &&
     state.inlineViewer.ownerKind === ownerKind && state.inlineViewer.ownerId === ownerId &&
     state.inlineViewer.mapKey === mapKey;
+  // Only the plain "not opened" row is reused — an opened one's handlers
+  // close over its viewer and active state, and there are only a few.
+  if (!cachedViewer) return cachedInactiveRow(viewersMap, mapKey, displayLabel, () => buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, null, false));
+  return buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive);
+}
+function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive) {
 
   const row = document.createElement("div");
   row.className = "folder-watch-file zip-source-file" +
@@ -24233,7 +24338,16 @@ function renderInlineTextViewer(v) {
   updateInlineViewerToolbar(v);
   const showPrettyBtn = v.ext === "json";
   itvPrettyPrintBtn.classList.toggle("active", showPrettyBtn && !!v.prettyPrint);
-  const pretty = showPrettyBtn && v.prettyPrint ? prettyPrintedJsonOrNull(v.text) : null;
+  // Every render() lands here while a text viewer is shown (a folder scan,
+  // a background tail tick, a sidebar click), and re-tokenizing a large
+  // file each time both costs seconds and throws away collapsed folds and
+  // the selection — so the markup is only rebuilt when the viewer or its
+  // Pretty Print state actually changed.
+  const wantPretty = showPrettyBtn && !!v.prettyPrint;
+  if (inlineTextViewerEl._shownViewer === v && inlineTextViewerEl._shownPretty === wantPretty) return;
+  inlineTextViewerEl._shownViewer = v;
+  inlineTextViewerEl._shownPretty = wantPretty;
+  const pretty = wantPretty ? prettyPrintedJsonOrNull(v.text) : null;
   const text = pretty !== null ? pretty : v.text;
   const tokenize = v.ext === "json" ? highlightJsonText : v.ext === "xml" ? highlightXmlText : escapeHtml;
   const lines = text.split("\n");
@@ -24296,7 +24410,7 @@ inlineTextViewerEl.addEventListener("dragstart", ev => ev.preventDefault());
 // easy to compare line-for-line.
 let imgZoom = null;
 let imgLastRender = null; // { W, H, xDomainMin, xDomainMax, yDomainMin, yDomainMax }
-let imgNaturalSize = null; // { w, h } of the currently-loaded image, set once on load
+let imgNaturalSize = null; // { w, h } of the image currently shown (its viewer's own naturalSize)
 
 function imgHomeDomain() {
   const w = imgNaturalSize ? imgNaturalSize.w : 1;
@@ -24369,16 +24483,33 @@ function renderInlineImageViewer(v) {
     imgViewerSvg.setAttribute("viewBox",
       xDomainMin + " " + (home.yDomainMax - yDomainMax) + " " +
       (xDomainMax - xDomainMin) + " " + (yDomainMax - yDomainMin));
-    imgViewerSvg.innerHTML = '<image href="' + v.dataUrl + '" x="0" y="0" width="' +
-      home.xDomainMax + '" height="' + home.yDomainMax + '" preserveAspectRatio="none"></image>';
+    // Only a different image replaces the <image> element — pan/zoom
+    // (every mousemove of a drag, every wheel step) just moves the viewBox
+    // above. Re-parsing a multi-MB data: URL into a fresh element on each of
+    // those events made panning a large image stutter.
+    if (imgViewerSvg._shownViewer !== v || !imgViewerSvg.firstChild) {
+      imgViewerSvg._shownViewer = v;
+      imgViewerSvg.innerHTML = '<image href="' + v.dataUrl + '" x="0" y="0" width="' +
+        home.xDomainMax + '" height="' + home.yDomainMax + '" preserveAspectRatio="none"></image>';
+    }
     imgLastRender = { W, H, xDomainMin, xDomainMax, yDomainMin, yDomainMax };
     const zoomPct = Math.round((homeFit.x1 - homeFit.x0) / (xDomainMax - xDomainMin) * 100);
     el("#imgViewerZoomLevel").textContent = zoomPct + "%";
   };
+  // Per viewer, not per page: a single module-level size used to be
+  // measured for the first image ever opened and then reused for every
+  // later one, drawing those with the first image's dimensions.
+  imgNaturalSize = v.naturalSize || null;
   if (imgNaturalSize) { load(); return; }
   const probe = new Image();
-  probe.onload = () => { imgNaturalSize = { w: probe.naturalWidth || 1, h: probe.naturalHeight || 1 }; load(); };
-  probe.onerror = () => { imgNaturalSize = { w: 1, h: 1 }; load(); };
+  const measured = size => {
+    v.naturalSize = size;
+    if (state.inlineViewer !== v) return; // switched away meanwhile — it renders itself when shown again
+    imgNaturalSize = size;
+    load();
+  };
+  probe.onload = () => measured({ w: probe.naturalWidth || 1, h: probe.naturalHeight || 1 });
+  probe.onerror = () => measured({ w: 1, h: 1 });
   probe.src = v.dataUrl;
 }
 
@@ -24929,10 +25060,56 @@ function urlTailHandle(url, path) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return new Blob([await res.arrayBuffer()]);
     },
+    // Learns the current size from a one-byte Range request (416 with
+    // "bytes */0" for an empty file) and hands back a rangedUrlFile; a
+    // wrapper that doesn't support Range yet gets the full body instead.
+    async getRangedFile() {
+      const res = await fetch(url, { cache: "no-store", headers: { Range: "bytes=0-0" } });
+      const m = (res.status === 206 || res.status === 416) && /\/(\d+)\s*$/.exec(res.headers.get("content-range") || "");
+      if (m) return rangedUrlFile(url, Number(m[1]));
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return new Blob([await res.arrayBuffer()]);
+    },
   };
 }
 function isUrlTailHandle(handle) {
   return !!(handle && handle[URL_TAIL_HANDLE]);
+}
+
+// Blob-shaped view (size, slice(), text(), arrayBuffer()) of a
+// philogg://local/… file of `size` bytes that fetches only the byte range
+// actually read, via an HTTP Range request (protocol.rs's read_local).
+// Everything that reads a few KB of a possibly huge file goes through this —
+// a tail poll, the folder minimap's head/tail probe, a windowed load's
+// bisection — where a plain getFile() fetches the whole file each time.
+function rangedUrlFile(url, size) {
+  const read = async (start, end) => {
+    if (end <= start) return new ArrayBuffer(0);
+    const res = await fetch(url, { cache: "no-store", headers: { Range: "bytes=" + start + "-" + (end - 1) } });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const buf = await res.arrayBuffer();
+    // A server that ignores Range answers 200 with the whole file.
+    return res.status === 206 ? buf : buf.slice(start, end);
+  };
+  const view = (start, end) => ({
+    size: end - start,
+    slice(a, b) {
+      const len = end - start;
+      const lo = Math.max(0, Math.min(len, a == null ? 0 : a));
+      const hi = Math.max(lo, Math.min(len, b == null ? len : b));
+      return view(start + lo, start + hi);
+    },
+    arrayBuffer: () => read(start, end),
+    text: async () => new TextDecoder().decode(await read(start, end)),
+  });
+  return view(0, size);
+}
+
+// What partial readers call instead of handle.getFile(): a urlTailHandle's
+// ranged view when it has one, the handle's own File otherwise (a real
+// FileSystemFileHandle's File is already lazy — slicing it reads nothing).
+function getPartialReadFile(handle) {
+  return typeof handle.getRangedFile === "function" ? handle.getRangedFile() : handle.getFile();
 }
 
 // Duck-typed stand-in for a FileSystemDirectoryHandle, backed by a desktop
@@ -25406,13 +25583,21 @@ function appendTailText(node, chunkText) {
 
 async function tailTick() {
   const changedRootIds = [];
-  for (const id of state.rootIds) {
+  // Root id -> entry count before this tick, for a file that only grew —
+  // lets invalidateCachesForRoots keep per-entry filters' results and only
+  // test the new entries (see extendCachedEntries). A rotation drops it.
+  const appendedFrom = new Map();
+  // Every tailed file is polled at the same time rather than one after the
+  // other: with a folder's worth of open files (or slow network shares)
+  // the serial awaits used to add up to more than TAIL_POLL_MS per tick.
+  await Promise.all(state.rootIds.map(async id => {
     const node = state.nodes[id];
     const t = node && node.tail;
-    if (!t || t.failed || t.busy) continue;
+    if (!t || t.failed || t.busy) return;
     t.busy = true;
     try {
-      const f = await t.handle.getFile();
+      const f = await getPartialReadFile(t.handle);
+      let rotated = false;
       if (f.size < t.offset) {
         // File shrank — truncated or rotated. Start over with the new content.
         // Drop the old entries from the global index first (unless a merged
@@ -25423,13 +25608,19 @@ async function tailTick() {
         t.offset = 0;
         t.pending = "";
         t.lastGrowth = Date.now();
+        rotated = true;
         changedRootIds.push(id);
       }
       if (f.size > t.offset) {
-        const chunk = await f.slice(t.offset).text();
+        const start = t.offset;
+        const chunk = await f.slice(start, f.size).text();
         t.offset = f.size;
         t.lastGrowth = Date.now();
-        if (appendTailText(node, chunk)) changedRootIds.push(id);
+        const oldLen = node.entries.length;
+        if (appendTailText(node, chunk)) {
+          if (!rotated) appendedFrom.set(id, oldLen);
+          if (!changedRootIds.includes(id)) changedRootIds.push(id);
+        }
       }
       t.errorCount = 0; // a clean poll clears any streak of prior transient failures
     } catch (err) {
@@ -25447,7 +25638,7 @@ async function tailTick() {
     } finally {
       t.busy = false;
     }
-  }
+  }));
   // A file crossing the staleness window (isTailLive flipping false) is a
   // change worth a re-render too, even with no bytes read this tick — that's
   // the only way a rotated-out file's dot ever goes dark on its own, since
@@ -25459,7 +25650,7 @@ async function tailTick() {
     const live = isTailLive(t);
     if (t.wasLive !== live) { t.wasLive = live; liveStatusChanged = true; }
   }
-  if (changedRootIds.length) onTailChange(changedRootIds);
+  if (changedRootIds.length) onTailChange(changedRootIds, appendedFrom);
   else if (liveStatusChanged) {
     renderTree(); // cheap: only the dot changed, no data/caches to touch
     // activeTailedRoot() (and so the jump button's own visibility) is now
@@ -25471,8 +25662,8 @@ async function tailTick() {
   }
 }
 
-function onTailChange(changedRootIds) {
-  invalidateCachesForRoots(changedRootIds);
+function onTailChange(changedRootIds, appendedFrom) {
+  invalidateCachesForRoots(changedRootIds, appendedFrom);
   // Grown or rotated: the File the node was loaded from no longer matches
   // its entries, so its cache record goes back to rebuilt text.
   changedRootIds.forEach(id => { const n = state.nodes[id]; if (n) delete n._cacheBlob; });
@@ -25712,6 +25903,7 @@ async function scanFolderHandle(dirHandle, settings) {
     // IPC calls, see nativeDirHandle.values()) a serial await-per-subfolder
     // walk was the main cost of a rescan.
     const subwalks = [];
+    const mtimeReads = []; // browser handles' lastModified, read together (see below)
     for await (const entryHandle of handle.values()) {
       if (entryHandle.kind === "directory") {
         if (s.includeSubfolders && typeof entryHandle.values === "function") {
@@ -25742,15 +25934,16 @@ async function scanFolderHandle(dirHandle, settings) {
           // Metadata-only cost (no content read) — best-effort: a handle
           // that fails here (permission hiccup) just leaves mtime unset,
           // falling back to name order for this file.
-          try {
-            const file = await entryHandle.getFile();
+          // Not awaited one file at a time: with hundreds of files that
+          // serial chain ran on every FOLDER_SCAN_MS poll.
+          mtimeReads.push(entryHandle.getFile().then(file => {
             if (typeof file.lastModified === "number") rec.mtime = file.lastModified;
-          } catch (err) { /* fall back to name order below */ }
+          }, () => { /* fall back to name order below */ }));
         }
       }
       out.push(rec);
     }
-    await Promise.all(subwalks);
+    await Promise.all(subwalks.concat(mtimeReads));
   }
   await walk(dirHandle, "");
   out.sort((a, b) => a.relPath.localeCompare(b.relPath));
@@ -25784,7 +25977,7 @@ async function mergeScannedFiles(folder, scanned) {
         // drop any cached folder-minimap time range (rec._range, see
         // probeFolderFileRange) so it gets re-probed instead of showing a
         // now-possibly-wrong bar.
-        if (existing.mtime !== s.mtime) existing._range = undefined;
+        if (existing.mtime !== s.mtime) { existing._range = undefined; existing._rangeProbe = null; }
         existing.mtime = s.mtime;
       }
       // A natively listed folder re-registers its files on every scan, and
@@ -25801,7 +25994,7 @@ async function mergeScannedFiles(folder, scanned) {
       if (node && !node.tail) {
         node.tail = {
           handle: s.handle,
-          offset: new Blob([rebuildFileText(node)]).size,
+          offset: restoredTailOffset(node),
           pending: "", failed: false, busy: false, errorCount: 0,
           lastGrowth: Date.now(), wasLive: true,
         };
@@ -25820,7 +26013,7 @@ async function mergeScannedFiles(folder, scanned) {
   // its entries/tail/filters are released instead of leaking a node no
   // listing entry points at anymore.
   for (const [key, rec] of known) {
-    if (scanned.some(s => s.relPath === key)) continue;
+    if (folder._lastScanKeys.has(key)) continue;
     if (rec.nodeId && state.nodes[rec.nodeId]) closeFolderFile(rec.nodeId);
   }
   merged.sort((a, b) => folderFileKey(a).localeCompare(folderFileKey(b)));
@@ -25974,11 +26167,13 @@ function removeWatchedFolder(folderId) {
 // symmetrically a person who opens a file themselves is never later
 // auto-closed by "auto-close — keep only N open", see applyFolderAutoRules'
 // rule 2) get set from.
-async function loadFolderFile(folder, rec, auto) {
+// quiet: skip the closing render() — for a caller that renders right after
+// anyway (the folder minimap's merge actions, loading several at once).
+async function loadFolderFile(folder, rec, auto, quiet) {
   if (rec.nodeId && state.nodes[rec.nodeId]) {
     state.activeId = rec.nodeId;
     state.focusRegion = "tree";
-    render();
+    if (!quiet) render();
     return;
   }
   // Non-log, inline-viewable file (this session's generalization — see
@@ -26028,7 +26223,7 @@ async function loadFolderFile(folder, rec, auto) {
     // which already has enough parameters and no other caller needing them.
     if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
   } finally {
-    render();
+    if (!quiet) render();
   }
 }
 
@@ -26208,6 +26403,13 @@ function renderFolderSection(folder) {
   if (folder.files.length) {
     const list = document.createElement("div");
     list.className = "folder-watch-files";
+    // folder+name -> first matching root, built once instead of a
+    // state.rootIds scan per listed file (the loading-row fallback below).
+    const rootByName = new Map();
+    state.rootIds.forEach(id => {
+      const n = state.nodes[id];
+      if (n && n.folderId === folder.id && !rootByName.has(n.name)) rootByName.set(n.name, id);
+    });
     folder.files.forEach(rec => {
       if (rec.nodeId && state.nodes[rec.nodeId]) {
         const n = state.nodes[rec.nodeId];
@@ -26233,10 +26435,7 @@ function renderFolderSection(folder) {
       // line after it returns — gating on loadFraction left exactly that
       // gap uncovered, showing the file as a closed/grayed listing entry
       // for one render in between "loading" and "open".
-      const loadingId = state.rootIds.find(id => {
-        const n = state.nodes[id];
-        return n && n.folderId === folder.id && n.name === rec.name;
-      });
+      const loadingId = rootByName.get(rec.name);
       if (loadingId) {
         const n = state.nodes[loadingId];
         if (n.mergeOwnerId && n.mergeSourceHidden) return; // same double-render guard as above, mid-load
@@ -26267,6 +26466,14 @@ function renderFolderSection(folder) {
 }
 
 function renderInactiveFileRow(folder, rec) {
+  const showRelPath = folder.settings && folder.settings.includeSubfolders && folder.settings.showRelativePath;
+  const text = showRelPath && rec.relPath ? rec.relPath : rec.name;
+  // Reused while its label is unchanged — see cachedInactiveRow; kept on
+  // the rec itself, whose identity mergeScannedFiles preserves.
+  if (!rec._inactiveRow || rec._inactiveRow.sig !== text) rec._inactiveRow = { sig: text, row: buildInactiveFileRow(folder, rec, text) };
+  return rec._inactiveRow.row;
+}
+function buildInactiveFileRow(folder, rec, text) {
   const row = document.createElement("div");
   row.className = "folder-watch-file";
   row.title = `Double-click to open "${rec.name}"`;
@@ -26276,8 +26483,7 @@ function renderInactiveFileRow(folder, rec) {
   row.appendChild(icon);
   const label = document.createElement("span");
   label.className = "folder-watch-file-name";
-  const showRelPath = folder.settings && folder.settings.includeSubfolders && folder.settings.showRelativePath;
-  label.textContent = showRelPath && rec.relPath ? rec.relPath : rec.name;
+  label.textContent = text;
   row.appendChild(label);
   row.addEventListener("dblclick", () => loadFolderFile(folder, rec));
   row.addEventListener("contextmenu", ev => {
@@ -26383,10 +26589,21 @@ function fmRangeOverlapsWindow(range, win) {
   return range.first <= win.to && range.last >= win.from;
 }
 
-async function probeFolderFileRange(folder, rec) {
-  if (rec._range !== undefined) return rec._range; // cached (including a cached null)
+// renderFolderMinimap kicks this off for every unresolved file on each of
+// its renders, and render() runs often while probes are still in flight (a
+// tail tick, a folder scan) — the in-flight promise is shared, so a file is
+// probed once, not once per render.
+function probeFolderFileRange(folder, rec) {
+  if (rec._range !== undefined) return Promise.resolve(rec._range); // cached (including a cached null)
+  if (!rec._rangeProbe) {
+    const probe = rec._rangeProbe = probeFolderFileRangeUncached(folder, rec)
+      .finally(() => { if (rec._rangeProbe === probe) rec._rangeProbe = null; });
+  }
+  return rec._rangeProbe;
+}
+async function probeFolderFileRangeUncached(folder, rec) {
   let file;
-  try { file = await rec.handle.getFile(); }
+  try { file = await getPartialReadFile(rec.handle); }
   catch { return (rec._range = null); }
   // Same per-filename format resolution loadOneFileIntoTree itself uses —
   // folders have no separate per-folder format setting.
@@ -26658,6 +26875,28 @@ async function folderMinimapLoadIndividually(folder) {
   finishFolderMinimapAction();
 }
 
+// Loads a folder-minimap merge's sources all at once — like a multi-file
+// drop (loadFileDescriptors), so several large files parse on separate
+// cores instead of one after the other — and tags each as a hidden source
+// of mergeShell (if any) the moment its own load returns. Resolves with the
+// loaded node ids in target order, whatever order the loads finished in, so
+// the merge stays deterministic.
+async function loadFolderMergeSources(targets, mergeShell, load) {
+  if (mergeShell) mergeShell.loadSources = [];
+  await Promise.all(targets.map(async rec => {
+    await load(rec);
+    if (!rec.nodeId || !state.nodes[rec.nodeId]) return;
+    if (mergeShell) {
+      const n = state.nodes[rec.nodeId];
+      n.mergeOwnerId = mergeShell.id;
+      n.mergeSourceHidden = true;
+      mergeShell.loadSources.push({ id: rec.nodeId, weight: 1 });
+    }
+    render();
+  }));
+  return targets.map(rec => rec.nodeId).filter(id => id && state.nodes[id]);
+}
+
 // Merge every target file IN FULL — no windowed/partial read, and
 // (person-decided) no "timerange" filter attached even if a window was
 // drawn: this button means "everything, unfiltered". A dragged window here
@@ -26673,24 +26912,9 @@ async function folderMinimapMergeFull(folder) {
   // accepted visibility gap here rather than a larger refactor).
   const mergeShell = targets.length >= 2 ? createMergeShell(targets.map(r => r.name).join(" + "), undefined) : null;
   // No file size is known at this point (only a handle; loadFolderFile
-  // reads it transiently and never stores it back onto rec), and sources
-  // load strictly sequentially here — equal weighting is the honest,
-  // simplest choice for this path.
-  if (mergeShell) mergeShell.loadSources = [];
-  const nodeIds = [];
-  for (const rec of targets) {
-    await loadFolderFile(folder, rec);
-    if (rec.nodeId) {
-      nodeIds.push(rec.nodeId);
-      if (mergeShell) {
-        const n = state.nodes[rec.nodeId];
-        n.mergeOwnerId = mergeShell.id;
-        n.mergeSourceHidden = true;
-        mergeShell.loadSources.push({ id: rec.nodeId, weight: 1 });
-        render();
-      }
-    }
-  }
+  // reads it transiently and never stores it back onto rec) — equal
+  // weighting is the honest, simplest choice for this path.
+  const nodeIds = await loadFolderMergeSources(targets, mergeShell, rec => loadFolderFile(folder, rec, false, true));
   if (nodeIds.length >= 2) {
     state.activeId = mergeShell.id;
     await fillMergedEntries(mergeShell, nodeIds.map(id => state.nodes[id]));
@@ -26723,23 +26947,9 @@ async function folderMinimapMergeWindow(folder) {
   const targets = resolveFolderMinimapTargets(folder);
   // Same create-shell-first shape as folderMinimapMergeFull above.
   const mergeShell = targets.length >= 2 ? createMergeShell(targets.map(r => r.name).join(" + "), undefined) : null;
-  // Same "no size known, sequential loading -> equal weighting" reasoning
-  // as folderMinimapMergeFull above.
-  if (mergeShell) mergeShell.loadSources = [];
-  const nodeIds = [];
-  for (const rec of targets) {
-    await loadFolderFileWindowed(folder, rec, win.from, win.to);
-    if (rec.nodeId) {
-      nodeIds.push(rec.nodeId);
-      if (mergeShell) {
-        const n = state.nodes[rec.nodeId];
-        n.mergeOwnerId = mergeShell.id;
-        n.mergeSourceHidden = true;
-        mergeShell.loadSources.push({ id: rec.nodeId, weight: 1 });
-        render();
-      }
-    }
-  }
+  // Same "no size known -> equal weighting" reasoning as
+  // folderMinimapMergeFull above.
+  const nodeIds = await loadFolderMergeSources(targets, mergeShell, rec => loadFolderFileWindowed(folder, rec, win.from, win.to));
   let resultId = null;
   if (nodeIds.length >= 2) {
     state.activeId = mergeShell.id;
@@ -33859,14 +34069,47 @@ function fileCacheSource(node) {
   return "text";
 }
 
+// A tailed file's content as a Blob instead of rebuilt text: the bytes its
+// entries were parsed from are exactly the handle's current file up to the
+// tail offset (minus a still-unterminated last line), so a fresh snapshot
+// sliced there is the same content as rebuildFileText — without building
+// and cloning a ~100 MB string on the main thread every debounce window
+// while a large file keeps growing. Browser handles only (a desktop file is
+// a "path" record anyway); null when the file no longer fits (rotated since
+// the last poll) or can't be read, and the caller falls back to text.
+async function tailSnapshotBlob(node) {
+  const t = node.tail;
+  if (!t || t.failed || node.merged || node.partial || !t.handle || isUrlTailHandle(t.handle)) return null;
+  try {
+    const committed = t.offset - new TextEncoder().encode(t.pending || "").length;
+    const f = await t.handle.getFile();
+    if (!f || typeof f.slice !== "function" || f.size < committed || committed < 0) return null;
+    return f.slice(0, committed);
+  } catch { return null; }
+}
+
+// Tail offset for a file restored from the cache: a Blob record is the
+// original bytes (exact, CRLF line ends included), rebuilt text is only an
+// approximation of them.
+function restoredTailOffset(node) {
+  return node._cacheBlob ? node._cacheBlob.size : new Blob([rebuildFileText(node)]).size;
+}
+
 // immediate: write now even when that means building the text (pagehide).
-async function persistFileNode(node, immediate) {
+// noSnapshot: skip tailSnapshotBlob (its write already failed once).
+async function persistFileNode(node, immediate, noSnapshot) {
   if (!cacheEnabled() || sessionRestoreInProgress) return;
   if (!node || node.type !== "file") return;
   if (!node.cacheKey) node.cacheKey = newCacheKey();
-  const source = fileCacheSource(node);
+  let source = fileCacheSource(node);
+  let blob = source === "blob" ? node._cacheBlob : null;
+  // Not on pagehide (immediate): an extra await there may never complete.
+  if (source === "text" && !immediate && !noSnapshot) {
+    blob = await tailSnapshotBlob(node);
+    if (blob) source = "snapshot";
+  }
   if (source === "text" && !immediate) return persistFileNodeWhenIdle(node);
-  await cacheStoreOp("files", "readwrite", store => store.put({
+  const written = await cacheStoreOp("files", "readwrite", store => store.put({
     key: node.cacheKey,
     name: node.name,
     merged: !!node.merged,
@@ -33892,7 +34135,7 @@ async function persistFileNode(node, immediate) {
     // Exactly one of text/blob is set, or neither for a "path" record — see
     // fileCacheSource.
     text: source === "text" ? rebuildFileText(node) : null,
-    blob: source === "blob" ? node._cacheBlob : null,
+    blob: source === "blob" || source === "snapshot" ? blob : null,
     formatId: node.formatId || null,
     // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (desktop
     // wrapper only) and sourceUrl (any ?url=/philoggLoadUrl deep-link) both
@@ -33917,6 +34160,9 @@ async function persistFileNode(node, immediate) {
     clockOffset: node.clockOffset || 0,
     savedAt: Date.now(),
   }));
+  // A snapshot can go stale between getFile() and the write (the file was
+  // appended to again) — then the text path writes it instead.
+  if (source === "snapshot" && written == null && state.nodes[node.id] === node) return persistFileNodeWhenIdle(node, true);
 }
 
 // A "text" record's write, deferred until the page is idle — never on a
@@ -33926,7 +34172,7 @@ async function persistFileNode(node, immediate) {
 // promise settles once the write is done, so `await persistFileNode(node)`
 // still means "written". pagehide runs whatever is still pending.
 const pendingIdlePersists = new Map(); // cacheKey -> { node, promise, run }
-function persistFileNodeWhenIdle(node) {
+function persistFileNodeWhenIdle(node, noSnapshot) {
   const pending = pendingIdlePersists.get(node.cacheKey);
   if (pending && pending.node === node) return pending.promise;
   let resolve;
@@ -33934,7 +34180,7 @@ function persistFileNodeWhenIdle(node) {
   entry.run = () => {
     if (pendingIdlePersists.get(node.cacheKey) !== entry) { resolve(); return; } // superseded, flushed or deleted
     pendingIdlePersists.delete(node.cacheKey);
-    resolve(state.nodes[node.id] === node ? persistFileNode(node, true) : undefined);
+    resolve(state.nodes[node.id] === node ? persistFileNode(node, true, noSnapshot) : undefined);
   };
   pendingIdlePersists.set(node.cacheKey, entry);
   if (typeof requestIdleCallback === "function") requestIdleCallback(entry.run, { timeout: 5000 });
@@ -34256,7 +34502,7 @@ async function tryReattachFileTail(node, handle) {
     // fails later, which tailTick already degrades gracefully on.
     const perm = isUrlTailHandle(handle) ? "granted" : await handle.queryPermission({ mode: "read" });
     if (perm === "granted") {
-      node.tail = newTailState(handle, new Blob([rebuildFileText(node)]).size);
+      node.tail = newTailState(handle, restoredTailOffset(node));
       return true;
     }
   } catch { /* handle unusable (moved/deleted) — stays a static snapshot */ }
@@ -35260,7 +35506,17 @@ function buildFileHistoryRecords() {
       root.filterHistoryMatch = null;
       root.filterHistoryTouched = true;
       const { roots } = serializeFilterTreeForCache(root);
+      // Only a changed filter tree is a new record. Every render() lands
+      // here (debounced), and while a file is being tailed every tail tick
+      // renders — re-fingerprinting the whole grown text each time (~280 ms
+      // on 100 MB) for a record whose filters hadn't changed. The record
+      // under the earlier fingerprint still matches the grown file (tier 2,
+      // see matchFileHistory).
+      const sig = JSON.stringify(roots);
+      if (root._historySig === sig) continue;
       const fullHash = getFileFullHash(root);
+      root._historySig = sig;
+      root._historyKey = fullHash;
       puts.push({
         key: fullHash,
         name: root.name,
@@ -35279,7 +35535,11 @@ function buildFileHistoryRecords() {
       // never touched (filterHistoryTouched still falsy) does NOT hit this
       // branch — nothing was decided about it yet, so its stored record
       // (if any) is left alone.
-      deletes.push(getFileFullHash(root));
+      // Once per emptying, keyed where the last record actually went (the
+      // content may have grown since).
+      if (root._historySig === "") continue;
+      deletes.push(root._historyKey || getFileFullHash(root));
+      root._historySig = "";
     }
   }
   return { puts, deletes };
