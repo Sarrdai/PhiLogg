@@ -2,6 +2,11 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: no console window from the release desktop app; "Select" actions use the selection checkmark (this session, 2026-09-25, person-requested: *"change the icon of the "Selection" button to match the selection symbol in the filter tree"* and *"make sure, that when using "release please" the build is not a dev version that spawns a console"*)**.
+  - Root cause of the console: the release exe already is a GUI-subsystem build (`windows_subsystem = "windows"` for every non-debug build), but `fonts.rs` spawned `powershell` for the system font list without `CREATE_NO_WINDOW`, so Windows opened a console window for that child on every start. It now passes the flag, like `vs_integration.rs`. `release-please.yml`'s `build_desktop` also checks the built exe's PE subsystem field and fails the release if it is not 2 (Windows GUI).
+  - The toolbar "Select" buttons and the context menu's "Add to selection" item draw the selection filter's tree checkmark (`ICON_CHECK`'s path) instead of the filter funnel.
+  - **Tests**: new **Group 277**. Full suite: **5845 passed, 0 failed**.
+
 - **feat + fix: Context view — surroundings open on the tab switch, new "Expand around matches" button (this session, 2026-09-25, person-reported/requested: *"Beim Wechsel Filter -> Context sollte die Umgebung des Eintrag ausgeklappt sein … Es klappt erst aus wenn ich wieder einen Eintrag klicke"* and *"einen [Button] ergänzen, der mir die definierte Anzahl Einträge um jeden Treffer herum ausklappt"*)**.
   - Root cause: only clicks, the nav arrows and `revealInHighlightView` ran `applyContextJumpExpansion`; a plain tab switch (`showFhTab`) never did. It now runs it for the selection under `"aroundJump"` (`expandContextAroundSelection`); a stale view defers it to `renderHighlightView` after the gaps are rebuilt (`contextSelectionExpansionPending`). This also fixes `revealInHighlightView` expanding against stale gaps when the Context view was hidden during the last render.
   - New toolbar button `#ctxExpandAround` (`expandAroundAllMatches`): one expansion step above and below every match, entries or time mode (`contextStepEdge`, now shared with `applyContextJumpExpansion`).

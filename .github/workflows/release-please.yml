@@ -131,6 +131,18 @@ jobs:
         working-directory: desktop
         run: npm run build
 
+      # Guard against shipping a console-subsystem (debug-style) exe: the
+      # release binary must be PE subsystem 2 (Windows GUI), which main.rs's
+      # `windows_subsystem = "windows"` gives every non-debug build.
+      - name: Verify release exe is a GUI (no-console) build
+        shell: bash
+        run: |
+          EXE=desktop/src-tauri/target/release/philogg-desktop.exe
+          PE_OFF=$(od -An -tu4 -j 60 -N4 "$EXE" | tr -d ' ')
+          SUBSYSTEM=$(od -An -tu2 -j $((PE_OFF + 92)) -N2 "$EXE" | tr -d ' ')
+          echo "PE subsystem: $SUBSYSTEM"
+          [ "$SUBSYSTEM" = "2" ] || { echo "::error::$EXE is not a GUI-subsystem build (subsystem $SUBSYSTEM)"; exit 1; }
+
       # `npm run build` already produced the raw, unbundled
       # `cargo build --release` binary alongside the NSIS installer — that
       # binary needs nothing installed to run (WebView2 ships with Windows
