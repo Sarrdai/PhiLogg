@@ -33820,6 +33820,12 @@ document.addEventListener("keydown", ev => {
 
   if (matchesShortcut(ev, "newFilter")) {
     ev.preventDefault();
+    // On an open text viewer: turn it into its "Filter lines" text version
+    // first (or re-activate the existing one) and filter that.
+    if (state.inlineViewer && state.inlineViewer.kind === "text") {
+      openInlineViewerAsTextLog(state.inlineViewer).then(node => { if (node) openFilterPopup(); });
+      return;
+    }
     if (state.activeId) openFilterPopup();
     return;
   }

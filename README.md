@@ -169,7 +169,7 @@ deployments possible:
   Every opened one is closable the same way a log file is (✕ or middle-click
   its row).
 - **Filter text files line by line** — the text viewer's funnel button
-  ("Filter lines") opens what it shows as a filterable file, one entry per
+  ("Filter lines"), or simply Ctrl+F in the viewer, opens what it shows as a filterable file, one entry per
   line: text, regex and wildcard filters (`"temp": [*:float>20]`), the
   extraction Table and Plot all work, with the line number taking the place
   of the timestamp. With JSON Pretty Print on, the filters see the

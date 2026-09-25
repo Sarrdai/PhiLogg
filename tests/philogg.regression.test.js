@@ -31112,6 +31112,23 @@ group(274);
     w.render();
     assert(d.querySelector('#tree .tree-row[data-node-id="' + f.id + '"]') && !w.isNestedUnderViewer(T.state.nodes[f.id]), "...as a top-level row, its viewer being closed");
   });
+
+  await withApp(async (w, d, T) => {
+    section("274d. Ctrl+F on an open text viewer opens its text version and the filter popup at once");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("cfg.json", new TextEncoder().encode(JSON_TEXT), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k3" });
+    T.state.inlineViewer.prettyPrint = true;
+    fireKeydown(d, w, "f", { ctrlKey: true });
+    await waitFor(() => !d.querySelector("#filterPopup").classList.contains("hidden"));
+    const f = T.state.nodes[T.state.activeId];
+    assert(f && f.formatId === "fmt-plaintext" && f.name === "cfg.json (pretty)" && f.viewerSource.mapKey === "k3", "the displayed (pretty) text became the active text version");
+    assert(T.state.inlineViewer === null, "the viewer gave way to its log view");
+    w.closeFilterPopup();
+    w.activateInlineViewer(map.get("k3"));
+    fireKeydown(d, w, "f", { ctrlKey: true });
+    await waitFor(() => !d.querySelector("#filterPopup").classList.contains("hidden"));
+    assert(T.state.rootIds.length === 1 && T.state.activeId === f.id, "again on the same viewer: the same text version, no copy");
+  });
 }
 
 console.log("\n" + "=".repeat(60));
@@ -35369,5 +35386,6 @@ process.exitCode = failed ? 1 : 0;
               (.col-msg.plaintext) and JSON/XML syntax highlighting
               (token ranges merged with match marks), and a "Filter lines"
               text version nests under its viewer entry in the tree
-              (nav order, reuse, close cascade + undo).
+              (nav order, reuse, close cascade + undo); Ctrl+F on a text
+              viewer opens its text version + the filter popup.
    ============================================================ */
