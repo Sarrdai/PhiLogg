@@ -89,10 +89,14 @@ jobs:
           grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" "${ASSET_NAME}"
           echo "ASSET_NAME=${ASSET_NAME}" >> "$GITHUB_ENV"
 
+      # LICENSE.md travels with every download (the page also shows the full
+      # text under Settings -> License).
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ASSET_NAME }}
-          path: ${{ env.ASSET_NAME }}
+          path: |
+            ${{ env.ASSET_NAME }}
+            LICENSE.md
 
   build_desktop:
     needs: prepare
@@ -134,6 +138,17 @@ jobs:
         working-directory: desktop
         run: npm install
 
+      # THIRD_PARTY_NOTICES.md (license texts of every bundled Rust crate)
+      # is committed for local builds, but regenerated here so a release
+      # never ships a stale one. See desktop/README.md "Third-party notices".
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Regenerate third-party notices
+        working-directory: desktop
+        run: cargo about generate -m src-tauri/Cargo.toml about.hbs -o THIRD_PARTY_NOTICES.md
+
       # Same short-SHA stamp + comment strip build_html uses, applied to the
       # checked-out copy the Tauri bundler embeds as a resource a moment
       # later, so the packaged philogg.html matches the standalone HTML
@@ -172,6 +187,7 @@ jobs:
           mkdir -p "$STAGE"
           cp desktop/src-tauri/target/release/philogg-desktop.exe "$STAGE/PhiLogg.exe"
           cp philogg.html "$STAGE/philogg.html"
+          cp LICENSE.md desktop/THIRD_PARTY_NOTICES.md "$STAGE/"
           touch "$STAGE/philogg-portable"
           (cd "$STAGE" && 7z a -tzip "../${STAGE}.zip" .)
 

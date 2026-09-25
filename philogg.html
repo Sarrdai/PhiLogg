@@ -3753,6 +3753,15 @@
   #licenseContent .license-holder{color:var(--text-secondary); font-weight:600;}
   #licenseContent ol{margin:0 0 10px; padding-left:18px;}
   #licenseContent li{margin:0 0 6px;}
+  .license-details{margin:0 0 10px;}
+  .license-details summary{cursor:pointer; color:var(--text-secondary);}
+  .license-text{
+    margin:6px 0 0; padding:8px 10px; max-height:260px; overflow:auto;
+    white-space:pre-wrap; font-family:var(--font-mono); font-size:10.5px;
+    background:var(--bg-elevated-2); border-radius:5px;
+  }
+  .license-subtitle{margin:4px 0 6px; color:var(--text-secondary); font-weight:600;}
+  #licenseContent .license-thirdparty{margin:0 0 10px; padding-left:18px;}
   .license-version{
     padding-top:8px; border-top:1px solid var(--border-soft);
     color:var(--text-tertiary); font-size:10.5px; font-family:var(--font-mono);
@@ -5494,15 +5503,160 @@
         <section class="settings-section" id="settingsSectionLicense">
           <div class="settings-section-title">License</div>
           <div id="licenseContent">
-            <p class="license-holder">Copyright © Philipp Klein<br>Rendsburger Straße 14, 20359 Hamburg<br>philogg@kleinphilipp.de</p>
-            <p>Alle Rechte vorbehalten. Diese Software ("PhiLogg") wird ausschließlich zum Zweck des Testens und der persönlichen Nutzung im Rahmen einer eingeschränkten Testphase zur Verfügung gestellt. Mit dem Öffnen oder Verwenden der Software werden diese Bedingungen anerkannt.</p>
+            <p class="license-holder">Copyright © Philipp Klein<br>philogg@kleinphilipp.de</p>
+            <p>PhiLogg is source-available software, licensed under the <strong>PolyForm Noncommercial License 1.0.0</strong> plus an additional permission for commercial evaluation. The full terms are below and in the <code>LICENSE.md</code> file that comes with every PhiLogg download.</p>
             <ol>
-              <li><strong>Nutzungsrecht:</strong> Es wird ein einfaches, nicht übertragbares und jederzeit widerrufliches Recht eingeräumt, diese Software für eigene Testzwecke zu nutzen.</li>
-              <li><strong>Keine Weitergabe:</strong> Die Weitergabe der Software oder von Kopien davon an Dritte — entgeltlich oder unentgeltlich — ist ohne vorherige schriftliche Zustimmung des Rechteinhabers nicht gestattet.</li>
-              <li><strong>Keine Veränderung:</strong> Eine Veränderung, Bearbeitung, Dekompilierung oder Erstellung abgeleiteter Werke der Software ist nicht gestattet, soweit dies nicht durch zwingendes Recht ausdrücklich erlaubt ist.</li>
-              <li><strong>Keine Gewährleistung:</strong> Die Software wird "wie besehen" ohne jegliche Gewährleistung zur Verfügung gestellt. Der Rechteinhaber haftet nicht für Schäden aus der Nutzung der Software, soweit gesetzlich zulässig.</li>
-              <li><strong>Rückruf:</strong> Der Rechteinhaber kann die Nutzung jederzeit ohne Angabe von Gründen untersagen.</li>
+              <li><strong>Free use:</strong> personal use (study, hobby projects, private use), projects without commercial application (such as private open-source projects) and noncommercial organizations (charities, schools and universities, public research, government bodies) may use, share and change PhiLogg free of charge.</li>
+              <li><strong>Commercial evaluation:</strong> you may try PhiLogg at work for up to 30 days to decide whether your company or organization wants a commercial license.</li>
+              <li><strong>Commercial use:</strong> any other use in or for a business requires a paid commercial license. Contact philogg@kleinphilipp.de.</li>
+              <li><strong>No warranty:</strong> PhiLogg is provided "as is", without any warranty. The licensor isn't liable for damages arising from its use, as far as the law allows.</li>
             </ol>
+            <details class="license-details" id="licenseFullText">
+              <summary>Full license text</summary>
+              <pre class="license-text"># PhiLogg License
+
+Required Notice: Copyright © Philipp Klein (philogg@kleinphilipp.de)
+
+PhiLogg is **source-available software, not open-source software**. It is
+licensed under the **PolyForm Noncommercial License 1.0.0** (full text
+below), plus the additional permission for commercial evaluation in the next
+section.
+
+## In short (not a substitute for the terms below)
+
+- **Free** for personal use (study, hobby projects, private use), for
+  projects without commercial application (such as private open-source
+  projects) and for noncommercial organizations (charities, schools and universities, public
+  research, public health and safety, environmental protection, government
+  bodies).
+- **Commercial evaluation:** you may try PhiLogg at work for up to 30 days
+  to decide whether your company or organization wants a commercial license.
+- **Any other commercial use** — using PhiLogg in or for a business beyond
+  that evaluation — requires a paid commercial license. Contact
+  philogg@kleinphilipp.de.
+- No warranty; the licensor isn't liable for damages (see "No Liability").
+
+## Additional Permission: Commercial Evaluation
+
+In addition to the licenses under the PolyForm Noncommercial License 1.0.0
+below, the licensor grants each individual a license to use the software for
+any purpose, commercial purposes included, for no more than 30 consecutive
+calendar days from their first use, solely to evaluate whether their company
+or organization wants to obtain a commercial license. The licensor may extend
+this period in writing (email is enough). This permission covers no further
+use after the evaluation period ends; continued commercial use requires a
+separate commercial license from the licensor.
+
+## Commercial Licenses
+
+Commercial licenses for companies are available from the licensor:
+Philipp Klein, philogg@kleinphilipp.de.
+
+---
+
+# PolyForm Noncommercial License 1.0.0
+
+&lt;https://polyformproject.org/licenses/noncommercial/1.0.0&gt;
+
+## Acceptance
+
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
+
+## Copyright License
+
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only distribute the software according to [Distribution License](#distribution-license) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
+
+## Distribution License
+
+The licensor grants you an additional copyright license to distribute copies of the software.  Your license to distribute covers distributing the software with changes and new works permitted by [Changes and New Works License](#changes-and-new-works-license).
+
+## Notices
+
+You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with `Required Notice:` that the licensor provided with the software.  For example:
+
+&gt; Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
+
+## Changes and New Works License
+
+The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
+
+## Patent License
+
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
+
+## Noncommercial Purposes
+
+Any noncommercial purpose is a permitted purpose.
+
+## Personal Uses
+
+Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
+
+## Noncommercial Organizations
+
+Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
+
+## Fair Use
+
+You may have "fair use" rights for the software under the law. These terms do not limit them.
+
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
+
+**You** refers to the individual or entity agreeing to these terms.
+
+**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the software under these terms.
+
+**Use** means anything you do with the software requiring one of your licenses.</pre>
+            </details>
+            <div class="license-subtitle">Third-party components</div>
+            <ul class="license-thirdparty" id="licenseThirdParty">
+              <li><strong>Catppuccin</strong> color palettes (the four Catppuccin themes and syntax schemes) — MIT License, Copyright (c) 2021 Catppuccin. (github.com/catppuccin/palette)</li>
+              <li><strong>Desktop app only:</strong> built with <strong>Tauri</strong> and further Rust crates, all under permissive licenses (MIT, Apache-2.0 and similar). Their names, versions and full license texts are in <code>THIRD_PARTY_NOTICES.md</code>, which comes with the desktop app.</li>
+            </ul>
+            <details class="license-details" id="licenseCatppuccinText">
+              <summary>Catppuccin license text</summary>
+              <pre class="license-text">MIT License
+
+Copyright (c) 2021 Catppuccin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</pre>
+            </details>
             <div class="license-version" id="licenseVersion"></div>
             <div class="license-build" id="licenseBuild"></div>
           </div>
