@@ -95,10 +95,9 @@ mod windows_impl {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
-    /// `CREATE_NO_WINDOW`: both scripts below are triggered by an explicit
-    /// user click (Connect, "Open in Visual Studio"), so — unlike the cached,
-    /// once-per-run font enumeration in `fonts.rs` — a flashing console
-    /// window would be noticeable on every use.
+    /// `CREATE_NO_WINDOW`: keeps every spawned PowerShell from opening its
+    /// own console window (the GUI-subsystem exe has none to share) — same
+    /// flag as the font enumeration in `fonts.rs`.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     /// Runs a fixed PowerShell script via `-EncodedCommand` (base64 of its
