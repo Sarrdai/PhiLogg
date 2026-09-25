@@ -31136,6 +31136,100 @@ group(274);
   });
 }
 
+/* ============================================================
+   GROUP 275 — Text/image viewers survive a reload like log files
+   Origin: 2026-09-25, person-requested: after a page reload / app restart,
+   restore opened text and image files too — on the desktop from their
+   stored path (if still there), like log files — so a "Filter lines" text
+   version nests under its file again. Covers: a loose viewer's record
+   (Blob in the browser, path only on the desktop), the meta's viewer list
+   (owner, map key, Pretty Print, active viewer), restore after the files
+   (text version nested again, filters kept), an image viewer, a path whose
+   file is gone (skipped), closing a viewer drops its record, and stale
+   viewer records are swept on restore.
+   ============================================================ */
+group(275);
+{
+  const JSON_TEXT = '{"a":1,"b":[1,2]}';
+  const factory = new IDBFactory();
+  let viewerKey = null;
+  await withApp(async (w, d, T) => {
+    section("275a. A directly opened text viewer + its text version are persisted");
+    await T.bootRestore;
+    await w.loadFiles([new w.File([JSON_TEXT], "cfg.json", { type: "application/json" })]);
+    const v = T.state.inlineViewer;
+    assert(v && v.cacheKey && v.cacheKey.startsWith("viewer-"), "the viewer got a cache key");
+    viewerKey = v.cacheKey;
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey))));
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey));
+    assert(rec && rec.viewer && rec.blob && !rec.localPath, "browser: the record holds the file as a Blob");
+    v.prettyPrint = true;
+    const f = await w.openInlineViewerAsTextLog(v);
+    w.createFilterNode(f.id, "text", '"a"');
+    // Written by openInlineViewerAsTextLog itself (idle-deferred text record)
+    // — not by the test: addFile alone persists nothing.
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey))));
+    // The viewer is shown at save time: it comes back as the shown one.
+    w.activateInlineViewer(v);
+    await w.persistMetaNow();
+    const meta = await w.cacheStoreOp("meta", "readonly", st => st.get("session"));
+    assert(meta.viewers.length === 1 && meta.viewers[0].prettyPrint && meta.viewers[0].ownerKind === "loose" && meta.activeViewer === viewerKey, "meta lists the viewer (loose, pretty, active)");
+    // A stale viewer record (closed in a session that never got to clean up).
+    await w.cacheStoreOp("files", "readwrite", st => st.put({ key: "viewer-stale", name: "old.txt", viewer: true, blob: new w.Blob(["x"]) }));
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("275b. Reload: viewer back (pretty, shown), text version nested under it with its filter");
+    await T.bootRestore;
+    const map = T.state.looseInlineViewers;
+    const v = [...map.values()][0];
+    assert(map.size === 1 && v.name === "cfg.json" && v.text === JSON_TEXT && v.prettyPrint && v.cacheKey === viewerKey, "viewer restored with its content and Pretty Print");
+    assert(T.state.inlineViewer === v, "...and shown, as it was");
+    const f = T.state.rootIds.map(id => T.state.nodes[id])[0];
+    assert(f && f.name === "cfg.json (pretty)" && f.textSyntax === "json" && w.isNestedUnderViewer(f), "text version restored and nested under its viewer");
+    assert(f.children.length === 1 && T.state.nodes[f.children[0]].value === '"a"', "its filter came back");
+    const rows = [...d.querySelectorAll("#tree .zip-source-file, #tree .tree-row")];
+    assert(rows[0].classList.contains("zip-source-file") && rows[1].dataset.nodeId === f.id, "tree: viewer row, then the text version");
+    assert(!(await w.cacheStoreOp("files", "readonly", st => st.get("viewer-stale"))), "a viewer record the meta doesn't list is swept");
+
+    section("275c. Closing the viewer drops its record");
+    fireClick(d.querySelector("#tree .zip-source-file .tree-del"), w);
+    await waitFor(async () => !(await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey))));
+    assert(map.size === 0, "viewer closed, record gone");
+  }, { indexedDB: factory });
+
+  // Desktop: stored as a path, re-read from disk; a file gone since is skipped.
+  const onDisk = { "/data/pic.png": "PNGDATA", "/data/notes.txt": "hello\nworld" };
+  const bridge = () => ({
+    openLocalPath: async p => {
+      if (!(p in onDisk)) throw new Error("gone");
+      return { url: "philogg://local/1/" + p.split("/").pop(), path: p, name: p.split("/").pop() };
+    },
+  });
+  const deskFactory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("275d. Desktop: an image and a text viewer are stored by path only");
+    await T.bootRestore;
+    const mk = (p, type) => ({ name: p.split("/").pop(), localPath: p, file: new w.File([onDisk[p]], p.split("/").pop(), { type }) });
+    await w.loadFileDescriptors([mk("/data/pic.png", "image/png"), mk("/data/notes.txt", "text/plain")]);
+    const keys = [...T.state.looseInlineViewers.values()].map(v => v.cacheKey);
+    await waitFor(async () => (await Promise.all(keys.map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))))).every(Boolean));
+    const recs = await Promise.all(keys.map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))));
+    assert(recs.every(r => r.localPath && !r.blob), "records hold the path, no content");
+    await w.persistMetaNow();
+  }, { indexedDB: deskFactory, philogg: bridge() });
+
+  onDisk["/data/notes.txt"] = "hello\nworld\nagain"; // changed on disk
+  delete onDisk["/data/pic.png"];                    // deleted
+  await withApp(async (w, d, T) => {
+    section("275e. Desktop reload: re-read from the path, a deleted file is skipped");
+    w.fetch = async u => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(onDisk["/data/" + String(u).split("/").pop()]).buffer });
+    await T.bootRestore;
+    const views = [...T.state.looseInlineViewers.values()];
+    assert(views.length === 1 && views[0].name === "notes.txt" && views[0].text === "hello\nworld\nagain", "the text file came back from disk (current content), the deleted image didn't (" + views.map(v => v.name) + ")");
+  }, { indexedDB: deskFactory, philogg: bridge() });
+}
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -35393,4 +35487,8 @@ process.exitCode = failed ? 1 : 0;
               text version nests under its viewer entry in the tree
               (nav order, reuse, close cascade + undo); Ctrl+F on a text
               viewer opens its text version + the filter popup.
+   Group 275 — same day: opened text/image viewers are persisted (desktop:
+              path; browser: Blob) and restored after a reload, the text
+              version nested under its viewer again, gone files skipped,
+              closed/stale viewer records dropped.
    ============================================================ */
