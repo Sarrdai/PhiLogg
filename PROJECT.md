@@ -460,6 +460,9 @@ The extraction table's synthetic Index/t(ms) columns, virtualized rendering (ext
 ### `docs/persistence-and-sync.md`
 Undo/redo, bookmarks (the auto-managed "Bookmarks" filter node), notes, pin-bookmarks-into-filtered-view, tailing (live file updates), file loading (progress-on-the-real-row, multi-file load, merge), deep-link loading (`?url=`), folder watch + lazy loading, filter save/load JSON, the reusable filter library, the session cache (IndexedDB, survives a reload), per-file filter history, and session export/import. Start here for anything about `state.bookmarks`/`state.notes`, `node.tail`, or the `philogg-session-cache` IndexedDB database.
 
+### `docs/export.md`
+Export / Share (FEATURE_BACKLOG.md #31 + #32, one ticket-oriented concept): the "Copy for ticket" clipboard snippet (bounded, Markdown / Jira wiki / plain flavors) and the full-view attachments (`.log`/`.csv`/`.tsv`/standalone `.html` report) behind `#btnExport`/`#exportDialog`/`Ctrl+Shift+E` — what "the current view" means for export, the size caps, the shared save path (`showSaveFilePicker` or download), and the parts of the concept deliberately left out. Start here for anything about `collectExportContext`/`buildTicketSnippet`/`buildExportFileParts`.
+
 ### `docs/desktop.md`
 The desktop wrapper's internal mechanism (`desktop/`, Tauri v2 + the OS webview): custom `philogg://` scheme, the injected script and the `window.philogg` bridge, native file/folder opening, frameless window and drag region, settings mirroring, tray/splash/close-to-tray, picture-in-picture (PiP), IDE Integration (Windows-only jump from a log entry into Visual Studio/Rider), and the release workflow. `desktop/README.md` has the build/run steps, prerequisites, current run status, and the known limitations.
 
