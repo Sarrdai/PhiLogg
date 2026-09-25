@@ -301,8 +301,8 @@ Covered by test **Group 145**.
 
 Windows-only. Three right-click verbs, added by the installer as an
 *optional* component and cleanly removed on uninstall: **"Open in
-PhiLogg"** on a single `.log` or `.zip` file, and **"Watch this Folder"**
-on a folder.
+PhiLogg"** on a single `.log`, `.gz` or `.zip` file, and **"Watch this
+Folder"** on a folder.
 
 **Multi-selecting several `.log` files was deliberately dropped.** Windows
 cannot hand multiple selected paths to one process launch through a plain
@@ -325,12 +325,16 @@ a result.
 (`.log`-suffix only) is now `classify_launch(argv) -> Option<LaunchArg>`,
 returning which of two routes a launch needs:
 
-- `LaunchArg::LogFile` — a `.log` argv entry. Routes through the
+- `LaunchArg::LogFile` — a `.log` or `.gz` argv entry. Routes through the
   **existing, unchanged** `open_file`/`create_main(..., Some(path))` →
   `window.philoggLoadUrl` (`loadUrlIntoTree` in `philogg.html`) single-URL
   path. The file-association double-click launch and the new "Open in
   PhiLogg" verb invoke the exe identically (`"<exe>" "%1"`), so there is
-  nothing to distinguish and nothing new needed here.
+  nothing to distinguish and nothing new needed here. A `.gz` (a
+  gzip-compressed rotated log such as `app.log.1.gz`) takes the same route
+  because the wrapper never looks inside the file. It serves the raw bytes,
+  and `loadUrlIntoTree` inflates them page-side (see
+  `docs/persistence-and-sync.md` → "gzip-compressed logs").
 - `LaunchArg::LocalTarget` — a `.zip` argv entry, or one that `is_dir()`.
   `loadUrlIntoTree` has no ZIP awareness at all (it always does
   `addFile(name, text)` on whatever bytes it fetches) — that only exists in
@@ -392,6 +396,22 @@ was ever ticked. Default is checked (opt-out, not opt-in).
 install-flow change), this file won't pick it up automatically — re-diff
 against the new stock template and reapply the `; PHILOGG:`-marked edits
 rather than assuming this fork silently tracks upstream.
+
+**gzip-compressed logs (`.gz`).** All decompression happens in
+`philogg.html` (`DecompressionStream("gzip")`). The Rust side never reads
+log content, it only serves bytes over `philogg://local`, so there is no
+native inflate and no new crate. The wrapper-side touch points are:
+- the `.gz` context-menu verb above;
+- `classify_launch` routing `.gz` as `LogFile`;
+- `pick_files` offering `gz` in its "Log files" filter;
+- the page passing `.gz` (`GZIP_LOG_EXTENSION`) to `list_folder` alongside
+  `.log`, so the native folder listing lets it through. The page itself
+  then decides which `.gz` names are logs (`isCompatibleFolderFile`).
+
+`.gz` is deliberately **not** in `tauri.conf.json` →
+`bundle.fileAssociations`. That would register PhiLogg as a handler for
+every gzip archive on the system, not just logs. The opt-in Explorer verb,
+"Open with…", the picker and drag-drop cover it instead.
 
 **Adding a future extension.** Not built as a generic system now — nothing
 asked for one, and two extensions don't justify one — but the actual
