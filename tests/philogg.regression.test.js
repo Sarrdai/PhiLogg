@@ -30958,6 +30958,9 @@ group(273);
     assert(grid[1] === "64px" && grid[2] === "0px" && grid[3] === "0px", "Line track 64px, Δt/Level collapsed (" + grid.join(" ") + ")");
     assert(w.activeLevelOrder().length === 0 && d.querySelectorAll("#levelBar .level-btn").length === 0, "no level buttons");
     assert(w.activeTextFilterColumns().map(c => c.label).join(",") === "Line,Message", "filter-column chips: Line, Message");
+    w.renderColumnsPanel();
+    const colKeys = [...d.querySelectorAll("#columnsList input[data-col]")].map(cb => cb.dataset.col).join(",");
+    assert(colKeys === "message", "Columns panel offers no Δt toggle for plain text (" + colKeys + ")");
     const row = [...d.querySelectorAll("#tableRows .log-row")].find(r => r.dataset.entryId === f.entries[2].id);
     assert(row && row.querySelector(".col-time").textContent === "3" && row.querySelector(".col-delta").textContent === "—", "row: line number, no Δt");
 
@@ -30974,6 +30977,8 @@ group(273);
     w.render();
     const header2 = d.querySelector("#tableHeader .row-grid").textContent;
     assert(header2.includes("Time") && header2.includes("Level"), "header back to Time/Level");
+    w.renderColumnsPanel();
+    assert(d.querySelector('#columnsList input[data-col="delta"]'), "...and the Columns panel offers Δt again");
     assert(w.activeLevelOrder().length > 0, "level buttons back");
   });
 
