@@ -8078,8 +8078,8 @@ async function parseLogTextAsync(text, node, onProgress) {
       // Worker unavailable, or building/running its blob failed (blocked
       // blob: URLs, out of memory, …) — fall through to the plain loop
       // below so a load never hard-fails just because the fast path didn't
-      // work. node.entries/entryIndex are untouched at this point: nothing
-      // is appended until the worker's first "chunk" message.
+      // work. node.entries/entryIndex are as they were before the call:
+      // parseLogTextInWorker rolls back whatever it appended before failing.
     }
   }
   const compiled = getCompiledFormat(formatId);
@@ -8100,6 +8100,7 @@ async function parseLogTextAsync(text, node, onProgress) {
     // lines before the first header are dropped
 
     if (i % PARSE_CHUNK_LINES === 0) {
+      updateFileAggregate(node); // see "Per-file aggregates"
       if (onProgress) onProgress(i, lines.length);
       await new Promise(resolve => setTimeout(resolve, 0)); // yield a tick
       // Deleted mid-parse (by the person, or a race) — stop touching the
@@ -8110,6 +8111,7 @@ async function parseLogTextAsync(text, node, onProgress) {
     }
   }
   if (current) { entryIndex[current.id] = current; node.entries.push(current); }
+  updateFileAggregate(node);
   if (onProgress) onProgress(lines.length, lines.length);
 }
 
@@ -8844,14 +8846,23 @@ function buildLogParseWorkerSrc() {
     compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
     formatLocation, applyFormatMatch, parseTimestamp, parseHeaderLine,
     messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
-    compileFormatRegex,
+    compileFormatRegex, encodeEntryBatch,
   ].map(fn => fn.toString()).join("\n\n");
   // A local, worker-scoped id counter — never the page's own uidCounter,
   // which is main-thread-only state a worker can't share. The main thread
   // reassigns real ids when it merges each chunk back in (see
   // parseLogTextInWorker), so these only need to be unique within one file.
   const uidDef = "let workerUidCounter = 0;\nfunction uid(prefix) { return prefix + (++workerUidCounter); }";
+  // Finished entries go back as binary batches (encodeEntryBatch — the
+  // native parser's layout, read by the page's own decodeNativeBatch), the
+  // ArrayBuffer transferred rather than copied: structured-cloning ~10
+  // strings per entry and unpacking them again on the main thread cost that
+  // thread ~1.4s per 650k entries.
   const mainLoop = [
+    'function postEntries(entries) {',
+    '  const batch = encodeEntryBatch(entries, 0);',
+    '  postMessage({ type: "batch", buf: batch.buf, strings: batch.strings }, [batch.buf]);',
+    '}',
     'self.onmessage = (ev) => {',
     '  const { text, fmt } = ev.data;',
     '  const compiled = compileOneFormat(fmt);',
@@ -8868,12 +8879,12 @@ function buildLogParseWorkerSrc() {
     '      appendContinuationLine(current, line);',
     '    }',
     '    if (i % PARSE_CHUNK_LINES === 0) {',
-    '      if (pending.length) { postMessage({ type: "chunk", entries: pending }); pending = []; }',
+    '      if (pending.length) { postEntries(pending); pending = []; }',
     '      postMessage({ type: "progress", done: i, total: lines.length });',
     '    }',
     '  }',
     '  if (current) pending.push(current);',
-    '  if (pending.length) postMessage({ type: "chunk", entries: pending });',
+    '  if (pending.length) postEntries(pending);',
     '  postMessage({ type: "done", total: lines.length });',
     '};',
   ].join("\n");
@@ -8889,46 +8900,226 @@ function getLogParseWorkerUrl() {
   return logParseWorkerUrl;
 }
 
-// Mirrors the main-thread loop's chunked streaming: node.entries fills in
-// live in the same PARSE_CHUNK_LINES-sized batches, just produced by the
-// worker instead. Rejects (never resolves-with-partial-work) on any worker
-// failure so parseLogTextAsync can fall back to the plain loop cleanly.
+// Splits a file's text into up to n pieces that each parse on their own to
+// exactly the entries the whole text parses to: every cut sits right before
+// a header line (isHeaderLine), so a continuation line — a stack trace, a
+// multi-line message — never ends up in a different piece than its entry,
+// and no piece starts with lines the parser would drop. A piece ends before
+// its last line's terminator ("\n" or "\r\n"), so splitting it on
+// /\r\n|\n/ yields exactly the whole text's lines in that range. A cut that
+// finds no header line within PARALLEL_PARSE_MAX_SCAN lines is skipped
+// (fewer, bigger pieces). Returns [start, end) offsets.
+const PARALLEL_PARSE_MAX_SCAN = 100000;
+function splitTextAtHeaderLines(text, isHeaderLine, n) {
+  const pieces = [];
+  let start = 0;
+  for (let k = 1; k < n; k++) {
+    const nl = text.indexOf("\n", Math.max(start, Math.floor(text.length * k / n)));
+    if (nl < 0) break;
+    let lineStart = nl + 1, cut = -1;
+    for (let scanned = 0; lineStart < text.length && scanned < PARALLEL_PARSE_MAX_SCAN; scanned++) {
+      let lineEnd = text.indexOf("\n", lineStart);
+      if (lineEnd < 0) lineEnd = text.length;
+      const contentEnd = lineEnd > lineStart && lineEnd < text.length && text.charCodeAt(lineEnd - 1) === 13 ? lineEnd - 1 : lineEnd;
+      if (isHeaderLine(text.slice(lineStart, contentEnd))) { cut = lineStart; break; }
+      lineStart = lineEnd + 1;
+    }
+    if (cut <= start) continue;
+    const end = text.charCodeAt(cut - 2) === 13 ? cut - 2 : cut - 1; // drop the previous line's terminator
+    pieces.push([start, end]);
+    start = cut;
+  }
+  pieces.push([start, text.length]);
+  return pieces;
+}
+
+// Runs fn in a task of its own, as soon as the event loop gets to it — a
+// MessageChannel message rather than setTimeout(fn, 0), which browsers clamp
+// and, in a hidden window, throttle to as little as once a second.
+const queueTaskChannel = typeof MessageChannel === "function" ? new MessageChannel() : null;
+const queuedTasks = [];
+if (queueTaskChannel) queueTaskChannel.port1.onmessage = () => { const fn = queuedTasks.shift(); if (fn) fn(); };
+function queueTask(fn) {
+  if (!queueTaskChannel) { setTimeout(fn, 0); return; }
+  queuedTasks.push(fn);
+  queueTaskChannel.port2.postMessage(null);
+}
+
+// Batches (PARSE_CHUNK_LINES each) adopted per task — see drain below.
+const PARALLEL_PARSE_DRAIN_BATCHES = 8;
+// Pieces smaller than this aren't worth a worker of their own.
+const PARALLEL_PARSE_MIN_CHARS = 1 << 20;
+function parallelParseWorkerCount(textLength) {
+  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 1;
+  return Math.max(1, Math.min(cores, 16, Math.floor(textLength / PARALLEL_PARSE_MIN_CHARS)));
+}
+
+// Parses on every core: the text is cut at header lines
+// (splitTextAtHeaderLines) into one piece per worker, and the pieces'
+// entries are appended in file order — a later piece's batches wait until
+// every earlier piece is complete — with ids assigned here, on the main
+// thread (uid/entryIndex are main-thread state), in file order. A worker
+// batch's ts is already final: the worker ran parseTimestamp/
+// parseTimestampGeneric itself, in this same engine and time zone — unlike
+// a native batch, whose naive ts parseLocalFileNatively still localizes
+// (makeNaiveTsLocalizer). Rejects on any worker failure with node.entries/
+// entryIndex rolled back, so parseLogTextAsync can fall back to the plain
+// loop cleanly.
 function parseLogTextInWorker(text, formatId, node, onProgress) {
   const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  const pieces = splitTextAtHeaderLines(text, getCompiledFormat(formatId).isHeaderLine, parallelParseWorkerCount(text.length));
+  const start = node.entries.length;
   return new Promise((resolve, reject) => {
-    let worker;
-    try {
-      worker = new Worker(getLogParseWorkerUrl());
-    } catch (err) {
+    const workers = [];
+    const queued = pieces.map(() => []); // decoded entry arrays not yet appended, per piece
+    const finished = pieces.map(() => false);
+    const progress = pieces.map(() => 0);  // 0..1 per piece
+    let next = 0;       // the piece whose entries are being appended
+    let settled = false;
+    const stop = () => { settled = true; workers.forEach(wk => wk.terminate()); };
+    const fail = err => {
+      if (settled) return;
+      stop();
+      for (const e of node.entries.splice(start)) delete entryIndex[e.id];
+      invalidateFileAggregate(node);
       reject(err);
-      return;
-    }
-    worker.onerror = (err) => { worker.terminate(); reject(err); };
-    worker.onmessage = (ev) => {
-      const msg = ev.data;
-      if (msg.type === "chunk") {
+    };
+    const append = entries => {
+      for (const e of entries) {
+        e.id = uid("e");
+        e.formatId = formatId;
+        entryIndex[e.id] = e;
+        node.entries.push(e);
+      }
+      updateFileAggregate(node); // while the workers are still busy, not in the first render
+    };
+    // Appends whatever is ready, in file order — at most
+    // PARALLEL_PARSE_DRAIN_BATCHES batches per task: once the first piece is
+    // done, the later pieces' queued batches (most of the file) would
+    // otherwise all be adopted in one long task. The next step is queued as
+    // a message (queueTask), not a setTimeout: a hidden window's timers are
+    // throttled — measured in the desktop app headless, 20 such yields added
+    // ~5s to a 650k-entry load — and a load behind a minimized window or the
+    // tray is exactly that case.
+    let drainScheduled = false;
+    const drain = () => {
+      if (drainScheduled || settled) return;
+      if (state.nodes[node.id] !== node) { stop(); resolve(); return; } // deleted mid-load, see onmessage
+      let budget = PARALLEL_PARSE_DRAIN_BATCHES;
+      while (next < pieces.length) {
+        while (queued[next].length) {
+          if (budget-- === 0) {
+            drainScheduled = true;
+            queueTask(() => { drainScheduled = false; drain(); });
+            return;
+          }
+          append(queued[next].shift());
+        }
+        if (!finished[next]) return;
+        next++;
+      }
+      stop();
+      if (onProgress) onProgress(text.length, text.length);
+      resolve();
+    };
+    const reportProgress = () => {
+      if (!onProgress) return;
+      let done = 0;
+      pieces.forEach(([a, b], i) => { done += progress[i] * (b - a); });
+      onProgress(done, text.length);
+    };
+    pieces.forEach(([a, b], i) => {
+      if (settled) return;
+      let worker;
+      try {
+        worker = new Worker(getLogParseWorkerUrl());
+      } catch (err) {
+        fail(err);
+        return;
+      }
+      workers.push(worker);
+      worker.onerror = err => fail(err);
+      worker.onmessage = ev => {
+        if (settled) return;
         // Deleted mid-load (by the person, or a race) — stop feeding the
         // now-orphaned node/entryIndex and stop the background parse
-        // outright, instead of leaking entries into them for the rest of
-        // the file. Resolve (not reject) so the awaiting caller just
+        // outright. Resolve (not reject) so the awaiting caller just
         // proceeds to its own existence check instead of hitting the
         // worker-failure fallback path.
-        if (state.nodes[node.id] !== node) { worker.terminate(); resolve(); return; }
-        for (const entry of msg.entries) {
-          entry.id = uid("e");
-          entryIndex[entry.id] = entry;
-          node.entries.push(entry);
+        if (state.nodes[node.id] !== node) { stop(); resolve(); return; }
+        const msg = ev.data;
+        if (msg.type === "batch") {
+          queued[i].push(decodeNativeBatch(msg.buf, msg.strings).entries);
+          if (i === next) drain();
+        } else if (msg.type === "progress") {
+          progress[i] = msg.total ? msg.done / msg.total : 1;
+          reportProgress();
+        } else if (msg.type === "done") {
+          progress[i] = 1;
+          finished[i] = true;
+          reportProgress();
+          if (i === next) drain();
         }
-      } else if (msg.type === "progress") {
-        if (onProgress) onProgress(msg.done, msg.total);
-      } else if (msg.type === "done") {
-        if (onProgress) onProgress(msg.total, msg.total);
-        worker.terminate();
-        resolve();
-      }
-    };
-    worker.postMessage({ text, fmt });
+      };
+      worker.postMessage({ text: pieces.length === 1 ? text : text.slice(a, b), fmt });
+    });
   });
+}
+
+// Writes entries into the binary batch layout the desktop's native parser
+// sends (desktop/src-tauri/logparse/src/batch.rs, read by decodeNativeBatch
+// below): the log-parse worker's transport. Mirrors batch.rs's encoder —
+// every string once, a field found inside its entry's raw referenced there
+// instead of written again, positions in UTF-16 code units — with one
+// difference: the string section stays a JS string (`strings`) next to the
+// ArrayBuffer (`buf`: header, ts, reference table) instead of being UTF-8
+// encoded onto its end. Posting a flat string is a plain copy, while
+// TextEncoder in the worker plus TextDecoder on the main thread cost ~6ms
+// per MB — and a string also carries a lone surrogate unchanged, which a
+// UTF-8 round trip would replace. ts goes in as-is (see
+// parseLogTextInWorker on local vs. naive ts).
+function encodeEntryBatch(entries, fraction) {
+  const parts = [];
+  let pos = 0;
+  let tab = new Uint8Array(entries.length * 24 + 64);
+  let p = 0;
+  const varint = v => {
+    if (p + 5 > tab.length) { const t = new Uint8Array(tab.length * 2); t.set(tab); tab = t; }
+    while (v >= 0x80) { tab[p++] = (v & 0x7F) | 0x80; v >>>= 7; }
+    tab[p++] = v;
+  };
+  const append = str => { const at = pos; parts.push(str); pos += str.length; return at; };
+  const field = (str, raw, rawAt) => {
+    const b = str === "" ? 0 : raw.indexOf(str);
+    varint((b >= 0 ? rawAt + b : append(str)) - rawAt);
+    varint(str.length);
+  };
+  let prevRaw = 0;
+  for (const e of entries) {
+    const raw = e.raw;
+    const rawAt = append(raw);
+    varint(rawAt - prevRaw);
+    varint(raw.length);
+    prevRaw = rawAt;
+    field(e.tsRaw, raw, rawAt); field(e.level, raw, rawAt); field(e.thread, raw, rawAt);
+    field(e.locationShort, raw, rawAt); field(e.locationFull, raw, rawAt);
+    field(e.method, raw, rawAt); field(e.message, raw, rawAt);
+    const keys = Object.keys(e.fields);
+    const open = e.msgOpenQuote !== undefined;
+    varint((open ? 1 : 0) | keys.length << 1);
+    if (open) field(e.msgOpenQuote, raw, rawAt);
+    for (const k of keys) { field(k, raw, rawAt); field(e.fields[k], raw, rawAt); }
+  }
+  const n = entries.length;
+  const buf = new ArrayBuffer(16 + n * 8 + p);
+  const head = new DataView(buf, 0, 16);
+  head.setFloat64(0, fraction, true);
+  head.setUint32(8, n, true);
+  head.setUint32(12, p, true);
+  const ts = new Float64Array(buf, 16, n);
+  for (let i = 0; i < n; i++) ts[i] = entries[i].ts;
+  new Uint8Array(buf, 16 + n * 8, p).set(tab.subarray(0, p));
+  return { buf, strings: parts.join("") };
 }
 
 /* ===================== Native parsing (desktop wrapper) =====================
@@ -8975,16 +9166,18 @@ function makeNaiveTsLocalizer() {
 // (applyFormatMatch/parseHeaderLine), minus id/formatId. The whole batch's
 // strings arrive as ONE UTF-8 buffer — decoded once, every field a
 // substring of it, located by varint offsets relative to the entry's raw;
-// ts stays naive (see makeNaiveTsLocalizer).
+// ts stays as sent (naive from Rust, see makeNaiveTsLocalizer). `strings`:
+// the string section already as a JS string, in place of the buffer's
+// UTF-8 tail — how the log-parse worker sends it (encodeEntryBatch).
 const nativeBatchDecoder = typeof TextDecoder === "function" ? new TextDecoder("utf-8", { ignoreBOM: true }) : null;
-function decodeNativeBatch(buf) {
+function decodeNativeBatch(buf, strings) {
   const head = new DataView(buf, 0, 16);
   const fraction = head.getFloat64(0, true);
   const count = head.getUint32(8, true);
   const tableLen = head.getUint32(12, true);
   const ts = new Float64Array(buf, 16, count);
   const tab = new Uint8Array(buf, 16 + count * 8, tableLen);
-  const S = nativeBatchDecoder.decode(new Uint8Array(buf, 16 + count * 8 + tableLen));
+  const S = strings !== undefined ? strings : nativeBatchDecoder.decode(new Uint8Array(buf, 16 + count * 8 + tableLen));
   const entries = new Array(count);
   let p = 0;
   let rawAt = 0;
@@ -9044,11 +9237,13 @@ async function parseLocalFileNatively(url, node, onFraction) {
           entryIndex[e.id] = e;
           node.entries.push(e);
         }
+        updateFileAggregate(node); // see "Per-file aggregates"
       }
       if (onFraction && typeof batch.fraction === "number") onFraction(batch.fraction);
     });
   } catch (err) {
     for (const e of node.entries.splice(start)) delete entryIndex[e.id];
+    invalidateFileAggregate(node);
     throw err;
   }
 }
@@ -9413,18 +9608,24 @@ function releaseEntriesFromIndex(entries, excludeRootId) {
 // by session-cache/merge restore so a file already parsed once never
 // silently reparses differently just because rules changed since (see
 // "Log format definitions" and restoreSessionFromCache).
+// Pins a file to a stored format (a session restore, mergeFiles, a
+// meta-format stream) instead of resolving one from its filename.
+async function pinFileFormat(node, formatId) {
+  const pinnedId = formatId || DEFAULT_FORMAT_ID;
+  // A restored file's pinned formatId can name a custom format not yet
+  // loaded from IndexedDB — loadFormatConfig() runs in parallel with boot,
+  // not gating it, so an ordinary/default-format load never waits on it.
+  // This is the one place a still-missing lookup would actually mis-parse
+  // a file (falling back to the default), so wait for it here specifically.
+  if (pinnedId !== DEFAULT_FORMAT_ID && !state.logFormats.some(f => f.id === pinnedId)) await formatConfigReady;
+  node.formatId = pinnedId;
+}
+
 async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
   const node = existingNode || createFileNode(name);
   if (existingNode) activateQueuedFileNode(node);
   if (formatIdOverride !== undefined) {
-    const pinnedId = formatIdOverride || DEFAULT_FORMAT_ID;
-    // A restored file's pinned formatId can name a custom format not yet
-    // loaded from IndexedDB — loadFormatConfig() runs in parallel with boot,
-    // not gating it, so an ordinary/default-format load never waits on it.
-    // This is the one place a still-missing lookup would actually mis-parse
-    // a file (falling back to the default), so wait for it here specifically.
-    if (pinnedId !== DEFAULT_FORMAT_ID && !state.logFormats.some(f => f.id === pinnedId)) await formatConfigReady;
-    node.formatId = pinnedId;
+    await pinFileFormat(node, formatIdOverride);
   } else {
     node.formatId = resolveFormatIdForFilename(name);
     // Only a *live* filename resolution can land on a meta-format — a
@@ -9515,6 +9716,7 @@ async function loadMetaFormatText(name, text, metaFmt) {
       // already chronological. Sorting here, once, is what keeps that fast
       // path's output actually chronological for a meta-format's vnodes.
       vnode.entries.sort((a, b) => a.ts - b.ts);
+      invalidateOrderIndexMap(vnode.id); // in-place reorder: same array, same length
       vnodes.push(vnode);
     }
   } finally {
@@ -10331,7 +10533,11 @@ function buildOrderIndexMap(fileId) {
 // key above can't see: a reorder that keeps the same array and length.
 function invalidateOrderIndexMap(fileId) {
   const file = fileId && state.nodes[fileId];
-  if (file) file._orderIndexMap = null;
+  if (file) {
+    file._orderIndexMap = null;
+    file._orderVersion = (file._orderVersion || 0) + 1; // keys contextMatchesAndGaps' memo
+    invalidateFileAggregate(file); // the aggregate's entry indices moved too
+  }
 }
 
 /* ===================== Per-file clock offset (FEATURE_BACKLOG.md #29) =====================
@@ -10377,6 +10583,7 @@ function resortMergedFilesAfterShift() {
 function shiftFileEntriesTs(node, deltaMs) {
   if (!node || !Array.isArray(node.entries) || !deltaMs) return;
   for (const e of node.entries) e.ts += deltaMs;
+  invalidateFileAggregate(node); // its min/max ts moved
   resortMergedFilesAfterShift();
 }
 
@@ -11898,6 +12105,81 @@ function invalidateCachesForRoots(changedRootIds) {
   }
 }
 
+/* Per-file aggregates: what the first render of a freshly loaded file would
+   otherwise compute in full passes over every entry — level counts
+   (getLevelCounts), the minimap's bucket bars (renderTimelineMinimap,
+   updateMinimapFullRange) and the widest message (computeMaxMessageWidth).
+   updateFileAggregate catches up from the last entry it saw to the end of
+   node.entries; the load paths call it after every adopted batch (while the
+   workers are still parsing), so the render finds it complete, and every
+   reader calls it too (fileAggregate), so a tail append is folded in
+   incrementally and correctness never depends on those call sites.
+   Kept per raw level text + formatId (not per bucket), so a format's level
+   edit changes nothing here — buckets and ranks are resolved when read.
+   Self-validating like _orderIndexMap for a replaced array (rotation) or a
+   shrunk one (a rolled-back parse); a mutation it can't see — an in-place
+   reorder (invalidateOrderIndexMap) or shifted ts (a clock offset) — drops
+   it via invalidateFileAggregate. */
+function invalidateFileAggregate(node) {
+  if (node) node._agg = null;
+}
+function updateFileAggregate(node) {
+  const entries = node.entries;
+  let a = node._agg;
+  if (!a || a.entries !== entries || a.count > entries.length) {
+    a = node._agg = {
+      entries, count: 0,
+      byFormat: new Map(), // formatId -> Map(level -> rec)
+      levelOrder: [],      // rec { formatId, level, n, idx: Int32Array (entry indices, ascending) }, first appearance first
+      sorted: true,        // every ts a number, non-decreasing
+      minTs: Infinity, maxTs: -Infinity,
+      longestMsg: "",      // first longest message (computeMaxMessageWidth, single-line)
+      longestLine: "",     // first longest line of any message (multi-line)
+    };
+  }
+  // The last entry already seen can still have grown (a tail tick appends
+  // continuation lines to it), so its message is looked at again.
+  for (let i = a.count ? a.count - 1 : 0; i < entries.length; i++) {
+    const e = entries[i];
+    const msg = e.message || "";
+    if (msg.length > a.longestMsg.length) a.longestMsg = msg;
+    if (msg.length > a.longestLine.length) {
+      if (msg.indexOf("\n") < 0) a.longestLine = msg;
+      else for (const line of msg.split("\n")) if (line.length > a.longestLine.length) a.longestLine = line;
+    }
+    if (i < a.count) continue;
+    let byLevel = a.byFormat.get(e.formatId);
+    if (!byLevel) { byLevel = new Map(); a.byFormat.set(e.formatId, byLevel); }
+    let rec = byLevel.get(e.level);
+    if (!rec) {
+      rec = { formatId: e.formatId, level: e.level, n: 0, idx: new Int32Array(64) };
+      byLevel.set(e.level, rec);
+      a.levelOrder.push(rec);
+    }
+    if (rec.n === rec.idx.length) { const grown = new Int32Array(rec.n * 2); grown.set(rec.idx); rec.idx = grown; }
+    rec.idx[rec.n++] = i;
+    const ts = e.ts;
+    if (ts < a.minTs) a.minTs = ts;
+    if (ts > a.maxTs) a.maxTs = ts;
+    if (a.sorted && !(i === 0 ? ts === ts : ts >= entries[i - 1].ts)) a.sorted = false;
+  }
+  a.count = entries.length;
+  return a;
+}
+function fileAggregate(node) {
+  return updateFileAggregate(node);
+}
+// The aggregate of the root file whose entries array `entries` is, if any —
+// a view that IS a file's whole entry list (a file node active, no level
+// filter, sort or pinned rows) can use it instead of a pass of its own.
+function aggregateForEntries(entries) {
+  for (const id of state.rootIds) {
+    const n = state.nodes[id];
+    if (n && n.entries === entries) return fileAggregate(n);
+  }
+  return null;
+}
+
 // Per-level entry counts for a node's own result, cached alongside _cache
 // (cleared in the exact same two places above). renderLevelBar needs these on
 // every render(), and the O(n) levelBucket pass over a large active view was
@@ -11906,6 +12188,18 @@ function invalidateCachesForRoots(changedRootIds) {
 function getLevelCounts(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return {};
+  if (!node._levelCounts && node.type === "file") {
+    // A file's counts come from its aggregate (per raw level text, bucketed
+    // here — so a format's level edit needs no recount), in order of first
+    // appearance, the same key order the per-entry loop below produces.
+    const counts = {};
+    const bucketOf = makeLevelBucketer();
+    for (const rec of fileAggregate(node).levelOrder) {
+      const b = bucketOf(rec.level, rec.formatId);
+      counts[b] = (counts[b] || 0) + rec.n;
+    }
+    node._levelCounts = counts;
+  }
   if (!node._levelCounts) {
     const counts = {};
     const bucketOf = makeLevelBucketer();
@@ -11967,6 +12261,9 @@ function snapshotSubtree(nodeId) {
     // same objects just get unplugged from entryIndex/rootIds on delete and
     // plugged back in on undo, same as a real re-open.
     copy.entries = node.entries; copy.cacheKey = node.cacheKey;
+    // Same entries, so the File they were parsed from still matches them —
+    // the restored node's cache record stays a cheap Blob (fileCacheSource).
+    if (node._cacheBlob) copy._cacheBlob = node._cacheBlob;
     if (node.merged) copy.merged = true;
     if (node.tail) copy.tail = node.tail;
     // formatId decides how the level bar is built (formatLevels), how tailed
@@ -12058,6 +12355,7 @@ function restoreSubtree(snap) {
     if (snap.folderId) node.folderId = snap.folderId;
     if (snap.partial) node.partial = snap.partial;
     if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
+    if (snap._cacheBlob) node._cacheBlob = snap._cacheBlob;
     if (snap.mergeOwnerId) node.mergeOwnerId = snap.mergeOwnerId;
     if (snap.mergeSourceHidden) node.mergeSourceHidden = true;
     if (snap.sources) node.sources = snap.sources;
@@ -12662,7 +12960,10 @@ function showFhTab(tab) {
     // (FEATURE_BACKLOG #25 — live-follow now applies to both views).
     if (tab === "highlight") {
       if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
-      renderHighlightVisibleRows();
+      // Revealed while stale (see renderMainView): build it now — unless this
+      // switch happens inside a render(), whose renderMainView builds it next.
+      if (contextViewStale && !renderDepth) renderHighlightView();
+      else renderHighlightVisibleRows();
     } else {
       if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
       renderVisibleRows();
@@ -12718,7 +13019,8 @@ function applyFhView(view) {
     if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
     if (wasOnTableOrPlot) renderMainView(); // content component switches back from Table/Plot to #fhSplit
     renderVisibleRows();
-    renderHighlightVisibleRows();
+    if (contextViewStale && !renderDepth) renderHighlightView(); // see showFhTab
+    else renderHighlightVisibleRows();
     // Entering Stacked always shows Box #1 (see updateMinimapFullRange) and
     // ties Box #2 back to the Filtered pane (see updateMinimapRenderedRange)
     // — re-evaluate immediately, same reasoning as showFhTab's own call below
@@ -12935,7 +13237,9 @@ function captureNavWaypoint(nodeId) {
     // Only the plain log table has an entry-keyed row list to anchor in; the
     // extraction table and the link pair view fall back to rawScrollTop.
     filterAnchor: scroller === tableBody ? captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody) : null,
-    contextAnchor: captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody),
+    // A stale (hidden, not rebuilt — see renderMainView) Context list belongs
+    // to an earlier node; its scroll position is all that's worth keeping.
+    contextAnchor: contextViewStale ? null : captureViewAnchor(currentHighlightViewEntries, highlightRowOffsets, highlightBody),
     rawScrollTop: scroller.scrollTop,
     contextScrollTop: highlightBody.scrollTop,
   };
@@ -13219,7 +13523,12 @@ function updateSortIndicators() {
   });
 }
 
+let renderDepth = 0; // > 0 while render() runs — see showFhTab's lazy Context build
 function render() {
+  renderDepth++;
+  try { renderInner(); } finally { renderDepth--; }
+}
+function renderInner() {
   if (state.activeId !== lastActiveIdForReveal) {
     const prevNode = state.nodes[lastActiveIdForReveal];
     lastActiveIdForReveal = state.activeId;
@@ -13378,6 +13687,7 @@ function renderMainView() {
     contextRuns = [];
     contextMatchRows = [];
     contextMatchPos = new Map();
+    contextMatchMemo = null; // holds the closed files' entries otherwise
     contextExpansionsKey = null;
     updateContextToolbar();
     return;
@@ -13458,7 +13768,19 @@ function renderMainView() {
     timelineMinimapEl.classList.remove("hidden");
     renderTable();
   }
-  renderHighlightView(true); // highlightColorMap was computed fresh above
+  // The Context view is only built while it is on screen (Stacked, or its
+  // tab): building it means a match set and gap list over the whole file,
+  // hundreds of ms for a large one, on every render. Hidden, it is marked
+  // stale and built when it is revealed (showFhTab/applyFhView).
+  if (contextViewVisible()) renderHighlightView(true); // highlightColorMap was computed fresh above
+  else contextViewStale = true;
+}
+
+// Whether the Context view (#highlightWrap) is on screen: Stacked shows it
+// next to Filtered, tabs layout only on its own tab.
+let contextViewStale = false;
+function contextViewVisible() {
+  return fhActiveTab !== "table" && fhActiveTab !== "plot" && (fhLayout === "stacked" || fhActiveTab === "highlight");
 }
 
 function renderStatus() {
@@ -18492,9 +18814,10 @@ let contextStrips = new Map();
 // for the ~40 rows actually on screen — see contextRunAt.
 let contextRuns = [];
 // Indices into currentHighlightViewEntries of the rows that are real matches,
-// ascending, plus each match's 1-based ordinal by entry id. Both are built
-// during buildContextView's own single walk rather than rescanned later: the
-// toolbar refreshes on every selection change, and an O(rows) scan per arrow
+// ascending, plus each match's 1-based ordinal by entry id. Built with the
+// view (the rows by buildContextView's own walk, the ordinals once per match
+// set by contextMatchesAndGaps) rather than rescanned later: the toolbar
+// refreshes on every selection change, and an O(rows) scan per arrow
 // keypress would be felt on a large fully-expanded view.
 let contextMatchRows = [];
 let contextMatchPos = new Map();
@@ -18646,6 +18969,66 @@ function contextRunAt(i) {
 // contextStrips/contextRuns along the way. Walks the gap list rather than the
 // whole file, so the cost scales with the number of matches, not the file
 // size.
+// The match/gap half of buildContextView, memoized per (active node, its
+// getEntries() result, the root's entries array + length + order version).
+// contextMatchIds/contextGaps are shared with the memo, so — as everywhere
+// they were already only read — nothing may mutate them in place.
+let contextMatchMemo = null;
+function contextMatchesAndGaps(node, root) {
+  const all = root.entries;
+  const result = getEntries(node.id);
+  const m = contextMatchMemo;
+  if (m && m.nodeId === node.id && m.result === result && m.all === all && m.length === all.length &&
+      m.orderVersion === (root._orderVersion || 0)) return m;
+  const matchIds = new Set();
+  // Root-file indices of the matches, ascending.
+  let idxs = null;
+  if (node.filterType !== "link") {
+    // Every other filter keeps its parent's order, so its result is normally
+    // a subsequence of the root's entries: one walk along both finds the
+    // indices without an id -> index map. Anything else (an "or" re-sorted
+    // by ts, say) runs off the end and takes the map route below.
+    idxs = [];
+    let j = 0;
+    for (const e of result) {
+      matchIds.add(e.id);
+      while (j < all.length && all[j] !== e) j++;
+      if (j === all.length) { idxs = null; break; }
+      idxs.push(j++);
+    }
+    if (!idxs) result.forEach(e => matchIds.add(e.id));
+  } else {
+    // Synthetic pair entries: colour/mark the real entries underneath, via the
+    // same recursive getTupleEntries() walk computeHighlightMap uses (a
+    // chained link's pair is itself a pair on one or both sides).
+    result.forEach(pair => getTupleEntries(pair).forEach(e => matchIds.add(e.id)));
+  }
+  if (!idxs) {
+    // A link node's flattened underlying entries genuinely can land out of
+    // order (a "before" hop's match precedes its own reference — see "Link
+    // filter" in docs/filters.md), hence sorting rather than trusting it.
+    const orderIndexMap = buildOrderIndexMap(root.id);
+    idxs = [];
+    matchIds.forEach(id => {
+      const i = orderIndexMap.get(id);
+      if (i !== undefined) idxs.push(i);
+    });
+    idxs.sort((a, b) => a - b);
+  }
+  const gaps = [];
+  // Entry id -> its 1-based position among the matches (contextMatchPos).
+  const matchPos = new Map();
+  let prev = -1;
+  for (let k = 0; k < idxs.length; k++) {
+    if (idxs[k] > prev + 1) gaps.push({ start: prev + 1, end: idxs[k] });
+    if (idxs[k] !== prev) matchPos.set(all[idxs[k]].id, matchPos.size + 1);
+    prev = idxs[k];
+  }
+  if (prev + 1 < all.length) gaps.push({ start: prev + 1, end: all.length });
+  contextMatchMemo = { nodeId: node.id, result, all, length: all.length, orderVersion: root._orderVersion || 0, matchIds, gaps, matchPos };
+  return contextMatchMemo;
+}
+
 function buildContextView(rootId) {
   contextActive = false;
   contextMatchIds = new Set();
@@ -18664,35 +19047,14 @@ function buildContextView(rootId) {
   if (!node || node.type !== "filter") return all;
   contextActive = true;
 
-  const result = getEntries(node.id);
-  if (node.filterType === "link") {
-    // Synthetic pair entries: colour/mark the real entries underneath, via the
-    // same recursive getTupleEntries() walk computeHighlightMap uses (a
-    // chained link's pair is itself a pair on one or both sides).
-    result.forEach(pair => getTupleEntries(pair).forEach(e => contextMatchIds.add(e.id)));
-  } else {
-    result.forEach(e => contextMatchIds.add(e.id));
-  }
-
-  // Root-file indices of the matches, ascending. Non-link filters preserve the
-  // parent's order, so their result is already sorted and the sort below is a
-  // no-op scan; a link node's flattened underlying entries genuinely can land
-  // out of order (a "before" hop's match precedes its own reference — see
-  // "Link filter" in docs/filters.md), hence sorting rather than trusting it.
-  const orderIndexMap = buildOrderIndexMap(rootId);
-  const idxs = [];
-  contextMatchIds.forEach(id => {
-    const i = orderIndexMap.get(id);
-    if (i !== undefined) idxs.push(i);
-  });
-  idxs.sort((a, b) => a - b);
-
-  let prev = -1;
-  for (let k = 0; k < idxs.length; k++) {
-    if (idxs[k] > prev + 1) contextGaps.push({ start: prev + 1, end: idxs[k] });
-    prev = idxs[k];
-  }
-  if (prev + 1 < all.length) contextGaps.push({ start: prev + 1, end: all.length });
+  // Which entries match and where the gaps between them fall depends only on
+  // the node's result and the root's entries, not on what is expanded — so
+  // it is memoized (contextMatchesAndGaps) and only the expansion-dependent
+  // rows/strips/runs below are rebuilt on every call.
+  const matches = contextMatchesAndGaps(node, root);
+  contextMatchIds = matches.matchIds;
+  contextGaps = matches.gaps;
+  contextMatchPos = matches.matchPos;
 
   // A different active node means a different result set, so the previous
   // node's expansions (plain root-file index ranges) mean nothing here — drop
@@ -18791,7 +19153,6 @@ function buildContextView(rootId) {
     // Not inside any gap, so this row is a match by construction.
     out.push(all[i]);
     contextMatchRows.push(out.length - 1);
-    contextMatchPos.set(all[i].id, contextMatchRows.length);
     i++;
   }
   return out;
@@ -19267,6 +19628,7 @@ function setHighlightScroll(value) {
 // fhLayout/fhActiveTab branch — a no-op whenever the Filtered tab or Stacked
 // layout is what's showing instead).
 function renderHighlightView(colorMapIsFresh) {
+  contextViewStale = false;
   const rootId = getRootFileId(state.activeId);
   const sameRoot = rootId === lastHighlightRootId;
   // Only worth trying to preserve scroll position within the SAME root
@@ -20387,6 +20749,31 @@ function minimapBarSpan(ts) {
 // order — i.e. currentViewEntries *before* any column-sort copy is applied
 // (see renderTable), since bucketing needs real time order regardless of
 // what the table itself is currently sorted by.
+// Where each minimap bucket starts in a root file's entries — bounds[b] is
+// the first index in bucket b or later, bounds[bucketCount] the entry count
+// — found by binary search instead of bucketing every entry. The bucket of
+// an index is monotonic in the index in entries mode, and in time mode as
+// long as the file's ts are all numbers and non-decreasing (its aggregate
+// knows); null otherwise, and the caller buckets entry by entry.
+function minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode) {
+  const root = state.nodes[rootId];
+  const entries = root.entries;
+  const n = entries.length;
+  if (!entriesMode && !fileAggregate(root).sorted) return null;
+  const bucketAt = entriesMode
+    ? i => Math.min(bucketCount - 1, Math.floor((i / n) * bucketCount))
+    : i => bucketOfTime(entries[i].ts);
+  const bounds = new Array(bucketCount + 1);
+  bounds[bucketCount] = n;
+  let lo0 = 0;
+  for (let b = 0; b < bucketCount; b++) {
+    let lo = lo0, hi = n;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (bucketAt(mid) < b) lo = mid + 1; else hi = mid; }
+    bounds[b] = lo0 = lo;
+  }
+  return bounds;
+}
+
 function renderTimelineMinimap(rootId, viewEntries) {
   minimapLastRootId = rootId;
   minimapLastViewEntries = viewEntries;
@@ -20472,7 +20859,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
     maxCount = c.maxCount;
   } else {
     bgCounts = new Array(bucketCount).fill(0);
-    if (entriesMode) {
+    const bounds = minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode);
+    if (bounds) {
+      for (let b = 0; b < bucketCount; b++) bgCounts[b] = bounds[b + 1] - bounds[b];
+    } else if (entriesMode) {
       // Entries mode slices the WHOLE root file into bucketCount equal-size
       // INDEX ranges — every bucket ends up covering the same fixed slice of
       // the file's line count, so the background bars render essentially
@@ -20498,6 +20888,31 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const ovCounts = new Array(bucketCount).fill(0);
   const ovRank = new Array(bucketCount).fill(Infinity);
   const ovName = new Array(bucketCount).fill("");
+  // The overlay of a view that IS the whole file (its first render, a file
+  // node active without a level filter) straight from the aggregate: the
+  // same counts as the background, and per bucket the lowest-ranked level
+  // present — ties going to the level whose first entry in that bucket comes
+  // first, exactly what the per-entry loop below picks.
+  const bounds = viewEntries === rootEntries ? minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode) : null;
+  if (bounds) {
+    const ovFirst = new Array(bucketCount).fill(Infinity);
+    for (let b = 0; b < bucketCount; b++) ovCounts[b] = bounds[b + 1] - bounds[b];
+    for (const rec of fileAggregate(state.nodes[rootId]).levelOrder) {
+      const bucket = levelBucket(rec.level, rec.formatId);
+      const rank = levelSortRank(bucket, rec.formatId);
+      const idx = rec.idx;
+      let j = 0;
+      for (let b = 0; b < bucketCount && j < rec.n; b++) {
+        // First of this level's entries at or after the bucket's start.
+        let lo = j, hi = rec.n;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (idx[mid] < bounds[b]) lo = mid + 1; else hi = mid; }
+        j = lo;
+        if (j < rec.n && idx[j] < bounds[b + 1] && (rank < ovRank[b] || (rank === ovRank[b] && idx[j] < ovFirst[b]))) {
+          ovRank[b] = rank; ovName[b] = bucket; ovFirst[b] = idx[j];
+        }
+      }
+    }
+  }
   // Entries mode needs each viewEntries entry's position WITHIN THE ROOT
   // FILE, not within viewEntries itself — viewEntries is a filtered SUBSET,
   // so its own array index would bucket by "Nth match" instead of "Nth line
@@ -20512,7 +20927,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // Resolved once per distinct (format, level) pair, not per entry — same
   // reasoning as makeLevelBucketer, extended to the rank.
   const levelInfo = new Map(); // formatId -> Map(level -> [bucket, rank])
-  for (const e of viewEntries) {
+  if (!bounds) for (const e of viewEntries) {
     let b;
     if (entriesMode) {
       const idx = orderIndexMap.get(e.id);
@@ -20606,7 +21021,9 @@ function updateMinimapFullRange() {
   const entries = minimapLastViewEntries;
   if (!entries || entries.length === 0) { rect.classList.add("hidden"); return; }
   let minTs = Infinity, maxTs = -Infinity;
-  for (const e of entries) {
+  const agg = aggregateForEntries(entries);
+  if (agg) { minTs = agg.minTs; maxTs = agg.maxTs; }
+  else for (const e of entries) {
     if (e.ts < minTs) minTs = e.ts;
     if (e.ts > maxTs) maxTs = e.ts;
   }
@@ -22494,6 +22911,13 @@ function longestMessageLine(message) {
 // Monospace font (var(--font-mono)), so the longest line in characters is
 // also the widest in pixels.
 function computeMaxMessageWidth(entries) {
+  // A file's whole entry list: its aggregate already knows (same first-
+  // longest pick, in the same order, as the scan below).
+  const agg = aggregateForEntries(entries);
+  if (agg) {
+    const line = state.multilineMessages ? agg.longestLine : agg.longestMsg;
+    return line ? measureMsgWidth(line) : 0;
+  }
   let longest = "";
   for (let i = 0; i < entries.length; i++) {
     const line = longestMessageLine(entries[i].message);
@@ -24093,6 +24517,10 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
   }
   if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
+  // The session cache stores the File itself rather than rebuilding its text
+  // (see fileCacheSource) — except for a ZIP entry, whose File is only an
+  // in-memory copy of the extracted bytes.
+  if (file && !node.zipId) node._cacheBlob = file;
   persistFileNode(node); // fire-and-forget; the write races nothing (keyed by cacheKey)
   // File filter history (see the section near the end of the script):
   // a freshly loaded file always starts with zero filter children, so
@@ -24891,6 +25319,9 @@ async function tailTick() {
 
 function onTailChange(changedRootIds) {
   invalidateCachesForRoots(changedRootIds);
+  // Grown or rotated: the File the node was loaded from no longer matches
+  // its entries, so its cache record goes back to rebuilt text.
+  changedRootIds.forEach(id => { const n = state.nodes[id]; if (n) delete n._cacheBlob; });
   // Keep the session cache's file text roughly current while tailing —
   // heavily debounced (see CACHE_FILE_DEBOUNCE_MS), pagehide flushes the rest.
   changedRootIds.forEach(id => { const n = state.nodes[id]; if (n) schedulePersistFileNode(n); });
@@ -33255,10 +33686,32 @@ function rebuildFileText(node) {
   return node.entries.map(e => e.raw).join("\n");
 }
 
-async function persistFileNode(node) {
+// What a file's cache record carries as its content, cheapest first:
+// - "path": nothing — a desktop file (node.localPath, and the wrapper can
+//   re-register a path via openLocalPath) is re-read and re-parsed from disk
+//   on restore. Person-decided trade-off: a file deleted or moved since is
+//   simply not restored, in exchange for never copying its text anywhere.
+// - "blob": the original File/Blob the node was loaded from
+//   (node._cacheBlob, see loadOneFileIntoTree) — IndexedDB copies a Blob's
+//   bytes off the JS thread, so storing it costs the page ~nothing.
+//   Only valid while node.entries are still exactly what that File parses
+//   to: any tail append or rotation drops it (onTailChange).
+// - "text": rebuildFileText — merges, meta-format streams, ZIP entries,
+//   tailed files, ... Building and structured-cloning ~100 MB of text blocks
+//   the main thread for ~0.5-1.5 s, so that write waits for idle time.
+function fileCacheSource(node) {
+  if (node.localPath && !node.partial && !node.merged && canReopenLocalPath()) return "path";
+  if (node._cacheBlob) return "blob";
+  return "text";
+}
+
+// immediate: write now even when that means building the text (pagehide).
+async function persistFileNode(node, immediate) {
   if (!cacheEnabled() || sessionRestoreInProgress) return;
   if (!node || node.type !== "file") return;
   if (!node.cacheKey) node.cacheKey = newCacheKey();
+  const source = fileCacheSource(node);
+  if (source === "text" && !immediate) return persistFileNodeWhenIdle(node);
   await cacheStoreOp("files", "readwrite", store => store.put({
     key: node.cacheKey,
     name: node.name,
@@ -33282,7 +33735,10 @@ async function persistFileNode(node) {
     // persisted right below, and restoreSessionFromCache rebuilds an
     // equivalent handle from it.
     handle: (node.tail && !node.folderId && !isUrlTailHandle(node.tail.handle)) ? node.tail.handle : null,
-    text: rebuildFileText(node),
+    // Exactly one of text/blob is set, or neither for a "path" record — see
+    // fileCacheSource.
+    text: source === "text" ? rebuildFileText(node) : null,
+    blob: source === "blob" ? node._cacheBlob : null,
     formatId: node.formatId || null,
     // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (desktop
     // wrapper only) and sourceUrl (any ?url=/philoggLoadUrl deep-link) both
@@ -33299,13 +33755,37 @@ async function persistFileNode(node) {
     // restored session would show a deliberately-incomplete node as if it
     // were the file's normal full content.
     partial: node.partial || null,
-    // Per-file clock offset (FEATURE_BACKLOG.md #29): `text` above is rebuilt
-    // from entry.raw (the ORIGINAL, unshifted timestamps), so this signed-ms
-    // amount is what restoreSessionFromCache re-applies to the freshly-parsed
-    // entries to reinstate the correction. Never set on a merged file.
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): the content above is
+    // the ORIGINAL file (text: rebuilt from entry.raw, unshifted), so this
+    // signed-ms amount is what restoreSessionFromCache re-applies to the
+    // freshly-parsed entries to reinstate the correction. Never set on a
+    // merged file.
     clockOffset: node.clockOffset || 0,
     savedAt: Date.now(),
   }));
+}
+
+// A "text" record's write, deferred until the page is idle — never on a
+// load's path to its first render (loadOneFileIntoTree persists right before
+// its caller renders). One pending write per file; it reads the node's state
+// when it runs, so a later change before then is included. The returned
+// promise settles once the write is done, so `await persistFileNode(node)`
+// still means "written". pagehide runs whatever is still pending.
+const pendingIdlePersists = new Map(); // cacheKey -> { node, promise, run }
+function persistFileNodeWhenIdle(node) {
+  const pending = pendingIdlePersists.get(node.cacheKey);
+  if (pending && pending.node === node) return pending.promise;
+  let resolve;
+  const entry = { node, promise: new Promise(r => { resolve = r; }) };
+  entry.run = () => {
+    if (pendingIdlePersists.get(node.cacheKey) !== entry) { resolve(); return; } // superseded, flushed or deleted
+    pendingIdlePersists.delete(node.cacheKey);
+    resolve(state.nodes[node.id] === node ? persistFileNode(node, true) : undefined);
+  };
+  pendingIdlePersists.set(node.cacheKey, entry);
+  if (typeof requestIdleCallback === "function") requestIdleCallback(entry.run, { timeout: 5000 });
+  else setTimeout(entry.run, 0);
+  return entry.promise;
 }
 
 // Per-file debounce for tail appends — rebuilding and writing a large file's
@@ -33328,6 +33808,7 @@ async function cacheDeleteFile(cacheKey) {
   if (!cacheKey) return;
   const pending = pendingFilePersists.get(cacheKey);
   if (pending) { clearTimeout(pending.timer); pendingFilePersists.delete(cacheKey); }
+  pendingIdlePersists.delete(cacheKey);
   await cacheStoreOp("files", "readwrite", store => store.delete(cacheKey));
 }
 
@@ -33611,6 +34092,9 @@ function materializeCachedFilters(fileNode, roots) {
 // clone always fails permission checks in jsdom (see tests/README.md), so
 // tests exercise this directly with a working fixture handle, the same way
 // reconnectFolder's own test does for folders.
+function newTailState(handle, offset) {
+  return { handle, offset, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
+}
 async function tryReattachFileTail(node, handle) {
   try {
     // A urlTailHandle has no permission model to query — the wrapper's own
@@ -33618,20 +34102,48 @@ async function tryReattachFileTail(node, handle) {
     // fails later, which tailTick already degrades gracefully on.
     const perm = isUrlTailHandle(handle) ? "granted" : await handle.queryPermission({ mode: "read" });
     if (perm === "granted") {
-      node.tail = {
-        handle,
-        offset: new Blob([rebuildFileText(node)]).size,
-        pending: "",
-        failed: false,
-        busy: false,
-        errorCount: 0,
-        lastGrowth: Date.now(),
-        wasLive: true,
-      };
+      node.tail = newTailState(handle, new Blob([rebuildFileText(node)]).size);
       return true;
     }
   } catch { /* handle unusable (moved/deleted) — stays a static snapshot */ }
   return false;
+}
+
+// A desktop "path" cache record (see fileCacheSource): the wrapper registers
+// the stored path again (openLocalPath rejects once the file is gone) and the
+// file is parsed the way loadOneFileIntoTree parses a freshly opened one —
+// natively where possible, else fetched and parsed in JS — under the format
+// it was pinned to. Resolves with the node and what the caller needs to
+// re-link it: this run's URL, the path, a tail handle and the bytes read.
+function canReopenLocalPath() {
+  return !!(window.philogg && typeof window.philogg.openLocalPath === "function");
+}
+async function reopenLocalPathForRestore(rec, placeholder) {
+  const local = await window.philogg.openLocalPath(rec.localPath);
+  const handle = urlTailHandle(local.url, local.path);
+  const node = placeholder;
+  activateQueuedFileNode(node);
+  await pinFileFormat(node, rec.formatId);
+  let size;
+  try {
+    try {
+      size = (await parseLocalFileNatively(local.url, node, fraction => {
+        node.loadFraction = fraction;
+        scheduleLoadRender(node.id);
+      })).size;
+    } catch (err) {
+      const file = await handle.getFile();
+      size = file.size;
+      await parseLogTextAsync(await file.text(), node, (done, total) => {
+        node.loadFraction = total ? done / total : 1;
+        scheduleLoadRender(node.id);
+      });
+    }
+  } finally {
+    delete node.loadFraction;
+  }
+  if (state.nodes[node.id] === node) flushLoadRender(node.id);
+  return { node, url: local.url, path: local.path || rec.localPath, handle, size };
 }
 
 // Boot-time restore. Returns true if at least one file came back. Any error
@@ -33660,7 +34172,10 @@ async function restoreSessionFromCache() {
     const recs = []; // { key, rec } | null (rec fetch failed/out of sync) per fileOrder entry
     for (const key of meta.fileOrder) {
       const rec = await cacheStoreOp("files", "readonly", store => store.get(key));
-      recs.push(rec && typeof rec.text === "string" ? { key, rec } : null);
+      // Content comes as text, as the original File (blob), or — a desktop
+      // "path" record, see fileCacheSource — re-read from disk.
+      const usable = rec && (typeof rec.text === "string" || rec.blob || (rec.localPath && canReopenLocalPath()));
+      recs.push(usable ? { key, rec } : null);
     }
     const queued = recs.map(entry => entry && createQueuedFileNode(entry.rec.name));
     if (queued.some(Boolean)) render();
@@ -33680,7 +34195,23 @@ async function restoreSessionFromCache() {
       // Explicit override (never undefined) so a restored file is pinned to
       // whatever format it was actually parsed under, even if the person's
       // filename rules have since changed — see "Log format definitions".
-      const node = await addFile(rec.name, rec.text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
+      let node, reopened = null;
+      try {
+        if (typeof rec.text === "string" || rec.blob) {
+          const text = typeof rec.text === "string" ? rec.text : await rec.blob.text();
+          node = await addFile(rec.name, text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
+          if (rec.blob) node._cacheBlob = rec.blob; // still the file's content — keeps its next write cheap
+        } else {
+          reopened = await reopenLocalPathForRestore(rec, placeholder);
+          node = reopened.node;
+        }
+      } catch (err) {
+        // This one file can't come back (a "path" record whose file is gone,
+        // an unreadable blob) — drop its placeholder, keep restoring the rest.
+        if (state.nodes[placeholder.id] === placeholder) deleteNode(placeholder.id);
+        continue;
+      }
+      if (state.nodes[node.id] !== node) continue;
       if (rec.merged) node.merged = true;
       // Windowed/partial load (see loadFolderFileWindowed): rec.text is
       // already just the slice that was actually read, so reparsing it here
@@ -33694,6 +34225,7 @@ async function restoreSessionFromCache() {
       if (rec.clockOffset && !node.merged) {
         node.clockOffset = rec.clockOffset;
         for (const e of node.entries) e.ts += rec.clockOffset;
+        invalidateFileAggregate(node);
       }
       // Re-links this node to its watched folder, if it had one — the
       // folder record itself (including its handle) comes back separately
@@ -33701,9 +34233,17 @@ async function restoreSessionFromCache() {
       if (rec.folderId) node.folderId = rec.folderId;
       if (rec.localPath) node.localPath = rec.localPath;
       if (rec.sourceUrl) node.sourceUrl = rec.sourceUrl;
+      // Re-read from disk: this run's own philogg://local/… URL replaces the
+      // stored one (those ids are per process), and tailing resumes from
+      // exactly the bytes just parsed.
+      if (reopened) {
+        node.localPath = reopened.path;
+        node.sourceUrl = reopened.url;
+        if (!rec.folderId) node.tail = newTailState(reopened.handle, reopened.size);
+      }
       // Plain (non-folder) file that was being tailed before the reload:
       // try to resume silently — see tryReattachFileTail.
-      if (rec.handle && !rec.folderId) await tryReattachFileTail(node, rec.handle);
+      else if (rec.handle && !rec.folderId) await tryReattachFileTail(node, rec.handle);
       // A desktop-local file (file association, or the wrapper's own
       // picker/drop — see loadDesktopLocalFiles) was tailed through a
       // urlTailHandle, which persistFileNode deliberately doesn't store.
@@ -33841,9 +34381,10 @@ window.addEventListener("pagehide", () => {
   if (metaPersistTimer) { clearTimeout(metaPersistTimer); metaPersistTimer = null; persistMetaNow(); }
   for (const { timer, node } of pendingFilePersists.values()) {
     clearTimeout(timer);
-    if (state.nodes[node.id] === node) persistFileNode(node);
+    if (state.nodes[node.id] === node) persistFileNode(node, true);
   }
   pendingFilePersists.clear();
+  for (const entry of [...pendingIdlePersists.values()]) entry.run();
 });
 
 /* ===================== Session export / import =====================

@@ -174,9 +174,9 @@ open it in a browser to view it.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
-  now load and parse concurrently, each on its own Web Worker where
-  available, so several large logs loaded together actually parse on
-  separate cores at once instead of one at a time.
+  load and parse concurrently, and even a single large file is split across
+  every CPU core (Web Workers where available), so a 100 MB log is on screen
+  in about two seconds.
 - **A merged file shows its "Sources"** — an expandable row under any
   merged file (alongside Bookmarks/Notes, in that order) lists which
   physical file (or, for a multi-pattern file below, which grammar) each
@@ -218,7 +218,9 @@ open it in a browser to view it.
   the desired absolute time of the file's first line, with a live before→after
   preview; it's undoable and survives a reload.
 - **Session cache** — reload the browser tab and get your files, filters,
-  and settings back.
+  and settings back. In the desktop app a file is re-read from disk on the
+  next start instead of being copied into the cache, so a file deleted or
+  moved in the meantime is left out of the restored session.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
   presets you apply across different files — pin a preset (with an icon of
   your choice) to the Filter-Toolbar for one-click reuse.

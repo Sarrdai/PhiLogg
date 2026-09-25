@@ -577,6 +577,19 @@ of silently vanishing after a refresh even though the file is still the same one
 outcomes, plus "absent without `window.philogg`") and the cache round-trip, via a stub
 `window.philogg` — jsdom can't run a real webview host.
 
+**Session cache: a desktop file is cached as its path.** With `node.localPath`
+known and `philogg.openLocalPath` available, `persistFileNode` stores no content
+for the file at all (`fileCacheSource` → `"path"`); `restoreSessionFromCache`
+re-registers the path (`openLocalPath`, which rejects once the file is gone),
+parses it natively (or through the JS fallback) under its pinned format, and
+takes this run's `philogg://local/…` URL and a fresh tail from there. Decided
+by the person (2026-09-24): a file deleted or moved since is left out of the
+restored session rather than keeping a text copy of every opened file in
+IndexedDB. The launch-argument/file-association route (`loadUrlIntoTree`)
+writes no cache record when it opens a file and sets no `localPath` (only a
+later tail change persists it, as rebuilt text). See `docs/persistence-and-sync.md` → "Session
+cache".
+
 ## Clickable local file paths in log lines
 
 Person-requested: an absolute path a log line happens to mention (e.g. a file the logged
