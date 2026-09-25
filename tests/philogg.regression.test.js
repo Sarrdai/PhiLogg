@@ -30896,6 +30896,340 @@ group(272);
   });
 }
 
+/* ============================================================
+   GROUP 273 — Plain-text files: line-wise filters, Table and Plot
+   Origin: 2026-09-25, person-requested — the filter concept carried over to
+   text files (search lines by value, wildcards, tables, plots), with the
+   filters acting on the Pretty-Printed JSON when Pretty Print is on. Covers:
+   the "Plain text" format (every line one entry, blank lines kept, no
+   trailing empty entry, ts = line number, no level), the same in the worker
+   source and on tail appends, text/wildcard filters + the extraction table's
+   "Line" column + the plot's default X, the row grid (Line column, no Δt/
+   Level, empty level bar) and its return once a real log is loaded, line-
+   range names for time filters, no merge, and the text viewer's "Filter
+   lines" button (pretty-printed vs. raw JSON).
+   ============================================================ */
+group(273);
+{
+  const PT = "fmt-plaintext";
+  const TEXT = "alpha\n\nTemp=21.5 ok\nTemp=-3 low\n";
+  const QUOTED = '  "indented, quoted"';
+
+  await withApp(async (w, d, T) => {
+    section("273a. Plain text parses one entry per line, blank lines kept, ts = line number, no level");
+    const f = await w.addFile("notes.txt", TEXT, () => {}, PT);
+    assert(f.entries.length === 4, "4 lines -> 4 entries, the final newline adds none (" + f.entries.length + ")");
+    assert(f.entries.map(e => e.message).join("|") === "alpha||Temp=21.5 ok|Temp=-3 low", "each entry's message is its line, blank line included");
+    assert(f.entries.map(e => e.ts).join(",") === "1,2,3,4" && f.entries[2].tsRaw === "3", "ts/tsRaw are the 1-based line numbers");
+    assert(f.entries.every(e => e.level === "" && w.levelBucket(e.level, e.formatId) === "OTHER"), "no level (OTHER bucket)");
+    const verbatim = await w.addFile("q.txt", QUOTED + "\n", () => {}, PT);
+    assert(verbatim.entries[0].message === QUOTED, "a line's indentation and outer quotes are kept verbatim");
+    const crlf = await w.addFile("crlf.txt", "a\r\nb\r\n", () => {}, PT);
+    assert(crlf.entries.map(e => e.message).join("|") === "a|b", "CRLF text: same split, no trailing entry");
+    const empty = await w.addFile("empty.txt", "", () => {}, PT);
+    assert(empty.entries.length === 0, "an empty file has no entries");
+    assert(w.rebuildFileText(f) + "\n" === TEXT, "cache text round-trips (rebuildFileText)");
+
+    section("273b. Text and wildcard filters, extraction table with a Line column, plot X defaults to Line");
+    const txt = w.createFilterNode(f.id, "text", "Temp");
+    assert(w.getEntries(txt.id).length === 2, "plain text filter finds both Temp lines");
+    const neg = w.createFilterNode(f.id, "text", "Temp=[*:float<0]");
+    assert(w.getEntries(neg.id).map(e => e.ts).join(",") === "4", "wildcard with a value condition finds line 4 only");
+    const ext = w.createFilterNode(f.id, "text", "Temp=[*:float] [*:word]");
+    T.state.activeId = ext.id;
+    w.render();
+    w.applyFhView("table");
+    assert(T.extractRowsData.length === 2, "extraction table: one row per matching line");
+    const lineCol = T.extractColumns.find(c => c.colIndex === -1);
+    assert(lineCol && lineCol.name === "Line", "the ELAPSED slot is titled Line (" + (lineCol && lineCol.name) + ")");
+    assert(T.extractRowsData.map(r => r.values[-1]).join(",") === "3,4", "...and holds the absolute line numbers");
+    assert(T.extractRowsData.map(r => r.values[0]).join(",") === "21.5,-3", "captured values");
+    w.applyFhView("plot");
+    assert(T.plotConfig.xCol === -1, "the plot's X axis defaults to Line (" + T.plotConfig.xCol + ")");
+
+    section("273c. Only plain text loaded: Line column, no Δt/Level, empty level bar");
+    T.state.activeId = f.id;
+    w.applyFhView("filter");
+    w.render();
+    assert(w.allRootsPlainText(), "sanity: every root is plain text");
+    const header = d.querySelector("#tableHeader .row-grid").textContent;
+    assert(header.includes("Line") && !header.includes("Time") && !header.includes("Thread"), "header: Line, no Time/Thread (" + header + ")");
+    const grid = d.documentElement.style.getPropertyValue("--row-grid").trim().split(/\s+/);
+    assert(grid[1] === "64px" && grid[2] === "0px" && grid[3] === "0px", "Line track 64px, Δt/Level collapsed (" + grid.join(" ") + ")");
+    assert(w.activeLevelOrder().length === 0 && d.querySelectorAll("#levelBar .level-btn").length === 0, "no level buttons");
+    assert(w.activeTextFilterColumns().map(c => c.label).join(",") === "Line,Message", "filter-column chips: Line, Message");
+    w.renderColumnsPanel();
+    const colKeys = [...d.querySelectorAll("#columnsList input[data-col]")].map(cb => cb.dataset.col).join(",");
+    assert(colKeys === "message", "Columns panel offers no Δt toggle for plain text (" + colKeys + ")");
+    const row = [...d.querySelectorAll("#tableRows .log-row")].find(r => r.dataset.entryId === f.entries[2].id);
+    assert(row && row.querySelector(".col-time").textContent === "3" && row.querySelector(".col-delta").textContent === "—", "row: line number, no Δt");
+
+    section("273d. Line ranges: time filters are named in lines, merge is refused");
+    const range = w.createFilterNode(f.id, "timerange", { from: 2, to: 3 });
+    assert(range.name === "line 2 → line 3", "range name in lines (" + range.name + ")");
+    assert(w.getEntries(range.id).length === 2, "range keeps lines 2-3");
+    const other = await w.addFile("other.txt", "x\n", () => {}, PT);
+    const bulk = w.describeBulkActions([f, other]);
+    assert(bulk.actions.length === 0 && /can't be merged/.test(bulk.note), "no merge for plain-text files");
+
+    section("273e. Loading a real log brings Time/Δt/Level back");
+    await w.addFile("app.log", makeLog(0, 3), () => {});
+    w.render();
+    const header2 = d.querySelector("#tableHeader .row-grid").textContent;
+    assert(header2.includes("Time") && header2.includes("Level"), "header back to Time/Level");
+    w.renderColumnsPanel();
+    assert(d.querySelector('#columnsList input[data-col="delta"]'), "...and the Columns panel offers Δt again");
+    assert(w.activeLevelOrder().length > 0, "level buttons back");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("273f. Worker source and tail appends number lines the same way");
+    const posted = [];
+    const sandboxSelf = {};
+    const ctx = vm.createContext({ self: sandboxSelf, postMessage: msg => posted.push(msg) });
+    vm.runInContext(w.buildLogParseWorkerSrc(), ctx);
+    sandboxSelf.onmessage({ data: { text: "one\n\nthree", fmt: { id: PT, mode: "plaintext" } } });
+    const wEntries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
+    assert(wEntries.map(e => e.message).join("|") === "one||three", "worker: every line, blank included");
+    const f = await w.addFile("live.txt", "one\n", () => {}, PT);
+    f.tail = { pending: "" };
+    w.appendTailText(f, "two\n\nfour\nfi");
+    assert(f.entries.map(e => e.ts + ":" + e.message).join("|") === "1:one|2:two|3:|4:four", "tail: numbered on append, partial line pending");
+    assert(!w.nativeFormatSpec({ id: PT, mode: "plaintext" }), "no native parse spec: plain text stays on the JS path");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("273g. \"Filter lines\" opens what the text viewer shows — pretty-printed JSON line by line");
+    const json = '{"a":1,"list":[1,2],"b":"x"}';
+    await w.openInlineViewer("data.json", new TextEncoder().encode(json), "text", null);
+    const btn = d.querySelector("#itvFilterLinesBtn");
+    assert(btn && !btn.classList.contains("hidden"), "button shown for a text viewer");
+    fireClick(d.querySelector("#itvPrettyPrintBtn"), w);
+    assert(T.state.inlineViewer.prettyPrint, "sanity: Pretty Print on");
+    fireClick(btn, w);
+    await waitFor(() => T.state.rootIds.length === 1 && !("loadFraction" in T.state.nodes[T.state.rootIds[0]]));
+    const f = T.state.nodes[T.state.rootIds[0]];
+    const pretty = JSON.stringify(JSON.parse(json), null, 2).split("\n");
+    assert(f.name === "data.json (pretty)" && f.formatId === PT, "new plain-text root named after the viewer (" + f.name + ")");
+    assert(f.entries.length === pretty.length && f.entries.every((e, i) => e.message === pretty[i]), "one entry per pretty-printed line: " + JSON.stringify(f.entries.map(e => e.message)));
+    assert(T.state.inlineViewer === null && T.state.activeId === f.id, "its log view replaces the viewer");
+    const flt = w.createFilterNode(f.id, "text", '"a": [*:int]');
+    assert(w.getEntries(flt.id).length === 1, "a wildcard filter matches the pretty-printed line");
+
+    await w.openInlineViewer("raw.json", new TextEncoder().encode(json), "text", null);
+    const raw = await w.openInlineViewerAsTextLog(T.state.inlineViewer);
+    assert(raw.name === "raw.json" && raw.entries.length === 1, "without Pretty Print: the file's own (single) line");
+  });
+}
+
+/* ============================================================
+   GROUP 274 — Plain-text rows: indentation, syntax highlighting, nesting
+   Origin: 2026-09-25, person-requested follow-up to Group 273 — keep a
+   plain-text line's leading spaces/tabs and the viewer's JSON/XML syntax
+   highlighting in the filter views, and hang a "Filter lines" text version
+   under its source file in the tree (file -> text version -> filters).
+   Covers: the .col-msg.plaintext class, token ranges (JSON, XML incl. an
+   attribute value with "&"), tokens combined with filter-match marks in
+   markCombinedHtml, highlighted rows in the Filtered view (none for an
+   ordinary log), the nested tree row + nav order, reuse on a second
+   "Filter lines", closing the viewer entry closes its text versions
+   (undoable, then top-level), and the token-range refactor keeping the
+   viewer's own highlighting.
+   ============================================================ */
+group(274);
+{
+  const JSON_TEXT = '{"name":"pump","temp":21.5,"on":true}';
+
+  await withApp(async (w, d, T) => {
+    section("274a. Token ranges and their merge with filter-match marks");
+    const j = w.jsonTokenRanges('"a": 1');
+    assert(j.length === 2 && j[0].cls === "tok-key" && j[1].cls === "tok-number", "JSON: key + number");
+    const x = w.xmlTokenRanges('<a b="c&d"/>');
+    assert(x.map(r => r.cls).join(",") === "tok-tag,tok-attr,tok-string,tok-tag", "XML: tag, attr, value (with &), close (" + x.map(r => r.cls).join(",") + ")");
+    const cmt = w.xmlTokenRanges("<!" + "-- note --" + ">");
+    assert(cmt.length === 1 && cmt[0].cls === "tok-comment", "XML comments still tokenized (regex avoids a literal comment opener)");
+    assert(w.highlightXmlText('<a b="c&d"/>').includes('<span class="tok-string">&quot;c&amp;d&quot;</span>'), "viewer output escapes inside the token");
+    assert(w.highlightJsonText('{"a":1}') === '{<span class="tok-key">&quot;a&quot;:</span><span class="tok-number">1</span>}', "viewer JSON output unchanged");
+    const html = w.markCombinedHtml('"a": 12', [[5, 6]], [], w.jsonTokenRanges('"a": 12'));
+    assert(html.includes('<mark class="text-match-mark mark-seg"><span class="tok-number">1</span></mark><span class="tok-number">2</span>'), "a match inside a token: the token span sits inside the mark, split at the mark's edge (" + html + ")");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("274b. Filtered view: indentation kept, JSON highlighted, marks still shown; an ordinary log gets no tokens");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("cfg.json", new TextEncoder().encode(JSON_TEXT), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k1" });
+    T.state.inlineViewer.prettyPrint = true;
+    const f = await w.openInlineViewerAsTextLog(T.state.inlineViewer);
+    assert(f.viewerSource && f.viewerSource.mapKey === "k1" && f.textSyntax === "json", "text version remembers its viewer and syntax");
+    const flt = w.createFilterNode(f.id, "text", "temp");
+    T.state.activeId = flt.id;
+    w.render();
+    const msg = d.querySelector("#tableRows .log-row .col-msg");
+    assert(msg && msg.classList.contains("plaintext"), "message cell carries .plaintext (white-space:pre)");
+    assert(msg.textContent === '  "temp": 21.5,', "leading spaces kept in the cell text (" + JSON.stringify(msg.textContent) + ")");
+    assert(msg.querySelector(".tok-key") && msg.querySelector(".tok-number"), "key and number highlighted");
+    assert(msg.querySelector("mark.text-match-mark"), "the filter match is still marked");
+    // Person-reported: an empty level badge painted a small grey block right
+    // before every message (its padding/background spilling out of the
+    // collapsed Level track).
+    assert(!d.querySelector("#tableRows .log-row .level-badge"), "plain-text rows render no level badge");
+    T.state.activeId = f.id;
+    w.render();
+    assert(T.minimapBucketCount >= 1 && T.minimapBucketCount <= f.entries.length,
+      "minimap: no more buckets than lines (else every other bucket is empty — a striped minimap), got " + T.minimapBucketCount + " for " + f.entries.length + " lines");
+    const log = await w.addFile("app.log", makeLog(0, 3), () => {});
+    T.state.activeId = log.id;
+    w.render();
+    const logMsg = d.querySelector("#tableRows .log-row .col-msg");
+    assert(logMsg && !logMsg.classList.contains("plaintext") && !logMsg.querySelector("[class^='tok-']"), "ordinary log rows: no plaintext class, no tokens");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("274c. Tree: file -> text version -> filter, nav order, reuse, close cascade");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("notes.txt", new TextEncoder().encode("a\n\tb\n"), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k2" });
+    const viewer = T.state.inlineViewer;
+    const f = await w.openInlineViewerAsTextLog(viewer);
+    const flt = w.createFilterNode(f.id, "text", "b");
+    w.render();
+    const tree = d.querySelector("#tree");
+    const rows = [...tree.querySelectorAll(".zip-source-file, .tree-row")];
+    const vIdx = rows.findIndex(r => r.classList.contains("zip-source-file"));
+    const fIdx = rows.findIndex(r => r.dataset.nodeId === f.id);
+    const cIdx = rows.findIndex(r => r.dataset.nodeId === flt.id);
+    assert(vIdx >= 0 && vIdx < fIdx && fIdx < cIdx, "viewer row, then its text version, then the filter (" + [vIdx, fIdx, cIdx] + ")");
+    assert(tree.querySelectorAll('.tree-row[data-node-id="' + f.id + '"]').length === 1, "text version rendered once (not also top-level)");
+    // Person-reported: the nested subtree had no connector lines (renderNode
+    // only decorates depth-0 subtrees).
+    const fltRow = tree.querySelector('.tree-row[data-node-id="' + flt.id + '"]');
+    assert(fltRow.querySelector(".tree-guide.h") && tree.querySelector('.tree-row[data-node-id="' + f.id + '"] .tree-guide.v'),
+      "text version -> filter drawn with connector lines (stem + elbow)");
+    const nav = w.flattenTreeIds();
+    const nv = nav.indexOf(w.viewerNavId("loose", "loose", "k2"));
+    assert(nv >= 0 && nav[nv + 1] === f.id && nav[nv + 2] === flt.id, "arrow-key order follows the nesting");
+    const again = await w.openInlineViewerAsTextLog(viewer);
+    assert(again === f && T.state.rootIds.length === 1 && T.state.activeId === f.id, "a second \"Filter lines\" re-activates the same text version");
+    w.render();
+    fireClick(d.querySelector("#tree .zip-source-file .tree-del"), w);
+    assert(!T.state.nodes[f.id] && !map.has("k2"), "closing the viewer entry closes its text version");
+    w.undo();
+    assert(T.state.nodes[f.id] && T.state.nodes[f.id].viewerSource, "undo restores it (viewerSource kept)");
+    w.render();
+    assert(d.querySelector('#tree .tree-row[data-node-id="' + f.id + '"]') && !w.isNestedUnderViewer(T.state.nodes[f.id]), "...as a top-level row, its viewer being closed");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("274d. Ctrl+F on an open text viewer opens its text version and the filter popup at once");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("cfg.json", new TextEncoder().encode(JSON_TEXT), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k3" });
+    T.state.inlineViewer.prettyPrint = true;
+    fireKeydown(d, w, "f", { ctrlKey: true });
+    await waitFor(() => !d.querySelector("#filterPopup").classList.contains("hidden"));
+    const f = T.state.nodes[T.state.activeId];
+    assert(f && f.formatId === "fmt-plaintext" && f.name === "cfg.json (pretty)" && f.viewerSource.mapKey === "k3", "the displayed (pretty) text became the active text version");
+    assert(T.state.inlineViewer === null, "the viewer gave way to its log view");
+    w.closeFilterPopup();
+    w.activateInlineViewer(map.get("k3"));
+    fireKeydown(d, w, "f", { ctrlKey: true });
+    await waitFor(() => !d.querySelector("#filterPopup").classList.contains("hidden"));
+    assert(T.state.rootIds.length === 1 && T.state.activeId === f.id, "again on the same viewer: the same text version, no copy");
+  });
+}
+
+/* ============================================================
+   GROUP 275 — Text/image viewers survive a reload like log files
+   Origin: 2026-09-25, person-requested: after a page reload / app restart,
+   restore opened text and image files too — on the desktop from their
+   stored path (if still there), like log files — so a "Filter lines" text
+   version nests under its file again. Covers: a loose viewer's record
+   (Blob in the browser, path only on the desktop), the meta's viewer list
+   (owner, map key, Pretty Print, active viewer), restore after the files
+   (text version nested again, filters kept), an image viewer, a path whose
+   file is gone (skipped), closing a viewer drops its record, and stale
+   viewer records are swept on restore.
+   ============================================================ */
+group(275);
+{
+  const JSON_TEXT = '{"a":1,"b":[1,2]}';
+  const factory = new IDBFactory();
+  let viewerKey = null;
+  await withApp(async (w, d, T) => {
+    section("275a. A directly opened text viewer + its text version are persisted");
+    await T.bootRestore;
+    await w.loadFiles([new w.File([JSON_TEXT], "cfg.json", { type: "application/json" })]);
+    const v = T.state.inlineViewer;
+    assert(v && v.cacheKey && v.cacheKey.startsWith("viewer-"), "the viewer got a cache key");
+    viewerKey = v.cacheKey;
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey))));
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey));
+    assert(rec && rec.viewer && rec.blob && !rec.localPath, "browser: the record holds the file as a Blob");
+    v.prettyPrint = true;
+    const f = await w.openInlineViewerAsTextLog(v);
+    w.createFilterNode(f.id, "text", '"a"');
+    // Written by openInlineViewerAsTextLog itself (idle-deferred text record)
+    // — not by the test: addFile alone persists nothing.
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey))));
+    // The viewer is shown at save time: it comes back as the shown one.
+    w.activateInlineViewer(v);
+    await w.persistMetaNow();
+    const meta = await w.cacheStoreOp("meta", "readonly", st => st.get("session"));
+    assert(meta.viewers.length === 1 && meta.viewers[0].prettyPrint && meta.viewers[0].ownerKind === "loose" && meta.activeViewer === viewerKey, "meta lists the viewer (loose, pretty, active)");
+    // A stale viewer record (closed in a session that never got to clean up).
+    await w.cacheStoreOp("files", "readwrite", st => st.put({ key: "viewer-stale", name: "old.txt", viewer: true, blob: new w.Blob(["x"]) }));
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("275b. Reload: viewer back (pretty, shown), text version nested under it with its filter");
+    await T.bootRestore;
+    const map = T.state.looseInlineViewers;
+    const v = [...map.values()][0];
+    assert(map.size === 1 && v.name === "cfg.json" && v.text === JSON_TEXT && v.prettyPrint && v.cacheKey === viewerKey, "viewer restored with its content and Pretty Print");
+    assert(T.state.inlineViewer === v, "...and shown, as it was");
+    const f = T.state.rootIds.map(id => T.state.nodes[id])[0];
+    assert(f && f.name === "cfg.json (pretty)" && f.textSyntax === "json" && w.isNestedUnderViewer(f), "text version restored and nested under its viewer");
+    assert(f.children.length === 1 && T.state.nodes[f.children[0]].value === '"a"', "its filter came back");
+    const rows = [...d.querySelectorAll("#tree .zip-source-file, #tree .tree-row")];
+    assert(rows[0].classList.contains("zip-source-file") && rows[1].dataset.nodeId === f.id, "tree: viewer row, then the text version");
+    assert(!(await w.cacheStoreOp("files", "readonly", st => st.get("viewer-stale"))), "a viewer record the meta doesn't list is swept");
+
+    section("275c. Closing the viewer drops its record");
+    fireClick(d.querySelector("#tree .zip-source-file .tree-del"), w);
+    await waitFor(async () => !(await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey))));
+    assert(map.size === 0, "viewer closed, record gone");
+  }, { indexedDB: factory });
+
+  // Desktop: stored as a path, re-read from disk; a file gone since is skipped.
+  const onDisk = { "/data/pic.png": "PNGDATA", "/data/notes.txt": "hello\nworld" };
+  const bridge = () => ({
+    openLocalPath: async p => {
+      if (!(p in onDisk)) throw new Error("gone");
+      return { url: "philogg://local/1/" + p.split("/").pop(), path: p, name: p.split("/").pop() };
+    },
+  });
+  const deskFactory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("275d. Desktop: an image and a text viewer are stored by path only");
+    await T.bootRestore;
+    const mk = (p, type) => ({ name: p.split("/").pop(), localPath: p, file: new w.File([onDisk[p]], p.split("/").pop(), { type }) });
+    await w.loadFileDescriptors([mk("/data/pic.png", "image/png"), mk("/data/notes.txt", "text/plain")]);
+    const keys = [...T.state.looseInlineViewers.values()].map(v => v.cacheKey);
+    await waitFor(async () => (await Promise.all(keys.map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))))).every(Boolean));
+    const recs = await Promise.all(keys.map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))));
+    assert(recs.every(r => r.localPath && !r.blob), "records hold the path, no content");
+    await w.persistMetaNow();
+  }, { indexedDB: deskFactory, philogg: bridge() });
+
+  onDisk["/data/notes.txt"] = "hello\nworld\nagain"; // changed on disk
+  delete onDisk["/data/pic.png"];                    // deleted
+  await withApp(async (w, d, T) => {
+    section("275e. Desktop reload: re-read from the path, a deleted file is skipped");
+    w.fetch = async u => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(onDisk["/data/" + String(u).split("/").pop()]).buffer });
+    await T.bootRestore;
+    const views = [...T.state.looseInlineViewers.values()];
+    assert(views.length === 1 && views[0].name === "notes.txt" && views[0].text === "hello\nworld\nagain", "the text file came back from disk (current content), the deleted image didn't (" + views.map(v => v.name) + ")");
+  }, { indexedDB: deskFactory, philogg: bridge() });
+}
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -35142,4 +35476,19 @@ process.exitCode = failed ? 1 : 0;
               per-image natural size, concurrent folder-minimap
               merge-source loads, filter-history record not re-fingerprinted
               on tail growth under an unchanged filter tree.
+   Group 273 — same day, new session: plain-text files — "Plain text"
+              format (line = entry, ts = line number, no level; worker +
+              tail), text/wildcard filters, Line column in Table/Plot, row
+              grid without Δt/Level, line-range filter names, no merge, and
+              the text viewer's "Filter lines" button (pretty-printed JSON).
+   Group 274 — same day, follow-up: plain-text rows keep indentation
+              (.col-msg.plaintext) and JSON/XML syntax highlighting
+              (token ranges merged with match marks), and a "Filter lines"
+              text version nests under its viewer entry in the tree
+              (nav order, reuse, close cascade + undo); Ctrl+F on a text
+              viewer opens its text version + the filter popup.
+   Group 275 — same day: opened text/image viewers are persisted (desktop:
+              path; browser: Blob) and restored after a reload, the text
+              version nested under its viewer again, gone files skipped,
+              closed/stale viewer records dropped.
    ============================================================ */

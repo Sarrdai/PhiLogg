@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~35,700 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~35,900 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -181,6 +181,23 @@ own worker and actually parse on separate cores at once — the scenario this
 was built for (large files, several loaded together). See `tests/…` GROUP
 165 for the coverage (sandboxed worker-source execution + concurrent-load
 correctness) and GROUP 68's addendum for the queued-placeholder UX change.
+
+**Plain text: `fmt-plaintext`.** A code-level builtin (`PLAINTEXT_LOG_FORMAT`,
+`mode: "plaintext"`) that isn't stored in `state.logFormats` and so isn't
+editable — `findLogFormat(id)` resolves it next to the stored ones. Every
+line is its own entry (blank lines included, message verbatim, no level),
+and since such a file has no time, **its entries' `ts`/`tsRaw` are the
+1-based line number** (`numberPlainTextEntry`, assigned when an entry is
+appended to its file: main-thread loop, worker adoption, `appendTailText`).
+That single choice keeps every order- and ts-based mechanism working
+unchanged (sorting, OR re-sort, link, context windows, minimap, time-range
+filters — all in lines); only the display side needs to know
+(`entryTimeText`, `formatTsFor`, `allRootsPlainText`). It is reached from
+the text viewer's "Filter lines" button (see `docs/ui-and-views.md` →
+"Inline text/image viewer"), never from filename resolution; no native
+parse (`nativeFormatSpec` → null), no merging. Its rows keep indentation and
+the viewer's JSON/XML highlighting, and it nests under its viewer entry in
+the tree (`node.viewerSource`) — see the same doc section.
 
 **Native parsing under the desktop wrapper (`parseLocalFileNatively`).**
 When `window.philogg.parseLogFile` exists, a file opened from disk (dialog,
