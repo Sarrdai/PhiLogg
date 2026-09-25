@@ -244,6 +244,16 @@ deployments possible:
   your choice) to the Filter-Toolbar for one-click reuse.
 - **Session export/import** — package an analysis (files, filters,
   bookmarks, notes) to share with a colleague.
+- **Export / Share for tickets** (toolbar button or `Ctrl+Shift+E`) —
+  "Copy for ticket" puts a compact findings summary on the clipboard, ready
+  to paste into Jira, GitHub, GitLab or Azure DevOps: source file, time
+  range, the filter chain as a readable step-by-step narrative with counts,
+  "x of y entries matched", your bookmarks and notes, and a bounded excerpt
+  of the matching lines — as Markdown, Jira wiki markup or plain text
+  (remembered). The full current view saves as a ticket attachment:
+  `.log` (raw lines), `.csv`, `.tsv`, or a standalone HTML report anyone can
+  open without PhiLogg. Nothing leaves your machine unless you copy or save
+  it.
 - **Configurable log formats** (Settings → Format Manager) — define
   additional formats **by example**: paste or drop a few log lines and
   PhiLogg suggests a format right away, shown as a live table preview of how
