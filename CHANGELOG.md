@@ -2,6 +2,17 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: open gzip-compressed logs (`.gz`) (2026-09-25, FEATURE_BACKLOG.md #83)**. A rotated log like `app.log.1.gz` now opens transparently on every route: drag-drop, the file picker, the desktop wrapper's native pick/drop and file-association/"Open in PhiLogg" launch, folder watch, ZIP entries, `?url=`, and the format dialog's example loader. `docs/persistence-and-sync.md` → "gzip-compressed logs (`.gz`)" has the full mechanics.
+  - **Detection and inflate**: gzip is detected by its magic bytes (`1f 8b`), not by extension. It's inflated with the native `DecompressionStream("gzip")`, the same Web API the ZIP path uses, so there's no dependency. The compressed input is streamed chunk by chunk, and the inflate drives the row's read-phase progress.
+  - **Where it plugs in**: `loadOneFileIntoTree` (every file route) and `loadUrlIntoTree` inflate first.
+  - **Names**: the node keeps its real name. `.gz`, plus a logrotate counter behind it, is looked through for format rules and folder-watch patterns (`fileNameGlobTest`) and for "is this a log?" (`isCompatibleFolderFile`, which also drives ZIP entry classification). `app.log.1.gz` counts as a log; `data.gz`/`.tar.gz` don't.
+  - **Static only**: a gzip file is never tailed. `tailTick` drops a tail that a session restore or folder rescan reattaches to one.
+  - **Folder-watch minimap**: it doesn't probe gzip files, so a windowed merge falls back to a full load for them.
+  - **Picker filters**: `.gz` added to the `<input>` accept lists and the desktop `pick_files` filter.
+  - **Desktop**: no Rust-side decompression. `.gz` launch arguments route like `.log`, the native folder listing is asked for `.gz`, and an opt-in `.gz` Explorer verb was added. `.gz` is deliberately not a `fileAssociations` entry. `docs/desktop.md` is updated.
+  - **Tests**: new **Groups 284–285**.
+  - **Full suite**: **5302 passed, 0 failed**.
+
 - **feat: one format dialog — define a log format by example, with an automatic suggestion, marking, direct regex editing, auto-filled levels, a table preview, and an optional filename rule (this session, 2026-09-23, person-requested, built in three rounds: a "Set up from examples" wizard first, then preview double-click + undo/redo, then merging the old format editor into it)**. Settings → Log Formats → "Add format…"/"Edit" now open one large dialog on top of Settings. It replaces the old inline editor panel, whose Pattern field, single example field, and separate column editor are gone. `docs/ui-and-views.md` → "Format dialog" has the full mechanics.
   - **Examples**: paste (Ctrl+V or a Paste button), open a file, or drop a file anywhere while the dialog is open. A drop becomes example lines instead of loading, in the browser and under the desktop wrapper (`loadDesktopLocalFiles`).
   - **Automatic suggestion (new formats)**: the old `suggestPatternFromSample`, run on the first line with a timestamp, then generalized through the same derivation as hand marks. It shows up immediately as suggested marks plus the preview.

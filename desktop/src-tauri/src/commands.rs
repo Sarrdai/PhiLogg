@@ -115,7 +115,7 @@ pub async fn pick_files(app: AppHandle) -> Vec<LocalFile> {
         .dialog()
         .file()
         .set_title("Open log files")
-        .add_filter("Log files", &["log", "txt"])
+        .add_filter("Log files", &["log", "txt", "gz"])
         .add_filter("All files", &["*"])
         .blocking_pick_files();
     let state = app.state::<AppState>();

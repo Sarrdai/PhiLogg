@@ -29263,6 +29263,233 @@ await withApp(async (w, d, T) => {
     "the worker parser does the same, got " + JSON.stringify(wEntries.map(e => e.message)));
 });
 
+/* ============================================================
+   GROUP 284 — gzip-compressed logs (.gz): detection, name handling, and
+   the load routes (drop/picker via loadFileDescriptors, ZIP entries,
+   ?url=/desktop file-association via loadUrlIntoTree)
+   Origin: 2026-09-25 (FEATURE_BACKLOG.md #83). A gzip stream is detected
+   by its magic bytes (1f 8b), never by extension alone, and inflated via
+   the native DecompressionStream("gzip") (Node's own, handed into the
+   jsdom window the same way GROUP 199's ZIP tests do). The node keeps its
+   real name; ".gz" is only looked through where a name is interpreted
+   (format rules, folder-watch log detection). A gzip file never tails.
+   ============================================================ */
+group(284);
+{
+  const zlib = require("zlib");
+  const GZ_TEXT = makeLog(0, 6, { msgPrefix: "rotated" });
+  const gz = text => zlib.gzipSync(Buffer.from(text, "utf8"));
+  const withGzipApis = w => { w.Response = Response; w.DecompressionStream = DecompressionStream; };
+
+  await withApp(async (w, d, T) => {
+    section("284a. isGzipBytes/stripGzipExt/isCompatibleFolderFile/fileNameGlobTest + format rules look through .gz");
+    assert(w.isGzipBytes(new Uint8Array([0x1f, 0x8b, 8])) === true, "1f 8b is gzip");
+    assert(w.isGzipBytes(new Uint8Array([0x1f])) === false && w.isGzipBytes(new Uint8Array([0x32, 0x30])) === false, "too short / plain text is not gzip");
+    assert(w.stripGzipExt("app.log.1.GZ") === "app.log.1" && w.stripGzipExt("app.log") === "app.log", "stripGzipExt drops only a trailing .gz, case-insensitively");
+    assert(w.isCompatibleFolderFile("app.log.gz") && w.isCompatibleFolderFile("app.log.1.gz") && w.isCompatibleFolderFile("APP.LOG.12.GZ"),
+      "a gzipped log (with or without a logrotate counter) counts as a log file");
+    assert(!w.isCompatibleFolderFile("data.gz") && !w.isCompatibleFolderFile("site.tar.gz") && !w.isCompatibleFolderFile("app.log.1"),
+      "a non-log .gz is not a log file; an uncompressed rotated .log.1 is unchanged (still not listed)");
+    assert(w.fileNameGlobTest("*.log", "app.log.gz") && w.fileNameGlobTest("*.gz", "app.log.gz") && w.fileNameGlobTest("*.log", "app.log.1.gz"),
+      "fileNameGlobTest tries the real name, then minus .gz, then minus a rotation counter too");
+    assert(!w.fileNameGlobTest("*.log", "app.log.1") && !w.fileNameGlobTest("*.log", "site.tar.gz"),
+      "...but only behind a .gz: an uncompressed app.log.1 is tested as-is (unchanged), and a non-log .gz stays unmatched");
+    await waitForFormatConfig(T);
+    T.state.logFormats.push({ id: "fmt-gz-rule", name: "GzRule", mode: "pattern", pattern: '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n',
+      regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", builtin: false, edited: false, createdAt: Date.now() });
+    T.state.formatRules.push({ id: "rule-gz", glob: "app*.log", formatId: "fmt-gz-rule", order: 0 });
+    w.invalidateGlobCompileCache();
+    assert(w.resolveFormatIdForFilename("app-server.log.gz") === "fmt-gz-rule" && w.resolveFormatIdForFilename("app-server.log.3.gz") === "fmt-gz-rule",
+      "a format rule for *.log also resolves the (rotated) .gz of that log");
+    assert(w.resolveFormatIdForFilename("other.log.gz") === "fmt-default", "...and a non-matching name still falls back to the default");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("284b. loadFileDescriptors (drop/picker route) inflates a gzip file, keeps its name, and never tails it");
+    withGzipApis(w);
+    let decompressCount = 0;
+    class CountingDS extends DecompressionStream { constructor(...a) { super(...a); decompressCount++; } }
+    w.DecompressionStream = CountingDS;
+    const handle = { kind: "file", name: "app.log.1.gz", async getFile() { return new w.File([gz(GZ_TEXT)], "app.log.1.gz"); } };
+    await w.loadFileDescriptors([{ file: await handle.getFile(), handle }]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(!!f && f.entries.length === 6, "all 6 entries parsed from the inflated text, got " + (f && f.entries.length));
+    assert(f.entries[2].message === "rotated 2", "entry content is the decompressed text, got " + (f && f.entries[2].message));
+    assert(f.name === "app.log.1.gz", "the node keeps its real on-disk name, got " + f.name);
+    assert(!f.tail, "a gzip file is a static snapshot — no tail attached even though a handle was given");
+    assert(decompressCount === 1, "exactly one DecompressionStream was used, got " + decompressCount);
+
+    // Detection is by content: a ".gz" that is really plain text loads as-is...
+    await w.loadFileDescriptors([{ file: new w.File([makeLog(0, 3)], "plain.log.gz"), handle: null }]);
+    const plain = T.state.nodes[T.state.rootIds[1]];
+    assert(plain && plain.entries.length === 3 && decompressCount === 1, "a .gz name without the gzip magic reads as plain text, no inflate attempted");
+    // ...and a gzip stream without the extension is still inflated.
+    await w.loadFileDescriptors([{ file: new w.File([gz(makeLog(0, 4))], "noext.log"), handle: null }]);
+    const noExt = T.state.nodes[T.state.rootIds[2]];
+    assert(noExt && noExt.entries.length === 4 && decompressCount === 2, "gzip magic without a .gz extension is still detected and inflated");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("284c. a corrupt/truncated gzip fails like any read error: toast, no stranded node");
+    withGzipApis(w);
+    const full = gz(GZ_TEXT);
+    const truncated = full.subarray(0, Math.floor(full.length / 2));
+    await w.loadFileDescriptors([{ file: new w.File([truncated], "broken.log.gz"), handle: null }]);
+    assert(T.state.rootIds.length === 0, "the queued placeholder is removed again, got " + T.state.rootIds.length + " root(s)");
+    assert(d.querySelector("#copyToast").textContent.includes("broken.log.gz"), "the failure is surfaced by name, got " + d.querySelector("#copyToast").textContent);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("284d. a .gz log inside a ZIP is listed as a log entry and opens inflated (deflate-raw, then gzip)");
+    withGzipApis(w);
+    // Minimal stored-method ZIP holding one gzip entry (the entry's own
+    // bytes ARE the gzip stream; the ZIP layer here adds no compression).
+    const name = "rotated/app.log.2.gz";
+    const data = gz(GZ_TEXT);
+    const nameBuf = Buffer.from(name);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0, 8);
+    lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+    const local = Buffer.concat([lh, nameBuf, data]);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0, 10);
+    ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(0, 42);
+    const central = Buffer.concat([ch, nameBuf]);
+    const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(1, 8); eocd.writeUInt16LE(1, 10);
+    eocd.writeUInt32LE(central.length, 12); eocd.writeUInt32LE(local.length, 16);
+    const zip = await w.openZipSource(new w.File([Buffer.concat([local, central, eocd])], "logs.zip"), "logs.zip");
+    assert(zip && zip.entries.length === 1 && w.isLogZipEntry(zip.entries[0]), "the .gz entry counts as a log entry (not an external/viewer file)");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries.length === 6);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.entries.length === 6 && f.entries[5].message === "rotated 5", "the entry loads with its inflated entries, got " + (f && f.entries.length));
+    assert(f.zipId === zip.id && !f.tail, "it nests under its ZIP and is static");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("284e. loadUrlIntoTree (?url= / desktop file association) inflates a gzip response and does not tail a philogg://local gzip");
+    withGzipApis(w);
+    const bytes = gz(GZ_TEXT);
+    w.fetch = async () => new Response(bytes);
+    await w.loadUrlIntoTree("philogg://local/7/app.log.3.gz");
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.entries.length === 6 && f.name === "app.log.3.gz", "the gzip response is inflated and parsed, got " + (f && f.entries.length));
+    assert(f.sourceUrl === "philogg://local/7/app.log.3.gz", "sourceUrl kept (Open File Location / Copy Path)");
+    assert(!f.tail, "a desktop-local gzip file gets no tail, unlike a plain .log from the same route");
+    // Same route, plain text still tails (unchanged behavior).
+    w.fetch = async () => new Response(makeLog(0, 2));
+    await w.loadUrlIntoTree("philogg://local/8/plain.log");
+    const p = T.state.nodes[T.state.rootIds[1]];
+    assert(p && p.entries.length === 2 && !!p.tail, "a plain desktop-local log still tails");
+  });
+}
+
+/* ============================================================
+   GROUP 285 — gzip-compressed logs (.gz): folder watch, native listing,
+   session-cache restore and the tail guard
+   Origin: 2026-09-25 (FEATURE_BACKLOG.md #83). Folder watch lists a
+   gzipped log (a "*.log" pattern still matches "app.log.1.gz"), opens it
+   inflated, never minimap-probes it (compressed byte windows), and the
+   desktop wrapper's native listing is told to let ".gz" through. The
+   session cache stores the decompressed text like any file; a tail that
+   a restore/rescan reattaches to the gzip source is dropped by tailTick
+   the first time it sees the gzip magic.
+   ============================================================ */
+group(285);
+{
+  const zlib = require("zlib");
+  const GZ_TEXT = makeLog(0, 5, { msgPrefix: "old" });
+  const gzBuf = zlib.gzipSync(Buffer.from(GZ_TEXT, "utf8"));
+  const withGzipApis = w => { w.Response = Response; w.DecompressionStream = DecompressionStream; };
+  const bytesHandle = (w, name, buf) => ({
+    kind: "file", name,
+    async getFile() { return new w.File([buf], name); },
+    async queryPermission() { return "granted"; },
+  });
+
+  await withApp(async (w, d, T) => {
+    section("285a. folder watch lists app.log.1.gz (also under a *.log pattern), opens it inflated, static, and never probes it");
+    withGzipApis(w);
+    const files = {
+      "app.log": Buffer.from(makeLog(100, 3)),
+      "app.log.1.gz": gzBuf,
+      "site.tar.gz": Buffer.from([0x1f, 0x8b, 0, 0]),
+      "notes.pdf": Buffer.from("x"),
+    };
+    const dir = {
+      kind: "directory", name: "logs",
+      async *values() { for (const n of Object.keys(files)) yield bytesHandle(w, n, files[n]); },
+    };
+    await w.addWatchedFolder(dir);
+    const folder = T.state.folders[0];
+    assert(folder.files.map(f => f.name).join(",") === "app.log,app.log.1.gz",
+      "the gzipped log is listed, the .tar.gz and .pdf are not, got " + folder.files.map(f => f.name).join(","));
+    folder.settings = { includeSubfolders: false, showRelativePath: false, patterns: [Object.assign(w.defaultFolderPattern(), { pattern: "*.log" })] };
+    await w.mergeScannedFiles(folder, await w.scanFolderHandle(dir, folder.settings));
+    assert(folder.files.map(f => f.name).join(",") === "app.log,app.log.1.gz", "a *.log pattern still matches the .gz of that log");
+
+    const rec = folder.files.find(f => f.name === "app.log.1.gz");
+    assert(await w.probeFolderFileRange(folder, rec) === null, "minimap probe returns the 'no range' sentinel for a gzip file (no inflate just to probe)");
+    await w.loadFolderFile(folder, rec);
+    const node = T.state.nodes[rec.nodeId];
+    assert(node && node.entries.length === 5 && node.entries[0].message === "old 0", "the folder file opens with its inflated entries");
+    assert(node.folderId === folder.id && !node.tail, "it belongs to the folder and is not tailed");
+    // A rescan's reattach (mergeScannedFiles attaches a tail to any open
+    // node without one) is dropped by tailTick on its first look.
+    await w.mergeScannedFiles(folder, await w.scanFolderHandle(dir, folder.settings));
+    assert(!!node.tail, "precondition: the rescan reattached a tail to the open gzip node");
+    await w.tailTick();
+    assert(!node.tail && node.entries.length === 5, "tailTick drops the gzip tail without appending compressed bytes, got " + node.entries.length + " entries");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("285b. the desktop wrapper's native listing is asked for .gz too, and a listed .gz opens through philogg://local");
+    withGzipApis(w);
+    let askedExts = null;
+    w.philogg.listFolder = async (p, exts) => {
+      askedExts = exts;
+      return [{ url: "philogg://local/5/app.log.1.gz", path: p + "/app.log.1.gz", name: "app.log.1.gz" }];
+    };
+    w.fetch = async () => new Response(gzBuf);
+    await w.addWatchedFolder(w.nativeDirHandle("/var/log/app", "app"));
+    assert(Array.isArray(askedExts) && askedExts.includes(".gz") && askedExts.includes(".log"), "listFolder is passed .gz alongside .log, got " + JSON.stringify(askedExts));
+    const folder = T.state.folders[0];
+    assert(folder.files.length === 1, "the gzip log is listed");
+    await w.loadFolderFile(folder, folder.files[0]);
+    const node = T.state.nodes[folder.files[0].nodeId];
+    assert(node && node.entries.length === 5, "it opens inflated via the wrapper's URL, got " + (node && node.entries.length));
+    assert(node.localPath === "/var/log/app/app.log.1.gz" && !node.tail, "location attached, no tail");
+  }, { philogg: nativeFolderBridge({}) });
+
+  const factory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("285c. session cache: a gzip file persists its decompressed text...");
+    withGzipApis(w);
+    await w.loadFileDescriptors([{ file: new w.File([gzBuf], "app.log.1.gz"), handle: null }]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    f.sourceUrl = "philogg://local/3/app.log.1.gz"; // as if opened through the desktop wrapper
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    assert(rec && rec.text.includes("old 4") && !rec.handle, "the cached text is the decompressed log, with no handle");
+  }, { indexedDB: factory });
+  await withApp(async (w, d, T) => {
+    section("285c. ...restores it identically, and the desktop-URL tail rebuilt on restore is dropped on the first tick");
+    withGzipApis(w);
+    // Every tail poll of the restored node goes through this fetch — a
+    // fetch of the gzip URL proves restore DID rebuild a tail (the app's
+    // own poll timer may already have run that first tick under load, so
+    // the tail's presence right after restore isn't asserted directly).
+    let tailFetches = 0;
+    w.fetch = async url => { if (String(url).endsWith("app.log.1.gz")) tailFetches++; return new Response(gzBuf); };
+    await T.bootRestore;
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.name === "app.log.1.gz" && f.entries.length === 5, "restored with its name and all entries, got " + (f && f.entries.length));
+    await w.tailTick();
+    assert(tailFetches >= 1, "restore rebuilt a urlTailHandle tail from the desktop sourceUrl (it was polled)");
+    assert(!f.tail && f.entries.length === 5, "tailTick drops it — no compressed bytes appended, got " + f.entries.length + " entries");
+  }, { indexedDB: factory });
+}
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -33420,4 +33647,11 @@ process.exitCode = failed ? 1 : 0;
       makeLog's tab-separated lines — it had been crashing its shard, and
       silently shortening the reported total, since the Custom Columns
       session).
+   Group 284 — 2026-09-25 (FEATURE_BACKLOG.md #83, gzip-compressed logs):
+      magic-byte detection, .gz/rotation-counter name look-through (format
+      rules, isCompatibleFolderFile), and inflate on the drop/picker, ZIP
+      entry and ?url=/desktop-launch routes; corrupt gzip, no tail.
+   Group 285 — same session: .gz in folder watch (patterns, no minimap
+      probe, native listFolder asked for .gz), session-cache round trip,
+      and tailTick dropping a tail reattached to a gzip source.
    ============================================================ */
