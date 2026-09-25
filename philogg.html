@@ -23374,7 +23374,9 @@ function renderColumnsPanel() {
     columnsListEl.appendChild(row);
     columnToggleInputs[key] = cb;
   };
-  addRow("delta", "Δt");
+  // Only plain-text files loaded: Δt is collapsed regardless (line numbers
+  // have no time delta — see applyRowGrid), so it isn't offered either.
+  if (!allRootsPlainText()) addRow("delta", "Δt");
   activeColumnDefs().forEach(col => addRow(col.key, col.label));
   addRow("message", "Message");
 }

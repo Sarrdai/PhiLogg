@@ -2,6 +2,8 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: the Columns panel offered Δt for plain-text files (this session, 2026-09-25, person-reported: *"die Spaltenauswahl bietet mir in der Ansicht noch delta T an, das macht hier keinen Sinn"*)**. With only plain-text files loaded the Δt track is collapsed regardless (line numbers have no time delta), so `renderColumnsPanel` no longer lists it. **Tests**: Group 273c/e extended. Full suite: **5811 passed, 0 failed**.
+
 - **fix: plain-text rows showed a grey block before every message, and a striped minimap (this session, 2026-09-25, person-reported with a screenshot: *"In den Messages ist noch irgendein Block Element das ich nicht zuordnen kann"*)**. The block was the empty `.level-badge` (padding + background) spilling out of the Level track collapsed to 0px; plain-text entries now render no badge at all (`levelCellHtml`/`levelBadgeHtml` — rows, pair rows, entry detail). The minimap's stripes came from more buckets than lines — consecutive line numbers left every other bucket empty; a plain-text file's minimap now has at most one bucket per line. **Tests**: Group 274b extended (fails on the previous code). Full suite: **5809 passed, 0 failed**.
 
 - **feat: plain-text rows keep indentation and JSON/XML highlighting; a text version nests under its file (this session, 2026-09-25, person-requested follow-up: *"die anführenden Leerzeichen Tabs, sowie das Syntax Highlighting in der Filter Darstellung zu behalten"* and *"hänge die Filterdarstellung von Dateien unter die jeweilige Datei im Files-Tree. Also Datei->PlainTextFilterVersion->Filter1"*)**.
