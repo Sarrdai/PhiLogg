@@ -1860,6 +1860,10 @@
      #tableRows and #highlightRows, exactly like .multiline-messages. */
   .wrap-messages:not(.multiline-messages) .col-msg{white-space:normal; word-break:break-all; text-overflow:clip; line-height:15px;}
   .wrap-messages.multiline-messages .col-msg{white-space:pre-wrap; word-break:break-all; text-overflow:clip; line-height:15px;}
+  /* A plain-text file's line (see msgColClass): leading spaces/tabs are its
+     indentation, so whitespace is preserved rather than collapsed. */
+  .col-msg.plaintext{white-space:pre; tab-size:4; text-overflow:clip;}
+  .wrap-messages .col-msg.plaintext{white-space:pre-wrap; word-break:break-all;}
   /* With wrap on, the message track must be free to shrink and wrap rather
      than being forced to its widest line's width — that forced width is what
      drives the horizontal scrollbar in the non-wrap views (see the
@@ -8599,6 +8603,31 @@ function numberPlainTextEntry(e, lineNo) {
 function entryTimeText(e) {
   return isPlainTextFormat(e.formatId) ? String(e.ts) : formatTime(e.ts);
 }
+// A plain-text row's message keeps its leading spaces/tabs (.col-msg.plaintext
+// renders white-space:pre — indentation is the structure of pretty-printed
+// JSON/XML).
+function msgColClass(e) {
+  return isPlainTextFormat(e.formatId) ? "col-msg plaintext" : "col-msg";
+}
+// Which syntax a plain-text file's lines are highlighted as: "json"/"xml"
+// when it came from such a text viewer (node.textSyntax, set by
+// openInlineViewerAsTextLog; derived from the name for a file restored
+// without it), else null.
+function plainTextSyntaxOf(fileNode) {
+  if (!fileNode || !isPlainTextFormat(fileNode.formatId)) return null;
+  if (fileNode.textSyntax !== undefined) return fileNode.textSyntax;
+  const m = /\.(json|xml)(?: \(pretty\))?$/i.exec(fileNode.name || "");
+  return m ? m[1].toLowerCase() : null;
+}
+function activePlainTextSyntax() {
+  const rootId = state.activeId ? getRootFileId(state.activeId) : null;
+  return plainTextSyntaxOf(rootId && state.nodes[rootId]);
+}
+// One row's syntax-token ranges (markFieldHtml's innermost layer), or null.
+function plainTextSyntaxRanges(e, syntax) {
+  if (!syntax || !isPlainTextFormat(e.formatId)) return null;
+  return syntax === "json" ? jsonTokenRanges(e.message) : syntax === "xml" ? xmlTokenRanges(e.message) : null;
+}
 // A bare ts from a view over `nodeId`'s root file (minimap labels, time
 // filter names): a line number when that root is plain text.
 function nodeIsPlainText(nodeId) {
@@ -11818,18 +11847,29 @@ function hlStripeGradient(colors) {
    Delegates straight to markRangesHtml when there are no rule ranges at all,
    keeping the pre-existing hot path (the common case: no coloured filters,
    or none matching this field) byte-for-byte what it was. */
-function markCombinedHtml(text, ranges, hlRanges) {
-  if (!hlRanges || !hlRanges.length) return markRangesHtml(text, ranges);
+// tokRanges (optional): syntax-token ranges ({start, end, cls}, sorted,
+// non-overlapping — jsonTokenRanges/xmlTokenRanges) of a plain-text line,
+// the innermost layer: each segment inside a token gets that token's span.
+function markCombinedHtml(text, ranges, hlRanges, tokRanges) {
+  const hasTok = !!(tokRanges && tokRanges.length);
+  if ((!hlRanges || !hlRanges.length) && !hasTok) return markRangesHtml(text, ranges);
+  hlRanges = hlRanges || [];
   const len = text.length;
   const bounds = new Set([0, len]);
   const addBound = v => { if (v > 0 && v < len) bounds.add(v); };
   for (const [rs, re] of ranges) { addBound(rs); addBound(re); }
   for (const r of hlRanges) { addBound(r.start); addBound(r.end); }
+  if (hasTok) for (const r of tokRanges) { addBound(r.start); addBound(r.end); }
   const pts = [...bounds].sort((a, b) => a - b);
-  let out = "";
+  let out = "", ti = 0;
   for (let i = 0; i < pts.length - 1; i++) {
     const s = pts[i], e = pts[i + 1];
-    const slice = escapeHtml(text.slice(s, e));
+    let slice = escapeHtml(text.slice(s, e));
+    if (hasTok) {
+      while (ti < tokRanges.length && tokRanges[ti].end <= s) ti++;
+      const t = tokRanges[ti];
+      if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '">' + slice + "</span>";
+    }
     const marked = ranges.some(r => r[0] <= s && r[1] >= e);
     const colors = [];
     for (const r of hlRanges) {
@@ -11866,11 +11906,12 @@ function buildMatchMarkContext(includeFilterMatches) {
 // One displayed field, marked per the given context — a plain escapeHtml
 // (exactly what this code did before any of this existed) whenever nothing
 // can contribute a mark, so the common case costs no range search at all.
-function markFieldHtml(mm, text, columnKey) {
-  if (!mm.active) return escapeHtml(text);
+function markFieldHtml(mm, text, columnKey, tokRanges) {
+  if (!mm.active) return tokRanges && tokRanges.length ? markCombinedHtml(text, [], [], tokRanges) : escapeHtml(text);
   return markCombinedHtml(text,
     matchRangesFor(text, columnKey, mm.nodes, mm.specs),
-    highlightMatchRangesFor(text, columnKey, mm.hlNodes, mm.hlSpecs));
+    highlightMatchRangesFor(text, columnKey, mm.hlNodes, mm.hlSpecs),
+    tokRanges);
 }
 
 // Clickable local file paths (desktop build only — see openFpPathMenu):
@@ -12590,6 +12631,9 @@ function snapshotSubtree(nodeId) {
     // shouldn't be the thing that makes that true).
     if (node.formatId) copy.formatId = node.formatId;
     if (node.folderId) copy.folderId = node.folderId;
+    // A "Filter lines" text version keeps its viewer nesting and syntax.
+    if (node.viewerSource) copy.viewerSource = node.viewerSource;
+    if (node.textSyntax !== undefined) copy.textSyntax = node.textSyntax;
     // Windowed/partial load (see loadFolderFileWindowed): losing this across
     // an undo would make a deliberately-incomplete node look like a normal
     // full file again, same class of bug node.formatId's own comment above
@@ -12668,6 +12712,8 @@ function restoreSubtree(snap) {
     if (snap.tail) node.tail = snap.tail;
     if (snap.formatId) node.formatId = snap.formatId;
     if (snap.folderId) node.folderId = snap.folderId;
+    if (snap.viewerSource) node.viewerSource = snap.viewerSource;
+    if (snap.textSyntax !== undefined) node.textSyntax = snap.textSyntax;
     if (snap.partial) node.partial = snap.partial;
     if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
     if (snap._cacheBlob) node._cacheBlob = snap._cacheBlob;
@@ -14204,7 +14250,7 @@ function renderTree() {
     // never as a separate top-level row (see createMergeShell). A source
     // that was already an independent top-level file BEFORE a manual merge
     // (mergeOwnerId set, mergeSourceHidden NOT set) stays visible here too.
-    if (node && (node.folderId || node.zipId || (node.mergeOwnerId && node.mergeSourceHidden))) return;
+    if (node && (node.folderId || node.zipId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node))) return;
     treeEl.appendChild(renderNode(id, 0));
   });
   // Directly opened/dropped non-log inline-viewable files (this session):
@@ -14291,8 +14337,14 @@ function flattenTreeIds() {
   // is toggled off, since no DOM row exists there to navigate to anyway).
   walk(state.rootIds.filter(id => {
     const node = state.nodes[id];
-    return !(node && (node.zipId || (node.mergeOwnerId && node.mergeSourceHidden)));
+    return !(node && (node.zipId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node)));
   }));
+  // A viewer entry's virtual id, followed by its nested "Filter lines" text
+  // versions (see viewerTextLogIds) — their visual position.
+  const pushViewer = (kind, ownerId, mapKey) => {
+    ids.push(viewerNavId(kind, ownerId, mapKey));
+    walk(viewerTextLogIds(kind, ownerId, mapKey));
+  };
   // ZIP sections (bugfix, person-reported: nav order didn't match the
   // visual order — every opened non-log entry was being tacked on as one
   // block AFTER the whole main tree, regardless of where its zip container
@@ -14316,7 +14368,7 @@ function flattenTreeIds() {
     zip.entries.forEach(entry => {
       const openId = rootByName.get(entry.name);
       if (openId) walk([openId]);
-      else if (zip.inlineViewers.has(entry.name)) ids.push(viewerNavId("zip", zip.id, entry.name));
+      else if (zip.inlineViewers.has(entry.name)) pushViewer("zip", zip.id, entry.name);
     });
   });
   // Folder-watch inline-viewer entries (generalized this session, same
@@ -14329,12 +14381,12 @@ function flattenTreeIds() {
   // ALSO aren't repositioned into their folder's slot above, so this is at
   // least internally consistent rather than a regression for this case.
   state.folders.forEach(folder => {
-    folder.inlineViewers.forEach((viewer, mapKey) => ids.push(viewerNavId("folder", folder.id, mapKey)));
+    folder.inlineViewers.forEach((viewer, mapKey) => pushViewer("folder", folder.id, mapKey));
   });
   // Directly opened/dropped non-log files (this session): no owning
   // container at all, so each gets a top-level virtual id, in the same
   // insertion order they render in (see renderTree's own loose-viewer loop).
-  state.looseInlineViewers.forEach((viewer, mapKey) => ids.push(viewerNavId("loose", "loose", mapKey)));
+  state.looseInlineViewers.forEach((viewer, mapKey) => pushViewer("loose", "loose", mapKey));
   return ids;
 }
 
@@ -18815,7 +18867,8 @@ function renderVisibleRows(reuseRows) {
   const columnDefs = activeColumnDefs();
   const messageVisible = activeMessageVisible();
 
-  const rc = { total, ctxNode, mm, columnDefs, messageVisible };
+  const syntax = activePlainTextSyntax();
+  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax };
   let groups;
   if (reuse) {
     for (let i = w.start; i < start; i++) w.groups[i - w.start].forEach(el => el.remove());
@@ -18907,7 +18960,7 @@ function appendLogRow(frag, i, rc) {
     const html = markFieldHtml(rc.mm, val, col.key);
     middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
   }
-  const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message");
+  const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message", plainTextSyntaxRanges(e, rc.syntax));
   const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
   row.className = cls;
@@ -18921,7 +18974,7 @@ function appendLogRow(frag, i, rc) {
     '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
     '<span class="col-level" data-col="level"><span class="level-badge">' + levelHtml + '</span></span>' +
     middleHtml +
-    (rc.messageVisible ? '<span class="col-msg" data-col="message">' + msgHtml + '</span>' : "");
+    (rc.messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message">' + msgHtml + '</span>' : "");
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
@@ -20053,6 +20106,7 @@ function renderHighlightVisibleRows() {
   // reasoning as renderVisibleRows.
   const columnDefs = activeColumnDefs();
   const messageVisible = activeMessageVisible();
+  const syntax = activePlainTextSyntax();
 
   const frag = document.createDocumentFragment();
   // A leading gap's filler rows have no row to hang off — they belong above
@@ -20100,7 +20154,7 @@ function renderHighlightVisibleRows() {
     // rule-marking toggle off), so this stays a plain escapeHtml call in the
     // common case — same shape as renderVisibleRows.
     const timeText = entryTimeText(e);
-    const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message");
+    const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message", plainTextSyntaxRanges(e, syntax));
     const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
     // Custom Columns: same generalized middle-column loop as
     // renderVisibleRows — see its own comment.
@@ -20118,7 +20172,7 @@ function renderHighlightVisibleRows() {
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
       '<span class="col-level" data-col="level"><span class="level-badge">' + markFieldHtml(mm, e.level, "level") + '</span></span>' +
       middleHtml +
-      (messageVisible ? '<span class="col-msg" data-col="message">' + hlMsgHtml + '</span>' : "");
+      (messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message">' + hlMsgHtml + '</span>' : "");
     // A PLAIN click is a jump to that match and gets the expansion treatment
     // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
     // gesture and must leave the row list alone, or the range the person is
@@ -23989,6 +24043,15 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
   row.appendChild(label);
 
   function closeThisEntry() {
+    // Its "Filter lines" text versions are its children — they close with it
+    // (undoable like any closed file; not deleteFilterNodeWithUndo, whose
+    // quit-on-last-file-closed check would fire while the viewer is open).
+    viewerTextLogIds(ownerKind, ownerId, mapKey).forEach(id => {
+      const index = state.rootIds.indexOf(id);
+      const snapshot = snapshotSubtree(id);
+      deleteNode(id);
+      pushUndo({ kind: "deleteFile", snapshot, index });
+    });
     viewersMap.delete(mapKey);
     if (isActive) state.inlineViewer = null;
     render();
@@ -24027,7 +24090,13 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
     render();
   });
   row.addEventListener("dblclick", openFn);
-  return row;
+  const nested = cachedViewer ? viewerTextLogIds(ownerKind, ownerId, mapKey) : [];
+  if (!nested.length) return row;
+  // The entry's "Filter lines" text versions, one level below it.
+  const frag = document.createDocumentFragment();
+  frag.appendChild(row);
+  nested.forEach(id => frag.appendChild(renderNode(id, 1)));
+  return frag;
 }
 function renderZipEntryRow(zip, entry) {
   return renderInlineViewerEntryRow("zip", zip.id, zip.inlineViewers, entry.name, entry.name, () => openZipEntry(entry, zip));
@@ -24265,12 +24334,45 @@ function inlineViewerDisplayedText(v) {
 // whole filter tree (text/regex/wildcard filters, Table, Plot) works on it.
 // It deliberately takes the DISPLAYED text: a minified JSON document is one
 // line and only becomes line-filterable pretty-printed.
+// The new file nests under the viewer's own row in the tree (viewer ->
+// text version -> its filters, see viewerTextLogIds); asking again for the
+// same version of the same viewer re-activates it instead of loading a
+// second copy.
 async function openInlineViewerAsTextLog(v) {
   if (!v || v.kind !== "text") return null;
   const pretty = v.ext === "json" && v.prettyPrint && prettyPrintedJsonOrNull(v.text) !== null;
-  const text = inlineViewerDisplayedText(v);
-  state.inlineViewer = null; // the new file's log view replaces the viewer
-  return addFile(v.name + (pretty ? " (pretty)" : ""), text, undefined, PLAINTEXT_FORMAT_ID);
+  const name = v.name + (pretty ? " (pretty)" : "");
+  const source = v.ownerKind ? { ownerKind: v.ownerKind, ownerId: v.ownerId, mapKey: v.mapKey } : null;
+  state.inlineViewer = null; // the text version's log view replaces the viewer
+  if (source) {
+    const existing = viewerTextLogIds(source.ownerKind, source.ownerId, source.mapKey).find(id => state.nodes[id].name === name);
+    if (existing) {
+      activateNewNode(state.nodes[existing]);
+      render();
+      return state.nodes[existing];
+    }
+  }
+  const node = createQueuedFileNode(name);
+  node.textSyntax = v.ext === "json" || v.ext === "xml" ? v.ext : null;
+  if (source) node.viewerSource = source;
+  return addFile(name, inlineViewerDisplayedText(v), undefined, PLAINTEXT_FORMAT_ID, node);
+}
+// The plain-text files opened from one viewer entry ("Filter lines"), in
+// open order — rendered nested under that entry's row while it is open
+// (isNestedUnderViewer), and closed together with it.
+function viewerTextLogIds(ownerKind, ownerId, mapKey) {
+  return state.rootIds.filter(id => {
+    const src = state.nodes[id] && state.nodes[id].viewerSource;
+    return !!src && src.ownerKind === ownerKind && src.ownerId === ownerId && src.mapKey === mapKey;
+  });
+}
+// Only while its source entry is still open: a text version whose viewer
+// is gone (its ZIP/folder removed) falls back to an ordinary top-level row.
+function isNestedUnderViewer(node) {
+  const src = node && node.viewerSource;
+  if (!src) return false;
+  const map = viewerMapForOwner(src.ownerKind, src.ownerId);
+  return !!map && map.has(src.mapKey);
 }
 const itvFilterLinesBtn = el("#itvFilterLinesBtn");
 itvFilterLinesBtn.innerHTML = ICON_FILTER;
@@ -24283,36 +24385,48 @@ itvFilterLinesBtn.addEventListener("click", () => { openInlineViewerAsTextLog(st
 // tokenizers, using the app's own existing color tokens (see .tok-* CSS
 // near #inlineViewerWrap) so a preview reads consistently with the rest of
 // the UI rather than introducing a new palette.
-function highlightJsonText(text) {
-  // Tokenizes the RAW text first (quotes/angle-brackets intact) and escapes
-  // each piece as it's emitted — escaping the whole string upfront (as
-  // highlightXmlText does below) would turn every `"` into `&quot;` before
-  // this regex ever saw a real quote to match against.
+// Both tokenizers produce RANGES over the raw text ({start, end, cls}),
+// rendered by tokenRangesHtml — the text viewer uses them directly, and a
+// plain-text file's log rows feed them to markCombinedHtml as a third layer
+// next to filter/highlight-rule marks (see plainTextSyntaxRanges), which a
+// finished HTML string couldn't be merged with.
+function jsonTokenRanges(text) {
   const re = /("(?:\\.|[^"\\])*")(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
-  let out = "", last = 0, m;
+  const out = [];
+  let m;
   while ((m = re.exec(text))) {
-    out += escapeHtml(text.slice(last, m.index));
     const tok = m[0];
-    const cls = m[1] ? (m[2] ? "tok-key" : "tok-string")
-      : (tok === "true" || tok === "false") ? "tok-bool"
-      : tok === "null" ? "tok-null" : "tok-number";
-    out += '<span class="' + cls + '">' + escapeHtml(tok) + '</span>';
-    last = re.lastIndex;
+    const cls = m[1] ? (m[2] ? "tok-key" : "tok-string") // a key's range includes its ":"
+      : (tok === "true" || tok === "false") ? "tok-bool" : tok === "null" ? "tok-null" : "tok-number";
+    out.push({ start: m.index, end: m.index + tok.length, cls });
+  }
+  return out;
+}
+function xmlTokenRanges(text) {
+  // "<!-{2}", not a literal comment opener: that sequence inside an inline
+  // <script> can switch the HTML parser into its script-data-escaped state.
+  const re = /(<!-{2}[\s\S]*?-{2}>)|(<\/?[a-zA-Z_][\w:.-]*)|([a-zA-Z_][\w:.-]*)(=)("[^"]*?"|'[^']*?')|(\/?>)/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(text))) {
+    const at = m.index, cls = m[1] ? "tok-comment" : m[2] || m[6] ? "tok-tag" : null;
+    if (cls) { out.push({ start: at, end: at + m[0].length, cls }); continue; }
+    out.push({ start: at, end: at + m[3].length, cls: "tok-attr" });
+    const v = at + m[3].length + m[4].length;
+    out.push({ start: v, end: v + m[5].length, cls: "tok-string" });
+  }
+  return out;
+}
+function tokenRangesHtml(text, ranges) {
+  let out = "", last = 0;
+  for (const r of ranges) {
+    out += escapeHtml(text.slice(last, r.start)) + '<span class="' + r.cls + '">' + escapeHtml(text.slice(r.start, r.end)) + "</span>";
+    last = r.end;
   }
   return out + escapeHtml(text.slice(last));
 }
-function highlightXmlText(text) {
-  return escapeHtml(text).replace(
-    /(&lt;!--[\s\S]*?--&gt;)|(&lt;\/?[a-zA-Z_][\w:.-]*)|([a-zA-Z_][\w:.-]*)(=)(&quot;[^&]*?&quot;|&#39;[^&#]*?&#39;)|(\/?&gt;)/g,
-    (m, comment, tagOpen, attrName, eq, attrVal, tagClose) => {
-      if (comment) return `<span class="tok-comment">${comment}</span>`;
-      if (tagOpen) return `<span class="tok-tag">${tagOpen}</span>`;
-      if (attrName) return `<span class="tok-attr">${attrName}</span>${eq}<span class="tok-string">${attrVal}</span>`;
-      if (tagClose) return `<span class="tok-tag">${tagClose}</span>`;
-      return m;
-    }
-  );
-}
+function highlightJsonText(text) { return tokenRangesHtml(text, jsonTokenRanges(text)); }
+function highlightXmlText(text) { return tokenRangesHtml(text, xmlTokenRanges(text)); }
 
 // Line-number gutter (this session): tokenizing is done PER LINE (splitting
 // v.text first, then running highlightJsonText/highlightXmlText on each

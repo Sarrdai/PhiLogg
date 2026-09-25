@@ -195,7 +195,9 @@ filters — all in lines); only the display side needs to know
 (`entryTimeText`, `formatTsFor`, `allRootsPlainText`). It is reached from
 the text viewer's "Filter lines" button (see `docs/ui-and-views.md` →
 "Inline text/image viewer"), never from filename resolution; no native
-parse (`nativeFormatSpec` → null), no merging.
+parse (`nativeFormatSpec` → null), no merging. Its rows keep indentation and
+the viewer's JSON/XML highlighting, and it nests under its viewer entry in
+the tree (`node.viewerSource`) — see the same doc section.
 
 **Native parsing under the desktop wrapper (`parseLocalFileNatively`).**
 When `window.philogg.parseLogFile` exists, a file opened from disk (dialog,
