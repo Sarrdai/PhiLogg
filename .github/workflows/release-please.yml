@@ -77,7 +77,7 @@ jobs:
           cp philogg.html "${ASSET_NAME}"
           node scripts/strip-comments.js "${ASSET_NAME}"
           grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" "${ASSET_NAME}"
-          gh release upload "${{ needs.cut-release.outputs.tag_name }}" "${ASSET_NAME}" --clobber
+          gh release upload "${{ needs.cut-release.outputs.tag_name }}" "${ASSET_NAME}" LICENSE.md --clobber
 
   build_desktop:
     needs: cut-release
@@ -101,6 +101,17 @@ jobs:
       - name: Install dependencies
         working-directory: desktop
         run: npm install
+
+      # THIRD_PARTY_NOTICES.md (license texts of every bundled Rust crate)
+      # is committed for local builds, but regenerated here so a release
+      # never ships a stale one. See desktop/README.md "Third-party notices".
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Regenerate third-party notices
+        working-directory: desktop
+        run: cargo about generate -m src-tauri/Cargo.toml about.hbs -o THIRD_PARTY_NOTICES.md
 
       # Same short-SHA stamp + comment strip build_html uses, applied to the
       # checked-out copy the Tauri bundler embeds as a resource a moment
@@ -135,6 +146,7 @@ jobs:
           mkdir -p "$STAGE"
           cp desktop/src-tauri/target/release/philogg-desktop.exe "$STAGE/PhiLogg.exe"
           cp philogg.html "$STAGE/philogg.html"
+          cp LICENSE.md desktop/THIRD_PARTY_NOTICES.md "$STAGE/"
           touch "$STAGE/philogg-portable"
           (cd "$STAGE" && 7z a -tzip "../${STAGE}.zip" .)
 

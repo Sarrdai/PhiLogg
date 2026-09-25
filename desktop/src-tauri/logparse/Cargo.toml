@@ -3,6 +3,7 @@ name = "philogg-logparse"
 version = "0.1.0"
 description = "Native log parser for the PhiLogg desktop wrapper — a port of philogg.html's own parsing loop"
 edition = "2021"
+license = "PolyForm-Noncommercial-1.0.0"
 publish = false
 
 [dependencies]

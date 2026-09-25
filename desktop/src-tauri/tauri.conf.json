@@ -27,8 +27,13 @@
       "icons/icon.ico",
       "icons/icon.icns"
     ],
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "licenseFile": "../../LICENSE.md",
+    "copyright": "Copyright © Philipp Klein",
     "resources": {
-      "../../philogg.html": "philogg.html"
+      "../../philogg.html": "philogg.html",
+      "../../LICENSE.md": "LICENSE.md",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     },
     "fileAssociations": [
       {
