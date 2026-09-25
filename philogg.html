@@ -4185,6 +4185,7 @@
                 <span id="contextNavLabel" class="ctx-nav-label stepper-value"></span>
                 <button type="button" id="ctxNextMatch" class="toolbar-icon-btn" title="Next match"></button>
               </div>
+              <button type="button" id="ctxExpandAround" class="toolbar-icon-btn" title="Expand around matches"></button>
               <button type="button" id="ctxExpandAll" class="toolbar-icon-btn" title="Expand all"></button>
               <button type="button" id="ctxCollapseAll" class="toolbar-icon-btn" title="Collapse all"></button>
             </div>
@@ -13177,6 +13178,7 @@ const contextToolbar = el("#contextToolbar");
 const contextNavLabel = el("#contextNavLabel");
 const ctxPrevMatch = el("#ctxPrevMatch");
 const ctxNextMatch = el("#ctxNextMatch");
+const ctxExpandAround = el("#ctxExpandAround");
 const ctxExpandAll = el("#ctxExpandAll");
 const ctxCollapseAll = el("#ctxCollapseAll");
 
@@ -13331,9 +13333,18 @@ function showFhTab(tab) {
     // (FEATURE_BACKLOG #25 — live-follow now applies to both views).
     if (tab === "highlight") {
       if (state.tailFollow && isTailedHighlightViewActive()) setHighlightScroll(highlightBody.scrollHeight);
-      // Revealed while stale (see renderMainView): build it now — unless this
-      // switch happens inside a render(), whose renderMainView builds it next.
-      if (contextViewStale && !renderDepth) renderHighlightView();
+      // Coming onto the Context tab is a jump to whatever is selected, so
+      // under "aroundJump" its surroundings open exactly as a click or a nav
+      // arrow would open them (person-reported: they only did after the next
+      // click). A stale view has stale contextGaps, so there — and inside a
+      // render(), whose renderMainView builds it next — the expansion is left
+      // to renderHighlightView, right after it has rebuilt the gaps. Revealed
+      // while stale (see renderMainView) it is built now; inside a render()
+      // its renderMainView builds it next.
+      if (contextViewStale || renderDepth) {
+        contextSelectionExpansionPending = true;
+        if (!renderDepth) renderHighlightView();
+      } else if (expandContextAroundSelection()) renderHighlightView();
       else renderHighlightVisibleRows();
     } else {
       if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
@@ -19184,6 +19195,10 @@ let contextExpansions = new Map();
 // is what makes a manual reveal/collapse stick for good (person-requested).
 // Lives and dies with contextExpansions.
 let contextAutoRanges = [];
+// Set by showFhTab when the Context tab comes on screen while the view still
+// has to be (re)built: renderHighlightView then opens the selection's
+// surroundings right after buildContextView (expandContextAroundSelection).
+let contextSelectionExpansionPending = false;
 // Which active node contextExpansions currently belongs to.
 let contextExpansionsKey = null;
 // Index into currentHighlightViewEntries -> the FILLER ROWS rendered directly
@@ -19737,6 +19752,38 @@ function setGapOpen(gapStart, open) {
   });
 }
 
+// How far one expansion step reaches from root index `idx` in direction `dir`
+// (-1 up, +1 down), as the root index of the last entry it covers — may lie
+// outside the file, callers clip against their gap. "entries" mode is a plain
+// index count; "time" mode is a window of contextExpandStepMs around the
+// entry's own timestamp, translated back to indices via the same
+// binary-search helpers used everywhere else for "first index >=/> a ts".
+function contextStepEdge(all, idx, dir) {
+  if (contextExpandStepUnit !== "time") return idx + dir * contextExpandStep;
+  return dir < 0
+    ? lowerBoundByTs(all, all[idx].ts - contextExpandStepMs)
+    : upperBoundByTs(all, all[idx].ts + contextExpandStepMs) - 1;
+}
+
+// The toolbar's "expand around matches" button: exactly one expansion step
+// (the same window a jump opens) on either side of EVERY match, and nothing
+// else — like its two siblings below it sets an absolute state rather than
+// adding to what is open, and it is all hand-set afterwards. Every gap is
+// bounded by matches (or the file's edges), so this only needs the gap list:
+// a gap's top window belongs to the match right above it, its bottom window
+// to the match right below it.
+function expandAroundAllMatches() {
+  const all = state.nodes[getRootFileId(state.activeId)].entries;
+  commitContextExpansionChange(() => {
+    contextExpansions = new Map();
+    contextGaps.forEach(g => {
+      if (g.start > 0) revealContextRange(g.start, g.start, Math.min(g.end, contextStepEdge(all, g.start - 1, 1) + 1));
+      if (g.end < all.length) revealContextRange(g.start, Math.max(g.start, contextStepEdge(all, g.end, -1)), g.end);
+    });
+    contextAutoRanges = [];
+  });
+}
+
 // Everything revealed / everything hidden again, from the toolbar's own two
 // buttons.
 function setAllGapsExpanded(expanded) {
@@ -19779,21 +19826,9 @@ function applyContextJumpExpansion(entryId) {
   // nothing for the match's own index).
   const wanted = [];
   if (aroundJump) {
-    let lo, hi;
-    if (contextExpandStepUnit === "time") {
-      // The same index-count -> timespan swap addHidden makes: a window of
-      // contextExpandStepMs on either side of the jump target's own
-      // timestamp, translated back to root-file indices via the same
-      // binary-search helpers used everywhere else in this file for "first
-      // index >=/> a given timestamp".
-      const all = state.nodes[rootId].entries;
-      const refTs = all[idx].ts;
-      lo = lowerBoundByTs(all, refTs - contextExpandStepMs);
-      hi = upperBoundByTs(all, refTs + contextExpandStepMs);
-    } else {
-      lo = idx - contextExpandStep;
-      hi = idx + contextExpandStep + 1;
-    }
+    const all = state.nodes[rootId].entries;
+    const lo = contextStepEdge(all, idx, -1);
+    const hi = contextStepEdge(all, idx, 1) + 1;
     contextGaps.forEach(g => {
       const from = Math.max(g.start, lo);
       const to = Math.min(g.end, hi);
@@ -19821,6 +19856,15 @@ function applyContextJumpExpansion(entryId) {
   });
   if (aroundJump) contextAutoRanges = nextAuto;
   return contextExpansionsSignature() !== before;
+}
+
+// The "aroundJump" window around the current selection — what switching onto
+// the Context tab does (see showFhTab). The other two settings mean "leave the
+// view as it is", so nothing happens under them. Returns true when anything
+// changed; the caller rebuilds.
+function expandContextAroundSelection() {
+  return contextInitialExpansion === "aroundJump" && !!state.selectedId &&
+    applyContextJumpExpansion(state.selectedId);
 }
 
 // Moves the selection to the previous/next real match, skipping over whatever
@@ -19961,6 +20005,7 @@ function updateContextToolbar() {
 
   const hiddenLeft = contextGaps.some(g => contextRevealedCount(g.start) < g.end - g.start);
   const anyRevealed = contextGaps.some(g => contextRevealedCount(g.start) > 0);
+  ctxExpandAround.disabled = !contextGaps.length;
   ctxExpandAll.disabled = !hiddenLeft;
   ctxCollapseAll.disabled = !anyRevealed;
 }
@@ -19990,10 +20035,12 @@ function setContextToolbarVisible(visible, compensate = true) {
 function initContextToolbar() {
   ctxPrevMatch.innerHTML = ICON_CARET_LEFT;
   ctxNextMatch.innerHTML = ICON_CARET_RIGHT;
+  ctxExpandAround.innerHTML = ICON_EXPAND_AROUND;
   ctxExpandAll.innerHTML = ICON_EXPAND_ALL;
   ctxCollapseAll.innerHTML = ICON_COLLAPSE_ALL;
   ctxPrevMatch.addEventListener("click", () => moveContextMatchSelection(-1));
   ctxNextMatch.addEventListener("click", () => moveContextMatchSelection(1));
+  ctxExpandAround.addEventListener("click", expandAroundAllMatches);
   ctxExpandAll.addEventListener("click", () => setAllGapsExpanded(true));
   ctxCollapseAll.addEventListener("click", () => setAllGapsExpanded(false));
 }
@@ -20032,6 +20079,10 @@ function renderHighlightView(colorMapIsFresh) {
   // click handler still reveals the Filtered view on every level-filter change
   // so the effect is visible where it actually applies.
   currentHighlightViewEntries = buildContextView(rootId);
+  if (contextSelectionExpansionPending) {
+    contextSelectionExpansionPending = false;
+    if (expandContextAroundSelection()) currentHighlightViewEntries = buildContextView(rootId);
+  }
   rebuildHighlightOffsets();
   if (!colorMapIsFresh) { highlightColorMap = computeHighlightMap(rootId); updateColorMarkGutter(); }
   updateContextToolbar();
@@ -20531,6 +20582,7 @@ const ICON_CARET_DOWN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="n
 // from the centre line (reveal everything) and back towards it (hide it all
 // again), plus the top/bottom rules that make them read as "the whole view",
 // not "this one run".
+const ICON_EXPAND_AROUND = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12"/><path d="M5 4.5 8 1.5l3 3"/><path d="M5 11.5l3 3 3-3"/></svg>';
 const ICON_EXPAND_ALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12M2 14h12"/><path d="M5 6.2 8 3.2l3 3"/><path d="M5 9.8l3 3 3-3"/></svg>';
 const ICON_COLLAPSE_ALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12M2 14h12"/><path d="M5 3.2 8 6.2l3-3"/><path d="M5 12.8l3-3 3 3"/></svg>';
 // The "Show more (+n)" filler row's own glyph — a plain plus, deliberately

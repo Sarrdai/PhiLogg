@@ -128,8 +128,10 @@ deployments possible:
   drawn as a line down the gutter between two carets; click it anywhere to
   fold the block back. Jump match to match with Ctrl+↑/↓ or the toolbar's
   ‹ / › buttons without going back to the tree, with the opened lines
-  travelling along and the clicked line staying put on screen. Side by side
-  or stacked.
+  travelling along and the clicked line staying put on screen. Switching
+  to the Context tab opens the lines around the selected result too, and a
+  toolbar button opens that many lines around every match at once. Side by
+  side or stacked.
 - **Live tailing & folder watch** (Chromium, File System Access API — or
   any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and
