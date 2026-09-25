@@ -1234,7 +1234,47 @@
   #levelBar .level-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
 
   /* ---------- Filter/Highlight split ---------- */
-  #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
+  #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0; position:relative;}
+  /* Find bar (FEATURE_BACKLOG.md #3) — floats over #fhSplit's top-right
+     corner, out of flex flow, so opening/closing it never moves a log row
+     (same "the lines must not shift" rule #contextToolbar's show/hide
+     compensation exists for). */
+  #findBar{
+    position:absolute; top:4px; right:14px; z-index:30;
+    display:flex; align-items:center; gap:4px;
+    background:var(--bg-elevated); border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.35);
+    padding:4px 4px 4px 6px; max-width:calc(100% - 28px);
+  }
+  #findBar.hidden{display:none;}
+  #findInput{
+    width:220px; min-width:80px; flex:0 1 auto; background:var(--bg-app);
+    border:1px solid var(--border); border-radius:5px; padding:4px 7px;
+    color:var(--text-primary); font-family:var(--font-mono); font-size:12px; outline:none;
+  }
+  #findInput:focus{border-color:var(--accent);}
+  #findInput.input-regex-error{border-color:var(--level-error);}
+  .find-opt{
+    height:24px; min-width:26px; padding:0 5px; flex:0 0 auto;
+    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
+    background:transparent; border:1px solid transparent; border-radius:5px; cursor:pointer;
+  }
+  .find-opt:hover{background:var(--bg-elevated-2);}
+  .find-opt.active{background:var(--accent-soft); border-color:var(--accent-strong); color:var(--accent-strong);}
+  .find-count{
+    min-width:74px; padding:0 4px; text-align:center; white-space:nowrap; flex:0 0 auto;
+    font-size:11px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;
+  }
+  .find-count.warn{color:var(--warn);}
+  .find-count.error{color:var(--level-error);}
+  .find-nav-btn{
+    display:flex; align-items:center; justify-content:center; width:24px; height:24px; flex:0 0 auto;
+    background:transparent; border:none; border-radius:5px; color:var(--text-secondary); cursor:pointer;
+  }
+  .find-nav-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  .find-nav-btn:disabled, #findAddFilterBtn:disabled{opacity:.35; cursor:default; pointer-events:none;}
+  #findAddFilterBtn{padding:3px 8px; white-space:nowrap; flex:0 0 auto;}
+  #findCloseBtn{padding:4px;}
   #fhSplit .fh-panel{flex:1 1 auto; display:flex; flex-direction:column; min-height:0; min-width:0;}
   /* Tabs layout (default): only the active panel is shown. */
   #fhSplit.fh-layout-tabs .fh-panel{display:none;}
@@ -1593,6 +1633,18 @@
      too, harmlessly, so this rule doesn't silently depend on that.) Must
      stay AFTER mark.text-match-mark: same specificity, later wins. */
   mark.mark-seg{padding:0; border-radius:0;}
+  /* Find-bar hits (FEATURE_BACKLOG.md #3, see markCombinedHtml's findRanges):
+     accent-tinted rather than the filter mark's --warn so "what I'm
+     searching for right now" and "what the active filter matched" stay
+     distinguishable when both mark the same row; the selected row (which is
+     the current hit after every find step) gets a stronger fill. Must stay
+     AFTER mark.mark-seg — a segmented find mark keeps square corners too. */
+  mark.find-match-mark{
+    background:color-mix(in srgb, var(--accent) 38%, transparent); color:inherit;
+    border-radius:2px; padding:0; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  mark.find-match-mark.mark-seg{border-radius:0;}
+  .log-row.selected mark.find-match-mark{background:color-mix(in srgb, var(--accent) 70%, transparent);}
 
   .log-row{
     height:28px; box-sizing:border-box; position:relative;
@@ -4156,6 +4208,27 @@
       </div>
 
       <div id="fhSplit">
+        <!-- Find bar (FEATURE_BACKLOG.md #3): incremental, non-destructive
+             search inside whichever log view is current (Context or
+             Filtered) — Ctrl+G opens it, F3/Shift+F3 (or Enter/Shift+Enter
+             in the input) walk the hits, "Add as filter" promotes the search
+             into a real "text" filter node only when that's actually wanted.
+             Floats over the top-right corner of #fhSplit (like an IDE find
+             widget) instead of sitting in the flex flow, so opening it never
+             shifts a single log row. Wired by the "Find bar" section in the
+             script (openFindBar/findStep/addFindAsFilter). -->
+        <div id="findBar" class="hidden" role="search">
+          <input type="text" id="findInput" placeholder="Find in view" autocomplete="off" spellcheck="false" aria-label="Find in view">
+          <button type="button" id="findCaseBtn" class="find-opt" aria-pressed="false" title="Match case">Aa</button>
+          <button type="button" id="findRegexBtn" class="find-opt" aria-pressed="false" title="Use regular expression">.*</button>
+          <span id="findCount" class="find-count"></span>
+          <button type="button" id="findPrevBtn" class="find-nav-btn" title="Previous match (Shift+F3 / Shift+Enter)"></button>
+          <button type="button" id="findNextBtn" class="find-nav-btn" title="Next match (F3 / Enter)"></button>
+          <button type="button" id="findAddFilterBtn" class="btn-mini-outline" title="Turn this search into a filter node under the active node (Ctrl+Enter)">Add as filter</button>
+          <button type="button" class="btn-icon" id="findCloseBtn" title="Close (Esc)">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+          </button>
+        </div>
         <div id="highlightWrap" class="fh-panel">
           <!-- Context view's own toolbar, grouped Settings | Controls |
                Actions (person-requested — no label on any group, just the
@@ -4287,7 +4360,7 @@
           <svg width="34" height="34" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M5.7 8h4.6M5.7 10h4.6M5.7 12h3"/></svg>
         </div>
         <h2>No log file loaded yet</h2>
-        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>.</p>
+        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>, or just search the current view with <b>Ctrl+G</b>.</p>
       </div>
 
       <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
@@ -11861,9 +11934,11 @@ function hlStripeGradient(colors) {
 // tokRanges (optional): syntax-token ranges ({start, end, cls}, sorted,
 // non-overlapping — jsonTokenRanges/xmlTokenRanges) of a plain-text line,
 // the innermost layer: each segment inside a token gets that token's span.
-function markCombinedHtml(text, ranges, hlRanges, tokRanges) {
+// findRanges (optional): find-bar hits ([start, end] pairs, see findMatchRanges).
+function markCombinedHtml(text, ranges, hlRanges, tokRanges, findRanges) {
   const hasTok = !!(tokRanges && tokRanges.length);
-  if ((!hlRanges || !hlRanges.length) && !hasTok) return markRangesHtml(text, ranges);
+  const hasFind = !!(findRanges && findRanges.length);
+  if ((!hlRanges || !hlRanges.length) && !hasTok && !hasFind) return markRangesHtml(text, ranges);
   hlRanges = hlRanges || [];
   const len = text.length;
   const bounds = new Set([0, len]);
@@ -11871,6 +11946,7 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges) {
   for (const [rs, re] of ranges) { addBound(rs); addBound(re); }
   for (const r of hlRanges) { addBound(r.start); addBound(r.end); }
   if (hasTok) for (const r of tokRanges) { addBound(r.start); addBound(r.end); }
+  if (hasFind) for (const [fs, fe] of findRanges) { addBound(fs); addBound(fe); }
   const pts = [...bounds].sort((a, b) => a - b);
   let out = "", ti = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -11882,16 +11958,21 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges) {
       if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '">' + slice + "</span>";
     }
     const marked = ranges.some(r => r[0] <= s && r[1] >= e);
+    // Find-bar hit (FEATURE_BACKLOG.md #3): its own background class, which
+    // takes precedence over the filter mark's for the same characters — the
+    // search is what the person is looking at right now. Rule stripes still
+    // stack on top of it exactly as they do on a filter mark.
+    const found = hasFind && findRanges.some(r => r[0] <= s && r[1] >= e);
     const colors = [];
     for (const r of hlRanges) {
       if (r.start <= s && r.end >= e && !colors.includes(r.color)) colors.push(r.color);
     }
-    if (!marked && !colors.length) { out += slice; continue; }
+    if (!marked && !found && !colors.length) { out += slice; continue; }
     const style = colors.length
       ? ' style="background-image:' + hlStripeGradient(colors) +
         ';background-repeat:no-repeat;background-position:left bottom;background-size:100% ' + HL_MATCH_STRIPE_H + 'px"'
       : "";
-    out += '<mark class="' + (marked ? "text-match-mark" : "hl-match-mark") + ' mark-seg"' + style + '>' + slice + '</mark>';
+    out += '<mark class="' + (found ? "find-match-mark" : marked ? "text-match-mark" : "hl-match-mark") + ' mark-seg"' + style + '>' + slice + '</mark>';
   }
   return out;
 }
@@ -11910,7 +11991,12 @@ function buildMatchMarkContext(includeFilterMatches) {
   return {
     nodes, specs: nodes.map(textFilterMatchSpec),
     hlNodes, hlSpecs: hlNodes.map(textFilterMatchSpec),
-    active: !!(nodes.length || hlNodes.length),
+    // The find bar's current query (FEATURE_BACKLOG.md #3) marks every
+    // displayed column, in every view, while the bar is open — the same
+    // "highlight all" a browser's find does, independent of both toggles
+    // above (it's an explicit, transient search, not a display preference).
+    findSpec: activeFindSpec(),
+    active: !!(nodes.length || hlNodes.length || activeFindSpec()),
   };
 }
 
@@ -11922,7 +12008,8 @@ function markFieldHtml(mm, text, columnKey, tokRanges) {
   return markCombinedHtml(text,
     matchRangesFor(text, columnKey, mm.nodes, mm.specs),
     highlightMatchRangesFor(text, columnKey, mm.hlNodes, mm.hlSpecs),
-    tokRanges);
+    tokRanges,
+    mm.findSpec ? findMatchRanges(text, mm.findSpec) : null);
 }
 
 // Clickable local file paths (desktop build only — see openFpPathMenu):
@@ -13439,6 +13526,7 @@ function applyFhView(view) {
     if (wasOnTableOrPlot) renderMainView(); // content component switches back from Table/Plot to #fhSplit
   }
   updateViewBarRowActions();
+  findRefresh(); // FEATURE_BACKLOG.md #3: a tab switch changes which view the find bar searches
   localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout);
   // Remember which tab the active node was left on, so a later switch back
   // to it can restore the same view (Settings -> Behavior "When switching
@@ -13779,7 +13867,7 @@ function applyNavWaypoint(wp) {
   // Same correctness requirement as revealInHighlightView's: a target inside
   // a collapsed gap has no row to scroll to. contextGaps only exist once the
   // Context view has been built for this node, hence after render().
-  if (wp.contextAnchor && applyContextJumpExpansion(wp.contextAnchor.id)) renderHighlightView();
+  if (wp.contextAnchor && applyContextJumpExpansion(wp.contextAnchor.id)) { renderHighlightView(); findRefresh(); }
   const scroller = activeNavScroller();
   if (scroller === tableBody) {
     if (!restoreViewAnchor(wp.filterAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical) && wp.rawScrollTop != null) {
@@ -13849,6 +13937,7 @@ tableHeaderEl.addEventListener("click", ev => {
     state.sortDir = "asc";
   }
   renderTable();
+  findRefresh(); // a re-sort reorders the list the find bar's hit indices point into
 });
 
 // Decides which view (Context/Filtered/Table/Plot/Stacked) to land on when
@@ -13943,6 +14032,7 @@ function renderInner() {
     refreshColumnState();
   }
   renderMainView();
+  findRefresh(); // FEATURE_BACKLOG.md #3: re-scan the find bar's hits if the current view's list changed
   renderStatus();
   updateDetailPanel();
   updateTailJumpBtn();
@@ -14156,6 +14246,7 @@ function renderMainView() {
   // stale and built when it is revealed (showFhTab/applyFhView).
   if (contextViewVisible()) renderHighlightView(true); // highlightColorMap was computed fresh above
   else contextViewStale = true;
+  findRefresh(); // see render() — also covers renderMainView's direct callers
 }
 
 // Whether the Context view (#highlightWrap) is on screen: Stacked shows it
@@ -20925,7 +21016,7 @@ function anyEscapeOverlayOpen() {
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
-    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay",
+    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
     const e = document.getElementById(overlayIds[i]);
@@ -22144,6 +22235,7 @@ function selectEntry(entryId, opts) {
   // full re-render here would break native double-click detection.
   updateSelectedRowClass(previousId);
   updateDetailPanel();
+  findRefresh(); // the find bar's "n / m" follows the selection
 }
 
 // Highlight-view counterpart of selectEntry — same shape, scrolls its own
@@ -22161,6 +22253,7 @@ function selectHighlightEntry(entryId, opts) {
   }
   updateSelectedRowClass(previousId);
   updateDetailPanel();
+  findRefresh(); // see selectEntry — also picks up a Context list rebuilt right before this call
 }
 
 // PiP exit-before-jump (see docs/desktop.md "Picture-in-picture"): while the
@@ -28207,6 +28300,400 @@ filterForm.addEventListener("submit", ev => {
 el("#btnCloseFilterPopup").addEventListener("click", closeFilterPopup);
 
 
+/* ===================== Find bar (Ctrl+G / F3 — FEATURE_BACKLOG.md #3) =====================
+   Incremental, NON-destructive search inside whichever log view is current:
+   the Context view (currentHighlightViewEntries — its matches plus whatever
+   context rows are revealed; collapsed gaps are not "in the view" and are
+   not searched) or the Filtered view (currentViewEntries — post filter
+   chain, post level quick-filter, in its displayed sort order). Table/Plot
+   and the Link view have no plain entry list to walk, so the bar reports
+   "Not in this view" there. Before this existed, Ctrl+F was the only search
+   and it always created a filter node — "just look for this once" cost a
+   tree node you then deleted. Now: search first, promote to a filter only
+   when needed ("Add as filter", which calls the exact createFilterNode the
+   Ctrl+F popup's commitFilter calls — no new node field, nothing new to
+   thread through the persistence carriers).
+
+   Shortcut decision: Ctrl+F stays "new filter" (least disruptive — it's the
+   app's core idiom and the empty-state hint), the find bar takes the
+   browser's own "find next" keys instead: Ctrl+G opens it (focuses it if
+   already open, steps to the next hit if already focused), F3/Shift+F3 step
+   next/previous from anywhere, Enter/Shift+Enter inside the input,
+   Ctrl+Enter adds the search as a filter, Esc closes it. The three chords
+   are rebindable in Settings -> Shortcuts.
+
+   The query language is exactly the filter popup's: a literal substring
+   (case-insensitive unless "Aa"), a [*:...]/[*] wildcard pattern, or a real
+   RegExp with ".*" — compiled via textFilterMatchSpec and tested per entry
+   via textFilterMatches, the same two functions a "text" filter node and its
+   match marking use, so "Add as filter" is guaranteed to keep exactly the
+   rows the search found. Hits are ROWS (the "n / m" counter counts
+   matching entries, like the Context view's own match navigator), marked
+   in every displayed column via markFieldHtml's findRanges.
+
+   Scale: the search runs over the view's entry array (the data model),
+   never the DOM — so it covers rows the virtualized renderer hasn't built —
+   in time-sliced chunks (FIND_SCAN_SLICE_MS per slice, setTimeout(0)
+   yields), so a view of hundreds of thousands of rows never blocks typing;
+   a small view completes inside the first, synchronous slice. Typing is
+   debounced (FIND_DEBOUNCE_MS, same 150ms as the filter popup's live
+   match). Hits are stored as ascending indices into that array, so a
+   next/previous step is a binary search, not a rescan. A view list that is
+   rebuilt (new filter, tail append, sort, tab switch) is noticed by array
+   identity (findRefresh, called from render()/renderMainView/selection) and
+   rescanned; a step requested mid-scan is remembered (pendingDelta) and
+   applied the moment the scan finishes. */
+const findBar = el("#findBar");
+const findInput = el("#findInput");
+const findCaseBtn = el("#findCaseBtn");
+const findRegexBtn = el("#findRegexBtn");
+const findCountEl = el("#findCount");
+const findPrevBtn = el("#findPrevBtn");
+const findNextBtn = el("#findNextBtn");
+const findAddFilterBtn = el("#findAddFilterBtn");
+const FIND_DEBOUNCE_MS = 150;
+const FIND_SCAN_SLICE_MS = 12;
+
+const findState = {
+  query: "", caseSensitive: false, isRegex: false,
+  spec: null,      // textFilterMatchSpec output, null = empty or invalid query
+  test: null,      // entry => boolean, same semantics as a "text" filter node
+  invalid: false,
+  kind: null,      // "filter" | "highlight" — the view the hits below belong to
+  entries: null,   // the exact array the hits index into (identity = staleness check)
+  hits: [],        // ascending indices into `entries`
+  done: true,      // false while a time-sliced scan is still running
+  gen: 0,          // bumped per scan, so a superseded scan's slices stop
+  cur: -1,         // index into `hits` of the last hit stepped to
+  pendingDelta: 0, // a next/prev requested before the scan finished
+  autoJump: false, // jump to the first hit once the scan finishes (typing)
+};
+let findDebounceTimer = null;
+let findScanTimer = null;
+
+function findBarOpen() { return !findBar.classList.contains("hidden"); }
+// What markFieldHtml should mark right now — nothing unless the bar is open.
+function activeFindSpec() { return findBarOpen() ? findState.spec : null; }
+
+// The view the find bar walks, or null when the current view has no plain
+// entry list (Table/Plot, the Link view, nothing loaded). Tabs layout: the
+// tab on screen. Stacked layout: whichever pane was last selected in
+// (state.entriesView), the same rule plain arrow-key navigation follows.
+function findTargetView() {
+  if (!state.rootIds.length || state.inlineViewer || state.folderView) return null;
+  if (fhSplit.style.display === "none") return null;
+  const kind = fhLayout === "tabs"
+    ? (fhActiveTab === "highlight" ? "highlight" : "filter")
+    : (state.entriesView === "highlight" ? "highlight" : "filter");
+  if (kind === "filter" && linkWrap.style.display !== "none") return null;
+  return { kind, entries: kind === "highlight" ? currentHighlightViewEntries : currentViewEntries };
+}
+
+function pressedGet(btn) { return btn.classList.contains("active"); }
+function pressedSet(btn, on) {
+  btn.classList.toggle("active", !!on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+}
+
+// Re-renders the visible rows of both log views (and the detail panel) so
+// the find marks follow the query — only the virtualized window, never the
+// whole list. Justified under the render scope rule: every row's own
+// content (its <mark>s) changes.
+function refreshFindMarks() {
+  if (!state.rootIds.length || fhSplit.style.display === "none") return;
+  if (tableWrap.style.display !== "none") renderVisibleRows();
+  renderHighlightVisibleRows();
+  updateDetailPanel();
+}
+
+// Recompiles the query from the input/toggles and restarts the scan.
+// autoJump: incremental "find as you type" — once the scan finishes, select
+// the first hit at or after the current selection (or the top visible row).
+function applyFindQuery(autoJump) {
+  clearTimeout(findDebounceTimer);
+  findDebounceTimer = null;
+  const q = findInput.value;
+  const caseSensitive = pressedGet(findCaseBtn);
+  const isRegex = pressedGet(findRegexBtn);
+  findState.query = q;
+  findState.caseSensitive = caseSensitive;
+  findState.isRegex = isRegex;
+  const spec = q ? textFilterMatchSpec({ value: q, caseSensitive, isRegex, wholeWord: false }) : null;
+  findState.spec = spec;
+  findState.invalid = !!q && !spec;
+  findState.test = spec
+    ? (e => textFilterMatches(e, q, caseSensitive, null, spec.wildcardRegex, spec.wildcardColumns, spec.regex, false))
+    : null;
+  findInput.classList.toggle("input-regex-error", findState.invalid);
+  findState.pendingDelta = 0;
+  findState.autoJump = !!autoJump && !!spec;
+  refreshFindMarks();
+  startFindScan();
+}
+
+function startFindScan() {
+  clearTimeout(findScanTimer);
+  const gen = ++findState.gen;
+  const view = findTargetView();
+  findState.kind = view ? view.kind : null;
+  findState.entries = view ? view.entries : null;
+  findState.hits = [];
+  findState.cur = -1;
+  findState.done = false;
+  if (!view || !findState.test) { findState.done = true; onFindScanDone(); return; }
+  const entries = view.entries, test = findState.test, hits = findState.hits;
+  let i = 0;
+  const slice = () => {
+    if (gen !== findState.gen) return; // superseded by a newer query/view
+    const t0 = performance.now();
+    while (i < entries.length) {
+      const end = Math.min(entries.length, i + 2048);
+      for (; i < end; i++) if (test(entries[i])) hits.push(i);
+      if (performance.now() - t0 >= FIND_SCAN_SLICE_MS) break;
+    }
+    if (i < entries.length) { updateFindCounter(); findScanTimer = setTimeout(slice, 0); return; }
+    findState.done = true;
+    onFindScanDone();
+  };
+  slice();
+}
+
+function onFindScanDone() {
+  const delta = findState.pendingDelta;
+  findState.pendingDelta = 0;
+  // Typing's own jump first, THEN any step pressed while the scan was still
+  // running — typing then F3 lands on the second hit, as it would have with
+  // an instant scan.
+  if (findState.autoJump) {
+    findState.autoJump = false;
+    if (findState.hits.length) findGoFrom(1, true);
+  }
+  if (delta) findGoFrom(delta, false);
+  updateFindCounter();
+}
+
+// Called after anything that may have rebuilt the current view's list (see
+// the section comment) — rescans on a changed list, otherwise just refreshes
+// the counter (its "n" follows the selection).
+function findRefresh() {
+  if (!findBarOpen()) return;
+  if (!findState.test) { updateFindCounter(); return; }
+  const view = findTargetView();
+  if ((view ? view.entries : null) !== findState.entries) { startFindScan(); return; }
+  // Same array, other view: on a file node the Context and Filtered views
+  // share the file's own entries array, so the hits stay valid — only which
+  // view a step selects in changes.
+  if (view) findState.kind = view.kind;
+  updateFindCounter();
+}
+
+// First k with hits[k] >= x (hits.length if none).
+function findLowerBound(hits, x) {
+  let lo = 0, hi = hits.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (hits[mid] < x) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+// Where a step starts from: the selected row if it's in the view, otherwise
+// the top visible row (so it also works straight after scrolling by hand —
+// same rule as the Context view's own match navigation).
+function findAnchor(entries) {
+  if (state.selectedId) {
+    const idx = entries.findIndex(e => e.id === state.selectedId);
+    if (idx !== -1) return { idx, fromSelection: true };
+  }
+  const isHl = findState.kind === "highlight";
+  const offsets = isHl ? highlightRowOffsets : (needsRowOffsets() ? tableRowOffsets : null);
+  const scrollTop = isHl ? highlightBody.scrollTop : physicalToLogicalScrollPx(tableBody.scrollTop);
+  const topId = topVisibleEntryId(entries, offsets, scrollTop);
+  const idx = topId ? entries.findIndex(e => e.id === topId) : -1;
+  return { idx: Math.max(0, idx), fromSelection: false };
+}
+
+// Steps to the next (delta 1) / previous (delta -1) hit, wrapping around.
+// inclusive: the anchor row itself counts (incremental typing keeps the
+// current row selected while it still matches).
+function findGoFrom(delta, inclusive) {
+  const hits = findState.hits, entries = findState.entries;
+  if (!hits.length || !entries) { updateFindCounter(); return; }
+  const cur = findState.cur;
+  let k;
+  if (!inclusive && cur >= 0 && cur < hits.length && entries[hits[cur]] && entries[hits[cur]].id === state.selectedId) {
+    k = (cur + delta + hits.length) % hits.length; // repeated F3: no findIndex at all
+  } else {
+    const anchor = findAnchor(entries);
+    // Without a selection the top visible row is only a reading position,
+    // not a hit already "seen" — the next hit may be that very row.
+    const incl = inclusive || !anchor.fromSelection;
+    if (delta > 0) {
+      k = findLowerBound(hits, incl ? anchor.idx : anchor.idx + 1);
+      if (k >= hits.length) k = 0;
+    } else {
+      k = findLowerBound(hits, incl ? anchor.idx + 1 : anchor.idx) - 1;
+      if (k < 0) k = hits.length - 1;
+    }
+  }
+  findGoToHit(k);
+}
+
+function findGoToHit(k) {
+  findState.cur = k;
+  const idx = findState.hits[k];
+  const entry = findState.entries[idx];
+  if (!entry) return;
+  // Centered, like the Context view's match navigator — the hit reads with
+  // its surrounding rows instead of pinned to a viewport edge.
+  if (findState.kind === "highlight") selectHighlightEntry(entry.id, { scroll: true, center: true, index: idx });
+  else selectEntry(entry.id, { scroll: true, center: true, index: idx });
+  updateFindCounter();
+}
+
+// Public step (buttons, F3/Shift+F3, Enter/Shift+Enter). A stale or still-
+// running scan defers the step until it's done instead of walking hits
+// that point into the wrong list.
+function findStep(delta) {
+  if (!findBarOpen()) return;
+  if (findDebounceTimer) applyFindQuery(false); // stepped right after typing: search what's typed first
+  if (!findState.test) return;
+  const view = findTargetView();
+  if (!view) { updateFindCounter(); return; }
+  if (view.entries !== findState.entries) { startFindScan(); findState.pendingDelta = delta; if (findState.done) onFindScanDone(); return; }
+  findState.kind = view.kind; // see findRefresh: same array, possibly the other view
+  if (!findState.done) { findState.pendingDelta = delta; return; }
+  findGoFrom(delta, false);
+}
+
+function updateFindCounter() {
+  if (!findBarOpen()) return;
+  const view = findTargetView();
+  const hits = findState.hits;
+  let text = "", cls = "find-count";
+  if (!findInput.value) text = "";
+  else if (findState.invalid) { text = findState.isRegex ? "Invalid regex" : "Invalid pattern"; cls += " error"; }
+  else if (!view) { text = "Not in this view"; cls += " warn"; }
+  else if (!findState.done) text = hits.length.toLocaleString("de-DE") + "…";
+  else if (!hits.length) { text = "No results"; cls += " warn"; }
+  else {
+    const cur = findState.cur;
+    const onHit = cur >= 0 && cur < hits.length && findState.entries[hits[cur]] &&
+      findState.entries[hits[cur]].id === state.selectedId;
+    text = onHit
+      ? (cur + 1).toLocaleString("de-DE") + " / " + hits.length.toLocaleString("de-DE")
+      : hits.length.toLocaleString("de-DE") + (hits.length === 1 ? " match" : " matches");
+  }
+  findCountEl.textContent = text;
+  findCountEl.className = cls;
+  const canStep = !!(findState.test && view && (!findState.done || hits.length));
+  findPrevBtn.disabled = !canStep;
+  findNextBtn.disabled = !canStep;
+  findAddFilterBtn.disabled = !(findState.spec && state.nodes[state.activeId]);
+}
+
+function openFindBar() {
+  if (!state.rootIds.length) return false; // nothing to search
+  const wasOpen = findBarOpen();
+  // Browser-style prefill: a short single-line text selection (e.g. a word
+  // selected in the Entry Detail panel) becomes the query.
+  const sel = window.getSelection ? String(window.getSelection() || "") : "";
+  const prefill = !!sel && sel.length <= 200 && !/[\r\n]/.test(sel) && sel !== findInput.value;
+  if (prefill) findInput.value = sel;
+  findBar.classList.remove("hidden");
+  findInput.focus();
+  findInput.select();
+  if (!wasOpen || prefill) applyFindQuery(false);
+  return true;
+}
+
+function closeFindBar() {
+  if (!findBarOpen()) return;
+  clearTimeout(findDebounceTimer);
+  findDebounceTimer = null;
+  clearTimeout(findScanTimer);
+  findState.gen++;
+  findBar.classList.add("hidden");
+  // A focused-but-hidden input would keep every later shortcut in the
+  // main keydown handler's "inInput" bail-out.
+  if (document.activeElement === findInput) findInput.blur();
+  findState.entries = null;
+  findState.hits = [];
+  findState.done = true;
+  findState.cur = -1;
+  findState.pendingDelta = 0;
+  findState.autoJump = false;
+  refreshFindMarks(); // drop the marks (activeFindSpec() is null now)
+}
+
+// "Add as filter": the search becomes a real "text" filter node under the
+// active node — the same createFilterNode call (and the same follow-up
+// reveal+render) the Ctrl+F popup's commitFilter makes, with the find bar's
+// case/regex toggles as its caseSensitive/isRegex. The query is used as-is,
+// so the new node keeps exactly the rows the search counted.
+function addFindAsFilter() {
+  if (findDebounceTimer || findInput.value !== findState.query ||
+      pressedGet(findCaseBtn) !== findState.caseSensitive || pressedGet(findRegexBtn) !== findState.isRegex) {
+    applyFindQuery(false);
+  }
+  if (!findState.spec || !state.nodes[state.activeId]) return null;
+  const node = createFilterNode(state.activeId, "text", findState.query, false, null,
+    findState.caseSensitive, null, findState.isRegex, false);
+  closeFindBar();
+  revealFilteredView(); // a new filter's result lives in the Filtered view
+  render();
+  return node;
+}
+
+// Ctrl+G / F3 / Shift+F3, from the main keydown handler. Returns true when
+// it consumed the event.
+function handleFindShortcut(ev) {
+  const isGo = matchesShortcut(ev, "findInView");
+  const isNext = matchesShortcut(ev, "findNext");
+  const isPrev = matchesShortcut(ev, "findPrev");
+  if (!isGo && !isNext && !isPrev) return false;
+  const active = document.activeElement;
+  const inFind = active === findInput;
+  // Any OTHER text field keeps its keys (a regex being typed into the
+  // filter popup, a rename, ...); an open dialog keeps them too.
+  // An input inside a closed (.hidden) popup doesn't count: real browsers
+  // drop focus from an element that stops rendering, jsdom doesn't.
+  if (!inFind && active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT") &&
+      !active.closest(".hidden")) return false;
+  if (!findBarOpen() && anyEscapeOverlayOpen()) return false;
+  if (!state.rootIds.length) return false;
+  ev.preventDefault();
+  if (isGo) {
+    if (!findBarOpen() || !inFind) openFindBar();
+    else findStep(1);
+    return true;
+  }
+  if (!findBarOpen()) openFindBar();
+  if (findInput.value) findStep(isPrev ? -1 : 1);
+  return true;
+}
+
+findInput.addEventListener("input", () => {
+  clearTimeout(findDebounceTimer);
+  findDebounceTimer = setTimeout(() => applyFindQuery(true), FIND_DEBOUNCE_MS);
+});
+findInput.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  ev.preventDefault();
+  if (ev.ctrlKey || ev.metaKey) { addFindAsFilter(); return; }
+  if (findDebounceTimer) { applyFindQuery(true); return; } // typed, not yet searched: this Enter IS the incremental jump
+  findStep(ev.shiftKey ? -1 : 1);
+});
+[findCaseBtn, findRegexBtn].forEach(btn => btn.addEventListener("click", () => {
+  pressedSet(btn, !pressedGet(btn));
+  findInput.focus();
+  applyFindQuery(true);
+}));
+findPrevBtn.innerHTML = ICON_CARET_UP;
+findNextBtn.innerHTML = ICON_CARET_DOWN;
+findPrevBtn.addEventListener("click", () => findStep(-1));
+findNextBtn.addEventListener("click", () => findStep(1));
+findAddFilterBtn.addEventListener("click", () => addFindAsFilter());
+el("#findCloseBtn").addEventListener("click", closeFindBar);
+
+
 /* ===================== Context menu (right-click a row) ===================== */
 
 const contextMenu = el("#contextMenu");
@@ -31554,6 +32041,13 @@ const SHORTCUT_BINDINGS_STORAGE_KEY = "philogg.shortcutBindings";
 
 const SHORTCUT_ACTIONS = [
   { id: "newFilter",     label: "New filter on selected node",         default: { ctrl: true, key: "f" } },
+  // FEATURE_BACKLOG.md #3: the find bar. Ctrl+F deliberately stays "new
+  // filter" (the app's core idiom, muscle memory, the empty-state hint) —
+  // the non-destructive search gets the browser's own "find next" keys,
+  // Ctrl+G and F3, instead. See docs/ui-and-views.md -> "Find bar".
+  { id: "findInView",    label: "Find in the current view (find bar)", default: { ctrl: true, key: "g" } },
+  { id: "findNext",      label: "Find bar: next match",                default: { key: "f3" } },
+  { id: "findPrev",      label: "Find bar: previous match",            default: { shift: true, key: "f3" } },
   { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
   { id: "editFilter",    label: "Edit a filter",                       default: { ctrl: true, key: "e" } },
   { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" } },
@@ -31581,6 +32075,8 @@ const SHORTCUT_ACTIONS = [
 // rebound. Rendered as extra rows appended after SHORTCUT_ACTIONS in
 // renderShortcutBindingsList().
 const FIXED_SHORTCUTS = [
+  { label: "Find bar: next / previous match (in its input)", display: ["Enter", "Shift+Enter"] },
+  { label: "Find bar: add the search as a filter (in its input)", display: ["Ctrl", "Enter"] },
   { label: "Copy a filter",                          display: ["Ctrl", "C"] },
   { label: "Cut a filter",                           display: ["Ctrl", "X"] },
   { label: "Paste under selected node",               display: ["Ctrl", "V"] },
@@ -31625,7 +32121,7 @@ function matchesShortcut(ev, actionId) {
 }
 // Keys whose ev.key value doesn't read well verbatim in the Shortcut Manager.
 const SHORTCUT_KEY_LABELS = {
-  f2: "F2", f11: "F11", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
+  f2: "F2", f3: "F3", f11: "F11", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
 };
 function comboLabelParts(combo) {
   const parts = [];
@@ -33983,6 +34479,10 @@ document.addEventListener("keydown", ev => {
     if (state.activeId) openFilterPopup();
     return;
   }
+  // FEATURE_BACKLOG.md #3: Ctrl+G / F3 / Shift+F3 — checked ahead of the
+  // inInput bail-out below so they keep working while typing in the find
+  // bar's own input (handleFindShortcut itself ignores every OTHER input).
+  if (handleFindShortcut(ev)) return;
   if (ev.key === "Escape") {
     // Esc is a secondary exit from Focus Mode (FEATURE_BACKLOG.md #66), but
     // only when nothing else is consuming this Esc — captured before the
@@ -33995,6 +34495,7 @@ document.addEventListener("keydown", ev => {
     closePlotFullscreen();
     closeSettingsDialog();
     closeFilterPopup();
+    closeFindBar();
     closeContextMenu();
     closeTreeContextMenu();
     closeExtractContextMenu();
