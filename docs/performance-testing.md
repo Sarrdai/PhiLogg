@@ -135,6 +135,26 @@ The generated test file's timestamps wrap every 86,400 entries, so it is
 sorted variant (the same script with `s = Math.floor(i / 8)`) — real logs
 are sorted.
 
+## Level 2d — the page in headless Chromium (live tracking)
+
+```
+NODE_PATH=$(npm root -g) node tools/perf/chromium-tail-bench.js /tmp/philogg-perf/perf-650k.log [philogg.html] [ticks]
+```
+
+Loads the file like Level 2c, puts a level filter (ERROR), a text filter
+("customer 42") and a text filter under the level node on it, activates the
+text filter, and turns the file into a tailed one whose handle serves the
+loaded `File` plus lines appended between ticks (20 per tick, the handle's
+`getFile` non-enumerable so the cache record clones like a real handle's).
+Prints the median/max wall time of one `tailTick()` (poll, parse,
+invalidation, the active view's render, layout), the longest heartbeat gap
+during the ticks and during the 6 s after them (the debounced session-cache
+write), and a `mergeFiles` of two sorted, overlapping 300k-entry files. Run
+the old page for comparison with `git show <rev>:philogg.html > /tmp/old.html`.
+The first filter-history write after creating the filters (one fingerprint
+of the whole text, ~280 ms) lands inside the tick window — once, not per
+tick.
+
 ## Level 3 — the real desktop app, headless
 
 ### One-time setup per container (~5 min)
@@ -210,6 +230,19 @@ JS parser in the same build.
   the native parser when the URL contains `nonative`, so the script opens
   the same bytes as `native.log` and `nonative.log`.
 
+### Tail polls (Level 3b)
+
+```
+tools/perf/desktop-tail-bench.sh [philogg.html] [log-file]
+```
+
+Same setup and result channel as the load bench. The instrumented page
+(`tools/perf/instrument-tail-timing.js`) waits for the launch-argument file
+to render, times five `tailTick()`s with the file unchanged, then the script
+appends 1000 lines and the page times the poll that picks them up; prints
+`{"idle":[ms…],"growth":ms,"added":entries}`. Rebuild the binary after a
+`protocol.rs` change — the Range handling is on the Rust side.
+
 ### Reading the numbers
 
 - **Noisy.** The cloud container shares CPU; the same run has varied
@@ -277,6 +310,22 @@ plus batch encoding, ~25 MB each), the main thread adopting ~650k entries
 
 Rust crate alone, same file: read ~0.3 s, parse ~0.6 s (4 threads) /
 ~1.7 s (1 thread), batch encoding ~0.4 s.
+
+Live tracking (2026-09-25, same file; Level 2d in headless Chromium 141 with
+three filters, Level 3b in the desktop app with none):
+
+| State | tick (Chromium) | stall after ticks (cache write) | idle poll (desktop) | growth poll, 1000 lines (desktop) |
+|---|---|---|---|---|
+| before | 330–365 ms | 380–435 ms | 2,315–2,375 ms | 2,348 ms |
+| per-entry filters extended, history record not re-fingerprinted, Blob snapshot, Range reads | 48–58 ms | 32–41 ms | 1–3 ms | 131–138 ms |
+
+Before, a tailed 100 MB desktop file's poll took longer than the 1.5 s
+poll interval (the whole file re-read and copied each time), and in the
+browser each tick paid the tick (~340 ms) plus a whole-text fingerprint for
+the filter-history record (~280 ms). A linear k-way merge of sorted sources
+was tried for `fillMergedEntries` and dropped: V8's TimSort already merges
+two sorted runs in linear time (2 x 300k overlapping: 243–365 ms either
+way, 660 ms for the chunked JS merge).
 
 Scrolling (Level 2b, headless Chromium 141, same 650k-entry file, 572px
 viewport; "blank"/"jumps" per scroll render, see Level 2b):

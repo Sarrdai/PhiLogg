@@ -118,6 +118,18 @@ placeholders, the multi-file merge prompt and tailing all work exactly as they d
 a dropped `File`; `node.localPath` and `node.sourceUrl` are both set, so "Open File
 Location" and "Copy Path" are offered. Covered by tests **Groups 141-143**.
 
+**Byte-range reads of `philogg://local/…`** (2026-09-25). `protocol.rs`'s
+`read_local` honours a single `Range: bytes=a-b` / `bytes=a-` / `bytes=-n` header
+(`parse_range`, unit-tested): it seeks and reads only those bytes and answers 206 with
+`Content-Range: bytes a-b/<size>` (416 with `bytes */<size>` outside the file;
+`Access-Control-Expose-Headers: content-range` so the page can read it). No header — a
+full load — is served whole exactly as before. The page's tail poll, the folder
+minimap's head/tail probe and a windowed load read through it (`urlTailHandle`'s
+`getRangedFile`, see `docs/persistence-and-sync.md` → "Tailing"): an idle poll of an
+open 100 MB file went from re-reading all of it (~2.3 s, longer than the poll interval)
+to ~2 ms. A page talking to an older wrapper gets a 200 with the whole body and uses
+that.
+
 **`res.arrayBuffer()`, never `res.blob()`, when reading a `philogg://local/…`
 response.** Person-reported: a real ~80KB file failed to load through both drag&drop
 and the dialog (grayed placeholder, then "Couldn't load") while a ~3KB one in the same
