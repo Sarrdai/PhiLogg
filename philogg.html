@@ -24110,7 +24110,13 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
   // The entry's "Filter lines" text versions, one level below it.
   const frag = document.createDocumentFragment();
   frag.appendChild(row);
-  nested.forEach(id => frag.appendChild(renderNode(id, 1)));
+  nested.forEach(id => {
+    const sub = renderNode(id, 1);
+    // renderNode only draws connector lines for a depth-0 subtree; this one
+    // starts at depth 1 (under the viewer row), so draw them here.
+    decorateTreeGuides(sub);
+    frag.appendChild(sub);
+  });
   return frag;
 }
 function renderZipEntryRow(zip, entry) {

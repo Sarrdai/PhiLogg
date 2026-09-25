@@ -2,6 +2,8 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: a nested text version's subtree had no tree connector lines (this session, 2026-09-25, person-reported with a screenshot comparing a log file's filters with a JSON text version's)**. `renderNode` only calls `decorateTreeGuides` for a depth-0 subtree, and a text version renders at depth 1 under its viewer row; `buildInlineViewerEntryRow` now decorates that subtree itself. **Tests**: Group 274c extended. Full suite: **5815 passed, 0 failed**.
+
 - **feat: Ctrl+F on a text viewer filters it directly (this session, 2026-09-25, person-requested: *"Strg+F auf einer Textdatei soll diese direkt in ein Textfilter File umwandeln und den Suchdialog öffnen"*)**. The `newFilter` shortcut, while a text viewer is shown, runs `openInlineViewerAsTextLog` (creating or re-activating its "Filter lines" text version — pretty-printed if Pretty Print is on) and then opens the filter popup on it. **Tests**: new Group 274d. Full suite: **5814 passed, 0 failed**.
 
 - **fix: the Columns panel offered Δt for plain-text files (this session, 2026-09-25, person-reported: *"die Spaltenauswahl bietet mir in der Ansicht noch delta T an, das macht hier keinen Sinn"*)**. With only plain-text files loaded the Δt track is collapsed regardless (line numbers have no time delta), so `renderColumnsPanel` no longer lists it. **Tests**: Group 273c/e extended. Full suite: **5811 passed, 0 failed**.
