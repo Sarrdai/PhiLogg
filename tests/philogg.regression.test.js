@@ -31017,6 +31017,90 @@ group(273);
   });
 }
 
+/* ============================================================
+   GROUP 274 — Plain-text rows: indentation, syntax highlighting, nesting
+   Origin: 2026-09-25, person-requested follow-up to Group 273 — keep a
+   plain-text line's leading spaces/tabs and the viewer's JSON/XML syntax
+   highlighting in the filter views, and hang a "Filter lines" text version
+   under its source file in the tree (file -> text version -> filters).
+   Covers: the .col-msg.plaintext class, token ranges (JSON, XML incl. an
+   attribute value with "&"), tokens combined with filter-match marks in
+   markCombinedHtml, highlighted rows in the Filtered view (none for an
+   ordinary log), the nested tree row + nav order, reuse on a second
+   "Filter lines", closing the viewer entry closes its text versions
+   (undoable, then top-level), and the token-range refactor keeping the
+   viewer's own highlighting.
+   ============================================================ */
+group(274);
+{
+  const JSON_TEXT = '{"name":"pump","temp":21.5,"on":true}';
+
+  await withApp(async (w, d, T) => {
+    section("274a. Token ranges and their merge with filter-match marks");
+    const j = w.jsonTokenRanges('"a": 1');
+    assert(j.length === 2 && j[0].cls === "tok-key" && j[1].cls === "tok-number", "JSON: key + number");
+    const x = w.xmlTokenRanges('<a b="c&d"/>');
+    assert(x.map(r => r.cls).join(",") === "tok-tag,tok-attr,tok-string,tok-tag", "XML: tag, attr, value (with &), close (" + x.map(r => r.cls).join(",") + ")");
+    const cmt = w.xmlTokenRanges("<!" + "-- note --" + ">");
+    assert(cmt.length === 1 && cmt[0].cls === "tok-comment", "XML comments still tokenized (regex avoids a literal comment opener)");
+    assert(w.highlightXmlText('<a b="c&d"/>').includes('<span class="tok-string">&quot;c&amp;d&quot;</span>'), "viewer output escapes inside the token");
+    assert(w.highlightJsonText('{"a":1}') === '{<span class="tok-key">&quot;a&quot;:</span><span class="tok-number">1</span>}', "viewer JSON output unchanged");
+    const html = w.markCombinedHtml('"a": 12', [[5, 6]], [], w.jsonTokenRanges('"a": 12'));
+    assert(html.includes('<mark class="text-match-mark mark-seg"><span class="tok-number">1</span></mark><span class="tok-number">2</span>'), "a match inside a token: the token span sits inside the mark, split at the mark's edge (" + html + ")");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("274b. Filtered view: indentation kept, JSON highlighted, marks still shown; an ordinary log gets no tokens");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("cfg.json", new TextEncoder().encode(JSON_TEXT), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k1" });
+    T.state.inlineViewer.prettyPrint = true;
+    const f = await w.openInlineViewerAsTextLog(T.state.inlineViewer);
+    assert(f.viewerSource && f.viewerSource.mapKey === "k1" && f.textSyntax === "json", "text version remembers its viewer and syntax");
+    const flt = w.createFilterNode(f.id, "text", "temp");
+    T.state.activeId = flt.id;
+    w.render();
+    const msg = d.querySelector("#tableRows .log-row .col-msg");
+    assert(msg && msg.classList.contains("plaintext"), "message cell carries .plaintext (white-space:pre)");
+    assert(msg.textContent === '  "temp": 21.5,', "leading spaces kept in the cell text (" + JSON.stringify(msg.textContent) + ")");
+    assert(msg.querySelector(".tok-key") && msg.querySelector(".tok-number"), "key and number highlighted");
+    assert(msg.querySelector("mark.text-match-mark"), "the filter match is still marked");
+    const log = await w.addFile("app.log", makeLog(0, 3), () => {});
+    T.state.activeId = log.id;
+    w.render();
+    const logMsg = d.querySelector("#tableRows .log-row .col-msg");
+    assert(logMsg && !logMsg.classList.contains("plaintext") && !logMsg.querySelector("[class^='tok-']"), "ordinary log rows: no plaintext class, no tokens");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("274c. Tree: file -> text version -> filter, nav order, reuse, close cascade");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("notes.txt", new TextEncoder().encode("a\n\tb\n"), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k2" });
+    const viewer = T.state.inlineViewer;
+    const f = await w.openInlineViewerAsTextLog(viewer);
+    const flt = w.createFilterNode(f.id, "text", "b");
+    w.render();
+    const tree = d.querySelector("#tree");
+    const rows = [...tree.querySelectorAll(".zip-source-file, .tree-row")];
+    const vIdx = rows.findIndex(r => r.classList.contains("zip-source-file"));
+    const fIdx = rows.findIndex(r => r.dataset.nodeId === f.id);
+    const cIdx = rows.findIndex(r => r.dataset.nodeId === flt.id);
+    assert(vIdx >= 0 && vIdx < fIdx && fIdx < cIdx, "viewer row, then its text version, then the filter (" + [vIdx, fIdx, cIdx] + ")");
+    assert(tree.querySelectorAll('.tree-row[data-node-id="' + f.id + '"]').length === 1, "text version rendered once (not also top-level)");
+    const nav = w.flattenTreeIds();
+    const nv = nav.indexOf(w.viewerNavId("loose", "loose", "k2"));
+    assert(nv >= 0 && nav[nv + 1] === f.id && nav[nv + 2] === flt.id, "arrow-key order follows the nesting");
+    const again = await w.openInlineViewerAsTextLog(viewer);
+    assert(again === f && T.state.rootIds.length === 1 && T.state.activeId === f.id, "a second \"Filter lines\" re-activates the same text version");
+    w.render();
+    fireClick(d.querySelector("#tree .zip-source-file .tree-del"), w);
+    assert(!T.state.nodes[f.id] && !map.has("k2"), "closing the viewer entry closes its text version");
+    w.undo();
+    assert(T.state.nodes[f.id] && T.state.nodes[f.id].viewerSource, "undo restores it (viewerSource kept)");
+    w.render();
+    assert(d.querySelector('#tree .tree-row[data-node-id="' + f.id + '"]') && !w.isNestedUnderViewer(T.state.nodes[f.id]), "...as a top-level row, its viewer being closed");
+  });
+}
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -35268,4 +35352,9 @@ process.exitCode = failed ? 1 : 0;
               tail), text/wildcard filters, Line column in Table/Plot, row
               grid without Δt/Level, line-range filter names, no merge, and
               the text viewer's "Filter lines" button (pretty-printed JSON).
+   Group 274 — same day, follow-up: plain-text rows keep indentation
+              (.col-msg.plaintext) and JSON/XML syntax highlighting
+              (token ranges merged with match marks), and a "Filter lines"
+              text version nests under its viewer entry in the tree
+              (nav order, reuse, close cascade + undo).
    ============================================================ */

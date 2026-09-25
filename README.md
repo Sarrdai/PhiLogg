@@ -174,7 +174,9 @@ deployments possible:
   extraction Table and Plot all work, with the line number taking the place
   of the timestamp. With JSON Pretty Print on, the filters see the
   pretty-printed lines, so a minified one-line JSON document becomes
-  searchable field by field.
+  searchable field by field. The filterable version sits under its file in
+  the tree (file → text version → filters) and keeps the viewer's
+  indentation and JSON/XML syntax colors.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
