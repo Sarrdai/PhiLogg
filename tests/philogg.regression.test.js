@@ -12423,7 +12423,10 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
   assert(!d.querySelector("#settingsSectionShortcuts .settings-section-desc"), "the usage-instruction prose under the section title is gone");
   const rebindableRows = d.querySelectorAll("#shortcutBindingsList > div[data-action-id]");
-  assert(rebindableRows.length === 20, "the rebindable-actions rows render one per registered action");
+  // Compared against the live SHORTCUT_ACTIONS length (a top-level const,
+  // reachable via global eval) rather than a hardcoded number, so adding a
+  // rebindable action (e.g. exportView, GROUP 283) doesn't need this edited.
+  assert(rebindableRows.length === w.eval("SHORTCUT_ACTIONS.length") && rebindableRows.length >= 20, "the rebindable-actions rows render one per registered action");
   const fixedRows = d.querySelectorAll("#shortcutBindingsList > div.shortcut-row-fixed");
   assert(fixedRows.length > 0, "fixed (non-rebindable) shortcuts are listed too, so the list stays complete");
   fixedRows.forEach(row => {
@@ -28350,6 +28353,289 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 281 — Export / Share: context + "Copy for ticket" snippet
+   Origin: 2026-09-25 session (FEATURE_BACKLOG.md #31 + #32, ticket-
+   oriented export — see docs/export.md). collectExportContext gathers the
+   active view (active node's result + level quick-filter), the filter
+   chain as human-readable steps with per-step counts, sources, time span
+   and the root file's bookmarks/notes; buildTicketSnippet renders it in
+   three flavors (Markdown / Jira wiki / plain), bounded by excerpt-line
+   count, per-entry and total character caps, each cut announced.
+   ============================================================ */
+group(281);
+await withApp(async (w, d, T) => {
+  section("281a. collectExportContext: view entries, chain steps with counts, sources, time span, findings");
+  assert(w.collectExportContext() === null, "no active node -> nothing to export (null)");
+  const f = await w.addFile("app.log", makeLog(0, 50), () => {});
+  const other = await w.addFile("other.log", makeLog(200, 5), () => {});
+  const txt = w.createFilterNode(f.id, "text", "message 1", false, null, true, ["message"], false, false);
+  T.state.activeId = txt.id;
+  let ctx = w.collectExportContext();
+  const expected = f.entries.filter(e => e.message.includes("message 1"));
+  assert(ctx.entries.length === expected.length && expected.length === 11, "the view is the active filter's result (11 of 50), got " + ctx.entries.length);
+  assert(ctx.total === 50 && ctx.root === f && ctx.active === txt, "total = the root file's entry count, root/active resolved");
+  assert(ctx.steps.length === 2 && ctx.steps[0].text === "File: app.log" && ctx.steps[0].count === 50,
+    "step 1 is the file with its full count, got " + JSON.stringify(ctx.steps[0]));
+  assert(ctx.steps[1].text === "Text contains: “message 1” [case-sensitive, in Message]" && ctx.steps[1].count === 11,
+    "step 2 describes the text filter incl. case/column flags and its count, got " + JSON.stringify(ctx.steps[1]));
+  assert(JSON.stringify(ctx.sources) === JSON.stringify(["app.log"]), "sources = the root file's name");
+  assert(ctx.from === expected[0].ts && ctx.to === expected[expected.length - 1].ts, "time span = first/last matching entry");
+
+  // Level quick filter narrows the view and becomes its own last step.
+  T.state.levelFilter.add("ERROR");
+  ctx = w.collectExportContext();
+  const errs = expected.filter(e => e.level === "ERROR");
+  assert(ctx.entries.length === errs.length && ctx.steps.length === 3 && ctx.steps[2].text === "Level quick filter: ERROR" && ctx.steps[2].count === errs.length,
+    "the level quick filter applies to the view and shows as a final chain step, got " + JSON.stringify(ctx.steps[2]));
+  T.state.levelFilter.clear();
+
+  // NOT + label: the label leads, the actual condition stays visible.
+  const inv = w.createFilterNode(txt.id, "text", "message 10", true);
+  inv.label = "Not the tenth";
+  assert(w.describeExportStep(inv) === "NOT Not the tenth (Text contains: “message 10”)", "NOT prefix + label keep the condition, got " + w.describeExportStep(inv));
+  const lvl = w.createFilterNode(f.id, "level", ["ERROR", "WARN"]);
+  assert(w.describeExportStep(lvl) === "Level: ERROR, WARN", "a level node reads 'Level: ERROR, WARN', got " + w.describeExportStep(lvl));
+  const rx = w.createFilterNode(f.id, "text", "mess.ge 4\\d", false, null, false, null, true);
+  assert(w.describeExportStep(rx) === "Regex: /mess.ge 4\\d/", "a regex node reads 'Regex: /…/', got " + w.describeExportStep(rx));
+
+  // Findings: the ROOT file's bookmarked/annotated entries, in log order —
+  // not another file's, and regardless of the active filter.
+  w.toggleBookmark(f.entries[30].id);
+  w.setNoteAndRepaint(f.entries[12].id, "first failure\nsee ticket");
+  w.toggleBookmark(other.entries[1].id);
+  T.state.activeId = txt.id;
+  ctx = w.collectExportContext();
+  assert(ctx.findings.length === 2 && ctx.findings[0].entry === f.entries[12] && ctx.findings[1].entry === f.entries[30],
+    "findings = this root's bookmarks + notes in log order, other file's bookmark excluded");
+  assert(ctx.findings[0].note === "first failure\nsee ticket" && !ctx.findings[0].bookmarked && ctx.findings[1].bookmarked,
+    "a finding carries its note and bookmark flag");
+
+  section("281b. buildTicketSnippet: Markdown / Jira wiki / plain flavors");
+  const md = w.buildTicketSnippet(ctx, "markdown", 3);
+  assert(md.startsWith("### Log findings: “message 1”"), "Markdown: ### heading with the view name, got " + md.split("\n")[0]);
+  assert(md.includes("**Source:** `app.log` (50 entries)"), "Markdown: source line with file name and total");
+  assert(md.includes("**Matched:** 11 of 50 entries (22%)"), "Markdown: x of y matched with percentage");
+  assert(md.includes("1. File: app.log — 50") && md.includes("2. Text contains: “message 1” \\[case-sensitive, in Message\\] — 11"),
+    "Markdown: numbered filter chain with counts, brackets escaped");
+  assert(md.includes("**Bookmarks & notes (2):**") && md.includes("— **Note:** first failure / see ticket") && md.includes("- ★ `"),
+    "Markdown: findings list with ★ for bookmarks and the note collapsed onto one line");
+  assert(md.includes("**Excerpt (first 3 of 11 matching entries):**\n```\n" + expected.slice(0, 3).map(e => e.raw).join("\n") + "\n```"),
+    "Markdown: excerpt = the first N raw lines in a fenced block");
+  assert(md.includes("_… 8 more matching entries — see the attached export._"), "Markdown: the cut is announced");
+  assert(/_Exported with PhiLogg .+ on \d{4}-\d\d-\d\d \d\d:\d\d\._$/.test(md), "Markdown: footer with version and date");
+
+  const jira = w.buildTicketSnippet(ctx, "jira", 3);
+  assert(jira.startsWith("h3. Log findings:") && jira.includes("*Matched:* 11 of 50 entries") && jira.includes("{{app.log}}"),
+    "Jira wiki: h3., *bold*, {{mono}}");
+  assert(jira.includes("# File: app.log — 50") && jira.includes("* ★ {{"), "Jira wiki: # numbered list, * bullets");
+  assert(jira.includes("{noformat}\n" + expected[0].raw) && !jira.includes("```") && !jira.includes("**"), "Jira wiki: {noformat} block, no Markdown");
+  assert(jira.includes("\\[case-sensitive, in Message\\]"), "Jira wiki: brackets escaped (they'd become links)");
+
+  const plain = w.buildTicketSnippet(ctx, "plain", 3);
+  assert(plain.startsWith("Log findings: “message 1”\n====") && !plain.includes("**") && !plain.includes("{noformat}") && !plain.includes("`"),
+    "plain: underlined title, no markup at all");
+  assert(plain.includes("\n    " + expected[0].raw), "plain: excerpt lines indented by four spaces");
+  assert(plain.includes("[case-sensitive, in Message]"), "plain: no escaping");
+
+  const none = w.buildTicketSnippet(ctx, "markdown", 0);
+  assert(!none.includes("```") && none.includes("_Matching entries: see the attached export._"), "0 excerpt lines -> no code block, points to the attachment");
+  const all = w.buildTicketSnippet(ctx, "markdown", 500);
+  assert(all.includes("**Matching entries:**") && !all.includes("more matching entries"), "an excerpt covering every entry says so and announces no cut");
+
+  section("281c. Bounds and escaping");
+  // Code fence grows past the longest backtick run in the quoted lines; a
+  // markup-looking filter value is escaped outside the code block.
+  const g = await w.addFile("ticks.log", makeLog(0, 3, { msgPrefix: "has ```` ticks *bold* _it_" }), () => {});
+  const tf = w.createFilterNode(g.id, "text", "*bold*");
+  T.state.activeId = tf.id;
+  const tctx = w.collectExportContext();
+  const tmd = w.buildTicketSnippet(tctx, "markdown", 5);
+  assert(tmd.includes("\n`````\n") && !tmd.includes("\n```\n"), "Markdown fence is longer than the longest backtick run inside");
+  assert(tmd.includes("Text contains: “\\*bold\\*”"), "filter value markup is escaped in the chain");
+  const tj = w.buildTicketSnippet(tctx, "jira", 5);
+  assert(tj.includes("Text contains: “\\*bold\\*”"), "Jira: filter value markup escaped");
+
+  // Per-entry cap + total cap: huge lines never blow the ticket limit.
+  const huge = "x".repeat(5000);
+  const h = await w.addFile("huge.log", makeLog(0, 200, { suffix: () => huge }), () => {});
+  T.state.activeId = h.id;
+  const hctx = w.collectExportContext();
+  const hmd = w.buildTicketSnippet(hctx, "markdown", 500);
+  assert(hmd.length <= w.eval("TICKET_SNIPPET_MAX_CHARS"), "the snippet stays within TICKET_SNIPPET_MAX_CHARS, got " + hmd.length);
+  assert(hmd.includes(" …[truncated]") && !hmd.includes(huge), "an over-long entry is cut at TICKET_ENTRY_MAX_CHARS and marked");
+  const m = hmd.match(/Excerpt \(first (\d+) of 200 matching entries\)/);
+  assert(m && Number(m[1]) > 5 && Number(m[1]) < 200, "the total budget stops the excerpt early and says how many were shown, got " + (m && m[1]));
+  assert(hmd.includes("more matching entries — see the attached export."), "...and announces the rest");
+});
+
+/* ============================================================
+   GROUP 282 — Export / Share: attachment files (.log/.csv/.tsv/.html)
+   Origin: 2026-09-25 session (see GROUP 281). buildExportFileParts builds
+   the full current view as chunked string parts (EXPORT_CHUNK_ENTRIES per
+   part) for one Blob; saveExportFile goes through showSaveFilePicker where
+   present (cancel = nothing saved, no fallback) else downloadBlobFallback.
+   The HTML report is standalone and inert: everything escaped, no script.
+   ============================================================ */
+group(282);
+await withApp(async (w, d, T) => {
+  section("282a. .log / .csv / .tsv content");
+  const text = makeLog(0, 12) +
+    '2024-01-15 10:00:12,000\tERROR\t"main"\tC:\\src\\Foo.cs\tline 12\t[DoWork]\t"quote \\" comma, tab\there <script>alert(1)</script>\nsecond line"\n';
+  const f = await w.addFile("svc.log", text, () => {});
+  T.state.activeId = f.id;
+  const ctx = w.collectExportContext();
+  assert(ctx.entries.length === 13, "sanity: 13 entries incl. the multi-line one, got " + ctx.entries.length);
+  const log = w.buildExportFileParts("log", ctx).join("");
+  assert(log === ctx.entries.map(e => e.raw).join("\n") + "\n", ".log = the raw lines exactly, one entry after another (continuation lines kept)");
+
+  const csv = w.buildExportFileParts("csv", ctx).join("");
+  const csvRows = csv.split("\r\n");
+  assert(csvRows[0] === "Time,Level,Thread,Location,Method,Message", ".csv header = the visible log columns, got " + csvRows[0]);
+  assert(csvRows[1].startsWith('"2024-01-15 10:00:00,000",ERROR,main,'),
+    ".csv quotes a field containing the delimiter (the ',000' timestamp), got " + csvRows[1]);
+  const last = ctx.entries[12];
+  assert(csv.includes('"' + last.message.replace(/"/g, '""') + '"') && last.message.includes("\n"),
+    ".csv keeps a multi-line message intact inside RFC 4180 quotes");
+  assert(csv.endsWith("\r\n"), ".csv rows end with CRLF");
+
+  const tsv = w.buildExportFileParts("tsv", ctx).join("");
+  const tsvRows = tsv.split("\n").filter(Boolean);
+  assert(tsvRows.length === 14 && tsvRows[0] === "Time\tLevel\tThread\tLocation\tMethod\tMessage", ".tsv: header + one line per entry");
+  assert(tsvRows.every(r => r.split("\t").length === 6), ".tsv: every row has exactly 6 fields (tabs inside values replaced)");
+  assert(tsvRows[13].includes("\\nsecond line"), ".tsv: a line break inside a value becomes the two characters \\n");
+
+  // Chunking: parts, not one string per line and not one giant string.
+  const big = await w.addFile("big.log", makeLog(0, 12001), () => {});
+  T.state.activeId = big.id;
+  const bigParts = w.buildExportFileParts("log", w.collectExportContext());
+  assert(bigParts.length === 3, ".log of 12001 entries is built as ceil(12001/5000) = 3 string parts, got " + bigParts.length);
+  assert(w.buildExportFileParts("csv", w.collectExportContext()).length === 4, ".csv adds the header as its own first part");
+
+  section("282b. HTML report: standalone, complete, inert");
+  T.state.activeId = f.id;
+  w.toggleBookmark(ctx.entries[3].id);
+  w.setNoteAndRepaint(ctx.entries[3].id, "root cause <b>here</b>");
+  const rctx = w.collectExportContext();
+  const html = w.buildExportFileParts("html", rctx).join("");
+  assert(html.startsWith("<!DOCTYPE html>") && html.includes("<title>Log findings: svc.log</title>"), "report is a full HTML document titled after the view");
+  assert(!/<script/i.test(html) && html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"), "log text is escaped — no <script> element anywhere in the report");
+  assert(!/<link|src=|href=/i.test(html), "no external resource references");
+  assert(html.includes("<li>File: svc.log — 13</li>"), "report lists the filter chain with counts");
+  assert(html.includes("<h2>Bookmarks &amp; notes (1)</h2>") && html.includes("root cause &lt;b&gt;here&lt;/b&gt;"), "report lists findings with the (escaped) note");
+  assert((html.match(/<div class="e /g) || []).length === 13, "report contains every matching entry");
+  assert(html.includes('class="e l-error"') && html.includes('class="e l-info bm">★ '), "entries carry level classes; the bookmarked one is marked ★");
+  assert(html.includes('<span class="n">Note: root cause'), "the note also appears inline under its entry");
+
+  section("282c. saveExportFile / exportViewFile: picker, cancel, download fallback");
+  const downloads = [];
+  w.downloadBlobFallback = (blob, name) => downloads.push({ blob, name });
+  const txt = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = txt.id;
+  assert(await w.exportViewFile("log") === true, "exportViewFile resolves true once saved");
+  assert(downloads.length === 1 && downloads[0].name === "svc-message_1.log", "no picker -> download fallback, named <file stem>-<view>, got " + (downloads[0] && downloads[0].name));
+  const expLog = w.buildExportFileParts("log", w.collectExportContext()).join("");
+  assert(downloads[0].blob.size === Buffer.byteLength(expLog, "utf8"), "the downloaded blob is the whole .log content");
+  assert(d.querySelector("#copyToast").textContent === "Saved 3 entries", "a toast confirms the save, got " + d.querySelector("#copyToast").textContent);
+  T.state.activeId = f.id;
+  await w.exportViewFile("html");
+  assert(downloads[1].name === "svc.html", "active = the file itself -> just the file stem, got " + downloads[1].name);
+
+  const written = [];
+  let pickerOpts = null;
+  w.showSaveFilePicker = async opts => {
+    pickerOpts = opts;
+    return { createWritable: async () => ({ write: async b => written.push(b), close: async () => {} }) };
+  };
+  await w.exportViewFile("tsv");
+  assert(written.length === 1 && downloads.length === 2, "with a picker, the file is written through it (no download)");
+  assert(pickerOpts.suggestedName === "svc.tsv" && pickerOpts.types[0].accept["text/tab-separated-values"][0] === ".tsv", "picker gets the suggested name and type");
+  w.showSaveFilePicker = async () => { const e = new Error("cancel"); e.name = "AbortError"; throw e; };
+  assert(await w.exportViewFile("csv") === false && downloads.length === 2, "cancelling the picker saves nothing and does not fall back");
+  w.showSaveFilePicker = async () => { throw new Error("SecurityError"); };
+  await w.exportViewFile("csv");
+  assert(downloads.length === 3 && downloads[2].name === "svc.csv", "an unusable picker falls back to the download");
+});
+
+/* ============================================================
+   GROUP 283 — Export / Share: dialog, remembered format, shortcut
+   Origin: 2026-09-25 session (see GROUP 281). One entry point: #btnExport
+   in the top toolbar + rebindable Ctrl+Shift+E (exportView) opening
+   #exportDialog — flavor switch (remembered in philogg-export-format),
+   excerpt lines (philogg-export-excerpt-lines), live preview, Copy for
+   ticket (primary), four attachment buttons. Esc closes it.
+   ============================================================ */
+group(283);
+await withApp(async (w, d, T) => {
+  section("283a. Entry points and the empty case");
+  const dlg = d.querySelector("#exportDialog");
+  assert(!isVisible(dlg, w), "the dialog starts hidden");
+  fireClick(d.querySelector("#btnExport"), w);
+  assert(!isVisible(dlg, w) && d.querySelector("#copyToast").textContent === "Nothing to export", "nothing loaded -> toast, no dialog");
+
+  const f = await w.addFile("app.log", makeLog(0, 30), () => {});
+  const txt = w.createFilterNode(f.id, "text", "message 2");
+  T.state.activeId = txt.id;
+  w.render();
+  fireClick(d.querySelector("#btnExport"), w);
+  assert(isVisible(dlg, w), "#btnExport opens the dialog");
+  assert(d.querySelector("#exportViewLabel").textContent === "“message 2”", "title names the view");
+  assert(d.querySelector("#exportSummary").textContent === "11 of 30 entries · 2 steps · 0 bookmarks/notes",
+    "summary line, got " + d.querySelector("#exportSummary").textContent);
+  const ctx = w.collectExportContext();
+  assert(d.querySelector("#exportPreview").value === w.buildTicketSnippet(ctx, "markdown", 20), "preview = the Markdown snippet with the default 20 excerpt lines");
+  assert(d.querySelector('[data-export-format="markdown"]').classList.contains("active"), "Markdown is the default flavor");
+  fireKeydown(d, w, "Escape");
+  assert(!isVisible(dlg, w), "Esc closes the dialog");
+  fireKeydown(d, w, "E", { ctrlKey: true, shiftKey: true });
+  assert(isVisible(dlg, w), "Ctrl+Shift+E opens it");
+  assert(w.eval('SHORTCUT_ACTIONS.some(a => a.id === "exportView")'), "the shortcut is a rebindable Shortcut Manager action");
+
+  section("283b. Flavor + excerpt lines: live preview, remembered");
+  fireClick(d.querySelector('[data-export-format="jira"]'), w);
+  assert(d.querySelector("#exportPreview").value.startsWith("h3. ") && d.querySelector('[data-export-format="jira"]').classList.contains("active"),
+    "switching flavor re-renders the preview");
+  assert(w.localStorage.getItem("philogg-export-format") === "jira", "the flavor is remembered in localStorage");
+  const inp = d.querySelector("#exportExcerptInput");
+  inp.value = "2";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#exportPreview").value.includes("Excerpt (first 2 of 11"), "excerpt lines apply to the preview");
+  assert(w.localStorage.getItem("philogg-export-excerpt-lines") === "2", "excerpt lines are remembered");
+  inp.value = "99999";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(inp.value === "500", "excerpt lines are clamped to 500");
+  inp.value = "2";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  w.localStorage.setItem("philogg-export-format", "bogus");
+  w.loadExportPrefs();
+  assert(w.eval("exportFormat") === "markdown" && w.eval("exportExcerptLines") === 2, "an unknown stored flavor falls back to Markdown on load");
+  w.localStorage.setItem("philogg-export-format", "plain");
+  w.loadExportPrefs();
+  assert(w.eval("exportFormat") === "plain", "a stored flavor is picked up on load");
+  w.closeExportDialog();
+  w.openExportDialog();
+  assert(d.querySelector('[data-export-format="plain"]').classList.contains("active") && d.querySelector("#exportExcerptInput").value === "2",
+    "reopening shows the remembered flavor and excerpt lines");
+
+  section("283c. Copy for ticket + attachment buttons");
+  let copied = null;
+  w.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
+  fireClick(d.querySelector("#exportCopy"), w);
+  assert(copied === w.buildTicketSnippet(w.collectExportContext(), "plain", 2), "Copy for ticket writes the snippet (current flavor + excerpt) to the clipboard");
+  assert(/^Ticket snippet copied \(\d+ chars\)$/.test(d.querySelector("#copyToast").textContent), "a toast confirms the copy with its length");
+  assert(isVisible(dlg, w), "the dialog stays open after copying (attachments can follow)");
+  const downloads = [];
+  w.downloadBlobFallback = (blob, name) => downloads.push(name);
+  for (const kind of ["log", "csv", "tsv", "html"]) {
+    fireClick(d.querySelector('[data-export-file="' + kind + '"]'), w);
+    await waitFor(() => downloads.length && downloads[downloads.length - 1].endsWith("." + kind));
+  }
+  assert(JSON.stringify(downloads) === JSON.stringify(["app-message_2.log", "app-message_2.csv", "app-message_2.tsv", "app-message_2.html"]),
+    "each attachment button saves its file kind, got " + JSON.stringify(downloads));
+  fireClick(d.querySelector("#exportClose"), w);
+  assert(!isVisible(dlg, w), "Close closes the dialog");
+});
+
+/* ============================================================
    GROUP 260 — Custom Columns (per-format custom columns)
    Origin: this session. Every format's entry schema was fixed at six
    fields (ts/level/thread/location/method/message); this generalizes it:
@@ -33420,4 +33706,12 @@ process.exitCode = failed ? 1 : 0;
       makeLog's tab-separated lines — it had been crashing its shard, and
       silently shortening the reported total, since the Custom Columns
       session).
+   Group 281-283 — 2026-09-25 session: Export / Share (FEATURE_BACKLOG.md
+      #31 + #32 as one ticket-oriented concept, docs/export.md) — 281 the
+      export context + bounded "Copy for ticket" snippet in Markdown / Jira
+      wiki / plain, 282 the .log/.csv/.tsv/.html attachment builders +
+      save path (picker/cancel/fallback), 283 the #exportDialog, remembered
+      flavor/excerpt lines, Ctrl+Shift+E. Same session made GROUP 114's
+      rebindable-row count read SHORTCUT_ACTIONS.length instead of a
+      hardcoded 20.
    ============================================================ */
