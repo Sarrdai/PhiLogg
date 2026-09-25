@@ -314,7 +314,7 @@
     document.head.appendChild(style);
 
     var toolbar = document.getElementById("toolbar");
-    if (!toolbar) return; // not philogg.html (splash window) — nothing to dress
+    if (!toolbar) return; // not philogg.html — nothing to dress
     markDragRegion(toolbar);
     new MutationObserver(function () {
       markDragRegion(toolbar);
@@ -407,10 +407,12 @@
   ready(function () {
     setUpChrome();
     setUpSettingsMirror();
-    // FEATURE_BACKLOG.md #51: dismisses the splash. Deliberately two nested
-    // frames after DOMContentLoaded rather than on the event itself — the
-    // point is that something has actually been painted, which
-    // DOMContentLoaded alone does not guarantee.
+    // Tells the wrapper the page is up, so a cold-launch .zip/folder open
+    // waiting in pending_local_load can be handed over (windows.rs's
+    // open_local). Deliberately two nested frames after DOMContentLoaded
+    // rather than on the event itself — the point is that the page has
+    // actually been painted, which DOMContentLoaded alone does not
+    // guarantee.
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         invoke("app_ready").catch(function () {});

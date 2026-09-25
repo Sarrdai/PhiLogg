@@ -1,8 +1,8 @@
 // PhiLogg desktop wrapper (Tauri v2).
 //
 // The optional desktop shell around `philogg.html`: `.log` file
-// associations, CLI-argument opening, a frameless window, a tray and a
-// splash screen, built on the OS webview (WebView2 / WKWebView / WebKitGTK)
+// associations, CLI-argument opening, a frameless window and a tray,
+// built on the OS webview (WebView2 / WKWebView / WebKitGTK)
 // plus this Rust backend. The per-module comments call out each place the
 // platforms genuinely differ.
 //
@@ -113,7 +113,6 @@ fn main() {
             app.manage(state);
 
             tray::create(&handle)?;
-            windows::create_splash(&handle);
             match windows::classify_launch(std::env::args()) {
                 Some(windows::LaunchArg::LogFile(path)) => windows::create_main(&handle, Some(path)),
                 Some(windows::LaunchArg::LocalTarget(path)) if path.is_dir() => {

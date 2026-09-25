@@ -44,10 +44,6 @@ pub fn app_url(query: Option<&str>) -> String {
     }
 }
 
-pub fn splash_url() -> String {
-    format!("{}app/splash.html", base_url())
-}
-
 /// Normalizes a request URI down to the path segments after the scheme's
 /// host, accepting every shape the platforms above can produce.
 fn segments(uri: &str) -> Vec<String> {
@@ -94,21 +90,6 @@ fn read(path: &PathBuf, content_type: &str) -> Response<Vec<u8>> {
     }
 }
 
-/// `FEATURE_BACKLOG.md` #51's splash half, verbatim in spirit from
-/// `desktop/main.js`: a tiny self-contained page shown immediately so the
-/// seconds before `philogg.html` paints aren't a blank screen. Generated
-/// here rather than shipped as a file so there is nothing extra to package.
-const SPLASH_HTML: &str = r#"<!doctype html><html><head><meta charset="utf-8"><style>
-  html, body { margin: 0; height: 100%; background: #151924; color: #cfd8e3;
-    font: 13px -apple-system, "Segoe UI", sans-serif; display: flex;
-    flex-direction: column; align-items: center; justify-content: center;
-    gap: 14px; -webkit-user-select: none; user-select: none; }
-  .spinner { width: 28px; height: 28px; border-radius: 50%;
-    border: 3px solid rgba(79, 199, 195, 0.25); border-top-color: #4fc7c3;
-    animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-</style></head><body><div class="spinner"></div><div>Loading PhiLogg…</div></body></html>"#;
-
 /// Asynchronous on purpose: a log file served through `philogg://local/…`
 /// can be hundreds of megabytes and is re-read on every tail tick, and the
 /// synchronous variant of this hook would block the webview's own thread for
@@ -126,11 +107,6 @@ pub fn handle<R: tauri::Runtime>(
         let response = match parts.first().map(String::as_str) {
             Some("app") => match parts.get(1).map(String::as_str) {
                 None | Some("philogg.html") => read(&state.html_path, "text/html; charset=utf-8"),
-                Some("splash.html") => Response::builder()
-                    .status(200)
-                    .header("content-type", "text/html; charset=utf-8")
-                    .body(SPLASH_HTML.as_bytes().to_vec())
-                    .expect("splash response"),
                 Some(_) => text(404, "Not found"),
             },
             Some("local") => match parts.get(1).and_then(|id| state.local_file(id)) {

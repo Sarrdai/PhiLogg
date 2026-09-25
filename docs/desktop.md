@@ -3,8 +3,8 @@
 The optional desktop wrapper around the **unmodified** `philogg.html`, in
 `desktop/`: the OS's own webview (WebView2 / WKWebView / WebKitGTK) plus a
 Rust backend (Tauri v2). It adds `.log` file associations, CLI-argument/double-click
-file opening, a frameless window with integrated window controls, a tray, a splash
-screen, `settings.json` mirroring, "Open File Location"/"Copy Path", a system font
+file opening, a frameless window with integrated window controls, a tray,
+`settings.json` mirroring, "Open File Location"/"Copy Path", a system font
 list for the UI font picker, a folder watch that does not go through the
 browser's File System Access API, and (Windows only) jumping from a log
 entry's Location straight into a running Visual Studio instance.
@@ -28,8 +28,8 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 | file | role |
 |---|---|
 | `main.rs` | builder wiring, `setup`, the macOS-only `RunEvent` arms |
-| `protocol.rs` | the `philogg://` scheme (app page, splash page, local files) |
-| `windows.rs` | main/splash window creation, close-to-tray, PiP, file routing |
+| `protocol.rs` | the `philogg://` scheme (app page, local files) |
+| `windows.rs` | main window creation, close-to-tray, PiP, file routing |
 | `tray.rs` | tray icon + menu |
 | `settings.rs` | `settings.json` read/write and its directory |
 | `commands.rs` | everything the injected script may call |
@@ -47,9 +47,8 @@ page genuinely can't `fetch()` anything — see PROJECT.md → "Deep-link loadin
 Serving the page from its own scheme keeps that guard intact instead of needing a
 special case carved out of it.
 
-The scheme serves three things — `app/philogg.html` (the packaged copy, or the working
-copy in a `tauri dev` run), `app/splash.html` (generated in Rust, see below), and
-`local/<id>/<basename>` (a local file, `id` mapped to a path chosen only from
+The scheme serves two things — `app/philogg.html` (the packaged copy, or the working
+copy in a `tauri dev` run), and `local/<id>/<basename>` (a local file, `id` mapped to a path chosen only from
 OS-supplied input: argv, the OS file dialog, a native drop, or macOS's `Opened`
 event — the same trust level as a native file-open dialog; the URL's `<basename>`
 segment is only read by `philogg.html`'s own last-path-segment naming logic, the
@@ -82,8 +81,8 @@ before `philogg.html`'s top-level script runs, and what needs the DOM (behind
 `DOMContentLoaded`) — and survives a reload (which the tray's "Clear Cache" performs)
 with no re-injection hook on the Rust side at all. It is built by `inject.rs`, which
 substitutes four values into it: the settings snapshot, a per-process nonce, the
-platform's real scheme base, and whether this is macOS. The splash window deliberately
-gets no script (it ends by reporting "painted", which would dismiss the splash itself).
+platform's real scheme base, and whether this is macOS. Its `DOMContentLoaded` half ends by
+reporting "painted" (the `app_ready` command, see "Main window" below).
 
 **Bridge.** `window.philogg` is the narrow surface `philogg.html` feature-detects on
 (`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`,
@@ -344,8 +343,8 @@ returning which of two routes a launch needs:
   (mirroring `open_file`), or — on a cold launch, where there is no window
   and so no loaded page to eval into yet — creates the window plain
   (`create_main(app, None)`) and stashes the payload in a new
-  `AppState.pending_local_load`. `commands::app_ready` (already the exact
-  "page reported its first paint" signal used to dismiss the splash) calls
+  `AppState.pending_local_load`. `commands::app_ready` (the
+  "page reported its first paint" signal, see "Main window" below) calls
   the new `windows::flush_pending_local`, which runs the stashed payload
   once the page actually exists to receive it, then clears it.
 
@@ -804,16 +803,16 @@ the tray's "Open Config Folder" and "Clear Cache" already go through `config_dir
 webview APIs, so they work unmodified in either mode. See "Release" below for how the
 portable `.zip` is assembled, and `desktop/README.md` for the user-facing description.
 
-## Tray, splash, close-to-tray, single instance
+## Main window, tray, close-to-tray, single instance
 
-- **Splash** (`FEATURE_BACKLOG.md` #51, the "startup takes several seconds with no
-  feedback" half): a small always-on-top undecorated window on `philogg://app/splash.html`,
-  generated as a string in `protocol.rs` so nothing extra needs packaging. It opens the
-  instant the main window is created; the main window is built `visible(false)` and shown
-  only once the page reports a first paint — two nested `requestAnimationFrame`s after
-  `DOMContentLoaded`, deliberately not the event itself, which would just swap one blank
-  window for another — via the `app_ready` command, which closes the splash at the same
-  moment.
+- **Main window**: there is no splash screen — startup is fast enough that the main
+  window is simply created visible right away. Its native background colour is set to the
+  dark theme's `#151924` (`#toolbar`/`--bg-panel`), so the moment before the page's own
+  background paints shows no white flash. The injected script still reports the page's
+  first paint — two nested `requestAnimationFrame`s after `DOMContentLoaded`, deliberately
+  not the event itself — via the `app_ready` command; its only job now is
+  `windows::flush_pending_local` (a cold-launch `.zip`/folder open that had to wait for the
+  page, see "Windows Explorer context-menu integration" above).
 - **Tray**: always created, not lazily on the first hide — with no application menu
   anywhere it is the only reachable place for "Open Config Folder" (opens the
   `settings.json` directory) and "Clear Cache" (wipes the IndexedDB session cache and

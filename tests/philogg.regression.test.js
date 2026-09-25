@@ -30800,8 +30800,9 @@ process.exitCode = failed ? 1 : 0;
    Group 107 — this session (2026-08-25), FEATURE_BACKLOG.md #51 ("Improve
               desktop startup time perception"): the localStorage half of
               the new "Close to system tray" setting (default on). The
-              splash-screen and tray/close-interception halves
-              live entirely in the wrapper, outside jsdom's reach —
+              tray/close-interception half (and the splash screen, since
+              removed 2026-09-25) lives entirely in the wrapper, outside
+              jsdom's reach —
               not covered here, same standing limitation as the rest of
               desktop/ (see its README's own "Status" section).
    Group 108 — this session (2026-08-25), person-reported bugfix: arrow-key

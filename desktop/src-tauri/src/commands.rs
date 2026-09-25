@@ -397,11 +397,11 @@ pub fn window_close(window: Window) {
 }
 
 /// Called by the injected script once `philogg.html` has actually painted,
-/// which is the point the splash can be dismissed. Tauri has no
+/// which is the point a cold-launch `.zip`/folder open that had to wait for
+/// the page can be handed over (see `windows::open_local`). Tauri has no
 /// "first paint" event of its own, so the page reports it (see `inject.js`).
 #[tauri::command]
 pub fn app_ready(app: AppHandle) {
-    windows::dismiss_splash(&app);
     windows::flush_pending_local(&app);
 }
 

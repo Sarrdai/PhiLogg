@@ -8,7 +8,6 @@ use crate::state::AppState;
 use crate::{commands, inject, protocol, settings};
 
 pub const MAIN: &str = "main";
-pub const SPLASH: &str = "splash";
 
 /// The small fixed size the window takes on while in picture-in-picture. In
 /// logical pixels, same as the popout's content window was; tune later.
@@ -53,35 +52,6 @@ pub fn classify_launch<I: IntoIterator<Item = String>>(argv: I) -> Option<Launch
     None
 }
 
-/// `FEATURE_BACKLOG.md` #51: shown immediately so the seconds before
-/// `philogg.html` paints aren't a blank screen. Deliberately gets no
-/// initialization script — that script ends by reporting "painted", which
-/// would have the splash dismiss itself.
-pub fn create_splash(app: &AppHandle) {
-    let Ok(url) = tauri::Url::parse(&protocol::splash_url()) else {
-        return;
-    };
-    let _ = WebviewWindowBuilder::new(app, SPLASH, WebviewUrl::CustomProtocol(url))
-        .title("PhiLogg")
-        .inner_size(320.0, 180.0)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .center()
-        .build();
-}
-
-pub fn dismiss_splash(app: &AppHandle) {
-    if let Some(splash) = app.get_webview_window(SPLASH) {
-        let _ = splash.close();
-    }
-    if let Some(main) = app.get_webview_window(MAIN) {
-        let _ = main.show();
-        let _ = main.set_focus();
-    }
-}
-
 pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
     let state = app.state::<AppState>();
     let query = file
@@ -100,9 +70,6 @@ pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
     let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::CustomProtocol(url))
         .title("PhiLogg")
         .inner_size(1400.0, 900.0)
-        // Shown by dismiss_splash() once the page reports a first paint, so
-        // the splash is never replaced by a blank window.
-        .visible(false)
         // Matches #toolbar/--bg-panel's dark-theme default, so there is no
         // white flash before the page's own background paints.
         .background_color(tauri::window::Color(0x15, 0x19, 0x24, 0xff))
@@ -437,8 +404,8 @@ fn eval_load_local(window: &WebviewWindow, payload: &serde_json::Value) {
 /// into, so the window is created plain (`create_main(app, None)`, same as
 /// a launch with nothing to open) and the payload waits in
 /// `AppState.pending_local_load` until `flush_pending_local` runs it —
-/// called from `commands::app_ready`, the same "first paint" signal that
-/// already dismisses the splash.
+/// called from `commands::app_ready`, the signal the injected script sends
+/// once the page has painted (i.e. its script is up and can take the eval).
 pub fn open_local(app: &AppHandle, files: Vec<PathBuf>, folders: Vec<PathBuf>) {
     let state = app.state::<AppState>();
     let local_files: Vec<commands::LocalFile> =
