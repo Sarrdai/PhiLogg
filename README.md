@@ -37,13 +37,10 @@ deployments possible:
 
 | | |
 |---|---|
-| ![Log view](homepage/screenshots/01-log-view.png) Log view with filter tree | ![Extraction table](homepage/screenshots/02-extraction-table.png) Extraction table |
-| ![Plot](homepage/screenshots/03-plot.png) Plotting extracted values | ![Link view](homepage/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view |
-| ![Context/Filtered split](homepage/screenshots/05-highlight-split.png) Context/Filtered split — matches plus expandable gaps | ![Bookmarks](homepage/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel |
-| ![Dark theme](homepage/screenshots/07-dark-theme.png) Dark theme (default) | |
-
-A guided feature tour with more screenshots lives in [`homepage/index.html`](homepage/index.html) —
-open it in a browser to view it.
+| ![Log view](docs/screenshots/01-log-view.png) Log view with filter tree | ![Extraction table](docs/screenshots/02-extraction-table.png) Extraction table |
+| ![Plot](docs/screenshots/03-plot.png) Plotting extracted values | ![Link view](docs/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view |
+| ![Context/Filtered split](docs/screenshots/05-highlight-split.png) Context/Filtered split — matches plus expandable gaps | ![Bookmarks](docs/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel |
+| ![Dark theme](docs/screenshots/07-dark-theme.png) Dark theme (default) | |
 
 ## Key features
 
@@ -285,9 +282,8 @@ open it in a browser to view it.
   shortcut is bound only in the desktop app — a plain browser keeps its own
   `F11`.
 
-See [`homepage/index.html`](homepage/index.html) for the full, illustrated
-feature list, and `PROJECT.md` for how each of these actually works
-internally.
+See `PROJECT.md` (and the `docs/*.md` files it links) for how each of these
+actually works internally.
 
 ## Getting started
 
@@ -349,9 +345,6 @@ desktop/
   README.md                             desktop wrapper (Tauri): prerequisites, build/run steps, known limitations
   src-tauri/                            Rust backend + tauri.conf.json (file associations + native file/folder opening, loads philogg.html unmodified)
   src-tauri/logparse/                   native log parser (parallel, same rules as philogg.html's own), used by the desktop build
-homepage/
-  index.html                            static feature-tour / marketing page
-  screenshots/                          screenshots used by the homepage and this README
 examples/
   general.log                           a sample log file in the default format
   bracket-format.log                    a sample log file in a different format, for trying the Format Manager
@@ -359,9 +352,11 @@ scripts/
   install_pkgs.sh                       helper for installing test dependencies
   strip-comments.js                     release-only: strips every comment out of a copy of philogg.html (both build workflows run it)
 .github/workflows/build-tester-files.yml  manual workflow: builds the selected variants (HTML/Windows/Windows portable/macOS/Linux) as downloadable run artifacts, no release created
-.github/workflows/build-release.yml       manual workflow: same variant selection, published as a single GitHub Release
+.github/workflows/release-please.yml      two-stage release: proposes the version bump on demand, then tags + builds HTML/Windows/Windows portable when that release PR merges
+release-please-config.json              release-please configuration (+ .release-please-manifest.json, the current version)
 PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
-docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
+docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing, performance)
+  screenshots/                          screenshots used by this README
 CHANGELOG.md                            full chronological, dated changelog
 FEATURE_BACKLOG.md                      unelaborated feature ideas
 CLAUDE.md                               instructions for AI coding sessions on this repo
@@ -412,12 +407,13 @@ history via [release-please](https://github.com/googleapis/release-please)
 — a new feature bumps the minor number, a bugfix bumps the patch number),
 reviews the proposed release PR, and merges it when ready. That merge
 automatically tags the release, publishes a GitHub Release, and builds
-every variant (HTML, Windows, Windows portable, macOS, Linux) onto it.
+the HTML, Windows installer and Windows portable variants onto it (macOS
+and Linux builds are available only through the tester workflow below).
 
 Separately, **"Build Tester Files"**
 (`.github/workflows/build-tester-files.yml`) is a manual, unversioned path
 for handing testers an ad-hoc build (with its own checkboxes for which
-variants to build) without cutting a real release — it uploads downloadable
+variants to build, macOS and Linux included) without cutting a real release — it uploads downloadable
 workflow run artifacts, no GitHub Release involved.
 
 ## License
