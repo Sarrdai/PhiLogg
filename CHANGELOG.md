@@ -2,6 +2,13 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: incremental find inside the current view — a find bar (`Ctrl+G`/`F3`) with "Add as filter" (2026-09-25, FEATURE_BACKLOG.md #3)**. `Ctrl+F` always created a filter node, so "just look for this string once" cost a tree node you then deleted. The new `#findBar` searches first and promotes to a filter only on demand. See `docs/ui-and-views.md` → "Find bar".
+  - **Shortcuts**: `Ctrl+F` stays "New filter" (least disruptive: core idiom, empty-state hint). The find bar takes the browser's own find-next keys the app didn't use: `Ctrl+G` opens/focuses it (steps when already focused), `F3`/`Shift+F3` next/previous from anywhere, `Enter`/`Shift+Enter` in its input, `Ctrl+Enter` = Add as filter, `Esc` closes. The three chords are rebindable in Settings → Shortcuts.
+  - **Search**: only the current view's rows (Context or Filtered; "Not in this view" on Table/Plot/Link), over the entry array rather than the DOM, with the text filter's own query language (literal, wildcard tokens, regex; Aa and .* toggles). Debounced typing jumps to the first hit; `n / m` counter; hits marked in every column (`mark.find-match-mark`) in both views and the Entry Detail.
+  - **Scale**: time-sliced scan (12ms slices of 2048-entry batches), hit indices + binary-search stepping, rescan only when the view's list changes (array identity).
+  - **Add as filter**: the same `createFilterNode` call the Ctrl+F popup makes, with the find bar's case/regex — no new node field.
+  - **Tests**: new **Groups 279** (279a/b) and **280**.
+
 - **fix: no console window from the release desktop app; "Select" actions use the selection checkmark (this session, 2026-09-25, person-requested: *"change the icon of the "Selection" button to match the selection symbol in the filter tree"* and *"make sure, that when using "release please" the build is not a dev version that spawns a console"*)**.
   - Root cause of the console: the release exe already is a GUI-subsystem build (`windows_subsystem = "windows"` for every non-debug build), but `fonts.rs` spawned `powershell` for the system font list without `CREATE_NO_WINDOW`, so Windows opened a console window for that child on every start. It now passes the flag, like `vs_integration.rs`. `release-please.yml`'s `build_desktop` also checks the built exe's PE subsystem field and fails the release if it is not 2 (Windows GUI).
   - The toolbar "Select" buttons and the context menu's "Add to selection" item draw the selection filter's tree checkmark (`ICON_CHECK`'s path) instead of the filter funnel.
