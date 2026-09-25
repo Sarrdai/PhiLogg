@@ -94,6 +94,85 @@ fn read(path: &PathBuf, content_type: &str) -> Response<Vec<u8>> {
     }
 }
 
+/// Parses a single-range `Range: bytes=…` header against a file of `len`
+/// bytes into an inclusive `(start, end)` pair. `None` means "serve the whole
+/// file" (no header, or a form this doesn't handle, e.g. several ranges);
+/// `Some(Err(()))` means the range lies outside the file (416).
+fn parse_range(header: Option<&str>, len: u64) -> Option<Result<(u64, u64), ()>> {
+    let spec = header?.trim().strip_prefix("bytes=")?;
+    if spec.contains(',') {
+        return None;
+    }
+    let (a, b) = spec.split_once('-')?;
+    let (a, b) = (a.trim(), b.trim());
+    let range = if a.is_empty() {
+        // Suffix form `bytes=-N`: the last N bytes.
+        let n: u64 = b.parse().ok()?;
+        if n == 0 || len == 0 {
+            return Some(Err(()));
+        }
+        (len.saturating_sub(n), len - 1)
+    } else {
+        let start: u64 = a.parse().ok()?;
+        let end = if b.is_empty() { u64::MAX } else { b.parse().ok()? };
+        if start >= len || end < start {
+            return Some(Err(()));
+        }
+        (start, end.min(len - 1))
+    };
+    Some(Ok(range))
+}
+
+/// Like `read`, but honours a `Range` header, reading only the requested
+/// bytes. The page's tail poll, the folder minimap's head/tail probe and a
+/// windowed load each need a few KB of a file that may be hundreds of MB —
+/// without this every one of them read the whole file off disk and copied
+/// it into the webview (a tail poll every 1.5 s per open file).
+fn read_local(path: &PathBuf, range: Option<&str>) -> Response<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    if range.is_none() {
+        return read(path, "text/plain; charset=utf-8");
+    }
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(err) => return text(404, &err.to_string()),
+    };
+    let len = match file.metadata() {
+        Ok(m) => m.len(),
+        Err(err) => return text(404, &err.to_string()),
+    };
+    let builder = Response::builder()
+        .header("content-type", "text/plain; charset=utf-8")
+        .header("cache-control", "no-store")
+        .header("accept-ranges", "bytes")
+        .header("access-control-allow-origin", "*")
+        .header("access-control-expose-headers", "content-range");
+    match parse_range(range, len) {
+        None => read(path, "text/plain; charset=utf-8"),
+        Some(Err(())) => builder
+            .status(416)
+            .header("content-range", format!("bytes */{len}"))
+            .body(Vec::new())
+            .expect("range response"),
+        Some(Ok((start, end))) => {
+            let mut bytes = vec![0u8; (end - start + 1) as usize];
+            let read_ok = file
+                .seek(SeekFrom::Start(start))
+                .and_then(|_| file.read_exact(&mut bytes));
+            match read_ok {
+                Ok(()) => builder
+                    .status(206)
+                    .header("content-range", format!("bytes {start}-{end}/{len}"))
+                    .body(bytes)
+                    .expect("range response"),
+                // Shrank between metadata() and the read (truncated or
+                // rotated mid-request): the page just polls again.
+                Err(err) => text(404, &err.to_string()),
+            }
+        }
+    }
+}
+
 /// `FEATURE_BACKLOG.md` #51's splash half, verbatim in spirit from
 /// `desktop/main.js`: a tiny self-contained page shown immediately so the
 /// seconds before `philogg.html` paints aren't a blank screen. Generated
@@ -120,6 +199,11 @@ pub fn handle<R: tauri::Runtime>(
 ) {
     let app = ctx.app_handle().clone();
     let uri = request.uri().to_string();
+    let range = request
+        .headers()
+        .get("range")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     std::thread::spawn(move || {
         let state = app.state::<AppState>();
         let parts = segments(&uri);
@@ -134,11 +218,32 @@ pub fn handle<R: tauri::Runtime>(
                 Some(_) => text(404, "Not found"),
             },
             Some("local") => match parts.get(1).and_then(|id| state.local_file(id)) {
-                Some(path) => read(&path, "text/plain; charset=utf-8"),
+                Some(path) => read_local(&path, range.as_deref()),
                 None => text(404, "Not found"),
             },
             _ => text(404, "Not found"),
         };
         responder.respond(response);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_range;
+
+    #[test]
+    fn ranges() {
+        assert_eq!(parse_range(None, 100), None);
+        assert_eq!(parse_range(Some("bytes=0-0"), 100), Some(Ok((0, 0))));
+        assert_eq!(parse_range(Some("bytes=10-19"), 100), Some(Ok((10, 19))));
+        assert_eq!(parse_range(Some("bytes=90-"), 100), Some(Ok((90, 99))));
+        assert_eq!(parse_range(Some("bytes=90-500"), 100), Some(Ok((90, 99))));
+        assert_eq!(parse_range(Some("bytes=-10"), 100), Some(Ok((90, 99))));
+        assert_eq!(parse_range(Some("bytes=-500"), 100), Some(Ok((0, 99))));
+        assert_eq!(parse_range(Some("bytes=100-"), 100), Some(Err(())));
+        assert_eq!(parse_range(Some("bytes=0-0"), 0), Some(Err(())));
+        assert_eq!(parse_range(Some("bytes=5-2"), 100), Some(Err(())));
+        assert_eq!(parse_range(Some("bytes=0-1,5-6"), 100), None);
+        assert_eq!(parse_range(Some("items=0-1"), 100), None);
+    }
 }
