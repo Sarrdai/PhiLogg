@@ -31099,6 +31099,11 @@ group(274);
     const cIdx = rows.findIndex(r => r.dataset.nodeId === flt.id);
     assert(vIdx >= 0 && vIdx < fIdx && fIdx < cIdx, "viewer row, then its text version, then the filter (" + [vIdx, fIdx, cIdx] + ")");
     assert(tree.querySelectorAll('.tree-row[data-node-id="' + f.id + '"]').length === 1, "text version rendered once (not also top-level)");
+    // Person-reported: the nested subtree had no connector lines (renderNode
+    // only decorates depth-0 subtrees).
+    const fltRow = tree.querySelector('.tree-row[data-node-id="' + flt.id + '"]');
+    assert(fltRow.querySelector(".tree-guide.h") && tree.querySelector('.tree-row[data-node-id="' + f.id + '"] .tree-guide.v'),
+      "text version -> filter drawn with connector lines (stem + elbow)");
     const nav = w.flattenTreeIds();
     const nv = nav.indexOf(w.viewerNavId("loose", "loose", "k2"));
     assert(nv >= 0 && nav[nv + 1] === f.id && nav[nv + 2] === flt.id, "arrow-key order follows the nesting");
