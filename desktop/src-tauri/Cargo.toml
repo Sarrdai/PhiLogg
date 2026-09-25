@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "PhiLogg desktop wrapper (Tauri)"
 authors = ["Philipp Klein"]
 edition = "2021"
+license = "PolyForm-Noncommercial-1.0.0"
+publish = false
 # Tauri 2 needs a reasonably recent toolchain; pinned so a CI runner with an
 # older stable fails loudly here instead of deep inside a dependency.
 rust-version = "1.77"
