@@ -2063,7 +2063,7 @@
      group shows for ANY text file (so #itvWrapBtn, the Text-View word-wrap
      toggle, is available on .txt/.xml/.json), but Pretty Print stays
      JSON-only — see updateInlineViewerToolbar. */
-  #itvWrapBtn.hidden, #itvPrettyPrintBtn.hidden{display:none;}
+  #itvWrapBtn.hidden, #itvPrettyPrintBtn.hidden, #itvFilterLinesBtn.hidden{display:none;}
   /* Same non-icon button look #plotToolbar's own Reset button uses (see
      that selector's own comment) — Reset isn't part of the zoom pill (see
      .stepper's own comment above), so it stays its own plain flat button.
@@ -4323,6 +4323,7 @@
           <div class="toolbar-group" data-toolbar-group="settings">
             <button type="button" id="itvWrapBtn" class="toolbar-icon-btn icon-toggle" title="Word wrap"></button>
             <button type="button" id="itvPrettyPrintBtn" class="toolbar-icon-btn icon-toggle" title="Pretty-print this JSON">{ }</button>
+            <button type="button" id="itvFilterLinesBtn" class="toolbar-icon-btn" title="Open the lines shown here as a filterable text file (one entry per line — with Pretty Print on, the pretty-printed lines)"></button>
           </div>
         </div>
         <div id="inlineViewerBody">
@@ -7796,7 +7797,8 @@ const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
 // behavior (see levelColorVar). Empty entries and the reserved OTHER are
 // dropped, same as before.
 function formatLevelDefs(formatId) {
-  const fmt = state.logFormats.find(f => f.id === formatId);
+  const fmt = findLogFormat(formatId);
+  if (fmt && fmt.mode === "plaintext") return []; // no levels at all, not the LEVELS fallback
   const raw = fmt && Array.isArray(fmt.levels) ? fmt.levels : null;
   if (!raw) return LEVELS.map(n => ({ value: n, name: n, color: null }));
   const out = [];
@@ -7898,7 +7900,7 @@ function activeLevelOrder() {
     const n = state.nodes[id];
     if (n) formatLevels(n.formatId || DEFAULT_FORMAT_ID).forEach(push);
   });
-  if (!out.length) LEVELS.forEach(push);
+  if (!out.length && !allRootsPlainText()) LEVELS.forEach(push); // plain text has no levels: an empty level bar
   return out;
 }
 
@@ -7935,7 +7937,7 @@ const DEFAULT_MIDDLE_COLUMNS = [
 // reserved field name other than thread/location/method (ts/level/message),
 // or a duplicate key.
 function formatColumnDefs(formatId) {
-  const fmt = state.logFormats.find(f => f.id === formatId);
+  const fmt = findLogFormat(formatId);
   if (!fmt || !Array.isArray(fmt.columnDefs)) return DEFAULT_MIDDLE_COLUMNS.slice();
   const out = [];
   const seen = new Set();
@@ -7951,7 +7953,7 @@ function formatColumnDefs(formatId) {
 // Whether the Message column is shown for one format — absent/undefined
 // means visible, matching every format's behavior before this feature.
 function formatMessageVisible(formatId) {
-  const fmt = state.logFormats.find(f => f.id === formatId);
+  const fmt = findLogFormat(formatId);
   return !fmt || fmt.messageVisible !== false;
 }
 
@@ -7968,7 +7970,9 @@ function activeColumnDefs() {
     const n = state.nodes[id];
     if (n) formatColumnDefs(n.formatId || DEFAULT_FORMAT_ID).forEach(push);
   });
-  if (!out.length) DEFAULT_MIDDLE_COLUMNS.forEach(push);
+  // Only the empty app falls back — loaded files that define no middle
+  // columns (plain text) really have none.
+  if (!state.rootIds.length) DEFAULT_MIDDLE_COLUMNS.forEach(push);
   return out;
 }
 
@@ -8003,7 +8007,7 @@ function knownTextFilterColumnKeys() {
 // (union, activeColumnDefs), then Message if any loaded format shows it —
 // replaces the old fixed TEXT_FILTER_COLUMNS table.
 function activeTextFilterColumns() {
-  const out = [{ key: "time", label: "Time" }, { key: "level", label: "Level" }];
+  const out = allRootsPlainText() ? [{ key: "time", label: "Line" }] : [{ key: "time", label: "Time" }, { key: "level", label: "Level" }];
   activeColumnDefs().forEach(d => out.push({ key: d.key, label: d.label }));
   if (activeMessageVisible()) out.push({ key: "message", label: "Message" });
   return out;
@@ -8224,6 +8228,12 @@ const PARSE_CHUNK_LINES = 4000;
 
 async function parseLogTextAsync(text, node, onProgress) {
   const formatId = node.formatId || DEFAULT_FORMAT_ID;
+  const plainText = isPlainTextFormat(formatId);
+  // Plain text keeps blank lines as entries, so a file's final line
+  // terminator must not turn into one more, empty "line" (nor an empty file
+  // into one blank entry).
+  if (plainText) text = text.replace(/\r?\n$/, "");
+  if (plainText && text === "") { updateFileAggregate(node); if (onProgress) onProgress(1, 1); return; }
   if (typeof Worker !== "undefined") {
     try {
       await parseLogTextInWorker(text, formatId, node, onProgress);
@@ -8243,7 +8253,7 @@ async function parseLogTextAsync(text, node, onProgress) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (compiled.isHeaderLine(line)) {
-      if (current) { entryIndex[current.id] = current; node.entries.push(current); }
+      if (current) { if (plainText) numberPlainTextEntry(current, node.entries.length + 1); entryIndex[current.id] = current; node.entries.push(current); }
       current = compiled.parseHeader(line);
       // Which format produced this entry — lets level rendering resolve the
       // owning format's level list per-entry, without needing the tree node.
@@ -8264,7 +8274,7 @@ async function parseLogTextAsync(text, node, onProgress) {
       if (state.nodes[node.id] !== node) return;
     }
   }
-  if (current) { entryIndex[current.id] = current; node.entries.push(current); }
+  if (current) { if (plainText) numberPlainTextEntry(current, node.entries.length + 1); entryIndex[current.id] = current; node.entries.push(current); }
   updateFileAggregate(node);
   if (onProgress) onProgress(lines.length, lines.length);
 }
@@ -8551,6 +8561,60 @@ const DEFAULT_LOG_FORMAT = {
   createdAt: 0,
 };
 
+// "Plain text": every physical line is its own entry (blank lines
+// included), its whole text the message — what makes an arbitrary text
+// file (or a Pretty-Printed JSON document, see openInlineViewerAsTextLog)
+// filterable/extractable/plottable with the ordinary filter tree. Such a
+// file has no time and no level: its entries' `ts` is the 1-based LINE
+// NUMBER instead (numberPlainTextEntry), which keeps every order-based
+// mechanism (sorting by ts, merge order, link nearest-neighbor, context
+// windows, the minimap's buckets, the extraction table's elapsed column)
+// working unchanged, just in lines rather than ms — the display side
+// shows it as a line number (entryTimeText, formatTsFor). Not stored in
+// state.logFormats (so not editable in the Format Manager): findLogFormat
+// resolves it as a code-level builtin.
+const PLAINTEXT_FORMAT_ID = "fmt-plaintext";
+const PLAINTEXT_LOG_FORMAT = {
+  id: PLAINTEXT_FORMAT_ID,
+  name: "Plain text",
+  mode: "plaintext",
+  levels: [],
+  columnDefs: [],
+  builtin: true,
+  edited: false,
+  createdAt: 0,
+};
+function findLogFormat(formatId) {
+  return state.logFormats.find(f => f.id === formatId) || (formatId === PLAINTEXT_FORMAT_ID ? PLAINTEXT_LOG_FORMAT : undefined);
+}
+function isPlainTextFormat(formatId) { return formatId === PLAINTEXT_FORMAT_ID; }
+// The one place a plain-text entry gets its line number — at the moment it
+// is appended to its file (main-thread parse, worker adoption, tailing),
+// since only the file knows how many lines came before it.
+function numberPlainTextEntry(e, lineNo) {
+  e.ts = lineNo;
+  e.tsRaw = String(lineNo);
+}
+// An entry's Time cell text: a line number for a plain-text entry.
+function entryTimeText(e) {
+  return isPlainTextFormat(e.formatId) ? String(e.ts) : formatTime(e.ts);
+}
+// A bare ts from a view over `nodeId`'s root file (minimap labels, time
+// filter names): a line number when that root is plain text.
+function nodeIsPlainText(nodeId) {
+  const rootId = nodeId ? getRootFileId(nodeId) : null;
+  const root = rootId ? state.nodes[rootId] : null;
+  return !!root && isPlainTextFormat(root.formatId);
+}
+function formatTsFor(nodeId, ts) {
+  return nodeIsPlainText(nodeId) ? "line " + Math.round(ts) : formatTime(ts); // a minimap drag lands between lines
+}
+// True when every loaded root file is plain text — the row grid then drops
+// the Δt/Level columns and titles the Time column "Line".
+function allRootsPlainText() {
+  return state.rootIds.length > 0 && state.rootIds.every(id => state.nodes[id] && isPlainTextFormat(state.nodes[id].formatId));
+}
+
 // A quoted, possibly multi-line message: a regex ending in
 // `"(?<message>...)(?:")?$` (what the format dialog derives when the
 // message is wrapped in quotes — the closing quote is optional there
@@ -8587,6 +8651,18 @@ function appendContinuationLine(entry, line) {
 // compile (should only happen if validation was bypassed) degrades to
 // "every line is its own untimestamped entry" rather than throwing.
 function compileOneFormat(fmt) {
+  // Checked before the builtin fast path below: Plain text is builtin too.
+  if (fmt.mode === "plaintext") {
+    // Every line (blank ones too) is a header line, so nothing is ever a
+    // continuation; ts/tsRaw are filled in with the line number when the
+    // entry is appended (numberPlainTextEntry), level stays empty (OTHER).
+    return {
+      isHeaderLine: () => true,
+      // message = the line verbatim: applyFormatMatch's stripQuotes would
+      // eat indentation (pretty-printed JSON) and a line's outer quotes.
+      parseHeader: line => { const e = applyFormatMatch({}, line, null); e.message = line; e.level = ""; return e; },
+    };
+  }
   if (fmt.builtin && !fmt.edited) {
     return { isHeaderLine: line => HEADER_RE.test(line), parseHeader: line => parseHeaderLine(line) };
   }
@@ -8641,8 +8717,8 @@ function compileFormatRegex(fmt) {
 // defined here. Mirrors compileOneFormat branch for branch; null for a
 // meta-format, which is split in JS before any per-line parsing.
 function nativeFormatSpec(fmt) {
+  if (fmt.mode === "meta" || fmt.mode === "plaintext") return null;
   if (fmt.builtin && !fmt.edited) return { builtin: true, regex: null, dateRegex: null, dateOrder: [], wrapQuote: "" };
-  if (fmt.mode === "meta") return null;
   const { dateFrag, regex } = compileFormatRegex(fmt);
   return {
     builtin: false,
@@ -8659,7 +8735,7 @@ function invalidateFormatCompileCache() { formatCompileCache.clear(); }
 function getCompiledFormat(formatId) {
   let c = formatCompileCache.get(formatId);
   if (c) return c;
-  const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  const fmt = findLogFormat(formatId) || DEFAULT_LOG_FORMAT;
   c = compileOneFormat(fmt);
   formatCompileCache.set(formatId, c);
   return c;
@@ -9120,7 +9196,8 @@ function parallelParseWorkerCount(textLength) {
 // entryIndex rolled back, so parseLogTextAsync can fall back to the plain
 // loop cleanly.
 function parseLogTextInWorker(text, formatId, node, onProgress) {
-  const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  const fmt = findLogFormat(formatId) || DEFAULT_LOG_FORMAT;
+  const plainText = isPlainTextFormat(formatId);
   const pieces = splitTextAtHeaderLines(text, getCompiledFormat(formatId).isHeaderLine, parallelParseWorkerCount(text.length));
   const start = node.entries.length;
   return new Promise((resolve, reject) => {
@@ -9142,6 +9219,7 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
       for (const e of entries) {
         e.id = uid("e");
         e.formatId = formatId;
+        if (plainText) numberPlainTextEntry(e, node.entries.length + 1);
         entryIndex[e.id] = e;
         node.entries.push(e);
       }
@@ -9366,9 +9444,9 @@ function decodeNativeBatch(buf, strings) {
 // rejection leaves node.entries/entryIndex exactly as they were.
 async function parseLocalFileNatively(url, node, onFraction) {
   const formatId = node.formatId || DEFAULT_FORMAT_ID;
-  const fmt = state.logFormats.find(f => f.id === formatId) || DEFAULT_LOG_FORMAT;
+  const fmt = findLogFormat(formatId) || DEFAULT_LOG_FORMAT;
   const spec = nativeFormatSpec(fmt);
-  if (!spec) throw new Error("meta-format");
+  if (!spec) throw new Error("meta-format or plain text");
   // No compiled date format: Date.parse, which only this engine can answer.
   const freeDate = !spec.builtin && !spec.dateRegex;
   const localize = makeNaiveTsLocalizer();
@@ -9771,7 +9849,7 @@ async function pinFileFormat(node, formatId) {
   // not gating it, so an ordinary/default-format load never waits on it.
   // This is the one place a still-missing lookup would actually mis-parse
   // a file (falling back to the default), so wait for it here specifically.
-  if (pinnedId !== DEFAULT_FORMAT_ID && !state.logFormats.some(f => f.id === pinnedId)) await formatConfigReady;
+  if (pinnedId !== DEFAULT_FORMAT_ID && !findLogFormat(pinnedId)) await formatConfigReady;
   node.formatId = pinnedId;
 }
 
@@ -10116,11 +10194,14 @@ function nodeIsExtractionView(node) {
 // single-bound predecessors of this type (still readable, no longer created
 // by any UI path — see FILTER_TYPES/getEntries) and keep their own simpler
 // ≥/≤ names in createFilterNode below, unaffected by this helper.
-function timeRangeFilterName(value) {
+// `nodeId` (optional) is where the range applies: under a plain-text file
+// its bounds are line numbers (formatTsFor).
+function timeRangeFilterName(value, nodeId) {
   const from = value && value.from, to = value && value.to;
-  if (from != null && to != null) return `${formatTime(from)} → ${formatTime(to)}`;
-  if (from != null) return `≥ ${formatTime(from)}`;
-  if (to != null) return `≤ ${formatTime(to)}`;
+  const f = ts => formatTsFor(nodeId, ts);
+  if (from != null && to != null) return `${f(from)} → ${f(to)}`;
+  if (from != null) return `≥ ${f(from)}`;
+  if (to != null) return `≤ ${f(to)}`;
   return "any time";
 }
 
@@ -10146,9 +10227,9 @@ function createFilterNode(parentId, filterType, value, inverted = false, ignored
   if (!parent) return null;
   let name;
   if (filterType === "text") name = (isRegex ? "/" + value + "/" : `“${value}”`);
-  else if (filterType === "after") name = `≥ ${formatTime(value)}`;
-  else if (filterType === "before") name = `≤ ${formatTime(value)}`;
-  else if (filterType === "timerange") name = timeRangeFilterName(value);
+  else if (filterType === "after") name = `≥ ${formatTsFor(parentId, value)}`;
+  else if (filterType === "before") name = `≤ ${formatTsFor(parentId, value)}`;
+  else if (filterType === "timerange") name = timeRangeFilterName(value, parentId);
   else if (filterType === "level") name = value.join(", ");
   else if (filterType === "idset") name = idSetFilterName(value);
   else name = String(value);
@@ -10243,7 +10324,7 @@ function updateTimeRangeFilterNode(nodeId, from, to) {
   if (!node) return;
   node.filterType = "timerange";
   node.value = { from, to };
-  node.name = timeRangeFilterName(node.value);
+  node.name = timeRangeFilterName(node.value, node.parentId);
   invalidateAllCaches();
 }
 
@@ -13555,7 +13636,7 @@ function navWaypointLabel(wp) {
   const name = node ? nodeDisplayName(node) : "a closed view";
   const anchor = navVisibleAnchor(wp);
   const entry = anchor ? entryIndex[anchor.id] : null;
-  return entry ? name + " · " + formatTime(entry.ts) : name;
+  return entry ? name + " · " + entryTimeText(entry) : name;
 }
 
 function updateNavHistoryButtons() {
@@ -13789,7 +13870,7 @@ function renderInner() {
   // column set so a render() that didn't change it (the common case — most
   // renders are a filter-tree change, not a file add/remove) costs one
   // cheap array-join comparison, not a DOM rebuild.
-  const columnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible();
+  const columnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible() + "|" + allRootsPlainText();
   if (columnStateKey !== lastColumnStateKey) {
     lastColumnStateKey = columnStateKey;
     refreshColumnState();
@@ -15932,7 +16013,7 @@ function buildPairRow(entry) {
   row.style.height = LINK_PAIR_ROW_HEIGHT + "px";
   row.innerHTML =
     '<span class="pair-row-bar"></span>' +
-    '<span class="pair-row-time">' + escapeHtml(formatTime(entry.ts)) + '</span>' +
+    '<span class="pair-row-time">' + escapeHtml(entryTimeText(entry)) + '</span>' +
     '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
     '<span class="pair-row-msg">' + escapeHtml(entry.message) + '</span>';
   row.title = entry.message;
@@ -16676,7 +16757,10 @@ function renderPlotControls() {
   // extraction (first time its plot tab is opened); after that, unchecking every
   // box is a valid state (the chart just shows a "pick a column" placeholder)
   // instead of the box being silently re-checked out from under the user.
-  if (plotConfig.xCol == null || !plottable.some(c => c.index === plotConfig.xCol)) plotConfig.xCol = plottable[0].index;
+  // A plain-text file's plot defaults to its Line column instead.
+  if (plotConfig.xCol == null || !plottable.some(c => c.index === plotConfig.xCol)) {
+    plotConfig.xCol = nodeIsPlainText(extractNodeId) && plottable.some(c => c.index === ELAPSED_COL) ? ELAPSED_COL : plottable[0].index;
+  }
   // Z axis (3D scatter only): re-pick if the pattern changed underneath it,
   // same fallback shape as X — default to the second plottable column so it
   // doesn't collide with X's own default pick.
@@ -16901,7 +16985,7 @@ function updatePlotFilterInfo() {
   const parts = [];
   const timeFilters = activeTimeFilters();
   if (timeFilters.length) {
-    parts.push(timeFilters.map(f => timeRangeFilterName(f.range)).join(" · "));
+    parts.push(timeFilters.map(f => timeRangeFilterName(f.range, state.activeId)).join(" · "));
   }
   // visiblePlotPoints() is only meaningful for the 2D SVG plot (it reads the
   // last 2D render's series snapshot) — 3D and empty/no-plot states have
@@ -17788,9 +17872,13 @@ function renderExtractTable(node) {
   // findExtractColumn) since positions shift as columns are ignored/
   // un-ignored but that identity must not.
   const ignoredSet = new Set(patternNode.ignoredColumns || []);
+  // Plain text: the ELAPSED_COL slot carries the absolute line number
+  // instead (its ts IS the line number, and "elapsed lines since the first
+  // match" would be the least useful of the two).
+  const plainText = nodeIsPlainText(node.id);
   extractColumns = [
     { name: "Index", type: "int", colIndex: INDEX_COL },
-    { name: "t (ms)", type: "int", colIndex: ELAPSED_COL },
+    { name: plainText ? "Line" : "t (ms)", type: "int", colIndex: ELAPSED_COL },
     ...spec.columns.map((c, i) => ({ ...c, colIndex: i })).filter(c => !ignoredSet.has(c.colIndex)),
   ].map(c => ({ ...c, name: getColumnDisplayName(node, c.colIndex, c.name) }));
   const entries = applyLevelFilter(getEntries(node.id));
@@ -17805,7 +17893,7 @@ function renderExtractTable(node) {
     values[INDEX_COL] = String(r);
     // Cumulative, not a row-to-row delta (see ELAPSED_COL comment above) —
     // 0 on the first row falls out naturally from e.ts - entries[0].ts.
-    values[ELAPSED_COL] = String(e.ts - entries[0].ts);
+    values[ELAPSED_COL] = String(plainText ? e.ts : e.ts - entries[0].ts);
     return { entry: e, values };
   });
   // Sorting is applied to extractRowsData itself (not just the table display)
@@ -18799,13 +18887,13 @@ function appendLogRow(frag, i, rc) {
   // out rather than shown misleadingly (same reasoning as the context
   // bracket being suppressed under column sort, see contextRangeIndex above).
   const prevE = i > 0 ? currentViewEntries[i - 1] : null;
-  const deltaMs = (!state.sortColumn && prevE) ? (e.ts - prevE.ts) : null;
+  const deltaMs = (!state.sortColumn && prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
 
   // markFieldHtml short-circuits to a plain escapeHtml before any range
   // search when nothing can contribute a mark (feature/row-toggle off and
   // no coloured filters), so this costs what it did before any of this
   // existed in the common case.
-  const timeText = formatTime(e.ts);
+  const timeText = entryTimeText(e);
   const timeHtml = markFieldHtml(rc.mm, timeText, "time");
   const levelHtml = markFieldHtml(rc.mm, e.level, "level");
   // Custom Columns: the middle (Thread/Location/Method/custom) spans are
@@ -20002,7 +20090,7 @@ function renderHighlightVisibleRows() {
       }
     }
     const prevE = i > 0 ? currentHighlightViewEntries[i - 1] : null;
-    const deltaMs = prevE ? (e.ts - prevE.ts) : null;
+    const deltaMs = prevE && !isPlainTextFormat(e.formatId) ? (e.ts - prevE.ts) : null;
 
     row.className = cls;
     row.style.height = baseRowHeightForEntry(e, highlightWrapCols) + "px";
@@ -20011,7 +20099,7 @@ function renderHighlightVisibleRows() {
     // search when nothing can contribute a mark (no coloured rules, or the
     // rule-marking toggle off), so this stays a plain escapeHtml call in the
     // common case — same shape as renderVisibleRows.
-    const timeText = formatTime(e.ts);
+    const timeText = entryTimeText(e);
     const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message");
     const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
     // Custom Columns: same generalized middle-column loop as
@@ -21040,9 +21128,11 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // last entry give the file's real time span directly, no scan needed.
   minimapTMin = rootEntries[0].ts;
   minimapTMax = rootEntries[rootEntries.length - 1].ts;
-  const minimapMeta = ["Start <b>" + escapeHtml(formatTime(minimapTMin)) + "</b>",
-    "End <b>" + escapeHtml(formatTime(minimapTMax)) + "</b>",
-    "Duration <b>" + escapeHtml(formatMs(minimapTMax - minimapTMin)) + "</b>"];
+  const minimapMeta = nodeIsPlainText(rootId)
+    ? ["Lines <b>" + (minimapTMax - minimapTMin + 1).toLocaleString("de-DE") + "</b>"]
+    : ["Start <b>" + escapeHtml(formatTime(minimapTMin)) + "</b>",
+      "End <b>" + escapeHtml(formatTime(minimapTMax)) + "</b>",
+      "Duration <b>" + escapeHtml(formatMs(minimapTMax - minimapTMin)) + "</b>"];
   // Per-level entry counts, one number-only segment per active level in the
   // same order/color as #levelBar's own buttons (activeLevelOrder()) —
   // person-requested, this session. Counts the whole ROOT FILE (rootId), not
@@ -21542,7 +21632,7 @@ timelineMinimapSvg.addEventListener("mousemove", ev => {
   const b = minimapBucketOf(bucketTs);
   const rank = minimapOvRank[b];
   const rankLabel = Number.isFinite(rank) && minimapOvName[b] ? " · " + minimapOvName[b] : "";
-  timelineMinimapTooltip.textContent = formatTime(bucketTs) + " · " + minimapOvCounts[b] + "/" + minimapBgCounts[b] + rankLabel;
+  timelineMinimapTooltip.textContent = formatTsFor(state.activeId, bucketTs) + " · " + minimapOvCounts[b] + "/" + minimapBgCounts[b] + rankLabel;
   timelineMinimapTooltip.style.left = Math.min(rect.width - 4, Math.max(4, localX)) + "px";
   timelineMinimapTooltip.classList.remove("hidden");
 });
@@ -21598,7 +21688,9 @@ function showMinimapDragOverlay(xa, xb) {
   timelineMinimapDragRect.classList.remove("hidden");
 
   const fromTs = minimapXToTs(lo), toTs = minimapXToTs(hi);
-  timelineMinimapDragLabel.textContent = formatTime(fromTs) + " → " + formatTime(toTs) + " · " + formatMs(Math.max(0, toTs - fromTs));
+  timelineMinimapDragLabel.textContent = nodeIsPlainText(state.activeId)
+    ? formatTsFor(state.activeId, fromTs) + " → " + formatTsFor(state.activeId, toTs)
+    : formatTime(fromTs) + " → " + formatTime(toTs) + " · " + formatMs(Math.max(0, toTs - fromTs));
   timelineMinimapDragLabel.style.left = Math.min(minimapWidth - 4, Math.max(4, (lo + hi) / 2)).toFixed(1) + "px";
   timelineMinimapDragLabel.classList.remove("hidden");
   timelineMinimapTooltip.classList.add("hidden"); // hover tooltip would otherwise fight the label for the same space
@@ -22344,13 +22436,13 @@ function updateDetailPanel() {
     const firstLine = entry.message.split("\n", 1)[0];
     detailMeta.innerHTML =
       '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
-      '<span class="detail-time">' + markField(formatTime(entry.ts), "time") + '</span>' +
+      '<span class="detail-time">' + markField(entryTimeText(entry), "time") + '</span>' +
       '<span class="detail-sep">·</span>' +
       '<span class="detail-collapsed-msg">' + markField(firstLine, "message") + '</span>';
   } else {
     detailMeta.innerHTML =
       '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
-      '<span class="detail-time">' + markField(formatTime(entry.ts), "time") + '</span>' +
+      '<span class="detail-time">' + markField(entryTimeText(entry), "time") + '</span>' +
       '<span class="detail-sep">·</span>' +
       '<span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' +
       '<span class="detail-sep">·</span>' +
@@ -22905,7 +22997,9 @@ btnFilePathLinks.forEach(b => b.addEventListener("click", () => {
    buildCacheMeta/restoreSessionFromCache): a column's width/visibility
    preference is remembered by KEY across whatever format/file happens to
    define that key, not reset every time the active file changes. */
-const FIXED_COLUMN_WIDTHS = { time: 178, delta: 72, level: 66, thread: 92, location: 158, method: 168 };
+// `line`: the Time track's own width key while only plain-text files are
+// loaded (line numbers need far less room — see applyRowGrid).
+const FIXED_COLUMN_WIDTHS = { time: 178, line: 64, delta: 72, level: 66, thread: 92, location: 158, method: 168 };
 const DEFAULT_CUSTOM_COLUMN_WIDTH = 120; // initial width for a column this dictionary has no entry for yet
 const COLUMN_MIN_WIDTH = 40;
 const COLUMN_GRID_GAP = 12; // must match .row-grid's column-gap
@@ -22955,8 +23049,11 @@ function applyRowGrid() {
   // state.columnVisible — only the dynamic middle columns (Thread/Location/
   // Method/custom); Δt stays visible (just narrower), same as before this
   // feature's mobile rule.
+  // Only plain-text files loaded: the Time track shows line numbers under
+  // its own width key ("line") and Δt/Level, meaningless there, collapse.
+  const plainText = allRootsPlainText();
   const pushTrack = (key, hideable, mobileForce) => {
-    const hidden = (mobile && mobileForce) || (hideable && !columnVisibleFor(key));
+    const hidden = (mobile && mobileForce) || (hideable && !columnVisibleFor(key)) || (plainText && (key === "delta" || key === "level"));
     const w = hidden ? 0 : columnWidthFor(key);
     parts.push(w + "px");
     x += COLUMN_GRID_GAP + w;
@@ -22966,7 +23063,7 @@ function applyRowGrid() {
       handle.style.display = hidden ? "none" : "";
     }
   };
-  pushTrack("time", false, false);
+  pushTrack(plainText ? "line" : "time", false, false);
   pushTrack("delta", true, false);
   pushTrack("level", false, false);
   activeColumnDefs().forEach(col => pushTrack(col.key, true, true));
@@ -23012,9 +23109,10 @@ function refreshColumnState() {
 // Method always has.
 function buildRowGridHeaderHtml(sortable) {
   let out = "<span></span>";
+  const timeLabel = allRootsPlainText() ? "Line" : "Time";
   out += sortable
-    ? '<span class="th th-sortable" data-sort="time">Time<span class="th-sort-arrow"></span></span>'
-    : '<span class="th">Time</span>';
+    ? '<span class="th th-sortable" data-sort="time">' + timeLabel + '<span class="th-sort-arrow"></span></span>'
+    : '<span class="th">' + timeLabel + '</span>';
   out += '<span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>';
   out += sortable
     ? '<span class="th th-sortable" data-sort="level">Level<span class="th-sort-arrow"></span></span>'
@@ -23033,7 +23131,7 @@ function buildRowGridHeaderHtml(sortable) {
 // positionColumnResizeHandles/applyRowGrid for their placement. No handle
 // for Message: it has no width of its own (1fr grid remainder).
 function buildResizeHandlesHtml() {
-  let out = '<span class="col-resize-handle" data-col="time" title="Drag to resize"></span>' +
+  let out = '<span class="col-resize-handle" data-col="' + (allRootsPlainText() ? "line" : "time") + '" title="Drag to resize"></span>' +
     '<span class="col-resize-handle" data-col="delta" title="Drag to resize"></span>' +
     '<span class="col-resize-handle" data-col="level" title="Drag to resize"></span>';
   activeColumnDefs().forEach(col => {
@@ -23338,10 +23436,10 @@ function autofitColumnWidth(key) {
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     let text;
-    if (key === "time") text = formatTime(e.ts);
+    if (key === "time" || key === "line") text = entryTimeText(e);
     else if (key === "delta") {
       const prev = i > 0 ? entries[i - 1] : null;
-      const dm = prev ? (e.ts - prev.ts) : null;
+      const dm = prev && !isPlainTextFormat(e.formatId) ? (e.ts - prev.ts) : null;
       text = dm == null ? "—" : formatDelta(dm);
     }
     // "location" measures the SHORT form (locationShort) — what's actually
@@ -24072,6 +24170,7 @@ function updateInlineViewerToolbar(v) {
   itvWrapBtn.classList.toggle("hidden", !isText);
   itvWrapBtn.classList.toggle("active", state.wrapTextView);
   itvPrettyPrintBtn.classList.toggle("hidden", !(isText && v.ext === "json"));
+  itvFilterLinesBtn.classList.toggle("hidden", !isText);
   itvControlsGroup.classList.toggle("hidden", !showControls);
   itvSettingsGroup.classList.toggle("hidden", !showSettings);
   itvToolbarSep.classList.toggle("hidden", !(showControls && showSettings));
@@ -24153,6 +24252,29 @@ function closeInlineViewer() {
   state.inlineViewer = null;
   render();
 }
+
+// The text a text viewer actually shows, line for line: the pretty-printed
+// JSON while Pretty Print is on, the file's own text otherwise.
+function inlineViewerDisplayedText(v) {
+  const pretty = v.ext === "json" && v.prettyPrint ? prettyPrintedJsonOrNull(v.text) : null;
+  return pretty !== null ? pretty : v.text;
+}
+
+// "Filter lines": loads what the viewer shows as a new root file under the
+// Plain text format (one entry per line — see PLAINTEXT_LOG_FORMAT), so the
+// whole filter tree (text/regex/wildcard filters, Table, Plot) works on it.
+// It deliberately takes the DISPLAYED text: a minified JSON document is one
+// line and only becomes line-filterable pretty-printed.
+async function openInlineViewerAsTextLog(v) {
+  if (!v || v.kind !== "text") return null;
+  const pretty = v.ext === "json" && v.prettyPrint && prettyPrintedJsonOrNull(v.text) !== null;
+  const text = inlineViewerDisplayedText(v);
+  state.inlineViewer = null; // the new file's log view replaces the viewer
+  return addFile(v.name + (pretty ? " (pretty)" : ""), text, undefined, PLAINTEXT_FORMAT_ID);
+}
+const itvFilterLinesBtn = el("#itvFilterLinesBtn");
+itvFilterLinesBtn.innerHTML = ICON_FILTER;
+itvFilterLinesBtn.addEventListener("click", () => { openInlineViewerAsTextLog(state.inlineViewer); });
 
 // No dedicated syntax highlighter exists anywhere else in philogg.html to
 // reuse for JSON/XML (checked, per the plan — message highlighting
@@ -24347,8 +24469,7 @@ function renderInlineTextViewer(v) {
   if (inlineTextViewerEl._shownViewer === v && inlineTextViewerEl._shownPretty === wantPretty) return;
   inlineTextViewerEl._shownViewer = v;
   inlineTextViewerEl._shownPretty = wantPretty;
-  const pretty = wantPretty ? prettyPrintedJsonOrNull(v.text) : null;
-  const text = pretty !== null ? pretty : v.text;
+  const text = inlineViewerDisplayedText(v);
   const tokenize = v.ext === "json" ? highlightJsonText : v.ext === "xml" ? highlightXmlText : escapeHtml;
   const lines = text.split("\n");
   const ranges = v.ext === "json" ? findJsonFoldRanges(text)
@@ -25569,6 +25690,7 @@ function appendTailText(node, chunkText) {
     if (compiled.isHeaderLine(line)) {
       const e = compiled.parseHeader(line);
       e.formatId = formatId; // same stamping as parseLogTextAsync
+      if (isPlainTextFormat(formatId)) numberPlainTextEntry(e, node.entries.length + 1);
       entryIndex[e.id] = e;
       node.entries.push(e);
       last = e;
@@ -27570,7 +27692,7 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures) {
     bar.className = "col-bar";
     const time = document.createElement("span");
     time.className = "filter-sample-time";
-    time.textContent = formatTime(e.ts).slice(11); // HH:mm:ss.SSS
+    time.textContent = isPlainTextFormat(e.formatId) ? String(e.ts) : formatTime(e.ts).slice(11); // HH:mm:ss.SSS
     const msg = document.createElement("span");
     msg.className = "filter-sample-msg";
     msg.title = e.message;
@@ -27844,7 +27966,7 @@ function openContextMenu(ev, entry) {
   ctxEntry = entry;
   ctxFilterColumn = resolveContextFilterColumn(ev);
   ctxFilterForColumnLabel.textContent = "Filter for this " + ctxFilterColumn.label;
-  ctxMeta.textContent = formatTime(entry.ts);
+  ctxMeta.textContent = isPlainTextFormat(entry.formatId) ? "Line " + entry.ts : formatTime(entry.ts);
   // Bookmarks only make sense for real log entries (present in entryIndex) —
   // a link-view pair entry has a synthetic id that's never indexed there, so
   // toggling one would silently create a bookmark that can never be jumped
@@ -28192,7 +28314,7 @@ function updateTableFilterInfo() {
   const parts = [];
   const timeFilters = activeTimeFilters();
   if (timeFilters.length) {
-    parts.push(timeFilters.map(f => timeRangeFilterName(f.range)).join(" · "));
+    parts.push(timeFilters.map(f => timeRangeFilterName(f.range, state.activeId)).join(" · "));
   }
   parts.push(extractRowsData.length + (extractRowsData.length === 1 ? " row" : " rows"));
   const selected = markedRowEntries().length;
@@ -29110,7 +29232,12 @@ function describeBulkActions(nodes) {
   const allFilters = nodes.every(n => n.type === "filter");
 
   if (allFiles) {
-    return { actions: [{ action: "merge", label: "Merge " + nodes.length + " files", icon: ICON_MERGE }] };
+    // A plain-text file's ts are line numbers, not times — interleaving it
+    // with anything by ts would be meaningless.
+    if (nodes.some(n => isPlainTextFormat(n.formatId))) {
+      return { actions: [], note: "Plain-text files have line numbers instead of timestamps and can't be merged." };
+    }
+    return { actions: [{ action: "merge", label:"Merge " + nodes.length + " files", icon: ICON_MERGE }] };
   }
   if (allFilters && nodes.length >= 2) {
     const roots = nodes.map(n => getRootFileId(n.id));
@@ -33326,7 +33453,7 @@ async function saveFormatEdit() {
   renderFormatRuleFormatOptions();
   renderLevelBar(); // its buttons/order come from the formats currently in play
   refreshColumnState(); // its columns/header likewise come from the formats currently in play
-  lastColumnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible(); // keep render()'s own memo check in sync, avoid a redundant second refresh on its next call
+  lastColumnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible() + "|" + allRootsPlainText(); // keep render()'s own memo check in sync, avoid a redundant second refresh on its next call
 }
 
 // Scrolls the example-lines box so example line `lineIdx` sits in its

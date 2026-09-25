@@ -168,6 +168,13 @@ deployments possible:
   get pan/zoom/reset (drag-to-select a region to zoom, same as Plot View).
   Every opened one is closable the same way a log file is (✕ or middle-click
   its row).
+- **Filter text files line by line** — the text viewer's funnel button
+  ("Filter lines") opens what it shows as a filterable file, one entry per
+  line: text, regex and wildcard filters (`"temp": [*:float>20]`), the
+  extraction Table and Plot all work, with the line number taking the place
+  of the timestamp. With JSON Pretty Print on, the filters see the
+  pretty-printed lines, so a minified one-line JSON document becomes
+  searchable field by field.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
