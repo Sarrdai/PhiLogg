@@ -15197,6 +15197,7 @@ await withApp(async (w, d, T) => {
   // DOM lookup aimed at the START of the list has to re-window there first.
   const showTop = () => { w.setHighlightScroll(0); w.renderHighlightVisibleRows(); };
   const resetContext = () => {
+    T.state.selectedId = null; // a selection would open its window on the switch (GROUP 276)
     T.state.activeId = otherFilter.id; showContext();
     T.state.activeId = hitFilter.id; showContext();
     showTop();
@@ -15359,6 +15360,9 @@ await withApp(async (w, d, T) => {
   assert(T.currentHighlightViewEntries.length === 2 && T.contextMatchIds.size === 2,
     "the level quick-filter narrows the Filtered view's display only — those rows never leave the result set, so the Context view is untouched");
   fireClick(errBtn, w); // reset
+  // No selection: switching onto the Context tab would otherwise open the
+  // window around it (GROUP 276), and (k) needs its stretch still hidden.
+  T.state.selectedId = null;
   w.applyFhView("highlight");
 
   // --- (k) jumping to a non-match reveals it ------------------------------
@@ -15435,6 +15439,7 @@ await withApp(async (w, d, T) => {
   assert(T.contextGaps.length === 2 && T.contextGaps.every(g => revealed(g.start) === g.start + "-" + g.end),
     "Stacked seeds every gap fully revealed the first time a node becomes active there, regardless of contextInitialExpansion");
   w.setGapOpen(T.contextGaps[0].start, false); // manually re-hide one
+  T.state.selectedId = null; // landing on the Context tab opens the selection's window (GROUP 276)
   w.applyFhView("highlight"); // flip to tabs...
   w.applyFhView("stacked");   // ...and back
   assert(revealed(T.contextGaps[0].start) === "",
@@ -15643,6 +15648,7 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#ctxPrevMatch").disabled && d.querySelector("#ctxNextMatch").disabled,
     "with a single match there is nowhere to walk, so both arrows are disabled");
   T.state.activeId = hitFilter.id;
+  T.state.selectedId = null; // the switch would open the selection's window (GROUP 276)
   showContext();
 
   // --- (d) the fold half -------------------------------------------------
@@ -31230,6 +31236,82 @@ group(275);
   }, { indexedDB: deskFactory, philogg: bridge() });
 }
 
+/* ============================================================
+   GROUP 276 — Context view: tab switch opens the selection's surroundings,
+   and the "Expand around matches" toolbar button
+   Origin: 2026-09-25, person-reported + person-requested. (1) Switching
+   Filtered -> Context with a selected match left its surroundings shut
+   under the "aroundJump" setting — they only opened on the next click or
+   nav-arrow jump, since showFhTab never ran applyContextJumpExpansion.
+   (2) A new toolbar button next to Expand all / Collapse all that reveals
+   exactly one expansion step around EVERY match.
+     a) the switch opens the window around the selection, both when the
+        Context view is stale (built by the switch itself) and when it is
+        current (a selection change only), via the real #fhTabs button.
+     b) under "collapsed" a switch opens nothing.
+     c) the button: one step above and below every match (entries mode),
+        an absolute state (replaces Expand all's), hand-owned afterwards
+        (the next jump takes none of it back); time mode uses the timespan.
+   ============================================================ */
+group(276);
+await withApp(async (w, d, T) => {
+  section("276a. Filtered -> Context opens the window around the selected match");
+  // "hit" every 10th line -> matches 0,10,...,50, gaps 1,11,...,51 (9 lines each).
+  const f = await w.addFile("ctxtab.log", makeLog(0, 60, { suffix: i => (i % 10 === 0 ? "hit" : "other") }), () => {});
+  const hitFilter = w.createFilterNode(f.id, "text", "hit");
+  const openRanges = () => [...T.contextExpansions.keys()].sort((a, b) => a - b)
+    .map(k => T.contextExpansions.get(k).map(r => r.from + "-" + r.to).join(",")).join("|");
+  const contextTab = () => d.querySelector('#fhTabs [data-fh-tab="highlight"]');
+  T.state.activeId = hitFilter.id;
+  w.render(); // lands on Filtered, the hidden Context view is marked stale
+  assert(T.fhActiveTab === "filter", "sanity: a new filter lands on Filtered");
+  T.state.selectedId = f.entries[20].id;
+  fireClick(contextTab(), w);
+  assert(T.fhActiveTab === "highlight", "sanity: the tab button switched to Context");
+  assert(openRanges() === "11-20|21-30",
+    "the switch itself opens a step above and below the selected match, got " + openRanges());
+  const row = d.querySelector('#highlightRows [data-entry-id="' + f.entries[25].id + '"]');
+  assert(row, "…and the revealed context rows are rendered right away");
+
+  fireClick(d.querySelector('#fhTabs [data-fh-tab="filter"]'), w);
+  T.state.selectedId = f.entries[40].id; // selection change only — the Context view stays current
+  fireClick(contextTab(), w);
+  assert(openRanges() === "31-40|41-50",
+    "a non-stale view too: the window moves to the new selection, the old one is taken back, got " + openRanges());
+  assert(d.querySelector('#highlightRows [data-entry-id="' + f.entries[40].id + '"].selected'),
+    "the selected match is in the rendered window");
+
+  section("276b. Under \"collapsed\" the switch leaves the view shut");
+  T.contextInitialExpansion = "collapsed";
+  fireClick(d.querySelector("#ctxCollapseAll"), w);
+  fireClick(d.querySelector('#fhTabs [data-fh-tab="filter"]'), w);
+  T.state.selectedId = f.entries[20].id;
+  fireClick(contextTab(), w);
+  assert(T.fhActiveTab === "highlight" && T.contextExpansions.size === 0,
+    "nothing opened, got " + openRanges());
+
+  section("276c. Expand around matches: one step around every match");
+  const btn = d.querySelector("#ctxExpandAround");
+  assert(btn && !btn.disabled, "the button exists and is enabled with gaps to open");
+  T.contextExpandStep = 3;
+  fireClick(d.querySelector("#ctxExpandAll"), w);
+  fireClick(btn, w);
+  assert(openRanges() === "1-4,7-10|11-14,17-20|21-24,27-30|31-34,37-40|41-44,47-50|51-54",
+    "three lines below and above each match, replacing Expand all's state, got " + openRanges());
+  T.contextInitialExpansion = "aroundJump";
+  w.moveContextMatchSelection(1); // -> 30: its own window adds nothing new (already open)
+  w.moveContextMatchSelection(1); // -> 40
+  assert(openRanges() === "1-4,7-10|11-14,17-20|21-24,27-30|31-34,37-40|41-44,47-50|51-54",
+    "hand-owned: later jumps take none of it back, got " + openRanges());
+  T.contextExpandStepUnit = "time";
+  T.contextExpandStepMs = 2500; // one entry per second -> two entries each way
+  fireClick(btn, w);
+  assert(openRanges() === "1-3,8-10|11-13,18-20|21-23,28-30|31-33,38-40|41-43,48-50|51-53",
+    "time mode reveals the configured timespan around each match, got " + openRanges());
+  T.contextExpandStepUnit = "entries";
+  T.contextExpandStep = 10;
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -35491,4 +35573,7 @@ process.exitCode = failed ? 1 : 0;
               path; browser: Blob) and restored after a reload, the text
               version nested under its viewer again, gone files skipped,
               closed/stale viewer records dropped.
+   Group 276 — same day: switching onto the Context tab opens the
+              "aroundJump" window around the selection; new "Expand around
+              matches" toolbar button.
    ============================================================ */
