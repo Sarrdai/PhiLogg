@@ -194,10 +194,10 @@ JS parser in the same build.
 
 ### How it works — and the traps it avoids
 
-- **The app runs, the window doesn't.** Under Xvfb the splash never
-  dismisses and the main window never shows (see `desktop/README.md` →
-  "Status": `requestAnimationFrame` doesn't tick for an unmapped window), but
-  the page inside it runs normally — which is all a timing run needs.
+- **The page runs headless.** The main window is created visible (there is
+  no splash any more, see `desktop/README.md`), and even where a bare Xvfb
+  doesn't map it the page inside runs normally — which is all a timing run
+  needs.
 - **Only the launch-argument route can be driven.** `philogg-desktop
   <file>` opens the file through `loadUrlIntoTree` (the file-association
   route). Drag & drop and the file dialog can't be driven headless; they
