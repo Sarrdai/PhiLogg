@@ -8609,6 +8609,16 @@ function entryTimeText(e) {
 function msgColClass(e) {
   return isPlainTextFormat(e.formatId) ? "col-msg plaintext" : "col-msg";
 }
+// A plain-text entry has no level: no badge at all — an empty .level-badge
+// still paints its padding + background as a small block (and would spill
+// out of the Level track, which is collapsed to 0px for plain text).
+function levelCellHtml(e, innerHtml) {
+  return '<span class="col-level" data-col="level">' +
+    (isPlainTextFormat(e.formatId) ? "" : '<span class="level-badge">' + innerHtml + '</span>') + '</span>';
+}
+function levelBadgeHtml(e) {
+  return isPlainTextFormat(e.formatId) ? "" : '<span class="level-badge">' + escapeHtml(e.level) + '</span>';
+}
 // Which syntax a plain-text file's lines are highlighted as: "json"/"xml"
 // when it came from such a text viewer (node.textSyntax, set by
 // openInlineViewerAsTextLog; derived from the name for a file restored
@@ -16066,7 +16076,7 @@ function buildPairRow(entry) {
   row.innerHTML =
     '<span class="pair-row-bar"></span>' +
     '<span class="pair-row-time">' + escapeHtml(entryTimeText(entry)) + '</span>' +
-    '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
+    levelBadgeHtml(entry) +
     '<span class="pair-row-msg">' + escapeHtml(entry.message) + '</span>';
   row.title = entry.message;
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [entry, row, linkScroll]));
@@ -18972,7 +18982,7 @@ function appendLogRow(frag, i, rc) {
     '<span class="col-bar"></span>' +
     '<span class="col-time" data-col="time">' + timeHtml + '</span>' +
     '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-    '<span class="col-level" data-col="level"><span class="level-badge">' + levelHtml + '</span></span>' +
+    levelCellHtml(e, levelHtml) +
     middleHtml +
     (rc.messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message">' + msgHtml + '</span>' : "");
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
@@ -20170,7 +20180,7 @@ function renderHighlightVisibleRows() {
       '<span class="col-bar"></span>' +
       '<span class="col-time" data-col="time">' + markFieldHtml(mm, timeText, "time") + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      '<span class="col-level" data-col="level"><span class="level-badge">' + markFieldHtml(mm, e.level, "level") + '</span></span>' +
+      levelCellHtml(e, markFieldHtml(mm, e.level, "level")) +
       middleHtml +
       (messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message">' + hlMsgHtml + '</span>' : "");
     // A PLAIN click is a jump to that match and gets the expansion treatment
@@ -21210,7 +21220,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
 
-  const bucketCount = Math.min(MINIMAP_MAX_BUCKETS, Math.max(MINIMAP_MIN_BUCKETS, Math.round(W / MINIMAP_BUCKET_PX)));
+  let bucketCount = Math.min(MINIMAP_MAX_BUCKETS, Math.max(MINIMAP_MIN_BUCKETS, Math.round(W / MINIMAP_BUCKET_PX)));
+  // A plain-text file's "ts" are consecutive line numbers: more buckets than
+  // lines would leave every other bucket empty (a striped minimap).
+  if (nodeIsPlainText(rootId)) bucketCount = Math.max(1, Math.min(bucketCount, minimapTMax - minimapTMin + 1));
   minimapBucketCount = bucketCount;
   // Bucket-index formulas for the two passes below — TIME mode buckets a
   // timestamp by its position in [minimapTMin, minimapTMax] (bucketOfTime,
@@ -22489,13 +22502,13 @@ function updateDetailPanel() {
     // comment: the peek overlay IS the expanded look, not a reduced one.
     const firstLine = entry.message.split("\n", 1)[0];
     detailMeta.innerHTML =
-      '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
+      levelBadgeHtml(entry) +
       '<span class="detail-time">' + markField(entryTimeText(entry), "time") + '</span>' +
       '<span class="detail-sep">·</span>' +
       '<span class="detail-collapsed-msg">' + markField(firstLine, "message") + '</span>';
   } else {
     detailMeta.innerHTML =
-      '<span class="level-badge">' + escapeHtml(entry.level) + '</span>' +
+      levelBadgeHtml(entry) +
       '<span class="detail-time">' + markField(entryTimeText(entry), "time") + '</span>' +
       '<span class="detail-sep">·</span>' +
       '<span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' +
