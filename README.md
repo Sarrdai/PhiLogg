@@ -79,6 +79,15 @@ open it in a browser to view it.
   multi-line/pin-bookmarks buttons); Settings → Behavior controls whether it
   shows only the filter you're currently drilled into or every text filter
   in the chain, and where the marks appear.
+- **Find in the current view without creating a filter** — `Ctrl+G` opens a
+  small find bar over the log view: it searches only the rows the current
+  view (Context or Filtered) shows, marks every hit as you type, jumps to
+  the first one, and counts them ("3 / 41"). `F3`/`Shift+F3` (or
+  `Enter`/`Shift+Enter`) walk the hits with wrap-around; match-case and
+  regex toggles use the same query language as a text filter. When a search
+  turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
+  into a real filter node — `Ctrl+F` still opens the filter popup directly.
+  Stays fast on views with hundreds of thousands of rows.
 - **Highlight rules underline their own matches** — a colored text filter
   doesn't just tint the row's left edge: the matched substring itself is
   underlined in that rule's color, in both views and the entry detail. Each
