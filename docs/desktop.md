@@ -747,6 +747,9 @@ PowerShell's `SystemFontFamilies` on Windows. macOS has neither out of the box, 
 there are approximated from the font files in the three standard font directories — the
 one place the list is less than exact. Any failure yields an empty list rather than
 throwing, so a headless or sandboxed OS just means no extra options appear.
+The Windows `powershell` call is spawned with `CREATE_NO_WINDOW`: the release exe is a
+GUI-subsystem binary with no console of its own, so without the flag Windows opened a
+fresh console window for the child on every app start.
 
 The same `listSystemFonts()` result feeds two independent pickers: `philogg.html`'s
 `initUiFont()`/`initLogFont()` each call it once (after applying their own curated default
@@ -842,9 +845,8 @@ sidestep Windows command-line quoting for a script this shape (embedded C#,
 here-strings); the actual variable, log-derived input (moniker/path/line)
 travels separately through `PHILOGG_VS_*` environment variables on the
 spawned process, never interpolated into the script text.
-`Command::creation_flags(CREATE_NO_WINDOW)` keeps every call from flashing a
-console window, since — unlike the once-per-run, cached font enumeration —
-this runs on every click.
+`Command::creation_flags(CREATE_NO_WINDOW)` keeps every call from opening a
+console window (same flag as the font enumeration above).
 
 Both scripts wrap their whole body in one top-level `try`/`catch`
 (`[Console]::Error.WriteLine($_.Exception.Message)` + `exit 1` on any

@@ -32,9 +32,16 @@ fn platform_fonts() -> Vec<String> {
     }
 }
 
+/// `CREATE_NO_WINDOW`: the release exe is a GUI-subsystem binary with no
+/// console of its own, so without this flag Windows opens a fresh console
+/// window for the spawned `powershell` child (same flag as
+/// `vs_integration.rs`).
 #[cfg(windows)]
 fn platform_fonts() -> Vec<String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let out = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
         .args([
             "-NoProfile",
             "-NonInteractive",
