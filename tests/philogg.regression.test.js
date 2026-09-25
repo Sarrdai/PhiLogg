@@ -31064,6 +31064,14 @@ group(274);
     assert(msg.textContent === '  "temp": 21.5,', "leading spaces kept in the cell text (" + JSON.stringify(msg.textContent) + ")");
     assert(msg.querySelector(".tok-key") && msg.querySelector(".tok-number"), "key and number highlighted");
     assert(msg.querySelector("mark.text-match-mark"), "the filter match is still marked");
+    // Person-reported: an empty level badge painted a small grey block right
+    // before every message (its padding/background spilling out of the
+    // collapsed Level track).
+    assert(!d.querySelector("#tableRows .log-row .level-badge"), "plain-text rows render no level badge");
+    T.state.activeId = f.id;
+    w.render();
+    assert(T.minimapBucketCount >= 1 && T.minimapBucketCount <= f.entries.length,
+      "minimap: no more buckets than lines (else every other bucket is empty — a striped minimap), got " + T.minimapBucketCount + " for " + f.entries.length + " lines");
     const log = await w.addFile("app.log", makeLog(0, 3), () => {});
     T.state.activeId = log.id;
     w.render();
