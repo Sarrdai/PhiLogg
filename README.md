@@ -224,9 +224,10 @@ deployments possible:
   the desired absolute time of the file's first line, with a live before→after
   preview; it's undoable and survives a reload.
 - **Session cache** — reload the browser tab and get your files, filters,
-  and settings back. In the desktop app a file is re-read from disk on the
-  next start instead of being copied into the cache, so a file deleted or
-  moved in the meantime is left out of the restored session.
+  opened text/image files and settings back. In the desktop app a file is
+  re-read from disk on the next start instead of being copied into the
+  cache, so a file deleted or moved in the meantime is left out of the
+  restored session.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
   presets you apply across different files — pin a preset (with an icon of
   your choice) to the Filter-Toolbar for one-click reuse.

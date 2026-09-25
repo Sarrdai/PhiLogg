@@ -24067,6 +24067,7 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
       deleteNode(id);
       pushUndo({ kind: "deleteFile", snapshot, index });
     });
+    if (cachedViewer && cachedViewer.cacheKey) cacheDeleteFile(cachedViewer.cacheKey);
     viewersMap.delete(mapKey);
     if (isActive) state.inlineViewer = null;
     render();
@@ -24308,7 +24309,26 @@ function activateInlineViewer(viewer) {
 // so a row renderer can tell "opened" (cached) apart from "active" (the one
 // currently shown), and so viewerNavId/moveTreeSelection can address it —
 // see their own comments.
+// owner.persist ({ localPath, blob }, optional): keep this viewer across a
+// reload / app restart, like a log file (persistViewer — loose and folder
+// viewers; a ZIP isn't restored, so its entries aren't either).
 async function openInlineViewer(name, bytes, kind, owner) {
+  const viewer = await buildInlineViewer(name, bytes, kind);
+  if (owner) {
+    registerInlineViewer(viewer, owner);
+    if (owner.persist) persistViewer(viewer, owner.persist, bytes);
+  }
+  activateInlineViewer(viewer);
+  render();
+}
+function registerInlineViewer(viewer, owner) {
+  viewer.ownerKind = owner.ownerKind;
+  viewer.ownerId = owner.ownerId;
+  viewer.entryName = viewer.name;
+  viewer.mapKey = owner.mapKey;
+  owner.map.set(owner.mapKey, viewer);
+}
+async function buildInlineViewer(name, bytes, kind) {
   let viewer;
   if (kind === "text") {
     const text = new TextDecoder().decode(bytes);
@@ -24324,15 +24344,77 @@ async function openInlineViewer(name, bytes, kind, owner) {
     viewer = { kind, name, dataUrl };
     imgZoom = null; // fresh image starts at its home (fit) view
   }
-  if (owner) {
-    viewer.ownerKind = owner.ownerKind;
-    viewer.ownerId = owner.ownerId;
-    viewer.entryName = name;
-    viewer.mapKey = owner.mapKey;
-    owner.map.set(owner.mapKey, viewer);
+  return viewer;
+}
+
+/* ---------- Viewer persistence (text/image files across a reload) ----------
+   An opened loose or folder viewer is kept like a log file: its content
+   record goes into the "files" store under a "viewer-" key — the file's
+   PATH when the desktop wrapper can reopen it (re-read from disk on
+   restore; a file gone since is skipped), else the File/bytes as a Blob —
+   and the session meta lists the open viewers (buildCacheMeta: owner, map
+   key, Pretty Print, which one was shown). restoreViewersFromCache
+   rebuilds them after the files and watched folders are back, so a
+   "Filter lines" text version (restored as an ordinary file carrying its
+   viewerSource) nests under its viewer again. */
+const VIEWER_CACHE_PREFIX = "viewer-";
+function persistViewer(viewer, src, bytes) {
+  if (!cacheEnabled() || (viewer.ownerKind !== "loose" && viewer.ownerKind !== "folder")) return;
+  viewer.cacheKey = VIEWER_CACHE_PREFIX + newCacheKey(); // synchronously, so the next meta write lists it
+  viewer.localPath = src.localPath || null;
+  const byPath = !!(viewer.localPath && canReopenLocalPath());
+  cacheStoreOp("files", "readwrite", store => store.put({
+    key: viewer.cacheKey, name: viewer.name, viewer: true,
+    localPath: viewer.localPath,
+    blob: byPath ? null : (src.blob || new Blob([bytes])),
+  }));
+}
+// The open viewers the session meta records, in tree order.
+function persistedViewerList() {
+  const out = [];
+  const add = (ownerKind, ownerId, map) => map.forEach((v, mapKey) => {
+    if (v.cacheKey) out.push({ key: v.cacheKey, ownerKind, ownerId, mapKey, name: v.name, kind: v.kind, prettyPrint: !!v.prettyPrint });
+  });
+  state.folders.forEach(f => add("folder", f.id, f.inlineViewers));
+  add("loose", "loose", state.looseInlineViewers);
+  return out;
+}
+async function readViewerRecordBytes(rec) {
+  if (rec.localPath && canReopenLocalPath()) {
+    const local = await window.philogg.openLocalPath(rec.localPath);
+    const res = await fetch(local.url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return new Uint8Array(await res.arrayBuffer());
   }
-  activateInlineViewer(viewer);
-  render();
+  if (rec.blob) return new Uint8Array(await rec.blob.arrayBuffer());
+  throw new Error("no content");
+}
+// Boot: after restoreSessionFromCache/restoreWatchedFolders. Also drops
+// viewer records the meta no longer lists (closed viewers, removed folders).
+async function restoreViewersFromCache(meta) {
+  if (!cacheEnabled()) return;
+  const list = meta && Array.isArray(meta.viewers) ? meta.viewers : [];
+  const keep = new Set();
+  let active = null;
+  for (const v of list) {
+    const map = v && viewerMapForOwner(v.ownerKind, v.ownerId);
+    if (!map || map.has(v.mapKey)) continue;
+    const rec = await cacheStoreOp("files", "readonly", store => store.get(v.key));
+    if (!rec) continue;
+    let bytes;
+    try { bytes = await readViewerRecordBytes(rec); } catch { continue; } // moved or deleted since
+    const viewer = await buildInlineViewer(v.name, bytes, v.kind);
+    if (v.prettyPrint) viewer.prettyPrint = true;
+    viewer.cacheKey = v.key;
+    viewer.localPath = rec.localPath || null;
+    registerInlineViewer(viewer, { ownerKind: v.ownerKind, ownerId: v.ownerId, map, mapKey: v.mapKey });
+    keep.add(v.key);
+    if (meta.activeViewer === v.key) active = viewer;
+  }
+  const keys = await cacheStoreOp("files", "readonly", store => store.getAllKeys());
+  (keys || []).forEach(k => { if (String(k).startsWith(VIEWER_CACHE_PREFIX) && !keep.has(k)) cacheDeleteFile(k); });
+  if (active) activateInlineViewer(active);
+  if (keep.size) render();
 }
 // No longer wired to a header button (this session, lifecycle unification —
 // see #inlineViewerHeader's own comment); kept as a plain function since
@@ -24376,7 +24458,11 @@ async function openInlineViewerAsTextLog(v) {
   const node = createQueuedFileNode(name);
   node.textSyntax = v.ext === "json" || v.ext === "xml" ? v.ext : null;
   if (source) node.viewerSource = source;
-  return addFile(name, inlineViewerDisplayedText(v), undefined, PLAINTEXT_FORMAT_ID, node);
+  const loaded = await addFile(name, inlineViewerDisplayedText(v), undefined, PLAINTEXT_FORMAT_ID, node);
+  // addFile itself writes no cache record (only the file-loading path does);
+  // without one the text version would be listed but not restorable.
+  if (loaded && state.nodes[loaded.id] === loaded) persistFileNode(loaded);
+  return loaded;
 }
 // The plain-text files opened from one viewer entry ("Filter lines"), in
 // open order — rendered nested under that entry's row while it is open
@@ -24393,7 +24479,14 @@ function isNestedUnderViewer(node) {
   const src = node && node.viewerSource;
   if (!src) return false;
   const map = viewerMapForOwner(src.ownerKind, src.ownerId);
-  return !!map && map.has(src.mapKey);
+  if (!map || !map.has(src.mapKey)) return false;
+  // A folder lists (and so renders) an entry only once scanned — e.g. not
+  // while a restored folder still waits for permission.
+  if (src.ownerKind === "folder") {
+    const folder = state.folders.find(f => f.id === src.ownerId);
+    return !!folder && folder.files.some(r => folderFileKey(r) === src.mapKey);
+  }
+  return true;
 }
 const itvFilterLinesBtn = el("#itvFilterLinesBtn");
 itvFilterLinesBtn.innerHTML = ICON_FILTER;
@@ -25150,7 +25243,8 @@ async function loadFileDescriptors(descs) {
       const kind = inlineViewableKind(file.name);
       const bytes = new Uint8Array(await file.arrayBuffer());
       const mapKey = "loose:" + newCacheKey();
-      await openInlineViewer(file.name, bytes, kind, { ownerKind: "loose", ownerId: "loose", map: state.looseInlineViewers, mapKey });
+      await openInlineViewer(file.name, bytes, kind, { ownerKind: "loose", ownerId: "loose", map: state.looseInlineViewers, mapKey,
+        persist: { localPath: d.localPath || null, blob: d.file || null } });
     }
     descs = descs.filter(d => !viewableDescs.includes(d));
     if (descs.length === 0) return;
@@ -26453,7 +26547,8 @@ async function loadFolderFile(folder, rec, auto, quiet) {
   if (viewKind) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mapKey = folderFileKey(rec);
-    await openInlineViewer(rec.name, bytes, viewKind, { ownerKind: "folder", ownerId: folder.id, map: folder.inlineViewers, mapKey });
+    await openInlineViewer(rec.name, bytes, viewKind, { ownerKind: "folder", ownerId: folder.id, map: folder.inlineViewers, mapKey,
+      persist: { localPath: (rec.handle && rec.handle.localPath) || null, blob: file } });
     return;
   }
   try {
@@ -34405,6 +34500,10 @@ async function persistFileNode(node, immediate, noSnapshot) {
     text: source === "text" ? rebuildFileText(node) : null,
     blob: source === "blob" || source === "snapshot" ? blob : null,
     formatId: node.formatId || null,
+    // A "Filter lines" text version: which viewer it nests under, and its
+    // syntax (see openInlineViewerAsTextLog / restoreViewersFromCache).
+    viewerSource: node.viewerSource || null,
+    textSyntax: node.textSyntax !== undefined ? node.textSyntax : null,
     // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (desktop
     // wrapper only) and sourceUrl (any ?url=/philoggLoadUrl deep-link) both
     // need to survive a
@@ -34629,6 +34728,8 @@ function buildCacheMeta() {
     filters,
     bookmarks,
     notes,
+    viewers: persistedViewerList(),
+    activeViewer: (state.inlineViewer && state.inlineViewer.cacheKey) || null,
     settings: {
       levelFilter: [...state.levelFilter],
       sortColumn: state.sortColumn,
@@ -34817,9 +34918,10 @@ async function reopenLocalPathForRestore(rec, placeholder) {
 // Boot-time restore. Returns true if at least one file came back. Any error
 // abandons the restore (whatever loaded so far stays usable) rather than
 // blocking the app on a corrupt cache.
-async function restoreSessionFromCache() {
+// metaIn: the meta as read at boot (bootMeta), when given.
+async function restoreSessionFromCache(metaIn) {
   if (!cacheEnabled()) return false;
-  const meta = await cacheStoreOp("meta", "readonly", store => store.get(CACHE_META_KEY));
+  const meta = metaIn !== undefined ? metaIn : await cacheStoreOp("meta", "readonly", store => store.get(CACHE_META_KEY));
   if (!meta || !Array.isArray(meta.fileOrder) || meta.fileOrder.length === 0) return false;
   if (meta.version > CACHE_FORMAT_VERSION) return false;
 
@@ -34899,6 +35001,8 @@ async function restoreSessionFromCache() {
       // folder record itself (including its handle) comes back separately
       // via restoreWatchedFolders, called right after this function returns.
       if (rec.folderId) node.folderId = rec.folderId;
+      if (rec.viewerSource) node.viewerSource = rec.viewerSource;
+      if (rec.textSyntax) node.textSyntax = rec.textSyntax;
       if (rec.localPath) node.localPath = rec.localPath;
       if (rec.sourceUrl) node.sourceUrl = rec.sourceUrl;
       // Re-read from disk: this run's own philogg://local/… URL replaces the
@@ -35998,10 +36102,15 @@ loadFromUrlParam();
 // settled" signal, which the regression suite awaits instead of polling
 // state.rootIds (that fills with grayed placeholders in restore's FIRST pass,
 // long before entries/localPath/filters/settings land — see tests/README.md).
-const bootRestore = restoreSessionFromCache().then(restored => {
+// The meta is read once, right at boot, for both restores: a render
+// between the file restore and the viewer restore rewrites it (with no
+// viewers yet), and a read any later could see what this session already
+// wrote instead of what the previous one left.
+const bootMeta = cacheEnabled() ? cacheStoreOp("meta", "readonly", store => store.get(CACHE_META_KEY)) : Promise.resolve(null);
+const bootRestore = bootMeta.then(meta => restoreSessionFromCache(meta)).then(restored => {
   if (restored) showCopyToast("Session restored");
   return restoreWatchedFolders();
-});
+}).then(() => bootMeta).then(meta => restoreViewersFromCache(meta));
 </script>
 </body>
 </html>
