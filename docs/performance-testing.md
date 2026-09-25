@@ -17,6 +17,7 @@ bottleneck was the transport to the page, which only the real app contains).
 | Rust crate alone | `logparse/examples/bench.rs` | read, parse, batch encoding | cargo |
 | Page in jsdom | `tools/perf/render-profile.js` | JS parse, `render()` breakdown, CPU profile | `tests/node_modules` |
 | Page in headless Chromium | `tools/perf/chromium-scroll-bench.js` | log-view row render cost, what the viewport shows while scrolling | global Playwright (preinstalled) |
+| Page in headless Chromium | `tools/perf/chromium-load-bench.js` | load wall time, main-thread stall, heap, filter create+render | global Playwright (preinstalled) |
 | Real desktop app | `tools/perf/desktop-load-bench.sh` | wall time from open to rendered, per route | WebKitGTK, Xvfb, release build |
 
 ## Test data
@@ -101,6 +102,38 @@ Headless wheel events scroll instantly (no smooth-scroll animation), so a
 drag isn't in the script: driven from Playwright, several steps land in
 one frame and the render count reads low; drive it from inside the page
 (`tableBody.scrollTop += ...` in a `setTimeout` loop) if it matters.
+
+## Level 2c — the page in headless Chromium (load and filters)
+
+```
+NODE_PATH=$(npm root -g) node tools/perf/chromium-load-bench.js /tmp/philogg-perf/perf-650k.log [philogg.html] [runs]
+```
+
+Same setup as Level 2b, a fresh browser context per run (so the session
+cache starts empty), the file loaded through `#fileInput` — the browser
+drop/dialog route: `readFileWithProgress`, the JS worker parse, the session
+cache write. Per run:
+
+- **load**: wall time from `setInputFiles` until the `render()` that shows
+  the fully loaded file has returned (every `render()` is wrapped and
+  timestamped);
+- **max stall**: the longest gap between two ticks of a 10ms `setInterval`
+  heartbeat during the load and 1.5s after it — how long the page was
+  unresponsive at worst;
+- **heap**: `Runtime.getHeapUsage` after a forced GC. JS heap only: strings
+  Blink creates (a `TextDecoder` result, say) can live outside it, so a
+  change of *where* strings come from can move this number without memory
+  actually being freed — it misled once (a 187 MB reading that was really
+  ~325 MB);
+- **level filter / text filter**: `applyLevelFilterUnderRootFile(root,
+  "ERROR")` (162,500 matches) and a `"customer 42"` text filter under the
+  file, each created and rendered, style and layout included.
+
+The generated test file's timestamps wrap every 86,400 entries, so it is
+**not chronological** — the minimap's sorted-ts fast path
+(`minimapBucketBounds`) never applies to it. For that path, generate a
+sorted variant (the same script with `s = Math.floor(i / 8)`) — real logs
+are sorted.
 
 ## Level 3 — the real desktop app, headless
 
@@ -206,6 +239,41 @@ rendered):
 | 2026-09-24 | first native version (JSON transport) | 8.6 s | 9.0 s |
 | 2026-09-24 | binary transport | 4.3 s | 8.4 s |
 | 2026-09-24 | + one render per load, memoized level work | 3.3–4.5 s | 8.0–8.1 s |
+| 2026-09-24 | baseline for the load/filter session (same container, later) | 2.8–3.2 s | 6.9–7.3 s |
+| 2026-09-24 | + parallel JS parse (binary worker transport) | — | 3.6–3.9 s |
+| 2026-09-24 | + aggregates, lazy Context view, message-task drain (final) | 2.7–3.1 s | 3.8–3.9 s |
+
+This route (`loadUrlIntoTree`) writes no session-cache record, so the
+session-cache change (below) doesn't show here; the native column also
+parses in Rust, so only the render work changed for it. An intermediate
+state drained parsed batches with `setTimeout(0)` yields: the JS path went
+to 9.2 s, because an unmapped Xvfb window counts as hidden and its timers
+are throttled — which is why the drain yields through `queueTask` (a
+`MessageChannel` message) now; a real minimized or tray-hidden window is
+the same case.
+
+Browser route (Level 2c, headless Chromium 141, same file, `#fileInput`,
+median of 4 runs; filters created under the file with the Filtered tab
+showing):
+
+| Date | State | load | max stall | JS heap | level filter | text filter |
+|---|---|---|---|---|---|---|
+| 2026-09-24 | before | 2.87 s | 460 ms | 357 MB | 530 ms | 220 ms |
+| 2026-09-24 | session cache stores the File (no rebuilt text on the load path) | 2.55 s | 460 ms | 357 MB | — | — |
+| 2026-09-24 | + parallel worker parse, binary transport | 2.13 s | 410 ms | 325 MB | — | — |
+| 2026-09-24 | + per-file aggregates, chunked drain | 2.21 s | 205 ms | 325 MB | — | — |
+| 2026-09-24 | + Context view only while visible (final) | 2.10 s | 225 ms | 326 MB | 100 ms | 188 ms |
+
+Final run on a chronological variant of the file (minimap fast path active):
+load 2.04–2.46 s, first render after the load 43 ms (230 ms before the
+aggregates, 118 ms with them on the unsorted file). With the Context tab
+showing: a re-render of the level filter 222 → 98 ms; switching to the
+Context tab 28 → 124 ms (the one build every render used to pay). Numbers are
+±30% between runs; the text filter didn't change (its cost is
+`textFilterMatches` lower-casing every `raw`, untouched here). Where the
+load's time goes now: ~0.2 s `FileReader`, ~1.4 s the four workers (parse
+plus batch encoding, ~25 MB each), the main thread adopting ~650k entries
+(`entryIndex`/`uid` ~0.4 s, spread over the load) and GC.
 
 Rust crate alone, same file: read ~0.3 s, parse ~0.6 s (4 threads) /
 ~1.7 s (1 thread), batch encoding ~0.4 s.

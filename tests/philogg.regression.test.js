@@ -28,6 +28,25 @@ const vm = require("vm");
 // path the feature has for private-mode browsers. Group 20 injects a shared
 // IDBFactory instance into two successive windows to simulate a reload.
 const { IDBFactory, IDBKeyRange } = require("fake-indexeddb");
+// fake-indexeddb clones every stored value with Node's own structuredClone,
+// which can't see inside a jsdom Blob/File (its bytes live behind jsdom's
+// impl symbol) and would store an empty object. A browser's IndexedDB stores
+// Blobs natively — the session cache keeps a loaded File as one (see
+// persistFileNode's fileCacheSource) — so top-level jsdom Blob fields of a
+// stored record are turned into Node Blobs first, which clone fine and offer
+// the same text() the page reads them back with.
+{
+  const { implForWrapper } = require("jsdom/lib/generated/idl/utils.js");
+  const nodeStructuredClone = global.structuredClone;
+  const isJsdomBlob = v => v && typeof v === "object" && implForWrapper(v) && implForWrapper(v)._bytes instanceof Uint8Array;
+  global.structuredClone = (value, options) => {
+    if (value && typeof value === "object" && !Array.isArray(value) && Object.values(value).some(isJsdomBlob)) {
+      value = Object.fromEntries(Object.entries(value).map(([k, v]) =>
+        [k, isJsdomBlob(v) ? new Blob([implForWrapper(v)._bytes], { type: v.type }) : v]));
+    }
+    return nodeStructuredClone(value, options);
+  };
+}
 
 // Default assumes this file lives in a `tests/` (or similarly named) folder
 // directly at the project root, sibling to philogg.html — e.g.:
@@ -163,6 +182,9 @@ async function withApp(run, opts = {}) {
       if (opts.philogg) {
         Object.defineProperty(window, "philogg", { value: opts.philogg, configurable: true });
       }
+      // opts.beforeParse(window): anything else a group needs in place before
+      // the page's script runs (a global jsdom lacks, say).
+      if (opts.beforeParse) opts.beforeParse(window);
       Object.defineProperty(window.Element.prototype, "clientHeight", { get() { return 400; }, configurable: true });
       Object.defineProperty(window.Element.prototype, "clientWidth", { get() { return 800; }, configurable: true });
       window.Element.prototype.getBoundingClientRect = function () {
@@ -197,6 +219,7 @@ async function withApp(run, opts = {}) {
       set minimapBinningMode(v) { minimapBinningMode = v; },
       get minimapWidth() { return minimapWidth; },
       get minimapBucketCount() { return minimapBucketCount; },
+      get minimapBars() { return { bg: minimapBgCounts, ov: minimapOvCounts, rank: minimapOvRank, name: minimapOvName }; },
       get highlightColorMap() { return highlightColorMap; },
       get currentViewEntries() { return currentViewEntries; },
       get currentHighlightViewEntries() { return currentHighlightViewEntries; },
@@ -208,6 +231,8 @@ async function withApp(run, opts = {}) {
       get contextExpansions() { return contextExpansions; },
       get contextAutoRanges() { return contextAutoRanges; },
       get contextMatchRows() { return contextMatchRows; },
+      get contextMatchPos() { return contextMatchPos; },
+      get contextViewStale() { return contextViewStale; },
       get highlightRowOffsets() { return highlightRowOffsets; },
       get contextInitialExpansion() { return contextInitialExpansion; },
       set contextInitialExpansion(v) { contextInitialExpansion = v; },
@@ -6495,6 +6520,7 @@ await withApp(async (w, d, T) => {
 group(55);
 await withApp(async (w, d, T) => {
   section("55a. Multiline toggle: default view, row heights, spacer, both Log views");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   // Entry 2 gets 2 continuation lines appended during parsing (same
   // technique as Group 1/20) -> a 3-line message; every other entry stays
@@ -6624,6 +6650,7 @@ await withApp(async (w, d, T) => {
 group(55);
 await withApp(async (w, d, T) => {
   section("55d. Multiline toggle: the top-visible entry stays anchored (no scroll jump/reset) when row heights change above it");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   // 60 entries; three of them (10, 25, 40) each get 3 continuation lines
   // (4-line messages) so real height changes happen well ABOVE the
@@ -7343,6 +7370,7 @@ await withApp(async (w, d, T) => {
 group(61);
 await withApp(async (w, d, T) => {
   section("61a. Level-filter toggle: the selected/active row stays on screen at the SAME pixel position — the log collapses/expands around it, not a jump");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   // 60 entries, ERROR at every 5th index (makeLog's own default level rule:
   // i%5===0 ? ERROR : INFO) — 12 ERROR / 48 INFO. Selecting an ERROR entry
@@ -10719,6 +10747,7 @@ await withApp(async (w, d, T) => {
 group(97);
 await withApp(async (w, d, T) => {
   section("97a. Tail growth auto-follows the Highlight/Full view too, not just Filtered");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   function fakeHandle(initialText) {
     let text = initialText;
@@ -14910,6 +14939,7 @@ await withApp(async (w, d, T) => {
 group(137);
 await withApp(async (w, d, T) => {
   section("137. Highlight-rule match text + regex match-spec fix");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   const btn = d.querySelector(".toggle-highlightmatch");
   const textMatchBtn = d.querySelector(".toggle-textmatch");
@@ -18781,7 +18811,8 @@ await withApp(async (w, d, T) => {
   // takes the exact same branch.
   const defaultFmt = { id: "fmt-default", builtin: true, edited: false };
   sandboxSelf.onmessage({ data: { text, fmt: defaultFmt } });
-  const workerEntries = posted.filter(m => m.type === "chunk").flatMap(m => m.entries);
+  // Entries come back as binary batches (see GROUP 268), decoded by the page.
+  const workerEntries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
   assert(posted.some(m => m.type === "done" && m.total === workerEntries.length + 1),
     // +1: makeLog's trailing "\n" produces one empty trailing line, matching
     // the main-thread loop's own lines.length semantics (blank lines after
@@ -18817,13 +18848,13 @@ await withApp(async (w, d, T) => {
   const ctx = vm.createContext({ self: sandboxSelf, postMessage: msg => posted.push(msg) });
   vm.runInContext(w.buildLogParseWorkerSrc(), ctx);
   sandboxSelf.onmessage({ data: { text, fmt: customFmt } });
-  const entries = posted.filter(m => m.type === "chunk").flatMap(m => m.entries);
+  // formatId is stamped on the main thread when a batch is adopted (GROUP 268).
+  const entries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
 
   assert(entries.length === 2, "the regex-mode format's header/continuation split works inside the sandboxed worker source, got " + entries.length);
   assert(entries[0].level === "INFO" && entries[1].level === "WARN", "level group matched correctly for a custom regex format");
   assert(entries[1].message.includes("second custom line") && entries[1].message.includes("continues the previous entry"),
     "a continuation line (no match against the custom regex) still gets appended to the open entry's message");
-  assert(entries.every(e => e.formatId === "fmt-165c"), "each entry carries the custom format's id, same as the main-thread compileOneFormat path sets it");
 });
 
 /* ============================================================
@@ -23142,6 +23173,7 @@ await withApp(async (w, d, T) => {
 
 await withApp(async (w, d, T) => {
   section("202b. the toggle actually gates rendering in BOTH the Table and the Full/Context view");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   const f = await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
   T.state.activeId = f.id;
@@ -23164,6 +23196,7 @@ await withApp(async (w, d, T) => {
 
 await withApp(async (w, d, T) => {
   section("202c. desktop build: verification/caching is shared across both views — a path seen in both costs one pathExists() call");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   let pathExistsCalls = 0;
   w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
@@ -29048,7 +29081,7 @@ await withApp(async (w, d, T) => {
   const ctx = vm.createContext({ self: sandboxSelf, postMessage: msg => posted.push(msg) });
   vm.runInContext(w.buildLogParseWorkerSrc(), ctx);
   sandboxSelf.onmessage({ data: { text: L.join("\n") + "\n", fmt: T.state.logFormats.find(f => f.id === "fmt-261h") } });
-  const wEntries = posted.filter(m => m.type === "chunk").flatMap(m => m.entries);
+  const wEntries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
   assert(wEntries.length === 3 && wEntries[1].message.endsWith("DirectInspect") && wEntries[0].message === "Refreshing test procedures list.",
     "the worker parser does the same, got " + JSON.stringify(wEntries.map(e => e.message)));
 });
@@ -29864,6 +29897,649 @@ group(266);
     }
     assert(!d.querySelector('#tableRows [data-entry-id="' + f.entries[500].id + '"]'), "500 scrolled out of the window...");
     assert(noteRows().every(n => n.dataset.entryId !== f.entries[500].id), "...and took its note row with it");
+  });
+}
+
+/* ============================================================
+   GROUP 267 — Session cache off the load path
+   Origin: 2026-09-24, load/filter performance session. A file loaded from
+   a File is cached as that File (a Blob — IndexedDB copies it off the JS
+   thread) instead of rebuildFileText's ~100 MB string; a desktop file with
+   a known path is cached as the path alone and re-read from disk on
+   restore (person-decided: a file gone since is not restored); every
+   remaining text record is written when idle, never before the load's
+   render.
+   ============================================================ */
+group(267);
+{
+  const logText = makeLog(0, 20);
+  const factory = new IDBFactory();
+  let savedRaws = null;
+  await withApp(async (w, d, T) => {
+    section("267a. A File load caches the File itself (no rebuilt text), restore parses it back identically");
+    await T.bootRestore;
+    let rebuilds = 0;
+    const origRebuild = w.rebuildFileText;
+    w.rebuildFileText = function () { rebuilds++; return origRebuild.apply(this, arguments); };
+    await w.loadFiles([new w.File([logText], "blob.log", { type: "text/plain" })]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.entries.length === 20, "file loaded");
+    assert(!!f._cacheBlob, "the node keeps the File it was loaded from as its cache source");
+    const rec = await waitFor(() => w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey)));
+    assert(rec && rec.blob && rec.text === null, "the cache record carries the blob and no text");
+    assert(rec && rec.blob && typeof rec.blob.text === "function" && (await rec.blob.text()) === logText, "the stored blob is the original file content");
+    assert(rebuilds === 0, "no rebuildFileText on the load path (" + rebuilds + ")");
+    savedRaws = f.entries.map(e => e.raw);
+    await w.persistMetaNow();
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    await T.bootRestore;
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.name === "blob.log", "restore: the blob record came back");
+    assert(f && JSON.stringify(f.entries.map(e => e.raw)) === JSON.stringify(savedRaws), "restore: entries parsed from the blob are identical");
+    assert(f && !!f._cacheBlob, "restore: the restored node keeps the blob, so its next write stays cheap");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("267b. A text record (merge, meta-format, ZIP, tail) is written when idle, not synchronously");
+    await T.bootRestore;
+    const f = await w.addFile("text.log", logText, () => {});
+    let rebuilds = 0;
+    const origRebuild = w.rebuildFileText;
+    w.rebuildFileText = function () { rebuilds++; return origRebuild.apply(this, arguments); };
+    const p = w.persistFileNode(f);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    assert(rebuilds === 0, "the text is not built within the current task (" + rebuilds + ")");
+    await p;
+    assert(rebuilds === 1, "awaiting persistFileNode still means written (" + rebuilds + ")");
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey));
+    assert(rec && rec.text === logText.trimEnd() && !rec.blob, "the deferred write stored the rebuilt text");
+    // Two requests before idle coalesce into one write.
+    const p1 = w.persistFileNode(f), p2 = w.persistFileNode(f);
+    await Promise.all([p1, p2]);
+    assert(rebuilds === 2, "one write for both (" + rebuilds + ")");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("267c. A tail append or rotation drops the File as cache source — the next write is text again");
+    await T.bootRestore;
+    await w.loadFiles([new w.File([logText], "tail.log", { type: "text/plain" })]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && !!f._cacheBlob, "loaded from a File: blob source");
+    f.tail = { handle: w.urlTailHandle("philogg://local/1/tail.log"), offset: logText.length, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
+    w.appendTailText(f, makeLog(100, 1));
+    w.onTailChange([f.id]);
+    assert(!f._cacheBlob, "grown: the File no longer matches the entries");
+    await w.persistFileNode(f);
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey));
+    assert(rec && !rec.blob && typeof rec.text === "string" && rec.text.split("\n").length === 21, "the record is the rebuilt text incl. the appended entry");
+  }, { indexedDB: new IDBFactory() });
+
+  // Desktop: a stub bridge whose openLocalPath knows which paths still exist.
+  const onDisk = { "/logs/app.log": logText, "/logs/gone.log": makeLog(0, 3) };
+  let nextId = 1;
+  const bridge = () => ({
+    openLocalPath: async p => {
+      if (!(p in onDisk)) throw new Error('"' + p + '" no longer exists');
+      const name = p.split("/").pop();
+      return { url: "philogg://local/" + (nextId++) + "/" + name, path: p, name };
+    },
+  });
+  const deskFactory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("267d. Desktop (person's choice: path only): a file with a known path is cached as its path and re-read from disk on restore");
+    await T.bootRestore;
+    let rebuilds = 0;
+    const origRebuild = w.rebuildFileText;
+    w.rebuildFileText = function () { rebuilds++; return origRebuild.apply(this, arguments); };
+    const a = await w.addFile("app.log", onDisk["/logs/app.log"], () => {});
+    a.localPath = "/logs/app.log"; a.sourceUrl = "philogg://local/99/app.log";
+    const g = await w.addFile("gone.log", onDisk["/logs/gone.log"], () => {});
+    g.localPath = "/logs/gone.log";
+    await w.persistFileNode(a);
+    await w.persistFileNode(g);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(a.cacheKey));
+    assert(rec && rec.text === null && rec.blob === null && rec.localPath === "/logs/app.log", "the record holds the path, no content");
+    assert(rebuilds === 0, "no text built for it (" + rebuilds + ")");
+  }, { indexedDB: deskFactory, philogg: bridge() });
+
+  // Meanwhile on disk: app.log grew by 2 entries, gone.log was deleted.
+  onDisk["/logs/app.log"] = logText + makeLog(100, 2);
+  delete onDisk["/logs/gone.log"];
+  await withApp(async (w, d, T) => {
+    const fetched = [];
+    w.fetch = async u => {
+      fetched.push(u);
+      const text = onDisk["/logs/" + String(u).split("/").pop()];
+      return { ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(text).buffer };
+    };
+    await T.bootRestore;
+    const roots = T.state.rootIds.map(id => T.state.nodes[id]);
+    assert(roots.length === 1 && roots[0].name === "app.log", "restore: the file that still exists came back, the deleted one is dropped (" + roots.map(n => n.name) + ")");
+    const f = roots[0];
+    assert(f && f.entries.length === 22, "restore: re-read from disk — the 2 entries written since are there (" + (f && f.entries.length) + ")");
+    assert(f && /^philogg:\/\/local\/\d+\/app\.log$/.test(f.sourceUrl) && f.sourceUrl !== "philogg://local/99/app.log", "restore: this run's own URL replaces the stored one");
+    assert(f && f.localPath === "/logs/app.log", "restore: localPath kept");
+    assert(f && f.tail && f.tail.offset === new w.TextEncoder().encode(onDisk["/logs/app.log"]).length && w.isUrlTailHandle(f.tail.handle),
+      "restore: tailing resumes from the bytes just read");
+    assert(!d.querySelector(".tree-row.queued"), "restore: no queued placeholder left behind");
+  }, { indexedDB: deskFactory, philogg: bridge() });
+}
+
+/* ============================================================
+   GROUP 268 — Parallel JS parsing with a binary worker transport
+   Origin: 2026-09-24, load/filter performance session. parseLogTextAsync's
+   worker path cuts the text at header lines (splitTextAtHeaderLines) into
+   one piece per core, and each worker sends its entries back as binary
+   batches (encodeEntryBatch: the native parser's batch.rs layout, string
+   section kept a JS string) that the page's decodeNativeBatch reads —
+   instead of structured-cloned entry objects. Ids are assigned on the main
+   thread in file order; worker ts are already local. The output must stay
+   byte-identical to the main-thread parse (and so to the golden fixture).
+   jsdom has no Worker: a fake one runs the real worker source in a vm.
+   ============================================================ */
+group(268);
+{
+  const golden = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "native-parse-golden.json"), "utf8"));
+  const noId = entries => JSON.stringify(entries.map(e => { const { id, ...rest } = e; return rest; }));
+  async function mainThreadParse(w, T, text, formatId) {
+    const node = w.createFileNode("ref.log");
+    node.formatId = formatId;
+    await w.parseLogTextAsync(text, node, () => {}); // jsdom: no Worker, the main-thread loop
+    const entries = node.entries.slice();
+    w.deleteNode(node.id);
+    return entries;
+  }
+  function useFormat(w, T, fmt) {
+    if (fmt.builtin) return;
+    T.state.logFormats = T.state.logFormats.filter(f => f.id !== fmt.id).concat([JSON.parse(JSON.stringify(fmt))]);
+    w.invalidateFormatCompileCache();
+  }
+  // Runs the real worker source in a vm; each worker's messages are
+  // delivered in order, after a per-worker delay (worker 0 slowest), so
+  // later pieces finish first and have to wait for earlier ones.
+  function installFakeWorker(w, opts = {}) {
+    const src = w.buildLogParseWorkerSrc();
+    const made = [];
+    w.URL.createObjectURL = () => "blob:fake-worker";
+    w.Worker = class {
+      constructor() {
+        const index = made.length;
+        made.push(this);
+        this.terminated = false;
+        const out = [];
+        const self = {};
+        vm.runInContext(src, vm.createContext({ self, postMessage: msg => out.push(msg) }));
+        this.run = data => {
+          self.onmessage({ data });
+          const deliver = async () => {
+            await sleep(opts.delay ? opts.delay(index) : (made.length - index) * 5);
+            for (const msg of out) {
+              if (this.terminated) return;
+              if (opts.failAt && opts.failAt(index, msg)) { this.onerror(new Error("worker crashed")); return; }
+              this.onmessage({ data: msg });
+              await Promise.resolve();
+            }
+          };
+          deliver();
+        };
+      }
+      postMessage(data) { setTimeout(() => this.run(data), 0); }
+      terminate() { this.terminated = true; }
+    };
+    return made;
+  }
+  // ~6 MB with stack traces, blank lines, CRLF and non-ASCII: 4+ pieces.
+  function bigText() {
+    const out = ["preamble dropped before the first header"];
+    for (let i = 0; i < 48000; i++) {
+      const sec = i % 86400;
+      const ts = "2024-01-15 " + String(Math.floor(sec / 3600)).padStart(2, "0") + ":" + String(Math.floor(sec / 60) % 60).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0") + "," + String(i % 1000).padStart(3, "0");
+      out.push(ts + "\t" + ["INFO", "WARN", "ERROR", "DEBUG"][i % 4] + "\t\"w" + (i % 7) + "\"\tC:\\src\\M" + (i % 9) + ".cs\tline " + i + "\t[Do" + (i % 5) + "]\t\"r\u00e9quest " + i + " \u{1F600} padding padding padding padding\"" + (i % 3 === 0 ? "\r" : ""));
+      for (let k = 0; k < i % 3; k++) out.push("   at Frame" + k + "() in C:\\x.cs:line " + k);
+      if (i % 11 === 0) out.push("");
+    }
+    return out.join("\n") + "\n";
+  }
+
+  await withApp(async (w, d, T) => {
+    section("268a. encodeEntryBatch -> decodeNativeBatch round-trips every golden case exactly (fields, open quotes, NaN ts, non-ASCII, lone surrogates)");
+    await T.bootRestore;
+    for (const c of golden.cases) {
+      if (c.base64 || c.format.mode === "meta") continue;
+      useFormat(w, T, c.format);
+      const entries = await mainThreadParse(w, T, c.text, c.format.id);
+      const batch = w.encodeEntryBatch(entries, 0.25);
+      const back = w.decodeNativeBatch(batch.buf, batch.strings);
+      assert(back.fraction === 0.25, c.name + ": fraction carried");
+      const expected = entries.map(e => { const { formatId, ...rest } = e; return rest; });
+      assert(noId(back.entries) === noId(expected), c.name + ": decoded entries identical to the parsed ones, key order included");
+      assert(back.entries.every((e, i) => Object.keys(expected[i].fields).length || e.fields === expected[i].fields), c.name + ": a field-less entry shares the page's EMPTY_ENTRY_FIELDS");
+    }
+    const odd = await mainThreadParse(w, T, "2024-01-15 10:00:00,000\tINFO\t\"a\"\tb\tline 1\t[m]\t\"lone \uD800 high, lone \uDC00 low\"\n", "fmt-default");
+    const oddBatch = w.encodeEntryBatch(odd, 1);
+    assert(w.decodeNativeBatch(oddBatch.buf, oddBatch.strings).entries[0].message === odd[0].message, "lone surrogates survive unchanged (no UTF-8 round trip)");
+    const nan = [Object.assign({}, odd[0], { ts: NaN })];
+    const nanBatch = w.encodeEntryBatch(nan, 1);
+    assert(Number.isNaN(w.decodeNativeBatch(nanBatch.buf, nanBatch.strings).entries[0].ts), "NaN ts carried as NaN");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("268b. splitTextAtHeaderLines cuts only before header lines; the pieces parse to exactly the whole text's entries");
+    const text = bigText();
+    const isHeader = w.getCompiledFormat("fmt-default").isHeaderLine;
+    const whole = await mainThreadParse(w, T, text, "fmt-default");
+    for (const n of [1, 2, 4, 7]) {
+      const pieces = w.splitTextAtHeaderLines(text, isHeader, n);
+      assert(pieces.length === n, n + " pieces requested, got " + pieces.length);
+      assert(pieces[0][0] === 0 && pieces[pieces.length - 1][1] === text.length, n + ": the pieces cover the text");
+      assert(pieces.slice(1).every(([a]) => isHeader(text.slice(a, text.indexOf("\n", a)).replace(/\r$/, ""))), n + ": every later piece starts with a header line");
+      let parts = [];
+      for (const [a, b] of pieces) parts = parts.concat(await mainThreadParse(w, T, text.slice(a, b), "fmt-default"));
+      assert(noId(parts) === noId(whole), n + ": pieces parsed one by one == the whole text parsed (" + parts.length + " vs " + whole.length + ")");
+    }
+    const noHeaders = "x\n".repeat(1000);
+    assert(w.splitTextAtHeaderLines(noHeaders, isHeader, 4).length === 1, "no header line to cut before: one piece");
+    const crlfEdge = "2024-01-15 10:00:00,000\tINFO\t\"a\"\tb\tline 1\t[m]\t\"one\"\r\n  cont\r\r\n2024-01-15 10:00:01,000\tINFO\t\"a\"\tb\tline 2\t[m]\t\"two\"\r\n";
+    const cp = w.splitTextAtHeaderLines(crlfEdge, isHeader, 2);
+    assert(cp.length === 2 && crlfEdge.slice(cp[0][0], cp[0][1]).endsWith("cont\r"), "a cut drops only the previous line's \\r\\n, not a \\r that belongs to the line");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("268c. The parallel worker parse: one worker per piece, file order kept although later pieces finish first, ids assigned in order, output identical");
+    Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 4, configurable: true });
+    const text = bigText();
+    const reference = await mainThreadParse(w, T, text, "fmt-default");
+    const made = installFakeWorker(w);
+    const node = w.createFileNode("par.log");
+    node.formatId = "fmt-default";
+    const progress = [];
+    await w.parseLogTextAsync(text, node, (done, total) => progress.push(done / total));
+    assert(made.length === 4, "4 workers for a ~" + Math.round(text.length / 1e6) + " MB text on 4 cores, got " + made.length);
+    assert(made.every(wk => wk.terminated), "every worker terminated once done");
+    assert(node.entries.length === reference.length && noId(node.entries) === noId(reference), "entries identical to the main-thread parse, in file order (" + node.entries.length + ")");
+    const nums = node.entries.map(e => +e.id.replace(/\D/g, ""));
+    assert(nums.every((v, i) => i === 0 || v > nums[i - 1]), "ids ascend in file order");
+    assert(node.entries.every(e => T.entryIndex[e.id] === e && e.formatId === "fmt-default"), "every entry registered and stamped with its formatId");
+    assert(progress.length > 4 && progress.every((v, i) => i === 0 || v >= progress[i - 1]) && progress[progress.length - 1] === 1, "progress reported, monotonic, ending at 1");
+
+    section("268d. A worker failing mid-parse rolls back what was appended; the main-thread fallback then parses the file once");
+    installFakeWorker(w, { delay: i => i * 5, failAt: (i, msg) => i === 2 && msg.type === "batch" });
+    const node2 = w.createFileNode("fail.log");
+    node2.formatId = "fmt-default";
+    const before = Object.keys(T.entryIndex).length;
+    await w.parseLogTextAsync(text, node2, () => {});
+    assert(node2.entries.length === reference.length && noId(node2.entries) === noId(reference), "no duplicated or missing entries after the fallback (" + node2.entries.length + ")");
+    assert(Object.keys(T.entryIndex).length === before + reference.length, "entryIndex holds each entry once");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("268f. The drain adopts queued batches a few at a time, yielding through queueTask (a message), never setTimeout — hidden windows throttle timers");
+    Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 4, configurable: true });
+    const text = bigText();
+    const reference = await mainThreadParse(w, T, text, "fmt-default");
+    // Worker 0 is by far the slowest: every later piece's batches queue up
+    // behind it and are adopted in one go once it is done.
+    installFakeWorker(w, { delay: i => (i === 0 ? 60 : 0) });
+    let pageTimeouts = 0;
+    const origSetTimeout = w.setTimeout;
+    // Only the parse's own timers — a render (createFileNode's) schedules its debounced persists too.
+    w.setTimeout = function () { if (/parseLogTextInWorker|drain/.test(new Error().stack)) pageTimeouts++; return origSetTimeout.apply(this, arguments); };
+    const node = w.createFileNode("drain.log");
+    node.formatId = "fmt-default";
+    await w.parseLogTextAsync(text, node, () => {});
+    w.setTimeout = origSetTimeout;
+    assert(noId(node.entries) === noId(reference), "entries identical (" + node.entries.length + ")");
+    assert(pageTimeouts === 0, "no setTimeout during the parallel parse (" + pageTimeouts + ")");
+  }, { beforeParse: window => {
+    // jsdom has no MessageChannel: a stand-in delivering each message as a
+    // task of its own (setImmediate — not the page's timers).
+    window.MessageChannel = class {
+      constructor() {
+        this.port1 = { onmessage: null };
+        this.port2 = { postMessage: data => setImmediate(() => this.port1.onmessage && this.port1.onmessage({ data })) };
+      }
+    };
+  } });
+
+  await withApp(async (w, d, T) => {
+    section("268e. A custom regex format with custom columns and a quoted multi-line message parses identically through the workers");
+    // The boot-time format-config load (loadFormatConfig) would replace
+    // state.logFormats under the test otherwise.
+    await waitFor(() => T.state.logFormats.some(f => f.id === "fmt-default"));
+    const c = golden.cases.find(x => !x.base64 && x.format.mode === "regex" && x.entries.some(e => e.msgOpenQuote || Object.keys(e.fields).length));
+    assert(!!c, "the golden fixture has such a case");
+    if (c) {
+      useFormat(w, T, c.format);
+      const text = Array.from({ length: 3000 }, () => c.text).join("\n");
+      const reference = await mainThreadParse(w, T, text, c.format.id);
+      Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 3, configurable: true });
+      installFakeWorker(w);
+      const node = w.createFileNode("custom.log");
+      node.formatId = c.format.id;
+      await w.parseLogTextAsync(text, node, () => {});
+      assert(noId(node.entries) === noId(reference), c.name + " x3000: identical through the workers (" + node.entries.length + ")");
+    }
+  });
+}
+
+/* ============================================================
+   GROUP 269 — Per-file aggregates (level counts, minimap bars, widest
+   message, ts range) computed while entries are adopted
+   Origin: 2026-09-24, load/filter performance session. updateFileAggregate
+   catches a file's aggregate up as each parsed batch is adopted, so the
+   first render reads it instead of making full passes: getLevelCounts
+   (per raw level + format, bucketed when read), the minimap (bucket
+   boundaries by binary search when ts are sorted, the whole-file overlay
+   from per-level index lists), updateMinimapFullRange and
+   computeMaxMessageWidth. It must give exactly what the per-entry passes
+   give, catch up incrementally on tail appends and survive rotation, clock
+   offsets, merges and format level edits.
+   ============================================================ */
+group(269);
+{
+  // What the render produced, and the same render with every aggregate
+  // shortcut switched off (the per-entry passes) — must be identical.
+  function viewSnapshot(w, T, d) {
+    const measured = [];
+    const origMeasure = w.measureMsgWidth;
+    w.measureMsgWidth = text => { measured.push(text); return origMeasure(text); };
+    T.minimapBgCache = null;
+    w.render();
+    w.measureMsgWidth = origMeasure;
+    const rect = d.querySelector("#minimapFullRangeRect");
+    return JSON.stringify({ bars: T.minimapBars, measured, rect: rect && rect.getAttribute("x") + "/" + rect.getAttribute("width"),
+      counts: w.getLevelCounts(T.state.rootIds[0]) });
+  }
+  function slowSnapshot(w, T, d) {
+    const saved = { b: w.minimapBucketBounds, a: w.aggregateForEntries, f: w.fileAggregate };
+    w.minimapBucketBounds = () => null;
+    w.aggregateForEntries = () => null;
+    T.state.rootIds.forEach(id => { T.state.nodes[id]._levelCounts = null; });
+    // getLevelCounts' file branch reads the aggregate — count per entry instead.
+    const origCounts = w.getLevelCounts;
+    w.getLevelCounts = id => {
+      const counts = {};
+      for (const e of w.getEntries(id)) { const b = w.levelBucket(e.level, e.formatId); counts[b] = (counts[b] || 0) + 1; }
+      return counts;
+    };
+    try { return viewSnapshot(w, T, d); }
+    finally {
+      w.minimapBucketBounds = saved.b; w.aggregateForEntries = saved.a; w.getLevelCounts = origCounts;
+      T.state.rootIds.forEach(id => { T.state.nodes[id]._levelCounts = null; });
+    }
+  }
+  function fastSnapshot(w, T, d) {
+    T.state.rootIds.forEach(id => { T.state.nodes[id]._levelCounts = null; });
+    return viewSnapshot(w, T, d);
+  }
+  // Sorted log with multi-line messages (the longest message is not the one
+  // with the longest line), several levels per bucket and a custom level.
+  function sortedLog(n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const sec = Math.floor(i / 3);
+      const ts = "2024-01-15 1" + Math.floor(sec / 3600) + ":" + String(Math.floor(sec / 60) % 60).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0") + "," + String((i % 3) * 100).padStart(3, "0");
+      const lvl = ["INFO", "DEBUG", "WARN", "INFO", "ERROR", "NOTICE"][i % 6 === 5 && i % 7 ? 0 : i % 6];
+      out.push(ts + "\t" + lvl + "\t\"t\"\tC:\\a.cs\tline " + i + "\t[M]\t\"msg " + i + (i === 700 ? " " + "x".repeat(90) : "") + "\"");
+      if (i === 300) out.push("  " + "y".repeat(120));
+    }
+    return out.join("\n") + "\n";
+  }
+  let boundsCalls = 0;
+  function countBounds(w) {
+    const orig = w.minimapBucketBounds;
+    if (typeof orig !== "function") return;
+    w.minimapBucketBounds = function () { const r = orig.apply(this, arguments); if (r) boundsCalls++; return r; };
+  }
+
+  await withApp(async (w, d, T) => {
+    section("269a. The aggregate is complete when a load finishes (built during adoption), and every reader matches the per-entry passes");
+    const f = await w.addFile("sorted.log", sortedLog(3000), () => {});
+    assert(f._agg && f._agg.count === f.entries.length && f._agg.entries === f.entries, "aggregate caught up to all " + f.entries.length + " entries by the end of the parse");
+    assert(f._agg && f._agg.sorted === true, "sorted ts recognized");
+    T.state.activeId = f.id;
+    countBounds(w);
+    for (const multi of [false, true]) {
+      T.state.multilineMessages = multi;
+      for (const mode of ["time", "entries"]) {
+        T.minimapBinningMode = mode;
+        boundsCalls = 0;
+        const fast = fastSnapshot(w, T, d);
+        assert(boundsCalls > 0, mode + (multi ? "/multi-line" : "") + ": the minimap took the bucket-boundary path");
+        const slow = slowSnapshot(w, T, d);
+        assert(fast === slow, mode + (multi ? "/multi-line" : "") + ": minimap bars, full-range box, measured message and level counts identical to the per-entry passes");
+      }
+    }
+    T.state.multilineMessages = false;
+    T.minimapBinningMode = "time";
+    const measured = JSON.parse(fastSnapshot(w, T, d)).measured;
+    assert(measured.length && measured.every(m => m.startsWith("msg 300\n  y")), "single-line mode measures the longest whole message");
+    T.state.multilineMessages = true;
+    const measuredMulti = JSON.parse(fastSnapshot(w, T, d)).measured;
+    assert(measuredMulti.every(m => m === "  " + "y".repeat(120)), "multi-line mode measures the longest line");
+    T.state.multilineMessages = false;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("269b. Unsorted and NaN timestamps: time-mode minimap falls back to the per-entry pass, results still identical");
+    const lines = makeLog(0, 400).trimEnd().split("\n");
+    lines.splice(100, 0, lines.splice(300, 1)[0]); // one entry out of order
+    lines[50] = lines[50].replace(/^2024-01-15 10:00:50,000/, "not-a-time");
+    const f = await w.addFile("unsorted.log", lines.join("\n") + "\n", () => {});
+    assert(f._agg && f._agg.sorted === false, "out-of-order / NaN ts: not sorted");
+    T.state.activeId = f.id;
+    for (const mode of ["time", "entries"]) {
+      T.minimapBinningMode = mode;
+      assert(fastSnapshot(w, T, d) === slowSnapshot(w, T, d), mode + ": identical to the per-entry passes");
+    }
+    T.minimapBinningMode = "time";
+  });
+
+  await withApp(async (w, d, T) => {
+    section("269c. Tail appends are folded in incrementally — including a continuation line that grows the last entry into the longest");
+    const f = await w.addFile("tail.log", sortedLog(500), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    const agg = f._agg;
+    f.tail = { handle: w.urlTailHandle("philogg://local/1/tail.log"), offset: 0, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
+    w.appendTailText(f, "2024-01-15 11:00:00,000\tERROR\t\"t\"\tC:\\a.cs\tline 1\t[M]\t\"late\"\n" + "  " + "z".repeat(400) + "\n");
+    w.onTailChange([f.id]);
+    const fast = fastSnapshot(w, T, d);
+    assert(f._agg === agg && agg.count === f.entries.length, "the same aggregate object caught up (" + (agg && agg.count) + "/" + f.entries.length + ")");
+    assert(fast === slowSnapshot(w, T, d), "after the append: identical to the per-entry passes");
+    assert(JSON.parse(fast).measured.every(m => m.includes("z".repeat(400))), "the grown last entry is now the widest");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("269d. Rotation, clock offset, merge and a format's level edit leave no stale aggregate behind");
+    const f = await w.addFile("a.log", sortedLog(600), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    // Clock offset: every ts moved.
+    w.applyClockOffset(f.id, 3600000);
+    assert(fastSnapshot(w, T, d) === slowSnapshot(w, T, d), "clock offset: identical to the per-entry passes");
+    assert(f._agg.minTs === f.entries[0].ts, "clock offset: the aggregate's ts range moved with the entries");
+    // Rotation: a new, shorter array.
+    const oldAgg = f._agg;
+    f.entries = [];
+    w.appendTailText(Object.assign(f, { tail: { pending: "" } }), sortedLog(40));
+    w.invalidateCachesForRoots([f.id]);
+    const fast = fastSnapshot(w, T, d);
+    assert(f._agg !== oldAgg && f._agg.count === 40, "rotation: a fresh aggregate over the new entries");
+    assert(fast === slowSnapshot(w, T, d), "rotation: identical to the per-entry passes");
+    delete f.tail;
+    // Merge: mergeFiles sorts its copy in place.
+    const g = await w.addFile("b.log", makeLog(30, 300, { levels: ["WARN", "INFO"] }), () => {});
+    const m = await w.mergeFiles([f.id, g.id]);
+    const merged = m && m.id ? m : T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
+    T.state.activeId = merged.id;
+    const fm = fastSnapshot(w, T, d);
+    assert(merged._agg && merged._agg.count === merged.entries.length, "merge: aggregate covers the merged entries");
+    assert(fm === slowSnapshot(w, T, d), "merge: identical to the per-entry passes");
+    // A format's level list edited after load: counts re-bucket when read.
+    T.state.activeId = f.id;
+    const fmt = { id: "fmt-269", name: "269", mode: "regex", builtin: false, edited: false, pattern: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS",
+      regex: "^(?<ts>\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d,\\d{3})\\t(?<level>\\w+)\\t(?<message>.*)$",
+      levels: [{ value: "NOTICE", name: "NOTICE", color: null }, { value: "INFO", name: "INFO", color: null }] };
+    T.state.logFormats.push(fmt);
+    w.invalidateFormatCompileCache();
+    const h = await w.addFile("c.log", "2024-01-15 10:00:00,000\tNOTICE\tx\n2024-01-15 10:00:01,000\tINFO\ty\n2024-01-15 10:00:02,000\tNOTICE\tz\n", () => {}, "fmt-269");
+    const before = w.getLevelCounts(h.id);
+    assert(before.NOTICE === 2, "custom level counted in its own bucket, got " + JSON.stringify(before));
+    fmt.levels = [{ value: "INFO", name: "INFO", color: null }];
+    w.invalidateFormatCompileCache();
+    w.invalidateAllCaches();
+    const after = w.getLevelCounts(h.id);
+    const expected = {};
+    for (const e of h.entries) { const b = w.levelBucket(e.level, e.formatId); expected[b] = (expected[b] || 0) + 1; }
+    assert(JSON.stringify(after) === JSON.stringify(expected) && !after.NOTICE, "after the edit: re-bucketed, " + JSON.stringify(after));
+  });
+}
+
+/* ============================================================
+   GROUP 270 — Context view: built only while visible, match/gap part
+   memoized
+   Origin: 2026-09-24, load/filter performance session. renderMainView used
+   to rebuild the Context view on every render, even with only the
+   Filtered tab on screen — a match set, order lookups, a sort and a gap
+   list over the whole file (~300ms for a 162k-match level filter on 650k
+   entries). Now a hidden Context view is marked stale and built when it is
+   revealed (its tab, Stacked, a jump into it), and the match/gap part
+   (contextMatchesAndGaps) is memoized per active node + result + root
+   entries, so only the expansion-dependent rows/strips/runs are rebuilt.
+   ============================================================ */
+group(270);
+{
+  const tab = (d, name) => d.querySelector('#fhTabs .view-tab[data-fh-tab="' + name + '"]');
+  // The Context view as a from-scratch reference: rows (entry ids + strips)
+  // for the current active node, computed with a cold memo.
+  function contextShape(T) {
+    return JSON.stringify({ rows: T.currentHighlightViewEntries.map(e => e.id), strips: [...T.contextStrips].map(([k, v]) => [k, v.map(x => x.kind + x.from + "-" + x.to)]),
+      matchRows: T.contextMatchRows, pos: [...T.contextMatchPos], gaps: T.contextGaps, ids: [...T.contextMatchIds].sort() });
+  }
+
+  await withApp(async (w, d, T) => {
+    section("270a. With the Filtered tab on screen, a render doesn't build the Context view; revealing it builds it for the current node");
+    const f = await w.addFile("a.log", makeLog(0, 200), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    let builds = 0;
+    const origBuild = w.buildContextView;
+    w.buildContextView = function () { builds++; return origBuild.apply(this, arguments); };
+    const err = w.createFilterNode(f.id, "level", ["ERROR"]);
+    w.revealFilteredView();
+    w.render();
+    assert(T.fhActiveTab === "filter", "sanity: the Filtered tab is showing");
+    assert(builds === 0, "no Context build while it is hidden (" + builds + ")");
+    assert(T.contextViewStale === true, "the hidden Context view is marked stale");
+    fireClick(tab(d, "highlight"), w);
+    assert(builds === 1, "revealing the Context tab builds it once (" + builds + ")");
+    assert(T.contextViewStale === false, "...and it is no longer stale");
+    assert(T.contextMatchRows.length === 40 && T.contextActive, "it shows the ERROR filter's 40 matches");
+    assert(d.querySelector("#highlightRows .log-row"), "...with rows rendered");
+    const counter = d.querySelector("#contextToolbar");
+    assert(counter && /40/.test(counter.textContent), "the toolbar's match counter reflects them, got " + (counter && counter.textContent.trim().slice(0, 80)));
+    w.buildContextView = origBuild;
+    // Stacked: both views on screen, so every render builds it.
+    w.applyFhView("stacked");
+    builds = 0;
+    w.buildContextView = function () { builds++; return origBuild.apply(this, arguments); };
+    w.render();
+    assert(builds === 1 && T.contextViewStale === false, "Stacked: a render builds the Context view (" + builds + ")");
+    w.buildContextView = origBuild;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("270b. The match/gap part is memoized: a re-render or a gap expansion reuses it, a changed result or root rebuilds it");
+    const f = await w.addFile("a.log", makeLog(0, 300), () => {});
+    const err = w.createFilterNode(f.id, "level", ["ERROR"]);
+    T.state.activeId = err.id;
+    w.applyFhView("highlight");
+    w.render();
+    const ids1 = T.contextMatchIds;
+    let orderMaps = 0;
+    const origMap = w.buildOrderIndexMap;
+    w.buildOrderIndexMap = function () { orderMaps++; return origMap.apply(this, arguments); };
+    w.render();
+    assert(T.contextMatchIds === ids1, "re-render: the same match set object (memo hit)");
+    const before = contextShape(T);
+    // Open one gap the way the gap row's click does: only the expansion part changes.
+    const g = T.contextGaps[3];
+    T.contextExpansions.set(g.start, [{ from: g.start, to: g.end }]);
+    w.render();
+    assert(T.contextMatchIds === ids1, "a gap expansion reuses the match set too");
+    assert(T.currentHighlightViewEntries.length === 60 + (g.end - g.start), "...while its rows are rebuilt with the gap revealed (" + T.currentHighlightViewEntries.length + ")");
+    assert(orderMaps === 0, "no id -> index map needed for a filter whose result is a subsequence of the file (" + orderMaps + ")");
+    T.contextExpansions.delete(g.start);
+    w.render();
+    assert(contextShape(T) === before, "closing it again restores the exact previous view");
+    // A tail append changes the root and the result: rebuilt.
+    f.tail = { pending: "" };
+    w.appendTailText(f, makeLog(400, 10));
+    delete f.tail;
+    w.invalidateCachesForRoots([f.id]);
+    w.render();
+    assert(T.contextMatchIds !== ids1 && T.contextMatchRows.length === 62, "after an append the matches are recomputed (" + T.contextMatchRows.length + ")");
+    // Cold reference for the same state.
+    const warm = contextShape(T);
+    w.invalidateAllCaches(); // new getEntries() results: the memo misses, built from scratch
+    w.render();
+    assert(contextShape(T) === warm, "memoized view identical to one built from scratch");
+    w.buildOrderIndexMap = origMap;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("270c. OR and link nodes: gaps and ordinals match a hand-computed reference; a link node's pairs take the id -> index route");
+    const lines = makeLog(0, 120).trimEnd().split("\n");
+    const f = await w.addFile("a.log", lines.join("\n") + "\n", () => {});
+    const a = w.createFilterNode(f.id, "text", "message 1");
+    const b = w.createFilterNode(f.id, "level", ["ERROR"]);
+    const or = w.createAndOrNode(a.id, b.id, "or");
+    T.state.activeId = or.id;
+    w.applyFhView("highlight");
+    w.render();
+    const expectIdx = f.entries.map((e, i) => (/message 1/.test(e.raw) || e.level === "ERROR") ? i : -1).filter(i => i >= 0);
+    const gaps = [];
+    let prev = -1;
+    for (const i of expectIdx) { if (i > prev + 1) gaps.push({ start: prev + 1, end: i }); prev = i; }
+    if (prev + 1 < f.entries.length) gaps.push({ start: prev + 1, end: f.entries.length });
+    assert(JSON.stringify(T.contextGaps) === JSON.stringify(gaps), "OR node: gaps match the reference");
+    assert(expectIdx.every((i, k) => T.contextMatchPos.get(f.entries[i].id) === k + 1), "OR node: every match's ordinal is its position among the matches");
+    const link = w.createLinkNode ? w.createLinkNode(b.id, a.id, "after", 1) : null;
+    if (link) {
+      T.state.activeId = link.id;
+      w.applyFhView("highlight");
+      let orderMaps = 0;
+      const origMap = w.buildOrderIndexMap;
+      w.buildOrderIndexMap = function () { orderMaps++; return origMap.apply(this, arguments); };
+      w.render();
+      w.buildOrderIndexMap = origMap;
+      assert(orderMaps > 0, "link node: its (possibly out-of-order) underlying entries go through the id -> index map");
+      const under = new Set();
+      w.getEntries(link.id).forEach(p => w.getTupleEntries(p).forEach(e => under.add(e.id)));
+      assert(T.contextMatchIds.size === under.size && [...under].every(id => T.contextMatchIds.has(id)), "link node: the underlying entries are the matches");
+      const rowsOrder = T.contextMatchRows.map(r => T.currentHighlightViewEntries[r].id);
+      const idxs = rowsOrder.map(id => f.entries.findIndex(e => e.id === id));
+      assert(idxs.every((v, i) => i === 0 || v > idxs[i - 1]), "link node: matches shown in file order");
+    }
+  });
+
+  await withApp(async (w, d, T) => {
+    section("270d. A jump into the Context view from the Filtered tab (double-click) builds it and expands around the entry");
+    const f = await w.addFile("a.log", makeLog(0, 300), () => {});
+    const err = w.createFilterNode(f.id, "level", ["ERROR"]);
+    T.state.activeId = err.id;
+    w.revealFilteredView();
+    w.render();
+    assert(T.contextViewStale === true, "sanity: Context hidden and stale");
+    const target = f.entries[150];
+    w.revealInHighlightView(target);
+    assert(T.fhActiveTab === "highlight" && T.contextViewStale === false, "the jump shows a freshly built Context view");
+    assert(T.currentHighlightViewEntries.some(e => e.id === target.id), "the jumped-to entry is in it");
+    assert(T.state.selectedId === target.id, "and selected");
   });
 }
 
@@ -34067,4 +34743,32 @@ process.exitCode = failed ? 1 : 0;
               instead of the 100ms throttle (GROUP 258 updated), and row
               reuse on scroll renders (identity kept, one-screen overscan,
               same markup as a full rebuild, note rows paired).
+   Group 267 — new session (2026-09-24, load/filter performance): the
+              session cache off the load path — a File load cached as the
+              File itself (blob, restored identically), text records
+              written when idle, a tail change dropping the blob, and the
+              desktop "path" record (person-decided: re-read from disk on
+              restore, a deleted file dropped). The suite's structuredClone
+              shim lets fake-indexeddb store jsdom Blobs.
+   Group 268 — same session: parallel JS parsing — encodeEntryBatch ->
+              decodeNativeBatch round trip over the golden cases, cuts only
+              before header lines (CRLF edge), one fake worker per piece
+              with out-of-order completion, file-order ids, rollback +
+              fallback on a worker failure, a custom regex format, and the
+              drain yielding through queueTask, never setTimeout. Groups
+              165b/c and 261 now decode the worker's binary batches.
+   Group 269 — same session: per-file aggregates — complete when the load
+              finishes, minimap bars/full-range box/measured message/level
+              counts identical to the per-entry passes (time + entries
+              mode, single- and multi-line), unsorted/NaN ts fallback, tail
+              appends folded in incrementally, rotation, clock offset,
+              merge and a format level edit.
+   Group 270 — same session: the Context view is built only while visible
+              (Filtered tab: not built, stale; revealed: built once;
+              Stacked: every render), its match/gap part memoized (re-render
+              and gap toggle reuse it, an append rebuilds it, identical to a
+              cold build), OR/link reference checks, a jump from the
+              Filtered tab. Groups 55a/55d/61a/97a/137/202b/202c assert on
+              both Log views at once and now run in Stacked layout, where
+              both are on screen.
    ============================================================ */
